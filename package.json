@@ -1,0 +1,25 @@
+{
+  "name": "code-agent",
+  "version": "1.0.0",
+  "description": "스펙 기반 소스 코드 생성 AI-Agent",
+  "main": "dist/core/run.js",
+  "bin": {
+    "code-agent": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate": "node dist/cli/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}
