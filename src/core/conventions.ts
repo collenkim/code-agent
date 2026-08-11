@@ -51,11 +51,10 @@ export function resolveConventions(
   const entries = override?.length ? override : declared;
   const origin = override?.length ? "--conventions" : "code-agent.json";
 
+  // 컨벤션 문서가 없는 것이 정상인 실행이 있다 — 신규 프로젝트 구성과 레거시 도입은
+  // 그 문서를 만들어 내는 쪽이다. 막지 않되, 프롬프트에 없다는 사실이 드러나게 한다.
   if (entries.length === 0) {
-    throw new Error(
-      "적용할 컨벤션 문서가 없습니다. code-agent.json 의 conventions 에 선언하거나 " +
-        "--conventions 로 지정하세요.",
-    );
+    return { paths: [], source: "(없음 — 이 실행에서 만들어 낼 대상)" };
   }
 
   const paths = entries.flatMap((entry) => {

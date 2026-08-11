@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "레거시 도입용 스타터. 이미 굴러가는 코드베이스에 code-agent 를 붙일 때 쓴다.",
+    "bootstrap 과 결정적으로 다른 점: 참조할 코드가 이미 있다. 그래서 규칙을 새로 정하지 않고 기존 코드에서 읽어낸다.",
+    "referenceDomain 은 --reference 로 지정한다 — '이 도메인을 표준으로 삼겠다'는 사람의 선택이다.",
+    "domainBase 는 실제 소스 루트로 바꿔서 쓴다(예: src/main/java/com/acme/app).",
+    "conventions 는 비워 둔다 — 기존 문서가 있으면 --conventions 로 준다."
+  ],
+  "domainBase": "src/main/java/com/finger/fingersales",
+  "domainRoots": ["application","admin"],
+
+  "conventions": [],
+  "stages": [
+    {
+      "key": "survey",
+      "title": "구조 조사서",
+      "template": "01-survey.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    },
+    {
+      "key": "declare",
+      "title": "code-agent.json + 컨벤션 문서",
+      "template": "02-declare.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    }
+  ]
+}

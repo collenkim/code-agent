@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 
-import { collectExemplars, formatExemplars } from "./exemplar";
+import { collectExemplars, formatExemplars, listReferenceTree } from "./exemplar";
 import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
 import type {
@@ -19,7 +19,7 @@ import type {
 /** 앞 단계 산출물을 프롬프트에 다시 넣을 때의 파일당 상한 */
 const MAX_PREVIOUS_LINES = 300;
 
-const FilesSchema = z.object({
+export const FilesSchema = z.object({
   files: z.array(
     z.object({
       path: z.string().describe("저장소 루트 기준 상대경로"),
@@ -106,14 +106,30 @@ export function buildStagePrompt(
   );
   const plannedFiles = plan.files.filter((file) => file.stage === stage.key);
 
+  // 참조 도메인의 파일 목록(경로만)은 어느 단계에나 쓸모가 있다 — 무엇이 이미 있는지 알아야
+  // 없는 것을 지어내지 않는다. 레거시 도입의 구조 조사 단계는 이것만으로 돌아간다.
+  const referenceTree = listReferenceTree(
+    context.repoRoot,
+    manifest,
+    context.referenceDomain,
+    manifest.stages,
+  );
+  const treeSection =
+    referenceTree.length > 0
+      ? `# 참조 도메인 '${context.referenceDomain}'의 전체 파일 목록\n${referenceTree.join("\n")}\n\n`
+      : "";
+
   const user = withPolicy(
     `# 이번 단계에서 만들 파일 (계획 확정분)\n` +
       (plannedFiles.length > 0
         ? plannedFiles.map((file) => `- ${file.path} — ${file.purpose}`).join("\n")
         : "(계획에 이 단계 파일이 없음 — 아무것도 만들지 말고 빈 배열을 반환한다)") +
       `\n\n# 단계 템플릿 (${stage.template})\n${readTemplate(context.templatesDir, stage)}\n\n` +
-      `# 참조 표준 코드 — 도메인 '${context.referenceDomain}'\n` +
-      `${formatExemplars(exemplars, manifest.language)}\n\n` +
+      treeSection +
+      (exemplars.length > 0
+        ? `# 참조 표준 코드 — 도메인 '${context.referenceDomain}'\n` +
+          `${formatExemplars(exemplars, manifest.language)}\n\n`
+        : "") +
       `# 스펙\n${context.specText}\n\n` +
       `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
       `# 앞 단계에서 이미 만든 파일\n${formatPrevious(previous)}` +

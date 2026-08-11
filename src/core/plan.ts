@@ -7,7 +7,7 @@ import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
 import type { BuildPlan, PromptPreview, ResolvedBuildContext } from "./types";
 
-const PlanSchema = z.object({
+export const PlanSchema = z.object({
   domainName: z.string().describe("프로젝트의 명명 규칙을 따른 도메인 이름"),
   domainLabel: z.string().describe("사람이 읽는 이름"),
   domainRoot: z
@@ -49,16 +49,30 @@ const PlanSchema = z.object({
   reasoning: z.string().describe("도메인 위치·파일 구성을 그렇게 정한 이유를 한국어로 간단히"),
 });
 
-const SYSTEM_PROMPT =
-  "너는 코드 생성 파이프라인의 플래너다. 스펙을 읽고 '무엇을 어떤 컨벤션으로 만들지'를 정리한 작업 명세서만 만든다. " +
+const SYSTEM_PROMPT_BASE =
+  "너는 코드 생성 파이프라인의 플래너다. 스펙을 읽고 '무엇을 어떤 규칙으로 만들지'를 정리한 작업 명세서만 만든다. " +
   "코드는 만들지 않는다.\n" +
-  "가장 중요한 규칙: **참조 표준 도메인의 파일 구조가 정본이다.** 만들 파일 목록은 참조 표준 도메인의 " +
-  "디렉토리 구성과 파일 이름 규칙을 그대로 따르고, 참조 표준에 없는 파일을 새로 발명하지 않는다.\n" +
-  "언어·프레임워크·계층 구조를 네가 알고 있는 관행으로 가정하지 않는다. 아래 주어진 참조 표준 코드와 " +
-  "컨벤션 문서에서 읽히는 것만 근거로 삼는다.\n" +
-  "컨벤션 문서가 참조 표준 코드와 다르게 말하면, 조용히 한쪽을 고르지 말고 conflicts에 남긴다. " +
-  "문서는 코드보다 뒤처질 수 있으므로 기본 판단은 '참조 표준 코드를 따른다'이며, 그 판단도 decision에 적는다.\n" +
+  "언어·프레임워크·계층 구조를 네가 알고 있는 관행으로 가정하지 않는다. 아래 주어진 것에서 읽히는 것만 근거로 삼는다.\n" +
   "스펙에 없는 필드·API·정책을 지어내지 않는다. 정할 수 없는 것은 openQuestions에 적는다.";
+
+/** 복제할 코드가 있을 때만 붙는 규칙 — 없는 실행(신규 프로젝트 구성)에 붙이면 거짓말이 된다. */
+const SYSTEM_PROMPT_WITH_REFERENCE =
+  "\n가장 중요한 규칙: **참조 표준 도메인의 파일 구조가 정본이다.** 만들 파일 목록은 참조 표준 도메인의 " +
+  "디렉토리 구성과 파일 이름 규칙을 그대로 따르고, 참조 표준에 없는 파일을 새로 발명하지 않는다.\n" +
+  "컨벤션 문서가 참조 표준 코드와 다르게 말하면, 조용히 한쪽을 고르지 말고 conflicts에 남긴다. " +
+  "문서는 코드보다 뒤처질 수 있으므로 기본 판단은 '참조 표준 코드를 따른다'이며, 그 판단도 decision에 적는다.";
+
+/** 복제할 코드가 없을 때 — 근거가 얇다는 사실 자체를 알려 준다. */
+const SYSTEM_PROMPT_WITHOUT_REFERENCE =
+  "\n이 실행에는 **복제할 참조 코드가 없다.** 기존 관행으로 빈칸을 메우지 말고, " +
+  "스펙과 결정 문서에 적힌 것만 계획에 넣는다. 근거가 없는 항목은 openQuestions로 돌린다.";
+
+function systemPromptFor(hasReference: boolean): string {
+  return (
+    SYSTEM_PROMPT_BASE +
+    (hasReference ? SYSTEM_PROMPT_WITH_REFERENCE : SYSTEM_PROMPT_WITHOUT_REFERENCE)
+  );
+}
 
 function buildUserPrompt(
   context: ResolvedBuildContext,
@@ -75,7 +89,9 @@ function buildUserPrompt(
       `- 도메인 디렉토리 위치: ${manifest.domainBase}\n` +
       `- 도메인 분류: ${roots.length > 0 ? roots.join(", ") : "(없음 — domainRoot는 빈 문자열)"}\n` +
       (manifest.language ? `- 주 언어: ${manifest.language}\n` : "") +
-      `\n# 참조 표준 도메인 '${context.referenceDomain}'의 파일 구조\n${referenceTree.join("\n")}\n\n` +
+      (referenceTree.length > 0
+        ? `\n# 참조 표준 도메인 '${context.referenceDomain}'의 파일 구조\n${referenceTree.join("\n")}\n\n`
+        : "\n# 참조 표준 코드\n(없음 — 복제할 기존 코드가 없는 실행이다)\n\n") +
       `# 실행할 단계\n${stages.map((stage) => `- ${stage.key}: ${stage.title}`).join("\n")}\n\n` +
       "files의 stage는 위 단계 키 중 하나여야 한다. 실행하지 않는 단계의 파일은 목록에 넣지 않는다.",
     context.policyText,
@@ -91,7 +107,7 @@ export function previewPlanPrompt(
   return {
     stage: "plan",
     reproducible: true,
-    system: SYSTEM_PROMPT,
+    system: systemPromptFor(referenceTree.length > 0),
     user: buildUserPrompt(context, manifest, stages, referenceTree),
   };
 }
@@ -113,7 +129,7 @@ export async function planBuild(
   const response = await client.messages.parse({
     model: "claude-opus-5",
     max_tokens: 8000,
-    system: SYSTEM_PROMPT,
+    system: systemPromptFor(referenceTree.length > 0),
     messages: [
       { role: "user", content: buildUserPrompt(context, manifest, stages, referenceTree) },
     ],
