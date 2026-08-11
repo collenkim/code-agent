@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "신규 프로젝트 구성용 스타터. 대상 저장소에는 아직 code-agent.json 이 없으므로 이것을 --templates 로 가리켜 시작한다.",
+    "여기 선언된 것은 '절차'이며 프로젝트 지식이 아니다 — 언어·프레임워크·계층 같은 값은 전부 --spec 문서에서 온다.",
+    "domainBase 는 스키마상 필수라 자리만 채운다. 이 단계들은 참조 파일을 쓰지 않으므로 실제로 참조되지 않는다.",
+    "conventions 에는 결정 문서(architecture-decisions.md)를 넣는다 — 이 실행에서는 그것이 유일한 규칙 근거다."
+  ],
+  "domainBase": "src",
+  "domainRoots": [],
+  "conventions": [],
+  "stages": [
+    {
+      "key": "decisions",
+      "title": "결정 질문지",
+      "template": "01-decisions.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    },
+    {
+      "key": "scaffold-plan",
+      "title": "스캐폴딩 명령",
+      "template": "02-scaffold.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    },
+    {
+      "key": "skeleton",
+      "title": "공통 모듈·설정",
+      "template": "03-skeleton.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "src"
+      ]
+    },
+    {
+      "key": "declare",
+      "title": "code-agent.json + 컨벤션 문서",
+      "template": "04-declare.md",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    }
+  ]
+}

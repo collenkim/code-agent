@@ -19,10 +19,20 @@ const StageSchema = z.object({
     .array(z.string())
     .default([])
     .describe("참조 도메인 디렉토리 기준 상대경로. {Ref}는 참조 도메인 PascalCase로 치환. /로 끝나면 디렉토리 전체"),
+  scope: z
+    .enum(["domain", "project"])
+    .default("domain")
+    .describe(
+      "domain이면 outputDirs를 도메인 디렉토리 기준으로, project면 저장소 루트 기준으로 본다. " +
+        "빌드 파일·공통 모듈처럼 도메인 밖에 놓이는 산출물은 project",
+    ),
   outputDirs: z
     .array(z.string())
     .default([])
-    .describe("산출물이 놓일 수 있는 도메인 하위 디렉토리. '.'은 도메인 디렉토리 바로 아래. 비면 소스가 아닌 문서 산출물"),
+    .describe(
+      "산출물이 놓일 수 있는 위치. scope=domain이면 도메인 하위 디렉토리('.'은 도메인 바로 아래), " +
+        "scope=project면 저장소 루트 기준 경로 접두사. 비면 위치를 제한하지 않는다",
+    ),
 });
 
 const ManifestSchema = z.object({

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { buildDryRunPreviews, formatDryRunReport } from "../core/dryRun";
 import { MANIFEST_FILE } from "../core/manifest";
+import { emitPrompt, ingestResponse, parsePromptTarget } from "../core/manualRun";
 import { formatPlan } from "../core/plan";
 import { runBuild } from "../core/run";
+import { loadPlan } from "../core/state";
 import type { BuildContext, BuildOutcome } from "../core/types";
 
 const USAGE =
@@ -10,6 +12,14 @@ const USAGE =
   "                  --repo <대상저장소경로> --templates <템플릿디렉토리>\n" +
   `\n템플릿 디렉토리에는 ${MANIFEST_FILE} 이 있어야 합니다 — 도메인 경로·계층·단계·검증 명령을\n` +
   "그 프로젝트가 선언하는 파일입니다. 에이전트는 언어·프레임워크를 가정하지 않습니다.\n" +
+  "\n수동 모드 (API 미사용 — 프롬프트를 뽑아 LLM에 붙여넣고 응답을 되돌려 넣는 방식):\n" +
+  "  --step <plan|단계키|gate:단계키>   대상 지정\n" +
+  "  --emit-prompt                    붙여넣을 프롬프트를 표준출력으로\n" +
+  "  --ingest <응답파일>               응답을 읽어 계획 저장 또는 파일 생성\n" +
+  "\n  예)  code-agent --repo … --templates … --spec … --step plan --emit-prompt > p.txt\n" +
+  "       code-agent --repo … --templates … --step plan --ingest answer.txt\n" +
+  "       code-agent --repo … --templates … --spec … --step entity --emit-prompt > p.txt\n" +
+  "       code-agent --repo … --templates … --step entity --ingest answer.txt\n" +
   "\n선택 옵션:\n" +
   `  --conventions <파일|디렉토리>   ${MANIFEST_FILE} 의 conventions 선언을 덮어씀\n` +
   `  --reference <참조도메인>        ${MANIFEST_FILE} 의 referenceDomain 을 덮어씀\n` +
@@ -71,13 +81,17 @@ function printStages(outcome: BuildOutcome) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  if (!args.spec || !first(args, "templates") || !first(args, "repo")) {
+  const isIngest = Boolean(first(args, "ingest"));
+  // --ingest 는 응답 파일만 읽어 반영하므로 스펙이 필요 없다.
+  const needsSpec = !isIngest;
+
+  if ((needsSpec && !args.spec) || !first(args, "templates") || !first(args, "repo")) {
     console.error(USAGE);
     process.exit(1);
   }
 
   const context: BuildContext = {
-    specPaths: args.spec,
+    specPaths: args.spec ?? [],
     conventionsPaths: args.conventions,
     templatesDir: first(args, "templates")!,
     policyPath: first(args, "policy"),
@@ -92,6 +106,55 @@ async function main() {
     test: first(args, "test") === "true",
     force: first(args, "force") === "true",
   };
+
+  // ---- 수동 모드 (API 미사용) ----
+
+  const step = first(args, "step");
+
+  if (first(args, "emit-prompt") === "true") {
+    if (!step) {
+      console.error("--emit-prompt 에는 --step <plan|단계키|gate:단계키> 가 필요합니다.");
+      process.exit(1);
+    }
+    // 프롬프트만 표준출력으로 — 파이프·리다이렉트로 바로 쓸 수 있게 다른 출력을 섞지 않는다.
+    process.stdout.write(emitPrompt(context, parsePromptTarget(step)));
+    return;
+  }
+
+  if (isIngest) {
+    if (!step) {
+      console.error("--ingest 에는 --step <plan|단계키|gate:단계키> 가 필요합니다.");
+      process.exit(1);
+    }
+    const result = ingestResponse(context, parsePromptTarget(step), first(args, "ingest")!);
+
+    if (result.planPath) {
+      console.log(`계획 저장: ${result.planPath}\n`);
+      console.log(formatPlan(loadPlan(context.outDir)));
+      return;
+    }
+    if (result.target.kind === "gate") {
+      console.log(`## 검수 결과 — 위반 ${result.violations.length}건`);
+      for (const violation of result.violations) {
+        console.log(`  [${violation.item}] ${violation.file}: ${violation.detail}`);
+      }
+      return;
+    }
+
+    console.log(`## ${result.target.kind === "stage" ? result.target.key : ""} — ${result.writtenFiles.length}개 생성`);
+    for (const path of result.writtenFiles) {
+      console.log(`  ${path}`);
+    }
+    if (result.violations.length > 0) {
+      console.log(`\n⚠ 코드 검사 위반 ${result.violations.length}건`);
+      for (const violation of result.violations) {
+        console.log(`  [${violation.item}] ${violation.file}: ${violation.detail}`);
+      }
+    }
+    return;
+  }
+
+  // ---- API 모드 ----
 
   if (first(args, "dry-run") === "true") {
     console.log(formatDryRunReport(buildDryRunPreviews(context)));

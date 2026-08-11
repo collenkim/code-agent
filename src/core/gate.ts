@@ -14,7 +14,7 @@ import type {
   ResolvedBuildContext,
 } from "./types";
 
-const GateSchema = z.object({
+export const GateSchema = z.object({
   violations: z.array(
     z.object({
       item: z.string().describe("위반한 체크리스트 항목 또는 컨벤션 규칙"),
@@ -50,8 +50,22 @@ function checkPaths(
       violations.push({ item: "경로 규칙", file: path, detail: "절대경로 또는 상위 경로 참조" });
       continue;
     }
-    // outputDirs가 비면 소스가 아닌 문서 산출물 — 경로 화이트리스트를 적용하지 않는다.
+    // outputDirs가 비면 위치를 제한하지 않는다 (문서 산출물 등).
     if (stage.outputDirs.length === 0) {
+      continue;
+    }
+    // 프로젝트 범위 단계는 도메인 디렉토리가 아니라 저장소 루트를 기준으로 본다.
+    if (stage.scope === "project") {
+      const allowed = stage.outputDirs.some(
+        (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+      );
+      if (!allowed) {
+        violations.push({
+          item: "do-not-touch 경계",
+          file: path,
+          detail: `${stage.key} 단계가 만들 수 있는 위치가 아님 (허용: ${stage.outputDirs.join(", ")})`,
+        });
+      }
       continue;
     }
     if (!path.startsWith(`${domainDir}/`)) {
@@ -110,6 +124,46 @@ function readChecklist(templatesDir: string, stage: StageDef): string {
   return readFileSync(path, "utf-8");
 }
 
+/**
+ * 코드만으로 할 수 있는 검사. API가 없어도 돌아가므로 수동 모드에서도 그대로 쓴다.
+ * 경로가 규칙에 맞는지, 계획대로 만들었는지는 전부 비교 연산이라 모델에 맡길 이유가 없다.
+ */
+export function runCodeChecks(
+  manifest: Manifest,
+  plan: BuildPlan,
+  stage: StageDef,
+  files: GeneratedFile[],
+): GateViolation[] {
+  return [...checkPaths(manifest, plan, stage, files), ...checkPlanCoverage(plan, stage, files)];
+}
+
+/** 검수 프롬프트 한 벌. 수동 모드에서 그대로 뽑아 쓸 수 있게 분리해 둔다. */
+export function buildGatePrompt(
+  context: ResolvedBuildContext,
+  manifest: Manifest,
+  stage: StageDef,
+  files: GeneratedFile[],
+): { system: string; user: string } {
+  const { files: exemplars } = collectExemplars(
+    context.repoRoot,
+    manifest,
+    context.referenceDomain,
+    stage,
+  );
+  const generated = files
+    .map((file) => `## ${file.path}\n\`\`\`${manifest.language ?? ""}\n${file.content}\n\`\`\``)
+    .join("\n\n");
+
+  return {
+    system: SYSTEM_PROMPT,
+    user:
+      `# 단계 템플릿 (체크리스트 포함)\n${readChecklist(context.templatesDir, stage)}\n\n` +
+      `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
+      `# 참조 표준 코드\n${formatExemplars(exemplars, manifest.language)}\n\n` +
+      `# 검수 대상 — ${stage.title}\n${generated}`,
+  };
+}
+
 const client = new Anthropic();
 
 /**
@@ -123,39 +177,19 @@ export async function runGate(
   stage: StageDef,
   files: GeneratedFile[],
 ): Promise<GateResult> {
-  const deterministic = [
-    ...checkPaths(manifest, plan, stage, files),
-    ...checkPlanCoverage(plan, stage, files),
-  ];
+  const deterministic = runCodeChecks(manifest, plan, stage, files);
 
   if (files.length === 0) {
     return { passed: deterministic.length === 0, violations: deterministic };
   }
 
-  const { files: exemplars } = collectExemplars(
-    context.repoRoot,
-    manifest,
-    context.referenceDomain,
-    stage,
-  );
-  const generated = files
-    .map((file) => `## ${file.path}\n\`\`\`${manifest.language ?? ""}\n${file.content}\n\`\`\``)
-    .join("\n\n");
+  const { system, user } = buildGatePrompt(context, manifest, stage, files);
 
   const response = await client.messages.parse({
     model: "claude-opus-5",
     max_tokens: 8000,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content:
-          `# 단계 템플릿 (체크리스트 포함)\n${readChecklist(context.templatesDir, stage)}\n\n` +
-          `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
-          `# 참조 표준 코드\n${formatExemplars(exemplars, manifest.language)}\n\n` +
-          `# 검수 대상 — ${stage.title}\n${generated}`,
-      },
-    ],
+    system,
+    messages: [{ role: "user", content: user }],
     output_config: { format: zodOutputFormat(GateSchema) },
   });
 

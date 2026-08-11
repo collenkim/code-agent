@@ -17,7 +17,10 @@ import type {
 } from "./types";
 
 /** 여러 문서를 출처 주석과 함께 한 덩어리로 합친다. */
-function concatDocuments(paths: string[]): string {
+function concatDocuments(paths: string[], emptyLabel = "(없음)"): string {
+  if (paths.length === 0) {
+    return emptyLabel;
+  }
   return paths.map((path) => `<!-- ${path} -->\n${readFileSync(path, "utf-8")}`).join("\n\n");
 }
 
@@ -41,8 +44,11 @@ export function withResolvedInputs(context: BuildContext): {
     ? resolveAgainstRepo(context.repoRoot, context.policyPath)
     : undefined;
 
-  const referenceDomain = context.referenceDomain ?? manifest.referenceDomain;
-  if (!referenceDomain) {
+  // 참조 도메인은 복제할 코드가 있을 때만 필요하다. 신규 프로젝트 구성처럼 참조할 파일을
+  // 선언하지 않은 단계만 있는 실행에서는 없어도 된다.
+  const referenceDomain = context.referenceDomain ?? manifest.referenceDomain ?? "";
+  const needsReference = manifest.stages.some((stage) => stage.exemplars.length > 0);
+  if (needsReference && !referenceDomain) {
     throw new Error(
       "참조 표준 도메인이 없습니다. code-agent.json 의 referenceDomain 에 선언하거나 " +
         "--reference 로 지정하세요.",
@@ -57,7 +63,10 @@ export function withResolvedInputs(context: BuildContext): {
       policyPath,
       referenceDomain,
       specText: concatDocuments(context.specPaths),
-      conventionsText: concatDocuments(conventions.paths),
+      conventionsText: concatDocuments(
+        conventions.paths,
+        "(아직 없음 — 이 실행이 만들어 낼 대상이다. 기존 규칙이 있다고 가정하지 않는다.)",
+      ),
       conventionsSource: conventions.source,
       policyText: policyPath ? readFileSync(policyPath, "utf-8") : undefined,
     },

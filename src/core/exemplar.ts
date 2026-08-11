@@ -99,6 +99,11 @@ export function collectExemplars(
   referenceDomain: string,
   stage: StageDef,
 ): { files: ExemplarFile[]; missing: string[] } {
+  // 참조할 파일을 선언하지 않은 단계(프로젝트 골격 등)는 참조 도메인 자체가 없을 수 있다.
+  if (stage.exemplars.length === 0) {
+    return { files: [], missing: [] };
+  }
+
   const { dir, relativeBase } = findReferenceDir(repoRoot, manifest, referenceDomain, stage.base);
 
   const files: ExemplarFile[] = [];
@@ -152,15 +157,31 @@ export function listReferenceTree(
       return statSync(child).isDirectory() ? walk(child, relative) : [relative];
     });
 
+  // 참조 도메인이 없는 실행(신규 프로젝트 구성)에서는 보여 줄 트리가 없다.
+  if (!referenceDomain) {
+    return [];
+  }
+
   // 단계마다 루트가 다를 수 있다(본 소스 / 테스트). 계획이 양쪽 경로를 다 제안할 수 있어야 한다.
   const bases = [...new Set(stages.map((stage) => stage.base ?? manifest.domainBase))];
 
-  return bases
-    .flatMap((base) => {
+  const resolved = bases.flatMap((base) => {
+    try {
       const found = findReferenceDir(repoRoot, manifest, referenceDomain, base);
-      return walk(found.dir, found.relativeBase);
-    })
-    .sort();
+      return [walk(found.dir, found.relativeBase)];
+    } catch {
+      // 어떤 루트에는 그 도메인이 없을 수 있다(예: 테스트가 없는 도메인). 하나라도 찾으면 된다.
+      return [];
+    }
+  });
+
+  if (resolved.length === 0) {
+    throw new Error(
+      `참조 표준 도메인 '${referenceDomain}' 을 어느 루트에서도 찾지 못했습니다 ` +
+        `(확인한 루트: ${bases.join(", ")}). domainBase 또는 --reference 를 확인하세요.`,
+    );
+  }
+  return resolved.flat().sort();
 }
 
 /** 참조 표준 파일들을 프롬프트에 넣을 형태로 직렬화한다. */
