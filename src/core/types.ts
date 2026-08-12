@@ -130,6 +130,11 @@ export interface StageResult {
 export interface BuildResult {
   passed: boolean;
   log: string;
+  /**
+   * 명령을 아예 돌리지 않았는지. 안 돌린 것을 "통과"로 읽으면 검증하지 않은 코드를
+   * 검증된 것으로 착각하게 되므로, 통과와 구분해서 알린다.
+   */
+  skipped?: boolean;
 }
 
 export interface BuildOutcome {
