@@ -34,7 +34,7 @@ const SYSTEM_PROMPT =
  * 경로 규칙 검사 — 판단이 아니라 규칙 대조라서 모델에 맡기지 않는다.
  * 다른 계층 파일을 만들지 않는다는 do-not-touch 경계가 여기서 강제된다.
  */
-function checkPaths(
+export function checkPaths(
   manifest: Manifest,
   plan: BuildPlan,
   stage: StageDef,
