@@ -8,6 +8,14 @@ const StageSchema = z.object({
   key: z.string().describe("--stages 에서 쓰는 식별자"),
   title: z.string().describe("이 단계가 만드는 것"),
   template: z.string().describe("같은 디렉토리의 템플릿 문서 파일명"),
+  kind: z
+    .enum(["code", "doc", "verify"])
+    .default("code")
+    .describe(
+      "이 단계가 만드는 것의 성격. doc은 코드가 아닌 문서(결정 질문지·조사서·컨벤션), " +
+        "verify는 build/test 명령을 돌려 그 결과로 고치는 단계. " +
+        "라이프사이클 단계를 코드에 박지 않고 프로젝트가 선언하게 하는 축이다",
+    ),
   base: z
     .string()
     .optional()

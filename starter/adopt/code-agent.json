@@ -15,6 +15,7 @@
       "key": "survey",
       "title": "구조 조사서",
       "template": "01-survey.md",
+      "kind": "doc",
       "scope": "project",
       "exemplars": [],
       "outputDirs": [
@@ -25,6 +26,7 @@
       "key": "declare",
       "title": "code-agent.json + 컨벤션 문서",
       "template": "02-declare.md",
+      "kind": "doc",
       "scope": "project",
       "exemplars": [],
       "outputDirs": [

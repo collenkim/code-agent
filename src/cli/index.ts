@@ -1,38 +1,40 @@
 #!/usr/bin/env node
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+
 import { buildDryRunPreviews, formatDryRunReport } from "../core/dryRun";
 import { MANIFEST_FILE } from "../core/manifest";
 import { emitPrompt, ingestResponse, parsePromptTarget } from "../core/manualRun";
 import { formatPlan } from "../core/plan";
 import { runBuild } from "../core/run";
+import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../core/session";
 import { loadPlan } from "../core/state";
+import { applyResponse, hasPlan, nextPrompt } from "../core/turn";
 import type { BuildContext, BuildOutcome } from "../core/types";
 
 const USAGE =
-  "사용법: code-agent --spec <스펙문서> [--spec <추가문서> ...]\n" +
-  "                  --repo <대상저장소경로> --templates <템플릿디렉토리>\n" +
+  "사용법: code-agent <명령> --repo <대상저장소> --templates <템플릿디렉토리>\n" +
   `\n템플릿 디렉토리에는 ${MANIFEST_FILE} 이 있어야 합니다 — 도메인 경로·계층·단계·검증 명령을\n` +
   "그 프로젝트가 선언하는 파일입니다. 에이전트는 언어·프레임워크를 가정하지 않습니다.\n" +
-  "\n수동 모드 (API 미사용 — 프롬프트를 뽑아 LLM에 붙여넣고 응답을 되돌려 넣는 방식):\n" +
-  "  --step <plan|단계키|gate:단계키>   대상 지정\n" +
-  "  --emit-prompt                    붙여넣을 프롬프트를 표준출력으로\n" +
-  "  --ingest <응답파일>               응답을 읽어 계획 저장 또는 파일 생성\n" +
-  "\n  예)  code-agent --repo … --templates … --spec … --step plan --emit-prompt > p.txt\n" +
-  "       code-agent --repo … --templates … --step plan --ingest answer.txt\n" +
-  "       code-agent --repo … --templates … --spec … --step entity --emit-prompt > p.txt\n" +
-  "       code-agent --repo … --templates … --step entity --ingest answer.txt\n" +
+  "\n명령 (수동 모드 — API 미사용):\n" +
+  "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
+  "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
+  "  status               지금 무엇을 할 차례인지\n" +
+  "  log                  턴 기록 — 몇 번 만에 됐는지, 어디서 막혔는지\n" +
+  "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
+  "       code-agent apply answer.txt --repo … --templates …\n" +
+  "\n  --spec 은 계획을 세울 때 한 번만 필요합니다. 이후에는 세션이 기억합니다.\n" +
+  "\n단계 지정 방식 (예전 방식 — JSON 응답):\n" +
+  "  --step <plan|단계키|gate:단계키> --emit-prompt\n" +
+  "  --step <plan|단계키|gate:단계키> --ingest <응답파일>\n" +
   "\n선택 옵션:\n" +
   `  --conventions <파일|디렉토리>   ${MANIFEST_FILE} 의 conventions 선언을 덮어씀\n` +
   `  --reference <참조도메인>        ${MANIFEST_FILE} 의 referenceDomain 을 덮어씀\n` +
   "  --out <출력디렉토리>            기본 ./out\n" +
   "  --policy <생성범위정책>         모든 단계에 공통 주입\n" +
-  "  --stages <키,키>               일부 단계만 실행\n" +
-  "  --plan-only                    계획만 만들고 종료\n" +
   "  --no-gate                      단계별 자가검증 생략\n" +
-  "  --retries <횟수>               게이트 실패 시 재생성 횟수 (기본 1)\n" +
-  `  --build                        ${MANIFEST_FILE} 의 build 명령으로 컴파일 검증\n` +
-  `  --test                         ${MANIFEST_FILE} 의 test 명령으로 테스트 실행 (실패는 보고만)\n` +
-  "  --force                        미결 질문이 남아도 생성 강행\n" +
-  "  --dry-run                      API 호출 없이 프롬프트만 출력";
+  "\n자동 모드 (API 사용):\n" +
+  "  --plan-only · --stages · --retries · --build · --test · --force · --dry-run";
 
 /** `--spec a.md --spec b.md` 처럼 반복되는 옵션이 있어 값을 배열로 모은다. */
 function parseArgs(argv: string[]): Record<string, string[]> {
@@ -78,12 +80,120 @@ function printStages(outcome: BuildOutcome) {
   }
 }
 
+/** 다음에 붙여넣을 프롬프트를 늘 같은 자리에 둔다 — 사람이 찾아 헤매지 않게. */
+function stashPrompt(outDir: string, prompt: string): string {
+  const path = join(outDir, SESSION_DIR, "prompt.txt");
+  mkdirSync(join(outDir, SESSION_DIR), { recursive: true });
+  writeFileSync(path, prompt, "utf-8");
+  return path;
+}
+
+/** 스펙은 계획을 세울 때만 필요하다. 그 뒤로는 세션이 기억하므로 다시 묻지 않는다. */
+function requireSpecForPlan(context: BuildContext) {
+  if (hasPlan(context.outDir) || context.specPaths.length > 0) {
+    return;
+  }
+  if (loadSession(context.outDir).specPaths.length > 0) {
+    return;
+  }
+  throw new Error(
+    "계획을 세우려면 --spec 이 필요합니다 (요구사항·데이터 정의 문서).\n" +
+      "한 번만 주면 이후 단계에서는 세션이 기억합니다.",
+  );
+}
+
+function runNext(context: BuildContext) {
+  requireSpecForPlan(context);
+  const next = nextPrompt(context);
+
+  if (!next.prompt) {
+    console.error(`## ${next.label}\n${next.message ?? ""}`);
+    return;
+  }
+
+  const stashed = stashPrompt(context.outDir, next.prompt);
+  // 프롬프트만 표준출력으로 — 파이프·리다이렉트로 바로 쓸 수 있게 다른 출력을 섞지 않는다.
+  process.stdout.write(next.prompt);
+  console.error(`\n\n[${next.label}] 이 프롬프트는 ${stashed} 에도 저장했습니다.`);
+}
+
+function runApply(context: BuildContext, responsePath: string) {
+  requireSpecForPlan(context);
+  const outcome = applyResponse(context, readFileSync(responsePath, "utf-8"));
+
+  console.log(`## ${outcome.label}`);
+
+  if (outcome.parseErrors.length > 0) {
+    console.log("\n응답 형식 오류 — 아무것도 반영하지 않았습니다:");
+    for (const error of outcome.parseErrors) {
+      console.log(`  - ${error}`);
+    }
+  }
+
+  if (outcome.planSaved) {
+    console.log(`계획 저장: ${outcome.planSaved}\n`);
+    console.log(formatPlan(loadPlan(context.outDir)));
+  }
+
+  const execution = outcome.execution;
+  if (execution) {
+    for (const path of execution.writtenFiles) {
+      console.log(`  + ${path}`);
+    }
+    for (const observation of execution.observations) {
+      console.log(`  ? ${observation.label}`);
+    }
+    for (const note of execution.notes) {
+      console.log(`  note: ${note}`);
+    }
+  }
+
+  if (outcome.violations.length > 0) {
+    console.log(`\n위반 ${outcome.violations.length}건`);
+    for (const violation of outcome.violations) {
+      console.log(`  [${violation.item}] ${violation.file}: ${violation.detail}`);
+    }
+  }
+
+  if (outcome.questionsAdded > 0) {
+    console.log(`\n질문 ${outcome.questionsAdded}건 — ${questionsPath(context.outDir)}`);
+  }
+
+  if (outcome.message) {
+    console.log(`\n${outcome.message}`);
+  }
+
+  const next = nextPrompt(context);
+  if (next.prompt) {
+    console.log(`\n다음: [${next.label}] → ${stashPrompt(context.outDir, next.prompt)}`);
+  } else {
+    console.log(`\n${next.message ?? ""}`);
+  }
+}
+
+function runStatus(context: BuildContext) {
+  const session = loadSession(context.outDir);
+  const next = nextPrompt(context);
+
+  console.log(`## 지금 할 차례: ${next.label}`);
+  console.log(`턴 ${session.turn} · 끝난 단계 ${session.completedStages.length}개`);
+  if (session.completedStages.length > 0) {
+    console.log(`  완료: ${session.completedStages.join(", ")}`);
+  }
+  if (next.message) {
+    console.log(`\n${next.message}`);
+  }
+}
+
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const command = argv[0] && !argv[0].startsWith("--") ? argv[0] : undefined;
+  const args = parseArgs(argv);
 
   const isIngest = Boolean(first(args, "ingest"));
-  // --ingest 는 응답 파일만 읽어 반영하므로 스펙이 필요 없다.
-  const needsSpec = !isIngest;
+  const isManaged = command !== undefined;
+  // 예전 방식의 --emit-prompt 는 계획이 아직 없을 때만 스펙이 필요하다.
+  const needsSpec = !isIngest && !isManaged && !first(args, "step");
 
   if ((needsSpec && !args.spec) || !first(args, "templates") || !first(args, "repo")) {
     console.error(USAGE);
@@ -107,7 +217,35 @@ async function main() {
     force: first(args, "force") === "true",
   };
 
-  // ---- 수동 모드 (API 미사용) ----
+  // ---- 상태가 이끄는 수동 모드 ----
+
+  if (command === "next") {
+    runNext(context);
+    return;
+  }
+  if (command === "apply") {
+    const responsePath = argv[1];
+    if (!responsePath || responsePath.startsWith("--")) {
+      console.error("apply 에는 응답 파일 경로가 필요합니다: code-agent apply answer.txt --repo …");
+      process.exit(1);
+    }
+    runApply(context, responsePath);
+    return;
+  }
+  if (command === "status") {
+    runStatus(context);
+    return;
+  }
+  if (command === "log") {
+    console.log(summarizeSession(loadSession(context.outDir)));
+    return;
+  }
+  if (command) {
+    console.error(`알 수 없는 명령: ${command}\n\n${USAGE}`);
+    process.exit(1);
+  }
+
+  // ---- 단계를 직접 지정하는 방식 ----
 
   const step = first(args, "step");
 
@@ -116,7 +254,6 @@ async function main() {
       console.error("--emit-prompt 에는 --step <plan|단계키|gate:단계키> 가 필요합니다.");
       process.exit(1);
     }
-    // 프롬프트만 표준출력으로 — 파이프·리다이렉트로 바로 쓸 수 있게 다른 출력을 섞지 않는다.
     process.stdout.write(emitPrompt(context, parsePromptTarget(step)));
     return;
   }

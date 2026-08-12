@@ -2,7 +2,9 @@
 
 스펙 기반 소스 코드 생성 AI-Agent. `review-agent`와 짝을 이루는 반대편 — review-agent가 diff를 읽고 지적한다면, code-agent는 스펙을 읽고 코드를 만든다.
 
-**API 없이 쓸 수 있다.** 프롬프트를 뽑아 LLM 채팅창에 붙여넣고, 응답을 되돌려 넣는 수동 모드가 기본 사용법이다. API 키가 있으면 같은 파이프라인을 자동으로 돌릴 수도 있다.
+**API 없이 쓸 수 있다.** 프롬프트를 뽑아 LLM 채팅창에 붙여넣고, 응답을 되돌려 넣는 수동 모드가 기본 사용법이다. 사람이 할 일은 `next` 와 `apply` 두 명령뿐이고, 어디까지 왔는지는 코드가 기억한다.
+
+모델은 파일만 돌려주는 게 아니라 **더 읽겠다·명령을 돌려 달라·사람에게 묻겠다**까지 요청할 수 있다. 실행은 전부 코드가 하므로, 전송이 사람의 클립보드든 나중에 붙일 API든 파이프라인은 그대로다.
 
 ---
 
@@ -12,6 +14,7 @@
 - [세 가지 모드](#세-가지-모드)
 - [코드 생성에 필요한 문서](#코드-생성에-필요한-문서)
 - [수동 모드 — API 미사용](#수동-모드--api-미사용)
+- [모델이 요청할 수 있는 것 — 액션](#모델이-요청할-수-있는-것--액션)
 - [프로젝트 설정 `code-agent.json`](#프로젝트-설정--code-agentjson)
 - [단계 템플릿](#단계-템플릿)
 - [자동 모드 — API 사용](#자동-모드--api-사용)
@@ -184,64 +187,183 @@ code-agent --repo /path/to/project --templates doc/templates \
 프롬프트를 뽑아 LLM 채팅창에 붙여넣고, 응답을 파일로 저장해 되돌려 넣는다. **API 키가 필요 없다.**
 
 ```
-① --emit-prompt  →  프롬프트 출력  →  복사  →  LLM에 붙여넣기
-②                                    응답 복사  →  answer.txt 로 저장
-③ --ingest       →  파일 생성 + 코드 검사  →  다음 단계 반복
+① next          →  프롬프트 출력  →  복사  →  LLM에 붙여넣기
+②                                  응답 복사  →  answer.txt 로 저장
+③ apply         →  실행 + 검사  →  다음 프롬프트 준비  →  ① 반복
 ```
+
+**어느 단계를 할 차례인지 사람이 지정하지 않는다.** 상태가 정한다.
 
 ### 흐름
 
 ```bash
 COMMON="--repo /path/to/project --templates doc/templates --out ./out"
 
-# 1. 계획 — 무엇을 어떤 규칙으로 만들지
-code-agent $COMMON --spec 요구사항.md --step plan --emit-prompt > prompt.txt
+# 스펙은 계획을 세울 때 한 번만. 이후에는 세션이 기억한다.
+code-agent next $COMMON --spec 요구사항.md > prompt.txt
 #   → prompt.txt 를 LLM에 붙여넣고, 응답을 answer.txt 로 저장
-code-agent $COMMON --step plan --ingest answer.txt
-#   → out/.plan.json 저장 + 계획 출력 (미결 질문·문서충돌 확인)
 
-# 2. 단계별 생성 — 매니페스트에 선언된 순서대로
-code-agent $COMMON --spec 요구사항.md --step entity --emit-prompt > prompt.txt
-code-agent $COMMON --step entity --ingest answer.txt
-#   → out/ 에 파일 생성 + 경로·계획 검사
+code-agent apply answer.txt $COMMON
+#   → 실행 결과 + 다음 프롬프트를 out/.code-agent/prompt.txt 에 준비
 
-code-agent $COMMON --spec 요구사항.md --step repository --emit-prompt > prompt.txt
-code-agent $COMMON --step repository --ingest answer.txt
-# … 선언된 단계 수만큼 반복
-
-# 3. (선택) 검수도 수동으로
-code-agent $COMMON --step gate:entity --emit-prompt > prompt.txt
-code-agent $COMMON --step gate:entity --ingest answer.txt
+# 그 다음부터는 --spec 없이 같은 두 줄을 반복한다
+code-agent next $COMMON > prompt.txt
+code-agent apply answer.txt $COMMON
 ```
 
-`--ingest`에는 `--spec`이 필요 없다 — 응답만 읽어 반영하기 때문이다.
+보조 명령:
+
+```bash
+code-agent status $COMMON   # 지금 무엇을 할 차례인지
+code-agent log $COMMON      # 몇 턴 만에 됐는지, 어디서 막혔는지
+```
+
+### 사람이 답해야 넘어가는 것 — 질문 루프
+
+모델이 스펙만으로 정할 수 없는 것을 만나면 **묻고 멈춘다.** 질문은 `out/.code-agent/questions.md`에 답 칸이 빈 채로 쌓인다.
+
+```markdown
+## Q1 · plan
+
+주소 최대 길이는?
+
+**답:**
+(여기에 답을 적으세요)
+```
+
+답을 적고 `next`를 다시 부르면, 그 답이 프롬프트에 실려 들어간다.
+
+```
+# 사람이 답한 것 — 이 답을 따른다. 다시 묻지 않는다
+- 주소 최대 길이는?
+  → 최대 200자
+```
+
+**답하지 않은 질문이 남아 있는 동안에는 어느 단계도 진행되지 않는다.** 추측으로 채운 코드가 나오는 것보다 멈추는 게 낫다.
 
 ### 이어짐이 어떻게 유지되나
 
-- 계획은 `out/.plan.json`에 저장된다. 단계마다 프로세스가 끝나므로 디스크에 남아야 이어진다.
-- 앞 단계 산출물은 `out/`에서 **다시 읽어** 다음 단계 프롬프트에 들어간다. 사람이 `out/` 안의 파일을 손봤다면 그 손본 내용이 반영된다 — 수동 모드에서는 그게 맞는 동작이다.
+- 계획은 `out/.plan.json`, 진행 상태는 `out/.code-agent/session.json`에 남는다. 명령마다 프로세스가 끝나므로 디스크에 남아야 이어진다.
+- 앞 단계 산출물은 `out/`에서 **다시 읽어** 다음 프롬프트에 들어간다. 사람이 `out/` 안의 파일을 손봤다면 그 손본 내용이 반영된다 — 수동 모드에서는 그게 맞는 동작이다.
+- 검수에서 위반이 나오면 그 단계로 **되돌아가고**, 위반 목록이 다음 프롬프트에 실린다. 두 번 시도해도 남으면 자동으로 덮지 않고 사람에게 넘긴다.
 
 ### 코드가 하는 검사는 API 없이 그대로 돈다
 
-`--ingest`는 파일을 쓰기 **전에** 검사한다.
+`apply`는 파일을 쓰기 **전에** 검사한다.
 
 | 검사 | 실패 시 |
 |---|---|
 | 절대경로 · 상위 경로(`..`) 참조 | 반영 거부 |
 | 허용된 위치 밖 (do-not-touch 경계) | 반영 거부 |
+| `edit`의 find가 원본에 없음 / 여러 곳에 걸림 | 반영 거부 |
+| `run`을 verify 단계 밖에서 요청 | 거부 |
 | 계획에 없는 파일 / 계획에 있는데 누락 | 경고 후 반영 |
-| JSON 형태가 스키마와 다름 | 어긋난 필드를 지목하고 거부 |
+
+**하나라도 걸리면 그 응답의 파일을 전부 반영하지 않는다.** 절반만 반영된 `out/`은 다음 턴의 입력이 되어 오염이 번지기 때문이다.
 
 ```
-$ code-agent … --step entity --ingest bad.txt
-오류: 경로 규칙을 어긴 파일이 있어 반영하지 않았습니다:
-  - [do-not-touch 경계] …/repository/X.java: entity 단계가 만들 수 있는 위치가 아님 (허용: domain, cd)
+$ code-agent apply bad.txt …
+위반 1건
+  [do-not-touch 경계] app/features/other/hack.py: 이번 도메인 디렉토리(app/features/shipment) 밖의 파일
 ```
+
+### 턴 기록 — 서버를 붙일지 판단하는 근거
+
+`log`가 내는 수치가 곧 "API로 돌리면 어떻게 될까"의 답이다.
+
+```
+| 대상 | 턴 | write | edit | read | ask | 위반 | 형식오류 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| plan | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| model | 3 | 3 | 0 | 1 | 0 | 1 | 0 |
+| gate:model | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- 대상당 평균 턴: 1.7 — API로 돌릴 때의 호출 횟수 추정치
+- 탐색(read·list) 요청: 1건 — 많으면 프롬프트 선주입이 부족하다는 뜻
+- 경계 위반: 1건 — 많으면 자동화에 아직 이르다
+```
+
+기록은 `out/.code-agent/session.json`에 남는다.
 
 ### 채팅에 붙여넣을 때 API와 다른 점
 
 1. **system 프롬프트가 분리되지 않는다.** API는 별도 필드로 보내지만 채팅에는 그런 필드가 없어 한 덩어리로 합쳐진다. 지시 준수 강도가 미묘하게 다를 수 있어 `# 역할·규칙` 머리말로 표시해 둔다.
-2. **출력 스키마 강제가 없다.** 그래서 프롬프트 끝에 출력 형식을 본문으로 붙인다. 이걸 빼고 붙여넣으면 모델이 산문으로 답해 `--ingest`가 실패한다 — 프롬프트 전체를 그대로 붙여넣어야 한다.
+2. **출력 스키마 강제가 없다.** 그래서 프롬프트 끝에 출력 형식을 본문으로 붙인다. 이걸 빼고 붙여넣으면 모델이 산문으로 답해 `apply`가 실패한다 — 프롬프트 전체를 그대로 붙여넣어야 한다.
+
+### 예전 방식도 남아 있다
+
+단계를 직접 지정하던 `--step` + `--emit-prompt` / `--ingest` 는 그대로 돈다. 응답 형식이 JSON이라는 점만 다르다.
+
+---
+
+## 모델이 요청할 수 있는 것 — 액션
+
+생성 단계의 응답은 JSON이 아니라 **지시 블록**이다.
+
+````
+### write app/features/shipment/models.py
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Shipment:
+    id: int
+```
+
+### edit app/features/shipment/models.py
+#### find
+```
+    id: int
+```
+#### replace
+```
+    id: int
+    address: str
+```
+
+### read app/features/orders/service.py
+
+### list app/features/orders/
+
+### run test
+
+### ask
+상태값이 스펙에 없습니다. 어떤 상태를 두나요?
+
+### note
+참조 표준에 없어 판단이 필요했던 지점
+
+### done
+````
+
+| 액션 | 하는 일 |
+|---|---|
+| `write` | 파일 전체를 만든다 |
+| `edit` | 기존 파일의 한 곳을 고친다. find가 **한 곳에만** 걸려야 한다 |
+| `read` · `list` | 더 읽는다. 결과가 다음 프롬프트에 실린다 |
+| `run` | `build`/`test`를 돌린다. **`kind: "verify"` 단계에서만** |
+| `ask` | 사람에게 묻는다. 답이 채워질 때까지 진행이 멈춘다 |
+| `note` | 판단이 필요했던 지점을 남긴다 |
+| `done` | 이 단계를 끝낸다. 없으면 같은 단계를 이어서 돈다 |
+
+### 왜 JSON이 아닌가
+
+전송이 **사람의 복사·붙여넣기**이기 때문이다.
+
+파일 내용을 JSON 문자열에 넣으면 줄바꿈·따옴표를 전부 이스케이프해야 하는데, 채팅 응답에서 그게 한 글자만 틀려도 통째로 파싱에 실패하고 **어디가 틀렸는지도 알 수 없다.** 코드블록은 이스케이프가 필요 없고, 사람이 눈으로 읽어 고칠 수 있으며, 응답이 중간에 잘렸다는 사실까지 드러난다.
+
+```
+$ code-agent apply truncated.txt …
+응답 형식 오류 — 아무것도 반영하지 않았습니다:
+  - 1행 '### write' app/models.py: 코드블록이 없거나 닫히지 않았습니다 —
+    응답이 중간에 잘렸을 수 있습니다. 그 파일만 다시 받아 이어 붙이세요.
+```
+
+계획과 검수는 파일 내용이 없는 작은 구조체라 JSON을 그대로 쓴다.
+
+### read 는 탈출구이지 기본 경로가 아니다
+
+참조 표준 파일은 코드가 **미리 골라 넣는다**(`exemplars`). `read`는 그것으로 부족할 때만 쓰라고 프롬프트에 적혀 있다. `log`의 탐색 요청 수가 계속 높으면 그건 모델 문제가 아니라 **선주입 설계가 부족하다는 신호**다 — 수동 모드에서 탐색 한 번은 사람의 왕복 한 번이기 때문이다.
 
 ---
 
@@ -291,10 +413,29 @@ $ code-agent … --step entity --ingest bad.txt
 | `conventions` | 컨벤션 문서 경로(파일 또는 디렉토리). 디렉토리면 안의 `.md` 전부 |
 | `referenceDomain` | 복제할 기준 도메인 |
 | `build` / `test` | `--build` / `--test` 시 실행할 명령. 첫 원소가 저장소 안의 실행 파일이면 그 경로로, 아니면 PATH에서 찾는다 |
+| `stages[].kind` | `code`(기본) · `doc`(코드가 아닌 문서) · `verify`(명령을 돌려 그 결과로 고치는 단계). **라이프사이클을 코드에 박지 않고 프로젝트가 선언하게 하는 축** |
 | `stages[].base` | 이 단계의 도메인 루트. 생략하면 `domainBase`. 테스트처럼 같은 패키지를 다른 루트에 미러링할 때 |
 | `stages[].scope` | `domain`(기본)이면 `outputDirs`를 도메인 디렉토리 기준, `project`면 저장소 루트 기준 |
 | `stages[].exemplars` | 참조 도메인 기준 상대경로. `{Ref}`는 참조 도메인 PascalCase로 치환, `/`로 끝나면 디렉토리 전체 |
 | `stages[].outputDirs` | 산출물 허용 위치(do-not-touch 경계). `"."`은 도메인 디렉토리 바로 아래, `[]`는 제한 없음 |
+
+### verify 단계 — 실패를 덮을 수 없게 만드는 법
+
+테스트를 돌려 고치는 단계는 `kind: "verify"`로 선언한다. 이때 **`outputDirs`에 테스트 디렉토리를 넣지 않는 것**이 핵심이다.
+
+```json
+{
+  "key": "verify",
+  "title": "빌드·테스트 통과시키기",
+  "template": "09-verify.md",
+  "kind": "verify",
+  "scope": "project",
+  "outputDirs": ["src/main/java"],
+  "exemplars": []
+}
+```
+
+이러면 `src/test/...` 파일을 고치는 것이 **구조적으로 불가능**해진다. 통과시키려고 단언을 지우는 전형적인 실패 모드를 모델의 선의가 아니라 경로 대조로 막는다.
 
 다른 언어라면 이렇게 된다 — 에이전트 코드는 그대로다.
 
@@ -366,14 +507,21 @@ code-agent --repo … --templates … --spec … --out ./out --build
 
 ## 옵션
 
+| 명령 | 설명 |
+|---|---|
+| `next` | 지금 붙여넣을 프롬프트를 표준출력으로. 상태를 바꾸지 않아 몇 번 불러도 같다 |
+| `apply <응답파일>` | 응답을 실행하고 다음 프롬프트를 준비 |
+| `status` | 지금 무엇을 할 차례인지 |
+| `log` | 턴 기록 |
+
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
 | `--repo` | (필수) | 대상 저장소 루트 |
 | `--templates` | (필수) | `code-agent.json` + 템플릿 문서가 있는 디렉토리 |
-| `--spec` | (`--ingest` 외 필수) | 요구사항 문서. 여러 번 지정 가능 |
-| `--step` | — | 수동 모드 대상: `plan` \| 단계키 \| `gate:단계키` |
-| `--emit-prompt` | off | 붙여넣을 프롬프트를 표준출력으로 |
-| `--ingest <파일>` | — | 응답을 읽어 계획 저장 또는 파일 생성 |
+| `--spec` | 계획 때 1회 | 요구사항 문서. 여러 번 지정 가능. **이후에는 세션이 기억한다** |
+| `--step` | — | 예전 방식 대상: `plan` \| 단계키 \| `gate:단계키` |
+| `--emit-prompt` | off | 예전 방식 — 붙여넣을 프롬프트를 표준출력으로 |
+| `--ingest <파일>` | — | 예전 방식 — 응답(JSON)을 읽어 계획 저장 또는 파일 생성 |
 | `--conventions` | 매니페스트 | 매니페스트의 `conventions` 선언을 덮어씀 |
 | `--reference` | 매니페스트 | 매니페스트의 `referenceDomain`을 덮어씀 |
 | `--out` | `./out` | 생성 결과를 쓸 staging 디렉토리 |
@@ -418,8 +566,8 @@ out/src/main/java/com/acme/app/application/contractguarantee/domain/ContractGuar
 
 ## 아직 안 되는 것
 
-- **기존 도메인 수정** — 세 모드 모두 새로 만드는 것만 상정한다.
-- **bootstrap·adopt는 스모크 테스트까지만 확인됐다.** 프롬프트 생성과 경로 검증은 돌지만, 실제 프로젝트를 끝까지 구성해 본 적은 없다.
-- **자동 모드(API 경로)는 실행 검증이 안 돼 있다.** 타입체크·빌드·프롬프트 생성까지만 확인했다.
+- **매니페스트가 "도메인 디렉토리 + 계층" 레이아웃을 전제한다.** `domainBase`/`domainRoots`/`{Ref}` 는 그 형태에 맞춰져 있어, 기능별로 파일이 한곳에 모이는 프로젝트(예: 컴포넌트+훅+테스트 co-locate)나 도메인 개념이 없는 도구·라이브러리에는 잘 맞지 않는다.
+- **실제 프로젝트로 끝까지 돌려 본 적이 없다.** 테스트와 fixture로는 전 경로가 검증돼 있지만, 실측 턴 수는 아직 없다. `log`가 그 데이터를 모으라고 있는 것이다.
+- **자동 모드(API 경로)는 실행 검증이 안 돼 있고, 아직 예전 `{files:[]}` 응답 형식을 쓴다.** 액션 프로토콜로 옮기는 것은 서버를 붙일 때 할 일이다.
 - **화면(템플릿·JS) 단계** — 기존 UI 메커니즘 복제 요구가 강해 별도 설계가 필요하다.
 - **review-agent 연동** — 생성 → 리뷰 → 수정 루프는 아직 손으로 이어 붙여야 한다.
