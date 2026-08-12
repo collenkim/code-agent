@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
 import type { StageDef } from "./manifest";
-import type { BuildPlan, StageResult } from "./types";
+import type { BuildPlan, GeneratedFile, StageResult } from "./types";
 
 /** 계획을 담아 두는 파일. 수동 모드는 단계마다 프로세스가 끝나므로 디스크에 남겨야 이어진다. */
 export const PLAN_FILE = ".plan.json";
@@ -26,12 +26,25 @@ export function loadPlan(outDir: string): BuildPlan {
 }
 
 /**
- * 이미 만들어진 앞 단계 산출물을 디스크에서 되읽는다.
+ * 한 단계가 만들기로 한 파일 중 실제로 out/ 에 있는 것을 읽는다.
  *
  * 내용을 상태 파일에 중복 저장하지 않는 이유는, 계획이 이미 "어느 단계가 어느 경로를 만드는지"를
  * 갖고 있어 경로만으로 복원되기 때문이다. 사람이 out/ 안의 파일을 손봤다면 그 손본 내용이 다음
  * 단계 입력으로 들어간다 — 수동 모드에서는 그게 맞는 동작이다.
  */
+export function loadStageFiles(
+  outDir: string,
+  plan: BuildPlan,
+  stageKey: string,
+): GeneratedFile[] {
+  return plan.files
+    .filter((file) => file.stage === stageKey)
+    .map((file) => ({ path: file.path, absolute: join(outDir, file.path) }))
+    .filter((file) => existsSync(file.absolute))
+    .map((file) => ({ path: file.path, content: readFileSync(file.absolute, "utf-8") }));
+}
+
+/** 이미 만들어진 **앞** 단계 산출물들. 대상 단계 자신은 포함하지 않는다. */
 export function loadPreviousResults(
   outDir: string,
   plan: BuildPlan,
@@ -46,10 +59,6 @@ export function loadPreviousResults(
   return stages.slice(0, targetIndex).map((stage) => ({
     stage: stage.key,
     attempts: 1,
-    files: plan.files
-      .filter((file) => file.stage === stage.key)
-      .map((file) => ({ path: file.path, absolute: join(outDir, file.path) }))
-      .filter((file) => existsSync(file.absolute))
-      .map((file) => ({ path: file.path, content: readFileSync(file.absolute, "utf-8") })),
+    files: loadStageFiles(outDir, plan, stage.key),
   }));
 }

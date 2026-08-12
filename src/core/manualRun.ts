@@ -14,7 +14,7 @@ import {
 } from "./manual";
 import { PlanSchema, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
-import { loadPlan, loadPreviousResults, savePlan } from "./state";
+import { loadPlan, loadPreviousResults, loadStageFiles, savePlan } from "./state";
 import type { BuildContext, GateViolation, GeneratedFile } from "./types";
 
 /** 수동 모드에서 뽑을 수 있는 프롬프트 종류 */
@@ -65,9 +65,8 @@ export function emitPrompt(input: BuildContext, target: PromptTarget): string {
   const plan = loadPlan(context.outDir);
 
   if (target.kind === "gate") {
-    const files = loadPreviousResults(context.outDir, plan, [...stages, stage], stage.key)
-      .filter((result) => result.stage === stage.key)
-      .flatMap((result) => result.files);
+    // 검수 대상은 '앞 단계'가 아니라 그 단계 자신의 산출물이다.
+    const files = loadStageFiles(context.outDir, plan, stage.key);
     if (files.length === 0) {
       throw new Error(
         `${stage.key} 단계의 산출물이 ${context.outDir} 에 없습니다. 먼저 생성을 반영하세요.`,
