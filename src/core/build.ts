@@ -43,10 +43,18 @@ export function verifyByBuild(
 ): BuildResult {
   const command = kind === "test" ? manifest.test : manifest.build;
   if (!command?.length) {
-    return { passed: true, log: `code-agent.json 에 ${kind} 명령이 없어 검증을 건너뜁니다.` };
+    return {
+      passed: true,
+      skipped: true,
+      log: `code-agent.json 에 ${kind} 명령이 없어 검증을 건너뜁니다.`,
+    };
   }
   if (!stages.some((stage) => stage.files.length > 0)) {
-    return { passed: true, log: "생성된 파일이 없어 검증을 건너뜁니다." };
+    return {
+      passed: true,
+      skipped: true,
+      log: "생성된 파일이 없어 검증을 건너뜁니다. 아직 만들거나 고친 것이 없습니다.",
+    };
   }
 
   const worktree = mkdtempSync(join(tmpdir(), "code-agent-build-"));

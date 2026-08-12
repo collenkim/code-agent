@@ -387,6 +387,17 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
     assert.match(nextPrompt(context).prompt!, /run test/);
   });
 
+  test("돌리지 않은 검증을 '통과'라고 말하지 않는다", () => {
+    // 이 fixture 에는 test 명령이 선언돼 있지 않아 실행 자체가 일어나지 않는다.
+    // 그것을 통과로 알리면 검증하지 않은 코드를 검증된 것으로 착각하고 단계를 끝낸다.
+    reachVerify();
+
+    const label = applyResponse(context, reply("### run test")).execution!.observations[0].label;
+
+    assert.match(label, /실행되지 않음/);
+    assert.doesNotMatch(label, /통과/);
+  });
+
   test("테스트 파일은 고칠 수 없다 — 단언을 지워 통과시키는 길을 막는다", () => {
     reachVerify();
 

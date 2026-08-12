@@ -172,8 +172,12 @@ function observeRun(input: ExecuteInput, command: string): Observation {
   }));
 
   const result = verifyByBuild(input.repoRoot, input.manifest, input.outDir, generated, command);
+
+  // 안 돌린 것과 통과한 것을 같은 말로 알리면, 검증하지 않은 코드를 검증된 것으로
+  // 착각하고 단계를 끝내 버린다. 셋을 구분해서 말한다.
+  const verdict = result.skipped ? "실행되지 않음" : result.passed ? "통과" : "실패";
   return {
-    label: `run ${command} — ${result.passed ? "통과" : "실패"}`,
+    label: `run ${command} — ${verdict}`,
     body: capLines(result.log, MAX_LOG_LINES, true),
   };
 }
