@@ -11,12 +11,14 @@ import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../co
 import { loadPlan } from "../core/state";
 import { applyResponse, hasPlan, nextPrompt } from "../core/turn";
 import type { BuildContext, BuildOutcome } from "../core/types";
+import { serve } from "../server/http";
 
 const USAGE =
   "사용법: code-agent <명령> --repo <대상저장소> --templates <템플릿디렉토리>\n" +
   `\n템플릿 디렉토리에는 ${MANIFEST_FILE} 이 있어야 합니다 — 도메인 경로·계층·단계·검증 명령을\n` +
   "그 프로젝트가 선언하는 파일입니다. 에이전트는 언어·프레임워크를 가정하지 않습니다.\n" +
   "\n명령 (수동 모드 — API 미사용):\n" +
+  "  serve                로컬 서버와 화면을 띄운다 (--port, --host, --state)\n" +
   "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
@@ -189,6 +191,16 @@ async function main() {
   const argv = process.argv.slice(2);
   const command = argv[0] && !argv[0].startsWith("--") ? argv[0] : undefined;
   const args = parseArgs(argv);
+
+  // 서버는 특정 저장소에 매이지 않는다 — 작업마다 저장소를 받으므로 --repo 를 요구하지 않는다.
+  if (command === "serve") {
+    serve({
+      port: Number(first(args, "port") ?? 4319),
+      host: first(args, "host") ?? "127.0.0.1",
+      statePath: first(args, "state") ?? join(".code-agent-server", "jobs.json"),
+    });
+    return;
+  }
 
   const isIngest = Boolean(first(args, "ingest"));
   const isManaged = command !== undefined;
