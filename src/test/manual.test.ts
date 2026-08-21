@@ -63,6 +63,11 @@ const PLAN: BuildPlan = {
 
 const MODEL_CODE = "from dataclasses import dataclass\n\n@dataclass\nclass Shipment:\n    id: int\n";
 
+/** 0차 게이트가 생긴 뒤로는 어떤 실행이든 작업 지시서 머리말이 있어야 한다. */
+const SPEC =
+  "---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: shipment\n---\n\n" +
+  "# 배송(shipment) 도메인. 필드: id\n";
+
 let root: string;
 let repoRoot: string;
 let outDir: string;
@@ -102,7 +107,7 @@ before(() => {
   write("doc/templates/code-agent.json", JSON.stringify(MANIFEST, null, 2));
   write("doc/templates/01-model.md", "# [01] 모델\n\n## 4. 자가검증 체크리스트\n- [ ] dataclass 인가\n");
   write("doc/templates/02-service.md", "# [02] 서비스\n");
-  writeFileSync(join(root, "spec.md"), "# 배송(shipment) 도메인. 필드: id\n", "utf-8");
+  writeFileSync(join(root, "spec.md"), SPEC, "utf-8");
 });
 
 after(() => {
@@ -165,6 +170,23 @@ describe("emitPrompt — 붙여넣을 프롬프트", () => {
   test("알 수 없는 단계는 선언된 단계를 알려준다", () => {
     assert.throws(() => emitPrompt(context(), parsePromptTarget("nope")), /model, service/);
   });
+
+  test("확정된 지시서가 프롬프트 머리에 실린다 — 턴마다 다시 추론하지 않게", () => {
+    // 게이트에만 쓰고 버리면 모델은 이 작업이 어떤 종류인지 모른 채 턴마다 다시 추론한다.
+    const prompt = emitPrompt(context(), parsePromptTarget("model"));
+
+    assert.match(prompt, /작업 지시서 — 사람이 확정한 것/);
+    assert.match(prompt, /작업 종류: feature/);
+    assert.match(prompt, /배송 도메인 추가/);
+  });
+
+  test("예전 방식도 스펙 경로를 기억한다 — 매번 --spec 을 다시 쓰지 않는다", () => {
+    // 지시서가 스펙 문서의 머리말에 있어 명령마다 경로가 필요해졌다. 상태가 이끄는 모드는
+    // 이미 기억해 주는데 이 경로만 아니면, 0차 게이트가 예전 방식에만 부담을 지운다.
+    const prompt = emitPrompt(context({ specPaths: [] }), parsePromptTarget("gate:model"));
+
+    assert.match(prompt, /class Shipment/, "앞 실행에서 준 스펙으로 그대로 이어져야 한다");
+  });
 });
 
 describe("ingestResponse — 응답 반영", () => {
@@ -174,7 +196,7 @@ describe("ingestResponse — 응답 반영", () => {
     });
 
     assert.throws(
-      () => ingestResponse(context({ specPaths: [] }), parsePromptTarget("service"), path),
+      () => ingestResponse(context(), parsePromptTarget("service"), path),
       /do-not-touch 경계/,
     );
     assert.equal(
@@ -190,7 +212,7 @@ describe("ingestResponse — 응답 반영", () => {
     });
 
     assert.throws(
-      () => ingestResponse(context({ specPaths: [] }), parsePromptTarget("service"), path),
+      () => ingestResponse(context(), parsePromptTarget("service"), path),
       /경로 규칙/,
     );
   });
@@ -200,7 +222,7 @@ describe("ingestResponse — 응답 반영", () => {
     writeFileSync(path, "네, 코드를 만들어 드리겠습니다!", "utf-8");
 
     assert.throws(
-      () => ingestResponse(context({ specPaths: [] }), parsePromptTarget("service"), path),
+      () => ingestResponse(context(), parsePromptTarget("service"), path),
       /출력 형식/,
     );
   });
@@ -211,10 +233,25 @@ describe("ingestResponse — 응답 반영", () => {
       files: [{ path: "app/features/shipment/service.py", content: code }],
     });
 
-    const result = ingestResponse(context({ specPaths: [] }), parsePromptTarget("service"), path);
+    const result = ingestResponse(context(), parsePromptTarget("service"), path);
 
     assert.equal(result.writtenFiles.length, 1);
     assert.deepEqual(result.violations, [], "계획대로 만들었으면 위반이 없어야 한다");
     assert.match(emitPrompt(context(), parsePromptTarget("gate:service")), /class ShipmentService/);
+  });
+
+  test("작업 지시서가 없으면 반영하지 않는다 — 0차 게이트에 예외는 없다", () => {
+    // 예전 방식(--step + --ingest)도 파일을 out/ 에 쓰는 생성 경로다. 여기가 열려 있으면
+    // 그것이 그대로 통제의 우회로가 된다.
+    const bare = join(root, "bare.md");
+    writeFileSync(bare, "# 머리말 없는 문서\n", "utf-8");
+    const path = answer("nogate.txt", {
+      files: [{ path: "app/features/shipment/service.py", content: "x" }],
+    });
+
+    assert.throws(
+      () => ingestResponse(context({ specPaths: [bare] }), parsePromptTarget("service"), path),
+      /작업 지시서가 없습니다/,
+    );
   });
 });

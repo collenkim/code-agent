@@ -1,3 +1,6 @@
+import type { SpecSchema } from "./specSchema";
+import type { WorkOrder } from "./workOrder";
+
 /** 코드 생성 1회 실행의 입력 일체 */
 export interface BuildContext {
   /** 요구사항·정책·기능·입출력이 적힌 스펙 문서 경로들 (여러 장 허용) */
@@ -41,8 +44,6 @@ export interface BuildContext {
    * 실패는 자동 수정 대상이 아니다 — 테스트가 틀렸는지 코드가 틀렸는지는 사람이 판단한다.
    */
   test?: boolean;
-  /** 계획 단계의 미결 질문이 남아 있어도 생성을 계속할지. 기본 false(중단) */
-  force?: boolean;
   /** 계획만 만들고 생성은 하지 않을지. 사람이 계획을 먼저 검토할 때 쓴다 */
   planOnly?: boolean;
 }
@@ -56,6 +57,14 @@ export interface ResolvedBuildContext extends BuildContext {
   specText: string;
   conventionsText: string;
   conventionsSource: string;
+  /** 0차 게이트를 통과한 작업 지시서. 여기까지 왔다는 것 자체가 통과했다는 뜻이다 */
+  workOrder: WorkOrder;
+  /** 선언됐다면 입력 규격. 선언하지 않은 프로젝트에서는 1차 게이트가 돌지 않는다 */
+  specSchema?: SpecSchema;
+  /** 항목을 다시 뽑아야 하는지. 스펙이 바뀌면 앞서 뽑은 것은 그 순간 무효다 */
+  intakeNeeded: boolean;
+  /** 확정된 항목을 근거와 함께 줄인 것. 없으면 빈 문자열 */
+  slotsText: string;
 }
 
 /** 계획 단계가 정한, 이 단계에서 만들 파일 하나 */

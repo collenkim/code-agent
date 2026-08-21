@@ -26,6 +26,14 @@ const USAGE =
   "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
   "       code-agent apply answer.txt --repo … --templates …\n" +
   "\n  --spec 은 계획을 세울 때 한 번만 필요합니다. 이후에는 세션이 기억합니다.\n" +
+  "\n  --spec 문서 중 **한 장**은 맨 첫 줄부터 작업 지시서 머리말을 담아야 합니다.\n" +
+  "  없으면 프롬프트를 만들지 않습니다 (규격: doc/work-order.md):\n" +
+  "    ---\n" +
+  "    kind: feature        # bootstrap | adopt | feature | fix | refactor\n" +
+  "    id: PROJ-1\n" +
+  "    title: 한 줄 요약\n" +
+  "    target: 대상\n" +
+  "    ---\n" +
   "\n단계 지정 방식 (예전 방식 — JSON 응답):\n" +
   "  --step <plan|단계키|gate:단계키> --emit-prompt\n" +
   "  --step <plan|단계키|gate:단계키> --ingest <응답파일>\n" +
@@ -36,7 +44,7 @@ const USAGE =
   "  --policy <생성범위정책>         모든 단계에 공통 주입\n" +
   "  --no-gate                      단계별 자가검증 생략\n" +
   "\n자동 모드 (API 사용):\n" +
-  "  --plan-only · --stages · --retries · --build · --test · --force · --dry-run";
+  "  --plan-only · --stages · --retries · --build · --test · --dry-run";
 
 /** `--spec a.md --spec b.md` 처럼 반복되는 옵션이 있어 값을 배열로 모은다. */
 function parseArgs(argv: string[]): Record<string, string[]> {
@@ -204,7 +212,8 @@ async function main() {
 
   const isIngest = Boolean(first(args, "ingest"));
   const isManaged = command !== undefined;
-  // 예전 방식의 --emit-prompt 는 계획이 아직 없을 때만 스펙이 필요하다.
+  // 작업 지시서는 --spec 문서의 머리말에 있다. 다만 예전 방식도 세션이 경로를 기억하므로
+  // 최초 한 번만 주면 된다 — 기억한 것이 없으면 0차 게이트가 무엇을 넣어야 하는지 알려 준다.
   const needsSpec = !isIngest && !isManaged && !first(args, "step");
 
   if ((needsSpec && !args.spec) || !first(args, "templates") || !first(args, "repo")) {
@@ -226,7 +235,6 @@ async function main() {
     maxRetries: Math.max(0, Number(first(args, "retries") ?? 1) || 0),
     build: first(args, "build") === "true",
     test: first(args, "test") === "true",
-    force: first(args, "force") === "true",
   };
 
   // ---- 상태가 이끄는 수동 모드 ----
@@ -325,7 +333,8 @@ async function main() {
 
   if (outcome.stages.length === 0) {
     console.log(
-      "\n미결 질문이 남아 생성을 중단했습니다. 스펙을 보완하거나 --force 로 강행하세요.",
+      "\n미결 질문이 남아 생성을 중단했습니다. 스펙을 보완하고 다시 실행하세요 — " +
+        "강행하는 옵션은 두지 않습니다.",
     );
     return;
   }

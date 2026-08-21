@@ -136,7 +136,9 @@ export function readQuestions(outDir: string): PendingQuestion[] {
   return blocks.map((block, index) => {
     const heading = block.match(/^(\d+)\s*·\s*(.*)$/m);
     const [question, answerPart] = block.split(/^\*\*답:\*\*$/m);
-    const answer = (answerPart ?? "").trim();
+    // 블록 구분선(---)이 앞 질문의 답 끝에 딸려 온다. 떼어 내지 않으면 답을 적지 않은 질문이
+    // "답이 있는" 것으로 읽혀 그냥 지나간다 — 질문이 둘 이상일 때만 드러나는 자리다.
+    const answer = (answerPart ?? "").replace(/\n\s*-{3,}\s*$/, "").trim();
 
     return {
       id: heading ? Number(heading[1]) : index + 1,
@@ -178,6 +180,7 @@ export function appendQuestions(
 // ---- 다음에 할 일 ----
 
 export type Target =
+  | { kind: "intake" }
   | { kind: "plan" }
   | { kind: "stage"; stage: StageDef }
   | { kind: "gate"; stage: StageDef }
@@ -186,6 +189,8 @@ export type Target =
 
 export function describeTarget(target: Target): string {
   switch (target.kind) {
+    case "intake":
+      return "intake";
     case "plan":
       return "plan";
     case "stage":
@@ -209,12 +214,15 @@ export function decideTarget(
   outDir: string,
   manifest: Manifest,
   session: Session,
-  options: { gate: boolean } = { gate: true },
+  options: { gate: boolean; intakeNeeded?: boolean } = { gate: true },
 ): Target {
-  if (!existsSync(join(outDir, PLAN_FILE))) {
-    return { kind: "plan" };
+  // 스펙에서 필요한 항목을 뽑는 일이 먼저다. 무엇이 비었는지 모르는 채로 계획을 세우면
+  // 그 빈칸이 곧 모델이 지어내는 자리가 된다.
+  if (options.intakeNeeded) {
+    return { kind: "intake" };
   }
 
+  // 질문 검사가 계획보다 앞에 있어야 한다 — 1차 게이트가 남긴 질문은 계획 이전에 걸린다.
   const open = unanswered(readQuestions(outDir));
   if (open.length > 0) {
     return {
@@ -224,6 +232,10 @@ export function decideTarget(
         `  ${questionsPath(outDir)}\n` +
         "이 파일의 **답:** 아래에 답을 적고 다시 실행하세요.",
     };
+  }
+
+  if (!existsSync(join(outDir, PLAN_FILE))) {
+    return { kind: "plan" };
   }
 
   for (const stage of manifest.stages) {

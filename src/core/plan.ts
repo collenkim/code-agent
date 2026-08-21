@@ -5,6 +5,7 @@ import { z } from "zod";
 import { listReferenceTree } from "./exemplar";
 import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
+import { describeWorkOrder } from "./workOrder";
 import type { BuildPlan, PromptPreview, ResolvedBuildContext } from "./types";
 
 export const PlanSchema = z.object({
@@ -83,7 +84,9 @@ function buildUserPrompt(
   const roots = manifest.domainRoots.filter(Boolean);
 
   return withPolicy(
-    `# 스펙 (요구사항·정책·기능·입출력)\n${context.specText}\n\n` +
+    `${describeWorkOrder(context.workOrder)}\n\n` +
+      (context.slotsText ? `${context.slotsText}\n\n` : "") +
+      `# 스펙 (요구사항·정책·기능·입출력)\n${context.specText}\n\n` +
       `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
       `# 프로젝트 구조\n` +
       `- 도메인 디렉토리 위치: ${manifest.domainBase}\n` +

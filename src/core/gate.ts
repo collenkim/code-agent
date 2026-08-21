@@ -5,6 +5,7 @@ import { join } from "path";
 import { z } from "zod";
 
 import { collectExemplars, domainDirOf, formatExemplars } from "./exemplar";
+import { describeWorkOrder } from "./workOrder";
 import type { Manifest, StageDef } from "./manifest";
 import type {
   BuildPlan,
@@ -157,6 +158,11 @@ export function buildGatePrompt(
   return {
     system: SYSTEM_PROMPT,
     user:
+      `${describeWorkOrder(context.workOrder)}\n` +
+      (context.workOrder.preserve.length > 0
+        ? "  위 '바뀌면 안 되는 것'을 어긴 곳이 있으면 그것을 최우선 위반으로 보고한다.\n"
+        : "") +
+      "\n" +
       `# 단계 템플릿 (체크리스트 포함)\n${readChecklist(context.templatesDir, stage)}\n\n` +
       `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
       `# 참조 표준 코드\n${formatExemplars(exemplars, manifest.language)}\n\n` +

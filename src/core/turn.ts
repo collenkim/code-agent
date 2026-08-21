@@ -20,6 +20,17 @@ import { GATE_SHAPE, parseResponse, PLAN_SHAPE, withOutputFormat } from "./manua
 import { PlanSchema, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
 import {
+  answeredSlotKeys,
+  buildIntakePrompt,
+  findGaps,
+  hashSpec,
+  INTAKE_SHAPE,
+  IntakeSchema,
+  questionTargetFor,
+  saveSlots,
+} from "./specSchema";
+import { describeWorkOrder } from "./workOrder";
+import {
   appendQuestions,
   decideTarget,
   describeTarget,
@@ -98,6 +109,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   const { context, manifest } = withResolvedInputs(withSessionSpec(input, session));
   const target = decideTarget(context.outDir, manifest, session, {
     gate: context.gate !== false,
+    intakeNeeded: context.intakeNeeded,
   });
   const label = describeTarget(target);
 
@@ -114,6 +126,21 @@ export function nextPrompt(input: BuildContext): NextPrompt {
     };
   }
 
+  if (target.kind === "intake") {
+    // specSchema 가 없으면 intake 가 대상이 될 수 없다 — decideTarget 이 그렇게 정한다.
+    const { system, user } = buildIntakePrompt(
+      context.specSchema!,
+      context.workOrder.kind,
+      describeWorkOrder(context.workOrder),
+      context.specText,
+    );
+    return {
+      target,
+      label,
+      prompt: withOutputFormat(joinForChat(system, user, "").trimEnd(), INTAKE_SHAPE),
+    };
+  }
+
   if (target.kind === "plan") {
     const referenceTree = listReferenceTree(
       context.repoRoot,
@@ -126,7 +153,9 @@ export function nextPrompt(input: BuildContext): NextPrompt {
       target,
       label,
       prompt: withOutputFormat(
-        joinForChat(preview.system, preview.user, "").trimEnd(),
+        // 사람이 답한 것은 계획에도 실려야 한다 — 1차 게이트의 질문이 계획 이전에 걸리므로,
+        // 여기서 빠지면 사람이 답한 내용을 계획이 모르는 채로 세워진다.
+        joinForChat(preview.system, preview.user + answerSection(context.outDir), "").trimEnd(),
         PLAN_SHAPE,
       ),
     };
@@ -188,6 +217,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   const target = decideTarget(context.outDir, manifest, session, {
     gate: context.gate !== false,
+    intakeNeeded: context.intakeNeeded,
   });
   const label = describeTarget(target);
   session.turn += 1;
@@ -221,6 +251,39 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
       advanced: false,
       message: target.kind === "blocked" ? target.reason : "이미 모든 단계가 끝났습니다.",
     };
+  }
+
+  // ---- 항목 추출 (1차 게이트) ----
+  if (target.kind === "intake") {
+    const schema = context.specSchema!;
+    const parsed = parseResponse(responseText, IntakeSchema);
+    saveSlots(context.outDir, {
+      specHash: hashSpec(context.specText),
+      slots: parsed.slots,
+    });
+
+    // 무엇이 비었는지는 **코드가** 판정한다. 모델이 질문을 떠올렸는지와 무관하다.
+    const answered = answeredSlotKeys(readQuestions(context.outDir));
+    const gaps = findGaps(schema, parsed.slots, context.workOrder.kind, answered);
+    for (const gap of gaps) {
+      appendQuestions(context.outDir, questionTargetFor(gap.key), [gap.question]);
+    }
+
+    session.lastObservations = [];
+    session.lastViolations = [];
+
+    return finish({
+      label,
+      violations: [],
+      parseErrors: [],
+      questionsAdded: gaps.length,
+      advanced: gaps.length === 0,
+      message:
+        gaps.length > 0
+          ? `스펙에서 근거를 찾지 못한 필수 항목 ${gaps.length}건을 질문으로 남겼습니다 ` +
+            `(${gaps.map((gap) => gap.title).join(", ")}). 답을 채워야 계획으로 넘어갑니다.`
+          : undefined,
+    });
   }
 
   // ---- 계획 ----

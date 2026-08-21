@@ -82,7 +82,13 @@ beforeEach(() => {
   write("doc/templates/code-agent.json", JSON.stringify(MANIFEST, null, 2));
   write("doc/templates/01-model.md", "# [01] 모델\n");
   write("doc/templates/02-check.md", "# [02] 검증\n");
-  writeFileSync(join(root, "spec.md"), "# 배송(shipment) 도메인\n", "utf-8");
+  // 0차 게이트가 생긴 뒤로는 어떤 실행이든 작업 지시서 머리말이 있어야 한다.
+  writeFileSync(
+    join(root, "spec.md"),
+    "---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: shipment\n---\n\n" +
+      "# 배송(shipment) 도메인\n",
+    "utf-8",
+  );
 
   context = {
     specPaths: [join(root, "spec.md")],
@@ -141,6 +147,31 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     assert.equal(next.label, "blocked");
     assert.match(next.message!, /답하지 않은 질문이 1건/);
     assert.match(readFileSync(questionsPath(context.outDir), "utf-8"), /상태값을 무엇으로 두나요\?/);
+  });
+
+  test("질문이 여러 건이면 전부 센다", () => {
+    // 회귀: 블록 구분선이 앞 질문의 답에 딸려 와, 마지막 질문 말고는 전부 "답이 있는" 것으로
+    // 읽혔다. 질문이 하나일 때는 드러나지 않아 오래 남아 있었다.
+    completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
+
+    const next = nextPrompt(context);
+
+    assert.equal(next.label, "blocked");
+    assert.match(next.message!, /답하지 않은 질문이 2건/);
+  });
+
+  test("일부만 답하면 아직 막혀 있다", () => {
+    completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
+
+    const path = questionsPath(context.outDir);
+    // 첫 질문에만 답을 적는다.
+    writeFileSync(
+      path,
+      readFileSync(path, "utf-8").replace("(여기에 답을 적으세요)", "준비·배송중·완료"),
+      "utf-8",
+    );
+
+    assert.match(nextPrompt(context).message!, /답하지 않은 질문이 1건/);
   });
 
   test("답을 채우면 다시 나아가고, 그 답이 프롬프트에 실린다", () => {
