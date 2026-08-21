@@ -92,7 +92,13 @@ before(() => {
   write("doc/templates/code-agent.json", JSON.stringify(MANIFEST, null, 2));
   write("doc/templates/01-model.md", "# [01] 모델\n\n## 4. 자가검증 체크리스트\n- [ ] dataclass 인가\n");
   write("doc/templates/02-service.md", "# [02] 서비스\n");
-  writeFileSync(join(root, "spec.md"), "# 배송(shipment) 도메인. 필드: id\n", "utf-8");
+  // 0차 게이트가 생긴 뒤로는 어떤 실행이든 작업 지시서 머리말이 있어야 한다.
+  writeFileSync(
+    join(root, "spec.md"),
+    "---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: shipment\n---\n\n" +
+      "# 배송(shipment) 도메인. 필드: id\n",
+    "utf-8",
+  );
 
   store = new JobStore(statePath);
 });

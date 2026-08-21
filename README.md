@@ -597,7 +597,6 @@ code-agent --repo … --templates … --spec … --out ./out --build
 | `--retries` | `1` | 게이트 실패 시 재생성 횟수 (자동) |
 | `--build` | off | 임시 worktree에서 `build` 명령 |
 | `--test` | off | `test` 명령 실행 — **실패해도 재생성하지 않는다** |
-| `--force` | off | 미결 질문이 남아도 생성 강행 |
 | `--dry-run` | off | 예시 계획으로 프롬프트 미리보기 |
 
 `--templates`·`--conventions`·`--policy`의 상대경로는 **대상 저장소 기준으로 먼저** 해석하고, 없으면 실행 위치 기준으로 다시 찾는다.

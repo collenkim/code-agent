@@ -7,9 +7,11 @@ import { z } from "zod";
 import { collectExemplars, formatExemplars, listReferenceTree } from "./exemplar";
 import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
+import { describeWorkOrder } from "./workOrder";
 import type {
   ResolvedBuildContext,
   BuildPlan,
+  ConventionRule,
   GateViolation,
   GeneratedFile,
   PromptPreview,
@@ -90,6 +92,30 @@ function formatViolations(violations: GateViolation[]): string {
   );
 }
 
+/**
+ * 컨벤션을 축약해 싣는다.
+ *
+ * 계획 단계가 이미 "스펙에 비추어 실제로 걸리는 규칙만" 근거와 함께 뽑아 놓았는데, 그것을
+ * 두고 컨벤션 디렉토리의 문서를 매번 통째로 싣던 자리다. 축약한 결과를 버리고 원문을
+ * 덤프하면, 정작 이번에 지켜야 할 규칙이 일반론 사이에 묻힌다.
+ *
+ * `source` 가 원문 위치를 가리키므로 모자라면 모델이 `read` 로 확인할 수 있다. 그 요청이
+ * 잦아지면 축약이 지나쳤다는 뜻이고, `log` 의 탐색 요청 수가 그것을 알려 준다.
+ *
+ * 계획이 규칙을 하나도 뽑지 못했으면 축약할 것이 없으므로 원문을 그대로 싣는다 —
+ * 없는 축약본을 근거로 아무것도 주지 않는 편이 더 나쁘다.
+ */
+function formatRules(rules: ConventionRule[], fallbackText: string): string {
+  if (rules.length === 0) {
+    return `# 코드 컨벤션 문서\n${fallbackText}\n\n`;
+  }
+  return (
+    "# 이번 생성에 걸리는 규칙 — 계획이 컨벤션 문서에서 뽑은 것\n" +
+    rules.map((rule) => `- ${rule.rule}\n  근거: ${rule.source}`).join("\n") +
+    "\n\n원문 확인이 필요하면 위 근거 경로를 `read` 로 요청한다. 여기 없는 규칙은 이번 대상이 아니다.\n\n"
+  );
+}
+
 export function buildStagePrompt(
   context: ResolvedBuildContext,
   manifest: Manifest,
@@ -120,7 +146,8 @@ export function buildStagePrompt(
       : "";
 
   const user = withPolicy(
-    `# 이번 단계에서 만들 파일 (계획 확정분)\n` +
+    `${describeWorkOrder(context.workOrder)}\n\n` +
+      `# 이번 단계에서 만들 파일 (계획 확정분)\n` +
       (plannedFiles.length > 0
         ? plannedFiles.map((file) => `- ${file.path} — ${file.purpose}`).join("\n")
         : "(계획에 이 단계 파일이 없음 — 아무것도 만들지 말고 빈 배열을 반환한다)") +
@@ -130,8 +157,9 @@ export function buildStagePrompt(
         ? `# 참조 표준 코드 — 도메인 '${context.referenceDomain}'\n` +
           `${formatExemplars(exemplars, manifest.language)}\n\n`
         : "") +
+      (context.slotsText ? `${context.slotsText}\n\n` : "") +
       `# 스펙\n${context.specText}\n\n` +
-      `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
+      formatRules(plan.conventions, context.conventionsText) +
       `# 앞 단계에서 이미 만든 파일\n${formatPrevious(previous)}` +
       formatViolations(violations),
     context.policyText,

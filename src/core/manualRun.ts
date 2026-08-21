@@ -14,6 +14,7 @@ import {
 } from "./manual";
 import { PlanSchema, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
+import { loadSession, saveSession } from "./session";
 import { loadPlan, loadPreviousResults, loadStageFiles, savePlan } from "./state";
 import type { BuildContext, GateViolation, GeneratedFile } from "./types";
 
@@ -40,8 +41,30 @@ function joinForChat(system: string, user: string, shape: string): string {
   return withOutputFormat(`# 역할·규칙\n${system}\n\n---\n\n${user}`, shape);
 }
 
+/**
+ * 스펙 경로를 세션이 기억하게 한다.
+ *
+ * 작업 지시서는 스펙 문서의 머리말에 있으므로, 0차 게이트가 생긴 뒤로는 명령마다 그 경로가
+ * 필요해졌다. 상태가 이끄는 모드는 이미 세션이 기억해 주는데 이 경로만 아니어서, 예전 방식만
+ * 매번 --spec 을 다시 쓰게 되는 차이가 생겼다.
+ *
+ * **기억하는 것은 경로뿐이다.** 지시서를 요구하는 것도, 그 내용을 매번 다시 읽어 검사하는 것도
+ * 그대로다 — 게이트를 무르게 하지 않으면서 없앨 수 있는 차이만 없앤다.
+ */
+function withRememberedSpec(input: BuildContext): BuildContext {
+  const session = loadSession(input.outDir);
+
+  if (input.specPaths.length === 0) {
+    return { ...input, specPaths: session.specPaths };
+  }
+  if (input.specPaths.join("\n") !== session.specPaths.join("\n")) {
+    saveSession(input.outDir, { ...session, specPaths: input.specPaths });
+  }
+  return input;
+}
+
 export function emitPrompt(input: BuildContext, target: PromptTarget): string {
-  const { context, manifest } = withResolvedInputs(input);
+  const { context, manifest } = withResolvedInputs(withRememberedSpec(input));
   const stages = selectStages(manifest);
 
   if (target.kind === "plan") {
@@ -94,7 +117,7 @@ export function ingestResponse(
   target: PromptTarget,
   responsePath: string,
 ): IngestResult {
-  const { context, manifest } = withResolvedInputs(input);
+  const { context, manifest } = withResolvedInputs(withRememberedSpec(input));
   const stages = selectStages(manifest);
   const text = readFileSync(responsePath, "utf-8");
 

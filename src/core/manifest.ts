@@ -43,6 +43,17 @@ const StageSchema = z.object({
     ),
 });
 
+/**
+ * 작업 지시서의 **확장** 속성. 예약 속성(kind·id·title·target·scope·preserve·approver)은
+ * 파이프라인이 분기에 쓰므로 에이전트가 들고 있고, 회사·프로젝트마다 다른 것만 여기 온다.
+ * 에이전트는 존재와 값 유효성만 볼 뿐 이 값들로 분기하지 않는다.
+ */
+const WorkOrderAttributeSchema = z.object({
+  name: z.string().describe("머리말에 쓸 속성 이름"),
+  required: z.boolean().default(false),
+  values: z.array(z.string()).optional().describe("허용 값. 생략하면 아무 문자열이나 받는다"),
+});
+
 const ManifestSchema = z.object({
   language: z
     .string()
@@ -70,6 +81,19 @@ const ManifestSchema = z.object({
     .array(z.string())
     .optional()
     .describe("테스트 실행 명령. --test 로 켠다. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
+  workOrder: z
+    .object({
+      attributes: z.array(WorkOrderAttributeSchema).default([]),
+      requireApprover: z
+        .boolean()
+        .default(false)
+        .describe(
+          "승인자를 필수로 볼지. 승인자 개념이 없는 조직에 필수로 걸면 아무 작업도 시작되지 않아 " +
+            "예약 속성 중 이것만은 필수 여부를 프로젝트가 정한다",
+        ),
+    })
+    .default({ attributes: [], requireApprover: false })
+    .describe("작업 지시서의 프로젝트 확장 속성 정책"),
   stages: z.array(StageSchema).min(1),
 });
 

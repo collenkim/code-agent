@@ -8,6 +8,8 @@ import { runGate } from "./gate";
 import { loadManifest, selectStages } from "./manifest";
 import type { Manifest } from "./manifest";
 import { planBuild } from "./plan";
+import { describeSlots, hashSpec, loadSlots, loadSpecSchema } from "./specSchema";
+import { loadWorkOrder } from "./workOrder";
 import type {
   BuildContext,
   BuildOutcome,
@@ -44,6 +46,17 @@ export function withResolvedInputs(context: BuildContext): {
     ? resolveAgainstRepo(context.repoRoot, context.policyPath)
     : undefined;
 
+  // 0차 게이트. 이 줄보다 앞에서 프롬프트가 만들어지는 경로는 없다 —
+  // 지시서가 규격에 맞지 않으면 모델에 한 글자도 가지 않는다.
+  const workOrder = loadWorkOrder(context.repoRoot, context.specPaths, manifest.workOrder);
+
+  // 1차 게이트가 쓸 것들. 파생물은 스펙 해시에 묶여 있어, 문서가 바뀌면 여기서 무효가 된다.
+  const specText = concatDocuments(context.specPaths);
+  const specSchema = loadSpecSchema(templatesDir);
+  const slots = specSchema ? loadSlots(context.outDir) : undefined;
+  const fresh = slots !== undefined && slots.specHash === hashSpec(specText);
+  const slotsText = specSchema && slots && fresh ? describeSlots(specSchema, slots.slots) : "";
+
   // 참조 도메인은 복제할 코드가 있을 때만 필요하다. 신규 프로젝트 구성처럼 참조할 파일을
   // 선언하지 않은 단계만 있는 실행에서는 없어도 된다.
   const referenceDomain = context.referenceDomain ?? manifest.referenceDomain ?? "";
@@ -61,8 +74,12 @@ export function withResolvedInputs(context: BuildContext): {
       ...context,
       templatesDir,
       policyPath,
+      workOrder,
+      specSchema,
+      intakeNeeded: specSchema !== undefined && !fresh,
+      slotsText,
       referenceDomain,
-      specText: concatDocuments(context.specPaths),
+      specText,
       conventionsText: concatDocuments(
         conventions.paths,
         "(아직 없음 — 이 실행이 만들어 낼 대상이다. 기존 규칙이 있다고 가정하지 않는다.)",
@@ -85,7 +102,8 @@ export async function runBuild(input: BuildContext): Promise<BuildOutcome> {
   }
 
   // 미결 질문이 남아 있으면 생성하지 않는다 — 추측으로 채운 코드가 나오는 것보다 멈추는 게 낫다.
-  if (plan.openQuestions.length > 0 && !context.force) {
+  // 우회 옵션은 두지 않는다. 예외를 하나 두면 그 자리가 통제의 우회로가 된다.
+  if (plan.openQuestions.length > 0) {
     return { plan, stages: [], conventionsSource };
   }
 
