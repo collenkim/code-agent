@@ -93,7 +93,7 @@ async function route(store: JobStore, req: IncomingMessage, res: ServerResponse)
     }
   }
 
-  const match = /^\/api\/jobs\/([^/]+)(?:\/(prompt|response|questions|log))?$/.exec(path);
+  const match = /^\/api\/jobs\/([^/]+)(?:\/(prompt|response|questions|approval|log))?$/.exec(path);
   if (match) {
     const id = decodeURIComponent(match[1]);
     const action = match[2];
@@ -119,6 +119,11 @@ async function route(store: JobStore, req: IncomingMessage, res: ServerResponse)
     if (action === "questions" && method === "POST") {
       const body = await readJson<{ answers?: { id: number; answer: string }[] }>(req);
       json(res, 200, api.answer(store, id, body.answers ?? []));
+      return;
+    }
+    if (action === "approval" && method === "POST") {
+      const body = await readJson<{ decision?: string; approver?: string; comment?: string }>(req);
+      json(res, 200, api.decide(store, id, body));
       return;
     }
     if (action === "log" && method === "GET") {

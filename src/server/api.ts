@@ -13,7 +13,7 @@ import {
 } from "../core/session";
 import type { PendingQuestion } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, hasPlan, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
 import type { JobStore } from "./jobs";
 
 export interface QuestionView {
@@ -38,6 +38,8 @@ export interface StatusView {
   message?: string;
   hasPrompt: boolean;
   hasPlan: boolean;
+  /** 계획이 승인되기 전에는 어느 단계도 진행되지 않는다 — 2차 게이트 */
+  needsApproval: boolean;
   /** 앞 턴에서 남은 위반 — 다음 프롬프트에 실려 들어간다 */
   lastViolations: { item: string; file: string; detail: string }[];
 }
@@ -92,6 +94,7 @@ export function status(store: JobStore, id: string): StatusView {
     message: next.message,
     hasPrompt: Boolean(next.prompt),
     hasPlan: hasPlan(job.context.outDir),
+    needsApproval: next.label === "approval",
     lastViolations: session.lastViolations,
   };
 }
@@ -153,6 +156,34 @@ export function answer(
 
   writeQuestions(job.context.outDir, updated);
   return status(store, id);
+}
+
+/**
+ * 2차 게이트 — 화면에서 계획에 판정을 내린다.
+ * 검사는 코어의 decideApproval 이 한다. 여기는 전송일 뿐이다.
+ */
+export function decide(
+  store: JobStore,
+  id: string,
+  input: { decision?: string; approver?: string; comment?: string },
+): { message: string; next: StatusView } {
+  const job = store.get(id);
+  if (input.decision !== "approved" && input.decision !== "rejected") {
+    throw new Error("판정은 approved 또는 rejected 여야 합니다.");
+  }
+
+  const { unchanged, record } = decideApproval(job.context, input.decision, {
+    approver: input.approver?.trim() || undefined,
+    comment: input.comment?.trim() || undefined,
+  });
+
+  return {
+    message: unchanged
+      ? `이미 승인되어 있습니다 — ${record.approver} · ${record.at}`
+      : `${record.decision === "approved" ? "승인" : "반려"}을 원장에 남겼습니다 — ` +
+        `${record.approver} · 계획 ${record.planHash}`,
+    next: status(store, id),
+  };
 }
 
 export function log(store: JobStore, id: string): { text: string } {

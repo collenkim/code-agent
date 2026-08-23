@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { questionsPath } from "../core/session";
 import { loadSlots } from "../core/specSchema";
-import { applyResponse, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
 import type { BuildContext } from "../core/types";
 
 const MANIFEST = {
@@ -238,6 +238,7 @@ describe("파생물이지 캐시가 아니다", () => {
   test("계획을 세운 뒤에 스펙을 고쳐도 다시 뽑는다", () => {
     applyResponse(context, extracted(BOTH_FOUND));
     applyResponse(context, JSON.stringify(PLAN_RESPONSE));
+    decideApproval(context, "approved", { approver: "tester" });
     assert.equal(nextPrompt(context).label, "model");
 
     writeSpec(`${SPEC_BODY}\n## 추가\n취소 상태가 생겼다.\n`);
@@ -260,6 +261,7 @@ describe("확정된 항목을 축약해 싣는다", () => {
   test("생성 프롬프트는 컨벤션 전문 대신 계획이 뽑은 규칙을 싣는다", () => {
     applyResponse(context, extracted(BOTH_FOUND));
     applyResponse(context, JSON.stringify(PLAN_RESPONSE));
+    decideApproval(context, "approved", { approver: "tester" });
 
     const prompt = nextPrompt(context).prompt!;
 

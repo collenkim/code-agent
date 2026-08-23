@@ -11,13 +11,15 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { ACTION_FORMAT } from "./action";
+import { checkApproval, formatDiff, hashPlan, recordDecision } from "./approval";
+import type { ApprovalRecord, ApprovalState, Decision, PendingApproval } from "./approval";
 import { executeActions } from "./execute";
 import type { ExecuteOutcome } from "./execute";
 import { parseActions } from "./fence";
 import { buildStagePrompt } from "./generate";
 import { buildGatePrompt, GateSchema } from "./gate";
 import { GATE_SHAPE, parseResponse, PLAN_SHAPE, withOutputFormat } from "./manual";
-import { PlanSchema, previewPlanPrompt } from "./plan";
+import { formatPlan, PlanSchema, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
 import {
   answeredSlotKeys,
@@ -41,7 +43,7 @@ import {
 import type { Session, Target } from "./session";
 import { listReferenceTree } from "./exemplar";
 import { loadPlan, loadPreviousResults, loadStageFiles, PLAN_FILE, savePlan } from "./state";
-import type { BuildContext, GateViolation } from "./types";
+import type { BuildContext, BuildPlan, GateViolation, ResolvedBuildContext } from "./types";
 
 /** 게이트를 몇 번까지 다시 돌릴지. 넘으면 사람에게 넘긴다 — 무한 반복이 더 나쁘다. */
 const MAX_GATE_ATTEMPTS = 2;
@@ -86,6 +88,72 @@ function answerSection(outDir: string): string {
   );
 }
 
+/**
+ * 2차 게이트에 걸 값. 계획이 없으면 아직 승인할 것이 없다.
+ * decideTarget 을 부르는 자리마다 이것을 함께 넘긴다 — 빠뜨리면 그쪽에서 곧바로 터진다.
+ */
+function approvalFor(context: ResolvedBuildContext): ApprovalState | undefined {
+  if (!existsSync(join(context.outDir, PLAN_FILE))) {
+    return undefined;
+  }
+  return checkApproval(context.repoRoot, context.workOrder, loadPlan(context.outDir));
+}
+
+const HOW_TO_DECIDE = [
+  '승인:  code-agent approve --approver <이름> [--comment "…"] --repo … --templates …',
+  '반려:  code-agent reject  --approver <이름> --comment "사유"  --repo … --templates …',
+].join("\n");
+
+/**
+ * 승인 화면에 올릴 말.
+ *
+ * 처음 승인이면 계획 전문을, 재승인이면 **달라진 것만** 보여 준다. 계획 전체를 다시 읽히면
+ * 승인이 형식이 되고, 형식이 된 승인은 통제가 아니다.
+ */
+function approvalMessage(state: PendingApproval, plan: BuildPlan, outDir: string): string {
+  const planPath = join(outDir, PLAN_FILE);
+  const head = "## 계획 승인이 필요합니다 (2차 게이트)";
+
+  if (state.status === "none") {
+    return [head, "", formatPlan(plan), "", HOW_TO_DECIDE].join("\n");
+  }
+
+  if (state.status === "rejected") {
+    return [
+      `## 이 계획은 반려되었습니다 — ${state.record.approver} · ${state.record.at}`,
+      ...(state.record.comment ? [`사유: ${state.record.comment}`] : []),
+      "",
+      "계획이 그대로인 채로는 진행되지 않습니다. 스펙이나 지시서를 고친 뒤 " +
+        `${planPath} 를 지우면 계획부터 다시 돕니다.`,
+    ].join("\n");
+  }
+
+  if (state.status === "stale-order") {
+    return [
+      "## 작업 지시서가 바뀌어 승인이 무효가 됐습니다 (0차부터 다시)",
+      `직전 판정: ${state.record.approver} · ${state.record.at} (지시서 ${state.record.orderHash})`,
+      "",
+      "지시서가 바뀌면 슬롯 충족 여부도 경계도 다시 봐야 합니다. 계획도 지금 지시서로 " +
+        `다시 세우는 것이 맞습니다 — ${planPath} 를 지우면 계획부터 다시 돕니다.`,
+      "",
+      HOW_TO_DECIDE,
+    ].join("\n");
+  }
+
+  const decided = state.record.decision === "approved" ? "승인됨" : "반려됨";
+  return [
+    `${head} — 계획이 바뀌어 직전 판정이 무효가 됐습니다`,
+    `[${decided}] planHash: ${state.record.planHash} (${state.record.approver} · ${state.record.at})`,
+    `[변경됨] planHash: ${hashPlan(plan)}`,
+    "─".repeat(60),
+    formatDiff(state.diff),
+    "",
+    `계획 전문: ${planPath}`,
+    "",
+    HOW_TO_DECIDE,
+  ].join("\n");
+}
+
 export interface NextPrompt {
   target: Target;
   label: string;
@@ -110,8 +178,14 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   const target = decideTarget(context.outDir, manifest, session, {
     gate: context.gate !== false,
     intakeNeeded: context.intakeNeeded,
+    approval: approvalFor(context),
   });
   const label = describeTarget(target);
+
+  if (target.kind === "approval") {
+    // 프롬프트를 내주지 않는다. 승인은 사람이 하는 일이라 모델에 보낼 것이 없다.
+    return { target, label, message: approvalMessage(target.state, loadPlan(context.outDir), context.outDir) };
+  }
 
   if (target.kind === "blocked") {
     return { target, label, message: target.reason };
@@ -194,6 +268,57 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   };
 }
 
+export interface ApprovalOutcome {
+  /** 이미 같은 판정이 있어 원장에 아무것도 남기지 않았는지 */
+  unchanged: boolean;
+  record: ApprovalRecord;
+}
+
+/**
+ * 2차 게이트에 사람이 판정을 내린다. CLI 든 서버든 이 함수를 지난다 —
+ * 판정을 남기는 자리가 둘이면 한쪽에만 검사가 빠지는 일이 생긴다.
+ */
+export function decideApproval(
+  input: BuildContext,
+  decision: Decision,
+  given: { approver?: string; comment?: string },
+): ApprovalOutcome {
+  const session = loadSession(input.outDir);
+  const { context } = withResolvedInputs(withSessionSpec(input, session));
+  const plan = loadPlan(context.outDir);
+  const state = checkApproval(context.repoRoot, context.workOrder, plan);
+
+  if (decision === "approved" && state.status === "approved") {
+    // 같은 계획에 같은 판정을 두 번 남기지 않는다. 원장이 사건 기록이라 중복은 잡음이다.
+    return { unchanged: true, record: state.record };
+  }
+  if (decision === "rejected" && !given.comment) {
+    throw new Error(
+      "반려에는 사유가 필요합니다. 반려는 지워야 할 실패가 아니라 가장 값진 기록입니다 — " +
+        "사유 없는 반려는 그 값을 잃습니다.",
+    );
+  }
+
+  const approver = given.approver ?? context.workOrder.approver;
+  if (!approver) {
+    throw new Error(
+      "누가 판정했는지 알 수 없습니다 (--approver). " +
+        "작업 지시서에 approver 를 적어 두면 그 값이 기본이 됩니다.",
+    );
+  }
+
+  return {
+    unchanged: false,
+    record: recordDecision(context.repoRoot, {
+      order: context.workOrder,
+      plan,
+      decision,
+      approver,
+      comment: given.comment,
+    }),
+  };
+}
+
 export interface ApplyOutcome {
   label: string;
   planSaved?: string;
@@ -218,6 +343,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   const target = decideTarget(context.outDir, manifest, session, {
     gate: context.gate !== false,
     intakeNeeded: context.intakeNeeded,
+    approval: approvalFor(context),
   });
   const label = describeTarget(target);
   session.turn += 1;
@@ -241,7 +367,8 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     return outcome;
   };
 
-  if (target.kind === "blocked" || target.kind === "done") {
+  if (target.kind === "blocked" || target.kind === "done" || target.kind === "approval") {
+    // 응답을 소비하지 않는다. 붙여넣은 것이 있어도 지금 반영할 자리가 없다.
     session.turn -= 1;
     return {
       label,
@@ -249,7 +376,12 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
       parseErrors: [],
       questionsAdded: 0,
       advanced: false,
-      message: target.kind === "blocked" ? target.reason : "이미 모든 단계가 끝났습니다.",
+      message:
+        target.kind === "blocked"
+          ? target.reason
+          : target.kind === "done"
+            ? "이미 모든 단계가 끝났습니다."
+            : approvalMessage(target.state, loadPlan(context.outDir), context.outDir),
     };
   }
 
