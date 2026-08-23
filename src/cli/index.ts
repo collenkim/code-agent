@@ -7,9 +7,11 @@ import { MANIFEST_FILE } from "../core/manifest";
 import { emitPrompt, ingestResponse, parsePromptTarget } from "../core/manualRun";
 import { formatPlan } from "../core/plan";
 import { runBuild } from "../core/run";
+import { ledgerPath } from "../core/approval";
+import type { Decision } from "../core/approval";
 import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, hasPlan, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
 import type { BuildContext, BuildOutcome } from "../core/types";
 import { serve } from "../server/http";
 
@@ -22,6 +24,8 @@ const USAGE =
   "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
+  "  approve              계획을 승인한다 (--approver, --comment) — 2차 게이트\n" +
+  "  reject               계획을 반려한다 (--approver, --comment 필수)\n" +
   "  log                  턴 기록 — 몇 번 만에 됐는지, 어디서 막혔는지\n" +
   "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
   "       code-agent apply answer.txt --repo … --templates …\n" +
@@ -195,6 +199,39 @@ function runStatus(context: BuildContext) {
   }
 }
 
+/**
+ * 2차 게이트 — 사람이 계획에 판정을 내린다.
+ *
+ * 기록은 대상 저장소의 .code-agent/approvals/ 에 남는다. 이 파일은 신원을 증명하지 않는다 —
+ * 보장하는 것은 "승인 없이는 진행되지 않는다"까지이고, 증명은 커밋·PR·티켓에 있다.
+ */
+function runDecision(
+  input: BuildContext,
+  decision: Decision,
+  given: { approver?: string; comment?: string },
+) {
+  const { unchanged, record } = decideApproval(input, decision, given);
+
+  if (unchanged) {
+    console.log(`이미 승인되어 있습니다 — ${record.approver} · ${record.at}`);
+    console.log("같은 계획에 같은 판정을 두 번 남기지 않습니다.");
+    return;
+  }
+
+  console.log(`${decision === "approved" ? "승인" : "반려"}: ${record.id} · ${record.target}`);
+  console.log(`  판정: ${record.approver} · ${record.at}`);
+  console.log(`  지시서 ${record.orderHash} · 계획 ${record.planHash}`);
+  console.log(`  원장: ${ledgerPath(input.repoRoot, record.id)}`);
+  console.log(`  스냅샷: ${record.snapshot}`);
+
+  const next = nextPrompt(input);
+  if (next.prompt) {
+    console.log(`\n다음: [${next.label}] → ${stashPrompt(input.outDir, next.prompt)}`);
+  } else {
+    console.log(`\n${next.message ?? ""}`);
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const command = argv[0] && !argv[0].startsWith("--") ? argv[0] : undefined;
@@ -254,6 +291,13 @@ async function main() {
   }
   if (command === "status") {
     runStatus(context);
+    return;
+  }
+  if (command === "approve" || command === "reject") {
+    runDecision(context, command === "approve" ? "approved" : "rejected", {
+      approver: first(args, "approver"),
+      comment: first(args, "comment"),
+    });
     return;
   }
   if (command === "log") {

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { loadSession, questionsPath, summarizeSession } from "../core/session";
-import { applyResponse, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
 import type { BuildContext } from "../core/types";
 
 const MANIFEST = {
@@ -103,9 +103,18 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** 계획까지 끝낸 상태로 만든다 — 대부분의 테스트가 그 다음부터를 본다. */
+/** 사람이 계획을 승인하는 것과 같은 일 — 2차 게이트 */
+function approvePlan() {
+  decideApproval(context, "approved", { approver: "tester" });
+}
+
+/**
+ * 계획까지 끝내고 승인까지 받은 상태로 만든다 — 대부분의 테스트가 그 다음부터를 본다.
+ * 2차 게이트 자체를 보는 테스트는 이 함수를 쓰지 않고 계획만 반영한다.
+ */
 function completePlan(openQuestions: string[] = []) {
   applyResponse(context, JSON.stringify({ ...PLAN_RESPONSE, openQuestions }));
+  approvePlan();
 }
 
 describe("상태가 다음 할 일을 정한다", () => {

@@ -175,13 +175,31 @@ describe("왕복 — 프롬프트 하나에 상태 한 칸", () => {
     assert.throws(() => api.respond(store, jobId, "   "), /빈 응답/);
   });
 
-  test("계획을 반영하면 첫 단계로 넘어간다", () => {
+  test("계획을 반영하면 승인을 기다린다 — 곧장 생성으로 가지 않는다", () => {
     const out = api.respond(store, jobId, PLAN_RESPONSE);
 
     assert.ok(out.planSaved, "계획 파일이 저장돼야 한다");
     assert.equal(out.advanced, true);
-    assert.equal(out.next.target, "model");
+    assert.equal(out.next.target, "approval", "2차 게이트에서 멈춰야 한다");
+    assert.equal(out.next.needsApproval, true);
     assert.equal(out.next.turn, 1);
+    assert.equal(api.prompt(store, jobId).prompt, undefined, "승인 전에는 프롬프트가 없다");
+    assert.match(api.prompt(store, jobId).message ?? "", /계획 승인이 필요합니다/);
+  });
+
+  test("반려에는 사유가 필요하고, 승인하면 첫 단계로 넘어간다", () => {
+    assert.throws(
+      () => api.decide(store, jobId, { decision: "rejected", approver: "팀장" }),
+      /사유/,
+      "반려는 가장 값진 기록이라 사유 없이 남기지 않는다",
+    );
+
+    const out = api.decide(store, jobId, { decision: "approved", approver: "팀장" });
+
+    assert.match(out.message, /승인/);
+    assert.equal(out.next.target, "model");
+    assert.equal(out.next.needsApproval, false);
+    assert.ok(existsSync(join(repoRoot, ".code-agent", "approvals", "TEST-1.jsonl")));
   });
 
   test("생성 프롬프트에 참조 표준이 실려 있다", () => {

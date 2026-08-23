@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import type { ActionType } from "./action";
+import type { ApprovalState, PendingApproval } from "./approval";
 import type { Observation } from "./execute";
 import type { Manifest, StageDef } from "./manifest";
 import { PLAN_FILE } from "./state";
@@ -182,6 +183,8 @@ export function appendQuestions(
 export type Target =
   | { kind: "intake" }
   | { kind: "plan" }
+  /** 계획은 섰으나 사람이 아직 승인하지 않았다 — 2차 게이트 */
+  | { kind: "approval"; state: PendingApproval }
   | { kind: "stage"; stage: StageDef }
   | { kind: "gate"; stage: StageDef }
   | { kind: "blocked"; reason: string }
@@ -193,6 +196,8 @@ export function describeTarget(target: Target): string {
       return "intake";
     case "plan":
       return "plan";
+    case "approval":
+      return "approval";
     case "stage":
       return target.stage.key;
     case "gate":
@@ -214,7 +219,7 @@ export function decideTarget(
   outDir: string,
   manifest: Manifest,
   session: Session,
-  options: { gate: boolean; intakeNeeded?: boolean } = { gate: true },
+  options: { gate: boolean; intakeNeeded?: boolean; approval?: ApprovalState } = { gate: true },
 ): Target {
   // 스펙에서 필요한 항목을 뽑는 일이 먼저다. 무엇이 비었는지 모르는 채로 계획을 세우면
   // 그 빈칸이 곧 모델이 지어내는 자리가 된다.
@@ -236,6 +241,17 @@ export function decideTarget(
 
   if (!existsSync(join(outDir, PLAN_FILE))) {
     return { kind: "plan" };
+  }
+
+  // 2차 게이트. 계획이 있는데 승인 상태를 계산하지 않고 부른 것은 호출자의 잘못이다 —
+  // 조용히 넘기면 그 자리가 그대로 통제의 우회로가 된다.
+  if (!options.approval) {
+    throw new Error(
+      "계획이 있는데 승인 상태 없이 decideTarget 을 불렀습니다 (2차 게이트를 건너뛸 수 없습니다).",
+    );
+  }
+  if (options.approval.status !== "approved") {
+    return { kind: "approval", state: options.approval };
   }
 
   for (const stage of manifest.stages) {

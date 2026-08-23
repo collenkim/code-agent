@@ -14,6 +14,7 @@
 - [세 가지 모드](#세-가지-모드)
 - [코드 생성에 필요한 문서](#코드-생성에-필요한-문서)
 - [수동 모드 — API 미사용](#수동-모드--api-미사용)
+- [계획 승인 — 2차 게이트](#계획-승인--2차-게이트)
 - [서버 모드 — 화면으로 왕복](#서버-모드--화면으로-왕복)
 - [모델이 요청할 수 있는 것 — 액션](#모델이-요청할-수-있는-것--액션)
 - [프로젝트 설정 `code-agent.json`](#프로젝트-설정--code-agentjson)
@@ -207,6 +208,9 @@ code-agent next $COMMON --spec 요구사항.md > prompt.txt
 code-agent apply answer.txt $COMMON
 #   → 실행 결과 + 다음 프롬프트를 out/.code-agent/prompt.txt 에 준비
 
+# 계획이 서면 여기서 한 번 멈춘다 — 사람이 승인해야 생성으로 넘어간다
+code-agent approve $COMMON --approver 팀장
+
 # 그 다음부터는 --spec 없이 같은 두 줄을 반복한다
 code-agent next $COMMON > prompt.txt
 code-agent apply answer.txt $COMMON
@@ -218,6 +222,8 @@ code-agent apply answer.txt $COMMON
 code-agent status $COMMON   # 지금 무엇을 할 차례인지
 code-agent log $COMMON      # 몇 턴 만에 됐는지, 어디서 막혔는지
 ```
+
+승인 명령은 [계획 승인 — 2차 게이트](#계획-승인--2차-게이트)에 있다.
 
 ### 사람이 답해야 넘어가는 것 — 질문 루프
 
@@ -297,6 +303,78 @@ $ code-agent apply bad.txt …
 
 ---
 
+## 계획 승인 — 2차 게이트
+
+계획이 나와도 곧장 생성으로 가지 않는다. **사람이 승인한 뒤에야 넘어간다.** 우회 옵션은 없다 —
+급할 때 쓰라고 만든 옵션은 급할 때만 쓰이지 않는다.
+
+```bash
+code-agent approve $COMMON --approver 팀장 --comment "보존 조건 확인함"
+code-agent reject  $COMMON --approver 팀장 --comment "공통 모듈은 별도 지시서로"
+```
+
+승인 전에 `next` 를 부르면 프롬프트 대신 **계획 전문과 판정 방법**이 나온다. 모델에 보낼 것이 없기 때문이다.
+그 상태에서 응답을 붙여넣어도 아무것도 반영되지 않는다.
+
+`--approver` 를 생략하면 작업 지시서의 `approver` 속성이 쓰인다.
+
+### 기록은 대상 저장소 안에 남는다
+
+```
+<repo>/.code-agent/approvals/
+  ├─ PROJ-1421.jsonl                   판정 원장 (append only)
+  └─ PROJ-1421/
+       └─ app-settlement-1.plan.json   판정 시점 계획 스냅샷
+```
+
+`out/` 이 아니다. `out/` 은 확인 후 지우는 staging 이라 승인 이력이 거기 있으면 같이 사라지고,
+승인은 버전 관리되어 PR 에서 읽혀야 하는 **팀의 기록**이기 때문이다.
+[대상 저장소는 건드리지 않는다](#출력-위치--대상-저장소는-건드리지-않는다)의 의도된 예외다 —
+그 약속은 *생성물*에 대한 것이고, 승인 기록은 생성물이 아니라 통제 기록이다.
+
+**반려도 남긴다.** 반려는 지워야 할 실패가 아니라 가장 값진 기록이다. 그래서 사유(`--comment`) 없는 반려는 받지 않는다.
+
+### 승인은 "이 계획, 이 지시서"에 대한 것이다
+
+| 무엇이 바뀌면 | 무효가 되는 것 | 어디부터 다시 |
+|---|---|---|
+| 계획 (`planHash`) | 그 대상의 승인 | **2차** — 재승인 |
+| 작업 지시서 (`orderHash`) | 그 지시서의 **모든 대상** 승인 | **0차** — 속성 검사부터 |
+
+해시가 없으면 *승인만 받아 두고 다른 것을 만드는* 길이 그대로 열린다.
+지시서 쪽이 더 위험하다 — `preserve` 한 줄을 지우면 3차 게이트가 그냥 통과하기 때문이다.
+
+### 재승인은 달라진 것만 보여 준다
+
+```
+## 계획 승인이 필요합니다 (2차 게이트) — 계획이 바뀌어 직전 판정이 무효가 됐습니다
+[승인됨] planHash: sha256:d1360ed123ff7ff4 (팀장 · 2026-08-21T10:14:02.000Z)
+[변경됨] planHash: sha256:907b2d2717d4ea61
+────────────────────────────────────────────────────────────
+  파일   - app/features/shipment/models.py [model] — 배송 모델
+       + app/features/shipment/service.py [model] — 배송 서비스
+  규칙   ~ dataclass 사용: 근거 doc/conventions.md → doc/style.md
+```
+
+텍스트 diff 가 아니라 계획 구조(`files`·`conventions`·`conflicts`)의 **항목 비교**다.
+문구만 바뀐 것과 파일이 늘어난 것이 같은 무게로 보이면 안 된다.
+
+- 계획 전체를 다시 읽히면 승인이 형식이 되고, 형식이 된 승인은 통제가 아니다. 그래서 `planHash` 범위가
+  계획 전체여도 사람이 보는 것은 달라진 줄뿐이다.
+- **승인 단위는 여전히 계획 전체다.** 제시만 diff 다 — 바뀐 부분만 승인으로 만들면 승인받지 않은 부분이 섞여 든다.
+- 문구가 통째로 바뀐 항목은 `-` 와 `+` 두 줄로 보인다. 어느 옛 항목이 어느 새 항목이 됐는지 짝짓는 것은
+  추측이고, 승인 화면에 추측을 올리지는 않는다.
+
+### 이 파일은 신원을 증명하지 않는다
+
+`approver` 에 누가 적혔든 로컬 도구는 그 사람이 실제로 승인했는지 알 수 없다. **자기가 자기를 승인할 수 있다.**
+보장하는 것은 "승인 없이는 진행되지 않는다"까지이고, 신원의 증명은 저장소 밖에 있다 — 커밋 서명·PR 승인·티켓의 권한 모델.
+**그러므로 커밋되지 않은 승인 기록은 아무것도 증명하지 않는다.**
+
+규격 전문은 [doc/work-order.md](doc/work-order.md) 의 "승인 기록" 절에 있다.
+
+---
+
 ## 서버 모드 — 화면으로 왕복
 
 같은 수동 루프를 **상시 떠 있는 로컬 서버**로 돌린다. 하는 일은 CLI와 똑같고 전송만 다르다 —
@@ -325,6 +403,7 @@ code-agent serve
 | 오른쪽 | 응답 붙여넣기 (반영하기 버튼) |
 | 결과 | 생성된 파일 · 경계 위반 · note · 모델이 요청한 read/list/run 결과 |
 | 질문 | 미답변이 있으면 답 칸이 뜬다. 저장하면 다음 프롬프트에 실린다 |
+| 승인 | 계획이 서면 승인·반려 버튼이 뜬다. 왼쪽에 계획(또는 달라진 부분)이 있다 |
 
 ### 작업
 
@@ -346,6 +425,7 @@ code-agent serve
 | `GET /api/jobs/:id/prompt` | 붙여넣을 프롬프트. **상태를 바꾸지 않는다** |
 | `POST /api/jobs/:id/response` | `{response}` 를 반영. 상태를 움직이는 유일한 지점 |
 | `POST /api/jobs/:id/questions` | `{answers: [{id, answer}]}` |
+| `POST /api/jobs/:id/approval` | `{decision: "approved"\|"rejected", approver, comment}` — 2차 게이트 |
 | `GET /api/jobs/:id/log` | 턴 기록 |
 | `DELETE /api/jobs/:id` | 목록에서 제거 (out/ 은 그대로) |
 
@@ -576,6 +656,8 @@ code-agent --repo … --templates … --spec … --out ./out --build
 | `serve` | 로컬 서버와 화면을 띄운다 (`--port` · `--host` · `--state`) |
 | `next` | 지금 붙여넣을 프롬프트를 표준출력으로. 상태를 바꾸지 않아 몇 번 불러도 같다 |
 | `apply <응답파일>` | 응답을 실행하고 다음 프롬프트를 준비 |
+| `approve` | 계획을 승인한다 — 2차 게이트 (`--approver` · `--comment`) |
+| `reject` | 계획을 반려한다 (`--comment` 필수) |
 | `status` | 지금 무엇을 할 차례인지 |
 | `log` | 턴 기록 |
 
@@ -584,6 +666,8 @@ code-agent --repo … --templates … --spec … --out ./out --build
 | `--repo` | (필수) | 대상 저장소 루트 |
 | `--templates` | (필수) | `code-agent.json` + 템플릿 문서가 있는 디렉토리 |
 | `--spec` | 계획 때 1회 | 요구사항 문서. 여러 번 지정 가능. **이후에는 세션이 기억한다** |
+| `--approver` | 지시서의 `approver` | 누가 판정했는지 (`approve` · `reject`) |
+| `--comment` | — | 판정에 남길 한마디. 반려에는 필수 |
 | `--step` | — | 예전 방식 대상: `plan` \| 단계키 \| `gate:단계키` |
 | `--emit-prompt` | off | 예전 방식 — 붙여넣을 프롬프트를 표준출력으로 |
 | `--ingest <파일>` | — | 예전 방식 — 응답(JSON)을 읽어 계획 저장 또는 파일 생성 |
@@ -604,6 +688,9 @@ code-agent --repo … --templates … --spec … --out ./out --build
 ### 출력 위치 — 대상 저장소는 건드리지 않는다
 
 생성물은 `--out` 디렉토리에 **저장소 루트 기준 상대경로 그대로** 쌓인다.
+
+> 예외가 하나 있다. [승인 기록](#기록은-대상-저장소-안에-남는다)은 대상 저장소의 `.code-agent/approvals/` 에 쓴다.
+> 그 약속은 생성물에 대한 것이고, 승인 기록은 생성물이 아니라 커밋되어야 하는 통제 기록이다.
 
 ```
 out/src/main/java/com/acme/app/application/contractguarantee/domain/ContractGuarantee.java

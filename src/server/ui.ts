@@ -146,6 +146,8 @@ function render() {
     "</div>"
   ).join("");
 
+  $("approval").style.display = state.needsApproval ? "" : "none";
+
   const v = state.lastViolations;
   $("carry").style.display = v.length ? "" : "none";
   $("carrylist").innerHTML = v.map((x) =>
@@ -218,6 +220,23 @@ function showResult(out) {
   flash("");
 }
 
+async function decide(decision) {
+  const body = await call("/api/jobs/" + encodeURIComponent(current) + "/approval", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      decision: decision,
+      approver: $("approver").value,
+      comment: $("acomment").value,
+    }),
+  });
+  state = body.next;
+  render();
+  await loadPrompt();
+  await loadJobs();
+  flash(body.message);
+}
+
 async function saveAnswers() {
   const answers = Array.from(document.querySelectorAll("#qlist input")).map((input) => ({
     id: Number(input.dataset.qid),
@@ -275,6 +294,8 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   $("send").addEventListener("click", send);
   $("saveq").addEventListener("click", () => saveAnswers().catch((e) => flash(e.message, true)));
+  $("approve").addEventListener("click", () => decide("approved").catch((e) => flash(e.message, true)));
+  $("reject").addEventListener("click", () => decide("rejected").catch((e) => flash(e.message, true)));
   $("reload").addEventListener("click", () => loadJobs().catch((e) => flash(e.message, true)));
   $("showlog").addEventListener("click", () => showLog().catch((e) => flash(e.message, true)));
   $("createform").addEventListener("submit", createJob);
@@ -323,6 +344,24 @@ const BODY = `
       <div class="body">
         <div id="qlist"></div>
         <div class="row" style="margin-top:10px"><button class="primary" id="saveq">답 저장</button></div>
+      </div>
+    </section>
+
+    <section id="approval" style="display:none">
+      <h2>계획 승인 <span class="muted">2차 게이트 — 승인 전에는 어느 단계도 진행되지 않습니다</span></h2>
+      <div class="body">
+        <p class="muted" style="margin-top:0">
+          왼쪽 칸에 계획(또는 달라진 부분)이 있습니다. 읽고 판정하세요.
+          기록은 대상 저장소의 <code>.code-agent/approvals/</code> 에 남고, 커밋되어야 증거가 됩니다.
+        </p>
+        <div class="row">
+          <input id="approver" placeholder="판정한 사람 (지시서의 approver 가 기본)">
+          <input id="acomment" placeholder="한마디 — 반려에는 필수">
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="approve">승인</button>
+          <button id="reject">반려</button>
+        </div>
       </div>
     </section>
 
