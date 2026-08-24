@@ -122,14 +122,17 @@ export function parseActions(raw: string): ParseResult {
 
     if (verb === "ask" || verb === "note") {
       const prose = readProse(lines, i);
-      if (!prose.text) {
+      // 헤더에 그대로 이어 쓴 것도 받는다. 인자를 받는 액션과 섞여 있어 나기 쉬운 실수인데,
+      // 여기서 거절해 봐야 왕복 한 번을 버릴 뿐 경계가 더 지켜지지도 않는다.
+      const text = prose.text || argument;
+      if (!text) {
         errors.push(`${where}: 내용이 비어 있습니다.`);
       } else if (verb === "ask") {
-        actions.push({ type: "ask", question: prose.text });
+        actions.push({ type: "ask", question: text });
       } else {
-        actions.push({ type: "note", text: prose.text });
+        actions.push({ type: "note", text });
       }
-      i = prose.next;
+      i = prose.text ? prose.next : i;
       continue;
     }
 

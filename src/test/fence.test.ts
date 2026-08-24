@@ -14,6 +14,36 @@ function response(...lines: string[]): string {
   return lines.join("\n");
 }
 
+describe("인자를 헤더에 이어 쓴 것도 받는다", () => {
+  test("### note 한 줄로 써도 반영된다", () => {
+    // 인자를 받는 액션(write·read·list)과 안 받는 액션(note·ask)이 섞여 있어 나기 쉬운
+    // 실수다. 실제로 한 번 돌려 봤을 때 10턴 중 1턴이 이걸로 날아갔다.
+    const parsed = parseActions("### note 판단이 필요했던 지점");
+
+    assert.deepEqual(parsed.errors, []);
+    assert.deepEqual(parsed.actions, [{ type: "note", text: "판단이 필요했던 지점" }]);
+  });
+
+  test("### ask 도 마찬가지다", () => {
+    const parsed = parseActions("### ask 주소 최대 길이는?");
+
+    assert.deepEqual(parsed.actions, [{ type: "ask", question: "주소 최대 길이는?" }]);
+  });
+
+  test("아래 줄에 쓴 것이 있으면 그쪽이 본문이다", () => {
+    const parsed = parseActions(["### note 짧은 말", "아래에 쓴 본문"].join("\n"));
+
+    assert.deepEqual(parsed.actions, [{ type: "note", text: "아래에 쓴 본문" }]);
+  });
+
+  test("둘 다 없으면 여전히 거절한다", () => {
+    const parsed = parseActions("### note");
+
+    assert.equal(parsed.actions.length, 0);
+    assert.match(parsed.errors[0], /내용이 비어 있습니다/);
+  });
+});
+
 describe("parseActions — 정상 응답", () => {
   test("write 는 코드블록 내용을 그대로 가져온다", () => {
     const { actions, errors } = parseActions(
@@ -132,6 +162,36 @@ describe("parseActions — 정상 응답", () => {
       actions.map((action) => action.type),
       ["read", "write", "done"],
     );
+  });
+});
+
+describe("인자를 헤더에 이어 쓴 것도 받는다", () => {
+  test("### note 한 줄로 써도 반영된다", () => {
+    // 인자를 받는 액션(write·read·list)과 안 받는 액션(note·ask)이 섞여 있어 나기 쉬운
+    // 실수다. 실제로 한 번 돌려 봤을 때 10턴 중 1턴이 이걸로 날아갔다.
+    const parsed = parseActions("### note 판단이 필요했던 지점");
+
+    assert.deepEqual(parsed.errors, []);
+    assert.deepEqual(parsed.actions, [{ type: "note", text: "판단이 필요했던 지점" }]);
+  });
+
+  test("### ask 도 마찬가지다", () => {
+    const parsed = parseActions("### ask 주소 최대 길이는?");
+
+    assert.deepEqual(parsed.actions, [{ type: "ask", question: "주소 최대 길이는?" }]);
+  });
+
+  test("아래 줄에 쓴 것이 있으면 그쪽이 본문이다", () => {
+    const parsed = parseActions(["### note 짧은 말", "아래에 쓴 본문"].join("\n"));
+
+    assert.deepEqual(parsed.actions, [{ type: "note", text: "아래에 쓴 본문" }]);
+  });
+
+  test("둘 다 없으면 여전히 거절한다", () => {
+    const parsed = parseActions("### note");
+
+    assert.equal(parsed.actions.length, 0);
+    assert.match(parsed.errors[0], /내용이 비어 있습니다/);
   });
 });
 

@@ -114,7 +114,10 @@ function approvalMessage(
   const head = `## 계획 승인이 필요합니다 (2차 게이트) — 대상: ${target}`;
 
   if (state.status === "none") {
-    return [head, "", formatPlan(plan), "", HOW_TO_DECIDE].join("\n");
+    // 승인하는 사람은 이 계획이 **어떤 답 위에** 세워졌는지도 봐야 한다.
+    return [head, "", formatPlan(plan) + answerSection(outDir), "", HOW_TO_DECIDE].join(
+      "\n",
+    );
   }
 
   if (state.status === "rejected") {

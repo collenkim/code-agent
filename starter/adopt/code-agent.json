@@ -6,7 +6,8 @@
     "domainBase 는 실제 소스 루트로 바꿔서 쓴다(예: src/main/java/com/acme/app).",
     "conventions 는 비워 둔다 — 기존 문서가 있으면 --conventions 로 준다.",
     "reads 에는 빌드 파일·설정처럼 코드가 읽어 넣어야 정확한 것을 적는다. 사람이 의존성 목록을 옮겨 적으면 반드시 실제와 어긋난다.",
-    "아래 reads 는 예시다 — 실제 파일 이름으로 바꿔서 쓴다(gradle/npm/pip 등 생태계마다 다르다)."
+    "아래 reads 는 예시다 — 실제 파일 이름으로 바꿔서 쓴다(gradle/npm/pip 등 생태계마다 다르다).",
+    "소스 루트를 넣어 두면 조사 단계가 list 로 저장소를 훑지 않아도 된다 — 목록은 전부, 내용은 상한까지 실린다."
   ],
   "domainBase": "src/main/java/com/finger/fingersales",
   "domainRoots": ["application","admin"],
@@ -22,6 +23,7 @@
       "scope": "project",
       "exemplars": [],
       "reads": [
+        "src",
         "build.gradle",
         "settings.gradle",
         "src/main/resources/application.yml"
