@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { collectExemplars, domainDirOf, formatExemplars } from "./exemplar";
 import { describeWorkOrder } from "./workOrder";
+import type { WorkOrder } from "./workOrder";
 import type { Manifest, StageDef } from "./manifest";
 import type {
   BuildPlan,
@@ -31,24 +32,83 @@ const SYSTEM_PROMPT =
   "- 취향·개선 제안은 위반이 아니다. 체크리스트 항목이나 명시된 컨벤션을 어긴 것만 적는다.\n" +
   "- 근거를 파일 내용에서 짚을 수 없으면 적지 않는다. 위반이 없으면 빈 배열을 반환한다.";
 
+/** 경로 하나가 어떤 경로(파일 또는 디렉토리) 안에 드는가. */
+function under(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+/**
+ * 보존하라고 한 것 중 **경로로 확인되는 것**.
+ *
+ * preserve 는 경로와 문장을 섞어 쓴다(`app/settlement` 과 `공개 시그니처를 유지한다`).
+ * 저장소에 실제로 있는 경로면 코드가 막고, 나머지 문장형은 검수 프롬프트가 본다 —
+ * 어느 쪽인지를 추측하지 않고 실재로 가른다.
+ */
+export function preservedPaths(repoRoot: string, order: WorkOrder): string[] {
+  return order.preserve
+    .map((entry) => entry.trim().replace(/\\/g, "/").replace(/\/+$/, ""))
+    .filter((entry) => entry !== "" && existsSync(join(repoRoot, entry)));
+}
+
+export interface BoundaryInput {
+  repoRoot: string;
+  /** 사람이 확정한 경계 — scope 는 상한선, preserve 는 손대면 안 되는 것 */
+  order: WorkOrder;
+  manifest: Manifest;
+  plan: BuildPlan;
+  stage: StageDef;
+  files: GeneratedFile[];
+}
+
 /**
  * 경로 규칙 검사 — 판단이 아니라 규칙 대조라서 모델에 맡기지 않는다.
  * 다른 계층 파일을 만들지 않는다는 do-not-touch 경계가 여기서 강제된다.
+ *
+ * 경계는 두 곳에서 온다. **지시서**(사람이 확정한 scope·preserve)와 **매니페스트**
+ * (단계별 outputDirs)이고, 둘 다 통과해야 한다. 지시서 쪽이 먼저인 이유는 그것이
+ * 사람이 정한 상한선이기 때문이다 — 매니페스트가 넓게 열려 있어도 그 밖으로 못 나간다.
  */
-export function checkPaths(
-  manifest: Manifest,
-  plan: BuildPlan,
-  stage: StageDef,
-  files: GeneratedFile[],
-): GateViolation[] {
+export function checkPaths({
+  repoRoot,
+  order,
+  manifest,
+  plan,
+  stage,
+  files,
+}: BoundaryInput): GateViolation[] {
   const violations: GateViolation[] = [];
   const domainDir = domainDirOf(manifest, plan.domainRoot, plan.domainDirName, stage.base);
+  const preserved = preservedPaths(repoRoot, order);
 
   for (const file of files) {
     const path = file.path.replace(/\\/g, "/");
 
     if (path.startsWith("/") || /^[a-zA-Z]:/.test(path) || path.includes("..")) {
       violations.push({ item: "경로 규칙", file: path, detail: "절대경로 또는 상위 경로 참조" });
+      continue;
+    }
+
+    // 바뀌면 안 된다고 사람이 적은 것. 종류와 무관하게 막는다 —
+    // 이걸 통과시키면 지시서의 preserve 는 모델에게 하는 부탁일 뿐이 된다.
+    const kept = preserved.find((entry) => under(path, entry));
+    if (kept) {
+      violations.push({
+        item: "보존 대상",
+        file: path,
+        detail:
+          `작업 지시서가 보존하라고 한 것입니다: ${kept}. ` +
+          "바꾸려면 지시서를 먼저 고쳐야 합니다.",
+      });
+      continue;
+    }
+
+    // 지시서가 건드려도 되는 곳을 적었으면 그것이 상한선이다.
+    if (order.scope.length > 0 && !order.scope.some((entry) => under(path, entry))) {
+      violations.push({
+        item: "지시서 scope 밖",
+        file: path,
+        detail: `이번에 건드려도 되는 곳: ${order.scope.join(", ")}`,
+      });
       continue;
     }
     // outputDirs가 비면 위치를 제한하지 않는다 (문서 산출물 등).
@@ -129,13 +189,8 @@ function readChecklist(templatesDir: string, stage: StageDef): string {
  * 코드만으로 할 수 있는 검사. API가 없어도 돌아가므로 수동 모드에서도 그대로 쓴다.
  * 경로가 규칙에 맞는지, 계획대로 만들었는지는 전부 비교 연산이라 모델에 맡길 이유가 없다.
  */
-export function runCodeChecks(
-  manifest: Manifest,
-  plan: BuildPlan,
-  stage: StageDef,
-  files: GeneratedFile[],
-): GateViolation[] {
-  return [...checkPaths(manifest, plan, stage, files), ...checkPlanCoverage(plan, stage, files)];
+export function runCodeChecks(input: BoundaryInput): GateViolation[] {
+  return [...checkPaths(input), ...checkPlanCoverage(input.plan, input.stage, input.files)];
 }
 
 /** 검수 프롬프트 한 벌. 수동 모드에서 그대로 뽑아 쓸 수 있게 분리해 둔다. */
@@ -183,7 +238,14 @@ export async function runGate(
   stage: StageDef,
   files: GeneratedFile[],
 ): Promise<GateResult> {
-  const deterministic = runCodeChecks(manifest, plan, stage, files);
+  const deterministic = runCodeChecks({
+    repoRoot: context.repoRoot,
+    order: context.workOrder,
+    manifest,
+    plan,
+    stage,
+    files,
+  });
 
   if (files.length === 0) {
     return { passed: deterministic.length === 0, violations: deterministic };

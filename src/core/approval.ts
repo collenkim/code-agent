@@ -204,7 +204,7 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
 // ---- 재승인 diff ----
 
 export interface PlanDiffEntry {
-  section: "도메인" | "파일" | "규칙" | "충돌" | "질문" | "근거";
+  section: "도메인" | "파일" | "보존" | "규칙" | "충돌" | "질문" | "근거";
   change: "+" | "-" | "~";
   text: string;
 }
@@ -242,6 +242,17 @@ export function diffPlans(before: BuildPlan, after: BuildPlan): PlanDiffEntry[] 
       old.stage === now.stage && old.purpose === now.purpose
         ? undefined
         : `${old.path}: [${old.stage}] ${old.purpose} → [${now.stage}] ${now.purpose}`,
+  );
+
+  // 보존 조건은 고치는 작업의 본체다. 한 줄이 바뀌면 승인이 무효가 되고, 그 줄이 보여야 한다.
+  compare(
+    entries,
+    "보존",
+    before.preserve ?? [],
+    after.preserve ?? [],
+    (entry) => entry.item,
+    (entry) => `${entry.item} → ${entry.how}`,
+    (old, now) => (old.how === now.how ? undefined : `${old.item}: ${old.how} → ${now.how}`),
   );
 
   compare(

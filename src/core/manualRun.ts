@@ -9,10 +9,9 @@ import {
   FILES_SHAPE,
   GATE_SHAPE,
   parseResponse,
-  PLAN_SHAPE,
   withOutputFormat,
 } from "./manual";
-import { PlanSchema, previewPlanPrompt } from "./plan";
+import { missingPreserve, planFormatFor, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
 import { withRememberedSpec } from "./targets";
 import { loadPlan, loadPreviousResults, loadStageFiles, savePlan } from "./state";
@@ -53,7 +52,7 @@ export function emitPrompt(input: BuildContext, target: PromptTarget): string {
       stages,
     );
     const preview = previewPlanPrompt(context, manifest, stages, referenceTree);
-    return joinForChat(preview.system, preview.user, PLAN_SHAPE);
+    return joinForChat(preview.system, preview.user, planFormatFor(context.workOrder.kind).shape);
   }
 
   const stage = stages.find((candidate) => candidate.key === target.key);
@@ -100,7 +99,17 @@ export function ingestResponse(
   const text = readFileSync(responsePath, "utf-8");
 
   if (target.kind === "plan") {
-    const plan = parseResponse(text, PlanSchema);
+    const format = planFormatFor(context.workOrder.kind);
+    const plan = format.toPlan(parseResponse(text, format.schema));
+    const missing = format.requiresPreserve ? missingPreserve(context.workOrder, plan) : [];
+    if (missing.length > 0) {
+      throw new Error(
+        [
+          `보존 조건 ${missing.length}건이 계획에 없습니다. 계획을 다시 받으세요:`,
+          ...missing.map((item) => `  - ${item}`),
+        ].join("\n"),
+      );
+    }
     return { target, writtenFiles: [], violations: [], planPath: savePlan(context.outDir, plan) };
   }
 
@@ -123,7 +132,14 @@ export function ingestResponse(
   const files: GeneratedFile[] = parsed.files;
 
   // 코드로 할 수 있는 검사는 파일을 쓰기 전에 돌린다 — 경계를 벗어난 파일은 애초에 만들지 않는다.
-  const violations = runCodeChecks(manifest, plan, stage, files);
+  const violations = runCodeChecks({
+    repoRoot: context.repoRoot,
+    order: context.workOrder,
+    manifest,
+    plan,
+    stage,
+    files,
+  });
   const blocking = violations.filter((violation) => violation.item !== "계획 준수");
   if (blocking.length > 0) {
     throw new Error(

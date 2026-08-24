@@ -18,8 +18,8 @@ import type { ExecuteOutcome } from "./execute";
 import { parseActions } from "./fence";
 import { buildStagePrompt } from "./generate";
 import { buildGatePrompt, GateSchema } from "./gate";
-import { GATE_SHAPE, parseResponse, PLAN_SHAPE, withOutputFormat } from "./manual";
-import { formatPlan, PlanSchema, previewPlanPrompt } from "./plan";
+import { GATE_SHAPE, parseResponse, withOutputFormat } from "./manual";
+import { formatPlan, missingPreserve, planFormatFor, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
 import type { Lane, LaneState } from "./targets";
 import { describeLanes, rememberDispatch, takeDispatch, withRememberedSpec } from "./targets";
@@ -240,7 +240,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
         // 사람이 답한 것은 계획에도 실려야 한다 — 1차 게이트의 질문이 계획 이전에 걸리므로,
         // 여기서 빠지면 사람이 답한 내용을 계획이 모르는 채로 세워진다.
         joinForChat(preview.system, preview.user + answerSection(context.outDir), "").trimEnd(),
-        PLAN_SHAPE,
+        planFormatFor(context.workOrder.kind).shape,
       ),
     };
   }
@@ -465,7 +465,31 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   // ---- 계획 ----
   if (target.kind === "plan") {
-    const plan = parseResponse(responseText, PlanSchema);
+    const format = planFormatFor(context.workOrder.kind);
+    const plan = format.toPlan(parseResponse(responseText, format.schema));
+
+    // 보존 조건이 빠진 계획을 승인받는 것이 이 종류에서 가장 위험한 실패다. 저장하지 않는다 —
+    // 저장하면 그대로 2차 게이트에 올라가고, 사람은 빠진 줄이 있다는 것을 알 길이 없다.
+    const missing = format.requiresPreserve ? missingPreserve(context.workOrder, plan) : [];
+    if (missing.length > 0) {
+      session.lastObservations = [];
+      return finish({
+        label,
+        ...laneInfo,
+        violations: missing.map((item) => ({
+          item: "보존 조건 누락",
+          file: "(계획)",
+          detail: `작업 지시서의 이 항목을 계획이 다루지 않았습니다: ${item}`,
+        })),
+        parseErrors: [],
+        questionsAdded: 0,
+        advanced: false,
+        message:
+          `보존 조건 ${missing.length}건이 계획에 없어 저장하지 않았습니다. ` +
+          "같은 프롬프트로 계획을 다시 받으세요 — 문장을 그대로 옮겨야 합니다.",
+      });
+    }
+
     const planPath = savePlan(context.outDir, plan);
     const questions = appendQuestions(context.outDir, "plan", plan.openQuestions);
     session.lastObservations = [];
@@ -557,6 +581,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   const execution = executeActions({
     repoRoot: context.repoRoot,
     outDir: context.outDir,
+    order: context.workOrder,
     manifest,
     plan,
     stage: target.stage,

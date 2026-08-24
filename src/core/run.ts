@@ -5,7 +5,7 @@ import { resolveAgainstRepo, resolveConventions } from "./conventions";
 import { emitFiles } from "./emit";
 import { generateStage } from "./generate";
 import { runGate } from "./gate";
-import { loadManifest, selectStages } from "./manifest";
+import { loadManifest, selectStages, stagesFor } from "./manifest";
 import type { Manifest } from "./manifest";
 import { planBuild } from "./plan";
 import { describeSlots, hashSpec, loadSlots, loadSpecSchema } from "./specSchema";
@@ -54,11 +54,11 @@ export interface ResolvedInputs {
  */
 export function withResolvedInputs(context: BuildContext, target?: string): ResolvedInputs {
   const templatesDir = resolveAgainstRepo(context.repoRoot, context.templatesDir);
-  const manifest = loadManifest(templatesDir);
+  const declared = loadManifest(templatesDir);
 
   const conventions = resolveConventions(
     context.repoRoot,
-    manifest.conventions,
+    declared.conventions,
     context.conventionsPaths,
   );
   const policyPath = context.policyPath
@@ -67,7 +67,11 @@ export function withResolvedInputs(context: BuildContext, target?: string): Reso
 
   // 0차 게이트. 이 줄보다 앞에서 프롬프트가 만들어지는 경로는 없다 —
   // 지시서가 규격에 맞지 않으면 모델에 한 글자도 가지 않는다.
-  const workOrder = loadWorkOrder(context.repoRoot, context.specPaths, manifest.workOrder);
+  const workOrder = loadWorkOrder(context.repoRoot, context.specPaths, declared.workOrder);
+
+  // 종류가 도는 단계만 남긴다. 아래는 전부 이 목록 위에서 돈다 — 어느 단계를 도는지가
+  // 종류마다 다르다는 것을 한 자리에서만 다루려는 것이다.
+  const manifest = { ...declared, stages: stagesFor(declared, workOrder.kind) };
 
   const specText = concatDocuments(context.specPaths);
   const specSchema = loadSpecSchema(templatesDir);

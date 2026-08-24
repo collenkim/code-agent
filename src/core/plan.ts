@@ -2,30 +2,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
-import { listReferenceTree } from "./exemplar";
+import { listPaths, listReferenceTree } from "./exemplar";
 import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
 import { describeWorkOrder } from "./workOrder";
+import type { WorkKind, WorkOrder } from "./workOrder";
 import type { BuildPlan, PromptPreview, ResolvedBuildContext } from "./types";
 
-export const PlanSchema = z.object({
-  domainName: z.string().describe("프로젝트의 명명 규칙을 따른 도메인 이름"),
-  domainLabel: z.string().describe("사람이 읽는 이름"),
-  domainRoot: z
-    .string()
-    .describe("아래 '도메인 분류' 중 하나를 그대로. 분류가 제시되지 않았으면 빈 문자열"),
-  domainDirName: z
-    .string()
-    .describe("실제로 만들 디렉토리 이름 — 참조 표준 도메인의 디렉토리 표기 규칙을 그대로 따른다"),
-  files: z
-    .array(
-      z.object({
-        stage: z.string().describe("이 파일을 만들 단계 키"),
-        path: z.string().describe("저장소 루트 기준 상대경로"),
-        purpose: z.string().describe("이 파일이 담당하는 것 한 줄"),
-      }),
-    )
-    .describe("생성할 파일 목록 — 참조 표준 도메인의 파일 구조를 그대로 따른다"),
+/** 종류가 무엇이든 계획에 들어가는 것 */
+const COMMON_PLAN_FIELDS = {
   conventions: z
     .array(
       z.object({
@@ -47,7 +32,58 @@ export const PlanSchema = z.object({
   openQuestions: z
     .array(z.string())
     .describe("스펙만으로 정할 수 없어 사람이 답해야 하는 것. 없으면 빈 배열"),
-  reasoning: z.string().describe("도메인 위치·파일 구성을 그렇게 정한 이유를 한국어로 간단히"),
+  reasoning: z.string().describe("그렇게 정한 이유를 한국어로 간단히"),
+};
+
+export const PlanSchema = z.object({
+  domainName: z.string().describe("프로젝트의 명명 규칙을 따른 도메인 이름"),
+  domainLabel: z.string().describe("사람이 읽는 이름"),
+  domainRoot: z
+    .string()
+    .describe("아래 '도메인 분류' 중 하나를 그대로. 분류가 제시되지 않았으면 빈 문자열"),
+  domainDirName: z
+    .string()
+    .describe("실제로 만들 디렉토리 이름 — 참조 표준 도메인의 디렉토리 표기 규칙을 그대로 따른다"),
+  files: z
+    .array(
+      z.object({
+        stage: z.string().describe("이 파일을 만들 단계 키"),
+        path: z.string().describe("저장소 루트 기준 상대경로"),
+        purpose: z.string().describe("이 파일이 담당하는 것 한 줄"),
+      }),
+    )
+    .describe("생성할 파일 목록 — 참조 표준 도메인의 파일 구조를 그대로 따른다"),
+  ...COMMON_PLAN_FIELDS,
+});
+
+/**
+ * 고칠 파일과 보존 조건 — refactor 의 계획.
+ *
+ * feature 의 계획은 *만들 파일 목록*이지만 refactor 에는 만들 도메인이 없다.
+ * 여기서 요구하는 것은 **무엇을 고치는가**와 **무엇을 지키는가** 둘이고,
+ * 뒤쪽이 이 작업의 본체다.
+ */
+export const RefactorPlanSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        stage: z.string().describe("이 파일을 고칠 단계 키"),
+        path: z.string().describe("저장소 루트 기준 상대경로 — 이미 있는 파일이어야 한다"),
+        purpose: z.string().describe("무엇을 어떻게 고치는지 한 줄"),
+      }),
+    )
+    .describe("고칠 파일 목록. 새 파일을 발명하지 않는다"),
+  preserve: z
+    .array(
+      z.object({
+        item: z
+          .string()
+          .describe("작업 지시서의 preserve 문장을 **그대로** 옮긴 것"),
+        how: z.string().describe("이번 변경에서 그것이 어떻게 지켜지는지"),
+      }),
+    )
+    .describe("지시서의 보존 조건마다 하나씩. 하나도 빠뜨리지 않는다"),
+  ...COMMON_PLAN_FIELDS,
 });
 
 const SYSTEM_PROMPT_BASE =
@@ -68,10 +104,55 @@ const SYSTEM_PROMPT_WITHOUT_REFERENCE =
   "\n이 실행에는 **복제할 참조 코드가 없다.** 기존 관행으로 빈칸을 메우지 말고, " +
   "스펙과 결정 문서에 적힌 것만 계획에 넣는다. 근거가 없는 항목은 openQuestions로 돌린다.";
 
-function systemPromptFor(hasReference: boolean): string {
+/**
+ * 고치는 작업의 계획자 — 만드는 작업과 규칙이 다르다.
+ *
+ * 참조 표준을 복제하는 것이 아니라 **이미 있는 코드를 보존 조건 아래에서 고치는** 일이라,
+ * "정본은 참조 도메인" 규칙을 그대로 붙이면 없는 파일을 만들라는 말이 된다.
+ */
+const REFACTOR_SYSTEM_PROMPT =
+  "너는 리팩토링 계획자다. **동작을 바꾸지 않는다.** 코드는 만들지 않고, 무엇을 고칠지와 " +
+  "무엇이 지켜져야 하는지를 정리한 작업 명세서만 만든다.\n" +
+  "가장 중요한 규칙: **작업 지시서의 '바뀌면 안 되는 것'을 하나도 빠뜨리지 않는다.** " +
+  "항목 문장을 그대로 옮기고, 이번 변경에서 그것이 어떻게 지켜지는지를 각각 적는다.\n" +
+  "- 새 파일을 발명하지 않는다. files 에는 아래 '대상의 현재 파일' 에 있는 경로만 넣는다.\n" +
+  "- 건드려도 되는 곳 밖의 파일은 목록에 넣지 않는다.\n" +
+  "- 기능을 더하거나 빼지 않는다. 스펙에 없는 구조 변경을 지어내지 않는다.\n" +
+  "- 정할 수 없는 것은 openQuestions 에 적는다.";
+
+function systemPromptFor(kind: WorkKind, hasReference: boolean): string {
+  if (kind === "refactor") {
+    return REFACTOR_SYSTEM_PROMPT;
+  }
   return (
     SYSTEM_PROMPT_BASE +
     (hasReference ? SYSTEM_PROMPT_WITH_REFERENCE : SYSTEM_PROMPT_WITHOUT_REFERENCE)
+  );
+}
+
+/** 고치는 작업의 계획 프롬프트. 근거는 참조 도메인이 아니라 **대상의 현재 코드**다. */
+function buildRefactorUserPrompt(
+  context: ResolvedBuildContext,
+  manifest: Manifest,
+  stages: StageDef[],
+): string {
+  const order = context.workOrder;
+  const current = listPaths(context.repoRoot, manifest, [context.target, ...order.scope]);
+
+  return withPolicy(
+    `${describeWorkOrder(order, context.target)}\n\n` +
+      (context.slotsText ? `${context.slotsText}\n\n` : "") +
+      `# 스펙 (무엇을 왜 고치는가)\n${context.specText}\n\n` +
+      `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
+      `# 대상의 현재 파일\n` +
+      (current.length > 0 ? current.join("\n") : "(비어 있음 — 지시서의 대상·scope 를 확인하세요)") +
+      "\n\n" +
+      `# 실행할 단계\n${stages.map((stage) => `- ${stage.key}: ${stage.title}`).join("\n")}\n\n` +
+      "files 의 stage 는 위 단계 키 중 하나여야 하고, path 는 위 '대상의 현재 파일' 에 있는 것이어야 한다.\n" +
+      (order.preserve.length > 0
+        ? `preserve 는 ${order.preserve.length} 건이다. 그 문장을 그대로 옮겨 하나씩 채운다.`
+        : "지시서에 보존 조건이 없다. 그래도 동작은 바뀌지 않아야 한다."),
+    context.policyText,
   );
 }
 
@@ -107,12 +188,90 @@ export function previewPlanPrompt(
   stages: StageDef[],
   referenceTree: string[],
 ): PromptPreview {
+  const kind = context.workOrder.kind;
   return {
     stage: "plan",
     reproducible: true,
-    system: systemPromptFor(referenceTree.length > 0),
-    user: buildUserPrompt(context, manifest, stages, referenceTree),
+    system: systemPromptFor(kind, referenceTree.length > 0),
+    user:
+      kind === "refactor"
+        ? buildRefactorUserPrompt(context, manifest, stages)
+        : buildUserPrompt(context, manifest, stages, referenceTree),
   };
+}
+
+/** 계획 단계가 돌려줘야 하는 형태 — 종류마다 다르다 */
+const PLAN_SHAPE = `{
+  "domainName": "도메인 이름",
+  "domainLabel": "사람이 읽는 이름",
+  "domainRoot": "도메인 분류 (없으면 \\"\\")",
+  "domainDirName": "실제 디렉토리 이름",
+  "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명" }],
+  "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
+  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
+  "openQuestions": ["사람이 답해야 하는 것"],
+  "reasoning": "판단 근거"
+}`;
+
+const REFACTOR_PLAN_SHAPE = `{
+  "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지" }],
+  "preserve": [{ "item": "지시서의 문장 그대로", "how": "이번 변경에서 어떻게 지켜지는지" }],
+  "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
+  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
+  "openQuestions": ["사람이 답해야 하는 것"],
+  "reasoning": "판단 근거"
+}`;
+
+/**
+ * 종류에 맞는 계획 형식 한 벌.
+ *
+ * 스키마와 붙여넣기용 형태와 해석을 한자리에 둔다 — 셋이 흩어지면 한쪽만 갈라져
+ * "형식은 refactor 인데 스키마는 feature" 같은 상태가 생긴다.
+ */
+export interface PlanFormat {
+  schema: z.ZodType<unknown>;
+  shape: string;
+  /** 계획에 보존 조건이 있어야 하는 종류인지 */
+  requiresPreserve: boolean;
+  toPlan(parsed: unknown): BuildPlan;
+}
+
+export function planFormatFor(kind: WorkKind): PlanFormat {
+  if (kind !== "refactor") {
+    return {
+      schema: PlanSchema,
+      shape: PLAN_SHAPE,
+      requiresPreserve: false,
+      toPlan: (parsed) => parsed as BuildPlan,
+    };
+  }
+
+  return {
+    schema: RefactorPlanSchema,
+    shape: REFACTOR_PLAN_SHAPE,
+    requiresPreserve: true,
+    // 고치는 작업에는 만들 도메인이 없다. 도메인 자리를 비워 두면 경계 검사도
+    // 도메인 디렉토리가 아니라 지시서의 scope 를 보게 된다.
+    toPlan: (parsed) => ({
+      domainName: "",
+      domainLabel: "",
+      domainRoot: "",
+      domainDirName: "",
+      ...(parsed as Omit<BuildPlan, "domainName" | "domainLabel" | "domainRoot" | "domainDirName">),
+    }),
+  };
+}
+
+/**
+ * 지시서의 보존 조건 중 계획이 다루지 않은 것.
+ *
+ * 문장을 **그대로** 옮기게 해 두면 대조를 코드가 한다. 모델이 요약하거나 흘리면 여기서 걸리고,
+ * 걸린 계획은 승인 화면에 올라가지 않는다 — 보존 조건이 빠진 계획을 승인받는 것이
+ * 이 종류에서 가장 위험한 실패다.
+ */
+export function missingPreserve(order: WorkOrder, plan: BuildPlan): string[] {
+  const covered = new Set((plan.preserve ?? []).map((entry) => entry.item.trim()));
+  return order.preserve.filter((entry) => !covered.has(entry.trim()));
 }
 
 const client = new Anthropic();
@@ -129,14 +288,15 @@ export async function planBuild(
     stages,
   );
 
+  const preview = previewPlanPrompt(context, manifest, stages, referenceTree);
+  const format = planFormatFor(context.workOrder.kind);
+
   const response = await client.messages.parse({
     model: "claude-opus-5",
     max_tokens: 8000,
-    system: systemPromptFor(referenceTree.length > 0),
-    messages: [
-      { role: "user", content: buildUserPrompt(context, manifest, stages, referenceTree) },
-    ],
-    output_config: { format: zodOutputFormat(PlanSchema) },
+    system: preview.system,
+    messages: [{ role: "user", content: preview.user }],
+    output_config: { format: zodOutputFormat(format.schema as z.ZodType<object>) },
   });
 
   const parsed = response.parsed_output;
@@ -144,19 +304,31 @@ export async function planBuild(
     // 계획이 없으면 이후 단계가 만들 파일을 특정할 수 없다 — 추측으로 진행하지 않는다.
     throw new Error("계획 응답을 파싱하지 못했습니다. 스펙을 줄이거나 다시 실행하세요.");
   }
-  return parsed;
+  return format.toPlan(parsed);
 }
 
 /** 계획을 사람이 읽을 형태로 출력한다. */
 export function formatPlan(plan: BuildPlan): string {
   const location = [plan.domainRoot, plan.domainDirName].filter(Boolean).join("/");
+  // 만들 도메인이 없는 계획(고치는 작업)은 도메인 줄 자리에 쓸 말이 없다.
+  const heading = plan.domainName
+    ? [`도메인: ${plan.domainName} (${plan.domainLabel}) · 위치: ${location}`, ""]
+    : [];
+
   const lines = [
     `## 작업 명세서`,
-    `도메인: ${plan.domainName} (${plan.domainLabel}) · 위치: ${location}`,
-    "",
-    `### 생성할 파일 (${plan.files.length}개)`,
+    ...heading,
+    `### ${plan.preserve ? "고칠" : "생성할"} 파일 (${plan.files.length}개)`,
     ...plan.files.map((file) => `- [${file.stage}] ${file.path} — ${file.purpose}`),
     "",
+    ...(plan.preserve
+      ? [
+          `### 보존 조건 (${plan.preserve.length}건)`,
+          ...plan.preserve.map((entry) => `- ${entry.item}
+  → ${entry.how}`),
+          "",
+        ]
+      : []),
     `### 적용 규칙`,
     ...plan.conventions.map((rule) => `- ${rule.rule} (${rule.source})`),
   ];
