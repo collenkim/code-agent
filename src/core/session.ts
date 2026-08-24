@@ -41,10 +41,9 @@ export interface TurnRecord {
   parseErrors: number;
 }
 
+/** 대상 하나의 진행 상태. 대상마다 따로 돌므로 레인 디렉토리마다 한 벌씩 있다. */
 export interface Session {
   version: 1;
-  /** 최초 한 번 받아 두면 이후 실행에서는 --spec 을 다시 주지 않아도 된다 */
-  specPaths: string[];
   completedStages: string[];
   gatedStages: string[];
   /** 단계별 검수 시도 횟수. 같은 곳에서 계속 막힐 때 사람에게 넘기려고 센다 */
@@ -60,7 +59,6 @@ export interface Session {
 export function emptySession(): Session {
   return {
     version: 1,
-    specPaths: [],
     completedStages: [],
     gatedStages: [],
     gateAttempts: {},

@@ -126,8 +126,8 @@ async function refresh() {
 }
 
 function render() {
-  const blocked = state.target === "blocked";
-  const done = state.target === "done";
+  const blocked = state.step === "blocked";
+  const done = state.step === "done";
   $("target").textContent = state.target;
   $("target").className = "chip" + (blocked ? " blocked" : done ? " done" : "");
   $("turn").textContent = "턴 " + state.turn;
@@ -146,7 +146,15 @@ function render() {
     "</div>"
   ).join("");
 
+  $("lanes").style.display = state.lanes.length > 1 ? "" : "none";
+  $("lanes").innerHTML = state.lanes.map((l) =>
+    '<span class="chip" style="margin-right:6px">' + esc(l.target) + " · " +
+      esc(l.needsApproval ? "승인 대기" : l.step) +
+      (l.target === state.lane ? " ←" : "") + "</span>"
+  ).join("");
+
   $("approval").style.display = state.needsApproval ? "" : "none";
+  $("atarget").textContent = state.lane;
 
   const v = state.lastViolations;
   $("carry").style.display = v.length ? "" : "none";
@@ -226,6 +234,8 @@ async function decide(decision) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       decision: decision,
+      // 화면에 띄운 계획과 판정하는 계획이 어긋나지 않게, 보고 있는 대상을 함께 보낸다.
+      target: state.lane,
       approver: $("approver").value,
       comment: $("acomment").value,
     }),
@@ -338,6 +348,7 @@ const BODY = `
 
   <div id="work" style="display:none">
     <p class="muted" id="paths" style="font-family:var(--mono);font-size:12px"></p>
+    <p id="lanes" style="display:none;margin:-4px 0 12px"></p>
 
     <section id="questions" style="display:none">
       <h2>사람이 답해야 넘어갑니다 <span class="muted" id="qcount"></span></h2>
@@ -348,7 +359,7 @@ const BODY = `
     </section>
 
     <section id="approval" style="display:none">
-      <h2>계획 승인 <span class="muted">2차 게이트 — 승인 전에는 어느 단계도 진행되지 않습니다</span></h2>
+      <h2>계획 승인 <span class="muted">2차 게이트 — 대상 <b id="atarget"></b> · 승인 전에는 어느 단계도 진행되지 않습니다</span></h2>
       <div class="body">
         <p class="muted" style="margin-top:0">
           왼쪽 칸에 계획(또는 달라진 부분)이 있습니다. 읽고 판정하세요.

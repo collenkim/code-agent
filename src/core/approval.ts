@@ -19,6 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join } from "path";
 
 import type { BuildPlan } from "./types";
+import { slug } from "./workOrder";
 import type { WorkOrder } from "./workOrder";
 
 /**
@@ -32,7 +33,7 @@ export type Decision = "approved" | "rejected";
 /** 원장 한 줄 = 승인 사건 하나. append 만 하고 고치지 않는다. */
 export interface ApprovalRecord {
   id: string;
-  /** 무엇에 대한 판정인가. 대상마다 따로 도는 것은 D 의 일이라 지금은 지시서의 대상 전부다 */
+  /** 무엇에 대한 판정인가. 대상마다 따로 돌므로 같은 id 아래 대상 수만큼 줄이 쌓인다 */
   target: string;
   kind: string;
   orderHash: string;
@@ -83,15 +84,6 @@ export function hashPlan(plan: BuildPlan): string {
 
 // ---- 원장 ----
 
-function slug(text: string): string {
-  return text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unnamed";
-}
-
-/** 대상 키. 지시서 하나가 대상 여럿을 담을 수 있으나 지금은 계획도 하나다. */
-export function targetKey(order: WorkOrder): string {
-  return order.target.join(", ");
-}
-
 export function ledgerPath(repoRoot: string, id: string): string {
   return join(repoRoot, APPROVALS_DIR, `${slug(id)}.jsonl`);
 }
@@ -137,27 +129,21 @@ export type PendingApproval = Exclude<ApprovalState, { status: "approved" }>;
  * 검사 순서가 곧 무효 규칙이다. 지시서를 먼저 보는 이유는, 지시서가 바뀌면 계획이 그대로여도
  * 승인이 무효이기 때문이다 — 그 반대는 성립하지 않는다.
  */
-export function checkApproval(repoRoot: string, order: WorkOrder, plan: BuildPlan): ApprovalState {
-  const rows = readLedger(repoRoot, order.id);
-  if (rows.length === 0) {
-    return { status: "none" };
-  }
-
-  // 지시서 무효는 **대상보다 먼저** 본다. 지시서를 고치면 대상 자체가 달라질 수 있고,
-  // 대상으로 먼저 거르면 그때 앞선 판정이 조회에서 사라져 "판정 없음"처럼 보인다 —
-  // 지시서가 바뀌었다는 사실이 그대로 묻히는 자리다.
-  const orderHash = hashWorkOrder(order);
-  const current = rows.filter((row) => row.orderHash === orderHash);
-  if (current.length === 0) {
-    return { status: "stale-order", record: rows[rows.length - 1] };
-  }
-
-  const target = targetKey(order);
-  const mine = current.filter((row) => row.target === target);
-  const record = mine[mine.length - 1];
+export function checkApproval(
+  repoRoot: string,
+  order: WorkOrder,
+  plan: BuildPlan,
+  target: string,
+): ApprovalState {
+  // 같은 id 아래 대상 수만큼 줄이 쌓인다. 대상 A 의 승인이 B 의 승인일 수는 없다.
+  const rows = readLedger(repoRoot, order.id).filter((row) => row.target === target);
+  const record = rows[rows.length - 1];
 
   if (!record) {
     return { status: "none" };
+  }
+  if (record.orderHash !== hashWorkOrder(order)) {
+    return { status: "stale-order", record };
   }
   if (record.planHash !== hashPlan(plan)) {
     const before = loadSnapshot(repoRoot, record);
@@ -173,6 +159,8 @@ export function checkApproval(repoRoot: string, order: WorkOrder, plan: BuildPla
 
 export interface DecisionInput {
   order: WorkOrder;
+  /** 지시서의 대상 중 이번에 판정하는 것 */
+  target: string;
   plan: BuildPlan;
   decision: Decision;
   approver: string;
@@ -186,8 +174,7 @@ export interface DecisionInput {
  * "승인 없이는 진행되지 않는다"까지이고, 증명은 커밋·PR·티켓에 있다.
  */
 export function recordDecision(repoRoot: string, input: DecisionInput): ApprovalRecord {
-  const { order, plan } = input;
-  const target = targetKey(order);
+  const { order, plan, target } = input;
   const seq = readLedger(repoRoot, order.id).filter((row) => row.target === target).length + 1;
   const snapshot = `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${seq}.plan.json`;
 

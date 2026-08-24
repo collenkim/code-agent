@@ -12,7 +12,7 @@ import { join } from "path";
 
 import { ACTION_FORMAT } from "./action";
 import { checkApproval, formatDiff, hashPlan, recordDecision } from "./approval";
-import type { ApprovalRecord, ApprovalState, Decision, PendingApproval } from "./approval";
+import type { ApprovalRecord, Decision, PendingApproval } from "./approval";
 import { executeActions } from "./execute";
 import type { ExecuteOutcome } from "./execute";
 import { parseActions } from "./fence";
@@ -21,6 +21,8 @@ import { buildGatePrompt, GateSchema } from "./gate";
 import { GATE_SHAPE, parseResponse, PLAN_SHAPE, withOutputFormat } from "./manual";
 import { formatPlan, PlanSchema, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
+import type { Lane, LaneState } from "./targets";
+import { describeLanes, rememberDispatch, takeDispatch, withRememberedSpec } from "./targets";
 import {
   answeredSlotKeys,
   buildIntakePrompt,
@@ -32,32 +34,14 @@ import {
   saveSlots,
 } from "./specSchema";
 import { describeWorkOrder } from "./workOrder";
-import {
-  appendQuestions,
-  decideTarget,
-  describeTarget,
-  loadSession,
-  readQuestions,
-  saveSession,
-} from "./session";
+import { appendQuestions, describeTarget, loadSession, readQuestions, saveSession } from "./session";
 import type { Session, Target } from "./session";
 import { listReferenceTree } from "./exemplar";
 import { loadPlan, loadPreviousResults, loadStageFiles, PLAN_FILE, savePlan } from "./state";
-import type { BuildContext, BuildPlan, GateViolation, ResolvedBuildContext } from "./types";
+import type { BuildContext, BuildPlan, GateViolation } from "./types";
 
 /** 게이트를 몇 번까지 다시 돌릴지. 넘으면 사람에게 넘긴다 — 무한 반복이 더 나쁘다. */
 const MAX_GATE_ATTEMPTS = 2;
-
-/**
- * 최초 한 번 준 스펙을 세션이 기억한다.
- * 새 프로젝트를 시작할 때만 필요하고, 이후 단계에서는 다시 주지 않아도 된다.
- */
-export function withSessionSpec(input: BuildContext, session: Session): BuildContext {
-  if (input.specPaths.length > 0) {
-    return input;
-  }
-  return { ...input, specPaths: session.specPaths };
-}
 
 function joinForChat(system: string, user: string, format: string): string {
   return `# 역할·규칙\n${system}\n\n---\n\n${user}\n\n${format}`;
@@ -89,19 +73,29 @@ function answerSection(outDir: string): string {
 }
 
 /**
- * 2차 게이트에 걸 값. 계획이 없으면 아직 승인할 것이 없다.
- * decideTarget 을 부르는 자리마다 이것을 함께 넘긴다 — 빠뜨리면 그쪽에서 곧바로 터진다.
+ * 지금 도는 대상의 레인 상태.
+ *
+ * 무엇을 할 차례인지는 레인 계산이 이미 정해 두었다. 여기서 다시 계산하면 고른 레인과
+ * 실제로 도는 단계가 어긋날 수 있어, 고른 쪽의 답을 그대로 쓴다.
  */
-function approvalFor(context: ResolvedBuildContext): ApprovalState | undefined {
-  if (!existsSync(join(context.outDir, PLAN_FILE))) {
-    return undefined;
-  }
-  return checkApproval(context.repoRoot, context.workOrder, loadPlan(context.outDir));
+function stepOf(lanes: LaneState[], target: string): Target {
+  return lanes.find((state) => state.lane.target === target)!.step;
+}
+
+/** 대상이 여럿일 때만 대상 이름을 붙인다. 하나뿐이면 군더더기다. */
+function labelFor(step: Target, target: string, lanes: LaneState[]): string {
+  return lanes.length > 1 ? `${target}:${describeTarget(step)}` : describeTarget(step);
+}
+
+/** 다른 대상이 어떤 상태인지 — 한 대상에서 막혔을 때 전경을 잃지 않게 */
+function laneSection(lanes: LaneState[]): string {
+  return lanes.length > 1 ? `\n\n대상별 상태:\n${describeLanes(lanes)}` : "";
 }
 
 const HOW_TO_DECIDE = [
-  '승인:  code-agent approve --approver <이름> [--comment "…"] --repo … --templates …',
-  '반려:  code-agent reject  --approver <이름> --comment "사유"  --repo … --templates …',
+  '승인:  code-agent approve --approver <이름> [--target <대상>] [--comment "…"] --repo … --templates …',
+  '반려:  code-agent reject  --approver <이름> [--target <대상>] --comment "사유"  --repo … --templates …',
+  "  --target 은 승인을 기다리는 대상이 둘 이상일 때 필요합니다.",
 ].join("\n");
 
 /**
@@ -110,9 +104,14 @@ const HOW_TO_DECIDE = [
  * 처음 승인이면 계획 전문을, 재승인이면 **달라진 것만** 보여 준다. 계획 전체를 다시 읽히면
  * 승인이 형식이 되고, 형식이 된 승인은 통제가 아니다.
  */
-function approvalMessage(state: PendingApproval, plan: BuildPlan, outDir: string): string {
+function approvalMessage(
+  state: PendingApproval,
+  plan: BuildPlan,
+  outDir: string,
+  target: string,
+): string {
   const planPath = join(outDir, PLAN_FILE);
-  const head = "## 계획 승인이 필요합니다 (2차 게이트)";
+  const head = `## 계획 승인이 필요합니다 (2차 게이트) — 대상: ${target}`;
 
   if (state.status === "none") {
     return [head, "", formatPlan(plan), "", HOW_TO_DECIDE].join("\n");
@@ -120,7 +119,7 @@ function approvalMessage(state: PendingApproval, plan: BuildPlan, outDir: string
 
   if (state.status === "rejected") {
     return [
-      `## 이 계획은 반려되었습니다 — ${state.record.approver} · ${state.record.at}`,
+      `## 이 계획은 반려되었습니다 (대상: ${target}) — ${state.record.approver} · ${state.record.at}`,
       ...(state.record.comment ? [`사유: ${state.record.comment}`] : []),
       "",
       "계획이 그대로인 채로는 진행되지 않습니다. 스펙이나 지시서를 고친 뒤 " +
@@ -130,7 +129,7 @@ function approvalMessage(state: PendingApproval, plan: BuildPlan, outDir: string
 
   if (state.status === "stale-order") {
     return [
-      "## 작업 지시서가 바뀌어 승인이 무효가 됐습니다 (0차부터 다시)",
+      `## 작업 지시서가 바뀌어 승인이 무효가 됐습니다 (0차부터 다시) — 대상: ${target}`,
       `직전 판정: ${state.record.approver} · ${state.record.at} (지시서 ${state.record.orderHash})`,
       "",
       "지시서가 바뀌면 슬롯 충족 여부도 경계도 다시 봐야 합니다. 계획도 지금 지시서로 " +
@@ -158,8 +157,14 @@ export interface NextPrompt {
   target: Target;
   label: string;
   prompt?: string;
-  /** blocked·done 이면 프롬프트 대신 사람에게 할 말 */
+  /** blocked·done·approval 이면 프롬프트 대신 사람에게 할 말 */
   message?: string;
+  /** 이 프롬프트가 어느 대상의 것인지 */
+  lane: string;
+  /** 그 대상의 계획·질문·생성물이 있는 곳 */
+  outDir: string;
+  /** 지시서의 대상 전부와 각자의 상태 */
+  lanes: LaneState[];
 }
 
 /**
@@ -167,50 +172,56 @@ export interface NextPrompt {
  * 스펙 경로만은 받은 자리에서 기억해 둔다 — 사람이 매번 --spec 을 다시 쓰지 않게 하려는 것이다.
  */
 export function nextPrompt(input: BuildContext): NextPrompt {
-  const session = loadSession(input.outDir);
-
-  if (input.specPaths.length > 0 && input.specPaths.join("\n") !== session.specPaths.join("\n")) {
-    saveSession(input.outDir, { ...session, specPaths: input.specPaths });
-    session.specPaths = input.specPaths;
-  }
-
-  const { context, manifest } = withResolvedInputs(withSessionSpec(input, session));
-  const target = decideTarget(context.outDir, manifest, session, {
-    gate: context.gate !== false,
-    intakeNeeded: context.intakeNeeded,
-    approval: approvalFor(context),
-  });
-  const label = describeTarget(target);
+  const { context, manifest, lanes } = withResolvedInputs(withRememberedSpec(input));
+  const session = loadSession(context.outDir);
+  const lane = context.target;
+  const target = stepOf(lanes, lane);
+  const head = {
+    target,
+    label: labelFor(target, lane, lanes),
+    lane,
+    lanes,
+    outDir: context.outDir,
+  };
 
   if (target.kind === "approval") {
     // 프롬프트를 내주지 않는다. 승인은 사람이 하는 일이라 모델에 보낼 것이 없다.
-    return { target, label, message: approvalMessage(target.state, loadPlan(context.outDir), context.outDir) };
+    return {
+      ...head,
+      message:
+        approvalMessage(target.state, loadPlan(context.outDir), context.outDir, lane) +
+        laneSection(lanes),
+    };
   }
 
   if (target.kind === "blocked") {
-    return { target, label, message: target.reason };
+    return { ...head, message: target.reason + laneSection(lanes) };
   }
   if (target.kind === "done") {
+    const all = lanes.every((state) => state.step.kind === "done");
     return {
-      target,
-      label,
-      message:
-        `모든 단계가 끝났습니다. 결과: ${context.outDir}\n` +
-        "내용을 확인한 뒤 저장소에 복사하면 반영됩니다.",
+      ...head,
+      message: all
+        ? `모든 대상이 끝났습니다. 결과: ${input.outDir}\n` +
+          "내용을 확인한 뒤 저장소에 복사하면 반영됩니다."
+        : `${lane} 은 끝났습니다.` + laneSection(lanes),
     };
   }
+
+  // 여기서부터는 프롬프트를 실제로 내준다. 어느 대상의 것이었는지 적어 둔다 —
+  // 그 사이 다른 대상이 풀려도 붙여넣은 응답이 엉뚱한 레인에 반영되지 않게.
+  rememberDispatch(input.outDir, context.workOrder.id, lane);
 
   if (target.kind === "intake") {
     // specSchema 가 없으면 intake 가 대상이 될 수 없다 — decideTarget 이 그렇게 정한다.
     const { system, user } = buildIntakePrompt(
       context.specSchema!,
       context.workOrder.kind,
-      describeWorkOrder(context.workOrder),
+      describeWorkOrder(context.workOrder, context.target),
       context.specText,
     );
     return {
-      target,
-      label,
+      ...head,
       prompt: withOutputFormat(joinForChat(system, user, "").trimEnd(), INTAKE_SHAPE),
     };
   }
@@ -224,8 +235,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
     );
     const preview = previewPlanPrompt(context, manifest, manifest.stages, referenceTree);
     return {
-      target,
-      label,
+      ...head,
       prompt: withOutputFormat(
         // 사람이 답한 것은 계획에도 실려야 한다 — 1차 게이트의 질문이 계획 이전에 걸리므로,
         // 여기서 빠지면 사람이 답한 내용을 계획이 모르는 채로 세워진다.
@@ -241,10 +251,10 @@ export function nextPrompt(input: BuildContext): NextPrompt {
     const files = loadStageFiles(context.outDir, plan, target.stage.key);
     if (files.length === 0) {
       // 아무것도 안 만든 단계는 검수할 것이 없다.
-      return { target, label, message: `${target.stage.key} 단계의 산출물이 없어 검수를 건너뜁니다.` };
+      return { ...head, message: `${target.stage.key} 단계의 산출물이 없어 검수를 건너뜁니다.` };
     }
     const { system, user } = buildGatePrompt(context, manifest, target.stage, files);
-    return { target, label, prompt: withOutputFormat(joinForChat(system, user, "").trimEnd(), GATE_SHAPE) };
+    return { ...head, prompt: withOutputFormat(joinForChat(system, user, "").trimEnd(), GATE_SHAPE) };
   }
 
   const previous = loadPreviousResults(context.outDir, plan, manifest.stages, target.stage.key);
@@ -258,14 +268,44 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   );
 
   return {
-    target,
-    label,
+    ...head,
     prompt: joinForChat(
       system,
       user + observationSection(session) + answerSection(context.outDir),
       ACTION_FORMAT,
     ),
   };
+}
+
+/**
+ * 어느 대상에 판정할 것인가.
+ *
+ * 대상 여럿이 동시에 승인을 기다릴 수 있다(A 가 대기하는 동안 B 를 돌렸으니 흔한 일이다).
+ * 그때 코드가 하나를 고르면 사람이 읽은 계획과 판정한 계획이 달라질 수 있어, 고르지 않고 묻는다.
+ */
+function laneToDecide(lanes: LaneState[], target?: string): Lane {
+  if (target) {
+    const named = lanes.find((state) => state.lane.target === target);
+    if (!named) {
+      throw new Error(
+        `작업 지시서에 없는 대상입니다: ${target} \n` +
+          `  대상: ${lanes.map((state) => state.lane.target).join(", ")}`,
+      );
+    }
+    return named.lane;
+  }
+
+  const waiting = lanes.filter((state) => state.step.kind === "approval");
+  if (waiting.length === 0) {
+    throw new Error("승인을 기다리는 대상이 없습니다. 계획이 선 뒤에 판정할 수 있습니다.");
+  }
+  if (waiting.length > 1) {
+    throw new Error(
+      `승인을 기다리는 대상이 ${waiting.length} 개입니다. --target 으로 고르세요: ` +
+        waiting.map((state) => state.lane.target).join(", "),
+    );
+  }
+  return waiting[0].lane;
 }
 
 export interface ApprovalOutcome {
@@ -281,12 +321,12 @@ export interface ApprovalOutcome {
 export function decideApproval(
   input: BuildContext,
   decision: Decision,
-  given: { approver?: string; comment?: string },
+  given: { approver?: string; comment?: string; target?: string },
 ): ApprovalOutcome {
-  const session = loadSession(input.outDir);
-  const { context } = withResolvedInputs(withSessionSpec(input, session));
-  const plan = loadPlan(context.outDir);
-  const state = checkApproval(context.repoRoot, context.workOrder, plan);
+  const { context, lanes } = withResolvedInputs(withRememberedSpec(input));
+  const lane = laneToDecide(lanes, given.target);
+  const plan = loadPlan(lane.outDir);
+  const state = checkApproval(context.repoRoot, context.workOrder, plan, lane.target);
 
   if (decision === "approved" && state.status === "approved") {
     // 같은 계획에 같은 판정을 두 번 남기지 않는다. 원장이 사건 기록이라 중복은 잡음이다.
@@ -311,6 +351,7 @@ export function decideApproval(
     unchanged: false,
     record: recordDecision(context.repoRoot, {
       order: context.workOrder,
+      target: lane.target,
       plan,
       decision,
       approver,
@@ -321,6 +362,10 @@ export function decideApproval(
 
 export interface ApplyOutcome {
   label: string;
+  /** 어느 대상에 반영했는지 */
+  lane: string;
+  /** 그 대상의 레인 디렉토리 */
+  outDir: string;
   planSaved?: string;
   execution?: ExecuteOutcome;
   violations: GateViolation[];
@@ -333,19 +378,15 @@ export interface ApplyOutcome {
 
 /** 채팅 응답을 읽어 실제로 반영한다. */
 export function applyResponse(input: BuildContext, responseText: string): ApplyOutcome {
-  const session = loadSession(input.outDir);
-  const { context, manifest } = withResolvedInputs(withSessionSpec(input, session));
-
-  if (input.specPaths.length > 0) {
-    session.specPaths = input.specPaths;
-  }
-
-  const target = decideTarget(context.outDir, manifest, session, {
-    gate: context.gate !== false,
-    intakeNeeded: context.intakeNeeded,
-    approval: approvalFor(context),
-  });
-  const label = describeTarget(target);
+  const remembered = withRememberedSpec(input);
+  // 프롬프트를 내준 대상에 반영한다. 그 사이 사람이 다른 대상의 질문에 답했다면 선택이
+  // 달라지는데, 그러면 붙여넣은 응답이 엉뚱한 레인으로 들어간다.
+  const dispatched = takeDispatch(remembered.outDir);
+  const { context, manifest, lanes } = withResolvedInputs(remembered, dispatched);
+  const session = loadSession(context.outDir);
+  const lane = context.target;
+  const target = stepOf(lanes, lane);
+  const label = labelFor(target, lane, lanes);
   session.turn += 1;
 
   const record = {
@@ -358,6 +399,8 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     violations: 0,
     parseErrors: 0,
   };
+
+  const laneInfo = { lane, outDir: context.outDir };
 
   const finish = (outcome: ApplyOutcome): ApplyOutcome => {
     record.violations = outcome.violations.length;
@@ -372,6 +415,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     session.turn -= 1;
     return {
       label,
+      ...laneInfo,
       violations: [],
       parseErrors: [],
       questionsAdded: 0,
@@ -381,7 +425,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
           ? target.reason
           : target.kind === "done"
             ? "이미 모든 단계가 끝났습니다."
-            : approvalMessage(target.state, loadPlan(context.outDir), context.outDir),
+            : approvalMessage(target.state, loadPlan(context.outDir), context.outDir, lane),
     };
   }
 
@@ -406,6 +450,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
     return finish({
       label,
+      ...laneInfo,
       violations: [],
       parseErrors: [],
       questionsAdded: gaps.length,
@@ -428,6 +473,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
     return finish({
       label,
+      ...laneInfo,
       planSaved: planPath,
       violations: [],
       parseErrors: [],
@@ -452,6 +498,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
       session.lastViolations = [];
       return finish({
         label,
+        ...laneInfo,
         violations: [],
         parseErrors: [],
         questionsAdded: 0,
@@ -466,6 +513,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
       session.gatedStages = [...session.gatedStages, target.stage.key];
       return finish({
         label,
+        ...laneInfo,
         violations: parsed.violations,
         parseErrors: [],
         questionsAdded: 0,
@@ -480,6 +528,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     session.completedStages = session.completedStages.filter((key) => key !== target.stage.key);
     return finish({
       label,
+      ...laneInfo,
       violations: parsed.violations,
       parseErrors: [],
       questionsAdded: 0,
@@ -495,6 +544,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     // 그 빈도야말로 "자동으로 맡겨도 되나"의 답이 된다.
     return finish({
       label,
+      ...laneInfo,
       violations: [],
       parseErrors: parsed.errors,
       questionsAdded: 0,
@@ -532,6 +582,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   return finish({
     label,
+    ...laneInfo,
     execution,
     violations: execution.violations,
     parseErrors: [],
@@ -549,10 +600,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   });
 }
 
-/**
- * 계획 파일이 있는지.
- * 스펙은 계획을 세울 때만 있으면 되므로, 이후 실행에서 --spec 을 요구할지 판단하는 데 쓴다.
- */
+/** 그 대상의 계획 파일이 있는지. 인자는 레인 디렉토리다 — 뿌리가 아니다. */
 export function hasPlan(outDir: string): boolean {
   return existsSync(join(outDir, PLAN_FILE));
 }

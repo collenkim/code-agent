@@ -122,7 +122,12 @@ async function route(store: JobStore, req: IncomingMessage, res: ServerResponse)
       return;
     }
     if (action === "approval" && method === "POST") {
-      const body = await readJson<{ decision?: string; approver?: string; comment?: string }>(req);
+      const body = await readJson<{
+        decision?: string;
+        approver?: string;
+        comment?: string;
+        target?: string;
+      }>(req);
       json(res, 200, api.decide(store, id, body));
       return;
     }

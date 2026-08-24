@@ -59,6 +59,8 @@ export interface ResolvedBuildContext extends BuildContext {
   conventionsSource: string;
   /** 0차 게이트를 통과한 작업 지시서. 여기까지 왔다는 것 자체가 통과했다는 뜻이다 */
   workOrder: WorkOrder;
+  /** 이번 왕복이 다루는 대상. outDir 은 그 대상의 레인이다 */
+  target: string;
   /** 선언됐다면 입력 규격. 선언하지 않은 프로젝트에서는 1차 게이트가 돌지 않는다 */
   specSchema?: SpecSchema;
   /** 항목을 다시 뽑아야 하는지. 스펙이 바뀌면 앞서 뽑은 것은 그 순간 무효다 */

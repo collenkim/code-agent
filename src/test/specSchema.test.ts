@@ -76,6 +76,12 @@ const SPEC_BODY =
   "## 상태\n준비 → 배송중 → 완료 순으로만 넘어간다.\n";
 
 let root: string;
+
+/** 대상 하나가 도는 자리. 대상마다 갈라지므로 out/ 바로 아래가 아니다. */
+function lane(...parts: string[]): string {
+  return join(root, "out", "TEST-1", "shipment", ...parts);
+}
+
 let context: BuildContext;
 
 function write(relativePath: string, content: string) {
@@ -94,7 +100,7 @@ function writeSpec(body: string, kind = "feature") {
 
 /** 사람이 questions.md 를 열어 답을 적는 것과 같은 일 */
 function answerAll(answer: string) {
-  const path = questionsPath(context.outDir);
+  const path = questionsPath(lane());
   writeFileSync(
     path,
     readFileSync(path, "utf-8").replace(/\(여기에 답을 적으세요\)/g, answer),
@@ -168,7 +174,7 @@ describe("빈칸을 코드가 판정한다", () => {
     );
 
     assert.equal(outcome.questionsAdded, 1);
-    assert.match(readFileSync(questionsPath(context.outDir), "utf-8"), /상태값과 허용된 전이는/);
+    assert.match(readFileSync(questionsPath(lane()), "utf-8"), /상태값과 허용된 전이는/);
     assert.equal(nextPrompt(context).label, "blocked");
   });
 
@@ -220,7 +226,7 @@ describe("파생물이지 캐시가 아니다", () => {
   test("뽑은 항목은 스펙 해시와 함께 남는다", () => {
     applyResponse(context, extracted(BOTH_FOUND));
 
-    const saved = loadSlots(context.outDir)!;
+    const saved = loadSlots(lane())!;
     assert.match(saved.specHash, /^sha256:/);
     assert.equal(saved.slots.length, 2);
   });
@@ -238,7 +244,7 @@ describe("파생물이지 캐시가 아니다", () => {
   test("계획을 세운 뒤에 스펙을 고쳐도 다시 뽑는다", () => {
     applyResponse(context, extracted(BOTH_FOUND));
     applyResponse(context, JSON.stringify(PLAN_RESPONSE));
-    decideApproval(context, "approved", { approver: "tester" });
+    decideApproval(context, "approved", { approver: "tester", target: "shipment" });
     assert.equal(nextPrompt(context).label, "model");
 
     writeSpec(`${SPEC_BODY}\n## 추가\n취소 상태가 생겼다.\n`);
@@ -261,7 +267,7 @@ describe("확정된 항목을 축약해 싣는다", () => {
   test("생성 프롬프트는 컨벤션 전문 대신 계획이 뽑은 규칙을 싣는다", () => {
     applyResponse(context, extracted(BOTH_FOUND));
     applyResponse(context, JSON.stringify(PLAN_RESPONSE));
-    decideApproval(context, "approved", { approver: "tester" });
+    decideApproval(context, "approved", { approver: "tester", target: "shipment" });
 
     const prompt = nextPrompt(context).prompt!;
 

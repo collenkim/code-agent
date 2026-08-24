@@ -146,7 +146,7 @@ export function buildStagePrompt(
       : "";
 
   const user = withPolicy(
-    `${describeWorkOrder(context.workOrder)}\n\n` +
+    `${describeWorkOrder(context.workOrder, context.target)}\n\n` +
       `# 이번 단계에서 만들 파일 (계획 확정분)\n` +
       (plannedFiles.length > 0
         ? plannedFiles.map((file) => `- ${file.path} — ${file.purpose}`).join("\n")

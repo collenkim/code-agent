@@ -75,6 +75,11 @@ let statePath: string;
 let store: JobStore;
 let jobId: string;
 
+/** 대상 하나가 도는 자리. 대상마다 갈라지므로 out/ 바로 아래가 아니다. */
+function lane(...parts: string[]): string {
+  return join(root, "out", "TEST-1", "shipment", ...parts);
+}
+
 function write(relativePath: string, content: string) {
   const path = join(repoRoot, relativePath);
   mkdirSync(join(path, ".."), { recursive: true });
@@ -216,7 +221,7 @@ describe("왕복 — 프롬프트 하나에 상태 한 칸", () => {
     assert.equal(out.writtenFiles.length, 1);
     assert.equal(out.advanced, true);
     assert.equal(out.next.target, "gate:model");
-    assert.ok(existsSync(join(root, "out", "app/features/shipment/models.py")));
+    assert.ok(existsSync(lane("app/features/shipment/models.py")));
   });
 
   test("검수를 통과하면 다음 단계로 넘어간다", () => {
@@ -250,7 +255,7 @@ describe("왕복 — 프롬프트 하나에 상태 한 칸", () => {
     assert.equal(out.violations.length, 1);
     assert.match(out.violations[0].item, /경계/);
     assert.equal(out.writtenFiles.length, 0);
-    assert.equal(existsSync(join(root, "out", "app/features/other/hack.py")), false);
+    assert.equal(existsSync(lane("app/features/other/hack.py")), false);
   });
 });
 

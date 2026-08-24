@@ -98,14 +98,23 @@ const KIND_MEANING: Record<WorkKind, string> = {
  * 머리에 실어 두지 않으면 모델은 턴마다 같은 것을 다시 추론하고, 그 추론이 턴마다 흔들린다.
  * 검사는 매번 새로 하되(캐시하면 지시서를 고쳐 우회할 수 있다), 확정된 사실은 계속 실어 준다.
  */
-export function describeWorkOrder(order: WorkOrder): string {
+export function describeWorkOrder(order: WorkOrder, focus?: string): string {
+  // 대상이 여럿이면 이번 왕복이 다루는 것 하나만 싣는다. 전부 실으면 모델이 이번에 만들
+  // 것과 다음에 만들 것을 구분할 근거가 없어 남의 대상까지 손대려 한다.
+  const others = focus ? order.target.filter((entry) => entry !== focus) : [];
   const lines = [
     "# 작업 지시서 — 사람이 확정한 것. 여기 적힌 것은 다시 정하지 않는다",
     `- 작업 종류: ${order.kind} — ${KIND_MEANING[order.kind]}`,
     `- 식별자: ${order.id}`,
     `- 제목: ${order.title}`,
-    `- 대상: ${order.target.join(", ")}`,
+    `- 대상: ${focus ?? order.target.join(", ")}`,
   ];
+
+  if (others.length > 0) {
+    lines.push(
+      `  이 지시서에는 다른 대상도 있다(${others.join(", ")}). 그것들은 따로 돈다 — 이번에는 손대지 않는다.`,
+    );
+  }
 
   if (order.scope.length > 0) {
     lines.push(
@@ -125,6 +134,14 @@ export function describeWorkOrder(order: WorkOrder): string {
 }
 
 // ---- 머리말 파서 ----
+
+/**
+ * 식별자·대상을 파일 이름과 디렉토리 이름으로 쓸 수 있게 만든다.
+ * 승인 원장과 대상별 갈래가 같은 규칙을 써야 해서 여기 둔다.
+ */
+export function slug(text: string): string {
+  return text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unnamed";
+}
 
 /** 따옴표로 감싼 값을 흔히 쓰므로 벗겨 준다. 안쪽은 손대지 않는다. */
 function unquote(text: string): string {

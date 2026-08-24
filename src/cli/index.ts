@@ -11,7 +11,8 @@ import { ledgerPath } from "../core/approval";
 import type { Decision } from "../core/approval";
 import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
+import { describeLanes, readRunState } from "../core/targets";
 import type { BuildContext, BuildOutcome } from "../core/types";
 import { serve } from "../server/http";
 
@@ -24,19 +25,21 @@ const USAGE =
   "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
-  "  approve              계획을 승인한다 (--approver, --comment) — 2차 게이트\n" +
-  "  reject               계획을 반려한다 (--approver, --comment 필수)\n" +
+  "  approve              계획을 승인한다 (--approver, --target, --comment) — 2차 게이트\n" +
+  "  reject               계획을 반려한다 (--approver, --target, --comment 필수)\n" +
   "  log                  턴 기록 — 몇 번 만에 됐는지, 어디서 막혔는지\n" +
   "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
   "       code-agent apply answer.txt --repo … --templates …\n" +
-  "\n  --spec 은 계획을 세울 때 한 번만 필요합니다. 이후에는 세션이 기억합니다.\n" +
+  "\n  --spec 은 계획을 세울 때 한 번만 필요합니다. 이후에는 기억합니다.\n" +
+  "\n  지시서의 target 이 여럿이면 대상마다 따로 돕니다 — 계획도 질문도 승인도 대상 단위입니다.\n" +
+  "  결과는 <out>/<id>/<대상>/ 아래 갈라집니다.\n" +
   "\n  --spec 문서 중 **한 장**은 맨 첫 줄부터 작업 지시서 머리말을 담아야 합니다.\n" +
   "  없으면 프롬프트를 만들지 않습니다 (규격: doc/work-order.md):\n" +
   "    ---\n" +
   "    kind: feature        # bootstrap | adopt | feature | fix | refactor\n" +
   "    id: PROJ-1\n" +
   "    title: 한 줄 요약\n" +
-  "    target: 대상\n" +
+  "    target: 대상          # [a, b] 처럼 여럿이면 대상마다 따로 돕니다\n" +
   "    ---\n" +
   "\n단계 지정 방식 (예전 방식 — JSON 응답):\n" +
   "  --step <plan|단계키|gate:단계키> --emit-prompt\n" +
@@ -102,12 +105,9 @@ function stashPrompt(outDir: string, prompt: string): string {
   return path;
 }
 
-/** 스펙은 계획을 세울 때만 필요하다. 그 뒤로는 세션이 기억하므로 다시 묻지 않는다. */
+/** 스펙 경로는 최초 한 번만 받는다. 그 뒤로는 지시서 단위 상태가 기억한다. */
 function requireSpecForPlan(context: BuildContext) {
-  if (hasPlan(context.outDir) || context.specPaths.length > 0) {
-    return;
-  }
-  if (loadSession(context.outDir).specPaths.length > 0) {
+  if (context.specPaths.length > 0 || readRunState(context.outDir).specPaths.length > 0) {
     return;
   }
   throw new Error(
@@ -125,7 +125,7 @@ function runNext(context: BuildContext) {
     return;
   }
 
-  const stashed = stashPrompt(context.outDir, next.prompt);
+  const stashed = stashPrompt(next.outDir, next.prompt);
   // 프롬프트만 표준출력으로 — 파이프·리다이렉트로 바로 쓸 수 있게 다른 출력을 섞지 않는다.
   process.stdout.write(next.prompt);
   console.error(`\n\n[${next.label}] 이 프롬프트는 ${stashed} 에도 저장했습니다.`);
@@ -146,7 +146,7 @@ function runApply(context: BuildContext, responsePath: string) {
 
   if (outcome.planSaved) {
     console.log(`계획 저장: ${outcome.planSaved}\n`);
-    console.log(formatPlan(loadPlan(context.outDir)));
+    console.log(formatPlan(loadPlan(outcome.outDir)));
   }
 
   const execution = outcome.execution;
@@ -170,7 +170,7 @@ function runApply(context: BuildContext, responsePath: string) {
   }
 
   if (outcome.questionsAdded > 0) {
-    console.log(`\n질문 ${outcome.questionsAdded}건 — ${questionsPath(context.outDir)}`);
+    console.log(`\n질문 ${outcome.questionsAdded}건 — ${questionsPath(outcome.outDir)}`);
   }
 
   if (outcome.message) {
@@ -179,20 +179,24 @@ function runApply(context: BuildContext, responsePath: string) {
 
   const next = nextPrompt(context);
   if (next.prompt) {
-    console.log(`\n다음: [${next.label}] → ${stashPrompt(context.outDir, next.prompt)}`);
+    console.log(`\n다음: [${next.label}] → ${stashPrompt(next.outDir, next.prompt)}`);
   } else {
     console.log(`\n${next.message ?? ""}`);
   }
 }
 
 function runStatus(context: BuildContext) {
-  const session = loadSession(context.outDir);
   const next = nextPrompt(context);
+  const session = loadSession(next.outDir);
 
   console.log(`## 지금 할 차례: ${next.label}`);
   console.log(`턴 ${session.turn} · 끝난 단계 ${session.completedStages.length}개`);
   if (session.completedStages.length > 0) {
     console.log(`  완료: ${session.completedStages.join(", ")}`);
+  }
+  if (next.lanes.length > 1) {
+    console.log(`\n대상별 상태:`);
+    console.log(describeLanes(next.lanes));
   }
   if (next.message) {
     console.log(`\n${next.message}`);
@@ -208,7 +212,7 @@ function runStatus(context: BuildContext) {
 function runDecision(
   input: BuildContext,
   decision: Decision,
-  given: { approver?: string; comment?: string },
+  given: { approver?: string; comment?: string; target?: string },
 ) {
   const { unchanged, record } = decideApproval(input, decision, given);
 
@@ -226,7 +230,7 @@ function runDecision(
 
   const next = nextPrompt(input);
   if (next.prompt) {
-    console.log(`\n다음: [${next.label}] → ${stashPrompt(input.outDir, next.prompt)}`);
+    console.log(`\n다음: [${next.label}] → ${stashPrompt(next.outDir, next.prompt)}`);
   } else {
     console.log(`\n${next.message ?? ""}`);
   }
@@ -297,11 +301,17 @@ async function main() {
     runDecision(context, command === "approve" ? "approved" : "rejected", {
       approver: first(args, "approver"),
       comment: first(args, "comment"),
+      target: first(args, "target"),
     });
     return;
   }
   if (command === "log") {
-    console.log(summarizeSession(loadSession(context.outDir)));
+    // 턴 기록도 대상 단위다. 하나로 합치면 어느 대상에서 막혔는지가 지워진다.
+    for (const lane of nextPrompt(context).lanes) {
+      console.log(`## 대상: ${lane.lane.target}`);
+      console.log(summarizeSession(loadSession(lane.lane.outDir)));
+      console.log();
+    }
     return;
   }
   if (command) {
