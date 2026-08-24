@@ -35,12 +35,19 @@ export interface ExecuteOutcome {
   violations: GateViolation[];
   /** 모델이 이 단계를 끝냈다고 선언했는지 */
   done: boolean;
+  /**
+   * 이 턴에서 **확인된** 검증 결과. 마지막 run 이후에 파일을 또 바꿨으면 없다 —
+   * 그 결과는 바뀌기 전 파일들에 대한 것이라 지금 상태를 말하지 않는다.
+   */
+  verified?: "pass" | "fail" | "skipped";
   counts: Partial<Record<ActionType, number>>;
 }
 
 export interface ExecuteInput {
   repoRoot: string;
   outDir: string;
+  /** 앞 턴들에서 확인해 둔 이 단계의 검증 결과. 파일이 바뀌면 세션이 지운다 */
+  verified?: "pass" | "fail";
   /** 사람이 확정한 경계. 매니페스트보다 이쪽이 상한선이다 */
   order: WorkOrder;
   manifest: Manifest;
@@ -166,11 +173,16 @@ function observeList(input: ExecuteInput, path: string): Observation {
   };
 }
 
-function observeRun(input: ExecuteInput, command: string): Observation {
+function observeRun(
+  input: ExecuteInput,
+  command: string,
+): { observation: Observation; verdict?: "pass" | "fail" | "skipped" } {
   if (command !== "build" && command !== "test") {
     return {
-      label: `run ${command}`,
-      body: "실행할 수 없습니다 — code-agent.json 에 선언된 build · test 만 돌릴 수 있습니다.",
+      observation: {
+        label: `run ${command}`,
+        body: "실행할 수 없습니다 — code-agent.json 에 선언된 build · test 만 돌릴 수 있습니다.",
+      },
     };
   }
 
@@ -185,11 +197,40 @@ function observeRun(input: ExecuteInput, command: string): Observation {
 
   // 안 돌린 것과 통과한 것을 같은 말로 알리면, 검증하지 않은 코드를 검증된 것으로
   // 착각하고 단계를 끝내 버린다. 셋을 구분해서 말한다.
-  const verdict = result.skipped ? "실행되지 않음" : result.passed ? "통과" : "실패";
+  const verdict = result.skipped ? "skipped" : result.passed ? "pass" : "fail";
+  const said = result.skipped ? "실행되지 않음" : result.passed ? "통과" : "실패";
   return {
-    label: `run ${command} — ${verdict}`,
-    body: capLines(result.log, MAX_LOG_LINES, true),
+    verdict,
+    observation: {
+      label: `run ${command} — ${said}`,
+      body: capLines(result.log, MAX_LOG_LINES, true),
+    },
   };
+}
+
+/** 기대한 결과가 확인되지 않은 이유를 그 자리에 맞게 알린다. */
+function explainExpect(
+  expected: "pass" | "fail",
+  seen: "pass" | "fail" | "skipped" | undefined,
+): string {
+  if (seen === undefined) {
+    return (
+      "돌려 보지 않고 끝냈습니다. `### run test` 로 결과를 확인해야 이 단계가 끝납니다 " +
+      "(파일을 바꿨다면 다시 돌려야 합니다 — 앞서 본 결과는 바뀌기 전 파일들에 대한 것입니다)."
+    );
+  }
+  if (seen === "skipped") {
+    return (
+      "검증 명령이 실행되지 않아 확인할 수 없습니다. code-agent.json 의 build·test 선언을 확인하세요 — " +
+      "돌리지 않은 것을 통과로 볼 수는 없습니다."
+    );
+  }
+  if (expected === "fail") {
+    return (
+      "이 단계는 검증이 **실패해야** 끝납니다. 지금은 통과합니다 — 결함을 재현하지 못한 테스트입니다."
+    );
+  }
+  return "검증이 아직 실패합니다. 통과해야 이 단계가 끝납니다.";
 }
 
 export function executeActions(input: ExecuteInput): ExecuteOutcome {
@@ -223,6 +264,8 @@ export function executeActions(input: ExecuteInput): ExecuteOutcome {
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, action.content, "utf-8");
         outcome.writtenFiles.push(target);
+        // 파일이 바뀌었으니 앞서 본 검증 결과는 지금 상태를 말하지 않는다.
+        outcome.verified = undefined;
         break;
       }
       case "edit": {
@@ -231,6 +274,7 @@ export function executeActions(input: ExecuteInput): ExecuteOutcome {
           outcome.violations.push(applied.error);
         } else {
           outcome.writtenFiles.push(applied.path);
+          outcome.verified = undefined;
         }
         break;
       }
@@ -259,7 +303,9 @@ export function executeActions(input: ExecuteInput): ExecuteOutcome {
           });
           break;
         }
-        outcome.observations.push(observeRun(input, action.command));
+        const run = observeRun(input, action.command);
+        outcome.observations.push(run.observation);
+        outcome.verified = run.verdict;
         break;
       }
       case "ask":
@@ -271,6 +317,24 @@ export function executeActions(input: ExecuteInput): ExecuteOutcome {
       case "done":
         outcome.done = true;
         break;
+    }
+  }
+
+  // 기대한 검증 결과를 선언한 단계는 **돌려 본 결과 없이는 끝나지 않는다.**
+  // 재현 테스트가 먼저 실패했는지, 고친 뒤 통과했는지는 모델이 말하는 것이 아니라
+  // 명령을 돌린 결과로 판정한다.
+  if (outcome.done && input.stage.expect) {
+    // 이 턴에서 파일을 바꿨다면 세션에 남은 결과로 되돌아가지 않는다 — 그것은 바뀌기 전
+    // 파일들에 대한 것이다. 뒤에 run 이 있었다면 outcome.verified 가 이미 그것을 덮는다.
+    const seen =
+      outcome.verified ?? (outcome.writtenFiles.length > 0 ? undefined : input.verified);
+    if (seen !== input.stage.expect) {
+      outcome.done = false;
+      outcome.violations.push({
+        item: "검증 미확인",
+        file: input.stage.key,
+        detail: explainExpect(input.stage.expect, seen),
+      });
     }
   }
 

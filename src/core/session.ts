@@ -48,6 +48,14 @@ export interface Session {
   gatedStages: string[];
   /** 단계별 검수 시도 횟수. 같은 곳에서 계속 막힐 때 사람에게 넘기려고 센다 */
   gateAttempts: Record<string, number>;
+  /**
+   * 단계별로 마지막에 **확인된** 검증 결과.
+   *
+   * 그 단계의 out/ 이 바뀌면 지워진다 — 검증 결과는 그때의 파일들에 대한 것이지
+   * 지금 파일들에 대한 것이 아니기 때문이다. 이것이 없으면 한 번 통과시켜 놓고
+   * 그 뒤에 무엇을 바꾸든 '통과했다'고 말할 수 있다.
+   */
+  verified: Record<string, "pass" | "fail">;
   turn: number;
   /** 앞 턴에서 요청한 read·list·run 의 결과. 다음 프롬프트에 실린다 */
   lastObservations: Observation[];
@@ -62,6 +70,7 @@ export function emptySession(): Session {
     completedStages: [],
     gatedStages: [],
     gateAttempts: {},
+    verified: {},
     turn: 0,
     lastObservations: [],
     lastViolations: [],

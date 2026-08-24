@@ -32,6 +32,7 @@ const MANIFEST = {
       scope: "domain" as const,
       exemplars: ["models.py"],
       kinds: [],
+      reads: [],
       outputDirs: ["."],
     },
     {
@@ -42,6 +43,7 @@ const MANIFEST = {
       scope: "domain" as const,
       exemplars: ["service.py"],
       kinds: [],
+      reads: [],
       outputDirs: ["."],
     },
   ],

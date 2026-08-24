@@ -67,12 +67,12 @@ export const RefactorPlanSchema = z.object({
   files: z
     .array(
       z.object({
-        stage: z.string().describe("이 파일을 고칠 단계 키"),
-        path: z.string().describe("저장소 루트 기준 상대경로 — 이미 있는 파일이어야 한다"),
-        purpose: z.string().describe("무엇을 어떻게 고치는지 한 줄"),
+        stage: z.string().describe("이 파일을 만들거나 고칠 단계 키"),
+        path: z.string().describe("저장소 루트 기준 상대경로"),
+        purpose: z.string().describe("무엇을 어떻게 하는지 한 줄"),
       }),
     )
-    .describe("고칠 파일 목록. 새 파일을 발명하지 않는다"),
+    .describe("고칠 파일 목록. 재현 테스트를 빼면 새 파일을 발명하지 않는다"),
   preserve: z
     .array(
       z.object({
@@ -120,9 +120,29 @@ const REFACTOR_SYSTEM_PROMPT =
   "- 기능을 더하거나 빼지 않는다. 스펙에 없는 구조 변경을 지어내지 않는다.\n" +
   "- 정할 수 없는 것은 openQuestions 에 적는다.";
 
+/**
+ * 결함 수정의 계획자 — **재현이 먼저다.**
+ *
+ * 고치고 나서 테스트를 쓰면 그 테스트가 결함을 잡는지 알 수 없다. 지금 코드에서
+ * 실패하는 것을 먼저 보여야 그 뒤의 통과가 뜻을 갖는다.
+ */
+const FIX_SYSTEM_PROMPT =
+  "너는 결함 수정 계획자다. 코드는 만들지 않고, 무엇을 재현하고 무엇을 고칠지를 정리한 " +
+  "작업 명세서만 만든다.\n" +
+  "가장 중요한 규칙: **재현 테스트가 먼저다.** 재현 조건에서 실패하는 테스트를 먼저 만들고, " +
+  "그 다음에 고친다. 그 테스트는 **지금 코드에서 실패해야 한다** — 통과한다면 결함을 재현하지 " +
+  "못한 것이다.\n" +
+  "- files 에는 새로 만들 재현 테스트와 고칠 파일을 함께 적는다. 각각 어느 단계의 것인지 밝힌다.\n" +
+  "- 고치는 범위를 넘지 않는다. 같은 원인이 다른 곳에도 있으면 openQuestions 에 남기고 " +
+  "이번에 같이 고치지 않는다.\n" +
+  "- 작업 지시서의 바뀌면 안 되는 것을 하나도 빠뜨리지 않는다. 문장을 그대로 옮긴다.";
+
 function systemPromptFor(kind: WorkKind, hasReference: boolean): string {
   if (kind === "refactor") {
     return REFACTOR_SYSTEM_PROMPT;
+  }
+  if (kind === "fix") {
+    return FIX_SYSTEM_PROMPT;
   }
   return (
     SYSTEM_PROMPT_BASE +
@@ -131,7 +151,7 @@ function systemPromptFor(kind: WorkKind, hasReference: boolean): string {
 }
 
 /** 고치는 작업의 계획 프롬프트. 근거는 참조 도메인이 아니라 **대상의 현재 코드**다. */
-function buildRefactorUserPrompt(
+function buildChangeUserPrompt(
   context: ResolvedBuildContext,
   manifest: Manifest,
   stages: StageDef[],
@@ -149,6 +169,9 @@ function buildRefactorUserPrompt(
       "\n\n" +
       `# 실행할 단계\n${stages.map((stage) => `- ${stage.key}: ${stage.title}`).join("\n")}\n\n` +
       "files 의 stage 는 위 단계 키 중 하나여야 하고, path 는 위 '대상의 현재 파일' 에 있는 것이어야 한다.\n" +
+      (order.kind === "fix"
+        ? "path 의 예외는 새로 만들 재현 테스트 하나다 — 그것만은 아직 없는 경로여도 된다.\n"
+        : "") +
       (order.preserve.length > 0
         ? `preserve 는 ${order.preserve.length} 건이다. 그 문장을 그대로 옮겨 하나씩 채운다.`
         : "지시서에 보존 조건이 없다. 그래도 동작은 바뀌지 않아야 한다."),
@@ -194,8 +217,8 @@ export function previewPlanPrompt(
     reproducible: true,
     system: systemPromptFor(kind, referenceTree.length > 0),
     user:
-      kind === "refactor"
-        ? buildRefactorUserPrompt(context, manifest, stages)
+      changesExistingCode(kind)
+        ? buildChangeUserPrompt(context, manifest, stages)
         : buildUserPrompt(context, manifest, stages, referenceTree),
   };
 }
@@ -236,8 +259,18 @@ export interface PlanFormat {
   toPlan(parsed: unknown): BuildPlan;
 }
 
+/**
+ * 이미 있는 코드를 고치는 종류인가.
+ *
+ * 이 둘의 계획은 *만들 파일 목록*이 아니라 **고칠 파일 + 보존 조건**이다. 만들 도메인이
+ * 없다는 점이 같아서, 계획의 모양도 같다.
+ */
+function changesExistingCode(kind: WorkKind): boolean {
+  return kind === "refactor" || kind === "fix";
+}
+
 export function planFormatFor(kind: WorkKind): PlanFormat {
-  if (kind !== "refactor") {
+  if (!changesExistingCode(kind)) {
     return {
       schema: PlanSchema,
       shape: PLAN_SHAPE,

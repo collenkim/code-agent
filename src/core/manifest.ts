@@ -26,6 +26,21 @@ const StageSchema = z.object({
       "이 단계를 도는 작업 종류. 비면 모든 종류에서 돈다. refactor 는 Entity~Controller 를 " +
         "순차 생성하지 않으므로, 종류마다 도는 단계가 갈리는 자리가 여기다",
     ),
+  expect: z
+    .enum(["pass", "fail"])
+    .optional()
+    .describe(
+      "이 단계를 끝내려면 검증 명령이 어떤 결과여야 하는가. fail 은 재현 단계다 — " +
+        "그 자리에서 통과하면 결함을 재현하지 못한 것이다. 선언하면 돌려 보지 않고는 " +
+        "단계를 끝낼 수 없다",
+    ),
+  reads: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "이 단계 프롬프트에 함께 실을 저장소 파일·디렉토리(루트 기준). 빌드 파일·설정처럼 " +
+        "코드가 읽어 넣는 편이 정확한 것들이다 — 사람이 옮겨 적으면 반드시 실제와 어긋난다",
+    ),
   base: z
     .string()
     .optional()
@@ -51,6 +66,17 @@ const StageSchema = z.object({
       "산출물이 놓일 수 있는 위치. scope=domain이면 도메인 하위 디렉토리('.'은 도메인 바로 아래), " +
         "scope=project면 저장소 루트 기준 경로 접두사. 비면 위치를 제한하지 않는다",
     ),
+}).superRefine((stage, ctx) => {
+  // 명령을 돌릴 수 없는 단계에 기대 결과를 걸면 그 단계는 영원히 끝나지 않는다.
+  if (stage.expect && stage.kind !== "verify") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expect"],
+      message:
+        `expect 는 kind 가 verify 인 단계에만 걸 수 있습니다 (${stage.key} 의 kind: ${stage.kind}). ` +
+        "명령을 돌릴 수 없는 단계에 걸면 끝낼 방법이 없습니다.",
+    });
+  }
 });
 
 /**

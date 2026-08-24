@@ -582,6 +582,8 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     repoRoot: context.repoRoot,
     outDir: context.outDir,
     order: context.workOrder,
+    // 앞 턴들에서 확인해 둔 결과. 그 뒤로 파일이 바뀌었으면 이미 지워져 있다.
+    verified: session.verified[target.stage.key],
     manifest,
     plan,
     stage: target.stage,
@@ -594,6 +596,15 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   session.lastObservations = execution.observations;
   session.lastViolations = execution.violations;
+
+  // 검증 결과는 그때의 파일들에 대한 것이다. 이 턴에서 확인한 것이 있으면 그것으로 갈고,
+  // 확인 없이 파일만 바꿨으면 앞서 본 것을 버린다.
+  if (execution.verified === "pass" || execution.verified === "fail") {
+    session.verified = { ...session.verified, [target.stage.key]: execution.verified };
+  } else if (execution.writtenFiles.length > 0) {
+    const { [target.stage.key]: dropped, ...rest } = session.verified;
+    session.verified = rest;
+  }
 
   const questions = appendQuestions(context.outDir, target.stage.key, execution.questions);
 
