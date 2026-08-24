@@ -68,6 +68,11 @@ function plan(changes: Partial<BuildPlan> = {}) {
   applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
 }
 
+/** 대상 하나가 도는 자리 */
+function lane(...parts: string[]): string {
+  return join(root, "out", "TEST-1", "shipment", ...parts);
+}
+
 function ledger(): ApprovalRecord[] {
   return readLedger(join(root, "repo"), "TEST-1");
 }
@@ -110,7 +115,7 @@ describe("승인 전에는 진행되지 않는다", () => {
 
     assert.equal(out.advanced, false);
     assert.equal(out.label, "approval");
-    assert.ok(!existsSync(join(root, "out", "app/features/shipment/models.py")));
+    assert.ok(!existsSync(lane("app/features/shipment/models.py")));
   });
 
   test("승인하면 첫 단계로 넘어간다", () => {
@@ -193,7 +198,7 @@ describe("원장 — 판정 사건이 쌓인다", () => {
   test("같은 계획에 같은 승인을 두 번 남기지 않는다", () => {
     plan();
     decideApproval(context, "approved", { approver: "팀장" });
-    const second = decideApproval(context, "approved", { approver: "팀장" });
+    const second = decideApproval(context, "approved", { approver: "팀장", target: "shipment" });
 
     assert.equal(second.unchanged, true);
     assert.equal(ledger().length, 1);
@@ -206,7 +211,7 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     decideApproval(context, "approved", { approver: "팀장" });
     assert.equal(nextPrompt(context).label, "model");
 
-    savePlan(context.outDir, {
+    savePlan(lane(), {
       ...PLAN,
       files: [
         ...PLAN.files,
@@ -223,7 +228,7 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
-    savePlan(context.outDir, {
+    savePlan(lane(), {
       ...PLAN,
       files: [{ stage: "model", path: "app/features/shipment/service.py", purpose: "배송 서비스" }],
       conventions: [{ rule: "dataclass 사용", source: "doc/style.md" }],
@@ -242,7 +247,8 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     assert.equal(nextPrompt(context).label, "model");
 
     // preserve 한 줄을 지우면 3차 게이트가 그냥 통과한다. 계획보다 이쪽이 더 위험하다.
-    writeSpec("---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: delivery\n---\n");
+    // 대상은 그대로 둔다 — 대상을 바꾸는 것은 무효가 아니라 아예 다른 레인을 여는 일이다.
+    writeSpec("---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 정리\ntarget: shipment\n---\n");
 
     const next = nextPrompt(context);
     assert.equal(next.label, "approval");

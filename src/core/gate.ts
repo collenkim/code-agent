@@ -158,7 +158,7 @@ export function buildGatePrompt(
   return {
     system: SYSTEM_PROMPT,
     user:
-      `${describeWorkOrder(context.workOrder)}\n` +
+      `${describeWorkOrder(context.workOrder, context.target)}\n` +
       (context.workOrder.preserve.length > 0
         ? "  위 '바뀌면 안 되는 것'을 어긴 곳이 있으면 그것을 최우선 위반으로 보고한다.\n"
         : "") +

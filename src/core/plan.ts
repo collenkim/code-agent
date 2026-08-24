@@ -84,7 +84,7 @@ function buildUserPrompt(
   const roots = manifest.domainRoots.filter(Boolean);
 
   return withPolicy(
-    `${describeWorkOrder(context.workOrder)}\n\n` +
+    `${describeWorkOrder(context.workOrder, context.target)}\n\n` +
       (context.slotsText ? `${context.slotsText}\n\n` : "") +
       `# 스펙 (요구사항·정책·기능·입출력)\n${context.specText}\n\n` +
       `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +

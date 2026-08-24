@@ -9,7 +9,10 @@ import { loadManifest, selectStages } from "./manifest";
 import type { Manifest } from "./manifest";
 import { planBuild } from "./plan";
 import { describeSlots, hashSpec, loadSlots, loadSpecSchema } from "./specSchema";
+import { laneStates, pickLane } from "./targets";
+import type { Lane, LaneState } from "./targets";
 import { loadWorkOrder } from "./workOrder";
+import type { WorkOrder } from "./workOrder";
 import type {
   BuildContext,
   BuildOutcome,
@@ -17,6 +20,14 @@ import type {
   ResolvedBuildContext,
   StageResult,
 } from "./types";
+
+/** 없는 대상을 지정한 것은 오타다. 조용히 다른 대상을 돌리지 않는다. */
+function failUnknownTarget(target: string, order: WorkOrder): Lane {
+  throw new Error(
+    `작업 지시서에 없는 대상입니다: ${target}\n` +
+      `  이 지시서(${order.id})의 대상: ${order.target.join(", ")}`,
+  );
+}
 
 /** 여러 문서를 출처 주석과 함께 한 덩어리로 합친다. */
 function concatDocuments(paths: string[], emptyLabel = "(없음)"): string {
@@ -26,14 +37,22 @@ function concatDocuments(paths: string[], emptyLabel = "(없음)"): string {
   return paths.map((path) => `<!-- ${path} -->\n${readFileSync(path, "utf-8")}`).join("\n\n");
 }
 
-/**
- * 프로젝트 설정을 읽고, 파일에서 읽어야 하는 입력(스펙·컨벤션·정책)을 모두 채운다.
- * 프로젝트별 값(도메인 경로·계층·참조 도메인·검증 명령)은 전부 여기서 매니페스트를 통해 들어온다.
- */
-export function withResolvedInputs(context: BuildContext): {
+export interface ResolvedInputs {
   context: ResolvedBuildContext;
   manifest: Manifest;
-} {
+  /** 대상마다 지금 무엇을 할 차례인지. context 는 그중 한 레인에 매여 있다 */
+  lanes: LaneState[];
+}
+
+/**
+ * 프로젝트 설정을 읽고, 파일에서 읽어야 하는 입력(스펙·컨벤션·정책)을 모두 채운 뒤
+ * **대상 하나의 레인**에 매단다. 프로젝트별 값(도메인 경로·계층·참조 도메인·검증 명령)은
+ * 전부 여기서 매니페스트를 통해 들어온다.
+ *
+ * 대상을 지정하지 않으면 진행할 수 있는 대상을 코드가 고른다 — 단계와 마찬가지로,
+ * 무엇을 할 차례인지는 사람이 지정하는 것이 아니라 상태가 정한다.
+ */
+export function withResolvedInputs(context: BuildContext, target?: string): ResolvedInputs {
   const templatesDir = resolveAgainstRepo(context.repoRoot, context.templatesDir);
   const manifest = loadManifest(templatesDir);
 
@@ -50,10 +69,23 @@ export function withResolvedInputs(context: BuildContext): {
   // 지시서가 규격에 맞지 않으면 모델에 한 글자도 가지 않는다.
   const workOrder = loadWorkOrder(context.repoRoot, context.specPaths, manifest.workOrder);
 
-  // 1차 게이트가 쓸 것들. 파생물은 스펙 해시에 묶여 있어, 문서가 바뀌면 여기서 무효가 된다.
   const specText = concatDocuments(context.specPaths);
   const specSchema = loadSpecSchema(templatesDir);
-  const slots = specSchema ? loadSlots(context.outDir) : undefined;
+
+  // 대상마다 따로 돈다. 여기서 레인 하나를 고르고, 아래의 모든 상태는 그 레인의 것이다.
+  const lanes = laneStates(context.outDir, workOrder, manifest, {
+    repoRoot: context.repoRoot,
+    specText,
+    specSchema,
+    gate: context.gate !== false,
+  });
+  const lane = target
+    ? (lanes.find((state) => state.lane.target === target)?.lane ??
+      failUnknownTarget(target, workOrder))
+    : pickLane(lanes).lane;
+
+  // 1차 게이트가 쓸 것들. 파생물은 스펙 해시에 묶여 있어, 문서가 바뀌면 여기서 무효가 된다.
+  const slots = specSchema ? loadSlots(lane.outDir) : undefined;
   const fresh = slots !== undefined && slots.specHash === hashSpec(specText);
   const slotsText = specSchema && slots && fresh ? describeSlots(specSchema, slots.slots) : "";
 
@@ -70,8 +102,11 @@ export function withResolvedInputs(context: BuildContext): {
 
   return {
     manifest,
+    lanes,
     context: {
       ...context,
+      outDir: lane.outDir,
+      target: lane.target,
       templatesDir,
       policyPath,
       workOrder,

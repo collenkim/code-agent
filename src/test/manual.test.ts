@@ -96,6 +96,11 @@ function answer(name: string, body: unknown): string {
   return path;
 }
 
+/** 대상 하나가 도는 자리. 예전 방식(--step)도 같은 레인 위에서 돈다. */
+function lane(...parts: string[]): string {
+  return join(outDir, "TEST-1", "shipment", ...parts);
+}
+
 before(() => {
   root = mkdtempSync(join(tmpdir(), "code-agent-test-"));
   repoRoot = join(root, "repo");
@@ -116,11 +121,11 @@ after(() => {
 
 describe("state — 단계 산출물 되읽기", () => {
   test("loadStageFiles 는 그 단계 자신의 산출물을 돌려준다", () => {
-    savePlan(outDir, PLAN);
-    mkdirSync(join(outDir, "app/features/shipment"), { recursive: true });
-    writeFileSync(join(outDir, "app/features/shipment/models.py"), MODEL_CODE, "utf-8");
+    savePlan(lane(), PLAN);
+    mkdirSync(lane("app/features/shipment"), { recursive: true });
+    writeFileSync(lane("app/features/shipment/models.py"), MODEL_CODE, "utf-8");
 
-    const files = loadStageFiles(outDir, PLAN, "model");
+    const files = loadStageFiles(lane(), PLAN, "model");
 
     assert.equal(files.length, 1);
     assert.equal(files[0].path, "app/features/shipment/models.py");
@@ -128,11 +133,11 @@ describe("state — 단계 산출물 되읽기", () => {
   });
 
   test("아직 만들어지지 않은 단계는 빈 목록이다", () => {
-    assert.deepEqual(loadStageFiles(outDir, PLAN, "service"), []);
+    assert.deepEqual(loadStageFiles(lane(), PLAN, "service"), []);
   });
 
   test("loadPreviousResults 는 대상 단계 자신을 포함하지 않는다", () => {
-    const previous = loadPreviousResults(outDir, PLAN, MANIFEST.stages, "service");
+    const previous = loadPreviousResults(lane(), PLAN, MANIFEST.stages, "service");
 
     assert.deepEqual(
       previous.map((result) => result.stage),
@@ -200,7 +205,7 @@ describe("ingestResponse — 응답 반영", () => {
       /do-not-touch 경계/,
     );
     assert.equal(
-      existsSync(join(outDir, "app/features/other/x.py")),
+      existsSync(lane("app/features/other/x.py")),
       false,
       "거부된 파일은 디스크에 남으면 안 된다",
     );

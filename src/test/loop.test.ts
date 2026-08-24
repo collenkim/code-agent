@@ -64,6 +64,11 @@ function write(relative: string, content: string) {
   writeFileSync(path, content, "utf-8");
 }
 
+/** 대상 하나가 도는 자리. 대상마다 갈라지므로 out/ 바로 아래가 아니다. */
+function lane(...parts: string[]): string {
+  return join(root, "out", "TEST-1", "shipment", ...parts);
+}
+
 /** 채팅 응답을 흉내 낸다. 줄 배열로 쓰는 편이 백틱 때문에 읽기 쉽다. */
 function reply(...lines: string[]): string {
   return lines.join("\n");
@@ -71,7 +76,7 @@ function reply(...lines: string[]): string {
 
 /** 사람이 questions.md 를 열어 답을 적는 것과 같은 일 */
 function answerAll(answer: string) {
-  const path = questionsPath(context.outDir);
+  const path = questionsPath(lane());
   writeFileSync(path, readFileSync(path, "utf-8").replace(/\(여기에 답을 적으세요\)/g, answer), "utf-8");
 }
 
@@ -105,7 +110,8 @@ afterEach(() => {
 
 /** 사람이 계획을 승인하는 것과 같은 일 — 2차 게이트 */
 function approvePlan() {
-  decideApproval(context, "approved", { approver: "tester" });
+  // 대상을 지정한다. 질문이 남아 승인 대기가 아닌 상태에서도 이 도우미는 승인까지 만들어 둔다.
+  decideApproval(context, "approved", { approver: "tester", target: "shipment" });
 }
 
 /**
@@ -155,7 +161,7 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
 
     assert.equal(next.label, "blocked");
     assert.match(next.message!, /답하지 않은 질문이 1건/);
-    assert.match(readFileSync(questionsPath(context.outDir), "utf-8"), /상태값을 무엇으로 두나요\?/);
+    assert.match(readFileSync(questionsPath(lane()), "utf-8"), /상태값을 무엇으로 두나요\?/);
   });
 
   test("질문이 여러 건이면 전부 센다", () => {
@@ -172,7 +178,7 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
   test("일부만 답하면 아직 막혀 있다", () => {
     completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
 
-    const path = questionsPath(context.outDir);
+    const path = questionsPath(lane());
     // 첫 질문에만 답을 적는다.
     writeFileSync(
       path,
@@ -199,7 +205,7 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     applyResponse(context, reply("### ask", "필드 길이는 얼마인가요?"));
 
     assert.equal(nextPrompt(context).label, "blocked");
-    assert.match(readFileSync(questionsPath(context.outDir), "utf-8"), /필드 길이는/);
+    assert.match(readFileSync(questionsPath(lane()), "utf-8"), /필드 길이는/);
   });
 });
 
@@ -273,7 +279,7 @@ describe("경계는 코드가 지킨다", () => {
     assert.equal(outcome.violations.length, 1);
     assert.match(outcome.violations[0].item, /do-not-touch/);
     assert.equal(
-      existsSync(join(context.outDir, "app/features/shipment/models.py")),
+      existsSync(lane("app/features/shipment/models.py")),
       false,
       "같은 응답의 정상 파일까지 반영하지 않아야 한다 — 절반만 반영된 상태가 가장 다루기 어렵다",
     );
@@ -314,7 +320,7 @@ describe("경계는 코드가 지킨다", () => {
 
     assert.deepEqual(outcome.violations, []);
     assert.match(
-      readFileSync(join(context.outDir, "app/features/shipment/models.py"), "utf-8"),
+      readFileSync(lane("app/features/shipment/models.py"), "utf-8"),
       /address: str/,
     );
     assert.match(
@@ -459,7 +465,7 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
     assert.equal(outcome.violations.length, 1);
     assert.match(outcome.violations[0].item, /do-not-touch/);
     assert.equal(
-      existsSync(join(context.outDir, "tests/test_shipment.py")),
+      existsSync(lane("tests/test_shipment.py")),
       false,
       "테스트 파일이 만들어지면 안 된다",
     );
@@ -486,7 +492,7 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
 
     assert.deepEqual(outcome.violations, []);
     assert.match(
-      readFileSync(join(context.outDir, "app/features/shipment/models.py"), "utf-8"),
+      readFileSync(lane("app/features/shipment/models.py"), "utf-8"),
       /id: int/,
     );
   });
@@ -501,7 +507,7 @@ describe("턴 기록", () => {
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
 
-    const session = loadSession(context.outDir);
+    const session = loadSession(lane());
     const summary = summarizeSession(session);
 
     assert.equal(session.log.length, 3, "계획 1턴 + 생성 2턴");
@@ -516,6 +522,6 @@ describe("턴 기록", () => {
 
     assert.equal(outcome.parseErrors.length, 1);
     assert.equal(outcome.execution, undefined);
-    assert.match(summarizeSession(loadSession(context.outDir)), /형식오류/);
+    assert.match(summarizeSession(loadSession(lane())), /형식오류/);
   });
 });

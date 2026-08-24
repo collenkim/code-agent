@@ -12,9 +12,17 @@ import {
   unanswered,
 } from "../core/session";
 import type { PendingQuestion } from "../core/session";
+import { describeTarget } from "../core/session";
 import { loadPlan } from "../core/state";
 import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
 import type { JobStore } from "./jobs";
+
+/** 지시서의 대상 하나와 그 상태 */
+export interface LaneView {
+  target: string;
+  step: string;
+  needsApproval: boolean;
+}
 
 export interface QuestionView {
   id: number;
@@ -28,8 +36,14 @@ export interface StatusView {
   label: string;
   repoRoot: string;
   outDir: string;
-  /** 지금 할 차례 — plan · 단계키 · gate:단계키 · blocked · done */
+  /** 지금 할 차례. 대상이 여럿이면 `대상:단계` 로 나온다 */
   target: string;
+  /** 대상 이름을 뺀 단계만 — plan · 단계키 · gate:단계키 · approval · blocked · done */
+  step: string;
+  /** 지금 도는 대상 */
+  lane: string;
+  /** 지시서의 대상 전부. 대상마다 따로 돈다 */
+  lanes: LaneView[];
   turn: number;
   completedStages: string[];
   questions: QuestionView[];
@@ -77,9 +91,10 @@ function toQuestionView(questions: PendingQuestion[]): QuestionView[] {
 
 export function status(store: JobStore, id: string): StatusView {
   const job = store.get(id);
-  const session = loadSession(job.context.outDir);
   const next = nextPrompt(job.context);
-  const questions = readQuestions(job.context.outDir);
+  // 진행 상태와 질문은 대상마다 따로 있다 — 지금 도는 대상의 것을 본다.
+  const session = loadSession(next.outDir);
+  const questions = readQuestions(next.outDir);
 
   return {
     id: job.id,
@@ -87,14 +102,21 @@ export function status(store: JobStore, id: string): StatusView {
     repoRoot: job.context.repoRoot,
     outDir: job.context.outDir,
     target: next.label,
+    step: describeTarget(next.target),
+    lane: next.lane,
+    lanes: next.lanes.map((state) => ({
+      target: state.lane.target,
+      step: describeTarget(state.step),
+      needsApproval: state.step.kind === "approval",
+    })),
     turn: session.turn,
     completedStages: session.completedStages,
     questions: toQuestionView(questions),
     openQuestionCount: unanswered(questions).length,
     message: next.message,
     hasPrompt: Boolean(next.prompt),
-    hasPlan: hasPlan(job.context.outDir),
-    needsApproval: next.label === "approval",
+    hasPlan: hasPlan(next.outDir),
+    needsApproval: next.target.kind === "approval",
     lastViolations: session.lastViolations,
   };
 }
@@ -119,7 +141,7 @@ export function respond(store: JobStore, id: string, responseText: string): Appl
   return {
     target: outcome.label,
     planSaved: outcome.planSaved,
-    planText: outcome.planSaved ? formatPlan(loadPlan(job.context.outDir)) : undefined,
+    planText: outcome.planSaved ? formatPlan(loadPlan(outcome.outDir)) : undefined,
     writtenFiles: outcome.execution?.writtenFiles ?? [],
     observations: outcome.execution?.observations ?? [],
     notes: outcome.execution?.notes ?? [],
@@ -142,7 +164,8 @@ export function answer(
   answers: { id: number; answer: string }[],
 ): StatusView {
   const job = store.get(id);
-  const questions = readQuestions(job.context.outDir);
+  const outDir = nextPrompt(job.context).outDir;
+  const questions = readQuestions(outDir);
 
   const unknown = answers.filter((given) => !questions.some((q) => q.id === given.id));
   if (unknown.length > 0) {
@@ -154,7 +177,7 @@ export function answer(
     return given ? { ...question, answer: given.answer.trim() } : question;
   });
 
-  writeQuestions(job.context.outDir, updated);
+  writeQuestions(outDir, updated);
   return status(store, id);
 }
 
@@ -165,7 +188,7 @@ export function answer(
 export function decide(
   store: JobStore,
   id: string,
-  input: { decision?: string; approver?: string; comment?: string },
+  input: { decision?: string; approver?: string; comment?: string; target?: string },
 ): { message: string; next: StatusView } {
   const job = store.get(id);
   if (input.decision !== "approved" && input.decision !== "rejected") {
@@ -175,20 +198,30 @@ export function decide(
   const { unchanged, record } = decideApproval(job.context, input.decision, {
     approver: input.approver?.trim() || undefined,
     comment: input.comment?.trim() || undefined,
+    target: input.target?.trim() || undefined,
   });
 
   return {
     message: unchanged
       ? `이미 승인되어 있습니다 — ${record.approver} · ${record.at}`
       : `${record.decision === "approved" ? "승인" : "반려"}을 원장에 남겼습니다 — ` +
-        `${record.approver} · 계획 ${record.planHash}`,
+        `${record.target} · ${record.approver} · 계획 ${record.planHash}`,
     next: status(store, id),
   };
 }
 
 export function log(store: JobStore, id: string): { text: string } {
   const job = store.get(id);
-  return { text: summarizeSession(loadSession(job.context.outDir)) };
+  // 대상마다 따로 쌓인다. 합치면 어느 대상에서 막혔는지가 지워진다.
+  const lanes = nextPrompt(job.context).lanes;
+  return {
+    text: lanes
+      .map(
+        (state) =>
+          `## 대상: ${state.lane.target}\n${summarizeSession(loadSession(state.lane.outDir))}`,
+      )
+      .join("\n\n"),
+  };
 }
 
 /** 목록 화면용 요약. 작업마다 상태를 읽으므로 개수가 많아지면 여기가 먼저 느려진다. */
