@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { diffPlans, hashWorkOrder, ledgerPath, readLedger } from "../core/approval";
 import type { ApprovalRecord } from "../core/approval";
+import { questionsPath } from "../core/session";
 import { savePlan } from "../core/state";
 import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
 import type { BuildContext, BuildPlan } from "../core/types";
@@ -107,6 +108,24 @@ describe("승인 전에는 진행되지 않는다", () => {
     assert.equal(next.prompt, undefined, "모델에 보낼 것이 없다 — 승인은 사람이 하는 일이다");
     assert.match(next.message!, /계획 승인이 필요합니다/);
     assert.match(next.message!, /app\/features\/shipment\/models\.py/, "계획 전문이 보여야 한다");
+  });
+
+  test("승인 화면은 사람이 답한 것을 함께 보여 준다", () => {
+    // 승인하는 사람은 이 계획이 어떤 답 위에 세워졌는지도 봐야 한다. 그리고 여기까지
+    // 왔다는 것은 답이 다 채워졌다는 뜻이라, 그것을 '미결' 이라 부르면 잘못 읽는다.
+    plan({ openQuestions: ["주소 최대 길이는?"] });
+    const path = questionsPath(lane());
+    writeFileSync(
+      path,
+      readFileSync(path, "utf-8").replace("(여기에 답을 적으세요)", "최대 200자"),
+      "utf-8",
+    );
+
+    const message = nextPrompt(context).message!;
+
+    assert.match(message, /사람이 답한 것/);
+    assert.match(message, /최대 200자/);
+    assert.doesNotMatch(message, /미결 질문/);
   });
 
   test("승인 전에 응답을 붙여넣어도 아무것도 반영하지 않는다", () => {

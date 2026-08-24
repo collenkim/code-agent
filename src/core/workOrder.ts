@@ -140,7 +140,12 @@ export function describeWorkOrder(order: WorkOrder, focus?: string): string {
  * 승인 원장과 대상별 갈래가 같은 규칙을 써야 해서 여기 둔다.
  */
 export function slug(text: string): string {
-  return text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unnamed";
+  const cleaned = text
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  // 점으로만 된 값(`.` · `..`)은 경로 조각으로 쓰면 사라지거나 한 단계 거슬러 오른다.
+  // adopt 의 대상은 저장소 경로라 `.` 이 실제로 들어온다 — 갈래가 뒤섞이는 자리다.
+  return /^\.+$/.test(cleaned) || cleaned === "" ? "unnamed" : cleaned;
 }
 
 /** 따옴표로 감싼 값을 흔히 쓰므로 벗겨 준다. 안쪽은 손대지 않는다. */

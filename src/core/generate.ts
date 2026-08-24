@@ -170,8 +170,13 @@ export function buildStagePrompt(
       ? [
           "# 프로젝트가 선언한 참고 파일",
           formatExemplars(declared, manifest.language),
+          // 내용은 상한까지만 싣되 **무엇이 있는지는 전부** 알려 준다. 목록을 모르면
+          // 모델이 list 로 저장소를 처음부터 훑게 되고, 그 왕복이 그대로 비용이 된다.
           ...(found.length > declared.length
-            ? [`(선언한 ${found.length}개 중 앞 ${declared.length}개만 실었습니다)`]
+            ? [
+                `(내용은 ${declared.length}개까지만 실었습니다. 선언된 ${found.length}개 전체 목록:)`,
+                found.join("\n"),
+              ]
             : []),
           "",
           "",

@@ -179,6 +179,27 @@ function buildChangeUserPrompt(
   );
 }
 
+/**
+ * 복제할 참조 도메인이 없을 때 무엇을 근거로 삼나.
+ *
+ * 지시서의 대상이 저장소 경로면(adopt 가 그렇다) **이미 있는 코드가 정본**이다. 그걸 싣지
+ * 않으면 계획이 만들 파일 경로를 지어내고, 그 뒤 단계가 list·read 로 저장소를 처음부터
+ * 훑게 된다 — 실측에서 탐색 8건 중 5건이 이 자리에서 나왔다.
+ */
+function describeCurrentFiles(context: ResolvedBuildContext, manifest: Manifest): string {
+  const current = listPaths(context.repoRoot, manifest, [
+    context.target,
+    ...context.workOrder.scope,
+  ]);
+  if (current.length === 0) {
+    return "\n# 참조 표준 코드\n(없음 — 복제할 기존 코드가 없는 실행이다)\n\n";
+  }
+  return (
+    "\n# 대상의 현재 파일 — 복제할 참조 도메인은 없고, 이미 있는 이 코드가 근거다\n" +
+    `${current.join("\n")}\n\n`
+  );
+}
+
 function buildUserPrompt(
   context: ResolvedBuildContext,
   manifest: Manifest,
@@ -198,7 +219,7 @@ function buildUserPrompt(
       (manifest.language ? `- 주 언어: ${manifest.language}\n` : "") +
       (referenceTree.length > 0
         ? `\n# 참조 표준 도메인 '${context.referenceDomain}'의 파일 구조\n${referenceTree.join("\n")}\n\n`
-        : "\n# 참조 표준 코드\n(없음 — 복제할 기존 코드가 없는 실행이다)\n\n") +
+        : describeCurrentFiles(context, manifest)) +
       `# 실행할 단계\n${stages.map((stage) => `- ${stage.key}: ${stage.title}`).join("\n")}\n\n` +
       "files의 stage는 위 단계 키 중 하나여야 한다. 실행하지 않는 단계의 파일은 목록에 넣지 않는다.",
     context.policyText,
@@ -379,7 +400,9 @@ export function formatPlan(plan: BuildPlan): string {
   }
 
   if (plan.openQuestions.length > 0) {
-    lines.push("", `### 미결 질문 (${plan.openQuestions.length}건)`);
+    // 승인 화면까지 오려면 전부 답이 채워져 있어야 한다 — 여기서 '미결'이라 부르면
+    // 승인하는 사람이 아직 남은 것이 있다고 읽는다.
+    lines.push("", `### 계획이 남긴 질문 (${plan.openQuestions.length}건)`);
     lines.push(...plan.openQuestions.map((question) => `- ${question}`));
   }
 

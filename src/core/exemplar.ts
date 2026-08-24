@@ -164,7 +164,9 @@ export function listPaths(repoRoot: string, manifest: Manifest, paths: string[])
       const child = join(current, name);
       const relative = posix.join(prefix, name);
       if (statSync(child).isDirectory()) {
-        return walk(child, relative);
+        // 저장소 전체를 가리키는 대상(adopt 의 `.`)에서 걸러야 할 것들. 소스가 아니고,
+        // 양이 커서 상한에 걸리면 정작 볼 파일이 밀려난다.
+        return name.startsWith(".") || name === "node_modules" ? [] : walk(child, relative);
       }
       return isSourceFile(manifest, name) ? [relative] : [];
     });
