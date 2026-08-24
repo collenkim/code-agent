@@ -9,6 +9,7 @@ import type { Manifest, StageDef } from "./manifest";
  */
 const MAX_FILES_PER_DIR = 5;
 const MAX_LINES_PER_FILE = 500;
+const MAX_TREE_ENTRIES = 300;
 
 export interface ExemplarFile {
   /** 저장소 루트 기준 상대경로 */
@@ -138,6 +139,45 @@ export function collectExemplars(
   }
 
   return { files, missing };
+}
+
+/**
+ * 이미 있는 파일들의 현재 내용.
+ *
+ * 고치라고 하려면 지금 무엇인지 보여 줘야 한다. 무엇을 읽을지는 계획이 정하고 —
+ * 그 계획은 사람이 승인한 것이다 — 모델이 탐색해서 고르지 않는다.
+ */
+export function readCurrent(repoRoot: string, paths: string[]): ExemplarFile[] {
+  return paths
+    .map((path) => ({ path, absolute: join(repoRoot, path) }))
+    .filter((entry) => existsSync(entry.absolute) && statSync(entry.absolute).isFile())
+    .map((entry) => readCapped(entry.absolute, entry.path));
+}
+
+/**
+ * 지시서가 가리키는 경로들의 파일 목록. 고칠 대상이 이미 저장소에 있는 실행에서,
+ * 참조 도메인 트리가 하던 일(무엇이 있는지 알려 주기)을 대신한다.
+ */
+export function listPaths(repoRoot: string, manifest: Manifest, paths: string[]): string[] {
+  const walk = (current: string, prefix: string): string[] =>
+    readdirSync(current).flatMap((name) => {
+      const child = join(current, name);
+      const relative = posix.join(prefix, name);
+      if (statSync(child).isDirectory()) {
+        return walk(child, relative);
+      }
+      return isSourceFile(manifest, name) ? [relative] : [];
+    });
+
+  const found = paths.flatMap((path) => {
+    const absolute = join(repoRoot, path);
+    if (!existsSync(absolute)) {
+      return [];
+    }
+    return statSync(absolute).isDirectory() ? walk(absolute, path.replace(/\\/g, "/")) : [path];
+  });
+
+  return [...new Set(found)].sort().slice(0, MAX_TREE_ENTRIES);
 }
 
 /**

@@ -4,7 +4,12 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 
-import { collectExemplars, formatExemplars, listReferenceTree } from "./exemplar";
+import {
+  collectExemplars,
+  formatExemplars,
+  listReferenceTree,
+  readCurrent,
+} from "./exemplar";
 import type { Manifest, StageDef } from "./manifest";
 import { withPolicy } from "./policy";
 import { describeWorkOrder } from "./workOrder";
@@ -145,14 +150,25 @@ export function buildStagePrompt(
       ? `# 참조 도메인 '${context.referenceDomain}'의 전체 파일 목록\n${referenceTree.join("\n")}\n\n`
       : "";
 
+  // 이미 있는 파일을 고치는 실행에서는 지금 무엇인지 보여 줘야 한다. 무엇을 읽을지는
+  // 계획이 정한 목록 그대로다 — 모델이 탐색해서 고르지 않는다.
+  const current = readCurrent(
+    context.repoRoot,
+    plannedFiles.map((file) => file.path),
+  );
+
   const user = withPolicy(
     `${describeWorkOrder(context.workOrder, context.target)}\n\n` +
-      `# 이번 단계에서 만들 파일 (계획 확정분)\n` +
+      `# 이번 단계에서 만들거나 고칠 파일 (계획 확정분)\n` +
       (plannedFiles.length > 0
         ? plannedFiles.map((file) => `- ${file.path} — ${file.purpose}`).join("\n")
         : "(계획에 이 단계 파일이 없음 — 아무것도 만들지 말고 빈 배열을 반환한다)") +
       `\n\n# 단계 템플릿 (${stage.template})\n${readTemplate(context.templatesDir, stage)}\n\n` +
       treeSection +
+      (current.length > 0
+        ? `# 고칠 파일의 현재 내용 — 여기서부터 바꾼다\n` +
+          `${formatExemplars(current, manifest.language)}\n\n`
+        : "") +
       (exemplars.length > 0
         ? `# 참조 표준 코드 — 도메인 '${context.referenceDomain}'\n` +
           `${formatExemplars(exemplars, manifest.language)}\n\n`

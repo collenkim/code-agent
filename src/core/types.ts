@@ -94,6 +94,16 @@ export interface DocConflict {
   decision: string;
 }
 
+/**
+ * 지시서의 보존 조건 하나와, 이번 변경이 그것을 지키는 방법.
+ * refactor 의 계획은 이것이 본체다 — 무엇이 보존되어야 하는지가 그 작업의 내용이기 때문이다.
+ */
+export interface PreserveNote {
+  /** 작업 지시서의 preserve 문장을 그대로 옮긴 것 */
+  item: string;
+  how: string;
+}
+
 /** "어떤 컨벤션으로 어떻게 만들지"를 정리한 작업 명세서 */
 export interface BuildPlan {
   /** 프로젝트 명명 규칙을 따른 도메인 이름 */
@@ -108,6 +118,8 @@ export interface BuildPlan {
   conventions: ConventionRule[];
   conflicts: DocConflict[];
   openQuestions: string[];
+  /** 보존 조건과 지키는 방법. 계획 스키마가 갈리는 종류에서만 채워진다 */
+  preserve?: PreserveNote[];
   reasoning: string;
 }
 

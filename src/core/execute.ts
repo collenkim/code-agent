@@ -13,6 +13,7 @@ import type { Action, ActionType } from "./action";
 import { checkPaths } from "./gate";
 import type { Manifest, StageDef } from "./manifest";
 import { loadStageFiles } from "./state";
+import type { WorkOrder } from "./workOrder";
 import type { BuildPlan, GateViolation, GeneratedFile } from "./types";
 
 /** 되돌려줄 관찰 결과의 상한 — 다음 프롬프트가 무한정 커지지 않게 한다 */
@@ -40,6 +41,8 @@ export interface ExecuteOutcome {
 export interface ExecuteInput {
   repoRoot: string;
   outDir: string;
+  /** 사람이 확정한 경계. 매니페스트보다 이쪽이 상한선이다 */
+  order: WorkOrder;
   manifest: Manifest;
   plan: BuildPlan;
   stage: StageDef;
@@ -87,7 +90,14 @@ function checkMutations(input: ExecuteInput, actions: Action[]): GateViolation[]
     .filter((action) => action.type === "write" || action.type === "edit")
     .map((action) => ({ path: normalize((action as { path: string }).path), content: "" }));
 
-  return checkPaths(input.manifest, input.plan, input.stage, targets);
+  return checkPaths({
+    repoRoot: input.repoRoot,
+    order: input.order,
+    manifest: input.manifest,
+    plan: input.plan,
+    stage: input.stage,
+    files: targets,
+  });
 }
 
 function applyEdit(

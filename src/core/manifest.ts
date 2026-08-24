@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 
+import { KINDS } from "./workOrder";
+import type { WorkKind } from "./workOrder";
+
 export const MANIFEST_FILE = "code-agent.json";
 
 const StageSchema = z.object({
@@ -15,6 +18,13 @@ const StageSchema = z.object({
       "이 단계가 만드는 것의 성격. doc은 코드가 아닌 문서(결정 질문지·조사서·컨벤션), " +
         "verify는 build/test 명령을 돌려 그 결과로 고치는 단계. " +
         "라이프사이클 단계를 코드에 박지 않고 프로젝트가 선언하게 하는 축이다",
+    ),
+  kinds: z
+    .array(z.enum(KINDS))
+    .default([])
+    .describe(
+      "이 단계를 도는 작업 종류. 비면 모든 종류에서 돈다. refactor 는 Entity~Controller 를 " +
+        "순차 생성하지 않으므로, 종류마다 도는 단계가 갈리는 자리가 여기다",
     ),
   base: z
     .string()
@@ -131,6 +141,26 @@ export function loadManifest(templatesDir: string): Manifest {
     throw new Error(`${MANIFEST_FILE} 형식 오류:\n${issues}`);
   }
   return parsed.data;
+}
+
+/**
+ * 그 종류가 도는 단계만.
+ *
+ * 하나도 없으면 조용히 끝난 것처럼 보이는 대신 거절한다 — 아무 단계도 돌지 않은 실행을
+ * "다 됐다"로 읽으면, 하지 않은 일을 한 것으로 알리게 된다.
+ */
+export function stagesFor(manifest: Manifest, kind: WorkKind): StageDef[] {
+  const stages = manifest.stages.filter(
+    (stage) => stage.kinds.length === 0 || stage.kinds.includes(kind),
+  );
+  if (stages.length === 0) {
+    throw new Error(
+      `이 프로젝트에는 ${kind} 로 돌 단계가 선언돼 있지 않습니다.\n` +
+        `  ${MANIFEST_FILE} 의 stages[].kinds 를 확인하세요 (선언된 단계: ` +
+        `${manifest.stages.map((stage) => stage.key).join(", ")}).`,
+    );
+  }
+  return stages;
 }
 
 /** 실행할 단계 목록. onlyStages가 있어도 선언된 순서를 유지한다. */

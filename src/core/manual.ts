@@ -30,19 +30,6 @@ export const FILES_SHAPE = `{
   ]
 }`;
 
-/** 계획 단계가 돌려줘야 하는 형태 */
-export const PLAN_SHAPE = `{
-  "domainName": "도메인 이름",
-  "domainLabel": "사람이 읽는 이름",
-  "domainRoot": "도메인 분류 (없으면 \\"\\")",
-  "domainDirName": "실제 디렉토리 이름",
-  "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명" }],
-  "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
-  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
-  "openQuestions": ["사람이 답해야 하는 것"],
-  "reasoning": "판단 근거"
-}`;
-
 /** 검수 단계가 돌려줘야 하는 형태 */
 export const GATE_SHAPE = `{
   "violations": [
