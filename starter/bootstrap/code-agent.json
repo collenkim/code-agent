@@ -11,6 +11,7 @@
   "stages": [
     {
       "key": "decisions",
+      "kinds": ["bootstrap"],
       "title": "결정 질문지",
       "template": "01-decisions.md",
       "kind": "doc",
@@ -22,6 +23,7 @@
     },
     {
       "key": "scaffold-plan",
+      "kinds": ["bootstrap"],
       "title": "스캐폴딩 명령",
       "template": "02-scaffold.md",
       "kind": "doc",
@@ -33,6 +35,7 @@
     },
     {
       "key": "skeleton",
+      "kinds": ["bootstrap"],
       "title": "공통 모듈·설정",
       "template": "03-skeleton.md",
       "scope": "project",
@@ -43,6 +46,7 @@
     },
     {
       "key": "declare",
+      "kinds": ["bootstrap"],
       "title": "code-agent.json + 컨벤션 문서",
       "template": "04-declare.md",
       "kind": "doc",

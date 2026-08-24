@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   collectExemplars,
   formatExemplars,
+  listPaths,
   listReferenceTree,
   readCurrent,
 } from "./exemplar";
@@ -25,6 +26,9 @@ import type {
 
 /** 앞 단계 산출물을 프롬프트에 다시 넣을 때의 파일당 상한 */
 const MAX_PREVIOUS_LINES = 300;
+
+/** 단계가 선언한 참고 파일의 개수 상한. 디렉토리를 선언하면 금세 커진다 */
+const MAX_DECLARED_READS = 12;
 
 export const FilesSchema = z.object({
   files: z.array(
@@ -157,6 +161,23 @@ export function buildStagePrompt(
     plannedFiles.map((file) => file.path),
   );
 
+  // 프로젝트가 이 단계에 함께 실으라고 선언한 것들(빌드 파일·설정 등). 의존성 목록을 사람이
+  // 옮겨 적게 하면 반드시 실제와 어긋난다 — 코드가 읽어 넣는 편이 정확하고 최신이다.
+  const found = listPaths(context.repoRoot, manifest, stage.reads);
+  const declared = readCurrent(context.repoRoot, found.slice(0, MAX_DECLARED_READS));
+  const declaredSection =
+    declared.length > 0
+      ? [
+          "# 프로젝트가 선언한 참고 파일",
+          formatExemplars(declared, manifest.language),
+          ...(found.length > declared.length
+            ? [`(선언한 ${found.length}개 중 앞 ${declared.length}개만 실었습니다)`]
+            : []),
+          "",
+          "",
+        ].join("\n")
+      : "";
+
   const user = withPolicy(
     `${describeWorkOrder(context.workOrder, context.target)}\n\n` +
       `# 이번 단계에서 만들거나 고칠 파일 (계획 확정분)\n` +
@@ -165,6 +186,7 @@ export function buildStagePrompt(
         : "(계획에 이 단계 파일이 없음 — 아무것도 만들지 말고 빈 배열을 반환한다)") +
       `\n\n# 단계 템플릿 (${stage.template})\n${readTemplate(context.templatesDir, stage)}\n\n` +
       treeSection +
+      declaredSection +
       (current.length > 0
         ? `# 고칠 파일의 현재 내용 — 여기서부터 바꾼다\n` +
           `${formatExemplars(current, manifest.language)}\n\n`
