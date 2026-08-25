@@ -1,13 +1,13 @@
 # [adopt 02] 선언 — code-agent.json + 컨벤션 문서
 
-> **선행**: [01] 구조 조사 · **다음**: develop (도메인 추가)
+> **선행**: [01] 구조 조사 · **다음**: `kind: feature` (도메인 추가)
 > **산출물**: `doc/templates/code-agent.json`, 컨벤션 문서 초안
 
 ## 0. 사용법
 
 조사 결과를 이후 실행이 읽을 파일로 옮긴다. **레거시 도입의 본체다.**
 
-이 단계가 끝나면 그 프로젝트는 `develop` 모드를 그대로 쓸 수 있다.
+이 단계가 끝나면 그 프로젝트는 `kind: feature` 를 그대로 쓸 수 있다.
 
 ## 1. 입력 게이트
 
@@ -59,4 +59,4 @@
 
 - **산출물**: `code-agent.json`, 컨벤션 문서
 - **사람이 할 일**: `exemplars` 경로가 맞는지 확인 (여기가 틀리면 이후 전부가 흔들린다)
-- **다음**: `--templates doc/templates` 로 develop 모드 사용
+- **다음**: `--templates doc/templates` 로 `kind: feature` 실행
