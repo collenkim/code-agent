@@ -59,20 +59,28 @@
 
 ## 세 가지 모드
 
-모드를 가르는 기준은 하나다. **복제할 코드가 있느냐.**
+모드를 가르는 기준은 하나다. **복제할 코드가 있느냐.** 모드는 작업 지시서의 `kind` 로 고른다.
 
-| 모드 | 언제 | 근거 | 산출물 |
+| `kind` | 언제 | 근거 | 산출물 |
 |---|---|---|---|
 | **bootstrap** | 신규 프로젝트를 처음 만들 때 | 사람의 결정 + 공식 스캐폴더 출력 | 빌드 파일 · 공통 모듈 · `code-agent.json` · 컨벤션 문서 |
 | **adopt** | 레거시 프로젝트에 도입할 때 | **이미 있는 코드** | `code-agent.json` · 컨벤션 문서 |
-| **develop** | 도메인을 추가할 때 | 같은 저장소의 참조 도메인 | Entity ~ Controller ~ 테스트 |
+| **feature** | 도메인을 추가할 때 | 같은 저장소의 참조 도메인 | Entity ~ Controller ~ 테스트 |
+
+고치는 작업인 [`refactor`](#고치는-작업--kind-refactor)·[`fix`](#결함-수정--kind-fix)도 같은 `kind` 축에 있다.
+그쪽은 만들 도메인이 없어 근거가 다르므로 따로 다룬다.
 
 ```
-신규:    bootstrap  →  seed(첫 도메인)  →  develop  →  develop  …
-레거시:  adopt      →  develop  →  develop  …
+신규:    bootstrap  →  (첫 도메인 — 아래 참고)  →  feature  →  feature  …
+레거시:  adopt      →  feature  →  feature  …
 ```
 
-`bootstrap`과 `adopt`의 진짜 산출물은 코드가 아니라 **근거 그 자체** — `code-agent.json`과 컨벤션 문서다. 그 둘이 생기면 이후는 `develop` 하나로 돈다.
+`bootstrap`과 `adopt`의 진짜 산출물은 코드가 아니라 **근거 그 자체** — `code-agent.json`과 컨벤션 문서다. 그 둘이 생기면 이후는 `feature` 하나로 돈다.
+
+> **첫 도메인은 아직 이 파이프라인으로 못 만든다.** `exemplars` 를 선언한 단계가 하나라도
+> 있으면 참조 도메인이 필수라 실행 자체가 거부된다(`run.ts`) — 그런데 `bootstrap` 직후에는
+> 복제할 도메인이 없다. 사람이 첫 도메인을 손으로 만들어야 그다음부터 `feature` 가 돈다.
+> [아직 안 되는 것](#아직-안-되는-것) 참고.
 
 `starter/bootstrap`, `starter/adopt`에 각 모드의 매니페스트와 템플릿이 들어 있다. 여기 선언된 것은 **절차**이며 프로젝트 지식이 아니다 — 언어·계층 같은 값은 전부 문서에서 온다.
 
@@ -92,7 +100,7 @@
 
 ### 모드별 필요 문서
 
-| 문서 | bootstrap | adopt | develop | 어떻게 넘기나 |
+| 문서 | bootstrap | adopt | feature | 어떻게 넘기나 |
 |---|:---:|:---:|:---:|---|
 | **프로젝트 개요** | 필수 | — | — | `--spec` |
 | **아키텍처 결정서** | 필수 | — | — | `--spec` |
@@ -131,7 +139,7 @@
 </details>
 
 <details open>
-<summary><b>요구사항·워크플로우</b> — develop 입력 · 최소 4항목</summary>
+<summary><b>요구사항·워크플로우</b> — feature 입력 · 최소 4항목</summary>
 
 아래가 **특정 가능해야** 생성이 시작된다. 유추로 채워야 하면 계획 단계가 미결 질문으로 남기고 멈춘다.
 
@@ -149,7 +157,7 @@
 </details>
 
 <details open>
-<summary><b>데이터 정의</b> — develop 입력</summary>
+<summary><b>데이터 정의</b> — feature 입력</summary>
 
 필드명 · 타입 · 필수 여부 · 길이/정밀도 · 제약. DDL(`.sql`)을 그대로 넘겨도 된다.
 
@@ -158,14 +166,14 @@
 </details>
 
 <details>
-<summary><b>화면·API 정의</b> — develop 입력(권장)</summary>
+<summary><b>화면·API 정의</b> — feature 입력(권장)</summary>
 
 화면 맵 · 상태별 UI 규칙 · API 목록(메서드·URI·요청·응답) · 권한.
 
 </details>
 
 <details>
-<summary><b>코드 컨벤션</b> — develop 필수 / bootstrap·adopt 산출물</summary>
+<summary><b>코드 컨벤션</b> — feature 필수 / bootstrap·adopt 산출물</summary>
 
 디렉토리를 주면 그 안의 `.md`를 전부 읽는다. 규칙이 여러 장으로 나뉘어 있는 게 보통이기 때문이다.
 
@@ -322,6 +330,10 @@ LLM 이 앉았고, 프롬프트를 Console 에 붙여넣는 사람의 왕복은 
 > **5턴이 전부 코드 덕은 아니다.** 두 번째 실행의 조사서가 검수를 한 번에 통과한 데에는 첫 실행의
 > 지적을 이미 본 영향이 있다. 반면 탐색 8건과 형식 오류 1건이 사라진 것은 프롬프트에 실린 것이
 > 달라져서다 — 그쪽은 코드 변경에 그대로 귀속된다.
+
+`bootstrap` 도 빈 저장소에 걸어 계획→질문→승인→첫 단계까지 CLI·HTTP 양쪽으로 돌려 봤다.
+**여기서도 모델 자리에는 사람이 아니라 LLM 이 앉았다.** 턴 수는 재지 않았다 — 절차와 API 규격을
+확인한 실행이다. 절차는 [doc/bootstrap-test.md](doc/bootstrap-test.md) 에 있다.
 
 ### 채팅에 붙여넣을 때 API와 다른 점
 
@@ -612,11 +624,22 @@ code-agent serve
 | `POST /api/jobs` | 작업 생성 `{repo, templates, out, specs[], reference?}` |
 | `GET /api/jobs/:id` | 지금 할 차례 · 턴 · 미결 질문 · 앞 턴의 위반 |
 | `GET /api/jobs/:id/prompt` | 붙여넣을 프롬프트. **상태를 바꾸지 않는다** |
-| `POST /api/jobs/:id/response` | `{response}` 를 반영. 상태를 움직이는 유일한 지점 |
+| `POST /api/jobs/:id/response` | 응답 전문을 반영. 상태를 움직이는 유일한 지점 |
 | `POST /api/jobs/:id/questions` | `{answers: [{id, answer}]}` |
 | `POST /api/jobs/:id/approval` | `{decision: "approved"\|"rejected", approver, comment, target}` — 2차 게이트 |
 | `GET /api/jobs/:id/log` | 턴 기록 |
 | `DELETE /api/jobs/:id` | 목록에서 제거 (out/ 은 그대로) |
+
+`response` 만 본문 형식이 둘이다. **`text/plain` 이면 본문 전체가 곧 응답 전문이다.**
+
+```bash
+curl -X POST localhost:4319/api/jobs/job-1/response \
+  -H "content-type: text/plain; charset=utf-8" --data-binary @answer.txt
+```
+
+`application/json` 이면 `{response: "…"}` 로 감싼다. 다만 응답 전문은 코드블록이 든 수 KB
+텍스트라 감싸는 쪽이 조용히 깨지는 일이 있다 — PowerShell 의 `ConvertTo-Json` 은 긴 문자열을
+`{value, Count}` 객체로 바꾼다. 그때는 감싸지 말고 `text/plain` 으로 보내면 된다.
 
 | 옵션 | 기본값 |
 |---|---|
@@ -914,6 +937,7 @@ out/PROJ-1421/contractguarantee/src/main/java/com/acme/app/application/contractg
 - **매니페스트가 "도메인 디렉토리 + 계층" 레이아웃을 전제한다.** `domainBase`/`domainRoots`/`{Ref}` 는 그 형태에 맞춰져 있어, 기능별로 파일이 한곳에 모이는 프로젝트(예: 컴포넌트+훅+테스트 co-locate)나 도메인 개념이 없는 도구·라이브러리에는 잘 맞지 않는다.
 - **사람이 Console 에 붙여넣는 왕복은 아직 해 보지 않았다.** 파이프라인 자체는 이 저장소에 `adopt` 를 걸어 끝까지 돌려 봤고 그 수치가 [실측](#실측--한-번-끝까지-돌려-본-결과)에 있다. 다만 모델 자리에 사람이 아니라 LLM 이 앉았고, `feature` 경로는 실제 프로젝트로 돌려 본 적이 없다.
 - **`feature` 의 실측이 없다.** 위 수치는 문서 두 장을 만드는 `adopt` 의 것이다. 도메인 하나를 Entity~Controller 로 만드는 실행의 턴 수는 아직 모른다 — 서버를 붙일지의 판단에는 그 숫자가 필요하다.
+- **`bootstrap` 다음의 첫 도메인을 만들 길이 없다.** `exemplars` 를 선언한 단계가 하나라도 있으면 참조 도메인이 필수인데(`run.ts`), `bootstrap` 직후에는 복제할 도메인이 없어 실행이 거부된다. 지금은 사람이 첫 도메인을 손으로 만들어야 `feature` 가 돈다. 참조 없는 단계를 선언하는 길은 열려 있으나(`exemplars: []`), 그 경로의 템플릿은 없다.
 - **자동 모드(API 경로)는 실행 검증이 안 돼 있고, 아직 예전 `{files:[]}` 응답 형식을 쓴다.** 액션 프로토콜로 옮기는 것은 서버를 붙일 때 할 일이다.
 - **화면(템플릿·JS) 단계** — 기존 UI 메커니즘 복제 요구가 강해 별도 설계가 필요하다.
 - **review-agent 연동** — 생성 → 리뷰 → 수정 루프는 아직 손으로 이어 붙여야 한다.

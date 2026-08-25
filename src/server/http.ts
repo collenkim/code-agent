@@ -5,7 +5,7 @@
  * 이 머신에서 실행한다. 외부에 열면 그게 그대로 원격 명령 실행이 된다.
  */
 import { createServer } from "http";
-import type { IncomingMessage, ServerResponse } from "http";
+import type { IncomingMessage, Server, ServerResponse } from "http";
 
 import * as api from "./api";
 import { JobStore } from "./jobs";
@@ -62,6 +62,28 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
 }
 
 /**
+ * 응답 전문만 본문 형식이 두 가지다.
+ *
+ * 이것은 코드블록이 든 수 KB 텍스트인데, JSON 문자열로 감싸는 일이 클라이언트에서 조용히
+ * 깨진다 — PowerShell 의 ConvertTo-Json 은 긴 문자열을 `{value, Count}` 객체로 감싼다.
+ * 그래서 `text/plain` 이면 본문을 그대로 받고, JSON 이면 감싸기가 깨졌는지 여기서 말해 준다.
+ */
+async function readResponseText(req: IncomingMessage): Promise<string> {
+  if ((req.headers["content-type"] ?? "").startsWith("text/plain")) {
+    return readBody(req);
+  }
+
+  const body = await readJson<{ response?: unknown }>(req);
+  if (body.response !== undefined && typeof body.response !== "string") {
+    throw new Error(
+      `response 는 문자열이어야 하는데 ${typeof body.response} 를 받았습니다. ` +
+        "감싸지 말고 Content-Type: text/plain 으로 응답 전문을 그대로 본문에 실으세요.",
+    );
+  }
+  return body.response ?? "";
+}
+
+/**
  * 요청 하나를 처리한다. 던져진 오류는 전부 400으로 나간다 —
  * 여기서 나오는 오류는 대개 경로 오타나 잘못 붙여넣은 응답이라 사용자가 고칠 수 있는 것들이다.
  */
@@ -112,8 +134,7 @@ async function route(store: JobStore, req: IncomingMessage, res: ServerResponse)
       return;
     }
     if (action === "response" && method === "POST") {
-      const body = await readJson<{ response?: string }>(req);
-      json(res, 200, api.respond(store, id, body.response ?? ""));
+      json(res, 200, api.respond(store, id, await readResponseText(req)));
       return;
     }
     if (action === "questions" && method === "POST") {
@@ -140,7 +161,8 @@ async function route(store: JobStore, req: IncomingMessage, res: ServerResponse)
   json(res, 404, { error: `그런 경로가 없습니다: ${method} ${path}` });
 }
 
-export function serve(options: ServeOptions): void {
+/** 테스트가 끝나고 닫을 수 있도록 서버를 돌려준다. CLI 는 쓰지 않는다. */
+export function serve(options: ServeOptions): Server {
   const store = new JobStore(options.statePath);
 
   const server = createServer((req, res) => {
@@ -159,4 +181,6 @@ export function serve(options: ServeOptions): void {
     console.log(`작업 목록: ${options.statePath}`);
     console.log("\n브라우저로 위 주소를 열고, 프롬프트를 Console 에 붙여넣으세요.");
   });
+
+  return server;
 }
