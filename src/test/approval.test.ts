@@ -175,6 +175,111 @@ describe("승인 전에는 진행되지 않는다", () => {
   });
 });
 
+/**
+ * 실제로 샜던 자리를 그대로 재현한다.
+ *
+ * bootstrap 스타터처럼 `conventions` 와 `exemplars` 가 비어 있으면 저장소에서 읽을 것이 하나도
+ * 없다. 그래서 오타 난 저장소 경로가 아무 데도 걸리지 않고 승인까지 흘러가고, recursive mkdir 이
+ * 거기에 트리를 통째로 만들어 버린다 — 아무도 승인한 적 없는 곳에 승인 기록이 생긴다.
+ */
+describe("없는 저장소에는 판정을 남기지 않는다", () => {
+  const BOOTSTRAP_MANIFEST = {
+    domainBase: "src",
+    domainRoots: [],
+    conventions: [],
+    stages: [
+      {
+        key: "decisions",
+        title: "결정 질문지",
+        template: "01-decisions.md",
+        kind: "doc",
+        scope: "project",
+        exemplars: [],
+        outputDirs: ["doc"],
+      },
+    ],
+  };
+
+  /** 저장소를 하나도 읽지 않는 실행. repoRoot 만 갈아 끼워 쓴다 */
+  function bootstrapAt(repoRoot: string): BuildContext {
+    return {
+      specPaths: [join(root, "new-spec.md")],
+      templatesDir: join(root, "templates"),
+      repoRoot,
+      outDir: join(root, "out-new"),
+      maxRetries: 1,
+    };
+  }
+
+  beforeEach(() => {
+    // 템플릿은 저장소 밖에 둔다 — 저장소가 없어도 매니페스트가 해석되는 상황이다.
+    mkdirSync(join(root, "templates"), { recursive: true });
+    writeFileSync(
+      join(root, "templates", "code-agent.json"),
+      JSON.stringify(BOOTSTRAP_MANIFEST),
+      "utf-8",
+    );
+    writeFileSync(join(root, "templates", "01-decisions.md"), "# [01] 결정 질문지\n", "utf-8");
+    writeFileSync(
+      join(root, "new-spec.md"),
+      "---\nkind: bootstrap\nid: NEW-1\ntitle: 신규\ntarget: new-service\n---\n\n# 프로젝트 개요\n무언가를 만든다.\n",
+      "utf-8",
+    );
+  });
+
+  /** 계획까지 세운다. 저장소가 없어도 여기까지는 돈다 */
+  function planFor(repoRoot: string): BuildContext {
+    const built = bootstrapAt(repoRoot);
+    applyResponse(
+      built,
+      JSON.stringify({
+        domainName: "new-service",
+        domainLabel: "신규",
+        domainRoot: "",
+        domainDirName: "new-service",
+        files: [{ stage: "decisions", path: "doc/architecture-decisions.md", purpose: "질문지" }],
+        conventions: [],
+        conflicts: [],
+        openQuestions: [],
+        reasoning: "복제할 코드가 없다",
+      }),
+    );
+    return built;
+  }
+
+  test("경로가 없으면 만들지 않고 멈춘다", () => {
+    const typo = join(root, "저장소-오타");
+    const built = planFor(typo);
+
+    assert.throws(
+      () => decideApproval(built, "approved", { approver: "팀장" }),
+      /대상 저장소가 없습니다/,
+    );
+    assert.equal(existsSync(typo), false, "없는 경로에 디렉토리가 생기면 안 된다");
+  });
+
+  test("저장소 자리에 파일이 있으면 거부한다", () => {
+    const notADir = join(root, "저장소-아닌-파일");
+    writeFileSync(notADir, "이건 디렉토리가 아니다", "utf-8");
+    const built = planFor(notADir);
+
+    assert.throws(
+      () => decideApproval(built, "approved", { approver: "팀장" }),
+      /대상 저장소가 없습니다/,
+    );
+  });
+
+  test("디렉토리만 있으면 남긴다 — git 저장소일 필요는 없다", () => {
+    const plainDir = join(root, "그냥-디렉토리");
+    mkdirSync(plainDir, { recursive: true });
+    const built = planFor(plainDir);
+
+    decideApproval(built, "approved", { approver: "팀장" });
+
+    assert.equal(readLedger(plainDir, "NEW-1").length, 1);
+  });
+});
+
 describe("원장 — 판정 사건이 쌓인다", () => {
   test("대상 저장소 안에 남는다 — out/ 은 지워지는 곳이다", () => {
     plan();

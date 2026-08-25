@@ -15,7 +15,7 @@
  * 규격은 doc/work-order.md 의 "승인 기록" 절에 있다.
  */
 import { createHash } from "crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
 import type { BuildPlan } from "./types";
@@ -168,12 +168,31 @@ export interface DecisionInput {
 }
 
 /**
+ * 승인 기록은 대상 저장소 **안에** 남는다. 그러므로 그 저장소가 없으면 만들지 않고 멈춘다.
+ *
+ * recursive mkdir 은 오타 난 경로에도 트리를 통째로 만들어 버린다. 그러면 아무도 승인한 적
+ * 없는 곳에 승인 기록이 생기고, 정작 승인했다고 믿은 저장소에는 아무것도 없다. 없는 경로를
+ * 만들어 주는 편의보다, 어디에 남기려는지 사람이 다시 보게 하는 편이 낫다.
+ */
+function assertRepoExists(repoRoot: string): void {
+  if (!existsSync(repoRoot) || !statSync(repoRoot).isDirectory()) {
+    throw new Error(
+      `승인 기록을 남길 대상 저장소가 없습니다: ${repoRoot}\n` +
+        "없는 경로에 디렉토리를 만들지 않고 멈췄습니다 — 경로 오타면 엉뚱한 곳에 승인 기록이 남습니다.\n" +
+        "경로가 맞는지 확인하고, 맞다면 그 디렉토리를 먼저 만드세요.",
+    );
+  }
+}
+
+/**
  * 판정을 원장에 남긴다. 반려도 남긴다 — 반려는 지워야 할 실패가 아니라 가장 값진 기록이다.
  *
  * 이 파일은 신원을 증명하지 않는다. 자기가 자기를 승인할 수 있다. 규격이 보장하는 것은
  * "승인 없이는 진행되지 않는다"까지이고, 증명은 커밋·PR·티켓에 있다.
  */
 export function recordDecision(repoRoot: string, input: DecisionInput): ApprovalRecord {
+  assertRepoExists(repoRoot);
+
   const { order, plan, target } = input;
   const seq = readLedger(repoRoot, order.id).filter((row) => row.target === target).length + 1;
   const snapshot = `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${seq}.plan.json`;
