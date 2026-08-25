@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 
+import { once } from "node:events";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import * as api from "../server/api";
+import { serve } from "../server/http";
 import { JobStore } from "../server/jobs";
 import { page } from "../server/ui";
 
@@ -281,6 +286,77 @@ describe("질문 — 답할 때까지 멈춘다", () => {
 
     const body = api.prompt(store, jobId).prompt ?? "";
     assert.match(body, /최대 200자/, "사람이 답한 것이 다음 프롬프트에 들어가야 한다");
+  });
+});
+
+/**
+ * 여기만 실제 HTTP 를 탄다. 응답 전문을 JSON 문자열로 감싸는 일이 클라이언트에서 조용히
+ * 깨지기 때문에(PowerShell 의 ConvertTo-Json), 본문 형식은 api 함수가 아니라 전송 계층에서
+ * 판정된다 — 그 자리를 직접 두드려야 회귀가 잡힌다.
+ */
+describe("응답 전송 — 본문 형식", () => {
+  let server: Server;
+  let base: string;
+
+  before(async () => {
+    // 위 왕복이 움직여 놓은 작업에 얹으면 무엇을 재는지 흐려진다. 따로 만든다.
+    const job = new JobStore(statePath).create({
+      label: "http",
+      repo: repoRoot,
+      templates: "doc/templates",
+      out: join(root, "out-http"),
+      specs: [join(root, "spec.md")],
+    });
+
+    // 포트 0 이면 빈 포트를 커널이 고른다 — 테스트가 특정 포트를 점유하지 않는다.
+    server = serve({ port: 0, host: "127.0.0.1", statePath });
+    await once(server, "listening");
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/jobs/${job.id}`;
+  });
+
+  after(() => {
+    server.close();
+  });
+
+  test("response 가 문자열이 아니면 무엇이 잘못됐는지 알려 준다", async () => {
+    // PowerShell 의 ConvertTo-Json 이 긴 문자열을 이렇게 감싼다. 여기서 걸러 주지 않으면
+    // "responseText.trim is not a function" 이 나가 원인을 짐작할 수 없다.
+    const res = await fetch(`${base}/response`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ response: { value: PLAN_RESPONSE, Count: 1 } }),
+    });
+
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.match(body.error, /문자열이어야/);
+    assert.match(body.error, /text\/plain/, "어떻게 고치는지까지 알려 줘야 한다");
+  });
+
+  test("text/plain 본문은 감싸지 않고 그대로 들어간다", async () => {
+    const res = await fetch(`${base}/response`, {
+      method: "POST",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: PLAN_RESPONSE,
+    });
+
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { planSaved?: string };
+    assert.ok(body.planSaved, "감싸지 않은 본문으로 계획이 저장돼야 한다");
+  });
+
+  test("JSON 본문도 그대로 돈다", async () => {
+    const res = await fetch(`${base}/response`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ response: "네, 코드를 만들어 드리겠습니다!" }),
+    });
+
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { parseErrors: string[]; advanced: boolean };
+    // 문자열이 실제로 건너갔다는 증거 — 형식이 깨진 채로 파서까지 도달했다.
+    assert.ok(body.parseErrors.length > 0);
+    assert.equal(body.advanced, false, "형식이 깨진 응답은 상태를 움직이지 않는다");
   });
 });
 

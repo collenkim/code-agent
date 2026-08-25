@@ -5,6 +5,10 @@
 >
 > 아래는 **나중에 API를 붙일 때** 꺼내 쓰는 안이다. Managed Agents는 Anthropic API이므로
 > API를 쓰지 않는 동안에는 성립하지 않는다. 전제(GitHub 저장소 필요 등)도 그때 다시 확인해야 한다.
+>
+> 이 문서의 이름은 지금 코드와 어긋난다 — 여기 쓰인 `mode: "develop"` 은 실제로는 작업 지시서의
+> `kind: feature` 다(종류는 `bootstrap · adopt · feature · fix · refactor`). 경로도 `/jobs` 가
+> 아니라 `/api/jobs` 다. **현재 API 는 [README 의 HTTP API](../README.md#http-api)가 기준이다.**
 
 **실행 기반**: Anthropic **Managed Agents**(이하 CMA). 에이전트 루프와 세션별 샌드박스 컨테이너를 Anthropic이 호스팅한다.
 code-agent는 그 위에 얹히는 **정책 계층**이 된다.
