@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-export const KINDS = ["bootstrap", "adopt", "feature", "fix", "refactor"] as const;
+export const KINDS = ["spec", "bootstrap", "adopt", "feature", "fix", "refactor"] as const;
 export type WorkKind = (typeof KINDS)[number];
 
 /** 파이프라인이 실제로 분기·검사에 쓰는 속성. 이 목록은 늘리지 않는다. */
@@ -24,6 +24,7 @@ const RESERVED = ["kind", "id", "title", "target", "scope", "preserve", "approve
  * 아직 디렉토리가 없다. 실재를 물을 수 있는 것은 이미 있는 코드를 다루는 셋뿐이다.
  */
 const TARGET_IS_PATH: Record<WorkKind, boolean> = {
+  spec: false,
   bootstrap: false,
   adopt: true,
   feature: false,
@@ -81,6 +82,9 @@ export class WorkOrderError extends Error {
 
 /** 종류가 무엇을 뜻하는지. 모델은 kind 라는 낱말만 보고는 무엇이 달라지는지 모른다. */
 const KIND_MEANING: Record<WorkKind, string> = {
+  spec:
+    "스펙 문서를 만든다. 만드는 것은 문서 한 장뿐이고, 그 내용은 전부 사람이 답한 것에서 온다 — " +
+    "모르는 것은 지어내지 않고 묻는다",
   bootstrap:
     "신규 프로젝트를 처음 만든다. 복제할 코드가 없으므로 결정 문서와 스캐폴더 출력만이 근거다",
   adopt:

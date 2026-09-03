@@ -3,7 +3,8 @@
     "신규 프로젝트 구성용 스타터. 대상 저장소에는 아직 code-agent.json 이 없으므로 이것을 --templates 로 가리켜 시작한다.",
     "여기 선언된 것은 '절차'이며 프로젝트 지식이 아니다 — 언어·프레임워크·계층 같은 값은 전부 --spec 문서에서 온다.",
     "domainBase 는 스키마상 필수라 자리만 채운다. 이 단계들은 참조 파일을 쓰지 않으므로 실제로 참조되지 않는다.",
-    "conventions 에는 결정 문서(architecture-decisions.md)를 넣는다 — 이 실행에서는 그것이 유일한 규칙 근거다."
+    "conventions 는 비운다 — 규칙 근거가 되는 결정 문서를 이 실행이 01 단계에서 만들어 내기 때문이다.",
+    "그 문서는 out/ 에 생기고 이후 단계에 '앞 단계 산출물'로 실린다. 저장소에서 읽을 것이 아니다."
   ],
   "domainBase": "src",
   "domainRoots": [],
@@ -12,7 +13,7 @@
     {
       "key": "decisions",
       "kinds": ["bootstrap"],
-      "title": "결정 질문지",
+      "title": "아키텍처 결정서",
       "template": "01-decisions.md",
       "kind": "doc",
       "scope": "project",

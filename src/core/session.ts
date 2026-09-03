@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import type { ActionType } from "./action";
-import type { ApprovalState, PendingApproval } from "./approval";
+import type { ApprovalState, PendingApproval, PendingStage, StageState } from "./approval";
 import type { Observation } from "./execute";
 import type { Manifest, StageDef } from "./manifest";
 import { PLAN_FILE } from "./state";
@@ -54,8 +54,11 @@ export interface Session {
    * 그 단계의 out/ 이 바뀌면 지워진다 — 검증 결과는 그때의 파일들에 대한 것이지
    * 지금 파일들에 대한 것이 아니기 때문이다. 이것이 없으면 한 번 통과시켜 놓고
    * 그 뒤에 무엇을 바꾸든 '통과했다'고 말할 수 있다.
+   *
+   * `error` 는 돌리긴 했으나 명령이 돌지 못한 것이다. 남겨 두는 이유는 다음 턴에
+   * "돌려 보지 않았다"가 아니라 "돌지 못했다"고 정확히 말하기 위해서다.
    */
-  verified: Record<string, "pass" | "fail">;
+  verified: Record<string, "pass" | "fail" | "error">;
   turn: number;
   /** 앞 턴에서 요청한 read·list·run 의 결과. 다음 프롬프트에 실린다 */
   lastObservations: Observation[];
@@ -194,6 +197,8 @@ export type Target =
   | { kind: "approval"; state: PendingApproval }
   | { kind: "stage"; stage: StageDef }
   | { kind: "gate"; stage: StageDef }
+  /** 단계가 만든 것을 사람이 아직 확정하지 않았다 — 4차 게이트 */
+  | { kind: "confirm"; stage: StageDef; state: PendingStage }
   | { kind: "blocked"; reason: string }
   | { kind: "done" };
 
@@ -209,6 +214,8 @@ export function describeTarget(target: Target): string {
       return target.stage.key;
     case "gate":
       return `gate:${target.stage.key}`;
+    case "confirm":
+      return `confirm:${target.stage.key}`;
     case "blocked":
       return "blocked";
     case "done":
@@ -226,7 +233,13 @@ export function decideTarget(
   outDir: string,
   manifest: Manifest,
   session: Session,
-  options: { gate: boolean; intakeNeeded?: boolean; approval?: ApprovalState } = { gate: true },
+  options: {
+    gate: boolean;
+    intakeNeeded?: boolean;
+    approval?: ApprovalState;
+    /** 단계별 확정 상태 — 4차 게이트. 계획이 있을 때만 계산된다 */
+    stages?: Map<string, StageState>;
+  } = { gate: true },
 ): Target {
   // 스펙에서 필요한 항목을 뽑는 일이 먼저다. 무엇이 비었는지 모르는 채로 계획을 세우면
   // 그 빈칸이 곧 모델이 지어내는 자리가 된다.
@@ -267,6 +280,12 @@ export function decideTarget(
     }
     if (options.gate && !session.gatedStages.includes(stage.key)) {
       return { kind: "gate", stage };
+    }
+    // 4차 게이트. 검수는 모델이 했고, 그것을 근거로 삼을지는 사람이 정한다.
+    // 계획이 승인된 뒤에만 여기 닿으므로 stages 는 반드시 계산되어 있다.
+    const confirmed = options.stages?.get(stage.key) ?? { status: "none" as const };
+    if (confirmed.status !== "confirmed") {
+      return { kind: "confirm", stage, state: confirmed };
     }
   }
 

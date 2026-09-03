@@ -11,8 +11,14 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { ACTION_FORMAT } from "./action";
-import { checkApproval, formatDiff, hashPlan, recordDecision } from "./approval";
-import type { ApprovalRecord, Decision, PendingApproval } from "./approval";
+import {
+  checkApproval,
+  formatDiff,
+  hashPlan,
+  recordDecision,
+  recordStageDecision,
+} from "./approval";
+import type { ApprovalRecord, Decision, PendingApproval, PendingStage } from "./approval";
 import { executeActions } from "./execute";
 import type { ExecuteOutcome } from "./execute";
 import { parseActions } from "./fence";
@@ -21,6 +27,7 @@ import { buildGatePrompt, GateSchema } from "./gate";
 import { GATE_SHAPE, parseResponse, withOutputFormat } from "./manual";
 import { formatPlan, missingPreserve, planFormatFor, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
+import type { StageDef } from "./manifest";
 import type { Lane, LaneState } from "./targets";
 import { describeLanes, rememberDispatch, takeDispatch, withRememberedSpec } from "./targets";
 import {
@@ -95,8 +102,55 @@ function laneSection(lanes: LaneState[]): string {
 const HOW_TO_DECIDE = [
   '승인:  code-agent approve --approver <이름> [--target <대상>] [--comment "…"] --repo … --templates …',
   '반려:  code-agent reject  --approver <이름> [--target <대상>] --comment "사유"  --repo … --templates …',
-  "  --target 은 승인을 기다리는 대상이 둘 이상일 때 필요합니다.",
+  "  --target 은 판정을 기다리는 대상이 둘 이상일 때 필요합니다.",
 ].join("\n");
+
+/**
+ * 4차 게이트 화면에 올릴 말.
+ *
+ * 무엇을 확정하는지는 **파일 목록**이다. 그것 없이 "확정하시겠습니까"만 물으면 판정이 형식이 되고,
+ * 형식이 된 판정은 통제가 아니다.
+ */
+function confirmMessage(
+  state: PendingStage,
+  stage: StageDef,
+  outDir: string,
+  target: string,
+): string {
+  const files = loadStageFiles(outDir, loadPlan(outDir), stage.key);
+  const listed =
+    files.length > 0
+      ? files
+          .map((file) => `  - ${join(outDir, file.path)} (${file.content.split("\n").length}줄)`)
+          .join("\n")
+      : "  (이 단계는 파일을 만들지 않았습니다 — 그대로 확정할지도 사람이 정합니다)";
+
+  const lines = [
+    `## 단계 산출물을 확정해야 넘어갑니다 (4차 게이트) — 대상: ${target} · 단계: ${stage.key}`,
+    stage.title,
+    "",
+    listed,
+    "",
+  ];
+
+  if (state.status === "rejected") {
+    lines.push(
+      `직전 판정: 반려 — ${state.record.approver} · ${state.record.at}`,
+      ...(state.record.comment ? [`  사유: ${state.record.comment}`] : []),
+      "그 사유는 다음 프롬프트에 실렸습니다. 다시 만든 것을 보고 판정하세요.",
+      "",
+    );
+  } else if (state.status === "stale-files") {
+    lines.push(
+      `이미 확정된 적이 있지만 그 뒤 산출물이 바뀌었습니다 — ${state.record.approver} · ${state.record.at}`,
+      "확정은 그때의 파일들에 대한 것이라 지금 파일들을 말하지 않습니다. 다시 판정하세요.",
+      "",
+    );
+  }
+
+  lines.push("확정 전에는 다음 단계로 넘어가지 않습니다.", "", HOW_TO_DECIDE);
+  return lines.join("\n");
+}
 
 /**
  * 승인 화면에 올릴 말.
@@ -194,6 +248,15 @@ export function nextPrompt(input: BuildContext): NextPrompt {
       message:
         approvalMessage(target.state, loadPlan(context.outDir), context.outDir, lane) +
         laneSection(lanes),
+    };
+  }
+
+  if (target.kind === "confirm") {
+    // 프롬프트를 내주지 않는다. 확정은 사람이 하는 일이라 모델에 보낼 것이 없다.
+    return {
+      ...head,
+      message:
+        confirmMessage(target.state, target.stage, context.outDir, lane) + laneSection(lanes),
     };
   }
 
@@ -298,13 +361,17 @@ function laneToDecide(lanes: LaneState[], target?: string): Lane {
     return named.lane;
   }
 
-  const waiting = lanes.filter((state) => state.step.kind === "approval");
+  const waiting = lanes.filter(
+    (state) => state.step.kind === "approval" || state.step.kind === "confirm",
+  );
   if (waiting.length === 0) {
-    throw new Error("승인을 기다리는 대상이 없습니다. 계획이 선 뒤에 판정할 수 있습니다.");
+    throw new Error(
+      "판정을 기다리는 대상이 없습니다. 계획 승인(2차)이나 단계 확정(4차)이 걸린 뒤에 판정할 수 있습니다.",
+    );
   }
   if (waiting.length > 1) {
     throw new Error(
-      `승인을 기다리는 대상이 ${waiting.length} 개입니다. --target 으로 고르세요: ` +
+      `판정을 기다리는 대상이 ${waiting.length} 개입니다. --target 으로 고르세요: ` +
         waiting.map((state) => state.lane.target).join(", "),
     );
   }
@@ -329,9 +396,10 @@ export function decideApproval(
   const { context, lanes } = withResolvedInputs(withRememberedSpec(input));
   const lane = laneToDecide(lanes, given.target);
   const plan = loadPlan(lane.outDir);
+  const step = stepOf(lanes, lane.target);
   const state = checkApproval(context.repoRoot, context.workOrder, plan, lane.target);
 
-  if (decision === "approved" && state.status === "approved") {
+  if (decision === "approved" && step.kind !== "confirm" && state.status === "approved") {
     // 같은 계획에 같은 판정을 두 번 남기지 않는다. 원장이 사건 기록이라 중복은 잡음이다.
     return { unchanged: true, record: state.record };
   }
@@ -350,6 +418,27 @@ export function decideApproval(
     );
   }
 
+  // 4차 게이트 — 지금 기다리는 것이 단계 확정이면 그것에 판정한다.
+  // 사람은 "승인·반려"만 하고, 무엇에 대한 판정인지는 상태가 정한다.
+  if (step.kind === "confirm") {
+    const files = loadStageFiles(lane.outDir, plan, step.stage.key);
+    const record = recordStageDecision(context.repoRoot, {
+      order: context.workOrder,
+      target: lane.target,
+      plan,
+      stage: step.stage.key,
+      files,
+      decision,
+      approver,
+      comment: given.comment,
+    });
+
+    if (decision === "rejected") {
+      reopenStage(lane.outDir, step.stage.key, given.comment!);
+    }
+    return { unchanged: false, record };
+  }
+
   return {
     unchanged: false,
     record: recordDecision(context.repoRoot, {
@@ -361,6 +450,28 @@ export function decideApproval(
       comment: given.comment,
     }),
   };
+}
+
+/**
+ * 반려된 단계를 다시 돌게 한다.
+ *
+ * 검수 시도 횟수까지 되돌리는 것은, 사람이 반려한 것과 모델이 스스로 걸린 것을 같은 예산으로
+ * 세면 두 번째 판정에서는 검수가 아예 돌지 않기 때문이다. 반려 사유는 **위반으로** 실어
+ * 다음 프롬프트에 그대로 올린다 — 사유가 안 실리면 같은 것을 다시 만들어 온다.
+ */
+function reopenStage(outDir: string, stageKey: string, comment: string): void {
+  const session = loadSession(outDir);
+  const { [stageKey]: dropped, ...attempts } = session.gateAttempts;
+
+  saveSession(outDir, {
+    ...session,
+    completedStages: session.completedStages.filter((key) => key !== stageKey),
+    gatedStages: session.gatedStages.filter((key) => key !== stageKey),
+    gateAttempts: attempts,
+    lastViolations: [
+      { item: "사람이 반려함", file: stageKey, detail: comment },
+    ],
+  });
 }
 
 export interface ApplyOutcome {
@@ -413,7 +524,12 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     return outcome;
   };
 
-  if (target.kind === "blocked" || target.kind === "done" || target.kind === "approval") {
+  if (
+    target.kind === "blocked" ||
+    target.kind === "done" ||
+    target.kind === "approval" ||
+    target.kind === "confirm"
+  ) {
     // 응답을 소비하지 않는다. 붙여넣은 것이 있어도 지금 반영할 자리가 없다.
     session.turn -= 1;
     return {
@@ -428,7 +544,9 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
           ? target.reason
           : target.kind === "done"
             ? "이미 모든 단계가 끝났습니다."
-            : approvalMessage(target.state, loadPlan(context.outDir), context.outDir, lane),
+            : target.kind === "confirm"
+              ? confirmMessage(target.state, target.stage, context.outDir, lane)
+              : approvalMessage(target.state, loadPlan(context.outDir), context.outDir, lane),
     };
   }
 
@@ -602,7 +720,11 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   // 검증 결과는 그때의 파일들에 대한 것이다. 이 턴에서 확인한 것이 있으면 그것으로 갈고,
   // 확인 없이 파일만 바꿨으면 앞서 본 것을 버린다.
-  if (execution.verified === "pass" || execution.verified === "fail") {
+  if (
+    execution.verified === "pass" ||
+    execution.verified === "fail" ||
+    execution.verified === "error"
+  ) {
     session.verified = { ...session.verified, [target.stage.key]: execution.verified };
   } else if (execution.writtenFiles.length > 0) {
     const { [target.stage.key]: dropped, ...rest } = session.verified;

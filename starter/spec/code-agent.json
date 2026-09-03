@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "스펙 문서를 만드는 스타터. 저장소보다 스펙이 먼저이므로, 이 실행에는 대상 저장소가 없다 —",
+    "--repo 로는 **스펙 문서를 둘 폴더**를 가리킨다. 승인 기록이 그 안에 남는다.",
+    "여기 선언된 것은 '절차'이며 프로젝트 지식이 아니다. 문서 내용은 전부 사람이 답한 것에서 온다.",
+    "domainBase 는 스키마상 필수라 자리만 채운다. 이 단계는 참조 파일을 쓰지 않으므로 참조되지 않는다.",
+    "spec-schema.json 이 무엇을 물을지 정한다 — 빈칸 판정은 모델이 아니라 코드가 한다."
+  ],
+  "domainBase": "doc",
+  "domainRoots": [],
+  "conventions": [],
+  "stages": [
+    {
+      "key": "spec-doc",
+      "kinds": ["spec"],
+      "title": "스펙 문서",
+      "template": "01-spec.md",
+      "kind": "doc",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": [
+        "doc"
+      ]
+    }
+  ]
+}

@@ -52,8 +52,12 @@ export interface StatusView {
   message?: string;
   hasPrompt: boolean;
   hasPlan: boolean;
-  /** 계획이 승인되기 전에는 어느 단계도 진행되지 않는다 — 2차 게이트 */
+  /** 사람의 판정을 기다리는가 — 계획 승인(2차)이든 산출물 확정(4차)이든 */
   needsApproval: boolean;
+  /** 무엇에 대한 판정인가. plan 이면 2차 게이트, stage 면 4차 게이트 */
+  pending?: "plan" | "stage";
+  /** pending 이 stage 일 때 그 단계 키 */
+  pendingStage?: string;
   /** 앞 턴에서 남은 위반 — 다음 프롬프트에 실려 들어간다 */
   lastViolations: { item: string; file: string; detail: string }[];
 }
@@ -107,7 +111,7 @@ export function status(store: JobStore, id: string): StatusView {
     lanes: next.lanes.map((state) => ({
       target: state.lane.target,
       step: describeTarget(state.step),
-      needsApproval: state.step.kind === "approval",
+      needsApproval: state.step.kind === "approval" || state.step.kind === "confirm",
     })),
     turn: session.turn,
     completedStages: session.completedStages,
@@ -116,7 +120,14 @@ export function status(store: JobStore, id: string): StatusView {
     message: next.message,
     hasPrompt: Boolean(next.prompt),
     hasPlan: hasPlan(next.outDir),
-    needsApproval: next.target.kind === "approval",
+    needsApproval: next.target.kind === "approval" || next.target.kind === "confirm",
+    pending:
+      next.target.kind === "approval"
+        ? "plan"
+        : next.target.kind === "confirm"
+          ? "stage"
+          : undefined,
+    pendingStage: next.target.kind === "confirm" ? next.target.stage.key : undefined,
     lastViolations: session.lastViolations,
   };
 }
@@ -182,8 +193,8 @@ export function answer(
 }
 
 /**
- * 2차 게이트 — 화면에서 계획에 판정을 내린다.
- * 검사는 코어의 decideApproval 이 한다. 여기는 전송일 뿐이다.
+ * 화면에서 판정을 내린다 — 계획 승인(2차)이든 산출물 확정(4차)이든 같은 자리다.
+ * 무엇에 대한 판정인지는 상태가 정하고, 검사는 코어의 decideApproval 이 한다. 여기는 전송일 뿐이다.
  */
 export function decide(
   store: JobStore,
@@ -204,8 +215,9 @@ export function decide(
   return {
     message: unchanged
       ? `이미 승인되어 있습니다 — ${record.approver} · ${record.at}`
-      : `${record.decision === "approved" ? "승인" : "반려"}을 원장에 남겼습니다 — ` +
-        `${record.target} · ${record.approver} · 계획 ${record.planHash}`,
+      : `${record.stage ? "확정" : "승인"} 판정(${record.decision === "approved" ? "승인" : "반려"})을 ` +
+        `원장에 남겼습니다 — ${record.target}${record.stage ? ` · 단계 ${record.stage}` : ""} · ` +
+        `${record.approver} · 계획 ${record.planHash}`,
     next: status(store, id),
   };
 }

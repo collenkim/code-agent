@@ -125,6 +125,11 @@ function git(...args: string[]) {
 }
 
 /** 계획을 세우고 승인까지 받은 상태 */
+/** 사람이 단계 산출물을 확정하는 것과 같은 일 — 4차 게이트 */
+function confirmStage() {
+  decideApproval(context, "approved", { approver: "팀장", target: "app/bug.js" });
+}
+
 function planned() {
   applyResponse(context, JSON.stringify(PLAN));
   decideApproval(context, "approved", { approver: "팀장", target: "app/bug.js" });
@@ -208,6 +213,9 @@ describe("돌려 보지 않으면 끝나지 않는다", () => {
 
     const done = applyResponse(context, "### done");
     assert.equal(done.advanced, true);
+    assert.equal(nextPrompt(context).label, "confirm:repro", "재현했다는 판정도 사람이 한다");
+
+    confirmStage();
     assert.equal(nextPrompt(context).label, "fix");
   });
 
@@ -238,6 +246,46 @@ describe("돌려 보지 않으면 끝나지 않는다", () => {
   });
 });
 
+describe("실패한 이유를 묻는다 — 환경이 고장 난 것은 재현이 아니다", () => {
+  /**
+   * 명령이 돌지 못한 것과 테스트가 실패한 것은 다르다. 둘을 같은 "실패"로 읽으면
+   * git 저장소가 아닌 곳에서 아무 테스트도 안 쓰고 `run test` 만 해도 재현 단계가 끝난다.
+   */
+  test("git 저장소가 아니면 실행 오류다 — 재현으로 치지 않는다", () => {
+    planned();
+    rmSync(join(root, "repo", ".git"), { recursive: true, force: true });
+    applyResponse(context, REPRO_TEST);
+
+    const ran = applyResponse(context, "### run test");
+    assert.equal(ran.execution!.verified, "error");
+    assert.match(ran.execution!.observations[0].label, /실행 오류/);
+    assert.match(ran.execution!.observations[0].body, /worktree/, "원인이 결과에 실린다");
+    assert.equal(loadSession(lane()).verified.repro, "error", "돌지 못했다는 사실도 기억한다");
+
+    const done = applyResponse(context, "### done");
+    assert.equal(done.advanced, false);
+    assert.equal(done.violations[0].item, "검증 미확인");
+    assert.match(done.violations[0].detail, /실행되지 못했습니다/);
+  });
+
+  test("명령 자체가 없으면 실행 오류다", () => {
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify({ ...MANIFEST, test: ["code-agent-no-such-command-xyz"] }, null, 2),
+    );
+    planned();
+    applyResponse(context, REPRO_TEST);
+
+    const ran = applyResponse(context, "### run test");
+    assert.equal(ran.execution!.verified, "error");
+    assert.match(ran.execution!.observations[0].body, /ENOENT|찾을 수 없/);
+
+    const done = applyResponse(context, "### done");
+    assert.equal(done.advanced, false);
+    assert.match(done.violations[0].detail, /실행되지 못했습니다/);
+  });
+});
+
 describe("고친 뒤에는 통과해야 끝난다 — 이것이 green 이다", () => {
   /** 재현 단계를 끝내 놓는다 */
   function reachFix() {
@@ -245,6 +293,7 @@ describe("고친 뒤에는 통과해야 끝난다 — 이것이 green 이다", (
     applyResponse(context, REPRO_TEST);
     applyResponse(context, "### run test");
     applyResponse(context, "### done");
+    confirmStage();
   }
 
   test("고치지 않은 채 done 하면 끝나지 않는다", () => {

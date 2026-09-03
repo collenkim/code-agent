@@ -28,26 +28,32 @@
 
 | 단계 | 키 | 산출물 | 사람이 하는 일 |
 |---|---|---|---|
-| 1 | `decisions` | `doc/architecture-decisions.md` | **질문지에 답을 적어 넣는다** — `out/` 의 그 파일에 직접 |
+| 1 | `decisions` | `doc/architecture-decisions.md` | **결정 질문에 답한다** — 미결 질문으로 나온다 (API ⑤ 또는 `questions.md`) |
 | 2 | `scaffold-plan` | `doc/scaffold.md` | **여기서 멈춘다** — 적힌 스캐폴더 명령을 직접 실행한다 |
 | 3 | `skeleton` | `src/**` 공통 모듈·설정 | 스캐폴더 출력이 참조 표준이 된다 |
 | 4 | `declare` | `code-agent.json` · 컨벤션 문서 | 이후 실행의 근거가 생긴다 |
+
+**네 단계 모두 끝에 확정이 하나씩 붙는다.** 검수(`gate:*`)를 통과하면 `confirm:<단계키>` 가 되고,
+사람이 산출물을 보고 판정해야 다음 단계로 간다 — 반려하면 그 단계를 다시 돈다. 검수는 모델이
+했을 뿐이고, 그것을 이후 실행의 근거로 삼을지는 사람이 정한다.
 
 2단계의 멈춤은 버그가 아니라 설계다. 빌드 파일과 의존성 좌표를 모델이 기억으로 쓰면
 플러그인 버전을 환각한다 — `spring init` · `npm create` 같은 생태계 도구의 **출력**이
 시점 0의 참조 표준이 되어야 한다.
 
 1단계도 사람 몫이 있다. **아키텍처 결정서는 입력이 아니라 이 실행의 산출물이다** — 01 이
-질문지를 내고, 사람이 `out/<id>/<대상>/doc/architecture-decisions.md` 에 답을 적는다.
-앞 단계 산출물은 `out/` 에서 다시 읽어 다음 프롬프트에 들어가므로(파일당 앞 300줄),
-손본 내용이 그대로 반영된다.
+선택지와 트레이드오프를 `ask` 로 묻고, 사람이 답하면 모델이 그 답을
+`out/<id>/<대상>/doc/architecture-decisions.md` 로 옮겨 적는다. 그래서 이 단계는 두 턴 이상
+돈다: 묻는 턴 → (`blocked`) → 답한 뒤 쓰는 턴.
 
-> 두 가지 "질문"이 따로 있다. 헷갈리면 어디에 답할지 못 찾는다.
+> **답할 곳은 한 군데다.** 스펙의 빈칸이든 아키텍처 결정이든 전부 미결 질문으로 나온다.
 >
 > | | 어디에 | 답하지 않으면 |
 > |---|---|---|
-> | **미결 질문** | `.code-agent/questions.md` | **진행이 멈춘다.** 모델의 `ask` 나 계획의 `openQuestions` 가 쌓이는 자리 |
-> | **결정 질문지** | `doc/architecture-decisions.md` | 진행은 된다. 다만 빈칸인 채로 다음 단계의 근거가 된다 |
+> | **미결 질문** | `.code-agent/questions.md` 또는 API ⑤ | **진행이 멈춘다.** 모델의 `ask` · 계획의 `openQuestions` · 1차 게이트가 짚은 빈칸이 쌓이는 자리 |
+>
+> 결정서가 생긴 뒤에 손으로 고쳐도 된다 — 앞 단계 산출물은 `out/` 에서 다시 읽어 다음
+> 프롬프트에 들어간다(파일당 앞 300줄).
 
 ---
 
@@ -57,7 +63,7 @@
 
 **② 스펙 문서** — 맨 위에 작업 지시서 머리말이 있어야 한다. 0차 게이트가 이것부터 본다
 (규격: [doc/work-order.md](work-order.md)). **필요한 것은 「프로젝트 개요」 한 장뿐이다** —
-언어·프레임워크·계층은 적지 않는다. 그건 01 단계가 질문지로 되물을 것들이다.
+언어·프레임워크·계층은 적지 않는다. 그건 01 단계가 되물을 것들이다.
 
 ```markdown
 ---
@@ -94,8 +100,10 @@ COMMON="--repo /path/to/newproj --templates starter/bootstrap --out ./out"
 
 ```
 next(계획) → apply → 질문에 답 → next → approve
-  → next(decisions) → apply → next(gate:decisions) → apply
+  → next(decisions) → apply(모델이 묻는다) → 질문에 답 → next(decisions) → apply(결정서)
+  → next(gate:decisions) → apply → next(confirm:decisions) → approve
   → scaffold-plan → [사람이 스캐폴더 실행] → skeleton → declare
+      (단계마다 gate → confirm → approve 가 붙는다)
 ```
 
 - 질문은 `out/<id>/<대상>/.code-agent/questions.md` 의 `**답:**` 아래에 적는다.
@@ -278,7 +286,8 @@ response 는 문자열이어야 하는데 object 를 받았습니다.
 | `blocked` | 미결 질문이 남았다 | `POST /questions` |
 | `approval` | 2차 게이트 대기 | `POST /approval` |
 | `<단계키>` | 그 단계를 생성할 차례 | `GET /prompt` → `POST /response` |
-| `gate:<단계키>` | 그 단계 검수 (1차 게이트) | `GET /prompt` → `POST /response` |
+| `gate:<단계키>` | 그 단계 검수 (모델) | `GET /prompt` → `POST /response` |
+| `confirm:<단계키>` | 산출물 확정 대기 (4차 게이트) | `POST /approval` |
 | `done` | 끝 | — |
 
 실측한 전이:
@@ -287,6 +296,13 @@ response 는 문자열이어야 하는데 object 를 받았습니다.
 plan ──POST /response──> blocked ──POST /questions──> approval
      ──POST /approval──> decisions ──POST /response──> gate:decisions ──> scaffold-plan …
 ```
+
+> 위는 **결정서를 사람이 손으로 채우고 단계 확정이 없던 때**의 실측이다. 그 뒤로 멈춤이 둘 늘었다.
+>
+> - 01 이 왕복이 되어 `decisions ──/response──> blocked ──/questions──> decisions` 가 앞에 붙는다.
+> - 단계마다 `gate:<키> ──/response──> confirm:<키> ──/approval──> 다음 단계` 로 끝난다.
+>
+> 나머지 전이는 그대로다.
 
 자동화 스크립트를 쓴다면 루프는 이 한 줄이다 — `step` 을 보고 셋 중 하나를 부른다.
 

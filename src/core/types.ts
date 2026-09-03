@@ -152,6 +152,12 @@ export interface StageResult {
 
 export interface BuildResult {
   passed: boolean;
+  /**
+   * 왜 이 결과인가. `failed` 는 명령이 돌아서 실패한 것이고, `error` 는 명령이 돌지 못한 것이다.
+   * 둘을 같은 "실패"로 읽으면 git 저장소가 아닌 곳에서 아무 테스트도 안 쓰고 재현 단계가 끝난다 —
+   * expect: fail 은 `failed` 만 재현으로 인정한다.
+   */
+  outcome: "passed" | "failed" | "not-run" | "error";
   log: string;
   /**
    * 명령을 아예 돌리지 않았는지. 안 돌린 것을 "통과"로 읽으면 검증하지 않은 코드를
