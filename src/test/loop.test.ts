@@ -114,6 +114,11 @@ function approvePlan() {
   decideApproval(context, "approved", { approver: "tester", target: "shipment" });
 }
 
+/** 사람이 단계 산출물을 확정하는 것과 같은 일 — 4차 게이트 */
+function confirmStage() {
+  decideApproval(context, "approved", { approver: "tester", target: "shipment" });
+}
+
 /**
  * 계획까지 끝내고 승인까지 받은 상태로 만든다 — 대부분의 테스트가 그 다음부터를 본다.
  * 2차 게이트 자체를 보는 테스트는 이 함수를 쓰지 않고 계획만 반영한다.
@@ -384,12 +389,16 @@ describe("검수 결과가 생성으로 되돌아온다", () => {
     assert.match(next.prompt!, /이번에는 반드시 고친다/);
   });
 
-  test("위반이 없으면 다음 단계로 넘어간다", () => {
+  test("위반이 없어도 사람이 확정해야 다음 단계로 넘어간다", () => {
     reachGate();
 
     const outcome = applyResponse(context, JSON.stringify({ violations: [] }));
 
     assert.equal(outcome.advanced, true);
+    assert.equal(nextPrompt(context).label, "confirm:model", "검수는 모델이 했을 뿐이다");
+
+    confirmStage();
+
     assert.equal(nextPrompt(context).label, "check");
   });
 
@@ -420,6 +429,7 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
     applyResponse(context, JSON.stringify({ violations: [] }));
+    confirmStage();
     assert.equal(nextPrompt(context).label, "check");
   }
 

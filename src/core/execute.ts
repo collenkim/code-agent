@@ -38,8 +38,9 @@ export interface ExecuteOutcome {
   /**
    * 이 턴에서 **확인된** 검증 결과. 마지막 run 이후에 파일을 또 바꿨으면 없다 —
    * 그 결과는 바뀌기 전 파일들에 대한 것이라 지금 상태를 말하지 않는다.
+   * `error` 는 명령이 돌지 못한 것이다. 실패와 구분하지 않으면 환경 고장이 재현으로 읽힌다.
    */
-  verified?: "pass" | "fail" | "skipped";
+  verified?: "pass" | "fail" | "skipped" | "error";
   counts: Partial<Record<ActionType, number>>;
 }
 
@@ -47,7 +48,7 @@ export interface ExecuteInput {
   repoRoot: string;
   outDir: string;
   /** 앞 턴들에서 확인해 둔 이 단계의 검증 결과. 파일이 바뀌면 세션이 지운다 */
-  verified?: "pass" | "fail";
+  verified?: "pass" | "fail" | "error";
   /** 사람이 확정한 경계. 매니페스트보다 이쪽이 상한선이다 */
   order: WorkOrder;
   manifest: Manifest;
@@ -176,7 +177,7 @@ function observeList(input: ExecuteInput, path: string): Observation {
 function observeRun(
   input: ExecuteInput,
   command: string,
-): { observation: Observation; verdict?: "pass" | "fail" | "skipped" } {
+): { observation: Observation; verdict?: ExecuteOutcome["verified"] } {
   if (command !== "build" && command !== "test") {
     return {
       observation: {
@@ -195,10 +196,15 @@ function observeRun(
 
   const result = verifyByBuild(input.repoRoot, input.manifest, input.outDir, generated, command);
 
-  // 안 돌린 것과 통과한 것을 같은 말로 알리면, 검증하지 않은 코드를 검증된 것으로
-  // 착각하고 단계를 끝내 버린다. 셋을 구분해서 말한다.
-  const verdict = result.skipped ? "skipped" : result.passed ? "pass" : "fail";
-  const said = result.skipped ? "실행되지 않음" : result.passed ? "통과" : "실패";
+  // 안 돌린 것·못 돌린 것·통과한 것·실패한 것을 같은 말로 알리면, 검증하지 않은 코드를
+  // 검증된 것으로 착각하거나 환경 고장을 재현으로 읽고 단계를 끝내 버린다. 넷을 구분해서 말한다.
+  const verdicts = {
+    "not-run": ["skipped", "실행되지 않음"],
+    error: ["error", "실행 오류"],
+    passed: ["pass", "통과"],
+    failed: ["fail", "실패"],
+  } as const;
+  const [verdict, said] = verdicts[result.outcome];
   return {
     verdict,
     observation: {
@@ -209,10 +215,7 @@ function observeRun(
 }
 
 /** 기대한 결과가 확인되지 않은 이유를 그 자리에 맞게 알린다. */
-function explainExpect(
-  expected: "pass" | "fail",
-  seen: "pass" | "fail" | "skipped" | undefined,
-): string {
+function explainExpect(expected: "pass" | "fail", seen: ExecuteOutcome["verified"]): string {
   if (seen === undefined) {
     return (
       "돌려 보지 않고 끝냈습니다. `### run test` 로 결과를 확인해야 이 단계가 끝납니다 " +
@@ -223,6 +226,12 @@ function explainExpect(
     return (
       "검증 명령이 실행되지 않아 확인할 수 없습니다. code-agent.json 의 build·test 선언을 확인하세요 — " +
       "돌리지 않은 것을 통과로 볼 수는 없습니다."
+    );
+  }
+  if (seen === "error") {
+    return (
+      "검증 명령이 실행되지 못했습니다. 원인은 위 실행 결과에 있습니다 — " +
+      "돌지 못한 것은 실패도 통과도 아니므로, 환경을 고친 뒤 다시 돌려야 이 단계가 끝납니다."
     );
   }
   if (expected === "fail") {

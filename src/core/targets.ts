@@ -19,13 +19,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
-import { checkApproval } from "./approval";
+import { checkApproval, checkStage } from "./approval";
+import type { StageState } from "./approval";
 import type { Manifest } from "./manifest";
 import { decideTarget, describeTarget, loadSession } from "./session";
 import type { Target } from "./session";
 import { needsIntake } from "./specSchema";
 import type { SpecSchema } from "./specSchema";
-import { loadPlan, PLAN_FILE } from "./state";
+import { loadPlan, loadStageFiles, PLAN_FILE } from "./state";
 import { slug } from "./workOrder";
 import type { WorkOrder } from "./workOrder";
 
@@ -131,26 +132,48 @@ export interface LaneDeps {
   gate: boolean;
 }
 
-/** 대상마다 지금 무엇을 할 차례인지. 1차 게이트도 승인도 여기서 대상별로 갈린다. */
+/** 대상마다 지금 무엇을 할 차례인지. 1차 게이트도 승인도 확정도 여기서 대상별로 갈린다. */
 export function laneStates(baseOut: string, order: WorkOrder, manifest: Manifest, deps: LaneDeps): LaneState[] {
   return lanesOf(baseOut, order).map((lane) => {
-    const hasPlan = existsSync(join(lane.outDir, PLAN_FILE));
+    const plan = existsSync(join(lane.outDir, PLAN_FILE)) ? loadPlan(lane.outDir) : undefined;
+    // 4차 게이트가 볼 것 — 단계마다 "지금 out/ 에 있는 파일들"이 확정된 것과 같은가.
+    // 계획이 없으면 어느 단계가 무엇을 만드는지 자체를 모르므로 계산하지 않는다.
+    const stages = plan
+      ? new Map<string, StageState>(
+          manifest.stages.map((stage) => [
+            stage.key,
+            checkStage(
+              deps.repoRoot,
+              order,
+              lane.target,
+              stage.key,
+              loadStageFiles(lane.outDir, plan, stage.key),
+            ),
+          ]),
+        )
+      : undefined;
+
     return {
       lane,
       step: decideTarget(lane.outDir, manifest, loadSession(lane.outDir), {
         gate: deps.gate,
         // 대상마다 필요한 것이 다르다. 도메인 A 에는 상태 전이가 있고 B 에는 없다.
         intakeNeeded: deps.specSchema !== undefined && needsIntake(lane.outDir, deps.specText),
-        approval: hasPlan
-          ? checkApproval(deps.repoRoot, order, loadPlan(lane.outDir), lane.target)
-          : undefined,
+        approval: plan ? checkApproval(deps.repoRoot, order, plan, lane.target) : undefined,
+        stages,
       }),
     };
   });
 }
 
 function actionable(step: Target): boolean {
-  return step.kind !== "blocked" && step.kind !== "approval" && step.kind !== "done";
+  // 모델에 낼 프롬프트가 있는 단계들. 사람을 기다리는 것(질문·승인·확정)은 여기 들지 않는다.
+  return (
+    step.kind !== "blocked" &&
+    step.kind !== "approval" &&
+    step.kind !== "confirm" &&
+    step.kind !== "done"
+  );
 }
 
 /**
@@ -177,9 +200,11 @@ export function describeLanes(states: LaneState[]): string {
           ? "미결 질문"
           : step.kind === "approval"
             ? "승인 대기"
-            : step.kind === "done"
-              ? "끝남"
-              : describeTarget(step);
+            : step.kind === "confirm"
+              ? `확정 대기 — ${step.stage.key}`
+              : step.kind === "done"
+                ? "끝남"
+                : describeTarget(step);
       return `  - ${state.lane.target}: ${detail}`;
     })
     .join("\n");

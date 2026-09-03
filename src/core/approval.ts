@@ -1,5 +1,8 @@
 /**
- * 2차 게이트 — 계획 승인.
+ * 사람이 판정하는 두 게이트 — 계획 승인(2차)과 단계 산출물 확정(4차).
+ *
+ * 둘 다 **같은 원장**에 쌓인다. 판정 이력이 두 곳에 갈리면 읽는 사람이 하나를 놓치기 때문이다.
+ * 아래 규칙은 계획 승인의 것이고, 단계 확정은 파일 맨 아래에 따로 있다.
  *
  * 계획이 나왔다고 곧장 생성으로 가지 않는다. 사람이 승인한 뒤에야 넘어간다. 우회 옵션은
  * 만들지 않는다 — 급할 때 쓰라고 만든 옵션은 급할 때만 쓰이지 않는다.
@@ -42,8 +45,18 @@ export interface ApprovalRecord {
   approver: string;
   at: string;
   comment?: string;
-  /** 승인 시점 계획 스냅샷 (저장소 루트 기준). 해시만으로는 diff 를 만들 수 없다 */
+  /**
+   * 계획 승인이면 계획 스냅샷, 단계 확정이면 확정된 파일 목록 (저장소 루트 기준).
+   * 해시만으로는 "무엇을 승인했나"를 나중에 확인할 수 없다.
+   */
   snapshot: string;
+  /**
+   * 단계 확정이면 그 단계 키. **없으면 계획 승인이다.**
+   * 두 판정이 같은 원장에 쌓이므로, 이 속성이 둘을 가른다.
+   */
+  stage?: string;
+  /** 단계 확정 시점의 산출물 해시. 파일이 바뀌면 그 확정은 무효다 */
+  filesHash?: string;
 }
 
 // ---- 해시 ----
@@ -136,7 +149,11 @@ export function checkApproval(
   target: string,
 ): ApprovalState {
   // 같은 id 아래 대상 수만큼 줄이 쌓인다. 대상 A 의 승인이 B 의 승인일 수는 없다.
-  const rows = readLedger(repoRoot, order.id).filter((row) => row.target === target);
+  // 단계 확정 줄은 걸러 낸다 — 섞으면 마지막 단계 확정이 계획 판정으로 읽혀,
+  // 계획이 바뀌어도 2차 게이트가 통과해 버린다.
+  const rows = readLedger(repoRoot, order.id).filter(
+    (row) => row.target === target && row.stage === undefined,
+  );
   const record = rows[rows.length - 1];
 
   if (!record) {
@@ -194,7 +211,10 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
   assertRepoExists(repoRoot);
 
   const { order, plan, target } = input;
-  const seq = readLedger(repoRoot, order.id).filter((row) => row.target === target).length + 1;
+  const seq =
+    readLedger(repoRoot, order.id).filter(
+      (row) => row.target === target && row.stage === undefined,
+    ).length + 1;
   const snapshot = `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${seq}.plan.json`;
 
   const snapshotPath = join(repoRoot, snapshot);
@@ -212,6 +232,116 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     at: new Date().toISOString(),
     ...(input.comment ? { comment: input.comment } : {}),
     snapshot,
+  };
+
+  const path = ledgerPath(repoRoot, order.id);
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf-8");
+  return record;
+}
+
+// ---- 4차 게이트 — 단계 확정 ----
+
+/**
+ * 단계가 만든 것을 사람이 보고 확정한다.
+ *
+ * 검수(`gate`)는 모델이 하고, 위반이 남아도 두 번 시도한 뒤에는 넘어간다. 그 끝에서
+ * **"이걸 근거로 삼겠다"고 말하는 주체가 사람이 아니면**, 이후 단계 전부가 아무도 확정한 적
+ * 없는 문서 위에 올라간다. 계획 승인이 "무엇을 만들지"에 대한 것이라면, 이것은
+ * "만들어진 것을 받아들일지"에 대한 것이다.
+ *
+ * 반려는 그 단계를 다시 돌게 한다 — 사유는 다음 프롬프트에 실린다.
+ */
+export type StageState =
+  /** 아직 판정이 없다 */
+  | { status: "none" }
+  | { status: "confirmed"; record: ApprovalRecord }
+  /** 반려됐다. 그 단계를 다시 돌아야 풀린다 */
+  | { status: "rejected"; record: ApprovalRecord }
+  /** 확정한 뒤 산출물이 바뀌었다 — 그 확정은 지금 파일들을 말하지 않는다 */
+  | { status: "stale-files"; record: ApprovalRecord };
+
+/** 확정이 나지 않은 상태들. 이 중 하나면 다음 단계로 넘어가지 않는다 */
+export type PendingStage = Exclude<StageState, { status: "confirmed" }>;
+
+/** 확정 대상이 된 산출물. 경로와 내용이 모두 담긴다 — 이름만 같고 내용이 달라도 무효다. */
+export function hashFiles(files: { path: string; content: string }[]): string {
+  const sorted = [...files]
+    .map((file) => ({ path: file.path.replace(/\\/g, "/"), content: file.content }))
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
+  return sha(canonical(sorted));
+}
+
+export function checkStage(
+  repoRoot: string,
+  order: WorkOrder,
+  target: string,
+  stage: string,
+  files: { path: string; content: string }[],
+): StageState {
+  const rows = readLedger(repoRoot, order.id).filter(
+    (row) => row.target === target && row.stage === stage,
+  );
+  const record = rows[rows.length - 1];
+
+  if (!record) {
+    return { status: "none" };
+  }
+  if (record.decision === "rejected") {
+    return { status: "rejected", record };
+  }
+  // 확정은 그때의 파일들에 대한 것이다. 세션의 verified 와 같은 원칙 — 파일이 바뀌면 다시 본다.
+  if (record.filesHash !== hashFiles(files)) {
+    return { status: "stale-files", record };
+  }
+  return { status: "confirmed", record };
+}
+
+export interface StageDecisionInput {
+  order: WorkOrder;
+  target: string;
+  plan: BuildPlan;
+  stage: string;
+  files: { path: string; content: string }[];
+  decision: Decision;
+  approver: string;
+  comment?: string;
+}
+
+/** 단계 확정을 계획 승인과 **같은 원장**에 남긴다. 판정 이력이 두 곳에 갈리면 읽는 사람이 하나를 놓친다. */
+export function recordStageDecision(repoRoot: string, input: StageDecisionInput): ApprovalRecord {
+  assertRepoExists(repoRoot);
+
+  const { order, target, stage, files, plan } = input;
+  const seq =
+    readLedger(repoRoot, order.id).filter((row) => row.target === target && row.stage === stage)
+      .length + 1;
+  const snapshot =
+    `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${slug(stage)}-${seq}.files.json`;
+
+  const snapshotPath = join(repoRoot, snapshot);
+  mkdirSync(dirname(snapshotPath), { recursive: true });
+  // 내용까지 남기면 원장이 저장소를 두 번 담는다. 무엇을 확정했는지는 경로 목록으로 충분하고,
+  // 내용이 바뀌었는지는 해시가 말한다.
+  writeFileSync(
+    snapshotPath,
+    JSON.stringify({ stage, files: files.map((file) => file.path) }, null, 2),
+    "utf-8",
+  );
+
+  const record: ApprovalRecord = {
+    id: order.id,
+    target,
+    kind: order.kind,
+    orderHash: hashWorkOrder(order),
+    planHash: hashPlan(plan),
+    decision: input.decision,
+    approver: input.approver,
+    at: new Date().toISOString(),
+    ...(input.comment ? { comment: input.comment } : {}),
+    snapshot,
+    stage,
+    filesHash: hashFiles(files),
   };
 
   const path = ledgerPath(repoRoot, order.id);

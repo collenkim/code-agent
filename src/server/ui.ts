@@ -155,6 +155,14 @@ function render() {
 
   $("approval").style.display = state.needsApproval ? "" : "none";
   $("atarget").textContent = state.lane;
+  var stageGate = state.pending === "stage";
+  $("atitle").textContent = stageGate ? "산출물 확정" : "계획 승인";
+  $("agate").textContent = stageGate
+    ? "4차 게이트 — 단계 " + esc(state.pendingStage || "") + " · 확정 전에는 다음 단계로 넘어가지 않습니다"
+    : "2차 게이트 — 승인 전에는 어느 단계도 진행되지 않습니다";
+  $("ahint").textContent = stageGate
+    ? "왼쪽 칸에 이 단계가 만든 파일 목록이 있습니다. 열어서 읽고 판정하세요. 반려하면 그 단계를 다시 돕니다."
+    : "왼쪽 칸에 계획(또는 달라진 부분)이 있습니다. 읽고 판정하세요.";
 
   const v = state.lastViolations;
   $("carry").style.display = v.length ? "" : "none";
@@ -341,7 +349,9 @@ const BODY = `
         <span></span><span><button class="primary" type="submit">만들기</button></span>
       </form>
       <p class="muted" style="margin-bottom:0">
-        출력 디렉토리는 작업마다 새로 잡으세요 — 계획과 세션이 그 안에 있습니다.
+        출력 디렉토리는 작업마다 새로 잡으세요 — 계획과 세션이 그 안에 있습니다.<br>
+        <b>kind: spec</b> 으로 스펙 문서를 만드는 작업이면 대상 저장소 자리에
+        <b>스펙을 둘 폴더</b>를 넣으세요 — 저장소는 아직 없고, 승인 기록이 그 폴더에 남습니다.
       </p>
     </div></section>
   </details>
@@ -359,10 +369,10 @@ const BODY = `
     </section>
 
     <section id="approval" style="display:none">
-      <h2>계획 승인 <span class="muted">2차 게이트 — 대상 <b id="atarget"></b> · 승인 전에는 어느 단계도 진행되지 않습니다</span></h2>
+      <h2><span id="atitle">계획 승인</span> <span class="muted">대상 <b id="atarget"></b> · <span id="agate"></span></span></h2>
       <div class="body">
         <p class="muted" style="margin-top:0">
-          왼쪽 칸에 계획(또는 달라진 부분)이 있습니다. 읽고 판정하세요.
+          <span id="ahint"></span>
           기록은 대상 저장소의 <code>.code-agent/approvals/</code> 에 남고, 커밋되어야 증거가 됩니다.
         </p>
         <div class="row">

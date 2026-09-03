@@ -229,11 +229,18 @@ describe("왕복 — 프롬프트 하나에 상태 한 칸", () => {
     assert.ok(existsSync(lane("app/features/shipment/models.py")));
   });
 
-  test("검수를 통과하면 다음 단계로 넘어간다", () => {
+  test("검수를 통과해도 사람이 확정해야 다음 단계로 넘어간다", () => {
     const out = api.respond(store, jobId, JSON.stringify({ violations: [] }));
 
     assert.equal(out.advanced, true);
-    assert.equal(out.next.target, "service");
+    assert.equal(out.next.target, "confirm:model", "검수는 모델이 했고, 받아들일지는 사람이 정한다");
+    assert.equal(out.next.pending, "stage");
+    assert.equal(out.next.hasPrompt, false, "확정 대기 중에는 프롬프트가 나오지 않는다");
+
+    const confirmed = api.decide(store, jobId, { decision: "approved", approver: "팀장" });
+
+    assert.match(confirmed.message, /단계 model/);
+    assert.equal(confirmed.next.target, "service");
   });
 
   test("형식이 깨진 응답은 아무것도 반영하지 않는다", () => {

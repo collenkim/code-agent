@@ -25,8 +25,10 @@ const USAGE =
   "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
-  "  approve              계획을 승인한다 (--approver, --target, --comment) — 2차 게이트\n" +
-  "  reject               계획을 반려한다 (--approver, --target, --comment 필수)\n" +
+  "  approve              지금 기다리는 것에 승인 (--approver, --target, --comment)\n" +
+  "                       계획 승인(2차) 또는 단계 산출물 확정(4차) — 무엇인지는 상태가 정한다\n" +
+  "  reject               같은 자리에 반려 (--approver, --target, --comment 필수)\n" +
+  "                       단계를 반려하면 그 단계를 다시 돈다 — 사유가 다음 프롬프트에 실린다\n" +
   "  log                  턴 기록 — 몇 번 만에 됐는지, 어디서 막혔는지\n" +
   "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
   "       code-agent apply answer.txt --repo … --templates …\n" +
@@ -36,7 +38,7 @@ const USAGE =
   "\n  --spec 문서 중 **한 장**은 맨 첫 줄부터 작업 지시서 머리말을 담아야 합니다.\n" +
   "  없으면 프롬프트를 만들지 않습니다 (규격: doc/work-order.md):\n" +
   "    ---\n" +
-  "    kind: feature        # bootstrap | adopt | feature | fix | refactor\n" +
+  "    kind: feature        # spec | bootstrap | adopt | feature | fix | refactor\n" +
   "    id: PROJ-1\n" +
   "    title: 한 줄 요약\n" +
   "    target: 대상          # [a, b] 처럼 여럿이면 대상마다 따로 돕니다\n" +
@@ -204,7 +206,9 @@ function runStatus(context: BuildContext) {
 }
 
 /**
- * 2차 게이트 — 사람이 계획에 판정을 내린다.
+ * 사람이 판정을 내린다 — 계획 승인(2차)이든 단계 산출물 확정(4차)이든 같은 명령이다.
+ * 무엇에 대한 판정인지는 상태가 정한다. 사람이 그것까지 지정하게 하면 읽던 것과
+ * 판정하는 것이 어긋날 수 있다.
  *
  * 기록은 대상 저장소의 .code-agent/approvals/ 에 남는다. 이 파일은 신원을 증명하지 않는다 —
  * 보장하는 것은 "승인 없이는 진행되지 않는다"까지이고, 증명은 커밋·PR·티켓에 있다.
@@ -222,9 +226,15 @@ function runDecision(
     return;
   }
 
-  console.log(`${decision === "approved" ? "승인" : "반려"}: ${record.id} · ${record.target}`);
+  const what = record.stage ? `단계 확정(${record.stage})` : "계획 승인";
+  console.log(
+    `${decision === "approved" ? "승인" : "반려"}: ${record.id} · ${record.target} — ${what}`,
+  );
   console.log(`  판정: ${record.approver} · ${record.at}`);
   console.log(`  지시서 ${record.orderHash} · 계획 ${record.planHash}`);
+  if (record.filesHash) {
+    console.log(`  산출물 ${record.filesHash}`);
+  }
   console.log(`  원장: ${ledgerPath(input.repoRoot, record.id)}`);
   console.log(`  스냅샷: ${record.snapshot}`);
 
@@ -396,12 +406,16 @@ async function main() {
   printStages(outcome);
   console.log(`\n생성 결과: ${context.outDir}`);
 
+  // 돌지 못한 것을 실패라고 하면 사람이 코드를 의심한다 — 원인은 환경에 있는데.
+  const said = (result: { outcome: string; passed: boolean }) =>
+    result.outcome === "error" ? "실행 오류" : result.passed ? "통과" : "실패";
+
   if (outcome.build) {
-    console.log(`\n## 빌드 ${outcome.build.passed ? "통과" : "실패"}\n${outcome.build.log}`);
+    console.log(`\n## 빌드 ${said(outcome.build)}\n${outcome.build.log}`);
   }
 
   if (outcome.test) {
-    console.log(`\n## 테스트 ${outcome.test.passed ? "통과" : "실패"}\n${outcome.test.log}`);
+    console.log(`\n## 테스트 ${said(outcome.test)}\n${outcome.test.log}`);
     if (!outcome.test.passed) {
       console.log(
         "\n테스트 실패는 자동으로 고치지 않습니다 — 테스트가 틀렸는지 코드가 틀렸는지는 " +
