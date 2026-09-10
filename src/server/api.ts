@@ -14,7 +14,7 @@ import {
 import type { PendingQuestion } from "../core/session";
 import { describeTarget } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, hasPlan, nextPrompt, rememberIssued } from "../core/turn";
 import type { JobStore } from "./jobs";
 
 /** 지시서의 대상 하나와 그 상태 */
@@ -66,6 +66,7 @@ export interface PromptView {
   target: string;
   prompt?: string;
   message?: string;
+  warnings?: string[];
 }
 
 export interface ApplyView {
@@ -132,11 +133,23 @@ export function status(store: JobStore, id: string): StatusView {
   };
 }
 
-/** 상태를 바꾸지 않는다. 몇 번을 불러도 같은 프롬프트가 나온다. */
+/**
+ * 진행 상태를 움직이지 않는다. 몇 번을 불러도 같은 프롬프트가 나온다.
+ *
+ * 다만 **프롬프트를 내준 대상은 적어 둔다.** 화면이 이것을 받아 사람이 붙여넣을 것이므로,
+ * 그 사이 다른 대상이 풀려도 응답이 엉뚱한 레인에 반영되지 않게 하려는 기록이다.
+ * `status`·`log`·목록 조회는 이것을 적지 않는다 — 그쪽이 적으면 이 기록이 덮여 무의미해진다.
+ */
 export function prompt(store: JobStore, id: string): PromptView {
   const job = store.get(id);
   const next = nextPrompt(job.context);
-  return { target: next.label, prompt: next.prompt, message: next.message };
+  rememberIssued(job.context, next);
+  return {
+    target: next.label,
+    prompt: next.prompt,
+    message: next.message,
+    warnings: next.warnings,
+  };
 }
 
 /** 채팅 응답을 반영한다. 상태를 움직이는 유일한 지점이다. */
@@ -210,6 +223,13 @@ export function decide(
     approver: input.approver?.trim() || undefined,
     comment: input.comment?.trim() || undefined,
     target: input.target?.trim() || undefined,
+    // 서버는 요청 뒤에 사람이 있었는지 **알 수 없다.** 화면의 버튼이든 curl 이든 같은 POST 다.
+    // 그러므로 관측했다고 적지 않는다 — 거짓 증거는 증거가 없는 것보다 나쁘다.
+    presence: {
+      channel: "server",
+      verified: false,
+      detail: "HTTP 요청 — 서버는 요청 뒤에 사람이 있었는지 관측할 수 없습니다",
+    },
   });
 
   return {

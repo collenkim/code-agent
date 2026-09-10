@@ -10,7 +10,7 @@ import { dirname, join } from "path";
 
 import { verifyByBuild } from "./build";
 import type { Action, ActionType } from "./action";
-import { checkPaths } from "./gate";
+import { checkPaths, unplannedFiles } from "./gate";
 import type { Manifest, StageDef } from "./manifest";
 import { loadStageFiles } from "./state";
 import type { WorkOrder } from "./workOrder";
@@ -98,7 +98,7 @@ function checkMutations(input: ExecuteInput, actions: Action[]): GateViolation[]
     .filter((action) => action.type === "write" || action.type === "edit")
     .map((action) => ({ path: normalize((action as { path: string }).path), content: "" }));
 
-  return checkPaths({
+  const boundary = checkPaths({
     repoRoot: input.repoRoot,
     order: input.order,
     manifest: input.manifest,
@@ -106,6 +106,19 @@ function checkMutations(input: ExecuteInput, actions: Action[]): GateViolation[]
     stage: input.stage,
     files: targets,
   });
+
+  // 경계가 "어디에" 를 막고, 승인된 계획이 "무엇을" 을 정한다.
+  //
+  // 이미 경계에 걸린 파일은 다시 세지 않는다. 도메인 밖 파일은 당연히 계획 밖이기도 해서,
+  // 둘 다 보고하면 같은 잘못이 두 줄로 보인다 — 사람이 위반 수를 세는 자리라 그게 잡음이다.
+  const flagged = new Set(boundary.map((violation) => violation.file));
+  const unplanned = unplannedFiles(
+    input.plan,
+    input.stage,
+    targets.map((file) => file.path).filter((path) => !flagged.has(path)),
+  );
+
+  return [...boundary, ...unplanned];
 }
 
 function applyEdit(

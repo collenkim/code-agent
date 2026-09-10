@@ -152,29 +152,92 @@ export function checkPaths({
   return violations;
 }
 
-/** 계획에 적힌 파일과 실제 생성된 파일이 일치하는지 — 누락·추가 모두 잡는다. */
+/**
+ * 이 단계에서 만들라고 계획이 적은 파일들.
+ *
+ * **비어 있으면 검사하지 않는다.** 계획이 그 단계에 대해 아무 말도 하지 않았으면 어길 것도
+ * 없다 — 문서 산출물처럼 계획이 파일을 열거하지 않는 단계까지 막아 버리면, 없던 규칙을
+ * 코드가 발명하는 셈이 된다.
+ */
+function plannedFor(plan: BuildPlan, stage: StageDef): Set<string> {
+  return new Set(
+    plan.files
+      .filter((file) => file.stage === stage.key)
+      .map((file) => file.path.replace(/\\/g, "/")),
+  );
+}
+
+/**
+ * 계획에 없는 파일을 만들려 하는가.
+ *
+ * 경계(`outputDirs`·`scope`)는 **어디에** 를 막고, 계획은 **무엇을** 을 정한다. 후자의 대조가
+ * 없으면 사람의 승인은 경계 안에서만 유효하다 — 승인한 목록과 다른 것이 같은 디렉토리에
+ * 생기는 것을 아무도 막지 않는다.
+ *
+ * 쓰기 **전에** 거부한다. 쓴 뒤에 알리면 되돌릴 수단이 없어(모델은 파일을 지울 수 없다)
+ * 위반이 out/ 에 남은 채 경고만 반복된다.
+ */
+export function unplannedFiles(
+  plan: BuildPlan,
+  stage: StageDef,
+  paths: string[],
+): GateViolation[] {
+  const planned = plannedFor(plan, stage);
+  if (planned.size === 0) {
+    return [];
+  }
+  return paths
+    .map((path) => path.replace(/\\/g, "/"))
+    .filter((path) => !planned.has(path))
+    .map((path) => ({
+      item: "계획 준수",
+      file: path,
+      detail:
+        "승인된 계획에 없는 파일입니다. 필요하면 note 로만 남기세요 — " +
+        "계획을 고치면 승인이 무효가 되고 재승인을 받습니다.",
+    }));
+}
+
+/**
+ * 계획에 있는데 아직 없는가. **단계를 끝냈다고 할 때만 본다** —
+ * 한 단계가 여러 턴에 걸쳐 도므로 중간 턴에 보면 매번 거짓 위반이 뜬다.
+ *
+ * 이쪽은 막아도 갇히지 않는다. 모델이 그 파일을 쓰면 풀린다.
+ */
+export function missingPlannedFiles(
+  plan: BuildPlan,
+  stage: StageDef,
+  present: string[],
+): GateViolation[] {
+  const planned = plannedFor(plan, stage);
+  if (planned.size === 0) {
+    return [];
+  }
+  const have = new Set(present.map((path) => path.replace(/\\/g, "/")));
+  return [...planned]
+    .filter((path) => !have.has(path))
+    .map((path) => ({
+      item: "계획 준수",
+      file: path,
+      detail: "승인된 계획에 있는데 만들어지지 않았습니다.",
+    }));
+}
+
+/**
+ * 계획에 적힌 파일과 실제 생성된 파일이 일치하는지 — 누락·추가 모두 잡는다.
+ *
+ * 위 두 함수를 합친 것이다. 규칙을 두 벌로 두면 한쪽에만 구멍이 생긴다.
+ */
 function checkPlanCoverage(
   plan: BuildPlan,
   stage: StageDef,
   files: GeneratedFile[],
 ): GateViolation[] {
-  const planned = new Set(
-    plan.files.filter((file) => file.stage === stage.key).map((file) => file.path),
-  );
-  const generated = new Set(files.map((file) => file.path.replace(/\\/g, "/")));
-
-  const violations: GateViolation[] = [];
-  for (const path of planned) {
-    if (!generated.has(path)) {
-      violations.push({ item: "계획 준수", file: path, detail: "계획에 있는데 생성되지 않음" });
-    }
-  }
-  for (const path of generated) {
-    if (!planned.has(path)) {
-      violations.push({ item: "계획 준수", file: path, detail: "계획에 없는 파일이 생성됨" });
-    }
-  }
-  return violations;
+  const paths = files.map((file) => file.path);
+  return [
+    ...missingPlannedFiles(plan, stage, paths),
+    ...unplannedFiles(plan, stage, paths),
+  ];
 }
 
 function readChecklist(templatesDir: string, stage: StageDef): string {

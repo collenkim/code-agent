@@ -33,6 +33,42 @@ export const APPROVALS_DIR = ".code-agent/approvals";
 
 export type Decision = "approved" | "rejected";
 
+/**
+ * 판정이 들어온 통로. **누가** 판정했는지가 아니라 **사람이 그 자리에 있었는지**를 가른다.
+ *
+ * `approver` 는 사람이 적어 넣는 문자열이라 아무것도 증명하지 않는다. 그래서 통로를 따로 남긴다 —
+ * 통로는 사람이 고르는 것이 아니라 전송이 관측하는 것이다.
+ */
+export type PresenceChannel =
+  /** 터미널에서 사람이 직접 확인 문구를 입력했다 */
+  | "tty"
+  /** HTTP 로 들어왔다. 서버는 요청 뒤에 사람이 있었는지 알 수 없다 */
+  | "server"
+  /** 사람의 입력을 관측하지 못했다 — 스크립트·비대화형 셸·명시적 우회 */
+  | "unattended";
+
+/**
+ * 사람 존재의 증거. **증명하는 것은 존재와 시점이고, 신원이 아니다.**
+ *
+ * 이 구분이 중요하다. 신원은 로컬 도구가 알 수 없고(커밋 서명·PR·티켓에 있다), 존재는
+ * 관측할 수 있다 — 비대화형 셸에는 TTY 가 없기 때문이다. 모델이 Bash 로 명령을 돌릴 때
+ * stdin 은 TTY 가 아니므로, 그 자리에서 `approve` 를 부르는 길이 막힌다.
+ */
+export interface Presence {
+  channel: PresenceChannel;
+  /** 사람의 입력이 실제로 관측됐는가. false 면 이것은 증거가 아니라 기록일 뿐이다 */
+  verified: boolean;
+  /** 무엇을 근거로 그렇게 판정했는지. 원장을 읽는 사람이 강도를 스스로 판단할 수 있게 */
+  detail: string;
+}
+
+/** 전송이 사람 존재를 관측하지 못했을 때. 안전한 쪽으로 기운다 — 권한을 주지 않는다 */
+export const UNATTENDED: Presence = {
+  channel: "unattended",
+  verified: false,
+  detail: "사람의 입력을 관측하지 못했습니다",
+};
+
 /** 원장 한 줄 = 승인 사건 하나. append 만 하고 고치지 않는다. */
 export interface ApprovalRecord {
   id: string;
@@ -57,6 +93,38 @@ export interface ApprovalRecord {
   stage?: string;
   /** 단계 확정 시점의 산출물 해시. 파일이 바뀌면 그 확정은 무효다 */
   filesHash?: string;
+  /**
+   * 이 판정이 들어온 통로. **예전 원장에는 없다** — 없으면 관측되지 않은 것으로 읽는다.
+   */
+  presence?: Presence;
+  /**
+   * 직전 줄의 해시. 원장을 사슬로 묶어 **나중에 고친 것이 드러나게** 한다.
+   *
+   * 이것이 막는 것은 위조가 아니라 *은폐* 다. 손으로 한 줄 끼워 넣거나 지운 과거를
+   * 조용히 통과시킬 수 없게 된다 — 사슬이 끊기면 읽는 쪽이 거부한다.
+   */
+  prev?: string;
+}
+
+/** 첫 줄의 `prev`. 빈 원장과 잘려 나간 원장을 구분하려고 값을 둔다 */
+export const LEDGER_GENESIS = "genesis";
+
+/**
+ * 원장이 나중에 고쳐졌다. **읽기를 거부한다.**
+ *
+ * 조용히 넘기면 사슬을 둔 이유가 사라진다 — 끊긴 사슬을 그냥 읽으면 그것은 사슬이 아니라
+ * 장식이다. 되살리는 것은 사람의 일이고(git 으로 복원한다), 코드가 추측으로 이을 자리가 아니다.
+ */
+export class LedgerTamperError extends Error {
+  constructor(readonly path: string, readonly line: number, detail: string) {
+    super(
+      `승인 원장이 나중에 고쳐졌습니다 — 읽지 않았습니다: ${path}\n` +
+        `  ${line} 번째 줄에서 사슬이 끊겼습니다: ${detail}\n` +
+        "원장은 append only 입니다. 줄을 고치거나 끼워 넣거나 지우면 이 검사가 걸립니다.\n" +
+        "git 으로 원장을 복원하세요 — 코드가 추측으로 잇지 않습니다.",
+    );
+    this.name = "LedgerTamperError";
+  }
 }
 
 // ---- 해시 ----
@@ -101,15 +169,69 @@ export function ledgerPath(repoRoot: string, id: string): string {
   return join(repoRoot, APPROVALS_DIR, `${slug(id)}.jsonl`);
 }
 
-export function readLedger(repoRoot: string, id: string): ApprovalRecord[] {
+/** 원장의 줄 원문. 사슬은 파싱된 객체가 아니라 **쓰인 바이트**에 걸린다 */
+function ledgerLines(repoRoot: string, id: string): string[] {
   const path = ledgerPath(repoRoot, id);
   if (!existsSync(path)) {
     return [];
   }
   return readFileSync(path, "utf-8")
     .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as ApprovalRecord);
+    .filter((line) => line.trim() !== "");
+}
+
+/**
+ * 원장을 읽으면서 사슬을 검사한다.
+ *
+ * `prev` 가 없는 줄은 사슬 도입 전에 쌓인 것이라 넘긴다 — 예전 원장을 못 읽게 만드는 것은
+ * 이 검사가 막으려던 것보다 나쁘다. 다만 `prev` 를 가진 줄은 예외 없이 검사한다. 그래서
+ * 새 줄이 하나라도 있으면 그 앞의 예전 줄까지 묶여 보호된다.
+ */
+export function readLedger(repoRoot: string, id: string): ApprovalRecord[] {
+  const lines = ledgerLines(repoRoot, id);
+  const records: ApprovalRecord[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    let record: ApprovalRecord;
+    try {
+      record = JSON.parse(lines[index]) as ApprovalRecord;
+    } catch {
+      throw new LedgerTamperError(ledgerPath(repoRoot, id), index + 1, "JSON 이 아닙니다");
+    }
+
+    if (record.prev !== undefined) {
+      const expected = index === 0 ? LEDGER_GENESIS : sha(lines[index - 1]);
+      if (record.prev !== expected) {
+        throw new LedgerTamperError(
+          ledgerPath(repoRoot, id),
+          index + 1,
+          `직전 줄의 해시가 ${expected} 여야 하는데 ${record.prev} 로 적혀 있습니다`,
+        );
+      }
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+/**
+ * 판정 한 줄을 사슬에 이어 붙인다. 두 게이트가 같은 함수를 지나므로 사슬이 갈리지 않는다.
+ *
+ * 붙이기 전에 원장을 **먼저 읽는다** — 이미 끊긴 사슬 위에 새 줄을 얹으면 끊긴 자리가
+ * 영원히 가려진다.
+ */
+function appendRecord(repoRoot: string, id: string, record: ApprovalRecord): ApprovalRecord {
+  readLedger(repoRoot, id);
+  const lines = ledgerLines(repoRoot, id);
+  const chained: ApprovalRecord = {
+    ...record,
+    prev: lines.length === 0 ? LEDGER_GENESIS : sha(lines[lines.length - 1]),
+  };
+
+  const path = ledgerPath(repoRoot, id);
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(chained)}\n`, "utf-8");
+  return chained;
 }
 
 function loadSnapshot(repoRoot: string, record: ApprovalRecord): BuildPlan | undefined {
@@ -131,7 +253,14 @@ export type ApprovalState =
   /** 계획이 바뀌었다 — 그 대상의 승인이 무효. 2차부터 다시 */
   | { status: "stale-plan"; record: ApprovalRecord; diff: PlanDiffEntry[] }
   /** 지시서가 바뀌었다 — 그 지시서의 모든 승인이 무효. 0차부터 다시 */
-  | { status: "stale-order"; record: ApprovalRecord };
+  | { status: "stale-order"; record: ApprovalRecord }
+  /**
+   * 승인 줄은 있으나 **사람 존재가 관측되지 않았다.**
+   *
+   * 프로젝트가 `requireVerifiedApproval` 을 켠 경우에만 나온다. 기본값에서는 이 상태가
+   * 생기지 않는다 — 서버 화면으로 승인하는 팀의 길을 조용히 막아 버리기 때문이다.
+   */
+  | { status: "unverified"; record: ApprovalRecord };
 
 /** 승인이 나지 않은 상태들. 이 중 하나면 생성 단계로 넘어가지 않는다 */
 export type PendingApproval = Exclude<ApprovalState, { status: "approved" }>;
@@ -142,11 +271,22 @@ export type PendingApproval = Exclude<ApprovalState, { status: "approved" }>;
  * 검사 순서가 곧 무효 규칙이다. 지시서를 먼저 보는 이유는, 지시서가 바뀌면 계획이 그대로여도
  * 승인이 무효이기 때문이다 — 그 반대는 성립하지 않는다.
  */
+export interface ApprovalPolicy {
+  /**
+   * 사람 존재가 관측된 승인만 게이트를 열게 할지. 프로젝트가 `code-agent.json` 에 선언한다.
+   *
+   * 기본값이 `false` 인 것은 의도다 — 서버 화면은 요청 뒤에 사람이 있었는지 증명할 수 없으므로,
+   * 켜는 순간 그 경로로는 승인이 안 된다. 무엇을 잃는지 알고 켜는 선언이어야 한다.
+   */
+  requireVerifiedApproval?: boolean;
+}
+
 export function checkApproval(
   repoRoot: string,
   order: WorkOrder,
   plan: BuildPlan,
   target: string,
+  policy: ApprovalPolicy = {},
 ): ApprovalState {
   // 같은 id 아래 대상 수만큼 줄이 쌓인다. 대상 A 의 승인이 B 의 승인일 수는 없다.
   // 단계 확정 줄은 걸러 낸다 — 섞으면 마지막 단계 확정이 계획 판정으로 읽혀,
@@ -169,6 +309,10 @@ export function checkApproval(
   if (record.decision === "rejected") {
     return { status: "rejected", record };
   }
+  // 사람 존재 검사는 마지막이다. 지시서·계획이 이미 어긋났으면 그쪽이 먼저 풀려야 한다.
+  if (policy.requireVerifiedApproval && record.presence?.verified !== true) {
+    return { status: "unverified", record };
+  }
   return { status: "approved", record };
 }
 
@@ -182,6 +326,8 @@ export interface DecisionInput {
   decision: Decision;
   approver: string;
   comment?: string;
+  /** 전송이 관측한 사람 존재. 코어는 추측하지 않는다 — 관측하는 쪽이 넘긴다 */
+  presence: Presence;
 }
 
 /**
@@ -232,12 +378,10 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     at: new Date().toISOString(),
     ...(input.comment ? { comment: input.comment } : {}),
     snapshot,
+    presence: input.presence,
   };
 
-  const path = ledgerPath(repoRoot, order.id);
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf-8");
-  return record;
+  return appendRecord(repoRoot, order.id, record);
 }
 
 // ---- 4차 게이트 — 단계 확정 ----
@@ -306,6 +450,8 @@ export interface StageDecisionInput {
   decision: Decision;
   approver: string;
   comment?: string;
+  /** 전송이 관측한 사람 존재 */
+  presence: Presence;
 }
 
 /** 단계 확정을 계획 승인과 **같은 원장**에 남긴다. 판정 이력이 두 곳에 갈리면 읽는 사람이 하나를 놓친다. */
@@ -342,12 +488,10 @@ export function recordStageDecision(repoRoot: string, input: StageDecisionInput)
     snapshot,
     stage,
     filesHash: hashFiles(files),
+    presence: input.presence,
   };
 
-  const path = ledgerPath(repoRoot, order.id);
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf-8");
-  return record;
+  return appendRecord(repoRoot, order.id, record);
 }
 
 // ---- 재승인 diff ----

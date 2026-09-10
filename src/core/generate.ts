@@ -132,7 +132,7 @@ export function buildStagePrompt(
   stage: StageDef,
   previous: StageResult[],
   violations: GateViolation[] = [],
-): { system: string; user: string; missingExemplars: string[] } {
+): { system: string; user: string; missingExemplars: string[]; exemplarsUsed: number } {
   const { files: exemplars, missing } = collectExemplars(
     context.repoRoot,
     manifest,
@@ -208,7 +208,12 @@ export function buildStagePrompt(
     context.policyText,
   );
 
-  return { system: buildSystemPrompt(manifest, stage), user, missingExemplars: missing };
+  return {
+    system: buildSystemPrompt(manifest, stage),
+    user,
+    missingExemplars: missing,
+    exemplarsUsed: exemplars.length,
+  };
 }
 
 export function previewStagePrompt(

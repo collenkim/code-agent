@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, readSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { buildDryRunPreviews, formatDryRunReport } from "../core/dryRun";
@@ -8,10 +8,10 @@ import { emitPrompt, ingestResponse, parsePromptTarget } from "../core/manualRun
 import { formatPlan } from "../core/plan";
 import { runBuild } from "../core/run";
 import { ledgerPath } from "../core/approval";
-import type { Decision } from "../core/approval";
+import type { Decision, Presence } from "../core/approval";
 import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
+import { applyResponse, decideApproval, nextPrompt, rememberIssued } from "../core/turn";
 import { describeLanes, readRunState } from "../core/targets";
 import type { BuildContext, BuildOutcome } from "../core/types";
 import { serve } from "../server/http";
@@ -26,6 +26,7 @@ const USAGE =
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
   "  approve              지금 기다리는 것에 승인 (--approver, --target, --comment)\n" +
+  "                       터미널에서 확인 문구를 입력해야 남는다. 스크립트는 --unattended\n" +
   "                       계획 승인(2차) 또는 단계 산출물 확정(4차) — 무엇인지는 상태가 정한다\n" +
   "  reject               같은 자리에 반려 (--approver, --target, --comment 필수)\n" +
   "                       단계를 반려하면 그 단계를 다시 돈다 — 사유가 다음 프롬프트에 실린다\n" +
@@ -78,6 +79,93 @@ function first(args: Record<string, string[]>, key: string): string | undefined 
   return args[key]?.[0];
 }
 
+// ---- 사람 존재 관측 ----
+
+/**
+ * 판정마다 사람이 입력해야 하는 낱말. **정확 일치**다.
+ *
+ * 아무 키나 누르면 넘어가는 확인은 확인이 아니다. 그리고 승인과 반려의 낱말이 다른 것은,
+ * 무엇에 동의하는지를 손가락이 한 번 더 지나가게 하려는 것이다.
+ */
+const CONFIRM_WORD: Record<Decision, string> = { approved: "approve", rejected: "reject" };
+
+/** 의존성 없이 동기 대기. TTY 가 비어 있을 때 바쁜 회전을 막는다 */
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * TTY 에서 한 줄을 **동기로** 읽는다.
+ *
+ * 판정 경로가 전부 동기라 여기만 비동기로 만들 수 없다. 비어 있으면(`EAGAIN`) 잠깐 쉬고
+ * 다시 읽는다 — 사람이 타이핑하는 동안이므로 회수는 사람의 속도에 묶인다.
+ */
+function readLineSync(): string {
+  const buffer = Buffer.alloc(256);
+  let text = "";
+  for (;;) {
+    let read: number;
+    try {
+      read = readSync(0, buffer, 0, buffer.length, null);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EAGAIN") {
+        pause(40);
+        continue;
+      }
+      if (code === "EOF") {
+        break;
+      }
+      throw error;
+    }
+    if (read === 0) {
+      break;
+    }
+    text += buffer.subarray(0, read).toString("utf-8");
+    if (text.includes("\n")) {
+      break;
+    }
+  }
+  return text.split("\n")[0].trim();
+}
+
+/**
+ * 이 판정 뒤에 사람이 있었는지 **관측한다.** 코어는 이것을 추측하지 않는다.
+ *
+ * 여기가 위조 방지의 실제 자리다. 모델이 셸로 명령을 돌릴 때 stdin 은 TTY 가 아니므로
+ * 이 문이 닫힌다. 증명되는 것은 **존재와 시점**이고 신원이 아니다 — 신원은 로컬 도구가
+ * 알 수 없고 커밋 서명·PR·티켓에 있다.
+ */
+function attestPresence(decision: Decision, args: Record<string, string[]>): Presence {
+  if (first(args, "unattended") !== undefined) {
+    return {
+      channel: "unattended",
+      verified: false,
+      detail: "--unattended 로 사람 존재 관측을 건너뛰었습니다",
+    };
+  }
+
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "판정은 터미널에서 받습니다 — stdin 이 TTY 가 아닙니다.\n" +
+        "  사람이 그 자리에 있었다는 것을 관측할 수 없으면, 승인은 통제가 아니라 기록일 뿐입니다.\n" +
+        "  스크립트에서 불러야 한다면 --unattended 를 붙이세요. 그 판정은 원장에 " +
+        "'관측되지 않음' 으로 남고,\n" +
+        "  code-agent.json 에 requireVerifiedApproval 을 켠 프로젝트에서는 게이트를 열지 않습니다.",
+    );
+  }
+
+  const word = CONFIRM_WORD[decision];
+  process.stdout.write(`${word} 를 그대로 입력하면 판정을 남깁니다 (다른 입력은 취소): `);
+  const typed = readLineSync();
+  if (typed !== word) {
+    throw new Error(
+      `판정을 남기지 않았습니다 — ${word} 가 아니라 ${JSON.stringify(typed)} 를 입력했습니다.`,
+    );
+  }
+  return { channel: "tty", verified: true, detail: `터미널에서 ${word} 입력` };
+}
+
 function printStages(outcome: BuildOutcome) {
   for (const stage of outcome.stages) {
     const attempts = stage.attempts > 1 ? ` (시도 ${stage.attempts}회)` : "";
@@ -121,6 +209,7 @@ function requireSpecForPlan(context: BuildContext) {
 function runNext(context: BuildContext) {
   requireSpecForPlan(context);
   const next = nextPrompt(context);
+  rememberIssued(context, next);
 
   if (!next.prompt) {
     console.error(`## ${next.label}\n${next.message ?? ""}`);
@@ -131,6 +220,10 @@ function runNext(context: BuildContext) {
   // 프롬프트만 표준출력으로 — 파이프·리다이렉트로 바로 쓸 수 있게 다른 출력을 섞지 않는다.
   process.stdout.write(next.prompt);
   console.error(`\n\n[${next.label}] 이 프롬프트는 ${stashed} 에도 저장했습니다.`);
+  // 경고는 표준오류로. 프롬프트를 파이프로 넘겨도 사람 눈에는 남아야 한다.
+  for (const warning of next.warnings ?? []) {
+    console.error(`  ⚠ ${warning}`);
+  }
 }
 
 function runApply(context: BuildContext, responsePath: string) {
@@ -180,6 +273,7 @@ function runApply(context: BuildContext, responsePath: string) {
   }
 
   const next = nextPrompt(context);
+  rememberIssued(context, next);
   if (next.prompt) {
     console.log(`\n다음: [${next.label}] → ${stashPrompt(next.outDir, next.prompt)}`);
   } else {
@@ -216,7 +310,7 @@ function runStatus(context: BuildContext) {
 function runDecision(
   input: BuildContext,
   decision: Decision,
-  given: { approver?: string; comment?: string; target?: string },
+  given: { approver?: string; comment?: string; target?: string; presence: Presence },
 ) {
   const { unchanged, record } = decideApproval(input, decision, given);
 
@@ -231,6 +325,10 @@ function runDecision(
     `${decision === "approved" ? "승인" : "반려"}: ${record.id} · ${record.target} — ${what}`,
   );
   console.log(`  판정: ${record.approver} · ${record.at}`);
+  if (record.presence) {
+    const mark = record.presence.verified ? "관측됨" : "관측되지 않음";
+    console.log(`  사람 존재: ${mark} (${record.presence.channel}) — ${record.presence.detail}`);
+  }
   console.log(`  지시서 ${record.orderHash} · 계획 ${record.planHash}`);
   if (record.filesHash) {
     console.log(`  산출물 ${record.filesHash}`);
@@ -239,6 +337,7 @@ function runDecision(
   console.log(`  스냅샷: ${record.snapshot}`);
 
   const next = nextPrompt(input);
+  rememberIssued(input, next);
   if (next.prompt) {
     console.log(`\n다음: [${next.label}] → ${stashPrompt(next.outDir, next.prompt)}`);
   } else {
@@ -308,10 +407,13 @@ async function main() {
     return;
   }
   if (command === "approve" || command === "reject") {
-    runDecision(context, command === "approve" ? "approved" : "rejected", {
+    const decision: Decision = command === "approve" ? "approved" : "rejected";
+    runDecision(context, decision, {
       approver: first(args, "approver"),
       comment: first(args, "comment"),
       target: first(args, "target"),
+      // 관측을 먼저 한다. 확인 문구를 입력하지 않으면 원장에 아무것도 닿지 않는다.
+      presence: attestPresence(decision, args),
     });
     return;
   }

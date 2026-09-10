@@ -391,10 +391,37 @@ code-agent 가 **실제로 분기·검사에 쓰는** 속성이다. 이 목록�
 한 줄이 승인 사건 하나다. append 만 하고 고치지 않는다.
 
 ```jsonl
-{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:14:02+09:00","comment":"보존 조건 확인함"}
-{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:31:11+09:00","stage":"entity","filesHash":"sha256:c4e1…"}
-{"id":"PROJ-1421","target":"app/common/tx","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:41ab…","decision":"rejected","approver":"team-lead","at":"2026-08-21T10:16:40+09:00","comment":"공통 모듈은 별도 지시서로"}
+{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:14:02+09:00","comment":"보존 조건 확인함","presence":{"channel":"tty","verified":true,"detail":"터미널에서 approve 입력"},"prev":"genesis"}
+{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:31:11+09:00","stage":"entity","filesHash":"sha256:c4e1…","presence":{"channel":"tty","verified":true,"detail":"터미널에서 approve 입력"},"prev":"sha256:b81f…"}
+{"id":"PROJ-1421","target":"app/common/tx","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:41ab…","decision":"rejected","approver":"team-lead","at":"2026-08-21T10:16:40+09:00","comment":"공통 모듈은 별도 지시서로","presence":{"channel":"server","verified":false,"detail":"HTTP 요청 — 서버는 요청 뒤에 사람이 있었는지 관측할 수 없습니다"},"prev":"sha256:2ac9…"}
 ```
+
+### `presence` — 사람이 그 자리에 있었는가
+
+`approver` 는 사람이 적어 넣는 문자열이라 아무것도 증명하지 않는다. `presence` 는 다르다 —
+**사람이 고르는 것이 아니라 전송이 관측하는 것이다.**
+
+| `channel` | `verified` | 언제 |
+|---|---|---|
+| `tty` | `true` | 터미널에서 확인 문구(`approve` / `reject`)를 그대로 입력했다 |
+| `server` | `false` | HTTP 로 들어왔다. 화면의 버튼이든 `curl` 이든 같은 POST 라 서버는 구분할 수 없다 |
+| `unattended` | `false` | `--unattended` 를 썼거나, 전송이 관측값을 넘기지 않았다 |
+
+`code-agent.json` 의 `workOrder.requireVerifiedApproval` 을 켜면 **`verified: true` 인 판정만
+게이트를 연다.** 기본값이 꺼진 것은 서버 경로를 조용히 막지 않기 위해서다.
+
+속성이 **없는 줄은 사슬 도입 전에 쌓인 것**이며, 관측되지 않은 것으로 읽는다.
+
+### `prev` — 원장을 사슬로 묶는다
+
+각 줄은 직전 줄의 해시를 안는다(첫 줄은 `genesis`). 해시는 파싱된 객체가 아니라 **쓰인 바이트**에 걸린다.
+
+- 줄을 고치거나 끼워 넣거나 지우면 **읽기가 거부된다.** 조용히 넘기면 사슬을 둔 이유가 사라진다.
+- **끊긴 사슬 위에는 새 판정을 얹지 않는다** — 얹으면 끊긴 자리가 영원히 가려진다.
+- 되살리는 것은 git 의 일이다. 코드가 추측으로 잇지 않는다.
+- `prev` 가 없는 예전 줄은 검사하지 않는다. 예전 원장을 못 읽게 만드는 것은 이 검사가 막으려던 것보다 나쁘다. 다만 새 줄이 하나라도 있으면 그 앞의 예전 줄까지 묶여 보호된다.
+
+**이것이 막는 것은 위조가 아니라 은폐다.** 위조는 여전히 가능하다 — 아래를 본다.
 
 **`stage` 가 있으면 단계 확정(4차), 없으면 계획 승인(2차)이다.** 두 판정이 같은 원장에 쌓이므로
 이 속성이 둘을 가른다 — 섞어 읽으면 마지막 단계 확정이 계획 승인으로 읽혀, 계획이 바뀌어도
