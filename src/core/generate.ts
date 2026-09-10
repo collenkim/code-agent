@@ -133,13 +133,21 @@ export function buildStagePrompt(
   previous: StageResult[],
   violations: GateViolation[] = [],
 ): { system: string; user: string; missingExemplars: string[]; exemplarsUsed: number } {
-  const { files: exemplars, missing } = collectExemplars(
+  const { files: exemplars, missing, omitted } = collectExemplars(
     context.repoRoot,
     manifest,
     context.referenceDomain,
     stage,
   );
   const plannedFiles = plan.files.filter((file) => file.stage === stage.key);
+  // 디렉토리형 참조에서 상한에 밀린 파일들. 내용은 없어도 **있다는 것**은 알려야 한다.
+  const omittedSection = omitted
+    .map(
+      (entry) =>
+        `(참조 \`${entry.pattern}\` 은 ${entry.shown + entry.names.length}개 중 ${entry.shown}개만 실었습니다. ` +
+        `나머지: ${entry.names.join(", ")})`,
+    )
+    .join("\n");
 
   // 참조 도메인의 파일 목록(경로만)은 어느 단계에나 쓸모가 있다 — 무엇이 이미 있는지 알아야
   // 없는 것을 지어내지 않는다. 레거시 도입의 구조 조사 단계는 이것만으로 돌아간다.
@@ -156,15 +164,17 @@ export function buildStagePrompt(
 
   // 이미 있는 파일을 고치는 실행에서는 지금 무엇인지 보여 줘야 한다. 무엇을 읽을지는
   // 계획이 정한 목록 그대로다 — 모델이 탐색해서 고르지 않는다.
+  // out/ 우선 — 앞 단계가 고친 판본이 있으면 그것이 지금 내용이다.
   const current = readCurrent(
     context.repoRoot,
     plannedFiles.map((file) => file.path),
+    context.outDir,
   );
 
   // 프로젝트가 이 단계에 함께 실으라고 선언한 것들(빌드 파일·설정 등). 의존성 목록을 사람이
   // 옮겨 적게 하면 반드시 실제와 어긋난다 — 코드가 읽어 넣는 편이 정확하고 최신이다.
-  const found = listPaths(context.repoRoot, manifest, stage.reads);
-  const declared = readCurrent(context.repoRoot, found.slice(0, MAX_DECLARED_READS));
+  const { paths: found, omitted: foundOmitted } = listPaths(context.repoRoot, manifest, stage.reads);
+  const declared = readCurrent(context.repoRoot, found.slice(0, MAX_DECLARED_READS), context.outDir);
   const declaredSection =
     declared.length > 0
       ? [
@@ -177,6 +187,9 @@ export function buildStagePrompt(
                 `(내용은 ${declared.length}개까지만 실었습니다. 선언된 ${found.length}개 전체 목록:)`,
                 found.join("\n"),
               ]
+            : []),
+          ...(foundOmitted > 0
+            ? [`(목록도 상한에 걸려 ${foundOmitted}개가 더 있습니다 — 알파벳순 뒤쪽입니다)`]
             : []),
           "",
           "",
@@ -198,7 +211,9 @@ export function buildStagePrompt(
         : "") +
       (exemplars.length > 0
         ? `# 참조 표준 코드 — 도메인 '${context.referenceDomain}'\n` +
-          `${formatExemplars(exemplars, manifest.language)}\n\n`
+          `${formatExemplars(exemplars, manifest.language)}\n` +
+          (omittedSection ? `${omittedSection}\n` : "") +
+          "\n"
         : "") +
       (context.slotsText ? `${context.slotsText}\n\n` : "") +
       `# 스펙\n${context.specText}\n\n` +
