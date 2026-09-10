@@ -9,8 +9,8 @@
     "아래 reads 는 예시다 — 실제 파일 이름으로 바꿔서 쓴다(gradle/npm/pip 등 생태계마다 다르다).",
     "소스 루트를 넣어 두면 조사 단계가 list 로 저장소를 훑지 않아도 된다 — 목록은 전부, 내용은 상한까지 실린다."
   ],
-  "domainBase": "src/main/java/com/finger/fingersales",
-  "domainRoots": ["application","admin"],
+  "domainBase": "src/main/java/com/acme/app",
+  "domainRoots": ["application", "admin"],
 
   "conventions": [],
   "stages": [

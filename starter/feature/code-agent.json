@@ -1,0 +1,73 @@
+{
+  "_comment": [
+    "도메인 추가(feature)용 스타터. 이미 있는 저장소에 도메인을 하나 더 붙일 때 쓴다.",
+    "이 파일의 값은 **예시**다 — 계층 이름·경로·확장자는 프로젝트가 정한다. adopt 실행이 만든 code-agent.json 이 있으면 그것을 쓰고, 이 파일은 참고만 한다.",
+    "축은 셋이다: referenceDomain(복제할 기준 도메인) · stages[].exemplars(참조할 파일, {Ref} 는 참조 도메인의 PascalCase) · stages[].outputDirs(이 단계가 만들 수 있는 위치).",
+    "단계 순서가 곧 의존 순서다. 앞 단계 산출물이 다음 단계 프롬프트에 실린다.",
+    "confirm: false 인 단계는 사람 확정(4차) 없이 넘어간다 — dto 처럼 다음 단계가 곧바로 검증하는 중간 산출물에만 쓴다.",
+    "verify 단계의 outputDirs 에 테스트 디렉토리를 넣지 않는 것이 핵심이다 — 실패한 테스트를 지워 통과시키는 길이 구조적으로 막힌다."
+  ],
+  "language": "java",
+  "sourceExtensions": [".java"],
+  "domainBase": "src/main/java/com/acme/app",
+  "domainRoots": ["application", "admin"],
+  "conventions": ["doc/guide"],
+  "referenceDomain": "deal",
+  "build": ["gradlew", "compileJava", "-q"],
+  "test": ["gradlew", "test"],
+  "stages": [
+    {
+      "key": "entity",
+      "title": "Entity + 코드 enum",
+      "template": "01-entity.md",
+      "kinds": ["feature"],
+      "exemplars": ["domain/{Ref}.java", "cd/"],
+      "outputDirs": ["domain", "cd"]
+    },
+    {
+      "key": "repository",
+      "title": "Repository",
+      "template": "02-repository.md",
+      "kinds": ["feature"],
+      "exemplars": ["repository/"],
+      "outputDirs": ["repository"]
+    },
+    {
+      "key": "service",
+      "title": "Command · Query 처리",
+      "template": "03-service.md",
+      "kinds": ["feature"],
+      "exemplars": ["command/", "query/", "facade/{Ref}Facade.java"],
+      "outputDirs": ["command", "query", "facade"]
+    },
+    {
+      "key": "controller",
+      "title": "Controller + DTO",
+      "template": "04-controller.md",
+      "kinds": ["feature"],
+      "exemplars": ["controller/", "dto/"],
+      "outputDirs": ["controller", "dto"],
+      "confirm": false
+    },
+    {
+      "key": "test",
+      "title": "테스트 코드",
+      "template": "05-test.md",
+      "kinds": ["feature"],
+      "base": "src/test/java/com/acme/app",
+      "exemplars": ["domain/{Ref}Tests.java", "facade/{Ref}FacadeTests.java"],
+      "outputDirs": ["domain", "facade", "."]
+    },
+    {
+      "key": "verify",
+      "title": "빌드·테스트 통과시키기",
+      "template": "06-verify.md",
+      "kinds": ["feature"],
+      "kind": "verify",
+      "expect": "pass",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": ["src/main/java"]
+    }
+  ]
+}
