@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { readLedger } from "../core/approval";
+import { executeActions } from "../core/execute";
 import { questionsPath } from "../core/session";
 import { readRunState } from "../core/targets";
 import { applyResponse, decideApproval, nextPrompt, rememberIssued } from "../core/turn";
@@ -207,6 +208,80 @@ describe("승인도 대상마다다", () => {
     assert.throws(
       () => decideApproval(context, "approved", { approver: "팀장", target: "billing" }),
       /없는 대상/,
+    );
+  });
+});
+
+describe("같은 지시서의 두 대상이 같은 파일을 고칠 수 없다", () => {
+  test("다른 대상이 이미 고친 파일을 쓰려 하면 거부한다 — 병합할 수단이 없다", () => {
+    // 대상마다 out/ 이 갈리므로, 두 레인이 같은 파일을 고치면 서로 모르는 두 판본이 생긴다.
+    // 정한 답은 "순서가 필요하면 지시서를 나눈다"다 — 여기서 그 규칙을 코드가 지킨다.
+    const order = {
+      kind: "feature" as const,
+      id: "TEST-1",
+      title: "둘",
+      target: ["shipment", "settlement"],
+      scope: [],
+      preserve: [],
+      extra: {},
+      sourcePath: "spec.md",
+    };
+    const manifest = {
+      language: "python",
+      sourceExtensions: [".py"],
+      domainBase: "app/features",
+      domainRoots: [],
+      conventions: [],
+      commands: {},
+      workOrder: { attributes: [], requireApprover: false, requireVerifiedApproval: false },
+      stages: [
+        {
+          key: "shared",
+          title: "공유",
+          template: "01.md",
+          kind: "code" as const,
+          kinds: [],
+          confirm: true,
+          reads: [],
+          exemplars: [],
+          scope: "project" as const,
+          outputDirs: [],
+        },
+      ],
+    };
+    const plan = {
+      domainName: "x",
+      domainLabel: "x",
+      domainRoot: "",
+      domainDirName: "x",
+      files: [{ stage: "shared", path: "app/common/shared.py", purpose: "공유" }],
+      conventions: [],
+      conflicts: [],
+      openQuestions: [],
+      reasoning: "",
+    };
+    // settlement 레인이 이미 그 파일을 고쳐 두었다.
+    const settlementLane = join(root, "out", "TEST-1", "settlement");
+    mkdirSync(join(settlementLane, "app", "common"), { recursive: true });
+    writeFileSync(join(settlementLane, "app", "common", "shared.py"), "theirs\n", "utf-8");
+
+    const outcome = executeActions({
+      repoRoot: join(root, "repo"),
+      outDir: join(root, "out", "TEST-1", "shipment"),
+      order,
+      manifest,
+      plan,
+      stage: manifest.stages[0],
+      actions: [{ type: "write", path: "app/common/shared.py", content: "mine\n" }],
+    });
+
+    assert.equal(outcome.violations.length, 1);
+    assert.equal(outcome.violations[0].item, "공유 파일");
+    assert.match(outcome.violations[0].detail, /settlement/);
+    assert.equal(
+      existsSync(join(root, "out", "TEST-1", "shipment", "app", "common", "shared.py")),
+      false,
+      "두 번째 판본을 만들지 않는다",
     );
   });
 });

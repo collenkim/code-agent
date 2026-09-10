@@ -26,6 +26,15 @@ const StageSchema = z.object({
       "이 단계를 도는 작업 종류. 비면 모든 종류에서 돈다. refactor 는 Entity~Controller 를 " +
         "순차 생성하지 않으므로, 종류마다 도는 단계가 갈리는 자리가 여기다",
     ),
+  confirm: z
+    .boolean()
+    .default(true)
+    .describe(
+      "이 단계의 산출물을 사람이 확정해야 다음으로 넘어가는가(4차 게이트). 기본은 참이다. " +
+        "끄는 것은 우회가 아니라 선언이다 — 결정서·매니페스트처럼 이후 모든 실행의 근거가 되는 " +
+        "단계는 켜 두고, dto 처럼 다음 단계가 곧바로 검증하는 중간 산출물은 끌 수 있다. " +
+        "끈 단계도 모델 검수(3차)는 그대로 지난다",
+    ),
   expect: z
     .enum(["pass", "fail"])
     .optional()
@@ -117,6 +126,14 @@ const ManifestSchema = z.object({
     .array(z.string())
     .optional()
     .describe("테스트 실행 명령. --test 로 켠다. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
+  commands: z
+    .record(z.string(), z.array(z.string()))
+    .default({})
+    .describe(
+      "verify 단계에서 `### run <이름>` 으로 돌릴 수 있는 추가 명령. build·test 두 리터럴만으로는 " +
+        "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
+        "덮어쓸 수 없다 — 그 둘은 --build/--test 의 의미가 따로 있다",
+    ),
   workOrder: z
     .object({
       attributes: z.array(WorkOrderAttributeSchema).default([]),

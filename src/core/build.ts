@@ -164,9 +164,10 @@ export function verifyByBuild(
   manifest: Manifest,
   outDir: string,
   stages: StageResult[],
-  kind: "build" | "test" = "build",
+  kind: string = "build",
 ): BuildResult {
-  const command = kind === "test" ? manifest.test : manifest.build;
+  const command =
+    kind === "test" ? manifest.test : kind === "build" ? manifest.build : manifest.commands[kind];
   if (!command?.length) {
     return {
       passed: true,

@@ -283,6 +283,12 @@ export function decideTarget(
     }
     // 4차 게이트. 검수는 모델이 했고, 그것을 근거로 삼을지는 사람이 정한다.
     // 계획이 승인된 뒤에만 여기 닿으므로 stages 는 반드시 계산되어 있다.
+    //
+    // 프로젝트가 `confirm: false` 로 선언한 단계는 확정 없이 넘어간다. 우회 옵션이 아니라
+    // 선언이다 — kinds·expect·outputDirs 처럼, 무엇에 사람의 확정이 필요한지도 프로젝트가 정한다.
+    if (stage.confirm === false) {
+      continue;
+    }
     const confirmed = options.stages?.get(stage.key) ?? { status: "none" as const };
     if (confirmed.status !== "confirmed") {
       return { kind: "confirm", stage, state: confirmed };

@@ -620,6 +620,23 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     return outcome;
   };
 
+  /**
+   * JSON 단계(intake·plan·gate)의 형식 오류도 **턴으로 센다.**
+   *
+   * 액션 단계는 이미 그렇게 하는데 이쪽만 예외로 throw 하고 있었다 — 그러면 `log` 의 형식오류
+   * 수치가 절반의 단계에서 빠져, "자동으로 맡겨도 되나"를 판단할 근거가 체계적으로 과소집계된다.
+   */
+  const malformed = (error: unknown): ApplyOutcome =>
+    finish({
+      label,
+      ...laneInfo,
+      violations: [],
+      parseErrors: [error instanceof Error ? error.message : String(error)],
+      questionsAdded: 0,
+      advanced: false,
+      message: "응답 형식이 어긋나 아무것도 반영하지 않았습니다.",
+    });
+
   if (
     target.kind === "blocked" ||
     target.kind === "done" ||
@@ -649,7 +666,12 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   // ---- 항목 추출 (1차 게이트) ----
   if (target.kind === "intake") {
     const schema = context.specSchema!;
-    const parsed = parseResponse(responseText, IntakeSchema);
+    let parsed: ReturnType<typeof IntakeSchema.parse>;
+    try {
+      parsed = parseResponse(responseText, IntakeSchema);
+    } catch (error) {
+      return malformed(error);
+    }
     saveSlots(context.outDir, {
       specHash: hashSpec(context.specText),
       slots: parsed.slots,
@@ -683,7 +705,12 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   // ---- 계획 ----
   if (target.kind === "plan") {
     const format = planFormatFor(context.workOrder.kind);
-    const plan = format.toPlan(parseResponse(responseText, format.schema));
+    let plan: BuildPlan;
+    try {
+      plan = format.toPlan(parseResponse(responseText, format.schema));
+    } catch (error) {
+      return malformed(error);
+    }
 
     // 보존 조건이 빠진 계획을 승인받는 것이 이 종류에서 가장 위험한 실패다. 저장하지 않는다 —
     // 저장하면 그대로 2차 게이트에 올라가고, 사람은 빠진 줄이 있다는 것을 알 길이 없다.
@@ -729,7 +756,12 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
 
   // ---- 검수 ----
   if (target.kind === "gate") {
-    const parsed = parseResponse(responseText, GateSchema);
+    let parsed: ReturnType<typeof GateSchema.parse>;
+    try {
+      parsed = parseResponse(responseText, GateSchema);
+    } catch (error) {
+      return malformed(error);
+    }
     const attempts = (session.gateAttempts?.[target.stage.key] ?? 0) + 1;
     session.gateAttempts = { ...session.gateAttempts, [target.stage.key]: attempts };
     session.lastObservations = [];
