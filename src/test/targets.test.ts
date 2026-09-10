@@ -13,7 +13,8 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { readLedger } from "../core/approval";
 import { questionsPath } from "../core/session";
-import { applyResponse, decideApproval, nextPrompt } from "../core/turn";
+import { readRunState } from "../core/targets";
+import { applyResponse, decideApproval, nextPrompt, rememberIssued } from "../core/turn";
 import type { BuildContext } from "../core/types";
 
 const MANIFEST = {
@@ -211,15 +212,24 @@ describe("승인도 대상마다다", () => {
 });
 
 describe("응답은 프롬프트를 내준 대상에 반영된다", () => {
-  test("그 사이 다른 대상이 풀려도 레인이 바뀌지 않는다", () => {
+  /** shipment 를 먼저 돌 차례로 만든다 — 질문에 답하고 계획까지 승인하면 model 단계다 */
+  function makeShipmentNext() {
+    answerAll("shipment", "준비·배송중·완료");
+    decideApproval(context, "approved", { approver: "팀장", target: "shipment" });
+  }
+
+  test("그 사이 다른 대상이 먼저 돌 차례가 되어도 레인이 바뀌지 않는다", () => {
     applyResponse(context, planFor("shipment", ["상태값을 무엇으로 두나요?"]));
 
     // shipment 가 막혀 settlement 의 프롬프트를 받았다.
     const issued = nextPrompt(context);
     assert.equal(issued.lane, "settlement");
+    // 프롬프트를 사람에게 내주는 자리가 하는 일. CLI 의 next 와 서버의 GET /prompt 가 이것을 부른다.
+    rememberIssued(context, issued);
 
-    // 붙여넣기 전에 사람이 shipment 의 질문에 답했다 — 이제 shipment 가 먼저 돌 차례다.
-    answerAll("shipment", "준비·배송중·완료");
+    // 붙여넣기 전에 사람이 shipment 를 풀어 버렸다 — 차례가 shipment 로 넘어간다.
+    makeShipmentNext();
+    assert.equal(nextPrompt(context).lane, "shipment", "차례 자체는 shipment 로 넘어갔다");
 
     const outcome = applyResponse(context, planFor("settlement"));
 
@@ -229,6 +239,27 @@ describe("응답은 프롬프트를 내준 대상에 반영된다", () => {
       readFileSync(lane("shipment", ".plan.json"), "utf-8").includes("settlement"),
       false,
       "다른 대상의 계획이 덮이면 안 된다",
+    );
+  });
+
+  test("상태 조회는 프롬프트를 내준 기록을 덮지 않는다", () => {
+    // 회귀: dispatch 를 nextPrompt 안에서 적던 때, status·log·질문 답변·목록 조회가 모두
+    // 그 함수를 불러 기록을 덮었다. 그러면 붙여넣은 응답이 엉뚱한 레인에 반영된다 —
+    // dispatch 가 막으려던 바로 그 사고다.
+    applyResponse(context, planFor("shipment", ["상태값을 무엇으로 두나요?"]));
+
+    const issued = nextPrompt(context);
+    rememberIssued(context, issued);
+    assert.equal(readRunState(join(root, "out")).dispatch?.target, "settlement");
+
+    makeShipmentNext();
+    // 조회다. 상태를 움직이지 않으므로 기록도 건드리지 않아야 한다.
+    nextPrompt(context);
+
+    assert.equal(
+      readRunState(join(root, "out")).dispatch?.target,
+      "settlement",
+      "조회가 프롬프트를 내준 대상 기록을 덮으면 안 된다",
     );
   });
 });

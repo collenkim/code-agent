@@ -17,13 +17,20 @@ import {
   hashPlan,
   recordDecision,
   recordStageDecision,
+  UNATTENDED,
 } from "./approval";
-import type { ApprovalRecord, Decision, PendingApproval, PendingStage } from "./approval";
+import type {
+  ApprovalRecord,
+  Decision,
+  PendingApproval,
+  PendingStage,
+  Presence,
+} from "./approval";
 import { executeActions } from "./execute";
 import type { ExecuteOutcome } from "./execute";
 import { parseActions } from "./fence";
 import { buildStagePrompt } from "./generate";
-import { buildGatePrompt, GateSchema } from "./gate";
+import { buildGatePrompt, GateSchema, missingPlannedFiles } from "./gate";
 import { GATE_SHAPE, parseResponse, withOutputFormat } from "./manual";
 import { formatPlan, missingPreserve, planFormatFor, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
@@ -184,6 +191,22 @@ function approvalMessage(
     ].join("\n");
   }
 
+  if (state.status === "unverified") {
+    return [
+      `## 승인은 있으나 사람 존재가 관측되지 않았습니다 — 대상: ${target}`,
+      `직전 판정: ${state.record.approver} · ${state.record.at}` +
+        ` (통로 ${state.record.presence?.channel ?? "기록 없음"})`,
+      ...(state.record.presence?.detail ? [`근거: ${state.record.presence.detail}`] : []),
+      "",
+      "이 프로젝트는 `requireVerifiedApproval` 을 켜 두었습니다 — 사람이 그 자리에 있었다는 것이" +
+        " 관측된 판정만 게이트를 엽니다.",
+      "터미널에서 `code-agent approve` 를 다시 부르세요. 그 자리에서 확인 문구를 입력하면" +
+        " 통로가 tty 로 기록됩니다.",
+      "",
+      HOW_TO_DECIDE,
+    ].join("\n");
+  }
+
   if (state.status === "stale-order") {
     return [
       `## 작업 지시서가 바뀌어 승인이 무효가 됐습니다 (0차부터 다시) — 대상: ${target}`,
@@ -218,10 +241,33 @@ export interface NextPrompt {
   message?: string;
   /** 이 프롬프트가 어느 대상의 것인지 */
   lane: string;
+  /** 작업 지시서의 id — 프롬프트를 내준 자리에서 dispatch 를 적을 때 쓴다 */
+  orderId: string;
   /** 그 대상의 계획·질문·생성물이 있는 곳 */
   outDir: string;
   /** 지시서의 대상 전부와 각자의 상태 */
   lanes: LaneState[];
+  /**
+   * 프롬프트는 나왔지만 사람이 알아야 하는 것. 지금은 참조 표준 일부 누락이 여기 온다.
+   *
+   * 위반과 다르다 — 진행을 막지 않는다. 다만 **버리지는 않는다**: 참조 표준이 빠진 사실을
+   * 아무도 모르면 이 도구의 설계 축이 조용히 무너진다.
+   */
+  warnings?: string[];
+}
+
+/**
+ * 프롬프트를 **사람에게 실제로 내주는 자리**에서 부른다 — 어느 대상의 것이었는지 적어 둔다.
+ *
+ * `nextPrompt` 안에서 적으면 안 된다. 그 함수는 `status`·`log`·목록 조회도 부르는데,
+ * 그때마다 dispatch 가 덮이면 **붙여넣은 응답이 엉뚱한 레인에 반영된다** — dispatch 가
+ * 막으려던 바로 그 사고다. "상태를 바꾸지 않아 몇 번 불러도 같다"는 약속도 그때 거짓이 된다.
+ */
+export function rememberIssued(input: BuildContext, next: NextPrompt): void {
+  if (!next.prompt) {
+    return;
+  }
+  rememberDispatch(input.outDir, next.orderId, next.lane);
 }
 
 /**
@@ -237,6 +283,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
     target,
     label: labelFor(target, lane, lanes),
     lane,
+    orderId: context.workOrder.id,
     lanes,
     outDir: context.outDir,
   };
@@ -273,10 +320,6 @@ export function nextPrompt(input: BuildContext): NextPrompt {
         : `${lane} 은 끝났습니다.` + laneSection(lanes),
     };
   }
-
-  // 여기서부터는 프롬프트를 실제로 내준다. 어느 대상의 것이었는지 적어 둔다 —
-  // 그 사이 다른 대상이 풀려도 붙여넣은 응답이 엉뚱한 레인에 반영되지 않게.
-  rememberDispatch(input.outDir, context.workOrder.id, lane);
 
   if (target.kind === "intake") {
     // specSchema 가 없으면 intake 가 대상이 될 수 없다 — decideTarget 이 그렇게 정한다.
@@ -324,7 +367,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   }
 
   const previous = loadPreviousResults(context.outDir, plan, manifest.stages, target.stage.key);
-  const { system, user } = buildStagePrompt(
+  const { system, user, missingExemplars, exemplarsUsed } = buildStagePrompt(
     context,
     manifest,
     plan,
@@ -333,8 +376,30 @@ export function nextPrompt(input: BuildContext): NextPrompt {
     session.lastViolations,
   );
 
+  // 이 도구의 1번 축은 "참조할 파일은 모델이 아니라 코드가 결정론적으로 고른다"다.
+  // 단계가 참조 표준을 선언했는데 하나도 실리지 않았다면, 이 프롬프트는 모델에게
+  // **지어내라고 하는 것**이 된다. 조용히 내보내면 축이 무너진 사실을 아무도 모른다.
+  if (target.stage.exemplars.length > 0 && exemplarsUsed === 0) {
+    throw new Error(
+      `참조 표준을 하나도 찾지 못해 ${target.stage.key} 단계의 프롬프트를 만들지 않았습니다.\n` +
+        `  선언: ${target.stage.exemplars.join(", ")}\n` +
+        `  찾은 곳: ${missingExemplars.join("\n           ") || "(경로 계산 실패)"}\n` +
+        `  참조 도메인: ${context.referenceDomain || "(없음)"}\n\n` +
+        "이 상태로 만들면 참조 표준 없이 지어낸 코드가 나옵니다. 흔한 원인은 둘입니다 —\n" +
+        "  · code-agent.json 의 exemplars 경로가 실제 저장소와 다르다\n" +
+        "  · {Ref} 치환이 실제 클래스명과 어긋난다 (여러 낱말로 된 도메인 이름)",
+    );
+  }
+
   return {
     ...head,
+    warnings:
+      missingExemplars.length > 0
+        ? [
+            `참조 표준 ${missingExemplars.length}건을 찾지 못했습니다 — ` +
+              `${missingExemplars.join(", ")} (나머지 ${exemplarsUsed}건으로 진행합니다)`,
+          ]
+        : undefined,
     prompt: joinForChat(
       system,
       user + observationSection(session) + answerSection(context.outDir),
@@ -391,13 +456,40 @@ export interface ApprovalOutcome {
 export function decideApproval(
   input: BuildContext,
   decision: Decision,
-  given: { approver?: string; comment?: string; target?: string },
+  given: {
+    approver?: string;
+    comment?: string;
+    target?: string;
+    /**
+     * 전송이 관측한 사람 존재. **생략하면 관측하지 못한 것으로 남는다** —
+     * 넘기지 않은 호출자에게 조용히 권한을 주지 않기 위해 기본값이 그쪽으로 기운다.
+     */
+    presence?: Presence;
+  },
 ): ApprovalOutcome {
-  const { context, lanes } = withResolvedInputs(withRememberedSpec(input));
+  const { context, manifest, lanes } = withResolvedInputs(withRememberedSpec(input));
   const lane = laneToDecide(lanes, given.target);
   const plan = loadPlan(lane.outDir);
   const step = stepOf(lanes, lane.target);
-  const state = checkApproval(context.repoRoot, context.workOrder, plan, lane.target);
+  // 정책을 함께 넘긴다. 빼면 아래 멱등 단축로가 관측되지 않은 승인을 "이미 승인됨"으로 읽어,
+  // 같은 계획에 관측된 승인을 얹으려는 사람을 조용히 되돌려 보낸다.
+  const state = checkApproval(context.repoRoot, context.workOrder, plan, lane.target, {
+    requireVerifiedApproval: manifest.workOrder.requireVerifiedApproval,
+  });
+
+  // 게이트가 **한 번도 제시된 적 없는** 자리에는 판정을 남기지 않는다.
+  //
+  // 이 검사가 없으면 질문에 막힌 대상의 계획을 미리 승인해 원장에 박아 둘 수 있다. 그러면
+  // 나중에 계획이 세워질 때 이미 승인이 있는 상태가 되고, 사람은 그 계획을 본 적이 없다.
+  //
+  // 이미 판정이 있는 자리(`status !== "none"`)는 통과시킨다 — 같은 승인을 다시 부르는 것과
+  // 승인을 되돌리는 것은 게이트를 지난 뒤의 일이라 여기서 막을 것이 아니다.
+  if (step.kind !== "approval" && step.kind !== "confirm" && state.status === "none") {
+    throw new Error(
+      `${lane.target} 은 판정을 기다리지 않습니다 (지금: ${describeTarget(step)}).\n` +
+        "판정은 게이트가 걸린 자리에만 남깁니다 — 아직 제시되지 않은 것을 미리 승인할 수는 없습니다.",
+    );
+  }
 
   if (decision === "approved" && step.kind !== "confirm" && state.status === "approved") {
     // 같은 계획에 같은 판정을 두 번 남기지 않는다. 원장이 사건 기록이라 중복은 잡음이다.
@@ -420,6 +512,8 @@ export function decideApproval(
 
   // 4차 게이트 — 지금 기다리는 것이 단계 확정이면 그것에 판정한다.
   // 사람은 "승인·반려"만 하고, 무엇에 대한 판정인지는 상태가 정한다.
+  const presence = given.presence ?? UNATTENDED;
+
   if (step.kind === "confirm") {
     const files = loadStageFiles(lane.outDir, plan, step.stage.key);
     const record = recordStageDecision(context.repoRoot, {
@@ -431,6 +525,7 @@ export function decideApproval(
       decision,
       approver,
       comment: given.comment,
+      presence,
     });
 
     if (decision === "rejected") {
@@ -448,6 +543,7 @@ export function decideApproval(
       decision,
       approver,
       comment: given.comment,
+      presence,
     }),
   };
 }
@@ -715,8 +811,22 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   record.written = execution.writtenFiles.length;
   record.observations = execution.observations.length;
 
+  // 사람이 승인한 계획이 만들라고 한 것이 다 있는가. **끝났다고 할 때만 본다** —
+  // 한 단계가 여러 턴에 걸쳐 도므로 중간 턴에 보면 매 턴 거짓 위반이 뜬다.
+  //
+  // 계획 밖 파일은 여기서 보지 않는다. 그쪽은 쓰기 전에 거부되므로(execute 의 경계 검사)
+  // out/ 에 남지 않는다 — 남은 뒤에 알리면 모델이 되돌릴 수단이 없어 경고만 반복된다.
+  const missing = execution.done
+    ? missingPlannedFiles(
+        plan,
+        target.stage,
+        loadStageFiles(context.outDir, plan, target.stage.key).map((file) => file.path),
+      )
+    : [];
+  const violations = [...execution.violations, ...missing];
+
   session.lastObservations = execution.observations;
-  session.lastViolations = execution.violations;
+  session.lastViolations = violations;
 
   // 검증 결과는 그때의 파일들에 대한 것이다. 이 턴에서 확인한 것이 있으면 그것으로 갈고,
   // 확인 없이 파일만 바꿨으면 앞서 본 것을 버린다.
@@ -734,7 +844,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   const questions = appendQuestions(context.outDir, target.stage.key, execution.questions);
 
   // 관찰 요청이 남아 있거나 위반이 있으면 아직 끝난 것이 아니다.
-  const blockedByFollowUp = execution.observations.length > 0 || execution.violations.length > 0;
+  const blockedByFollowUp = execution.observations.length > 0 || violations.length > 0;
   const advanced = execution.done && !blockedByFollowUp;
 
   if (advanced) {
@@ -745,13 +855,13 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
     label,
     ...laneInfo,
     execution,
-    violations: execution.violations,
+    violations,
     parseErrors: [],
     questionsAdded: execution.questions.length,
     advanced,
     message: advanced
       ? undefined
-      : execution.violations.length > 0
+      : violations.length > 0
         ? "위반이 있어 이 단계를 이어서 돕니다."
         : execution.observations.length > 0
           ? "요청한 내용을 다음 프롬프트에 실어 이어서 돕니다."

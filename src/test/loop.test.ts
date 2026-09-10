@@ -110,7 +110,6 @@ afterEach(() => {
 
 /** 사람이 계획을 승인하는 것과 같은 일 — 2차 게이트 */
 function approvePlan() {
-  // 대상을 지정한다. 질문이 남아 승인 대기가 아닌 상태에서도 이 도우미는 승인까지 만들어 둔다.
   decideApproval(context, "approved", { approver: "tester", target: "shipment" });
 }
 
@@ -125,7 +124,12 @@ function confirmStage() {
  */
 function completePlan(openQuestions: string[] = []) {
   applyResponse(context, JSON.stringify({ ...PLAN_RESPONSE, openQuestions }));
-  approvePlan();
+  // 미결 질문이 남으면 승인 게이트가 아직 제시되지 않는다(질문 검사가 승인보다 앞이다).
+  // 그 자리에 승인을 미리 박아 두는 것은 통제의 우회라 코드가 거부한다 — 그리고 질문이
+  // 막는지 보는 테스트에는 승인이 필요하지 않다.
+  if (openQuestions.length === 0) {
+    approvePlan();
+  }
 }
 
 describe("상태가 다음 할 일을 정한다", () => {
@@ -197,6 +201,9 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
   test("답을 채우면 다시 나아가고, 그 답이 프롬프트에 실린다", () => {
     completePlan(["상태값을 무엇으로 두나요?"]);
     answerAll("준비·배송중·완료 세 가지");
+    // 답이 채워지면 그 다음에 오는 것이 2차 게이트다. 승인은 질문이 풀린 뒤의 일이다.
+    assert.equal(nextPrompt(context).label, "approval");
+    approvePlan();
 
     const next = nextPrompt(context);
 
@@ -259,6 +266,121 @@ describe("액션 실행", () => {
     const outcome = applyResponse(context, reply("### read app/features/nope/x.py"));
 
     assert.match(outcome.execution!.observations[0].body, /없는 파일/);
+  });
+});
+
+describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => {
+  test("계획에 없는 파일은 쓰기 전에 거부된다", () => {
+    // 경계(outputDirs)는 "어디에" 를 막는다. 이 파일은 허용된 위치에 있으므로 경계는 통과한다 —
+    // 막는 것은 사람이 승인한 계획에 이 파일이 없다는 사실이다.
+    completePlan();
+
+    const outcome = applyResponse(
+      context,
+      reply(
+        "### write app/features/shipment/models.py",
+        "```",
+        "ok",
+        "```",
+        "### write app/features/shipment/helper.py",
+        "```",
+        "계획에 없다",
+        "```",
+        "### done",
+      ),
+    );
+
+    assert.equal(outcome.violations.length, 1);
+    assert.match(outcome.violations[0].item, /계획 준수/);
+    assert.match(outcome.violations[0].file, /helper\.py/);
+    assert.equal(
+      existsSync(lane("app/features/shipment/helper.py")),
+      false,
+      "쓰기 전에 거부되어야 한다 — 쓴 뒤에 알리면 모델이 되돌릴 수단이 없다",
+    );
+    assert.equal(outcome.advanced, false);
+  });
+
+  test("계획에 있는 파일이 빠지면 done 이 통하지 않는다", () => {
+    completePlan();
+
+    const outcome = applyResponse(context, reply("### note 만들 것이 없다고 판단", "### done"));
+
+    assert.equal(outcome.advanced, false, "승인된 계획을 다 만들지 않고 끝낼 수는 없다");
+    assert.equal(outcome.violations.length, 1);
+    assert.match(outcome.violations[0].item, /계획 준수/);
+    assert.match(outcome.violations[0].detail, /만들어지지 않았습니다/);
+  });
+
+  test("누락은 그 파일을 쓰면 풀린다 — 갇히지 않는다", () => {
+    completePlan();
+    applyResponse(context, reply("### done"));
+
+    const outcome = applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+
+    assert.equal(outcome.violations.length, 0);
+    assert.equal(outcome.advanced, true);
+  });
+
+  test("중간 턴에는 누락을 묻지 않는다 — 한 단계가 여러 턴에 걸쳐 돈다", () => {
+    // done 없이 read 만 한 턴. 여기서 "계획에 있는데 없다"고 하면 매 턴 거짓 위반이 뜬다.
+    completePlan();
+
+    const outcome = applyResponse(context, reply("### read app/features/orders/models.py"));
+
+    assert.equal(outcome.violations.length, 0);
+    assert.equal(outcome.advanced, false, "관찰 요청이 남아 아직 끝난 것은 아니다");
+  });
+
+  test("경계에 걸린 파일을 계획 준수로 또 세지 않는다", () => {
+    // 도메인 밖 파일은 당연히 계획 밖이기도 하다. 둘 다 보고하면 같은 잘못이 두 줄로 보인다.
+    completePlan();
+
+    const outcome = applyResponse(
+      context,
+      reply("### write app/features/other/x.py", "```", "bad", "```", "### done"),
+    );
+
+    assert.equal(outcome.violations.length, 1);
+    assert.match(outcome.violations[0].item, /do-not-touch/);
+  });
+});
+
+describe("참조 표준이 빠진 것을 조용히 넘기지 않는다", () => {
+  test("선언한 참조 표준을 하나도 못 찾으면 프롬프트를 만들지 않는다", () => {
+    completePlan();
+    // 참조 도메인의 파일을 치운다 — {Ref} 치환이 실제 클래스명과 어긋날 때와 같은 상황이다.
+    rmSync(join(root, "repo", "app", "features", "orders", "models.py"));
+
+    // 이대로 프롬프트를 내면 참조 표준 없이 지어낸 코드가 나온다.
+    assert.throws(() => nextPrompt(context), /참조 표준을 하나도 찾지 못해/);
+  });
+
+  test("일부만 못 찾으면 경고로 알리고 진행한다", () => {
+    completePlan();
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify(
+        {
+          ...MANIFEST,
+          stages: MANIFEST.stages.map((stage) =>
+            stage.key === "model" ? { ...stage, exemplars: ["models.py", "gone.py"] } : stage,
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+
+    const next = nextPrompt(context);
+
+    assert.ok(next.prompt, "남은 참조 표준으로 진행한다");
+    assert.equal(next.warnings?.length, 1);
+    assert.match(next.warnings![0], /gone\.py/);
+    assert.match(next.warnings![0], /나머지 1건으로 진행/);
   });
 });
 

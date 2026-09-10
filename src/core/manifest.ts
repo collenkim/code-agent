@@ -127,8 +127,16 @@ const ManifestSchema = z.object({
           "승인자를 필수로 볼지. 승인자 개념이 없는 조직에 필수로 걸면 아무 작업도 시작되지 않아 " +
             "예약 속성 중 이것만은 필수 여부를 프로젝트가 정한다",
         ),
+      requireVerifiedApproval: z
+        .boolean()
+        .default(false)
+        .describe(
+          "사람 존재가 관측된 판정만 게이트를 열게 할지. 켜면 터미널에서 확인 문구를 입력한 " +
+            "승인만 유효해지고, 서버 화면과 비대화형 셸의 승인은 기록으로만 남는다 — " +
+            "서버 경로를 잃는 대가를 알고 켜는 선언이다",
+        ),
     })
-    .default({ attributes: [], requireApprover: false })
+    .default({ attributes: [], requireApprover: false, requireVerifiedApproval: false })
     .describe("작업 지시서의 프로젝트 확장 속성 정책"),
   stages: z.array(StageSchema).min(1),
 });

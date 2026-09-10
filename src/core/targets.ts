@@ -159,7 +159,11 @@ export function laneStates(baseOut: string, order: WorkOrder, manifest: Manifest
         gate: deps.gate,
         // 대상마다 필요한 것이 다르다. 도메인 A 에는 상태 전이가 있고 B 에는 없다.
         intakeNeeded: deps.specSchema !== undefined && needsIntake(lane.outDir, deps.specText),
-        approval: plan ? checkApproval(deps.repoRoot, order, plan, lane.target) : undefined,
+        approval: plan
+          ? checkApproval(deps.repoRoot, order, plan, lane.target, {
+              requireVerifiedApproval: manifest.workOrder.requireVerifiedApproval,
+            })
+          : undefined,
         stages,
       }),
     };
