@@ -44,7 +44,7 @@ const USAGE =
   "    title: 한 줄 요약\n" +
   "    target: 대상          # [a, b] 처럼 여럿이면 대상마다 따로 돕니다\n" +
   "    ---\n" +
-  "\n단계 지정 방식 (예전 방식 — JSON 응답):\n" +
+  "\n단계 지정 방식 (예전 방식 — JSON 응답 · 제거 예정, 새 작업에는 쓰지 않는다):\n" +
   "  --step <plan|단계키|gate:단계키> --emit-prompt\n" +
   "  --step <plan|단계키|gate:단계키> --ingest <응답파일>\n" +
   "\n선택 옵션:\n" +
@@ -53,7 +53,7 @@ const USAGE =
   "  --out <출력디렉토리>            기본 ./out\n" +
   "  --policy <생성범위정책>         모든 단계에 공통 주입\n" +
   "  --no-gate                      단계별 자가검증 생략\n" +
-  "\n자동 모드 (API 사용):\n" +
+  "\n자동 모드 (API 사용 · 실행 검증되지 않음 — 예전 {files:[]} 응답 형식):\n" +
   "  --plan-only · --stages · --retries · --build · --test · --dry-run";
 
 /** `--spec a.md --spec b.md` 처럼 반복되는 옵션이 있어 값을 배열로 모은다. */
