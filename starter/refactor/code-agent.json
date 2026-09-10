@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "구조 정리(refactor)용 스타터. 동작을 바꾸지 않고 구조만 고친다 — 무엇이 보존되어야 하는지가 이 작업의 본체다.",
+    "이 파일의 경로 값은 **예시**다(README 의 파이썬 예시와 같다).",
+    "feature 와 근거가 다르다: 복제할 참조 도메인이 없고, 대상의 현재 코드와 지시서의 preserve 가 근거다. 그래서 exemplars 는 비어 있고 scope 는 project 다.",
+    "계획은 preserve 항목마다 '어떻게 지키는지'를 하나씩 들어야 저장된다 — 빠진 계획을 승인받는 것이 이 종류에서 가장 위험한 실패다.",
+    "preserve 에 적힌 것이 실재하는 경로면 코드가 쓰기를 막는다. 문장형은 검수와 사람이 본다.",
+    "verify 단계는 기존 테스트가 그대로 통과하는지 본다 — 테스트 디렉토리가 outputDirs 에 없어 테스트를 고쳐 통과시킬 수 없다."
+  ],
+  "language": "python",
+  "sourceExtensions": [".py"],
+  "domainBase": "app",
+  "domainRoots": [],
+  "conventions": ["docs/conventions.md"],
+  "test": ["pytest", "-q"],
+  "stages": [
+    {
+      "key": "restructure",
+      "title": "구조 정리",
+      "template": "01-restructure.md",
+      "kinds": ["refactor"],
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": []
+    },
+    {
+      "key": "verify",
+      "title": "기존 테스트 통과 확인",
+      "template": "02-verify.md",
+      "kinds": ["refactor"],
+      "kind": "verify",
+      "expect": "pass",
+      "scope": "project",
+      "exemplars": [],
+      "outputDirs": ["app"]
+    }
+  ]
+}
