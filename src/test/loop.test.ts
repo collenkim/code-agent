@@ -349,6 +349,115 @@ describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => 
   });
 });
 
+describe("형식이 깨진 응답은 어느 단계든 턴으로 센다", () => {
+  test("계획 단계의 형식 오류가 세션 기록에 남는다", () => {
+    // 액션 단계는 원래 그랬는데 JSON 단계(plan·gate·intake)는 throw 로 빠져 턴이 안 세어졌다.
+    // 그러면 `log` 의 형식오류 수치가 절반의 단계에서 빠진다 — 서버를 붙일지 판단하는 그 수치다.
+    const outcome = applyResponse(context, "계획은 대충 이렇습니다: 모델 하나 만들면 됩니다.");
+
+    assert.equal(outcome.advanced, false);
+    assert.equal(outcome.parseErrors.length, 1);
+    const session = loadSession(lane());
+    assert.equal(session.turn, 1, "왕복 한 번은 한 번으로 센다");
+    assert.equal(session.log[0].parseErrors, 1);
+    assert.equal(nextPrompt(context).label, "plan", "다시 계획 프롬프트를 낸다");
+  });
+
+  test("검수 단계의 형식 오류도 같다", () => {
+    completePlan();
+    applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+    assert.equal(nextPrompt(context).label, "gate:model");
+
+    const outcome = applyResponse(context, "위반은 없어 보입니다.");
+
+    assert.equal(outcome.parseErrors.length, 1);
+    assert.equal(nextPrompt(context).label, "gate:model", "검수를 다시 받는다");
+  });
+});
+
+describe("confirm: false 인 단계는 사람 확정 없이 넘어간다", () => {
+  test("선언한 단계는 검수 뒤 곧바로 다음 단계다", () => {
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify(
+        {
+          ...MANIFEST,
+          stages: MANIFEST.stages.map((stage) =>
+            stage.key === "model" ? { ...stage, confirm: false } : stage,
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+    completePlan();
+    applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+    applyResponse(context, JSON.stringify({ violations: [] }));
+
+    assert.equal(nextPrompt(context).label, "check", "confirm 을 기다리지 않고 다음 단계로 간다");
+  });
+
+  test("선언하지 않으면 기본은 확정을 기다린다", () => {
+    completePlan();
+    applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+    applyResponse(context, JSON.stringify({ violations: [] }));
+
+    assert.equal(nextPrompt(context).label, "confirm:model");
+  });
+});
+
+describe("commands — build·test 외의 검증 명령", () => {
+  test("선언하지 않은 이름은 돌리지 않고, 무엇을 선언했는지 말해 준다", () => {
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify({ ...MANIFEST, commands: { lint: ["node", "-e", "process.exit(0)"] } }, null, 2),
+    );
+    completePlan();
+    applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+    applyResponse(context, JSON.stringify({ violations: [] }));
+    confirmStage();
+    assert.equal(nextPrompt(context).label, "check");
+
+    const outcome = applyResponse(context, reply("### run migrate"));
+
+    const [observation] = outcome.execution!.observations;
+    assert.match(observation.body, /실행할 수 없습니다/);
+    assert.match(observation.body, /lint/, "선언된 이름을 알려 준다");
+  });
+
+  test("선언한 이름은 run 의 문을 지난다", () => {
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify({ ...MANIFEST, commands: { lint: ["node", "-e", "process.exit(0)"] } }, null, 2),
+    );
+    completePlan();
+    applyResponse(
+      context,
+      reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
+    );
+    applyResponse(context, JSON.stringify({ violations: [] }));
+    confirmStage();
+
+    const outcome = applyResponse(context, reply("### run lint"));
+
+    const [observation] = outcome.execution!.observations;
+    assert.doesNotMatch(observation.body, /실행할 수 없습니다/);
+    assert.match(observation.label, /^run lint/);
+  });
+});
+
 describe("참조 표준이 빠진 것을 조용히 넘기지 않는다", () => {
   test("선언한 참조 표준을 하나도 못 찾으면 프롬프트를 만들지 않는다", () => {
     completePlan();

@@ -33,6 +33,7 @@ const MANIFEST = {
       exemplars: ["models.py"],
       kinds: [],
       reads: [],
+      confirm: true,
       outputDirs: ["."],
     },
     {
@@ -44,6 +45,7 @@ const MANIFEST = {
       exemplars: ["service.py"],
       kinds: [],
       reads: [],
+      confirm: true,
       outputDirs: ["."],
     },
   ],

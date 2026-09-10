@@ -6,13 +6,14 @@
  * 이 함수는 같은 것을 한다.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 
 import { verifyByBuild } from "./build";
 import type { Action, ActionType } from "./action";
 import { checkPaths, unplannedFiles } from "./gate";
 import type { Manifest, StageDef } from "./manifest";
 import { loadStageFiles } from "./state";
+import { slug } from "./workOrder";
 import type { WorkOrder } from "./workOrder";
 import type { BuildPlan, GateViolation, GeneratedFile } from "./types";
 
@@ -118,7 +119,27 @@ function checkMutations(input: ExecuteInput, actions: Action[]): GateViolation[]
     targets.map((file) => file.path).filter((path) => !flagged.has(path)),
   );
 
-  return [...boundary, ...unplanned];
+  // 같은 지시서의 **다른 대상**이 이미 고친 파일인가. 대상마다 out/ 이 갈리므로 두 레인이 같은
+  // 파일을 고치면 서로 모르는 두 판본이 생기고, 그것을 병합할 수단이 없다. 정한 답은 "순서가
+  // 필요하면 지시서를 나눈다"이고, 여기서 그 규칙을 코드가 지킨다.
+  const laneRoot = dirname(input.outDir);
+  const mine = basename(input.outDir);
+  const shared: GateViolation[] = targets
+    .filter((file) => !flagged.has(file.path))
+    .flatMap((file) =>
+      input.order.target
+        .filter((other) => slug(other) !== mine)
+        .filter((other) => existsSync(join(laneRoot, slug(other), file.path)))
+        .map((other) => ({
+          item: "공유 파일",
+          file: file.path,
+          detail:
+            `같은 지시서의 다른 대상(${other})이 이미 고친 파일입니다. 두 판본을 병합할 수단이 없습니다 — ` +
+            "순서가 필요하면 지시서를 나누세요.",
+        })),
+    );
+
+  return [...boundary, ...unplanned, ...shared];
 }
 
 function applyEdit(
@@ -191,11 +212,17 @@ function observeRun(
   input: ExecuteInput,
   command: string,
 ): { observation: Observation; verdict?: ExecuteOutcome["verified"] } {
-  if (command !== "build" && command !== "test") {
+  // build·test 두 리터럴 외에, 프로젝트가 commands 에 선언한 이름도 돌릴 수 있다 — 마이그레이션이나
+  // 테스트 필터처럼 검증에 필요한데 두 리터럴로는 표현되지 않는 것이 있기 때문이다.
+  const declared = Object.keys(input.manifest.commands);
+  if (command !== "build" && command !== "test" && !declared.includes(command)) {
     return {
       observation: {
         label: `run ${command}`,
-        body: "실행할 수 없습니다 — code-agent.json 에 선언된 build · test 만 돌릴 수 있습니다.",
+        body:
+          "실행할 수 없습니다 — code-agent.json 에 선언된 build · test" +
+          (declared.length > 0 ? ` 와 commands 의 이름(${declared.join(", ")})` : "") +
+          " 만 돌릴 수 있습니다.",
       },
     };
   }
