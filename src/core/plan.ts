@@ -157,7 +157,10 @@ function buildChangeUserPrompt(
   stages: StageDef[],
 ): string {
   const order = context.workOrder;
-  const current = listPaths(context.repoRoot, manifest, [context.target, ...order.scope]);
+  const { paths: current, omitted } = listPaths(context.repoRoot, manifest, [
+    context.target,
+    ...order.scope,
+  ]);
 
   return withPolicy(
     `${describeWorkOrder(order, context.target)}\n\n` +
@@ -166,6 +169,7 @@ function buildChangeUserPrompt(
       `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
       `# 대상의 현재 파일\n` +
       (current.length > 0 ? current.join("\n") : "(비어 있음 — 지시서의 대상·scope 를 확인하세요)") +
+      (omitted > 0 ? `\n(상한에 걸려 ${omitted}개가 더 있습니다 — 알파벳순 뒤쪽입니다)` : "") +
       "\n\n" +
       `# 실행할 단계\n${stages.map((stage) => `- ${stage.key}: ${stage.title}`).join("\n")}\n\n` +
       "files 의 stage 는 위 단계 키 중 하나여야 하고, path 는 위 '대상의 현재 파일' 에 있는 것이어야 한다.\n" +
@@ -187,7 +191,7 @@ function buildChangeUserPrompt(
  * 훑게 된다 — 실측에서 탐색 8건 중 5건이 이 자리에서 나왔다.
  */
 function describeCurrentFiles(context: ResolvedBuildContext, manifest: Manifest): string {
-  const current = listPaths(context.repoRoot, manifest, [
+  const { paths: current, omitted } = listPaths(context.repoRoot, manifest, [
     context.target,
     ...context.workOrder.scope,
   ]);
@@ -196,7 +200,11 @@ function describeCurrentFiles(context: ResolvedBuildContext, manifest: Manifest)
   }
   return (
     "\n# 대상의 현재 파일 — 복제할 참조 도메인은 없고, 이미 있는 이 코드가 근거다\n" +
-    `${current.join("\n")}\n\n`
+    `${current.join("\n")}\n` +
+    // 1,258개 저장소에 adopt 를 걸면 앞 300개만 실린다. 잘렸다는 것을 모르면 모델은
+    // 알파벳순 뒤쪽 디렉토리가 **없다**고 안다 — 그 자리를 지어내는 것보다 나쁘다.
+    (omitted > 0 ? `(상한에 걸려 ${omitted}개가 더 있습니다 — 알파벳순 뒤쪽입니다)\n` : "") +
+    "\n"
   );
 }
 
