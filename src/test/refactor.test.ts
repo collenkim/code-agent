@@ -86,8 +86,8 @@ function lane(...parts: string[]): string {
   return join(root, "out", "PROJ-7", "app-features-settlement", ...parts);
 }
 
-function plan(changes: Partial<typeof PLAN> = {}) {
-  applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
+async function plan(changes: Partial<typeof PLAN> = {}) {
+  await applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
 }
 
 function approve() {
@@ -120,7 +120,7 @@ afterEach(() => {
 });
 
 describe("종류마다 도는 단계가 다르다", () => {
-  test("refactor 는 생성 단계를 돌지 않는다", () => {
+  test("refactor 는 생성 단계를 돌지 않는다", async () => {
     const stages = stagesFor({ ...MANIFEST, stages: MANIFEST.stages } as never, "refactor");
 
     assert.deepEqual(
@@ -130,7 +130,7 @@ describe("종류마다 도는 단계가 다르다", () => {
     );
   });
 
-  test("돌 단계가 하나도 없으면 조용히 끝내지 않는다", () => {
+  test("돌 단계가 하나도 없으면 조용히 끝내지 않는다", async () => {
     assert.throws(
       () => stagesFor({ ...MANIFEST, stages: [MANIFEST.stages[0]] } as never, "refactor"),
       /선언돼 있지 않습니다/,
@@ -140,7 +140,7 @@ describe("종류마다 도는 단계가 다르다", () => {
 });
 
 describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
-  test("계획 프롬프트가 참조 도메인이 아니라 대상의 현재 파일을 싣는다", () => {
+  test("계획 프롬프트가 참조 도메인이 아니라 대상의 현재 파일을 싣는다", async () => {
     const prompt = nextPrompt(context).prompt!;
 
     assert.match(prompt, /리팩토링 계획자/);
@@ -150,8 +150,8 @@ describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
     assert.match(prompt, /"preserve"/, "보존 조건이 응답 형식에 있어야 한다");
   });
 
-  test("보존 조건이 빠진 계획은 저장하지 않는다", () => {
-    const outcome = applyResponse(
+  test("보존 조건이 빠진 계획은 저장하지 않는다", async () => {
+    const outcome = await applyResponse(
       context,
       JSON.stringify({ ...PLAN, preserve: [PLAN.preserve[0]] }),
     );
@@ -162,8 +162,8 @@ describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
     assert.ok(!existsSync(lane(".plan.json")), "승인 화면에 올라가면 안 된다");
   });
 
-  test("보존 조건을 다 든 계획은 저장되고 승인을 기다린다", () => {
-    plan();
+  test("보존 조건을 다 든 계획은 저장되고 승인을 기다린다", async () => {
+    await plan();
 
     assert.ok(existsSync(lane(".plan.json")));
     const next = nextPrompt(context);
@@ -172,7 +172,7 @@ describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
     assert.match(next.message!, /고칠 파일/);
   });
 
-  test("missingPreserve 는 문장을 그대로 옮겼는지로 본다", () => {
+  test("missingPreserve 는 문장을 그대로 옮겼는지로 본다", async () => {
     const order = validateWorkOrder(
       join(root, "repo"),
       {
@@ -196,7 +196,7 @@ describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
     );
   });
 
-  test("고치는 작업의 계획에는 도메인 자리가 비어 있다", () => {
+  test("고치는 작업의 계획에는 도메인 자리가 비어 있다", async () => {
     const format = planFormatFor("refactor");
     const built = format.toPlan(JSON.parse(JSON.stringify(PLAN)));
 
@@ -206,11 +206,11 @@ describe("계획이 갈린다 — 고칠 파일과 보존 조건", () => {
 });
 
 describe("보존 대상은 코드가 막는다", () => {
-  test("preserve 에 적힌 파일을 고치려 하면 반영하지 않는다", () => {
-    plan();
+  test("preserve 에 적힌 파일을 고치려 하면 반영하지 않는다", async () => {
+    await plan();
     approve();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       [
         "### edit app/features/settlement/facade.py",
@@ -233,11 +233,11 @@ describe("보존 대상은 코드가 막는다", () => {
     assert.ok(!existsSync(lane("app/features/settlement/facade.py")), "디스크에 남으면 안 된다");
   });
 
-  test("scope 밖의 파일도 막는다", () => {
-    plan();
+  test("scope 밖의 파일도 막는다", async () => {
+    await plan();
     approve();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       [
         "### write app/common/tx.py",
@@ -253,11 +253,11 @@ describe("보존 대상은 코드가 막는다", () => {
     assert.equal(outcome.violations[0].item, "지시서 scope 밖");
   });
 
-  test("scope 안의 보존 대상 아닌 파일은 고칠 수 있다", () => {
-    plan();
+  test("scope 안의 보존 대상 아닌 파일은 고칠 수 있다", async () => {
+    await plan();
     approve();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       [
         "### edit app/features/settlement/service.py",
@@ -286,8 +286,8 @@ describe("보존 대상은 코드가 막는다", () => {
     );
   });
 
-  test("생성 프롬프트에 고칠 파일의 현재 내용이 실린다", () => {
-    plan();
+  test("생성 프롬프트에 고칠 파일의 현재 내용이 실린다", async () => {
+    await plan();
     approve();
 
     const prompt = nextPrompt(context).prompt!;

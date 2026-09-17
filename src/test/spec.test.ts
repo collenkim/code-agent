@@ -73,11 +73,11 @@ function answerAll(lane: string): void {
   );
 }
 
-function runUpToStage(): string {
-  const lane = applyResponse(context, JSON.stringify(EMPTY_INTAKE)).outDir;
+async function runUpToStage(): Promise<string> {
+  const lane = (await applyResponse(context, JSON.stringify(EMPTY_INTAKE))).outDir;
   answerAll(lane);
 
-  applyResponse(context, JSON.stringify(PLAN));
+  await applyResponse(context, JSON.stringify(PLAN));
   decideApproval(context, "approved", { approver: "카이", target: "order-service" });
   return lane;
 }
@@ -103,10 +103,10 @@ afterEach(() => {
 });
 
 describe("빈칸은 코드가 찾아 묻는다", () => {
-  test("씨앗에서 읽히지 않은 필수 항목이 질문으로 남는다", () => {
+  test("씨앗에서 읽히지 않은 필수 항목이 질문으로 남는다", async () => {
     assert.equal(nextPrompt(context).label, "intake");
 
-    const outcome = applyResponse(context, JSON.stringify(EMPTY_INTAKE));
+    const outcome = await applyResponse(context, JSON.stringify(EMPTY_INTAKE));
 
     assert.equal(outcome.questionsAdded, 4);
     const targets = readQuestions(outcome.outDir).map((question) => question.target);
@@ -118,15 +118,15 @@ describe("빈칸은 코드가 찾아 묻는다", () => {
     ]);
   });
 
-  test("확정된 것이 없다고 적어 둔 항목은 묻지 않는다 — 비워 두는 것이 답이다", () => {
-    const outcome = applyResponse(context, JSON.stringify(EMPTY_INTAKE));
+  test("확정된 것이 없다고 적어 둔 항목은 묻지 않는다 — 비워 두는 것이 답이다", async () => {
+    const outcome = await applyResponse(context, JSON.stringify(EMPTY_INTAKE));
 
     const asked = readQuestions(outcome.outDir).map((question) => question.target);
     assert.equal(asked.includes("intake:constraints"), false);
   });
 
-  test("답하지 않으면 계획으로 넘어가지 않는다", () => {
-    applyResponse(context, JSON.stringify(EMPTY_INTAKE));
+  test("답하지 않으면 계획으로 넘어가지 않는다", async () => {
+    await applyResponse(context, JSON.stringify(EMPTY_INTAKE));
 
     const next = nextPrompt(context);
 
@@ -136,8 +136,8 @@ describe("빈칸은 코드가 찾아 묻는다", () => {
 });
 
 describe("모델은 옮겨 적기만 한다", () => {
-  test("사람이 답한 것이 단계 프롬프트에 실린다", () => {
-    runUpToStage();
+  test("사람이 답한 것이 단계 프롬프트에 실린다", async () => {
+    await runUpToStage();
 
     const next = nextPrompt(context);
 
@@ -147,8 +147,8 @@ describe("모델은 옮겨 적기만 한다", () => {
     assert.match(next.prompt!, /정산은 이번에 하지 않는다/);
   });
 
-  test("언어·프레임워크를 적지 말라는 규칙이 프롬프트에 실린다", () => {
-    runUpToStage();
+  test("언어·프레임워크를 적지 말라는 규칙이 프롬프트에 실린다", async () => {
+    await runUpToStage();
 
     const prompt = nextPrompt(context).prompt!;
 
@@ -156,13 +156,13 @@ describe("모델은 옮겨 적기만 한다", () => {
     assert.match(prompt, /아키텍처 결정서는 이 문서의 입력이 아니라 다음 실행의 산출물이다/);
   });
 
-  test("스펙 문서 한 장이 생기고, 다음 실행의 지시서 머리말을 달고 나온다", () => {
-    const lane = runUpToStage();
+  test("스펙 문서 한 장이 생기고, 다음 실행의 지시서 머리말을 달고 나온다", async () => {
+    const lane = await runUpToStage();
     const body =
       "---\nkind: bootstrap\nid: NEW-1\ntitle: 주문 관리 서비스 신규 구축\ntarget: order-service\n---\n\n" +
       "# 프로젝트 개요\n사내 영업팀 100명이 쓰는 주문 관리 백엔드를 새로 만든다.\n";
 
-    const outcome = applyResponse(context, writeAction("doc/spec.md", body));
+    const outcome = await applyResponse(context, writeAction("doc/spec.md", body));
 
     assert.equal(outcome.violations.length, 0);
     assert.equal(outcome.advanced, true);
@@ -172,19 +172,19 @@ describe("모델은 옮겨 적기만 한다", () => {
 });
 
 describe("경계는 이 종류에서도 그대로다", () => {
-  test("선언한 위치 밖에는 쓰지 못한다", () => {
-    runUpToStage();
+  test("선언한 위치 밖에는 쓰지 못한다", async () => {
+    await runUpToStage();
 
-    const outcome = applyResponse(context, writeAction("spec.md", "# 아무 데나"));
+    const outcome = await applyResponse(context, writeAction("spec.md", "# 아무 데나"));
 
     assert.equal(outcome.execution!.writtenFiles.length, 0);
     assert.equal(outcome.violations[0].item, "do-not-touch 경계");
   });
 
-  test("승인 전에는 어느 단계도 돌지 않는다", () => {
-    const lane = applyResponse(context, JSON.stringify(EMPTY_INTAKE)).outDir;
+  test("승인 전에는 어느 단계도 돌지 않는다", async () => {
+    const lane = (await applyResponse(context, JSON.stringify(EMPTY_INTAKE))).outDir;
     answerAll(lane);
-    applyResponse(context, JSON.stringify(PLAN));
+    await applyResponse(context, JSON.stringify(PLAN));
 
     const next = nextPrompt(context);
 

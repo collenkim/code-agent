@@ -16,10 +16,11 @@
  * 진행할 수 있는 대상으로 간다. 정말 순서가 필요하면 지시서를 나눈다 — 나누는 편이
  * 승인 단위로도 옳다.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 import { checkApproval, checkStage } from "./approval";
+import { writeAtomic } from "./atomic";
 import type { StageState } from "./approval";
 import type { Manifest } from "./manifest";
 import { decideTarget, describeTarget, loadSession } from "./session";
@@ -52,8 +53,8 @@ const RUN_FILE = join(".code-agent", "run.json");
 export interface RunState {
   /** 최초 한 번 받아 두면 이후 실행에서는 --spec 을 다시 주지 않아도 된다 */
   specPaths: string[];
-  /** 프롬프트를 마지막으로 내준 대상 */
-  dispatch?: { id: string; target: string };
+  /** 프롬프트를 마지막으로 내준 자리. 돌아온 응답이 그 자리의 것인지 대조한다 */
+  issued?: { id: string; token: string };
 }
 
 export function runStatePath(baseOut: string): string {
@@ -66,13 +67,11 @@ export function readRunState(baseOut: string): RunState {
     return { specPaths: [] };
   }
   const stored = JSON.parse(readFileSync(path, "utf-8")) as Partial<RunState>;
-  return { specPaths: stored.specPaths ?? [], dispatch: stored.dispatch };
+  return { specPaths: stored.specPaths ?? [], issued: stored.issued };
 }
 
 export function writeRunState(baseOut: string, state: RunState): void {
-  const path = runStatePath(baseOut);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), "utf-8");
+  writeAtomic(runStatePath(baseOut), JSON.stringify(state, null, 2));
 }
 
 /**
@@ -97,24 +96,28 @@ export function withRememberedSpec<T extends { specPaths: string[]; outDir: stri
   return input;
 }
 
-/** 프롬프트를 내준 대상을 적어 둔다 — 응답이 엉뚱한 대상에 반영되지 않게 */
-export function rememberDispatch(baseOut: string, id: string, target: string): void {
-  writeRunState(baseOut, { ...readRunState(baseOut), dispatch: { id, target } });
+/** 프롬프트를 내준 자리를 적어 둔다 — 돌아온 응답이 그 자리의 것인지 대조하려는 것이다 */
+export function rememberIssuedToken(baseOut: string, id: string, token: string): void {
+  writeRunState(baseOut, { ...readRunState(baseOut), issued: { id, token } });
 }
 
 /**
- * 마지막으로 프롬프트를 내준 대상. 읽고 나면 지운다.
+ * 마지막으로 프롬프트를 내준 자리의 토큰. 읽고 나면 지운다.
  *
- * 이것이 없으면 next 와 apply 사이에 사람이 다른 대상의 질문에 답했을 때 선택이 달라져,
- * 붙여넣은 응답이 **다른 대상의 레인에 반영된다.** 추측으로 고르지 않기 위한 기록이다.
+ * **프로세스가 갈리는 CLI 전용 자리다.** next 와 apply 가 다른 프로세스라 토큰을 둘 곳이
+ * 파일밖에 없고, 그 사이 사람이 다른 대상의 질문에 답하면 고를 레인이 달라지기 때문이다.
+ *
+ * 서버는 이것을 쓰지 않는다 — 클라이언트가 토큰을 직접 들고 온다. 슬롯 하나를 여럿이
+ * 나눠 쓰면 두 번째 사용자가 첫 번째 사용자의 것을 덮어쓰는데, 그게 바로 이 장치가
+ * 막으려던 사고다.
  */
-export function takeDispatch(baseOut: string): string | undefined {
+export function takeIssuedToken(baseOut: string): string | undefined {
   const state = readRunState(baseOut);
-  if (!state.dispatch) {
+  if (!state.issued) {
     return undefined;
   }
   writeRunState(baseOut, { specPaths: state.specPaths });
-  return state.dispatch.target;
+  return state.issued.token;
 }
 
 // ---- 어느 대상을 돌 차례인가 ----

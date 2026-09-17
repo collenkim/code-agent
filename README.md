@@ -766,15 +766,43 @@ code-agent serve
 
 | 메서드 · 경로 | 하는 일 |
 |---|---|
-| `GET /api/jobs` | 작업 목록과 각 상태 |
+| `GET /api/jobs` | 작업 목록과 각 상태. 인증이 켜져 있으면 **내 것만** 나온다 |
 | `POST /api/jobs` | 작업 생성 `{repo, templates, out, specs[], reference?}` |
-| `GET /api/jobs/:id` | 지금 할 차례 · 턴 · 미결 질문 · 앞 턴의 위반 |
-| `GET /api/jobs/:id/prompt` | 붙여넣을 프롬프트. **상태를 바꾸지 않는다** |
-| `POST /api/jobs/:id/response` | 응답 전문을 반영. 상태를 움직이는 유일한 지점 |
+| `GET /api/jobs/:id` | 지금 할 차례 · 턴 · 미결 질문 · 앞 턴의 위반 · 진행 중인 실행 |
+| `GET /api/jobs/:id/prompt` | 붙여넣을 프롬프트와 그 자리의 `token`. **상태를 바꾸지 않는다 — 디스크에도 쓰지 않는다** |
+| `POST /api/jobs/:id/response` | 응답 전문을 반영. 상태를 움직이는 유일한 지점. `X-Code-Agent-Turn` 필수 |
+| `GET /api/jobs/:id/runs/:runId` | 202 로 갈린 실행의 결과를 받아 간다 |
 | `POST /api/jobs/:id/questions` | `{answers: [{id, answer}]}` |
-| `POST /api/jobs/:id/approval` | `{decision: "approved"\|"rejected", approver, comment, target}` — 2차·4차 게이트. 지금 기다리는 것에 판정한다 |
+| `POST /api/jobs/:id/approval` | `{decision: "approved"\|"rejected", comment, target}` — 2차·4차 게이트. 지금 기다리는 것에 판정한다 |
 | `GET /api/jobs/:id/log` | 턴 기록 |
 | `DELETE /api/jobs/:id` | 목록에서 제거 (out/ 은 그대로) |
+
+### 요청에 붙는 헤더
+
+| 헤더 | 언제 | 왜 |
+|---|---|---|
+| `X-Code-Agent: 1` | 상태를 바꾸는 모든 요청 | 값은 보지 않는다. 커스텀 헤더가 하나라도 붙으면 브라우저가 preflight 를 먼저 보내므로, **다른 사이트가 사람 몰래 이 서버를 두드리는 길(CSRF)** 이 구조적으로 막힌다 |
+| `X-Code-Agent-Turn: <token>` | `POST /response` | 이 응답이 **어느 자리에서 나온 프롬프트의 것인지**. `GET /prompt` 가 준 `token` 을 그대로 되돌려 준다 |
+| `<인증 헤더>` | 인증을 켰을 때 전부 | 앞단 프록시가 넣는다. 그 값이 작업의 주인이자 승인 원장의 `approver` 다 |
+
+### 자리 토큰 — 응답이 엉뚱한 곳에 반영되지 않게
+
+`GET /prompt` 는 `token` 을 함께 준다. 형식은 `대상@단계#턴` 이고(`shipment@plan#3`),
+`POST /response` 가 그것을 되돌려 받아 **지금 자리와 같은지 대조한다.** 다르면 409 로 거부하고
+아무것도 반영하지 않는다.
+
+이것이 없으면 화면이 둘이거나 사람이 둘일 때 이런 일이 난다 — 둘이 같은 프롬프트를 받아 가고,
+한쪽이 먼저 반영해 상태가 움직인 뒤, 나중에 붙여넣은 응답이 **그 사이 차례가 된 다른 대상의
+레인**으로 들어간다. 계획 하나가 남의 도메인에 저장되는 사고다.
+
+### 오래 걸리는 것 — 202
+
+`### run` 이 든 응답은 빌드·테스트를 돌리므로 몇 분이 걸릴 수 있다. 2초 안에 끝나지 않으면
+`202 {runId}` 로 갈리고, 실행은 서버에서 계속 돈다. 클라이언트는 `GET /runs/:runId` 로
+받아 간다 — 200 이면 결과, 202 면 아직 도는 중이다.
+
+**같은 작업의 요청은 줄을 선다. 다른 작업은 서로 기다리지 않는다.** 상태 파일은 원자적으로
+쓰이므로(`core/atomic.ts`) 빌드가 도는 동안에도 조회는 막히지 않는다.
 
 `response` 만 본문 형식이 둘이다. **`text/plain` 이면 본문 전체가 곧 응답 전문이다.**
 
@@ -792,9 +820,33 @@ curl -X POST localhost:4319/api/jobs/job-1/response \
 | `--port` | `4319` |
 | `--host` | `127.0.0.1` |
 | `--state` | `.code-agent-server/jobs.json` — 작업 목록 파일 |
+| `--auth-header` | (없음) 인증 주체가 실려 오는 헤더 이름 |
+| `--trust-proxy` | (없음) 위 헤더를 신뢰한다는 선언. `--auth-header` 와 짝이다 |
+| `--root` | (없음) 작업이 가리킬 수 있는 경로의 뿌리. 여러 번 줄 수 있다 |
 
 > **`--host` 기본값이 `127.0.0.1`인 것은 의도다.** 이 서버는 대상 저장소를 읽고 `build`·`test` 명령을
 > 이 머신에서 실행한다. 외부에 열면 그게 그대로 원격 명령 실행이 된다.
+
+### 여럿이 쓸 때
+
+```bash
+code-agent serve --host 0.0.0.0 \
+  --auth-header X-Auth-User --trust-proxy \
+  --root /srv/repos --root /srv/specs
+```
+
+| | 무엇을 하는가 |
+|---|---|
+| `--auth-header` | **앞단 프록시가 인증하고 그 주체를 이 헤더로 넘긴다**는 전제에서 돈다. 헤더가 없으면 401 이고, 그 값이 작업의 주인이자 원장의 `approver` 가 된다 — 본문에 적어 보낸 이름은 무시한다 |
+| `--trust-proxy` | 위 전제를 사람이 한 번 더 적는 자리. 없이 `--auth-header` 만 주면 시작하지 않는다 — 프록시가 없으면 누구나 스스로 그 헤더를 적어 남의 이름으로 승인할 수 있기 때문이다 |
+| `--root` | 작업이 가리킬 수 있는 경로를 묶는다. 없으면 요청 본문의 절대경로 하나로 이 프로세스가 닿는 모든 곳이 사정권에 든다 |
+
+**남의 작업은 404 다.** 403 이 아닌 것은 의도로, 있다는 사실 자체를 알리지 않는다.
+
+> **인증이 알려 주는 것은 신원이지 사람의 존재가 아니다.** 프록시가 말해 주는 것은 "어느 계정으로
+> 들어온 요청인가"이고, "그 사람이 계획을 읽고 판단했는가"는 아니다. 그래서 서버 경로의 판정은
+> 여전히 원장에 `presence.verified: false` 로 남는다 — `requireVerifiedApproval` 을 켠 프로젝트에서는
+> 이 경로로 게이트가 열리지 않는다. 거짓 증거는 증거가 없는 것보다 나쁘다.
 
 ---
 

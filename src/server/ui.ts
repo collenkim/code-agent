@@ -81,6 +81,15 @@ const SCRIPT = String.raw`
 let jobs = [];
 let current = null;
 let state = null;
+// 지금 화면에 떠 있는 프롬프트가 나온 자리. 응답과 함께 되돌려 줘야 반영된다.
+let turnToken = null;
+
+/**
+ * 상태를 바꾸는 요청에 붙는 헤더. 값은 서버가 보지 않는다 —
+ * 커스텀 헤더가 하나라도 있으면 브라우저가 preflight 를 거치므로, 다른 사이트가
+ * 사람 몰래 이 서버를 두드리는 길이 막힌다.
+ */
+const INTENT = { "x-code-agent": "1" };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
@@ -91,6 +100,33 @@ async function call(path, options) {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
   return body;
+}
+
+/**
+ * 오래 걸리는 것(검증 명령)은 202 로 돌아온다 — 실행은 서버에서 계속 돌고 있고,
+ * 여기서 runId 로 받아 간다. 붙잡고 기다리면 프록시가 먼저 끊는다.
+ */
+async function callMaybeSlow(path, options, onAccepted) {
+  const res = await fetch(path, options);
+  const body = await res.json();
+  if (res.status === 202) {
+    if (onAccepted) onAccepted(body);
+    return pollRun(body.runId);
+  }
+  if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+  return body;
+}
+
+async function pollRun(runId) {
+  const url = "/api/jobs/" + encodeURIComponent(current) + "/runs/" + encodeURIComponent(runId);
+  for (;;) {
+    await new Promise((wake) => setTimeout(wake, 1500));
+    const res = await fetch(url);
+    const body = await res.json();
+    if (res.status === 202) continue;
+    if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+    return body;
+  }
 }
 
 function flash(message, isError) {
@@ -105,7 +141,9 @@ async function loadJobs() {
   jobs = body.jobs;
   const select = $("jobs");
   select.innerHTML = jobs.map((job) =>
-    '<option value="' + esc(job.id) + '">' + esc(job.label) + " — " + esc(job.target) + "</option>"
+    '<option value="' + esc(job.id) + '">' +
+      (job.broken ? "⚠ " : "") + esc(job.label) + " — " + esc(job.target) +
+    "</option>"
   ).join("");
   if (jobs.length === 0) {
     current = null;
@@ -120,9 +158,35 @@ async function loadJobs() {
 }
 
 async function refresh() {
+  // 목록이 이미 "이 작업은 상태를 읽지 못했다"고 말해 준 경우. 조회하면 그대로 오류가 나므로,
+  // 무엇이 잘못됐는지 보여 주고 **지울 수 있는 상태로** 둔다.
+  const listed = jobs.find((job) => job.id === current);
+  if (listed && listed.broken) {
+    state = listed;
+    renderBroken(listed);
+    return;
+  }
   state = await call("/api/jobs/" + encodeURIComponent(current));
   render();
   await loadPrompt();
+}
+
+function renderBroken(job) {
+  turnToken = null;
+  $("target").textContent = "설정 오류";
+  $("target").className = "chip blocked";
+  $("running").style.display = "none";
+  $("turn").textContent = "";
+  $("stages").textContent = "";
+  $("paths").textContent = job.repoRoot + "  →  " + job.outDir;
+  for (const id of ["questions", "approval", "carry", "result", "log", "lanes"]) {
+    $(id).style.display = "none";
+  }
+  $("prompt").textContent = job.message || "이 작업의 상태를 읽지 못했습니다.";
+  $("copy").disabled = true;
+  $("send").disabled = true;
+  $("response").disabled = true;
+  flash("이 작업은 설정이 어긋나 진행할 수 없습니다. 고치거나 삭제하세요.", true);
 }
 
 function render() {
@@ -130,6 +194,8 @@ function render() {
   const done = state.step === "done";
   $("target").textContent = state.target;
   $("target").className = "chip" + (blocked ? " blocked" : done ? " done" : "");
+  $("running").textContent = state.running ? "⏳ " + state.running.what + " 실행 중" : "";
+  $("running").style.display = state.running ? "" : "none";
   $("turn").textContent = "턴 " + state.turn;
   $("stages").textContent = state.completedStages.length
     ? "완료 " + state.completedStages.join(", ") : "완료된 단계 없음";
@@ -173,6 +239,7 @@ function render() {
 
 async function loadPrompt() {
   const body = await call("/api/jobs/" + encodeURIComponent(current) + "/prompt");
+  turnToken = body.token;
   const has = Boolean(body.prompt);
   $("prompt").textContent = has ? body.prompt : (body.message || "");
   $("copy").disabled = !has;
@@ -183,13 +250,23 @@ async function loadPrompt() {
 async function send() {
   const text = $("response").value;
   if (!text.trim()) { flash("Console 응답을 붙여넣으세요.", true); return; }
+  if (!turnToken) { flash("프롬프트를 먼저 받아야 합니다. 새로고침 해 보세요.", true); return; }
   $("send").disabled = true;
   try {
-    const out = await call("/api/jobs/" + encodeURIComponent(current) + "/response", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ response: text }),
-    });
+    const out = await callMaybeSlow(
+      "/api/jobs/" + encodeURIComponent(current) + "/response",
+      {
+        method: "POST",
+        headers: {
+          ...INTENT,
+          "content-type": "application/json",
+          // 이 응답이 어느 자리의 것인지. 없으면 서버가 받지 않는다.
+          "x-code-agent-turn": turnToken,
+        },
+        body: JSON.stringify({ response: text }),
+      },
+      (accepted) => flash(accepted.message || (accepted.what + " — 실행 중입니다…")),
+    );
     showResult(out);
     if (out.parseErrors.length === 0 && out.violations.length === 0) $("response").value = "";
     state = out.next;
@@ -237,9 +314,9 @@ function showResult(out) {
 }
 
 async function decide(decision) {
-  const body = await call("/api/jobs/" + encodeURIComponent(current) + "/approval", {
+  const body = await callMaybeSlow("/api/jobs/" + encodeURIComponent(current) + "/approval", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...INTENT, "content-type": "application/json" },
     body: JSON.stringify({
       decision: decision,
       // 화면에 띄운 계획과 판정하는 계획이 어긋나지 않게, 보고 있는 대상을 함께 보낸다.
@@ -260,9 +337,9 @@ async function saveAnswers() {
     id: Number(input.dataset.qid),
     answer: input.value,
   }));
-  state = await call("/api/jobs/" + encodeURIComponent(current) + "/questions", {
+  state = await callMaybeSlow("/api/jobs/" + encodeURIComponent(current) + "/questions", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...INTENT, "content-type": "application/json" },
     body: JSON.stringify({ answers }),
   });
   render();
@@ -277,7 +354,7 @@ async function createJob(event) {
   try {
     const job = await call("/api/jobs", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...INTENT, "content-type": "application/json" },
       body: JSON.stringify({
         label: form.get("label"),
         repo: form.get("repo"),
@@ -295,6 +372,22 @@ async function createJob(event) {
   } catch (err) {
     flash(err.message, true);
   }
+}
+
+/**
+ * 목록에서 뺀다. out/ 의 산출물은 건드리지 않는다 — 지우는 것은 "이 작업을 계속 하겠다"는
+ * 표시뿐이고, 만들어 둔 것과 승인 기록은 사람이 확인한 뒤에 치울 일이다.
+ */
+async function dropJob() {
+  const job = jobs.find((entry) => entry.id === current);
+  if (!confirm("작업 '" + (job ? job.label : current) + "' 을 목록에서 뺍니다.\n" +
+      "out/ 의 산출물과 승인 기록은 그대로 남습니다. 계속할까요?")) {
+    return;
+  }
+  await call("/api/jobs/" + encodeURIComponent(current), { method: "DELETE", headers: INTENT });
+  current = null;
+  await loadJobs();
+  flash("작업을 목록에서 뺐습니다.");
 }
 
 async function showLog() {
@@ -316,6 +409,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("reject").addEventListener("click", () => decide("rejected").catch((e) => flash(e.message, true)));
   $("reload").addEventListener("click", () => loadJobs().catch((e) => flash(e.message, true)));
   $("showlog").addEventListener("click", () => showLog().catch((e) => flash(e.message, true)));
+  $("drop").addEventListener("click", () => dropJob().catch((e) => flash(e.message, true)));
   $("createform").addEventListener("submit", createJob);
   loadJobs().catch((e) => flash(e.message, true));
 });
@@ -328,8 +422,10 @@ const BODY = `
   <span class="chip" id="target">—</span>
   <span class="muted" id="turn"></span>
   <span class="muted" id="stages"></span>
+  <span class="chip" id="running" style="display:none"></span>
   <button id="reload">새로고침</button>
   <button id="showlog">턴 기록</button>
+  <button id="drop">작업 삭제</button>
 </header>
 
 <main>

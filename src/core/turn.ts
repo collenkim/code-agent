@@ -36,7 +36,7 @@ import { formatPlan, missingPreserve, planFormatFor, previewPlanPrompt } from ".
 import { withResolvedInputs } from "./run";
 import type { StageDef } from "./manifest";
 import type { Lane, LaneState } from "./targets";
-import { describeLanes, rememberDispatch, takeDispatch, withRememberedSpec } from "./targets";
+import { describeLanes, rememberIssuedToken, takeIssuedToken, withRememberedSpec } from "./targets";
 import {
   answeredSlotKeys,
   buildIntakePrompt,
@@ -233,15 +233,74 @@ function approvalMessage(
   ].join("\n");
 }
 
+/**
+ * 이 프롬프트가 **어느 자리에서 나왔는지**. 응답이 돌아왔을 때 그 자리가 그대로인지 대조한다.
+ *
+ * 이것이 없으면 `applyResponse` 는 붙여넣은 것이 어느 단계를 위해 만들어졌는지 모른 채
+ * 지금 차례에 밀어넣는다. 혼자 쓸 때는 드러나지 않지만 화면이 둘이거나 사람이 둘이면,
+ * 한쪽이 먼저 반영해 상태를 움직인 뒤 다른 쪽이 붙여넣게 되고 그 응답은 **엉뚱한 레인의
+ * 엉뚱한 단계**로 들어간다. 계획 하나가 남의 대상에 저장되는 사고가 여기서 난다.
+ *
+ * 해시가 아니라 읽을 수 있는 문자열인 것은 의도다 — 막으려는 것이 위조가 아니라 착오이고
+ * (위조는 인증이 막는다), 어긋났을 때 무엇과 무엇이 어긋났는지 사람이 바로 읽어야 한다.
+ * 뒤에서부터 잘라 읽으므로 대상 이름에 `@`·`#` 이 들어 있어도 갈리지 않는다.
+ */
+export function turnTokenOf(lane: string, step: Target, turn: number): string {
+  return `${lane}@${describeTarget(step)}#${turn}`;
+}
+
+export function parseTurnToken(
+  token: string,
+): { lane: string; step: string; turn: number } | undefined {
+  const hash = token.lastIndexOf("#");
+  if (hash < 0) {
+    return undefined;
+  }
+  const turn = Number(token.slice(hash + 1));
+  if (!Number.isInteger(turn) || turn < 0) {
+    return undefined;
+  }
+  const head = token.slice(0, hash);
+  const at = head.lastIndexOf("@");
+  // at === 0 이면 대상 이름이 비어 있다 — 그런 레인은 없다.
+  if (at <= 0) {
+    return undefined;
+  }
+  return { lane: head.slice(0, at), step: head.slice(at + 1), turn };
+}
+
+/**
+ * 응답이 만들어진 자리와 지금 자리가 다르다. **아무것도 반영하지 않는다.**
+ *
+ * 형식 오류(`parseErrors`)와 구분하는 이유는 고치는 방법이 다르기 때문이다. 형식 오류는
+ * 같은 프롬프트로 다시 받으면 되지만, 이것은 프롬프트 자체를 다시 받아야 한다.
+ */
+export class TurnMismatchError extends Error {
+  constructor(
+    readonly issued: string,
+    readonly now: string,
+  ) {
+    super(
+      `붙여넣은 응답은 \`${issued}\` 자리의 것인데 지금 차례는 \`${now}\` 입니다 — ` +
+        "아무것도 반영하지 않았습니다.\n" +
+        "  그 사이에 이 작업이 진행됐습니다 (다른 화면 · 다른 사람 · 앞선 요청).\n" +
+        "  프롬프트를 다시 받아 그 응답을 붙여넣으세요.",
+    );
+    this.name = "TurnMismatchError";
+  }
+}
+
 export interface NextPrompt {
   target: Target;
   label: string;
   prompt?: string;
+  /** 이 프롬프트가 나온 자리. 응답을 되돌려 줄 때 그대로 실어 보낸다 */
+  token: string;
   /** blocked·done·approval 이면 프롬프트 대신 사람에게 할 말 */
   message?: string;
   /** 이 프롬프트가 어느 대상의 것인지 */
   lane: string;
-  /** 작업 지시서의 id — 프롬프트를 내준 자리에서 dispatch 를 적을 때 쓴다 */
+  /** 작업 지시서의 id — 프롬프트를 내준 자리를 적을 때 쓴다 */
   orderId: string;
   /** 그 대상의 계획·질문·생성물이 있는 곳 */
   outDir: string;
@@ -257,17 +316,17 @@ export interface NextPrompt {
 }
 
 /**
- * 프롬프트를 **사람에게 실제로 내주는 자리**에서 부른다 — 어느 대상의 것이었는지 적어 둔다.
+ * **CLI 전용** — next 가 내준 자리를 적어 두어 apply 가 대조할 수 있게 한다.
  *
- * `nextPrompt` 안에서 적으면 안 된다. 그 함수는 `status`·`log`·목록 조회도 부르는데,
- * 그때마다 dispatch 가 덮이면 **붙여넣은 응답이 엉뚱한 레인에 반영된다** — dispatch 가
- * 막으려던 바로 그 사고다. "상태를 바꾸지 않아 몇 번 불러도 같다"는 약속도 그때 거짓이 된다.
+ * 두 명령이 다른 프로세스라 토큰을 들고 있을 곳이 파일밖에 없다. 서버는 이것을 부르지
+ * 않는다 — 클라이언트가 토큰을 직접 들고 오므로 조회가 부작용을 갖지 않아도 되고,
+ * 파일 슬롯 하나를 여럿이 나눠 쓰면 그게 곧 덮어쓰기 사고가 된다.
  */
 export function rememberIssued(input: BuildContext, next: NextPrompt): void {
   if (!next.prompt) {
     return;
   }
-  rememberDispatch(input.outDir, next.orderId, next.lane);
+  rememberIssuedToken(input.outDir, next.orderId, next.token);
 }
 
 /**
@@ -282,6 +341,7 @@ export function nextPrompt(input: BuildContext): NextPrompt {
   const head = {
     target,
     label: labelFor(target, lane, lanes),
+    token: turnTokenOf(lane, target, session.turn),
     lane,
     orderId: context.workOrder.id,
     lanes,
@@ -586,16 +646,40 @@ export interface ApplyOutcome {
   message?: string;
 }
 
-/** 채팅 응답을 읽어 실제로 반영한다. */
-export function applyResponse(input: BuildContext, responseText: string): ApplyOutcome {
+/**
+ * 채팅 응답을 읽어 실제로 반영한다.
+ *
+ * `issuedToken` 은 이 응답이 만들어진 자리다. 서버는 클라이언트가 보낸 것을 그대로 넘기고,
+ * CLI 는 생략해 next 가 적어 둔 것을 읽게 한다. 어느 쪽이든 **지금 자리와 다르면 던진다** —
+ * 그 자리에 밀어넣으면 남의 대상에 남의 계획이 저장된다.
+ */
+export async function applyResponse(
+  input: BuildContext,
+  responseText: string,
+  issuedToken?: string,
+): Promise<ApplyOutcome> {
   const remembered = withRememberedSpec(input);
-  // 프롬프트를 내준 대상에 반영한다. 그 사이 사람이 다른 대상의 질문에 답했다면 선택이
-  // 달라지는데, 그러면 붙여넣은 응답이 엉뚱한 레인으로 들어간다.
-  const dispatched = takeDispatch(remembered.outDir);
-  const { context, manifest, lanes } = withResolvedInputs(remembered, dispatched);
+  const issued = issuedToken ?? takeIssuedToken(remembered.outDir);
+  const parsedToken = issued === undefined ? undefined : parseTurnToken(issued);
+  if (issued !== undefined && parsedToken === undefined) {
+    throw new Error(
+      `자리 토큰의 형식이 어긋납니다: ${JSON.stringify(issued)}\n` +
+        "  형식은 `대상@단계#턴` 입니다. 프롬프트를 받은 자리에서 준 값을 그대로 보내세요.",
+    );
+  }
+
+  // 토큰이 가리키는 레인으로 간다. 없는 대상이면 지시서의 대상 목록과 함께 거부된다.
+  const { context, manifest, lanes } = withResolvedInputs(remembered, parsedToken?.lane);
   const session = loadSession(context.outDir);
   const lane = context.target;
   const target = stepOf(lanes, lane);
+
+  // 대조는 레인을 고른 **뒤에** 한다 — 단계와 턴까지 봐야 "그 사이 진행됐다"를 잡는다.
+  const now = turnTokenOf(lane, target, session.turn);
+  if (issued !== undefined && issued !== now) {
+    throw new TurnMismatchError(issued, now);
+  }
+
   const label = labelFor(target, lane, lanes);
   session.turn += 1;
 
@@ -827,7 +911,7 @@ export function applyResponse(input: BuildContext, responseText: string): ApplyO
   }
 
   const plan = loadPlan(context.outDir);
-  const execution = executeActions({
+  const execution = await executeActions({
     repoRoot: context.repoRoot,
     outDir: context.outDir,
     order: context.workOrder,

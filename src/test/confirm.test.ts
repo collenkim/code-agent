@@ -66,10 +66,10 @@ function decide(decision: "approved" | "rejected", comment?: string) {
 }
 
 /** 계획 승인까지 끝내고 첫 단계 산출물을 만들어, 확정 대기에 세운다. */
-function reachConfirm(): void {
-  applyResponse(context, JSON.stringify(PLAN));
+async function reachConfirm(): Promise<void> {
+  await applyResponse(context, JSON.stringify(PLAN));
   decide("approved");
-  applyResponse(context, MODEL);
+  await applyResponse(context, MODEL);
 }
 
 beforeEach(() => {
@@ -105,8 +105,8 @@ afterEach(() => {
 });
 
 describe("확정 없이는 넘어가지 않는다", () => {
-  test("단계가 끝나면 다음 단계가 아니라 확정 대기가 된다", () => {
-    reachConfirm();
+  test("단계가 끝나면 다음 단계가 아니라 확정 대기가 된다", async () => {
+    await reachConfirm();
 
     const next = nextPrompt(context);
 
@@ -115,8 +115,8 @@ describe("확정 없이는 넘어가지 않는다", () => {
     assert.match(next.message!, /단계 산출물을 확정해야 넘어갑니다/);
   });
 
-  test("무엇을 확정하는지 파일 목록으로 보여 준다 — 목록 없이 묻는 판정은 형식이다", () => {
-    reachConfirm();
+  test("무엇을 확정하는지 파일 목록으로 보여 준다 — 목록 없이 묻는 판정은 형식이다", async () => {
+    await reachConfirm();
 
     const message = nextPrompt(context).message!;
 
@@ -124,10 +124,10 @@ describe("확정 없이는 넘어가지 않는다", () => {
     assert.match(message, /\d+줄/, "몇 줄짜리인지까지 보여야 열어 볼지 판단할 수 있다");
   });
 
-  test("확정 대기 중에 응답을 붙여넣어도 소비되지 않는다", () => {
-    reachConfirm();
+  test("확정 대기 중에 응답을 붙여넣어도 소비되지 않는다", async () => {
+    await reachConfirm();
 
-    const outcome = applyResponse(context, SERVICE);
+    const outcome = await applyResponse(context, SERVICE);
 
     assert.equal(outcome.advanced, false);
     assert.equal(outcome.execution, undefined, "다음 단계 산출물이 먼저 들어오지 않는다");
@@ -135,18 +135,18 @@ describe("확정 없이는 넘어가지 않는다", () => {
     assert.equal(nextPrompt(context).label, "confirm:model");
   });
 
-  test("확정하면 다음 단계로 간다", () => {
-    reachConfirm();
+  test("확정하면 다음 단계로 간다", async () => {
+    await reachConfirm();
 
     decide("approved");
 
     assert.equal(nextPrompt(context).label, "service");
   });
 
-  test("마지막 단계까지 확정해야 끝난다", () => {
-    reachConfirm();
+  test("마지막 단계까지 확정해야 끝난다", async () => {
+    await reachConfirm();
     decide("approved");
-    applyResponse(context, SERVICE);
+    await applyResponse(context, SERVICE);
 
     assert.equal(nextPrompt(context).label, "confirm:service");
 
@@ -157,14 +157,14 @@ describe("확정 없이는 넘어가지 않는다", () => {
 });
 
 describe("반려하면 그 단계를 다시 돈다", () => {
-  test("반려에는 사유가 필요하다", () => {
-    reachConfirm();
+  test("반려에는 사유가 필요하다", async () => {
+    await reachConfirm();
 
     assert.throws(() => decide("rejected"), /사유/);
   });
 
-  test("반려하면 같은 단계로 돌아가고 사유가 다음 프롬프트에 실린다", () => {
-    reachConfirm();
+  test("반려하면 같은 단계로 돌아가고 사유가 다음 프롬프트에 실린다", async () => {
+    await reachConfirm();
 
     decide("rejected", "필드가 스펙과 다르다");
 
@@ -175,11 +175,11 @@ describe("반려하면 그 단계를 다시 돈다", () => {
     assert.equal(loadSession(lane()).completedStages.includes("model"), false);
   });
 
-  test("다시 만들면 확정을 또 물어본다 — 반려가 통과로 바뀌지 않는다", () => {
-    reachConfirm();
+  test("다시 만들면 확정을 또 물어본다 — 반려가 통과로 바뀌지 않는다", async () => {
+    await reachConfirm();
     decide("rejected", "다시");
 
-    applyResponse(context, writeAction("app/shipment/models.py", "class Shipment:\n    code: str"));
+    await applyResponse(context, writeAction("app/shipment/models.py", "class Shipment:\n    code: str"));
 
     const next = nextPrompt(context);
     assert.equal(next.label, "confirm:model");
@@ -188,8 +188,8 @@ describe("반려하면 그 단계를 다시 돈다", () => {
 });
 
 describe("확정은 그때의 파일들에 대한 것이다", () => {
-  test("확정한 뒤 산출물이 바뀌면 다시 물어본다", () => {
-    reachConfirm();
+  test("확정한 뒤 산출물이 바뀌면 다시 물어본다", async () => {
+    await reachConfirm();
     decide("approved");
     assert.equal(nextPrompt(context).label, "service");
 
@@ -203,8 +203,8 @@ describe("확정은 그때의 파일들에 대한 것이다", () => {
 });
 
 describe("판정 기록", () => {
-  test("확정도 같은 원장에 남는다 — 무엇을 확정했는지까지", () => {
-    reachConfirm();
+  test("확정도 같은 원장에 남는다 — 무엇을 확정했는지까지", async () => {
+    await reachConfirm();
 
     decide("approved", "확인함");
 
@@ -218,10 +218,10 @@ describe("판정 기록", () => {
     assert.deepEqual(snapshot.files, ["app/shipment/models.py"]);
   });
 
-  test("단계 확정이 계획 판정으로 읽히지 않는다", () => {
+  test("단계 확정이 계획 판정으로 읽히지 않는다", async () => {
     // 회귀 위험: 두 판정이 같은 원장에 쌓이므로, 마지막 줄만 보면 단계 확정이 계획 승인으로
     // 읽힌다. 그러면 계획이 바뀌어도 2차 게이트가 그냥 통과한다.
-    reachConfirm();
+    await reachConfirm();
     decide("approved");
 
     const planPath = lane(".plan.json");

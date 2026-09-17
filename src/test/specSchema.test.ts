@@ -141,7 +141,7 @@ afterEach(() => {
 });
 
 describe("선언한 프로젝트에서만 돈다", () => {
-  test("규격을 선언하면 계획보다 먼저 항목을 뽑는다", () => {
+  test("규격을 선언하면 계획보다 먼저 항목을 뽑는다", async () => {
     const next = nextPrompt(context);
 
     assert.equal(next.label, "intake");
@@ -149,14 +149,14 @@ describe("선언한 프로젝트에서만 돈다", () => {
     assert.match(next.prompt!, /판단하거나 채우지 않는다/);
   });
 
-  test("규격을 선언하지 않은 프로젝트는 예전처럼 계획부터 간다", () => {
+  test("규격을 선언하지 않은 프로젝트는 예전처럼 계획부터 간다", async () => {
     rmSync(join(root, "repo/doc/templates/spec-schema.json"));
 
     assert.equal(nextPrompt(context).label, "plan");
   });
 
-  test("필수 여부는 kind 가 정한다 — fix 전용 항목은 feature 에서 묻지 않는다", () => {
-    const outcome = applyResponse(context, extracted(BOTH_FOUND));
+  test("필수 여부는 kind 가 정한다 — fix 전용 항목은 feature 에서 묻지 않는다", async () => {
+    const outcome = await applyResponse(context, extracted(BOTH_FOUND));
 
     assert.equal(outcome.questionsAdded, 0, "repro 는 fix 전용이라 묻지 않는다");
     assert.equal(nextPrompt(context).label, "plan");
@@ -164,8 +164,8 @@ describe("선언한 프로젝트에서만 돈다", () => {
 });
 
 describe("빈칸을 코드가 판정한다", () => {
-  test("근거를 못 찾은 필수 항목이 질문이 된다", () => {
-    const outcome = applyResponse(
+  test("근거를 못 찾은 필수 항목이 질문이 된다", async () => {
+    const outcome = await applyResponse(
       context,
       extracted([
         { key: "data", value: "id, address", evidence: "- id: 식별자" },
@@ -178,9 +178,9 @@ describe("빈칸을 코드가 판정한다", () => {
     assert.equal(nextPrompt(context).label, "blocked");
   });
 
-  test("인용 없이 채운 값은 채워진 것으로 보지 않는다", () => {
+  test("인용 없이 채운 값은 채워진 것으로 보지 않는다", async () => {
     // 모델이 관행으로 지어내면 옮겨 올 문장이 없다. 그 자리를 코드가 잡는다.
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       extracted([
         { key: "data", value: "id, address", evidence: "- id: 식별자" },
@@ -191,8 +191,8 @@ describe("빈칸을 코드가 판정한다", () => {
     assert.equal(outcome.questionsAdded, 1, "근거 없는 값은 통과하면 안 된다");
   });
 
-  test("빈 항목이 여럿이면 전부 질문으로 남고 전부 막는다", () => {
-    const outcome = applyResponse(
+  test("빈 항목이 여럿이면 전부 질문으로 남고 전부 막는다", async () => {
+    const outcome = await applyResponse(
       context,
       extracted([
         { key: "data", value: "", evidence: "" },
@@ -204,8 +204,8 @@ describe("빈칸을 코드가 판정한다", () => {
     assert.match(nextPrompt(context).message!, /답하지 않은 질문이 2건/);
   });
 
-  test("사람이 답하면 그 항목은 다시 묻지 않고 계획으로 넘어간다", () => {
-    applyResponse(context, extracted([{ key: "states", value: "", evidence: "" }]));
+  test("사람이 답하면 그 항목은 다시 묻지 않고 계획으로 넘어간다", async () => {
+    await applyResponse(context, extracted([{ key: "states", value: "", evidence: "" }]));
     assert.equal(nextPrompt(context).label, "blocked");
 
     answerAll("준비·배송중·완료 세 가지");
@@ -213,9 +213,9 @@ describe("빈칸을 코드가 판정한다", () => {
     assert.equal(nextPrompt(context).label, "plan");
   });
 
-  test("사람이 답한 것이 계획 프롬프트에 실린다", () => {
+  test("사람이 답한 것이 계획 프롬프트에 실린다", async () => {
     // 1차 게이트의 질문은 계획 이전에 걸리므로, 여기서 빠지면 계획이 그 답을 모른 채 세워진다.
-    applyResponse(context, extracted([{ key: "states", value: "", evidence: "" }]));
+    await applyResponse(context, extracted([{ key: "states", value: "", evidence: "" }]));
     answerAll("준비·배송중·완료 세 가지");
 
     assert.match(nextPrompt(context).prompt!, /준비·배송중·완료 세 가지/);
@@ -223,16 +223,16 @@ describe("빈칸을 코드가 판정한다", () => {
 });
 
 describe("파생물이지 캐시가 아니다", () => {
-  test("뽑은 항목은 스펙 해시와 함께 남는다", () => {
-    applyResponse(context, extracted(BOTH_FOUND));
+  test("뽑은 항목은 스펙 해시와 함께 남는다", async () => {
+    await applyResponse(context, extracted(BOTH_FOUND));
 
     const saved = loadSlots(lane())!;
     assert.match(saved.specHash, /^sha256:/);
     assert.equal(saved.slots.length, 2);
   });
 
-  test("스펙이 바뀌면 앞서 뽑은 것이 무효가 되어 다시 뽑는다", () => {
-    applyResponse(context, extracted(BOTH_FOUND));
+  test("스펙이 바뀌면 앞서 뽑은 것이 무효가 되어 다시 뽑는다", async () => {
+    await applyResponse(context, extracted(BOTH_FOUND));
     assert.equal(nextPrompt(context).label, "plan");
 
     // 사람이 스펙을 고쳤다. 앞서 뽑은 항목을 그대로 쓰면 문서를 고쳐 게이트를 우회할 수 있다.
@@ -241,9 +241,9 @@ describe("파생물이지 캐시가 아니다", () => {
     assert.equal(nextPrompt(context).label, "intake", "문서가 정본이다");
   });
 
-  test("계획을 세운 뒤에 스펙을 고쳐도 다시 뽑는다", () => {
-    applyResponse(context, extracted(BOTH_FOUND));
-    applyResponse(context, JSON.stringify(PLAN_RESPONSE));
+  test("계획을 세운 뒤에 스펙을 고쳐도 다시 뽑는다", async () => {
+    await applyResponse(context, extracted(BOTH_FOUND));
+    await applyResponse(context, JSON.stringify(PLAN_RESPONSE));
     decideApproval(context, "approved", { approver: "tester", target: "shipment" });
     assert.equal(nextPrompt(context).label, "model");
 
@@ -254,8 +254,8 @@ describe("파생물이지 캐시가 아니다", () => {
 });
 
 describe("확정된 항목을 축약해 싣는다", () => {
-  test("계획 프롬프트에 근거와 함께 들어간다", () => {
-    applyResponse(context, extracted(BOTH_FOUND));
+  test("계획 프롬프트에 근거와 함께 들어간다", async () => {
+    await applyResponse(context, extracted(BOTH_FOUND));
 
     const prompt = nextPrompt(context).prompt!;
 
@@ -264,9 +264,9 @@ describe("확정된 항목을 축약해 싣는다", () => {
     assert.match(prompt, /> 근거: 준비 → 배송중 → 완료 순으로만 넘어간다\./);
   });
 
-  test("생성 프롬프트는 컨벤션 전문 대신 계획이 뽑은 규칙을 싣는다", () => {
-    applyResponse(context, extracted(BOTH_FOUND));
-    applyResponse(context, JSON.stringify(PLAN_RESPONSE));
+  test("생성 프롬프트는 컨벤션 전문 대신 계획이 뽑은 규칙을 싣는다", async () => {
+    await applyResponse(context, extracted(BOTH_FOUND));
+    await applyResponse(context, JSON.stringify(PLAN_RESPONSE));
     decideApproval(context, "approved", { approver: "tester", target: "shipment" });
 
     const prompt = nextPrompt(context).prompt!;

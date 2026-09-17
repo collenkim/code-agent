@@ -42,10 +42,10 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("PATH 에 있는 명령을 찾아 돌린다 — 공백 든 인자와 종료 코드가 그대로 온다", () => {
+test("PATH 에 있는 명령을 찾아 돌린다 — 공백 든 인자와 종료 코드가 그대로 온다", async () => {
   installEcho(bin, "fake-runner");
 
-  const done = runCommand(join(root, "work"), ["fake-runner", "a b", "c"], env);
+  const done = await runCommand(join(root, "work"), ["fake-runner", "a b", "c"], env);
 
   assert.equal(done.error, undefined);
   assert.equal(done.status, 3, "종료 코드가 전달되어야 한다");
@@ -53,7 +53,7 @@ test("PATH 에 있는 명령을 찾아 돌린다 — 공백 든 인자와 종료
   assert.match(done.stdout, /c/);
 });
 
-test("저장소 안의 래퍼가 PATH 보다 먼저다", () => {
+test("저장소 안의 래퍼가 PATH 보다 먼저다", async () => {
   // PATH 에도 같은 이름이 있지만, worktree 안의 것이 프로젝트가 고정한 버전이다.
   installEcho(bin, "gradlew");
   if (win) {
@@ -63,7 +63,7 @@ test("저장소 안의 래퍼가 PATH 보다 먼저다", () => {
     chmodSync(join(root, "work", "gradlew"), 0o755);
   }
 
-  const done = runCommand(join(root, "work"), ["gradlew", "build"], env);
+  const done = await runCommand(join(root, "work"), ["gradlew", "build"], env);
 
   assert.equal(done.status, 0);
   assert.match(done.stdout, /local build/);
@@ -72,12 +72,12 @@ test("저장소 안의 래퍼가 PATH 보다 먼저다", () => {
 test(
   "Windows 는 확장자 없는 파일을 건너뛰고 .cmd 를 고른다 — nodejs 의 npm 과 npm.cmd 가 그렇다",
   { skip: !win },
-  () => {
+  async () => {
     installEcho(bin, "fake-runner");
     // 같은 이름의 POSIX 스크립트. Windows 가 실행할 수 없는데 먼저 집으면 ENOENT 로 죽는다.
     writeFileSync(join(bin, "fake-runner"), "#!/bin/sh\necho posix\n");
 
-    const done = runCommand(join(root, "work"), ["fake-runner", "x"], env);
+    const done = await runCommand(join(root, "work"), ["fake-runner", "x"], env);
 
     assert.equal(done.error, undefined);
     assert.equal(done.status, 3);
@@ -85,8 +85,8 @@ test(
   },
 );
 
-test("어디에도 없는 명령은 실행 오류다 — 실패로 읽히지 않는다", () => {
-  const done = runCommand(join(root, "work"), ["code-agent-no-such-command-xyz", "x"], env);
+test("어디에도 없는 명령은 실행 오류다 — 실패로 읽히지 않는다", async () => {
+  const done = await runCommand(join(root, "work"), ["code-agent-no-such-command-xyz", "x"], env);
 
   assert.ok(done.error, "찾지 못한 것은 error 로 알린다");
   assert.match(done.error!.message, /code-agent-no-such-command-xyz/);

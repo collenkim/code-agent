@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
+import { writeAtomic } from "./atomic";
 import type { StageDef } from "./manifest";
 import type { BuildPlan, GeneratedFile, StageResult } from "./types";
 
@@ -9,8 +10,7 @@ export const PLAN_FILE = ".plan.json";
 
 export function savePlan(outDir: string, plan: BuildPlan): string {
   const path = join(outDir, PLAN_FILE);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(plan, null, 2), "utf-8");
+  writeAtomic(path, JSON.stringify(plan, null, 2));
   return path;
 }
 
