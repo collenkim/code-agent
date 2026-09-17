@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
-import { diffPlans, hashWorkOrder, ledgerPath, readLedger } from "../core/approval";
+import { diffPlans, hashManifest, hashWorkOrder, ledgerPath, readLedger } from "../core/approval";
 import type { ApprovalRecord } from "../core/approval";
 import { questionsPath } from "../core/session";
 import { savePlan } from "../core/state";
@@ -378,6 +378,90 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     assert.equal(next.label, "approval");
     assert.match(next.message!, /지시서가 바뀌어/);
     assert.match(next.message!, /0차부터 다시/);
+  });
+
+  test("경계가 바뀌면 승인이 무효가 된다 — 승인한 적 없는 곳에 코드가 나가지 않게", async () => {
+    await plan();
+    decideApproval(context, "approved", { approver: "팀장" });
+    assert.equal(nextPrompt(context).label, "model");
+
+    // 승인을 받은 뒤 만들 수 있는 위치를 넓힌다. 계획도 지시서도 그대로다 —
+    // 그래서 그 둘의 해시로는 이것이 잡히지 않는다.
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify(
+        { ...MANIFEST, stages: [{ ...MANIFEST.stages[0], outputDirs: [".", "config"] }] },
+        null,
+        2,
+      ),
+    );
+
+    const next = nextPrompt(context);
+    assert.equal(next.label, "approval", "넓어진 경계로 그냥 진행되면 안 된다");
+    assert.match(next.message!, /경계·검증 선언이 바뀌어/);
+    assert.match(next.message!, /outputDirs/);
+  });
+
+  test("검증 명령이 바뀌어도 무효가 된다 — 무엇을 돌릴지도 승인의 범위다", async () => {
+    await plan();
+    decideApproval(context, "approved", { approver: "팀장" });
+
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify({ ...MANIFEST, test: ["python", "-m", "pytest"] }, null, 2),
+    );
+
+    assert.equal(nextPrompt(context).label, "approval");
+  });
+
+  test("컨벤션 문서나 템플릿 문구가 바뀌는 것은 무효 사유가 아니다", async () => {
+    await plan();
+    decideApproval(context, "approved", { approver: "팀장" });
+
+    // 일상적으로 고치는 것들이다. 이것까지 재승인을 요구하면 재승인이 형식이 된다.
+    write("doc/conventions.md", "# 컨벤션\n- dataclass 를 쓴다.\n- 한 줄 더 적었다.\n");
+    write("doc/templates/01-model.md", "# [01] 모델\n\n체크리스트를 고쳤다.\n");
+
+    assert.equal(nextPrompt(context).label, "model", "여전히 승인된 상태여야 한다");
+  });
+
+  test("매니페스트 해시는 경계·검증만 담는다", () => {
+    const base = MANIFEST as never;
+    const wider = {
+      ...MANIFEST,
+      stages: [{ ...MANIFEST.stages[0], outputDirs: [".", "config"] }],
+    } as never;
+    const reworded = { ...MANIFEST, language: "javascript", conventions: ["doc/other.md"] } as never;
+
+    assert.notEqual(hashManifest(base), hashManifest(wider), "경계가 달라지면 달라야 한다");
+    assert.equal(hashManifest(base), hashManifest(reworded), "문구·언어는 경계가 아니다");
+  });
+
+  test("경계 검사가 없던 예전 원장은 그대로 읽힌다", async () => {
+    await plan();
+    decideApproval(context, "approved", { approver: "팀장" });
+
+    // manifestHash 도 prev 도 없는 줄 — 이 검사들이 생기기 전에 쌓인 것들이다.
+    const path = ledgerPath(join(root, "repo"), "TEST-1");
+    const stripped = readFileSync(path, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const { manifestHash, prev, ...rest } = JSON.parse(line) as ApprovalRecord;
+        return JSON.stringify(rest);
+      });
+    writeFileSync(path, stripped.join("\n") + "\n", "utf-8");
+
+    write(
+      "doc/templates/code-agent.json",
+      JSON.stringify({ ...MANIFEST, stages: [{ ...MANIFEST.stages[0], outputDirs: [".", "x"] }] }),
+    );
+
+    assert.equal(
+      nextPrompt(context).label,
+      "model",
+      "예전 기록을 못 읽게 만드는 것은 이 검사가 막으려던 것보다 나쁘다",
+    );
   });
 
   test("속성 순서만 바꾼 지시서는 같은 것으로 본다", async () => {

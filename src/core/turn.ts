@@ -34,6 +34,7 @@ import { buildGatePrompt, GateSchema, missingPlannedFiles } from "./gate";
 import { GATE_SHAPE, parseResponse, withOutputFormat } from "./manual";
 import { formatPlan, missingPreserve, planFormatFor, previewPlanPrompt } from "./plan";
 import { withResolvedInputs } from "./run";
+import { MANIFEST_FILE } from "./manifest";
 import type { StageDef } from "./manifest";
 import type { Lane, LaneState } from "./targets";
 import { describeLanes, rememberIssuedToken, takeIssuedToken, withRememberedSpec } from "./targets";
@@ -202,6 +203,19 @@ function approvalMessage(
         " 관측된 판정만 게이트를 엽니다.",
       "터미널에서 `code-agent approve` 를 다시 부르세요. 그 자리에서 확인 문구를 입력하면" +
         " 통로가 tty 로 기록됩니다.",
+      "",
+      HOW_TO_DECIDE,
+    ].join("\n");
+  }
+
+  if (state.status === "stale-manifest") {
+    return [
+      `## 경계·검증 선언이 바뀌어 승인이 무효가 됐습니다 — 대상: ${target}`,
+      `직전 판정: ${state.record.approver} · ${state.record.at}`,
+      "",
+      "승인은 계획만이 아니라 **그 계획을 어디에 만들 수 있고 무엇을 돌릴 수 있는지**에 대한 것입니다.",
+      `${MANIFEST_FILE} 의 stages(outputDirs·scope·base·expect·confirm·kinds) 또는 build·test·commands 가`,
+      "바뀌었습니다 — 승인한 적 없는 경계로 코드가 나가지 않게 다시 판정해야 합니다.",
       "",
       HOW_TO_DECIDE,
     ].join("\n");
@@ -535,6 +549,7 @@ export function decideApproval(
   // 같은 계획에 관측된 승인을 얹으려는 사람을 조용히 되돌려 보낸다.
   const state = checkApproval(context.repoRoot, context.workOrder, plan, lane.target, {
     requireVerifiedApproval: manifest.workOrder.requireVerifiedApproval,
+    manifest,
   });
 
   // 게이트가 **한 번도 제시된 적 없는** 자리에는 판정을 남기지 않는다.
@@ -600,6 +615,7 @@ export function decideApproval(
       order: context.workOrder,
       target: lane.target,
       plan,
+      manifest,
       decision,
       approver,
       comment: given.comment,

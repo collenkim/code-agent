@@ -1,9 +1,12 @@
 import { spawn } from "child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
-import { delimiter, isAbsolute, join, resolve } from "path";
+import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import type { Manifest } from "./manifest";
+import { SESSION_DIR } from "./session";
+import { SPEC_SLOTS_FILE } from "./specSchema";
+import { PLAN_FILE } from "./state";
 import type { BuildResult, StageResult } from "./types";
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -229,6 +232,24 @@ export async function runCommand(
   return spawnAsync(file, args, { cwd, env });
 }
 
+/**
+ * out/ 에 있지만 **생성물이 아닌 것들** — 계획·세션·질문·파생물.
+ *
+ * 검증용 worktree 에 얹을 때 이것들까지 따라가면, 검증 명령이 보는 작업트리에 저장소에는
+ * 없던 파일이 생긴다. 트리를 훑는 린트나 "추적되지 않은 파일이 없어야 한다"는 검사가 있으면
+ * 그 자리에서 어긋나고, 원인은 코드가 아니라 이 도구에 있다.
+ */
+const NOT_GENERATED = new Set([PLAN_FILE, SESSION_DIR, SPEC_SLOTS_FILE]);
+
+/** 그 경로가 생성물인가. 레인 디렉토리 바로 아래의 상태 파일들만 걸러 낸다 */
+function isGenerated(outDir: string, source: string): boolean {
+  const rest = relative(outDir, source).replace(/\\/g, "/");
+  if (rest === "") {
+    return true;
+  }
+  return !NOT_GENERATED.has(rest.split("/")[0]);
+}
+
 // ---- worktree 검증 ----
 
 /**
@@ -282,7 +303,11 @@ export async function verifyByBuild(
 
   try {
     // outDir은 저장소 루트 기준 상대경로 구조를 그대로 갖고 있어 통째로 덮어쓰면 된다.
-    cpSync(outDir, worktree, { recursive: true });
+    // 다만 계획·세션은 생성물이 아니므로 빼고 얹는다.
+    cpSync(outDir, worktree, {
+      recursive: true,
+      filter: (source) => isGenerated(outDir, source),
+    });
 
     const executed = await runCommand(worktree, command);
     const log = [executed.stdout, executed.stderr].filter(Boolean).join("\n").trim();

@@ -7,9 +7,11 @@
  * 계획이 나왔다고 곧장 생성으로 가지 않는다. 사람이 승인한 뒤에야 넘어간다. 우회 옵션은
  * 만들지 않는다 — 급할 때 쓰라고 만든 옵션은 급할 때만 쓰이지 않는다.
  *
- * 승인은 "이 작업"이 아니라 **"이 계획, 이 지시서"** 에 대한 것이다. 그래서 해시가 둘이다.
+ * 승인은 "이 작업"이 아니라 **"이 계획, 이 지시서, 이 경계"** 에 대한 것이다. 그래서 해시가 셋이다 —
+ * 지시서(사람이 확정한 것) · 계획(무엇을 만들지) · 매니페스트(어디에 만들 수 있고 무엇을 돌릴지).
  * 하나라도 달라지면 승인은 자동으로 무효가 된다. 이것이 없으면 *승인받고 다른 것을 만드는*
- * 구멍이 그대로 열린다.
+ * 구멍이 그대로 열린다 — 셋째가 없던 동안은 승인을 받은 뒤 outputDirs 를 넓히는 것만으로
+ * 승인한 적 없는 경계에 코드가 나갔다.
  *
  * 기록은 **대상 저장소 안**에 남긴다. out/ 은 확인 후 지우는 staging 이라 승인 이력이 거기
  * 있으면 같이 사라지고, 승인은 팀의 기록이라 버전 관리되어야 한다. "대상 저장소는 건드리지
@@ -21,6 +23,7 @@ import { createHash } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
+import type { Manifest } from "./manifest";
 import type { BuildPlan } from "./types";
 import { slug } from "./workOrder";
 import type { WorkOrder } from "./workOrder";
@@ -77,6 +80,11 @@ export interface ApprovalRecord {
   kind: string;
   orderHash: string;
   planHash: string;
+  /**
+   * 승인 시점의 경계·검증 선언. **예전 원장에는 없다** — 없으면 검사하지 않는다.
+   * 예전 기록을 못 읽게 만드는 것은 이 검사가 막으려던 것보다 나쁘다.
+   */
+  manifestHash?: string;
   decision: Decision;
   approver: string;
   at: string;
@@ -161,6 +169,38 @@ export function hashWorkOrder(order: WorkOrder): string {
 /** 계획 해시. 범위는 계획 **전체**다 — 재승인 diff 가 그 부담을 흡수한다. */
 export function hashPlan(plan: BuildPlan): string {
   return sha(canonical(plan));
+}
+
+/**
+ * 매니페스트 해시 — **경계와 검증 선언만** 담는다.
+ *
+ * 계획은 "무엇을 만들지"를 말하지만 그것을 **어디에 만들 수 있고 무엇을 돌릴 수 있는지**는
+ * 매니페스트가 정한다. 승인이 그것을 담지 않으면, 승인을 받은 뒤 `outputDirs` 를 넓히거나
+ * `build` 명령을 바꾸는 것만으로 승인한 적 없는 경계로 코드가 나간다 — 이 파일이 막겠다고
+ * 한 "승인받고 다른 것을 만드는" 구멍이 거기 그대로 있었다.
+ *
+ * 범위를 전부로 하지 않는 것은 의도다. `conventions`·`language`·템플릿 문구가 바뀔 때마다
+ * 승인이 무효가 되면 재승인이 일상이 되고, 일상이 된 재승인은 통제가 아니라 잡음이다.
+ * 여기 담는 것은 **사람이 승인할 때 본 경계**뿐이다.
+ */
+export function hashManifest(manifest: Manifest): string {
+  return sha(
+    canonical({
+      stages: manifest.stages.map((stage) => ({
+        key: stage.key,
+        kind: stage.kind,
+        kinds: stage.kinds,
+        scope: stage.scope,
+        base: stage.base,
+        outputDirs: stage.outputDirs,
+        expect: stage.expect,
+        confirm: stage.confirm,
+      })),
+      build: manifest.build,
+      test: manifest.test,
+      commands: manifest.commands,
+    }),
+  );
 }
 
 // ---- 원장 ----
@@ -254,6 +294,8 @@ export type ApprovalState =
   | { status: "stale-plan"; record: ApprovalRecord; diff: PlanDiffEntry[] }
   /** 지시서가 바뀌었다 — 그 지시서의 모든 승인이 무효. 0차부터 다시 */
   | { status: "stale-order"; record: ApprovalRecord }
+  /** 경계·검증 선언이 바뀌었다 — 승인한 계획을 승인한 적 없는 규칙으로 만들게 된다 */
+  | { status: "stale-manifest"; record: ApprovalRecord }
   /**
    * 승인 줄은 있으나 **사람 존재가 관측되지 않았다.**
    *
@@ -272,6 +314,13 @@ export type PendingApproval = Exclude<ApprovalState, { status: "approved" }>;
  * 승인이 무효이기 때문이다 — 그 반대는 성립하지 않는다.
  */
 export interface ApprovalPolicy {
+  /**
+   * 지금 실행의 매니페스트. 주면 승인 시점의 경계·검증 선언과 대조한다.
+   *
+   * 넘기지 않으면 검사하지 않는다 — 호출자가 그것을 모르는 자리(예전 코드·테스트)를
+   * 조용히 막지 않기 위해서다.
+   */
+  manifest?: Manifest;
   /**
    * 사람 존재가 관측된 승인만 게이트를 열게 할지. 프로젝트가 `code-agent.json` 에 선언한다.
    *
@@ -302,6 +351,15 @@ export function checkApproval(
   if (record.orderHash !== hashWorkOrder(order)) {
     return { status: "stale-order", record };
   }
+  // 지시서 다음이 경계다. 계획보다 앞인 이유는, 같은 계획이어도 경계가 달라지면
+  // **만들어지는 곳**이 달라지기 때문이다 — 계획 diff 로는 그것이 보이지 않는다.
+  if (
+    policy.manifest &&
+    record.manifestHash !== undefined &&
+    record.manifestHash !== hashManifest(policy.manifest)
+  ) {
+    return { status: "stale-manifest", record };
+  }
   if (record.planHash !== hashPlan(plan)) {
     const before = loadSnapshot(repoRoot, record);
     return { status: "stale-plan", record, diff: before ? diffPlans(before, plan) : [] };
@@ -323,6 +381,8 @@ export interface DecisionInput {
   /** 지시서의 대상 중 이번에 판정하는 것 */
   target: string;
   plan: BuildPlan;
+  /** 이 판정이 전제한 경계·검증 선언. 뒤에 바뀌면 승인이 무효가 된다 */
+  manifest: Manifest;
   decision: Decision;
   approver: string;
   comment?: string;
@@ -373,6 +433,7 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     kind: order.kind,
     orderHash: hashWorkOrder(order),
     planHash: hashPlan(plan),
+    manifestHash: hashManifest(input.manifest),
     decision: input.decision,
     approver: input.approver,
     at: new Date().toISOString(),

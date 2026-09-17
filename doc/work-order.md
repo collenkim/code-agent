@@ -390,8 +390,18 @@ code-agent 가 **실제로 분기·검사에 쓰는** 속성이다. 이 목록�
 
 한 줄이 승인 사건 하나다. append 만 하고 고치지 않는다.
 
+| 속성 | 무엇인가 |
+|---|---|
+| `orderHash` | 판정 시점의 작업 지시서. 바뀌면 그 지시서의 **모든** 승인이 무효 |
+| `planHash` | 판정 시점의 계획 |
+| `manifestHash` | 판정 시점의 **경계·검증 선언** — `stages[]` 의 outputDirs·scope·base·expect·confirm·kinds·kind 와 build·test·commands. 이것이 없으면 승인을 받은 뒤 경계를 넓힐 수 있다. **예전 원장에는 없고, 없으면 검사하지 않는다** |
+| `stage` | 있으면 단계 확정(4차), 없으면 계획 승인(2차) |
+| `filesHash` | 단계 확정 시점의 산출물. 파일이 바뀌면 그 확정은 무효 |
+| `presence` | 사람이 그 자리에 있었는지. 아래 참고 |
+| `prev` | 직전 줄의 해시. 나중에 고친 것이 드러나게 한다 |
+
 ```jsonl
-{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:14:02+09:00","comment":"보존 조건 확인함","presence":{"channel":"tty","verified":true,"detail":"터미널에서 approve 입력"},"prev":"genesis"}
+{"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","manifestHash":"sha256:3e88…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:14:02+09:00","comment":"보존 조건 확인함","presence":{"channel":"tty","verified":true,"detail":"터미널에서 approve 입력"},"prev":"genesis"}
 {"id":"PROJ-1421","target":"app/settlement","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:9f2c…","decision":"approved","approver":"team-lead","at":"2026-08-21T10:31:11+09:00","stage":"entity","filesHash":"sha256:c4e1…","presence":{"channel":"tty","verified":true,"detail":"터미널에서 approve 입력"},"prev":"sha256:b81f…"}
 {"id":"PROJ-1421","target":"app/common/tx","kind":"refactor","orderHash":"sha256:7d10…","planHash":"sha256:41ab…","decision":"rejected","approver":"team-lead","at":"2026-08-21T10:16:40+09:00","comment":"공통 모듈은 별도 지시서로","presence":{"channel":"server","verified":false,"detail":"HTTP 요청 — 서버는 요청 뒤에 사람이 있었는지 관측할 수 없습니다"},"prev":"sha256:2ac9…"}
 ```

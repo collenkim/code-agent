@@ -127,6 +127,45 @@ function requesterOf(req: IncomingMessage, authHeader?: string): string | undefi
 
 class Unauthorized extends Error {}
 
+/** 요청 하나를 지나며 채워지는 것. 기록은 route 밖에서 찍으므로 여기에 모아 둔다 */
+interface Trace {
+  requester?: string;
+  error?: string;
+}
+
+/**
+ * 한 줄짜리 기록. **상태를 바꾼 요청과 실패한 요청만 남긴다.**
+ *
+ * 조회까지 남기면 화면이 폴링할 때마다 몇 줄씩 쌓여 정작 봐야 할 줄이 묻힌다. 남겨야 하는
+ * 것은 "누가 무엇을 바꿨는가"와 "무엇이 왜 거절됐는가" 둘이고, 그 둘은 나중에 "이 승인은
+ * 누가 눌렀나"를 되짚는 자리다 — 원장이 담지 못하는 거절과 실패까지 여기 남는다.
+ */
+function logRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  startedAt: number,
+  trace: Trace,
+): void {
+  const method = req.method ?? "GET";
+  const changed = method !== "GET" && method !== "HEAD";
+  if (!changed && res.statusCode < 400) {
+    return;
+  }
+
+  const line = [
+    new Date().toISOString(),
+    String(res.statusCode).padStart(3),
+    method.padEnd(6),
+    (req.url ?? "/").padEnd(34),
+    `${Date.now() - startedAt}ms`.padStart(8),
+    trace.requester ?? "-",
+    trace.error ? `— ${trace.error.split("\n")[0]}` : "",
+  ].join("  ");
+
+  // 실패는 표준오류로. 파이프로 갈라 두면 로그를 뒤지지 않아도 고장이 보인다.
+  (res.statusCode >= 400 ? console.error : console.log)(line.trimEnd());
+}
+
 function json(res: ServerResponse, code: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(code, {
@@ -223,6 +262,7 @@ async function route(
   options: ServeOptions,
   req: IncomingMessage,
   res: ServerResponse,
+  trace: Trace,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -231,6 +271,7 @@ async function route(
   assertSameHost(req, options.host);
   assertIntent(req, method);
   const requester = requesterOf(req, options.authHeader);
+  trace.requester = requester;
 
   /** 내 작업인가. 없는 것과 남의 것을 구분해 알리지 않는다 */
   const requireJob = (id: string) => {
@@ -379,8 +420,13 @@ export function serve(options: ServeOptions): Server {
   const queue = new JobQueue();
 
   const server = createServer((req, res) => {
-    route(store, queue, options, req, res).catch((err) => {
+    const startedAt = Date.now();
+    const trace: Trace = {};
+    res.on("finish", () => logRequest(req, res, startedAt, trace));
+
+    route(store, queue, options, req, res, trace).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
+      trace.error = message;
       // 지나간 자리의 응답은 **사용자가 고칠 수 없는 충돌**이라 400 과 구분한다 —
       // 클라이언트가 이것을 보고 프롬프트를 다시 받아야 하는지 판단할 수 있어야 한다.
       const code =
