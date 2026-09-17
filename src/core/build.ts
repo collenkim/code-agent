@@ -1,5 +1,4 @@
-import { spawnSync } from "child_process";
-import type { SpawnSyncReturns } from "child_process";
+import { spawn } from "child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, resolve } from "path";
@@ -9,8 +8,91 @@ import type { BuildResult, StageResult } from "./types";
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 
-function git(args: string[], cwd: string) {
-  return spawnSync("git", args, { cwd, encoding: "utf-8", timeout: BUILD_TIMEOUT_MS });
+/**
+ * 한 스트림에서 받아 둘 최대 바이트. `spawnSync` 의 maxBuffer 가 하던 몫이다 —
+ * 폭주하는 빌드가 서버 메모리를 통째로 가져가지 않게 앞쪽을 버리고 꼬리를 남긴다.
+ * 꼬리인 것은 로그에서 원인이 대개 끝에 있기 때문이다.
+ */
+const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+/** 검증 명령 한 번의 결과. spawnSync 의 반환 중 실제로 읽는 것만 남겼다. */
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  /** 명령이 **돌지 못한** 이유. 실패(status≠0)와 구분된다 */
+  error?: Error;
+}
+
+/**
+ * 자식 프로세스를 돌리고 기다린다. **이벤트 루프를 잡지 않는다.**
+ *
+ * `spawnSync` 였을 때는 gradle 이 도는 몇 분 동안 서버 전체가 멈췄다 — 다른 사람의 화면
+ * 로딩조차 그 뒤에 줄을 섰다. 요청 하나가 프로세스 전체를 세우지 않게 하는 것이
+ * 이 함수가 비동기인 유일한 이유다.
+ */
+function spawnAsync(
+  file: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean },
+): Promise<CommandResult> {
+  return new Promise((settle) => {
+    const child = spawn(file, args, { ...options, windowsHide: true });
+
+    let stdout = "";
+    let stderr = "";
+    let truncated = false;
+    let timedOut = false;
+
+    const collect = (text: string, chunk: string): string => {
+      const joined = text + chunk;
+      if (joined.length <= MAX_OUTPUT_BYTES) {
+        return joined;
+      }
+      truncated = true;
+      return joined.slice(joined.length - MAX_OUTPUT_BYTES);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, BUILD_TIMEOUT_MS);
+
+    child.stdout?.setEncoding("utf-8");
+    child.stderr?.setEncoding("utf-8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout = collect(stdout, chunk);
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr = collect(stderr, chunk);
+    });
+
+    const note = (): string =>
+      truncated ? `(출력이 상한을 넘겨 앞부분을 버렸습니다 — 아래는 끝부분입니다)\n` : "";
+
+    // error 와 close 가 둘 다 오는 경우가 있다. Promise 는 첫 것만 받으므로 그대로 둔다.
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      settle({ stdout: note() + stdout, stderr, status: null, signal: null, error });
+    });
+    child.on("close", (status, signal) => {
+      clearTimeout(timer);
+      settle({
+        stdout: note() + stdout,
+        stderr,
+        status,
+        signal,
+        error: timedOut
+          ? new Error(`제한 시간 ${BUILD_TIMEOUT_MS / 1000}초를 넘겨 중단했습니다`)
+          : undefined,
+      });
+    });
+  });
+}
+
+function git(args: string[], cwd: string): Promise<CommandResult> {
+  return spawnAsync("git", args, { cwd, env: process.env });
 }
 
 // ---- 실행 파일 해석 ----
@@ -115,18 +197,16 @@ function isBatchScript(file: string): boolean {
  * 못 찾은 명령은 spawn 하지 않고 `error` 로 돌린다. ENOENT 가 자연히 나기를 기다리면
  * Windows 에서는 나지 않는 경우가 있고(.cmd), 메시지에 어디를 봤는지도 실리지 않는다.
  */
-export function runCommand(
+export async function runCommand(
   cwd: string,
   command: string[],
   env: NodeJS.ProcessEnv = process.env,
-): SpawnSyncReturns<string> {
+): Promise<CommandResult> {
   const [name, ...args] = command;
   const file = resolveExecutable(cwd, name, env);
 
   if (!file) {
     return {
-      pid: 0,
-      output: [],
       stdout: "",
       stderr: "",
       status: null,
@@ -138,16 +218,15 @@ export function runCommand(
     };
   }
 
-  const options = { cwd, env, encoding: "utf-8" as const, timeout: BUILD_TIMEOUT_MS };
-
   if (isBatchScript(file)) {
     const line = [quoteForCmd(file), ...args.map(quoteForCmd)].join(" ");
-    return spawnSync(env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `"${line}"`], {
-      ...options,
+    return spawnAsync(env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `"${line}"`], {
+      cwd,
+      env,
       windowsVerbatimArguments: true,
     });
   }
-  return spawnSync(file, args, options);
+  return spawnAsync(file, args, { cwd, env });
 }
 
 // ---- worktree 검증 ----
@@ -159,13 +238,13 @@ export function runCommand(
  * 저장소 작업트리에 직접 쓰면 "저장소 무변경" 약속이 깨진다. 그래서 임시 git worktree를 만들어
  * 거기에만 파일을 얹고 실행한 뒤 통째로 지운다 — 원본 작업트리는 그대로 남는다.
  */
-export function verifyByBuild(
+export async function verifyByBuild(
   repoRoot: string,
   manifest: Manifest,
   outDir: string,
   stages: StageResult[],
   kind: string = "build",
-): BuildResult {
+): Promise<BuildResult> {
   const command =
     kind === "test" ? manifest.test : kind === "build" ? manifest.build : manifest.commands[kind];
   if (!command?.length) {
@@ -189,7 +268,7 @@ export function verifyByBuild(
   // mkdtemp가 만든 빈 디렉토리를 git이 거부하므로, 경로만 쓰고 실제 생성은 git에 맡긴다.
   rmSync(worktree, { recursive: true, force: true });
 
-  const added = git(["worktree", "add", "--detach", worktree, "HEAD"], repoRoot);
+  const added = await git(["worktree", "add", "--detach", worktree, "HEAD"], repoRoot);
   if (added.status !== 0) {
     // 명령이 돌지 못한 것이다. 테스트가 실패한 것과 같은 말로 알리면 재현으로 오독된다.
     return {
@@ -205,7 +284,7 @@ export function verifyByBuild(
     // outDir은 저장소 루트 기준 상대경로 구조를 그대로 갖고 있어 통째로 덮어쓰면 된다.
     cpSync(outDir, worktree, { recursive: true });
 
-    const executed = runCommand(worktree, command);
+    const executed = await runCommand(worktree, command);
     const log = [executed.stdout, executed.stderr].filter(Boolean).join("\n").trim();
 
     if (executed.error) {
@@ -222,6 +301,6 @@ export function verifyByBuild(
       log: log || (executed.status === 0 ? "검증 통과" : `검증 실패 (exit ${executed.status})`),
     };
   } finally {
-    git(["worktree", "remove", "--force", worktree], repoRoot);
+    await git(["worktree", "remove", "--force", worktree], repoRoot);
   }
 }

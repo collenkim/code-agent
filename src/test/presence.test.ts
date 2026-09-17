@@ -92,8 +92,8 @@ function ledgerFile(): string {
   return ledgerPath(join(root, "repo"), "TEST-1");
 }
 
-function plan(changes: Partial<BuildPlan> = {}) {
-  applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
+async function plan(changes: Partial<BuildPlan> = {}) {
+  await applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
 }
 
 beforeEach(() => {
@@ -123,9 +123,9 @@ afterEach(() => {
 });
 
 describe("제시되지 않은 게이트에는 판정을 남기지 않는다", () => {
-  test("질문에 막힌 대상의 계획을 미리 승인할 수 없다", () => {
+  test("질문에 막힌 대상의 계획을 미리 승인할 수 없다", async () => {
     // 질문 검사가 승인 검사보다 앞이므로, 이 대상은 승인 대기가 아니라 blocked 다.
-    plan({ openQuestions: ["상태값을 무엇으로 두나요?"] });
+    await plan({ openQuestions: ["상태값을 무엇으로 두나요?"] });
     assert.equal(nextPrompt(context).label, "blocked");
 
     assert.throws(
@@ -135,7 +135,7 @@ describe("제시되지 않은 게이트에는 판정을 남기지 않는다", ()
     assert.equal(ledger().length, 0, "원장에 아무것도 닿지 않아야 한다");
   });
 
-  test("계획이 아직 없으면 승인할 수 없다", () => {
+  test("계획이 아직 없으면 승인할 수 없다", async () => {
     // 이 자리는 계획을 읽는 단계에서 먼저 막힌다 — 어느 쪽이든 원장에 닿지 않는 것이 요점이다.
     assert.throws(
       () => decideApproval(context, "approved", { approver: "팀장", target: "shipment" }),
@@ -144,8 +144,8 @@ describe("제시되지 않은 게이트에는 판정을 남기지 않는다", ()
     assert.equal(ledger().length, 0);
   });
 
-  test("답을 채워 게이트가 제시되면 그때 승인된다", () => {
-    plan({ openQuestions: ["상태값을 무엇으로 두나요?"] });
+  test("답을 채워 게이트가 제시되면 그때 승인된다", async () => {
+    await plan({ openQuestions: ["상태값을 무엇으로 두나요?"] });
     const path = questionsPath(lane());
     writeFileSync(
       path,
@@ -160,8 +160,8 @@ describe("제시되지 않은 게이트에는 판정을 남기지 않는다", ()
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("이미 판정이 있는 자리는 다시 불러도 막지 않는다 — 멱등이다", () => {
-    plan();
+  test("이미 판정이 있는 자리는 다시 불러도 막지 않는다 — 멱등이다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
     const second = decideApproval(context, "approved", {
       approver: "팀장",
@@ -175,8 +175,8 @@ describe("제시되지 않은 게이트에는 판정을 남기지 않는다", ()
 });
 
 describe("사람이 그 자리에 있었는지 원장에 남는다", () => {
-  test("관측한 통로와 근거가 함께 남는다", () => {
-    plan();
+  test("관측한 통로와 근거가 함께 남는다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
 
     const [record] = ledger();
@@ -185,8 +185,8 @@ describe("사람이 그 자리에 있었는지 원장에 남는다", () => {
     assert.match(record.presence!.detail, /approve 입력/);
   });
 
-  test("전송이 넘기지 않으면 '관측되지 않음' 으로 남는다 — 조용히 권한을 주지 않는다", () => {
-    plan();
+  test("전송이 넘기지 않으면 '관측되지 않음' 으로 남는다 — 조용히 권한을 주지 않는다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
     const [record] = ledger();
@@ -196,17 +196,17 @@ describe("사람이 그 자리에 있었는지 원장에 남는다", () => {
 });
 
 describe("requireVerifiedApproval — 관측된 판정만 게이트를 연다", () => {
-  test("기본값에서는 관측되지 않은 승인도 게이트를 연다", () => {
+  test("기본값에서는 관측되지 않은 승인도 게이트를 연다", async () => {
     // 서버 화면으로 승인하는 팀의 길을 조용히 막지 않는다. 켜는 것은 선언이다.
-    plan();
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("켜면 관측되지 않은 승인은 게이트를 열지 않고, 이유를 말한다", () => {
+  test("켜면 관측되지 않은 승인은 게이트를 열지 않고, 이유를 말한다", async () => {
     useManifest({ requireVerifiedApproval: true });
-    plan();
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
     const next = nextPrompt(context);
@@ -218,17 +218,17 @@ describe("requireVerifiedApproval — 관측된 판정만 게이트를 연다", 
     assert.match(next.message!, /터미널에서/, "무엇을 해야 하는지 말해야 한다");
   });
 
-  test("켜도 터미널에서 관측된 승인은 게이트를 연다", () => {
+  test("켜도 터미널에서 관측된 승인은 게이트를 연다", async () => {
     useManifest({ requireVerifiedApproval: true });
-    plan();
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
 
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("관측되지 않은 승인 위에 관측된 승인을 얹으면 풀린다", () => {
+  test("관측되지 않은 승인 위에 관측된 승인을 얹으면 풀린다", async () => {
     useManifest({ requireVerifiedApproval: true });
-    plan();
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
     assert.equal(nextPrompt(context).label, "approval");
 
@@ -242,15 +242,15 @@ describe("requireVerifiedApproval — 관측된 판정만 게이트를 연다", 
 
 describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
   /** 판정 두 건을 쌓는다 — 계획을 고쳐 재승인 대기로 되돌리는 것이 실제 경로다 */
-  function twoDecisions() {
-    plan();
+  async function twoDecisions() {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
     savePlan(lane(), { ...PLAN, reasoning: "범위를 좁혀 다시 세웠다" });
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
   }
 
-  test("새 줄은 직전 줄의 해시를 안고 쌓인다", () => {
-    twoDecisions();
+  test("새 줄은 직전 줄의 해시를 안고 쌓인다", async () => {
+    await twoDecisions();
 
     const rows = ledger();
     assert.equal(rows.length, 2);
@@ -258,8 +258,8 @@ describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
     assert.match(rows[1].prev!, /^sha256:/);
   });
 
-  test("줄을 고치면 읽기를 거부한다", () => {
-    twoDecisions();
+  test("줄을 고치면 읽기를 거부한다", async () => {
+    await twoDecisions();
 
     // 첫 줄의 승인자를 바꿔 치운다. 뒤 줄이 그 줄의 해시를 안고 있어 사슬이 끊긴다.
     const lines = readFileSync(ledgerFile(), "utf-8").trim().split("\n");
@@ -270,8 +270,8 @@ describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
     assert.throws(() => nextPrompt(context), /나중에 고쳐졌습니다/);
   });
 
-  test("손으로 승인 줄을 끼워 넣으면 드러난다", () => {
-    plan();
+  test("손으로 승인 줄을 끼워 넣으면 드러난다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
 
     // 관측을 통과한 것처럼 꾸민 줄. 내용은 그럴듯하지만 사슬이 맞지 않는다.
@@ -286,8 +286,8 @@ describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
     assert.throws(() => ledger(), /사슬이 끊겼습니다/);
   });
 
-  test("끊긴 사슬 위에는 새 판정을 얹지 않는다 — 끊긴 자리가 가려지기 때문", () => {
-    plan();
+  test("끊긴 사슬 위에는 새 판정을 얹지 않는다 — 끊긴 자리가 가려지기 때문", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", presence: AT_TERMINAL });
     writeFileSync(
       ledgerFile(),
@@ -306,7 +306,7 @@ describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
     );
   });
 
-  test("사슬 이전에 쌓인 원장은 그대로 읽힌다", () => {
+  test("사슬 이전에 쌓인 원장은 그대로 읽힌다", async () => {
     // 예전 원장을 못 읽게 만드는 것은 이 검사가 막으려던 것보다 나쁘다.
     const legacy = {
       id: "TEST-1",

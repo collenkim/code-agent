@@ -14,7 +14,7 @@ import {
 import type { PendingQuestion } from "../core/session";
 import { describeTarget } from "../core/session";
 import { loadPlan } from "../core/state";
-import { applyResponse, decideApproval, hasPlan, nextPrompt, rememberIssued } from "../core/turn";
+import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
 import type { JobStore } from "./jobs";
 
 /** 지시서의 대상 하나와 그 상태 */
@@ -60,10 +60,16 @@ export interface StatusView {
   pendingStage?: string;
   /** 앞 턴에서 남은 위반 — 다음 프롬프트에 실려 들어간다 */
   lastViolations: { item: string; file: string; detail: string }[];
+  /** 상태 자체를 읽지 못했다. message 에 이유가 있다 */
+  broken?: boolean;
+  /** 지금 이 작업에서 도는 것이 있는지. 전송 계층이 채운다 */
+  running?: { runId: string; what: string; since: string };
 }
 
 export interface PromptView {
   target: string;
+  /** 이 프롬프트가 나온 자리. 응답을 보낼 때 그대로 되돌려 준다 */
+  token: string;
   prompt?: string;
   message?: string;
   warnings?: string[];
@@ -134,18 +140,18 @@ export function status(store: JobStore, id: string): StatusView {
 }
 
 /**
- * 진행 상태를 움직이지 않는다. 몇 번을 불러도 같은 프롬프트가 나온다.
+ * 진행 상태를 움직이지 않는다 — **디스크에도 쓰지 않는다.** 몇 번을 불러도 같다.
  *
- * 다만 **프롬프트를 내준 대상은 적어 둔다.** 화면이 이것을 받아 사람이 붙여넣을 것이므로,
- * 그 사이 다른 대상이 풀려도 응답이 엉뚱한 레인에 반영되지 않게 하려는 기록이다.
- * `status`·`log`·목록 조회는 이것을 적지 않는다 — 그쪽이 적으면 이 기록이 덮여 무의미해진다.
+ * 어느 자리의 프롬프트였는지는 `token` 으로 함께 내주고, 클라이언트가 응답과 같이 되돌려
+ * 준다. 서버가 그것을 파일 슬롯 하나에 적어 두던 때는 두 번째 사용자의 조회가 첫 번째
+ * 사용자의 기록을 덮어, 나중에 붙여넣은 응답이 **엉뚱한 레인**으로 들어갔다.
  */
 export function prompt(store: JobStore, id: string): PromptView {
   const job = store.get(id);
   const next = nextPrompt(job.context);
-  rememberIssued(job.context, next);
   return {
     target: next.label,
+    token: next.token,
     prompt: next.prompt,
     message: next.message,
     warnings: next.warnings,
@@ -153,14 +159,19 @@ export function prompt(store: JobStore, id: string): PromptView {
 }
 
 /** 채팅 응답을 반영한다. 상태를 움직이는 유일한 지점이다. */
-export function respond(store: JobStore, id: string, responseText: string): ApplyView {
+export async function respond(
+  store: JobStore,
+  id: string,
+  responseText: string,
+  issuedToken: string,
+): Promise<ApplyView> {
   const job = store.get(id);
 
   if (responseText.trim() === "") {
     throw new Error("빈 응답입니다. Console 응답을 통째로 붙여넣으세요.");
   }
 
-  const outcome = applyResponse(job.context, responseText);
+  const outcome = await applyResponse(job.context, responseText, issuedToken);
 
   return {
     target: outcome.label,
@@ -212,7 +223,14 @@ export function answer(
 export function decide(
   store: JobStore,
   id: string,
-  input: { decision?: string; approver?: string; comment?: string; target?: string },
+  input: {
+    decision?: string;
+    approver?: string;
+    comment?: string;
+    target?: string;
+    /** 인증이 켜진 서버에서 프록시가 알려 준 주체. 있으면 본문의 approver 를 이긴다 */
+    requester?: string;
+  },
 ): { message: string; next: StatusView } {
   const job = store.get(id);
   if (input.decision !== "approved" && input.decision !== "rejected") {
@@ -220,15 +238,20 @@ export function decide(
   }
 
   const { unchanged, record } = decideApproval(job.context, input.decision, {
-    approver: input.approver?.trim() || undefined,
+    // 인증이 켜져 있으면 **본문이 아니라 프록시가 말한 주체**가 승인자다.
+    // 본문에서 받으면 아무 이름이나 적을 수 있어, 원장의 approver 가 증거가 되지 못한다.
+    approver: input.requester ?? input.approver?.trim() ?? undefined,
     comment: input.comment?.trim() || undefined,
     target: input.target?.trim() || undefined,
-    // 서버는 요청 뒤에 사람이 있었는지 **알 수 없다.** 화면의 버튼이든 curl 이든 같은 POST 다.
-    // 그러므로 관측했다고 적지 않는다 — 거짓 증거는 증거가 없는 것보다 나쁘다.
+    // 신원을 알게 된 것과 **사람이 그 자리에 있었는지**는 다른 문제다. 프록시가 알려 주는 것은
+    // 어느 계정으로 들어온 요청인가이지, 그 사람이 계획을 읽고 판단했는가가 아니다 —
+    // 그러므로 여전히 관측했다고 적지 않는다. 거짓 증거는 증거가 없는 것보다 나쁘다.
     presence: {
       channel: "server",
       verified: false,
-      detail: "HTTP 요청 — 서버는 요청 뒤에 사람이 있었는지 관측할 수 없습니다",
+      detail: input.requester
+        ? `HTTP 요청 — 인증 주체 ${input.requester}. 그 사람이 실제로 읽고 판단했는지는 관측할 수 없습니다`
+        : "HTTP 요청 — 서버는 요청 뒤에 사람이 있었는지 관측할 수 없습니다",
     },
   });
 
@@ -256,7 +279,46 @@ export function log(store: JobStore, id: string): { text: string } {
   };
 }
 
-/** 목록 화면용 요약. 작업마다 상태를 읽으므로 개수가 많아지면 여기가 먼저 느려진다. */
-export function listJobs(store: JobStore): StatusView[] {
-  return store.list().map((job) => status(store, job.id));
+/**
+ * 목록 화면용 요약. 작업마다 상태를 읽으므로 개수가 많아지면 여기가 먼저 느려진다.
+ *
+ * **작업 하나가 깨져도 목록은 나온다.** 스펙 문서를 옮기거나 참조 표준을 못 찾는 일은
+ * 흔한데, 그때 목록 전체가 실패하면 화면이 통째로 먹통이 되고 그 작업을 지울 수조차 없다.
+ * 깨진 작업은 무엇이 잘못됐는지를 달고 목록에 남는다.
+ */
+export function listJobs(store: JobStore, owner?: string): StatusView[] {
+  return store
+    .list()
+    .filter((job) => store.visibleTo(job, owner))
+    .map((job) => {
+      try {
+        return status(store, job.id);
+      } catch (error) {
+        return brokenJob(job, error);
+      }
+    });
+}
+
+/** 상태를 읽지 못한 작업의 자리. 목록에서 사라지는 것보다 낫다 */
+function brokenJob(job: { id: string; label: string; context: { repoRoot: string; outDir: string } }, error: unknown): StatusView {
+  return {
+    id: job.id,
+    label: job.label,
+    repoRoot: job.context.repoRoot,
+    outDir: job.context.outDir,
+    target: "broken",
+    step: "broken",
+    lane: "",
+    lanes: [],
+    turn: 0,
+    completedStages: [],
+    questions: [],
+    openQuestionCount: 0,
+    message: error instanceof Error ? error.message : String(error),
+    hasPrompt: false,
+    hasPlan: false,
+    needsApproval: false,
+    lastViolations: [],
+    broken: true,
+  };
 }

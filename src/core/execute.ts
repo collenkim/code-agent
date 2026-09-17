@@ -208,10 +208,10 @@ function observeList(input: ExecuteInput, path: string): Observation {
   };
 }
 
-function observeRun(
+async function observeRun(
   input: ExecuteInput,
   command: string,
-): { observation: Observation; verdict?: ExecuteOutcome["verified"] } {
+): Promise<{ observation: Observation; verdict?: ExecuteOutcome["verified"] }> {
   // build·test 두 리터럴 외에, 프로젝트가 commands 에 선언한 이름도 돌릴 수 있다 — 마이그레이션이나
   // 테스트 필터처럼 검증에 필요한데 두 리터럴로는 표현되지 않는 것이 있기 때문이다.
   const declared = Object.keys(input.manifest.commands);
@@ -234,7 +234,13 @@ function observeRun(
     files: loadStageFiles(input.outDir, input.plan, stage.key),
   }));
 
-  const result = verifyByBuild(input.repoRoot, input.manifest, input.outDir, generated, command);
+  const result = await verifyByBuild(
+    input.repoRoot,
+    input.manifest,
+    input.outDir,
+    generated,
+    command,
+  );
 
   // 안 돌린 것·못 돌린 것·통과한 것·실패한 것을 같은 말로 알리면, 검증하지 않은 코드를
   // 검증된 것으로 착각하거나 환경 고장을 재현으로 읽고 단계를 끝내 버린다. 넷을 구분해서 말한다.
@@ -282,7 +288,7 @@ function explainExpect(expected: "pass" | "fail", seen: ExecuteOutcome["verified
   return "검증이 아직 실패합니다. 통과해야 이 단계가 끝납니다.";
 }
 
-export function executeActions(input: ExecuteInput): ExecuteOutcome {
+export async function executeActions(input: ExecuteInput): Promise<ExecuteOutcome> {
   const outcome: ExecuteOutcome = {
     writtenFiles: [],
     observations: [],
@@ -352,7 +358,7 @@ export function executeActions(input: ExecuteInput): ExecuteOutcome {
           });
           break;
         }
-        const run = observeRun(input, action.command);
+        const run = await observeRun(input, action.command);
         outcome.observations.push(run.observation);
         outcome.verified = run.verdict;
         break;

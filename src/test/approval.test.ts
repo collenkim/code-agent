@@ -65,8 +65,8 @@ function writeSpec(frontMatter: string) {
 const ORDER = "---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: shipment\n---\n";
 
 /** 계획까지 세운 상태. 승인은 아직이다 */
-function plan(changes: Partial<BuildPlan> = {}) {
-  applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
+async function plan(changes: Partial<BuildPlan> = {}) {
+  await applyResponse(context, JSON.stringify({ ...PLAN, ...changes }));
 }
 
 /** 대상 하나가 도는 자리 */
@@ -100,8 +100,8 @@ afterEach(() => {
 });
 
 describe("승인 전에는 진행되지 않는다", () => {
-  test("계획이 서면 프롬프트 대신 승인 요청이 나온다", () => {
-    plan();
+  test("계획이 서면 프롬프트 대신 승인 요청이 나온다", async () => {
+    await plan();
     const next = nextPrompt(context);
 
     assert.equal(next.label, "approval");
@@ -110,10 +110,10 @@ describe("승인 전에는 진행되지 않는다", () => {
     assert.match(next.message!, /app\/features\/shipment\/models\.py/, "계획 전문이 보여야 한다");
   });
 
-  test("승인 화면은 사람이 답한 것을 함께 보여 준다", () => {
+  test("승인 화면은 사람이 답한 것을 함께 보여 준다", async () => {
     // 승인하는 사람은 이 계획이 어떤 답 위에 세워졌는지도 봐야 한다. 그리고 여기까지
     // 왔다는 것은 답이 다 채워졌다는 뜻이라, 그것을 '미결' 이라 부르면 잘못 읽는다.
-    plan({ openQuestions: ["주소 최대 길이는?"] });
+    await plan({ openQuestions: ["주소 최대 길이는?"] });
     const path = questionsPath(lane());
     writeFileSync(
       path,
@@ -128,24 +128,24 @@ describe("승인 전에는 진행되지 않는다", () => {
     assert.doesNotMatch(message, /미결 질문/);
   });
 
-  test("승인 전에 응답을 붙여넣어도 아무것도 반영하지 않는다", () => {
-    plan();
-    const out = applyResponse(context, "### write app/features/shipment/models.py\n```py\nx = 1\n```\n### done");
+  test("승인 전에 응답을 붙여넣어도 아무것도 반영하지 않는다", async () => {
+    await plan();
+    const out = await applyResponse(context, "### write app/features/shipment/models.py\n```py\nx = 1\n```\n### done");
 
     assert.equal(out.advanced, false);
     assert.equal(out.label, "approval");
     assert.ok(!existsSync(lane("app/features/shipment/models.py")));
   });
 
-  test("승인하면 첫 단계로 넘어간다", () => {
-    plan();
+  test("승인하면 첫 단계로 넘어간다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("반려하면 계획을 다시 세우기 전에는 풀리지 않는다", () => {
-    plan();
+  test("반려하면 계획을 다시 세우기 전에는 풀리지 않는다", async () => {
+    await plan();
     decideApproval(context, "rejected", { approver: "팀장", comment: "공통 모듈은 별도 지시서로" });
 
     const next = nextPrompt(context);
@@ -154,21 +154,21 @@ describe("승인 전에는 진행되지 않는다", () => {
     assert.match(next.message!, /공통 모듈은 별도 지시서로/, "사유가 보여야 한다");
   });
 
-  test("반려에는 사유가 필요하다", () => {
-    plan();
+  test("반려에는 사유가 필요하다", async () => {
+    await plan();
     assert.throws(() => decideApproval(context, "rejected", { approver: "팀장" }), /사유/);
   });
 
-  test("누가 판정했는지 모르면 남기지 않는다", () => {
-    plan();
+  test("누가 판정했는지 모르면 남기지 않는다", async () => {
+    await plan();
     assert.throws(() => decideApproval(context, "approved", {}), /--approver/);
   });
 
-  test("지시서의 approver 가 기본값이 된다", () => {
+  test("지시서의 approver 가 기본값이 된다", async () => {
     writeSpec(
       "---\nkind: feature\nid: TEST-1\ntitle: 배송 도메인 추가\ntarget: shipment\napprover: team-lead\n---\n",
     );
-    plan();
+    await plan();
     const { record } = decideApproval(context, "approved", {});
 
     assert.equal(record.approver, "team-lead");
@@ -228,9 +228,9 @@ describe("없는 저장소에는 판정을 남기지 않는다", () => {
   });
 
   /** 계획까지 세운다. 저장소가 없어도 여기까지는 돈다 */
-  function planFor(repoRoot: string): BuildContext {
+  async function planFor(repoRoot: string): Promise<BuildContext> {
     const built = bootstrapAt(repoRoot);
-    applyResponse(
+    await applyResponse(
       built,
       JSON.stringify({
         domainName: "new-service",
@@ -247,9 +247,9 @@ describe("없는 저장소에는 판정을 남기지 않는다", () => {
     return built;
   }
 
-  test("경로가 없으면 만들지 않고 멈춘다", () => {
+  test("경로가 없으면 만들지 않고 멈춘다", async () => {
     const typo = join(root, "저장소-오타");
-    const built = planFor(typo);
+    const built = await planFor(typo);
 
     assert.throws(
       () => decideApproval(built, "approved", { approver: "팀장" }),
@@ -258,10 +258,10 @@ describe("없는 저장소에는 판정을 남기지 않는다", () => {
     assert.equal(existsSync(typo), false, "없는 경로에 디렉토리가 생기면 안 된다");
   });
 
-  test("저장소 자리에 파일이 있으면 거부한다", () => {
+  test("저장소 자리에 파일이 있으면 거부한다", async () => {
     const notADir = join(root, "저장소-아닌-파일");
     writeFileSync(notADir, "이건 디렉토리가 아니다", "utf-8");
-    const built = planFor(notADir);
+    const built = await planFor(notADir);
 
     assert.throws(
       () => decideApproval(built, "approved", { approver: "팀장" }),
@@ -269,10 +269,10 @@ describe("없는 저장소에는 판정을 남기지 않는다", () => {
     );
   });
 
-  test("디렉토리만 있으면 남긴다 — git 저장소일 필요는 없다", () => {
+  test("디렉토리만 있으면 남긴다 — git 저장소일 필요는 없다", async () => {
     const plainDir = join(root, "그냥-디렉토리");
     mkdirSync(plainDir, { recursive: true });
-    const built = planFor(plainDir);
+    const built = await planFor(plainDir);
 
     decideApproval(built, "approved", { approver: "팀장" });
 
@@ -281,8 +281,8 @@ describe("없는 저장소에는 판정을 남기지 않는다", () => {
 });
 
 describe("원장 — 판정 사건이 쌓인다", () => {
-  test("대상 저장소 안에 남는다 — out/ 은 지워지는 곳이다", () => {
-    plan();
+  test("대상 저장소 안에 남는다 — out/ 은 지워지는 곳이다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장", comment: "확인함" });
 
     const path = ledgerPath(join(root, "repo"), "TEST-1");
@@ -299,10 +299,10 @@ describe("원장 — 판정 사건이 쌓인다", () => {
     assert.match(record.planHash, /^sha256:/);
   });
 
-  test("반려도 남는다 — 지워야 할 실패가 아니다", () => {
-    plan();
+  test("반려도 남는다 — 지워야 할 실패가 아니다", async () => {
+    await plan();
     decideApproval(context, "rejected", { approver: "팀장", comment: "범위가 넓다" });
-    plan({ files: [] });
+    await plan({ files: [] });
     decideApproval(context, "approved", { approver: "팀장" });
 
     const rows = ledger();
@@ -311,16 +311,16 @@ describe("원장 — 판정 사건이 쌓인다", () => {
     assert.equal(rows[1].decision, "approved");
   });
 
-  test("승인 시점 계획 스냅샷이 함께 남는다 — 해시만으로는 diff 를 만들 수 없다", () => {
-    plan();
+  test("승인 시점 계획 스냅샷이 함께 남는다 — 해시만으로는 diff 를 만들 수 없다", async () => {
+    await plan();
     const { record } = decideApproval(context, "approved", { approver: "팀장" });
 
     const snapshot = JSON.parse(readFileSync(join(root, "repo", record.snapshot), "utf-8"));
     assert.equal(snapshot.files[0].path, "app/features/shipment/models.py");
   });
 
-  test("같은 계획에 같은 승인을 두 번 남기지 않는다", () => {
-    plan();
+  test("같은 계획에 같은 승인을 두 번 남기지 않는다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
     const second = decideApproval(context, "approved", { approver: "팀장", target: "shipment" });
 
@@ -330,8 +330,8 @@ describe("원장 — 판정 사건이 쌓인다", () => {
 });
 
 describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
-  test("계획이 바뀌면 승인이 무효가 되고 재승인을 기다린다", () => {
-    plan();
+  test("계획이 바뀌면 승인이 무효가 되고 재승인을 기다린다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
     assert.equal(nextPrompt(context).label, "model");
 
@@ -348,8 +348,8 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     assert.match(next.message!, /직전 판정이 무효/);
   });
 
-  test("재승인 화면은 계획 전문이 아니라 달라진 항목만 띄운다", () => {
-    plan();
+  test("재승인 화면은 계획 전문이 아니라 달라진 항목만 띄운다", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
 
     savePlan(lane(), {
@@ -365,8 +365,8 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     assert.doesNotMatch(message, /## 작업 명세서/, "전문을 다시 읽히지 않는다");
   });
 
-  test("작업 지시서가 바뀌면 승인이 무효가 된다 — 0차부터 다시", () => {
-    plan();
+  test("작업 지시서가 바뀌면 승인이 무효가 된다 — 0차부터 다시", async () => {
+    await plan();
     decideApproval(context, "approved", { approver: "팀장" });
     assert.equal(nextPrompt(context).label, "model");
 
@@ -380,7 +380,7 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
     assert.match(next.message!, /0차부터 다시/);
   });
 
-  test("속성 순서만 바꾼 지시서는 같은 것으로 본다", () => {
+  test("속성 순서만 바꾼 지시서는 같은 것으로 본다", async () => {
     const policy = { attributes: [], requireApprover: false };
     const one = validateWorkOrder(
       join(root, "repo"),
@@ -400,7 +400,7 @@ describe("승인은 이 계획, 이 지시서에 대한 것이다", () => {
 });
 
 describe("diff — 문구 하나와 파일 하나가 같은 무게로 보이면 안 된다", () => {
-  test("절마다 항목 단위로 비교한다", () => {
+  test("절마다 항목 단위로 비교한다", async () => {
     const entries = diffPlans(PLAN, {
       ...PLAN,
       domainDirName: "shipments",
@@ -419,7 +419,7 @@ describe("diff — 문구 하나와 파일 하나가 같은 무게로 보이면 
     assert.equal(of("규칙").length, 0, "안 바뀐 절은 나오지 않는다");
   });
 
-  test("순서만 바뀐 것은 변경이 아니다", () => {
+  test("순서만 바뀐 것은 변경이 아니다", async () => {
     const two = {
       ...PLAN,
       files: [

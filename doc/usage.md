@@ -260,12 +260,27 @@ code-agent 서버: http://127.0.0.1:4319
 
 ### 헤더
 
-| 요청 | Content-Type |
+| 요청 | 헤더 |
 |---|---|
-| `/response` | `text/plain; charset=utf-8` — Body 는 **raw → Text** |
-| 그 외 POST | `application/json; charset=utf-8` — Body 는 **raw → JSON** |
+| **모든 POST · DELETE** | `X-Code-Agent: 1` — 없으면 받지 않는다 |
+| `/response` | 위 + `Content-Type: text/plain; charset=utf-8` (Body 는 **raw → Text**) + `X-Code-Agent-Turn: <token>` |
+| 그 외 POST | 위 + `Content-Type: application/json; charset=utf-8` (Body 는 **raw → JSON**) |
+| 인증을 켠 서버 | 전부 + 프록시가 넣는 인증 헤더 |
 
 한글이 들어가므로 `charset=utf-8` 을 빼지 않는다.
+
+`X-Code-Agent-Turn` 의 값은 **`GET /prompt` 응답의 `token`** 이다 (`shipment@plan#3` 꼴).
+Postman 이라면 프롬프트 요청의 **Scripts → Post-response** 에 아래를 넣어 환경 변수로 받아 둔다.
+
+```javascript
+pm.environment.set("turn", pm.response.json().token);
+```
+
+그러면 `/response` 요청의 헤더에 `X-Code-Agent-Turn: {{turn}}` 으로 쓸 수 있다.
+값이 지금 자리와 다르면 **409** 가 나오고 아무것도 반영되지 않는다 — 그때는 프롬프트를 다시 받는다.
+
+`### run` 이 든 응답은 검증 명령을 돌리므로 **202** 가 나올 수 있다. 그때는 본문의 `runId` 로
+`GET {{base}}/{{job}}/runs/{{runId}}` 를 200 이 나올 때까지 다시 부른다.
 
 ### 프롬프트를 읽을 수 있게 — Visualize
 

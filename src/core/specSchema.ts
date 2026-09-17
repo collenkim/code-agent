@@ -12,9 +12,11 @@
  * 바뀌면 그 순간 무효가 되고 다시 뽑는다. 정본은 언제나 문서다.
  */
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { z } from "zod";
+
+import { writeAtomic } from "./atomic";
 
 import type { PendingQuestion } from "./session";
 import type { WorkKind } from "./workOrder";
@@ -119,8 +121,7 @@ export function slotsPath(outDir: string): string {
 
 export function saveSlots(outDir: string, slots: SpecSlots): string {
   const path = slotsPath(outDir);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(slots, null, 2), "utf-8");
+  writeAtomic(path, JSON.stringify(slots, null, 2));
   return path;
 }
 

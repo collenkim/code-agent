@@ -92,7 +92,7 @@ afterEach(() => {
 });
 
 describe("근거는 이미 있는 코드에서 온다", () => {
-  test("참조 표준이 없으면 대상의 현재 파일이 계획 프롬프트에 실린다", () => {
+  test("참조 표준이 없으면 대상의 현재 파일이 계획 프롬프트에 실린다", async () => {
     const prompt = nextPrompt(context).prompt!;
 
     assert.match(prompt, /# 대상의 현재 파일/);
@@ -101,14 +101,14 @@ describe("근거는 이미 있는 코드에서 온다", () => {
     assert.doesNotMatch(prompt, /복제할 기존 코드가 없는 실행이다/);
   });
 
-  test("소스가 아닌 곳은 싣지 않는다 — 상한에 걸려 정작 볼 파일이 밀려난다", () => {
+  test("소스가 아닌 곳은 싣지 않는다 — 상한에 걸려 정작 볼 파일이 밀려난다", async () => {
     const prompt = nextPrompt(context).prompt!;
 
     assert.doesNotMatch(prompt, /node_modules/);
     assert.doesNotMatch(prompt, /\.idea/);
   });
 
-  test("복제할 코드도 없고 대상이 경로도 아니면 없다고 말한다", () => {
+  test("복제할 코드도 없고 대상이 경로도 아니면 없다고 말한다", async () => {
     writeFileSync(
       join(root, "spec.md"),
       "---\nkind: bootstrap\nid: NEW-1\ntitle: 새로 만든다\ntarget: 새-프로젝트\n---\n\n# 새 프로젝트\n",
@@ -120,8 +120,8 @@ describe("근거는 이미 있는 코드에서 온다", () => {
     assert.match(prompt, /복제할 기존 코드가 없는 실행이다/);
   });
 
-  test("단계가 선언한 파일은 코드가 읽어 싣는다 — 사람이 옮겨 적으면 어긋난다", () => {
-    applyResponse(context, JSON.stringify(PLAN));
+  test("단계가 선언한 파일은 코드가 읽어 싣는다 — 사람이 옮겨 적으면 어긋난다", async () => {
+    await applyResponse(context, JSON.stringify(PLAN));
     decideApproval(context, "approved", { approver: "팀장", target: "." });
 
     const prompt = nextPrompt(context).prompt!;
@@ -133,7 +133,7 @@ describe("근거는 이미 있는 코드에서 온다", () => {
 });
 
 describe("대상 이름이 경로를 거스르지 않는다", () => {
-  test("점으로만 된 대상은 갈래 이름으로 쓰지 않는다", () => {
+  test("점으로만 된 대상은 갈래 이름으로 쓰지 않는다", async () => {
     const order = (target: string) =>
       validateWorkOrder(
         join(root, "repo"),

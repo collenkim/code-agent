@@ -122,8 +122,8 @@ function confirmStage() {
  * 계획까지 끝내고 승인까지 받은 상태로 만든다 — 대부분의 테스트가 그 다음부터를 본다.
  * 2차 게이트 자체를 보는 테스트는 이 함수를 쓰지 않고 계획만 반영한다.
  */
-function completePlan(openQuestions: string[] = []) {
-  applyResponse(context, JSON.stringify({ ...PLAN_RESPONSE, openQuestions }));
+async function completePlan(openQuestions: string[] = []) {
+  await applyResponse(context, JSON.stringify({ ...PLAN_RESPONSE, openQuestions }));
   // 미결 질문이 남으면 승인 게이트가 아직 제시되지 않는다(질문 검사가 승인보다 앞이다).
   // 그 자리에 승인을 미리 박아 두는 것은 통제의 우회라 코드가 거부한다 — 그리고 질문이
   // 막는지 보는 테스트에는 승인이 필요하지 않다.
@@ -133,21 +133,21 @@ function completePlan(openQuestions: string[] = []) {
 }
 
 describe("상태가 다음 할 일을 정한다", () => {
-  test("계획이 없으면 계획부터", () => {
+  test("계획이 없으면 계획부터", async () => {
     const next = nextPrompt(context);
 
     assert.equal(next.label, "plan");
     assert.match(next.prompt!, /배송\(shipment\) 도메인/, "스펙이 실려야 한다");
   });
 
-  test("계획이 끝나면 첫 단계로 넘어간다", () => {
-    completePlan();
+  test("계획이 끝나면 첫 단계로 넘어간다", async () => {
+    await completePlan();
 
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("--spec 은 계획 때 한 번이면 된다 — 이후엔 세션이 기억한다", () => {
-    completePlan();
+  test("--spec 은 계획 때 한 번이면 된다 — 이후엔 세션이 기억한다", async () => {
+    await completePlan();
 
     const withoutSpec: BuildContext = { ...context, specPaths: [] };
     const prompt = nextPrompt(withoutSpec).prompt!;
@@ -155,16 +155,16 @@ describe("상태가 다음 할 일을 정한다", () => {
     assert.match(prompt, /배송\(shipment\) 도메인/, "세션에 남은 스펙이 다시 실려야 한다");
   });
 
-  test("next 는 상태를 바꾸지 않아 몇 번 불러도 같다", () => {
-    completePlan();
+  test("next 는 상태를 바꾸지 않아 몇 번 불러도 같다", async () => {
+    await completePlan();
 
     assert.equal(nextPrompt(context).prompt, nextPrompt(context).prompt);
   });
 });
 
 describe("질문은 막다른 길이 아니라 루프다", () => {
-  test("미결 질문이 생기면 문서로 남기고 멈춘다", () => {
-    completePlan(["상태값을 무엇으로 두나요?"]);
+  test("미결 질문이 생기면 문서로 남기고 멈춘다", async () => {
+    await completePlan(["상태값을 무엇으로 두나요?"]);
 
     const next = nextPrompt(context);
 
@@ -173,10 +173,10 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     assert.match(readFileSync(questionsPath(lane()), "utf-8"), /상태값을 무엇으로 두나요\?/);
   });
 
-  test("질문이 여러 건이면 전부 센다", () => {
+  test("질문이 여러 건이면 전부 센다", async () => {
     // 회귀: 블록 구분선이 앞 질문의 답에 딸려 와, 마지막 질문 말고는 전부 "답이 있는" 것으로
     // 읽혔다. 질문이 하나일 때는 드러나지 않아 오래 남아 있었다.
-    completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
+    await completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
 
     const next = nextPrompt(context);
 
@@ -184,8 +184,8 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     assert.match(next.message!, /답하지 않은 질문이 2건/);
   });
 
-  test("일부만 답하면 아직 막혀 있다", () => {
-    completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
+  test("일부만 답하면 아직 막혀 있다", async () => {
+    await completePlan(["상태값을 무엇으로 두나요?", "주소 최대 길이는?"]);
 
     const path = questionsPath(lane());
     // 첫 질문에만 답을 적는다.
@@ -198,8 +198,8 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     assert.match(nextPrompt(context).message!, /답하지 않은 질문이 1건/);
   });
 
-  test("답을 채우면 다시 나아가고, 그 답이 프롬프트에 실린다", () => {
-    completePlan(["상태값을 무엇으로 두나요?"]);
+  test("답을 채우면 다시 나아가고, 그 답이 프롬프트에 실린다", async () => {
+    await completePlan(["상태값을 무엇으로 두나요?"]);
     answerAll("준비·배송중·완료 세 가지");
     // 답이 채워지면 그 다음에 오는 것이 2차 게이트다. 승인은 질문이 풀린 뒤의 일이다.
     assert.equal(nextPrompt(context).label, "approval");
@@ -212,9 +212,9 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
     assert.match(next.prompt!, /다시 묻지 않는다/);
   });
 
-  test("생성 중에 나온 ask 도 같은 문서로 모인다", () => {
-    completePlan();
-    applyResponse(context, reply("### ask", "필드 길이는 얼마인가요?"));
+  test("생성 중에 나온 ask 도 같은 문서로 모인다", async () => {
+    await completePlan();
+    await applyResponse(context, reply("### ask", "필드 길이는 얼마인가요?"));
 
     assert.equal(nextPrompt(context).label, "blocked");
     assert.match(readFileSync(questionsPath(lane()), "utf-8"), /필드 길이는/);
@@ -222,10 +222,10 @@ describe("질문은 막다른 길이 아니라 루프다", () => {
 });
 
 describe("액션 실행", () => {
-  test("write + done 이면 단계가 끝나고 검수로 넘어간다", () => {
-    completePlan();
+  test("write + done 이면 단계가 끝나고 검수로 넘어간다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```python", "class Shipment:", "    id: int", "```", "### done"),
     );
@@ -235,10 +235,10 @@ describe("액션 실행", () => {
     assert.equal(nextPrompt(context).label, "gate:model");
   });
 
-  test("done 이 없으면 그 단계를 이어서 돈다", () => {
-    completePlan();
+  test("done 이 없으면 그 단계를 이어서 돈다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```"),
     );
@@ -247,10 +247,10 @@ describe("액션 실행", () => {
     assert.equal(nextPrompt(context).label, "model");
   });
 
-  test("read 결과가 다음 프롬프트에 실린다 — 이게 툴 호출 한 턴이다", () => {
-    completePlan();
+  test("read 결과가 다음 프롬프트에 실린다 — 이게 툴 호출 한 턴이다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(context, reply("### read app/features/orders/models.py"));
+    const outcome = await applyResponse(context, reply("### read app/features/orders/models.py"));
 
     assert.equal(outcome.execution!.observations.length, 1);
     assert.equal(outcome.advanced, false, "읽기만 했으면 아직 끝난 게 아니다");
@@ -260,22 +260,22 @@ describe("액션 실행", () => {
     assert.match(prompt, /class Order/, "읽은 내용이 실려야 한다");
   });
 
-  test("없는 파일을 읽으면 없다고 알려준다 — 조용히 지어내게 두지 않는다", () => {
-    completePlan();
+  test("없는 파일을 읽으면 없다고 알려준다 — 조용히 지어내게 두지 않는다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(context, reply("### read app/features/nope/x.py"));
+    const outcome = await applyResponse(context, reply("### read app/features/nope/x.py"));
 
     assert.match(outcome.execution!.observations[0].body, /없는 파일/);
   });
 });
 
 describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => {
-  test("계획에 없는 파일은 쓰기 전에 거부된다", () => {
+  test("계획에 없는 파일은 쓰기 전에 거부된다", async () => {
     // 경계(outputDirs)는 "어디에" 를 막는다. 이 파일은 허용된 위치에 있으므로 경계는 통과한다 —
     // 막는 것은 사람이 승인한 계획에 이 파일이 없다는 사실이다.
-    completePlan();
+    await completePlan();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### write app/features/shipment/models.py",
@@ -301,10 +301,10 @@ describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => 
     assert.equal(outcome.advanced, false);
   });
 
-  test("계획에 있는 파일이 빠지면 done 이 통하지 않는다", () => {
-    completePlan();
+  test("계획에 있는 파일이 빠지면 done 이 통하지 않는다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(context, reply("### note 만들 것이 없다고 판단", "### done"));
+    const outcome = await applyResponse(context, reply("### note 만들 것이 없다고 판단", "### done"));
 
     assert.equal(outcome.advanced, false, "승인된 계획을 다 만들지 않고 끝낼 수는 없다");
     assert.equal(outcome.violations.length, 1);
@@ -312,11 +312,11 @@ describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => 
     assert.match(outcome.violations[0].detail, /만들어지지 않았습니다/);
   });
 
-  test("누락은 그 파일을 쓰면 풀린다 — 갇히지 않는다", () => {
-    completePlan();
-    applyResponse(context, reply("### done"));
+  test("누락은 그 파일을 쓰면 풀린다 — 갇히지 않는다", async () => {
+    await completePlan();
+    await applyResponse(context, reply("### done"));
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
@@ -325,21 +325,21 @@ describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => 
     assert.equal(outcome.advanced, true);
   });
 
-  test("중간 턴에는 누락을 묻지 않는다 — 한 단계가 여러 턴에 걸쳐 돈다", () => {
+  test("중간 턴에는 누락을 묻지 않는다 — 한 단계가 여러 턴에 걸쳐 돈다", async () => {
     // done 없이 read 만 한 턴. 여기서 "계획에 있는데 없다"고 하면 매 턴 거짓 위반이 뜬다.
-    completePlan();
+    await completePlan();
 
-    const outcome = applyResponse(context, reply("### read app/features/orders/models.py"));
+    const outcome = await applyResponse(context, reply("### read app/features/orders/models.py"));
 
     assert.equal(outcome.violations.length, 0);
     assert.equal(outcome.advanced, false, "관찰 요청이 남아 아직 끝난 것은 아니다");
   });
 
-  test("경계에 걸린 파일을 계획 준수로 또 세지 않는다", () => {
+  test("경계에 걸린 파일을 계획 준수로 또 세지 않는다", async () => {
     // 도메인 밖 파일은 당연히 계획 밖이기도 하다. 둘 다 보고하면 같은 잘못이 두 줄로 보인다.
-    completePlan();
+    await completePlan();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply("### write app/features/other/x.py", "```", "bad", "```", "### done"),
     );
@@ -350,10 +350,10 @@ describe("계획 준수 — 승인한 것과 만든 것을 대조한다", () => 
 });
 
 describe("형식이 깨진 응답은 어느 단계든 턴으로 센다", () => {
-  test("계획 단계의 형식 오류가 세션 기록에 남는다", () => {
+  test("계획 단계의 형식 오류가 세션 기록에 남는다", async () => {
     // 액션 단계는 원래 그랬는데 JSON 단계(plan·gate·intake)는 throw 로 빠져 턴이 안 세어졌다.
     // 그러면 `log` 의 형식오류 수치가 절반의 단계에서 빠진다 — 서버를 붙일지 판단하는 그 수치다.
-    const outcome = applyResponse(context, "계획은 대충 이렇습니다: 모델 하나 만들면 됩니다.");
+    const outcome = await applyResponse(context, "계획은 대충 이렇습니다: 모델 하나 만들면 됩니다.");
 
     assert.equal(outcome.advanced, false);
     assert.equal(outcome.parseErrors.length, 1);
@@ -363,15 +363,15 @@ describe("형식이 깨진 응답은 어느 단계든 턴으로 센다", () => {
     assert.equal(nextPrompt(context).label, "plan", "다시 계획 프롬프트를 낸다");
   });
 
-  test("검수 단계의 형식 오류도 같다", () => {
-    completePlan();
-    applyResponse(
+  test("검수 단계의 형식 오류도 같다", async () => {
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
     assert.equal(nextPrompt(context).label, "gate:model");
 
-    const outcome = applyResponse(context, "위반은 없어 보입니다.");
+    const outcome = await applyResponse(context, "위반은 없어 보입니다.");
 
     assert.equal(outcome.parseErrors.length, 1);
     assert.equal(nextPrompt(context).label, "gate:model", "검수를 다시 받는다");
@@ -379,7 +379,7 @@ describe("형식이 깨진 응답은 어느 단계든 턴으로 센다", () => {
 });
 
 describe("confirm: false 인 단계는 사람 확정 없이 넘어간다", () => {
-  test("선언한 단계는 검수 뒤 곧바로 다음 단계다", () => {
+  test("선언한 단계는 검수 뒤 곧바로 다음 단계다", async () => {
     write(
       "doc/templates/code-agent.json",
       JSON.stringify(
@@ -393,64 +393,64 @@ describe("confirm: false 인 단계는 사람 확정 없이 넘어간다", () =>
         2,
       ),
     );
-    completePlan();
-    applyResponse(
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
-    applyResponse(context, JSON.stringify({ violations: [] }));
+    await applyResponse(context, JSON.stringify({ violations: [] }));
 
     assert.equal(nextPrompt(context).label, "check", "confirm 을 기다리지 않고 다음 단계로 간다");
   });
 
-  test("선언하지 않으면 기본은 확정을 기다린다", () => {
-    completePlan();
-    applyResponse(
+  test("선언하지 않으면 기본은 확정을 기다린다", async () => {
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
-    applyResponse(context, JSON.stringify({ violations: [] }));
+    await applyResponse(context, JSON.stringify({ violations: [] }));
 
     assert.equal(nextPrompt(context).label, "confirm:model");
   });
 });
 
 describe("commands — build·test 외의 검증 명령", () => {
-  test("선언하지 않은 이름은 돌리지 않고, 무엇을 선언했는지 말해 준다", () => {
+  test("선언하지 않은 이름은 돌리지 않고, 무엇을 선언했는지 말해 준다", async () => {
     write(
       "doc/templates/code-agent.json",
       JSON.stringify({ ...MANIFEST, commands: { lint: ["node", "-e", "process.exit(0)"] } }, null, 2),
     );
-    completePlan();
-    applyResponse(
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
-    applyResponse(context, JSON.stringify({ violations: [] }));
+    await applyResponse(context, JSON.stringify({ violations: [] }));
     confirmStage();
     assert.equal(nextPrompt(context).label, "check");
 
-    const outcome = applyResponse(context, reply("### run migrate"));
+    const outcome = await applyResponse(context, reply("### run migrate"));
 
     const [observation] = outcome.execution!.observations;
     assert.match(observation.body, /실행할 수 없습니다/);
     assert.match(observation.body, /lint/, "선언된 이름을 알려 준다");
   });
 
-  test("선언한 이름은 run 의 문을 지난다", () => {
+  test("선언한 이름은 run 의 문을 지난다", async () => {
     write(
       "doc/templates/code-agent.json",
       JSON.stringify({ ...MANIFEST, commands: { lint: ["node", "-e", "process.exit(0)"] } }, null, 2),
     );
-    completePlan();
-    applyResponse(
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "ok", "```", "### done"),
     );
-    applyResponse(context, JSON.stringify({ violations: [] }));
+    await applyResponse(context, JSON.stringify({ violations: [] }));
     confirmStage();
 
-    const outcome = applyResponse(context, reply("### run lint"));
+    const outcome = await applyResponse(context, reply("### run lint"));
 
     const [observation] = outcome.execution!.observations;
     assert.doesNotMatch(observation.body, /실행할 수 없습니다/);
@@ -459,8 +459,8 @@ describe("commands — build·test 외의 검증 명령", () => {
 });
 
 describe("참조 표준이 빠진 것을 조용히 넘기지 않는다", () => {
-  test("선언한 참조 표준을 하나도 못 찾으면 프롬프트를 만들지 않는다", () => {
-    completePlan();
+  test("선언한 참조 표준을 하나도 못 찾으면 프롬프트를 만들지 않는다", async () => {
+    await completePlan();
     // 참조 도메인의 파일을 치운다 — {Ref} 치환이 실제 클래스명과 어긋날 때와 같은 상황이다.
     rmSync(join(root, "repo", "app", "features", "orders", "models.py"));
 
@@ -468,8 +468,8 @@ describe("참조 표준이 빠진 것을 조용히 넘기지 않는다", () => {
     assert.throws(() => nextPrompt(context), /참조 표준을 하나도 찾지 못해/);
   });
 
-  test("일부만 못 찾으면 경고로 알리고 진행한다", () => {
-    completePlan();
+  test("일부만 못 찾으면 경고로 알리고 진행한다", async () => {
+    await completePlan();
     write(
       "doc/templates/code-agent.json",
       JSON.stringify(
@@ -494,10 +494,10 @@ describe("참조 표준이 빠진 것을 조용히 넘기지 않는다", () => {
 });
 
 describe("경계는 코드가 지킨다", () => {
-  test("도메인 밖 write 는 하나도 반영하지 않는다", () => {
-    completePlan();
+  test("도메인 밖 write 는 하나도 반영하지 않는다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### write app/features/shipment/models.py",
@@ -521,24 +521,24 @@ describe("경계는 코드가 지킨다", () => {
     );
   });
 
-  test("명령 실행은 verify 단계에서만 된다", () => {
-    completePlan();
+  test("명령 실행은 verify 단계에서만 된다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(context, reply("### run test"));
+    const outcome = await applyResponse(context, reply("### run test"));
 
     assert.equal(outcome.violations.length, 1);
     assert.match(outcome.violations[0].detail, /verify인 단계에서만/);
   });
 
-  test("edit 은 저장소 원본을 건드리지 않고 out/ 에만 쓴다", () => {
-    completePlan();
+  test("edit 은 저장소 원본을 건드리지 않고 out/ 에만 쓴다", async () => {
+    await completePlan();
     // done 을 넣지 않아 같은 단계에 머문다 — 고쳐 쓰는 것도 한 단계 안의 일이다.
-    applyResponse(
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "    id: int", "```"),
     );
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### edit app/features/shipment/models.py",
@@ -566,14 +566,14 @@ describe("경계는 코드가 지킨다", () => {
     );
   });
 
-  test("edit 의 find 가 여러 곳에 걸리면 거부한다", () => {
-    completePlan();
-    applyResponse(
+  test("edit 의 find 가 여러 곳에 걸리면 거부한다", async () => {
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "pass", "pass", "```"),
     );
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### edit app/features/shipment/models.py",
@@ -593,18 +593,18 @@ describe("경계는 코드가 지킨다", () => {
 });
 
 describe("검수 결과가 생성으로 되돌아온다", () => {
-  function reachGate() {
-    completePlan();
-    applyResponse(
+  async function reachGate() {
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
   }
 
-  test("위반이 있으면 그 단계로 돌아가고 위반이 프롬프트에 실린다", () => {
-    reachGate();
+  test("위반이 있으면 그 단계로 돌아가고 위반이 프롬프트에 실린다", async () => {
+    await reachGate();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       JSON.stringify({
         violations: [
@@ -620,10 +620,10 @@ describe("검수 결과가 생성으로 되돌아온다", () => {
     assert.match(next.prompt!, /이번에는 반드시 고친다/);
   });
 
-  test("위반이 없어도 사람이 확정해야 다음 단계로 넘어간다", () => {
-    reachGate();
+  test("위반이 없어도 사람이 확정해야 다음 단계로 넘어간다", async () => {
+    await reachGate();
 
-    const outcome = applyResponse(context, JSON.stringify({ violations: [] }));
+    const outcome = await applyResponse(context, JSON.stringify({ violations: [] }));
 
     assert.equal(outcome.advanced, true);
     assert.equal(nextPrompt(context).label, "confirm:model", "검수는 모델이 했을 뿐이다");
@@ -633,18 +633,18 @@ describe("검수 결과가 생성으로 되돌아온다", () => {
     assert.equal(nextPrompt(context).label, "check");
   });
 
-  test("두 번 시도해도 남으면 덮지 않고 사람에게 넘긴다", () => {
-    reachGate();
+  test("두 번 시도해도 남으면 덮지 않고 사람에게 넘긴다", async () => {
+    await reachGate();
     const violation = {
       violations: [{ item: "규칙", file: "app/features/shipment/models.py", detail: "여전히 어긋남" }],
     };
 
-    applyResponse(context, JSON.stringify(violation));
-    applyResponse(
+    await applyResponse(context, JSON.stringify(violation));
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
-    const second = applyResponse(context, JSON.stringify(violation));
+    const second = await applyResponse(context, JSON.stringify(violation));
 
     assert.equal(second.advanced, true);
     assert.match(second.message!, /자동으로 덮지 않고/);
@@ -653,42 +653,43 @@ describe("검수 결과가 생성으로 되돌아온다", () => {
 
 describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
   /** 검수까지 통과시켜 verify 단계에 세운다. */
-  function reachVerify() {
-    completePlan();
-    applyResponse(
+  async function reachVerify() {
+    await completePlan();
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
-    applyResponse(context, JSON.stringify({ violations: [] }));
+    await applyResponse(context, JSON.stringify({ violations: [] }));
     confirmStage();
     assert.equal(nextPrompt(context).label, "check");
   }
 
-  test("verify 단계에서는 명령을 돌릴 수 있고 결과가 다음 프롬프트에 실린다", () => {
-    reachVerify();
+  test("verify 단계에서는 명령을 돌릴 수 있고 결과가 다음 프롬프트에 실린다", async () => {
+    await reachVerify();
 
-    const outcome = applyResponse(context, reply("### run test"));
+    const outcome = await applyResponse(context, reply("### run test"));
 
     assert.deepEqual(outcome.violations, []);
     assert.equal(outcome.execution!.observations.length, 1);
     assert.match(nextPrompt(context).prompt!, /run test/);
   });
 
-  test("돌리지 않은 검증을 '통과'라고 말하지 않는다", () => {
+  test("돌리지 않은 검증을 '통과'라고 말하지 않는다", async () => {
     // 이 fixture 에는 test 명령이 선언돼 있지 않아 실행 자체가 일어나지 않는다.
     // 그것을 통과로 알리면 검증하지 않은 코드를 검증된 것으로 착각하고 단계를 끝낸다.
-    reachVerify();
+    await reachVerify();
 
-    const label = applyResponse(context, reply("### run test")).execution!.observations[0].label;
+    const outcome = await applyResponse(context, reply("### run test"));
+    const label = outcome.execution!.observations[0].label;
 
     assert.match(label, /실행되지 않음/);
     assert.doesNotMatch(label, /통과/);
   });
 
-  test("테스트 파일은 고칠 수 없다 — 단언을 지워 통과시키는 길을 막는다", () => {
-    reachVerify();
+  test("테스트 파일은 고칠 수 없다 — 단언을 지워 통과시키는 길을 막는다", async () => {
+    await reachVerify();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### edit tests/test_shipment.py",
@@ -712,10 +713,10 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
     );
   });
 
-  test("본문 소스는 고칠 수 있다", () => {
-    reachVerify();
+  test("본문 소스는 고칠 수 있다", async () => {
+    await reachVerify();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       reply(
         "### edit app/features/shipment/models.py",
@@ -740,10 +741,10 @@ describe("verify 단계 — 실패를 덮을 수 없게 한다", () => {
 });
 
 describe("턴 기록", () => {
-  test("효율을 판단할 수치가 남는다", () => {
-    completePlan();
-    applyResponse(context, reply("### read app/features/orders/models.py"));
-    applyResponse(
+  test("효율을 판단할 수치가 남는다", async () => {
+    await completePlan();
+    await applyResponse(context, reply("### read app/features/orders/models.py"));
+    await applyResponse(
       context,
       reply("### write app/features/shipment/models.py", "```", "class Shipment:", "```", "### done"),
     );
@@ -756,10 +757,10 @@ describe("턴 기록", () => {
     assert.match(summary, /대상당 평균 턴/);
   });
 
-  test("형식이 깨진 응답은 반영하지 않고 기록만 남긴다", () => {
-    completePlan();
+  test("형식이 깨진 응답은 반영하지 않고 기록만 남긴다", async () => {
+    await completePlan();
 
-    const outcome = applyResponse(context, "네, 만들어 드릴게요!");
+    const outcome = await applyResponse(context, "네, 만들어 드릴게요!");
 
     assert.equal(outcome.parseErrors.length, 1);
     assert.equal(outcome.execution, undefined);

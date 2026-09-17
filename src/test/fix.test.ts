@@ -130,8 +130,8 @@ function confirmStage() {
   decideApproval(context, "approved", { approver: "팀장", target: "app/bug.js" });
 }
 
-function planned() {
-  applyResponse(context, JSON.stringify(PLAN));
+async function planned() {
+  await applyResponse(context, JSON.stringify(PLAN));
   decideApproval(context, "approved", { approver: "팀장", target: "app/bug.js" });
 }
 
@@ -176,7 +176,7 @@ afterEach(() => {
 });
 
 describe("계획은 재현부터 세운다", () => {
-  test("계획 프롬프트가 재현을 먼저 요구한다", () => {
+  test("계획 프롬프트가 재현을 먼저 요구한다", async () => {
     const prompt = nextPrompt(context).prompt!;
 
     assert.match(prompt, /결함 수정 계획자/);
@@ -185,33 +185,33 @@ describe("계획은 재현부터 세운다", () => {
     assert.match(prompt, /"preserve"/, "고치는 작업이므로 보존 조건을 든다");
   });
 
-  test("계획이 서면 재현 단계부터 돈다", () => {
-    planned();
+  test("계획이 서면 재현 단계부터 돈다", async () => {
+    await planned();
 
     assert.equal(nextPrompt(context).label, "repro");
   });
 });
 
 describe("돌려 보지 않으면 끝나지 않는다", () => {
-  test("테스트만 쓰고 done 하면 단계가 끝나지 않는다", () => {
-    planned();
+  test("테스트만 쓰고 done 하면 단계가 끝나지 않는다", async () => {
+    await planned();
 
-    const outcome = applyResponse(context, `${REPRO_TEST}\n\n### done`);
+    const outcome = await applyResponse(context, `${REPRO_TEST}\n\n### done`);
 
     assert.equal(outcome.advanced, false);
     assert.equal(outcome.violations[0].item, "검증 미확인");
     assert.match(outcome.violations[0].detail, /돌려 보지 않고 끝냈습니다/);
   });
 
-  test("실패를 확인한 뒤 done 하면 넘어간다 — 이것이 red 다", () => {
-    planned();
-    applyResponse(context, REPRO_TEST);
+  test("실패를 확인한 뒤 done 하면 넘어간다 — 이것이 red 다", async () => {
+    await planned();
+    await applyResponse(context, REPRO_TEST);
 
-    const ran = applyResponse(context, "### run test");
+    const ran = await applyResponse(context, "### run test");
     assert.equal(ran.execution!.verified, "fail", "재현 테스트는 지금 코드에서 실패해야 한다");
     assert.equal(loadSession(lane()).verified.repro, "fail");
 
-    const done = applyResponse(context, "### done");
+    const done = await applyResponse(context, "### done");
     assert.equal(done.advanced, true);
     assert.equal(nextPrompt(context).label, "confirm:repro", "재현했다는 판정도 사람이 한다");
 
@@ -219,26 +219,26 @@ describe("돌려 보지 않으면 끝나지 않는다", () => {
     assert.equal(nextPrompt(context).label, "fix");
   });
 
-  test("재현하지 못하는 테스트는 거부한다 — 통과해 버리면 재현이 아니다", () => {
-    planned();
-    applyResponse(context, USELESS_TEST);
-    const ran = applyResponse(context, "### run test");
+  test("재현하지 못하는 테스트는 거부한다 — 통과해 버리면 재현이 아니다", async () => {
+    await planned();
+    await applyResponse(context, USELESS_TEST);
+    const ran = await applyResponse(context, "### run test");
     assert.equal(ran.execution!.verified, "pass");
 
-    const done = applyResponse(context, "### done");
+    const done = await applyResponse(context, "### done");
 
     assert.equal(done.advanced, false);
     assert.match(done.violations[0].detail, /재현하지 못한 테스트/);
   });
 
-  test("돌려 본 뒤에 파일을 또 바꾸면 그 결과는 무효다", () => {
-    planned();
-    applyResponse(context, REPRO_TEST);
-    applyResponse(context, "### run test");
+  test("돌려 본 뒤에 파일을 또 바꾸면 그 결과는 무효다", async () => {
+    await planned();
+    await applyResponse(context, REPRO_TEST);
+    await applyResponse(context, "### run test");
     assert.equal(loadSession(lane()).verified.repro, "fail");
 
     // 확인 뒤에 테스트를 갈아 치웠다 — 앞서 본 실패는 이 파일에 대한 것이 아니다.
-    const changed = applyResponse(context, `${USELESS_TEST}\n\n### done`);
+    const changed = await applyResponse(context, `${USELESS_TEST}\n\n### done`);
 
     assert.equal(changed.advanced, false);
     assert.equal(loadSession(lane()).verified.repro, undefined);
@@ -251,36 +251,36 @@ describe("실패한 이유를 묻는다 — 환경이 고장 난 것은 재현�
    * 명령이 돌지 못한 것과 테스트가 실패한 것은 다르다. 둘을 같은 "실패"로 읽으면
    * git 저장소가 아닌 곳에서 아무 테스트도 안 쓰고 `run test` 만 해도 재현 단계가 끝난다.
    */
-  test("git 저장소가 아니면 실행 오류다 — 재현으로 치지 않는다", () => {
-    planned();
+  test("git 저장소가 아니면 실행 오류다 — 재현으로 치지 않는다", async () => {
+    await planned();
     rmSync(join(root, "repo", ".git"), { recursive: true, force: true });
-    applyResponse(context, REPRO_TEST);
+    await applyResponse(context, REPRO_TEST);
 
-    const ran = applyResponse(context, "### run test");
+    const ran = await applyResponse(context, "### run test");
     assert.equal(ran.execution!.verified, "error");
     assert.match(ran.execution!.observations[0].label, /실행 오류/);
     assert.match(ran.execution!.observations[0].body, /worktree/, "원인이 결과에 실린다");
     assert.equal(loadSession(lane()).verified.repro, "error", "돌지 못했다는 사실도 기억한다");
 
-    const done = applyResponse(context, "### done");
+    const done = await applyResponse(context, "### done");
     assert.equal(done.advanced, false);
     assert.equal(done.violations[0].item, "검증 미확인");
     assert.match(done.violations[0].detail, /실행되지 못했습니다/);
   });
 
-  test("명령 자체가 없으면 실행 오류다", () => {
+  test("명령 자체가 없으면 실행 오류다", async () => {
     write(
       "doc/templates/code-agent.json",
       JSON.stringify({ ...MANIFEST, test: ["code-agent-no-such-command-xyz"] }, null, 2),
     );
-    planned();
-    applyResponse(context, REPRO_TEST);
+    await planned();
+    await applyResponse(context, REPRO_TEST);
 
-    const ran = applyResponse(context, "### run test");
+    const ran = await applyResponse(context, "### run test");
     assert.equal(ran.execution!.verified, "error");
     assert.match(ran.execution!.observations[0].body, /ENOENT|찾을 수 없/);
 
-    const done = applyResponse(context, "### done");
+    const done = await applyResponse(context, "### done");
     assert.equal(done.advanced, false);
     assert.match(done.violations[0].detail, /실행되지 못했습니다/);
   });
@@ -288,32 +288,32 @@ describe("실패한 이유를 묻는다 — 환경이 고장 난 것은 재현�
 
 describe("고친 뒤에는 통과해야 끝난다 — 이것이 green 이다", () => {
   /** 재현 단계를 끝내 놓는다 */
-  function reachFix() {
-    planned();
-    applyResponse(context, REPRO_TEST);
-    applyResponse(context, "### run test");
-    applyResponse(context, "### done");
+  async function reachFix() {
+    await planned();
+    await applyResponse(context, REPRO_TEST);
+    await applyResponse(context, "### run test");
+    await applyResponse(context, "### done");
     confirmStage();
   }
 
-  test("고치지 않은 채 done 하면 끝나지 않는다", () => {
-    reachFix();
+  test("고치지 않은 채 done 하면 끝나지 않는다", async () => {
+    await reachFix();
 
-    applyResponse(context, "### run test");
-    const done = applyResponse(context, "### done");
+    await applyResponse(context, "### run test");
+    const done = await applyResponse(context, "### done");
 
     assert.equal(done.advanced, false);
     assert.match(done.violations[0].detail, /아직 실패합니다/);
   });
 
-  test("고치고 통과를 확인하면 끝난다", () => {
-    reachFix();
+  test("고치고 통과를 확인하면 끝난다", async () => {
+    await reachFix();
 
-    applyResponse(context, FIX_EDIT);
-    const ran = applyResponse(context, "### run test");
+    await applyResponse(context, FIX_EDIT);
+    const ran = await applyResponse(context, "### run test");
     assert.equal(ran.execution!.verified, "pass", "고친 뒤에는 통과해야 한다");
 
-    const done = applyResponse(context, "### done");
+    const done = await applyResponse(context, "### done");
     assert.equal(done.advanced, true);
     assert.match(
       readFileSync(lane("app/bug.js"), "utf-8"),
@@ -327,10 +327,10 @@ describe("고친 뒤에는 통과해야 끝난다 — 이것이 green 이다", (
     );
   });
 
-  test("수정 단계에서는 테스트를 고칠 수 없다 — 단언을 지워 통과시키는 길을 막는다", () => {
-    reachFix();
+  test("수정 단계에서는 테스트를 고칠 수 없다 — 단언을 지워 통과시키는 길을 막는다", async () => {
+    await reachFix();
 
-    const outcome = applyResponse(
+    const outcome = await applyResponse(
       context,
       [
         "### edit tests/repro.js",

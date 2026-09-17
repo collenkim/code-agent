@@ -8,10 +8,11 @@
  * 계획인데, 기록이 없으면 검증할 데이터 자체가 안 생긴다. 단계당 턴 수·경계 위반·read 비율은
  * 그대로 "API로 돌리면 몇 번 호출될까"와 "자동으로 맡겨도 되나"의 답이 된다.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import type { ActionType } from "./action";
+import { writeAtomic } from "./atomic";
 import type { ApprovalState, PendingApproval, PendingStage, StageState } from "./approval";
 import type { Observation } from "./execute";
 import type { Manifest, StageDef } from "./manifest";
@@ -94,9 +95,7 @@ export function loadSession(outDir: string): Session {
 }
 
 export function saveSession(outDir: string, session: Session): void {
-  const path = sessionPath(outDir);
-  mkdirSync(join(outDir, SESSION_DIR), { recursive: true });
-  writeFileSync(path, JSON.stringify(session, null, 2), "utf-8");
+  writeAtomic(sessionPath(outDir), JSON.stringify(session, null, 2));
 }
 
 // ---- 미결 질문 ----
@@ -113,7 +112,6 @@ export function questionsPath(outDir: string): string {
  */
 export function writeQuestions(outDir: string, questions: PendingQuestion[]): string {
   const path = questionsPath(outDir);
-  mkdirSync(join(outDir, SESSION_DIR), { recursive: true });
 
   const body = questions
     .map(
@@ -123,14 +121,13 @@ export function writeQuestions(outDir: string, questions: PendingQuestion[]): st
     )
     .join("\n---\n\n");
 
-  writeFileSync(
+  writeAtomic(
     path,
     "# 미결 질문\n\n" +
       "code-agent 가 스펙만으로 정할 수 없어 남긴 것들입니다. " +
       "**답:** 아래에 답을 적으면 다음 프롬프트에 반영됩니다.\n\n" +
       "답하지 않은 질문이 남아 있는 동안에는 다음 단계로 넘어가지 않습니다.\n\n" +
       `---\n\n${body}`,
-    "utf-8",
   );
   return path;
 }

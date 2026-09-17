@@ -21,7 +21,8 @@ const USAGE =
   `\n템플릿 디렉토리에는 ${MANIFEST_FILE} 이 있어야 합니다 — 도메인 경로·계층·단계·검증 명령을\n` +
   "그 프로젝트가 선언하는 파일입니다. 에이전트는 언어·프레임워크를 가정하지 않습니다.\n" +
   "\n명령 (수동 모드 — API 미사용):\n" +
-  "  serve                로컬 서버와 화면을 띄운다 (--port, --host, --state)\n" +
+  "  serve                서버와 화면을 띄운다 (--port, --host, --state)\n" +
+  "                       여럿이 쓰려면 --auth-header + --trust-proxy + --root 가 필요하다\n" +
   "  next                 지금 붙여넣을 프롬프트를 표준출력으로\n" +
   "  apply <응답파일>      응답을 실행하고 다음 프롬프트를 준비\n" +
   "  status               지금 무엇을 할 차례인지\n" +
@@ -47,6 +48,14 @@ const USAGE =
   "\n단계 지정 방식 (예전 방식 — JSON 응답 · 제거 예정, 새 작업에는 쓰지 않는다):\n" +
   "  --step <plan|단계키|gate:단계키> --emit-prompt\n" +
   "  --step <plan|단계키|gate:단계키> --ingest <응답파일>\n" +
+  "\nserve 옵션:\n" +
+  "  --port <포트>                  기본 4319\n" +
+  "  --host <주소>                  기본 127.0.0.1. 밖에 열려면 인증을 함께 켜야 한다\n" +
+  "  --state <파일>                 작업 목록 파일. 기본 .code-agent-server/jobs.json\n" +
+  "  --auth-header <헤더이름>        앞단 프록시가 넣어 주는 인증 주체 (예: X-Auth-User)\n" +
+  "                                 그 값이 작업의 주인이자 승인 원장의 approver 가 된다\n" +
+  "  --trust-proxy                  위 헤더를 신뢰한다는 선언. --auth-header 와 짝이다\n" +
+  "  --root <디렉토리>               작업이 가리킬 수 있는 경로의 뿌리 (여러 번 줄 수 있다)\n" +
   "\n선택 옵션:\n" +
   `  --conventions <파일|디렉토리>   ${MANIFEST_FILE} 의 conventions 선언을 덮어씀\n` +
   `  --reference <참조도메인>        ${MANIFEST_FILE} 의 referenceDomain 을 덮어씀\n` +
@@ -166,6 +175,36 @@ function attestPresence(decision: Decision, args: Record<string, string[]>): Pre
   return { channel: "tty", verified: true, detail: `터미널에서 ${word} 입력` };
 }
 
+/**
+ * 인증을 켤 것인가, 그리고 그 전제가 실제로 선언됐는가.
+ *
+ * 헤더 하나로 신원을 받는 것은 **앞에 그 헤더를 덮어쓰는 프록시가 있을 때만** 인증이다.
+ * 없으면 클라이언트가 스스로 아무 값이나 적어 보낼 수 있어 자기 신고에 지나지 않는다.
+ * 그래서 `--trust-proxy` 를 따로 요구한다 — 잊고 켜는 일이 없도록, 그 전제를 사람이
+ * 한 번 더 적게 하는 자리다.
+ */
+function resolveAuthHeader(args: Record<string, string[]>): string | undefined {
+  const given = first(args, "auth-header");
+  const header = given === "true" ? undefined : given;
+  const trusted = first(args, "trust-proxy") !== undefined;
+
+  if (given !== undefined && header === undefined) {
+    throw new Error("--auth-header 에는 헤더 이름이 필요합니다 (예: --auth-header X-Auth-User).");
+  }
+  if (header && !trusted) {
+    throw new Error(
+      "--auth-header 는 --trust-proxy 와 함께 써야 합니다.\n" +
+        "  이 헤더는 앞단 프록시가 덮어쓴다는 전제에서만 인증입니다 — 프록시가 없으면\n" +
+        "  누구나 스스로 그 헤더를 적어 남의 이름으로 승인할 수 있습니다.\n" +
+        "  프록시를 두었다면 --trust-proxy 를 붙여 그 사실을 선언하세요.",
+    );
+  }
+  if (trusted && !header) {
+    throw new Error("--trust-proxy 만으로는 인증이 켜지지 않습니다. --auth-header 로 헤더 이름을 주세요.");
+  }
+  return header;
+}
+
 function printStages(outcome: BuildOutcome) {
   for (const stage of outcome.stages) {
     const attempts = stage.attempts > 1 ? ` (시도 ${stage.attempts}회)` : "";
@@ -226,9 +265,9 @@ function runNext(context: BuildContext) {
   }
 }
 
-function runApply(context: BuildContext, responsePath: string) {
+async function runApply(context: BuildContext, responsePath: string) {
   requireSpecForPlan(context);
-  const outcome = applyResponse(context, readFileSync(responsePath, "utf-8"));
+  const outcome = await applyResponse(context, readFileSync(responsePath, "utf-8"));
 
   console.log(`## ${outcome.label}`);
 
@@ -356,6 +395,8 @@ async function main() {
       port: Number(first(args, "port") ?? 4319),
       host: first(args, "host") ?? "127.0.0.1",
       statePath: first(args, "state") ?? join(".code-agent-server", "jobs.json"),
+      authHeader: resolveAuthHeader(args),
+      roots: args.root?.filter((root) => root !== "true"),
     });
     return;
   }
@@ -399,7 +440,7 @@ async function main() {
       console.error("apply 에는 응답 파일 경로가 필요합니다: code-agent apply answer.txt --repo …");
       process.exit(1);
     }
-    runApply(context, responsePath);
+    await runApply(context, responsePath);
     return;
   }
   if (command === "status") {
