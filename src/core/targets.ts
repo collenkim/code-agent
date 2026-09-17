@@ -165,6 +165,7 @@ export function laneStates(baseOut: string, order: WorkOrder, manifest: Manifest
         approval: plan
           ? checkApproval(deps.repoRoot, order, plan, lane.target, {
               requireVerifiedApproval: manifest.workOrder.requireVerifiedApproval,
+              manifest,
             })
           : undefined,
         stages,

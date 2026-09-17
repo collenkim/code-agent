@@ -156,6 +156,20 @@ const ManifestSchema = z.object({
     .default({ attributes: [], requireApprover: false, requireVerifiedApproval: false })
     .describe("작업 지시서의 프로젝트 확장 속성 정책"),
   stages: z.array(StageSchema).min(1),
+}).superRefine((manifest, ctx) => {
+  // 주석은 "덮어쓸 수 없다"고 말하는데 검사가 없었다. 그래서 commands.build 를 선언하면
+  // 조용히 무시되고, 선언한 사람은 그것이 도는 줄 안다 — 검증 명령에서 그 착각은 비싸다.
+  for (const reserved of ["build", "test"] as const) {
+    if (reserved in manifest.commands) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["commands", reserved],
+        message:
+          reserved + " 은 commands 에 선언할 수 없습니다 — 최상위 " + reserved + " 가 이미 그 이름입니다. " +
+          "여기 적으면 조용히 무시됩니다. 다른 이름을 쓰거나 최상위 " + reserved + " 를 고치세요.",
+      });
+    }
+  }
 });
 
 export type Manifest = z.infer<typeof ManifestSchema>;

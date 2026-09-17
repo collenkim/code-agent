@@ -15,6 +15,7 @@ import { applyResponse, decideApproval, nextPrompt, rememberIssued } from "../co
 import { describeLanes, readRunState } from "../core/targets";
 import type { BuildContext, BuildOutcome } from "../core/types";
 import { serve } from "../server/http";
+import type { Server } from "http";
 
 const USAGE =
   "사용법: code-agent <명령> --repo <대상저장소> --templates <템플릿디렉토리>\n" +
@@ -205,6 +206,51 @@ function resolveAuthHeader(args: Record<string, string[]>): string | undefined {
   return header;
 }
 
+/** 종료 신호를 받고 기다려 주는 시간. 넘으면 그대로 내려간다 */
+const SHUTDOWN_WAIT_MS = 15_000;
+
+/**
+ * 종료 신호를 받으면 **새 요청을 받지 않고** 진행 중인 것이 끝나기를 기다린다.
+ *
+ * 그냥 죽이면 응답을 기다리던 사람에게는 연결이 끊긴 것으로만 보인다. 상태 파일은 원자적으로
+ * 쓰이므로 반쯤 쓰인 것이 남지는 않지만, **202 로 갈려 뒤에서 돌던 검증 명령은 중단된다** —
+ * 그 결과는 세션에 들어가지 못하므로 다시 돌려야 한다. 그 사실을 말해 주는 것이 여기의 일이다.
+ *
+ * 서버를 만드는 함수가 아니라 CLI 가 이것을 붙인다. `serve` 는 테스트가 여러 번 부르는
+ * 라이브러리 함수라, 그 안에서 프로세스 신호를 잡으면 핸들러가 겹쳐 쌓인다.
+ */
+function installShutdown(server: Server): void {
+  let closing = false;
+
+  const stop = (signal: string) => {
+    if (closing) {
+      console.error("한 번 더 받았습니다 — 기다리지 않고 바로 내려갑니다.");
+      process.exit(1);
+    }
+    closing = true;
+    console.log(
+      `\n${signal} — 새 요청을 받지 않습니다. 진행 중인 요청이 끝나기를 최대 ` +
+        `${SHUTDOWN_WAIT_MS / 1000}초 기다립니다 (한 번 더 누르면 즉시 종료).\n` +
+        "  뒤에서 돌던 검증 명령이 있으면 중단됩니다 — 그 결과는 다시 돌려야 합니다.",
+    );
+
+    // 놀고 있는 keep-alive 연결은 붙잡고 있을 이유가 없다. 이것이 없으면 브라우저가
+    // 열어 둔 소켓 때문에 close 가 제한 시간까지 끝나지 않는다.
+    server.closeIdleConnections?.();
+    server.close(() => process.exit(0));
+
+    const giveUp = setTimeout(() => {
+      console.error("제한 시간을 넘겨 그대로 종료합니다.");
+      process.exit(1);
+    }, SHUTDOWN_WAIT_MS);
+    giveUp.unref();
+  };
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => stop(signal));
+  }
+}
+
 function printStages(outcome: BuildOutcome) {
   for (const stage of outcome.stages) {
     const attempts = stage.attempts > 1 ? ` (시도 ${stage.attempts}회)` : "";
@@ -391,13 +437,15 @@ async function main() {
 
   // 서버는 특정 저장소에 매이지 않는다 — 작업마다 저장소를 받으므로 --repo 를 요구하지 않는다.
   if (command === "serve") {
-    serve({
+    installShutdown(
+      serve({
       port: Number(first(args, "port") ?? 4319),
       host: first(args, "host") ?? "127.0.0.1",
       statePath: first(args, "state") ?? join(".code-agent-server", "jobs.json"),
-      authHeader: resolveAuthHeader(args),
-      roots: args.root?.filter((root) => root !== "true"),
-    });
+        authHeader: resolveAuthHeader(args),
+        roots: args.root?.filter((root) => root !== "true"),
+      }),
+    );
     return;
   }
 
