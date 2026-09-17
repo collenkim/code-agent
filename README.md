@@ -30,6 +30,9 @@
 
 > **바로 돌려 보려면** — [doc/usage.md](doc/usage.md) 에 신규·레거시 두 경로를 Postman 으로
 > 끝까지 도는 순서가 있다. 이 문서는 그 뒤에 있는 "왜 이런가"를 다룬다.
+>
+> **여럿이 쓰는 서버로 올리려면** — [doc/operations.md](doc/operations.md) 에 프록시·TLS·경로 울타리와,
+> 승인이 증거가 되기 위해 팀이 지켜야 하는 것(원장 커밋·지시서 작명)이 있다.
 
 ---
 
@@ -681,7 +684,9 @@ POST 다) 켜는 순간 그 경로로는 승인이 안 된다. **무엇을 잃�
 TTY 검사도 경계가 아니라 관측이다. 사람이 자기 터미널에서 스크립트로 감싸면 통과한다. 이것이 막는 것은
 *훔치는 사람*이 아니라 **사람 없이 진행되는 파이프라인**이다.
 
-규격 전문은 [doc/work-order.md](doc/work-order.md) 의 "승인 기록" 절에 있다.
+규격 전문은 [doc/work-order.md](doc/work-order.md) 의 "승인 기록" 절에 있고,
+**원장이 실제로 증거가 되게 하는 절차**(커밋 규율·신원·`requireVerifiedApproval` 판단)는
+[doc/operations.md](doc/operations.md) 에 있다.
 
 ---
 
@@ -871,6 +876,8 @@ code-agent serve --host 0.0.0.0 \
 > 들어온 요청인가"이고, "그 사람이 계획을 읽고 판단했는가"는 아니다. 그래서 서버 경로의 판정은
 > 여전히 원장에 `presence.verified: false` 로 남는다 — `requireVerifiedApproval` 을 켠 프로젝트에서는
 > 이 경로로 게이트가 열리지 않는다. 거짓 증거는 증거가 없는 것보다 나쁘다.
+
+프록시 설정·`--root` 를 무엇으로 잡을지·배치 전 점검 목록은 [doc/operations.md](doc/operations.md) 에 있다.
 
 ---
 
