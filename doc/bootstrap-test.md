@@ -131,11 +131,23 @@ next(계획) → apply → 질문에 답 → next → approve
 }
 ```
 
-선택: `reference` · `conventions[]` · `policy` · `gate`(기본 `true`).
+선택: `reference` · `conventions[]` · `policy` · `gate`(기본 `true`) ·
+`workRef` · `baseRef`.
 
 생성 시점에 매니페스트·컨벤션·참조 표준을 **실제로 읽어 본다.** 경로 오타는 첫 프롬프트가
 아니라 여기서 400 으로 걸린다. `out` 이 겹치는 작업은 거부한다 — 계획과 세션이 그 안에
 있어 섞이면 이어지지 않는다.
+
+**작업 브랜치와 비교 브랜치.** `workRef` 는 생성물을 얹어 검증할 바탕이고(생략하면 대상
+저장소의 지금 HEAD), `baseRef` 는 이 작업이 어디서 갈라져 나왔는지다(생략하면 `master`,
+없으면 `main`). 둘 다 **작업을 만들 때 커밋으로 굳는다** — 이후 브랜치가 움직이거나 다른
+브랜치를 체크아웃해도 검증은 굳은 커밋 위에서 돈다. 굳은 값은 상태 응답의 `refs` 에 있다.
+
+**없는 이름을 적으면 여기서 400 으로 걸린다** — 오타를 조용히 넘기면 엉뚱한 자리에서 검증이
+돌아도 아무도 모른다. 반대로 **적지 않았는데 정할 수 없으면 막지 않는다**: git 저장소가
+아니거나(`kind: spec` 처럼 저장소가 아직 없는 경우) 커밋이 하나도 없으면 `refs` 자체가 없고,
+`master` 도 `main` 도 없는 저장소면 `refs.base` 만 빠진다. 검증이 딛는 자리는 `refs.work` 이고
+비교 대상은 기록이라, 그것 하나 때문에 작업을 막지 않는다.
 
 ### 상태 응답 (`StatusView`)
 
@@ -143,6 +155,10 @@ next(계획) → apply → 질문에 답 → next → approve
 {
   "id": "job-1", "label": "order-service 신규",
   "repoRoot": "…/newproj", "outDir": "…/out",
+  "refs": {
+    "work": { "ref": "HEAD", "commit": "26b56f8…" },
+    "base": { "ref": "master", "commit": "26b56f8…" }
+  },
   "target": "plan", "step": "plan", "lane": "order-service",
   "lanes": [{ "target": "order-service", "step": "plan", "needsApproval": false }],
   "turn": 0, "completedStages": [],
@@ -153,6 +169,8 @@ next(계획) → apply → 질문에 답 → next → approve
 ```
 
 `lanes` 는 지시서의 대상 전부다 — 대상마다 따로 돌기 때문에 하나가 막혀도 나머지는 간다.
+`refs` 는 작업을 만들 때 굳은 커밋이다. git 저장소가 아니거나 커밋이 하나도 없으면 없고,
+기본 브랜치 이름이 `master`·`main` 이 아닌 저장소에서는 `base` 만 빠진다.
 
 ### POST /api/jobs/{id}/response
 

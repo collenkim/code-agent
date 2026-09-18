@@ -7,7 +7,7 @@ import type { Manifest } from "./manifest";
 import { SESSION_DIR } from "./session";
 import { SPEC_SLOTS_FILE } from "./specSchema";
 import { PLAN_FILE } from "./state";
-import type { BuildResult, StageResult } from "./types";
+import type { BuildResult, JobRefs, StageResult } from "./types";
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -96,6 +96,94 @@ function spawnAsync(
 
 function git(args: string[], cwd: string): Promise<CommandResult> {
   return spawnAsync("git", args, { cwd, env: process.env });
+}
+
+// ---- ref 굳히기 ----
+
+/**
+ * 그 디렉토리가 git 작업트리 안인가.
+ *
+ * 아닌 곳도 작업 대상이 된다 — `kind: spec` 은 저장소가 아직 없고 스펙을 둘 폴더만 있다.
+ * 그래서 이것이 거짓이라고 해서 작업을 막지 않는다. 굳힐 것이 없을 뿐이다.
+ */
+export async function isGitRepo(dir: string): Promise<boolean> {
+  const inside = await git(["rev-parse", "--is-inside-work-tree"], dir);
+  return inside.status === 0 && inside.stdout.trim() === "true";
+}
+
+/**
+ * ref 하나를 **그 순간의 커밋으로 굳힌다.** 없는 ref 면 undefined.
+ *
+ * 브랜치 이름은 움직인다. 이름만 들고 있으면 같은 작업이 언제 검증하느냐에 따라 다른 코드를
+ * 보게 되므로, 작업을 만들 때 한 번 커밋으로 바꿔 두고 그 뒤로는 커밋만 쓴다.
+ */
+export async function resolveCommit(dir: string, ref: string): Promise<string | undefined> {
+  const found = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir);
+  return found.status === 0 && found.stdout.trim() !== "" ? found.stdout.trim() : undefined;
+}
+
+/** 비교 브랜치를 안 적었을 때 찾아보는 순서. master 가 먼저다 */
+const BASE_FALLBACKS = ["master", "main"];
+
+/**
+ * 작업·비교 브랜치를 그 순간의 커밋으로 굳힌다. 굳힐 것이 없으면 undefined.
+ *
+ * **git 저장소가 아니면 굳히지 않는다** — `kind: spec` 처럼 저장소가 아직 없고 스펙을 둘
+ * 폴더만 있는 작업이 있어서, 브랜치를 요구하면 만들 수 없는 작업이 생긴다. 커밋이 하나도
+ * 없는 갓 만든 저장소도 마찬가지다. 다만 **사람이 이름을 적었는데 굳힐 수 없으면** 그것은
+ * 오타이므로 그대로 알린다 — 조용히 무시하면 엉뚱한 자리에서 검증이 돌아도 아무도 모른다.
+ */
+export async function pinRefs(
+  repoRoot: string,
+  workRef?: string,
+  baseRef?: string,
+): Promise<JobRefs | undefined> {
+  const work = workRef?.trim() || undefined;
+  const base = baseRef?.trim() || undefined;
+
+  if (!(await isGitRepo(repoRoot))) {
+    if (work ?? base) {
+      throw new Error(
+        `브랜치를 적었는데 대상 저장소가 git 저장소가 아닙니다: ${repoRoot}\n` +
+          "  브랜치를 비우면 그대로 만들 수 있습니다 — 스펙만 두는 폴더에는 브랜치가 없습니다.",
+      );
+    }
+    return undefined;
+  }
+
+  const commit = await resolveCommit(repoRoot, work ?? "HEAD");
+  if (!commit) {
+    if (work) {
+      throw new Error(
+        `작업 브랜치를 찾을 수 없습니다: ${work}\n` +
+          `  대상 저장소(${repoRoot})에 있는 이름인지 보세요.`,
+      );
+    }
+    // 커밋이 하나도 없는 저장소. 굳힐 것이 없으니 예전처럼 검증할 때의 HEAD 를 쓴다.
+    return undefined;
+  }
+  const pinned = { ref: work ?? "HEAD", commit };
+
+  if (base) {
+    const baseCommit = await resolveCommit(repoRoot, base);
+    if (!baseCommit) {
+      throw new Error(
+        `비교 브랜치를 찾을 수 없습니다: ${base}\n` +
+          `  대상 저장소(${repoRoot})에 있는 이름인지 보세요.`,
+      );
+    }
+    return { work: pinned, base: { ref: base, commit: baseCommit } };
+  }
+
+  for (const candidate of BASE_FALLBACKS) {
+    const baseCommit = await resolveCommit(repoRoot, candidate);
+    if (baseCommit) {
+      return { work: pinned, base: { ref: candidate, commit: baseCommit } };
+    }
+  }
+  // 기본 브랜치 이름이 다른 저장소다. 짐작해서 적느니 비워 둔다 — 비교 대상은 기록이고,
+  // 검증이 딛는 자리(work)는 이미 굳었다. 필요하면 사람이 이름을 적어 주면 된다.
+  return { work: pinned };
 }
 
 // ---- 실행 파일 해석 ----
@@ -265,6 +353,13 @@ export async function verifyByBuild(
   outDir: string,
   stages: StageResult[],
   kind: string = "build",
+  /**
+   * 어느 커밋 위에 생성물을 얹어 볼 것인가. 작업을 만들 때 굳혀 둔 커밋이 온다.
+   *
+   * 없으면 그때의 HEAD 다 — 굳힐 것이 없는 저장소(커밋 0개)이거나 굳히기 전에 만들어진
+   * 작업이라는 뜻이고, 그 경우 같은 작업이 체크아웃에 따라 다른 것을 검증하게 된다.
+   */
+  ref: string = "HEAD",
 ): Promise<BuildResult> {
   const command =
     kind === "test" ? manifest.test : kind === "build" ? manifest.build : manifest.commands[kind];
@@ -289,14 +384,14 @@ export async function verifyByBuild(
   // mkdtemp가 만든 빈 디렉토리를 git이 거부하므로, 경로만 쓰고 실제 생성은 git에 맡긴다.
   rmSync(worktree, { recursive: true, force: true });
 
-  const added = await git(["worktree", "add", "--detach", worktree, "HEAD"], repoRoot);
+  const added = await git(["worktree", "add", "--detach", worktree, ref], repoRoot);
   if (added.status !== 0) {
     // 명령이 돌지 못한 것이다. 테스트가 실패한 것과 같은 말로 알리면 재현으로 오독된다.
     return {
       passed: false,
       outcome: "error",
       log:
-        `임시 worktree 생성 실패 (exit ${added.status}): ${added.stderr || added.stdout}`.trim() +
+        `임시 worktree 생성 실패 (${ref}, exit ${added.status}): ${added.stderr || added.stdout}`.trim() +
         "\n대상 저장소가 git 저장소이고 커밋이 하나 이상 있어야 검증을 돌릴 수 있습니다.",
     };
   }

@@ -189,6 +189,19 @@ function renderBroken(job) {
   flash("이 작업은 설정이 어긋나 진행할 수 없습니다. 고치거나 삭제하세요.", true);
 }
 
+/**
+ * 이 작업이 어느 커밋 위에 서 있는지. 굳혀 둔 값이라 브랜치가 움직여도 이 줄은 안 바뀐다 —
+ * 사람이 "내가 방금 푸시한 게 들어갔나"를 물을 때 답이 되는 자리다.
+ */
+function describeRefs(refs) {
+  if (!refs) {
+    return "";
+  }
+  const pin = (p) => p.ref + "@" + p.commit.slice(0, 7);
+  return "   ·   작업 " + pin(refs.work) +
+    "   비교 " + (refs.base ? pin(refs.base) : "(없음 — master 도 main 도 없습니다)");
+}
+
 function render() {
   const blocked = state.step === "blocked";
   const done = state.step === "done";
@@ -199,7 +212,7 @@ function render() {
   $("turn").textContent = "턴 " + state.turn;
   $("stages").textContent = state.completedStages.length
     ? "완료 " + state.completedStages.join(", ") : "완료된 단계 없음";
-  $("paths").textContent = state.repoRoot + "  →  " + state.outDir;
+  $("paths").textContent = state.repoRoot + "  →  " + state.outDir + describeRefs(state.refs);
 
   const open = state.questions.filter((q) => !q.answer);
   $("qcount").textContent = state.questions.length
@@ -360,6 +373,8 @@ async function createJob(event) {
         repo: form.get("repo"),
         templates: form.get("templates"),
         out: form.get("out"),
+        workRef: form.get("workRef") || undefined,
+        baseRef: form.get("baseRef") || undefined,
         reference: form.get("reference") || undefined,
         specs,
       }),
@@ -439,6 +454,8 @@ const BODY = `
         <label>대상 저장소</label><input name="repo" required placeholder="C:\\path\\to\\project">
         <label>템플릿 디렉토리</label><input name="templates" required placeholder="doc\\templates">
         <label>출력 디렉토리</label><input name="out" required placeholder=".\\out-shipment">
+        <label>작업 브랜치</label><input name="workRef" placeholder="(대상 저장소의 지금 HEAD)">
+        <label>비교 브랜치</label><input name="baseRef" placeholder="master">
         <label>참조 도메인</label><input name="reference" placeholder="(매니페스트 기본값 사용)">
         <label>스펙 문서</label><textarea name="specs" style="min-height:80px"
           placeholder="한 줄에 하나씩&#10;요구사항.md&#10;schema.sql"></textarea>

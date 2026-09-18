@@ -6,14 +6,15 @@ import { buildDryRunPreviews, formatDryRunReport } from "../core/dryRun";
 import { MANIFEST_FILE } from "../core/manifest";
 import { emitPrompt, ingestResponse, parsePromptTarget } from "../core/manualRun";
 import { formatPlan } from "../core/plan";
+import { pinRefs } from "../core/build";
 import { runBuild } from "../core/run";
 import { ledgerPath } from "../core/approval";
 import type { Decision, Presence } from "../core/approval";
 import { loadSession, questionsPath, SESSION_DIR, summarizeSession } from "../core/session";
 import { loadPlan } from "../core/state";
 import { applyResponse, decideApproval, nextPrompt, rememberIssued } from "../core/turn";
-import { describeLanes, readRunState } from "../core/targets";
-import type { BuildContext, BuildOutcome } from "../core/types";
+import { describeLanes, readRunState, rememberedRefs, rememberRefs } from "../core/targets";
+import type { BuildContext, BuildOutcome, JobRefs } from "../core/types";
 import { serve } from "../server/http";
 import type { Server } from "http";
 
@@ -36,6 +37,10 @@ const USAGE =
   "\n  예)  code-agent next --repo … --templates … --spec 요구사항.md > p.txt\n" +
   "       code-agent apply answer.txt --repo … --templates …\n" +
   "\n  --spec 은 계획을 세울 때 한 번만 필요합니다. 이후에는 기억합니다.\n" +
+  "\n  --work-ref <브랜치>   생성물을 얹어 검증할 바탕. 생략하면 대상 저장소의 지금 HEAD\n" +
+  "  --base-ref <브랜치>   비교 브랜치. 생략하면 master, 없으면 main\n" +
+  "  둘 다 **처음 한 번만** 커밋으로 굳어 out/ 에 적힙니다 — 이후 호출은 적힌 것을 다시\n" +
+  "  쓰므로, 명령 사이에 브랜치가 움직여도 검증은 같은 커밋 위에 섭니다.\n" +
   "\n  지시서의 target 이 여럿이면 대상마다 따로 돕니다 — 계획도 질문도 승인도 대상 단위입니다.\n" +
   "  결과는 <out>/<id>/<대상>/ 아래 갈라집니다.\n" +
   "\n  --spec 문서 중 **한 장**은 맨 첫 줄부터 작업 지시서 머리말을 담아야 합니다.\n" +
@@ -204,6 +209,51 @@ function resolveAuthHeader(args: Record<string, string[]>): string | undefined {
     throw new Error("--trust-proxy 만으로는 인증이 켜지지 않습니다. --auth-header 로 헤더 이름을 주세요.");
   }
   return header;
+}
+
+/**
+ * 이 작업이 딛는 자리. **처음 한 번만 굳고, 이후 호출은 적힌 것을 다시 쓴다.**
+ *
+ * CLI 는 명령마다 새 프로세스라 매번 다시 굳히면 굳힌 것이 아니다 — `next` 와 `apply`
+ * 사이에 브랜치가 움직이거나 다른 브랜치를 체크아웃하면 검증이 다른 커밋 위에 선다.
+ * 이름을 다시 적어 주는 것으로도 막히지 않는다. 브랜치 자체가 움직이기 때문이다.
+ *
+ * 이미 굳은 작업에 **다른 이름을 주면 거절한다.** 조용히 다시 굳히면 앞선 단계는 A 위에서,
+ * 뒤의 단계는 B 위에서 검증된 산출물이 한 out 에 섞인다.
+ */
+async function settleRefs(
+  outDir: string,
+  repoRoot: string,
+  args: Record<string, string[]>,
+): Promise<JobRefs | undefined> {
+  const work = first(args, "work-ref");
+  const base = first(args, "base-ref");
+  const stored = rememberedRefs(outDir);
+
+  if (stored) {
+    const conflict =
+      (work && work !== stored.work.ref) || (base && base !== (stored.base?.ref ?? base));
+    if (conflict) {
+      throw new Error(
+        "이 작업은 이미 다른 자리에 굳어 있습니다 — 바꾸지 않았습니다.\n" +
+          `  굳은 자리: 작업 ${stored.work.ref}@${stored.work.commit.slice(0, 7)}` +
+          (stored.base ? ` · 비교 ${stored.base.ref}@${stored.base.commit.slice(0, 7)}` : "") +
+          "\n" +
+          `  이번에 준 것: ${[work && `--work-ref ${work}`, base && `--base-ref ${base}`]
+            .filter(Boolean)
+            .join(" ")}\n` +
+          "  다른 자리에서 하려면 --out 을 새로 잡으세요. 한 out 안에 두 자리의 산출물이\n" +
+          "  섞이면 무엇이 무엇 위에서 검증된 것인지 알 수 없습니다.",
+      );
+    }
+    return stored;
+  }
+
+  const pinned = await pinRefs(repoRoot, work, base);
+  if (pinned) {
+    rememberRefs(outDir, pinned);
+  }
+  return pinned;
 }
 
 /** 종료 신호를 받고 기다려 주는 시간. 넘으면 그대로 내려간다 */
@@ -468,6 +518,7 @@ async function main() {
     repoRoot: first(args, "repo")!,
     referenceDomain: first(args, "reference"),
     outDir: first(args, "out") ?? "./out",
+    refs: await settleRefs(first(args, "out") ?? "./out", first(args, "repo")!, args),
     onlyStages: first(args, "stages")?.split(",").map((key) => key.trim()),
     gate: first(args, "no-gate") !== "true",
     // 숫자가 아닌 값이 들어와도 생성 자체는 한 번 돌아야 하므로 0으로 떨어뜨린다

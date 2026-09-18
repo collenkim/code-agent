@@ -6,7 +6,8 @@
  * 작업을 만들 때 드러나는가" 두 가지다.
  */
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -129,7 +130,7 @@ after(() => {
 describe("JobStore — 작업 목록", () => {
   test("작업을 만들 때 설정을 실제로 읽어 본다", async () => {
     // 경로 오타를 첫 프롬프트 요청까지 끌고 가면 어디가 틀렸는지 알기 어려워진다.
-    assert.throws(
+    await assert.rejects(
       () =>
         store.create({
           repo: repoRoot,
@@ -141,7 +142,7 @@ describe("JobStore — 작업 목록", () => {
   });
 
   test("정상 설정이면 작업이 만들어진다", async () => {
-    const job = store.create({
+    const job = await store.create({
       label: "shipment",
       repo: repoRoot,
       templates: "doc/templates",
@@ -156,7 +157,7 @@ describe("JobStore — 작업 목록", () => {
 
   test("같은 출력 디렉토리를 쓰는 작업은 거부한다", async () => {
     // 계획과 세션이 out/ 안에 있어 섞이면 두 작업 다 못 쓰게 된다.
-    assert.throws(
+    await assert.rejects(
       () =>
         store.create({
           repo: repoRoot,
@@ -319,7 +320,7 @@ describe("응답 전송 — 본문 형식", () => {
 
   before(async () => {
     // 위 왕복이 움직여 놓은 작업에 얹으면 무엇을 재는지 흐려진다. 따로 만든다.
-    const job = new JobStore(statePath).create({
+    const job = await new JobStore(statePath).create({
       label: "http",
       repo: repoRoot,
       templates: "doc/templates",
@@ -445,15 +446,17 @@ describe("여럿이 쓸 때 — 인증과 소유권", () => {
     );
 
     const store = new JobStore(join(root, "jobs-auth.json"));
-    mine = store.create(
-      {
-        label: "kai 의 작업",
-        repo: repoRoot,
-        templates: "doc/templates",
-        out: join(root, "out-auth"),
-        specs: [join(root, "spec-auth.md")],
-      },
-      "kai@crm.co.kr",
+    mine = (
+      await store.create(
+        {
+          label: "kai 의 작업",
+          repo: repoRoot,
+          templates: "doc/templates",
+          out: join(root, "out-auth"),
+          specs: [join(root, "spec-auth.md")],
+        },
+        "kai@crm.co.kr",
+      )
     ).id;
 
     server = serve({
@@ -566,10 +569,10 @@ describe("여럿이 쓸 때 — 인증과 소유권", () => {
 });
 
 describe("경로 울타리 — --root", () => {
-  test("뿌리 밖을 가리키는 작업은 만들지 않는다", () => {
+  test("뿌리 밖을 가리키는 작업은 만들지 않는다", async () => {
     const store = new JobStore(join(root, "jobs-root.json"), [join(root, "repo")]);
 
-    assert.throws(
+    await assert.rejects(
       () =>
         store.create({
           repo: repoRoot,
@@ -580,10 +583,10 @@ describe("경로 울타리 — --root", () => {
     );
   });
 
-  test("뿌리 안이면 그대로 만들어진다", () => {
+  test("뿌리 안이면 그대로 만들어진다", async () => {
     const store = new JobStore(join(root, "jobs-root2.json"), [root]);
 
-    const job = store.create({
+    const job = await store.create({
       repo: repoRoot,
       templates: "doc/templates",
       out: join(root, "out-fenced"),
@@ -591,6 +594,99 @@ describe("경로 울타리 — --root", () => {
     });
 
     assert.ok(job.id);
+  });
+
+  test("링크 별칭으로 같은 out 을 두 번 등록할 수 없다", async () => {
+    // 울타리는 링크를 풀어 보는데 중복 검사가 문자열만 보면, 같은 디렉토리가 두 작업으로
+    // 등록된다. 그 둘은 같은 계획·세션 파일을 나눠 쓰면서 서로 다른 줄에 선다.
+    const real = join(root, "out-alias");
+    mkdirSync(real, { recursive: true });
+    const alias = join(root, "out-alias-link");
+    symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir");
+
+    try {
+      const store = new JobStore(join(root, "jobs-alias.json"));
+      const made = await store.create({
+        repo: repoRoot,
+        templates: "doc/templates",
+        out: real,
+        specs: [join(root, "spec.md")],
+      });
+
+      await assert.rejects(
+        () =>
+          store.create({
+            repo: repoRoot,
+            templates: "doc/templates",
+            out: alias,
+            specs: [join(root, "spec.md")],
+          }),
+        /이미 같은 출력 디렉토리/,
+      );
+      assert.equal(store.list().length, 1, `${made.id} 하나만 남아야 한다`);
+    } finally {
+      rmSync(alias, { recursive: true, force: true });
+    }
+  });
+
+  test("같은 out 으로 동시에 들어와도 하나만 만들어진다", async () => {
+    // 중복 검사와 등록 사이에 브랜치를 굳히는 await 가 있다. 둘이 겹치면 둘 다 "중복 없음"을
+    // 보고 양보한 뒤 둘 다 등록된다 — 작업 하나에 out 하나라는 전제가 거기서 깨진다.
+    const store = new JobStore(join(root, "jobs-race.json"));
+    const same = {
+      repo: repoRoot,
+      templates: "doc/templates",
+      out: join(root, "out-race"),
+      specs: [join(root, "spec.md")],
+    };
+
+    const results = await Promise.allSettled([store.create(same), store.create(same)]);
+
+    const made = results.filter((result) => result.status === "fulfilled");
+    const refused = results.filter((result) => result.status === "rejected");
+
+    assert.equal(made.length, 1, "하나만 만들어져야 한다");
+    assert.equal(refused.length, 1);
+    assert.match(
+      (refused[0] as PromiseRejectedResult).reason.message,
+      /이미 같은 출력 디렉토리/,
+    );
+    assert.equal(store.list().length, 1);
+    // 디스크에도 하나만 남아야 한다 — 서버를 껐다 켜면 이 파일이 곧 목록이다.
+    assert.equal(new JobStore(join(root, "jobs-race.json")).list().length, 1);
+  });
+
+  test("링크로 뿌리 밖을 가리키는 경로는 울타리를 넘지 못한다", async () => {
+    // 문자열만 보는 울타리는 이것을 통과시켰다. Windows 의 junction 은 관리자 권한도
+    // 필요 없어서, 뿌리 안에 쓸 수 있는 사람이면 누구나 밖의 파일을 읽고 쓸 수 있었다.
+    const outside = mkdtempSync(join(tmpdir(), "code-agent-outside-"));
+    const link = join(root, "escape");
+    symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+
+    try {
+      // 뿌리는 root — 저장소도 스펙도 그 안에 있어 걸릴 이유가 없다. 걸리는 것은 링크뿐이다.
+      const store = new JobStore(join(root, "jobs-link.json"), [root]);
+
+      await assert.rejects(
+        () =>
+          store.create({
+            repo: repoRoot,
+            templates: "doc/templates",
+            out: join(link, "out-escaped"),
+            specs: [join(root, "spec.md")],
+          }),
+        (error: Error) => {
+          assert.match(error.message, /허용된 경로 밖입니다/);
+          assert.match(error.message, /escape/, "무엇이 걸렸는지 그 경로를 보여 줘야 한다");
+          return true;
+        },
+      );
+
+      assert.ok(!existsSync(join(outside, "out-escaped")), "밖에 아무것도 만들지 않았어야 한다");
+    } finally {
+      rmSync(link, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -601,5 +697,173 @@ describe("화면", () => {
 
     assert.equal(/<(script|link|img)[^>]+(src|href)\s*=\s*["']https?:/i.test(html), false);
     assert.match(html, /<title>code-agent<\/title>/);
+  });
+});
+
+/**
+ * 도는 중에 지우면 무슨 일이 벌어지는가.
+ *
+ * 목록에서 빼는 것만으로는 실행이 멈추지 않는다 — 그 실행은 계속 out/ 을 쓰고, 그 사이
+ * 같은 출력 디렉토리로 새 작업을 만들면 중복 검사도 통과한다. 그러면 서로 다른 줄에 선
+ * 둘이 같은 계획·세션을 동시에 고친다. 여기서 판정되는 것은 **그 창이 닫혔는가**다.
+ */
+describe("도는 중에는 지우지 않는다", () => {
+  let server: Server;
+  let slowRoot: string;
+  let slowOut: string;
+  let jobUrl: string;
+
+  /** 3초를 그냥 흘려보내는 명령. 도는 중이라는 상태를 만들려는 것이 전부다 */
+  const SLEEP = ["node", "-e", "setTimeout(() => {}, 3000)"];
+
+  /**
+   * 명령 실행은 `kind: verify` 단계에서만 된다. 그래서 만드는 단계 하나와 돌리는 단계
+   * 하나를 두고, 사이의 4차 게이트는 꺼 둔다 — 여기서 재는 것은 게이트가 아니라 삭제다.
+   */
+  const SLOW_MANIFEST = {
+    ...MANIFEST,
+    commands: { slow: SLEEP },
+    stages: [
+      { ...MANIFEST.stages[0], confirm: false },
+      {
+        key: "check",
+        title: "검증",
+        template: "03-check.md",
+        kind: "verify",
+        confirm: false,
+        exemplars: [],
+        outputDirs: ["."],
+      },
+    ],
+  };
+
+  /** 이 저장소의 단계는 model 하나뿐이다 — 계획도 그만큼만 담는다 */
+  const SLOW_PLAN = JSON.stringify({
+    domainName: "shipment",
+    domainLabel: "배송",
+    domainRoot: "",
+    domainDirName: "shipment",
+    files: [{ stage: "model", path: "app/features/shipment/models.py", purpose: "배송 모델" }],
+    conventions: [{ rule: "dataclass 를 쓴다", source: "doc/conventions.md" }],
+    conflicts: [],
+    openQuestions: [],
+    reasoning: "참조 도메인 구조를 그대로 따랐다",
+  });
+
+  before(async () => {
+    slowRoot = mkdtempSync(join(tmpdir(), "code-agent-slow-"));
+    const repo = join(slowRoot, "repo");
+    slowOut = join(slowRoot, "out");
+
+    const put = (relativePath: string, content: string) => {
+      const path = join(repo, relativePath);
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, content, "utf-8");
+    };
+
+    put("app/features/orders/models.py", "class Order:\n    pass\n");
+    put("app/features/orders/service.py", "class OrderService:\n    pass\n");
+    put("doc/conventions.md", "# 컨벤션\n- dataclass 를 쓴다.\n");
+    put("doc/templates/01-model.md", "# [01] 모델\n");
+    put("doc/templates/03-check.md", "# [03] 검증\n");
+    // 검증 명령이 실제로 돌아야 "도는 중"이 만들어진다 — 그래서 slow 를 선언해 둔다.
+    put("doc/templates/code-agent.json", JSON.stringify(SLOW_MANIFEST, null, 2));
+
+    // 검증은 임시 worktree 를 만들어 돈다. git 저장소가 아니면 그 자리에서 빨리 끝나 버린다.
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], {
+      cwd: repo,
+    });
+
+    writeFileSync(
+      join(slowRoot, "spec.md"),
+      "---\nkind: feature\nid: SLOW-1\ntitle: 배송 도메인 추가\ntarget: shipment\n---\n\n" +
+        "# 배송(shipment) 도메인. 필드: id\n",
+      "utf-8",
+    );
+
+    const statePathSlow = join(slowRoot, "jobs.json");
+    const job = await new JobStore(statePathSlow).create({
+      label: "slow",
+      repo,
+      templates: "doc/templates",
+      out: slowOut,
+      specs: [join(slowRoot, "spec.md")],
+    });
+
+    server = serve({ port: 0, host: "127.0.0.1", statePath: statePathSlow });
+    await once(server, "listening");
+    jobUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/jobs/${job.id}`;
+  });
+
+  after(() => {
+    server.close();
+    rmSync(slowRoot, { recursive: true, force: true });
+  });
+
+  /** 화면이 하는 것과 같은 왕복 한 번 */
+  async function send(text: string): Promise<Response> {
+    const token = ((await (await fetch(`${jobUrl}/prompt`)).json()) as { token: string }).token;
+    return fetch(`${jobUrl}/response`, {
+      method: "POST",
+      headers: { ...INTENT, "content-type": "text/plain; charset=utf-8", "x-code-agent-turn": token },
+      body: text,
+    });
+  }
+
+  async function running(): Promise<{ what: string } | undefined> {
+    const state = (await (await fetch(jobUrl)).json()) as { running?: { what: string } };
+    return state.running;
+  }
+
+  test("검증이 도는 중에 지우면 409 로 거부하고 작업은 남는다", async () => {
+    assert.equal((await send(SLOW_PLAN)).status, 200);
+
+    // 계획 승인(2차)을 지나야 생성 단계에 선다.
+    const approved = await fetch(`${jobUrl}/approval`, {
+      method: "POST",
+      headers: { ...INTENT, "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approved", approver: "팀장" }),
+    });
+    assert.equal(approved.status, 200);
+
+    // 생성물이 있어야 검증이 건너뛰지 않는다. 쓰고, 모델 검수(3차)를 지나 verify 단계로.
+    assert.equal((await send(MODEL_RESPONSE)).status, 200);
+    assert.equal((await send(JSON.stringify({ violations: [] }))).status, 200);
+
+    // 3초짜리 검증을 건다. 기다리지 않는다 — 도는 중에 지워 보는 것이 이 테스트다.
+    const inFlight = send("### run slow\n\n### done\n");
+
+    // 폴링은 조회라 줄에 서지 않는다. 실제로 돌기 시작한 것을 보고 나서 지운다.
+    let seen: { what: string } | undefined;
+    for (let attempt = 0; attempt < 100 && !seen; attempt += 1) {
+      seen = await running();
+    }
+    assert.ok(seen, "검증이 도는 상태를 만들지 못했다 — 이 테스트는 그 위에서만 뜻이 있다");
+
+    const dropped = await fetch(jobUrl, { method: "DELETE", headers: INTENT });
+
+    assert.equal(dropped.status, 409, "도는 중 삭제는 요청 오류(400)가 아니라 충돌이다");
+    const body = (await dropped.json()) as { error: string };
+    assert.match(body.error, /도는 중이라 지우지 않았습니다/);
+    assert.match(body.error, /끝난 뒤에 다시 지우세요/, "무엇을 하면 되는지까지 알려 줘야 한다");
+
+    // 목록에 그대로 있어야 한다 — 지워졌다면 같은 out 으로 새 작업을 만들 수 있게 된다.
+    assert.equal((await fetch(jobUrl)).status, 200);
+
+    await inFlight;
+  });
+
+  test("끝나면 지워진다", async () => {
+    for (let attempt = 0; attempt < 200 && (await running()); attempt += 1) {
+      // 앞 테스트가 걸어 둔 검증이 끝나기를 기다린다.
+    }
+    assert.equal(await running(), undefined);
+
+    const dropped = await fetch(jobUrl, { method: "DELETE", headers: INTENT });
+
+    assert.equal(dropped.status, 200);
+    assert.equal((await fetch(jobUrl)).status, 404);
   });
 });

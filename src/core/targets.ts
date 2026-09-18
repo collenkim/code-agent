@@ -6,7 +6,7 @@
  *
  * ```
  * out/                          ← --out (지시서 하나의 뿌리)
- *   .code-agent/run.json        지시서 단위 상태 — 스펙 경로 · 프롬프트를 내준 대상
+ *   .code-agent/run.json        지시서 단위 상태 — 스펙 경로 · 내준 대상 · 굳힌 커밋
  *   PROJ-1421/
  *     app-settlement/           ← 레인 하나. 계획 · 질문 · 세션 · 생성물이 여기 있다
  *     app-common-tx/            ← 〃
@@ -28,6 +28,7 @@ import type { Target } from "./session";
 import { needsIntake } from "./specSchema";
 import type { SpecSchema } from "./specSchema";
 import { loadPlan, loadStageFiles, PLAN_FILE } from "./state";
+import type { JobRefs } from "./types";
 import { slug } from "./workOrder";
 import type { WorkOrder } from "./workOrder";
 
@@ -55,6 +56,14 @@ export interface RunState {
   specPaths: string[];
   /** 프롬프트를 마지막으로 내준 자리. 돌아온 응답이 그 자리의 것인지 대조한다 */
   issued?: { id: string; token: string };
+  /**
+   * 이 작업이 딛는 자리. **처음 한 번만 굳고 이후 호출은 이것을 다시 쓴다.**
+   *
+   * CLI 는 명령마다 새 프로세스라 매번 다시 굳히면 굳힌 것이 아니다 — `next` 와 `apply`
+   * 사이에 브랜치가 움직이거나 다른 브랜치를 체크아웃하면 검증이 다른 커밋 위에 선다.
+   * 서버는 작업 목록에 들고 있으므로 이 자리를 쓰지 않는다.
+   */
+  refs?: JobRefs;
 }
 
 export function runStatePath(baseOut: string): string {
@@ -67,7 +76,7 @@ export function readRunState(baseOut: string): RunState {
     return { specPaths: [] };
   }
   const stored = JSON.parse(readFileSync(path, "utf-8")) as Partial<RunState>;
-  return { specPaths: stored.specPaths ?? [], issued: stored.issued };
+  return { specPaths: stored.specPaths ?? [], issued: stored.issued, refs: stored.refs };
 }
 
 export function writeRunState(baseOut: string, state: RunState): void {
@@ -101,6 +110,16 @@ export function rememberIssuedToken(baseOut: string, id: string, token: string):
   writeRunState(baseOut, { ...readRunState(baseOut), issued: { id, token } });
 }
 
+/** 앞선 호출이 굳혀 둔 자리. 없으면 아직 굳힌 적이 없다 */
+export function rememberedRefs(baseOut: string): JobRefs | undefined {
+  return readRunState(baseOut).refs;
+}
+
+/** 처음 굳힌 자리를 적어 둔다. 한 번 적히면 이후 호출은 이것을 다시 쓴다 */
+export function rememberRefs(baseOut: string, refs: JobRefs): void {
+  writeRunState(baseOut, { ...readRunState(baseOut), refs });
+}
+
 /**
  * 마지막으로 프롬프트를 내준 자리의 토큰. 읽고 나면 지운다.
  *
@@ -116,7 +135,8 @@ export function takeIssuedToken(baseOut: string): string | undefined {
   if (!state.issued) {
     return undefined;
   }
-  writeRunState(baseOut, { specPaths: state.specPaths });
+  // 지우는 것은 토큰 하나다. 나머지를 같이 떨어뜨리면 기억해 둔 것이 조용히 사라진다.
+  writeRunState(baseOut, { ...state, issued: undefined });
   return state.issued.token;
 }
 

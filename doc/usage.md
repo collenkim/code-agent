@@ -343,11 +343,16 @@ Content-Type: application/json; charset=utf-8
   "templates": "C:/IdeaProjects/legacy-app/doc/templates",
   "out": "C:/IdeaProjects/code-agent/out-legacy",
   "specs": ["C:/IdeaProjects/legacy-app/spec.md"],
-  "reference": "order"
+  "reference": "order",
+  "workRef": "feature/ORD-42",
+  "baseRef": "master"
 }
 ```
 
 - **문서 내용이 아니라 경로만** 보낸다. 파일은 서버가 읽으므로 이스케이프할 일이 없다.
+- `workRef` 는 생성물을 얹어 검증할 바탕, `baseRef` 는 어디서 갈라져 나왔는지다. 생략하면
+  각각 대상 저장소의 지금 HEAD 와 `master`(없으면 `main`)다. **둘 다 여기서 커밋으로 굳는다** —
+  진행 중인 레거시 브랜치에서 남이 체크아웃을 바꿔도 검증은 굳은 커밋 위에서 돈다.
 - 경로는 서버 프로세스가 보는 로컬 경로다. 역슬래시 대신 `/` 가 안전하다.
 - `201` 과 함께 상태가 돌아온다. **`id` 를 환경 변수 `job` 에 넣는다.**
 

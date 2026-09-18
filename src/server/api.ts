@@ -15,6 +15,7 @@ import type { PendingQuestion } from "../core/session";
 import { describeTarget } from "../core/session";
 import { loadPlan } from "../core/state";
 import { applyResponse, decideApproval, hasPlan, nextPrompt } from "../core/turn";
+import type { JobRefs } from "../core/types";
 import type { JobStore } from "./jobs";
 
 /** 지시서의 대상 하나와 그 상태 */
@@ -36,6 +37,8 @@ export interface StatusView {
   label: string;
   repoRoot: string;
   outDir: string;
+  /** 이 작업이 딛고 선 자리. git 저장소가 아니거나 커밋이 없으면 없다 */
+  refs?: JobRefs;
   /** 지금 할 차례. 대상이 여럿이면 `대상:단계` 로 나온다 */
   target: string;
   /** 대상 이름을 뺀 단계만 — plan · 단계키 · gate:단계키 · approval · blocked · done */
@@ -112,6 +115,7 @@ export function status(store: JobStore, id: string): StatusView {
     label: job.label,
     repoRoot: job.context.repoRoot,
     outDir: job.context.outDir,
+    ...(job.context.refs ? { refs: job.context.refs } : {}),
     target: next.label,
     step: describeTarget(next.target),
     lane: next.lane,
