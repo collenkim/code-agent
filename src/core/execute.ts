@@ -48,6 +48,8 @@ export interface ExecuteOutcome {
 export interface ExecuteInput {
   repoRoot: string;
   outDir: string;
+  /** 검증 worktree 가 설 커밋. 작업을 만들 때 굳혀 둔 것이고, 없으면 그때의 HEAD 다 */
+  workCommit?: string;
   /** 앞 턴들에서 확인해 둔 이 단계의 검증 결과. 파일이 바뀌면 세션이 지운다 */
   verified?: "pass" | "fail" | "error";
   /** 사람이 확정한 경계. 매니페스트보다 이쪽이 상한선이다 */
@@ -240,6 +242,7 @@ async function observeRun(
     input.outDir,
     generated,
     command,
+    input.workCommit,
   );
 
   // 안 돌린 것·못 돌린 것·통과한 것·실패한 것을 같은 말로 알리면, 검증하지 않은 코드를

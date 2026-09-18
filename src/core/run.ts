@@ -175,13 +175,27 @@ export async function runBuild(input: BuildContext): Promise<BuildOutcome> {
   emitFiles(context.outDir, results);
 
   const build = context.build
-    ? await verifyByBuild(context.repoRoot, manifest, context.outDir, results, "build")
+    ? await verifyByBuild(
+        context.repoRoot,
+        manifest,
+        context.outDir,
+        results,
+        "build",
+        context.refs?.work.commit,
+      )
     : undefined;
 
   // 테스트 실패는 재생성으로 되돌리지 않는다. 통과시키려고 단언을 지우는 것이 전형적인 실패
   // 모드라, 테스트가 틀렸는지 코드가 틀렸는지의 판단은 사람에게 남긴다.
   const test = context.test
-    ? await verifyByBuild(context.repoRoot, manifest, context.outDir, results, "test")
+    ? await verifyByBuild(
+        context.repoRoot,
+        manifest,
+        context.outDir,
+        results,
+        "test",
+        context.refs?.work.commit,
+      )
     : undefined;
 
   return { plan, stages: results, build, test, conventionsSource };

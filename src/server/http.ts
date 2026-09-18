@@ -58,6 +58,9 @@ export interface ServeOptions {
 /** 없는 작업과 남의 작업을 같은 말로 돌려주기 위한 것 — 있다는 사실도 알리지 않는다 */
 class NotFound extends Error {}
 
+/** 지금은 받을 수 없다. 본문을 고쳐서 될 일이 아니라 끝나기를 기다려야 하는 것이다 */
+class Conflict extends Error {}
+
 /** 상태를 바꾸는 요청에 요구하는 헤더. 값은 보지 않는다 — 있다는 것 자체가 preflight 의 증거다 */
 const INTENT_HEADER = "x-code-agent";
 
@@ -298,7 +301,7 @@ async function route(
     }
     if (method === "POST") {
       const input = await readJson<JobInput>(req);
-      const job = store.create(input, requester);
+      const job = await store.create(input, requester);
       try {
         json(res, 201, api.status(store, job.id));
       } catch (error) {
@@ -350,6 +353,16 @@ async function route(
       return;
     }
     if (!action && method === "DELETE") {
+      // 도는 중에 지우면 그 실행은 멈추지 않는다 — 목록에서만 사라진 채 out/ 을 계속 쓴다.
+      // 그 사이 같은 out 으로 새 작업을 만들면 중복 검사도 통과해, 서로 다른 줄에 선 둘이
+      // 같은 세션·계획을 동시에 고친다. 끝난 뒤에 지우는 것 말고는 안전한 순서가 없다.
+      const running = queue.runningOn(id);
+      if (running) {
+        throw new Conflict(
+          `지금 "${running.what}" 이(가) 도는 중이라 지우지 않았습니다 (${running.since} 시작).\n` +
+            "  끝난 뒤에 다시 지우세요 — GET /api/jobs/:id 의 running 이 비면 끝난 것입니다.",
+        );
+      }
       store.remove(id);
       queue.release(id);
       json(res, 200, { removed: id });
@@ -427,14 +440,14 @@ export function serve(options: ServeOptions): Server {
     route(store, queue, options, req, res, trace).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
       trace.error = message;
-      // 지나간 자리의 응답은 **사용자가 고칠 수 없는 충돌**이라 400 과 구분한다 —
-      // 클라이언트가 이것을 보고 프롬프트를 다시 받아야 하는지 판단할 수 있어야 한다.
+      // 지나간 자리의 응답과 도는 중인 작업은 **사용자가 고칠 수 없는 충돌**이라 400 과
+      // 구분한다 — 클라이언트가 이것을 보고 다시 받아야 하는지 기다려야 하는지 판단한다.
       const code =
         err instanceof Unauthorized
           ? 401
           : err instanceof NotFound
             ? 404
-            : err instanceof TurnMismatchError
+            : err instanceof TurnMismatchError || err instanceof Conflict
               ? 409
               : 400;
       if (!res.headersSent) {

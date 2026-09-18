@@ -1,6 +1,33 @@
 import type { SpecSchema } from "./specSchema";
 import type { WorkOrder } from "./workOrder";
 
+/** 이름 하나와, 그 이름이 작업을 만들 때 가리키던 커밋. 커밋은 그 뒤로 움직이지 않는다 */
+export interface RefPin {
+  /** 사람이 적은 이름 — `master`·`feat/x`·태그 무엇이든 */
+  ref: string;
+  /** 굳혀 둔 커밋 */
+  commit: string;
+}
+
+/**
+ * 이 작업이 딛고 선 자리.
+ *
+ * 브랜치 이름은 움직이고 체크아웃도 바뀐다. 굳혀 두지 않으면 같은 작업이 언제 검증하느냐에
+ * 따라 다른 코드를 보게 되므로, 작업을 만들 때 커밋으로 바꿔 두고 그 뒤로는 커밋만 쓴다.
+ */
+export interface JobRefs {
+  /** 작업 브랜치 — 생성물을 얹어 검증할 바탕 */
+  work: RefPin;
+  /**
+   * 비교 브랜치 — 이 작업이 어디서 갈라져 나왔는지.
+   *
+   * **없을 수 있다.** 적어 주지도 않았고 `master` 도 `main` 도 없는 저장소라면 짐작하지
+   * 않는다. 비교 대상은 기록이지 검증이 딛는 자리가 아니므로, 그것 하나 때문에 작업을
+   * 막지 않는다 — 기본 브랜치 이름이 다른 저장소가 통째로 못 쓰게 되는 편이 더 나쁘다.
+   */
+  base?: RefPin;
+}
+
 /** 코드 생성 1회 실행의 입력 일체 */
 export interface BuildContext {
   /** 요구사항·정책·기능·입출력이 적힌 스펙 문서 경로들 (여러 장 허용) */
@@ -31,6 +58,11 @@ export interface BuildContext {
   referenceDomain?: string;
   /** 생성 결과를 쓸 staging 디렉토리 — 대상 저장소는 건드리지 않는다 */
   outDir: string;
+  /**
+   * 작업·비교 브랜치. **git 저장소일 때만 있다** — 스펙만 두는 폴더에는 없다.
+   * 검증 worktree 는 `refs.work.commit` 위에 선다.
+   */
+  refs?: JobRefs;
   /** 실행할 단계 키. 생략 시 전체 단계 */
   onlyStages?: string[];
   /** 단계별 자가검증 게이트 실행 여부. 기본 true — false만 명시적으로 꺼짐 */

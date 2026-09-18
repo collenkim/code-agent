@@ -930,6 +930,7 @@ export async function applyResponse(
   const execution = await executeActions({
     repoRoot: context.repoRoot,
     outDir: context.outDir,
+    workCommit: context.refs?.work.commit,
     order: context.workOrder,
     // 앞 턴들에서 확인해 둔 결과. 그 뒤로 파일이 바뀌었으면 이미 지워져 있다.
     verified: session.verified[target.stage.key],

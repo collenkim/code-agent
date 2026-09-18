@@ -509,7 +509,7 @@ $ code-agent apply answer.txt …
 
 ```
 out/                            ← --out (지시서 하나의 뿌리)
-  .code-agent/run.json          스펙 경로 · 프롬프트를 내준 대상
+  .code-agent/run.json          스펙 경로 · 프롬프트를 내준 대상 · 굳힌 커밋(작업·비교 브랜치)
   PROJ-1421/
     app-settlement/             ← 레인 하나. 계획 · 질문 · 세션 · 생성물이 여기 있다
     app-common-tx/              ← 〃
@@ -782,7 +782,7 @@ code-agent serve
 | 메서드 · 경로 | 하는 일 |
 |---|---|
 | `GET /api/jobs` | 작업 목록과 각 상태. 인증이 켜져 있으면 **내 것만** 나온다 |
-| `POST /api/jobs` | 작업 생성 `{repo, templates, out, specs[], reference?}` |
+| `POST /api/jobs` | 작업 생성 `{repo, templates, out, specs[], reference?, workRef?, baseRef?}` |
 | `GET /api/jobs/:id` | 지금 할 차례 · 턴 · 미결 질문 · 앞 턴의 위반 · 진행 중인 실행 |
 | `GET /api/jobs/:id/prompt` | 붙여넣을 프롬프트와 그 자리의 `token`. **상태를 바꾸지 않는다 — 디스크에도 쓰지 않는다** |
 | `POST /api/jobs/:id/response` | 응답 전문을 반영. 상태를 움직이는 유일한 지점. `X-Code-Agent-Turn` 필수 |
@@ -790,7 +790,7 @@ code-agent serve
 | `POST /api/jobs/:id/questions` | `{answers: [{id, answer}]}` |
 | `POST /api/jobs/:id/approval` | `{decision: "approved"\|"rejected", comment, target}` — 2차·4차 게이트. 지금 기다리는 것에 판정한다 |
 | `GET /api/jobs/:id/log` | 턴 기록 |
-| `DELETE /api/jobs/:id` | 목록에서 제거 (out/ 은 그대로) |
+| `DELETE /api/jobs/:id` | 목록에서 제거 (out/ 은 그대로). **도는 중이면 409** — 지워도 실행은 멈추지 않으므로, 끝난 뒤에 지운다 |
 
 ### 요청에 붙는 헤더
 
@@ -1121,6 +1121,8 @@ code-agent --repo … --templates … --spec … --out ./out --build
 | `--step` | — | 예전 방식 대상: `plan` \| 단계키 \| `gate:단계키` |
 | `--emit-prompt` | off | 예전 방식 — 붙여넣을 프롬프트를 표준출력으로 |
 | `--ingest <파일>` | — | 예전 방식 — 응답(JSON)을 읽어 계획 저장 또는 파일 생성 |
+| `--work-ref` | 대상 저장소의 지금 HEAD | 생성물을 얹어 검증할 바탕. **첫 호출에서 커밋으로 굳어 `out/.code-agent/run.json` 에 적히고, 이후 호출은 적힌 것을 쓴다** — 명령 사이에 브랜치가 움직여도 같은 커밋 위에서 검증한다. 굳은 뒤 다른 이름을 주면 거절한다 |
+| `--base-ref` | `master` (없으면 `main`, 그것도 없으면 비워 둠) | 비교 브랜치 — 어디서 갈라져 나왔는지. 같이 굳는다 |
 | `--conventions` | 매니페스트 | 매니페스트의 `conventions` 선언을 덮어씀 |
 | `--reference` | 매니페스트 | 매니페스트의 `referenceDomain`을 덮어씀 |
 | `--out` | `./out` | 생성 결과를 쓸 staging 디렉토리 |
