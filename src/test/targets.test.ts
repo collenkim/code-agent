@@ -240,6 +240,8 @@ describe("같은 지시서의 두 대상이 같은 파일을 고칠 수 없다",
       domainRoots: [],
       conventions: [],
       commands: {},
+      docs: {},
+      git: { base: "master" },
       workOrder: { attributes: [], requireApprover: false, requireVerifiedApproval: false },
       stages: [
         {
