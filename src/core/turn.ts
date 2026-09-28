@@ -239,7 +239,7 @@ function approvalMessage(
     `[${decided}] planHash: ${state.record.planHash} (${state.record.approver} · ${state.record.at})`,
     `[변경됨] planHash: ${hashPlan(plan)}`,
     "─".repeat(60),
-    formatDiff(state.diff),
+    formatDiff(state.status === "stale-plan" ? state.diff : []),
     "",
     `계획 전문: ${planPath}`,
     "",

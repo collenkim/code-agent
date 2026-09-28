@@ -97,9 +97,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
     join(repoRoot, ".gitignore"),
     GITIGNORE_START,
     GITIGNORE_END,
-    `${STATE_DIR}/active.json\n${STATE_DIR}/log/`,
+    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/log/`,
   );
-  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, .code-agent/log/)");
+  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, log/)");
 
   mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   const version = packageVersion();

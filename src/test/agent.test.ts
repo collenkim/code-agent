@@ -11,7 +11,8 @@ import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { loadActive, saveActive } from "../agent/layout";
 import { parseQuestions } from "../agent/questions";
-import { loadWork } from "../agent/work";
+import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
+import { loadManifestIfAny, loadWork } from "../agent/work";
 
 const APP = "src/main/java/com/acme/app/application";
 const ORDER = `${APP}/order`;
@@ -47,7 +48,32 @@ const PLAN = {
   reasoning: "테스트",
 };
 
+const ARCH = [
+  "# 아키텍처",
+  "## 기술 스택", "Java 21, Spring Boot 3",
+  "## 모듈/패키지 구조", "com.acme.app.<분류>.<도메인>.<계층>",
+  "## 계층과 책임", "- domain: 엔티티", "- repository: 저장소",
+  "## 의존 방향", "repository → domain",
+  "## 공통 모듈", "없음",
+  "## 주요 결정", "- 식별자: Long auto increment",
+].join("\n");
+
+const CONV = [
+  "# 코드 컨벤션",
+  "## 명명", "- 저장소는 <Entity>Repository",
+  "## 계층별 규칙", "- 엔티티 필드는 private",
+  "## 예외 처리", "- 공통 BusinessException",
+  "## 테스트 규칙", "- 슬라이스 테스트",
+].join("\n");
+
 let repo: string;
+
+/** 사람의 문서 확정을 흉내 낸다 — 원장에 쓰는 것은 실제 함수 그대로다 */
+function confirmDocs(): void {
+  for (const check of checkProjectDocs(repo, loadManifestIfAny(repo))) {
+    recordDocConfirmation(repo, check, "test", { channel: "tty", verified: true, detail: "테스트" });
+  }
+}
 
 function write(path: string, content: string): void {
   mkdirSync(dirname(join(repo, path)), { recursive: true });
@@ -107,8 +133,9 @@ beforeEach(() => {
   repo = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-agent-")));
   execFileSync("git", ["init", "-q", "-b", "master"], { cwd: repo });
   write("code-agent.json", JSON.stringify(MANIFEST));
-  write("doc/architecture.md", "# 아키텍처\n");
-  write("doc/conventions.md", "# 컨벤션\n");
+  write("doc/architecture.md", ARCH);
+  write("doc/conventions.md", CONV);
+  confirmDocs();
   write(`${APP}/deal/domain/Deal.java`, "public class Deal {}\n");
   write(`${APP}/deal/repository/DealRepository.java`, "public interface DealRepository {}\n");
   write("doc/work/ORD-1.md", "---\nkind: feature\nid: ORD-1\ntitle: 주문 도메인 추가\ntarget: order\n---\n\n주문은 id, 주문번호, 금액을 가진다.\n");
@@ -231,14 +258,24 @@ describe("start — 문서 게이트와 작업 브랜치", () => {
       error instanceof Stop && /아키텍처: 파일이 없습니다/.test(error.message));
   });
 
-  test("아키텍처가 등록되지 않았으면 시작하지 않는다", () => {
-    write("code-agent.json", JSON.stringify({ ...MANIFEST, docs: {} }));
-    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /docs\.architecture 에 경로가 없습니다/);
+  test("등록한 아키텍처 경로에 파일이 없으면 시작하지 않는다", () => {
+    write("code-agent.json", JSON.stringify({ ...MANIFEST, docs: { architecture: "doc/arch/overview.md" } }));
+    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /아키텍처: 파일이 없습니다: doc\/arch\/overview\.md/);
   });
 
-  test("컨벤션이 없으면 시작하지 않는다", () => {
-    write("code-agent.json", JSON.stringify({ ...MANIFEST, conventions: [] }));
-    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /코드 컨벤션/);
+  test("컨벤션 문서가 없으면 시작하지 않는다", () => {
+    rmSync(join(repo, "doc/conventions.md"));
+    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /코드 컨벤션: 파일이 없습니다/);
+  });
+
+  test("확정되지 않은 문서로는 시작하지 않는다", () => {
+    rmSync(join(repo, ".code-agent/approvals/docs.jsonl"));
+    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /사람의 확정이 없습니다/);
+  });
+
+  test("확정 뒤 바뀐 문서로는 시작하지 않는다", () => {
+    write("doc/architecture.md", `${ARCH}\n## 추가\n내용\n`);
+    assert.throws(() => start(repo, join(repo, "doc/work/ORD-1.md")), /확정 뒤 내용이 바뀌었습니다/);
   });
 
   test("기준 브랜치(기본 master)에서 <종류>/<ID> 를 딴다", () => {

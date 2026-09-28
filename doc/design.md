@@ -32,9 +32,16 @@
 
 통과 조건 — 둘 다 셋을 만족해야 어떤 작업도 요구사항 분석 이후로 가지 않는다.
 
-1. 파일이 있다 (`code-agent.json` 의 `docs` 에 등록된 경로)
-2. 필수 섹션이 있고 비어 있지 않다 — 섹션 목록은 문서 종류별 스키마(`doc-schemas/*.json`)가 정한다
-3. **사람이 확정했다** — `code-agent confirm doc <종류>` 가 문서 해시를 원장에 남긴다. 확정 뒤 바뀌면 다시 확정한다
+1. 파일이 있다 — `code-agent.json` 의 `docs.architecture` · `conventions`. 등록이 없으면(매니페스트가 아직 없는 신규 포함)
+   기본 경로 `doc/architecture.md` · `doc/conventions.md` 를 본다. 컨벤션은 디렉토리여도 된다 (그 아래 `.md` 전부)
+2. 필수 섹션이 있고 비어 있지 않다 — 섹션 목록·별칭은 `src/agent/schemas.ts` 가 정한다. 제목의 번호·띄어쓰기는 가리지 않는다.
+   **`확인 필요` 가 남은 필수 섹션은 채워지지 않은 것이다** — 역공학이 코드로 알 수 없는 자리에 남기는 표시라, 답을 받기 전에는 통과하지 못한다
+3. **사람이 확정했다** — `code-agent confirm doc <종류>`(터미널)가 문서 해시를 `.code-agent/approvals/docs.jsonl`(해시 사슬)에 남긴다.
+   확정 뒤 바뀌면 다시 확정한다. 줄바꿈(CRLF/LF)만 바뀐 것은 바뀐 것으로 보지 않는다
+
+**문서 작성 세션** — `/ca-docs` · `/ca-adopt` 는 `code-agent docs begin` 으로 세션을 열고, 그동안 hook 이
+문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기를 막는다. 문서를 쓰다가 코드를 "고쳐 두는" 일을 막는 것이다.
+작업이 진행 중이면 세션을 열지 않는다 — 근거 문서는 작업 도중에 바꾸지 않는다.
 
 ### 2.2 작업 문서 — 요구사항에 따라 유동적
 
@@ -269,6 +276,10 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | 터미널 (사람) | 하는 일 |
 |---|---|
 | `code-agent docs` | 문서 게이트 상태 — 종류별 있음·섹션·확정 여부 |
+
+스킬이 부르는 문서 명령: `docs begin · end`(세션) · `docs skeleton <종류>`(섹션 뼈대) · `docs interview <종류>`(사용자 입력 질문) ·
+`docs link <종류> <경로>`(기존 문서 연결) · `survey`(뼈대 역공학용 저장소 개요 — 빌드·언어·구조·계층 후보·표본) ·
+`manifest check`(도입한 매니페스트가 참조 파일을 실제로 찾는지).
 | `code-agent confirm doc <종류>` | 프로젝트 필수 문서 확정 (해시를 원장에) |
 | `code-agent approve` · `reject` | 계획 + 작업 문서 판정 (diff 표시, 반려 사유 필수) |
 | `code-agent status` · `abort` · `usage` | 상태 · 중단 · 토큰 집계 |

@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
+import { checkApproval } from "../core/approval";
+import type { ApprovalState } from "../core/approval";
 import { loadManifest, MANIFEST_FILE, stagesFor } from "../core/manifest";
 import type { Manifest, StageDef } from "../core/manifest";
 import type { BuildPlan } from "../core/types";
 import { loadWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
+import { checkProjectDocs, projectDocsHash } from "./docs";
 import { loadActive, planFile } from "./layout";
 import type { ActiveWork } from "./layout";
 
@@ -31,6 +34,21 @@ export function readOrder(repoRoot: string, spec: string, manifest: Manifest): W
   return loadWorkOrder(repoRoot, [join(repoRoot, spec)], {
     attributes: manifest.workOrder.attributes,
     requireApprover: manifest.workOrder.requireApprover,
+  });
+}
+
+/**
+ * 지금 계획의 승인 상태. 판정하는 곳이 여럿이라(hook·next·status·approve) 기준을 한 벌로 둔다 —
+ * 한 곳만 문서 해시를 빠뜨리면 거기가 구멍이 된다.
+ */
+export function approvalOf(work: Work): ApprovalState {
+  if (!work.plan) {
+    return { status: "none" };
+  }
+  return checkApproval(work.repoRoot, work.order, work.plan, work.active.target, {
+    manifest: work.manifest,
+    requireVerifiedApproval: work.manifest.workOrder.requireVerifiedApproval,
+    docsHash: projectDocsHash(checkProjectDocs(work.repoRoot, work.manifest)),
   });
 }
 

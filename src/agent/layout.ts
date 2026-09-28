@@ -12,6 +12,8 @@ import { writeAtomic } from "../core/atomic";
 export const STATE_DIR = ".code-agent";
 export const ACTIVE_FILE = `${STATE_DIR}/active.json`;
 export const WORK_DOCS_DIR = "doc/work";
+/** 문서 작성 세션 — 있는 동안 hook 이 문서 자리 밖 쓰기를 막는다 */
+export const DOCS_SESSION_FILE = `${STATE_DIR}/docs-session.json`;
 
 export const PHASES = ["analysis", "research", "plan", "implement", "verify", "handoff"] as const;
 export type Phase = (typeof PHASES)[number];
