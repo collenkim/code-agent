@@ -50,6 +50,10 @@ export const PlanSchema = z.object({
         stage: z.string().describe("이 파일을 만들 단계 키"),
         path: z.string().describe("저장소 루트 기준 상대경로"),
         purpose: z.string().describe("이 파일이 담당하는 것 한 줄"),
+        requirements: z
+          .array(z.string())
+          .optional()
+          .describe("이 파일이 담당하는 요구 항목 번호 (analysis.md 의 R1, R2 …)"),
       }),
     )
     .describe("생성할 파일 목록 — 참조 표준 도메인의 파일 구조를 그대로 따른다"),
@@ -70,6 +74,10 @@ export const RefactorPlanSchema = z.object({
         stage: z.string().describe("이 파일을 만들거나 고칠 단계 키"),
         path: z.string().describe("저장소 루트 기준 상대경로"),
         purpose: z.string().describe("무엇을 어떻게 하는지 한 줄"),
+        requirements: z
+          .array(z.string())
+          .optional()
+          .describe("이 파일이 담당하는 요구 항목 번호 (analysis.md 의 R1, R2 …)"),
       }),
     )
     .describe("고칠 파일 목록. 재현 테스트를 빼면 새 파일을 발명하지 않는다"),
@@ -258,7 +266,7 @@ const PLAN_SHAPE = `{
   "domainLabel": "사람이 읽는 이름",
   "domainRoot": "도메인 분류 (없으면 \\"\\")",
   "domainDirName": "실제 디렉토리 이름",
-  "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명" }],
+  "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
   "openQuestions": ["사람이 답해야 하는 것"],
@@ -266,7 +274,7 @@ const PLAN_SHAPE = `{
 }`;
 
 const REFACTOR_PLAN_SHAPE = `{
-  "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지" }],
+  "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지", "requirements": ["R1"] }],
   "preserve": [{ "item": "지시서의 문장 그대로", "how": "이번 변경에서 어떻게 지켜지는지" }],
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],

@@ -66,6 +66,8 @@ function markdownFiles(repoRoot: string, path: string): string[] {
 function normalizeHeading(text: string): string {
   return text
     .replace(/^[\d.)\s]+/, "")
+    // 뒤에 붙은 괄호 설명은 제목이 아니다 — "응답 (성공, HTTP 200)" 은 "응답" 이다
+    .replace(/\s*\([^)]*\)\s*$/, "")
     .replace(/[`*_]/g, "")
     .replace(/\s+/g, "")
     .toLowerCase();
@@ -104,7 +106,7 @@ export function checkSections(schema: DocSchema, text: string): SectionState[] {
   });
 }
 
-function sha(text: string): string {
+export function sha(text: string): string {
   return `sha256:${createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 16)}`;
 }
 

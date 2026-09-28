@@ -21,7 +21,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 
 스킬이 부른다 (Claude Code 안):
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지)
-  code-agent docs skeleton <종류>     빈 문서의 섹션 뼈대
+  code-agent docs skeleton <종류>     빈 문서의 섹션 뼈대 (architecture · conventions · 작업 문서 data · api · current)
   code-agent docs interview <종류> [--sections a,b]   사용자 입력으로 채울 때 묻는 것
   code-agent docs link <종류> <경로...>  이미 있는 문서를 등록
   code-agent survey                   뼈대 역공학용 저장소 개요 (빌드·언어·구조·계층 후보·표본)

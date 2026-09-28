@@ -10,7 +10,9 @@ import { stagesFor } from "../core/manifest";
 import type { StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
-import { checkProjectDocs, docsReady, formatDocChecks, projectDocsHash } from "./docs";
+import { analysisFile, loadAnalysis, workDocProblems } from "./analysis";
+import type { Analysis } from "./analysis";
+import { checkProjectDocs, docsReady, formatDocChecks } from "./docs";
 import {
   canonical,
   clearActive,
@@ -25,7 +27,7 @@ import type { ActiveWork, Phase } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { confirmOnTerminal } from "./tty";
-import { approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
+import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
 
 /** 사람이 고칠 수 있는 이유로 멈출 때. 스택 없이 메시지만 보인다 */
@@ -70,6 +72,70 @@ function requireAnswers(repoRoot: string, active: ActiveWork): void {
         "\n/ca-answer 로 답하세요.",
     );
   }
+}
+
+/** 분석 결과. 없거나 형식이 틀리면 멈춘다 — 뒤 스테이지의 검사가 전부 여기에 기댄다 */
+function requireAnalysis(repoRoot: string, active: ActiveWork): Analysis {
+  let analysis: Analysis | undefined;
+  try {
+    analysis = loadAnalysis(repoRoot, active.id);
+  } catch (error) {
+    const lines = (error instanceof Error ? error.message : String(error)).split("\n");
+    throw new Stop(`${analysisFile(active.id)} 의 형식이 맞지 않습니다:\n${lines.map((line) => `  - ${line}`).join("\n")}`);
+  }
+  if (!analysis) {
+    throw new Stop(`요구사항 분석 결과가 없습니다: ${analysisFile(active.id)} 에 요구 항목(## R1 · …)과 ## 작업 문서 를 쓰세요.`);
+  }
+  return analysis;
+}
+
+function requireWorkDocs(repoRoot: string, active: ActiveWork, analysis: Analysis): void {
+  const problems = workDocProblems(repoRoot, active.id, analysis);
+  if (problems.length > 0) {
+    throw new Stop(
+      "분석이 필요하다고 한 작업 문서가 갖춰지지 않았습니다:\n" +
+        problems.map((problem) => `  - ${problem}`).join("\n") +
+        "\n요구사항 범위만 작성하세요. 필요 없다고 판단이 바뀌었으면 analysis.md 의 ## 작업 문서 를 고칩니다.",
+    );
+  }
+}
+
+/** 계획이 요구 항목을 전부 덮는가 — 파일마다 어느 항목을 위한 것인지 적게 해 코드가 대조한다 */
+function coverageProblems(analysis: Analysis, files: { path: string; requirements?: string[] }[]): string[] {
+  const problems: string[] = [];
+  for (const file of files) {
+    const listed = file.requirements ?? [];
+    if (listed.length === 0) {
+      problems.push(`${file.path}: 어느 요구 항목을 위한 파일인지 requirements 에 적으세요 (${analysis.requirements.join(", ")})`);
+    }
+    for (const key of listed.filter((key) => !analysis.requirements.includes(key))) {
+      problems.push(`${file.path}: 분석에 없는 요구 항목 ${key}`);
+    }
+  }
+  const covered = new Set(files.flatMap((file) => file.requirements ?? []));
+  const uncovered = analysis.requirements.filter((key) => !covered.has(key));
+  if (uncovered.length > 0) {
+    problems.push(`어떤 파일에도 닿지 않는 요구 항목: ${uncovered.join(", ")} — 파일을 더하거나, 이번 범위가 아니면 질문으로 확인하세요`);
+  }
+  return problems;
+}
+
+/**
+ * implement 가 실제로 도는 단계 — 계획에 파일이 있는 것만. 공통 모듈처럼 대부분의 작업에서 비는 단계에
+ * 서브에이전트를 빈손으로 보내지 않는다.
+ */
+function plannedStages(work: Work): StageDef[] {
+  const files = work.plan?.files ?? [];
+  return codeStages(work).filter((stage) => files.some((file) => file.stage === stage.key));
+}
+
+/** 승인하면 함께 받아들이는 가정 — 승인 화면과 제출 결과에 같은 모양으로 */
+export function formatAssumptions(analysis: Analysis | undefined): string | undefined {
+  if (!analysis || analysis.assumptions.length === 0) return undefined;
+  return [
+    `가정 ${analysis.assumptions.length}개 — 승인하면 계획과 함께 받아들입니다. 틀린 것이 있으면 반려하세요:`,
+    ...analysis.assumptions.map((item) => `  - ${item}`),
+  ].join("\n");
 }
 
 /** implement 가 도는 단계 — 검증 단계는 verify 스테이지가 맡는다 */
@@ -203,7 +269,7 @@ export function status(repoRoot: string): string {
     `스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`,
   );
   if (active.phase === "implement") {
-    const keys = codeStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key));
+    const keys = plannedStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key));
     lines.push(`단계: ${keys.join(" → ")}`);
   }
   lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}`);
@@ -231,8 +297,10 @@ export function next(repoRoot: string): string {
 
   switch (active.phase) {
     case "analysis":
+      requireAnalysis(repoRoot, active);
       return advance("research");
     case "research":
+      requireWorkDocs(repoRoot, active, requireAnalysis(repoRoot, active));
       return advance("plan");
     case "plan": {
       if (!work.plan) {
@@ -242,10 +310,10 @@ export function next(repoRoot: string): string {
       if (approval.status !== "approved") {
         throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 사람이 별도 터미널에서 code-agent approve 를 실행해야 합니다.`);
       }
-      return advance("implement", codeStages(work)[0]?.key);
+      return advance("implement", plannedStages(work)[0]?.key);
     }
     case "implement": {
-      const stages = codeStages(work);
+      const stages = plannedStages(work);
       const index = stages.findIndex((stage) => stage.key === active.stage);
       const stage = stages[index];
       if (stage && work.plan) {
@@ -301,6 +369,58 @@ export function context(repoRoot: string): string {
   if (order.scope.length > 0) out.push(`- scope (건드려도 되는 곳): ${order.scope.join(", ")}`);
   if (order.preserve.length > 0) out.push(`- preserve (바뀌면 안 되는 것): ${order.preserve.join(" / ")}`);
 
+  if (active.phase === "analysis") {
+    out.push(
+      "",
+      "## 분석 결과 형식",
+      `${analysisFile(active.id)} 에 쓴다. 코드가 읽는 것은 \`## R<번호>\` 요구 항목과 \`## 작업 문서\` 목록이다 — 이게 없으면 code-agent next 가 넘어가지 않는다.`,
+      "```markdown",
+      "## R1 · <요구 한 가지>",
+      "근거: \"<지시서 문장 그대로>\"",
+      "- 데이터: 만든다 | 바꾼다 | 안 건드린다",
+      "- 접점(API·화면): 만든다 | 바꾼다 | 안 건드린다",
+      "- 기존 코드: 고친다 | 안 고친다",
+      "",
+      "## 작업 문서",
+      "- data.md          ← 이 작업 폴더에 만들 것 (data.md · api.md · current.md)",
+      "- doc/<기존 문서>.md ← 이미 있는 프로젝트 문서가 범위를 덮으면 그 경로",
+      "- 없음             ← 하나도 필요 없을 때",
+      "",
+      "## 가정",
+      "- <정한 것> — 근거: <컨벤션 위치 · 참조 코드 path:line · 일반 관행>",
+      "```",
+    );
+  }
+
+  if (active.phase === "analysis" || active.phase === "research") {
+    out.push(
+      "",
+      "## 질문과 가정 — 어느 쪽인가",
+      `- **질문** (${questionsFile(active.id)}, 답이 올 때까지 진행 금지): 업무 규칙 · 범위(무엇을 만들고 무엇을 안 만드는가) · 권한 · 데이터의 의미 ·`,
+      "  다른 도메인·외부와의 계약 · 아키텍처·컨벤션과 충돌하는 것. 모델이 정하면 지어낸 것이 되는 것들이다.",
+      `- **가정** (${analysisFile(active.id)} 의 \`## 가정\`, 진행한다): 컨벤션·참조 코드·일반 관행으로 기본값을 댈 수 있고 승인 때 고쳐도 싼 기술 세부 —`,
+      "  메서드 이름 · 정렬 · 숫자 정밀도 · 테스트 케이스 목록 · 메시지 문구 · 이번 범위 밖으로 둘 부수 작업. 근거를 반드시 단다.",
+      "- 가정은 승인 화면에 그대로 보여 사람이 계획과 함께 받아들인다. 확신이 없으면 질문으로.",
+    );
+  }
+
+  if (active.phase === "research" || active.phase === "plan") {
+    const analysis = requireAnalysis(repoRoot, active);
+    out.push("", `- 요구 항목: ${analysis.requirements.join(", ")} (${analysisFile(active.id)})`);
+    out.push(`- 작업 문서: ${analysis.workDocs.join(", ") || "없음"}`);
+
+    // 참조 코드는 코드가 고른다 — 조사자마다 참조 도메인을 다시 찾아 저장소를 훑지 않게 경로를 준다.
+    if (manifest.referenceDomain) {
+      out.push("", `## 참조 도메인 ${manifest.referenceDomain} — 단계별 표준 파일 (다시 찾지 말고 이것부터 읽는다)`);
+      for (const stage of codeStages(work)) {
+        const where = stage.scope === "project" ? `저장소 기준 ${stage.outputDirs.join(", ") || "제한 없음"}` : "도메인 안";
+        const { files, missing } = collectExemplars(repoRoot, manifest, manifest.referenceDomain, stage);
+        const paths = files.map((file) => file.path);
+        out.push(`- ${stage.key} (${where}): ${paths.join(", ") || (stage.exemplars.length === 0 ? "참조 없음" : `못 찾음 ${missing.join(", ")}`)}`);
+      }
+    }
+  }
+
   if (active.phase === "plan") {
     const format = planFormatFor(order.kind);
     out.push(
@@ -308,6 +428,7 @@ export function context(repoRoot: string): string {
       "## 계획 형식",
       `초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 \`code-agent plan submit ${workDocsDir(active.id)}/plan.json\` 로 제출한다.`,
       "openQuestions 가 남아 있으면 제출되지 않는다 — questions.md 로 옮겨 답을 받는다.",
+      "files[].requirements 에 그 파일이 담당하는 요구 항목 번호를 적는다. 모든 요구 항목이 어느 파일엔가 닿아야 제출된다.",
       "```json",
       format.shape,
       "```",
@@ -363,6 +484,8 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   requireDocs(repoRoot, work);
   requireAnswers(repoRoot, active);
+  const analysis = requireAnalysis(repoRoot, active);
+  requireWorkDocs(repoRoot, active, analysis);
 
   const format = planFormatFor(order.kind);
   let raw: unknown;
@@ -380,7 +503,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   const plan = format.toPlan(parsed.data);
 
-  const problems: string[] = [];
+  const problems: string[] = [...coverageProblems(analysis, plan.files)];
   if (plan.openQuestions.length > 0) {
     problems.push(`남은 질문이 있습니다 — questions.md 로 옮겨 답을 받으세요: ${plan.openQuestions.join(" / ")}`);
   }
@@ -407,6 +530,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   writeAtomic(path, `${JSON.stringify(plan, null, 2)}\n`);
   return (
     `계획을 제출했습니다.\n\n${formatPlan(plan)}\n\n` +
+    (formatAssumptions(analysis) ? `${formatAssumptions(analysis)}\n\n` : "") +
     "사람이 **별도 터미널**에서 `code-agent approve` 를 실행해야 구현으로 넘어갑니다."
   );
 }
@@ -425,10 +549,12 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
 
   // 확정되지 않은 문서 위의 계획은 승인하지 않는다 — 승인이 묶을 근거가 없다.
   requireDocs(repoRoot, work);
-  const docsHash = projectDocsHash(checkProjectDocs(repoRoot, manifest));
+  const docsHash = approvalDocsHash(work);
 
   const state = approvalOf(work);
   const shown = [formatPlan(plan)];
+  const assumptions = formatAssumptions(loadAnalysis(repoRoot, active.id));
+  if (assumptions) shown.push("", assumptions);
   if (state.status === "stale-plan" && state.diff.length > 0) {
     shown.push("", "이전 판정 이후 바뀐 곳:", ...state.diff.map((entry) => `  ${JSON.stringify(entry)}`));
   }
