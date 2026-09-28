@@ -20,7 +20,7 @@ export interface SectionSchema {
 }
 
 export interface DocSchema {
-  kind: DocKind;
+  kind: DocKind | WorkDocKind;
   label: string;
   defaultPath: string;
   sections: SectionSchema[];
@@ -163,6 +163,97 @@ export const CONVENTIONS: DocSchema = {
 };
 
 export const SCHEMAS: Record<DocKind, DocSchema> = { architecture: ARCHITECTURE, conventions: CONVENTIONS };
+
+/**
+ * 작업 문서 — 분석이 필요하다고 할 때 작업 폴더에 **요구사항 범위만** 만든다.
+ *
+ * 프로젝트 문서와 같은 섹션 검사를 받지만 확정은 따로 없다 — 계획과 한 묶음으로 승인된다.
+ * 역공학(explorer)과 사용자 답(questions.md)이 채우므로 질문 목록은 두지 않는다.
+ */
+export type WorkDocKind = "data" | "api" | "current";
+
+export const DATA: DocSchema = {
+  kind: "data",
+  label: "데이터 정의",
+  defaultPath: "data.md",
+  sections: [
+    {
+      id: "entities", heading: "대상 엔티티", aliases: ["대상", "엔티티", "테이블"], required: true, questions: [],
+      guide: "이번 요구 항목이 만들거나 바꾸는 엔티티·테이블만 — 새로 만드는지 바꾸는지, 담당 요구 항목(R 번호)",
+    },
+    {
+      id: "fields", heading: "필드", aliases: ["컬럼", "속성"], required: true, questions: [],
+      guide: "엔티티별 표: 이름 · 타입 · 필수 · 길이/정밀도 · 제약 · 기본값 · 근거(코드 경로 또는 사용자 답 Qn)",
+    },
+    {
+      id: "relations", heading: "관계", aliases: ["연관", "연관관계"], required: false, questions: [],
+      guide: "다른 엔티티와의 연결과 방식 (ID 참조 · JPA 연관 등), 존재 확인을 어디서 하는지",
+    },
+    {
+      id: "impact", heading: "기존 데이터 영향", aliases: ["마이그레이션", "기존 데이터"], required: false, questions: [],
+      guide: "기존 테이블·데이터가 바뀌면 무엇이 어떻게 — 새 테이블만이면 '없음'",
+    },
+  ],
+};
+
+export const API: DocSchema = {
+  kind: "api",
+  label: "API 정의",
+  defaultPath: "api.md",
+  sections: [
+    {
+      id: "endpoints", heading: "엔드포인트", aliases: ["엔드포인트 목록", "API 목록", "접점"], required: true, questions: [],
+      guide: "메서드 · 경로 · 하는 일 · 담당 요구 항목(R 번호) · 새로 만드는지 바꾸는지",
+    },
+    {
+      id: "request", heading: "요청", aliases: ["요청 형식", "request"], required: true, questions: [],
+      guide: "엔드포인트별 경로 변수 · 쿼리 · 본문 필드와 검증 규칙",
+    },
+    {
+      id: "response", heading: "응답", aliases: ["응답 형식", "response"], required: true, questions: [],
+      guide: "성공 응답의 모양 — 프로젝트의 공통 응답 래퍼를 따르면 그 이름과 함께",
+    },
+    {
+      id: "errors", heading: "오류", aliases: ["예외", "오류 응답", "errors"], required: true, questions: [],
+      guide: "실패 조건마다 오류 코드 · HTTP 상태 · 근거 (없는 id, 검증 실패, 참조 대상 없음 …)",
+    },
+  ],
+};
+
+export const CURRENT: DocSchema = {
+  kind: "current",
+  label: "현행 분석",
+  defaultPath: "current.md",
+  sections: [
+    {
+      id: "files", heading: "관련 파일", aliases: ["관련 코드", "대상 파일"], required: true, questions: [],
+      guide: "이번 요구 항목이 닿는 파일과 왜 관련되는지 한 줄씩",
+    },
+    {
+      id: "behavior", heading: "현행 동작", aliases: ["현재 동작", "지금 동작"], required: true, questions: [],
+      guide: "지금 코드가 실제로 하는 것 (근거 path:line) — fix 면 결함이 나는 경로까지",
+    },
+    {
+      id: "changes", heading: "바뀌는 곳", aliases: ["변경 지점", "고칠 곳"], required: true, questions: [],
+      guide: "무엇을 어떻게 바꾸는지, 파일·메서드 단위로",
+    },
+    {
+      id: "impact", heading: "영향 범위", aliases: ["영향", "호출하는 곳"], required: true, questions: [],
+      guide: "바뀌는 코드를 부르는 곳과 그쪽에 미치는 영향 — 없으면 근거와 함께 '없음'",
+    },
+    {
+      id: "callpath", heading: "호출 경로", aliases: ["호출 흐름"], required: false, questions: [],
+      guide: "진입점(컨트롤러·핸들러)부터 저장소까지, 필요한 만큼만",
+    },
+  ],
+};
+
+export const WORK_SCHEMAS: Record<WorkDocKind, DocSchema> = { data: DATA, api: API, current: CURRENT };
+
+/** 작업 폴더의 이 이름이면 그 스키마. 인용한 프로젝트 문서처럼 이름이 다르면 섹션 검사를 하지 않는다 */
+export function workSchemaFor(fileName: string): DocSchema | undefined {
+  return Object.values(WORK_SCHEMAS).find((schema) => schema.defaultPath === fileName);
+}
 
 export function isDocKind(value: string): value is DocKind {
   return value === "architecture" || value === "conventions";

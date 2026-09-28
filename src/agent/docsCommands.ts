@@ -7,8 +7,8 @@ import { writeAtomic } from "../core/atomic";
 import { Stop } from "./commands";
 import { checkDoc, checkProjectDocs, docsReady, formatDocChecks, recordDocConfirmation } from "./docs";
 import { DOCS_SESSION_FILE, loadActive } from "./layout";
-import { interview, isDocKind, SCHEMAS, skeleton } from "./schemas";
-import type { DocKind } from "./schemas";
+import { interview, isDocKind, SCHEMAS, skeleton, WORK_SCHEMAS } from "./schemas";
+import type { DocKind, WorkDocKind } from "./schemas";
 import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny } from "./work";
 
@@ -37,7 +37,11 @@ export function docsStatus(repoRoot: string): string {
   ].join("\n");
 }
 
+/** 프로젝트 문서(architecture · conventions)와 작업 문서(data · api · current)의 뼈대 */
 export function docsSkeleton(kind: string | undefined): string {
+  if (kind && kind in WORK_SCHEMAS) {
+    return skeleton(WORK_SCHEMAS[kind as WorkDocKind]);
+  }
   return skeleton(SCHEMAS[kindOf(kind)]);
 }
 

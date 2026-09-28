@@ -7,12 +7,12 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { recordDecision } from "../core/approval";
 import { decide as decideApproval, next, start, Stop, submitPlan } from "../agent/commands";
-import { checkDoc, checkProjectDocs, checkSections, DOCS_LEDGER, projectDocsHash, readDocLedger, recordDocConfirmation } from "../agent/docs";
+import { checkDoc, checkProjectDocs, checkSections, DOCS_LEDGER, readDocLedger, recordDocConfirmation } from "../agent/docs";
 import { confirmDoc, docsBegin, docsEnd, docsLink, docsStatus } from "../agent/docsCommands";
 import { decide } from "../agent/hook";
 import { ARCHITECTURE, CONVENTIONS, skeleton } from "../agent/schemas";
 import { manifestCheck, survey } from "../agent/survey";
-import { approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
+import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 
 const APP = "src/main/java/com/acme/app/application";
 
@@ -156,11 +156,12 @@ describe("확정", () => {
   test("문서가 확정되지 않았으면 계획 승인도 받지 않는다", () => {
     confirmAll();
     start(repo, join(repo, "doc/work/ORD-1.md"));
+    write("doc/work/ORD-1/analysis.md", "## R1 · 주문\n## 작업 문서\n- 없음\n");
     next(repo);
     next(repo);
     write("doc/work/ORD-1/plan.json", JSON.stringify({
       domainName: "Order", domainLabel: "주문", domainRoot: "application", domainDirName: "order",
-      files: [{ stage: "entity", path: `${APP}/order/domain/Order.java`, purpose: "엔티티" }],
+      files: [{ stage: "entity", path: `${APP}/order/domain/Order.java`, purpose: "엔티티", requirements: ["R1"] }],
       conventions: [], conflicts: [], openQuestions: [], reasoning: "",
     }));
     submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
@@ -173,11 +174,12 @@ describe("계획 승인은 문서에 묶인다", () => {
   test("승인 뒤 문서를 바꿔 다시 확정하면 그 승인은 무효다", () => {
     confirmAll();
     start(repo, join(repo, "doc/work/ORD-1.md"));
+    write("doc/work/ORD-1/analysis.md", "## R1 · 주문\n## 작업 문서\n- 없음\n");
     next(repo);
     next(repo);
     write("doc/work/ORD-1/plan.json", JSON.stringify({
       domainName: "Order", domainLabel: "주문", domainRoot: "application", domainDirName: "order",
-      files: [{ stage: "entity", path: `${APP}/order/domain/Order.java`, purpose: "엔티티" }],
+      files: [{ stage: "entity", path: `${APP}/order/domain/Order.java`, purpose: "엔티티", requirements: ["R1"] }],
       conventions: [], conflicts: [], openQuestions: [], reasoning: "",
     }));
     submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
@@ -185,7 +187,7 @@ describe("계획 승인은 문서에 묶인다", () => {
     recordDecision(repo, {
       order: work.order, target: "order", plan: work.plan!, manifest: work.manifest, decision: "approved",
       approver: "t", presence: { channel: "tty", verified: true, detail: "t" },
-      docsHash: projectDocsHash(checkProjectDocs(repo, work.manifest)),
+      docsHash: approvalDocsHash(work),
     });
     assert.equal(approvalOf(loadWork(repo)!).status, "approved");
 

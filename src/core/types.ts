@@ -107,6 +107,8 @@ export interface PlannedFile {
   /** 저장소 루트 기준 상대경로 */
   path: string;
   purpose: string;
+  /** 이 파일이 담당하는 요구 항목 번호 (R1 …). 요구사항 분석을 거친 계획에만 있다 */
+  requirements?: string[];
 }
 
 /** 이번 생성에 적용할 규칙과 그 출처(문서 섹션 또는 참조 표준 파일) */

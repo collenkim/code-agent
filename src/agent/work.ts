@@ -8,7 +8,8 @@ import type { Manifest, StageDef } from "../core/manifest";
 import type { BuildPlan } from "../core/types";
 import { loadWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
-import { checkProjectDocs, projectDocsHash } from "./docs";
+import { loadAnalysis, workDocsHash } from "./analysis";
+import { checkProjectDocs, projectDocsHash, sha } from "./docs";
 import { loadActive, planFile } from "./layout";
 import type { ActiveWork } from "./layout";
 
@@ -38,6 +39,20 @@ export function readOrder(repoRoot: string, spec: string, manifest: Manifest): W
 }
 
 /**
+ * 승인이 묶는 문서의 해시 — 확정된 프로젝트 필수 문서 + 이 작업의 분석·작업 문서.
+ * 승인은 "이 문서들을 근거로 한 이 계획"에 대한 것이라, 승인 뒤 어느 쪽이 바뀌어도 무효가 된다.
+ * 필수 문서가 확정되지 않았으면 undefined — 묶을 근거가 없다.
+ */
+export function approvalDocsHash(work: Work): string | undefined {
+  const project = projectDocsHash(checkProjectDocs(work.repoRoot, work.manifest));
+  if (!project) {
+    return undefined;
+  }
+  const analysis = loadAnalysis(work.repoRoot, work.active.id);
+  return analysis ? sha(`${project}\n${workDocsHash(work.repoRoot, work.active.id, analysis)}`) : project;
+}
+
+/**
  * 지금 계획의 승인 상태. 판정하는 곳이 여럿이라(hook·next·status·approve) 기준을 한 벌로 둔다 —
  * 한 곳만 문서 해시를 빠뜨리면 거기가 구멍이 된다.
  */
@@ -48,7 +63,7 @@ export function approvalOf(work: Work): ApprovalState {
   return checkApproval(work.repoRoot, work.order, work.plan, work.active.target, {
     manifest: work.manifest,
     requireVerifiedApproval: work.manifest.workOrder.requireVerifiedApproval,
-    docsHash: projectDocsHash(checkProjectDocs(work.repoRoot, work.manifest)),
+    docsHash: approvalDocsHash(work),
   });
 }
 

@@ -114,6 +114,13 @@ function decideBash(manifest: Manifest | undefined, command: string): string | u
 
 function decideWrite(work: Work, path: string): string | undefined {
   const { repoRoot, active } = work;
+  // 지시서는 사람의 입력이다 — 작업 폴더 안에 있어도 모델이 고치지 않는다. 모호하면 질문으로 돌린다.
+  if (path === active.spec) {
+    return (
+      `작업 지시서(${active.spec})는 고칠 수 없습니다. 요구가 모호하거나 틀려 보이면 ` +
+      `${workDocsDir(active.id)}/questions.md 에 질문으로 남기세요 — 지시서는 사람이 고칩니다.`
+    );
+  }
   // 작업 폴더(분석·질문·작업 문서·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);
   if (path === workDir || path.startsWith(`${workDir}/`)) {
