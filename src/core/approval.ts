@@ -85,6 +85,11 @@ export interface ApprovalRecord {
    * 예전 기록을 못 읽게 만드는 것은 이 검사가 막으려던 것보다 나쁘다.
    */
   manifestHash?: string;
+  /**
+   * 승인 시점에 확정돼 있던 프로젝트 필수 문서(아키텍처·컨벤션)의 해시. **예전 원장에는 없다** —
+   * 없으면 검사하지 않는다. 승인은 "이 문서들을 근거로 한 이 계획"에 대한 것이다.
+   */
+  docsHash?: string;
   decision: Decision;
   approver: string;
   at: string;
@@ -296,6 +301,8 @@ export type ApprovalState =
   | { status: "stale-order"; record: ApprovalRecord }
   /** 경계·검증 선언이 바뀌었다 — 승인한 계획을 승인한 적 없는 규칙으로 만들게 된다 */
   | { status: "stale-manifest"; record: ApprovalRecord }
+  /** 근거 문서가 바뀌었다 — 승인한 계획의 전제가 달라졌다 */
+  | { status: "stale-docs"; record: ApprovalRecord }
   /**
    * 승인 줄은 있으나 **사람 존재가 관측되지 않았다.**
    *
@@ -328,6 +335,8 @@ export interface ApprovalPolicy {
    * 켜는 순간 그 경로로는 승인이 안 된다. 무엇을 잃는지 알고 켜는 선언이어야 한다.
    */
   requireVerifiedApproval?: boolean;
+  /** 지금 확정된 필수 문서의 해시. 주면 승인 시점의 것과 대조한다 */
+  docsHash?: string;
 }
 
 export function checkApproval(
@@ -360,6 +369,9 @@ export function checkApproval(
   ) {
     return { status: "stale-manifest", record };
   }
+  if (policy.docsHash !== undefined && record.docsHash !== undefined && record.docsHash !== policy.docsHash) {
+    return { status: "stale-docs", record };
+  }
   if (record.planHash !== hashPlan(plan)) {
     const before = loadSnapshot(repoRoot, record);
     return { status: "stale-plan", record, diff: before ? diffPlans(before, plan) : [] };
@@ -388,6 +400,8 @@ export interface DecisionInput {
   comment?: string;
   /** 전송이 관측한 사람 존재. 코어는 추측하지 않는다 — 관측하는 쪽이 넘긴다 */
   presence: Presence;
+  /** 이 판정이 근거로 삼은 필수 문서의 해시 */
+  docsHash?: string;
 }
 
 /**
@@ -434,6 +448,7 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     orderHash: hashWorkOrder(order),
     planHash: hashPlan(plan),
     manifestHash: hashManifest(input.manifest),
+    ...(input.docsHash ? { docsHash: input.docsHash } : {}),
     decision: input.decision,
     approver: input.approver,
     at: new Date().toISOString(),

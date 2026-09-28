@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { userInfo } from "os";
 
-import { checkApproval, recordDecision } from "../core/approval";
+import { recordDecision } from "../core/approval";
 import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
@@ -10,7 +10,7 @@ import { stagesFor } from "../core/manifest";
 import type { StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
-import { checkProjectDocs, docsReady, formatDocChecks } from "./docs";
+import { checkProjectDocs, docsReady, formatDocChecks, projectDocsHash } from "./docs";
 import {
   canonical,
   clearActive,
@@ -25,7 +25,7 @@ import type { ActiveWork, Phase } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { confirmOnTerminal } from "./tty";
-import { loadManifestIfAny, loadWork, readOrder } from "./work";
+import { approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
 
 /** 사람이 고칠 수 있는 이유로 멈출 때. 스택 없이 메시지만 보인다 */
@@ -161,7 +161,7 @@ function nextHint(work: Work): string {
       if (!work.plan) {
         return `계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
       }
-      const approval = checkApproval(repoRoot, work.order, work.plan, active.target, { manifest: work.manifest });
+      const approval = approvalOf(work);
       return approval.status === "approved"
         ? "승인됨 — code-agent next 로 구현 시작"
         : `사람이 별도 터미널에서 code-agent approve (현재: ${approval.status})`;
@@ -177,11 +177,17 @@ function nextHint(work: Work): string {
 
 export function status(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
-  const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checkProjectDocs(repoRoot, manifest))];
+  const checks = checkProjectDocs(repoRoot, manifest);
+  const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checks)];
 
   const work = loadWork(repoRoot);
   if (!work) {
-    lines.push("", "작업: 없음", "다음: " + (manifest ? "/ca-feature <지시서> 로 시작" : "/ca-adopt 로 도입"));
+    const hint = !manifest
+      ? "/ca-adopt 로 도입 (레거시) · 신규 프로젝트면 /ca-docs 로 아키텍처·컨벤션부터"
+      : !docsReady(checks)
+        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc <종류>"
+        : "/ca-feature <지시서> 로 시작";
+    lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
   }
 
@@ -202,8 +208,7 @@ export function status(repoRoot: string): string {
   }
   lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}`);
   if (work.plan) {
-    const approval = checkApproval(repoRoot, order, work.plan, active.target, { manifest: work.manifest });
-    lines.push(`계획: 제출됨 · 승인 ${approval.status}`);
+    lines.push(`계획: 제출됨 · 승인 ${approvalOf(work).status}`);
   } else {
     lines.push("계획: 없음");
   }
@@ -233,10 +238,7 @@ export function next(repoRoot: string): string {
       if (!work.plan) {
         throw new Stop("제출된 계획이 없습니다. code-agent plan submit <초안> 으로 제출하세요.");
       }
-      const approval = checkApproval(repoRoot, work.order, work.plan, active.target, {
-        manifest: work.manifest,
-        requireVerifiedApproval: work.manifest.workOrder.requireVerifiedApproval,
-      });
+      const approval = approvalOf(work);
       if (approval.status !== "approved") {
         throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 사람이 별도 터미널에서 code-agent approve 를 실행해야 합니다.`);
       }
@@ -421,7 +423,11 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     throw new Stop("반려에는 사유가 필요합니다: code-agent reject --comment \"사유\"");
   }
 
-  const state = checkApproval(repoRoot, order, plan, active.target, { manifest });
+  // 확정되지 않은 문서 위의 계획은 승인하지 않는다 — 승인이 묶을 근거가 없다.
+  requireDocs(repoRoot, work);
+  const docsHash = projectDocsHash(checkProjectDocs(repoRoot, manifest));
+
+  const state = approvalOf(work);
   const shown = [formatPlan(plan)];
   if (state.status === "stale-plan" && state.diff.length > 0) {
     shown.push("", "이전 판정 이후 바뀐 곳:", ...state.diff.map((entry) => `  ${JSON.stringify(entry)}`));
@@ -436,6 +442,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     approver: order.approver ?? userInfo().username,
     comment,
     presence,
+    docsHash,
   });
   return decision === "approved"
     ? "승인을 원장에 남겼습니다. Claude Code 에서 /ca-next 로 구현을 시작하세요."

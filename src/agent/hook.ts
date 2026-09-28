@@ -1,9 +1,13 @@
 import { isAbsolute, relative, resolve } from "path";
 
-import { checkApproval } from "../core/approval";
+import { existsSync } from "fs";
+import { join } from "path";
+
 import { checkPaths, unplannedFiles } from "../core/gate";
-import { canonical, STATE_DIR, workDocsDir } from "./layout";
-import { loadWork } from "./work";
+import type { Manifest } from "../core/manifest";
+import { docPaths } from "./docs";
+import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 
 /**
@@ -28,24 +32,65 @@ const READONLY_GIT = /^git (status|diff|log|show|branch)(\s|$)/;
 export function decide(input: HookInput, projectDir?: string): string | undefined {
   const repoRoot = canonical(projectDir ?? input.cwd);
   const work = loadWork(repoRoot);
-  if (!work) {
+  const documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
+  if (!work && !documenting) {
     return undefined;
   }
+  const manifest = work ? work.manifest : loadManifestIfAny(repoRoot);
   if (input.tool_name === "Bash") {
-    return decideBash(work, (input.tool_input.command ?? "").trim());
+    return decideBash(manifest, (input.tool_input.command ?? "").trim());
   }
   if (!WRITE_TOOLS.includes(input.tool_name)) {
     return undefined;
   }
   const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
-  return decideWrite(work, target);
+  const path = repoPath(repoRoot, target);
+  const outside = guardRepo(path, target);
+  if (outside) {
+    return outside;
+  }
+  return work ? decideWrite(work, path) : decideDocWrite(manifest, path);
 }
 
-function decideBash(work: Work, command: string): string | undefined {
+function repoPath(repoRoot: string, target: string): string {
+  const absolute = isAbsolute(target) ? target : resolve(repoRoot, target);
+  return relative(repoRoot, canonical(absolute)).replace(/\\/g, "/");
+}
+
+/** 어느 모드든 공통 — 저장소 밖과 `.code-agent/` 는 도구로 쓸 수 없다 */
+function guardRepo(path: string, target: string): string | undefined {
+  if (path === "" || path.startsWith("..") || isAbsolute(path)) {
+    return `저장소 밖의 파일입니다: ${target}`;
+  }
+  if (path === STATE_DIR || path.startsWith(`${STATE_DIR}/`)) {
+    return (
+      "작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다. " +
+      "진행은 code-agent next, 계획은 code-agent plan submit, 확정은 code-agent confirm 으로 바뀝니다."
+    );
+  }
+  return undefined;
+}
+
+/**
+ * 문서 작성 세션 — 문서를 쓰다가 코드를 "고쳐 두는" 일을 막는다.
+ * 쓸 수 있는 곳은 `doc/` 아래, 등록된 문서 경로, `code-agent.json`(도입할 때 만든다)뿐이다.
+ */
+function decideDocWrite(manifest: Manifest | undefined, path: string): string | undefined {
+  const allowed = ["doc", ...docPaths(manifest, "architecture"), ...docPaths(manifest, "conventions")];
+  if (path === "code-agent.json" || allowed.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    return undefined;
+  }
+  return (
+    `문서 작성 중에는 문서 자리(doc/, 등록된 문서, code-agent.json) 밖은 쓸 수 없습니다: ${path}. ` +
+    "코드를 바꿔야 한다고 보이면 문서에 적고 사람에게 알리세요. 세션은 code-agent docs end 로 끝납니다."
+  );
+}
+
+function decideBash(manifest: Manifest | undefined, command: string): string | undefined {
   const declared = [
-    work.manifest.build,
-    work.manifest.test,
-    ...Object.values(work.manifest.commands),
+    manifest?.build,
+    manifest?.test,
+    ...Object.values(manifest?.commands ?? {}),
   ]
     .filter((argv): argv is string[] => Array.isArray(argv) && argv.length > 0)
     .map((argv) => argv.join(" "));
@@ -67,20 +112,8 @@ function decideBash(work: Work, command: string): string | undefined {
   );
 }
 
-function decideWrite(work: Work, target: string): string | undefined {
+function decideWrite(work: Work, path: string): string | undefined {
   const { repoRoot, active } = work;
-  const absolute = isAbsolute(target) ? target : resolve(repoRoot, target);
-  const path = relative(repoRoot, canonical(absolute)).replace(/\\/g, "/");
-
-  if (path === "" || path.startsWith("..") || isAbsolute(path)) {
-    return `저장소 밖의 파일입니다: ${target}`;
-  }
-  if (path === STATE_DIR || path.startsWith(`${STATE_DIR}/`)) {
-    return (
-      "작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다. " +
-      "진행은 code-agent next, 계획은 code-agent plan submit 으로 바뀝니다."
-    );
-  }
   // 작업 폴더(분석·질문·작업 문서·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);
   if (path === workDir || path.startsWith(`${workDir}/`)) {
@@ -101,10 +134,7 @@ function decideWrite(work: Work, target: string): string | undefined {
   if (!plan) {
     return "제출된 계획이 없습니다. code-agent plan submit 으로 계획을 제출하고 승인을 받아야 합니다.";
   }
-  const approval = checkApproval(repoRoot, order, plan, active.target, {
-    manifest,
-    requireVerifiedApproval: manifest.workOrder.requireVerifiedApproval,
-  });
+  const approval = approvalOf(work);
   if (approval.status !== "approved") {
     return (
       `계획이 승인되지 않았습니다 (${approval.status}). ` +
