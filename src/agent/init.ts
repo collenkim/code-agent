@@ -1,0 +1,120 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { dirname, join, relative } from "path";
+
+import { STATE_DIR } from "./layout";
+
+/** 이 패키지의 루트 — dist/agent/init.js 기준 두 단계 위 */
+const PACKAGE_ROOT = join(__dirname, "..", "..");
+const TEMPLATE_DIR = join(PACKAGE_ROOT, "template");
+
+const BLOCK_START = "<!-- code-agent:start -->";
+const BLOCK_END = "<!-- code-agent:end -->";
+const GITIGNORE_START = "# code-agent:start";
+const GITIGNORE_END = "# code-agent:end";
+
+const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash";
+
+export interface InitOptions {
+  /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
+  cli?: string;
+}
+
+function packageVersion(): string {
+  return (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")) as { version: string }).version;
+}
+
+function copyTree(from: string, to: string, copied: string[], repoRoot: string): void {
+  for (const name of readdirSync(from)) {
+    const source = join(from, name);
+    const target = join(to, name);
+    if (statSync(source).isDirectory()) {
+      copyTree(source, target, copied, repoRoot);
+      continue;
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(source, target);
+    copied.push(relative(repoRoot, target).replace(/\\/g, "/"));
+  }
+}
+
+/** 표시된 블록만 넣거나 바꾼다. 블록 밖은 사람의 것이라 건드리지 않는다 */
+function upsertBlock(path: string, start: string, end: string, body: string): "created" | "updated" {
+  const block = `${start}\n${body.trim()}\n${end}`;
+  if (!existsSync(path)) {
+    writeFileSync(path, `${block}\n`);
+    return "created";
+  }
+  const text = readFileSync(path, "utf-8");
+  const from = text.indexOf(start);
+  const to = text.indexOf(end);
+  const next =
+    from >= 0 && to > from
+      ? text.slice(0, from) + block + text.slice(to + end.length)
+      : `${text.replace(/\s*$/, "")}\n\n${block}\n`;
+  writeFileSync(path, next);
+  return "updated";
+}
+
+interface HookEntry {
+  matcher?: string;
+  hooks: { type: string; command: string }[];
+}
+
+/** settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 의 PreToolUse 항목만 하나로 맞춘다 */
+function upsertHook(path: string, command: string): void {
+  const settings = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>) : {};
+  const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
+  const ours = (entry: HookEntry) => entry.hooks.some((hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && / hook$/.test(hook.command));
+  hooks.PreToolUse = [
+    ...(hooks.PreToolUse ?? []).filter((entry) => !ours(entry)),
+    { matcher: HOOK_MATCHER, hooks: [{ type: "command", command }] },
+  ];
+  settings.hooks = hooks;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+export function init(repoRoot: string, options: InitOptions = {}): string {
+  const lines: string[] = [];
+  const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" hook` : "code-agent hook";
+
+  const copied: string[] = [];
+  copyTree(join(TEMPLATE_DIR, "claude"), join(repoRoot, ".claude"), copied, repoRoot);
+  lines.push(`스킬·에이전트 ${copied.length}개: .claude/skills/ca-*, .claude/agents/ca-*`);
+
+  upsertHook(join(repoRoot, ".claude", "settings.json"), command);
+  lines.push(`hook: .claude/settings.json → ${command}`);
+
+  const claude = upsertBlock(
+    join(repoRoot, "CLAUDE.md"),
+    BLOCK_START,
+    BLOCK_END,
+    readFileSync(join(TEMPLATE_DIR, "CLAUDE.block.md"), "utf-8"),
+  );
+  lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);
+
+  upsertBlock(
+    join(repoRoot, ".gitignore"),
+    GITIGNORE_START,
+    GITIGNORE_END,
+    `${STATE_DIR}/active.json\n${STATE_DIR}/log/`,
+  );
+  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, .code-agent/log/)");
+
+  mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
+  const version = packageVersion();
+  writeFileSync(join(repoRoot, STATE_DIR, "version"), `${version}\n`);
+  lines.push(`버전 고정: ${STATE_DIR}/version = ${version}`);
+
+  const hasManifest = existsSync(join(repoRoot, "code-agent.json"));
+  return [
+    `code-agent 를 설치했습니다 — ${repoRoot}`,
+    ...lines.map((line) => `  - ${line}`),
+    "",
+    "다음:",
+    hasManifest
+      ? "  claude 를 열고 /ca-status 로 문서 상태를 확인하세요."
+      : "  claude 를 열고 /ca-adopt 로 프로젝트를 도입하세요 (code-agent.json · 아키텍처 · 컨벤션).",
+    "  설치된 파일(.claude/, CLAUDE.md, .code-agent/version)은 커밋해 팀과 공유합니다.",
+  ].join("\n");
+}

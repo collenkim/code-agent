@@ -44,6 +44,8 @@ function manifestWith(build: string[]): Manifest {
     conventions: [],
     build,
     commands: {},
+    docs: {},
+    git: { base: "master" },
     workOrder: { attributes: [], requireApprover: false, requireVerifiedApproval: false },
     stages: [
       {

@@ -1,0 +1,8 @@
+## code-agent — 이 저장소의 코드 작업 절차
+
+코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor` 로 시작하고 `/ca-next` 로 진행한다. 지금 위치는 `code-agent status`.
+
+- 진행 중인 작업이 있으면 **승인된 계획의 파일만** 쓴다. 계획 밖 쓰기·Bash 우회는 hook 이 거부한다 — 거부되면 사유를 그대로 보고하고 우회하지 않는다.
+- 애매하거나 모호한 것은 지어내지 않고 작업 폴더의 `questions.md` 에 질문으로 남긴다.
+- 승인·확정은 사람이 별도 터미널에서 한다 (`code-agent approve`). 대신 하지 않는다.
+- `.code-agent/` 는 code-agent 명령으로만 바뀐다.

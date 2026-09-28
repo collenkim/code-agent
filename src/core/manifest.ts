@@ -118,6 +118,23 @@ const ManifestSchema = z.object({
     .default([])
     .describe("컨벤션 문서 경로(파일 또는 디렉토리), 저장소 기준"),
   referenceDomain: z.string().optional().describe("기본 참조 표준 도메인"),
+  docs: z
+    .object({
+      architecture: z
+        .string()
+        .optional()
+        .describe("아키텍처(뼈대 구조) 문서 경로, 저장소 기준. 컨벤션 문서는 conventions 가 맡는다"),
+    })
+    .default({})
+    .describe("프로젝트 필수 문서의 위치. 없으면 어떤 작업도 요구사항 분석 이후로 가지 않는다"),
+  git: z
+    .object({
+      base: z
+        .string()
+        .default("master")
+        .describe("작업 브랜치(<종류>/<ID>)를 딸 기준 브랜치. 작업마다 start --base 로 바꿀 수 있다"),
+    })
+    .default({ base: "master" }),
   build: z
     .array(z.string())
     .optional()

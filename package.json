@@ -4,7 +4,8 @@
   "description": "스펙 기반 소스 코드 생성 AI-Agent",
   "main": "dist/core/run.js",
   "bin": {
-    "code-agent": "dist/cli/index.js"
+    "code-agent": "dist/agent/cli.js",
+    "code-agent-legacy": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",

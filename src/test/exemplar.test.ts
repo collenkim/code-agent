@@ -43,6 +43,8 @@ const MANIFEST: Manifest = {
   domainRoots: [],
   conventions: [],
   commands: {},
+  docs: {},
+  git: { base: "master" },
   workOrder: { attributes: [], requireApprover: false, requireVerifiedApproval: false },
   stages: [],
 };
