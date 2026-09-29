@@ -79,6 +79,28 @@ const PHASE_LABEL: Record<Phase, string> = {
 };
 
 /**
+ * 스테이지마다 그 스테이지 하나만 도는 스킬. 단계별로 나눠 두면 어디서 어긋났는지 보고 그 칸만 다시 돌 수 있다.
+ * `/ca-next` 는 같은 절차를 이어서 도는 사이클이라 결과가 같고, `deliver` 만은 사람의 자리라 스킬이 없다.
+ */
+const PHASE_COMMAND: Record<Phase, string> = {
+  analysis: "/ca-analyze",
+  impact: "/ca-impact",
+  design: "/ca-design",
+  plan: "/ca-plan",
+  implement: "/ca-implement",
+  check: "/ca-check",
+  test: "/ca-test",
+  review: "/ca-review",
+  integrate: "/ca-integrate",
+  deliver: "code-agent deliver",
+};
+
+/** `다음:` 줄의 머리 — 지금 이 칸을 도는 명령과, 이어서 돌리는 사이클 */
+function stageCommand(phase: Phase): string {
+  return `${PHASE_COMMAND[phase]} (또는 /ca-next 로 사이클)`;
+}
+
+/**
  * 모르는 스테이지는 옛 버전이 남긴 커서다 (P3 의 `research`). 조용히 다른 칸으로 옮겨 이어 가면
  * 그 작업의 문서가 어느 게이트를 지났는지 아무도 모른다 — 지우고 다시 시작하게 한다.
  */
@@ -293,51 +315,51 @@ function nextHint(work: Work): string {
     case "analysis":
     case "impact":
     case "design":
-      return `${PHASE_LABEL[active.phase]}(${workDocsDir(active.id)}/ 의 번호 문서)을 마치면 code-agent next`;
+      return `${stageCommand(active.phase)} — ${PHASE_LABEL[active.phase]}(${workDocsDir(active.id)}/ 의 번호 문서)을 마치면 code-agent next`;
     case "plan": {
       if (!work.plan) {
-        return `계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
+        return `${stageCommand("plan")} — 계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
       }
       const approval = approvalOf(work);
       if (approval.status === "approved") {
-        return "승인됨 — code-agent next 로 구현 시작";
+        return `승인됨 — code-agent next 로 넘긴 뒤 ${stageCommand("implement")}`;
       }
       // 반려는 다시 내라는 뜻이 아니라 다시 보라는 뜻이다 — 사유가 어느 문서를 가리키는지부터 읽게 한다
       if (approval.status === "rejected") {
         return (
-          `반려됐습니다: ${approval.record.comment ?? "(사유 없음)"} — ` +
+          `${stageCommand("plan")} — 반려됐습니다: ${approval.record.comment ?? "(사유 없음)"} — ` +
           `사유가 가리키는 문서(01~04 · 07 · plan.json)를 다시 보고, 정할 수 없는 것은 ${questionsFile(active.id)} 에 질문으로 남긴 뒤 다시 제출하세요`
         );
       }
       return `사람이 별도 터미널에서 code-agent approve (현재: ${approval.status})`;
     }
     case "implement":
-      return `단계 ${active.stage} 를 구현한 뒤 code-agent next`;
+      return `${stageCommand("implement")} — 단계 ${active.stage} 를 구현한 뒤 code-agent next`;
     case "check":
     case "test": {
       const evidence = loadEvidence(repoRoot, active.id, active.target);
       if (!evidence) {
-        return `code-agent ${active.phase}`;
+        return `${stageCommand(active.phase)} — code-agent ${active.phase}`;
       }
       if (overFixLimit(work, evidence)) {
         return `고쳐 쓰기 ${fixLimit(work, evidence)}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${workDocsDir(active.id)}/questions.md 에 적고 사람에게 보고하세요`;
       }
       const failed = runsOf(evidence, active.phase).filter((run) => run.outcome !== "passed");
       return failed.length === 0 && runsOf(evidence, active.phase).length > 0
-        ? "검증 통과 — code-agent next"
-        : `${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — 계획 안에서 고치고 code-agent ${active.phase} (${evidence.rounds}/${fixLimit(work, evidence) + 1}회차)`;
+        ? `검증 통과 — code-agent next 로 넘긴 뒤 ${stageCommand(active.phase === "check" ? "test" : "review")}`
+        : `${stageCommand(active.phase)} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — 계획 안에서 고치고 code-agent ${active.phase} (${evidence.rounds}/${fixLimit(work, evidence) + 1}회차)`;
     }
     case "review": {
       const problems = reviewProblems(work);
       return problems.length === 0
-        ? "리뷰가 닫혔습니다 — code-agent next 로 통합 검증으로"
-        : `${problems[0]}${problems.length > 1 ? ` (외 ${problems.length - 1}건)` : ""}`;
+        ? `리뷰가 닫혔습니다 — code-agent next 로 넘긴 뒤 ${stageCommand("integrate")}`
+        : `${stageCommand("review")} — ${problems[0]}${problems.length > 1 ? ` (외 ${problems.length - 1}건)` : ""}`;
     }
     case "integrate": {
       const evidence = loadEvidence(repoRoot, active.id, active.target);
       return evidence && runsOf(evidence, "integrate").length > 0 && stageProblems(work, "integrate").length === 0
-        ? "통합 검증 통과 — code-agent next"
-        : "code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)";
+        ? "통합 검증 통과 — code-agent next 로 넘긴 뒤 사람이 별도 터미널에서 code-agent deliver"
+        : `${stageCommand("integrate")} — code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)`;
     }
     case "deliver":
       return `사람이 별도 터미널에서 code-agent deliver — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
@@ -552,6 +574,73 @@ export function abort(repoRoot: string): string {
   }
   clearActive(repoRoot);
   return `작업 커서를 지웠습니다: ${active.id}. 작업 폴더·계획·원장은 남아 있습니다 — 같은 지시서로 다시 시작할 수 있습니다.`;
+}
+
+// ---- back ----
+
+/**
+ * `code-agent back` 이 받는 스테이지. `deliver` 는 없다 — 마지막 칸이라 되감아 갈 자리가 아니다.
+ */
+export const BACK_PHASES: readonly Phase[] = PHASES.filter((phase) => phase !== "deliver");
+
+/** 되감으면 무엇이 무효가 되는가 — 무엇을 다시 해야 하는지까지 적는다 */
+function backNotes(to: Phase): string[] {
+  const notes = [
+    "증거(⑧) · 리뷰 회차(⑨) · 승인 원장 · 작업 문서는 그대로 둡니다 — 커서만 옮겼습니다.",
+    "고쳐 쓰기 회차는 planHash 에 묶여 있어 되감아도 줄지 않습니다. 계획을 재승인해야 처음부터 셉니다.",
+  ];
+  if (to === "analysis" || to === "impact" || to === "design") {
+    notes.push(
+      "01~04 · 07 을 고치면 승인이 무효가 됩니다(stale-docs) — 계획을 다시 제출하고 사람이 다시 승인해야 코드를 쓸 수 있습니다.",
+    );
+  }
+  if (to === "plan") {
+    notes.push(
+      "계획을 바꿔 제출하면 재승인이 필요합니다. 같은 문서 위에서 같은 계획을 다시 제출하면 승인은 그대로입니다.",
+    );
+  }
+  notes.push("앞으로 가는 길은 code-agent next 뿐입니다 — 게이트를 다시 전부 지나야 합니다.");
+  return notes;
+}
+
+/**
+ * 커서를 **앞 스테이지로만** 되감는다. 단계별 스킬이 어긋난 칸 하나를 다시 돌 수 있게 하는 자리다.
+ *
+ * 앞으로 가지 못하게 막는 이유는 하나다 — 건너뛸 수 있으면 나머지 게이트가 전부 장식이 된다.
+ * 지우는 것도 없다. 증거·리뷰 회차·승인 원장·문서를 그대로 두고 커서만 옮기므로, 되감았다고
+ * 앞 스테이지의 통과가 되살아나거나 고쳐 쓰기 회차가 줄지 않는다 (전부 해시에 묶여 있다).
+ */
+export function back(repoRoot: string, to: string): string {
+  const work = requireWork(repoRoot);
+  const { active } = work;
+  // REWINDABLE 이 `code-agent check` 에 대해 닫아 둔 것과 같은 자리다 — 사람이 deliver 확인 화면 앞에 서 있는데
+  // 모델이 커서를 빼면 그 화면이 조용히 무효가 되고, 되감은 칸에서 계획 파일을 고치면 증거의 트리 해시가 깨져 반영이 실패한다.
+  if (active.phase === "deliver") {
+    throw new Stop(
+      "반영은 사람이 터미널에 서 있는 자리라 모델이 커서를 빼지 않습니다. " +
+        "되돌릴 일이 있으면 사람이 직접 돌립니다 — 무엇이 문제인지 보고하세요.",
+    );
+  }
+  if (!(BACK_PHASES as readonly string[]).includes(to)) {
+    throw new Stop(`되감을 수 없는 스테이지입니다: ${to || "(없음)"} — 받는 값: ${BACK_PHASES.join(" | ")}`);
+  }
+  const target = to as Phase;
+  if (PHASES.indexOf(target) >= PHASES.indexOf(active.phase)) {
+    throw new Stop(
+      `back 은 뒤로만 갑니다 (지금 ${active.phase}, 받은 값 ${target}). ` +
+        "앞으로 가는 길은 code-agent next 뿐입니다 — 게이트를 건너뛰는 자리가 아닙니다.",
+    );
+  }
+  // implement 로 되감으면 계획의 첫 단계부터 — 단계 키가 비면 hook 이 지금 단계를 찾지 못해 쓰기를 전부 막는다
+  const stage = target === "implement" ? plannedStages(work)[0]?.key : undefined;
+  saveActive(repoRoot, { ...active, phase: target, stage });
+  return (
+    `커서를 ${PHASE_LABEL[active.phase]}(${active.phase}) 에서 ${PHASE_LABEL[target]}(${target}) 로 되감았습니다.\n` +
+    backNotes(target)
+      .map((note) => `  - ${note}`)
+      .join("\n") +
+    `\n\n${status(repoRoot)}`
+  );
 }
 
 // ---- context ----

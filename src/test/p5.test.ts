@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { blockCount, readBlock, stripBlock, upsertBlock } from "../agent/blocks";
 import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
-import { abort, context, next, requireValidatable, start, status, Stop, submitPlan } from "../agent/commands";
+import { abort, back, context, next, requireValidatable, start, status, Stop, submitPlan } from "../agent/commands";
 import { commitDelivery, deliver, deliverProblems, prDocFile, traceRows } from "../agent/deliver";
 import { loadEvidence, outsideChanges, overFixLimit, runsOf, validationDocFile } from "../agent/evidence";
 import { decide } from "../agent/hook";
@@ -20,7 +20,7 @@ import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
 import { check, integrate, runTests } from "../agent/validate";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
-import { loadManifestIfAny, loadWork } from "../agent/work";
+import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 
 /**
  * P5 — 증거 코어(단계 1)와 리뷰·통합 검증·반영(단계 2).
@@ -562,6 +562,16 @@ describe("수정 루프", () => {
     assert.equal(overFixLimit(loadWork(repo)!, loadEvidence(repo, "ORD-1", "order")!), true);
   });
 
+  test("한도를 넘긴 뒤 implement 로 되감아도 계획 파일은 열리지 않는다", async () => {
+    toCheck();
+    await burnRounds(3);
+    assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /고쳐 쓰기 2회를 넘겨/);
+
+    // 커서를 구현으로 빼는 것은 한도를 되사는 길이 아니다 — 막는 것은 스테이지가 아니라 증거다
+    back(repo, "implement");
+    assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /고쳐 쓰기 2회를 넘겨/);
+  });
+
   test("계획이 재승인되면 회차와 동결이 함께 풀린다 — 옛 증거는 다른 계획 위의 것이다", async () => {
     toCheck();
     await burnRounds(3);
@@ -600,6 +610,21 @@ describe("테스트 동결", () => {
     toCheck();
     saveActive(repo, { ...loadActive(repo)!, phase: "implement", stage: "test" });
     assert.equal(writeFileHook(TEST_FILE), undefined);
+  });
+
+  test("테스트가 돈 뒤에는 implement 로 되감아도 얼어 있다 — 동결은 커서가 아니라 증거에 묶인다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
+
+    // 커서를 구현으로 빼고 테스트 단계까지 걸어 와도 같다 — 단언을 지워 통과시키는 길이 여기서도 닫힌다
+    back(repo, "implement");
+    next(repo);
+    next(repo);
+    assert.equal(loadActive(repo)!.stage, "test");
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
   });
 
   test("⑨ 에 그 파일을 가리키는 열린 계획 안 지적이 있으면 풀린다 — 해결로 닫으면 다시 언다", async () => {
@@ -663,6 +688,10 @@ describe("hook — 검증 명령", () => {
     assert.equal(hook("Bash", { command: "code-agent check" }), undefined);
     assert.equal(hook("Bash", { command: "code-agent test" }), undefined);
     assert.match(hook("Bash", { command: "code-agent check && git commit -m x" }) ?? "", /연결·리다이렉트/);
+    // 되감기도 모델이 부를 수 있다 — 뒤로만 가고 지우는 것이 없어 건너뛸 수 있는 것이 없다
+    assert.equal(hook("Bash", { command: "code-agent back design" }), undefined);
+    // 커서를 지우는 abort 는 그대로 사람의 자리다 — 열어 두면 hook 이 아무것도 판정하지 않게 된다
+    assert.match(hook("Bash", { command: "code-agent abort" }) ?? "", /사람이 터미널에서 실행합니다/);
   });
 });
 
@@ -1312,11 +1341,180 @@ describe("설치되는 템플릿", () => {
   test("지적 표의 열은 코드가 읽는 순서 그대로다 — 문서와 파서가 갈리면 게이트가 영영 안 닫힌다", () => {
     init(repo);
     const header = "| id | 계획 파일 | 범위 | 상태 | 지적 |";
-    for (const path of [".claude/agents/ca-reviewer.md", ".claude/skills/ca-next/SKILL.md"]) {
+    // 리뷰 절차는 단계 스킬 `/ca-review` 하나가 들고 있다 — 사이클(`/ca-next`)은 그 파일을 읽으라고만 한다
+    for (const path of [".claude/agents/ca-reviewer.md", ".claude/skills/ca-review/SKILL.md"]) {
       const text = readFileSync(join(repo, path), "utf-8");
       assert.ok(text.includes(header), `${path} 에 고정된 열 머리가 없습니다`);
       assert.equal(text.includes("고침"), false, `${path} 에 쓰이지 않는 상태값이 남아 있습니다`);
       assert.equal(text.includes("요구 충족"), false, `${path} 가 코드가 읽지 않는 절을 시킵니다`);
     }
+  });
+
+  test("init 이 스테이지마다 스킬 하나씩 + 사이클·보조 스킬을 설치한다", () => {
+    const report = init(repo);
+    const stages = ["analyze", "impact", "design", "plan", "implement", "check", "test", "review", "integrate"];
+    const skills = [...stages.map((stage) => `ca-${stage}`), "ca-next", "ca-feature", "ca-fix", "ca-refactor", "ca-answer", "ca-status", "ca-docs", "ca-adopt"];
+    for (const skill of skills) {
+      const text = readFileSync(join(repo, `.claude/skills/${skill}/SKILL.md`), "utf-8");
+      assert.ok(text.includes(`name: ${skill}`), `${skill} 의 머리말 이름이 다릅니다`);
+    }
+    // 사이클은 단계 스킬의 절차를 **읽어서** 돈다 — 절차를 베껴 두면 둘이 갈린다
+    const cycle = readFileSync(join(repo, ".claude/skills/ca-next/SKILL.md"), "utf-8");
+    for (const stage of stages) {
+      assert.ok(cycle.includes(`.claude/skills/ca-${stage}/SKILL.md`), `사이클이 ca-${stage} 의 절차를 가리키지 않습니다`);
+    }
+    assert.match(report, new RegExp(`스킬·에이전트 ${skills.length + 8}개`));
+  });
+
+  test("단계 스킬이 그 칸을 여는 명령을 빠뜨리지 않는다 — 없으면 모델은 게이트에 부딪혀서야 안다", () => {
+    init(repo);
+    // 회차를 여는 것은 `code-agent review` 이고 **첫 절차**여야 한다 — 뒤에만 있으면 모델은 next 가
+    // "리뷰 회차가 없습니다" 로 막고서야 그 명령을 찾는다
+    const review = readFileSync(join(repo, ".claude/skills/ca-review/SKILL.md"), "utf-8");
+    const firstStep = review.split("\n").find((line) => line.startsWith("1. "));
+    assert.match(firstStep ?? "", /code-agent review/, "ca-review 의 첫 절차가 회차를 열지 않습니다");
+    // 승인은 커서를 옮기지 않는다 — 승인된 계획 위에서 갈래가 없으면 사이클이 plan 에서 계획을 다시 쓰며 돈다
+    const plan = readFileSync(join(repo, ".claude/skills/ca-plan/SKILL.md"), "utf-8");
+    assert.ok(plan.includes("승인이 `approved` 면"), "ca-plan 에 승인된 계획의 갈래가 없습니다");
+  });
+});
+
+// ---- 단계별 명령과 되감기 ----
+
+describe("스테이지 명령", () => {
+  test("문서 칸의 `다음:` 이 지금 칸을 도는 스킬을 이름으로 부른다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    assert.match(status(repo), /다음: \/ca-analyze \(또는 \/ca-next 로 사이클\)/);
+
+    write("doc/work/ORD-1/01-requirements.md", REQUIREMENTS);
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-impact \(또는 \/ca-next 로 사이클\)/);
+
+    write("doc/work/ORD-1/02-analysis.md", IMPACT);
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-design \(또는 \/ca-next 로 사이클\)/);
+
+    write("doc/work/ORD-1/03-design.md", DESIGN);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL);
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-plan \(또는 \/ca-next 로 사이클\)/);
+
+    write("doc/work/ORD-1/07-test-spec.md", TEST_SPEC);
+    write("doc/work/ORD-1/plan.json", JSON.stringify(PLAN));
+    submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
+    // 승인 대기는 사람의 자리라 스킬을 부르지 않는다
+    assert.match(status(repo), /다음: 사람이 별도 터미널에서 code-agent approve/);
+    approve();
+    assert.match(status(repo), /승인됨 — code-agent next 로 넘긴 뒤 \/ca-implement/);
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-implement \(또는 \/ca-next 로 사이클\)/);
+  });
+
+  test("검증 칸도 제 스킬을 부르고, deliver 만은 사람의 터미널로 보낸다", async () => {
+    toCheck();
+    assert.match(status(repo), /다음: \/ca-check \(또는 \/ca-next 로 사이클\)/);
+
+    await check(requireValidatable(repo, "check"));
+    assert.match(status(repo), /검증 통과 — code-agent next 로 넘긴 뒤 \/ca-test/);
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-test \(또는 \/ca-next 로 사이클\)/);
+
+    await runTests(requireValidatable(repo, "test"));
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-review \(또는 \/ca-next 로 사이클\)/);
+
+    openRound(requireValidatable(repo, "review"));
+    writeFindings();
+    next(repo);
+    assert.match(status(repo), /다음: \/ca-integrate \(또는 \/ca-next 로 사이클\)/);
+
+    await integrate(requireValidatable(repo, "integrate"));
+    next(repo);
+    assert.match(status(repo), /다음: 사람이 별도 터미널에서 code-agent deliver/);
+  });
+});
+
+describe("code-agent back", () => {
+  test("앞으로도 제자리로도 가지 않고, 진행 중인 작업이 없으면 아무것도 하지 않는다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    assert.throws(() => back(repo, "impact"), (error: Error) => error instanceof Stop && /뒤로만 갑니다/.test(error.message));
+    assert.throws(() => back(repo, "analysis"), /뒤로만 갑니다/);
+    assert.equal(loadActive(repo)!.phase, "analysis");
+    // deliver 는 마지막 칸이라 되감아 갈 자리가 아니고, 없는 이름은 받지 않는다
+    assert.throws(() => back(repo, "deliver"), /되감을 수 없는 스테이지/);
+    assert.throws(() => back(repo, "verify"), /되감을 수 없는 스테이지/);
+    assert.throws(() => back(repo, ""), /되감을 수 없는 스테이지/);
+
+    abort(repo);
+    assert.throws(() => back(repo, "analysis"), /진행 중인 작업이 없습니다/);
+  });
+
+  test("deliver 에서는 되감지 않는다 — 사람이 확인 화면 앞에 서 있는 자리다", async () => {
+    await toDeliver();
+    // REWINDABLE 이 code-agent check 에 대해 닫아 둔 것과 같은 자리다 — 모델이 커서를 빼면 사람이 보던 화면이 무효가 된다
+    assert.throws(
+      () => back(repo, "check"),
+      (error: Error) => error instanceof Stop && /사람이 터미널에 서 있는 자리/.test(error.message),
+    );
+    assert.equal(loadActive(repo)!.phase, "deliver");
+  });
+
+  test("design 으로 되감아 03 을 고치면 승인이 무효가 되고 코드 쓰기가 막힌다", () => {
+    toCheck();
+    // 이 파일의 approve() 는 문서 해시를 묶지 않는다 — 문서 묶임을 보는 자리라 실제 decide() 와 같게 다시 남긴다
+    const work = loadWork(repo)!;
+    recordDecision(repo, {
+      order: work.order,
+      target: work.active.target,
+      plan: work.plan!,
+      manifest: work.manifest,
+      decision: "approved",
+      approver: "test",
+      presence: { channel: "tty", verified: true, detail: "테스트" },
+      docsHash: approvalDocsHash(work),
+    });
+    assert.equal(approvalOf(loadWork(repo)!).status, "approved");
+
+    const printed = back(repo, "design");
+    assert.equal(loadActive(repo)!.phase, "design");
+    assert.match(printed, /승인이 무효가 됩니다\(stale-docs\)/);
+
+    write("doc/work/ORD-1/03-design.md", `${DESIGN}\n- 정렬은 최신순\n`);
+    assert.equal(approvalOf(loadWork(repo)!).status, "stale-docs");
+    // 이 칸에서는 hook 이 작업 폴더 밖 쓰기를 통째로 막는다 — 코드는 승인 뒤 implement 에서만 쓴다
+    assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /design 스테이지라/);
+    // 되감았다고 승인이 되살아나지 않는다 — 다시 앞으로 와도 게이트가 같은 자리에서 막는다
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "plan");
+    assert.throws(() => next(repo), /승인되지 않았습니다 \(stale-docs\)/);
+  });
+
+  test("되감아도 고쳐 쓰기 회차는 줄지 않는다 — 증거는 planHash 에 묶여 있다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+
+    back(repo, "implement");
+    // implement 로 되감으면 계획의 첫 단계부터 — 단계 키가 비면 hook 이 지금 단계를 못 찾는다
+    assert.equal(loadActive(repo)!.stage, "entity");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1, "되감기는 증거를 지우지 않는다");
+
+    next(repo);
+    next(repo);
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "check");
+    await check(requireValidatable(repo, "check"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2, "되감기로 한도를 다시 벌 수는 없다");
+  });
+
+  test("plan 으로 되감아 같은 계획을 다시 제출하면 승인은 그대로다", () => {
+    toCheck();
+    back(repo, "plan");
+    assert.equal(loadActive(repo)!.phase, "plan");
+
+    submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
+    assert.equal(approvalOf(loadWork(repo)!).status, "approved", "같은 문서 위의 같은 계획은 해시가 같다");
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "implement");
   });
 });

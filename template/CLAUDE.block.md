@@ -1,6 +1,6 @@
 ## code-agent — 이 저장소의 코드 작업 절차
 
-코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor` 로 시작하고 `/ca-next` 로 진행한다. 지금 위치는 `code-agent status`.
+코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor` 로 시작한다. 진행은 둘 중 하나다 — 사이클 `/ca-next`, 또는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`)을 하나씩. 절차는 단계 스킬 하나에만 있어 어느 쪽으로 가도 같다. 지금 위치는 `code-agent status`, 이전 스테이지로 되감기는 `code-agent back <스테이지>` (앞으로는 못 간다).
 
 - 진행 중인 작업이 있으면 **승인된 계획의 파일만** 쓴다. 계획 밖 쓰기·Bash 우회는 hook 이 거부한다 — 거부되면 사유를 그대로 보고하고 우회하지 않는다.
 - 애매하거나 모호한 것은 지어내지 않는다 — 업무 규칙·범위·권한·데이터의 의미처럼 사람이 정할 것은 작업 폴더의 `questions.md` 에 질문으로, 컨벤션·참조 코드로 기본값을 댈 수 있는 기술 세부는 `01-requirements.md` 의 `## 가정` 에 근거와 함께 적는다.

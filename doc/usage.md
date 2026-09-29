@@ -101,23 +101,27 @@ claude
                                     터미널: code-agent confirm doc conventions
                                     터미널: code-agent confirm doc test-strategy
                                     터미널: code-agent confirm doc quality
-  /ca-feature doc/work/UZRF-145/requirement.md
-      analysis  → 01-requirements.md   질문이 나오면 멈춤 → /ca-answer
-      impact    → 02-analysis.md
-      design    → 03-design.md · 04-functional.md
-      plan      → plan.json + 07-test-spec.md → 제출(코드가 05-plan.md 렌더) 후 멈춤
+  /ca-feature doc/work/UZRF-145/requirement.md      (= start + 사이클을 plan 까지)
+      analysis  /ca-analyze   → 01-requirements.md   질문이 나오면 멈춤 → /ca-answer
+      impact    /ca-impact    → 02-analysis.md
+      design    /ca-design    → 03-design.md · 04-functional.md
+      plan      /ca-plan      → plan.json + 07-test-spec.md → 제출(코드가 05-plan.md 렌더) 후 멈춤
   ────────────────────────────────  터미널: code-agent approve
-  /ca-next                          → implement, 단계마다 서브에이전트
-      check     → build · 정적 분석·보안 명령 → 08-validation.md (코드만 쓴다)
-      test      → ca-tester 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 → 이후 테스트 동결
+  /ca-next                                          (= 단계 명령을 이어 도는 사이클)
+      implement /ca-implement → 계획의 단계마다 서브에이전트, 커서가 check 에 닿을 때까지
+      check     /ca-check     → build · 정적 분석·보안 명령 → 08-validation.md (코드만 쓴다)
+      test      /ca-test      → ca-tester 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 → 이후 테스트 동결
         실패 → 계획 안이면 고치고 check 부터 다시 (기본 2회) / 계획 밖이면 질문·재승인
-      review    → ca-reviewer 지적 표 → 09-review.md → 지적도 같은 수정 루프로
-      integrate → 깨끗한 worktree 에서 전체 build · test
-      deliver   → 10-pr.md 의 요약·확인 방법·위험을 쓰고 멈춤
+      review    /ca-review    → ca-reviewer 지적 표 → 09-review.md → 지적도 같은 수정 루프로
+      integrate /ca-integrate → 깨끗한 worktree 에서 전체 build · test
+      deliver                 → 10-pr.md 의 요약·확인 방법·위험 (/ca-integrate 가 이어서 쓰고 멈춘다)
   ────────────────────────────────  터미널: code-agent deliver  (확인 → 작업 브랜치 로컬 커밋)
 ```
 
 사람이 멈추는 자리는 넷이다 — **문서 확정 · 질문 답변 · 계획 승인 · 반영 확인.** 그중 확정·승인·반영은 터미널에서만 된다.
+
+가운데 열이 **단계 명령**이다. 한 단계씩 끊어 결과를 보고 보완하고 싶으면 그것을 직접 부르고, 쭉 몰고 싶으면 `/ca-next` 를 부른다 —
+절차는 단계 스킬 **하나**에만 있어 어느 쪽으로 가도 같은 파일을 읽는다. 잘못 온 자리는 `code-agent back <스테이지>` 로 **뒤로만** 되감는다.
 
 ---
 
@@ -127,12 +131,41 @@ claude
 |---|---|---|---|
 | `/ca-adopt` | 레거시 첫 도입 — 뼈대 역공학으로 문서 + `code-agent.json` | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종) |
 | `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 3종) | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종) |
-| `/ca-feature <지시서>` | 분석 → 영향도 → 설계 → 계획 제출 | 질문 · 계획 승인 | 구현됨 (`impact`·`design` 포함) |
+| `/ca-feature <지시서>` | `start` + 사이클을 `plan` 까지 | 질문 · 계획 승인 | 구현됨 (`impact`·`design` 포함) |
 | `/ca-answer` | 답 없는 질문을 사용자에게 묻고 기록 | — | 구현됨 |
-| `/ca-next` | 지금 스테이지를 이어 간다 | 스테이지마다 · `deliver` 는 사람에게 넘긴다 | 구현됨 (`integrate` 까지) |
+| `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고 다음으로 이어 간다 | 사람의 자리마다 · `deliver` 는 사람에게 넘긴다 | 구현됨 (`integrate` 까지) |
 | `/ca-status` | 위치·막힌 이유·다음 할 일 | — | 구현됨 |
 | `/ca-fix <지시서>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
 | `/ca-refactor <지시서>` | 리팩토링 — 보존 조건이 계획의 중심 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
+
+### 단계별 명령
+
+스테이지마다 명령이 하나씩이다. 하는 일은 **그 단계 스킬에만** 적혀 있고 `/ca-next` 사이클도 같은 파일을 읽는다 —
+단계로 끊어 돌든 사이클로 몰든 절차가 갈리지 않는다.
+
+| 스테이지 | 명령 | 하는 일 | 어디서 멈추나 |
+|---|---|---|---|
+| `analysis` | `/ca-analyze [<지시서>] [--base] [--target]` | ① `01-requirements.md` — analyst. 진행 중인 작업이 없고 인자가 있으면 `code-agent start` 부터 | 질문 · `code-agent next` |
+| `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer | 질문 · `code-agent next` |
+| `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — writer | 질문 · `code-agent next` |
+| `plan` | `/ca-plan` | ⑤ `plan.json` · ⑦ `07-test-spec.md` → critic → `plan submit`. 반려 사유를 읽는 자리도 여기다 | **터미널 `code-agent approve`** (게이트가 아니라 사람) |
+| `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지 | hook 거부 · 질문 · `check` 도달 |
+| `check` | `/ca-check` | `code-agent check` — build + 정적 분석·보안. **↺ 수정 루프의 정의가 여기 있다** | 실패 · `code-agent next` |
+| `test` | `/ca-test` | tester 가 ⑦ 의 TC 만 → `code-agent test`, 이후 테스트 동결 | 실패 · `code-agent next` |
+| `review` | `/ca-review` | reviewer 의 지적 표를 ⑨ `09-review.md` 에 그대로 | 열린 지적 · `code-agent next` |
+| `integrate` | `/ca-integrate` | `code-agent integrate` → 이어서 ⑩ `10-pr.md` 의 모델 구역 | **터미널 `code-agent deliver`** |
+
+각 단계 스킬은 먼저 `code-agent status` 로 **자리를 확인한다.** 커서가 그 스테이지가 아니면 일하지 않는다 —
+아직 이르면 먼저 할 명령을 알려 주고, 이미 지났으면 `code-agent back <스테이지>` 로 되감아야 한다고 알린다.
+**되감기는 사용자가 되돌리라고 말했을 때만** 돈다.
+
+`code-agent back <스테이지>` 는 **뒤로만** 간다. 커서만 움직이고 증거·승인 원장·작업 문서는 그대로 둔다 — 그래서:
+
+- `design` 이하로 되감아 `01`~`04`·`07` 을 고치면 계획 승인이 `stale-docs` 가 된다. 다시 제출하고 다시 승인받아야 코드를 쓸 수 있다.
+- 되감아도 **수정 회차는 초기화되지 않는다.** 증거가 `planHash` 에 묶여 있어 같은 계획이면 같은 카운터다.
+- `plan` 으로 되감아 **같은 계획을 그대로** 다시 제출하면 승인은 살아 있다.
+- `implement` 로 되감아도 **테스트 동결과 고쳐 쓰기 한도는 그대로다.** 둘 다 커서가 아니라 증거를 보고 막는다.
+- `deliver` 에서는 되감지 않는다 — 사람이 확인 화면 앞에 서 있는 자리다. 되돌릴 일이 있으면 사람이 직접 돌린다.
 
 ### `/ca-adopt`
 
@@ -180,12 +213,11 @@ claude
 요구가 모호하면 지시서를 고치는 대신 `questions.md` 에 질문으로 남는다.
 
 1. `code-agent start` — 지시서 머리말을 검사하고, 작업 브랜치 `<종류>/<ID>` 를 따고, `questions.md` 를 만들고, 커서를 `analysis` 에 둔다.
-2. **analysis** → ① `01-requirements.md` — `ca-analyst` 가 요구 항목 `## R<n>`(각각 `근거:`)·`## 가정`·`## 범위 밖` 을 뽑는다. 질문이 나오면 **멈춘다.**
-3. **impact** → ② `02-analysis.md` — 요구 항목을 닿는 영역으로 묶어 `ca-explorer` 를 병렬로 돌리고 `ca-writer` 가 쓴다.
-   `doc/knowledge/` 에 키가 이미 있으면 explorer 를 붙이지 않고 **인용한다.**
-4. **design** → ③ `03-design.md` · ④ `04-functional.md` — `ca-writer` 가 같은 스테이지에서 함께 쓴다. AC(`AC-R<n>-<m>`)가 여기서 나온다.
-5. **plan** → ⑤ `plan.json` + ⑦ `07-test-spec.md` 초안 → `ca-critic` 반박 검토 → `code-agent plan submit` (통과하면 코드가 `05-plan.md` 를 렌더한다).
-6. 제출되면 **멈춘다** — 사람이 터미널에서 승인해야 한다.
+2. 그 뒤는 **사이클을 `plan` 까지** 돈 것과 같다 — `/ca-analyze` → `/ca-impact` → `/ca-design` → `/ca-plan`.
+   각 단계가 무엇을 하는지는 [단계별 명령](#단계별-명령)과 [단계마다 실제로 도는 것](#단계마다-실제로-도는-것).
+3. 계획이 제출되면 **멈춘다** — 사람이 터미널에서 승인해야 한다.
+
+중간에 한 단계를 다시 보고 싶으면 그 명령을 직접 부르면 된다 (`code-agent back <스테이지>` 로 되감은 뒤 `/ca-design` 처럼).
 
 문서마다 Bash: `code-agent docs skeleton <종류>` 로 뼈대를 받아 쓴다. **`05-plan.md` 는 모델이 쓸 수 없다** — 고칠 것이 있으면 `plan.json` 을 고쳐 다시 제출한다.
 
@@ -199,21 +231,33 @@ claude
 
 ### `/ca-next`
 
-`code-agent status` 로 스테이지를 보고 그 자리부터 이어 간다.
+**사이클**이다. `code-agent status` 로 스테이지를 보고, 그 스테이지의 단계 스킬(`.claude/skills/ca-<명령>/SKILL.md`)을 그대로 따르고,
+게이트를 지나면 다음 스테이지의 단계 스킬로 이어 간다. **사람의 자리가 나오면 멈춘다** —
+답 없는 질문 · 계획 제출(터미널 승인) · 반려 · 계획 밖 실패·지적 · 고쳐 쓰기 한도 초과 · 명령의 거부 · 커서가 `deliver`.
 
-- `analysis` · `impact` · `design` · `plan` — `/ca-feature` 의 해당 절차를 잇는다.
-- `implement` — 단계마다 `code-agent context` 로 만들 파일·단계 규칙·참조 표준 코드를 받아 `ca-implementer`(테스트 단계면 `ca-tester`)에게 넘기고, 끝나면 `code-agent next`.
-- `check` — `code-agent check` 가 `build` + 품질·보안 기준의 명령을 돌린 결과만 게이트를 연다. 모델이 직접 돌린 빌드는 세지 않는다.
-- `test` — ⑦ 에 코드가 없는 TC 가 남아 있으면 `ca-tester` 가 **그대로, 그것만** 쓰고(매니페스트에 `kind: test` 단계가 있으면 `implement` 에서 이미 다 썼다) `code-agent test` 가 돌린다.
+사이클 자체에는 절차가 없다. 그래서 `/ca-next` 로 몰든 단계 명령으로 끊어 돌든 도는 내용이 갈리지 않는다.
+사용자가 되돌리라고 하면 `code-agent back <스테이지>` 를 돌리고 그 자리부터 다시 돈다 — 사이클이 스스로 되감지는 않는다.
+
+### 단계마다 실제로 도는 것
+
+- `analysis`(`/ca-analyze`) — ① `01-requirements.md`. `ca-analyst` 가 요구 항목 `## R<n>`(각각 `근거:`)·`## 가정`·`## 범위 밖` 을 뽑는다. 질문이 나오면 멈춘다.
+- `impact`(`/ca-impact`) — ② `02-analysis.md`. 요구 항목을 닿는 영역으로 묶어 `ca-explorer` 를 병렬로 돌리고 `ca-writer` 가 쓴다.
+  `doc/knowledge/` 에 키가 이미 있으면 explorer 를 붙이지 않고 **인용한다.**
+- `design`(`/ca-design`) — ③ `03-design.md` · ④ `04-functional.md` 를 `ca-writer` 가 같은 스테이지에서 함께 쓴다. AC(`AC-R<n>-<m>`)가 여기서 나온다.
+- `plan`(`/ca-plan`) — ⑤ `plan.json` + ⑦ `07-test-spec.md` → `ca-critic` 반박 검토 → `code-agent plan submit` (통과하면 코드가 `05-plan.md` 를 렌더한다).
+  여기서는 `code-agent next` 를 돌리지 않는다 — 이 문을 여는 것은 게이트가 아니라 터미널의 승인이다. 반려 사유를 읽고 다시 내는 자리도 여기다.
+- `implement`(`/ca-implement`) — 단계마다 `code-agent context` 로 만들 파일·단계 규칙·참조 표준 코드를 받아 `ca-implementer`(테스트 단계면 `ca-tester`)에게 넘기고, 끝나면 `code-agent next`.
+- `check`(`/ca-check`) — `code-agent check` 가 `build` + 품질·보안 기준의 명령을 돌린 결과만 게이트를 연다. 모델이 직접 돌린 빌드는 세지 않는다.
+- `test`(`/ca-test`) — ⑦ 에 코드가 없는 TC 가 남아 있으면 `ca-tester` 가 **그대로, 그것만** 쓰고(매니페스트에 `kind: test` 단계가 있으면 `implement` 에서 이미 다 썼다) `code-agent test` 가 돌린다.
   이 실행 뒤 `kind: test` 단계의 파일은 **언다** — 실패해도 단언을 고쳐 통과시킬 수 없다.
-- `review` — `code-agent context` 가 고른 것(계획 파일 · 요구 항목 · 검증 증거 요약 · 실패 로그 경로 · 얼어 있는 파일)만 `ca-reviewer` 에게 준다.
+- `review`(`/ca-review`) — `code-agent context` 가 고른 것(계획 파일 · 요구 항목 · 검증 증거 요약 · 실패 로그 경로 · 얼어 있는 파일)만 `ca-reviewer` 에게 준다.
   리뷰어는 그 목록 밖을 읽지 않고 `| id | 계획 파일 | 범위 | 상태 | 지적 |` 표로 답한다 — 열 순서는 코드가 칸 위치로 읽어 고정이고,
   계획 파일은 저장소 기준 경로 그대로(백틱·`:줄번호` 없이), 상태는 `열림` · `해결` 둘뿐이다. 메인은 그 표를 `09-review.md` 의 `## 지적` 에 **그대로** 옮긴다(요약·완화 금지).
   회차 머리(번호·시각·기준 트리 해시)는 코드가 적는다. 반영은 **마지막 회차의 트리 해시가 지금과 같고 열린 `계획 안` 지적이 0** 이어야 열린다.
   얼어 있던 테스트 파일을 지적으로 푼 경우 **그 줄은 코드가 기억한다** — 쓰고 나서 지우면 `review` → `integrate` 가 막힌다.
-- `integrate` — `code-agent integrate` 가 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
-- `deliver` — 모델은 ⑩ `10-pr.md` 의 `요약`·`확인 방법`·`위험·되돌리기` 만 쓰고 멈춘다. 추적표·검증 블록과 커밋은 `code-agent deliver` 의 몫이다.
-- **↺ 수정 루프** — 실패·지적 중 **계획 안**은 `ca-implementer` 가 지목된 파일만 고치고 `check` 부터 다시 돈다.
+- `integrate`(`/ca-integrate`) — `code-agent integrate` 가 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
+- `deliver` — 같은 `/ca-integrate` 가 이어서 한다. 모델은 ⑩ `10-pr.md` 의 `요약`·`확인 방법`·`위험·되돌리기` 만 쓰고 멈춘다. 추적표·검증 블록과 커밋은 `code-agent deliver` 의 몫이다.
+- **↺ 수정 루프** (정의는 `/ca-check` 에 있고 `test`·`review`·`integrate` 가 그것을 가리킨다) — 실패·지적 중 **계획 안**은 `ca-implementer` 가 지목된 파일만 고치고 `check` 부터 다시 돈다.
   `code-agent check` 는 `test` · `review` · `integrate` 어디서 불러도 커서를 그 자리로 되감는다. 회차는 코드가 세고 기본 2회이며, 한 번 시작한 루프는 시작할 때의 한도로 끝난다.
   **계획 밖**은 고치지 않는다 — `questions.md` 에 질문으로 남기거나 계획을 고쳐 재승인한다. 한도를 넘기면 hook 이 계획 파일 쓰기를 전부 막고 보고만 남는다.
 - 사람에게 물을 것은 **턴의 마지막 메시지에 모아서** 낸다.
@@ -224,7 +268,7 @@ claude
 
 ### `/ca-fix` · `/ca-refactor` (P6)
 
-스킬은 설치돼 있고 `/ca-feature` 와 같은 절차로 계획 제출까지 돈다. 다른 점은 아래 둘이다.
+스킬은 설치돼 있고 `/ca-feature` 와 **같은 단계 스킬을 같은 순서로** 돌아 계획 제출까지 간다. 다른 점은 아래 둘이다.
 
 - `fix` — `02-analysis.md` 의 `기존 시스템 분석` 이 **결함이 나는 경로까지** 가야 한다. `07-test-spec.md` 의 첫 TC 는 **재현 케이스**이고 계획 `sequence[]` 의 첫 자리다.
 - `refactor` — `02-analysis.md` 의 `영향 범위` 가 중심. 지시서의 `preserve` 문장을 **그대로** 옮겨야 제출된다 (코드가 대조한다).
@@ -273,10 +317,12 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `code-agent manifest check` | `code-agent.json` 이 참조 파일을 실제로 찾는지 (✗ 면 exit 1) |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 |
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
+| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙 |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
 | `code-agent check` | 8 정적 분석·컴파일 — `build` + 품질·보안 기준이 적은 명령을 돌려 증거에 적고 ⑧ 을 렌더 |
 | `code-agent test` | 9 테스트 — `test` + 테스트 전략이 적은 명령을 돌리고 ⑦ 의 TC id 를 대조. 이 실행 뒤 테스트가 언다 |
+| `code-agent review` | 11 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 |
 | `code-agent integrate` | 12 통합 검증 — 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 **한 번** 알린다. 사람이 부르지 않는다 |
@@ -457,8 +503,8 @@ code-agent reject --comment "공통 모듈을 건드리는 계획은 먼저 설�
 | 승인 상태 | 뜻 | 할 일 |
 |---|---|---|
 | `none` | 판정이 없다 | 터미널에서 `approve` |
-| `approved` | 유효하다 | `/ca-next` |
-| `rejected` | 반려됐다 | 사유대로 계획을 고쳐 다시 제출 |
+| `approved` | 유효하다 | `/ca-implement` (또는 `/ca-next` 로 사이클) |
+| `rejected` | 반려됐다 | `/ca-plan` — 사유를 읽고 문서부터 다시 본 뒤 고쳐 제출 |
 | `stale-plan` | 승인 뒤 계획이 바뀌었다 | 다시 승인 (바뀐 곳이 화면에 뜬다) |
 | `stale-docs` | 승인 뒤 POLICY 문서나 작업 문서(`01`~`04`·`07`·지시서 본문)가 바뀌었다 | 다시 승인 |
 | `stale-order` | 승인 뒤 지시서가 바뀌었다 | 다시 승인 |

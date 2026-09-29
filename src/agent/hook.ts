@@ -10,7 +10,7 @@ import { docPaths } from "./docs";
 import { fixLimit, loadEvidence, overFixLimit, validationDocFile } from "./evidence";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { AFTER_IMPLEMENT, canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
@@ -51,6 +51,9 @@ const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
 const MODEL_SUBCOMMANDS = [
   "start",
   "next",
+  // 되감기는 열어 둔다 — 앞으로는 못 가고 지우는 것도 없어 건너뛸 수 있는 것이 없다.
+  // 승인·증거가 전부 해시에 묶여 있어, 되감아도 통과가 되살아나거나 회차가 줄지 않는다.
+  "back",
   "context",
   "status",
   "plan submit",
@@ -242,7 +245,11 @@ function decideWrite(work: Work, path: string): string | undefined {
 }
 
 /**
- * 검증 스테이지에서 이 파일을 고칠 수 없는 이유. 둘이다.
+ * 이 파일을 고칠 수 없는 이유. 둘이다.
+ *
+ * **스테이지로 재지 않는다.** 증거가 있고 그 증거가 지금 계획(`planHash`) 위의 것인지만 본다 —
+ * `code-agent back implement` 로 커서를 구현으로 빼면 두 규칙이 다 풀리기 때문이다. 첫 구현 패스에는
+ * 증거 자체가 없어 여기서 걸릴 것이 없고, 계획을 재승인하면 `planHash` 가 달라져 둘이 함께 풀린다.
  *
  * **① 테스트 동결** — 테스트가 한 번 돈 뒤(통과든 실패든)에는 `kind: "test"` 단계의 계획 파일을
  * 고칠 수 없다. 옛 흐름이 "verify 단계의 outputDirs 에 테스트 디렉토리를 넣지 않는다"로 구조적으로
@@ -255,9 +262,6 @@ function decideWrite(work: Work, path: string): string | undefined {
  * 이 함수에 오기 전에 이미 통과했으므로 보고와 질문의 길은 남는다.
  */
 function freezeReason(work: Work, stage: StageDef, path: string): string | undefined {
-  if (!AFTER_IMPLEMENT.includes(work.active.phase)) {
-    return undefined;
-  }
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
   if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) {
     return undefined;
