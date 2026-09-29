@@ -32,6 +32,8 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
 - **referenceDomain** — 복제의 기준이 될 도메인. 후보 2~3개(계층이 다 갖춰진 것)를 보여 주고 사용자가 고른다.
 - **stages** — survey 의 계층 후보를 의존 순서대로 (예: entity → repository → service → controller → test).
   `exemplars` 는 참조 도메인 디렉토리 기준 상대경로이고 `{Ref}` 는 참조 도메인의 PascalCase 다.
+- **테스트 단계에는 `"kind": "test"` 를 단다.** 테스트가 한 번 돈 뒤에는 hook 이 그 단계의 파일을 얼려,
+  실패한 단언을 지워 통과시키는 길을 막는다. 선언하지 않으면 그 보호가 없다 — 검증 출력이 그 사실을 크게 찍는다.
 - **공통 단계** — 아키텍처의 공통 모듈(예외·응답 래퍼·유틸 등)이 도메인 밖에 있으면 `"scope": "project"` 단계를 하나 둔다
   (예: `{ "key": "common", "title": "공통", "scope": "project", "outputDirs": ["src/main/java/com/acme/crm/common"], "kinds": ["feature"], "exemplars": [], "template": "doc/code-agent/stages/common.md" }`).
   없으면 공통 코드를 고쳐야 하는 기능(새 오류 코드 등)의 계획이 경계 검사에서 거부된다. 순서는 도메인 단계보다 앞.
@@ -66,7 +68,7 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
     { "key": "entity", "title": "Entity", "template": "doc/code-agent/stages/entity.md",
       "kinds": ["feature"], "exemplars": ["domain/{Ref}.java"], "outputDirs": ["domain"] },
     { "key": "test", "title": "테스트", "template": "doc/code-agent/stages/test.md",
-      "kinds": ["feature"], "base": "src/test/java/com/acme/app",
+      "kind": "test", "kinds": ["feature"], "base": "src/test/java/com/acme/app",
       "exemplars": ["domain/{Ref}Tests.java"], "outputDirs": ["domain"] }
   ]
 }

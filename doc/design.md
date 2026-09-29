@@ -70,10 +70,10 @@
 - **승인 해시에 넣지 않는다.** 넣으면 다른 작업의 반영마다 남의 승인이 stale 이 되어 병렬 작업이 막힌다.
   대신 **작업 문서가 전제를 들고 간다** — 03·04 는 인용한 항목의 키와 *그것에 기대는 사실 한 줄*을 옮겨 적고 그 뒤에 차이를 쓴다.
   그 한 줄은 `workDocsHash` 에 이미 들어가므로 승인의 근거는 옮겨 적은 줄이 덮는다. (항목 단위 해시는 인용 파서가 필요해 P6 으로 미룬다.)
-- **쓰는 것은 반영(deliver)뿐이다.** 모델이 직접 쓰지 않는다 — 작업 중에는 hook 이 작업 폴더 밖 쓰기를 막으므로 제안은 `doc/work/<ID>/knowledge.proposal.md` 에 쓰고,
-  `code-agent deliver` 가 TTY 에서 diff 를 보여 준 뒤 **코드가** 키로 upsert 한다(정렬 고정 — 매번 diff 가 흔들리지 않게).
-  **삭제는 적용하지 않는다** — 자동 삭제는 되돌릴 근거가 없다. 같은 키에 다른 내용이 오면 조용히 덮지 않고 양쪽을 나란히 보여 준다.
-- 적용마다 `그 작업의 R 번호 1개 이상`을 요구한다 — 이것이 "한 작업의 범위만 자란다"를 코드로 강제하는 자리다.
+- **쓰는 것은 반영(deliver)뿐이다 (P5 ✅).** 모델이 직접 쓰지 않는다 — 작업 중에는 hook 이 작업 폴더 밖 쓰기를 막으므로 제안은 `doc/work/<ID>/knowledge.proposal.md` 에
+  (`## <종류>` 아래 ``### `키` 이름`` 블록으로) 쓰고, `code-agent deliver` 가 TTY 에서 항목마다 지금 것과 제안을 나란히 보여 준 뒤 **코드가** 키로 upsert 한다.
+  **삭제는 적용하지 않는다** — 자동 삭제는 되돌릴 근거가 없다. 같은 키는 그 자리에서 갈아 끼우고(문서의 순서가 흔들리지 않게) 새 키만 끝에 붙는다.
+- 적용마다 `그 작업의 R 번호 1개 이상`을 요구한다 — 이것이 "한 작업의 범위만 자란다"를 코드로 강제하는 자리다. 근거를 달지 않은 항목은 사람에게 묻지도 않고 걸러 사유를 알린다.
 
 ### 2.3 역공학은 두 층이다
 
@@ -100,9 +100,9 @@
 | `plan.json` ⑤ | 6 `plan` | 모델 → `plan submit` | 스키마 · R 커버리지 · openQuestions 0 · preserve 전량 · 경로 경계 | planHash |
 | `05-plan.md` ⑤ | 6 `plan` | **코드** (렌더) | 없음 — 파생물. hook 이 모델 쓰기 거부 | — (planHash 가 덮는다) |
 | `07-test-spec.md` ⑦ | 6 `plan` | 모델 (구현 전) | TC 표 파싱 · AC 실재 · **모든 AC 가 TC 에 덮임** | ✔ |
-| `08-validation.md` ⑧ | 8~9 · 12 | **코드만** (hook 거부 + 재렌더 대조) | base·부분 트리 해시·planHash 일치 · 선언된 검증 전부 `passed` | 역방향 |
-| `09-review.md` ⑨ | 11 `review` | 모델(지적) + 코드(회차 머리) | **마지막 회차 트리 해시 == 지금 트리** · `계획 안`+`열림` 0 | 트리 해시 |
-| `10-pr.md` ⑩ | 13 `deliver` | 코드(추적표·검증 블록) + 모델(나머지) | 추적표 빈 칸 0 · 코드 블록 재렌더 바이트 대조 · **사람 TTY 확인** | — |
+| `08-validation.md` ⑧ | 7~8 · 10 | **코드만** (hook 거부 + 재렌더 바이트 대조) | base·부분 트리 해시·manifestHash·planHash 일치 · 선언된 검증 전부 `passed` (`not-run`·`error` 는 통과가 아니다) | 역방향 (P5 ✅) |
+| `09-review.md` ⑨ | 9 `review` | 모델(지적 표) + **코드(회차 구역)** | **마지막 회차 트리 해시 == 지금 트리** · `열림` 0 · `계획 밖` 0 · 회차 구역 재렌더 바이트 대조 | 트리 해시 (P5 ✅) |
+| `10-pr.md` ⑩ | 11 `deliver` | **코드(추적표·검증·변경 요약 구역)** + 모델(나머지) | 추적표 빈 칸 0 · 코드 구역 재렌더 · 모델 3섹션 filled · **사람 TTY 확인** | — (P5 ✅) |
 
 (⑥ Code 는 소스 코드 자체다 — `06-` 파일은 없다.)
 
@@ -155,18 +155,20 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + writer | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 ✅ |
 | 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | 메인 → critic | **사람 승인 (터미널)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 ✅ |
 | 6 | 코드 생성 `implement` | 코드 생성 | ⑥ 계획의 단계마다 새 컨텍스트에서 | implementer (테스트 단계는 tester) | hook — 계획 밖 쓰기 거부 | P3 ✅ |
-| 7 | 정적 분석·컴파일 `check` | 정적 분석·컴파일 | 품질·보안 기준이 적은 명령 + `build` 를 돌려 증거로 기록 → ⑧ `08-validation.md` (코드만 씀) | CLI | 코드 — `not-run` 은 통과가 아니다 | P5 |
-| 8 | 테스트 `test` | 테스트 생성·실행 · 결과 분석 | tester 가 ⑦ 의 케이스만 작성 → CLI 가 실행 → ⑧ 에 케이스마다 한 줄 | tester + CLI | 코드 — ⑦ 전부 통과, 이후 테스트 동결 | P5 |
-| ↺ | 수정 | 실패 → 수정 | 7·8·9 에서 나온 것 중 계획 안은 implementer 가 고치고 **7 부터 다시** (최대 N회, 넘으면 덮지 않고 보고). 계획 밖이면 질문 또는 재계획(재승인) | implementer | hook | P5 |
-| 9 | 코드 리뷰 `review` | 성공 → 코드 리뷰 | ⑨ `09-review.md` — 회차 · 지적(계획 파일 경로) · 요구 충족. 지적은 수정 루프로 | reviewer | 열린 지적 0 · 마지막 회차 트리 해시 == 지금 | P5 |
-| 10 | 통합 검증 `integrate` | 통합 검증 | 깨끗한 worktree(기준 커밋 + 변경 파일)에서 전체 build · 전체 test → ⑧ | CLI | 코드 | P5 |
-| 11 | 반영 `deliver` | 반영·PR | ⑩ `10-pr.md` — 요약 · 추적표(R → AC → 파일 → TC → 검증) · 확인 방법 · 위험. KNOWLEDGE 갱신 제안을 하나씩 고른다 → **사람 최종 확인(터미널)** → 작업 브랜치에 로컬 커밋. push · PR 생성 · 병합은 사람 | 메인 + CLI | **사람 확인 (터미널)** | P5 |
+| 7 | 정적 분석·컴파일 `check` | 정적 분석·컴파일 | 품질·보안 기준이 적은 명령 + `build` 를 돌려 증거로 기록 → ⑧ `08-validation.md` (코드만 씀) | CLI | 코드 — `not-run` 은 통과가 아니다 | P5 ✅ |
+| 8 | 테스트 `test` | 테스트 생성·실행 · 결과 분석 | tester 가 ⑦ 의 케이스만 작성 → CLI 가 실행 → ⑧ 에 케이스마다 한 줄 | tester + CLI | 코드 — ⑦ 의 모든 TC id 가 실행 출력 또는 `kind:"test"` 파일에서 확인됨, 이후 테스트 동결 | P5 ✅ |
+| ↺ | 수정 | 실패 → 수정 | 7·8·9 에서 나온 것 중 계획 안은 implementer 가 고치고 **7 부터 다시** (`code-agent check` 는 `test`·`review`·`integrate` 에서 불려도 커서를 7 로 되감는다. 기본 N=2, `code-agent.json` 의 `fixRounds`. 한도는 증거가 시작될 때 굳고, 넘으면 덮지 않고 보고). 계획 밖이면 질문 또는 재계획(재승인) | implementer | hook | P5 ✅ |
+| 9 | 코드 리뷰 `review` | 성공 → 코드 리뷰 | ⑨ `09-review.md` — `code-agent review` 가 회차 구역(번호·시각·**기준 트리 해시**)을 렌더하고, 메인이 reviewer 의 지적을 표로 옮긴다. 지적은 수정 루프로 | reviewer + CLI | 열린 지적 0 · 계획 밖 지적 0 · 마지막 회차 트리 해시 == 지금 | P5 ✅ |
+| 10 | 통합 검증 `integrate` | 통합 검증 | 깨끗한 worktree(기준 커밋 + 변경 파일)에서 전체 build · 전체 test → ⑧ | CLI | 코드 | P5 ✅ |
+| 11 | 반영 `deliver` | 반영·PR | ⑩ `10-pr.md` — 요약 · 추적표(R → AC → 파일 → TC → 검증) · 확인 방법 · 위험. KNOWLEDGE 갱신 제안을 하나씩 고른다 → **사람 최종 확인(터미널)** → 작업 브랜치에 로컬 커밋. **push · MR/PR 생성은 하지 않는다 — git 호스트가 붙을 때까지 보류** | 메인 + CLI | **사람 확인 (터미널)** | P5 ✅ |
 
 **오늘 커서가 도는 자리** — `code-agent status` 가 보여 주는 스테이지는
-`analysis → impact → design → plan → implement → verify` 다 (`src/agent/layout.ts` 의 `PHASES`).
-P3 의 `research` 한 칸이 3·4(영향도·설계) 자리였고, P4 에서 `impact` · `design` 둘로 갈렸다.
-커서는 `verify` 에서 끝난다 — `code-agent next` 는 `implement` 의 마지막 단계를 마치면 거기서 멈추고,
-7~11 이 생기는 P5 까지 그 뒤는 없다.
+`analysis → impact → design → plan → implement → check → test → review → integrate → deliver` 다
+(`src/agent/layout.ts` 의 `PHASES`). P4 의 `verify` 한 칸이 P5 에서 `check`·`test`·`review`·`integrate`·`deliver`
+다섯으로 갈렸다 — 목표 흐름의 7~11 을 그대로 딴다. `verify` 는 더 이상 스테이지가 아니다
+(옛 커서는 `code-agent abort` 로 지우고 다시 시작한다. 굳혀 둔 기준 커밋이 없는 커서도 마찬가지다).
+커서는 `deliver` 에서 끝난다 — `code-agent next` 는 반영을 끝내지 않고, **사람이 별도 터미널에서
+`code-agent deliver`** 를 돌려야 로컬 커밋이 되고 커서가 지워진다.
 
 **작업 종류**는 어떤 스테이지를 어떻게 도는지로 갈린다.
 
@@ -186,7 +188,7 @@ P3 의 `research` 한 칸이 3·4(영향도·설계) 자리였고, P4 에서 `im
 ### 질문은 어느 스테이지에서든 던진다
 
 애매하거나 모호하면 지어내지 않고 묻는다. 질문은 작업 폴더의 `questions.md` 에 쌓이고, **답이 없는 질문이
-있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 이 확인한다. 턴 끝에 보는 Stop hook 은 P5).
+있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 이 확인한다. 턴 끝에 보는 Stop hook 은 한 번만 알려 주는 쪽이고, 절대적인 차단은 이 둘이다).
 
 ```
 ## Q3 · 요구사항 분석
@@ -220,6 +222,31 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 결과는 모두 ⑧ 08-validation.md 에 코드가 남기고, 리뷰는 ⑨ 09-review.md 에 회차로 쌓인다
 ```
 
+**증거가 서는 자리** (P5 단계 1 ✅) — `start` 가 기준 브랜치를 그 순간의 커밋으로 굳혀 `ActiveWork.baseCommit` 에 박고,
+그 뒤 모든 판정이 그 위에 선다. `check`·`test` 는 `.code-agent/work/<ID>/<대상>.verify.json` 에 **코드만** 쓰고
+(hook 이 도구 쓰기를 막는다) 거기서 ⑧ 을 렌더한다. 증거에는 기준 커밋 · **계획 파일의 부분 트리 해시** ·
+`manifestHash` · `planHash` 가 함께 적혀, 넷 중 하나라도 지금 값과 다르면 그 통과는 무효다 —
+통과를 받아 두고 단언을 지우는 길과 검증 명령을 약하게 바꾸는 길이 같은 자리에서 닫힌다.
+명령을 돌리기 **전에** 계획↔트리를 대조하고 회차를 올린다(계획 밖 변경 위의 통과는 증거가 아니고,
+뒤에 올리면 프로세스를 죽여 카운터를 피할 수 있다).
+
+**리뷰가 서는 자리** (P5 단계 2 ✅) — 리뷰의 강제력은 **마지막 회차의 기준 트리 해시**다.
+그 값을 모델이 적으면 아무것도 묶지 못하므로 회차는 `.code-agent/work/<ID>/<대상>.review.json` 에
+**코드만** 쓰고(`code-agent review`), ⑨ 의 회차 구역(`<!-- code-agent:review:... -->`)을 거기서 렌더한다.
+지적은 판정이라 코드가 만들 수 없어 구역 **밖**의 표에 모델이 옮겨 적고, 거기서도 **범위(계획 안/밖)는
+코드가 계획 파일 목록과 대조해 정한다** — 모델이 다르게 적으면 게이트가 알린다. 경로 단위 hook 으로
+구역 안쪽만 막으려면 Edit 의 부분 치환까지 봐야 해 비싸므로, ⑨·⑩ 은 **다시 렌더해 바이트로 대조한다**.
+
+**통합 검증이 다른 이유** — `check`·`test` 는 사람이 보고 있는 작업 트리에서 돈다. 거기 남아 있던
+산출물이 결과를 떠받칠 수 있어, `integrate` 는 굳혀 둔 기준 커밋 위에 **깨끗한 worktree** 를 만들고
+이 작업의 변경만 얹어 전체 `build`·`test` 를 돌린다. `verifyByBuild` 는 쓰지 않는다 — 그것은 커밋을
+검증하는데 새 흐름은 반영 전까지 아무것도 커밋하지 않아, 수정이 하나도 없는 트리를 통과시킨다.
+
+**⑦ 대조는 두 갈래다** — 테스트 출력에서 TC id 를 읽어 내는 것은 프레임워크마다 형식이 달라 일반적으로 되지 않는다.
+그래서 ① 실행 출력에 TC id 가 그대로 나오면 그것으로 인정하고, ② 나오지 않으면 `kind: "test"` 단계의 계획 파일이
+그 id 를 들고 있는지 본다(컨벤션의 `테스트 규칙` 이 "테스트 이름·주석에 TC id 를 남긴다"고 정한 그 자리다).
+둘 다 아니면 통과로 세지 않는다.
+
 ## 4. 메인 에이전트와 서브에이전트
 
 **메인 에이전트**는 사용자와 대화하는 Claude Code 세션 자체다. 스킬(`/ca-*`)을 따라 순서를 진행하고,
@@ -233,8 +260,8 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | `ca-writer` | 1, 4 | 쓰기 (문서 경로만) | 분석 결과·사용자 답을 문서 스키마 섹션에 맞춰 문서로 | P2·P3 ✅ |
 | `ca-critic` | 5 | 읽기 전용 | 계획 반박 검토 — 빠진 요구 항목, 계획 밖 파일 필요성, 테스트 공백, 작업 문서와의 불일치 | P3 ✅ |
 | `ca-implementer` | 6, ↺ | 쓰기 (hook 강제) | 단계 하나. `code-agent context` 로 받은 것만 읽고 시작 | P3 ✅ |
-| `ca-tester` | 8 | 쓰기 (테스트 경로만) | 테스트 작성. 구현과 다른 컨텍스트라 구현을 베끼지 않는다 | P3 ✅ (오늘은 `implement` 의 테스트 단계) · 독립 `test` 스테이지는 P5 |
-| `ca-reviewer` | 9 | 읽기 전용 | 컨벤션·요구사항 충족·참조 코드와의 차이. 고칠 목록만 낸다 | 정의만 · 스테이지는 P5 |
+| `ca-tester` | 8 | 쓰기 (테스트 경로만) | 테스트 작성. 구현과 다른 컨텍스트라 구현을 베끼지 않는다. 첫 검증 뒤에는 언다 | P5 ✅ |
+| `ca-reviewer` | 9 | 읽기 전용 | 컨벤션·요구사항 충족·참조 코드와의 차이. 고칠 목록만 낸다 — 항목마다 **계획 파일 경로**를 적고, 저장소를 다시 훑지 않는다(`context` 가 준 목록·증거만) | P5 ✅ |
 
 **2~5 스테이지의 흐름** — 서브에이전트를 가장 적극적으로 쓰는 곳이다.
 
@@ -281,9 +308,20 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 승인은 무엇에 대한 것인가 | 원장 해시 사슬 — 지시서·계획·매니페스트·문서 | 매 쓰기 | P1 ✅ |
 | POLICY 4종(테스트 전략 · 품질·보안 기준 추가) 확정 + 명령 이름이 매니페스트에 실재 | `start` · `next` · `plan submit` · `approve` | 스테이지 전환 | P4 ✅ |
 | ②③④⑦ 이 없거나 게이트를 못 지나면 계획으로 못 가고 제출도 거부 — 영향 표에 모든 R · R 마다 AC · 모든 AC 가 TC 에 | `code-agent next` · `plan submit` | 계획 전 | P4 ✅ |
-| `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 ✅ · P5 |
-| 정적 분석을 통과해야 테스트로, 수정은 N회까지 | `check` · `test` 스테이지 | 스테이지 전환 | P5 |
-| 답 없는 질문·계획과 실제 변경(`git diff`)을 턴 끝에 대조 | Stop hook | 턴 끝 | P5 |
+| `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 바이트 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 ✅ · P5 ✅ |
+| 정적 분석을 통과해야 테스트로, 수정은 N회까지 (`fixRounds`, 기본 2 — 넘으면 hook 이 계획 파일 쓰기를 전부 거부). 한도는 **증거가 시작될 때 굳는다**(`Evidence.fixRounds`) — `fixRounds` 는 `hashManifest` 밖이라, 매번 매니페스트에서 읽으면 `code-agent.json` 이 계획 파일인 작업에서 루프 도중에 올릴 수 있다 | `check` · `test` · hook | 스테이지 전환 · 쓰기 전 | P5 ✅ |
+| 검증 명령이 이 계획이 쓰는 파일을 가리키면 제출 거부 — 제 검증기를 쓰는 계획은 모든 묶임이 들어맞아도 증거가 아니다 | `code-agent plan submit` | 계획 전 | P5 ✅ |
+| 검증 증거는 기준 커밋 · 계획 파일 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 통과가 무효 | `code-agent next` (`stageProblems`) | 스테이지 전환 | P5 ✅ |
+| 테스트가 한 번 돈 뒤 `kind: "test"` 단계의 계획 파일 동결 — 푸는 길은 ⑨ 의 **그 파일을 가리키는 열린 계획 안 지적** 또는 계획 재승인. 지적이 열쇠가 되려면 셋이 함께다: **`review` 스테이지**일 것 · `code-agent review` 가 연 **회차가 있을 것** · 푼 사실이 `review.json` 에 남을 것(남기지 못하면 풀지 않는다). ⑨ 는 작업 폴더 안이라 아무 때나 쓸 수 있어, 이 셋이 없으면 `test` 에서 미리 적어 두고 풀 수 있다 | PreToolUse hook (`findingOpensFile`) | 쓰기 전 | P5 ✅ |
+| 동결을 푼 지적 줄은 지울 수 없다 — 쓴 뒤 표에서 지우면 커밋된 ⑨ 에 아무 흔적도 남지 않는다. `review.json` 의 기록과 대조해 `review` → `integrate` 를 막는다 | `code-agent next` (`reviewProblems`) | 스테이지 전환 | P5 ✅ |
+| 지적의 상태는 `열림` · `해결` **글자 그대로** — 부분 일치로 보면 `미해결` · `해결 안 됨` 이 전부 닫힌 것으로 읽힌다. 둘 다 아닌 값은 오타로 짚는다. `- 없음` 은 `## 지적` 절 **안에서만** 인정한다 | `code-agent next` (`reviewProblems`) | 스테이지 전환 | P5 ✅ |
+| ⑦ 의 모든 TC id 가 실행 출력 또는 `kind: "test"` 단계 파일에 있어야 `test` → `review` | `code-agent next` | 스테이지 전환 | P5 ✅ |
+| ⑨ 의 회차는 코드만 쓴다 (`code-agent review` → `review.json` → 회차 구역 재렌더 바이트 대조 — 표시 짝이 둘이면 어느 쪽도 믿지 않는다). **마지막 회차 트리 해시 == 지금**이 아니면 `review` → `integrate` 거부 | `code-agent review` · `next` | 스테이지 전환 | P5 ✅ |
+| 열린 지적 0 · **계획 밖을 가리키는 지적 0** — 범위는 모델이 적은 것이 아니라 코드가 계획 파일 목록과 대조해 정한다 | `code-agent next` (`reviewProblems`) | 스테이지 전환 | P5 ✅ |
+| 통합 검증은 기준 커밋 위의 **깨끗한 worktree** 에서 전체 `build`·`test` — 작업 트리의 산출물이 결과를 떠받치지 못한다 | `code-agent integrate` | 스테이지 전환 | P5 ✅ |
+| 반영은 사람만 — TTY 확인 + 게이트 재검사(⑧ 셋 · ⑨ · 추적표 빈 칸 0 · 모델 3섹션) 뒤에야 커밋, **검증된 변경 집합만** (`git add -A` 아님). 확인 화면 직전에 `HEAD` 가 작업 브랜치인지도 본다 — 사람이 다른 터미널에서 돌리는 명령이라 그 창이 다른 브랜치에 서 있을 수 있는데, 커밋은 이 반영의 유일한 기록이다 | `code-agent deliver` | 반영 시 | P5 ✅ |
+| ⑩ 의 추적표·검증·변경 요약은 코드 구역이다 — 손으로 고치면 `deliver` 가 다시 렌더해 덮고 확인 화면에 알린다. 표시 짝이 둘 이상이면 전부 걷어 내 하나로 만들고, 표시 **밖**에 같은 제목의 절을 따로 써 두면 커밋을 세운다 (재렌더가 덮지 못하고 아래에 덧붙어, 화면에는 진짜가 보이는데 커밋에는 지어낸 표가 함께 실린다) | `code-agent deliver` (`blocks.ts` · `deliverProblems`) | 반영 시 | P5 ✅ |
+| 답 없는 질문·계획과 실제 변경(기준 커밋 대비)을 턴 끝에 대조 — **한 번만** 막는다 (`stop_hook_active` 면 통과, 판정 실패도 통과). 절대적인 차단은 `check`·`test`·`next` 가 한다 | Stop hook (`code-agent stop`) | 턴 끝 | P5 ✅ |
 
 경로는 실제 경로로 풀어 비교한다 (`canonical` — Windows 8.3 이름·junction·심볼릭 링크).
 hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있다.
@@ -349,13 +387,14 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json` 의 PreToolUse hook, `.code-agent/version` | O | P1 ✅ |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의, build · test · commands) | O | P1 ✅ |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
-| 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 갱신 |
+| 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 ✅ 갱신 |
 | `doc/work/<ID>/requirement.md` — 작업 지시서. `<ID>` 는 Jira 키 그대로 (`UZRF-145`). **사람이 쓴다** | O | P1 ✅ |
 | `doc/work/<ID>/questions.md` — 질문과 답 | O | P3 ✅ |
 | `doc/work/<ID>/01-requirements.md` · `02-analysis.md` · `03-design.md` · `04-functional.md` — ①~④ (P3 의 `analysis.md` · `current.md` · `data.md` · `api.md` 를 흡수) | O | P4 ✅ |
 | `doc/work/<ID>/plan.json` · `05-plan.md` · `07-test-spec.md` — ⑤ 계획(초안 + 코드 렌더) · ⑦ 테스트 명세 | O | P3 ✅ · P4 ✅ |
-| `doc/work/<ID>/08-validation.md` · `09-review.md` · `10-pr.md` — ⑧ 검증(코드만) · ⑨ 리뷰 · ⑩ PR 본문·추적표 | O | P5 |
-| `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` — 제출된 계획 · 검증 증거. 코드만 쓴다 | O | P1 ✅ · P5 |
+| `doc/work/<ID>/08-validation.md` · `09-review.md` · `10-pr.md` — ⑧ 검증(코드만) · ⑨ 리뷰(회차 구역은 코드) · ⑩ PR 본문(추적표 구역은 코드) | O | P5 ✅ |
+| `doc/work/<ID>/knowledge.proposal.md` — 공통 KNOWLEDGE 갱신 제안. 반영 때 사람이 고른 것만 코드가 upsert | O | P5 ✅ |
+| `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷 | O (증거) | P1 ✅ |
 | `.code-agent/models.json` — 에이전트별 모델 (바꾼 것만) | O | ✅ |
 | `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/log/` | X (`init` 이 `.gitignore` 에 넣는다) | P1 ✅ |
@@ -368,8 +407,8 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 기준 브랜치는 **사용자 입력(`--base`) > `code-agent.json` 의 `git.base` > `master`** 순이다. git 저장소가 아니면 브랜치를 만들지 않는다.
 모델은 브랜치를 바꿀 수 없다 — hook 이 읽기용 git(status·diff·log·show, branch 는 목록 보기만)만 허용한다.
 
-반영은 **로컬까지**다 — 사람 최종 확인(TTY) 뒤 작업 브랜치에 커밋하고 PR 본문을 `pr.md` 로 남긴다.
-push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
+반영은 **로컬 커밋까지**다 — 사람 최종 확인(TTY) 뒤 작업 브랜치에 커밋하고 MR/PR 본문을 `10-pr.md` 로 남긴다.
+**push · MR/PR 생성은 하지 않는다.** git 호스트가 붙기 전에는 만들 자리가 없어 보류한 것이고, 붙으면 그때 정한다 (2026-09-29 결정).
 
 작업 문서 중 오래 쓸 가치가 있는 것(새 도메인의 데이터 정의 등)은 반영 스테이지에서 `doc/` 로 올릴지 묻는다.
 레거시에 문서가 조금씩 쌓이는 길이 이것이다.
@@ -397,6 +436,7 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | `code-agent confirm doc <architecture \| conventions>` | 프로젝트 필수 문서 확정 (해시를 원장에, TTY 에서만) | P2 ✅ |
 | `code-agent approve` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만) | P1 ✅ |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) | P1 ✅ |
+| `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY, 기본 opus) | ✅ |
 | `code-agent usage` | 스테이지·에이전트별 토큰 집계 | P8 |
 | `code-agent update` · `plugin list \| add \| remove` | 갱신 · 플러그인 등록 | P7·P8 |
@@ -409,6 +449,10 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 | P1 ✅ |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙 | P1 ✅ |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 | P1 ✅ |
+| `code-agent check` | 7 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 | P5 ✅ |
+| `code-agent test` | 8 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 | P5 ✅ |
+| `code-agent review` | 9 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 | P5 ✅ |
+| `code-agent integrate` | 10 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 `build`·`test` | P5 ✅ |
 | `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지) | P2 ✅ |
 | `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — `architecture` · `conventions` · `data` · `api` · `current` | P2 ✅ |
 | `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 묻는 것 | P2 ✅ |
@@ -416,6 +460,7 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드·언어·구조·계층 후보·표본 | P2 ✅ |
 | `code-agent manifest check` | `code-agent.json` 이 실제 참조 파일을 찾는지 | P2 ✅ |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON → deny 사유) | P1 ✅ |
+| `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 | P5 ✅ |
 
 ## 10. core 재사용
 
@@ -431,7 +476,7 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | `core/exemplar.ts` | 참조 도메인의 단계별 표준 파일 수집·표시 | `context` |
 | `core/atomic.ts` | 상태·계획 원자적 쓰기 | `layout` · `plan submit` |
 | `core/types.ts` | `BuildPlan` 등 공용 타입 | 전부 |
-| `core/build.ts` | 매니페스트의 `build` · `test` · `commands` 에 선언한 명령 실행 | `check` · `test` · `integrate` 스테이지 (P5) |
+| `core/build.ts` | 매니페스트의 `build` · `test` · `commands` 에 선언한 명령 실행 (`runCommand` 만 — `verifyByBuild` 는 커밋을 검증하므로 쓰지 않는다. `integrate` 는 worktree 를 직접 만든다) | `check` · `test` · `integrate` ✅ |
 
 매니페스트는 넓힌다 — 지금은 "도메인 디렉토리 + 계층" 레이아웃을 전제하지만, 경계의 중심은 **승인된 계획의 파일 목록**이다.
 계층 `outputDirs` 는 선언한 프로젝트에서만 추가로 건다. 그래야 레이아웃이 다른 프로젝트에서도 쓸 수 있다.
@@ -444,10 +489,25 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | P2 프로젝트 문서 | 문서 스키마(아키텍처·컨벤션), `code-agent docs`·`confirm doc`, `/ca-docs` 의 세 경로, 뼈대 역공학(`survey`·surveyor), `/ca-adopt` | 필수 문서 없는 저장소에서 진행이 거부되고, 레거시 1개는 뼈대 역공학으로·빈 저장소 1개는 인터뷰로 두 문서가 만들어져 게이트 통과 | ✅ |
 | P3 분석·범위 조사·계획 | analyst(작업 문서 판정), explorer(범위 역공학), writer(작업 문서), critic, 질문·가정 갈래, 요구 항목 커버리지 검사 | 레거시 저장소에서 데이터 정의 없이 시작해 요구사항 범위 작업 문서가 생기고 승인 가능한 계획까지, 토큰 기준치 기록 | ✅ |
 | P4 문서 모델 전환 + 영향도·설계 | **한 번에 전환한다.** POLICY 2 → 4(테스트 전략 · 품질·보안 기준 스키마, 명령 이름 대조, `/ca-docs` 의 기본/대화 선택, survey 의 도구 후보) · KNOWLEDGE 3종 경로 등록 + 빈 뼈대 · 작업 문서를 번호 문서로(01 ← analysis.md, 02 ← current.md + 영향도·Risk, 03 ← data.md · api.md + 구성 요소·흐름·결정, 04 신규, 07 신규, 05 렌더) · 스테이지 `research` → `impact` · `design` · 게이트(영향 표의 R 전량 · R 마다 AC · 모든 AC 가 TC 에) · 승인 묶음을 고정 목록(지시서 본문 · 01 · 02 · 03 · 04 · 07)으로 | 레거시에서 POLICY 4종을 확정하고, 공통 모듈을 건드리는 요구가 02 에 드러나고, 03·04 를 거쳐 07 이 모든 AC 를 덮은 계획이 승인된다. KNOWLEDGE 는 빈 채로 막지 않는다. P3 대비 토큰을 다시 잰다. **기존 계획 승인은 전부 무효가 된다** (docsHash 계산식이 바뀜) | ✅ |
-| P5 구현·검증·반영 | ⑧⑨⑩ — `check` · `test`(⑦ 의 케이스만, 실행·결과 분석) · 수정 루프(`check` 부터, 최대 N회) · `review` · `integrate`(worktree) · `deliver`(TTY 확인 · 로컬 커밋 · 추적표 · KNOWLEDGE 갱신) · Stop hook. 엄격안 — 증거는 기준 커밋 · 부분 트리 해시에 묶이고 테스트는 첫 실행 뒤 동결 | 실제 프로젝트에서 feature 한 건을 반영까지 완주 (첫 실측) | |
+| P5 단계 1 증거 코어 | 기준 커밋 고정(`ActiveWork.baseCommit`) · `tree.ts`(변경 목록 · 부분 트리 해시) · 스테이지 `check`·`test`·`review`·`integrate`·`deliver` · `code-agent check`·`test`(증거 `verify.json` · ⑧ 렌더 · 계획↔트리 사전 대조 · 회차) · 수정 루프(`fixRounds`, 기본 2) · 테스트 동결(`kind: "test"`) · Stop hook | ⑧ 이 코드로만 쓰이고, 증거가 트리·매니페스트·계획에 묶이고, 한도를 넘기면 hook 이 막는다 — 전부 테스트로 | ✅ |
+| P5 단계 2 리뷰·통합·반영 | ⑨ `09-review.md`(코드가 쓰는 회차 구역 · 마지막 회차 트리 해시 == 지금 · 범위는 코드가 판정) · `integrate`(기준 커밋 + 변경 파일만 얹은 깨끗한 worktree 에서 전체 build·test) · `deliver`(TTY 확인 → ⑩ `10-pr.md` 추적표 렌더 → **로컬 커밋까지**. push·MR/PR 없음) · KNOWLEDGE upsert · 테스트 동결의 두 번째 탈출구(⑨ 의 지적) | 실제 프로젝트에서 feature 한 건을 로컬 커밋까지 완주 (첫 실측) | 코드 ✅ (리뷰 지적 반영) · 실측 |
 | P6 fix·refactor · 신규 저장소 | 현행 분석 필수, 재현 테스트 먼저, preserve 강제, adopt 매니페스트의 종류별 단계, 빈 저장소의 매니페스트를 인터뷰로 | 각 한 건 완주, 빈 저장소에서 feature 시작 | |
 | P7 플러그인 | 자리 정의, `plugin add/list/remove`, 무료 도구 감지, Jev 어댑터 — **등록한 사람만 opt-in** | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | |
 | P8 정리·배포 | 쓰이지 않는 코드·문서 정리, 문서 세트(README 가 이 문서를 가리킴), `usage`, 단일 바이너리 배포, 설치·점검 | 다른 개발자가 혼자 설치부터 반영까지 | |
+
+**P5 뒤로 미룬 것**
+
+- **반영의 원장 줄** — 지금 `deliver` 의 TTY 확인은 **커밋 자체**가 기록이다(증거 파일·⑧⑨⑩ 이 그 커밋 안에 들어간다). 원장(`.code-agent/approvals/`)에는 계획 승인만 쌓인다 — 반영 줄을 더하려면 `ApprovalRecord` 에 종류 축을 넣고 `checkApproval`·`recordDecision` 의 `stage === undefined` 필터를 함께 고쳐야 해서, 그 자리를 건드리는 값이 확인될 때까지 미룬다.
+- **⑨ 의 `요구 충족` 절** — AC 마다 충족/근거를 적는 절은 넣지 않았다. 같은 대조를 ⑩ 의 추적표가 **코드로** 하고 있어(R → AC → 파일 → TC → 검증, 빈 칸이면 반영 거부), 모델이 쓰는 두 번째 사본을 두면 둘이 갈릴 때 어느 쪽이 사실인지가 모호해진다.
+  스킬·에이전트 템플릿과 `usage.md` 는 이 절을 쓰라고 시키고 있었는데(코드는 읽지도 않는다), 2026-09-29 리뷰에서 걷어냈다 — 문서 하나에 출처가 둘이면 어느 쪽도 근거가 되지 않는다.
+- **매니페스트의 `kind: "verify"` 이중 개념** — `codeStages()` 가 걸러 내는데 fix 스타터는 두 단계가 모두 `verify` 라 그 매니페스트로는 코드 단계가 0개가 된다. P6(fix) 시작 전에 정리한다.
+- **MR/PR** — `deliver` 는 로컬 커밋에서 끝난다. push·MR/PR 생성은 git 호스트가 붙을 때 정한다(2026-09-29 결정). ⑩ 이 그때 쓸 본문을 이미 들고 있다.
+
+**알고 남긴 한계** (2026-09-29 리뷰에서 재현해 두고 고치지 않기로 한 것)
+
+- **⑦ 대조의 두 번째 갈래** — 실행 출력에 TC id 가 없으면 `kind:"test"` 단계의 계획 파일에 그 id 가 **있기만 하면** 확인으로 센다. `// TC-1 · TC-2` 한 줄짜리 파일도 통과한다. 출력 파싱은 프레임워크마다 형식이 달라 일반적으로 되지 않아 둔 갈래이고(§3), 강제력은 `build`·`test` 가 실제로 도는 것과 테스트 동결이 든다.
+- **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 화면에 싣고, 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.
+- **KNOWLEDGE 3종은 계획 밖 변경 대조에서 빠진다** — `deliver` 가 사람이 고른 항목을 코드로 적용하는 자리라 모델이 쓸 수 없고(hook), 넣어 두지 않으면 커밋이 실패했을 때 적용본만 남아 다시 반영할 길이 영영 막힌다.
 
 **P3 실측 기준치** (2026-09-29, 가짜 레거시 — Spring, 도메인 3 × 계층 5, Java 23파일 · 지시서 "주문을 등록·조회한다" 한 줄 · 서브에이전트 전부 opus)
 

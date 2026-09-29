@@ -42,6 +42,7 @@ const MANIFEST: Manifest = {
   domainBase: "app/features",
   domainRoots: [],
   conventions: [],
+  fixRounds: 2,
   commands: {},
   docs: {},
   git: { base: "master" },

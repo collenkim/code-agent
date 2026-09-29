@@ -149,7 +149,7 @@ const COMMAND_SECTIONS: Partial<Record<DocKind, string[]>> = {
  * 빈 줄은 목록의 끝이 아니다 (마크다운의 loose list) — 건너뛰고, 목록이 아닌 줄에서만 끝낸다.
  * 여기서 끊으면 항목을 띄어 쓴 목록의 뒷이름이 통째로 대조에서 빠진다.
  */
-function firstListNames(body: string): { names: string[]; none: boolean } {
+export function firstListNames(body: string): { names: string[]; none: boolean } {
   const lines = body.split("\n").map((line) => line.trim());
   const start = lines.findIndex((line) => /^[-*]\s+/.test(line));
   const names: string[] = [];

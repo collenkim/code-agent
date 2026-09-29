@@ -36,6 +36,7 @@ function manifestWith(build: string[]): Manifest {
     domainRoots: [],
     conventions: [],
     build,
+    fixRounds: 2,
     commands: {},
     docs: {},
     git: { base: "master" },

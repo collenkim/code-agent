@@ -7,7 +7,7 @@
 | 층 | 문서 | 코드가 보는 것 | 승인 해시 | 상태 |
 |---|---|---|---|---|
 | **공통 POLICY** | `doc/architecture.md` · 컨벤션(`conventions[]`) · `doc/test-strategy.md` · `doc/quality.md` | 파일 + 필수 섹션 + **사람 확정** | 예 | ✅ (4종) |
-| **공통 KNOWLEDGE** | `doc/knowledge/` 의 데이터 사전 · API 목록 · 업무 규칙·용어집 | **파일 존재만** | 아니오 | 생성 ✅ · 갱신 P5 |
+| **공통 KNOWLEDGE** | `doc/knowledge/` 의 데이터 사전 · API 목록 · 업무 규칙·용어집 | **파일 존재만** | 아니오 | 생성 ✅ · 갱신 ✅ (`deliver` 에서 사람이 고른 항목만) |
 | **작업 문서** | `doc/work/<ID>/` 의 번호 문서 | 문서마다 다르다 | 6개 | 아래 흐름 표 |
 
 **막는 것은 POLICY 4종뿐이다.** KNOWLEDGE 는 비어 있어도 작업을 막지 않는다 — 도입 때 빈 뼈대로 만들고 반영마다 그 작업 범위만 자란다.
@@ -24,18 +24,19 @@
 | 3 | 영향도 분석 `impact` | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 표(**모든 R**) · Risk. 모든 작업 필수 | ✅ |
 | 4~5 | 시스템 설계 + 기능·API·데이터 정의 `design` | ③ `03-design.md`(구성 요소·흐름·API·데이터·설계 결정) + ④ `04-functional.md`(기능·업무 규칙·예외·**AC**) | ✅ |
 | 6 | 구현 계획 `plan` | ⑤ `plan.json`(+`sequence`·`approach`) → 코드가 `05-plan.md` 렌더 + ⑦ `07-test-spec.md`(AC 마다 TC) → **사람 승인(터미널)** | ✅ |
-| 7 | 코드 생성 `implement` | 단계마다 새 컨텍스트에서 `ca-implementer` | 커서·hook 울타리 ✅ · 루프 P5 |
-| 8 | 정적 분석·컴파일 `check` | 품질·보안 기준이 적은 명령 + build → ⑧ `08-validation.md` (코드만 쓴다) | P5 |
-| 9 | 테스트 생성·실행 `test` | `ca-tester` 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 | P5 |
-| 10 | 결과 분석 | 실패를 파일·요구 항목으로 묶는다 | P5 |
-| ↺ | 수정 | 계획 안이면 고치고 **8 부터 다시** (최대 N회). 계획 밖이면 질문 또는 재승인 | P5 |
-| 11 | 코드 리뷰 `review` | ⑨ `09-review.md` — 컨벤션·요구 충족·설계와의 불일치. 지적은 ↺ 수정 루프로 | P5 |
-| 12 | 통합 검증 `integrate` | 깨끗한 worktree 에서 전체 build · test | P5 |
-| 13 | 반영 `deliver` | ⑩ `10-pr.md` — 추적표·변경 요약 → **사람 최종 확인(터미널)** → 작업 브랜치 로컬 커밋. KNOWLEDGE 3종이 여기서 자란다. push · PR 생성 · 병합은 사람 | P5 |
+| 7 | 코드 생성 `implement` | 단계마다 새 컨텍스트에서 `ca-implementer` | ✅ |
+| 8 | 정적 분석·컴파일 `check` | 품질·보안 기준이 적은 명령 + build → ⑧ `08-validation.md` (코드만 쓴다) | ✅ |
+| 9 | 테스트 생성·실행 `test` | `ca-tester` 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 · 이후 테스트 동결 | ✅ |
+| 10 | 결과 분석 | 실패를 파일·요구 항목으로 묶는다 | ✅ |
+| ↺ | 수정 | 계획 안이면 고치고 **8 부터 다시** (기본 2회 — `code-agent check` 가 뒤 스테이지에서 불려도 그 자리로 되감는다). 계획 밖이면 질문 또는 재승인 | ✅ |
+| 11 | 코드 리뷰 `review` | ⑨ `09-review.md` — `ca-reviewer` 가 낸 지적 표(`id · 계획 파일 · 범위 · 상태 · 지적`)를 그대로 옮긴다. 지적은 ↺ 수정 루프로 | ✅ |
+| 12 | 통합 검증 `integrate` | 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build · test | ✅ |
+| 13 | 반영 `deliver` | ⑩ `10-pr.md` — 추적표·변경 요약 → **사람 최종 확인(터미널)** → 작업 브랜치 로컬 커밋. KNOWLEDGE 3종이 여기서 자란다. push · MR/PR 생성은 하지 않는다(git 호스트가 붙을 때까지 보류) | ✅ |
 
 (⑥ Code 는 소스 코드 자체다 — `06-` 파일은 없다.)
 
-오늘 `code-agent next` 는 `implement` 를 지나 `verify` 에서 멈춘다. P3 의 `research` 한 칸은 `impact` · `design` 둘로 갈렸다.
+`/ca-next` 가 `implement` → `check` → `test` → `review` → `integrate` 까지 몰고, `deliver` 앞에서 멈춰 **사람에게 터미널을 넘긴다**.
+P4 의 `verify` 한 칸은 `check` · `test` · `review` · `integrate` · `deliver` 다섯으로 갈렸다.
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
@@ -43,8 +44,9 @@
 | P2 프로젝트 문서 | 문서 스키마 · `docs` · `confirm doc` · `/ca-docs` · `/ca-adopt` | ✅ |
 | P3 분석·조사·계획 | analyst · explorer · writer · critic · 질문 루프 · `plan submit` · `approve` | ✅ |
 | P4 문서 모델 전환 + 영향도·설계 | POLICY 2 → 4 · KNOWLEDGE 3종 빈 뼈대 · 작업 문서를 번호 문서(`01`~`04`·`07`, `05` 는 코드 렌더)로 · `impact` · `design` 스테이지 | ✅ |
-| P5 구현·검증·반영 | 7~13 · 수정 루프 · Stop hook | 다음 |
-| P6 fix·refactor·신규 저장소 | 재현 테스트 우선 · preserve 강제 · 빈 저장소 도입 | |
+| P5 단계 1 증거 코어 | 8·9·10 · 수정 루프 · 테스트 동결 · Stop hook · 기준 커밋·부분 트리 해시에 묶인 증거 | ✅ |
+| P5 단계 2 리뷰·통합·반영 | 11~13 · ⑨⑩ · KNOWLEDGE 갱신 · 로컬 커밋 | ✅ |
+| P6 fix·refactor·신규 저장소 | 재현 테스트 우선 · preserve 강제 · 빈 저장소 도입 | 다음 |
 | P7 플러그인 | 자리(slot) 정의 · `plugin add/list/remove` — 등록한 사람만 opt-in | |
 | P8 정리·배포 | 문서 세트 · `usage` · 단일 실행 파일 | |
 
@@ -86,7 +88,10 @@ claude
 5. **`/ca-answer`** — 답 없는 질문을 하나씩 묻는다. 하나라도 남으면 다음 스테이지로 넘어가지 않는다.
 6. **별도 터미널에서 승인** — `code-agent approve`. 계획과 `## 가정` 이 함께 보인다.
    반려는 `code-agent reject --comment "사유"` (사유 필수).
-7. **`/ca-next`** — 구현 단계를 하나씩 진행한다. 지금 위치는 `/ca-status`.
+7. **`/ca-next`** — 구현 단계를 하나씩 진행하고, 이어서 `check` → `test` → `review` → `integrate` 를 몬다.
+   검증이 실패하면 계획 안에서 고치고 `check` 부터 다시 돈다(기본 2회). 지금 위치는 `/ca-status`.
+8. **별도 터미널에서 반영** — `code-agent deliver`. 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤
+   작업 브랜치에 **로컬 커밋**한다. push·MR/PR 생성은 하지 않는다.
 
 ## 명령
 
@@ -102,10 +107,11 @@ claude
 | `code-agent status` · `code-agent docs` | 문서·작업·스테이지·질문·승인 상태 · 문서 섹션별 상태 |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | 공통 POLICY 문서 확정 (TTY) |
 | `code-agent approve` · `reject --comment <사유>` | 계획 판정 (TTY) |
+| `code-agent deliver` | 반영 — 추적표·검증 증거 확인 후 작업 브랜치 로컬 커밋 (TTY). push·MR/PR 없음 |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 터미널에서만, 기본 opus) |
 
-스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `context` · `status` · `plan submit` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (stdin JSON).
+스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `context` · `status` · `plan submit` · `check` · `test` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
 
 ## 막히는 자리
 
@@ -123,7 +129,13 @@ claude
 | `.code-agent/` 는 도구로 못 쓴다 (커서·제출된 계획·승인 원장) | PreToolUse hook | ✅ |
 | Bash 는 스킬이 부르는 `code-agent` 서브명령 · 선언된 명령 · 읽기용 git(파일로 내보내기 없이)만. 연결·리다이렉트 금지 | PreToolUse hook | ✅ |
 | 답 없는 질문이 있으면 진행 금지 | `next` · `plan submit` | ✅ |
-| 승인·확정은 사람만 | `approve` · `confirm` 의 TTY 검사 | ✅ |
+| 검증 결과는 모델이 보고하는 것이 아니라 `check`·`test`·`integrate` 가 증거에 적은 것만 유효하다 — `not-run`·`error`·`skipped` 는 통과가 아니다 | `check` · `test` · `next` | ✅ |
+| 증거는 기준 커밋 · 계획 파일의 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 그 통과가 무효 | `next` · `deliver` | ✅ |
+| 테스트가 한 번 돌면 `kind: "test"` 단계의 파일이 언다 — 단언을 지워 통과시키는 길이 막힌다 | PreToolUse hook | ✅ |
+| 계획 안 수정은 `fixRounds`(기본 2)회까지. 넘으면 계획 파일 쓰기가 전부 거부되고 보고만 남는다 | PreToolUse hook | ✅ |
+| 리뷰의 열린 `계획 안` 지적이 있거나 마지막 회차 트리 해시가 지금과 다르면 반영 거부 | `deliver` | ✅ |
+| 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 알린다 (두 번 막지 않는다) | Stop hook (`code-agent stop`) | ✅ |
+| 승인·확정·반영은 사람만 — 반영 확인 화면에 추적표·검증 증거·커밋될 파일 목록이 함께 뜬다 | `approve` · `confirm` · `deliver` 의 TTY 검사 | ✅ |
 
 hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있다.
 

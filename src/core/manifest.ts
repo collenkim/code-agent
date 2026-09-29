@@ -12,11 +12,12 @@ const StageSchema = z.object({
   title: z.string().describe("이 단계가 만드는 것"),
   template: z.string().describe("같은 디렉토리의 템플릿 문서 파일명"),
   kind: z
-    .enum(["code", "doc", "verify"])
+    .enum(["code", "doc", "verify", "test"])
     .default("code")
     .describe(
       "이 단계가 만드는 것의 성격. doc은 코드가 아닌 문서(결정 질문지·조사서·컨벤션), " +
-        "verify는 build/test 명령을 돌려 그 결과로 고치는 단계. " +
+        "verify는 build/test 명령을 돌려 그 결과로 고치는 단계, " +
+        "test는 테스트 코드 단계 — 테스트가 한 번 돈 뒤에는 hook 이 그 파일들을 얼린다(단언을 지워 통과시키는 길). " +
         "라이프사이클 단계를 코드에 박지 않고 프로젝트가 선언하게 하는 축이다",
     ),
   kinds: z
@@ -155,6 +156,16 @@ const ManifestSchema = z.object({
       "검증(P5)이 build·test 말고 이름으로 돌릴 수 있는 추가 명령. 두 리터럴만으로는 " +
         "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
         "덮어쓸 수 없다 — 그 둘은 최상위 선언이 이미 쓰고 있는 이름이다",
+    ),
+  fixRounds: z
+    .number()
+    .int()
+    .min(1)
+    .default(2)
+    .describe(
+      "검증 실패 뒤 계획 안에서 고쳐 쓸 수 있는 최대 회차. 넘으면 hook 이 계획 파일 쓰기를 전부 " +
+        "거부하고 작업 폴더(보고·질문)만 남는다 — 덮지 않고 보고한다를 선언이 아니라 강제로 만드는 자리다. " +
+        "hashManifest 에는 넣지 않는다: 경계도 검증 선언도 아니라 재승인을 부를 이유가 없다",
     ),
   workOrder: z
     .object({

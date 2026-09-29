@@ -49,6 +49,16 @@ export function requireTerminal(what: string): void {
   }
 }
 
+/**
+ * 터미널에 한 줄 묻고 답을 받는다. 반영에서 KNOWLEDGE 항목을 하나씩 고르는 자리에 쓴다 —
+ * 그 선택은 판정이 아니라서 확인 문구를 요구하지 않지만, 사람이 없으면 물을 수도 없다.
+ */
+export function askOnTerminal(shown: string, prompt: string): string {
+  requireTerminal(prompt);
+  process.stdout.write(`${shown}\n${prompt}: `);
+  return readLineSync();
+}
+
 export function confirmOnTerminal(shown: string, word: string): Presence {
   if (!process.stdin.isTTY) {
     throw new Error(
