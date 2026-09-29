@@ -7,11 +7,13 @@ description: 진행 중인 code-agent 작업을 다음으로 진행한다 — �
 
 1. Bash: `code-agent status` 로 스테이지를 확인한다.
 2. 스테이지별로:
-   - **analysis · research · plan** — `.claude/skills/ca-feature/SKILL.md` 의 해당 절부터 이어 간다.
+   - **analysis · impact · design · plan** — `.claude/skills/ca-feature/SKILL.md` 의 해당 절부터 이어 간다
+     (`analysis` → 1절 `01-requirements.md`, `impact` → 2절 `02-analysis.md`, `design` → 3절 `03-design.md`·`04-functional.md`, `plan` → 4절 `plan.json`·`07-test-spec.md`).
    - **implement** — 단계가 끝날 때까지 반복한다:
      1. Bash: `code-agent context` — 이 단계의 만들 파일, 단계 규칙, 참조 표준 코드가 나온다.
      2. 테스트 단계면 `ca-tester`, 아니면 `ca-implementer` 를 부른다. context 출력을 **그대로** 넘기고,
-        작업 폴더의 analysis.md · 작업 문서 경로를 함께 준다. 서브에이전트는 새 컨텍스트에서 시작하므로 필요한 것은 전부 넘긴다.
+        작업 폴더의 `03-design.md` · `04-functional.md` 경로(테스트 단계면 `07-test-spec.md` 도)를 함께 준다.
+        서브에이전트는 새 컨텍스트에서 시작하므로 필요한 것은 전부 넘긴다.
      3. 서브에이전트가 hook 거부나 질문을 보고하면 사용자에게 전하고 멈춘다.
      4. Bash: `code-agent next` — 계획 파일이 빠졌다고 하면 같은 서브에이전트에게 빠진 것만 한 번 더 맡긴다. 두 번째도 안 되면 멈추고 보고한다.
    - **verify** — 아직 구현되지 않았다 (P5). 상태를 보고하고 멈춘다.

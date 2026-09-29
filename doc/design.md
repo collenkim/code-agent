@@ -31,7 +31,7 @@
 
 **막는 것은 POLICY 4개뿐이다.** KNOWLEDGE 는 비어 있어도 작업을 막지 않는다 — 막으면 첫 도입에서 아무 작업도 시작되지 않는다.
 
-### 2.1 공통 POLICY — 확정 전에는 작업이 시작되지 않는다 (P2 ✅ 2종 · P4 2종)
+### 2.1 공통 POLICY — 확정 전에는 작업이 시작되지 않는다 (P2 ✅ 2종 · P4 ✅ 2종)
 
 | 문서 | 기본 경로 | 필수 섹션 (코드가 검사) |
 |---|---|---|
@@ -58,7 +58,7 @@
 **문서 작성 세션** — `/ca-docs` · `/ca-adopt` 가 `code-agent docs begin` 으로 열고, 그동안 hook 이 문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기를 막는다.
 작업이 진행 중이면 세션을 열지 않는다 — 근거 문서는 작업 도중에 바꾸지 않는다.
 
-### 2.2 공통 KNOWLEDGE — 비어서 시작하고 반영마다 자란다 (P4 생성 · P5 갱신)
+### 2.2 공통 KNOWLEDGE — 비어서 시작하고 반영마다 자란다 (P4 ✅ 생성 · P5 갱신)
 
 | 문서 | 경로 | 항목 키 | 무엇이 쌓이나 |
 |---|---|---|---|
@@ -79,8 +79,8 @@
 
 | 층 | 범위 | 언제 | 산출물 | 상태 |
 |---|---|---|---|---|
-| **뼈대 역공학** | 프로젝트 전체를 **얕게** — 빌드 파일·디렉토리·계층별 표본·**도구 후보**(테스트·린터·보안 의존성, CI 설정) | 도입에 한 번 | POLICY 4종 초안 + KNOWLEDGE 목록 초안(상한 30·40개) | P2 ✅ / P4 |
-| **요구사항 범위 역공학** | 요구사항이 닿는 코드만 **깊게** | 작업마다 | 02 분석 보고서 · 03 기술 설계 | P3 ✅ / P4 |
+| **뼈대 역공학** | 프로젝트 전체를 **얕게** — 빌드 파일·디렉토리·계층별 표본·**도구 후보**(테스트·린터·보안 의존성, CI 설정) | 도입에 한 번 | POLICY 4종 초안 + KNOWLEDGE 목록 초안(상한 30·40개) | P2 ✅ / P4 ✅ |
+| **요구사항 범위 역공학** | 요구사항이 닿는 코드만 **깊게** | 작업마다 | 02 분석 보고서 · 03 기술 설계 | P3 ✅ / P4 ✅ |
 
 전체를 깊게 분석하는 층은 두지 않는다 — 그 자리를 KNOWLEDGE 가 **반영마다 조금씩** 대신한다.
 요구 항목이 닿는 키가 이미 KNOWLEDGE 에 있으면 explorer 를 붙이지 않고 인용한다(토큰이 줄어드는 자리).
@@ -114,15 +114,15 @@ projectDocsHash = POLICY 4종의 확정 해시
 workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 · 02 · 03 · 04 · 07
 ```
 
-목록이 **고정**인 것이 P4 의 변경점이다. 지금은 `analysis.md` 의 `## 작업 문서` 가 부른 것만 담기는데,
-02·03·04 가 항상 필수가 되면서 그 판정이 사라졌다 — `## 작업 문서` 섹션과 `workDocProblems` 를 없애고,
+목록이 **고정**인 것이 P4 의 변경점이었다. P3 에서는 `analysis.md` 의 `## 작업 문서` 가 부른 것만 담겼는데,
+02·03·04 가 항상 필수가 되면서 그 판정이 사라졌다 — `## 작업 문서` 섹션과 `workDocProblems` 를 없앴고,
 그 섹션이 열어 두던 "이미 있는 문서가 이 범위를 덮는다" 경로는 03 의 `해당 없음 — <근거>` 와 KNOWLEDGE 인용이 대신한다.
 
 제외하는 것과 이유 — `05-plan.md`·`plan.json`(planHash 가 이미 덮는다) · `questions.md`(구현 중에도 쌓여 승인이 수시로 무효가 된다)
 · KNOWLEDGE 3종(위 2.2) · `08`·`09`·`10`(승인 뒤 산출물이라 역방향으로 묶인다 — 증거가 어느 승인 아래에서 났는지를 적는다).
 
-> **P4 도입 시 기존 계획 승인은 전부 무효가 된다.** POLICY 가 2 → 4 개가 되고 작업 문서 목록이 바뀌어 `docsHash` 계산식이 달라진다.
-> 진행 중이던 작업은 `stale-docs` 로 떨어져 재승인이 필요하다.
+> **P4 도입으로 P3 때 받은 계획 승인은 전부 무효가 됐다.** POLICY 가 2 → 4 개가 되고 작업 문서 목록이 바뀌어 `docsHash` 계산식이 달라졌다.
+> 진행 중이던 작업은 `stale-docs` 로 떨어져 재승인이 필요하다. 옛 형식으로 제출돼 있던 `plan.json`(`sequence`·`approach` 없음)은 `plan submit` 으로 다시 제출해야 한다.
 > 매니페스트 쪽은 안전하다 — `hashManifest` 는 `stages`·`build`·`test`·`commands` 만 담고 `docs` 는 담지 않으므로 경로 등록이 늘어도 `stale-manifest` 는 나지 않는다.
 
 ### 2.5 문서를 만드는 세 경로
@@ -149,11 +149,11 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | # | 스테이지 (key) | 목표 흐름 | 하는 일 | 누가 | 게이트 | 상태 |
 |---|---|---|---|---|---|---|
 | 0 | 준비 | — | `init` 설치, 워크스페이스 감지 (신규/레거시, 필수 문서 유무) | CLI | — | P1 ✅ |
-| 1 | 공통 문서 | — | POLICY 4종(아키텍처 · 컨벤션 · 테스트 전략 · 품질·보안 기준) 점검·작성, KNOWLEDGE 3종 빈 뼈대. 문서마다 기본으로 생성 / 대화로 생성 | CLI 점검 + surveyor·writer | **POLICY 넷 다 확정돼야 작업 시작** | P2 ✅ 2종 · P4 2종 |
-| 2 | 요구사항 분석 `analysis` | 요구사항 · 분석·명세화 | ① `01-requirements.md` — 요구 항목(`## R<n>`), 기본값은 `## 가정`, 모호·누락·충돌은 질문 | 메인 + analyst | 질문 · R 형식 | P3 ✅ (`analysis.md`) → P4 |
-| 3 | 영향도 분석 `impact` | 영향도 분석 | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 · Risk (**항상**, 크기는 작업에 맞게) | 메인 + explorer × 영역 → writer | 질문 · 필수 섹션 · **영향 표에 모든 R** | P4 |
-| 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + writer | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 |
-| 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | 메인 → critic | **사람 승인 (터미널)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 |
+| 1 | 공통 문서 | — | POLICY 4종(아키텍처 · 컨벤션 · 테스트 전략 · 품질·보안 기준) 점검·작성, KNOWLEDGE 3종 빈 뼈대. 문서마다 기본으로 생성 / 대화로 생성 | CLI 점검 + surveyor·writer | **POLICY 넷 다 확정돼야 작업 시작** | P2 ✅ 2종 · P4 ✅ 2종 |
+| 2 | 요구사항 분석 `analysis` | 요구사항 · 분석·명세화 | ① `01-requirements.md` — 요구 항목(`## R<n>`), 기본값은 `## 가정`, 모호·누락·충돌은 질문 | 메인 + analyst | 질문 · R 형식 | P4 ✅ (P3 의 `analysis.md`) |
+| 3 | 영향도 분석 `impact` | 영향도 분석 | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 · Risk (**항상**, 크기는 작업에 맞게) | 메인 + explorer × 영역 → writer | 질문 · 필수 섹션 · **영향 표에 모든 R** | P4 ✅ |
+| 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + writer | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 ✅ |
+| 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | 메인 → critic | **사람 승인 (터미널)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 ✅ |
 | 6 | 코드 생성 `implement` | 코드 생성 | ⑥ 계획의 단계마다 새 컨텍스트에서 | implementer (테스트 단계는 tester) | hook — 계획 밖 쓰기 거부 | P3 ✅ |
 | 7 | 정적 분석·컴파일 `check` | 정적 분석·컴파일 | 품질·보안 기준이 적은 명령 + `build` 를 돌려 증거로 기록 → ⑧ `08-validation.md` (코드만 씀) | CLI | 코드 — `not-run` 은 통과가 아니다 | P5 |
 | 8 | 테스트 `test` | 테스트 생성·실행 · 결과 분석 | tester 가 ⑦ 의 케이스만 작성 → CLI 가 실행 → ⑧ 에 케이스마다 한 줄 | tester + CLI | 코드 — ⑦ 전부 통과, 이후 테스트 동결 | P5 |
@@ -163,8 +163,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | 11 | 반영 `deliver` | 반영·PR | ⑩ `10-pr.md` — 요약 · 추적표(R → AC → 파일 → TC → 검증) · 확인 방법 · 위험. KNOWLEDGE 갱신 제안을 하나씩 고른다 → **사람 최종 확인(터미널)** → 작업 브랜치에 로컬 커밋. push · PR 생성 · 병합은 사람 | 메인 + CLI | **사람 확인 (터미널)** | P5 |
 
 **오늘 커서가 도는 자리** — `code-agent status` 가 보여 주는 스테이지는
-`analysis → research → plan → implement → verify` 다 (`src/agent/layout.ts` 의 `PHASES`).
-`research` 한 칸이 3·4(영향도·설계)가 들어갈 자리다 — P4 에서 `impact` · `design` 둘로 나눈다.
+`analysis → impact → design → plan → implement → verify` 다 (`src/agent/layout.ts` 의 `PHASES`).
+P3 의 `research` 한 칸이 3·4(영향도·설계) 자리였고, P4 에서 `impact` · `design` 둘로 갈렸다.
 커서는 `verify` 에서 끝난다 — `code-agent next` 는 `implement` 의 마지막 단계를 마치면 거기서 멈추고,
 7~11 이 생기는 P5 까지 그 뒤는 없다.
 
@@ -229,7 +229,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 |---|---|---|---|---|
 | `ca-surveyor` | 1 | 읽기 전용 | 뼈대 역공학 — 영역 하나(빌드·구조·계층 표본)를 맡아 근거 경로가 달린 분석. 여럿 병렬 | P2 ✅ |
 | `ca-analyst` | 2 | 읽기 전용 | 요구 항목화, 모호·누락·충돌을 질문 후보로, 항목별 "데이터·접점을 건드리는가" 판정 | P3 ✅ |
-| `ca-explorer` | 3 | 읽기 전용 | 요구사항 범위 역공학 — 닿는 영역 하나의 관련 파일·호출 경로·현행 데이터·API. 영역마다 병렬 | P3 ✅ (오늘은 `research` 에서 돈다) |
+| `ca-explorer` | 3 | 읽기 전용 | 요구사항 범위 역공학 — 닿는 영역 하나의 관련 파일·호출 경로·현행 데이터·API. 영역마다 병렬 | P3 ✅ · P4 부터 `impact` 에서 돈다 |
 | `ca-writer` | 1, 4 | 쓰기 (문서 경로만) | 분석 결과·사용자 답을 문서 스키마 섹션에 맞춰 문서로 | P2·P3 ✅ |
 | `ca-critic` | 5 | 읽기 전용 | 계획 반박 검토 — 빠진 요구 항목, 계획 밖 파일 필요성, 테스트 공백, 작업 문서와의 불일치 | P3 ✅ |
 | `ca-implementer` | 6, ↺ | 쓰기 (hook 강제) | 단계 하나. `code-agent context` 로 받은 것만 읽고 시작 | P3 ✅ |
@@ -274,14 +274,14 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 계획 승인 전(분석·조사·계획 스테이지) 작업 폴더 밖 쓰기 금지 | PreToolUse hook → `code-agent hook` | 쓰기 전 | P1 ✅ |
 | 계획에 없는 파일, scope 밖, preserve, 계층 경계 | 같음 (코어 `checkPaths` · `unplannedFiles`) | 쓰기 전 | P1 ✅ |
 | `.code-agent/` 상태·제출된 계획·원장 변조 | 같음 | 쓰기 전 | P1 ✅ |
-| Bash 는 허용 목록만 (`code-agent *`, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch). 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부 | 같음 | 실행 전 | P1 ✅ |
+| Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model` 은 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰므로 거부). 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부 | 같음 | 실행 전 | P1 ✅ · P4 ✅ |
 | 답 없는 질문이 있으면 진행 금지 | `code-agent next` · `plan submit` (`requireAnswers`) | 스테이지 전환 | P3 ✅ |
 | 단계의 계획 파일이 실제로 생겼는지 확인해야 다음 단계 | `code-agent next` (`missingPlannedFiles`) | 스테이지 전환 | P3 ✅ |
 | 승인·확정은 사람만 | `approve` · `reject` · `confirm doc` 의 TTY 검사 | 승인 시 | P1 ✅ |
 | 승인은 무엇에 대한 것인가 | 원장 해시 사슬 — 지시서·계획·매니페스트·문서 | 매 쓰기 | P1 ✅ |
-| POLICY 4종(테스트 전략 · 품질·보안 기준 추가) 확정 + 명령 이름이 매니페스트에 실재 | `start` · `next` · `plan submit` · `approve` | 스테이지 전환 | P4 |
-| ②③④⑦ 이 없거나 게이트를 못 지나면 계획으로 못 가고 제출도 거부 — 영향 표에 모든 R · R 마다 AC · 모든 AC 가 TC 에 | `code-agent next` · `plan submit` | 계획 전 | P4 |
-| `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 · P5 |
+| POLICY 4종(테스트 전략 · 품질·보안 기준 추가) 확정 + 명령 이름이 매니페스트에 실재 | `start` · `next` · `plan submit` · `approve` | 스테이지 전환 | P4 ✅ |
+| ②③④⑦ 이 없거나 게이트를 못 지나면 계획으로 못 가고 제출도 거부 — 영향 표에 모든 R · R 마다 AC · 모든 AC 가 TC 에 | `code-agent next` · `plan submit` | 계획 전 | P4 ✅ |
+| `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 ✅ · P5 |
 | 정적 분석을 통과해야 테스트로, 수정은 N회까지 | `check` · `test` 스테이지 | 스테이지 전환 | P5 |
 | 답 없는 질문·계획과 실제 변경(`git diff`)을 턴 끝에 대조 | Stop hook | 턴 끝 | P5 |
 
@@ -348,12 +348,12 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 |---|---|---|
 | `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json` 의 PreToolUse hook, `.code-agent/version` | O | P1 ✅ |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의, build · test · commands) | O | P1 ✅ |
-| 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 |
-| 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 생성 · P5 갱신 |
+| 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
+| 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 갱신 |
 | `doc/work/<ID>/requirement.md` — 작업 지시서. `<ID>` 는 Jira 키 그대로 (`UZRF-145`). **사람이 쓴다** | O | P1 ✅ |
 | `doc/work/<ID>/questions.md` — 질문과 답 | O | P3 ✅ |
-| `doc/work/<ID>/01-requirements.md` · `02-analysis.md` · `03-design.md` · `04-functional.md` — ①~④ (P3 의 `analysis.md` · `current.md` · `data.md` · `api.md` 를 흡수) | O | P4 |
-| `doc/work/<ID>/plan.json` · `05-plan.md` · `07-test-spec.md` — ⑤ 계획(초안 + 코드 렌더) · ⑦ 테스트 명세 | O | P3 ✅ · P4 |
+| `doc/work/<ID>/01-requirements.md` · `02-analysis.md` · `03-design.md` · `04-functional.md` — ①~④ (P3 의 `analysis.md` · `current.md` · `data.md` · `api.md` 를 흡수) | O | P4 ✅ |
+| `doc/work/<ID>/plan.json` · `05-plan.md` · `07-test-spec.md` — ⑤ 계획(초안 + 코드 렌더) · ⑦ 테스트 명세 | O | P3 ✅ · P4 ✅ |
 | `doc/work/<ID>/08-validation.md` · `09-review.md` · `10-pr.md` — ⑧ 검증(코드만) · ⑨ 리뷰 · ⑩ PR 본문·추적표 | O | P5 |
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` — 제출된 계획 · 검증 증거. 코드만 쓴다 | O | P1 ✅ · P5 |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷 | O (증거) | P1 ✅ |
@@ -443,7 +443,7 @@ push · PR 생성 · 병합은 사람이 한다. GitHub 연동은 없다 (P5).
 | P1 뼈대 | CLI(`init` `hook` `start` `context` `plan submit` `approve` `status` `next` `abort`), `.claude/` 템플릿(CLAUDE.md 블록·hook·스킬·에이전트 정의), 작업 폴더 구조, 작업 브랜치 | 스파이크 판정 13개를 테스트로 이관해 통과, 테스트 저장소에서 `init` → `/ca-status` | ✅ |
 | P2 프로젝트 문서 | 문서 스키마(아키텍처·컨벤션), `code-agent docs`·`confirm doc`, `/ca-docs` 의 세 경로, 뼈대 역공학(`survey`·surveyor), `/ca-adopt` | 필수 문서 없는 저장소에서 진행이 거부되고, 레거시 1개는 뼈대 역공학으로·빈 저장소 1개는 인터뷰로 두 문서가 만들어져 게이트 통과 | ✅ |
 | P3 분석·범위 조사·계획 | analyst(작업 문서 판정), explorer(범위 역공학), writer(작업 문서), critic, 질문·가정 갈래, 요구 항목 커버리지 검사 | 레거시 저장소에서 데이터 정의 없이 시작해 요구사항 범위 작업 문서가 생기고 승인 가능한 계획까지, 토큰 기준치 기록 | ✅ |
-| P4 문서 모델 전환 + 영향도·설계 | **한 번에 전환한다.** POLICY 2 → 4(테스트 전략 · 품질·보안 기준 스키마, 명령 이름 대조, `/ca-docs` 의 기본/대화 선택, survey 의 도구 후보) · KNOWLEDGE 3종 경로 등록 + 빈 뼈대 · 작업 문서를 번호 문서로(01 ← analysis.md, 02 ← current.md + 영향도·Risk, 03 ← data.md · api.md + 구성 요소·흐름·결정, 04 신규, 07 신규, 05 렌더) · 스테이지 `research` → `impact` · `design` · 게이트(영향 표의 R 전량 · R 마다 AC · 모든 AC 가 TC 에) · 승인 묶음을 고정 목록(지시서 본문 · 01 · 02 · 03 · 04 · 07)으로 | 레거시에서 POLICY 4종을 확정하고, 공통 모듈을 건드리는 요구가 02 에 드러나고, 03·04 를 거쳐 07 이 모든 AC 를 덮은 계획이 승인된다. KNOWLEDGE 는 빈 채로 막지 않는다. P3 대비 토큰을 다시 잰다. **기존 계획 승인은 전부 무효가 된다** (docsHash 계산식이 바뀜) | |
+| P4 문서 모델 전환 + 영향도·설계 | **한 번에 전환한다.** POLICY 2 → 4(테스트 전략 · 품질·보안 기준 스키마, 명령 이름 대조, `/ca-docs` 의 기본/대화 선택, survey 의 도구 후보) · KNOWLEDGE 3종 경로 등록 + 빈 뼈대 · 작업 문서를 번호 문서로(01 ← analysis.md, 02 ← current.md + 영향도·Risk, 03 ← data.md · api.md + 구성 요소·흐름·결정, 04 신규, 07 신규, 05 렌더) · 스테이지 `research` → `impact` · `design` · 게이트(영향 표의 R 전량 · R 마다 AC · 모든 AC 가 TC 에) · 승인 묶음을 고정 목록(지시서 본문 · 01 · 02 · 03 · 04 · 07)으로 | 레거시에서 POLICY 4종을 확정하고, 공통 모듈을 건드리는 요구가 02 에 드러나고, 03·04 를 거쳐 07 이 모든 AC 를 덮은 계획이 승인된다. KNOWLEDGE 는 빈 채로 막지 않는다. P3 대비 토큰을 다시 잰다. **기존 계획 승인은 전부 무효가 된다** (docsHash 계산식이 바뀜) | ✅ |
 | P5 구현·검증·반영 | ⑧⑨⑩ — `check` · `test`(⑦ 의 케이스만, 실행·결과 분석) · 수정 루프(`check` 부터, 최대 N회) · `review` · `integrate`(worktree) · `deliver`(TTY 확인 · 로컬 커밋 · 추적표 · KNOWLEDGE 갱신) · Stop hook. 엄격안 — 증거는 기준 커밋 · 부분 트리 해시에 묶이고 테스트는 첫 실행 뒤 동결 | 실제 프로젝트에서 feature 한 건을 반영까지 완주 (첫 실측) | |
 | P6 fix·refactor · 신규 저장소 | 현행 분석 필수, 재현 테스트 먼저, preserve 강제, adopt 매니페스트의 종류별 단계, 빈 저장소의 매니페스트를 인터뷰로 | 각 한 건 완주, 빈 저장소에서 feature 시작 | |
 | P7 플러그인 | 자리 정의, `plugin add/list/remove`, 무료 도구 감지, Jev 어댑터 — **등록한 사람만 opt-in** | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | |

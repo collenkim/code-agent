@@ -6,12 +6,13 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { recordDecision } from "../core/approval";
-import { abort, context, formatAssumptions, next, start, status, Stop, submitPlan, decide as decideApproval } from "../agent/commands";
+import { abort, context, next, start, status, Stop, submitPlan, decide as decideApproval } from "../agent/commands";
 import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { loadActive, saveActive } from "../agent/layout";
+import type { ActiveWork } from "../agent/layout";
 import { parseQuestions } from "../agent/questions";
-import { parseAnalysis } from "../agent/analysis";
+import { formatAssumptions, parseRequirements } from "../agent/workDocs";
 import { AGENTS, modelsTable, setModel } from "../agent/models";
 import { docsSkeleton } from "../agent/docsCommands";
 import { WORK_SCHEMAS } from "../agent/schemas";
@@ -46,6 +47,8 @@ const PLAN = {
     { stage: "entity", path: `${ORDER}/domain/Order.java`, purpose: "주문 엔티티", requirements: ["R1"] },
     { stage: "repository", path: `${ORDER}/repository/OrderRepository.java`, purpose: "저장소", requirements: ["R1", "R2"] },
   ],
+  sequence: [{ step: "entity", why: "저장소가 엔티티에 기댄다" }, { step: "repository", why: "엔티티 뒤" }],
+  approach: "참조 도메인 deal 의 구조를 그대로 따라 새로 만든다",
   conventions: [],
   conflicts: [],
   openQuestions: [],
@@ -67,7 +70,21 @@ const CONV = [
   "## 명명", "- 저장소는 <Entity>Repository",
   "## 계층별 규칙", "- 엔티티 필드는 private",
   "## 예외 처리", "- 공통 BusinessException",
-  "## 테스트 규칙", "- 슬라이스 테스트",
+  "## 테스트 규칙", "- 테스트 클래스는 <Entity>Test",
+].join("\n");
+
+const TEST_STRATEGY_DOC = [
+  "# 테스트 전략",
+  "## 수준과 범위", "- Unit: 필수",
+  "## 도구와 실행 명령", "- `test`: 전체 테스트",
+  "## 통과 기준", "- 수락 기준마다 1케이스",
+].join("\n");
+
+const QUALITY_DOC = [
+  "# 품질·보안 기준",
+  "## 정적 분석", "- `build`: 컴파일 경고",
+  "## 보안 검사", "- 없음 — 리뷰에서 본다",
+  "## 통과 기준과 반영 차단", "- 컴파일 실패는 반영을 막는다",
 ].join("\n");
 
 let repo: string;
@@ -119,26 +136,81 @@ function submit(plan: unknown = PLAN): string {
   return submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
 }
 
-const ANALYSIS = [
-  "# ORD-1 요구사항 분석",
+// ---- 작업 폴더의 번호 문서 (①②③④⑦) ----
+
+const REQUIREMENTS = [
+  "# ORD-1 요구사항 정의",
   "## R1 · 주문 등록", "근거: \"주문은 id, 주문번호, 금액을 가진다.\"", "- 데이터: 만든다",
-  "## R2 · 주문 조회", "- 데이터: 안 건드린다",
-  "## 작업 문서", "- data.md",
+  "## R2 · 주문 조회", "근거: \"주문을 조회한다.\"", "- 데이터: 안 건드린다",
+  "## 가정", "- 없음",
 ].join("\n");
 
-const DATA_DOC = "# 데이터 정의\n\n## 대상 엔티티\n- Order (새로, R1)\n\n## 필드\n- id: Long\n";
+const IMPACT = [
+  "# 영향도 분석",
+  "## 기존 시스템 분석", "- 주문 도메인은 아직 없다 (참조: deal)",
+  "## 영향 범위",
+  "| R 번호 | 닿는 파일/모듈 | 부르는 곳 | 파급 |",
+  "|---|---|---|---|",
+  "| R1 | 새 파일 | 없음 | 없음 — 새 도메인 |",
+  "| R2 | 새 파일 | 없음 | 없음 — 새 도메인 |",
+  "## Risk", "- 없음 — 기존 경로를 건드리지 않는다",
+].join("\n");
 
-/** 분석 스테이지의 산출물 — analysis.md 와 그것이 부른 작업 문서 */
-function analyze(analysis = ANALYSIS): void {
-  write("doc/work/ORD-1/analysis.md", analysis);
-  write("doc/work/ORD-1/data.md", DATA_DOC);
+const DESIGN = [
+  "# 기술 설계",
+  "## 구성 요소", "- Order 엔티티 · OrderRepository",
+  "## 처리 흐름", "- 등록 → 저장소 저장",
+  "## API", "해당 없음 — 이번 범위는 도메인·저장소까지다",
+  "## 데이터", "- Order: id(Long) · orderNo(String) · amount(BigDecimal)",
+  "## 설계 결정", "- 식별자는 Long auto increment (아키텍처의 주요 결정)",
+].join("\n");
+
+const FUNCTIONAL = [
+  "# 기능 명세",
+  "## 기능 정의", "- R1: 주문을 등록한다", "- R2: 주문을 조회한다",
+  "## 업무 규칙", "- 없음 — 사용자 답에 규칙이 없다",
+  "## 예외", "- 없는 주문 조회: ORDER_NOT_FOUND (404)",
+  "## 수락 기준", "- AC-R1-1: 주문을 등록하면 id 가 생긴다", "- AC-R2-1: 없는 주문을 조회하면 ORDER_NOT_FOUND 다",
+].join("\n");
+
+const TEST_SPEC = [
+  "# 테스트 명세",
+  "## 테스트 케이스",
+  "| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |",
+  "|---|---|---|---|---|",
+  "| TC-1 | Unit | AC-R1-1 | 주문 저장 | id 가 생긴다 |",
+  "| TC-2 | Unit | AC-R2-1 | 없는 주문 조회 | ORDER_NOT_FOUND |",
+].join("\n");
+
+/** 번호 문서를 한꺼번에 쓴다 — 스테이지마다 하나씩 쓰는 테스트는 인자로 갈아 끼운다 */
+function writeDocs(docs: { requirements?: string; impact?: string; design?: string; functional?: string; testSpec?: string } = {}): void {
+  write("doc/work/ORD-1/01-requirements.md", docs.requirements ?? REQUIREMENTS);
+  write("doc/work/ORD-1/02-analysis.md", docs.impact ?? IMPACT);
+  write("doc/work/ORD-1/03-design.md", docs.design ?? DESIGN);
+  write("doc/work/ORD-1/04-functional.md", docs.functional ?? FUNCTIONAL);
+  write("doc/work/ORD-1/07-test-spec.md", docs.testSpec ?? TEST_SPEC);
 }
 
-/** start → analysis → research → plan 까지 */
+/** start → analysis → impact → design → plan 까지 */
 function toPlan(): void {
   start(repo, join(repo, "doc/work/ORD-1.md"));
-  analyze();
+  writeDocs();
   next(repo);
+  next(repo);
+  next(repo);
+}
+
+/** ① 만 쓰고 영향도 분석 스테이지까지 — 스테이지별 게이트를 따로 보는 테스트용 */
+function toImpact(requirements = REQUIREMENTS): void {
+  start(repo, join(repo, "doc/work/ORD-1.md"));
+  write("doc/work/ORD-1/01-requirements.md", requirements);
+  next(repo);
+}
+
+/** ①② 를 쓰고 설계 스테이지까지 */
+function toDesign(impact = IMPACT): void {
+  toImpact();
+  write("doc/work/ORD-1/02-analysis.md", impact);
   next(repo);
 }
 
@@ -155,10 +227,12 @@ beforeEach(() => {
   write("code-agent.json", JSON.stringify(MANIFEST));
   write("doc/architecture.md", ARCH);
   write("doc/conventions.md", CONV);
+  write("doc/test-strategy.md", TEST_STRATEGY_DOC);
+  write("doc/quality.md", QUALITY_DOC);
   confirmDocs();
   write(`${APP}/deal/domain/Deal.java`, "public class Deal {}\n");
   write(`${APP}/deal/repository/DealRepository.java`, "public interface DealRepository {}\n");
-  write("doc/work/ORD-1.md", "---\nkind: feature\nid: ORD-1\ntitle: 주문 도메인 추가\ntarget: order\n---\n\n주문은 id, 주문번호, 금액을 가진다.\n");
+  write("doc/work/ORD-1.md", "---\nkind: feature\nid: ORD-1\ntitle: 주문 도메인 추가\ntarget: order\n---\n\n주문은 id, 주문번호, 금액을 가진다. 주문을 조회한다.\n");
   git("add", "-A");
   git("commit", "-qm", "init");
 });
@@ -186,12 +260,19 @@ describe("hook — 계획 전 스테이지", () => {
     abort(repo);
     start(repo, join(repo, "doc/work/ORD-1/requirement.md"));
     assert.match(writeFile("doc/work/ORD-1/requirement.md") ?? "", /작업 지시서\(doc\/work\/ORD-1\/requirement\.md\)는 고칠 수 없습니다/);
-    assert.equal(writeFile("doc/work/ORD-1/analysis.md"), undefined);
+    assert.equal(writeFile("doc/work/ORD-1/01-requirements.md"), undefined);
   });
 
   test("작업 폴더는 쓴다", () => {
-    assert.equal(writeFile("doc/work/ORD-1/analysis.md"), undefined);
+    assert.equal(writeFile("doc/work/ORD-1/01-requirements.md"), undefined);
+    assert.equal(writeFile("doc/work/ORD-1/07-test-spec.md"), undefined);
     assert.equal(writeFile("doc/work/ORD-1/questions.md"), undefined);
+  });
+
+  test("05-plan.md 는 작업 폴더 안에 있어도 쓸 수 없다 — 코드가 계획에서 렌더한다", () => {
+    assert.match(writeFile("doc/work/ORD-1/05-plan.md") ?? "", /05-plan\.md 는 코드가 렌더합니다/);
+    // 파일이 아직 없으면 canonical 이 실제 이름으로 되돌려 주지 못한다 — 대소문자만 바꾼 이름이 지나가면 안 된다
+    assert.match(writeFile("doc/work/ORD-1/05-PLAN.md") ?? "", /05-plan\.md 는 코드가 렌더합니다/);
   });
 
   test("상태·원장은 어느 스테이지에서도 쓸 수 없다", () => {
@@ -217,6 +298,45 @@ describe("hook — Bash 허용 목록", () => {
     assert.equal(bash("code-agent next"), undefined);
     assert.equal(bash("git status"), undefined);
     assert.equal(bash("git diff --stat"), undefined);
+  });
+
+  /**
+   * abort 한 줄이면 작업 커서가 사라져 hook 이 그 뒤로 아무것도 판정하지 않고,
+   * init --cli 한 줄이면 hook 자체가 모델이 만든 스크립트로 갈린다. 둘 다 사람의 명령이다.
+   */
+  test("사람이 터미널에서 돌리는 code-agent 명령은 모델이 부를 수 없다", () => {
+    for (const human of [
+      "code-agent abort",
+      "code-agent init --cli doc/work/ORD-1/noop.js",
+      "code-agent approve",
+      "code-agent reject --comment x",
+      "code-agent confirm doc architecture",
+      "code-agent model all sonnet",
+      "echo hello next", // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다
+    ]) {
+      assert.match(bash(human) ?? "", /사람이 터미널에서 실행합니다/, human);
+    }
+    for (const skill of [
+      "code-agent start doc/work/ORD-1.md",
+      "code-agent next",
+      "code-agent context",
+      "code-agent status",
+      "code-agent plan submit doc/work/ORD-1/plan.json",
+      "code-agent docs",
+      "code-agent docs begin",
+      "code-agent docs skeleton 01-requirements",
+      "code-agent survey",
+      "code-agent manifest check",
+    ]) {
+      assert.equal(bash(skill), undefined, skill);
+    }
+  });
+
+  test("읽기용 git 도 파일로 내보내는 것은 막는다 — --output 은 판정을 거치지 않는 쓰기다", () => {
+    assert.ok(bash("git diff --output=pwned.txt"));
+    assert.ok(bash("git show HEAD:code-agent.json --output=.claude/settings.json"));
+    assert.ok(bash("git log -o out.txt"));
+    assert.equal(bash("git log --oneline"), undefined, "이름만 비슷한 읽기 옵션은 그대로 통과한다");
   });
 
   test("허용된 명령 뒤에 연결해 붙이는 것은 막는다", () => {
@@ -369,12 +489,12 @@ describe("next — 질문과 승인", () => {
   test("답이 없는 질문이 있으면 넘어가지 않는다", () => {
     start(repo, join(repo, "doc/work/ORD-1.md"));
     const questions = join(repo, "doc/work/ORD-1/questions.md");
-    analyze();
+    writeDocs();
     writeFileSync(questions, `${readFileSync(questions, "utf-8")}\n## Q1 · 요구사항 분석\n금액 타입은?\nA. Long\nB. BigDecimal\n[Answer]:\n`);
     assert.throws(() => next(repo), /답이 없는 질문이 1개/);
     writeFileSync(questions, readFileSync(questions, "utf-8").replace(/\[Answer\]:\n$/, "[Answer]: B\n"));
     next(repo);
-    assert.equal(loadActive(repo)!.phase, "research");
+    assert.equal(loadActive(repo)!.phase, "impact");
   });
 
   test("계획이 승인되지 않으면 구현으로 넘어가지 않는다", () => {
@@ -462,13 +582,33 @@ describe("plan submit — 제출 전 검사", () => {
       "---", "", "경계만 옮긴다.", "",
     ].join("\n"));
     start(repo, join(repo, "doc/work/REF-1.md"));
-    write("doc/work/REF-1/analysis.md",
-      ["## R1 · 경계 정리", "- 데이터: 안 건드린다", "## 작업 문서", "- 없음", ""].join("\n"));
+    write("doc/work/REF-1/01-requirements.md",
+      ["## R1 · 경계 정리", "근거: \"경계만 옮긴다.\"", "- 데이터: 안 건드린다", "## 가정", "- 없음", ""].join("\n"));
+    write("doc/work/REF-1/02-analysis.md", [
+      "## 기존 시스템 분석", "- DealFacade 가 트랜잭션을 연다",
+      "## 영향 범위", "| R 번호 | 닿는 파일 | 부르는 곳 | 파급 |", "|---|---|---|---|", "| R1 | Deal.java | DealFacade | 없음 |",
+      "## Risk", "- 없음 — 시그니처를 바꾸지 않는다", "",
+    ].join("\n"));
+    write("doc/work/REF-1/03-design.md", [
+      "## 구성 요소", "- Deal", "## 처리 흐름", "- 그대로", "## API", "해당 없음 — 접점을 안 건드린다",
+      "## 데이터", "해당 없음 — 스키마를 안 건드린다", "## 설계 결정", "- 경계만 옮긴다", "",
+    ].join("\n"));
+    write("doc/work/REF-1/04-functional.md", [
+      "## 기능 정의", "- R1: 동작은 그대로", "## 업무 규칙", "- 없음 — 규칙 변경 없음",
+      "## 예외", "- 없음 — 기존 예외 그대로", "## 수락 기준", "- AC-R1-1: 기존 테스트가 그대로 통과한다", "",
+    ].join("\n"));
+    write("doc/work/REF-1/07-test-spec.md", [
+      "## 테스트 케이스", "| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |", "|---|---|---|---|---|",
+      "| TC-1 | Unit | AC-R1-1 | 기존 테스트 | 통과 |", "",
+    ].join("\n"));
+    next(repo);
     next(repo);
     next(repo);
 
     const base = {
       files: [{ stage: "restructure", path: `${DEAL}/domain/Deal.java`, purpose: "경계를 옮긴다", requirements: ["R1"] }],
+      sequence: [{ step: "restructure", why: "옮길 곳이 하나다" }],
+      approach: "트랜잭션 경계만 서비스로 옮긴다",
       conventions: [], conflicts: [], openQuestions: [], reasoning: "경계만 옮긴다",
     };
     const submitRef = (plan: unknown) => {
@@ -489,54 +629,272 @@ describe("plan submit — 제출 전 검사", () => {
   });
 });
 
-describe("분석 · 작업 문서 · 요구 항목 대조", () => {
-  const begin = () => start(repo, join(repo, "doc/work/ORD-1.md"));
-
-  test("분석 결과가 없으면 조사로 넘어가지 않는다", () => {
-    begin();
-    assert.throws(() => next(repo), /요구사항 분석 결과가 없습니다: doc\/work\/ORD-1\/analysis\.md/);
+describe("① 01-requirements.md — 요구 항목", () => {
+  test("요구사항 정의가 없으면 영향도 분석으로 넘어가지 않는다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    assert.throws(() => next(repo), /요구사항 분석 결과가 없습니다: doc\/work\/ORD-1\/01-requirements\.md/);
   });
 
-  test("요구 항목·작업 문서 섹션이 없으면 무엇이 틀렸는지 알린다", () => {
-    begin();
-    write("doc/work/ORD-1/analysis.md", "# 분석\n\n주문을 만든다.\n");
-    assert.throws(() => next(repo), /요구 항목\(`## R1 · …`\)이 없습니다[\s\S]*`## 작업 문서` 섹션이 없습니다/);
-    write("doc/work/ORD-1/analysis.md", "## R1 · a\n## R1 · b\n## 작업 문서\n");
-    assert.throws(() => next(repo), /번호가 겹칩니다: R1[\s\S]*`## 작업 문서` 가 비어 있습니다/);
-  });
-
-  test("분석이 부른 작업 문서가 없거나 비어 있으면 계획으로 넘어가지 않는다", () => {
-    begin();
-    write("doc/work/ORD-1/analysis.md", ANALYSIS.replace("- data.md", "- data.md\n- doc/dictionary.md"));
+  test("요구 항목·근거·가정이 없으면 무엇이 틀렸는지 알린다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    write("doc/work/ORD-1/01-requirements.md", "# 정의\n\n주문을 만든다.\n");
+    assert.throws(() => next(repo), /요구 항목\(`## R1 · …`\)이 없습니다[\s\S]*`## 가정` 섹션이 없습니다/);
+    // 근거가 없는 요구는 지시서에 없는 요구다 — 모델이 보탠 것이 여기서 걸린다
+    write("doc/work/ORD-1/01-requirements.md", "## R1 · 등록\n- 데이터: 만든다\n## 가정\n- 없음\n");
+    assert.throws(() => next(repo), /근거: 줄이 없는 요구 항목: R1/);
+    write("doc/work/ORD-1/01-requirements.md", "## R1 · a\n근거: \"x\"\n## R1 · b\n근거: \"y\"\n## 가정\n- 없음\n");
+    assert.throws(() => next(repo), /번호가 겹칩니다: R1/);
+    write("doc/work/ORD-1/01-requirements.md", REQUIREMENTS);
     next(repo);
-    write("doc/work/ORD-1/data.md", "  \n");
-    assert.throws(() => next(repo), /갖춰지지 않았습니다:\n  - doc\/work\/ORD-1\/data\.md — 비어 있습니다\n  - doc\/dictionary\.md — 없습니다/);
-    write("doc/work/ORD-1/data.md", "# 데이터 정의\n\n## 대상 엔티티\n- Order\n\n## 필드\n확인 필요\n");
-    write("doc/dictionary.md", "# 사전\n");
-    assert.throws(() => next(repo), /data\.md — 필수 섹션이 비었습니다: 필드 \(code-agent docs skeleton data\)/);
-    write("doc/work/ORD-1/data.md", DATA_DOC);
-    next(repo);
-    assert.equal(loadActive(repo)!.phase, "plan", "인용한 프로젝트 문서는 섹션 검사를 하지 않는다");
+    assert.equal(loadActive(repo)!.phase, "impact");
   });
 
-  test("작업 문서는 섹션의 첫 목록만 읽는다 — 뒤에 붙은 설명 목록은 문서가 아니다", () => {
-    // 실제 실행에서 analyst 가 목록 뒤에 "판정 근거:" 목록을 붙였다
-    const analysis = parseAnalysis(
-      "## R1 · 등록\n## 작업 문서\n\n- data.md\n- api.md\n\n판정 근거:\n- data.md: 새 엔티티\n- current.md: 불필요\n",
-      "ORD-1",
+  test("가정은 진행을 막지 않고, 제출 결과·승인 화면에 그대로 보인다", () => {
+    const withAssumptions = REQUIREMENTS.replace(
+      "## 가정\n- 없음",
+      "## 가정\n- 목록은 id 내림차순 — 근거: 일반 관행\n- amount 는 precision 15, scale 2 — 근거: 선례 없음\n\n판정 근거:\n- 이건 가정이 아니다",
     );
-    assert.deepEqual(analysis.workDocs, ["doc/work/ORD-1/data.md", "doc/work/ORD-1/api.md"]);
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    writeDocs({ requirements: withAssumptions });
+    const parsed = parseRequirements(readFileSync(join(repo, "doc/work/ORD-1/01-requirements.md"), "utf-8"));
+    assert.deepEqual(parsed.assumptions, ["목록은 id 내림차순 — 근거: 일반 관행", "amount 는 precision 15, scale 2 — 근거: 선례 없음"]);
+    next(repo);
+    next(repo);
+    next(repo);
+    assert.match(submit(), /가정 2개 — 승인하면 계획과 함께 받아들입니다[\s\S]*- 목록은 id 내림차순/);
+    assert.equal(formatAssumptions([]), undefined, "가정이 없으면 보이지 않는다");
   });
 
-  test("작업 문서 제목은 별칭·괄호 설명·하위 제목으로 써도 섹션으로 인정한다", () => {
-    // 실제 실행에서 writer 가 뼈대 없이 쓴 제목들
-    const api = "## 엔드포인트 목록\n- POST /api/orders\n## R1 · 등록\n### 요청\n- orderNo\n### 응답 (성공, HTTP 200)\n- OrderResponse\n## 오류 응답\n- C001\n";
-    assert.ok(checkSections(WORK_SCHEMAS.api, api).every((state) => state.filled));
-    const data = "## 대상\n- Order (새로)\n## 엔티티 `Order`\n### 필드\n- orderNo: String\n";
-    assert.ok(checkSections(WORK_SCHEMAS.data, data).filter((state) => state.required).every((state) => state.filled));
+  /**
+   * 가정이 조용히 빈 배열이 되면 승인 화면·05-plan.md 어디에도 실리지 않는데 게이트는 통과한다 —
+   * 사람이 계획과 함께 받아들이기로 한 것이 아무에게도 보이지 않는 상태다.
+   */
+  test("가정은 앞의 설명 줄·CRLF·별칭 제목에도 읽힌다", () => {
+    const expected = ["정렬은 id 내림차순 — 근거: 일반 관행", "금액은 BigDecimal — 근거: 선례 없음"];
+    const prose = REQUIREMENTS.replace(
+      "## 가정\n- 없음",
+      `## 가정\n아래와 같이 정했다.\n\n- ${expected[0]}\n- ${expected[1]}`,
+    );
+    assert.deepEqual(parseRequirements(prose).assumptions, expected, "목록 앞의 산문");
+    assert.deepEqual(parseRequirements(prose.replace(/\n/g, "\r\n")).assumptions, expected, "CRLF");
+    // 스키마가 선언한 별칭(가정과 근거)·번호·괄호 설명도 다른 섹션 검사와 같게 받는다
+    assert.deepEqual(parseRequirements(REQUIREMENTS.replace("## 가정", "## 1. 가정과 근거 (기본값)")).assumptions, []);
   });
 
-  test("작업 문서 뼈대는 그 스키마의 필수 섹션을 전부 담는다", () => {
+  test("모르는 스테이지(P3 의 research)로 남은 커서는 이어 가지 않는다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    saveActive(repo, { ...loadActive(repo)!, phase: "research" as ActiveWork["phase"] });
+    assert.throws(() => next(repo), (error: Error) => error instanceof Stop && /알 수 없는 스테이지입니다: research/.test(error.message));
+    assert.throws(() => status(repo), /알 수 없는 스테이지입니다: research/);
+    assert.throws(() => context(repo), /알 수 없는 스테이지입니다: research/);
+  });
+});
+
+describe("② 02-analysis.md — 영향 범위 표에 모든 R", () => {
+  test("없거나 필수 섹션이 비면 설계로 넘어가지 않는다", () => {
+    toImpact();
+    assert.throws(() => next(repo), /02-analysis\.md — 없거나 비어 있습니다 \(code-agent docs skeleton 02-analysis\)/);
+    write("doc/work/ORD-1/02-analysis.md", IMPACT.replace("- 없음 — 기존 경로를 건드리지 않는다", ""));
+    assert.throws(() => next(repo), /필수 섹션이 비었거나 없습니다: Risk/);
+  });
+
+  test("표 첫 열에 빠진 R 이 있으면 넘어가지 않는다 — 본문에 번호가 등장하는 것으로는 안 된다", () => {
+    toImpact();
+    const onlyR1 = IMPACT.replace("| R2 | 새 파일 | 없음 | 없음 — 새 도메인 |\n", "")
+      .replace("- 주문 도메인은 아직 없다 (참조: deal)", "- 주문 도메인은 아직 없다. R2 는 영향이 없다");
+    write("doc/work/ORD-1/02-analysis.md", onlyR1);
+    assert.throws(() => next(repo), /영향 범위 표에 없는 요구 항목: R2/);
+    write("doc/work/ORD-1/02-analysis.md", IMPACT);
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "design");
+  });
+
+  test("R 번호만 적고 나머지 칸이 빈 줄은 영향을 본 것이 아니다", () => {
+    toImpact();
+    write("doc/work/ORD-1/02-analysis.md", IMPACT.replace("| R2 | 새 파일 | 없음 | 없음 — 새 도메인 |", "| R2 | | | |"));
+    assert.throws(() => next(repo), /영향 범위 표의 줄이 비었습니다: R2/);
+  });
+});
+
+describe("③ 03-design.md · ④ 04-functional.md — 설계·정의", () => {
+  test("근거 없는 `해당 없음` 은 미충족이다", () => {
+    toDesign();
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL);
+    // 목록 표시·강조를 붙여도 근거 없는 한 단어인 것은 같다
+    for (const decorated of ["해당 없음", "- 해당 없음", "**해당 없음**", "- **해당 없음**"]) {
+      write("doc/work/ORD-1/03-design.md", DESIGN.replace("해당 없음 — 이번 범위는 도메인·저장소까지다", decorated));
+      assert.throws(() => next(repo), /해당 없음 에 근거가 없습니다: API/, decorated);
+    }
+    write("doc/work/ORD-1/03-design.md", DESIGN);
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "plan");
+  });
+
+  test("R 마다 AC 가 하나는 있어야 하고, 겹치거나 없는 R 을 가리킬 수 없다", () => {
+    toDesign();
+    write("doc/work/ORD-1/03-design.md", DESIGN);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL.replace("- AC-R2-1: 없는 주문을 조회하면 ORDER_NOT_FOUND 다", ""));
+    assert.throws(() => next(repo), /AC 가 없는 요구 항목: R2/);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL.replace("AC-R2-1", "AC-R9-1"));
+    assert.throws(() => next(repo), /01 에 없는 요구 항목을 가리키는 수락 기준: AC-R9-1/);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL.replace("AC-R2-1", "AC-R1-1"));
+    assert.throws(() => next(repo), /수락 기준 id 가 겹칩니다: AC-R1-1/);
+  });
+
+  test("필수 섹션이 비면 넘어가지 않는다", () => {
+    toDesign();
+    write("doc/work/ORD-1/03-design.md", DESIGN);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL.replace("- 없음 — 사용자 답에 규칙이 없다", ""));
+    assert.throws(() => next(repo), /필수 섹션이 비었거나 없습니다: 업무 규칙/);
+  });
+});
+
+describe("⑦ 07-test-spec.md — 모든 AC 가 TC 에", () => {
+  test("테스트 명세가 없으면 계획이 제출되지 않는다", () => {
+    toPlan();
+    rmSync(join(repo, "doc/work/ORD-1/07-test-spec.md"));
+    assert.throws(() => submit(), /07-test-spec\.md — 없거나 비어 있습니다/);
+  });
+
+  test("표를 읽지 못하거나 AC 가 안 덮이면 제출되지 않는다", () => {
+    toPlan();
+    write("doc/work/ORD-1/07-test-spec.md", "## 테스트 케이스\n- TC-1: 주문 저장 (AC-R1-1)\n");
+    assert.throws(() => submit(), /테스트 케이스 표를 읽지 못했습니다/);
+    write("doc/work/ORD-1/07-test-spec.md", TEST_SPEC.replace("\n| TC-2 | Unit | AC-R2-1 | 없는 주문 조회 | ORDER_NOT_FOUND |", ""));
+    assert.throws(() => submit(), /테스트 케이스가 없는 수락 기준: AC-R2-1/);
+    write("doc/work/ORD-1/07-test-spec.md", TEST_SPEC.replace("| TC-2 | Unit | AC-R2-1", "| TC-1 | Unit | AC-R9-1"));
+    assert.throws(() => submit(), /TC id 가 겹칩니다: TC-1[\s\S]*04 에 없는 수락 기준을 가리킵니다: AC-R9-1/);
+  });
+
+  test("전략이 '하지 않음' 이라 한 수준은 `안 하는 것` 에 근거가 있어야 쓴다", () => {
+    write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- Unit: 필수\n- E2E: 하지 않음"));
+    confirmDocs();
+    toPlan();
+    const e2e = TEST_SPEC.replace("| TC-2 | Unit | AC-R2-1", "| TC-2 | E2E | AC-R2-1");
+    write("doc/work/ORD-1/07-test-spec.md", e2e);
+    assert.throws(() => submit(), /테스트 전략이 '하지 않음' 이라 한 수준을 씁니다: E2E/);
+    write("doc/work/ORD-1/07-test-spec.md", `${e2e}\n## 안 하는 것\n- E2E 를 쓰는 이유: 조회 경로가 화면까지 걸린다 (사용자 답 Q1)\n`);
+    submit();
+  });
+
+  /**
+   * 부정을 줄 전체에서 찾으면 조건을 적은 수준 줄이 '하지 않음' 으로 분류돼, 빠져나갈 길이
+   * 확정된 POLICY 문서를 고치는 것뿐인 자리에서 정상적인 제출이 막힌다.
+   */
+  test("수준 줄의 조건 설명은 '하지 않음' 이 아니다", () => {
+    write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- Unit: 분기 있는 로직만 — 단순 위임은 하지 않음"));
+    confirmDocs();
+    toPlan();
+    assert.match(submit(), /계획을 제출하고/);
+  });
+
+  test("케이스·기대 결과가 빈 줄로는 AC 를 덮지 못한다 — 열은 다섯 개다", () => {
+    toPlan();
+    const header = "## 테스트 케이스\n| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n";
+    write("doc/work/ORD-1/07-test-spec.md", `${header}| TC-1 | Unit | AC-R1-1 AC-R2-1 | | |\n`);
+    assert.throws(() => submit(), /케이스·기대 결과가 빈 테스트 케이스: TC-1/);
+    // 열을 줄여 쓴 줄은 아예 케이스로 읽지 않는다
+    write("doc/work/ORD-1/07-test-spec.md", `${header}| TC-1 | Unit | AC-R1-1 AC-R2-1 |\n`);
+    assert.throws(() => submit(), /테스트 케이스 표를 읽지 못했습니다/);
+  });
+
+  test("전략에서 수준을 읽지 못하면 대조를 건너뛰고 그 사실을 알린다", () => {
+    write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- 자세한 것은 팀 위키를 따른다"));
+    confirmDocs();
+    toPlan();
+    assert.match(submit(), /참고: 테스트 전략의 `수준과 범위` 에서 수준을 읽지 못해 수준 대조는 건너뛰었습니다/);
+  });
+});
+
+describe("⑤ 05-plan.md — 코드가 렌더한다", () => {
+  test("제출하면 계획·작업 순서·구현 방법·가정이 파일로 남는다", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    writeDocs({ requirements: REQUIREMENTS.replace("## 가정\n- 없음", "## 가정\n- 목록은 id 내림차순 — 근거: 일반 관행") });
+    next(repo);
+    next(repo);
+    next(repo);
+    assert.match(submit(), /doc\/work\/ORD-1\/05-plan\.md 를 렌더했습니다/);
+    const rendered = readFileSync(join(repo, "doc/work/ORD-1/05-plan.md"), "utf-8");
+    assert.match(rendered, /### 작업 순서\n1\. entity — 저장소가 엔티티에 기댄다/);
+    assert.match(rendered, /### 구현 방법\n참조 도메인 deal 의 구조를 그대로 따라 새로 만든다/);
+    assert.match(rendered, /### 가정 \(01-requirements\.md\)\n- 목록은 id 내림차순/);
+  });
+
+  test("sequence · approach 가 없는 계획은 제출되지 않는다", () => {
+    toPlan();
+    const { sequence, ...withoutSequence } = PLAN;
+    assert.throws(() => submit(withoutSequence), /계획 형식이 맞지 않습니다[\s\S]*sequence/);
+    assert.throws(() => submit({ ...PLAN, approach: "" }), /계획 형식이 맞지 않습니다[\s\S]*approach/);
+  });
+
+  /**
+   * `<대상>.plan.json` 은 커밋되는 파일이라 옛 형식이 남아 있을 수 있다. 검사 없이 읽으면
+   * 승인 화면이 없는 필드를 읽다 죽어(TypeError) 재승인 경로가 통째로 닫힌다.
+   */
+  test("옛 형식으로 남아 있던 제출본은 다시 제출하게 한다", () => {
+    toPlan();
+    submit();
+    const { sequence, approach, ...outdated } = PLAN;
+    write(".code-agent/work/ORD-1/order.plan.json", JSON.stringify(outdated));
+    assert.throws(() => status(repo), (error: Error) =>
+      error instanceof Stop && /제출된 계획의 형식이 지금 스키마와 맞지 않습니다[\s\S]*plan submit 으로 다시 제출/.test(error.message));
+    assert.throws(() => decideApproval(repo, "approved"), /제출된 계획의 형식이 지금 스키마와 맞지 않습니다/);
+  });
+});
+
+describe("승인 묶음 — 지시서 본문 · 01 · 02 · 03 · 04 · 07 고정 목록", () => {
+  const approveWithDocs = (): void => {
+    const work = loadWork(repo)!;
+    recordDecision(repo, {
+      order: work.order, target: work.active.target, plan: work.plan!, manifest: work.manifest,
+      decision: "approved", approver: "test", presence: { channel: "tty", verified: true, detail: "테스트" },
+      docsHash: approvalDocsHash(work),
+    });
+  };
+
+  test("승인 뒤 번호 문서가 바뀌면 무효다 — 줄바꿈만 바뀐 것은 아니다", () => {
+    toPlan();
+    submit();
+    approveWithDocs();
+    assert.equal(approvalOf(loadWork(repo)!).status, "approved");
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL.replace(/\n/g, "\r\n"));
+    assert.equal(approvalOf(loadWork(repo)!).status, "approved", "줄바꿈만 바뀐 것은 같은 것으로 본다");
+    // ⑦ 을 고쳐 기대치를 낮추는 길 — 수정 루프 중 테스트 동결의 절반이 여기다
+    write("doc/work/ORD-1/07-test-spec.md", TEST_SPEC.replace("id 가 생긴다", "아무거나"));
+    assert.equal(approvalOf(loadWork(repo)!).status, "stale-docs");
+    assert.throws(() => next(repo), /승인되지 않았습니다 \(stale-docs\)/);
+  });
+
+  /**
+   * 확정이 깨진 것을 "묶을 근거가 없다"로 읽어 대조를 끄면, 확정된 POLICY 문서 한 글자를 고치는 것만으로
+   * 문서 묶음 대조가 통째로 꺼진다 — 그 뒤엔 번호 문서를 고쳐도 승인이 그대로 남는다.
+   */
+  test("확정이 깨지면 승인은 무효다 — 대조가 꺼지는 것이 아니다", () => {
+    toPlan();
+    submit();
+    approveWithDocs();
+    next(repo);
+    write("doc/architecture.md", `${ARCH}\n## 추가\n- 삭제는 soft delete\n`);
+    assert.equal(approvalOf(loadWork(repo)!).status, "stale-docs");
+    assert.match(writeFile(`${ORDER}/domain/Order.java`) ?? "", /stale-docs/);
+  });
+
+  test("지시서 본문이 바뀌면 stale-docs, 머리말이 바뀌면 stale-order", () => {
+    toPlan();
+    submit();
+    approveWithDocs();
+    const spec = readFileSync(join(repo, "doc/work/ORD-1.md"), "utf-8");
+    write("doc/work/ORD-1.md", `${spec}\n금액은 원 단위다.\n`);
+    assert.equal(approvalOf(loadWork(repo)!).status, "stale-docs", "본문은 어느 해시에도 없던 구멍이었다");
+    write("doc/work/ORD-1.md", spec);
+    assert.equal(approvalOf(loadWork(repo)!).status, "approved");
+    write("doc/work/ORD-1.md", spec.replace("title: 주문 도메인 추가", "title: 주문 도메인 개편"));
+    assert.equal(approvalOf(loadWork(repo)!).status, "stale-order");
+  });
+});
+
+describe("작업 문서 뼈대와 context", () => {
+  test("뼈대는 그 스키마의 필수 섹션을 전부 담는다", () => {
     for (const schema of Object.values(WORK_SCHEMAS)) {
       const states = checkSections(schema, docsSkeleton(schema.kind));
       assert.ok(states.every((state) => state.found), `${schema.kind} 뼈대에 빠진 섹션`);
@@ -544,34 +902,28 @@ describe("분석 · 작업 문서 · 요구 항목 대조", () => {
     }
   });
 
-  test("가정은 진행을 막지 않고, 제출 결과·승인 화면에 그대로 보인다", () => {
-    start(repo, join(repo, "doc/work/ORD-1.md"));
-    analyze(`${ANALYSIS}\n\n## 가정\n- 목록은 id 내림차순 — 근거: 일반 관행\n- amount 는 precision 15, scale 2 — 근거: 선례 없음\n\n판정 근거:\n- 이건 가정이 아니다\n`);
-    const analysis = parseAnalysis(readFileSync(join(repo, "doc/work/ORD-1/analysis.md"), "utf-8"), "ORD-1");
-    assert.deepEqual(analysis.assumptions, ["목록은 id 내림차순 — 근거: 일반 관행", "amount 는 precision 15, scale 2 — 근거: 선례 없음"]);
-    next(repo);
-    next(repo);
-    assert.match(submit(), /가정 2개 — 승인하면 계획과 함께 받아들입니다[\s\S]*- 목록은 id 내림차순/);
-    assert.equal(formatAssumptions(parseAnalysis(ANALYSIS, "ORD-1")), undefined, "가정이 없으면 보이지 않는다");
+  test("별칭·번호·괄호 설명으로 쓴 제목도 섹션으로 인정한다", () => {
+    // 실제 실행에서 writer 가 뼈대 없이 쓴 제목들
+    const text = "## 1. 현행 분석\n- OrderService (src/…:12)\n## 영향 (도메인 밖 포함)\n| R1 | a | b | 없음 |\n## 위험\n- 없음\n";
+    assert.ok(checkSections(WORK_SCHEMAS["02-analysis"], text).filter((state) => state.required).every((state) => state.filled));
   });
 
-  test("조사 context 는 참조 도메인의 단계별 표준 파일을 준다 — 조사자가 다시 찾지 않게", () => {
-    start(repo, join(repo, "doc/work/ORD-1.md"));
-    analyze();
-    next(repo);
+  test("영향도·설계 context 는 참조 도메인의 표준 파일과 요구 항목을 준다", () => {
+    toImpact();
     const text = context(repo);
     assert.match(text, /## 참조 도메인 deal — 단계별 표준 파일/);
     assert.match(text, new RegExp(`- entity \\(도메인 안\\): ${APP}/deal/domain/Deal\\.java`));
     assert.match(text, new RegExp(`- repository \\(도메인 안\\): ${APP}/deal/repository/DealRepository\\.java`));
     assert.match(text, /- 요구 항목: R1, R2/);
+    assert.match(text, /## ② 02-analysis\.md — 영향도 분석/);
   });
 
-  test("작업 문서가 필요 없으면 '없음' 으로 지난다", () => {
-    begin();
-    write("doc/work/ORD-1/analysis.md", "## R1 · 조회\n## 작업 문서\n- 없음\n");
-    next(repo);
-    next(repo);
-    assert.equal(loadActive(repo)!.phase, "plan");
+  test("계획 context 는 AC 와 TC 를 요약해 준다 — 메인이 04·07 을 다시 읽지 않게", () => {
+    toPlan();
+    const text = context(repo);
+    assert.match(text, /- 수락 기준 \(doc\/work\/ORD-1\/04-functional\.md\): AC-R1-1, AC-R2-1/);
+    assert.match(text, /- 테스트 케이스 \(doc\/work\/ORD-1\/07-test-spec\.md\): TC-1\(Unit → AC-R1-1\), TC-2\(Unit → AC-R2-1\)/);
+    assert.match(text, /05-plan\.md 를 렌더한다/);
   });
 
   test("계획 제출 — 모든 요구 항목이 어느 파일엔가 닿아야 하고, 파일마다 항목을 적는다", () => {
@@ -579,27 +931,10 @@ describe("분석 · 작업 문서 · 요구 항목 대조", () => {
     const [entity, repository] = PLAN.files;
     assert.throws(
       () => submit({ ...PLAN, files: [entity, { ...repository, requirements: ["R1", "R9"] }] }),
-      /분석에 없는 요구 항목 R9[\s\S]*어떤 파일에도 닿지 않는 요구 항목: R2/,
+      /01-requirements\.md 에 없는 요구 항목 R9[\s\S]*어떤 파일에도 닿지 않는 요구 항목: R2/,
     );
     assert.throws(() => submit({ ...PLAN, files: [{ ...entity, requirements: undefined }, repository] }), /Order\.java: 어느 요구 항목을 위한 파일인지/);
     submit();
-  });
-
-  test("승인 뒤 작업 문서가 바뀌면 승인이 무효다 — 계획과 한 묶음이다", () => {
-    toPlan();
-    submit();
-    const work = loadWork(repo)!;
-    recordDecision(repo, {
-      order: work.order, target: work.active.target, plan: work.plan!, manifest: work.manifest,
-      decision: "approved", approver: "test", presence: { channel: "tty", verified: true, detail: "테스트" },
-      docsHash: approvalDocsHash(work),
-    });
-    assert.equal(approvalOf(loadWork(repo)!).status, "approved");
-    write("doc/work/ORD-1/data.md", DATA_DOC.replace(/\n/g, "\r\n"));
-    assert.equal(approvalOf(loadWork(repo)!).status, "approved", "줄바꿈만 바뀐 것은 같은 것으로 본다");
-    write("doc/work/ORD-1/data.md", DATA_DOC.replace("id: Long", "id: String"));
-    assert.equal(approvalOf(loadWork(repo)!).status, "stale-docs");
-    assert.throws(() => next(repo), /승인되지 않았습니다 \(stale-docs\)/);
   });
 });
 
@@ -615,6 +950,19 @@ describe("approve — 사람만", () => {
     toPlan();
     submit();
     assert.throws(() => decideApproval(repo, "rejected"), /사유가 필요합니다/);
+  });
+
+  /**
+   * 제출과 승인 사이에도 작업 폴더는 쓸 수 있다. 다시 보지 않으면 비워진 상태의 문서 해시가
+   * 그대로 승인으로 굳는다 — 승인 화면에는 계획과 가정만 보여 사람은 그 사실을 알 수 없다.
+   */
+  test("제출 뒤 비운 작업 문서는 승인 화면 앞에서 걸린다", () => {
+    toPlan();
+    submit();
+    write("doc/work/ORD-1/07-test-spec.md", "");
+    assert.throws(() => decideApproval(repo, "approved"), /작업 문서가 게이트를 지나지 못했습니다[\s\S]*07-test-spec\.md/);
+    write("doc/work/ORD-1/02-analysis.md", "");
+    assert.throws(() => decideApproval(repo, "rejected", "사유"), /작업 문서가 게이트를 지나지 못했습니다[\s\S]*02-analysis\.md/);
   });
 });
 

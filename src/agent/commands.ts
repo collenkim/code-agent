@@ -10,9 +10,7 @@ import { stagesFor } from "../core/manifest";
 import type { StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
-import { analysisFile, loadAnalysis, workDocProblems } from "./analysis";
-import type { Analysis } from "./analysis";
-import { checkProjectDocs, docsReady, formatDocChecks } from "./docs";
+import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
 import {
   canonical,
   clearActive,
@@ -26,27 +24,59 @@ import {
 import type { ActiveWork, Phase } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { isGitRepo, switchToWorkBranch } from "./git";
+import { KNOWLEDGE_KINDS } from "./schemas";
+import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
+import {
+  acceptanceCriteria,
+  analysisProblems,
+  designProblems,
+  formatAssumptions,
+  functionalProblems,
+  loadRequirements,
+  parseTestCases,
+  planDocFile,
+  readWorkDoc,
+  renderPlanDoc,
+  testSpecProblems,
+  workDocPath,
+} from "./workDocs";
+import type { Requirements } from "./workDocs";
 
-/** 사람이 고칠 수 있는 이유로 멈출 때. 스택 없이 메시지만 보인다 */
-export class Stop extends Error {}
+// Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
+export { Stop } from "./stop";
 
 
 const PHASE_LABEL: Record<Phase, string> = {
   analysis: "요구사항 분석",
-  research: "범위 조사·작업 문서",
-  plan: "개발 계획",
+  impact: "영향도 분석",
+  design: "설계·정의",
+  plan: "구현 계획",
   implement: "구현",
   verify: "검증·개선",
 };
+
+/**
+ * 모르는 스테이지는 옛 버전이 남긴 커서다 (P3 의 `research`). 조용히 다른 칸으로 옮겨 이어 가면
+ * 그 작업의 문서가 어느 게이트를 지났는지 아무도 모른다 — 지우고 다시 시작하게 한다.
+ */
+function requirePhase(active: ActiveWork): void {
+  if (!(PHASES as readonly string[]).includes(active.phase)) {
+    throw new Stop(
+      `알 수 없는 스테이지입니다: ${active.phase} (스테이지: ${PHASES.join(" → ")}).\n` +
+        "code-agent abort 로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
+    );
+  }
+}
 
 function requireWork(repoRoot: string): Work {
   const work = loadWork(repoRoot);
   if (!work) {
     throw new Stop("진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor 로 시작하세요.");
   }
+  requirePhase(work.active);
   return work;
 }
 
@@ -72,46 +102,48 @@ function requireAnswers(repoRoot: string, active: ActiveWork): void {
   }
 }
 
-/** 분석 결과. 없거나 형식이 틀리면 멈춘다 — 뒤 스테이지의 검사가 전부 여기에 기댄다 */
-function requireAnalysis(repoRoot: string, active: ActiveWork): Analysis {
-  let analysis: Analysis | undefined;
+/** ① 요구 항목. 없거나 형식이 틀리면 멈춘다 — 뒤 스테이지의 검사가 전부 여기에 기댄다 */
+function requireRequirements(repoRoot: string, active: ActiveWork): Requirements {
+  const path = workDocPath(active.id, "01-requirements");
+  let requirements: Requirements | undefined;
   try {
-    analysis = loadAnalysis(repoRoot, active.id);
+    requirements = loadRequirements(repoRoot, active.id);
   } catch (error) {
     const lines = (error instanceof Error ? error.message : String(error)).split("\n");
-    throw new Stop(`${analysisFile(active.id)} 의 형식이 맞지 않습니다:\n${lines.map((line) => `  - ${line}`).join("\n")}`);
+    throw new Stop(`${path} 의 형식이 맞지 않습니다:\n${lines.map((line) => `  - ${line}`).join("\n")}`);
   }
-  if (!analysis) {
-    throw new Stop(`요구사항 분석 결과가 없습니다: ${analysisFile(active.id)} 에 요구 항목(## R1 · …)과 ## 작업 문서 를 쓰세요.`);
+  if (!requirements) {
+    throw new Stop(
+      `요구사항 분석 결과가 없습니다: ${path} 에 요구 항목(## R1 · …)과 ## 가정 을 쓰세요 (code-agent docs skeleton 01-requirements).`,
+    );
   }
-  return analysis;
+  return requirements;
 }
 
-function requireWorkDocs(repoRoot: string, active: ActiveWork, analysis: Analysis): void {
-  const problems = workDocProblems(repoRoot, active.id, analysis);
+/** 번호 문서의 게이트 — 지나지 못하면 무엇이 모자란지 그대로 알린다 */
+function requireWorkDocs(problems: string[]): void {
   if (problems.length > 0) {
     throw new Stop(
-      "분석이 필요하다고 한 작업 문서가 갖춰지지 않았습니다:\n" +
-        problems.map((problem) => `  - ${problem}`).join("\n") +
-        "\n요구사항 범위만 작성하세요. 필요 없다고 판단이 바뀌었으면 analysis.md 의 ## 작업 문서 를 고칩니다.",
+      "작업 문서가 게이트를 지나지 못했습니다:\n" +
+        problems.map((problem) => `  - ${problem}`).join("\n"),
     );
   }
 }
 
 /** 계획이 요구 항목을 전부 덮는가 — 파일마다 어느 항목을 위한 것인지 적게 해 코드가 대조한다 */
-function coverageProblems(analysis: Analysis, files: { path: string; requirements?: string[] }[]): string[] {
+function coverageProblems(keys: string[], files: { path: string; requirements?: string[] }[]): string[] {
   const problems: string[] = [];
   for (const file of files) {
     const listed = file.requirements ?? [];
     if (listed.length === 0) {
-      problems.push(`${file.path}: 어느 요구 항목을 위한 파일인지 requirements 에 적으세요 (${analysis.requirements.join(", ")})`);
+      problems.push(`${file.path}: 어느 요구 항목을 위한 파일인지 requirements 에 적으세요 (${keys.join(", ")})`);
     }
-    for (const key of listed.filter((key) => !analysis.requirements.includes(key))) {
-      problems.push(`${file.path}: 분석에 없는 요구 항목 ${key}`);
+    for (const key of listed.filter((key) => !keys.includes(key))) {
+      problems.push(`${file.path}: 01-requirements.md 에 없는 요구 항목 ${key}`);
     }
   }
   const covered = new Set(files.flatMap((file) => file.requirements ?? []));
-  const uncovered = analysis.requirements.filter((key) => !covered.has(key));
+  const uncovered = keys.filter((key) => !covered.has(key));
   if (uncovered.length > 0) {
     problems.push(`어떤 파일에도 닿지 않는 요구 항목: ${uncovered.join(", ")} — 파일을 더하거나, 이번 범위가 아니면 질문으로 확인하세요`);
   }
@@ -125,15 +157,6 @@ function coverageProblems(analysis: Analysis, files: { path: string; requirement
 function plannedStages(work: Work): StageDef[] {
   const files = work.plan?.files ?? [];
   return codeStages(work).filter((stage) => files.some((file) => file.stage === stage.key));
-}
-
-/** 승인하면 함께 받아들이는 가정 — 승인 화면과 제출 결과에 같은 모양으로 */
-export function formatAssumptions(analysis: Analysis | undefined): string | undefined {
-  if (!analysis || analysis.assumptions.length === 0) return undefined;
-  return [
-    `가정 ${analysis.assumptions.length}개 — 승인하면 계획과 함께 받아들입니다. 틀린 것이 있으면 반려하세요:`,
-    ...analysis.assumptions.map((item) => `  - ${item}`),
-  ].join("\n");
 }
 
 /** implement 가 도는 단계 — 검증 단계는 verify 스테이지가 맡는다 */
@@ -216,8 +239,9 @@ function nextHint(work: Work): string {
   }
   switch (active.phase) {
     case "analysis":
-    case "research":
-      return `${PHASE_LABEL[active.phase]}을 마치면 code-agent next`;
+    case "impact":
+    case "design":
+      return `${PHASE_LABEL[active.phase]}(${workDocsDir(active.id)}/ 의 번호 문서)을 마치면 code-agent next`;
     case "plan": {
       if (!work.plan) {
         return `계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
@@ -242,7 +266,7 @@ export function status(repoRoot: string): string {
   const work = loadWork(repoRoot);
   if (!work) {
     const hint = !manifest
-      ? "/ca-adopt 로 도입 (레거시) · 신규 프로젝트면 /ca-docs 로 아키텍처·컨벤션부터"
+      ? "/ca-adopt 로 도입 (레거시) · 신규 프로젝트면 /ca-docs 로 공통 POLICY 4종부터"
       : !docsReady(checks)
         ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc <종류>"
         : "/ca-feature <지시서> 로 시작";
@@ -251,6 +275,7 @@ export function status(repoRoot: string): string {
   }
 
   const { active, order } = work;
+  requirePhase(active);
   const flow = PHASES.map((phase) => (phase === active.phase ? `[${phase}]` : phase)).join(" → ");
   const open = unansweredQuestions(repoRoot, questionsFile(active.id));
   lines.push(
@@ -290,11 +315,21 @@ export function next(repoRoot: string): string {
 
   switch (active.phase) {
     case "analysis":
-      requireAnalysis(repoRoot, active);
-      return advance("research");
-    case "research":
-      requireWorkDocs(repoRoot, active, requireAnalysis(repoRoot, active));
+      requireRequirements(repoRoot, active);
+      return advance("impact");
+    case "impact": {
+      const { keys } = requireRequirements(repoRoot, active);
+      requireWorkDocs(analysisProblems(repoRoot, active.id, keys));
+      return advance("design");
+    }
+    case "design": {
+      const { keys } = requireRequirements(repoRoot, active);
+      requireWorkDocs([
+        ...designProblems(repoRoot, active.id),
+        ...functionalProblems(repoRoot, active.id, keys).problems,
+      ]);
       return advance("plan");
+    }
     case "plan": {
       if (!work.plan) {
         throw new Stop("제출된 계획이 없습니다. code-agent plan submit <초안> 으로 제출하세요.");
@@ -362,8 +397,9 @@ export function context(repoRoot: string): string {
   if (active.phase === "analysis") {
     out.push(
       "",
-      "## 분석 결과 형식",
-      `${analysisFile(active.id)} 에 쓴다. 코드가 읽는 것은 \`## R<번호>\` 요구 항목 · \`## 작업 문서\` 목록 · \`## 가정\` 셋이고, 앞의 둘이 게이트다 — 그게 없으면 code-agent next 가 넘어가지 않는다.`,
+      "## ① 01-requirements.md — 요구사항 정의",
+      `${workDocPath(active.id, "01-requirements")} 에 쓴다 (뼈대: code-agent docs skeleton 01-requirements).`,
+      "코드가 보는 것은 셋이다 — `## R<번호>` 1개 이상·중복 없음 · R 블록마다 `근거:` 줄 · `## 가정` 섹션. 없으면 code-agent next 가 넘어가지 않는다.",
       "```markdown",
       "## R1 · <요구 한 가지>",
       "근거: \"<지시서 문장 그대로>\"",
@@ -371,33 +407,60 @@ export function context(repoRoot: string): string {
       "- 접점(API·화면): 만든다 | 바꾼다 | 안 건드린다",
       "- 기존 코드: 고친다 | 안 고친다",
       "",
-      "## 작업 문서",
-      "- data.md          ← 이 작업 폴더에 만들 것 (data.md · api.md · current.md)",
-      "- doc/<기존 문서>.md ← 이미 있는 프로젝트 문서가 범위를 덮으면 그 경로",
-      "- 없음             ← 하나도 필요 없을 때",
-      "",
       "## 가정",
-      "- <정한 것> — 근거: <컨벤션 위치 · 참조 코드 path:line · 일반 관행>",
+      "- <정한 것> — 근거: <컨벤션 위치 · 참조 코드 path:line · 일반 관행>   ← 없으면 `- 없음`",
+      "",
+      "## 범위 밖   ← 선택",
+      "- <이번에 하지 않는 것> — 근거: <왜 밖인가>",
       "```",
     );
   }
 
-  if (active.phase === "analysis" || active.phase === "research") {
+  if (active.phase === "analysis" || active.phase === "impact" || active.phase === "design") {
     out.push(
       "",
       "## 질문과 가정 — 어느 쪽인가",
       `- **질문** (${questionsFile(active.id)}, 답이 올 때까지 진행 금지): 업무 규칙 · 범위(무엇을 만들고 무엇을 안 만드는가) · 권한 · 데이터의 의미 ·`,
       "  다른 도메인·외부와의 계약 · 아키텍처·컨벤션과 충돌하는 것. 모델이 정하면 지어낸 것이 되는 것들이다.",
-      `- **가정** (${analysisFile(active.id)} 의 \`## 가정\`, 진행한다): 컨벤션·참조 코드·일반 관행으로 기본값을 댈 수 있고 승인 때 고쳐도 싼 기술 세부 —`,
+      `- **가정** (${workDocPath(active.id, "01-requirements")} 의 \`## 가정\`, 진행한다): 컨벤션·참조 코드·일반 관행으로 기본값을 댈 수 있고 승인 때 고쳐도 싼 기술 세부 —`,
       "  메서드 이름 · 정렬 · 숫자 정밀도 · 테스트 케이스 목록 · 메시지 문구 · 이번 범위 밖으로 둘 부수 작업. 근거를 반드시 단다.",
       "- 가정은 승인 화면에 그대로 보여 사람이 계획과 함께 받아들인다. 확신이 없으면 질문으로.",
     );
   }
 
-  if (active.phase === "research" || active.phase === "plan") {
-    const analysis = requireAnalysis(repoRoot, active);
-    out.push("", `- 요구 항목: ${analysis.requirements.join(", ")} (${analysisFile(active.id)})`);
-    out.push(`- 작업 문서: ${analysis.workDocs.join(", ") || "없음"}`);
+  if (active.phase === "impact") {
+    out.push(
+      "",
+      "## ② 02-analysis.md — 영향도 분석",
+      `${workDocPath(active.id, "02-analysis")} 에 쓴다 (뼈대: code-agent docs skeleton 02-analysis).`,
+      "필수 섹션: 기존 시스템 분석 · 영향 범위 · Risk. `영향 범위` 표의 **첫 열에 01 의 모든 R** 이 한 줄 이상이어야 넘어간다 —",
+      "영향이 없는 R 도 근거와 함께 '없음' 으로 한 줄 넣는다.",
+      "```markdown",
+      "## 영향 범위",
+      "| R 번호 | 닿는 파일/모듈 | 부르는 곳 | 파급 |",
+      "|---|---|---|---|",
+      "| R1 | <path:line> | <부르는 곳> | 없음 — <근거> |",
+      "```",
+      `- 공통 KNOWLEDGE (읽기만 — 키가 이미 있으면 ca-explorer 를 붙이지 말고 인용한다): ${KNOWLEDGE_KINDS.map((kind) => docPaths(manifest, kind)[0]).join(", ")}`,
+    );
+  }
+
+  if (active.phase === "design") {
+    out.push(
+      "",
+      "## ③ 03-design.md · ④ 04-functional.md — 설계·정의 (같은 스테이지에서 함께 쓴다)",
+      `뼈대: code-agent docs skeleton 03-design · code-agent docs skeleton 04-functional`,
+      `- ${workDocPath(active.id, "03-design")} — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정.`,
+      "  API·데이터는 조건부다: 안 건드리면 `해당 없음 — <근거>`. **근거 없는 `해당 없음` 은 미충족이다.**",
+      `- ${workDocPath(active.id, "04-functional")} — 기능 정의 · 업무 규칙 · 예외 · 수락 기준.`,
+      "  수락 기준은 `AC-R<n>-<m>` 한 줄씩, **R 마다 최소 하나** · id 중복 없음 · 01 에 없는 R 을 가리키지 않는다. 오류 코드는 03 의 API 와 글자까지 같게.",
+      `- 공통 KNOWLEDGE (읽기만 — 인용은 키와 기대는 사실 한 줄을 옮겨 적고 차이만): ${KNOWLEDGE_KINDS.map((kind) => docPaths(manifest, kind)[0]).join(", ")}`,
+    );
+  }
+
+  if (active.phase === "impact" || active.phase === "design" || active.phase === "plan") {
+    const { keys } = requireRequirements(repoRoot, active);
+    out.push("", `- 요구 항목: ${keys.join(", ")} (${workDocPath(active.id, "01-requirements")})`);
 
     // 참조 코드는 코드가 고른다 — 조사자마다 참조 도메인을 다시 찾아 저장소를 훑지 않게 경로를 준다.
     if (manifest.referenceDomain) {
@@ -413,12 +476,32 @@ export function context(repoRoot: string): string {
 
   if (active.phase === "plan") {
     const format = planFormatFor(order.kind);
+    const functional = readWorkDoc(repoRoot, active.id, "04-functional");
+    const acceptance = functional ? acceptanceCriteria(functional) : [];
+    const spec = readWorkDoc(repoRoot, active.id, "07-test-spec");
+    const cases = spec ? parseTestCases(spec) : [];
     out.push(
+      "",
+      `- 수락 기준 (${workDocPath(active.id, "04-functional")}): ${acceptance.join(", ") || "없음 — 04 를 먼저 쓴다"}`,
+      `- 테스트 케이스 (${workDocPath(active.id, "07-test-spec")}): ` +
+        (cases.length > 0
+          ? cases.map((entry) => `${entry.id}(${entry.level} → ${entry.acceptance.join(",") || "대상 없음"})`).join(", ")
+          : "아직 없음"),
+      `- 테스트 전략: ${docPaths(manifest, "test-strategy")[0]} · 품질·보안 기준: ${docPaths(manifest, "quality")[0]}`,
+      "",
+      "## ⑦ 07-test-spec.md — 테스트 명세 (구현 전에 쓴다)",
+      "뼈대: code-agent docs skeleton 07-test-spec. 열 순서는 고정이고, 04 의 **모든 AC 가 최소 한 TC 에** 걸려야 계획이 제출된다.",
+      "```markdown",
+      "| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |",
+      "|---|---|---|---|---|",
+      "| TC-1 | Unit | AC-R1-1 | <무엇을 한다> | <무엇이 된다> |",
+      "```",
       "",
       "## 계획 형식",
       `초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 \`code-agent plan submit ${workDocsDir(active.id)}/plan.json\` 로 제출한다.`,
       "openQuestions 가 남아 있으면 제출되지 않는다 — questions.md 로 옮겨 답을 받는다.",
       "files[].requirements 에 그 파일이 담당하는 요구 항목 번호를 적는다. 모든 요구 항목이 어느 파일엔가 닿아야 제출된다.",
+      `제출하면 코드가 ${planDocFile(active.id)} 를 렌더한다 — 그 파일은 손대지 않는다 (hook 이 거부한다).`,
       "```json",
       format.shape,
       "```",
@@ -474,8 +557,17 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   requireDocs(repoRoot, work);
   requireAnswers(repoRoot, active);
-  const analysis = requireAnalysis(repoRoot, active);
-  requireWorkDocs(repoRoot, active, analysis);
+
+  // 계획 검사 전에 ①~④·⑦ 을 다시 본다 — 스테이지를 지난 뒤에 문서를 고쳤을 수 있고, 승인은 이 묶음에 대한 것이다.
+  const requirements = requireRequirements(repoRoot, active);
+  const functional = functionalProblems(repoRoot, active.id, requirements.keys);
+  const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest);
+  requireWorkDocs([
+    ...analysisProblems(repoRoot, active.id, requirements.keys),
+    ...designProblems(repoRoot, active.id),
+    ...functional.problems,
+    ...testSpec.problems,
+  ]);
 
   const format = planFormatFor(order.kind);
   let raw: unknown;
@@ -493,7 +585,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   const plan = format.toPlan(parsed.data);
 
-  const problems: string[] = [...coverageProblems(analysis, plan.files)];
+  const problems: string[] = [...coverageProblems(requirements.keys, plan.files)];
   if (plan.openQuestions.length > 0) {
     problems.push(`남은 질문이 있습니다 — questions.md 로 옮겨 답을 받으세요: ${plan.openQuestions.join(" / ")}`);
   }
@@ -518,9 +610,15 @@ export function submitPlan(repoRoot: string, draft: string): string {
   const path = planFile(repoRoot, active.id, active.target);
   mkdirSync(dirname(path), { recursive: true });
   writeAtomic(path, `${JSON.stringify(plan, null, 2)}\n`);
+  // ⑤ 05-plan.md 는 제출본의 파생물이다 — 승인하는 사람과 구현하는 모델이 같은 것을 보게 코드가 렌더한다.
+  const rendered = join(repoRoot, planDocFile(active.id));
+  writeAtomic(rendered, renderPlanDoc(active.id, plan, requirements.assumptions));
+
+  const assumptions = formatAssumptions(requirements.assumptions);
   return (
-    `계획을 제출했습니다.\n\n${formatPlan(plan)}\n\n` +
-    (formatAssumptions(analysis) ? `${formatAssumptions(analysis)}\n\n` : "") +
+    `계획을 제출하고 ${planDocFile(active.id)} 를 렌더했습니다.\n\n${formatPlan(plan)}\n\n` +
+    (assumptions ? `${assumptions}\n\n` : "") +
+    testSpec.notes.map((note) => `참고: ${note}\n\n`).join("") +
     "사람이 **별도 터미널**에서 `code-agent approve` 를 실행해야 구현으로 넘어갑니다."
   );
 }
@@ -539,11 +637,21 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
 
   // 확정되지 않은 문서 위의 계획은 승인하지 않는다 — 승인이 묶을 근거가 없다.
   requireDocs(repoRoot, work);
+  // 제출과 승인 사이에도 작업 폴더는 쓸 수 있다 — 제출 때 지난 게이트를 다시 본다.
+  // 여기서 안 보면 02·07 을 빈 파일로 덮은 상태의 docsHash 가 그대로 승인으로 굳는다 (승인 화면에는 계획만 보인다).
+  const requirements = requireRequirements(repoRoot, active);
+  const functional = functionalProblems(repoRoot, active.id, requirements.keys);
+  requireWorkDocs([
+    ...analysisProblems(repoRoot, active.id, requirements.keys),
+    ...designProblems(repoRoot, active.id),
+    ...functional.problems,
+    ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest).problems,
+  ]);
   const docsHash = approvalDocsHash(work);
 
   const state = approvalOf(work);
   const shown = [formatPlan(plan)];
-  const assumptions = formatAssumptions(loadAnalysis(repoRoot, active.id));
+  const assumptions = formatAssumptions(requirements.assumptions);
   if (assumptions) shown.push("", assumptions);
   if (state.status === "stale-plan" && state.diff.length > 0) {
     shown.push("", "이전 판정 이후 바뀐 곳:", formatDiff(state.diff));
