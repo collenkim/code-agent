@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { userInfo } from "os";
 
-import { recordDecision } from "../core/approval";
+import { formatDiff, recordDecision } from "../core/approval";
 import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
@@ -33,7 +33,6 @@ import type { Work } from "./work";
 /** 사람이 고칠 수 있는 이유로 멈출 때. 스택 없이 메시지만 보인다 */
 export class Stop extends Error {}
 
-const STARTABLE = ["feature", "fix", "refactor"];
 
 const PHASE_LABEL: Record<Phase, string> = {
   analysis: "요구사항 분석",
@@ -41,7 +40,6 @@ const PHASE_LABEL: Record<Phase, string> = {
   plan: "개발 계획",
   implement: "구현",
   verify: "검증·개선",
-  handoff: "인계",
 };
 
 function requireWork(repoRoot: string): Work {
@@ -160,9 +158,6 @@ export function start(repoRoot: string, spec: string, options: { target?: string
 
   const specPath = toRepoPath(repoRoot, spec);
   const order = readOrder(repoRoot, specPath, manifest);
-  if (!STARTABLE.includes(order.kind)) {
-    throw new Stop(`${order.kind} 는 작업으로 시작하지 않습니다 (시작할 수 있는 것: ${STARTABLE.join(", ")}).`);
-  }
   const chosen = target ?? order.target[0];
   if (!order.target.includes(chosen)) {
     throw new Stop(`지시서의 대상이 아닙니다: ${chosen} (대상: ${order.target.join(", ")})`);
@@ -235,9 +230,7 @@ function nextHint(work: Work): string {
     case "implement":
       return `단계 ${active.stage} 를 구현한 뒤 code-agent next`;
     case "verify":
-      return "검증(code-agent verify)은 아직 구현되지 않았습니다 (P4)";
-    case "handoff":
-      return "인계를 마치면 code-agent next 로 작업 종료";
+      return "검증(code-agent verify)은 아직 구현되지 않았습니다 (P5)";
   }
 }
 
@@ -332,10 +325,7 @@ export function next(repoRoot: string): string {
       return following ? advance("implement", following.key) : advance("verify");
     }
     case "verify":
-      throw new Stop("검증(code-agent verify)은 아직 구현되지 않았습니다 (P4).");
-    case "handoff":
-      clearActive(repoRoot);
-      return `작업을 마쳤습니다: ${active.id}\n\n${status(repoRoot)}`;
+      throw new Stop("검증(code-agent verify)은 아직 구현되지 않았습니다 (P5).");
   }
 }
 
@@ -373,7 +363,7 @@ export function context(repoRoot: string): string {
     out.push(
       "",
       "## 분석 결과 형식",
-      `${analysisFile(active.id)} 에 쓴다. 코드가 읽는 것은 \`## R<번호>\` 요구 항목과 \`## 작업 문서\` 목록이다 — 이게 없으면 code-agent next 가 넘어가지 않는다.`,
+      `${analysisFile(active.id)} 에 쓴다. 코드가 읽는 것은 \`## R<번호>\` 요구 항목 · \`## 작업 문서\` 목록 · \`## 가정\` 셋이고, 앞의 둘이 게이트다 — 그게 없으면 code-agent next 가 넘어가지 않는다.`,
       "```markdown",
       "## R1 · <요구 한 가지>",
       "근거: \"<지시서 문장 그대로>\"",
@@ -468,7 +458,7 @@ export function context(repoRoot: string): string {
     }
   }
 
-  if ((active.phase === "verify" || active.phase === "handoff") && work.plan) {
+  if (active.phase === "verify" && work.plan) {
     out.push("", "## 계획 파일", ...work.plan.files.map((file) => `- [${file.stage}] ${file.path} — ${file.purpose}`));
   }
   return out.join("\n");
@@ -556,7 +546,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   const assumptions = formatAssumptions(loadAnalysis(repoRoot, active.id));
   if (assumptions) shown.push("", assumptions);
   if (state.status === "stale-plan" && state.diff.length > 0) {
-    shown.push("", "이전 판정 이후 바뀐 곳:", ...state.diff.map((entry) => `  ${JSON.stringify(entry)}`));
+    shown.push("", "이전 판정 이후 바뀐 곳:", formatDiff(state.diff));
   }
   const presence = confirmOnTerminal(shown.join("\n"), decision === "approved" ? "approve" : "reject");
   recordDecision(repoRoot, {

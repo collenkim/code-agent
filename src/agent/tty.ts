@@ -39,6 +39,16 @@ function readLineSync(): string {
  * 모델이 셸로 명령을 돌릴 때 stdin 은 TTY 가 아니므로 이 문이 닫힌다. 증명되는 것은 존재와 시점이고
  * 신원이 아니다 — 신원은 커밋 서명·PR·티켓에 있다.
  */
+/** 사람만 바꿀 수 있는 설정 — 판정처럼 입력 단어를 받지는 않고, 터미널인지만 본다 */
+export function requireTerminal(what: string): void {
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      `${what}은(는) 터미널에서만 바꿉니다 — stdin 이 TTY 가 아닙니다.\n` +
+        "  Claude Code 밖의 별도 터미널에서 실행하세요.",
+    );
+  }
+}
+
 export function confirmOnTerminal(shown: string, word: string): Presence {
   if (!process.stdin.isTTY) {
     throw new Error(

@@ -1,7 +1,7 @@
 ---
 name: ca-fix
 description: 결함 지시서로 버그 수정을 시작한다 — 현행 분석과 재현 테스트를 앞세워 계획 제출까지 진행한다.
-argument-hint: <지시서 경로> [--base <기준 브랜치>]
+argument-hint: <지시서 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다. 다른 점만:

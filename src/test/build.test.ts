@@ -1,10 +1,9 @@
 /**
- * 검증 worktree — 무엇이 올라가고 무엇이 올라가지 않는가.
+ * 검증 worktree — 무엇 위에 무엇이 얹히는가.
  *
- * 생성물만으로는 빌드할 수 없고(의존 코드가 저장소에 있다) 대상 저장소 작업트리에 직접 쓰면
- * "저장소 무변경" 약속이 깨지므로, 임시 git worktree 에 얹어 돌린다. 여기서 판정되는 것은
- * **그 worktree 가 저장소와 생성물만으로 이루어지는가**다 — 계획·세션이 따라 올라가면
- * 검증 명령이 보는 트리에 저장소에는 없던 파일이 생기고, 그것으로 깨지는 검사가 있다.
+ * 바뀐 파일만으로는 빌드할 수 없고(의존 코드가 저장소에 있다) 사람이 보고 있는 작업트리에서
+ * 그대로 돌리면 검증이 중간 상태를 밟으므로, 임시 git worktree 에 얹어 돌린다. 여기서
+ * 판정되는 것은 **그 worktree 가 굳혀 둔 커밋의 저장소 위에 얹은 파일로 이루어지는가**다.
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -15,17 +14,11 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { pinRefs, verifyByBuild } from "../core/build";
 import { loadManifest } from "../core/manifest";
-import {
-  rememberedRefs,
-  rememberIssuedToken,
-  rememberRefs,
-  takeIssuedToken,
-} from "../core/targets";
 import type { Manifest } from "../core/manifest";
 
 let root: string;
 let repo: string;
-let outDir: string;
+let filesDir: string;
 
 /** worktree 가 실제로 무엇을 보는지 그대로 찍는 명령. 검증이 아니라 관측이 목적이다 */
 const LIST_TREE = [
@@ -55,7 +48,6 @@ function manifestWith(build: string[]): Manifest {
         kind: "code",
         kinds: [],
         confirm: true,
-        reads: [],
         exemplars: [],
         scope: "project",
         outputDirs: ["src"],
@@ -71,7 +63,7 @@ const STAGES = [
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "code-agent-verify-"));
   repo = join(root, "repo");
-  outDir = join(root, "out");
+  filesDir = join(root, "changed");
 
   mkdirSync(join(repo, "src"), { recursive: true });
   writeFileSync(join(repo, "README.md"), "# repo\n", "utf-8");
@@ -84,47 +76,50 @@ beforeEach(() => {
     { cwd: repo },
   );
 
-  // 생성물과, 생성물이 아닌 진행 상태가 같은 디렉토리에 있다 — 이것이 실제 out/ 의 모습이다.
-  mkdirSync(join(outDir, "src"), { recursive: true });
-  mkdirSync(join(outDir, ".code-agent"), { recursive: true });
-  writeFileSync(join(outDir, "src", "thing.js"), "module.exports = 2;\n", "utf-8");
-  writeFileSync(join(outDir, ".plan.json"), "{}", "utf-8");
-  writeFileSync(join(outDir, ".spec-slots.json"), "{}", "utf-8");
-  writeFileSync(join(outDir, ".code-agent", "session.json"), "{}", "utf-8");
+  // worktree 에 얹을 파일들 — 저장소 루트 기준 구조를 그대로 갖는다.
+  mkdirSync(join(filesDir, "src"), { recursive: true });
+  writeFileSync(join(filesDir, "src", "thing.js"), "module.exports = 2;\n", "utf-8");
 });
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("검증 worktree 는 저장소와 생성물만 본다", () => {
-  test("생성물은 올라간다", async () => {
-    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), outDir, STAGES, "build");
+describe("검증 worktree 는 저장소 위에 바뀐 파일을 얹는다", () => {
+  test("바뀐 파일은 올라간다", async () => {
+    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), filesDir, STAGES, "build");
 
     assert.equal(result.outcome, "passed", result.log);
     assert.match(result.log, /README\.md/, "저장소 파일이 있어야 한다");
-    assert.match(result.log, /src\//, "생성물이 얹혀야 한다");
-  });
-
-  test("계획·세션·파생물은 올라가지 않는다", async () => {
-    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), outDir, STAGES, "build");
-
-    assert.doesNotMatch(result.log, /\.plan\.json/, "계획은 생성물이 아니다");
-    assert.doesNotMatch(result.log, /\.code-agent/, "세션은 생성물이 아니다");
-    assert.doesNotMatch(result.log, /\.spec-slots\.json/, "파생물은 생성물이 아니다");
+    assert.match(result.log, /src\//, "바뀐 파일이 얹혀야 한다");
   });
 
   test("돌지 못한 명령은 실패가 아니라 실행 오류다", async () => {
     const result = await verifyByBuild(
       repo,
       manifestWith(["code-agent-no-such-command-xyz"]),
-      outDir,
+      filesDir,
       STAGES,
       "build",
     );
 
     assert.equal(result.outcome, "error", "환경 고장을 재현으로 읽으면 안 된다");
     assert.match(result.log, /실행 파일을 찾을 수 없습니다/);
+  });
+
+  /**
+   * 재현 실패와 환경 고장을 가른다.
+   *
+   * 둘을 같은 "실패"로 읽으면 git 저장소가 아닌 곳에서 아무 테스트도 안 쓰고 검증이 끝난다 —
+   * `expect: fail` 은 `failed` 만 재현으로 인정한다.
+   */
+  test("git 저장소가 아니면 실행 오류다 — 재현으로 치지 않는다", async () => {
+    rmSync(join(repo, ".git"), { recursive: true, force: true });
+
+    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), filesDir, STAGES, "build");
+
+    assert.equal(result.outcome, "error");
+    assert.notEqual(result.outcome, "failed", "환경이 고장 난 것은 재현이 아니다");
   });
 });
 
@@ -187,7 +182,7 @@ describe("검증은 굳혀 둔 커밋 위에 선다", () => {
     const pinned = head();
     commitFile("LATER.md");
 
-    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), outDir, STAGES, "build", pinned);
+    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), filesDir, STAGES, "build", pinned);
 
     assert.ok(result.passed, result.log);
     assert.ok(!result.log.includes("LATER.md"), `굳힌 커밋 이후의 파일이 올라왔다:\n${result.log}`);
@@ -197,7 +192,7 @@ describe("검증은 굳혀 둔 커밋 위에 선다", () => {
   test("ref 를 주지 않으면 예전처럼 그때의 HEAD 를 본다", async () => {
     commitFile("LATER.md");
 
-    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), outDir, STAGES, "build");
+    const result = await verifyByBuild(repo, manifestWith(LIST_TREE), filesDir, STAGES, "build");
 
     assert.ok(result.passed, result.log);
     assert.ok(result.log.includes("LATER.md"), result.log);
@@ -207,7 +202,7 @@ describe("검증은 굳혀 둔 커밋 위에 선다", () => {
     const result = await verifyByBuild(
       repo,
       manifestWith(LIST_TREE),
-      outDir,
+      filesDir,
       STAGES,
       "build",
       "없는브랜치",
@@ -271,67 +266,5 @@ describe("pinRefs — 작업·비교 브랜치 굳히기", () => {
     mkdirSync(plain, { recursive: true });
 
     await assert.rejects(() => pinRefs(plain, "master"), /git 저장소가 아닙니다/);
-  });
-});
-
-/**
- * CLI 는 명령마다 새 프로세스다.
- *
- * `next` 와 `apply` 가 다른 프로세스라, 굳힌 값을 어딘가에 적어 두지 않으면 매 호출이 그때의
- * HEAD 를 다시 굳힌다 — 그러면 "굳혔다"는 말이 거짓이 되고, 앞 단계는 A 위에서 뒤 단계는
- * B 위에서 검증된 산출물이 한 out 에 섞인다. 여기서 보는 것은 **두 번째 호출이 첫 번째가
- * 굳힌 자리를 그대로 쓰는가**다.
- */
-describe("굳힌 자리는 호출이 갈려도 유지된다", () => {
-  let outDir2: string;
-
-  beforeEach(() => {
-    outDir2 = join(root, "out-cli");
-    mkdirSync(outDir2, { recursive: true });
-  });
-
-  function moveHead(name: string) {
-    writeFileSync(join(repo, name), "x\n", "utf-8");
-    execFileSync("git", ["add", "-A"], { cwd: repo });
-    execFileSync(
-      "git",
-      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", name],
-      { cwd: repo },
-    );
-  }
-
-  test("두 번째 호출은 HEAD 가 움직여도 처음 굳힌 커밋을 쓴다", async () => {
-    const first = await pinRefs(repo);
-    assert.ok(first);
-    rememberRefs(outDir2, first);
-
-    moveHead("MOVED.md");
-
-    // 두 번째 프로세스가 하는 일과 같다 — 적힌 것이 있으면 다시 굳히지 않는다.
-    const second = rememberedRefs(outDir2);
-
-    assert.equal(second?.work.commit, first.work.commit, "굳힌 커밋이 따라 움직이면 안 된다");
-
-    // 그 커밋으로 검증하면 그 뒤의 커밋은 보이지 않는다.
-    const result = await verifyByBuild(
-      repo,
-      manifestWith(LIST_TREE),
-      outDir,
-      STAGES,
-      "build",
-      second!.work.commit,
-    );
-    assert.ok(result.passed, result.log);
-    assert.ok(!result.log.includes("MOVED.md"), `굳힌 뒤의 커밋이 올라왔다:\n${result.log}`);
-  });
-
-  test("토큰을 받아 가도 굳힌 자리는 남는다", () => {
-    // run.json 을 다시 쓰는 자리가 여럿이다. 그중 하나가 통째로 덮어쓰면 조용히 사라진다.
-    const pinned = { work: { ref: "HEAD", commit: "a".repeat(40) } };
-    rememberRefs(outDir2, pinned);
-    rememberIssuedToken(outDir2, "shipment", "token-1");
-
-    assert.equal(takeIssuedToken(outDir2), "token-1");
-    assert.deepEqual(rememberedRefs(outDir2), pinned, "토큰만 지워야 한다");
   });
 });

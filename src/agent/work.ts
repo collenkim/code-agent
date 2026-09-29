@@ -32,7 +32,7 @@ export function loadManifestIfAny(repoRoot: string): Manifest | undefined {
 }
 
 export function readOrder(repoRoot: string, spec: string, manifest: Manifest): WorkOrder {
-  return loadWorkOrder(repoRoot, [join(repoRoot, spec)], {
+  return loadWorkOrder(repoRoot, join(repoRoot, spec), {
     attributes: manifest.workOrder.attributes,
     requireApprover: manifest.workOrder.requireApprover,
   });

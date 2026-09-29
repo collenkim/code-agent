@@ -6,6 +6,7 @@ import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, 
 import { runHook } from "./hook";
 import { init } from "./init";
 import { findRepoRoot } from "./layout";
+import { modelsTable, setModel } from "./models";
 import { manifestCheck, survey } from "./survey";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
@@ -18,6 +19,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent approve                  제출된 계획 승인 (TTY 에서만)
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기
+  code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
 
 스킬이 부른다 (Claude Code 안):
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지)
@@ -109,6 +111,9 @@ function main(argv: string[]): number {
         throw new Stop("사용법: code-agent confirm doc <architecture | conventions>");
       }
       print(confirmDoc(repoRoot, args[1]));
+      return 0;
+    case "model":
+      print(args.length === 0 ? modelsTable(repoRoot) : setModel(repoRoot, args[0], args[1]));
       return 0;
     case "survey":
       print(survey(repoRoot));

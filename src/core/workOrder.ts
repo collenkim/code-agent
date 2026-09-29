@@ -1,17 +1,17 @@
 /**
- * 작업 지시서 — 모든 작업이 통과해야 하는 입구(0차 게이트).
+ * 작업 지시서 — 모든 작업이 통과해야 하는 입구.
  *
- * 여기서 걸리면 **프롬프트를 만들지 않는다.** 모델에 한 글자도 가지 않는다는 것이 이 파일의
- * 존재 이유다 — 뒤 층의 검사(슬롯·승인·경계)는 전부 모델을 한 번 부른 뒤에야 일어나므로,
- * 그것만으로는 통제가 모델이 협조하는 동안만 유지된다.
+ * 여기서 걸리면 **작업을 시작하지 않는다.** 커서도 브랜치도 만들어지지 않는다는 것이 이 파일의
+ * 존재 이유다 — 뒤 층의 검사(계획 승인·경계 검사)는 전부 작업이 이미 돌기 시작한 뒤에야
+ * 일어나므로, 그것만으로는 통제가 모델이 협조하는 동안만 유지된다.
  *
- * 규격은 doc/work-order.md 에 있다. 여기서 검사하는 것은 형식·존재·값·오타·실재 다섯이고,
+ * 규격은 doc/requirement.md 에 있다. 여기서 검사하는 것은 형식·존재·값·오타·실재 다섯이고,
  * 무엇이 걸리든 사람이 문서를 고쳐야 풀린다 — 우회 옵션은 만들지 않는다.
  */
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-export const KINDS = ["spec", "bootstrap", "adopt", "feature", "fix", "refactor"] as const;
+export const KINDS = ["feature", "fix", "refactor"] as const;
 export type WorkKind = (typeof KINDS)[number];
 
 /** 파이프라인이 실제로 분기·검사에 쓰는 속성. 이 목록은 늘리지 않는다. */
@@ -20,19 +20,16 @@ const RESERVED = ["kind", "id", "title", "target", "scope", "preserve", "approve
 /**
  * target 이 저장소 경로로 해석되는 종류.
  *
- * bootstrap 의 대상은 프로젝트 이름이고, feature 의 대상은 **이제부터 만들** 도메인이라
- * 아직 디렉토리가 없다. 실재를 물을 수 있는 것은 이미 있는 코드를 다루는 셋뿐이다.
+ * feature 의 대상은 **이제부터 만들** 도메인이라 아직 디렉토리가 없다. 실재를 물을 수 있는
+ * 것은 이미 있는 코드를 다루는 둘뿐이다.
  */
 const TARGET_IS_PATH: Record<WorkKind, boolean> = {
-  spec: false,
-  bootstrap: false,
-  adopt: true,
   feature: false,
   fix: true,
   refactor: true,
 };
 
-/** 보존할 대상이 있는 종류에서만 필수다. bootstrap 은 보존할 것이 아직 없어 해당이 없다. */
+/** 보존할 대상이 있는 종류에서만 필수다. feature 는 새로 만드는 것이라 해당이 없다. */
 const REQUIRES_SCOPE: WorkKind[] = ["fix", "refactor"];
 const REQUIRES_PRESERVE: WorkKind[] = ["fix", "refactor"];
 
@@ -72,69 +69,12 @@ export class WorkOrderError extends Error {
   constructor(readonly problems: WorkOrderProblem[]) {
     super(
       "작업 지시서가 규격에 맞지 않아 진행하지 않았습니다 " +
-        `(${problems.length}건) — 프롬프트를 만들지 않았습니다:\n` +
+        `(${problems.length}건) — 작업을 시작하지 않았습니다:\n` +
         problems.map((problem) => `  - [${problem.attribute}] ${problem.detail}`).join("\n") +
-        "\n\n머리말 규격은 doc/work-order.md 에 있습니다.",
+        "\n\n머리말 규격은 doc/requirement.md 에 있습니다.",
     );
     this.name = "WorkOrderError";
   }
-}
-
-/** 종류가 무엇을 뜻하는지. 모델은 kind 라는 낱말만 보고는 무엇이 달라지는지 모른다. */
-const KIND_MEANING: Record<WorkKind, string> = {
-  spec:
-    "스펙 문서를 만든다. 만드는 것은 문서 한 장뿐이고, 그 내용은 전부 사람이 답한 것에서 온다 — " +
-    "모르는 것은 지어내지 않고 묻는다",
-  bootstrap:
-    "신규 프로젝트를 처음 만든다. 복제할 코드가 없으므로 결정 문서와 스캐폴더 출력만이 근거다",
-  adopt:
-    "이미 있는 저장소에 도입한다. 코드가 정본이고, 만드는 것은 그 코드에서 읽어 낸 선언과 문서다",
-  feature: "기능·도메인을 새로 추가한다. 참조 표준 도메인의 구조를 그대로 따른다",
-  fix: "결함을 고친다. 재현 조건이 먼저이고, 고치는 범위를 넘지 않는다",
-  refactor:
-    "동작을 바꾸지 않고 구조만 고친다. 무엇이 보존되어야 하는지가 이 작업의 본체다",
-};
-
-/**
- * 확정된 지시서를 프롬프트에 실을 형태로.
- *
- * 0차 게이트를 통과했다는 것은 **사람이 정한 것이 확정됐다**는 뜻이다. 그것을 매 턴 프롬프트
- * 머리에 실어 두지 않으면 모델은 턴마다 같은 것을 다시 추론하고, 그 추론이 턴마다 흔들린다.
- * 검사는 매번 새로 하되(캐시하면 지시서를 고쳐 우회할 수 있다), 확정된 사실은 계속 실어 준다.
- */
-export function describeWorkOrder(order: WorkOrder, focus?: string): string {
-  // 대상이 여럿이면 이번 왕복이 다루는 것 하나만 싣는다. 전부 실으면 모델이 이번에 만들
-  // 것과 다음에 만들 것을 구분할 근거가 없어 남의 대상까지 손대려 한다.
-  const others = focus ? order.target.filter((entry) => entry !== focus) : [];
-  const lines = [
-    "# 작업 지시서 — 사람이 확정한 것. 여기 적힌 것은 다시 정하지 않는다",
-    `- 작업 종류: ${order.kind} — ${KIND_MEANING[order.kind]}`,
-    `- 식별자: ${order.id}`,
-    `- 제목: ${order.title}`,
-    `- 대상: ${focus ?? order.target.join(", ")}`,
-  ];
-
-  if (others.length > 0) {
-    lines.push(
-      `  이 지시서에는 다른 대상도 있다(${others.join(", ")}). 그것들은 따로 돈다 — 이번에는 손대지 않는다.`,
-    );
-  }
-
-  if (order.scope.length > 0) {
-    lines.push(
-      `- 건드려도 되는 곳: ${order.scope.join(", ")}`,
-      "  이 밖의 파일은 필요해 보여도 바꾸지 않는다. 필요하면 note 에만 적는다.",
-    );
-  }
-
-  if (order.preserve.length > 0) {
-    lines.push(
-      "- 바뀌면 안 되는 것 — 하나라도 어기면 이 작업은 실패다:",
-      ...order.preserve.map((entry) => `  - ${entry}`),
-    );
-  }
-
-  return lines.join("\n");
 }
 
 // ---- 머리말 파서 ----
@@ -148,7 +88,7 @@ export function slug(text: string): string {
     .replace(/[^A-Za-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   // 점으로만 된 값(`.` · `..`)은 경로 조각으로 쓰면 사라지거나 한 단계 거슬러 오른다.
-  // adopt 의 대상은 저장소 경로라 `.` 이 실제로 들어온다 — 갈래가 뒤섞이는 자리다.
+  // fix·refactor 의 대상은 저장소 경로라 `.` 이 실제로 들어온다 — 갈래가 뒤섞이는 자리다.
   return /^\.+$/.test(cleaned) || cleaned === "" ? "unnamed" : cleaned;
 }
 
@@ -409,28 +349,24 @@ export function validateWorkOrder(
 }
 
 /**
- * 스펙 문서들에서 작업 지시서를 읽는다.
+ * 지시서 문서 한 장에서 작업 지시서를 읽는다.
  *
- * 머리말은 **정확히 한 장**에만 있어야 한다. 둘 이상이면 어느 것이 지시서인지 --spec 순서에
- * 의존하게 되고, 순서는 사람이 쉽게 바꾸는 것이라 통제의 근거로 삼을 수 없다.
+ * 머리말이 없으면 그 문서는 지시서가 아니다 — 무엇을 어디에 써야 하는지 예시로 보여 주고 멈춘다.
  */
 export function loadWorkOrder(
   repoRoot: string,
-  specPaths: string[],
+  specPath: string,
   policy: WorkOrderPolicy,
 ): WorkOrder {
-  const found = specPaths
-    .map((path) => ({ path, values: parseFrontMatter(readFileSync(path, "utf-8")) }))
-    .filter((candidate): candidate is { path: string; values: Record<string, string | string[]> } =>
-      candidate.values !== undefined,
-    );
+  const values = parseFrontMatter(readFileSync(specPath, "utf-8"));
 
-  if (found.length === 0) {
+  if (!values) {
     throw new WorkOrderError([
       {
         attribute: "머리말",
         detail:
-          "작업 지시서가 없습니다. --spec 문서 중 한 장의 맨 첫 줄부터 머리말을 두세요:\n" +
+          `작업 지시서가 없습니다: ${specPath}\n` +
+          "    requirement.md 의 맨 첫 줄부터 머리말을 두세요:\n" +
           "    ---\n" +
           `    kind: feature        # ${KINDS.join(" | ")}\n` +
           "    id: PROJ-1\n" +
@@ -441,16 +377,5 @@ export function loadWorkOrder(
     ]);
   }
 
-  if (found.length > 1) {
-    throw new WorkOrderError([
-      {
-        attribute: "머리말",
-        detail:
-          `머리말이 ${found.length} 장에 있습니다: ${found.map((entry) => entry.path).join(", ")}\n` +
-          "    정확히 한 장에만 두세요 — 둘 이상이면 어느 것이 지시서인지 --spec 순서에 달리게 됩니다",
-      },
-    ]);
-  }
-
-  return validateWorkOrder(repoRoot, found[0].values, found[0].path, policy);
+  return validateWorkOrder(repoRoot, values, specPath, policy);
 }

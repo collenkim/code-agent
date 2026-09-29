@@ -1,36 +1,16 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { existsSync, readFileSync } from "fs";
+/**
+ * 경계 검사 — 순수 규칙 대조만 한다.
+ *
+ * 검수(컨벤션 준수 같은 문맥 판단)는 Claude Code 안의 ca-reviewer 가 맡는다. 여기 남는 것은
+ * 경로·계획 대조처럼 비교 연산으로 끝나는 것들이고, 그것이 hook 이 딛는 자리다.
+ */
+import { existsSync } from "fs";
 import { join } from "path";
-import { z } from "zod";
 
-import { collectExemplars, domainDirOf, formatExemplars } from "./exemplar";
-import { describeWorkOrder } from "./workOrder";
+import { domainDirOf } from "./exemplar";
 import type { WorkOrder } from "./workOrder";
 import type { Manifest, StageDef } from "./manifest";
-import type {
-  BuildPlan,
-  GateResult,
-  GateViolation,
-  GeneratedFile,
-  ResolvedBuildContext,
-} from "./types";
-
-export const GateSchema = z.object({
-  violations: z.array(
-    z.object({
-      item: z.string().describe("위반한 체크리스트 항목 또는 컨벤션 규칙"),
-      file: z.string().describe("해당 파일 경로"),
-      detail: z.string().describe("무엇이 어떻게 어긋났는지 한국어로"),
-    }),
-  ),
-});
-
-const SYSTEM_PROMPT =
-  "너는 생성된 코드의 검수자다. 아래 체크리스트와 참조 표준 코드를 기준으로 위반만 찾는다.\n" +
-  "- 참조 표준 코드가 실제로 하고 있는 방식은 위반이 아니다. 문서와 달라도 마찬가지다.\n" +
-  "- 취향·개선 제안은 위반이 아니다. 체크리스트 항목이나 명시된 컨벤션을 어긴 것만 적는다.\n" +
-  "- 근거를 파일 내용에서 짚을 수 없으면 적지 않는다. 위반이 없으면 빈 배열을 반환한다.";
+import type { BuildPlan, GateViolation, GeneratedFile } from "./types";
 
 /** 경로 하나가 어떤 경로(파일 또는 디렉토리) 안에 드는가. */
 function under(path: string, root: string): boolean {
@@ -41,8 +21,8 @@ function under(path: string, root: string): boolean {
  * 보존하라고 한 것 중 **경로로 확인되는 것**.
  *
  * preserve 는 경로와 문장을 섞어 쓴다(`app/settlement` 과 `공개 시그니처를 유지한다`).
- * 저장소에 실제로 있는 경로면 코드가 막고, 나머지 문장형은 검수 프롬프트가 본다 —
- * 어느 쪽인지를 추측하지 않고 실재로 가른다.
+ * 저장소에 실제로 있는 경로면 코드가 막고, 나머지 문장형은 `plan submit` 의 missingPreserve 가
+ * 계획에 적혔는지로 본다 — 어느 쪽인지를 추측하지 않고 실재로 가른다.
  */
 export function preservedPaths(repoRoot: string, order: WorkOrder): string[] {
   return order.preserve
@@ -175,7 +155,7 @@ function plannedFor(plan: BuildPlan, stage: StageDef): Set<string> {
  * 생기는 것을 아무도 막지 않는다.
  *
  * 쓰기 **전에** 거부한다. 쓴 뒤에 알리면 되돌릴 수단이 없어(모델은 파일을 지울 수 없다)
- * 위반이 out/ 에 남은 채 경고만 반복된다.
+ * 위반이 저장소 작업트리에 남은 채 경고만 반복된다.
  */
 export function unplannedFiles(
   plan: BuildPlan,
@@ -223,107 +203,3 @@ export function missingPlannedFiles(
     }));
 }
 
-/**
- * 계획에 적힌 파일과 실제 생성된 파일이 일치하는지 — 누락·추가 모두 잡는다.
- *
- * 위 두 함수를 합친 것이다. 규칙을 두 벌로 두면 한쪽에만 구멍이 생긴다.
- */
-function checkPlanCoverage(
-  plan: BuildPlan,
-  stage: StageDef,
-  files: GeneratedFile[],
-): GateViolation[] {
-  const paths = files.map((file) => file.path);
-  return [
-    ...missingPlannedFiles(plan, stage, paths),
-    ...unplannedFiles(plan, stage, paths),
-  ];
-}
-
-function readChecklist(templatesDir: string, stage: StageDef): string {
-  const path = join(templatesDir, stage.template);
-  if (!existsSync(path)) {
-    return "(템플릿 없음 — 컨벤션 문서만 기준으로 검사)";
-  }
-  return readFileSync(path, "utf-8");
-}
-
-/**
- * 코드만으로 할 수 있는 검사. API가 없어도 돌아가므로 수동 모드에서도 그대로 쓴다.
- * 경로가 규칙에 맞는지, 계획대로 만들었는지는 전부 비교 연산이라 모델에 맡길 이유가 없다.
- */
-export function runCodeChecks(input: BoundaryInput): GateViolation[] {
-  return [...checkPaths(input), ...checkPlanCoverage(input.plan, input.stage, input.files)];
-}
-
-/** 검수 프롬프트 한 벌. 수동 모드에서 그대로 뽑아 쓸 수 있게 분리해 둔다. */
-export function buildGatePrompt(
-  context: ResolvedBuildContext,
-  manifest: Manifest,
-  stage: StageDef,
-  files: GeneratedFile[],
-): { system: string; user: string } {
-  const { files: exemplars } = collectExemplars(
-    context.repoRoot,
-    manifest,
-    context.referenceDomain,
-    stage,
-  );
-  const generated = files
-    .map((file) => `## ${file.path}\n\`\`\`${manifest.language ?? ""}\n${file.content}\n\`\`\``)
-    .join("\n\n");
-
-  return {
-    system: SYSTEM_PROMPT,
-    user:
-      `${describeWorkOrder(context.workOrder, context.target)}\n` +
-      (context.workOrder.preserve.length > 0
-        ? "  위 '바뀌면 안 되는 것'을 어긴 곳이 있으면 그것을 최우선 위반으로 보고한다.\n"
-        : "") +
-      "\n" +
-      `# 단계 템플릿 (체크리스트 포함)\n${readChecklist(context.templatesDir, stage)}\n\n` +
-      `# 코드 컨벤션 문서\n${context.conventionsText}\n\n` +
-      `# 참조 표준 코드\n${formatExemplars(exemplars, manifest.language)}\n\n` +
-      `# 검수 대상 — ${stage.title}\n${generated}`,
-  };
-}
-
-const client = new Anthropic();
-
-/**
- * 한 단계의 산출물을 검수한다.
- * 규칙 대조(경로·계획 준수)는 코드가, 문맥 판단(컨벤션 준수)은 모델이 맡는다.
- */
-export async function runGate(
-  context: ResolvedBuildContext,
-  manifest: Manifest,
-  plan: BuildPlan,
-  stage: StageDef,
-  files: GeneratedFile[],
-): Promise<GateResult> {
-  const deterministic = runCodeChecks({
-    repoRoot: context.repoRoot,
-    order: context.workOrder,
-    manifest,
-    plan,
-    stage,
-    files,
-  });
-
-  if (files.length === 0) {
-    return { passed: deterministic.length === 0, violations: deterministic };
-  }
-
-  const { system, user } = buildGatePrompt(context, manifest, stage, files);
-
-  const response = await client.messages.parse({
-    model: "claude-opus-5",
-    max_tokens: 8000,
-    system,
-    messages: [{ role: "user", content: user }],
-    output_config: { format: zodOutputFormat(GateSchema) },
-  });
-
-  const violations = [...deterministic, ...(response.parsed_output?.violations ?? [])];
-  return { passed: violations.length === 0, violations };
-}

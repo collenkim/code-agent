@@ -1,8 +1,8 @@
 /**
- * 0차 게이트 — 작업 지시서 검사.
+ * 작업 지시서 검사 — 작업이 시작되기 전의 입구.
  *
- * 여기서 확인하는 것은 "무엇이 걸리는가"보다 **걸렸을 때 모델을 부르지 않는가**다.
- * 뒤 층의 검사는 전부 모델을 한 번 부른 뒤에 일어나므로, 이 층이 새면 통제가
+ * 여기서 확인하는 것은 "무엇이 걸리는가"보다 **걸렸을 때 작업이 시작되지 않는가**다.
+ * 뒤 층의 검사는 전부 작업이 이미 돌기 시작한 뒤에 일어나므로, 이 층이 새면 통제가
  * 모델이 협조하는 동안만 유지된다.
  */
 import { strict as assert } from "node:assert";
@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 
 import {
-  describeWorkOrder,
   loadWorkOrder,
+  slug,
   parseFrontMatter,
   validateWorkOrder,
   WorkOrderError,
@@ -33,7 +33,7 @@ function spec(name: string, body: string): string {
 }
 
 function order(body: string, policy: WorkOrderPolicy = OPEN) {
-  return loadWorkOrder(repoRoot, [spec("order.md", body)], policy);
+  return loadWorkOrder(repoRoot, spec("order.md", body), policy);
 }
 
 function problems(body: string, policy: WorkOrderPolicy = OPEN): string[] {
@@ -99,7 +99,7 @@ describe("머리말 파서 — 봉투는 하나다", () => {
   });
 });
 
-describe("0차 게이트 — 존재 · 값 · 오타", () => {
+describe("작업 지시서 검사 — 존재 · 값 · 오타", () => {
   test("정상 지시서는 값을 정규화해 돌려준다", () => {
     const result = order(
       "---\nkind: feature\nid: PROJ-1\ntitle: 배송 추가\ntarget: shipment\n---\n",
@@ -117,14 +117,6 @@ describe("0차 게이트 — 존재 · 값 · 오타", () => {
     assert.match(found[0], /작업 지시서가 없습니다/);
   });
 
-  test("머리말이 두 장에 있으면 거부한다 — 순서에 기대지 않는다", () => {
-    const head = "---\nkind: feature\nid: A\ntitle: t\ntarget: x\n---\n";
-    assert.throws(
-      () => loadWorkOrder(repoRoot, [spec("one.md", head), spec("two.md", head)], OPEN),
-      /두 장|2 장/,
-    );
-  });
-
   test("필수 속성이 빠지면 한 번에 모아 알린다", () => {
     const found = problems("---\nkind: feature\n---\n");
 
@@ -136,7 +128,7 @@ describe("0차 게이트 — 존재 · 값 · 오타", () => {
 
   test("알 수 없는 kind 는 고를 수 있는 값을 알려준다", () => {
     const found = problems("---\nkind: featrue\nid: A\ntitle: t\ntarget: x\n---\n");
-    assert.match(found[0], /featrue.*bootstrap \| adopt \| feature \| fix \| refactor/s);
+    assert.match(found[0], /featrue.*feature \| fix \| refactor/s);
   });
 
   test("모르는 속성은 거부한다 — 오타를 넘기면 안 걸리는 상태가 된다", () => {
@@ -147,7 +139,7 @@ describe("0차 게이트 — 존재 · 값 · 오타", () => {
   });
 });
 
-describe("0차 게이트 — kind 별 필수", () => {
+describe("작업 지시서 검사 — kind 별 필수", () => {
   const base = "id: A\ntitle: t\ntarget: app/features/orders\n";
 
   test("refactor 는 scope 와 preserve 가 필수다", () => {
@@ -163,13 +155,13 @@ describe("0차 게이트 — kind 별 필수", () => {
     assert.equal(found.length, 2);
   });
 
-  test("bootstrap 은 보존할 것이 아직 없어 preserve 를 묻지 않는다", () => {
-    const result = order("---\nkind: bootstrap\nid: A\ntitle: t\ntarget: 신규프로젝트\n---\n");
+  test("feature 는 새로 만드는 것이라 scope·preserve 를 묻지 않는다", () => {
+    const result = order("---\nkind: feature\nid: A\ntitle: t\ntarget: 새도메인\n---\n");
     assert.deepEqual(result.preserve, []);
   });
 });
 
-describe("0차 게이트 — 경로 실재", () => {
+describe("작업 지시서 검사 — 경로 실재", () => {
   test("refactor 의 target 이 저장소에 없으면 거부한다", () => {
     const found = problems(
       "---\nkind: refactor\nid: A\ntitle: t\ntarget: app/features/없음\n" +
@@ -202,7 +194,7 @@ describe("0차 게이트 — 경로 실재", () => {
   });
 });
 
-describe("0차 게이트 — 프로젝트 확장 속성", () => {
+describe("작업 지시서 검사 — 프로젝트 확장 속성", () => {
   const policy: WorkOrderPolicy = {
     requireApprover: true,
     attributes: [
@@ -240,31 +232,6 @@ describe("0차 게이트 — 프로젝트 확장 속성", () => {
   });
 });
 
-describe("describeWorkOrder — 프롬프트에 실리는 형태", () => {
-  test("scope 와 preserve 가 규칙 문장으로 나온다", () => {
-    const text = describeWorkOrder(
-      order(
-        "---\nkind: refactor\nid: A\ntitle: 경계 정리\ntarget: app/common/tx\n" +
-          "scope: [app/common/tx]\npreserve: [OrderFacade 공개 시그니처]\n---\n",
-      ),
-    );
-
-    assert.match(text, /작업 종류: refactor/);
-    assert.match(text, /건드려도 되는 곳: app\/common\/tx/);
-    assert.match(text, /바뀌면 안 되는 것/);
-    assert.match(text, /OrderFacade 공개 시그니처/);
-  });
-
-  test("보존할 것이 없는 종류에는 그 줄이 아예 없다", () => {
-    const text = describeWorkOrder(
-      order("---\nkind: feature\nid: A\ntitle: t\ntarget: shipment\n---\n"),
-    );
-
-    assert.doesNotMatch(text, /바뀌면 안 되는 것/);
-    assert.doesNotMatch(text, /건드려도 되는 곳/);
-  });
-});
-
 describe("validateWorkOrder — 값만 주어졌을 때", () => {
   test("파일 없이도 같은 규칙으로 검사한다", () => {
     assert.throws(
@@ -277,5 +244,27 @@ describe("validateWorkOrder — 값만 주어졌을 때", () => {
         ),
       /scope/,
     );
+  });
+});
+
+/**
+ * 원장 경로와 계획 경로가 같은 규칙을 써야 한다.
+ *
+ * 지시서 id 와 대상 이름은 그대로 디렉토리·파일 이름이 된다(`approvals/<id>/<target>-N.plan.json`).
+ * 파일 이름으로 쓸 수 없는 문자가 섞이면 두 자리가 서로 다른 곳을 가리키게 된다.
+ */
+describe("slug — 이름이 경로가 될 때", () => {
+  test("대상 이름에 @ 나 # 이 있어도 갈리지 않는다", () => {
+    assert.equal(slug("a@b#c"), "a-b-c");
+  });
+
+  test("경로 구분자도 같은 규칙으로 걸린다", () => {
+    assert.equal(slug("app/features/settlement"), "app-features-settlement");
+  });
+
+  test("이름으로 쓸 것이 남지 않으면 unnamed 다 — 점만 남으면 경로가 거슬러 오른다", () => {
+    assert.equal(slug("."), "unnamed");
+    assert.equal(slug(".."), "unnamed");
+    assert.equal(slug("주문 도메인"), "unnamed", "ASCII 밖은 이름으로 쓰지 않는다");
   });
 });

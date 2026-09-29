@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { dirname, join, relative } from "path";
 
 import { STATE_DIR } from "./layout";
+import { applyModels } from "./models";
 
 /** 이 패키지의 루트 — dist/agent/init.js 기준 두 단계 위 */
 const PACKAGE_ROOT = join(__dirname, "..", "..");
@@ -81,6 +82,8 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   const copied: string[] = [];
   copyTree(join(TEMPLATE_DIR, "claude"), join(repoRoot, ".claude"), copied, repoRoot);
   lines.push(`스킬·에이전트 ${copied.length}개: .claude/skills/ca-*, .claude/agents/ca-*`);
+  // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
+  applyModels(repoRoot);
 
   upsertHook(join(repoRoot, ".claude", "settings.json"), command);
   lines.push(`hook: .claude/settings.json → ${command}`);

@@ -12,6 +12,7 @@ import { init } from "../agent/init";
 import { loadActive, saveActive } from "../agent/layout";
 import { parseQuestions } from "../agent/questions";
 import { parseAnalysis } from "../agent/analysis";
+import { AGENTS, modelsTable, setModel } from "../agent/models";
 import { docsSkeleton } from "../agent/docsCommands";
 import { WORK_SCHEMAS } from "../agent/schemas";
 import { checkProjectDocs, checkSections, recordDocConfirmation } from "../agent/docs";
@@ -230,6 +231,15 @@ describe("hook — Bash 허용 목록", () => {
     assert.ok(bash("git checkout -b other"));
     assert.ok(bash("git commit -m x"));
   });
+
+  test("git branch 는 목록 보기만 — 지우기·이름 바꾸기·만들기는 막는다", () => {
+    for (const read of ["git branch", "git branch --show-current", "git branch -a", "git branch --list -v"]) {
+      assert.equal(bash(read), undefined, read);
+    }
+    for (const write of ["git branch -D feature/ORD-1", "git branch -m other", "git branch other", "git branch -f master HEAD~1"]) {
+      assert.ok(bash(write), write);
+    }
+  });
 });
 
 describe("hook — 구현", () => {
@@ -339,6 +349,15 @@ describe("start — 문서 게이트와 작업 브랜치", () => {
     assert.match(start(repo, join(repo, "doc/work/ORD-1.md")), /이미 있는 작업 브랜치 feature\/ORD-1 로 전환/);
   });
 
+  test("지시서에 없는 대상은 거부한다", () => {
+    // 사람이 읽은 계획과 판정한 계획이 달라질 수 있다 — 대상은 지시서가 정한 것뿐이다.
+    assert.throws(
+      () => start(repo, join(repo, "doc/work/ORD-1.md"), { target: "없는대상" }),
+      /지시서의 대상이 아닙니다: 없는대상/,
+    );
+    assert.equal(loadActive(repo), undefined);
+  });
+
   test("다른 작업이 진행 중이면 시작하지 않는다", () => {
     start(repo, join(repo, "doc/work/ORD-1.md"));
     write("doc/work/ORD-2.md", "---\nkind: feature\nid: ORD-2\ntitle: 다른 것\ntarget: order\n---\n");
@@ -419,6 +438,54 @@ describe("plan submit — 제출 전 검사", () => {
   test("plan 스테이지가 아니면 받지 않는다", () => {
     saveActive(repo, { ...loadActive(repo)!, phase: "analysis" });
     assert.throws(() => submit(), /plan 스테이지에서 제출합니다/);
+  });
+
+  /**
+   * 보존 조건이 빠진 계획이 승인 화면에 올라가는 것이 고치는 작업에서 가장 위험한 실패다.
+   * 문장을 그대로 옮기게 해 두면 대조를 코드가 하고, 걸린 계획은 제출 자체가 막힌다.
+   */
+  test("kind: refactor — 보존 조건이 빠진 계획은 제출되지 않는다", () => {
+    const DEAL = `${APP}/deal`;
+    abort(repo);
+    // 고치는 작업은 Entity~Controller 를 순차 생성하지 않는다 — 경계는 지시서가 정한다.
+    write("code-agent.json", JSON.stringify({
+      ...MANIFEST,
+      stages: [...MANIFEST.stages, {
+        key: "restructure", title: "구조 정리", template: "90-restructure.md",
+        kinds: ["refactor"], scope: "project", exemplars: [], outputDirs: [],
+      }],
+    }));
+    write("doc/work/REF-1.md", [
+      "---", "kind: refactor", "id: REF-1", "title: 거래 경계 정리",
+      `target: ${DEAL}`, `scope: [${DEAL}]`,
+      `preserve: [${DEAL}/repository/DealRepository.java, DealFacade 공개 시그니처]`,
+      "---", "", "경계만 옮긴다.", "",
+    ].join("\n"));
+    start(repo, join(repo, "doc/work/REF-1.md"));
+    write("doc/work/REF-1/analysis.md",
+      ["## R1 · 경계 정리", "- 데이터: 안 건드린다", "## 작업 문서", "- 없음", ""].join("\n"));
+    next(repo);
+    next(repo);
+
+    const base = {
+      files: [{ stage: "restructure", path: `${DEAL}/domain/Deal.java`, purpose: "경계를 옮긴다", requirements: ["R1"] }],
+      conventions: [], conflicts: [], openQuestions: [], reasoning: "경계만 옮긴다",
+    };
+    const submitRef = (plan: unknown) => {
+      write("doc/work/REF-1/plan.json", JSON.stringify(plan));
+      return submitPlan(repo, join(repo, "doc/work/REF-1/plan.json"));
+    };
+
+    // 문장 하나를 흘린 계획 — 요약·의역도 누락으로 본다.
+    assert.throws(
+      () => submitRef({ ...base, preserve: [{ item: "DealFacade 공개 시그니처", how: "그대로 둔다" }] }),
+      /preserve 가 계획에 없습니다: .*DealRepository\.java/,
+    );
+    // 다 든 계획은 제출된다.
+    submitRef({ ...base, preserve: [
+      { item: `${DEAL}/repository/DealRepository.java`, how: "열지 않는다" },
+      { item: "DealFacade 공개 시그니처", how: "그대로 둔다" },
+    ] });
   });
 });
 
@@ -561,6 +628,26 @@ describe("questions", () => {
 });
 
 describe("init", () => {
+  test("에이전트 8개 모두 model: opus 가 박혀 설치된다 — 각자 PC 의 기본 모델에 맡기지 않는다", () => {
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    for (const agent of AGENTS) {
+      assert.match(readFileSync(join(repo, `.claude/agents/ca-${agent}.md`), "utf-8"), /^model: opus$/m, agent);
+    }
+  });
+
+  test("사람이 바꾼 모델은 다시 설치해도 남고, 바꾸기는 터미널에서만 된다", () => {
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    assert.throws(() => setModel(repo, "implementer", "sonnet"), /터미널에서만 바꿉니다/);
+    assert.throws(() => setModel(repo, "nobody", "sonnet"), /에이전트는/);
+    assert.throws(() => setModel(repo, "implementer", "gpt"), /모델은/);
+    // 사람이 터미널에서 바꾼 결과를 흉내 낸다 — 파일은 도구로 못 쓰는 .code-agent/ 에 있다
+    write(".code-agent/models.json", JSON.stringify({ implementer: "sonnet" }));
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    assert.match(readFileSync(join(repo, ".claude/agents/ca-implementer.md"), "utf-8"), /^model: sonnet$/m);
+    assert.match(readFileSync(join(repo, ".claude/agents/ca-reviewer.md"), "utf-8"), /^model: opus$/m);
+    assert.match(modelsTable(repo), /implementer\s+sonnet\s+\(바꿈\)/);
+  });
+
   test("다른 hook 과 CLAUDE.md 의 기존 내용을 보존하고, 두 번 돌려도 하나만 남는다", () => {
     write(".claude/settings.json", JSON.stringify({ model: "x", hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "other-check" }] }] } }));
     write("CLAUDE.md", "# 우리 프로젝트\n\n원래 내용\n");

@@ -2,6 +2,7 @@
 name: ca-implementer
 description: code-agent 구현 — 승인된 계획의 한 단계를, 넘겨받은 context(만들 파일·단계 규칙·참조 표준 코드)대로 쓴다.
 tools: Read, Grep, Glob, Write, Edit, Bash
+model: opus
 ---
 
 입력: `code-agent context` 출력(그대로), 작업 폴더의 분석·작업 문서 경로.

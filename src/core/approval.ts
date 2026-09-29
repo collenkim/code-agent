@@ -1,23 +1,20 @@
 /**
- * 사람이 판정하는 두 게이트 — 계획 승인(2차)과 단계 산출물 확정(4차).
- *
- * 둘 다 **같은 원장**에 쌓인다. 판정 이력이 두 곳에 갈리면 읽는 사람이 하나를 놓치기 때문이다.
- * 아래 규칙은 계획 승인의 것이고, 단계 확정은 파일 맨 아래에 따로 있다.
+ * 사람이 판정하는 게이트 — 계획 승인.
  *
  * 계획이 나왔다고 곧장 생성으로 가지 않는다. 사람이 승인한 뒤에야 넘어간다. 우회 옵션은
  * 만들지 않는다 — 급할 때 쓰라고 만든 옵션은 급할 때만 쓰이지 않는다.
  *
- * 승인은 "이 작업"이 아니라 **"이 계획, 이 지시서, 이 경계"** 에 대한 것이다. 그래서 해시가 셋이다 —
- * 지시서(사람이 확정한 것) · 계획(무엇을 만들지) · 매니페스트(어디에 만들 수 있고 무엇을 돌릴지).
- * 하나라도 달라지면 승인은 자동으로 무효가 된다. 이것이 없으면 *승인받고 다른 것을 만드는*
- * 구멍이 그대로 열린다 — 셋째가 없던 동안은 승인을 받은 뒤 outputDirs 를 넓히는 것만으로
- * 승인한 적 없는 경계에 코드가 나갔다.
+ * 승인은 "이 작업"이 아니라 **"이 계획, 이 지시서, 이 경계, 이 근거 문서"** 에 대한 것이다.
+ * 그래서 해시가 넷이다 — 지시서(사람이 확정한 것) · 계획(무엇을 만들지) · 매니페스트(어디에
+ * 만들 수 있고 무엇을 돌릴지) · 문서(무엇을 근거로 세운 계획인지). 하나라도 달라지면 승인은
+ * 자동으로 무효가 된다. 이것이 없으면 *승인받고 다른 것을 만드는* 구멍이 그대로 열린다 —
+ * 매니페스트 해시가 없던 동안은 승인을 받은 뒤 outputDirs 를 넓히는 것만으로 승인한 적 없는
+ * 경계에 코드가 나갔다.
  *
- * 기록은 **대상 저장소 안**에 남긴다. out/ 은 확인 후 지우는 staging 이라 승인 이력이 거기
- * 있으면 같이 사라지고, 승인은 팀의 기록이라 버전 관리되어야 한다. "대상 저장소는 건드리지
- * 않는다"의 의도된 예외다 — 그 약속은 생성물에 대한 것이고 이것은 통제 기록이다.
+ * 기록은 **대상 저장소 안**에 남긴다. 승인은 한 사람의 메모가 아니라 팀의 기록이라 버전
+ * 관리되어야 하고, 다른 머신·다른 체크아웃에서도 같은 원장을 읽어야 하기 때문이다.
  *
- * 규격은 doc/work-order.md 의 "승인 기록" 절에 있다.
+ * 규격은 doc/requirement.md 의 "승인 기록" 절에 있다.
  */
 import { createHash } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
@@ -45,8 +42,6 @@ export type Decision = "approved" | "rejected";
 export type PresenceChannel =
   /** 터미널에서 사람이 직접 확인 문구를 입력했다 */
   | "tty"
-  /** HTTP 로 들어왔다. 서버는 요청 뒤에 사람이 있었는지 알 수 없다 */
-  | "server"
   /** 사람의 입력을 관측하지 못했다 — 스크립트·비대화형 셸·명시적 우회 */
   | "unattended";
 
@@ -64,13 +59,6 @@ export interface Presence {
   /** 무엇을 근거로 그렇게 판정했는지. 원장을 읽는 사람이 강도를 스스로 판단할 수 있게 */
   detail: string;
 }
-
-/** 전송이 사람 존재를 관측하지 못했을 때. 안전한 쪽으로 기운다 — 권한을 주지 않는다 */
-export const UNATTENDED: Presence = {
-  channel: "unattended",
-  verified: false,
-  detail: "사람의 입력을 관측하지 못했습니다",
-};
 
 /** 원장 한 줄 = 승인 사건 하나. append 만 하고 고치지 않는다. */
 export interface ApprovalRecord {
@@ -95,16 +83,20 @@ export interface ApprovalRecord {
   at: string;
   comment?: string;
   /**
-   * 계획 승인이면 계획 스냅샷, 단계 확정이면 확정된 파일 목록 (저장소 루트 기준).
+   * 승인한 계획의 스냅샷 (저장소 루트 기준).
    * 해시만으로는 "무엇을 승인했나"를 나중에 확인할 수 없다.
    */
   snapshot: string;
   /**
-   * 단계 확정이면 그 단계 키. **없으면 계획 승인이다.**
-   * 두 판정이 같은 원장에 쌓이므로, 이 속성이 둘을 가른다.
+   * **예전 원장에만 있다** — 지금은 쓰지 않는다.
+   *
+   * 단계 산출물 확정이 같은 원장에 쌓이던 시절의 단계 키다. 그 기능은 없어졌지만 이미
+   * 쌓인 줄에는 남아 있고, `checkApproval` 과 `recordDecision` 이 `stage === undefined` 로
+   * 계획 승인 줄만 고르는 필터를 계속 쓴다. 필드를 지우면 옛 원장을 읽을 때 타입이
+   * 거짓말을 하고, 단계 확정 줄이 계획 승인으로 읽혀 계획 승인이 그냥 통과한다.
    */
   stage?: string;
-  /** 단계 확정 시점의 산출물 해시. 파일이 바뀌면 그 확정은 무효다 */
+  /** 예전 원장의 단계 확정 시점 산출물 해시. 위와 같은 이유로 타입에 남긴다 */
   filesHash?: string;
   /**
    * 이 판정이 들어온 통로. **예전 원장에는 없다** — 없으면 관측되지 않은 것으로 읽는다.
@@ -162,7 +154,7 @@ function canonical(value: unknown): string {
 
 /**
  * 지시서 해시. 이것이 바뀌면 그 지시서의 **모든** 승인이 무효다 —
- * preserve 한 줄을 지우면 3차 게이트가 그냥 통과하므로, 계획보다 지시서 쪽이 더 위험하다.
+ * preserve 한 줄을 지우면 hook 의 경계 검사가 그냥 통과하므로, 계획보다 지시서 쪽이 더 위험하다.
  *
  * sourcePath 는 빼고 담는다. 문서를 옮겼다고 승인이 무효가 될 이유는 없다.
  */
@@ -295,9 +287,9 @@ export type ApprovalState =
   | { status: "approved"; record: ApprovalRecord }
   /** 같은 계획이 반려됐다. 계획을 다시 세우기 전에는 풀리지 않는다 */
   | { status: "rejected"; record: ApprovalRecord }
-  /** 계획이 바뀌었다 — 그 대상의 승인이 무효. 2차부터 다시 */
+  /** 계획이 바뀌었다 — 그 대상의 승인이 무효. 계획 승인부터 다시 */
   | { status: "stale-plan"; record: ApprovalRecord; diff: PlanDiffEntry[] }
-  /** 지시서가 바뀌었다 — 그 지시서의 모든 승인이 무효. 0차부터 다시 */
+  /** 지시서가 바뀌었다 — 그 지시서의 모든 승인이 무효. 지시서 검사부터 다시 */
   | { status: "stale-order"; record: ApprovalRecord }
   /** 경계·검증 선언이 바뀌었다 — 승인한 계획을 승인한 적 없는 규칙으로 만들게 된다 */
   | { status: "stale-manifest"; record: ApprovalRecord }
@@ -307,12 +299,9 @@ export type ApprovalState =
    * 승인 줄은 있으나 **사람 존재가 관측되지 않았다.**
    *
    * 프로젝트가 `requireVerifiedApproval` 을 켠 경우에만 나온다. 기본값에서는 이 상태가
-   * 생기지 않는다 — 서버 화면으로 승인하는 팀의 길을 조용히 막아 버리기 때문이다.
+   * 생기지 않는다 — TTY 가 없는 자리에서 남긴 승인까지 조용히 막아 버리기 때문이다.
    */
   | { status: "unverified"; record: ApprovalRecord };
-
-/** 승인이 나지 않은 상태들. 이 중 하나면 생성 단계로 넘어가지 않는다 */
-export type PendingApproval = Exclude<ApprovalState, { status: "approved" }>;
 
 /**
  * 이 계획으로 생성 단계에 들어가도 되는가.
@@ -331,8 +320,8 @@ export interface ApprovalPolicy {
   /**
    * 사람 존재가 관측된 승인만 게이트를 열게 할지. 프로젝트가 `code-agent.json` 에 선언한다.
    *
-   * 기본값이 `false` 인 것은 의도다 — 서버 화면은 요청 뒤에 사람이 있었는지 증명할 수 없으므로,
-   * 켜는 순간 그 경로로는 승인이 안 된다. 무엇을 잃는지 알고 켜는 선언이어야 한다.
+   * 기본값이 `false` 인 것은 의도다 — 켜는 순간 TTY 가 없는 자리(스크립트·비대화형 셸)의
+   * 판정은 기록으로만 남고 게이트를 열지 못한다. 무엇을 잃는지 알고 켜는 선언이어야 한다.
    */
   requireVerifiedApproval?: boolean;
   /** 지금 확정된 필수 문서의 해시. 주면 승인 시점의 것과 대조한다 */
@@ -348,7 +337,7 @@ export function checkApproval(
 ): ApprovalState {
   // 같은 id 아래 대상 수만큼 줄이 쌓인다. 대상 A 의 승인이 B 의 승인일 수는 없다.
   // 단계 확정 줄은 걸러 낸다 — 섞으면 마지막 단계 확정이 계획 판정으로 읽혀,
-  // 계획이 바뀌어도 2차 게이트가 통과해 버린다.
+  // 계획이 바뀌어도 계획 승인이 통과해 버린다.
   const rows = readLedger(repoRoot, order.id).filter(
     (row) => row.target === target && row.stage === undefined,
   );
@@ -454,116 +443,6 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     at: new Date().toISOString(),
     ...(input.comment ? { comment: input.comment } : {}),
     snapshot,
-    presence: input.presence,
-  };
-
-  return appendRecord(repoRoot, order.id, record);
-}
-
-// ---- 4차 게이트 — 단계 확정 ----
-
-/**
- * 단계가 만든 것을 사람이 보고 확정한다.
- *
- * 검수(`gate`)는 모델이 하고, 위반이 남아도 두 번 시도한 뒤에는 넘어간다. 그 끝에서
- * **"이걸 근거로 삼겠다"고 말하는 주체가 사람이 아니면**, 이후 단계 전부가 아무도 확정한 적
- * 없는 문서 위에 올라간다. 계획 승인이 "무엇을 만들지"에 대한 것이라면, 이것은
- * "만들어진 것을 받아들일지"에 대한 것이다.
- *
- * 반려는 그 단계를 다시 돌게 한다 — 사유는 다음 프롬프트에 실린다.
- */
-export type StageState =
-  /** 아직 판정이 없다 */
-  | { status: "none" }
-  | { status: "confirmed"; record: ApprovalRecord }
-  /** 반려됐다. 그 단계를 다시 돌아야 풀린다 */
-  | { status: "rejected"; record: ApprovalRecord }
-  /** 확정한 뒤 산출물이 바뀌었다 — 그 확정은 지금 파일들을 말하지 않는다 */
-  | { status: "stale-files"; record: ApprovalRecord };
-
-/** 확정이 나지 않은 상태들. 이 중 하나면 다음 단계로 넘어가지 않는다 */
-export type PendingStage = Exclude<StageState, { status: "confirmed" }>;
-
-/** 확정 대상이 된 산출물. 경로와 내용이 모두 담긴다 — 이름만 같고 내용이 달라도 무효다. */
-export function hashFiles(files: { path: string; content: string }[]): string {
-  const sorted = [...files]
-    .map((file) => ({ path: file.path.replace(/\\/g, "/"), content: file.content }))
-    .sort((a, b) => (a.path < b.path ? -1 : 1));
-  return sha(canonical(sorted));
-}
-
-export function checkStage(
-  repoRoot: string,
-  order: WorkOrder,
-  target: string,
-  stage: string,
-  files: { path: string; content: string }[],
-): StageState {
-  const rows = readLedger(repoRoot, order.id).filter(
-    (row) => row.target === target && row.stage === stage,
-  );
-  const record = rows[rows.length - 1];
-
-  if (!record) {
-    return { status: "none" };
-  }
-  if (record.decision === "rejected") {
-    return { status: "rejected", record };
-  }
-  // 확정은 그때의 파일들에 대한 것이다. 세션의 verified 와 같은 원칙 — 파일이 바뀌면 다시 본다.
-  if (record.filesHash !== hashFiles(files)) {
-    return { status: "stale-files", record };
-  }
-  return { status: "confirmed", record };
-}
-
-export interface StageDecisionInput {
-  order: WorkOrder;
-  target: string;
-  plan: BuildPlan;
-  stage: string;
-  files: { path: string; content: string }[];
-  decision: Decision;
-  approver: string;
-  comment?: string;
-  /** 전송이 관측한 사람 존재 */
-  presence: Presence;
-}
-
-/** 단계 확정을 계획 승인과 **같은 원장**에 남긴다. 판정 이력이 두 곳에 갈리면 읽는 사람이 하나를 놓친다. */
-export function recordStageDecision(repoRoot: string, input: StageDecisionInput): ApprovalRecord {
-  assertRepoExists(repoRoot);
-
-  const { order, target, stage, files, plan } = input;
-  const seq =
-    readLedger(repoRoot, order.id).filter((row) => row.target === target && row.stage === stage)
-      .length + 1;
-  const snapshot =
-    `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${slug(stage)}-${seq}.files.json`;
-
-  const snapshotPath = join(repoRoot, snapshot);
-  mkdirSync(dirname(snapshotPath), { recursive: true });
-  // 내용까지 남기면 원장이 저장소를 두 번 담는다. 무엇을 확정했는지는 경로 목록으로 충분하고,
-  // 내용이 바뀌었는지는 해시가 말한다.
-  writeFileSync(
-    snapshotPath,
-    JSON.stringify({ stage, files: files.map((file) => file.path) }, null, 2),
-    "utf-8",
-  );
-
-  const record: ApprovalRecord = {
-    id: order.id,
-    target,
-    kind: order.kind,
-    orderHash: hashWorkOrder(order),
-    planHash: hashPlan(plan),
-    decision: input.decision,
-    approver: input.approver,
-    at: new Date().toISOString(),
-    ...(input.comment ? { comment: input.comment } : {}),
-    snapshot,
-    stage,
-    filesHash: hashFiles(files),
     presence: input.presence,
   };
 
