@@ -66,6 +66,8 @@ const PLAN: BuildPlan = {
   domainRoot: "",
   domainDirName: "shipment",
   files: [{ stage: "model", path: "app/features/shipment/models.py", purpose: "배송 모델" }],
+  sequence: [{ step: "model", why: "다른 단계가 이 모델에 기댄다" }],
+  approach: "참조 도메인의 구조를 그대로 따라 새로 만든다",
   conventions: [{ rule: "dataclass 사용", source: "doc/conventions.md" }],
   conflicts: [],
   openQuestions: [],

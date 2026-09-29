@@ -116,9 +116,22 @@ const ManifestSchema = z.object({
         .string()
         .optional()
         .describe("아키텍처(뼈대 구조) 문서 경로, 저장소 기준. 컨벤션 문서는 conventions 가 맡는다"),
+      testStrategy: z.string().optional().describe("테스트 전략 문서 경로. 기본 doc/test-strategy.md"),
+      quality: z.string().optional().describe("품질·보안 기준 문서 경로. 기본 doc/quality.md"),
+      knowledge: z
+        .object({
+          dataDictionary: z.string().optional(),
+          apiCatalog: z.string().optional(),
+          businessRules: z.string().optional(),
+        })
+        .optional()
+        .describe(
+          "공통 KNOWLEDGE 문서의 위치. 게이트는 파일 존재뿐이고 승인 해시에도 넣지 않는다 — " +
+            "넣으면 다른 작업의 반영마다 남의 승인이 stale 이 되어 병렬 작업이 막힌다",
+        ),
     })
     .default({})
-    .describe("프로젝트 필수 문서의 위치. 없으면 어떤 작업도 요구사항 분석 이후로 가지 않는다"),
+    .describe("프로젝트 필수 문서(POLICY 4종)의 위치. 넷이 확정되지 않으면 어떤 작업도 시작되지 않는다"),
   git: z
     .object({
       base: z

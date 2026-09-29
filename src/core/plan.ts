@@ -11,6 +11,19 @@ import type { BuildPlan } from "./types";
 
 /** 종류가 무엇이든 계획에 들어가는 것 */
 const COMMON_PLAN_FIELDS = {
+  sequence: z
+    .array(
+      z.object({
+        step: z.string().describe("단계 키 또는 파일 묶음"),
+        why: z.string().describe("왜 그 차례인지 한 줄"),
+      }),
+    )
+    .min(1)
+    .describe("작업 순서 — 02-analysis.md 의 Risk 가 큰 것부터"),
+  approach: z
+    .string()
+    .min(1)
+    .describe("구현 방법 한 문단 — 03-design.md 의 설계를 어떤 방식으로 옮기는가 (기존 것을 확장 / 새로 만들고 갈아끼움)"),
   conventions: z
     .array(
       z.object({
@@ -53,7 +66,7 @@ export const PlanSchema = z.object({
         requirements: z
           .array(z.string())
           .optional()
-          .describe("이 파일이 담당하는 요구 항목 번호 (analysis.md 의 R1, R2 …)"),
+          .describe("이 파일이 담당하는 요구 항목 번호 (01-requirements.md 의 R1, R2 …)"),
       }),
     )
     .describe("생성할 파일 목록 — 참조 표준 도메인의 파일 구조를 그대로 따른다"),
@@ -77,7 +90,7 @@ export const RefactorPlanSchema = z.object({
         requirements: z
           .array(z.string())
           .optional()
-          .describe("이 파일이 담당하는 요구 항목 번호 (analysis.md 의 R1, R2 …)"),
+          .describe("이 파일이 담당하는 요구 항목 번호 (01-requirements.md 의 R1, R2 …)"),
       }),
     )
     .describe("고칠 파일 목록. 재현 테스트를 빼면 새 파일을 발명하지 않는다"),
@@ -101,6 +114,8 @@ const PLAN_SHAPE = `{
   "domainRoot": "도메인 분류 (없으면 \\"\\")",
   "domainDirName": "실제 디렉토리 이름",
   "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
+  "sequence": [{ "step": "단계 키 또는 파일 묶음", "why": "왜 그 차례인지" }],
+  "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
   "openQuestions": ["사람이 답해야 하는 것"],
@@ -110,6 +125,8 @@ const PLAN_SHAPE = `{
 const REFACTOR_PLAN_SHAPE = `{
   "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지", "requirements": ["R1"] }],
   "preserve": [{ "item": "지시서의 문장 그대로", "how": "이번 변경에서 어떻게 지켜지는지" }],
+  "sequence": [{ "step": "단계 키 또는 파일 묶음", "why": "왜 그 차례인지" }],
+  "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
   "openQuestions": ["사람이 답해야 하는 것"],
@@ -200,6 +217,12 @@ export function formatPlan(plan: BuildPlan): string {
           "",
         ]
       : []),
+    `### 작업 순서`,
+    ...plan.sequence.map((entry, index) => `${index + 1}. ${entry.step} — ${entry.why}`),
+    "",
+    `### 구현 방법`,
+    plan.approach,
+    "",
     `### 적용 규칙`,
     ...plan.conventions.map((rule) => `- ${rule.rule} (${rule.source})`),
   ];

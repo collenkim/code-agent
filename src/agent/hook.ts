@@ -6,9 +6,11 @@ import { join } from "path";
 import { checkPaths, unplannedFiles } from "../core/gate";
 import type { Manifest } from "../core/manifest";
 import { docPaths } from "./docs";
+import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
+import { planDocFile } from "./workDocs";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -28,6 +30,32 @@ const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 const SHELL_META = /[;&|<>`\n]|\$\(/;
 
 const READONLY_GIT = /^git (status|diff|log|show)(\s|$)/;
+
+/**
+ * 읽기용 git 도 `-o`·`--output` 을 받으면 파일을 쓴다 — `git show HEAD:<경로> --output=<아무 곳>` 은
+ * 커밋된 내용을 바이트 그대로 아무 자리에 떨군다. 셸 메타 문자가 없어 SHELL_META 에도 걸리지 않는다.
+ */
+const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
+
+/**
+ * 모델이 Bash 로 부를 수 있는 `code-agent` 서브명령 — 스킬이 부르는 것뿐이다.
+ *
+ * `init`·`abort`·`approve`·`reject`·`confirm`·`model` 은 사람이 터미널에서 돌리는 것이다. 열어 두면
+ * `abort` 한 줄로 작업 커서가 사라져 hook 이 아무것도 판정하지 않게 되고, `init --cli <제 스크립트>` 로
+ * hook 자체가 갈린다. 여기 한 곳에서 같이 닫힌다.
+ */
+const MODEL_SUBCOMMANDS = ["start", "next", "context", "status", "plan submit", "docs", "survey", "manifest check"];
+
+function isModelCommand(command: string): boolean {
+  if (command === "code-agent") {
+    return true;
+  }
+  if (!command.startsWith("code-agent ")) {
+    return false;
+  }
+  const rest = command.slice("code-agent ".length);
+  return MODEL_SUBCOMMANDS.some((sub) => rest === sub || rest.startsWith(`${sub} `));
+}
 
 /**
  * `git branch` 는 목록 보기만. 인자를 열어 두면 `-D`·`-m`·`<새 브랜치>` 로 작업 브랜치를 지우거나 바꾼다 —
@@ -82,7 +110,7 @@ function guardRepo(path: string, target: string): string | undefined {
  * 쓸 수 있는 곳은 `doc/` 아래, 등록된 문서 경로, `code-agent.json`(도입할 때 만든다)뿐이다.
  */
 function decideDocWrite(manifest: Manifest | undefined, path: string): string | undefined {
-  const allowed = ["doc", ...docPaths(manifest, "architecture"), ...docPaths(manifest, "conventions")];
+  const allowed = ["doc", ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))];
   if (path === "code-agent.json" || allowed.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
     return undefined;
   }
@@ -103,18 +131,17 @@ function decideBash(manifest: Manifest | undefined, command: string): string | u
 
   const allowed =
     !SHELL_META.test(command) &&
-    (command === "code-agent" ||
-      command.startsWith("code-agent ") ||
+    (isModelCommand(command) ||
       declared.includes(command) ||
-      READONLY_GIT.test(command) ||
-      READONLY_BRANCH.test(command));
+      (!WRITES_FILE.test(command) && (READONLY_GIT.test(command) || READONLY_BRANCH.test(command))));
   if (allowed) {
     return undefined;
   }
   return (
-    "작업 중에는 Bash 로 code-agent 명령, 선언된 명령" +
+    `작업 중에는 Bash 로 code-agent 명령(${MODEL_SUBCOMMANDS.join(" · ")}), 선언된 명령` +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
-    ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만)만 실행할 수 있습니다. 연결·리다이렉트(; && | >)는 안 됩니다. " +
+    ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
+    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model 은 사람이 터미널에서 실행합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );
 }
@@ -128,13 +155,21 @@ function decideWrite(work: Work, path: string): string | undefined {
       `${workDocsDir(active.id)}/questions.md 에 질문으로 남기세요 — 지시서는 사람이 고칩니다.`
     );
   }
-  // 작업 폴더(분석·질문·작업 문서·계획 초안)는 어느 스테이지에서든 쓴다.
+  // 05-plan.md 는 제출된 plan.json 의 파생물이라 코드만 쓴다 — 모델이 고치면 승인받은 계획과 읽는 문서가 갈라진다.
+  // 대소문자는 무시한다 — 파일이 아직 없으면 canonical 이 실제 이름으로 되돌려 주지 못해 `05-PLAN.md` 가 지나간다.
+  if (path.toLowerCase() === planDocFile(active.id).toLowerCase()) {
+    return (
+      `${planDocFile(active.id)} 는 코드가 렌더합니다 — code-agent plan submit 이 plan.json 에서 만듭니다. ` +
+      `고칠 것이 있으면 ${workDocsDir(active.id)}/plan.json 을 고쳐 다시 제출하세요.`
+    );
+  }
+  // 작업 폴더(번호 문서·질문·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);
   if (path === workDir || path.startsWith(`${workDir}/`)) {
     return undefined;
   }
 
-  if (active.phase === "analysis" || active.phase === "research" || active.phase === "plan") {
+  if (active.phase === "analysis" || active.phase === "impact" || active.phase === "design" || active.phase === "plan") {
     return (
       `지금은 ${active.phase} 스테이지라 작업 폴더(${workDir}/) 밖은 쓸 수 없습니다. ` +
       "코드는 계획이 승인된 뒤 implement 스테이지에서 씁니다."

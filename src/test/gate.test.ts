@@ -57,6 +57,8 @@ const PLAN: BuildPlan = {
       purpose: "트랜잭션 경계를 옮긴다",
     },
   ],
+  sequence: [{ step: "restructure", why: "옮길 곳이 하나다" }],
+  approach: "트랜잭션 경계만 서비스로 옮긴다",
   conventions: [],
   conflicts: [],
   openQuestions: [],

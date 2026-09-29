@@ -37,6 +37,13 @@ export interface PlannedFile {
   requirements?: string[];
 }
 
+/** 작업 순서 한 칸 — 무엇을 언제 하는가와 그 차례인 이유 */
+export interface PlanStep {
+  /** 단계 키 또는 파일 묶음 */
+  step: string;
+  why: string;
+}
+
 /** 이번 생성에 적용할 규칙과 그 출처(문서 섹션 또는 참조 표준 파일) */
 export interface ConventionRule {
   rule: string;
@@ -75,6 +82,10 @@ export interface BuildPlan {
   /** 실제 디렉토리 이름 — 언어마다 대소문자 규칙이 달라 이름과 따로 둔다 */
   domainDirName: string;
   files: PlannedFile[];
+  /** 어떤 단계·파일을 어떤 차례로, 왜 그 차례인지 — 영향도 분석의 Risk 가 큰 것부터 */
+  sequence: PlanStep[];
+  /** 구현 방법 한 문단 — 설계를 어떤 방식으로 옮기는가 */
+  approach: string;
   conventions: ConventionRule[];
   conflicts: DocConflict[];
   openQuestions: string[];

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { extname, join, posix } from "path";
 
 import { collectExemplars } from "../core/exemplar";
@@ -25,6 +25,53 @@ const BUILD_FILES = [
 const SOURCE_EXT = new Set([".java", ".kt", ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".cs", ".php", ".rb", ".scala", ".vue"]);
 
 const MAX_FILES = 20000;
+
+/**
+ * 도구 후보 — 테스트 전략과 품질·보안 기준 두 문서가 같은 것(빌드 파일·CI 설정)을 읽으므로
+ * 코드가 한 번 세서 둘이 나눠 쓴다. 모델에게 세게 하면 실행마다 결과가 달라진다.
+ */
+const TOOL_HINTS: { group: string; name: string; pattern: RegExp }[] = [
+  { group: "테스트", name: "JUnit 5", pattern: /junit-jupiter|junit5/i },
+  { group: "테스트", name: "JUnit 4", pattern: /junit:junit|junit4/i },
+  { group: "테스트", name: "Mockito", pattern: /mockito/i },
+  { group: "테스트", name: "AssertJ", pattern: /assertj/i },
+  { group: "테스트", name: "Spring Boot Test", pattern: /spring-boot-starter-test/i },
+  { group: "테스트", name: "Testcontainers", pattern: /testcontainers/i },
+  { group: "테스트", name: "REST Assured", pattern: /rest-assured/i },
+  { group: "테스트", name: "Jest", pattern: /"jest"|\bjest\b/i },
+  { group: "테스트", name: "Vitest", pattern: /vitest/i },
+  { group: "테스트", name: "Playwright", pattern: /playwright/i },
+  { group: "테스트", name: "Cypress", pattern: /cypress/i },
+  { group: "테스트", name: "pytest", pattern: /pytest/i },
+  { group: "정적 분석", name: "Checkstyle", pattern: /checkstyle/i },
+  { group: "정적 분석", name: "PMD", pattern: /\bpmd\b/i },
+  { group: "정적 분석", name: "SpotBugs", pattern: /spotbugs/i },
+  { group: "정적 분석", name: "Error Prone", pattern: /errorprone|error_prone/i },
+  { group: "정적 분석", name: "JaCoCo", pattern: /jacoco/i },
+  { group: "정적 분석", name: "Spotless", pattern: /spotless/i },
+  { group: "정적 분석", name: "SonarQube", pattern: /sonarqube|sonarcloud/i },
+  { group: "정적 분석", name: "ESLint", pattern: /eslint/i },
+  { group: "정적 분석", name: "Biome", pattern: /biome/i },
+  { group: "정적 분석", name: "Ruff", pattern: /\bruff\b/i },
+  { group: "정적 분석", name: "flake8", pattern: /flake8/i },
+  { group: "정적 분석", name: "mypy", pattern: /mypy/i },
+  { group: "보안", name: "FindSecBugs", pattern: /findsecbugs/i },
+  { group: "보안", name: "OWASP Dependency-Check", pattern: /dependency-?check/i },
+  { group: "보안", name: "npm audit", pattern: /npm audit/i },
+  { group: "보안", name: "pip-audit", pattern: /pip-audit/i },
+  { group: "보안", name: "Bandit", pattern: /bandit/i },
+  { group: "보안", name: "비밀정보 검사(gitleaks·trufflehog)", pattern: /gitleaks|trufflehog/i },
+  { group: "보안", name: "Snyk", pattern: /snyk/i },
+];
+
+/** CI 설정은 walk 가 보지 않는다(점으로 시작하는 디렉토리) — 실제로 도는 명령의 1순위 근거라 따로 찾는다 */
+function ciFiles(repoRoot: string): string[] {
+  const workflows = ".github/workflows";
+  const found = existsSync(join(repoRoot, workflows))
+    ? readdirSync(join(repoRoot, workflows)).filter((name) => /\.ya?ml$/.test(name)).sort().map((name) => posix.join(workflows, name))
+    : [];
+  return [...found, ...["Jenkinsfile", ".gitlab-ci.yml"].filter((path) => existsSync(join(repoRoot, path)))];
+}
 
 interface Entry {
   path: string;
@@ -114,6 +161,28 @@ export function survey(repoRoot: string): string {
   const tests = sources.filter((file) => isTest(file.path)).map((file) => file.path).sort();
   if (tests.length) out.push(`- 테스트: ${tests.slice(0, 3).join(", ")}`);
   out.push("");
+
+  // 도구 후보 — 빌드 파일과 CI 설정에 이름이 나오는 것만. 이름이 나온다고 도는 것은 아니므로 '후보'다
+  const scanned = [...builds.map((file) => file.path), ...ciFiles(repoRoot)];
+  const hits = new Map<string, string[]>();
+  for (const path of scanned) {
+    let text: string;
+    try {
+      text = readFileSync(join(repoRoot, path), "utf-8");
+    } catch {
+      continue;
+    }
+    for (const hint of TOOL_HINTS) {
+      if (hint.pattern.test(text)) hits.set(`${hint.group}\u0000${hint.name}`, [...(hits.get(`${hint.group}\u0000${hint.name}`) ?? []), path]);
+    }
+  }
+  out.push("## 도구 후보 (테스트 전략 · 품질·보안 기준의 근거 — 이름이 적힌 파일까지)");
+  for (const group of ["테스트", "정적 분석", "보안"]) {
+    const rows = [...hits.entries()].filter(([key]) => key.startsWith(`${group}\u0000`));
+    out.push(`- ${group}: ${rows.length ? rows.map(([key, paths]) => `${key.split("\u0000")[1]} (${paths.join(", ")})`).join(", ") : "없음"}`);
+  }
+  const ci = ciFiles(repoRoot);
+  out.push(`- CI 설정: ${ci.length ? ci.join(", ") : "없음"}`, "");
 
   const docs = files.filter((file) => file.ext === ".md" && (!file.path.includes("/") || /^(doc|docs)\//.test(file.path))).map((file) => file.path);
   out.push("## 이미 있는 문서", ...(docs.length ? docs.slice(0, 30).map((path) => `- ${path}`) : ["- 없음"]));
