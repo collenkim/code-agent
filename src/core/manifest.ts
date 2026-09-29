@@ -8,7 +8,7 @@ import type { WorkKind } from "./workOrder";
 export const MANIFEST_FILE = "code-agent.json";
 
 const StageSchema = z.object({
-  key: z.string().describe("--stages 에서 쓰는 식별자"),
+  key: z.string().describe("단계를 가리키는 식별자. 계획의 files[].stage 와 작업 커서가 이 값을 쓴다"),
   title: z.string().describe("이 단계가 만드는 것"),
   template: z.string().describe("같은 디렉토리의 템플릿 문서 파일명"),
   kind: z
@@ -30,10 +30,9 @@ const StageSchema = z.object({
     .boolean()
     .default(true)
     .describe(
-      "이 단계의 산출물을 사람이 확정해야 다음으로 넘어가는가(4차 게이트). 기본은 참이다. " +
-        "끄는 것은 우회가 아니라 선언이다 — 결정서·매니페스트처럼 이후 모든 실행의 근거가 되는 " +
-        "단계는 켜 두고, dto 처럼 다음 단계가 곧바로 검증하는 중간 산출물은 끌 수 있다. " +
-        "끈 단계도 모델 검수(3차)는 그대로 지난다",
+      "**지금은 아무것도 바꾸지 않는다.** 단계 산출물을 사람이 따로 확정하게 하던 시절의 " +
+        "선언이고 그 기능은 없어졌다. 승인 시점의 매니페스트 해시에 이미 들어가 있어 남겨 둔다 — " +
+        "지우면 그 해시가 달라져 이미 받은 승인이 전부 무효가 된다",
     ),
   expect: z
     .enum(["pass", "fail"])
@@ -42,13 +41,6 @@ const StageSchema = z.object({
       "이 단계를 끝내려면 검증 명령이 어떤 결과여야 하는가. fail 은 재현 단계다 — " +
         "그 자리에서 통과하면 결함을 재현하지 못한 것이다. 선언하면 돌려 보지 않고는 " +
         "단계를 끝낼 수 없다",
-    ),
-  reads: z
-    .array(z.string())
-    .default([])
-    .describe(
-      "이 단계 프롬프트에 함께 실을 저장소 파일·디렉토리(루트 기준). 빌드 파일·설정처럼 " +
-        "코드가 읽어 넣는 편이 정확한 것들이다 — 사람이 옮겨 적으면 반드시 실제와 어긋난다",
     ),
   base: z
     .string()
@@ -142,14 +134,14 @@ const ManifestSchema = z.object({
   test: z
     .array(z.string())
     .optional()
-    .describe("테스트 실행 명령. --test 로 켠다. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
+    .describe("테스트 실행 명령. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
   commands: z
     .record(z.string(), z.array(z.string()))
     .default({})
     .describe(
-      "verify 단계에서 `### run <이름>` 으로 돌릴 수 있는 추가 명령. build·test 두 리터럴만으로는 " +
+      "검증(P5)이 build·test 말고 이름으로 돌릴 수 있는 추가 명령. 두 리터럴만으로는 " +
         "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
-        "덮어쓸 수 없다 — 그 둘은 --build/--test 의 의미가 따로 있다",
+        "덮어쓸 수 없다 — 그 둘은 최상위 선언이 이미 쓰고 있는 이름이다",
     ),
   workOrder: z
     .object({
@@ -166,8 +158,8 @@ const ManifestSchema = z.object({
         .default(false)
         .describe(
           "사람 존재가 관측된 판정만 게이트를 열게 할지. 켜면 터미널에서 확인 문구를 입력한 " +
-            "승인만 유효해지고, 서버 화면과 비대화형 셸의 승인은 기록으로만 남는다 — " +
-            "서버 경로를 잃는 대가를 알고 켜는 선언이다",
+            "승인만 유효해지고, 비대화형 셸의 승인은 기록으로만 남는다 — " +
+            "그 자리를 잃는 대가를 알고 켜는 선언이다",
         ),
     })
     .default({ attributes: [], requireApprover: false, requireVerifiedApproval: false })
@@ -243,20 +235,4 @@ export function stagesFor(manifest: Manifest, kind: WorkKind): StageDef[] {
     );
   }
   return stages;
-}
-
-/** 실행할 단계 목록. onlyStages가 있어도 선언된 순서를 유지한다. */
-export function selectStages(manifest: Manifest, onlyStages?: string[]): StageDef[] {
-  if (!onlyStages?.length) {
-    return manifest.stages;
-  }
-
-  const unknown = onlyStages.filter((key) => !manifest.stages.some((stage) => stage.key === key));
-  if (unknown.length > 0) {
-    throw new Error(
-      `알 수 없는 단계: ${unknown.join(", ")} ` +
-        `(선언된 단계: ${manifest.stages.map((stage) => stage.key).join(", ")})`,
-    );
-  }
-  return manifest.stages.filter((stage) => onlyStages.includes(stage.key));
 }

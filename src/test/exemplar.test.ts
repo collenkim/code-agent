@@ -1,8 +1,8 @@
 /**
  * 참조 표준 선정 — 코드가 결정론적으로 고른다는 축이 실제로 서는가.
  *
- * 여기서 판정되는 것은 셋이다. `{Ref}` 치환이 낱말 경계를 모르는 도메인에서도 실제 파일에 닿는가,
- * 상한에 걸려 잘린 것이 **잘렸다고 드러나는가**, 그리고 고칠 파일의 현재 내용이 out/ 의 최신 판본인가.
+ * 여기서 판정되는 것은 둘이다. `{Ref}` 치환이 낱말 경계를 모르는 도메인에서도 실제 파일에 닿는가,
+ * 그리고 상한에 걸려 잘린 것이 **잘렸다고 드러나는가**.
  */
 import { strict as assert } from "node:assert";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
-import { collectExemplars, listPaths, readCurrent } from "../core/exemplar";
+import { collectExemplars } from "../core/exemplar";
 import type { Manifest, StageDef } from "../core/manifest";
 
 let root: string;
@@ -57,7 +57,6 @@ function stage(exemplars: string[]): StageDef {
     kind: "code",
     kinds: [],
     confirm: true,
-    reads: [],
     exemplars,
     scope: "domain",
     outputDirs: ["."],
@@ -137,33 +136,4 @@ describe("상한에 잘린 것은 잘렸다고 드러난다", () => {
     assert.deepEqual(omitted, []);
   });
 
-  test("파일 목록은 300개까지 실고 나머지 개수를 돌려준다", () => {
-    for (let index = 0; index < 305; index += 1) {
-      write(`app/features/big/f${String(index).padStart(3, "0")}.py`);
-    }
-
-    const { paths, omitted } = listPaths(root, MANIFEST, ["app/features/big"]);
-
-    assert.equal(paths.length, 300);
-    assert.equal(omitted, 5, "잘렸다는 사실을 모르면 모델은 뒤쪽 파일이 없다고 안다");
-  });
-});
-
-describe("고칠 파일의 현재 내용은 out/ 이 우선이다", () => {
-  test("앞 단계가 out/ 에 고친 판본이 있으면 그것을 읽는다", () => {
-    write("repo/app/a.py", "original\n");
-    write("out/app/a.py", "staged\n");
-
-    const [file] = readCurrent(join(root, "repo"), ["app/a.py"], join(root, "out"));
-
-    assert.equal(file.content, "staged\n", "저장소 원본을 읽으면 같은 파일의 두 판본이 한 프롬프트에 실린다");
-  });
-
-  test("out/ 에 없으면 저장소 원본을 읽는다", () => {
-    write("repo/app/a.py", "original\n");
-
-    const [file] = readCurrent(join(root, "repo"), ["app/a.py"], join(root, "out"));
-
-    assert.equal(file.content, "original\n");
-  });
 });

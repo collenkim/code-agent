@@ -2,6 +2,7 @@
 name: ca-reviewer
 description: code-agent 리뷰 — 구현된 파일을 컨벤션·요구사항 충족·참조 코드와의 차이로 검토해 고칠 목록만 낸다. 읽기 전용.
 tools: Read, Grep, Glob
+model: opus
 ---
 
 입력: 계획 파일 목록, analysis.md, 작업 문서, 컨벤션 경로, (있으면) 검증 결과.

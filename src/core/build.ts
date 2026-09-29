@@ -1,19 +1,16 @@
 import { spawn } from "child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
-import { delimiter, isAbsolute, join, relative, resolve } from "path";
+import { delimiter, isAbsolute, join, resolve } from "path";
 
 import type { Manifest } from "./manifest";
-import { SESSION_DIR } from "./session";
-import { SPEC_SLOTS_FILE } from "./specSchema";
-import { PLAN_FILE } from "./state";
 import type { BuildResult, JobRefs, StageResult } from "./types";
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * 한 스트림에서 받아 둘 최대 바이트. `spawnSync` 의 maxBuffer 가 하던 몫이다 —
- * 폭주하는 빌드가 서버 메모리를 통째로 가져가지 않게 앞쪽을 버리고 꼬리를 남긴다.
+ * 폭주하는 빌드가 메모리를 통째로 가져가지 않게 앞쪽을 버리고 꼬리를 남긴다.
  * 꼬리인 것은 로그에서 원인이 대개 끝에 있기 때문이다.
  */
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -31,9 +28,9 @@ export interface CommandResult {
 /**
  * 자식 프로세스를 돌리고 기다린다. **이벤트 루프를 잡지 않는다.**
  *
- * `spawnSync` 였을 때는 gradle 이 도는 몇 분 동안 서버 전체가 멈췄다 — 다른 사람의 화면
- * 로딩조차 그 뒤에 줄을 섰다. 요청 하나가 프로세스 전체를 세우지 않게 하는 것이
- * 이 함수가 비동기인 유일한 이유다.
+ * `spawnSync` 였을 때는 gradle 이 도는 몇 분 동안 프로세스가 통째로 멈춰, 그 사이 아무것도
+ * 응답하지 못했다. 검증 한 번이 프로세스 전체를 세우지 않게 하는 것이 이 함수가 비동기인
+ * 유일한 이유다.
  */
 function spawnAsync(
   file: string,
@@ -103,8 +100,7 @@ function git(args: string[], cwd: string): Promise<CommandResult> {
 /**
  * 그 디렉토리가 git 작업트리 안인가.
  *
- * 아닌 곳도 작업 대상이 된다 — `kind: spec` 은 저장소가 아직 없고 스펙을 둘 폴더만 있다.
- * 그래서 이것이 거짓이라고 해서 작업을 막지 않는다. 굳힐 것이 없을 뿐이다.
+ * 거짓이라고 해서 작업을 막지 않는다. 굳힐 것이 없을 뿐이다.
  */
 export async function isGitRepo(dir: string): Promise<boolean> {
   const inside = await git(["rev-parse", "--is-inside-work-tree"], dir);
@@ -128,9 +124,8 @@ const BASE_FALLBACKS = ["master", "main"];
 /**
  * 작업·비교 브랜치를 그 순간의 커밋으로 굳힌다. 굳힐 것이 없으면 undefined.
  *
- * **git 저장소가 아니면 굳히지 않는다** — `kind: spec` 처럼 저장소가 아직 없고 스펙을 둘
- * 폴더만 있는 작업이 있어서, 브랜치를 요구하면 만들 수 없는 작업이 생긴다. 커밋이 하나도
- * 없는 갓 만든 저장소도 마찬가지다. 다만 **사람이 이름을 적었는데 굳힐 수 없으면** 그것은
+ * **git 저장소가 아니거나 커밋이 하나도 없으면 굳히지 않는다** — 굳힐 커밋이 없다.
+ * 다만 **사람이 이름을 적었는데 굳힐 수 없으면** 그것은
  * 오타이므로 그대로 알린다 — 조용히 무시하면 엉뚱한 자리에서 검증이 돌아도 아무도 모른다.
  */
 export async function pinRefs(
@@ -145,7 +140,7 @@ export async function pinRefs(
     if (work ?? base) {
       throw new Error(
         `브랜치를 적었는데 대상 저장소가 git 저장소가 아닙니다: ${repoRoot}\n` +
-          "  브랜치를 비우면 그대로 만들 수 있습니다 — 스펙만 두는 폴더에는 브랜치가 없습니다.",
+          "  git 저장소가 아니면 브랜치를 비우세요 — 굳힐 커밋이 없습니다.",
       );
     }
     return undefined;
@@ -320,37 +315,20 @@ export async function runCommand(
   return spawnAsync(file, args, { cwd, env });
 }
 
-/**
- * out/ 에 있지만 **생성물이 아닌 것들** — 계획·세션·질문·파생물.
- *
- * 검증용 worktree 에 얹을 때 이것들까지 따라가면, 검증 명령이 보는 작업트리에 저장소에는
- * 없던 파일이 생긴다. 트리를 훑는 린트나 "추적되지 않은 파일이 없어야 한다"는 검사가 있으면
- * 그 자리에서 어긋나고, 원인은 코드가 아니라 이 도구에 있다.
- */
-const NOT_GENERATED = new Set([PLAN_FILE, SESSION_DIR, SPEC_SLOTS_FILE]);
-
-/** 그 경로가 생성물인가. 레인 디렉토리 바로 아래의 상태 파일들만 걸러 낸다 */
-function isGenerated(outDir: string, source: string): boolean {
-  const rest = relative(outDir, source).replace(/\\/g, "/");
-  if (rest === "") {
-    return true;
-  }
-  return !NOT_GENERATED.has(rest.split("/")[0]);
-}
-
 // ---- worktree 검증 ----
 
 /**
- * 프로젝트가 선언한 명령으로 생성물을 검증한다.
+ * 프로젝트가 선언한 명령으로 바뀐 파일을 검증한다.
  *
- * staging 디렉토리의 파일만으로는 빌드할 수 없고(의존 코드가 저장소에 있다), 그렇다고 대상
- * 저장소 작업트리에 직접 쓰면 "저장소 무변경" 약속이 깨진다. 그래서 임시 git worktree를 만들어
+ * 바뀐 파일만으로는 빌드할 수 없고(의존 코드가 저장소에 있다), 사람이 보고 있는 작업트리에서
+ * 그대로 돌리면 검증이 중간 상태를 밟는다. 그래서 임시 git worktree를 굳혀 둔 커밋 위에 만들어
  * 거기에만 파일을 얹고 실행한 뒤 통째로 지운다 — 원본 작업트리는 그대로 남는다.
  */
 export async function verifyByBuild(
   repoRoot: string,
   manifest: Manifest,
-  outDir: string,
+  /** worktree 에 얹을 파일들이 저장소 루트 기준 구조 그대로 들어 있는 디렉토리 */
+  filesDir: string,
   stages: StageResult[],
   kind: string = "build",
   /**
@@ -397,12 +375,8 @@ export async function verifyByBuild(
   }
 
   try {
-    // outDir은 저장소 루트 기준 상대경로 구조를 그대로 갖고 있어 통째로 덮어쓰면 된다.
-    // 다만 계획·세션은 생성물이 아니므로 빼고 얹는다.
-    cpSync(outDir, worktree, {
-      recursive: true,
-      filter: (source) => isGenerated(outDir, source),
-    });
+    // 저장소 루트 기준 상대경로 구조를 그대로 갖고 있어 통째로 덮어쓰면 된다.
+    cpSync(filesDir, worktree, { recursive: true });
 
     const executed = await runCommand(worktree, command);
     const log = [executed.stdout, executed.stderr].filter(Boolean).join("\n").trim();

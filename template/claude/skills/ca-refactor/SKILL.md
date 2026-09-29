@@ -1,7 +1,7 @@
 ---
 name: ca-refactor
 description: 리팩토링 지시서로 작업을 시작한다 — 보존 조건을 계획의 중심에 두고 계획 제출까지 진행한다.
-argument-hint: <지시서 경로> [--base <기준 브랜치>]
+argument-hint: <지시서 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다. 다른 점만:

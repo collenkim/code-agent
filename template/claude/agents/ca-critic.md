@@ -2,6 +2,7 @@
 name: ca-critic
 description: code-agent 계획 반박 검토 — 계획 초안의 빠진 요구 항목, 불필요하거나 빠진 파일, 테스트 공백, 문서와의 불일치를 찾는다. 읽기 전용.
 tools: Read, Grep, Glob
+model: opus
 ---
 
 입력: 계획 초안 경로, analysis.md, 작업 문서, 아키텍처·컨벤션 경로, 참조 표준 파일.

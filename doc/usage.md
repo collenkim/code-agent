@@ -1,708 +1,454 @@
-# 사용 가이드 — Postman 으로 끝까지 돌리기
+# 사용 가이드 — 설치부터 승인까지
 
-> 개념과 설계는 [README](../README.md), 지시서 규격은 [work-order.md](work-order.md).
-> 이 문서는 **실제로 요청을 보내는 법**이다. 신규(`bootstrap`)와 레거시(`adopt`) 둘 다 다룬다.
+> 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
+> 이 문서는 **무엇을 치고 어디서 멈추는가**다.
+
+code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴다. 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있고,
+강제는 PreToolUse hook 과 `code-agent` CLI 가 한다.
+
+창은 둘 띄운다.
+
+| 창 | 무엇 | 왜 |
+|---|---|---|
+| Claude Code (`claude`) | `/ca-*` 스킬로 작업을 진행한다 | 모델이 일하는 자리 |
+| 터미널 (PowerShell · Windows Terminal) | `confirm doc` · `approve` · `reject` · `status` | 판정은 사람이 한다. 모델 세션 안의 승인은 모델이 한 것과 구분되지 않는다 |
 
 ---
 
 ## 목차
 
-- [시작 전에 — 어느 경로인가](#시작-전에--어느-경로인가)
-- [0. 스펙 정의 — 무엇을 먼저 정하나](#0-스펙-정의--무엇을-먼저-정하나)
-- [1. 준비물](#1-준비물)
-- [2. 서버 띄우기](#2-서버-띄우기)
-- [3. Postman 준비](#3-postman-준비)
-- [4. 요청 아홉 개](#4-요청-아홉-개)
-- [5. 신규 프로젝트 — 전체 순서](#5-신규-프로젝트--전체-순서)
-- [6. 레거시 프로젝트 — 전체 순서](#6-레거시-프로젝트--전체-순서)
-- [7. 사람이 멈추는 곳에서 하는 일](#7-사람이-멈추는-곳에서-하는-일)
-- [8. 막히면](#8-막히면)
+- [1. 설치](#1-설치)
+- [2. 흐름 — 지금 어디까지 도는가](#2-흐름--지금-어디까지-도는가)
+- [3. 한 바퀴](#3-한-바퀴)
+- [4. 슬래시 명령 (Claude Code 안)](#4-슬래시-명령-claude-code-안)
+- [5. 터미널 명령 (사람)](#5-터미널-명령-사람)
+- [6. 스킬이 부르는 명령](#6-스킬이-부르는-명령)
+- [7. 만들어지는 파일](#7-만들어지는-파일)
+- [8. 질문과 가정](#8-질문과-가정)
+- [9. 승인 — 터미널에서](#9-승인--터미널에서)
+- [10. 막히면](#10-막히면)
+- [11. 아직 없는 것](#11-아직-없는-것)
 
 ---
 
-## 시작 전에 — 어느 경로인가
+## 1. 설치
 
-가르는 기준은 하나다. **복제할 코드가 있느냐.**
+```
+npm install -g <사내 저장소>/code-agent     # 한 번
+cd <프로젝트> && code-agent init             # 프로젝트마다
+```
 
-| | 신규 `bootstrap` | 레거시 `adopt` |
+`init` 이 대상 저장소에 하는 일.
+
+| 무엇 | 자리 | 커밋 |
 |---|---|---|
-| 대상 | **빈 디렉토리면 된다** — 구조는 스캐폴더가 만든다 | 굴러가는 저장소 |
-| `target` | 프로젝트 이름 (실재 안 해도 됨) | **저장소 경로 (실재해야 함)** |
-| 템플릿 | `starter/bootstrap` 그대로 | `starter/adopt` 를 **복사해 고쳐서** |
-| 단계 | 4 (`decisions`→`scaffold-plan`→`skeleton`→`declare`) | 2 (`survey`→`declare`) |
-| 사람이 멈추는 곳 | 2군데 | 1군데 |
-| 끝나면 | **끊긴다** — 첫 도메인은 손으로 | 바로 `feature` 로 이어짐 |
+| 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
+| PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash`, command `code-agent hook` | O |
+| 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
+| 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
+| 버전 고정 | `.code-agent/version` | O |
 
-둘 다 같은 것을 만든다 — `code-agent.json` 과 컨벤션 문서. 그 둘이 이후 실행의 근거다.
+표시된 블록 **안쪽만** 바꾼다. `settings.json` 의 다른 hook·설정과 `CLAUDE.md` 의 블록 밖은 건드리지 않는다.
 
-> **스펙 문서 자체가 아직 없다면** 그 앞에 한 바퀴가 더 있다. `kind: spec` 은 씨앗 몇 줄에서
-> 시작해 **묻고 답해** 스펙 한 장을 만든다 — 손으로 쓰는 대신 왕복으로 만드는 길이다.
-> 산출물이 곧 `bootstrap` 의 입력이 된다. [0절](#0-스펙-정의--무엇을-먼저-정하나) 참고.
+`--cli <경로>` 는 hook 이 부를 CLI 를 바꾼다 — `node "<경로>" hook` 이 된다. code-agent 자체를 고치면서 쓸 때만 쓴다.
+
+```
+code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+```
+
+설치한 파일은 커밋해 팀과 공유한다. 배포는 지금 npm 전역 설치다 (단일 실행 파일은 P8).
 
 ---
 
-## 0. 스펙 정의 — 무엇을 먼저 정하나
+## 2. 흐름 — 지금 어디까지 도는가
 
-**스펙이 저장소보다 먼저다.** 어떤 스펙이냐에 따라 만들어질 저장소의 모양이 달라지기 때문이다.
-다만 스펙에 들어갈 것들이 전부 "사람이 미리 써야 하는 입력"은 아니다 — **두 층으로 갈린다.**
+목표 흐름과, 지금 CLI 가 실제로 가진 스테이지의 대응.
 
-| 스펙 항목 | 신규 `bootstrap` | 레거시 `adopt` |
+| # | 목표 흐름 | 지금 스테이지 (`active.json` 의 `phase`) | 상태 |
+|---|---|---|---|
+| — | 프로젝트 문서 (아키텍처·컨벤션) | (스테이지 밖 게이트) | **구현됨** P2 |
+| 1·2 | 요구사항 → 분석·명세화 | `analysis` | **구현됨** P3 |
+| 3 | 영향도 분석 | — | P4 |
+| 4 | 시스템 설계 | — | P4 |
+| 5 | 기능·API·데이터 정의 | `research` (범위 조사 + 작업 문서) | **구현됨** P3 |
+| 6 | 구현 계획 | `plan` | **구현됨** P3 |
+| 7 | 코드 생성 | `implement` | **구현됨** P3 (단계 커서 + hook 울타리) |
+| 8 | 정적 분석·컴파일 | — | P5 |
+| 9 | 테스트 생성·실행 | — | P5 |
+| 10 | 결과 분석 · 수정 루프 (8 부터 다시, 최대 N회) | — | P5 |
+| 11 | 코드 리뷰 (지적은 수정 루프로) | — | P5 |
+| 12 | 통합 검증 | — | P5 |
+| 13 | 반영 — 사람 최종 확인 → 로컬 커밋 + `pr.md` | — | P5 |
+
+- `research` 는 P4 에서 `impact`(영향도) 와 `design`(시스템 설계) 으로 갈린다. `impact.md` · `design.md` 는 **모든 작업에 필수**가 된다 (크기는 작업에 맞게).
+- 지금 `code-agent next` 는 `implement` 를 마치면 `verify` 로 옮기고 **거기서 멈춘다.** 검증·리뷰·반영은 아직 없다.
+- push · PR 생성 · 병합은 구현돼도 사람이 한다. GitHub 없이 로컬에서 돈다.
+
+---
+
+## 3. 한 바퀴
+
+```
+code-agent init
+claude
+  /ca-adopt (또는 /ca-docs)        → 아키텍처·컨벤션 작성
+  ────────────────────────────────  터미널: code-agent confirm doc architecture
+                                    터미널: code-agent confirm doc conventions
+  /ca-feature doc/work/UZRF-145/requirement.md
+      analysis  → 질문이 나오면 멈춤 → /ca-answer
+      research  → 작업 문서(data·api·current)
+      plan      → 계획 제출 후 멈춤
+  ────────────────────────────────  터미널: code-agent approve
+  /ca-next                          → implement, 단계마다 서브에이전트
+                                    → verify 에서 멈춤 (P5)
+```
+
+사람이 멈추는 자리는 넷이다 — **문서 확정 · 질문 답변 · 계획 승인 · (P5) 반영 확인.** 그중 확정·승인·반영은 터미널에서만 된다.
+
+---
+
+## 4. 슬래시 명령 (Claude Code 안)
+
+| 명령 | 하는 일 | 어디서 멈추나 | 상태 |
+|---|---|---|---|
+| `/ca-adopt` | 레거시 첫 도입 — 뼈대 역공학으로 문서 + `code-agent.json` | 문서 확정 안내 | 구현됨 |
+| `/ca-docs [종류]` | 프로젝트 필수 문서 점검·작성 | 문서 확정 안내 | 구현됨 |
+| `/ca-feature <지시서>` | 분석 → 조사 → 계획 제출 | 질문 · 계획 승인 | 구현됨 |
+| `/ca-answer` | 답 없는 질문을 사용자에게 묻고 기록 | — | 구현됨 |
+| `/ca-next` | 지금 스테이지를 이어 간다 | 스테이지마다 | 구현됨 (`verify` 에서 멈춤) |
+| `/ca-status` | 위치·막힌 이유·다음 할 일 | — | 구현됨 |
+| `/ca-fix <지시서>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
+| `/ca-refactor <지시서>` | 리팩토링 — 보존 조건이 계획의 중심 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
+
+### `/ca-adopt`
+
+레거시 저장소에 처음 들일 때. `code-agent docs begin` 으로 문서 세션을 열고 `code-agent survey` 로 저장소 개요를 받은 뒤,
+`ca-surveyor` 여럿을 병렬로 돌려 아키텍처·컨벤션 초안을 쓰고, `code-agent.json` 을 만든다.
+
+사람이 하는 일 — `referenceDomain`(복제 기준 도메인) 고르기, `stages`(계층 순서)·`build`·`test`·`git.base` 확인.
+끝나면 `code-agent manifest check` 가 ✓ 여야 한다.
+
+### `/ca-docs [architecture | conventions]`
+
+필수 문서 게이트를 여는 명령. 문서마다 경로가 셋이다.
+
+| 경로 | 언제 | 어떻게 |
 |---|---|---|
-| **목적 · 무엇을 만드는지** | 🖊 사람이 먼저 쓴다 · 🗣 `spec` 이 물어 준다 | 🖊 사람이 먼저 쓴다 (도입 범위) |
-| **만들 기능 · 도메인** | 🖊 이름만이라도 개요에 · 🗣 `spec` 이 물어 준다 | 🖊 표준 삼을 도메인을 고른다 (`reference`) |
-| **프로젝트 현황** | — 시점 0. 없다 | ⚙ **코드가 정본.** `survey` 가 읽어낸다 |
-| **인프라** (언어·프레임워크·빌드·영속) | ⚙ **결정** — `decisions` 가 묻고 사람이 답한다 | ⚙ 코드에서 읽어낸다 |
-| **계층 구조 · 공통 규약** | ⚙ **결정** — 같은 왕복 | ⚙ 코드에서 읽어낸다 |
-| **코드 컨벤션** | ⚙ **산출물** — `declare` 가 결정을 규칙 문장으로 옮긴다 | ⚙ **산출물** — 코드에서 읽어낸 것 |
+| 역공학 | 코드가 있을 때 | `survey` → `ca-surveyor` 병렬 → `ca-writer` 가 작성. 코드로 알 수 없는 것은 `확인 필요` 로 남는다 |
+| 사용자 입력 | 신규거나, 의도·결정처럼 코드에 없는 것 | `code-agent docs interview <종류>` 의 질문을 사용자에게 묻고 답을 옮긴다 |
+| 기존 문서 연결 | 다른 곳에 이미 있을 때 | `code-agent docs link <종류> <경로...>` — 섹션 검사는 똑같이 받는다 |
 
-🖊 = 사람이 먼저 쓴다 (근거가 없으면 지어낼 수밖에 없는 것)
-🗣 = 앞선 `spec` 실행이 **물어서** 받는다 (쓰는 사람이 아니라 답하는 사람이 된다)
-⚙ = 이 실행이 뽑아낸다 (미리 쓰지 않는 편이 낫다)
+통과 조건은 셋이다. ① 파일이 있다 ② 필수 섹션이 있고 비어 있지 않다 ③ **사람이 확정했다.**
+확정은 모델이 못 한다 — 터미널에서 `code-agent confirm doc <종류>`.
 
-### 왜 인프라를 미리 안 쓰나
+### `/ca-feature <지시서> [--base <기준 브랜치>] [--target <대상>]`
 
-언어·프레임워크·계층·식별자 전략은 **요구사항이 아니라 결정**이다. 스펙에 적어 넣으면 그건
-*이미 내린 결정*으로 처리되어 다시 묻지 않는다. 안 적으면 `decisions` 단계가 **선택지와
-트레이드오프를 함께** 내주고, 고르지는 않는다.
+지시서는 `doc/work/<Jira 키>/requirement.md` 다. **모델은 이 파일을 쓸 수 없다** — hook 이 거부한다.
+요구가 모호하면 지시서를 고치는 대신 `questions.md` 에 질문으로 남는다.
+
+1. `code-agent start` — 지시서 머리말을 검사하고, 작업 브랜치 `<종류>/<ID>` 를 따고, `questions.md` 를 만들고, 커서를 `analysis` 에 둔다.
+2. **analysis** — `ca-analyst` 가 요구 항목을 뽑는다. 결과는 `analysis.md` 에 쓴다. 질문이 나오면 **멈춘다.**
+3. **research** — 요구 항목을 닿는 영역으로 묶어 `ca-explorer` 를 병렬로 돌리고, 필요한 작업 문서를 `ca-writer` 가 쓴다.
+4. **plan** — `plan.json` 초안 → `ca-critic` 반박 검토 → `code-agent plan submit`.
+5. 제출되면 **멈춘다** — 사람이 터미널에서 승인해야 한다.
+
+기준 브랜치는 `--base` > `code-agent.json` 의 `git.base` > `master` 순이다.
+지시서에 `target` 이 여럿이면 `--target` 으로 고른다.
+
+### `/ca-answer`
+
+`questions.md` 에서 `[Answer]:` 가 빈 질문을 사용자에게 묻고, **사용자가 한 말 그대로** 적는다.
+모르면 비워 둔다 — 대신 답하지 않는다. 답이 없는 질문이 하나라도 있으면 `code-agent next` 가 넘어가지 않는다.
+
+### `/ca-next`
+
+`code-agent status` 로 스테이지를 보고 그 자리부터 이어 간다.
+
+- `analysis` · `research` · `plan` — `/ca-feature` 의 해당 절차를 잇는다.
+- `implement` — 단계마다 `code-agent context` 로 만들 파일·단계 규칙·참조 표준 코드를 받아 `ca-implementer`(테스트 단계면 `ca-tester`)에게 넘기고, 끝나면 `code-agent next`.
+- `verify` — 멈춘다 (P5).
+
+### `/ca-status`
+
+`code-agent status` 를 그대로 보여 주고 마지막 `다음:` 줄을 한 문장으로 풀어 준다.
+
+### `/ca-fix` · `/ca-refactor` (P6)
+
+스킬은 설치돼 있고 `/ca-feature` 와 같은 절차로 계획 제출까지 돈다. 다른 점은 아래 둘이다.
+
+- `fix` — `current.md`(현행 분석)가 필수. 계획의 첫 파일은 **결함을 재현하는 테스트**.
+- `refactor` — `current.md` 필수. 지시서의 `preserve` 문장을 **그대로** 옮겨야 제출된다 (코드가 대조한다).
+
+재현 테스트를 먼저 실패시켜 보는 것, 기존 테스트가 그대로 통과하는지 확인하는 것은 검증 스테이지가 필요하다 — **P6 에서 완주한다.**
+
+---
+
+## 5. 터미널 명령 (사람)
+
+| 명령 | 하는 일 | TTY 필요 |
+|---|---|---|
+| `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
+| `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
+| `code-agent docs` | 필수 문서의 섹션별 상태와 확정 여부 | — |
+| `code-agent confirm doc <architecture\|conventions>` | 문서 확정 — 해시를 원장에 남긴다 | **O** |
+| `code-agent approve` | 제출된 계획 승인 | **O** |
+| `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
+| `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다 | — |
+| `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 표 · 바꾸기. 설정은 `.code-agent/models.json`, 정의 파일의 `model:` 줄을 코드가 다시 쓴다 | 바꾸기는 **터미널에서만** |
+
+`abort` 는 작업 폴더·제출된 계획·원장을 남긴다. 같은 지시서로 다시 `start` 할 수 있다.
+
+`status` 가 보여 주는 것 — 프로젝트 문서 ✓/✗, 작업 id·제목·종류·대상, 지시서 경로, 작업 폴더, 브랜치와 기준,
+스테이지(전체 흐름에서 지금 자리를 `[ ]` 로), `implement` 면 단계 목록, 답 없는 질문, 계획·승인 상태, `다음:` 한 줄.
+
+---
+
+## 6. 스킬이 부르는 명령
+
+사람이 칠 일은 거의 없다. 무엇이 왜 거부됐는지 읽을 때 필요하다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `code-agent docs begin` · `end` | 문서 작성 세션. 도는 동안 hook 이 문서 자리 밖 쓰기를 막는다 |
+| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대. 종류: `architecture` `conventions` `data` `api` `current` |
+| `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 물을 것 |
+| `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 `code-agent.json` 에 등록 |
+| `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드 파일·언어·디렉토리·계층 후보·표본·이미 있는 문서 |
+| `code-agent manifest check` | `code-agent.json` 이 참조 파일을 실제로 찾는지 (✗ 면 exit 1) |
+| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 |
+| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
+| `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙 |
+| `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
+| `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
+
+---
+
+## 7. 만들어지는 파일
+
+자리는 둘로 나뉜다. `doc/work/<ID>/` 는 **모델과 사람이** 쓰고, `.code-agent/` 는 **코드만** 쓴다 (hook 이 모든 도구 쓰기를 막는다).
+
+| 경로 | 무엇 | 누가 쓴다 | 커밋 |
+|---|---|---|---|
+| `doc/work/<ID>/requirement.md` | 작업 지시서 — 작업의 입력 | **사람만** | O |
+| `doc/work/<ID>/questions.md` | 질문과 답 | `start` 가 만들고 모델이 덧붙인다 | O |
+| `doc/work/<ID>/analysis.md` | 요구 항목 · 필요한 작업 문서 · 가정 | 모델 (`ca-analyst` 결과) | O |
+| `doc/work/<ID>/data.md` · `api.md` · `current.md` | 작업 문서 — 요구사항 범위만 | 모델 (`ca-writer`) | O |
+| `doc/work/<ID>/plan.json` | 계획 초안 | 모델 | O |
+| `.code-agent/work/<ID>/<대상>.plan.json` | 제출된 계획 | `plan submit` 만 | O |
+| `.code-agent/approvals/docs.jsonl` | 문서 확정 원장 (해시 사슬) | `confirm doc` 만 | O |
+| `.code-agent/approvals/<ID>.jsonl` | 계획 승인·반려 원장 (해시 사슬) | `approve` · `reject` 만 | O |
+| `.code-agent/approvals/<ID>/<대상>-<n>.plan.json` | 판정한 그 계획의 사본 — 재승인 때 바뀐 곳을 이것과 대조해 보여 준다 | `approve` · `reject` 만 | O |
+| `.code-agent/version` | 설치된 code-agent 버전 | `init` | O |
+| `.code-agent/active.json` | 진행 커서 (id·지시서·대상·스테이지·단계·브랜치) | `start` · `next` · `abort` | X |
+| `.code-agent/docs-session.json` | 문서 작성 세션 표시 | `docs begin` · `end` | X |
+
+`<ID>` 는 지시서 머리말의 `id` 다 — Jira 키를 그대로 쓴다. **작업 폴더 이름과 같아야** 지시서와 작업 폴더가 한자리에 있다.
+
+### `analysis.md` — 코드가 읽는 형식
 
 ```markdown
-### D1 · 계층 구조
-- (가) domain / application / infrastructure — 경계가 뚜렷하나 파일 수가 는다
-- (나) controller / service / repository — 익숙하나 도메인 로직이 service 로 몰린다
+## R1 · 주문을 등록한다
+근거: "주문을 등록·조회한다."
+- 데이터: 만든다
+- 접점(API·화면): 만든다
+- 기존 코드: 안 고친다
+
+## 작업 문서
+- data.md
+- api.md
+- doc/data-dictionary.md   ← 이미 있는 프로젝트 문서를 인용할 때는 경로로
+
+## 가정
+- 목록 정렬은 등록일 내림차순 — 근거: doc/conventions.md 계층별 규칙
 ```
 
-**이미 사내 표준으로 정해져 있는 것만 적는다.** 그건 "이미 정해짐"으로 처리되고 질문에서
-빠진다. 아직 안 정했는데 적으면 근거 없는 구조 위에 프로젝트 전체가 올라간다.
+코드가 읽는 것은 셋이다 — `## R<번호>` 요구 항목, `## 작업 문서` 목록, `## 가정`.
+앞의 둘이 게이트다: 요구 항목 번호는 계획의 `files[].requirements` 와 대조되고, 작업 문서 목록은
+그 문서가 실제로 생겼는지 막는 데 쓴다 (필요한 문서가 없으면 `- 없음`).
+`## 가정` 은 막지 않는다 — 계획 제출과 `approve` 화면에 그대로 실려 사람이 계획과 함께 받아들인다.
 
-### 스펙을 손으로 쓰기 어렵다면 — `kind: spec`
-
-빈 문서를 앞에 두고 무엇부터 적어야 할지 막히는 자리다. `spec` 은 그 한 장을 **왕복으로**
-만든다 — 씨앗(머리말 네 줄 + 한두 줄)만 주면, **무엇이 비었는지는 코드가 판정해서** 묻는다.
-
-```
-씨앗 한 줄  →  코드가 빈칸을 찾아 묻는다  →  사람이 답한다  →  모델이 문서로 옮겨 적는다
-                (starter/spec/spec-schema.json 이 목록)      (답에 없는 것은 못 쓴다)
-```
-
-무엇을 묻는지는 `starter/spec/spec-schema.json` 이 정한다 — 목적, 사용자·규모, 주요 도메인,
-이번 범위, 그리고 참고 항목인 「이미 정해진 것」. **회사마다 다른 목록이므로 에이전트가 아니라
-스타터가 들고 있다.** 항목을 더하거나 빼려면 그 파일을 고친다.
-
-씨앗에 이미 적힌 것은 묻지 않는다. 모델이 **원문을 인용해** 옮겨 오고, 인용을 붙이지 못한
-값은 코드가 미충족으로 처리하므로 지어낸 값이 통과할 자리가 없다.
-
-> **`spec` 실행에는 대상 저장소가 없다.** `repo` 로는 **스펙 문서를 둘 폴더**를 가리킨다
-> (예: `C:/IdeaProjects/specs`). 승인 기록이 그 안에 남으므로 그 폴더는 실재해야 한다 —
-> 만들어 주지 않고 거부한다.
-
-### 그래서 순서는 이렇게 된다
-
-```
-⓪ 씨앗 몇 줄       (선택) kind: spec — 물어 가며 ①을 만든다
-       ↓
-① 스펙(개요)      무엇을·누가·주요 도메인 이름 + 이미 정해진 제약
-       ↓
-② 계획 · 승인      빈 디렉토리 하나만 있으면 된다 (승인 기록이 거기 남는다)
-       ↓
-③ 결정 왕복        ← 인프라 · 계층 · 공통 규약을 묻고, 답이 그대로 결정서가 된다
-       ↓
-④ scaffold.md      ← 그 결정으로 스캐폴더 명령이 정해진다
-       ↓
-⑤ 스캐폴더 실행     ★ 프로젝트 실체가 여기서 처음 생긴다
-       ↓
-⑥ skeleton · declare  →  out/ 를 저장소에 옮기고 커밋
-```
-
-**프로젝트 실체는 ⑤에서 생긴다.** ①~④ 의 산출물은 전부 `out/` 안에 쌓인다.
-
----
-
-## 1. 준비물
-
-### 공통 — 빌드
-
-```powershell
-Set-Location C:\IdeaProjects\code-agent
-npm run build
-```
-
-### 신규일 때 — 저장소를 먼저 만들지 않는다
-
-**`bootstrap` 은 대상 저장소를 읽지 않는다.** 확인한 사실이다.
-
-| | |
-|---|---|
-| 계획·질문 | 저장소 디렉토리가 없어도 나온다 |
-| 산출물 | 전부 `out/` 에 쌓인다. 대상 저장소에 쓰지 않는다 |
-| **승인** | **저장소가 실재해야 한다.** 없으면 만들지 않고 거부한다 |
-| git | 필요 없다. **빈 디렉토리면 된다** |
-
-빈 저장소를 `git init` 해서 "프로젝트를 만들어 두는" 것은 순서가 거꾸로다 — 디렉토리
-레이아웃은 스캐폴더가 정하고, 스캐폴더 명령은 결정서가 나온 **뒤에** 정해진다.
-
-```
-스펙(개요)  →  결정 질문  →  사람이 답함  →  결정서  →  scaffold.md  →  ★ 여기서 프로젝트 실체가 생긴다
-                            언어·프레임워크·계층이                    spring init / npm create …
-                            여기서 정해진다
-```
-
-**다만 승인 전에는 그 디렉토리가 있어야 한다.** 승인 기록은 대상 저장소 안에 남기는데,
-없는 경로를 만들어 주면 오타 난 곳에 아무도 승인한 적 없는 기록이 생기기 때문이다.
-
-```
-오류: 승인 기록을 남길 대상 저장소가 없습니다: C:/IdeaProjects/my-new-servcie
-없는 경로에 디렉토리를 만들지 않고 멈췄습니다 — 경로 오타면 엉뚱한 곳에 승인 기록이 남습니다.
-경로가 맞는지 확인하고, 맞다면 그 디렉토리를 먼저 만드세요.
-```
-
-빈 디렉토리 하나면 충분하다. 레이아웃은 여전히 스캐폴더가 정한다.
-
-**① 스펙 문서** — 저장소보다 이것이 먼저다. **대상 저장소 밖 아무 데나** 두고 경로로 넘긴다
-(예: `C:/IdeaProjects/specs/order-service.md`). 저장소가 아직 없기 때문이다.
-손으로 쓰는 대신 [`kind: spec` 으로 물어 가며 만들 수도 있다](#스펙을-손으로-쓰기-어렵다면--kind-spec) —
-그 실행의 산출물이 그대로 이 자리에 온다.
-맨 위 머리말 네 줄이 없으면 0차 게이트가 막는다.
-본문은 **「프로젝트 개요」 한 장이면 충분하다.**
+### `questions.md` — 한 질문에 한 결정
 
 ```markdown
----
-kind: bootstrap
-id: NEW-1
-title: 주문 관리 서비스 신규 구축
-target: order-service
----
-
-# 프로젝트 개요
-사내 주문 관리 백엔드를 새로 만든다. 주문 접수 · 상태 변경 · 조회를 REST 로 제공한다.
-사용자는 사내 100명 수준.
-
-# 주요 도메인
-order · customer · product
+## Q3 · 요구사항 분석
+주문 취소 후 재주문이 가능한가?
+A. 가능 — 새 주문번호
+B. 불가
+X. 기타:
+[Answer]: A
 ```
 
-> **언어·프레임워크·계층은 적지 않는다.** 적으면 *이미 내린 결정*이 되어 다시 묻지 않는다.
-> 안 적으면 01 단계가 선택지와 트레이드오프를 질문으로 내준다 — 아키텍처 결정서는
-> 입력이 아니라 이 실행의 산출물이다.
+`[Answer]:` 뒤가 비어 있으면 답이 없는 것이다. 하나라도 비면 다음 스테이지로 넘어가지 않는다.
 
-**② 저장소 경로** — 만들 곳을 정한다. **빈 디렉토리만 만들어 둔다** — 승인이 그 안에 기록을
-남기기 때문이다. `git init` 도, 구조를 잡는 것도 하지 않는다. 그건 ⑤에서 스캐폴더가 한다.
+### `plan.json` — 제출 형식
 
-```powershell
-New-Item -ItemType Directory -Force C:\IdeaProjects\my-new-service | Out-Null
-```
-
-**③ 템플릿** — `starter/bootstrap` 을 그대로 가리킨다. 고칠 것 없다.
-
-### 레거시일 때
-
-**① 스타터를 복사해 고친다.** 저장소 안의 `starter/adopt` 를 직접 고치지 않는다.
-
-```powershell
-$REPO = "C:\IdeaProjects\legacy-app"
-Copy-Item -Recurse C:\IdeaProjects\code-agent\starter\adopt "$REPO\doc\templates"
-```
-
-`$REPO\doc\templates\code-agent.json` 에서 **세 곳**을 실제 값으로 바꾼다. 예시 값 그대로 두면
-경로가 어긋난 채로 돈다.
-
-| 키 | 무엇으로 |
-|---|---|
-| `domainBase` | 실제 소스 루트 (예: `src/main/java/com/acme/app`) |
-| `domainRoots` | 그 아래 분류. 분류가 없으면 `[]` |
-| `reads` | 실제 빌드 파일·설정 이름. gradle/npm/pip 마다 다르다 |
-
-`reads` 에 소스 루트를 넣어 두면 조사 단계가 `list` 로 저장소를 처음부터 훑지 않는다 —
-목록은 전부, 내용은 상한까지 실린다.
-
-**② `spec.md`** — `target` 이 **저장소 경로**다. 실재하지 않으면 0차 게이트가 막는다.
-
-```markdown
----
-kind: adopt
-id: ADOPT-1
-title: legacy-app 에 code-agent 도입
-target: .
----
-
-# 도입 범위
-주문(order) 도메인을 표준으로 삼는다. 신규 도메인을 이 구조대로 만들 예정.
-```
-
-**③ 표준 도메인을 고른다.** 작업 생성 때 `reference` 로 넘긴다. "이 도메인처럼 만들겠다"는
-사람의 선택이고, 그 도메인의 파일 목록이 조사 단계의 근거다.
-
----
-
-## 2. 서버 띄우기
-
-```powershell
-Set-Location C:\IdeaProjects\code-agent
-node dist/cli/index.js serve --port 4319 --state .\.code-agent-server\jobs.json
-```
-
-```
-code-agent 서버: http://127.0.0.1:4319
-```
-
-이 창은 켜 둔다. `127.0.0.1` 바인딩은 의도다 — 이 서버는 대상 저장소를 읽고 `build`·`test`
-명령을 이 머신에서 실행하므로, 외부에 열면 그게 그대로 원격 명령 실행이 된다.
-
----
-
-## 3. Postman 준비
-
-### 환경 변수 둘
-
-| 변수 | 초기값 |
-|---|---|
-| `base` | `http://127.0.0.1:4319/api/jobs` |
-| `job` | (비워 둠 — 작업을 만들면 채운다) |
-
-### 헤더
-
-| 요청 | 헤더 |
-|---|---|
-| **모든 POST · DELETE** | `X-Code-Agent: 1` — 없으면 받지 않는다 |
-| `/response` | 위 + `Content-Type: text/plain; charset=utf-8` (Body 는 **raw → Text**) + `X-Code-Agent-Turn: <token>` |
-| 그 외 POST | 위 + `Content-Type: application/json; charset=utf-8` (Body 는 **raw → JSON**) |
-| 인증을 켠 서버 | 전부 + 프록시가 넣는 인증 헤더 |
-
-한글이 들어가므로 `charset=utf-8` 을 빼지 않는다.
-
-`X-Code-Agent-Turn` 의 값은 **`GET /prompt` 응답의 `token`** 이다 (`shipment@plan#3` 꼴).
-Postman 이라면 프롬프트 요청의 **Scripts → Post-response** 에 아래를 넣어 환경 변수로 받아 둔다.
-
-```javascript
-pm.environment.set("turn", pm.response.json().token);
-```
-
-그러면 `/response` 요청의 헤더에 `X-Code-Agent-Turn: {{turn}}` 으로 쓸 수 있다.
-값이 지금 자리와 다르면 **409** 가 나오고 아무것도 반영되지 않는다 — 그때는 프롬프트를 다시 받는다.
-
-`### run` 이 든 응답은 검증 명령을 돌리므로 **202** 가 나올 수 있다. 그때는 본문의 `runId` 로
-`GET {{base}}/{{job}}/runs/{{runId}}` 를 200 이 나올 때까지 다시 부른다.
-
-### 프롬프트를 읽을 수 있게 — Visualize
-
-`GET /prompt` 의 응답은 JSON 문자열이라 Postman 의 Body 탭에서는 `\n` 이 그대로 보인다.
-**그대로 복사하면 안 된다.** 요청의 **Scripts → Post-response** 에 아래를 넣으면
-Visualize 탭에 붙여넣을 수 있는 형태로 나온다.
-
-```javascript
-const body = pm.response.json();
-pm.visualizer.set(
-  "<pre style='white-space:pre-wrap;font-family:monospace'>{{p}}</pre>",
-  { p: body.prompt || body.message || "(프롬프트 없음)" }
-);
-```
-
-> 이 한 단계만은 화면(`http://127.0.0.1:4319`)이 더 편하다. 프롬프트 옆에 복사 버튼이 있다.
-> Postman 으로 끝까지 가려면 위 Visualize 를 쓴다.
-
----
-
-## 4. 요청 아홉 개
-
-### ① 작업 생성
-
-```
-POST {{base}}
-Content-Type: application/json; charset=utf-8
-```
-
-**신규:**
+`feature` 는 만들 파일 목록, `fix` · `refactor` 는 고칠 파일 + 보존 조건이다.
 
 ```json
 {
-  "label": "order-service",
-  "repo": "C:/IdeaProjects/my-new-service",
-  "templates": "C:/IdeaProjects/code-agent/starter/bootstrap",
-  "out": "C:/IdeaProjects/code-agent/out-newproj",
-  "specs": ["C:/IdeaProjects/specs/order-service.md"]
+  "domainName": "도메인 이름",
+  "domainLabel": "사람이 읽는 이름",
+  "domainRoot": "도메인 분류 (없으면 \"\")",
+  "domainDirName": "실제 디렉토리 이름",
+  "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
+  "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
+  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
+  "openQuestions": [],
+  "reasoning": "판단 근거"
 }
 ```
 
-**스펙부터 만들 때** (`kind: spec` — 저장소가 아직 없다. `repo` 는 **스펙을 둘 폴더**다):
+`fix` · `refactor` 는 `domain*` 대신 `preserve: [{ "item": "지시서 문장 그대로", "how": "어떻게 지켜지는지" }]` 가 들어간다.
 
-```json
-{
-  "label": "order-service-spec",
-  "repo": "C:/IdeaProjects/specs",
-  "templates": "C:/IdeaProjects/code-agent/starter/spec",
-  "out": "C:/IdeaProjects/code-agent/out-spec",
-  "specs": ["C:/IdeaProjects/specs/seed-order.md"]
-}
-```
+제출이 통과하려면 — `openQuestions` 가 비어 있고, 파일마다 `requirements` 가 있고, 모든 요구 항목이 어느 파일엔가 닿고,
+경로가 단계의 위치·지시서 `scope`·계층 경계 안이어야 한다.
 
-**레거시:**
+---
 
-```json
-{
-  "label": "legacy-app",
-  "repo": "C:/IdeaProjects/legacy-app",
-  "templates": "C:/IdeaProjects/legacy-app/doc/templates",
-  "out": "C:/IdeaProjects/code-agent/out-legacy",
-  "specs": ["C:/IdeaProjects/legacy-app/spec.md"],
-  "reference": "order",
-  "workRef": "feature/ORD-42",
-  "baseRef": "master"
-}
-```
+## 8. 질문과 가정
 
-- **문서 내용이 아니라 경로만** 보낸다. 파일은 서버가 읽으므로 이스케이프할 일이 없다.
-- `workRef` 는 생성물을 얹어 검증할 바탕, `baseRef` 는 어디서 갈라져 나왔는지다. 생략하면
-  각각 대상 저장소의 지금 HEAD 와 `master`(없으면 `main`)다. **둘 다 여기서 커밋으로 굳는다** —
-  진행 중인 레거시 브랜치에서 남이 체크아웃을 바꿔도 검증은 굳은 커밋 위에서 돈다.
-- 경로는 서버 프로세스가 보는 로컬 경로다. 역슬래시 대신 `/` 가 안전하다.
-- `201` 과 함께 상태가 돌아온다. **`id` 를 환경 변수 `job` 에 넣는다.**
+모든 모호함을 질문으로 막으면 한 줄짜리 요구에도 사람 왕복이 세 번 쌓인다. 그래서 둘로 나눈다.
 
-Postman Scripts → Post-response 에 넣어 두면 자동으로 채워진다:
-
-```javascript
-pm.environment.set("job", pm.response.json().id);
-```
-
-### ② 지금 할 차례 보기
-
-```
-GET {{base}}/{{job}}
-```
-
-이 하나가 다음에 무엇을 부를지 정한다. 볼 필드:
-
-| 필드 | 뜻 |
-|---|---|
-| `step` | 지금 할 차례 — 아래 표대로 분기 |
-| `questions` | 미결 질문 배열 (`id`·`question`·`answer`) |
-| `openQuestionCount` | 답 안 한 질문 수 |
-| `needsApproval` | 2차 게이트 대기 여부 |
-| `turn` · `completedStages` | 진행 상황 |
-| `lastViolations` | 앞 턴에 남은 위반 |
-
-| `step` | 부를 것 |
-|---|---|
-| `plan` · 단계키 · `gate:단계키` | ③ → ④ |
-| `blocked` | ⑤ |
-| `approval` | ⑥ |
-| `done` | 끝 |
-
-### ③ 프롬프트 받기
-
-```
-GET {{base}}/{{job}}/prompt
-```
-
-**상태를 바꾸지 않는다.** 몇 번 눌러도 같은 것이 나온다.
-Visualize 탭의 내용을 **통째로** LLM Console 에 붙여넣는다 — 끝의 출력 형식 안내까지 있어야
-모델이 산문 대신 액션 블록으로 답한다.
-
-### ④ 응답 반영
-
-```
-POST {{base}}/{{job}}/response
-Content-Type: text/plain; charset=utf-8
-Body: raw → Text
-```
-
-Console 응답 **전문을 그대로** 붙여넣는다. 감싸지 않는다. 돌아오는 것:
-
-| 필드 | 뜻 |
-|---|---|
-| `writtenFiles` | `out/` 에 쓰인 파일 |
-| `violations` | 경계 위반. **하나라도 있으면 그 응답의 파일을 전부 반영하지 않는다** |
-| `parseErrors` | 형식 오류 |
-| `questionsAdded` | 이번에 늘어난 질문 |
-| `advanced` | 상태가 한 칸 갔는지 |
-| `next` | 반영 직후 상태 (②를 다시 부를 필요 없음) |
-
-### ⑤ 질문에 답하기
-
-```
-POST {{base}}/{{job}}/questions
-Content-Type: application/json; charset=utf-8
-```
-
-```json
-{
-  "answers": [
-    { "id": 1, "answer": "Java 21 + Spring Boot 3" },
-    { "id": 2, "answer": "PostgreSQL + Spring Data JPA" }
-  ]
-}
-```
-
-`id` 는 ②의 `questions` 에서 본다. 없는 `id` 를 주면 `400`.
-**답하지 않은 질문이 하나라도 남아 있는 동안에는 어느 단계도 진행되지 않는다.**
-
-### ⑥ 판정 — 계획 승인(2차)과 단계 확정(4차)
-
-```
-POST {{base}}/{{job}}/approval
-Content-Type: application/json; charset=utf-8
-```
-
-```json
-{ "decision": "approved", "approver": "카이", "comment": "계획 확인" }
-```
-
-**요청은 하나뿐이고, 무엇에 대한 판정인지는 상태가 정한다.** `step` 이 `approval` 이면 계획을,
-`confirm:<단계키>` 면 그 단계의 산출물을 판정한다 — 사람이 그것까지 지정하게 하면 읽던 것과
-판정하는 것이 어긋날 수 있다. 상태 응답의 `pending` 이 `plan` · `stage` 로 알려 준다.
-
-반려는 `"rejected"` 이고 **`comment` 가 필수**다 — 반려는 지울 실패가 아니라 가장 값진 기록이다.
-무엇을 판정하는지는 판정 전에 ③의 `message` 로 나온다 — 계획이면 계획 전문, 단계면 **만든 파일 목록**이다.
-
-| | 계획 승인 | 단계 확정 |
+| | 질문 | 가정 |
 |---|---|---|
-| `step` | `approval` | `confirm:<단계키>` |
-| 승인하면 | 첫 단계로 넘어간다 | 다음 단계로 넘어간다 |
-| 반려하면 | 계획이 그대로인 채로는 진행되지 않는다 | **그 단계를 다시 돈다** — 사유가 다음 프롬프트에 실린다 |
+| 무엇 | 업무 규칙 · 범위 · 권한 · 데이터의 의미 · 외부·다른 도메인과의 계약 | 이름 · 정렬 · 숫자 정밀도 · 테스트 케이스 목록 · 메시지 문구 · 범위 밖으로 둘 부수 작업 |
+| 기준 | 모델이 정하면 **지어낸 것**이 된다 | 컨벤션·참조 코드·일반 관행으로 **기본값을 댈 수 있다** |
+| 어디에 | `doc/work/<ID>/questions.md` | `analysis.md` 의 `## 가정` — 근거를 반드시 단다 |
+| 진행 | **막는다** — 답이 없으면 다음 스테이지로 못 간다 | 막지 않는다 |
+| 사람은 언제 보나 | 그때 바로 (`/ca-answer`) | 승인 화면에 그대로 뜬다 — 계획과 함께 받아들이거나 반려한다 |
 
-판정은 **대상 저장소** `.code-agent/approvals/<id>.jsonl` 원장과 스냅샷에 남는다.
-`out/` 이 아니다 — 승인은 커밋되어 PR 에서 읽혀야 하는 팀의 기록이기 때문이다.
-단계 확정 줄에는 `stage` 와 `filesHash` 가 붙는다. **확정한 뒤 `out/` 의 파일이 바뀌면 그 확정은
-무효가 되고 다시 묻는다.**
+**질문 하나에 결정 하나.** 두 결정을 한 질문에 묶으면 한쪽만 답이 오고 되묻게 된다 (실측에서 나온 왕복이다).
 
-### ⑦ 턴 기록
-
-```
-GET {{base}}/{{job}}/log
-```
-
-`text` 에 마크다운 표가 담겨 온다 — 턴 · `write` · `edit` · `read` · `ask` · 위반 · 형식오류.
-
-### ⑧ 작업 목록
-
-```
-GET {{base}}
-```
-
-### ⑨ 작업 삭제
-
-```
-DELETE {{base}}/{{job}}
-```
-
-목록에서만 뺀다. `out/` 산출물은 그대로 남는다.
-**스펙을 바꾸려면 지우고 다시 만든다** — 스펙 교체 API 는 열려 있지 않다.
+답은 채팅으로 해도 된다 — 메인 에이전트가 파일에 옮긴다. 질문의 답은 승인이 아니라 터미널을 요구하지 않는다.
 
 ---
 
-## 5. 신규 프로젝트 — 전체 순서
+## 9. 승인 — 터미널에서
 
-| # | 요청 | `step` 이 이렇게 되면 | 다음 |
-|---|---|---|---|
-| 1 | ① 작업 생성 | `plan` | 2 |
-| 2 | ③ 프롬프트 → Console → ④ 반영 | `blocked` | 3 |
-| 3 | ② 로 `questions` 확인 → ⑤ 답하기 | `approval` | 4 |
-| 4 | ⑥ 승인 | `decisions` | 5 |
-| 5 | ③ → Console → ④ | `blocked` — **결정 질문이 나온다** | 6 |
-| 6 | ② 로 `questions` 확인 → ⑤ 답하기 | `decisions` (그대로) | 7 |
-| 7 | ③ → Console → ④ | `gate:decisions` | 8 |
-| 8 | ③ → Console → ④ (검수) | `confirm:decisions` | 9 |
-| 9 | ⑥ **결정서 확정** | `scaffold-plan` | 10 |
-| 10 | ③ → Console → ④ | `gate:scaffold-plan` | 11 |
-| 11 | ③ → Console → ④ (검수) | `confirm:scaffold-plan` | 12 |
-| 12 | ⑥ 확정 | `skeleton` | **★ 멈춤** |
-| — | **저장소를 만든다.** `doc/scaffold.md` 의 명령을 그 경로에서 실행 | — | 13 |
-| 13 | ③ → Console → ④ | `gate:skeleton` | 14 |
-| 14 | ③ → Console → ④ (검수) | `confirm:skeleton` | 15 |
-| 15 | ⑥ 확정 | `declare` | 16 |
-| 16 | ③ → Console → ④ | `gate:declare` | 17 |
-| 17 | ③ → Console → ④ (검수) | `confirm:declare` | 18 |
-| 18 | ⑥ 확정 | `done` | ⑦ 로 수치 확인 |
-
-**`confirm:*` 은 4차 게이트다.** 검수는 모델이 했을 뿐이고, 그것을 근거로 삼을지는 사람이 정한다 —
-승인과 같은 요청(⑥)으로 판정하며, **반려하면 그 단계를 다시 돈다.**
-
-**아키텍처 결정은 5~6 에서 왕복으로 정해진다.** 모델이 선택지와 트레이드오프를 질문으로 내고,
-사람이 답하면 그 답이 `doc/architecture-decisions.md` 가 된다 — 사람이 문서를 옮겨 적지 않는다.
-[7절](#7-사람이-멈추는-곳에서-하는-일) 참고.
-
-> `plan` 에서 질문이 안 나오면 2 → 4 로 바로 간다. 스펙에 이미 적혀 있으면 묻지 않는다.
-> 5 에서도 마찬가지다 — 스펙에 이미 확정된 것으로 적힌 항목은 묻지 않고 인용만 남긴다.
-
-### 스펙부터 만들 때 — 앞에 붙는 한 바퀴
-
-`kind: spec` 은 같은 요청들로 돌지만 단계가 하나뿐이다. 산출물
-`out-spec/<id>/<대상>/doc/spec.md` 를 읽어 보고 스펙 폴더로 옮기면, 그 경로가 위 표 1행의
-`specs` 가 된다.
-
-| # | 요청 | `step` 이 이렇게 되면 | 다음 |
-|---|---|---|---|
-| 1 | ① 작업 생성 (`templates` = `starter/spec`) | `intake` | 2 |
-| 2 | ③ → Console → ④ | `blocked` — **씨앗에 없는 항목을 묻는다** | 3 |
-| 3 | ② 로 `questions` 확인 → ⑤ 답하기 | `plan` | 4 |
-| 4 | ③ → Console → ④ | `approval` | 5 |
-| 5 | ⑥ 승인 (계획) | `spec-doc` | 6 |
-| 6 | ③ → Console → ④ | `gate:spec-doc` | 7 |
-| 7 | ③ → Console → ④ (검수) | `confirm:spec-doc` | 8 |
-| 8 | ⑥ **스펙 문서 확정** | `done` | 문서를 읽고 스펙 폴더로 옮긴다 |
-
-> `intake` 는 **1차 게이트**다. 씨앗에서 읽히는 것만 뽑아 오고, 인용을 붙이지 못한 항목은
-> 채워지지 않은 것으로 판정된다 — 그 판정을 하는 것은 모델이 아니라 코드다.
-
-### 끝나고 나면 — 여기서 끊긴다
-
-`code-agent.json` 과 컨벤션 문서가 생겨도 `feature` 를 바로 못 돌린다.
-
-```
-오류: 참조 표준 도메인이 없습니다. code-agent.json 의 referenceDomain 에 선언하거나
-      --reference 로 지정하세요.
-```
-
-`exemplars` 를 선언한 단계가 하나라도 있으면 참조 도메인이 필수인데, 이 시점에는 복제할
-도메인이 없다. **첫 도메인을 만드는 작업 종류는 아직 없다** — 사람이 손으로 하나 만들고 그
-이름을 `referenceDomain` 에 넣어야 그다음부터 `feature` 가 돈다. 여기서 만든 것이 이후 모든
-도메인의 참조 표준이 되므로 검수를 생략하지 않는다.
-
----
-
-## 6. 레거시 프로젝트 — 전체 순서
-
-| # | 요청 | `step` 이 이렇게 되면 | 다음 |
-|---|---|---|---|
-| 1 | ① 작업 생성 (`reference` 포함) | `plan` | 2 |
-| 2 | ③ 프롬프트 → Console → ④ 반영 | `approval` 또는 `blocked` | 3 |
-| 3 | (`blocked` 면) ⑤ 답하기 | `approval` | 4 |
-| 4 | ⑥ 승인 (계획) | `survey` | 5 |
-| 5 | ③ → Console → ④ | `gate:survey` | 6 |
-| 6 | ③ → Console → ④ (검수) | `confirm:survey` | 7 |
-| 7 | ⑥ 확정 | `declare` | 8 |
-| 8 | ③ → Console → ④ | `gate:declare` | 9 |
-| 9 | ③ → Console → ④ (검수) | `confirm:declare` | 10 |
-| 10 | ⑥ 확정 | `done` | **★ 멈춤** |
-| — | `out-legacy/ADOPT-1/unnamed/doc/templates/code-agent.json` 의 **`exemplars` 경로 확인** | — | 대상 저장소로 옮김 |
-
-> `target: .` 이면 갈래 이름이 `unnamed` 이 된다. 점으로만 된 대상은 디렉토리 이름으로 쓰지 않는다.
-
-### 끝나고 나면 — 바로 이어진다
-
-`code-agent.json` 을 대상 저장소의 `doc/templates/` 로 옮기면 그때부터
-`kind: feature` 로 도메인을 추가한다. 참조 도메인이 이미 코드에 있으므로 끊기지 않는다.
-
-```json
-{
-  "repo": "C:/IdeaProjects/legacy-app",
-  "templates": "C:/IdeaProjects/legacy-app/doc/templates",
-  "out": "C:/IdeaProjects/code-agent/out-shipment",
-  "specs": ["C:/IdeaProjects/legacy-app/spec-shipment.md"]
-}
-```
-
-`spec-shipment.md` 의 머리말은 `kind: feature`, `target` 은 **이제부터 만들** 도메인 이름이다.
-`reference` 는 매니페스트의 `referenceDomain` 이 대신하므로 넘기지 않아도 된다.
-
----
-
-## 7. 사람이 멈추는 곳에서 하는 일
-
-**답할 곳은 한 군데다.** 스펙의 빈칸이든 아키텍처 결정이든, 전부 미결 질문으로 나온다.
-
-| | 어디에 | 답 안 하면 |
-|---|---|---|
-| **미결 질문** | `out/<id>/<대상>/.code-agent/questions.md` 또는 API ⑤ | **진행이 멈춘다** (`step` = `blocked`) |
-
-### ① 미결 질문 — API 로 답한다
-
-모델이 `ask` 했거나, 계획이 `openQuestions` 를 남겼거나, 1차 게이트가 스펙의 빈칸을 짚은
-것이다. 요청 ⑤ 로 답하면 그 답이 다음 프롬프트에 "사람이 답한 것 — 이 답을 따른다.
-다시 묻지 않는다"로 실린다.
-
-### ② 아키텍처 결정 — 같은 자리에서 답한다 (신규만)
-
-`decisions` 단계는 **묻고, 답을 받아, 문서로 남기는** 두 국면으로 돈다.
-
-```
-모델: ask   "[2] 프레임워크? A) … B) …  트레이드오프: …"   → step = blocked
-사람: ⑤     "A 로 간다. 사내 표준이 Spring 이다"
-모델: write doc/architecture-decisions.md                  → 결정 · 근거 · 대안
-```
-
-**사람이 결정서를 옮겨 적지 않는다.** 답이 곧 근거로 인용되고, 그 문서가 다음 단계에
-앞 단계 산출물로 실린다(파일당 앞 300줄). 다루는 항목은 최소 여섯이다 — 언어·런타임,
-프레임워크, 빌드 도구와 스캐폴딩 명령, 패키지 루트와 도메인 분류, 아키텍처 계층과
-트랜잭션 경계, 공통 규약(식별자·soft delete·멀티테넌시·감사 필드·예외 체계).
-
-> 결정서를 손으로 고쳐도 된다. `out/` 의 파일을 다시 읽어 싣기 때문이다 —
-> 다만 **답하지 않은 채로는 다음 단계로 넘어가지 않는다.**
-
-### ③ 단계 산출물 확정 — 단계마다 한 번씩
-
-검수(`gate:*`)를 통과해도 `confirm:<단계키>` 에서 한 번 더 멈춘다. **검수는 모델이 했을 뿐이고,
-그것을 근거로 삼을지는 사람이 정한다.** ③의 `message` 에 그 단계가 만든 파일 목록이 나온다 —
-열어서 읽고 ⑥ 으로 판정한다.
-
-```
-## 단계 산출물을 확정해야 넘어갑니다 (4차 게이트) — 대상: order-service · 단계: decisions
-아키텍처 결정서
-
-  - out-newproj/NEW-1/order-service/doc/architecture-decisions.md (48줄)
-
-확정 전에는 다음 단계로 넘어가지 않습니다.
-```
-
-반려하면 그 단계를 다시 돈다. 사유는 다음 프롬프트에 위반으로 실리므로, **무엇이 잘못됐는지
-적어야** 같은 것이 다시 나오지 않는다.
-
-### ④ 스캐폴더 실행 — 여기서 저장소가 생긴다 (신규만)
-
-`scaffold-plan` 이 만든 `out-newproj/NEW-1/<대상>/doc/scaffold.md` 에 적힌 명령을 실행한다.
-**프로젝트 실체가 처음 생기는 지점이다** — 그 전까지 대상 저장소 경로에는 승인 원장밖에 없다.
+계획이 제출되면 Claude Code 는 멈춘다. **별도 터미널**(PowerShell · Windows Terminal)에서 저장소로 가서 친다.
 
 ```powershell
-Set-Location C:\IdeaProjects\my-new-service   # ②에서 만들어 둔 빈 디렉토리
-# scaffold.md 에 적힌 명령. 결정서에서 정해진 것이다
-spring init --dependencies=web,data-jpa --build=gradle .
-git init
-```
- 빌드 파일과 의존성 좌표를 모델이 기억으로 쓰면 플러그인 버전을
-환각하므로, **생태계 도구의 출력이 시점 0의 참조 표준이 된다.**
-
-안 멈추고 스캐폴딩을 지어냈다면 그게 바로 이 도구가 막으려던 것이다.
-
-### ⑤ `exemplars` 확인 — 눈으로 본다 (레거시만)
-
-`declare` 가 만든 `code-agent.json` 의 `exemplars` 경로가 실제 파일과 맞는지 본다.
-**여기가 틀리면 이후 생성 품질이 통째로 무너진다.**
-
-### 산출물은 어디에 쌓이나
-
-```
-<out>/<id>/<대상>/                 ← 그 안은 저장소 루트 기준 상대경로 그대로
-  ├─ .plan.json                    계획
-  ├─ .code-agent/                  세션 · 질문 · 프롬프트
-  └─ doc/ · src/ …                 생성물
+cd C:\IdeaProjects\my-app
+code-agent approve
 ```
 
-**`<대상>` 은 지시서의 `target` 이지만 그대로는 아니다.** 점으로만 된 대상(`.`·`..`)은 갈래
-이름으로 쓰지 않고 `unnamed` 이 된다 — `.` 을 디렉토리 이름으로 쓰면 레인 디렉토리가
-사라지고 `..` 은 한 단계 거슬러 오르기 때문이다.
+화면에 뜨는 것 — 작업 명세서(파일 목록 · 보존 조건 · 적용 규칙), `analysis.md` 의 가정 전부,
+이전 판정 뒤 계획이 바뀌었으면 바뀐 곳.
+
+마지막 줄에서 **`approve` 를 그대로 입력**한다. 다른 것을 치면 아무것도 남기지 않고 끝난다.
 
 ```
-kind: adopt · target: .     →  out-legacy/ADOPT-1/unnamed/
-kind: adopt · target: src   →  out-legacy/ADOPT-1/src/
-kind: bootstrap · target: order-service
-                            →  out-newproj/NEW-1/order-service/
+approve 를 그대로 입력하면 판정을 남깁니다 (다른 입력은 취소): approve
+승인을 원장에 남겼습니다. Claude Code 에서 /ca-next 로 구현을 시작하세요.
 ```
 
-대상 저장소로 옮기는 것은 **확인 후 사람이** 한다. 대상 저장소에 정상적으로 생기는 것은
-`.code-agent/approvals/` 승인 원장뿐이다.
+반려는 사유가 필수다. 입력할 낱말은 `reject` 다.
+
+```powershell
+code-agent reject --comment "공통 모듈을 건드리는 계획은 먼저 설계 논의"
+```
+
+문서 확정도 같은 모양이다 — `code-agent confirm doc architecture`, 입력할 낱말은 `confirm`.
+
+승인은 **묶인다.** 원장에 남는 해시에 지시서·계획·매니페스트·확정된 필수 문서·`analysis.md` 와 작업 문서가 들어간다.
+어느 쪽이든 승인 뒤에 바뀌면 승인이 무효가 된다.
+
+| 승인 상태 | 뜻 | 할 일 |
+|---|---|---|
+| `none` | 판정이 없다 | 터미널에서 `approve` |
+| `approved` | 유효하다 | `/ca-next` |
+| `rejected` | 반려됐다 | 사유대로 계획을 고쳐 다시 제출 |
+| `stale-plan` | 승인 뒤 계획이 바뀌었다 | 다시 승인 (바뀐 곳이 화면에 뜬다) |
+| `stale-docs` | 승인 뒤 필수 문서나 `analysis.md`·작업 문서가 바뀌었다 | 다시 승인 |
+| `stale-order` | 승인 뒤 지시서가 바뀌었다 | 다시 승인 |
+| `stale-manifest` | 승인 뒤 `code-agent.json` 이 바뀌었다 | 다시 승인 |
+| `unverified` | 사람 확인 없이 남은 판정 | 터미널에서 다시 |
 
 ---
 
-## 8. 막히면
+## 10. 막히면
 
-| 증상 | 원인과 대응 |
+### `판정은 터미널에서 받습니다 — stdin 이 TTY 가 아닙니다`
+
+`approve` · `reject` · `confirm doc` 은 stdin 이 TTY 여야 한다.
+
+| 어디서 | 되나 | 어떻게 |
+|---|---|---|
+| Claude Code 안의 Bash | **안 된다** | 설계다. 모델 세션 안의 승인은 모델이 한 것과 구분되지 않는다 |
+| PowerShell · Windows Terminal · cmd | 된다 | 그대로 |
+| Git Bash (mintty) | **안 된다** | mintty 는 node 의 stdin 을 파이프로 준다. `winpty code-agent approve` 로 감싸거나 PowerShell 을 쓴다 |
+| CI · 스크립트 · 파이프 | 안 된다 | 사람이 그 자리에 있는지를 보는 문이다 |
+
+이 문이 막는 것은 모델이 셸로 자기 계획을 승인하는 길이다. 보안 경계가 아니라 **관측**이다.
+
+### hook 이 거부했다
+
+거부 사유는 모델에게 그대로 보인다. 우회하지 않는 것이 규칙이다.
+
+| 거부 문구 | 뜻 | 할 일 |
+|---|---|---|
+| `지금은 analysis 스테이지라 작업 폴더(...) 밖은 쓸 수 없습니다` | 승인 전에 코드를 쓰려 했다 | 계획까지 진행하고 승인을 받는다 |
+| `계획이 승인되지 않았습니다 (none)` | 제출·승인 전 쓰기 | 터미널에서 `approve` |
+| `계획이 승인되지 않았습니다 (stale-docs)` | 승인 뒤 근거 문서가 바뀌었다 | 다시 승인 |
+| `승인된 계획에 없는 파일입니다: <경로>` | 계획 밖 파일 | 사람에게 알린다. 계획을 고치면 재승인 |
+| `[지시서 scope 밖]` · `[do-not-touch 경계]` | 지시서 `scope` 밖이거나 계층 경계를 넘었다 | 아래 참고 |
+| `[보존 대상]` | `preserve` 로 지킨다고 한 것을 건드렸다 | 계획을 고치거나 질문으로 |
+| `작업 지시서(...)는 고칠 수 없습니다` | 모델이 `requirement.md` 를 고치려 했다 | 모호하면 `questions.md` 에 질문으로. 지시서는 사람이 고친다 |
+| `작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다` | `.code-agent/` 쓰기 | `next` · `plan submit` · `confirm` 으로만 바뀐다 |
+| `문서 작성 중에는 문서 자리(...) 밖은 쓸 수 없습니다` | 문서 세션 중 코드 쓰기 | 문서에 적고 사람에게 알린다. 세션은 `docs end` |
+| `작업 중에는 Bash 로 code-agent 명령, 선언된 명령, 읽기용 git 만` | 허용 밖 명령 | 파일은 Write/Edit, 읽기는 Read/Grep/Glob |
+| `연결·리다이렉트(; && \| >)는 안 됩니다` | 명령을 이어 붙였다 | 한 번에 하나씩 실행한다 |
+
+**공통 모듈이 경계에 걸릴 때** — 새 오류 코드처럼 도메인 밖 공통 파일을 고쳐야 하는 계획은 경계 검사에서 거부된다.
+`code-agent.json` 에 `"scope": "project"` 인 공통 단계를 두면 풀린다 (순서는 도메인 단계보다 앞).
+지시서의 `scope` 를 넓혀야 하는 경우라면 그건 사람이 고친다.
+
+### `code-agent next` 가 넘어가지 않는다
+
+| 문구 | 뜻 |
 |---|---|
-| ① 이 `400` | 경로 오타. 서버 프로세스가 보는 경로여야 하고 `/` 가 안전하다. 매니페스트·컨벤션·참조 표준을 **작업 생성 시점에 실제로 읽어 보므로** 여기서 걸린다 |
-| `승인 기록을 남길 대상 저장소가 없습니다` | `repo` 경로가 실재하지 않는다. 오타면 고치고, 맞으면 그 디렉토리를 만든다. **없는 경로를 만들어 주지 않는다** — 오타 난 곳에 아무도 승인한 적 없는 기록이 남기 때문이다 |
-| `작업 지시서가 규격에 맞지 않아…` | 머리말 네 줄(`kind`·`id`·`title`·`target`)을 본다. `adopt`·`fix`·`refactor` 는 `target` 이 실재하는 경로여야 한다 |
-| `참조 표준 도메인이 없습니다` | `feature` 인데 참조 도메인이 없다. 매니페스트의 `referenceDomain` 이나 작업 생성의 `reference` 를 채운다 |
-| `blocked` 가 안 풀림 | ②의 `questions` 에서 `id` 를 확인. 없는 `id` 를 주면 거부한다 |
-| `violations` 가 나옴 | 경계 밖 파일이다. **그 응답의 파일이 전부 반영되지 않았다** — 절반만 반영된 `out/` 이 다음 턴의 입력이 되어 오염이 번지기 때문이다. 위반 목록은 다음 프롬프트에 실린다 |
-| `parseErrors` 가 나옴 | 프롬프트를 잘라 붙여넣었을 때 주로 난다. 출력 형식 안내까지 통째로 넣는다 |
-| `response 는 문자열이어야…` | Body 를 JSON 으로 감쌌다. `text/plain` + raw → Text 로 보낸다 |
-| 한글이 깨짐 | `charset=utf-8` 을 헤더에 명시한다 |
+| `프로젝트 필수 문서가 갖춰지지 않아...` | 아키텍처·컨벤션이 없거나·섹션이 비었거나·확정되지 않았다. `code-agent docs` 로 어느 섹션인지 본다 |
+| `답이 없는 질문이 N개 있어...` | `/ca-answer` |
+| `요구사항 분석 결과가 없습니다` | `analysis.md` 에 `## R<번호>` 와 `## 작업 문서` 를 쓴다 |
+| `analysis.md 의 형식이 맞지 않습니다` | 요구 항목이 없거나·번호가 겹치거나·`## 작업 문서` 가 없거나 비었다 |
+| `분석이 필요하다고 한 작업 문서가 갖춰지지 않았습니다` | 목록에 적은 문서를 쓰거나, 필요 없어졌으면 `## 작업 문서` 를 고친다 |
+| `단계 <key> 의 계획 파일이 아직 없습니다` | 그 단계의 계획 파일이 덜 만들어졌다 |
+| `검증(code-agent verify)은 아직 구현되지 않았습니다` | 여기가 지금의 끝이다 (P5) |
 
-HTTP 본문의 실제 모양과 `curl`·PowerShell 예시는 [doc/bootstrap-test.md](bootstrap-test.md) 에 있다.
+### `code-agent plan submit` 이 거부했다
+
+| 문구 | 할 일 |
+|---|---|
+| `어느 요구 항목을 위한 파일인지 requirements 에 적으세요` | 파일마다 담당 요구 항목 번호를 단다 |
+| `어떤 파일에도 닿지 않는 요구 항목: R3` | 파일을 더하거나, 이번 범위가 아니면 질문으로 확인 |
+| `남은 질문이 있습니다` | `openQuestions` 를 `questions.md` 로 옮겨 답을 받는다 |
+| `preserve 가 계획에 없습니다: <문장>` | 지시서의 보존 조건을 **문장 그대로** 옮긴다 |
+| `알 수 없는 단계 <key>` | `code-agent context` 가 보여 준 단계 key 를 쓴다 |
+
+### 그 밖
+
+| 상황 | 뜻 |
+|---|---|
+| `code-agent.json 이 없습니다` | `/ca-adopt` 로 먼저 도입 |
+| `진행 중인 작업이 있습니다: <ID>` | 끝내거나 `code-agent abort` 뒤에 시작 |
+| `작업이 진행 중입니다 ... 근거 문서는 작업 도중에 바꾸지 않습니다` | `/ca-docs` 를 작업 중에 열었다. 작업을 끝내거나 `abort` |
+| `사슬이 끊겼습니다 — 누가 원장을 고쳤는지 확인하세요` | `.code-agent/approvals/*.jsonl` 이 손으로 바뀌었다. git 이력으로 확인한다 |
+| `기준 브랜치가 없습니다: master` | `start --base <브랜치>` 또는 `code-agent.json` 의 `git.base` |
+| `code-agent hook 이 판정에 실패해 막았습니다` | hook 자체가 터졌다. 막는 쪽으로 닫힌다 — 메시지를 보고 `code-agent status` 로 상태를 확인 |
+
+---
+
+## 11. 아직 없는 것
+
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| P1 뼈대 | CLI · hook · `.claude/` 템플릿 · 작업 폴더 | ✅ |
+| P2 프로젝트 문서 | 문서 스키마 · `docs` · `confirm doc` · `/ca-docs` · `/ca-adopt` | ✅ |
+| P3 분석·조사·계획 | `analysis.md` · 작업 문서 · 계획 검사 · 승인 · 구현 울타리 | ✅ |
+| P4 영향도·시스템 설계 | `impact` · `design` 스테이지, `impact.md` · `design.md` (모든 작업 필수) | 다음 |
+| P5 구현·검증·반영 | 정적 분석 · 테스트 실행 · 수정 루프 · 코드 리뷰 · 통합 검증 · 반영(TTY 확인 · 로컬 커밋 · `pr.md`) | — |
+| P6 fix·refactor·신규 저장소 | 재현 테스트 먼저 · preserve 강제 완주 · 빈 저장소 도입 | — |
+| P7 플러그인 | 자리 정의 · `plugin add/list/remove` · 등록한 사람만 opt-in | — |
+| P8 정리·배포 | 단일 실행 파일 · `usage`(토큰 집계) · 설치 점검 | — |
+
+지금 완주할 수 있는 것은 **계획 승인 + 구현 단계까지**다. 검증·리뷰·반영은 사람이 손으로 한다.

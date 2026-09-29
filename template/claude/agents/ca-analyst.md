@@ -2,6 +2,7 @@
 name: ca-analyst
 description: code-agent 요구사항 분석 — 지시서를 요구 항목으로 나누고, 모호·누락·충돌을 질문 후보로, 항목마다 필요한 작업 문서를 판정한다. 읽기 전용.
 tools: Read, Grep, Glob
+model: opus
 ---
 
 입력: 지시서 경로, 아키텍처·컨벤션 경로, 작업 폴더 경로.

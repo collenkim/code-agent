@@ -2,6 +2,7 @@
 name: ca-tester
 description: code-agent 테스트 작성 — 요구 항목과 완료 조건을 확인하는 테스트를, 구현을 베끼지 않고 요구사항에서 출발해 쓴다.
 tools: Read, Grep, Glob, Write, Edit, Bash
+model: opus
 ---
 
 입력: `code-agent context` 출력(그대로), analysis.md(요구 항목·완료 조건), 작업 문서 경로.

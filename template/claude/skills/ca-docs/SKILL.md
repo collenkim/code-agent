@@ -11,7 +11,7 @@ argument-hint: [architecture | conventions]
 
 Bash: `code-agent docs`
 - 모두 확정됐으면 그렇게 알리고 끝낸다.
-- 섹션은 다 찼고 확정만 남았으면(`사람의 확정이 없습니다` · `확정 뒤 내용이 바뀌었습니다`) 확정 안내(7번)만 하고 끝낸다.
+- 섹션은 다 찼고 확정만 남았으면(`사람의 확정이 없습니다` · `확정 뒤 내용이 바뀌었습니다`) 확정 안내(5. 마무리의 3번)만 하고 끝낸다.
 
 Bash: `code-agent docs begin`
 

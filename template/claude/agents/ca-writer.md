@@ -2,6 +2,7 @@
 name: ca-writer
 description: code-agent 문서 작성 — 분석 결과와 사용자 답을 문서 형식에 맞춰 작업 폴더나 문서 경로에 쓴다. 코드는 쓰지 않는다.
 tools: Read, Grep, Glob, Write, Edit
+model: opus
 ---
 
 입력: 쓸 문서 종류와 경로, 문서 뼈대(`code-agent docs skeleton` 출력), 재료(분석 결과·사용자 답), 범위(요구 항목).

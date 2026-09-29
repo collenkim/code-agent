@@ -27,7 +27,13 @@ const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 /** 셸 연결·리다이렉트·치환. 허용 목록의 명령 뒤에 무엇이든 붙일 수 있게 되는 자리다 */
 const SHELL_META = /[;&|<>`\n]|\$\(/;
 
-const READONLY_GIT = /^git (status|diff|log|show|branch)(\s|$)/;
+const READONLY_GIT = /^git (status|diff|log|show)(\s|$)/;
+
+/**
+ * `git branch` 는 목록 보기만. 인자를 열어 두면 `-D`·`-m`·`<새 브랜치>` 로 작업 브랜치를 지우거나 바꾼다 —
+ * 작업 브랜치는 start 만 딴다.
+ */
+const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--verbose|--show-current))*$/;
 
 export function decide(input: HookInput, projectDir?: string): string | undefined {
   const repoRoot = canonical(projectDir ?? input.cwd);
@@ -100,14 +106,15 @@ function decideBash(manifest: Manifest | undefined, command: string): string | u
     (command === "code-agent" ||
       command.startsWith("code-agent ") ||
       declared.includes(command) ||
-      READONLY_GIT.test(command));
+      READONLY_GIT.test(command) ||
+      READONLY_BRANCH.test(command));
   if (allowed) {
     return undefined;
   }
   return (
     "작업 중에는 Bash 로 code-agent 명령, 선언된 명령" +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
-    ", 읽기용 git(status·diff·log·show·branch)만 실행할 수 있습니다. 연결·리다이렉트(; && | >)는 안 됩니다. " +
+    ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만)만 실행할 수 있습니다. 연결·리다이렉트(; && | >)는 안 됩니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );
 }
@@ -133,10 +140,6 @@ function decideWrite(work: Work, path: string): string | undefined {
       "코드는 계획이 승인된 뒤 implement 스테이지에서 씁니다."
     );
   }
-  if (active.phase === "handoff") {
-    return "인계 스테이지에서는 코드를 고치지 않습니다. 고칠 것이 있으면 사람에게 알리세요.";
-  }
-
   const { plan, order, manifest } = work;
   if (!plan) {
     return "제출된 계획이 없습니다. code-agent plan submit 으로 계획을 제출하고 승인을 받아야 합니다.";
