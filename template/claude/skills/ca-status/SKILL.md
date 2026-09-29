@@ -9,5 +9,7 @@ description: code-agent 작업의 현재 위치(문서·스테이지·질문·�
    - 확정만 남았으면 "별도 터미널에서 `code-agent confirm doc <architecture | conventions | test-strategy | quality>`" — 넷 다 확정돼야 작업이 시작된다
    - 질문이 남았으면 `/ca-answer`
    - 승인 대기면 "별도 터미널에서 `code-agent approve`"
-   - 승인이 `rejected` 면 `/ca-next` — 반려 사유를 읽고 문서부터 다시 본다 (같은 계획을 그대로 다시 내지 않는다)
+   - 승인이 `rejected` 면 `/ca-plan` — 반려 사유를 읽고 문서부터 다시 본다 (같은 계획을 그대로 다시 내지 않는다)
+   - 그 밖이면 `다음:` 줄이 가리키는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`) 하나,
+     또는 `/ca-next` 로 그 자리부터 사이클. 이전 스테이지로 돌아가야 하면 `code-agent back <스테이지>` (앞으로는 못 간다)
    - 스테이지가 `deliver` 면 "별도 터미널에서 `code-agent deliver`" — 확인 화면과 로컬 커밋은 사람의 자리다

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "fs";
 
-import { abort, context, decide, next, requireValidatable, start, status, Stop, submitPlan } from "./commands";
+import { abort, back, BACK_PHASES, context, decide, next, requireValidatable, start, status, Stop, submitPlan } from "./commands";
 import { deliver } from "./deliver";
 import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, docsStatus } from "./docsCommands";
 import { runHook } from "./hook";
@@ -35,6 +35,8 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent manifest check           code-agent.json 이 실제 참조 파일을 찾는지
   code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]
   code-agent next                     게이트를 확인하고 다음 스테이지·단계로
+  code-agent back <스테이지>          커서를 앞 스테이지로 되감기 — 앞으로는 못 가고, 증거·리뷰 회차·원장은 그대로 남는다
+                                      ${BACK_PHASES.join(" | ")}
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent check                    7 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
@@ -78,6 +80,9 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "next":
       print(next(repoRoot));
+      return 0;
+    case "back":
+      print(back(repoRoot, args[0] ?? ""));
       return 0;
     case "context":
       print(context(repoRoot));

@@ -35,8 +35,29 @@
 
 (⑥ Code 는 소스 코드 자체다 — `06-` 파일은 없다.)
 
-`/ca-next` 가 `implement` → `check` → `test` → `review` → `integrate` 까지 몰고, `deliver` 앞에서 멈춰 **사람에게 터미널을 넘긴다**.
+스테이지마다 명령이 하나씩 있다. **`/ca-next` 는 그 명령들을 이어 도는 사이클**이고, `deliver` 앞에서 멈춰 **사람에게 터미널을 넘긴다**.
 P4 의 `verify` 한 칸은 `check` · `test` · `review` · `integrate` · `deliver` 다섯으로 갈렸다.
+
+### 단계별 명령
+
+절차는 단계 스킬 **하나**에만 있다 — 단계 명령으로 가든 `/ca-next` 사이클로 가든 읽는 파일이 같다.
+단계마다 끊으면 그 자리에서 결과를 보고 고친 뒤 다음으로 갈 수 있다.
+
+| 스테이지 | 명령 | 하는 일 | 어디서 멈추나 |
+|---|---|---|---|
+| `analysis` | `/ca-analyze [<지시서>]` | ① `01-requirements.md` (진행 중인 작업이 없고 인자가 있으면 `code-agent start` 부터) | 질문 · `next` 통과 |
+| `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer | 질문 · `next` 통과 |
+| `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` | 질문 · `next` 통과 |
+| `plan` | `/ca-plan` | ⑤ `plan.json` · ⑦ `07-test-spec.md` → critic → `plan submit` | **터미널 `code-agent approve`** |
+| `implement` | `/ca-implement` | 계획의 단계마다 implementer·tester, 커서가 `check` 에 닿을 때까지 | 계획 밖 · 질문 · `check` 도달 |
+| `check` | `/ca-check` | `code-agent check` (build + 정적 분석·보안) · **↺ 수정 루프의 정의가 여기 있다** | 실패 · `next` 통과 |
+| `test` | `/ca-test` | tester 가 ⑦ 의 TC 만 → `code-agent test` (이후 테스트 동결) | 실패 · `next` 통과 |
+| `review` | `/ca-review` | reviewer 의 지적을 ⑨ `09-review.md` 에 그대로 | 열린 지적 · `next` 통과 |
+| `integrate` | `/ca-integrate` | `code-agent integrate` + ⑩ `10-pr.md` 의 모델 구역 | **터미널 `code-agent deliver`** |
+
+**사이클** — `/ca-feature`(= `start` + `plan` 까지) · `/ca-fix` · `/ca-refactor` 로 시작하고, `/ca-next` 로 사람의 자리가 나올 때까지 이어 돈다.
+잘못 온 자리는 `code-agent back <스테이지>` 로 **뒤로만** 되감는다 — 앞으로는 못 가고, 무엇이 무효가 되는지(예: `design` 이하로 가서 문서를 고치면 계획 승인이 `stale-docs`) 명령이 찍는다.
+증거는 `planHash` 에 묶여 있어 되감아도 수정 회차는 초기화되지 않는다.
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
@@ -89,6 +110,7 @@ claude
 6. **별도 터미널에서 승인** — `code-agent approve`. 계획과 `## 가정` 이 함께 보인다.
    반려는 `code-agent reject --comment "사유"` (사유 필수).
 7. **`/ca-next`** — 구현 단계를 하나씩 진행하고, 이어서 `check` → `test` → `review` → `integrate` 를 몬다.
+   한 단계씩 끊어 보려면 `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate` 를 직접 부른다 (절차는 같다).
    검증이 실패하면 계획 안에서 고치고 `check` 부터 다시 돈다(기본 2회). 지금 위치는 `/ca-status`.
 8. **별도 터미널에서 반영** — `code-agent deliver`. 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤
    작업 브랜치에 **로컬 커밋**한다. push·MR/PR 생성은 하지 않는다.
@@ -98,8 +120,9 @@ claude
 | Claude Code 안 | 하는 일 |
 |---|---|
 | `/ca-adopt` · `/ca-docs` | 도입 · 공통 문서(POLICY 4종 · KNOWLEDGE 3종) 점검·작성 |
-| `/ca-feature <지시서>` · `/ca-fix` · `/ca-refactor` | 작업 시작 — 승인 대기에서 멈춘다 |
-| `/ca-answer` · `/ca-next` · `/ca-status` | 질문에 답 · 다음으로 · 지금 위치 |
+| `/ca-feature <지시서>` · `/ca-fix` · `/ca-refactor` | 작업 시작 — 계획까지 돌고 승인 대기에서 멈춘다 |
+| `/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate` | 스테이지 하나씩 (위 [단계별 명령](#단계별-명령)) |
+| `/ca-answer` · `/ca-next` · `/ca-status` | 질문에 답 · 사이클로 이어 돌기 · 지금 위치 |
 
 | 터미널 (사람) | 하는 일 |
 |---|---|
@@ -111,7 +134,7 @@ claude
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 터미널에서만, 기본 opus) |
 
-스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `context` · `status` · `plan submit` · `check` · `test` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
+스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `back <스테이지>` · `context` · `status` · `plan submit` · `check` · `test` · `review` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
 
 ## 막히는 자리
 
@@ -129,6 +152,7 @@ claude
 | `.code-agent/` 는 도구로 못 쓴다 (커서·제출된 계획·승인 원장) | PreToolUse hook | ✅ |
 | Bash 는 스킬이 부르는 `code-agent` 서브명령 · 선언된 명령 · 읽기용 git(파일로 내보내기 없이)만. 연결·리다이렉트 금지 | PreToolUse hook | ✅ |
 | 답 없는 질문이 있으면 진행 금지 | `next` · `plan submit` | ✅ |
+| `back` 은 **뒤로만** 간다 — 앞 스테이지로는 못 가고, `deliver`(사람이 서 있는 자리)에서는 되감지 않으며, 되감아도 증거·승인·수정 회차는 지워지지 않는다 (해시에 묶여 있어 어긋나면 그때 막힌다) | `back` | ✅ |
 | 검증 결과는 모델이 보고하는 것이 아니라 `check`·`test`·`integrate` 가 증거에 적은 것만 유효하다 — `not-run`·`error`·`skipped` 는 통과가 아니다 | `check` · `test` · `next` | ✅ |
 | 증거는 기준 커밋 · 계획 파일의 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 그 통과가 무효 | `next` · `deliver` | ✅ |
 | 테스트가 한 번 돌면 `kind: "test"` 단계의 파일이 언다 — 단언을 지워 통과시키는 길이 막힌다 | PreToolUse hook | ✅ |
