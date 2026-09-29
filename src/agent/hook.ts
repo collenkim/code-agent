@@ -3,11 +3,14 @@ import { isAbsolute, relative, resolve } from "path";
 import { existsSync } from "fs";
 import { join } from "path";
 
+import { hashPlan } from "../core/approval";
 import { checkPaths, unplannedFiles } from "../core/gate";
-import type { Manifest } from "../core/manifest";
+import type { Manifest, StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
+import { fixLimit, loadEvidence, overFixLimit, validationDocFile } from "./evidence";
+import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { AFTER_IMPLEMENT, canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
@@ -40,11 +43,25 @@ const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
 /**
  * 모델이 Bash 로 부를 수 있는 `code-agent` 서브명령 — 스킬이 부르는 것뿐이다.
  *
- * `init`·`abort`·`approve`·`reject`·`confirm`·`model` 은 사람이 터미널에서 돌리는 것이다. 열어 두면
+ * `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver` 는 사람이 터미널에서 돌리는 것이다. 열어 두면
  * `abort` 한 줄로 작업 커서가 사라져 hook 이 아무것도 판정하지 않게 되고, `init --cli <제 스크립트>` 로
- * hook 자체가 갈린다. 여기 한 곳에서 같이 닫힌다.
+ * hook 자체가 갈린다. `deliver` 는 TTY 확인 뒤 커밋까지 가므로 모델의 자리가 아니다 —
+ * 여기 없어도 `confirmOnTerminal` 이 한 번 더 막지만, 두 겹으로 닫는다.
  */
-const MODEL_SUBCOMMANDS = ["start", "next", "context", "status", "plan submit", "docs", "survey", "manifest check"];
+const MODEL_SUBCOMMANDS = [
+  "start",
+  "next",
+  "context",
+  "status",
+  "plan submit",
+  "docs",
+  "survey",
+  "manifest check",
+  "check",
+  "test",
+  "review",
+  "integrate",
+];
 
 function isModelCommand(command: string): boolean {
   if (command === "code-agent") {
@@ -163,6 +180,17 @@ function decideWrite(work: Work, path: string): string | undefined {
       `고칠 것이 있으면 ${workDocsDir(active.id)}/plan.json 을 고쳐 다시 제출하세요.`
     );
   }
+  // ⑧ 도 같은 이유로 코드만 쓴다 — 검증 결과는 모델이 보고하는 것이 아니라 명령이 돌아서 남은 것만 유효하다.
+  //
+  // ⑨·⑩ 은 경로로 막지 않는다. 한 파일 안에서 쓰는 쪽이 갈리기 때문이다(회차 머리·추적표는 코드,
+  // 지적·요약은 모델) — 안쪽만 막으려면 Edit 의 부분 치환까지 봐야 해 경로 단위 거부보다 비싸다.
+  // 대신 코드가 그 구역을 **다시 렌더해 바이트로 대조한다** (blocks.ts · review.ts · deliver.ts).
+  if (path.toLowerCase() === validationDocFile(active.id).toLowerCase()) {
+    return (
+      `${validationDocFile(active.id)} 는 코드가 렌더합니다 — code-agent check · test · integrate 가 검증 증거에서 만듭니다. ` +
+      "검증 결과는 모델이 보고하는 것이 아니라 명령이 돌아서 남은 것만 유효합니다."
+    );
+  }
   // 작업 폴더(번호 문서·질문·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);
   if (path === workDir || path.startsWith(`${workDir}/`)) {
@@ -187,7 +215,7 @@ function decideWrite(work: Work, path: string): string | undefined {
     );
   }
 
-  // implement 는 지금 단계의 파일만. verify 는 고쳐 쓰는 자리라 계획의 어느 단계 파일이든, 그 파일의 단계 규칙으로.
+  // implement 는 지금 단계의 파일만. 검증·리뷰는 고쳐 쓰는 자리라 계획의 어느 단계 파일이든, 그 파일의 단계 규칙으로.
   const stage =
     active.phase === "implement"
       ? work.stage
@@ -199,12 +227,60 @@ function decideWrite(work: Work, path: string): string | undefined {
       ? `지금 단계(${active.stage ?? "없음"})를 매니페스트에서 찾을 수 없습니다. code-agent status 로 확인하세요.`
       : `승인된 계획에 없는 파일입니다: ${path}. 필요하면 사람에게 알리세요 — 계획을 고치면 재승인을 받습니다.`;
   }
+  const frozen = freezeReason(work, stage, path);
+  if (frozen) {
+    return frozen;
+  }
   const violations = [
     ...checkPaths({ repoRoot, order, manifest, plan, stage, files: [{ path, content: "" }] }),
     ...unplannedFiles(plan, stage, [path]),
   ];
   if (violations.length > 0) {
     return violations.map((v) => `[${v.item}] ${v.file}: ${v.detail}`).join("\n");
+  }
+  return undefined;
+}
+
+/**
+ * 검증 스테이지에서 이 파일을 고칠 수 없는 이유. 둘이다.
+ *
+ * **① 테스트 동결** — 테스트가 한 번 돈 뒤(통과든 실패든)에는 `kind: "test"` 단계의 계획 파일을
+ * 고칠 수 없다. 옛 흐름이 "verify 단계의 outputDirs 에 테스트 디렉토리를 넣지 않는다"로 구조적으로
+ * 막던 것의 최소 번역이다 — 실패한 단언을 지워 통과시키는 길이 여기서 닫힌다. `kind` 는
+ * `hashManifest` 가 이미 해시하므로 승인 묶임이 따라온다: 승인 뒤에 선언을 끌 수 없다.
+ * 푸는 길은 둘 — ⑨ 에 그 파일을 가리키는 열린 계획 안 지적, 또는 계획 재승인(planHash 가 달라지면
+ * 증거가 통째로 무효라 동결도 함께 풀린다).
+ *
+ * **② 고쳐 쓰기 한도** — 한도를 넘겨 실패한 채면 계획 안 파일을 **전부** 거부한다. 작업 폴더는
+ * 이 함수에 오기 전에 이미 통과했으므로 보고와 질문의 길은 남는다.
+ */
+function freezeReason(work: Work, stage: StageDef, path: string): string | undefined {
+  if (!AFTER_IMPLEMENT.includes(work.active.phase)) {
+    return undefined;
+  }
+  const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) {
+    return undefined;
+  }
+  if (overFixLimit(work, evidence)) {
+    return (
+      `고쳐 쓰기 ${fixLimit(work, evidence)}회를 넘겨 계획 파일을 더 고칠 수 없습니다: ${path}. ` +
+      `${workDocsDir(work.active.id)}/questions.md 에 무엇이 막혔는지 적고 사람에게 보고하세요 — ` +
+      "덮지 않고 보고하는 자리입니다. 계획 자체를 고쳐야 하면 사람이 재승인해야 합니다."
+    );
+  }
+  if (stage.kind === "test" && evidence.runs.some((run) => run.phase === "test")) {
+    // 탈출구 둘 — ⑨ 에 이 파일을 가리키는 열린 계획 안 지적이 있거나, 계획이 재승인되거나.
+    // 앞의 것은 문서에 남는 지적이 열쇠라 몰래 풀 수 없다 (그 줄이 닫히기 전에는 리뷰 게이트가 막는다).
+    if (findingOpensFile(work, path)) {
+      return undefined;
+    }
+    return (
+      `테스트가 이미 돌아 얼어 있는 파일입니다: ${path} (단계 ${stage.key}, kind: test). ` +
+      "테스트가 틀렸다고 판단되면 고치지 말고 근거와 함께 보고하세요 — 단언을 지워 통과시키는 길을 막는 자리입니다. " +
+      `정말 고쳐야 하면 ${workDocsDir(work.active.id)}/09-review.md 에 그 파일을 가리키는 지적으로 남기거나, ` +
+      "계획을 고쳐 사람의 재승인을 받으세요."
+    );
   }
   return undefined;
 }

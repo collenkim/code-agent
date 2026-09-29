@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 import { readFileSync } from "fs";
 
-import { abort, context, decide, next, start, status, Stop, submitPlan } from "./commands";
+import { abort, context, decide, next, requireValidatable, start, status, Stop, submitPlan } from "./commands";
+import { deliver } from "./deliver";
 import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, docsStatus } from "./docsCommands";
 import { runHook } from "./hook";
 import { init } from "./init";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel } from "./models";
+import { openRound } from "./review";
+import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
+import { check, integrate, runTests } from "./validate";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
@@ -19,6 +23,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent approve                  제출된 계획 승인 (TTY 에서만)
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기
+  code-agent deliver                  11 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
   code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
 
 스킬이 부른다 (Claude Code 안):
@@ -32,19 +37,28 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent next                     게이트를 확인하고 다음 스테이지·단계로
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
   code-agent plan submit <초안.json>  계획 검사 후 제출
+  code-agent check                    7 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
+  code-agent test                     8 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC 를 대조
+  code-agent review                   9 코드 리뷰 — 회차를 열고 ⑨ 의 회차 구역을 렌더 (기준 트리 해시를 굳힌다)
+  code-agent integrate                10 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
 
 hook 이 부른다:
-  code-agent hook                     PreToolUse 판정 (stdin JSON)`;
+  code-agent hook                     PreToolUse 판정 (stdin JSON)
+  code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(`--${name}`);
   return index >= 0 ? args[index + 1] : undefined;
 }
 
-function main(argv: string[]): number {
+/** 검증 명령은 자식 프로세스를 기다린다 — main 이 async 인 유일한 이유다 */
+async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
   if (command === "hook") {
     return runHook(readFileSync(0, "utf-8"));
+  }
+  if (command === "stop") {
+    return runStopHook(readFileSync(0, "utf-8"));
   }
 
   const repoRoot = findRepoRoot(process.cwd());
@@ -67,6 +81,21 @@ function main(argv: string[]): number {
       return 0;
     case "context":
       print(context(repoRoot));
+      return 0;
+    case "check":
+      print(await check(requireValidatable(repoRoot, "check")));
+      return 0;
+    case "test":
+      print(await runTests(requireValidatable(repoRoot, "test")));
+      return 0;
+    case "review":
+      print(openRound(requireValidatable(repoRoot, "review")));
+      return 0;
+    case "integrate":
+      print(await integrate(requireValidatable(repoRoot, "integrate")));
+      return 0;
+    case "deliver":
+      print(deliver(requireValidatable(repoRoot, "deliver")));
       return 0;
     case "plan":
       if (args[0] !== "submit" || !args[1]) {
@@ -132,9 +161,12 @@ function main(argv: string[]): number {
   }
 }
 
-try {
-  process.exitCode = main(process.argv.slice(2));
-} catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = error instanceof Stop ? 1 : 2;
-}
+main(process.argv.slice(2)).then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = error instanceof Stop ? 1 : 2;
+  },
+);

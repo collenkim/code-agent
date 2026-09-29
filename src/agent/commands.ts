@@ -12,6 +12,7 @@ import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
 import {
+  AFTER_IMPLEMENT,
   canonical,
   clearActive,
   loadActive,
@@ -24,6 +25,21 @@ import {
 import type { ActiveWork, Phase } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { isGitRepo, switchToWorkBranch } from "./git";
+import { commitOf, mergeBase } from "./tree";
+import { prDocFile } from "./deliver";
+import { proposalFile } from "./knowledge";
+import {
+  fixLimit,
+  loadEvidence,
+  outsideChanges,
+  overFixLimit,
+  runsOf,
+  stageProblems,
+  testStageFiles,
+  validationDocFile,
+} from "./evidence";
+import type { VerifyPhase } from "./evidence";
+import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
@@ -55,7 +71,11 @@ const PHASE_LABEL: Record<Phase, string> = {
   design: "설계·정의",
   plan: "구현 계획",
   implement: "구현",
-  verify: "검증·개선",
+  check: "정적 분석·컴파일",
+  test: "테스트",
+  review: "코드 리뷰",
+  integrate: "통합 검증",
+  deliver: "반영",
 };
 
 /**
@@ -71,12 +91,29 @@ function requirePhase(active: ActiveWork): void {
   }
 }
 
+/**
+ * P5 이전에 시작된 작업에는 굳혀 둔 기준 커밋이 없다. 그 위에서 검증하면 변경 목록이 실제보다
+ * 넓거나 좁고, 증거가 무엇 위에서 났는지 아무도 모른다 — 지금 다시 굳히는 것도 같은 이유로 안 된다
+ * (그 사이 기준 브랜치가 움직였을 수 있다). 지우고 다시 시작하게 한다.
+ *
+ * git 저장소가 아니었으면 브랜치도 없다 — 그 작업은 애초에 굳힐 커밋이 없었던 것이라 통과시킨다.
+ */
+function requireBaseCommit(active: ActiveWork): void {
+  if (active.branch && !active.baseCommit) {
+    throw new Stop(
+      "이 작업에는 굳혀 둔 기준 커밋이 없습니다 (P5 이전에 시작된 커서입니다).\n" +
+        "code-agent abort 로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
+    );
+  }
+}
+
 function requireWork(repoRoot: string): Work {
   const work = loadWork(repoRoot);
   if (!work) {
     throw new Stop("진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor 로 시작하세요.");
   }
   requirePhase(work.active);
+  requireBaseCommit(work.active);
   return work;
 }
 
@@ -201,12 +238,14 @@ export function start(repoRoot: string, spec: string, options: { target?: string
   // 작업 브랜치 — 기준은 사용자 입력(--base) > code-agent.json 의 git.base > master
   let branch: string | undefined;
   let base: string | undefined;
+  let baseCommit: string | undefined;
   let branchNote = "git 저장소가 아니라 작업 브랜치를 만들지 않았습니다.";
   if (isGitRepo(repoRoot)) {
     base = options.base ?? manifest.git.base;
     branch = `${order.kind}/${order.id}`;
+    let how: "created" | "switched" | "already";
     try {
-      const how = switchToWorkBranch(repoRoot, branch, base);
+      how = switchToWorkBranch(repoRoot, branch, base);
       branchNote =
         how === "created" ? `작업 브랜치 ${branch} 를 ${base} 에서 만들었습니다.`
         : how === "switched" ? `이미 있는 작업 브랜치 ${branch} 로 전환했습니다.`
@@ -214,6 +253,19 @@ export function start(repoRoot: string, spec: string, options: { target?: string
     } catch (error) {
       throw new Stop(`작업 브랜치로 옮기지 못했습니다: ${error instanceof Error ? error.message : error}`);
     }
+    // 기준을 **이름이 아니라 커밋으로** 굳힌다. 새로 딴 브랜치는 기준 브랜치의 끝이 곧 갈라진
+    // 자리지만, 이미 있던 브랜치로 돌아온 것이라면 그 사이 기준이 나아갔을 수 있다 — 그때 끝을
+    // 굳히면 기준이 더한 파일이 전부 이 작업의 `[D]` 삭제로 잡혀 검증이 통째로 막힌다.
+    baseCommit =
+      (how === "created" ? commitOf(repoRoot, base) : mergeBase(repoRoot, base, "HEAD")) ??
+      commitOf(repoRoot, base) ??
+      commitOf(repoRoot, "HEAD");
+    if (!baseCommit) {
+      throw new Stop(
+        `기준 커밋을 굳힐 수 없습니다 (${base}). 커밋이 하나도 없는 저장소에서는 검증 증거를 묶을 자리가 없습니다 — 먼저 커밋하세요.`,
+      );
+    }
+    branchNote += ` 기준 커밋 ${baseCommit.slice(0, 12)} 를 굳혔습니다.`;
   }
 
   const questions = join(repoRoot, questionsFile(order.id));
@@ -225,7 +277,7 @@ export function start(repoRoot: string, spec: string, options: { target?: string
         "<!-- 질문은 `## Q<번호> · <스테이지>` 로 시작하고, 답은 `[Answer]:` 뒤에 적는다. 답이 없으면 다음으로 넘어가지 않는다. -->\n",
     );
   }
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base });
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit });
   return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}`;
 }
 
@@ -247,14 +299,48 @@ function nextHint(work: Work): string {
         return `계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
       }
       const approval = approvalOf(work);
-      return approval.status === "approved"
-        ? "승인됨 — code-agent next 로 구현 시작"
-        : `사람이 별도 터미널에서 code-agent approve (현재: ${approval.status})`;
+      if (approval.status === "approved") {
+        return "승인됨 — code-agent next 로 구현 시작";
+      }
+      // 반려는 다시 내라는 뜻이 아니라 다시 보라는 뜻이다 — 사유가 어느 문서를 가리키는지부터 읽게 한다
+      if (approval.status === "rejected") {
+        return (
+          `반려됐습니다: ${approval.record.comment ?? "(사유 없음)"} — ` +
+          `사유가 가리키는 문서(01~04 · 07 · plan.json)를 다시 보고, 정할 수 없는 것은 ${questionsFile(active.id)} 에 질문으로 남긴 뒤 다시 제출하세요`
+        );
+      }
+      return `사람이 별도 터미널에서 code-agent approve (현재: ${approval.status})`;
     }
     case "implement":
       return `단계 ${active.stage} 를 구현한 뒤 code-agent next`;
-    case "verify":
-      return "검증(code-agent verify)은 아직 구현되지 않았습니다 (P5)";
+    case "check":
+    case "test": {
+      const evidence = loadEvidence(repoRoot, active.id, active.target);
+      if (!evidence) {
+        return `code-agent ${active.phase}`;
+      }
+      if (overFixLimit(work, evidence)) {
+        return `고쳐 쓰기 ${fixLimit(work, evidence)}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${workDocsDir(active.id)}/questions.md 에 적고 사람에게 보고하세요`;
+      }
+      const failed = runsOf(evidence, active.phase).filter((run) => run.outcome !== "passed");
+      return failed.length === 0 && runsOf(evidence, active.phase).length > 0
+        ? "검증 통과 — code-agent next"
+        : `${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — 계획 안에서 고치고 code-agent ${active.phase} (${evidence.rounds}/${fixLimit(work, evidence) + 1}회차)`;
+    }
+    case "review": {
+      const problems = reviewProblems(work);
+      return problems.length === 0
+        ? "리뷰가 닫혔습니다 — code-agent next 로 통합 검증으로"
+        : `${problems[0]}${problems.length > 1 ? ` (외 ${problems.length - 1}건)` : ""}`;
+    }
+    case "integrate": {
+      const evidence = loadEvidence(repoRoot, active.id, active.target);
+      return evidence && runsOf(evidence, "integrate").length > 0 && stageProblems(work, "integrate").length === 0
+        ? "통합 검증 통과 — code-agent next"
+        : "code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)";
+    }
+    case "deliver":
+      return `사람이 별도 터미널에서 code-agent deliver — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
   }
 }
 
@@ -295,6 +381,23 @@ export function status(repoRoot: string): string {
     lines.push(`계획: 제출됨 · 승인 ${approvalOf(work).status}`);
   } else {
     lines.push("계획: 없음");
+  }
+  if (AFTER_IMPLEMENT.includes(active.phase)) {
+    const evidence = loadEvidence(repoRoot, active.id, active.target);
+    lines.push(
+      `검증: ${evidence ? `${evidence.rounds}회차 · ${evidence.runs.length}회 실행 (${validationDocFile(active.id)})` : "아직 없음"}`,
+    );
+    if (active.phase !== "check" && active.phase !== "test") {
+      const review = loadReview(repoRoot, active.id, active.target);
+      const last = review?.rounds[review.rounds.length - 1];
+      lines.push(
+        `리뷰: ${last ? `${last.round}회차 · 기준 트리 ${last.treeHash.slice(-12)} (${reviewDocFile(active.id)})` : "회차 없음 — code-agent review"}`,
+      );
+    }
+    const outside = outsideChanges(work);
+    if (outside.length > 0) {
+      lines.push(`계획 밖 변경: ${outside.map((change) => `[${change.status}] ${change.path}`).join(", ")}`);
+    }
   }
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
@@ -357,10 +460,88 @@ export function next(repoRoot: string): string {
         }
       }
       const following = stages[index + 1];
-      return following ? advance("implement", following.key) : advance("verify");
+      return following ? advance("implement", following.key) : advance("check", undefined);
     }
-    case "verify":
-      throw new Stop("검증(code-agent verify)은 아직 구현되지 않았습니다 (P5).");
+    // 7·8 은 코드가 남긴 증거만 읽는다 — 모델의 "통과했습니다" 는 여기서 아무 효력이 없다.
+    case "check":
+      requireEvidence(work, "check");
+      return advance("test");
+    case "test":
+      requireEvidence(work, "test");
+      return advance("review");
+    case "review": {
+      const problems = reviewProblems(work);
+      if (problems.length > 0) {
+        throw new Stop(
+          "코드 리뷰를 마치지 못했습니다:\n" + problems.map((problem) => `  - ${problem}`).join("\n"),
+        );
+      }
+      return advance("integrate");
+    }
+    case "integrate":
+      requireEvidence(work, "integrate");
+      return advance("deliver");
+    case "deliver":
+      // 반영은 사람의 자리다 — 모델이 next 로 끝낼 수 없고, deliver 가 커밋 뒤 커서를 지운다
+      throw new Stop(
+        `반영은 사람이 **별도 터미널**에서 code-agent deliver 로 합니다 (TTY 확인 뒤 로컬 커밋).\n` +
+          `${prDocFile(active.id)} 의 요약·확인 방법·위험·되돌리기를 먼저 쓰세요 — 추적표·검증·변경 요약은 코드가 렌더합니다.`,
+      );
+  }
+}
+
+/**
+ * 수정 루프가 `check` 로 되감을 수 있는 자리 — 검증 실패·지적이 나는 스테이지들.
+ *
+ * `deliver` 는 넣지 않는다. 거기는 사람이 터미널에 서 있는 자리라, 모델이 부른 `check` 한 번에
+ * 커서가 뒤로 가면 사람이 보던 화면이 조용히 무효가 된다.
+ */
+const REWINDABLE: readonly Phase[] = ["test", "review", "integrate"];
+
+/**
+ * `code-agent check` · `test` 의 전제. 승인이 stale 로 돌아섰는데 검증을 통과시키면
+ * 그 통과는 근거 없는 것이 되므로 승인 상태까지 여기서 본다.
+ *
+ * **`check` 만은 커서를 되감는다.** 수정 루프의 규칙이 "고쳤으면 `check` 부터 다시"인데 커서가
+ * 앞으로만 가면 그 문장을 실행할 길이 없다 — `test` 에서 실패해 고치면 `check` 는 "지금은 test"
+ * 라고 막고, `test` 는 "계획 파일이 바뀌었으니 check 부터" 라고 막아 `abort` 말고는 나갈 데가
+ * 없었다. 되감아도 잃는 것은 없다: 증거는 회차와 트리 해시에 묶여 있어 앞 스테이지의 통과가
+ * 되살아나지 않고, 다시 `next` 로 같은 게이트를 전부 지나야 한다.
+ */
+export function requireValidatable(
+  repoRoot: string,
+  phase: "check" | "test" | "review" | "integrate" | "deliver",
+): Work {
+  let work = requireWork(repoRoot);
+  requireDocs(repoRoot, work);
+  requireAnswers(repoRoot, work.active);
+  if (phase === "check" && REWINDABLE.includes(work.active.phase)) {
+    saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined });
+    work = requireWork(repoRoot);
+  }
+  if (work.active.phase !== phase) {
+    throw new Stop(
+      `${PHASE_LABEL[phase]}(${phase}) 스테이지에서 돌립니다 (지금: ${work.active.phase}).\n${nextHint(work)}`,
+    );
+  }
+  const approval = approvalOf(work);
+  if (approval.status !== "approved") {
+    throw new Stop(
+      `계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 검증 결과는 증거가 아닙니다.`,
+    );
+  }
+  return work;
+}
+
+/** 증거가 없거나 지금 트리를 가리키지 않거나 하나라도 통과가 아니면 넘어가지 않는다 */
+function requireEvidence(work: Work, phase: VerifyPhase): void {
+  const problems = stageProblems(work, phase);
+  if (problems.length > 0) {
+    throw new Stop(
+      `${PHASE_LABEL[phase]} 를 마치지 못했습니다:\n` +
+        problems.map((problem) => `  - ${problem}`).join("\n") +
+        `\ncode-agent ${phase} 로 다시 돌리세요.`,
+    );
   }
 }
 
@@ -541,8 +722,83 @@ export function context(repoRoot: string): string {
     }
   }
 
-  if (active.phase === "verify" && work.plan) {
-    out.push("", "## 계획 파일", ...work.plan.files.map((file) => `- [${file.stage}] ${file.path} — ${file.purpose}`));
+  // 검증·리뷰 스테이지 — 재탐색이 비용을 터뜨리는 자리다. 읽을 것을 코드가 골라 주고,
+  // 긴 것(실패 로그)은 내용이 아니라 경로만 준다.
+  if (AFTER_IMPLEMENT.includes(active.phase) && work.plan) {
+    const frozen = testStageFiles(work);
+    out.push(
+      "",
+      "## 계획 파일",
+      ...work.plan.files.map(
+        (file) =>
+          `- [${file.stage}] ${file.path} — ${file.purpose} · 요구 ${(file.requirements ?? []).join(", ") || "없음"}` +
+          (frozen.includes(file.path) ? " · **얼어 있음 (kind:test)**" : ""),
+      ),
+    );
+    const evidence = loadEvidence(repoRoot, active.id, active.target);
+    out.push(
+      "",
+      `## 검증 증거 (${validationDocFile(active.id)})`,
+      evidence
+        ? [
+            `- ${evidence.rounds}회차 · 한도 ${fixLimit(work, evidence) + 1}회차`,
+            ...(["check", "test"] as const).flatMap((phase) =>
+              runsOf(evidence, phase).map(
+                (run) => `- ${phase}/${run.kind}: ${run.outcome}${run.logFile ? ` · 로그 ${run.logFile}` : ""}`,
+              ),
+            ),
+          ].join("\n")
+        : "- 아직 없습니다 — code-agent check",
+      "",
+      "얼어 있는 테스트 파일은 고칠 수 없습니다. 틀렸다고 보이면 고치지 말고 근거와 함께 보고하세요 — hook 이 거부합니다.",
+      `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문으로 남기고 멈추세요.`,
+    );
+  }
+
+  if (active.phase === "review") {
+    const review = loadReview(repoRoot, active.id, active.target);
+    const last = review?.rounds[review.rounds.length - 1];
+    out.push(
+      "",
+      `## ⑨ ${reviewDocFile(active.id)} — 코드 리뷰`,
+      `- 회차: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "없음 — code-agent review 로 먼저 여세요"}`,
+      "- 회차 구역(`<!-- code-agent:review:... -->`)은 코드가 렌더합니다. 손대면 게이트가 거부합니다.",
+      "- ca-reviewer 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.",
+      "",
+      "`## 지적` 표에 ca-reviewer 의 지적을 줄이지 말고 그대로 옮깁니다 (하나도 없으면 `- 없음`):",
+      "```markdown",
+      "| id | 계획 파일 | 범위 | 상태 | 지적 |",
+      "|---|---|---|---|---|",
+      "| F1 | <계획 파일 경로> | 계획 안 | 열림 | <무엇이 어긋났나 · 근거 · 고치는 방향> |",
+      "```",
+      "- **열 순서는 고정입니다** — 코드가 칸 위치로 읽습니다. 상태는 `열림` · `해결` 둘뿐이고 글자 그대로 봅니다.",
+      "- 계획 파일 칸은 **저장소 기준 경로 그대로** — 백틱도 `:줄번호` 도 붙이지 마세요 (줄번호·근거는 지적 칸에).",
+      "- **범위는 코드가 계획과 대조해 정합니다** — 적은 것이 다르면 게이트가 알려 줍니다.",
+      "- 계획 안 지적: 고친 뒤 code-agent check → test → review 로 다음 회차를 엽니다 (check 가 이 자리에서 되감습니다).",
+      `- 계획 밖 지적: 모델이 닫을 수 없습니다. ${questionsFile(active.id)} 로 묻거나 계획을 고쳐 재승인받습니다.`,
+    );
+  }
+
+  if (active.phase === "integrate") {
+    out.push(
+      "",
+      "## 10 통합 검증",
+      "`code-agent integrate` — 굳혀 둔 기준 커밋 위에 깨끗한 worktree 를 만들고 이 작업의 변경만 얹어 전체 build · test 를 돌립니다.",
+      "작업 트리에 남아 있던 산출물이 결과를 떠받치지 않는지 보는 자리라, 모델이 할 일은 명령을 부르는 것뿐입니다.",
+    );
+  }
+
+  if (active.phase === "deliver") {
+    out.push(
+      "",
+      `## ⑩ ${prDocFile(active.id)} — PR 본문`,
+      "모델이 쓰는 것은 세 섹션입니다 — `## 요약` · `## 확인 방법` · `## 위험·되돌리기`.",
+      "추적표(R → AC → 파일 → TC → 검증) · 검증 · 변경 요약은 코드 구역(`<!-- code-agent:trace:... -->`)이라 code-agent deliver 가 렌더합니다.",
+      `공통 KNOWLEDGE 에 더할 것이 있으면 ${proposalFile(active.id)} 에 제안으로 씁니다 — 종류(\`## data-dictionary\`)마다 \`### \`키\` 이름\` 블록, 본문에 이번 작업의 R 번호를 답니다.`,
+      "",
+      "**반영은 사람이 별도 터미널에서 `code-agent deliver`** 로 합니다 — TTY 확인 뒤 작업 브랜치에 로컬 커밋합니다.",
+      "push · MR/PR 생성은 하지 않습니다 (git 호스트가 붙을 때까지 보류).",
+    );
   }
   return out.join("\n");
 }
@@ -592,6 +848,20 @@ export function submitPlan(repoRoot: string, draft: string): string {
   if (format.requiresPreserve) {
     problems.push(...missingPreserve(order, plan).map((item) => `preserve 가 계획에 없습니다: ${item}`));
   }
+  // 검증 명령이 이 계획이 쓰는 파일을 가리키면 모델이 제 검증기를 쓰게 된다 — 그래도 묶임은
+  // 전부 들어맞는다(가짜 검증기까지 함께 굳으므로). 코드가 판별할 수 있는 것이 아니라 사람이
+  // 판단할 것이라, 조용히 지나가지 않게 제출을 세우고 무엇이 걸렸는지 그대로 보여 준다.
+  const planned = new Set(plan.files.map((file) => file.path));
+  const declared = [manifest.build, manifest.test, ...Object.values(manifest.commands)]
+    .filter((argv): argv is string[] => Array.isArray(argv))
+    .flat()
+    .map((element) => element.replace(/^\.\//, ""));
+  for (const path of [...new Set(declared.filter((element) => planned.has(element)))]) {
+    problems.push(
+      `검증 명령이 이 계획이 쓰는 파일을 가리킵니다: ${path} — 검증을 스스로 쓰는 계획은 증거가 되지 않습니다`,
+    );
+  }
+
   const stages = codeStages(work);
   for (const file of plan.files) {
     const stage = stages.find((candidate) => candidate.key === file.stage);

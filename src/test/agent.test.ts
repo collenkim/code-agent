@@ -400,9 +400,9 @@ describe("hook — 구현", () => {
     assert.match(writeFile(`${ORDER}/domain/Order.java`) ?? "", /stale-plan/);
   });
 
-  test("verify 에서는 계획의 어느 단계 파일이든 고친다 — 계획 밖은 막는다", () => {
+  test("검증 스테이지에서는 계획의 어느 단계 파일이든 고친다 — 계획 밖은 막는다", () => {
     toImplement();
-    saveActive(repo, { ...loadActive(repo)!, phase: "verify", stage: undefined });
+    saveActive(repo, { ...loadActive(repo)!, phase: "check", stage: undefined });
     assert.equal(writeFile(`${ORDER}/repository/OrderRepository.java`), undefined);
     assert.match(writeFile(`${ORDER}/domain/OrderStatus.java`) ?? "", /계획에 없는 파일/);
   });
@@ -507,7 +507,7 @@ describe("next — 질문과 승인", () => {
     assert.deepEqual([loadActive(repo)!.phase, loadActive(repo)!.stage], ["implement", "entity"]);
   });
 
-  test("단계의 계획 파일이 모두 있어야 다음 단계로, 마지막 뒤에는 verify 로", () => {
+  test("단계의 계획 파일이 모두 있어야 다음 단계로, 마지막 뒤에는 check 로", () => {
     toImplement();
     assert.throws(() => next(repo), /단계 entity 의 계획 파일이 아직 없습니다/);
     write(`${ORDER}/domain/Order.java`, "class Order {}\n");
@@ -515,7 +515,7 @@ describe("next — 질문과 승인", () => {
     assert.equal(loadActive(repo)!.stage, "repository");
     write(`${ORDER}/repository/OrderRepository.java`, "interface OrderRepository {}\n");
     next(repo);
-    assert.equal(loadActive(repo)!.phase, "verify");
+    assert.equal(loadActive(repo)!.phase, "check");
   });
 
   test("계획에 파일이 없는 단계는 구현에서 건너뛴다 — 빈손으로 서브에이전트를 보내지 않는다", () => {

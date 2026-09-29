@@ -15,8 +15,30 @@ export const WORK_DOCS_DIR = "doc/work";
 /** 문서 작성 세션 — 있는 동안 hook 이 문서 자리 밖 쓰기를 막는다 */
 export const DOCS_SESSION_FILE = `${STATE_DIR}/docs-session.json`;
 
-export const PHASES = ["analysis", "impact", "design", "plan", "implement", "verify"] as const;
+export const PHASES = [
+  "analysis",
+  "impact",
+  "design",
+  "plan",
+  "implement",
+  "check",
+  "test",
+  "review",
+  "integrate",
+  "deliver",
+] as const;
 export type Phase = (typeof PHASES)[number];
+
+/** 구현 뒤의 스테이지 — 계획 파일을 고쳐 쓰는 자리라 hook 이 같은 규칙으로 판정한다 */
+export const AFTER_IMPLEMENT: readonly Phase[] = ["check", "test", "review", "integrate", "deliver"];
+
+/**
+ * Stop hook 이 턴 끝에 들여다보는 스테이지 — 코드를 쓰는 자리부터 통합 검증까지.
+ *
+ * `deliver` 는 뺀다. 거기서는 `code-agent deliver` 가 같은 대조를 절대적으로 하고 사람이 TTY 앞에
+ * 있으므로, 한 번 더 막아 봐야 사람이 보는 화면에 잡음만 는다.
+ */
+export const STOP_PHASES: readonly Phase[] = ["implement", "check", "test", "review", "integrate"];
 
 export interface ActiveWork {
   /** 작업 지시서 id */
@@ -29,6 +51,14 @@ export interface ActiveWork {
   /** 작업 브랜치와 그 기준. git 저장소가 아니면 없다 */
   branch?: string;
   base?: string;
+  /**
+   * 작업을 시작할 때 기준 브랜치를 굳혀 둔 커밋. **이름이 아니라 커밋이다.**
+   *
+   * 브랜치 이름은 움직인다. 이름만 들고 있으면 같은 작업이 언제 검증하느냐에 따라 변경 목록이
+   * 달라지고, 증거가 무엇 위에서 났는지 아무도 모른다. P5 의 모든 대조(계획 밖 변경 · 증거 묶기 ·
+   * 커밋 대상)가 이 값 위에 선다. git 저장소가 아니면 없다 — 그 경우 검증 스테이지가 거부한다.
+   */
+  baseCommit?: string;
   /** implement 에서 지금 도는 매니페스트 단계 key */
   stage?: string;
 }
@@ -45,6 +75,21 @@ export function questionsFile(id: string): string {
 /** 제출된 계획. 초안은 작업 폴더에 있고, `plan submit` 만이 이 자리에 쓴다 */
 export function planFile(repoRoot: string, id: string, target: string): string {
   return join(repoRoot, STATE_DIR, "work", id, `${target}.plan.json`);
+}
+
+/** 검증 증거. `code-agent check` · `test` 만이 이 자리에 쓴다 — hook 이 도구 쓰기를 막는다 */
+export function verifyFile(repoRoot: string, id: string, target: string): string {
+  return join(repoRoot, STATE_DIR, "work", id, `${target}.verify.json`);
+}
+
+/** 리뷰 회차. `code-agent review` 만이 이 자리에 쓴다 — 회차의 기준 트리 해시를 모델이 지어내지 못하게 */
+export function reviewFile(repoRoot: string, id: string, target: string): string {
+  return join(repoRoot, STATE_DIR, "work", id, `${target}.review.json`);
+}
+
+/** 검증 로그. `.gitignore` 에 있어 커밋되지 않는다 — 근거는 ⑧ 이 들고 있다 */
+export function logDir(repoRoot: string): string {
+  return join(repoRoot, STATE_DIR, "log");
 }
 
 /**

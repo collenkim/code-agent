@@ -61,14 +61,22 @@ interface HookEntry {
   hooks: { type: string; command: string }[];
 }
 
-/** settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 의 PreToolUse 항목만 하나로 맞춘다 */
-function upsertHook(path: string, command: string): void {
+/**
+ * settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 항목만 하나로 맞춘다.
+ *
+ * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다. 우리 것인지 가르는 규칙은
+ * 서브명령 이름이다 — 이벤트마다 다른 서브명령을 부르므로 한쪽을 지우면서 다른 쪽을 지우지 않는다.
+ */
+function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string): void {
   const settings = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>) : {};
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
-  const ours = (entry: HookEntry) => entry.hooks.some((hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && / hook$/.test(hook.command));
-  hooks.PreToolUse = [
-    ...(hooks.PreToolUse ?? []).filter((entry) => !ours(entry)),
-    { matcher: HOOK_MATCHER, hooks: [{ type: "command", command }] },
+  const ours = (entry: HookEntry) =>
+    entry.hooks.some(
+      (hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
+    );
+  hooks[event] = [
+    ...(hooks[event] ?? []).filter((entry) => !ours(entry)),
+    { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] },
   ];
   settings.hooks = hooks;
   mkdirSync(dirname(path), { recursive: true });
@@ -77,7 +85,9 @@ function upsertHook(path: string, command: string): void {
 
 export function init(repoRoot: string, options: InitOptions = {}): string {
   const lines: string[] = [];
-  const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" hook` : "code-agent hook";
+  const invoke = (subcommand: string): string =>
+    options.cli ? `node "${options.cli.replace(/\\/g, "/")}" ${subcommand}` : `code-agent ${subcommand}`;
+  const command = invoke("hook");
 
   const copied: string[] = [];
   copyTree(join(TEMPLATE_DIR, "claude"), join(repoRoot, ".claude"), copied, repoRoot);
@@ -85,8 +95,11 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
   applyModels(repoRoot);
 
-  upsertHook(join(repoRoot, ".claude", "settings.json"), command);
-  lines.push(`hook: .claude/settings.json → ${command}`);
+  const settings = join(repoRoot, ".claude", "settings.json");
+  upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);
+  // Stop hook — PreToolUse 가 못 보는 것(도구를 거치지 않고 생긴 파일·남은 질문)을 턴 끝에 한 번 본다
+  upsertHook(settings, "Stop", "stop", invoke("stop"));
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · Stop ${invoke("stop")}`);
 
   const claude = upsertBlock(
     join(repoRoot, "CLAUDE.md"),

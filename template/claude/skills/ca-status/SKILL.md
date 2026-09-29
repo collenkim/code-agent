@@ -9,3 +9,5 @@ description: code-agent 작업의 현재 위치(문서·스테이지·질문·�
    - 확정만 남았으면 "별도 터미널에서 `code-agent confirm doc <architecture | conventions | test-strategy | quality>`" — 넷 다 확정돼야 작업이 시작된다
    - 질문이 남았으면 `/ca-answer`
    - 승인 대기면 "별도 터미널에서 `code-agent approve`"
+   - 승인이 `rejected` 면 `/ca-next` — 반려 사유를 읽고 문서부터 다시 본다 (같은 계획을 그대로 다시 내지 않는다)
+   - 스테이지가 `deliver` 면 "별도 터미널에서 `code-agent deliver`" — 확인 화면과 로컬 커밋은 사람의 자리다
