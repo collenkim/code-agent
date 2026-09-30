@@ -585,7 +585,8 @@ describe("plan submit — 제출 전 검사", () => {
     write("doc/work/REF-1/01-requirements.md",
       ["## R1 · 경계 정리", "근거: \"경계만 옮긴다.\"", "- 데이터: 안 건드린다", "## 가정", "- 없음", ""].join("\n"));
     write("doc/work/REF-1/02-analysis.md", [
-      "## 기존 시스템 분석", "- DealFacade 가 트랜잭션을 연다",
+      // refactor 의 ② 는 '지금 동작' 을 근거 path:line 과 함께 적어야 지난다 (P6)
+      "## 기존 시스템 분석", `- DealFacade 가 트랜잭션을 연다 — ${DEAL}/facade/DealFacade.java:42`,
       "## 영향 범위", "| R 번호 | 닿는 파일 | 부르는 곳 | 파급 |", "|---|---|---|---|", "| R1 | Deal.java | DealFacade | 없음 |",
       "## Risk", "- 없음 — 시그니처를 바꾸지 않는다", "",
     ].join("\n"));

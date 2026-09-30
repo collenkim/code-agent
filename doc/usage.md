@@ -71,7 +71,7 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 | 3 | 영향도 분석 | `impact` | ② `02-analysis.md` | **구현됨** P4 |
 | 4·5 | 시스템 설계 + 기능·API·데이터 정의 | `design` | ③ `03-design.md` · ④ `04-functional.md` | **구현됨** P4 |
 | 6 | 구현 계획 | `plan` | ⑤ `plan.json` → 코드가 `05-plan.md` 렌더 · ⑦ `07-test-spec.md` | **구현됨** P3 · ⑤ 렌더·⑦ P4 |
-| 7 | 코드 생성 | `implement` | ⑥ 소스 코드 (`06-` 파일은 없다) | **구현됨** P3 (단계 커서 + hook 울타리) |
+| 7 | 코드 생성 | `implement` | ⑥ 소스 코드 (`06-` 파일은 없다). `fix` 는 테스트 단계가 먼저이고 `code-agent repro` 가 재현을 본 뒤에 고친다 | **구현됨** P3 (단계 커서 + hook 울타리) · 재현 P6 |
 | 8 | 정적 분석·컴파일 | `check` | ⑧ `08-validation.md` (코드만 쓴다) | **구현됨** P5 |
 | 9 | 테스트 생성·실행 | `test` | 테스트 코드 (⑦ 의 TC 만) + ⑧ · 이후 테스트 동결 | **구현됨** P5 |
 | 10 | 결과 분석 · 수정 루프 (8 부터 다시, 기본 2회) | — | ⑧ 의 `수정 루프` | **구현됨** P5 |
@@ -109,6 +109,7 @@ claude
   ────────────────────────────────  터미널: code-agent approve
   /ca-next                                          (= 단계 명령을 이어 도는 사이클)
       implement /ca-implement → 계획의 단계마다 서브에이전트, 커서가 check 에 닿을 때까지
+        fix 면    → 테스트 단계가 먼저. 재현 테스트를 쓰고 code-agent repro (실패를 봐야 고칠 파일이 열린다)
       check     /ca-check     → build · 정적 분석·보안 명령 → 08-validation.md (코드만 쓴다)
       test      /ca-test      → ca-tester 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 → 이후 테스트 동결
         실패 → 계획 안이면 고치고 check 부터 다시 (기본 2회) / 계획 밖이면 질문·재승인
@@ -129,14 +130,14 @@ claude
 
 | 명령 | 하는 일 | 어디서 멈추나 | 상태 |
 |---|---|---|---|
-| `/ca-adopt` | 레거시 첫 도입 — 뼈대 역공학으로 문서 + `code-agent.json` | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종) |
+| `/ca-adopt` | 첫 도입 — 뼈대 역공학(소스가 없으면 인터뷰)으로 문서 + `code-agent.json` | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종 · 빈 저장소 P6) |
 | `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 3종) | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종) |
 | `/ca-feature <지시서>` | `start` + 사이클을 `plan` 까지 | 질문 · 계획 승인 | 구현됨 (`impact`·`design` 포함) |
 | `/ca-answer` | 답 없는 질문을 사용자에게 묻고 기록 | — | 구현됨 |
 | `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고 다음으로 이어 간다 | 사람의 자리마다 · `deliver` 는 사람에게 넘긴다 | 구현됨 (`integrate` 까지) |
 | `/ca-status` | 위치·막힌 이유·다음 할 일 | — | 구현됨 |
-| `/ca-fix <지시서>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
-| `/ca-refactor <지시서>` | 리팩토링 — 보존 조건이 계획의 중심 | 질문 · 계획 승인 | 스킬만 · 완주는 **P6** |
+| `/ca-fix <지시서>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 (`code-agent repro` 로 재현을 본 뒤에 고친다) | 질문 · 계획 승인 | 구현됨 (P6) |
+| `/ca-refactor <지시서>` | 리팩토링 — 보존 조건이 계획의 중심, 기존 테스트는 손댈 수 없다 | 질문 · 계획 승인 | 구현됨 (P6) |
 
 ### 단계별 명령
 
@@ -149,7 +150,7 @@ claude
 | `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer | 질문 · `code-agent next` |
 | `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — writer | 질문 · `code-agent next` |
 | `plan` | `/ca-plan` | ⑤ `plan.json` · ⑦ `07-test-spec.md` → critic → `plan submit`. 반려 사유를 읽는 자리도 여기다 | **터미널 `code-agent approve`** (게이트가 아니라 사람) |
-| `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지 | hook 거부 · 질문 · `check` 도달 |
+| `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지. `fix` 는 테스트 단계가 먼저이고 그 뒤 `code-agent repro` | hook 거부 · 재현 실패 · 질문 · `check` 도달 |
 | `check` | `/ca-check` | `code-agent check` — build + 정적 분석·보안. **↺ 수정 루프의 정의가 여기 있다** | 실패 · `code-agent next` |
 | `test` | `/ca-test` | tester 가 ⑦ 의 TC 만 → `code-agent test`, 이후 테스트 동결 | 실패 · `code-agent next` |
 | `review` | `/ca-review` | reviewer 의 지적 표를 ⑨ `09-review.md` 에 그대로 | 열린 지적 · `code-agent next` |
@@ -172,8 +173,26 @@ claude
 레거시 저장소에 처음 들일 때. `code-agent docs begin` 으로 문서 세션을 열고 `code-agent survey` 로 저장소 개요와 **도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)를 받은 뒤,
 `ca-surveyor` 여럿을 병렬로 돌려 POLICY 4종 초안과 KNOWLEDGE 3종 뼈대를 쓰고, `code-agent.json` 을 만든다.
 
-사람이 하는 일 — `referenceDomain`(복제 기준 도메인) 고르기, `stages`(계층 순서)·`build`·`test`·`commands`·`git.base` 확인.
-끝나면 `code-agent manifest check` 가 ✓ 여야 한다.
+사람이 하는 일 — `referenceDomain`(복제 기준 도메인) 고르기, `stages`(계층 순서 · 종류별 `kinds`)·`build`·`test`·`prepare`·`commands`·`git.base` 확인.
+끝나면 `code-agent manifest check` 가 ✓ 여야 한다. `- 확인:` 으로 시작하는 줄은 **경고**다 (종료 코드 0) —
+종류별로 돌 단계가 0개거나, `kind: "test"` 단계가 없거나, 참조 파일을 선언한 단계가 없으면 여기서 알려 준다.
+
+- **`kinds`** — 코드 단계·테스트 단계에는 `["feature", "fix", "refactor"]` 를 기본으로 단다. 비우면 모든 종류에서 돌지만,
+  명시하는 쪽이 매니페스트만 읽고도 어떤 종류가 도는지 보인다. 종류 하나만 도는 단계(신규 도메인 뼈대 등)가 있으면 거기만 좁힌다.
+- **`prepare`** (선택) — 통합 검증의 깨끗한 worktree 에서 `build`·`test` **앞에** 한 번 도는 준비 명령 (예: `["npm", "ci"]`).
+  기준 커밋을 뜬 트리에는 의존성처럼 커밋되지 않는 것이 없어서 두는 자리다. 필요 없으면 **아예 적지 않는다** — 빈 배열(`[]`)은 형식 오류다
+  (선언은 해시를 바꾸고 `manifest check` 에도 실려 "돈다" 로 읽히는데 `integrate` 는 건너뛴다).
+  `check`·`test` 에서는 돌지 않고 — POLICY 문서의 명령 목록에 `prepare` 를 적어도 거기서는 풀리지 않는다 —
+  `commands` 의 키로도 쓸 수 없다 (`build`·`test` 와 같은 예약 이름).
+
+**소스 파일이 없는 저장소** — `code-agent survey` 가 `소스 파일이 없습니다 — 신규(빈) 저장소입니다` 를 찍으면 역공학할 것이 없다.
+(빌드 파일은 있는데 아는 확장자의 소스만 없으면 `지원 목록 밖 언어입니다` 로 찍힌다 — 그때는 **사람에게 확인하고** 갈라진다.)
+`/ca-adopt` 는 `ca-surveyor` 를 부르지 않고 **인터뷰**로 간다 — POLICY 4종은 `docs interview`, `code-agent.json` 은 사용자에게 묻는다
+(언어 · 소스 루트 · 단계 목록과 `outputDirs` · 테스트 단계의 `"kind": "test"` · `build`·`test`·`prepare` · `git.base`).
+`referenceDomain` 은 적지 않고 `exemplars` 는 전부 `[]` 로 두며, 복제할 표준이 없으므로 단계는 `"scope": "project"` 가 자연스럽다.
+그 뒤 `code-agent context` 는 참조 표준 코드 대신 **아키텍처·컨벤션 문서**를 가리킨다.
+"빈 저장소" 는 **소스가 없는 저장소**이지 커밋이 없는 저장소가 아니다 — `start` 는 기준 커밋을 굳힐 수 없으면 거부하므로,
+`/ca-adopt` 가 만든 것을 사람이 한 번 커밋한 뒤에 작업이 시작된다.
 
 ### `/ca-docs [종류]`
 
@@ -247,6 +266,8 @@ claude
 - `plan`(`/ca-plan`) — ⑤ `plan.json` + ⑦ `07-test-spec.md` → `ca-critic` 반박 검토 → `code-agent plan submit` (통과하면 코드가 `05-plan.md` 를 렌더한다).
   여기서는 `code-agent next` 를 돌리지 않는다 — 이 문을 여는 것은 게이트가 아니라 터미널의 승인이다. 반려 사유를 읽고 다시 내는 자리도 여기다.
 - `implement`(`/ca-implement`) — 단계마다 `code-agent context` 로 만들 파일·단계 규칙·참조 표준 코드를 받아 `ca-implementer`(테스트 단계면 `ca-tester`)에게 넘기고, 끝나면 `code-agent next`.
+  **`fix` 는 `kind: "test"` 단계가 맨 앞에 선다** — 재현 테스트를 쓰고 `code-agent repro` 로 지금 코드에서 그 TC 가 실패하는 것을 봐야 나머지 단계의 파일이 열린다.
+  참조 도메인이 없는 저장소에서는 context 가 참조 표준 코드 대신 아키텍처·컨벤션 문서를 가리킨다(`참조 없음 — 아키텍처·컨벤션 문서로`).
 - `check`(`/ca-check`) — `code-agent check` 가 `build` + 품질·보안 기준의 명령을 돌린 결과만 게이트를 연다. 모델이 직접 돌린 빌드는 세지 않는다.
 - `test`(`/ca-test`) — ⑦ 에 코드가 없는 TC 가 남아 있으면 `ca-tester` 가 **그대로, 그것만** 쓰고(매니페스트에 `kind: test` 단계가 있으면 `implement` 에서 이미 다 썼다) `code-agent test` 가 돌린다.
   이 실행 뒤 `kind: test` 단계의 파일은 **언다** — 실패해도 단언을 고쳐 통과시킬 수 없다.
@@ -256,6 +277,7 @@ claude
   회차 머리(번호·시각·기준 트리 해시)는 코드가 적는다. 반영은 **마지막 회차의 트리 해시가 지금과 같고 열린 `계획 안` 지적이 0** 이어야 열린다.
   얼어 있던 테스트 파일을 지적으로 푼 경우 **그 줄은 코드가 기억한다** — 쓰고 나서 지우면 `review` → `integrate` 가 막힌다.
 - `integrate`(`/ca-integrate`) — `code-agent integrate` 가 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
+  매니페스트에 `prepare` 가 있으면 **그것이 먼저** 돌고, 실패하면 build·test 는 돌지 않는다 — 준비되지 않은 트리 위의 통과는 증거가 아니다.
 - `deliver` — 같은 `/ca-integrate` 가 이어서 한다. 모델은 ⑩ `10-pr.md` 의 `요약`·`확인 방법`·`위험·되돌리기` 만 쓰고 멈춘다. 추적표·검증 블록과 커밋은 `code-agent deliver` 의 몫이다.
 - **↺ 수정 루프** (정의는 `/ca-check` 에 있고 `test`·`review`·`integrate` 가 그것을 가리킨다) — 실패·지적 중 **계획 안**은 `ca-implementer` 가 지목된 파일만 고치고 `check` 부터 다시 돈다.
   `code-agent check` 는 `test` · `review` · `integrate` 어디서 불러도 커서를 그 자리로 되감는다. 회차는 코드가 세고 기본 2회이며, 한 번 시작한 루프는 시작할 때의 한도로 끝난다.
@@ -266,15 +288,50 @@ claude
 
 `code-agent status` 를 그대로 보여 주고 마지막 `다음:` 줄을 한 문장으로 풀어 준다.
 
-### `/ca-fix` · `/ca-refactor` (P6)
+### `/ca-fix` · `/ca-refactor`
 
-스킬은 설치돼 있고 `/ca-feature` 와 **같은 단계 스킬을 같은 순서로** 돌아 계획 제출까지 간다. 다른 점은 아래 둘이다.
+`/ca-feature` 와 **같은 단계 스킬을 같은 순서로** 돌아 계획 제출까지 간다. 다른 점은 **전부 코드가 막는다** — 스킬 지시가 아니다.
 
-- `fix` — `02-analysis.md` 의 `기존 시스템 분석` 이 **결함이 나는 경로까지** 가야 한다. `07-test-spec.md` 의 첫 TC 는 **재현 케이스**이고 계획 `sequence[]` 의 첫 자리다.
-- `refactor` — `02-analysis.md` 의 `영향 범위` 가 중심. 지시서의 `preserve` 문장을 **그대로** 옮겨야 제출된다 (코드가 대조한다).
+**`fix` — 재현이 먼저다.**
 
-검증 스테이지(`check` · `test` · `review` · `integrate` · `deliver`)는 종류를 가리지 않고 그대로 돈다.
-다만 **종류별 강제**(재현 TC 를 계획의 첫 자리에, `expect: fail` 로 먼저 실패시켜 보기, preserve 대조)는 아직 스킬 지시로만 있다 — **P6 에서 완주한다.**
+| 자리 | 무엇 | 어디서 막히나 |
+|---|---|---|
+| ② `02-analysis.md` | `기존 시스템 분석` 에 **결함이 나는 경로**를. `해당 없음` 으로 비울 수 없고 근거 `path:line` 이 최소 하나 | `code-agent next`(impact) |
+| ⑦ `07-test-spec.md` | `## 재현` 절에 재현 TC id 를 `- TC-1` 로 한 줄씩. 수준은 무엇이든 되고, 적은 id 는 표에 실재해야 한다 | `code-agent next` · `plan submit` |
+| ⑤ `plan.json` | `sequence[0]` 이 `kind: "test"` 단계이고, `files[]` 에 그 단계의 파일이 있을 것. 그 단계에 적은 파일은 **그 단계가 밝힌 테스트 자리 안**이어야 한다 — 고칠 파일을 테스트 단계에 적어 넣으면 재현이 비껴간다 | `code-agent plan submit` |
+| `implement` | 커서가 **테스트 단계에 먼저** 선다. 재현 테스트를 쓰고 `code-agent repro` — 지금 코드에서 그 TC 가 **실패**해야 고칠 파일이 열린다 | PreToolUse hook · `code-agent repro` |
+| `test` | 같은 TC 가 이제 **통과**해야 한다 | `code-agent next` |
+
+`code-agent repro` 가 인정하는 것은 `failed` 뿐이다. `passed` 는 재현하지 못한 것이고, `not-run`·`error` 는 아무것도 증명하지 않는다.
+그리고 **재현 TC id 가 실패한 그 실행의 출력에 찍혀야** 한다 — 테스트 파일에 id 가 적혀 있는 것은 여기서 인정하지 않는다
+(파일을 grep 한 것은 *무엇이* 실패했는지 말해 주지 않아, 다른 TC 의 실패도 깨진 import 도 같은 `failed` 로 보인다).
+컨벤션의 `테스트 규칙` 대로 테스트 이름에 TC id 를 남기면 실패 보고에 그대로 찍힌다.
+비-테스트 계획 파일이 이미 바뀌어 있으면 거부한다 — 재현은 "테스트만 바뀐 트리" 에서 봐야 증거가 된다.
+통과하면 그 순간부터 `kind: "test"` 단계의 파일이 **언다** (테스트가 아직 한 번도 돌지 않았어도).
+`code-agent back implement` 로도 풀리지 않는다 — 증거로 재기 때문이다. 계획을 다시 승인하면 재현 증거도 함께 버려져 다시 봐야 한다.
+⑨ 지적으로 동결을 풀어 재현 테스트를 고쳤으면 **통합 검증 앞에서 걸린다** — ⑧·⑩ 이 찍는 재현 줄은 반영될 테스트를 가리켜야 한다.
+
+**`refactor` — 동작 보존.**
+
+| 자리 | 무엇 | 어디서 막히나 |
+|---|---|---|
+| ② `02-analysis.md` | `기존 시스템 분석` 에 **지금 동작**을 (fix 와 같은 두 규칙) | `code-agent next`(impact) |
+| ⑤ `plan.json` | 지시서의 `preserve` 문장을 **그대로** 전부. **기준 커밋에 이미 있던 `kind: "test"` 단계 파일은 넣을 수 없다** | `code-agent plan submit` |
+| 쓰기 | 그 테스트 파일을 고치거나 지우려 하면 거부 | PreToolUse hook |
+| `check`·`test`·`integrate` | 그 파일이 바뀐 채로는 검증이 서지 않고, 기존 테스트 스위트가 통째로 통과해야 한다 (`not-run` 은 통과가 아니다) | `code-agent check` · `next` |
+
+고쳐야 할 이유가 보이면 고치지 말고 `questions.md` 로 묻는다 — **동작이 보존되는지 보는 것이 그 테스트**다.
+
+무엇이 "기존 테스트" 인지는 **매니페스트의 모든 `kind: "test"` 단계가 밝힌 자리**로 정한다 — `scope: "project"` 의 `outputDirs`
+또는 `base`, 그 둘뿐이다. `kinds` 로 거르지 않으므로 `kinds` 에서 `refactor` 를 빼도 보호는 그대로 걸리고, `domainBase` 로 물러서지
+않으므로 테스트가 소스 옆에 있는 프로젝트에서 소스 루트 전체가 테스트로 읽히는 일도 없다. 자리를 밝히지 않은 단계는 **보호가 없다** —
+`code-agent manifest check` 가 그 사실을 경고한다.
+
+**종류별 단계** — 어떤 종류로 어떤 단계가 도는지는 `code-agent.json` 의 `stages[].kinds` 가 정한다 (비우면 모든 종류).
+`fix` 로 돌 `kind: "test"` 단계가 없으면 `plan submit` 이 재현 테스트를 넣을 자리를 찾지 못하고, 종류별 단계가 0개면 `start` 가 거부한다.
+`code-agent manifest check` 가 그 둘과 **자리를 밝히지 않은 `kind: "test"` 단계**를 **경고**로 미리 낸다 (경고는 종료 코드 0).
+
+검증 스테이지(`check` · `test` · `review` · `integrate` · `deliver`)의 나머지는 종류를 가리지 않고 그대로 돈다.
 
 ---
 
@@ -320,10 +377,11 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙 |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
+| `code-agent repro` | 7 재현 — **`fix` 에서만** 돈다. `kind: "test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 ⑦ 의 `## 재현` TC 가 **실패**하는 것을 확인하고 증거에 적는다. 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 |
 | `code-agent check` | 8 정적 분석·컴파일 — `build` + 품질·보안 기준이 적은 명령을 돌려 증거에 적고 ⑧ 을 렌더 |
 | `code-agent test` | 9 테스트 — `test` + 테스트 전략이 적은 명령을 돌리고 ⑦ 의 TC id 를 대조. 이 실행 뒤 테스트가 언다 |
 | `code-agent review` | 11 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 |
-| `code-agent integrate` | 12 통합 검증 — 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test |
+| `code-agent integrate` | 12 통합 검증 — 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 (`prepare` 가 있으면 그것 먼저) 전체 build·test. `prepare` 가 실패하면 build·test 는 돌지 않는다 |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 **한 번** 알린다. 사람이 부르지 않는다 |
 
@@ -353,7 +411,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `doc/work/<ID>/10-pr.md` ⑩ | MR/PR 본문 — 요약 · 추적표 · 검증 · 확인 방법 · 위험 | `code-agent:trace` 블록은 **`deliver` 만**, 나머지는 모델 | O |
 | `doc/work/<ID>/knowledge.proposal.md` | KNOWLEDGE 갱신 제안 — `deliver` 가 항목별로 물어 고른 것만 반영 | 모델이 적고 사람이 고른다 | O |
 | `.code-agent/work/<ID>/<대상>.plan.json` | 제출된 계획 | `plan submit` 만 | O |
-| `.code-agent/work/<ID>/<대상>.verify.json` | 검증 증거 — 기준 커밋 · 부분 트리 해시 · `manifestHash` · `planHash` · 회차 · 실행 목록 | `check` · `test` · `integrate` 만 | O (증거) |
+| `.code-agent/work/<ID>/<대상>.verify.json` | 검증 증거 — 기준 커밋 · 부분 트리 해시 · `manifestHash` · `planHash` · 회차 · 실행 목록 · (`fix` 면) 재현 증거 `repro`(재현 TC · 그때의 테스트 파일 트리 해시) | `repro` · `check` · `test` · `integrate` 만 | O (증거) |
 | `.code-agent/approvals/docs.jsonl` | 문서 확정 원장 (해시 사슬) | `confirm doc` 만 | O |
 | `.code-agent/approvals/<ID>.jsonl` | 계획 승인·반려 원장 (해시 사슬) | `approve` · `reject` 만 | O |
 | `.code-agent/approvals/<ID>/<대상>-<n>.plan.json` | 판정한 그 계획의 사본 — 재승인 때 바뀐 곳을 이것과 대조해 보여 준다 | `approve` · `reject` 만 | O |
@@ -402,9 +460,16 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 |---|---|---|---|---|
 | TC-1 | Unit | AC-R1-1 | 유효한 주문 등록 | 주문번호가 발급된다 |
 | TC-2 | Integration | AC-R1-2 | 품목 빈 요청 | 400 · ORDER_ITEM_REQUIRED |
+
+## 재현
+- TC-2
 ```
 
 AC 는 **R 마다 최소 하나**, TC 는 **AC 마다 최소 하나**다. 하나라도 비면 계획이 제출되지 않는다.
+
+`## 재현` 절은 **`fix` 에서만 필수**다 — 결함을 재현하는 TC id 를 `- TC-<n>` 으로 한 줄씩 적는다.
+**수준(Unit/Integration/E2E)은 무엇이든 된다.** 적은 id 는 표에 실재해야 하고, `code-agent repro` 가 그 TC 의 실패를 보기 전에는 고칠 파일을 쓸 수 없다.
+표의 열 순서·개수는 종류와 무관하게 고정이다 — 재현 표시는 열이 아니라 이 절이 든다.
 ⑦ 은 승인 묶음에 들어가므로 **승인 뒤에 고치면 `stale-docs` 로 코드 쓰기가 멈춘다** — 테스트가 통과하지 않는다고 기대치를 낮추는 길이 닫힌다.
 
 ### `questions.md` — 한 질문에 한 결정
@@ -441,6 +506,11 @@ X. 기타:
 ```
 
 `fix` · `refactor` 는 `domain*` 대신 `preserve: [{ "item": "지시서 문장 그대로", "how": "어떻게 지켜지는지" }]` 가 들어간다.
+
+- **`fix`** — `sequence[0]` 의 `step` 이 `kind: "test"` 단계 key 여야 하고, `files[]` 에 그 단계의 파일(재현 테스트)이 있어야 한다.
+  그 단계에 적는 파일은 **그 단계가 밝힌 테스트 자리 안**이어야 한다 — '재현 먼저' 는 단계 이름표로 재므로, 고칠 파일을 테스트 단계에
+  적어 넣으면 재현 없이 열린다.
+- **`refactor`** — `files[]` 에 **기준 커밋에 이미 있던 `kind: "test"` 단계 파일**을 넣을 수 없다.
 
 제출이 통과하려면 — `openQuestions` 가 비어 있고, 파일마다 `requirements` 가 있고, 모든 요구 항목이 어느 파일엔가 닿고,
 경로가 단계의 위치·지시서 `scope`·계층 경계 안이고, **`07-test-spec.md` 의 모든 TC 가 `04` 에 실재하는 AC 를 가리키며 모든 AC 가 덮여야** 한다.
@@ -533,8 +603,11 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 
 - 화면을 그리기 **전에** 게이트를 한 번 더 돈다 — 증거가 지금 트리와 맞고, 승인이 아직 `approved` 이고,
   ⑨ 에 열린 `계획 안` 지적이 없고, 마지막 회차의 트리 해시가 지금과 같아야 한다. 하나라도 어긋나면 **커밋하지 않고** 무엇이 어긋났는지 찍는다.
-- 커밋 범위는 계획 파일 · `doc/work/<ID>/` · `.code-agent/work/<ID>/` · 승인 원장이다 (`git add -A` 가 아니다).
+- 커밋 범위는 계획 파일 · `doc/work/<ID>/` · `.code-agent/work/<ID>/` · **이 작업의** 승인 원장(`.code-agent/approvals/<ID>.jsonl` 과 `<ID>/` 스냅샷) ·
+  사람이 고른 KNOWLEDGE 파일이다 (`git add -A` 가 아니고, `.code-agent` 통째도 아니다).
   증거와 원장이 코드와 **같은 커밋**에 들어가, 무엇을 근거로 이 코드가 들어왔는지가 커밋 하나 안에서 닫힌다.
+  다른 작업의 증거·전 작업의 원장·`.code-agent/models.json`·`version`·`approvals/docs.jsonl` 은 **들어가지 않는다** —
+  이 작업의 산물이 아니라 도입·설정 때 사람이 따로 커밋하는 것이다 (`deliver` 의 마지막 줄이 그렇게 알린다).
 - **push · MR/PR 생성은 하지 않는다.** `10-pr.md` 를 MR/PR 본문으로 그대로 쓰면 된다.
 - KNOWLEDGE 갱신은 `knowledge.proposal.md` 의 항목 중 **화면에서 고른 것만** 반영된다 (키 단위 upsert, 삭제 없음).
 
@@ -570,7 +643,10 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `작업 지시서(...)는 고칠 수 없습니다` | 모델이 `requirement.md` 를 고치려 했다 | 모호하면 `questions.md` 에 질문으로. 지시서는 사람이 고친다 |
 | `05-plan.md 는 코드가 렌더합니다` | 모델이 렌더된 계획 문서를 고치려 했다 | `plan.json` 을 고쳐 `plan submit` 으로 다시 제출한다 |
 | `08-validation.md 는 코드가 렌더합니다` | 검증 보고서를 손으로 고치려 했다 | 결과를 바꾸려면 고쳐서 `code-agent check` 부터 다시 돈다 |
-| `테스트가 이미 돌아 얼어 있는 파일입니다` | `code-agent test` 가 한 번 돈 뒤의 `kind: test` 단계 파일이다 | 고치지 말고 근거와 함께 보고한다. 풀리는 길은 계획 재승인뿐이다 |
+| `테스트가 이미 돌아 얼어 있는 파일입니다` | `code-agent test` 가 한 번 돈 뒤 — `fix` 는 `code-agent repro` 가 재현을 본 뒤 — 의 `kind: test` 단계 파일이다 | 고치지 말고 근거와 함께 보고한다. 풀리는 길은 ⑨ 의 그 파일을 가리키는 열린 계획 안 지적, 또는 계획 재승인이다 |
+| `재현을 먼저 봐야 이 파일을 고칠 수 있습니다: <경로> (fix)` | `fix` 인데 재현 증거가 없다 | `kind: "test"` 단계의 계획 파일을 쓰고 `code-agent repro` 로 지금 코드에서 **실패**하는 것을 본다 |
+| `재현을 본 뒤 테스트 파일이 바뀌었습니다` | 재현을 본 트리와 지금 테스트 파일이 다르다 (첫 `check` 전에만 본다) | `code-agent repro` 를 다시 돌린다 |
+| `리팩토링은 기존 테스트를 고치지 않습니다` | 기준 커밋에 이미 있던 `kind: test` 단계 파일을 건드렸다 | 되돌린다. **동작이 보존되는지 보는 것이 그 테스트**다 — 고쳐야 할 이유가 보이면 `questions.md` 로 묻는다 |
 | `고쳐 쓰기 2회를 넘겨…` | `fixRounds` 한도를 넘겼다 | 덮지 않고 보고하는 자리다. `questions.md` 에 적고 사람에게 알린다 |
 | `작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다` | `.code-agent/` 쓰기 | `next` · `plan submit` · `confirm` 으로만 바뀐다 |
 | `문서 작성 중에는 문서 자리(...) 밖은 쓸 수 없습니다` | 문서 세션 중 코드 쓰기 | 문서에 적고 사람에게 알린다. 세션은 `docs end` |
@@ -597,6 +673,12 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `마지막 리뷰 회차 이후 코드가 바뀌었습니다` | 리뷰 뒤에 고쳤다. 리뷰를 한 회차 더 돈다 |
 | `반영은 별도 터미널에서 code-agent deliver` | 여기가 모델의 끝이다. 확인과 커밋은 사람이 한다 |
 | `굳혀 둔 기준 커밋이 없습니다` | 증거 코어 이전에 시작된 커서다. `code-agent abort` 뒤 다시 시작한다 (작업 폴더는 남는다) |
+| `fix 는 기존 시스템 분석에 결함이 나는 경로를 적습니다` · `refactor 는 … 지금 동작을 적습니다` | ② 의 그 절이 `해당 없음` **뿐**이거나(다 쓴 분석에 섞인 한 줄은 막지 않는다) 근거 `path:line` 이 하나도 없다 |
+| `재현을 아직 보지 못했습니다` | `fix` 의 테스트 단계를 끝냈는데 `code-agent repro` 를 돌리지 않았다 |
+| `재현을 본 테스트 트리가 지금과 다릅니다` | 재현을 본 뒤 재현 테스트가 바뀐 채로 통합 검증에 왔다(⑨ 로 동결을 푼 뒤 고친 경우). 재현을 본 상태로 되돌리거나, 계획을 재승인해 재현부터 다시 본다 |
+| `리팩토링이 기존 테스트를 고쳤습니다: [M] <경로>` | 기준 커밋에 있던 테스트 파일이 바뀌었다(지워도 같다). 되돌린다 |
+| `prepare: failed (…)` · `prepare: error` | 통합 검증의 준비 명령이 실패했다. build·test 는 돌지 않았다 — 매니페스트의 `prepare` 나 환경을 본다 (계획 파일 문제가 아니다) |
+| `test: not-run (선언 없음)` | `code-agent.json` 에 `test` 명령이 없다. 아무것도 돌리지 않은 결과는 통과가 아니다 |
 
 ### `code-agent plan submit` 이 거부했다
 
@@ -607,12 +689,33 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `남은 질문이 있습니다` | `openQuestions` 를 `questions.md` 로 옮겨 답을 받는다 |
 | `preserve 가 계획에 없습니다: <문장>` | 지시서의 보존 조건을 **문장 그대로** 옮긴다 |
 | `알 수 없는 단계 <key>` | `code-agent context` 가 보여 준 단계 key 를 쓴다 |
+| `fix 는 ## 재현 절에 … TC id 를 최소 하나 적습니다` | ⑦ 에 `## 재현` 절을 두고 `- TC-1` 처럼 적는다 (수준은 무엇이든 된다) |
+| `## 재현 이 표에 없는 TC 를 가리킵니다: TC-9` | `테스트 케이스` 표에 그 id 가 없다. 오타이거나 표에 줄을 더해야 한다 |
+| `계획의 sequence[0] 이 테스트 단계가 아닙니다` | `fix` 는 재현 테스트가 먼저다. 받는 값(단계 key)이 메시지에 함께 나온다 |
+| `fix 의 계획에 kind:"test" 단계의 파일이 없습니다` | 재현 테스트 파일을 `files[]` 에 넣는다 |
+| `이 프로젝트에는 fix 로 도는 kind:"test" 단계가 없습니다` | `code-agent.json` 의 `stages` 에 `"kind": "test"` 단계를 두고 `kinds` 에 `"fix"` 를 넣는다 (확인: `code-agent manifest check`) |
+| `계획이 kind:"test" 단계에 테스트 자리 밖의 파일을 넣었습니다: <경로>` | 고칠 파일을 테스트 단계에 적었다. 그 파일은 코드 단계로 옮긴다 — 재현은 테스트 자리로 잰다 |
+| `kind:"test" 단계(<key>)가 자리를 밝히지 않아 재현 테스트를 가려낼 수 없습니다` | 그 단계에 `scope: "project"` 의 `outputDirs` 나 `base` 를 적는다 (확인: `code-agent manifest check`) |
+| `리팩토링은 기존 테스트를 고치지 않습니다 — 계획에서 빼세요` | 기준 커밋에 이미 있던 테스트 파일이 `files[]` 에 있다 |
+
+### `code-agent repro` 가 거부했다 (`fix` 전용)
+
+| 문구 | 뜻 | 할 일 |
+|---|---|---|
+| `code-agent repro 는 fix 작업에서만 돕니다 (지금: feature)` | 종류가 `fix` 가 아니다 | 그냥 `/ca-implement` 를 잇는다 |
+| `재현은 implement 스테이지에서 돕니다 (지금: <phase>)` | 자리가 아니다 | `code-agent status` 의 `다음:` 줄을 따른다 |
+| `재현을 보기 전에 이미 바뀐 계획 파일이 있습니다: <경로…>` | 비-테스트 계획 파일이 기준 커밋과 다르다 | 되돌린 뒤 다시 돌린다 — 재현은 **테스트만 바뀐 트리**에서 봐야 증거가 된다 |
+| `재현하지 못했습니다 — <kind>: passed` | 지금 코드에서 그 TC 가 통과한다 | **고치지 않는다.** ⑦ 의 `## 재현` 케이스가 결함을 실제로 찌르는지 다시 보고, 안 되면 사람에게 보고한다 |
+| `재현 명령이 돌지 못했습니다 (<kind>: not-run\|error)` | 테스트 명령이 선언되지 않았거나 실행 파일이 없다 | `code-agent.json` 의 `test` 를 확인한다. `not-run`·`error` 는 아무것도 증명하지 않는다 |
+| `재현 TC 가 실패한 실행의 출력에 없습니다: TC-1` | **실패한** 실행의 출력에 그 id 가 찍히지 않았다 (파일에 적혀 있는 것은 인정하지 않는다 — 무엇이 실패했는지 말해 주지 않는다) | 테스트 **이름**에 TC id 를 남겨 실패 보고에 찍히게 한다 (컨벤션의 `테스트 규칙`). 다른 TC 만 빨간 것이면 ⑦ 의 `## 재현` 케이스를 다시 본다 |
+| `이미 재현을 봤습니다 (…)` | 거부가 아니다 — 멱등이다 | 고칠 파일을 쓴다 |
 
 ### 그 밖
 
 | 상황 | 뜻 |
 |---|---|
 | `code-agent.json 이 없습니다` | `/ca-adopt` 로 먼저 도입 |
+| `이 프로젝트에는 fix 로 돌 단계가 선언돼 있지 않습니다` | `code-agent.json` 의 `stages[].kinds` 에 그 종류를 더한다 (비우면 모든 종류). 메시지가 단계별 `kinds` 목록을 함께 찍는다 — 확인은 `code-agent manifest check` |
 | `진행 중인 작업이 있습니다: <ID>` | 끝내거나 `code-agent abort` 뒤에 시작 |
 | `작업이 진행 중입니다 ... 근거 문서는 작업 도중에 바꾸지 않습니다` | `/ca-docs` 를 작업 중에 열었다. 작업을 끝내거나 `abort` |
 | `사슬이 끊겼습니다 — 누가 원장을 고쳤는지 확인하세요` | `.code-agent/approvals/*.jsonl` 이 손으로 바뀌었다. git 이력으로 확인한다 |
@@ -632,7 +735,7 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | P3 분석·조사·계획 | `analysis.md` · 작업 문서 · 계획 검사 · 승인 · 구현 울타리 | ✅ |
 | P4 문서 모델 전환 + 영향도·설계 | POLICY 2 → 4 · KNOWLEDGE 3종 빈 뼈대 · 번호 작업 문서(`01`~`04`·`07`, `05` 는 코드 렌더) · `impact`·`design` 스테이지 · 영향 표/AC/TC 게이트 · 승인 묶음 고정 | ✅ |
 | P5 구현·검증·반영 | 정적 분석 · 테스트 실행 · 테스트 동결 · 수정 루프 · 코드 리뷰 · 통합 검증 · 반영(TTY 확인 · 로컬 커밋 · `10-pr.md`) · KNOWLEDGE 갱신 · Stop hook | ✅ |
-| P6 fix·refactor·신규 저장소 | 재현 테스트 먼저 · preserve 강제 완주 · 빈 저장소 도입 | 다음 |
+| P6 fix·refactor·신규 저장소 | 재현 테스트 먼저(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리 정의 · `plugin add/list/remove` · 등록한 사람만 opt-in | — |
 | P8 정리·배포 | 단일 실행 파일 · `usage`(토큰 집계) · 설치 점검 | — |
 

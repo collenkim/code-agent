@@ -24,7 +24,7 @@
 | 3 | 영향도 분석 `impact` | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 표(**모든 R**) · Risk. 모든 작업 필수 | ✅ |
 | 4~5 | 시스템 설계 + 기능·API·데이터 정의 `design` | ③ `03-design.md`(구성 요소·흐름·API·데이터·설계 결정) + ④ `04-functional.md`(기능·업무 규칙·예외·**AC**) | ✅ |
 | 6 | 구현 계획 `plan` | ⑤ `plan.json`(+`sequence`·`approach`) → 코드가 `05-plan.md` 렌더 + ⑦ `07-test-spec.md`(AC 마다 TC) → **사람 승인(터미널)** | ✅ |
-| 7 | 코드 생성 `implement` | 단계마다 새 컨텍스트에서 `ca-implementer` | ✅ |
+| 7 | 코드 생성 `implement` | 단계마다 새 컨텍스트에서 `ca-implementer`. `fix` 는 테스트 단계가 먼저이고 `code-agent repro` 로 재현을 본 뒤에 고친다 | ✅ |
 | 8 | 정적 분석·컴파일 `check` | 품질·보안 기준이 적은 명령 + build → ⑧ `08-validation.md` (코드만 쓴다) | ✅ |
 | 9 | 테스트 생성·실행 `test` | `ca-tester` 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 · 이후 테스트 동결 | ✅ |
 | 10 | 결과 분석 | 실패를 파일·요구 항목으로 묶는다 | ✅ |
@@ -67,7 +67,7 @@ P4 의 `verify` 한 칸은 `check` · `test` · `review` · `integrate` · `deli
 | P4 문서 모델 전환 + 영향도·설계 | POLICY 2 → 4 · KNOWLEDGE 3종 빈 뼈대 · 작업 문서를 번호 문서(`01`~`04`·`07`, `05` 는 코드 렌더)로 · `impact` · `design` 스테이지 | ✅ |
 | P5 단계 1 증거 코어 | 8·9·10 · 수정 루프 · 테스트 동결 · Stop hook · 기준 커밋·부분 트리 해시에 묶인 증거 | ✅ |
 | P5 단계 2 리뷰·통합·반영 | 11~13 · ⑨⑩ · KNOWLEDGE 갱신 · 로컬 커밋 | ✅ |
-| P6 fix·refactor·신규 저장소 | 재현 테스트 우선 · preserve 강제 · 빈 저장소 도입 | 다음 |
+| P6 fix·refactor·신규 저장소 | 재현 테스트 우선(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리(slot) 정의 · `plugin add/list/remove` — 등록한 사람만 opt-in | |
 | P8 정리·배포 | 문서 세트 · `usage` · 단일 실행 파일 | |
 
@@ -98,14 +98,16 @@ cd <프로젝트> && code-agent init
 claude
 ```
 
-1. **`/ca-adopt`** — 레거시 첫 도입. 뼈대 역공학으로 `code-agent.json` · POLICY 4종 · KNOWLEDGE 3종 빈 뼈대까지.
+1. **`/ca-adopt`** — 첫 도입. 뼈대 역공학으로 `code-agent.json` · POLICY 4종 · KNOWLEDGE 3종 빈 뼈대까지.
+   **소스 파일이 없는 신규 저장소**면 `code-agent survey` 가 그것을 찍고, 역공학 대신 인터뷰로 간다 (`referenceDomain` 없이, `exemplars` 는 전부 `[]`).
    이미 매니페스트가 있으면 **`/ca-docs`** 로 문서만 점검·작성한다 — 문서마다 **기본으로 생성 / 대화로 생성 / 기존 문서 연결** 을 추천과 함께 묻는다.
 2. **별도 터미널에서 확정** — `code-agent confirm doc architecture` · `conventions` · `test-strategy` · `quality` **네 번.**
    TTY 에서만 받는다. 모델 세션 안의 확정은 모델이 한 것과 구분되지 않는다. KNOWLEDGE 3종은 확정하지 않는다.
 3. **요구사항을 쓴다** — `doc/work/<Jira 키>/requirement.md`. 사람의 입력이라 모델은 고칠 수 없다(hook 이 거부).
    머리말에 `kind: feature` · `id` (Jira 키 그대로) · `title` · `target`.
 4. **`/ca-feature doc/work/UZRF-145/requirement.md`** — 분석 → 영향도 → 설계 → 계획 제출까지 가고 멈춘다.
-   (`/ca-fix` · `/ca-refactor` 는 재현 TC 와 preserve 가 더 붙는다.)
+   `/ca-fix` 는 ② 의 현행 분석 · ⑦ 의 `## 재현` 절 · `sequence[0]` 이 테스트 단계라는 것이 더 붙고, 구현에서 `code-agent repro` 로
+   **지금 코드에서 실패하는 것을 본 뒤에야** 고칠 파일이 열린다. `/ca-refactor` 는 preserve 전량과 **기존 테스트 파일 보호**가 더 붙는다.
 5. **`/ca-answer`** — 답 없는 질문을 하나씩 묻는다. 하나라도 남으면 다음 스테이지로 넘어가지 않는다.
 6. **별도 터미널에서 승인** — `code-agent approve`. 계획과 `## 가정` 이 함께 보인다.
    반려는 `code-agent reject --comment "사유"` (사유 필수).
@@ -134,7 +136,7 @@ claude
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 터미널에서만, 기본 opus) |
 
-스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `back <스테이지>` · `context` · `status` · `plan submit` · `check` · `test` · `review` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
+스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `back <스테이지>` · `context` · `status` · `plan submit` · `repro`(fix 전용) · `check` · `test` · `review` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
 
 ## 막히는 자리
 
@@ -155,7 +157,12 @@ claude
 | `back` 은 **뒤로만** 간다 — 앞 스테이지로는 못 가고, `deliver`(사람이 서 있는 자리)에서는 되감지 않으며, 되감아도 증거·승인·수정 회차는 지워지지 않는다 (해시에 묶여 있어 어긋나면 그때 막힌다) | `back` | ✅ |
 | 검증 결과는 모델이 보고하는 것이 아니라 `check`·`test`·`integrate` 가 증거에 적은 것만 유효하다 — `not-run`·`error`·`skipped` 는 통과가 아니다 | `check` · `test` · `next` | ✅ |
 | 증거는 기준 커밋 · 계획 파일의 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 그 통과가 무효 | `next` · `deliver` | ✅ |
-| 테스트가 한 번 돌면 `kind: "test"` 단계의 파일이 언다 — 단언을 지워 통과시키는 길이 막힌다 | PreToolUse hook | ✅ |
+| 테스트가 한 번 돌면 — `fix` 는 `code-agent repro` 가 재현을 본 순간부터 — `kind: "test"` 단계의 파일이 언다 — 단언을 지워 통과시키는 길이 막힌다 | PreToolUse hook | ✅ |
+| `fix` 는 **재현이 먼저다** — ② 의 현행 분석(`해당 없음` 불가) · ⑦ 의 `## 재현` 절 · `sequence[0]` 이 테스트 단계. `code-agent repro` 가 지금 코드에서 그 TC 의 **실패**를 보기 전에는 고칠 파일을 쓸 수 없다 (`not-run`·`error` 는 재현이 아니고, 재현 TC id 는 **실패한 실행의 출력**에 찍혀야 한다) | `next` · `plan submit` · `repro` · PreToolUse hook | ✅ |
+| `refactor` 는 **기준 커밋에 이미 있던 `kind: "test"` 단계 파일**을 고치지도 지우지도 못한다 — 동작이 보존되는지 보는 것이 그 테스트다. 그 자리는 단계가 밝힌 `outputDirs`·`base` 로 정해진다 (`kinds` 로 거르지 않고 소스 루트로 물러서지 않는다) | `plan submit` · PreToolUse hook · `check` | ✅ |
+| 선언된 종류(`stages[].kinds`)로 돌 단계가 0개면 `start` 가 거부하고 무엇을 고칠지 찍는다. `manifest check` 가 미리 경고한다 (경고일 뿐 종료 코드 0) | `start` · `manifest check` | ✅ |
+| `prepare` 가 선언돼 있으면 통합 검증의 깨끗한 worktree 에서 `build`·`test` **앞에** 돌고, 실패하면 build·test 를 돌리지 않는다 — 준비되지 않은 트리 위의 통과는 증거가 아니다 | `integrate` · `next` | ✅ |
+| 반영 커밋에는 **이 작업의 파일·증거·원장만** 담긴다 — `.code-agent/` 를 통째로 올리지 않는다 (다른 작업의 증거·`models.json`·도입 원장은 사람이 따로 커밋한다) | `deliver` | ✅ |
 | 계획 안 수정은 `fixRounds`(기본 2)회까지. 넘으면 계획 파일 쓰기가 전부 거부되고 보고만 남는다 | PreToolUse hook | ✅ |
 | 리뷰의 열린 `계획 안` 지적이 있거나 마지막 회차 트리 해시가 지금과 다르면 반영 거부 | `deliver` | ✅ |
 | 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 알린다 (두 번 막지 않는다) | Stop hook (`code-agent stop`) | ✅ |

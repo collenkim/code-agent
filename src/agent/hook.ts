@@ -7,7 +7,15 @@ import { hashPlan } from "../core/approval";
 import { checkPaths, unplannedFiles } from "../core/gate";
 import type { Manifest, StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
-import { fixLimit, loadEvidence, overFixLimit, validationDocFile } from "./evidence";
+import {
+  fixLimit,
+  loadEvidence,
+  overFixLimit,
+  reproMissing,
+  testRoots,
+  trackedTestFiles,
+  validationDocFile,
+} from "./evidence";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
@@ -60,6 +68,7 @@ const MODEL_SUBCOMMANDS = [
   "docs",
   "survey",
   "manifest check",
+  "repro",
   "check",
   "test",
   "review",
@@ -200,6 +209,19 @@ function decideWrite(work: Work, path: string): string | undefined {
     return undefined;
   }
 
+  // 리팩토링이 기존 테스트를 고치면 '동작 보존' 을 재는 자가 없어진다. 계획 밖 변경으로도 잡히지만
+  // 여기서 막아야 **무엇이 규칙인지**가 거부 사유로 보인다. 접두어를 먼저 보고 그때만 git 을 부른다.
+  if (work.order.kind === "refactor") {
+    const roots = testRoots(work);
+    if (roots.some((root) => path === root || path.startsWith(`${root}/`)) && trackedTestFiles(work).includes(path)) {
+      return (
+        `리팩토링은 기존 테스트를 고치지 않습니다 — hook 이 막습니다: ${path}. ` +
+        "동작이 보존되는지 보는 것이 그 테스트입니다. " +
+        `테스트를 고쳐야 할 이유가 보이면 ${workDocsDir(active.id)}/questions.md 로 물으세요.`
+      );
+    }
+  }
+
   if (active.phase === "analysis" || active.phase === "impact" || active.phase === "design" || active.phase === "plan") {
     return (
       `지금은 ${active.phase} 스테이지라 작업 폴더(${workDir}/) 밖은 쓸 수 없습니다. ` +
@@ -218,19 +240,24 @@ function decideWrite(work: Work, path: string): string | undefined {
     );
   }
 
-  // implement 는 지금 단계의 파일만. 검증·리뷰는 고쳐 쓰는 자리라 계획의 어느 단계 파일이든, 그 파일의 단계 규칙으로.
-  const stage =
-    active.phase === "implement"
-      ? work.stage
-      : work.stages.find((candidate) =>
-          plan.files.some((file) => file.stage === candidate.key && file.path === path),
-        );
+  // 계획이 이 파일에 배정한 단계. 검증·리뷰는 고쳐 쓰는 자리라 커서가 아니라 이 단계의 규칙으로 본다.
+  const planStage = work.stages.find((candidate) =>
+    plan.files.some((file) => file.stage === candidate.key && file.path === path),
+  );
+  // implement 는 지금 단계의 파일만 — 경계·계획 대조는 커서 단계로 한다.
+  const stage = active.phase === "implement" ? work.stage : planStage;
   if (!stage) {
     return active.phase === "implement"
       ? `지금 단계(${active.stage ?? "없음"})를 매니페스트에서 찾을 수 없습니다. code-agent status 로 확인하세요.`
       : `승인된 계획에 없는 파일입니다: ${path}. 필요하면 사람에게 알리세요 — 계획을 고치면 재승인을 받습니다.`;
   }
-  const frozen = freezeReason(work, stage, path);
+  const blocked = reproReason(work, path);
+  if (blocked) {
+    return blocked;
+  }
+  // 동결은 **그 파일이 속한 단계**로 잰다. 커서 단계로 재면, 구현 중 커서가 테스트 단계에 서 있는
+  // 동안 고칠 파일까지 '테스트가 얼었다' 는 엉뚱한 사유로 막힌다 (막히는 것은 맞아도 이유가 틀린다).
+  const frozen = freezeReason(work, planStage ?? stage, path);
   if (frozen) {
     return frozen;
   }
@@ -242,6 +269,34 @@ function decideWrite(work: Work, path: string): string | undefined {
     return violations.map((v) => `[${v.item}] ${v.file}: ${v.detail}`).join("\n");
   }
   return undefined;
+}
+
+/**
+ * fix 의 '재현 먼저'. 재현 증거가 없으면 **고칠 파일**(kind:"test" 가 아닌 계획 파일)을 쓸 수 없다.
+ *
+ * `freezeReason` 과 같은 이유로 스테이지가 아니라 증거로 잰다 — `back implement` 로 풀리면 안 된다.
+ * 판정은 `reproMissing` 한 곳에 있다 (`next` 게이트가 같은 함수를 쓴다).
+ */
+function reproReason(work: Work, path: string): string | undefined {
+  if (work.order.kind !== "fix" || !work.plan) {
+    return undefined;
+  }
+  // 커서 단계가 아니라 **그 파일이 속한 단계**로 본다 — 재현 테스트는 어느 커서에서도 열려 있어야 하고,
+  // 고칠 파일은 어느 커서에서도 닫혀 있어야 한다. 계획에 없는 파일은 다른 검사가 막는다.
+  const testKeys = new Set(work.stages.filter((candidate) => candidate.kind === "test").map((candidate) => candidate.key));
+  const planned = work.plan.files.find((file) => file.path === path);
+  if (!planned || testKeys.has(planned.stage)) {
+    return undefined;
+  }
+  const missing = reproMissing(work, loadEvidence(work.repoRoot, work.active.id, work.active.target));
+  if (!missing) {
+    return undefined;
+  }
+  return (
+    `${missing} — 재현을 먼저 봐야 이 파일을 고칠 수 있습니다: ${path} (fix).\n` +
+    "kind:\"test\" 단계의 계획 파일을 쓴 뒤 code-agent repro 로 지금 코드에서 **실패**하는 것을 보세요 — " +
+    "고치고 나서 쓴 테스트는 결함을 재현한 적이 없습니다."
+  );
 }
 
 /**
@@ -273,7 +328,10 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
       "덮지 않고 보고하는 자리입니다. 계획 자체를 고쳐야 하면 사람이 재승인해야 합니다."
     );
   }
-  if (stage.kind === "test" && evidence.runs.some((run) => run.phase === "test")) {
+  // 재현을 본 순간에도 언다 — 그때부터 단언을 약하게 하면 재현이 증거가 아니게 된다.
+  // (`phase: "repro"` 로 기록하는 이유가 여기다. `test` 로 기록하면 재현에 실패했을 때
+  //  재현 테스트를 고칠 길이 막혀 교착이 된다.)
+  if (stage.kind === "test" && (evidence.runs.some((run) => run.phase === "test") || evidence.repro !== undefined)) {
     // 탈출구 둘 — ⑨ 에 이 파일을 가리키는 열린 계획 안 지적이 있거나, 계획이 재승인되거나.
     // 앞의 것은 문서에 남는 지적이 열쇠라 몰래 풀 수 없다 (그 줄이 닫히기 전에는 리뷰 게이트가 막는다).
     if (findingOpensFile(work, path)) {
@@ -282,6 +340,7 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
     return (
       `테스트가 이미 돌아 얼어 있는 파일입니다: ${path} (단계 ${stage.key}, kind: test). ` +
       "테스트가 틀렸다고 판단되면 고치지 말고 근거와 함께 보고하세요 — 단언을 지워 통과시키는 길을 막는 자리입니다. " +
+      "(재현을 본 뒤에는 재현 테스트가 얼립니다 — 그 단언을 약하게 하면 재현이 증거가 아니게 됩니다.) " +
       `정말 고쳐야 하면 ${workDocsDir(work.active.id)}/09-review.md 에 그 파일을 가리키는 지적으로 남기거나, ` +
       "계획을 고쳐 사람의 재승인을 받으세요."
     );

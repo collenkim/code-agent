@@ -1,6 +1,6 @@
 ---
 name: ca-adopt
-description: 레거시 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학으로 POLICY 4종·KNOWLEDGE 3종 문서와 code-agent.json 을 만든다.
+description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학(소스가 없으면 인터뷰)으로 POLICY 4종·KNOWLEDGE 3종 문서와 code-agent.json 을 만든다.
 ---
 
 너는 **메인 에이전트**다. 문서와 `code-agent.json` 만 쓴다. `code-agent` 명령이 거부하면 사유를 전하고 멈춘다.
@@ -11,6 +11,19 @@ description: 레거시 저장소에 code-agent 를 처음 도입한다 — 뼈�
 1. Bash: `code-agent status` — `code-agent.json` 이 이미 있으면 Bash: `code-agent manifest check` 를 보고, 문서만 모자라면 `/ca-docs` 절차로 간다.
 2. Bash: `code-agent docs begin`
 3. Bash: `code-agent survey`
+
+**`survey` 가 "소스 파일이 없습니다 — 신규(빈) 저장소입니다" 를 찍으면** — 2 의 역공학을 건너뛰고 **인터뷰**로 간다.
+역공학할 코드가 없으므로 `ca-surveyor` 를 부르지 않는다.
+(`지원 목록 밖 언어입니다` 로 찍혔으면 아직 갈라지지 않는다 — survey 가 아는 확장자 밖의 코드가 있을 수 있다.
+**사용자에게 물어** 빈 저장소가 맞는지 확인하고, 코드가 있으면 그 언어의 파일을 직접 짚어 역공학으로 간다.)
+
+- POLICY 4종은 `code-agent docs skeleton <종류>` + `code-agent docs interview <종류>` 로만 채운다.
+- `code-agent.json` 은 아래를 사용자에게 묻는다 — 언어 · 소스 루트(`domainBase`) · 단계 목록(의존 순서, 각 `outputDirs`, 테스트 단계에 `"kind": "test"`) ·
+  `build` · `test` · `prepare` · `git.base`.
+- **`referenceDomain` 은 적지 않고 `exemplars` 는 전부 `[]` 로 둔다** — 참조할 코드가 없다.
+  복제할 표준이 없으므로 단계는 `"scope": "project"` + `outputDirs` 로 선언하는 쪽이 자연스럽다.
+- `manifest check` 가 `- 확인: 참조 파일을 선언한 단계가 없습니다` 만 찍으면 정상이다 (경고이지 ✗ 가 아니다).
+  참조 표준이 없는 자리는 `code-agent context` 가 아키텍처·컨벤션 문서를 대신 가리킨다.
 
 ## 2. 문서
 
@@ -32,13 +45,28 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
 - **referenceDomain** — 복제의 기준이 될 도메인. 후보 2~3개(계층이 다 갖춰진 것)를 보여 주고 사용자가 고른다.
 - **stages** — survey 의 계층 후보를 의존 순서대로 (예: entity → repository → service → controller → test).
   `exemplars` 는 참조 도메인 디렉토리 기준 상대경로이고 `{Ref}` 는 참조 도메인의 PascalCase 다.
+- **`kinds` 는 `["feature", "fix", "refactor"]` 를 기본으로 단다.** 비우면 모든 종류에서 돌지만,
+  명시하는 쪽을 기본으로 쓰는 것은 **매니페스트만 읽고도 어떤 종류가 도는지 보이게** 하기 위해서다.
+  종류 하나만 도는 단계(예: 신규 도메인 뼈대)가 있으면 거기만 좁힌다.
+  한 종류로 돌 단계가 0개면 `code-agent start` 가 그 종류를 받지 않는다 — `manifest check` 가 미리 경고한다.
 - **테스트 단계에는 `"kind": "test"` 를 단다.** 테스트가 한 번 돈 뒤에는 hook 이 그 단계의 파일을 얼려,
   실패한 단언을 지워 통과시키는 길을 막는다. 선언하지 않으면 그 보호가 없다 — 검증 출력이 그 사실을 크게 찍는다.
+  **fix 의 재현 테스트가 이 단계에서 돈다** — `kinds` 에 `fix` 가 없으면 `plan submit` 이 재현 테스트를 넣을 자리를 찾지 못해 거부한다.
+  `refactor` 에서는 이 단계의 **기준 커밋에 이미 있던 파일**이 통째로 보호된다 (고치거나 지우면 막힌다).
+  이 보호는 `kinds` 를 보지 않으므로, `kinds` 에서 `refactor` 를 빼도 그대로 걸린다.
+- **`kind: "test"` 단계는 제 자리를 밝혀야 한다** — `"scope": "project"` 의 `outputDirs`(예: `["src/test"]`) 또는 `base`.
+  둘 다 없으면 코드가 **무엇이 테스트 파일인지 알 수 없어** refactor 의 기존 테스트 보호가 걸리지 않고 fix 의 계획도 거부된다
+  (`manifest check` 가 `자리를 밝히지 않았습니다` 로 경고한다). 테스트가 소스 옆에 있는 프로젝트(`*.test.ts` · `_test.go` · pytest)면
+  테스트가 실제로 놓이는 디렉토리를 `outputDirs` 로 적는다 — 소스 루트로 물러서지 않는다(그러면 소스 전체가 '기존 테스트' 가 된다).
 - **공통 단계** — 아키텍처의 공통 모듈(예외·응답 래퍼·유틸 등)이 도메인 밖에 있으면 `"scope": "project"` 단계를 하나 둔다
-  (예: `{ "key": "common", "title": "공통", "scope": "project", "outputDirs": ["src/main/java/com/acme/crm/common"], "kinds": ["feature"], "exemplars": [], "template": "doc/code-agent/stages/common.md" }`).
+  (예: `{ "key": "common", "title": "공통", "scope": "project", "outputDirs": ["src/main/java/com/acme/crm/common"], "kinds": ["feature", "fix", "refactor"], "exemplars": [], "template": "doc/code-agent/stages/common.md" }`).
   없으면 공통 코드를 고쳐야 하는 기능(새 오류 코드 등)의 계획이 경계 검사에서 거부된다. 순서는 도메인 단계보다 앞.
 - **build · test · commands** — 빌드 파일에서 (예: `["gradlew", "compileJava", "-q"]`). 사용자에게 맞는지 확인한다.
   테스트 전략·품질·보안 기준 문서가 적은 이름(`unit` · `check.style` · `sec.deps` …)은 **여기 키로 실재해야** 문서가 게이트를 통과한다.
+  `commands` 에는 `build` · `test` · `prepare` 를 키로 쓸 수 없다 — 예약된 이름이라 `loadManifest` 가 거부한다.
+- **prepare** (선택) — 통합 검증의 **깨끗한 worktree 에서 `build`·`test` 앞에 한 번** 도는 준비 명령 (예: `["npm", "ci"]` · `["gradlew", "--offline", "dependencies"]`).
+  기준 커밋을 뜬 트리에는 의존성처럼 커밋되지 않는 것이 없어서 두는 자리다. 실패하면 `build`·`test` 를 돌리지 않고 통합 검증 전체가 실패한다.
+  `check`·`test` 스테이지에서는 돌지 않는다 (거기는 사람이 보고 있는 작업 트리다). 설치가 필요 없는 프로젝트면 **적지 않는다.**
 - **docs** — POLICY 는 `architecture` · `conventions` · `testStrategy` · `quality`, KNOWLEDGE 는 `docs.knowledge` 의 세 경로.
 - **git.base** — Bash: `git branch` 로 후보를 보고 확인한다 (기본 master).
 
@@ -63,18 +91,23 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
   "git": { "base": "master" },
   "build": ["gradlew", "compileJava", "-q"],
   "test": ["gradlew", "test"],
+  "prepare": ["gradlew", "--offline", "dependencies"],
   "commands": { "check.style": ["gradlew", "checkstyleMain"], "sec.deps": ["gradlew", "dependencyCheckAnalyze"] },
   "stages": [
     { "key": "entity", "title": "Entity", "template": "doc/code-agent/stages/entity.md",
-      "kinds": ["feature"], "exemplars": ["domain/{Ref}.java"], "outputDirs": ["domain"] },
+      "kinds": ["feature", "fix", "refactor"], "exemplars": ["domain/{Ref}.java"], "outputDirs": ["domain"] },
     { "key": "test", "title": "테스트", "template": "doc/code-agent/stages/test.md",
-      "kind": "test", "kinds": ["feature"], "base": "src/test/java/com/acme/app",
+      "kind": "test", "kinds": ["feature", "fix", "refactor"], "base": "src/test/java/com/acme/app",
       "exemplars": ["domain/{Ref}Tests.java"], "outputDirs": ["domain"] }
   ]
 }
 ```
 
+(`prepare` 는 선택이다 — 준비 명령이 필요 없으면 이 줄을 아예 뺀다. 빈 배열로 두지 않는다.)
+
 `code-agent.json` 을 쓰고 Bash: `code-agent manifest check` — ✗ 가 없어질 때까지 경로·`{Ref}`·referenceDomain 을 고친다.
+`- 확인:` 으로 시작하는 줄은 **경고**다(종료 코드 0). 종류별로 돌 단계가 0개거나 `kind: "test"` 단계가 없으면 여기서 알려 준다 —
+뜻이 있어 그렇게 둔 것이 아니면 `stages[].kinds` 를 고친다.
 
 ## 4. 단계 규칙
 

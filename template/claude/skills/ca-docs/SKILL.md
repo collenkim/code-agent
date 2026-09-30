@@ -41,6 +41,10 @@ Bash: `code-agent docs begin`
 ## 2. 기본으로 생성 (역공학)
 
 1. Bash: `code-agent survey` — 빌드 파일·언어·구조·계층 후보·표본 경로·**도구 후보**(테스트·정적 분석·보안 의존성, CI 설정). 저장소를 직접 훑지 말고 이것에서 출발한다.
+   **"소스 파일이 없습니다 — 신규(빈) 저장소입니다" 가 찍히면 이 경로는 쓸 수 없다** — 역공학할 코드가 없으므로 `ca-surveyor` 를 부르지 말고
+   **3. 대화로 생성**으로 간다 (POLICY 4종 전부). 사용자에게도 그렇게 알린다.
+   `지원 목록 밖 언어입니다` 로 찍혔으면 아직 갈라지지 않는다 — survey 가 아는 확장자 밖의 코드가 있을 수 있으니 **사용자에게 확인**하고,
+   코드가 있으면 그 언어의 파일을 직접 짚어 역공학을 이어 간다.
 2. 파일이 없으면 Bash: `code-agent docs skeleton <종류>` — 써야 할 섹션과 안내.
    종류: `architecture` · `conventions` · `test-strategy` · `quality` · `data-dictionary` · `api-catalog` · `business-rules`.
 3. `ca-surveyor` 를 **한 메시지에서 병렬로** 부른다. 각자에게 survey 출력, 맡은 섹션의 안내, 읽을 표본을 넘긴다.

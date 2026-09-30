@@ -33,9 +33,12 @@ import {
   loadEvidence,
   outsideChanges,
   overFixLimit,
+  reproMissing,
   runsOf,
   stageProblems,
+  testRoots,
   testStageFiles,
+  trackedTestFiles,
   validationDocFile,
 } from "./evidence";
 import type { VerifyPhase } from "./evidence";
@@ -215,7 +218,12 @@ function coverageProblems(keys: string[], files: { path: string; requirements?: 
  */
 function plannedStages(work: Work): StageDef[] {
   const files = work.plan?.files ?? [];
-  return codeStages(work).filter((stage) => files.some((file) => file.stage === stage.key));
+  const staged = codeStages(work).filter((stage) => files.some((file) => file.stage === stage.key));
+  // fix 는 재현 테스트가 먼저다 — 커서가 그 단계에 먼저 서야 hook 의 '재현 먼저' 가 교착이 아니라 순서가 된다.
+  // (매니페스트의 선언 순서는 보통 테스트가 마지막이다. hashManifest 는 선언 순서를 그대로 해시하므로 해시 중립이다.)
+  return work.order.kind === "fix"
+    ? [...staged.filter((stage) => stage.kind === "test"), ...staged.filter((stage) => stage.kind !== "test")]
+    : staged;
 }
 
 /** implement 가 도는 단계 — 검증 단계는 verify 스테이지가 맡는다 */
@@ -444,7 +452,7 @@ export function next(repoRoot: string): string {
       return advance("impact");
     case "impact": {
       const { keys } = requireRequirements(repoRoot, active);
-      requireWorkDocs(analysisProblems(repoRoot, active.id, keys));
+      requireWorkDocs(analysisProblems(repoRoot, active.id, keys, work.order.kind));
       return advance("design");
     }
     case "design": {
@@ -479,6 +487,14 @@ export function next(repoRoot: string): string {
             `단계 ${stage.key} 의 계획 파일이 아직 없습니다:\n` +
               missing.map((violation) => `  - ${violation.file}`).join("\n"),
           );
+        }
+      }
+      // 재현은 hook 도 막지만, 거부는 모델이 **엉뚱한 자리**(다음 단계에서 고칠 파일을 쓰려 할 때)에
+      // 도착한다. 경계에서 바로 말해 준다.
+      if (stage && stage.kind === "test" && work.order.kind === "fix") {
+        const missing = reproMissing(work, loadEvidence(repoRoot, active.id, active.target));
+        if (missing) {
+          throw new Stop(`${missing} — code-agent repro 로 지금 코드에서 재현 TC 가 실패하는 것을 보고 넘어가세요.`);
         }
       }
       const following = stages[index + 1];
@@ -555,8 +571,30 @@ export function requireValidatable(
   return work;
 }
 
+/**
+ * `code-agent repro` 의 전제 — fix 의 implement 스테이지에서만, 승인된 계획 위에서만 돈다.
+ * 승인 위에서 나지 않은 재현은 나중에 계획이 바뀌면 무엇에 대한 재현이었는지 알 수 없다.
+ */
+export function requireReproable(repoRoot: string): Work {
+  const work = requireWork(repoRoot);
+  requireDocs(repoRoot, work);
+  requireAnswers(repoRoot, work.active);
+  if (work.order.kind !== "fix") {
+    throw new Stop(`code-agent repro 는 fix 작업에서만 돕니다 (지금: ${work.order.kind}).`);
+  }
+  if (work.active.phase !== "implement") {
+    throw new Stop(`재현은 implement 스테이지에서 돕니다 (지금: ${work.active.phase}).\n${nextHint(work)}`);
+  }
+  const approval = approvalOf(work);
+  if (approval.status !== "approved") {
+    throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 재현은 증거가 아닙니다.`);
+  }
+  return work;
+}
+
 /** 증거가 없거나 지금 트리를 가리키지 않거나 하나라도 통과가 아니면 넘어가지 않는다 */
-function requireEvidence(work: Work, phase: VerifyPhase): void {
+// `repro` 는 스테이지가 아니라 implement 안에서 도는 자리라 여기 오지 않는다
+function requireEvidence(work: Work, phase: Exclude<VerifyPhase, "repro">): void {
   const problems = stageProblems(work, phase);
   if (problems.length > 0) {
     throw new Stop(
@@ -741,6 +779,17 @@ export function context(repoRoot: string): string {
         const paths = files.map((file) => file.path);
         out.push(`- ${stage.key} (${where}): ${paths.join(", ") || (stage.exemplars.length === 0 ? "참조 없음" : `못 찾음 ${missing.join(", ")}`)}`);
       }
+    } else {
+      // 신규(빈) 저장소 — 베낄 코드가 없다. 문서가 정하지 않은 것을 지어내지 않게 자리를 짚어 준다
+      out.push(
+        "",
+        "## 참조 없음 — 아키텍처·컨벤션 문서로",
+        "참조 표준으로 삼을 기존 코드가 없습니다 (code-agent.json 에 referenceDomain 이 없습니다).",
+        `구조·이름·계층 경계는 ${manifest.docs.architecture ?? "(아키텍처 문서 없음)"} 와 ` +
+          `${manifest.conventions.join(", ") || "(컨벤션 문서 없음)"} 가 정한 것을 따릅니다.`,
+        `문서가 정하지 않은 것은 지어내지 말고 ① ${workDocPath(active.id, "01-requirements")} 의 \`## 가정\` 에 ` +
+          `근거와 함께 적거나 ${questionsFile(active.id)} 로 물으세요.`,
+      );
     }
   }
 
@@ -785,6 +834,37 @@ export function context(repoRoot: string): string {
       "",
       `도메인 위치: ${manifest.domainBase}/{${manifest.domainRoots.join(",")}}/<도메인>/<단계 위치>`,
       `참조 도메인: ${manifest.referenceDomain ?? "(없음)"}`,
+    );
+    // 제출이 세우는 종류별 규칙은 **쓰기 전에** 보여야 한다 — 거절당해서 알게 되는 규칙은 규칙이 아니라 함정이다
+    const testKeys = codeStages(work).filter((stage) => stage.kind === "test").map((stage) => stage.key);
+    if (order.kind === "fix") {
+      out.push(
+        "",
+        "## fix — 재현이 먼저다 (제출이 세우는 것)",
+        `- ⑦ ${workDocPath(active.id, "07-test-spec")} 에 \`## 재현\` 절을 두고 결함을 재현하는 TC id 를 \`- TC-1\` 로 한 줄씩. 수준은 무엇이든 되고, 적은 id 는 위 표에 실재해야 합니다.`,
+        `- \`sequence[0].step\` 이 kind:"test" 단계의 key 여야 합니다 (받는 값: ${testKeys.join(", ") || "없음 — code-agent.json 에 kind:\"test\" 단계가 필요합니다"}).`,
+        `- \`files[]\` 에 그 단계의 파일(재현 테스트)이 있어야 하고, 그 파일은 테스트 자리 안이어야 합니다: ${testRoots(work).join(", ") || "선언 없음"}.`,
+        "- 구현에서는 그 테스트를 쓰고 `code-agent repro` 로 **실패**를 본 뒤에야 고칠 파일이 열립니다.",
+      );
+    }
+    if (order.kind === "refactor") {
+      out.push(
+        "",
+        "## refactor — 기존 테스트는 계획에 넣지 않는다 (제출이 세우는 것)",
+        `- 기준 커밋에 이미 있던 테스트 자리(${testRoots(work).join(", ") || "선언 없음"})의 파일은 \`files[]\` 에 넣을 수 없습니다 — 동작이 보존되는지 보는 것이 그 테스트입니다.`,
+        `- 테스트를 고쳐야 할 이유가 보이면 계획에 넣지 말고 ${questionsFile(active.id)} 로 물으세요.`,
+        "- `preserve` 에 지시서의 보존 항목과 그것을 어떻게 지키는지를 적어야 제출됩니다.",
+      );
+    }
+  }
+
+  if (active.phase === "implement" && order.kind === "fix") {
+    out.push(
+      "",
+      "## fix — 재현 먼저",
+      `1. kind:"test" 단계의 계획 파일에 ⑦ ${workDocPath(active.id, "07-test-spec")} 의 \`## 재현\` 이 가리키는 TC 를 씁니다.`,
+      "2. Bash: `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다. 실패를 보지 못하면 고치지 말고 보고하세요.",
+      "3. 재현을 본 뒤에야 고칠 파일을 쓸 수 있습니다 (hook 이 그 전에는 거부합니다). 재현 테스트는 그때 얼어붙습니다.",
     );
   }
 
@@ -906,9 +986,9 @@ export function submitPlan(repoRoot: string, draft: string): string {
   // 계획 검사 전에 ①~④·⑦ 을 다시 본다 — 스테이지를 지난 뒤에 문서를 고쳤을 수 있고, 승인은 이 묶음에 대한 것이다.
   const requirements = requireRequirements(repoRoot, active);
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);
-  const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest);
+  const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind);
   requireWorkDocs([
-    ...analysisProblems(repoRoot, active.id, requirements.keys),
+    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
     ...testSpec.problems,
@@ -941,7 +1021,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   // 전부 들어맞는다(가짜 검증기까지 함께 굳으므로). 코드가 판별할 수 있는 것이 아니라 사람이
   // 판단할 것이라, 조용히 지나가지 않게 제출을 세우고 무엇이 걸렸는지 그대로 보여 준다.
   const planned = new Set(plan.files.map((file) => file.path));
-  const declared = [manifest.build, manifest.test, ...Object.values(manifest.commands)]
+  const declared = [manifest.build, manifest.test, manifest.prepare, ...Object.values(manifest.commands)]
     .filter((argv): argv is string[] => Array.isArray(argv))
     .flat()
     .map((element) => element.replace(/^\.\//, ""));
@@ -952,6 +1032,55 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
 
   const stages = codeStages(work);
+  // fix 는 재현 테스트가 먼저다 — 계획이 그 순서를 담지 않으면 강제할 자리가 없다
+  if (order.kind === "fix") {
+    const testKeys = stages.filter((stage) => stage.kind === "test").map((stage) => stage.key);
+    if (testKeys.length === 0) {
+      problems.push(
+        "이 프로젝트에는 fix 로 도는 kind:\"test\" 단계가 없습니다 — code-agent.json 의 stages 에 하나 두고 " +
+          "kinds 에 \"fix\" 를 넣으세요 (확인: code-agent manifest check)",
+      );
+    } else {
+      const first = (plan.sequence[0]?.step ?? "").trim();
+      if (!testKeys.includes(first)) {
+        problems.push(
+          `계획의 sequence[0] 이 테스트 단계가 아닙니다 (지금: "${first}") — fix 는 재현 테스트가 먼저입니다. ` +
+            `받는 값: ${testKeys.join(", ")}`,
+        );
+      }
+      if (!plan.files.some((file) => testKeys.includes(file.stage))) {
+        problems.push(`fix 의 계획에 kind:"test" 단계의 파일이 없습니다 — 재현 테스트 파일을 계획에 넣으세요 (단계: ${testKeys.join(", ")})`);
+      }
+      // '재현 먼저' 는 **단계 이름표**로 판정된다 (hook 도 repro 의 깨끗한 트리 검사도). 그래서 고칠 파일을
+      // 테스트 단계에 적어 넣으면 재현 전에 쓸 수 있고 — outputDirs 가 비면 위치 검사도 서지 않는다 —
+      // 그 파일이 바뀐 채로 repro 가 통과한다. 이름표가 가리키는 자리 안에 있는지 여기서 본다.
+      const roots = testRoots(work);
+      const mislabeled = plan.files.filter(
+        (file) => testKeys.includes(file.stage) && !roots.some((root) => file.path === root || file.path.startsWith(`${root}/`)),
+      );
+      for (const file of mislabeled) {
+        problems.push(
+          roots.length === 0
+            ? `kind:"test" 단계(${file.stage})가 자리를 밝히지 않아 재현 테스트를 가려낼 수 없습니다: ${file.path} — ` +
+                "code-agent.json 의 그 단계에 scope:\"project\" 의 outputDirs 나 base 를 적으세요 (확인: code-agent manifest check)"
+            : `계획이 kind:"test" 단계에 테스트 자리 밖의 파일을 넣었습니다: ${file.path} (단계 ${file.stage}) — ` +
+                `'재현 먼저' 는 그 자리로 잽니다. 테스트 자리: ${roots.join(", ")}`,
+        );
+      }
+    }
+  }
+  // 리팩토링이 기존 테스트를 고칠 수 있으면 '동작 보존' 을 재는 자가 없어진다. 부하를 지는 자리가 여기다
+  if (order.kind === "refactor") {
+    const tracked = new Set(trackedTestFiles(work));
+    const hit = plan.files.map((file) => file.path).filter((path) => tracked.has(path));
+    if (hit.length > 0) {
+      problems.push(
+        `리팩토링은 기존 테스트를 고치지 않습니다 — 계획에서 빼세요: ${hit.join(", ")}. ` +
+          "동작이 보존되는지 보는 것이 그 테스트입니다. " +
+          `테스트를 고쳐야 할 이유가 보이면 ${questionsFile(active.id)} 로 물으세요`,
+      );
+    }
+  }
   for (const file of plan.files) {
     const stage = stages.find((candidate) => candidate.key === file.stage);
     if (!stage) {
@@ -1001,10 +1130,10 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   const requirements = requireRequirements(repoRoot, active);
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);
   requireWorkDocs([
-    ...analysisProblems(repoRoot, active.id, requirements.keys),
+    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
-    ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest).problems,
+    ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind).problems,
   ]);
   const docsHash = approvalDocsHash(work);
 

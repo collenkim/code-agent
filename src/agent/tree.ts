@@ -39,6 +39,22 @@ export function mergeBase(repoRoot: string, a: string, b: string): string | unde
   }
 }
 
+/**
+ * 그 커밋에 추적돼 있던 경로 전부 — 기준 커밋의 '이미 있던 파일' 을 가른다.
+ * refactor 가 손대면 안 되는 기존 테스트를 이 목록으로 정한다.
+ */
+export function trackedPaths(repoRoot: string, commit: string): string[] {
+  try {
+    return git(repoRoot, ["ls-tree", "-r", "--name-only", commit])
+      .split("\n")
+      .map((line) => line.replace(/\r$/, "").trim())
+      .filter(Boolean);
+  } catch {
+    // 커밋을 읽을 수 없으면 '이미 있던 파일' 을 셀 수 없다 — 여기서 던지면 판정 경로 전체가 선다
+    return [];
+  }
+}
+
 export type ChangeStatus = "A" | "M" | "D" | "R";
 
 export interface Change {

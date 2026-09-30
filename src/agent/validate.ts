@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -15,20 +15,26 @@ import {
   missingPlanFiles,
   outsideChanges,
   overFixLimit,
+  planPaths,
+  prepareCommand,
+  preservedTestProblems,
   renderValidationDoc,
   runsOf,
   saveEvidence,
   testCaseEvidence,
   testCommands,
+  testStageFiles,
+  testTreeHashNow,
   treeHashNow,
   validationDocFile,
 } from "./evidence";
-import type { CommandSpec, Evidence, Outcome, VerifyPhase, VerifyRun } from "./evidence";
+import type { CommandSpec, Evidence, Outcome, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
 import { logDir, workDocsDir } from "./layout";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
 import type { Work } from "./work";
+import { reproCases, readWorkDoc, workDocPath } from "./workDocs";
 
 /**
  * 7 정적 분석·컴파일(`check`) · 8 테스트(`test`).
@@ -76,11 +82,13 @@ function requireEvidenceBase(work: Work): string {
   return active.baseCommit;
 }
 
-/** 실행 전 대조 — 계획 밖 변경과 사라진 계획 파일. 하나라도 있으면 명령을 돌리지 않는다 */
+/** 실행 전 대조 — 계획 밖 변경과 사라진 계획 파일, refactor 면 기존 테스트까지. 하나라도 있으면 명령을 돌리지 않는다 */
 function requireCleanPlan(work: Work): void {
   const outside = outsideChanges(work);
   const missing = missingPlanFiles(work);
-  if (outside.length === 0 && missing.length === 0) {
+  // 기존 테스트 수정은 `계획 밖 변경` 으로도 잡히지만, 여기서 따로 말해야 무엇이 규칙인지가 보인다
+  const preserved = preservedTestProblems(work);
+  if (outside.length === 0 && missing.length === 0 && preserved.length === 0) {
     return;
   }
   throw new Stop(
@@ -88,6 +96,7 @@ function requireCleanPlan(work: Work): void {
       [
         ...outside.map((change) => `  - 계획 밖 변경 [${change.status}] ${change.path}`),
         ...missing.map((path) => `  - 계획에 있는데 없는 파일 ${path}`),
+        ...preserved.map((problem) => `  - ${problem}`),
       ].join("\n") +
       `\n되돌리거나, 계획을 넓혀야 하면 ${workDocsDir(work.active.id)}/questions.md 에 질문으로 남기고 사람에게 알리세요.`,
   );
@@ -136,7 +145,8 @@ async function runSpecs(
   specs: CommandSpec[],
   /** 명령을 돌릴 자리. 통합 검증만 저장소가 아니라 임시 worktree 에서 돈다 */
   cwd: string = work.repoRoot,
-): Promise<{ runs: VerifyRun[]; output: string }> {
+  // 출력은 `runs` 와 자리를 맞춰 돌려준다 — 재현이 "**실패한 실행의** 출력" 만 보려면 갈라져 있어야 한다
+): Promise<{ runs: VerifyRun[]; outputs: string[] }> {
   const runs: VerifyRun[] = [];
   const outputs: string[] = [];
   mkdirSync(logDir(work.repoRoot), { recursive: true });
@@ -146,6 +156,7 @@ async function runSpecs(
     if (!spec.argv) {
       // 선언되지 않은 종류는 통과가 아니다 — 안 돌린 것을 통과로 읽으면 검증하지 않은 코드가 검증된 것이 된다
       runs.push({ round, phase, kind: spec.kind, command: "", outcome: "not-run", status: null, tail: "", at });
+      outputs.push("");
       continue;
     }
     const result = await runCommand(cwd, spec.argv);
@@ -171,7 +182,7 @@ async function runSpecs(
       at,
     });
   }
-  return { runs, output: outputs.join("\n") };
+  return { runs, outputs };
 }
 
 function remainingNote(work: Work, evidence: Evidence, phase: VerifyPhase): string {
@@ -230,6 +241,140 @@ function persist(work: Work, evidence: Evidence): void {
   writeAtomic(join(work.repoRoot, validationDocFile(work.active.id)), renderValidationDoc(work, evidence));
 }
 
+// ---- fix 의 재현 ----
+
+/**
+ * 재현을 판정한다. **실패(failed)만 재현으로 인정한다** — `not-run`·`error` 는 아무것도 증명하지 않고,
+ * `passed` 는 결함을 찌르지 못한 테스트다.
+ */
+function reproProblem(runs: VerifyRun[], found: TestCaseEvidence[]): string | undefined {
+  const broken = runs.find((run) => run.outcome === "error" || run.outcome === "not-run");
+  if (broken) {
+    return (
+      `재현 명령이 돌지 못했습니다 (${broken.kind}: ${broken.outcome}) — ` +
+      "재현은 실패(failed)만 인정합니다. not-run·error 는 아무것도 증명하지 않습니다."
+    );
+  }
+  if (!runs.some((run) => run.outcome === "failed")) {
+    return (
+      `재현하지 못했습니다 — ${runs.map((run) => `${run.kind}: ${run.outcome}`).join(", ")}. ` +
+      "지금 코드에서 **실패**하는 테스트라야 결함을 재현한 것입니다. " +
+      "⑦ 의 `## 재현` 케이스가 결함을 실제로 찌르는지 다시 보세요."
+    );
+  }
+  const uncovered = found.filter((entry) => entry.source === "없음").map((entry) => entry.id);
+  if (uncovered.length > 0) {
+    return (
+      `재현 TC 가 실패한 실행의 출력에 없습니다: ${uncovered.join(", ")} — ` +
+      "재현은 **실패한 실행이 그 TC 를 찍어야** 증거가 됩니다. 테스트 파일에 id 가 적혀 있다는 것은 " +
+      "무엇이 실패했는지 말해 주지 않습니다(다른 TC 의 실패·깨진 import 도 같은 실패로 보입니다).\n" +
+      "컨벤션의 `테스트 규칙` 대로 테스트 이름에 TC id 를 남겨, 실패 보고에 그 id 가 찍히게 하세요."
+    );
+  }
+  return undefined;
+}
+
+/** `remainingNote` 를 쓰지 않는다 — 그 문구는 "code-agent check 부터" 라 재현 자리에서는 거짓말이 된다 */
+function reproSummary(work: Work, evidence: Evidence): string {
+  const runs = runsOf(evidence, "repro");
+  const lines = [
+    `# code-agent repro — ${work.active.id}`,
+    "",
+    ...runs.map(
+      (run) =>
+        `- ${run.kind}: ${run.outcome}${run.command ? ` (${run.command})` : " — code-agent.json 에 선언이 없습니다"}` +
+        `${run.logFile ? ` · 로그 ${run.logFile}` : ""}`,
+    ),
+    "",
+    `재현 TC: ${(evidence.repro?.cases ?? []).join(", ")} · 테스트 트리 ${evidence.repro?.testTreeHash ?? "없음"}`,
+    `⑧ ${validationDocFile(work.active.id)} 를 렌더했습니다.`,
+    "재현을 봤습니다 — 이제 고칠 파일을 쓸 수 있습니다. kind:\"test\" 단계의 파일은 여기서 얼었습니다.",
+  ];
+  for (const run of runs.filter((entry) => entry.outcome === "failed")) {
+    lines.push("", `## ${run.kind} 실패 — 재현입니다 (마지막 40줄, 전체는 ${run.logFile})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
+  }
+  return lines.join("\n");
+}
+
+/**
+ * fix 의 재현 — 고칠 파일을 쓰기 **전에**, 테스트만 바뀐 트리에서 재현 TC 가 실패하는 것을 본다.
+ *
+ * 순서가 곧 규칙이다. 재현을 본 뒤에 쓴 테스트는 결함을 재현한 적이 없으므로, 이 명령이 남기는
+ * 증거는 "무엇을, 어떤 테스트 트리 위에서 봤는가" 로 묶인다 (hook 이 그 묶임을 대조한다).
+ */
+export async function repro(work: Work): Promise<string> {
+  const { repoRoot, active } = work;
+  const baseCommit = requireEvidenceBase(work);
+
+  // requireCleanPlan 을 그대로 쓰지 않는다 — 재현은 고칠 파일을 **쓰기 전에** 본다. 계획이 새 파일을
+  // 만들기로 했으면 그 파일은 아직 없고, hook 이 재현 전에는 그것을 쓰지 못하게 막는다. 계획 파일이
+  // 전부 있어야 한다고 걸면 그런 계획은 재현도 구현도 못 하는 교착이 된다.
+  const outside = outsideChanges(work);
+  const missingTests = testStageFiles(work).filter((path) => !existsSync(join(repoRoot, path)));
+  if (outside.length > 0 || missingTests.length > 0) {
+    throw new Stop(
+      "계획과 실제 변경이 어긋나 재현을 돌리지 않았습니다:\n" +
+        [
+          ...outside.map((change) => `  - 계획 밖 변경 [${change.status}] ${change.path}`),
+          ...missingTests.map((path) => `  - kind:"test" 단계의 계획 파일이 아직 없습니다: ${path}`),
+        ].join("\n") +
+        `\n재현 테스트를 먼저 쓰고 다시 돌리세요.`,
+    );
+  }
+
+  // 재현은 "테스트만 바뀐 트리" 에서 봐야 증거가 된다 — 이미 고쳐 둔 코드 위의 실패는 재현이 아니다
+  const tests = new Set(testStageFiles(work));
+  const planned = new Set(planPaths(work));
+  const dirty = changedPaths(repoRoot, baseCommit).filter((change) => planned.has(change.path) && !tests.has(change.path));
+  if (dirty.length > 0) {
+    throw new Stop(
+      `재현을 보기 전에 이미 바뀐 계획 파일이 있습니다: ${dirty.map((change) => `[${change.status}] ${change.path}`).join(", ")}\n` +
+        "재현은 \"테스트만 바뀐 트리\" 에서 봐야 증거가 됩니다 — 되돌린 뒤 다시 돌리세요.",
+    );
+  }
+
+  const spec = readWorkDoc(repoRoot, active.id, "07-test-spec");
+  const cases = spec ? reproCases(spec) : [];
+  if (cases.length === 0) {
+    throw new Stop(
+      `${workDocPath(active.id, "07-test-spec")} — fix 는 \`## 재현\` 절에 결함을 재현하는 TC id 를 최소 하나 적습니다 (\`- TC-1\`). 수준은 무엇이든 됩니다.`,
+    );
+  }
+
+  const evidence = carry(work, baseCommit);
+  if (evidence.repro && evidence.repro.testTreeHash === testTreeHashNow(work)) {
+    return `이미 재현을 봤습니다 (${evidence.repro.cases.join(", ")} · ${evidence.repro.at}). 고칠 파일을 쓰세요.`;
+  }
+
+  // 0회차 — 고쳐 쓰기 회차가 아니다. 재현이 한도를 잡아먹으면 고칠 기회가 한 번 줄어든다
+  const specs = testCommands(repoRoot, work.manifest);
+  const { runs, outputs } = await runSpecs(work, "repro", 0, specs);
+  replaceRuns(evidence, "repro", 0, runs);
+
+  // ⑧ 의 두 갈래(출력 · 테스트 파일)를 여기서는 쓰지 않는다. 재현이 주장하는 것은 "그 TC 가 실패했다"
+  // 인데, 파일 안에 id 가 있다는 것은 무엇이 실패했는지 말해 주지 않는다 — 다른 TC 의 실패도, 깨진
+  // import 도 같은 `failed` 로 보인다. **실패한 실행의 출력**만 본다.
+  // (남는 한계: 한 실행이 TC-1 통과와 TC-9 실패를 함께 찍으면 여기서 갈라내지 못한다. 프레임워크마다
+  //  통과·실패 표기가 달라 일반적으로 파싱되지 않는 자리다 — ⑧ 의 대조와 사람의 리뷰가 그 뒤를 받는다.)
+  const failedOutput = outputs.filter((_, index) => runs[index].outcome === "failed").join("\n");
+  const found: TestCaseEvidence[] = cases.map((id) =>
+    // id 가 다른 id 의 앞부분이면 안 된다 — TC-1 이 TC-12 에 걸리면 못 본 것이 본 것으로 읽힌다
+    new RegExp(`\\b${id}\\b`).test(failedOutput)
+      ? { id, source: "출력" as const, where: "실패한 실행의 출력" }
+      : { id, source: "없음" as const },
+  );
+  const problem = reproProblem(runs, found);
+  if (problem) {
+    // 판정에 실패해도 무엇을 돌렸는지는 남긴다 — 그러고 나서 세운다
+    persist(work, evidence);
+    throw new Stop(`${problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.`);
+  }
+
+  evidence.repro = { at: new Date().toISOString(), testTreeHash: testTreeHashNow(work), cases, found };
+  persist(work, evidence);
+  return reproSummary(work, evidence);
+}
+
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
 export async function check(work: Work): Promise<string> {
   const baseCommit = requireEvidenceBase(work);
@@ -272,9 +417,9 @@ export async function runTests(work: Work): Promise<string> {
   }
 
   const specs = testCommands(work.repoRoot, work.manifest);
-  const { runs, output } = await runSpecs(work, "test", evidence.rounds, specs);
+  const { runs, outputs } = await runSpecs(work, "test", evidence.rounds, specs);
   replaceRuns(evidence, "test", evidence.rounds, runs);
-  evidence.testCases = testCaseEvidence(work, output);
+  evidence.testCases = testCaseEvidence(work, outputs.join("\n"));
   persist(work, evidence);
   return summary(work, evidence, "test", specs);
 }
@@ -350,14 +495,27 @@ export async function integrate(work: Work): Promise<string> {
   }
 
   const specs = integrateCommands(work.manifest);
-  const { runs } = await inCleanWorktree(work, baseCommit, (cwd) =>
-    runSpecs(work, "integrate", evidence.rounds, specs, cwd),
-  );
+  // 준비 명령은 선언됐을 때만, build·test 앞에 한 번. 기준 커밋을 뜬 트리에는 의존성처럼
+  // 커밋되지 않는 것이 없어서 두는 자리다.
+  const prep = prepareCommand(work.manifest);
+  const { runs } = await inCleanWorktree(work, baseCommit, async (cwd) => {
+    const first = prep
+      ? await runSpecs(work, "integrate", evidence.rounds, [prep], cwd)
+      : { runs: [] as VerifyRun[], outputs: [] as string[] };
+    // 준비되지 않은 트리 위의 build·test 통과는 증거가 아니다 — 돌리지 않고 끝낸다
+    if (first.runs.some((run) => run.outcome !== "passed")) {
+      return first;
+    }
+    const rest = await runSpecs(work, "integrate", evidence.rounds, specs, cwd);
+    return { runs: [...first.runs, ...rest.runs], outputs: [] };
+  });
   replaceRuns(evidence, "integrate", evidence.rounds, runs);
   persist(work, evidence);
+  const stopped = runs.some((run) => run.kind === "prepare" && run.outcome !== "passed");
   return [
     summary(work, evidence, "integrate", specs),
     "",
     `기준 커밋 ${baseCommit.slice(0, 12)} 위의 깨끗한 worktree 에서 돌렸습니다 — 작업 트리에 남아 있던 산출물은 끼지 않았습니다.`,
+    ...(stopped ? ["준비 명령이 실패해 build·test 를 돌리지 않았습니다 — 준비되지 않은 트리 위의 통과는 증거가 아닙니다."] : []),
   ].join("\n");
 }

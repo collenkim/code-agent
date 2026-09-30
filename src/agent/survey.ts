@@ -3,6 +3,8 @@ import { extname, join, posix } from "path";
 
 import { collectExemplars } from "../core/exemplar";
 import { loadManifest } from "../core/manifest";
+import { KINDS } from "../core/workOrder";
+import { stageTestRoots } from "./evidence";
 
 /**
  * 뼈대 역공학의 **결정론적인 절반** — 저장소를 얕게 훑어 사실만 뽑는다.
@@ -116,10 +118,26 @@ function isTest(path: string): boolean {
 export function survey(repoRoot: string): string {
   const { files, truncated } = walk(repoRoot);
   const sources = files.filter((file) => SOURCE_EXT.has(file.ext));
+  // 빌드 파일을 빈 저장소 판정보다 **먼저** 센다 — 그 판정이 이것을 함께 본다
+  const builds = files.filter((file) => BUILD_FILES.includes(posix.basename(file.path)) && file.path.split("/").length <= 3);
   const out: string[] = ["# 뼈대 역공학 — 저장소 개요 (code-agent survey)", ""];
   if (truncated) out.push(`> 파일이 ${MAX_FILES}개를 넘어 앞부분만 셌습니다.`, "");
+  // 신규(빈) 저장소인지는 **코드가 판정한다** — 모델이 숫자를 눈대중해 실행마다 다른 길로 가지 않게.
+  // 다만 "소스 0개" 는 SOURCE_EXT 가 아는 확장자로만 센 것이라, 목록 밖 언어(C·C++·Swift·Dart·Elixir…)로
+  // 가득 찬 저장소도 0개로 나온다. 빌드 파일까지 없을 때만 "빈 저장소" 라고 단정하고, 아니면
+  // **무엇을 쟀는지** 그대로 적어 스킬이 사람에게 확인하고 갈라지게 한다.
+  if (sources.length === 0) {
+    out.push(
+      builds.length === 0
+        ? "> **소스 파일이 없습니다 — 신규(빈) 저장소입니다.** 역공학할 것이 없으므로 문서와 code-agent.json 을 인터뷰로 만듭니다."
+        : `> **code-agent 가 아는 확장자의 소스 파일이 없습니다 — 신규(빈) 저장소이거나 지원 목록 밖 언어입니다.** ` +
+            `빌드·설정 파일은 ${builds.length}개 있습니다(아래). 인터뷰로 가기 전에 코드가 실재하는지 사람에게 확인하세요 ` +
+            `(아는 확장자: ${[...SOURCE_EXT].join(" ")}).`,
+      "> 정할 것: 언어 · 소스 루트(domainBase) · 단계 목록(key · title · outputDirs · kind) · build · test · prepare 명령 · git.base",
+      "",
+    );
+  }
 
-  const builds = files.filter((file) => BUILD_FILES.includes(posix.basename(file.path)) && file.path.split("/").length <= 3);
   out.push("## 빌드·설정 파일 (깊이 3까지)", ...(builds.length ? builds.map((file) => `- ${file.path}`) : ["- 없음"]), "");
 
   const byExt = new Map<string, number>();
@@ -216,7 +234,36 @@ export function manifestCheck(repoRoot: string): { text: string; ok: boolean } {
       out.push(`- ✗ ${stage.key}: ${error instanceof Error ? error.message : error}`);
     }
   }
-  for (const [name, argv] of [["build", manifest.build], ["test", manifest.test]] as const) {
+  // 종류마다 도는 단계가 있는가. 여기서 말해 주지 않으면 fix 지시서로 start 할 때 처음 알게 된다.
+  // failed 는 건드리지 않는다 — 경고이지 형식 오류가 아니다(종료 코드 0 유지).
+  for (const kind of KINDS) {
+    const running = manifest.stages.filter((stage) => stage.kinds.length === 0 || stage.kinds.includes(kind));
+    if (running.length === 0) {
+      out.push(`- 확인: ${kind} 로 돌 단계가 없습니다 — stages[].kinds 에 "${kind}" 를 더하거나 kinds 를 비우세요 (비면 모든 종류)`);
+      continue;
+    }
+    if (!running.some((stage) => stage.kind === "test")) {
+      out.push(
+        `- 확인: ${kind} 에 kind:"test" 단계가 없습니다 — 테스트 동결이 걸리지 않습니다` +
+          (kind === "fix" ? " (fix 는 재현 테스트를 넣을 자리가 없어 plan submit 이 거부합니다)" : ""),
+      );
+    }
+  }
+  // kind:"test" 단계가 제 자리를 밝히지 않으면 "기존 테스트" 를 가려낼 수 없다 — refactor 의 보호가
+  // 통째로 꺼지고 fix 의 재현 테스트도 자리를 잴 수 없다. 선언을 보고 미리 말해 주는 자리가 여기다.
+  for (const stage of manifest.stages.filter((stage) => stage.kind === "test")) {
+    if (stageTestRoots(stage).length === 0) {
+      out.push(
+        `- 확인: ${stage.key} 는 kind:"test" 인데 자리를 밝히지 않았습니다 ` +
+          "(scope:\"project\" 의 outputDirs 나 base) — refactor 의 기존 테스트 보호가 걸리지 않고, " +
+          "fix 의 계획은 재현 테스트의 자리를 잴 수 없어 거부됩니다",
+      );
+    }
+  }
+  if (manifest.stages.every((stage) => stage.exemplars.length === 0)) {
+    out.push("- 확인: 참조 파일을 선언한 단계가 없습니다 — 신규(빈) 저장소면 정상입니다");
+  }
+  for (const [name, argv] of [["build", manifest.build], ["test", manifest.test], ["prepare", manifest.prepare]] as const) {
     if (argv && !existsSync(join(repoRoot, argv[0])) && !/^[a-z]+$/.test(argv[0])) {
       out.push(`- 확인: ${name} 명령의 실행 파일이 저장소에 없습니다: ${argv[0]}`);
     }
