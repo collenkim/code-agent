@@ -7,6 +7,23 @@ import type { WorkKind } from "./workOrder";
 
 export const MANIFEST_FILE = "code-agent.json";
 
+/**
+ * 플러그인이 끼는 자리. 코어가 자리를 정의하고 자리마다 **기본 구현**이 있다 —
+ * 플러그인은 그 자리를 대신 채울 뿐이고, 등록하지 않은 사람에게는 기본 구현으로 돈다.
+ *
+ * 계약(요청·응답 JSON)과 상한은 `src/agent/plugins/protocol.ts` 가 들고 있다. 이름만 여기 있는
+ * 것은 매니페스트 스키마가 이 목록으로 값을 검사하기 때문이다 — core 는 agent 를 import 하지 않는다.
+ */
+export const SLOTS = [
+  "survey.classify",
+  "candidates.rank",
+  "review.prefilter",
+  "context.docs",
+  "code.index",
+  "verify.extra",
+] as const;
+export type Slot = (typeof SLOTS)[number];
+
 const StageSchema = z.object({
   key: z.string().describe("단계를 가리키는 식별자. 계획의 files[].stage 와 작업 커서가 이 값을 쓴다"),
   title: z.string().describe("이 단계가 만드는 것"),
@@ -200,8 +217,33 @@ const ManifestSchema = z.object({
     })
     .default({ attributes: [], requireApprover: false, requireVerifiedApproval: false })
     .describe("작업 지시서의 프로젝트 확장 속성 정책"),
+  plugins: z
+    .record(z.string(), z.object({ slots: z.array(z.enum(SLOTS)).default([]) }))
+    .default({})
+    .describe(
+      "이 프로젝트가 어느 자리에 어느 플러그인을 쓰는가. **키는 여기 없다** — 키는 사람마다 " +
+        "~/.code-agent/credentials.json 에만 있고, 등록하지 않은 사람에게는 기본 구현으로 돈다. " +
+        "hashManifest 에 넣지 않는다: 경계도 검증 선언도 아니고, 플러그인은 런을 더하기만 하므로 " +
+        "승인이 본 경계를 넓히지 못한다",
+    ),
   stages: z.array(StageSchema).min(1),
 }).superRefine((manifest, ctx) => {
+  // 두 플러그인이 같은 자리를 선언하면 무엇이 도는지 정해지지 않는다 — 형식 오류다
+  const owners = new Map<string, string[]>();
+  for (const [name, entry] of Object.entries(manifest.plugins)) {
+    for (const slot of entry.slots) {
+      owners.set(slot, [...(owners.get(slot) ?? []), name]);
+    }
+  }
+  for (const [slot, names] of owners) {
+    if (names.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["plugins"],
+        message: `자리 ${slot} 를 두 플러그인이 선언했습니다: ${names.join(", ")} — 한 자리에는 하나만 적습니다.`,
+      });
+    }
+  }
   // 주석은 "덮어쓸 수 없다"고 말하는데 검사가 없었다. 그래서 commands.build 를 선언하면
   // 조용히 무시되고, 선언한 사람은 그것이 도는 줄 안다 — 검증 명령에서 그 착각은 비싸다.
   for (const reserved of ["build", "test", "prepare"] as const) {

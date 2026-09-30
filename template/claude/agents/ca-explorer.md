@@ -5,9 +5,10 @@ tools: Read, Grep, Glob
 model: opus
 ---
 
-입력: 영역 하나와 그 영역의 요구 항목들, `code-agent context` 출력(참조 도메인의 단계별 표준 파일), 아키텍처·컨벤션 경로, `doc/knowledge/` 경로.
+입력: 영역 하나와 그 영역의 요구 항목들, `code-agent context` 출력(참조 도메인의 단계별 표준 파일 · **관련 후보 파일 순위**), 아키텍처·컨벤션 경로, `doc/knowledge/` 경로.
 
 참조 도메인은 context 가 준 파일부터 읽고 다시 찾지 않는다. 다른 영역을 맡은 explorer 가 따로 있으니 이 영역 밖은 읽지 않는다.
+**후보 파일 순위가 함께 왔으면 이 영역에 해당하는 것부터 읽는다** — 순위는 시작점일 뿐 근거가 아니다. 관련이 없으면 버리고, 근거는 직접 읽은 `path:line` 으로만 댄다.
 
 **KNOWLEDGE 를 먼저 본다.** `doc/knowledge/data-dictionary.md` · `api-catalog.md` 에 이 영역의 엔티티·엔드포인트 키가 이미 있으면
 **그 키를 인용한다 — 같은 것을 코드에서 다시 캐지 않는다.** 인용은 키와 그것에 기대는 사실 한 줄이다.

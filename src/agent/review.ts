@@ -6,6 +6,8 @@ import { writeAtomic } from "../core/atomic";
 import { readBlock, stripBlock, upsertBlock } from "./blocks";
 import { planPaths, stageProblems, treeHashNow } from "./evidence";
 import { reviewFile, workDocsDir } from "./layout";
+import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
+import { callSlot, clamp } from "./plugins/run";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 
@@ -244,11 +246,41 @@ export function openRound(work: Work): string {
   saveReview(repoRoot, log);
   renderReviewDoc(work, log);
 
+  // review.prefilter — **문서는 건드리지 않는다.** 지적 표는 모델이 쓰고 회차 구역은 코드가
+  // 바이트로 대조하는 자리라, 코드가 지적 표에 쓰면 `parseFindings` 와 `renderRoundsBlock` 대조가
+  // 양쪽에서 흔들린다. 단서는 이 출력에만 싣는다 (기록은 .code-agent/log/plugins/ 에 남는다).
+  const prefilter = callSlot(
+    repoRoot,
+    work.manifest,
+    "review.prefilter",
+    () => ({
+      baseCommit: round.baseCommit,
+      treeHash,
+      files: planPaths(work),
+      rules: (work.plan?.conventions ?? []).map((entry) => ({ source: entry.source, rule: entry.rule })),
+    }),
+    () => ({ suspects: [] }),
+  );
+  const suspects =
+    prefilter.source === "plugin" && prefilter.output.suspects.length > 0
+      ? [
+          "",
+          `## 의심 항목 (플러그인 ${prefilter.name} — 판정이 아니라 단서다. 지적은 ca-reviewer 가 낸 것만 ⑨ 에 적는다)`,
+          // 개수와 길이를 여기서 묶는다 — 이 블록은 모델이 지시로 읽는 화면이다
+          ...prefilter.output.suspects.slice(0, MAX_OUTPUT_ITEMS).map(
+            (entry) =>
+              `- ${clamp(entry.path)}${entry.line ? `:${entry.line}` : ""} — ${clamp(entry.note)}${entry.rule ? ` (${clamp(entry.rule)})` : ""}`,
+          ),
+        ]
+      : [];
+
   return [
     `# code-agent review — ${active.id} · ${round.round}회차`,
     "",
     `- 기준 트리 해시: ${treeHash}`,
     `- 리뷰 대상 계획 파일 ${planPaths(work).length}개 (code-agent context 가 목록과 검증 증거를 준다)`,
+    ...(prefilter.notice ? [`- ${prefilter.notice}`] : []),
+    ...suspects,
     "",
     `ca-reviewer 를 부르고, 낸 지적을 ${reviewDocFile(active.id)} 의 \`## 지적\` 표에 그대로 옮기세요.`,
     "| id | 계획 파일 | 범위 | 상태 | 지적 | — 지적이 없으면 `- 없음`.",

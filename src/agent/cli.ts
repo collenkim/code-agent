@@ -21,6 +21,7 @@ import { runHook } from "./hook";
 import { init } from "./init";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel } from "./models";
+import { pluginAdd, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
 import { openRound } from "./review";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
@@ -38,6 +39,8 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent abort                    진행 중인 작업 커서 지우기
   code-agent deliver                  11 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
   code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
+  code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
+  code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
 
 스킬이 부른다 (Claude Code 안):
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
@@ -46,6 +49,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent docs link <종류> <경로...>  이미 있는 문서를 등록
   code-agent survey                   뼈대 역공학용 저장소 개요 (빌드·언어·구조·계층 후보·표본)
   code-agent manifest check           code-agent.json 이 실제 참조 파일을 찾는지
+  code-agent plugin list              자리·기본 구현·감지된 무료 도구·등록된 플러그인·저장소 선언
   code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]
   code-agent next                     게이트를 확인하고 다음 스테이지·단계로
   code-agent back <스테이지>          커서를 앞 스테이지로 되감기 — 앞으로는 못 가고, 증거·리뷰 회차·원장은 그대로 남는다
@@ -166,6 +170,27 @@ async function main(argv: string[]): Promise<number> {
     case "model":
       print(args.length === 0 ? modelsTable(repoRoot) : setModel(repoRoot, args[0], args[1]));
       return 0;
+    case "plugin":
+      switch (args[0]) {
+        case "list":
+          print(pluginList(repoRoot));
+          return 0;
+        case "add":
+          print(
+            pluginAdd(repoRoot, {
+              name: args[1],
+              command: option(args, "command"),
+              slots: option(args, "slots"),
+              sendsCode: args.includes("--sends-code"),
+            }),
+          );
+          return 0;
+        case "remove":
+          print(pluginRemove(repoRoot, args[1]));
+          return 0;
+        default:
+          throw new Stop(PLUGIN_USAGE);
+      }
     case "survey":
       print(survey(repoRoot));
       return 0;

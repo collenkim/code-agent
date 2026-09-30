@@ -37,6 +37,7 @@ function manifestWith(build: string[]): Manifest {
     conventions: [],
     build,
     fixRounds: 2,
+    plugins: {},
     commands: {},
     docs: {},
     git: { base: "master" },

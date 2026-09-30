@@ -68,7 +68,7 @@ P4 의 `verify` 한 칸은 `check` · `test` · `review` · `integrate` · `deli
 | P5 단계 1 증거 코어 | 8·9·10 · 수정 루프 · 테스트 동결 · Stop hook · 기준 커밋·부분 트리 해시에 묶인 증거 | ✅ |
 | P5 단계 2 리뷰·통합·반영 | 11~13 · ⑨⑩ · KNOWLEDGE 갱신 · 로컬 커밋 | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 우선(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
-| P7 플러그인 | 자리(slot) 정의 · `plugin add/list/remove` — 등록한 사람만 opt-in | |
+| P7 플러그인 | 자리(slot) 6개 · 명령 어댑터 계약(stdin JSON → stdout JSON) · `plugin list/add/remove` · 기본 구현 — 등록한 사람만 opt-in ([`doc/plugins.md`](doc/plugins.md)) | 코드 ✅ · Jev A/B 실측 |
 | P8 정리·배포 | 문서 세트 · `usage` · 단일 실행 파일 | |
 
 ## 설치
@@ -135,8 +135,10 @@ claude
 | `code-agent deliver` | 반영 — 추적표·검증 증거 확인 후 작업 브랜치 로컬 커밋 (TTY). push·MR/PR 없음 |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 터미널에서만, 기본 opus) |
+| `code-agent plugin list` | 자리마다 지금 무엇이 채우는지 · 감지된 무료 도구 · 등록된 플러그인 |
+| `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 플러그인 등록 · 해제 (TTY). 키와 동의는 `~/.code-agent/credentials.json` 에만 — 저장소에는 자리 선언만 ([`doc/plugins.md`](doc/plugins.md)) |
 
-스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `back <스테이지>` · `context` · `status` · `plan submit` · `repro`(fix 전용) · `check` · `test` · `review` · `integrate` · `survey` · `manifest check` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
+스킬이 부르는 것(= 모델이 Bash 로 부를 수 있는 전부): `start` · `next` · `back <스테이지>` · `context` · `status` · `plan submit` · `repro`(fix 전용) · `check` · `test` · `review` · `integrate` · `survey` · `manifest check` · `plugin list` · `docs begin|end|skeleton|interview|link`. hook 이 부르는 것: `code-agent hook` (PreToolUse) · `code-agent stop` (Stop). 둘 다 stdin JSON 이다.
 
 ## 막히는 자리
 
@@ -167,6 +169,9 @@ claude
 | 리뷰의 열린 `계획 안` 지적이 있거나 마지막 회차 트리 해시가 지금과 다르면 반영 거부 | `deliver` | ✅ |
 | 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 알린다 (두 번 막지 않는다) | Stop hook (`code-agent stop`) | ✅ |
 | 승인·확정·반영은 사람만 — 반영 확인 화면에 추적표·검증 증거·커밋될 파일 목록이 함께 뜬다 | `approve` · `confirm` · `deliver` 의 TTY 검사 | ✅ |
+| 플러그인 등록·해제도 사람만 — 모델은 `plugin list` 만 부른다. 코드를 밖으로 보내는 플러그인은 **이름을 그대로 입력**해야 등록되고, `probe` 가 실패하면 키도 저장되지 않는다 | `plugin add`·`remove` 의 TTY 검사 · PreToolUse hook | ✅ |
+| 플러그인은 검증 런을 **더하기만** 한다 — 실패한 빌드를 통과로 만들 수 없고, 호출이 실패하면 기본 구현으로 떨어지며 명령은 정상 종료한다 | `check` · `context` · `review` · `survey` | ✅ |
+| 등록된 키 파일(`~/.code-agent/`)은 모델이 읽지 못한다 — `Read`·`Grep`·`Glob` 도, 그 경로를 가리키는 Bash 도 막힌다. 어댑터 실행 파일은 **PATH 에서만** 찾아 저장소가 가로챌 수 없다 | PreToolUse hook · `resolveExecutable(skipLocal)` | ✅ |
 
 hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있다.
 
@@ -177,5 +182,6 @@ hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 
 | [`doc/design.md`](doc/design.md) | **정본** — 역할 · 문서 게이트 · 스테이지 · 강제 · 서브에이전트 · 플러그인 자리 · 구현 순서 · 실측 |
 | [`doc/usage.md`](doc/usage.md) | 설치부터 승인까지 — 무엇을 치고 어디서 멈추는가 |
 | [`doc/requirement.md`](doc/requirement.md) | 작업 지시서 규격 — 자리·머리말 속성·kind 별 필수·승인 묶음 |
+| [`doc/plugins.md`](doc/plugins.md) | 플러그인(명령 어댑터) 계약 — 자리·요청/응답 JSON·등록과 키·실패 규칙·예시 어댑터 |
 
 흐름·정책이 이 README 와 어긋나면 `doc/design.md` 가 맞다.

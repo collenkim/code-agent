@@ -26,8 +26,9 @@ code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴�
 - [7. 만들어지는 파일](#7-만들어지는-파일)
 - [8. 질문과 가정](#8-질문과-가정)
 - [9. 승인과 반영 — 터미널에서](#9-승인과-반영--터미널에서)
-- [10. 막히면](#10-막히면)
-- [11. 아직 없는 것](#11-아직-없는-것)
+- [10. 플러그인 (선택)](#10-플러그인-선택)
+- [11. 막히면](#11-막히면)
+- [12. 아직 없는 것](#12-아직-없는-것)
 
 ---
 
@@ -348,6 +349,8 @@ claude
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다 | — |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 표 · 바꾸기. 설정은 `.code-agent/models.json`, 정의 파일의 `model:` 줄을 코드가 다시 쓴다 | 바꾸기는 **터미널에서만** |
+| `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
+| `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
 
 `abort` 는 작업 폴더·제출된 계획·원장을 남긴다. 같은 지시서로 다시 `start` 할 수 있다.
 
@@ -372,6 +375,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 `code-agent.json` 에 등록. 작업이 진행 중이면 거부한다 — 근거 문서는 작업 도중에 바꾸지 않는다 |
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드 파일·언어·디렉토리·계층 후보·표본·**도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)·이미 있는 문서 |
 | `code-agent manifest check` | `code-agent.json` 이 참조 파일을 실제로 찾는지 (✗ 면 exit 1) |
+| `code-agent plugin list` | 자리마다 지금 무엇이 채우는지 (읽기만 한다 — `plugin add`·`remove` 는 사람의 터미널 명령이다) |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 |
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
@@ -385,7 +389,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 **한 번** 알린다. 사람이 부르지 않는다 |
 
-모델이 Bash 로 부를 수 있는 것은 이 표의 명령과 `code-agent status` 뿐이다 — `init` · `abort` · `approve` · `reject` · `confirm doc` · `deliver` · `model` 은 hook 이 거부한다 (사람의 터미널 명령이다).
+모델이 Bash 로 부를 수 있는 것은 이 표의 명령과 `code-agent status` 뿐이다 — `init` · `abort` · `approve` · `reject` · `confirm doc` · `deliver` · `model` · `plugin add` · `plugin remove` 는 hook 이 거부한다 (사람의 터미널 명령이다).
 
 ---
 
@@ -419,6 +423,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | `.code-agent/active.json` | 진행 커서 (id·지시서·대상·스테이지·단계·브랜치) | `start` · `next` · `abort` | X |
 | `.code-agent/docs-session.json` | 문서 작성 세션 표시 | `docs begin` · `end` | X |
 | `.code-agent/log/` | 검증 명령의 전체 로그 — ⑧ 에는 꼬리만 남는다 | `check` · `test` · `integrate` | X |
+| `.code-agent/log/plugins/<자리>.jsonl` | 플러그인 호출 기록 — 요청 요약·소요·결과. 마지막 200줄만, **키 값은 들어가지 않는다** | 플러그인을 부르는 명령 | X |
 
 `<ID>` 는 지시서 머리말의 `id` 다 — Jira 키를 그대로 쓴다. **작업 폴더 이름과 같아야** 지시서와 작업 폴더가 한자리에 있다.
 
@@ -613,7 +618,89 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 
 ---
 
-## 10. 막히면
+## 10. 플러그인 (선택)
+
+**등록하지 않아도 전 과정이 돈다.** 자리마다 기본 구현이 있고, 플러그인은 그 자리를 대신 채울 뿐이다.
+플러그인은 **명령 어댑터**다 — stdin 으로 JSON 한 벌을 받아 stdout 으로 JSON 한 벌을 내는 실행 파일 하나.
+계약·형식·보안은 [plugins.md](plugins.md) 가 정본이고, 여기는 **무엇을 치는가**다.
+
+| 명령 | 하는 일 | TTY 필요 |
+|---|---|---|
+| `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 이 PC 의 등록 · 저장소 선언 · **지금 무엇이 채우는가** | — (모델도 부를 수 있다) |
+| `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` | 이 PC 에 등록 — `describe` → 동의 → 키 → `probe` 순서로 묻는다 | **O** |
+| `code-agent plugin remove <이름>` | 등록 해제 — 키·동의·probe 기록을 함께 지운다 | **O** |
+
+`add` · `remove` 는 `approve` · `deliver` 와 같은 문이다 — **모델은 부를 수 없다** (hook 이 막는다).
+등록은 사람이 동의를 주는 자리라서다. `list` 는 상태만 읽으므로 스킬도 부른다.
+
+### 지금 무엇이 채우고 있나
+
+```
+> code-agent plugin list
+
+| 자리 | 기본 구현 | 지금 채우는 것 |
+|---|---|---|
+| survey.classify  | 경로 규칙 + surveyor (code-agent survey)  | 기본 구현 |
+| candidates.rank  | 내장 키워드 스캔 (code-agent context)     | 플러그인 jev |
+| review.prefilter | reviewer 가 전부 봄 (code-agent review)   | 기본 구현 |
+| context.docs     | 제목 매칭 (code-agent context)            | 기본 구현 |
+| code.index       | 없음 — 예약 (이 버전은 부르지 않는다)      | 예약 — 부르는 지점이 없습니다 |
+| verify.extra     | 매니페스트 commands (code-agent check)    | 기본 구현 |
+```
+
+`ripgrep` 이 깔려 있어도 `candidates.rank` 는 쓰지 않는다 — rg 의 ignore 규칙·단어 경계가 달라
+**같은 저장소에서 사람마다 다른 순위**가 나오기 때문이다. `plugin list` 가 "감지됨 · 쓰지 않음" 으로 보고한다.
+
+### 등록
+
+```
+> code-agent plugin add example --command "node C:/tools/code-agent/template/plugin-example/echo-adapter.js"
+```
+
+어댑터에게 `describe` 를 한 번 물어 **무엇을 채우는지 · 코드를 밖으로 보내는지 · 키가 필요한지**를 받는다.
+사람에게는 그 답이 그대로 보인다.
+
+- 코드를 밖으로 보내는 플러그인이면 경고가 뜨고 **플러그인 이름을 그대로 입력**해야 통과한다
+  (`approve` · `deliver` 와 같은 확인이다).
+- 자리마다 **무엇이 어댑터로 나가는지**를 등록 화면이 적는다. `sendsCode: false` 라고 답한 어댑터에도
+  그 자리의 입력(경로 목록 · 요구 항목 문장 · 컨벤션 규칙)은 간다 — 그 답은 게이트 대상이 스스로 한 것이다.
+- 누가·언제·어느 자리를 열었는지는 **언제나** 기록된다 (`sendsCode` 여부와 무관하다).
+- 키가 필요하다고 하면 그때 묻는다. **키 입력은 화면에 보인다** — 프롬프트가 그 사실을 말한다.
+- 마지막으로 `probe` 를 한 번 보낸다. **실패하면 키도 저장하지 않고 등록하지 않는다.**
+
+키와 등록은 `~/.code-agent/credentials.json` (이 PC · 이 사용자)에만 들어간다 — **저장소에는 아무것도 쓰지 않는다.**
+`plugin list` 는 `키 등록됨` 만 찍고 값을 되출력하지 않는다.
+작업 중에는 **모델이 그 파일을 읽지 못한다** — `Read`·`Grep`·`Glob` 도, Bash 로 그 경로를 가리키는 명령도 hook 이 막는다.
+
+### 저장소가 쓸지 말지는 `code-agent.json` 이 정한다
+
+등록만으로는 아무 일도 일어나지 않는다. 저장소가 그 자리를 선언해야 돈다.
+
+```jsonc
+// code-agent.json — 커밋해 팀과 공유한다. 키는 여기 없다
+"plugins": { "jev": { "slots": ["candidates.rank", "review.prefilter"] } }
+```
+
+- **키가 없는 팀원은 기본 구현으로 돈다** — 알림 한 줄이 뜨고 작업은 그대로 진행된다.
+- 개인이 등록해 뒀어도 저장소가 선언하지 않았으면 기본 구현이 돈다 (등록은 개인 것, 선언은 팀 것).
+- 한 자리를 두 플러그인이 선언하면 `code-agent.json` 형식 오류다.
+- `plugins` 는 매니페스트 해시에 들어가지 않는다 — **더해도 기존 계획 승인이 무효가 되지 않는다.**
+
+### 어디에 나타나나
+
+| 명령 | 무엇이 붙나 |
+|---|---|
+| `code-agent context` (`impact`·`design`) | `## 관련 후보 파일 (순위 …)` — 출처 줄이 `기본 구현` 인지 `플러그인 <이름>` 인지 찍는다 |
+| `code-agent context` (`impact`·`design`·`plan`) | `## 참고 문서 섹션 (제목 매칭 …)` |
+| `code-agent review` | `## 의심 항목` — **단서일 뿐 판정이 아니다.** ⑨ 에 적히는 지적은 `ca-reviewer` 가 낸 것뿐이다 |
+| `code-agent check` | `verify.extra` 의 결과가 증거 런으로 **추가**된다 (`kind: "plugin:<이름>:…"`). 더하기만 하므로 실패한 빌드를 통과로 만들 수 없다 |
+| `code-agent survey` | 계층·컴포넌트 분류 블록 (플러그인이 없으면 출력이 지금과 같다) |
+
+실제 Jev 는 아직 붙지 않았다 — A/B 토큰 비교 절차는 [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면).
+
+---
+
+## 11. 막히면
 
 ### `판정은 터미널에서 받습니다 — stdin 이 TTY 가 아닙니다`
 
@@ -650,7 +737,7 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `고쳐 쓰기 2회를 넘겨…` | `fixRounds` 한도를 넘겼다 | 덮지 않고 보고하는 자리다. `questions.md` 에 적고 사람에게 알린다 |
 | `작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다` | `.code-agent/` 쓰기 | `next` · `plan submit` · `confirm` 으로만 바뀐다 |
 | `문서 작성 중에는 문서 자리(...) 밖은 쓸 수 없습니다` | 문서 세션 중 코드 쓰기 | 문서에 적고 사람에게 알린다. 세션은 `docs end` |
-| `작업 중에는 Bash 로 code-agent 명령(…), 선언된 명령, 읽기용 git 만` | 허용 밖 명령 | 파일은 Write/Edit, 읽기는 Read/Grep/Glob. `init`·`abort`·`approve`·`reject`·`confirm`·`deliver`·`model` 은 사람이 터미널에서 |
+| `작업 중에는 Bash 로 code-agent 명령(…), 선언된 명령, 읽기용 git 만` | 허용 밖 명령 | 파일은 Write/Edit, 읽기는 Read/Grep/Glob. `init`·`abort`·`approve`·`reject`·`confirm`·`deliver`·`model`·`plugin add`·`plugin remove` 는 사람이 터미널에서 (`plugin list` 는 열려 있다) |
 | `연결·리다이렉트(; && \| >)는 안 됩니다` | 명령을 이어 붙였다 | 한 번에 하나씩 실행한다 |
 
 **공통 모듈이 경계에 걸릴 때** — 새 오류 코드처럼 도메인 밖 공통 파일을 고쳐야 하는 계획은 경계 검사에서 거부된다.
@@ -723,10 +810,12 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `code-agent hook 이 판정에 실패해 막았습니다` | hook 자체가 터졌다. 막는 쪽으로 닫힌다 — 메시지를 보고 `code-agent status` 로 상태를 확인 |
 | `계획 밖 변경이 있습니다` (턴 끝) | Stop hook 이 기준 커밋과 대조해 한 번 알린 것이다. 되돌리거나 사람에게 알린다 — 계획을 넓히려면 재승인 |
 | `검증 증거가 지금 트리와 맞지 않습니다` | 통과 뒤에 코드·계획·매니페스트가 바뀌었다. `code-agent check` 부터 다시 돈다 |
+| `플러그인 jev(candidates.rank) 가 실패해 기본 구현으로 돕니다: <이유>` | 어댑터가 제한 시간·응답 형식·종료 코드 중 하나에서 걸렸다. **명령은 정상 종료한다** — 그 자리의 결과가 기본 구현의 것일 뿐이다. 이유별 뜻은 [plugins.md §5](plugins.md#5-자리-해결-순서와-실패), 자세한 것은 `.code-agent/log/plugins/<자리>.jsonl` |
+| `자리 candidates.rank 는 code-agent.json 이 jev 를 선언했지만 이 PC 에 등록돼 있지 않습니다` | 이 저장소가 쓰는 플러그인을 아직 등록하지 않았다. 그대로 둬도 기본 구현으로 돈다 — 쓰려면 별도 터미널에서 `code-agent plugin add jev` |
 
 ---
 
-## 11. 아직 없는 것
+## 12. 아직 없는 것
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
@@ -736,7 +825,7 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | P4 문서 모델 전환 + 영향도·설계 | POLICY 2 → 4 · KNOWLEDGE 3종 빈 뼈대 · 번호 작업 문서(`01`~`04`·`07`, `05` 는 코드 렌더) · `impact`·`design` 스테이지 · 영향 표/AC/TC 게이트 · 승인 묶음 고정 | ✅ |
 | P5 구현·검증·반영 | 정적 분석 · 테스트 실행 · 테스트 동결 · 수정 루프 · 코드 리뷰 · 통합 검증 · 반영(TTY 확인 · 로컬 커밋 · `10-pr.md`) · KNOWLEDGE 갱신 · Stop hook | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 먼저(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
-| P7 플러그인 | 자리 정의 · `plugin add/list/remove` · 등록한 사람만 opt-in | — |
+| P7 플러그인 | 자리 6개 · 명령 어댑터 계약 · `plugin list/add/remove` · 등록한 사람만 opt-in · 기본 구현(내장 키워드 스캔 · 제목 매칭) — [10. 플러그인](#10-플러그인-선택) | 코드 ✅ · Jev A/B 실측 |
 | P8 정리·배포 | 단일 실행 파일 · `usage`(토큰 집계) · 설치 점검 | — |
 
 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. push · MR/PR 생성 · 병합은 사람이 손으로 한다 —

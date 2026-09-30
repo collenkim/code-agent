@@ -12,9 +12,9 @@ description: 설계·정의 단계(design)만 돈다 — ③ 03-design.md 와 �
 
 ## 하는 일 — ③ `03-design.md` · ④ `04-functional.md`
 
-1. Bash: `code-agent context`
+1. Bash: `code-agent context` — **관련 후보 파일 순위**와 **참고 문서 섹션**이 함께 나온다. 컨벤션·KNOWLEDGE 를 전문으로 읽지 말고 그 절부터 본다.
 2. Bash: `code-agent docs skeleton 03-design` · `code-agent docs skeleton 04-functional`
-3. `ca-writer` 에게 뼈대 + `01`·`02` + 아키텍처·컨벤션 경로 + KNOWLEDGE 인용을 넘겨 둘을 쓰게 한다. 같은 스테이지에서 함께 쓴다.
+3. `ca-writer` 에게 뼈대 + `01`·`02` + 아키텍처·컨벤션 경로 + `context` 가 짚은 문서 섹션 + KNOWLEDGE 인용을 넘겨 둘을 쓰게 한다. 같은 스테이지에서 함께 쓴다.
    - **`03-design.md`** — `구성 요소` · `처리 흐름` · `API` · `데이터` · `설계 결정`.
      API·데이터는 조건부다: 접점이나 데이터를 안 건드리면 `해당 없음 — <근거>` 라고 쓴다. **근거 없는 `해당 없음` 은 미충족이다.**
      KNOWLEDGE 에 있는 것은 키와 기대는 사실 한 줄을 옮겨 적고 **차이만** 쓴다.

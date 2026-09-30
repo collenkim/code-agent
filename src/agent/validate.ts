@@ -30,6 +30,7 @@ import {
 } from "./evidence";
 import type { CommandSpec, Evidence, Outcome, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
 import { logDir, workDocsDir } from "./layout";
+import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
@@ -199,6 +200,17 @@ function remainingNote(work: Work, evidence: Evidence, phase: VerifyPhase): stri
         `${workDocsDir(work.active.id)}/questions.md 에 무엇이 막혔는지 적고 사람에게 알리세요.`;
 }
 
+/**
+ * 전문을 어디서 보나. **런마다 다르다** — `logFile` 은 명령을 돌린 런만 갖는다.
+ * 플러그인 런은 로그 파일을 쓰지 않으므로 그 자리에 `undefined` 를 찍는 대신 실제로 있는 자리를 가리킨다.
+ */
+function wholeLog(run: VerifyRun): string {
+  if (run.logFile) {
+    return ` — 전체는 ${run.logFile}`;
+  }
+  return run.kind.startsWith("plugin:") ? ` — 플러그인 런입니다. 요청·응답은 ${PLUGIN_LOG_DIR}/verify.extra.jsonl` : "";
+}
+
 function summary(work: Work, evidence: Evidence, phase: VerifyPhase, specs: CommandSpec[]): string {
   const runs = runsOf(evidence, phase);
   const lines = [
@@ -221,7 +233,7 @@ function summary(work: Work, evidence: Evidence, phase: VerifyPhase, specs: Comm
     }
   }
   for (const run of runs.filter((entry) => entry.outcome === "failed" || entry.outcome === "error")) {
-    lines.push("", `## ${run.kind} 실패 (마지막 40줄 — 전체는 ${run.logFile})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
+    lines.push("", `## ${run.kind} 실패 (마지막 40줄${wholeLog(run)})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
   }
   lines.push("", `⑧ ${validationDocFile(work.active.id)} 를 렌더했습니다.`, remainingNote(work, evidence, phase));
   return lines.join("\n");
@@ -291,7 +303,7 @@ function reproSummary(work: Work, evidence: Evidence): string {
     "재현을 봤습니다 — 이제 고칠 파일을 쓸 수 있습니다. kind:\"test\" 단계의 파일은 여기서 얼었습니다.",
   ];
   for (const run of runs.filter((entry) => entry.outcome === "failed")) {
-    lines.push("", `## ${run.kind} 실패 — 재현입니다 (마지막 40줄, 전체는 ${run.logFile})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
+    lines.push("", `## ${run.kind} 실패 — 재현입니다 (마지막 40줄${wholeLog(run)})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
   }
   return lines.join("\n");
 }
@@ -394,9 +406,12 @@ export async function check(work: Work): Promise<string> {
 
   const specs = checkCommands(work.repoRoot, work.manifest);
   const { runs } = await runSpecs(work, "check", evidence.rounds, specs);
-  replaceRuns(evidence, "check", evidence.rounds, runs);
+  // 플러그인 검사는 런을 **더하기만** 한다 — 실패한 빌드를 통과로 만들 수 없다.
+  // 호출이 실패해도 여기는 정상 종료한다: 알림 한 줄이 늘 뿐이다.
+  const extra = pluginVerifyRuns(work, evidence.rounds);
+  replaceRuns(evidence, "check", evidence.rounds, [...runs, ...extra.runs]);
   persist(work, evidence);
-  return summary(work, evidence, "check", specs);
+  return [summary(work, evidence, "check", specs), ...(extra.notice ? ["", extra.notice] : [])].join("\n");
 }
 
 /** 8 테스트 — test + 테스트 전략이 적은 명령. ⑦ 의 TC id 가 전부 확인돼야 넘어간다 */

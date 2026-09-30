@@ -43,6 +43,7 @@ const MANIFEST: Manifest = {
   domainRoots: [],
   conventions: [],
   fixRounds: 2,
+  plugins: {},
   commands: {},
   docs: {},
   git: { base: "master" },
