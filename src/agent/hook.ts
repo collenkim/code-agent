@@ -16,6 +16,7 @@ import {
   trackedTestFiles,
   validationDocFile,
 } from "./evidence";
+import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
@@ -32,10 +33,13 @@ import { planDocFile } from "./workDocs";
 export interface HookInput {
   cwd: string;
   tool_name: string;
-  tool_input: { file_path?: string; notebook_path?: string; command?: string };
+  tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string };
 }
 
 const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+
+/** 경로를 받아 파일 내용을 모델에게 주는 도구들 */
+const READ_TOOLS = ["Read", "Grep", "Glob"];
 
 /** 셸 연결·리다이렉트·치환. 허용 목록의 명령 뒤에 무엇이든 붙일 수 있게 되는 자리다 */
 const SHELL_META = /[;&|<>`\n]|\$\(/;
@@ -51,7 +55,8 @@ const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
 /**
  * 모델이 Bash 로 부를 수 있는 `code-agent` 서브명령 — 스킬이 부르는 것뿐이다.
  *
- * `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver` 는 사람이 터미널에서 돌리는 것이다. 열어 두면
+ * `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람이 터미널에서
+ * 돌리는 것이다. 열어 두면
  * `abort` 한 줄로 작업 커서가 사라져 hook 이 아무것도 판정하지 않게 되고, `init --cli <제 스크립트>` 로
  * hook 자체가 갈린다. `deliver` 는 TTY 확인 뒤 커밋까지 가므로 모델의 자리가 아니다 —
  * 여기 없어도 `confirmOnTerminal` 이 한 번 더 막지만, 두 겹으로 닫는다.
@@ -68,6 +73,9 @@ const MODEL_SUBCOMMANDS = [
   "docs",
   "survey",
   "manifest check",
+  // `plugin list` **만** 연다. `"plugin"` 을 넣으면 isModelCommand 의 접두어 일치로 add·remove 까지
+  // 열려, 모델이 "어디로 코드가 나가는가" 를 제 손으로 정하게 된다.
+  "plugin list",
   "repro",
   "check",
   "test",
@@ -92,6 +100,30 @@ function isModelCommand(command: string): boolean {
  */
 const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--verbose|--show-current))*$/;
 
+/**
+ * 등록된 키가 사는 자리 — **모델은 여기를 읽지 못한다.**
+ *
+ * P7 이 사용자 키를 평문으로 디스크에 두면서 생긴 자리다. 등록·제거는 TTY 로 막았지만, 막은 것은
+ * *쓰는* 길뿐이었다 — `Read ~/.code-agent/credentials.json` 한 번이면 그 키가 모델의 화면에 그대로
+ * 온다. 경로 비교는 구분자와 대소문자를 접어 본다 (Windows 는 둘 다 흔들린다).
+ */
+function normalized(path: string): string {
+  return resolve(path).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function insideStore(target: string): boolean {
+  if (target.trim() === "") {
+    return false;
+  }
+  const root = normalized(storeDir());
+  const path = normalized(target);
+  return path === root || path.startsWith(`${root}/`);
+}
+
+const STORE_DENIED =
+  "등록된 플러그인 키가 있는 자리는 읽을 수 없습니다. " +
+  "무엇이 등록돼 있는지는 code-agent plugin list 가 값을 빼고 보여 줍니다 — 키가 필요하면 사람에게 물으세요.";
+
 export function decide(input: HookInput, projectDir?: string): string | undefined {
   const repoRoot = canonical(projectDir ?? input.cwd);
   const work = loadWork(repoRoot);
@@ -101,7 +133,12 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   }
   const manifest = work ? work.manifest : loadManifestIfAny(repoRoot);
   if (input.tool_name === "Bash") {
-    return decideBash(manifest, (input.tool_input.command ?? "").trim());
+    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting);
+  }
+  // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
+  if (READ_TOOLS.includes(input.tool_name)) {
+    const target = input.tool_input.file_path ?? input.tool_input.path ?? "";
+    return insideStore(target) ? STORE_DENIED : undefined;
   }
   if (!WRITE_TOOLS.includes(input.tool_name)) {
     return undefined;
@@ -149,14 +186,39 @@ function decideDocWrite(manifest: Manifest | undefined, path: string): string | 
   );
 }
 
-function decideBash(manifest: Manifest | undefined, command: string): string | undefined {
-  const declared = [
-    manifest?.build,
-    manifest?.test,
-    ...Object.values(manifest?.commands ?? {}),
-  ]
-    .filter((argv): argv is string[] => Array.isArray(argv) && argv.length > 0)
-    .map((argv) => argv.join(" "));
+/**
+ * 셸 명령이 키 파일 자리를 가리키는가.
+ *
+ * 해석한 경로만 보면 `~`·`$HOME` 표기를 놓친다 — 셸이 풀기 전의 글자도 함께 본다.
+ * 허용 목록을 통과한 명령(`declared`)이라도 여기서 먼저 걸린다.
+ */
+const STORE_MARKERS = [
+  "~/.code-agent",
+  "$home/.code-agent",
+  "${home}/.code-agent",
+  "%userprofile%/.code-agent",
+  "$code_agent_home",
+  "${code_agent_home}",
+  "%code_agent_home%",
+];
+
+function mentionsStore(command: string): boolean {
+  const text = command.replace(/\\/g, "/").toLowerCase();
+  return text.includes(normalized(storeDir())) || STORE_MARKERS.some((marker) => text.includes(marker));
+}
+
+function decideBash(manifest: Manifest | undefined, command: string, documenting: boolean): string | undefined {
+  if (mentionsStore(command)) {
+    return STORE_DENIED;
+  }
+  // 문서 세션에서는 **선언된 명령을 열지 않는다.** 그 세션은 `code-agent.json` 을 쓸 수 있는
+  // 유일한 자리라(`decideDocWrite`), 허용 목록을 모델이 제 손으로 넓히고 그것을 그대로 돌리는
+  // 길이 열린다. 문서를 쓰는 동안 빌드·테스트를 돌릴 일은 없다.
+  const declared = documenting
+    ? []
+    : [manifest?.build, manifest?.test, ...Object.values(manifest?.commands ?? {})]
+        .filter((argv): argv is string[] => Array.isArray(argv) && argv.length > 0)
+        .map((argv) => argv.join(" "));
 
   const allowed =
     !SHELL_META.test(command) &&
@@ -170,7 +232,8 @@ function decideBash(manifest: Manifest | undefined, command: string): string | u
     `작업 중에는 Bash 로 code-agent 명령(${MODEL_SUBCOMMANDS.join(" · ")}), 선언된 명령` +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
     ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
-    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model 은 사람이 터미널에서 실행합니다. " +
+    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model·plugin add·plugin remove 는 " +
+    "사람이 터미널에서 실행합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );
 }

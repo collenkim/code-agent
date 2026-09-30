@@ -42,6 +42,7 @@ const MANIFEST: Manifest = {
   conventions: ["doc/conventions.md"],
   referenceDomain: "orders",
   fixRounds: 2,
+  plugins: {},
   commands: {},
   docs: {},
   git: { base: "master" },

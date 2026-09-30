@@ -7,7 +7,7 @@ import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
-import type { StageDef } from "../core/manifest";
+import type { Manifest, StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
@@ -42,8 +42,12 @@ import {
   validationDocFile,
 } from "./evidence";
 import type { VerifyPhase } from "./evidence";
+import { docRefs, keywordsOf, rankCandidates, relevantDocSections, requirementItems } from "./plugins/defaults";
+import type { RequirementRef } from "./plugins/protocol";
+import { callSlot, clamp, sourceLines } from "./plugins/run";
 import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
+import { sourceFiles } from "./survey";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
@@ -687,6 +691,49 @@ export function back(repoRoot: string, to: string): string {
  * 지금 스테이지에 필요한 것만. 모델이 저장소를 헤매지 않게 코드가 골라 준다 —
  * 참조 코드는 매니페스트대로 결정론적으로 읽고, 긴 문서는 경로만 준다.
  */
+/** 순위는 20개, 문서 절은 10개 — 컨텍스트에 넣을 값이 있는 만큼만 */
+const CANDIDATE_LIMIT = 20;
+const DOC_SECTION_LIMIT = 10;
+
+/** `candidates.rank` — 요구 항목과 관련된 파일 순위 */
+function candidateLines(repoRoot: string, manifest: Manifest, items: RequirementRef[], keywords: string[]): string[] {
+  const files = sourceFiles(repoRoot);
+  const result = callSlot(
+    repoRoot,
+    manifest,
+    "candidates.rank",
+    () => ({ requirements: items, keywords, files, limit: CANDIDATE_LIMIT }),
+    () => ({ ranked: rankCandidates(repoRoot, files, keywords, CANDIDATE_LIMIT) }),
+  );
+  const ranked = result.output.ranked.slice(0, CANDIDATE_LIMIT);
+  return [
+    "## 관련 후보 파일 (순위 — 다시 찾지 말고 이것부터)",
+    ...sourceLines(result, "내장 키워드 스캔, 결정론"),
+    ...(ranked.length > 0
+      ? ranked.map((entry, index) => `${index + 1}. ${clamp(entry.path)} (${entry.score.toFixed(2)} — ${clamp(entry.why)})`)
+      : ["- 없음 — 요구 항목의 낱말에 걸리는 파일이 없습니다. 후보를 직접 찾아야 합니다."]),
+  ];
+}
+
+/** `context.docs` — 컨벤션·KNOWLEDGE 에서 읽을 절 */
+function docSectionLines(repoRoot: string, manifest: Manifest, items: RequirementRef[], keywords: string[]): string[] {
+  const result = callSlot(
+    repoRoot,
+    manifest,
+    "context.docs",
+    () => ({ requirements: items, docs: docRefs(repoRoot, manifest), limit: DOC_SECTION_LIMIT }),
+    () => ({ sections: relevantDocSections(repoRoot, manifest, keywords, DOC_SECTION_LIMIT) }),
+  );
+  const sections = result.output.sections.slice(0, DOC_SECTION_LIMIT);
+  return [
+    "## 참고 문서 섹션 (제목 매칭 — 전문을 읽지 말고 이 절만)",
+    ...sourceLines(result, "제목 매칭"),
+    ...(sections.length > 0
+      ? sections.map((entry) => `- ${clamp(entry.path)} · ## ${clamp(entry.heading)}${entry.why ? ` (${clamp(entry.why)})` : ""}`)
+      : ["- 없음 — 등록된 문서에서 걸리는 절이 없습니다."]),
+  ];
+}
+
 export function context(repoRoot: string): string {
   const work = requireWork(repoRoot);
   const { active, manifest, order } = work;
@@ -791,6 +838,15 @@ export function context(repoRoot: string): string {
           `근거와 함께 적거나 ${questionsFile(active.id)} 로 물으세요.`,
       );
     }
+
+    // 자리 둘 — 기본 구현은 등록 없이 돌고, 저장소가 선언한 플러그인이 있으면 그것이 대신 채운다.
+    // 재탐색을 대신하는 자리라, 여기서 준 것으로 충분하면 서브에이전트가 저장소를 다시 훑지 않는다.
+    const items = requirementItems(readWorkDoc(repoRoot, active.id, "01-requirements") ?? "");
+    const keywords = keywordsOf(items);
+    if (active.phase !== "plan") {
+      out.push("", ...candidateLines(repoRoot, manifest, items, keywords));
+    }
+    out.push("", ...docSectionLines(repoRoot, manifest, items, keywords));
   }
 
   if (active.phase === "plan") {

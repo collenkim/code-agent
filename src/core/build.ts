@@ -233,18 +233,24 @@ function findExecutable(base: string, env: NodeJS.ProcessEnv): string | undefine
  * 둔 것이 PATH 의 것보다 그 프로젝트에 맞기 때문이다. 없으면 PATH 를 코드가 직접 순회한다.
  * Node 의 spawnSync 에 이름만 넘기면 Windows 에서 `.exe` 만 찾아 `npm`(npm.cmd) 이 ENOENT 로
  * 죽는데, 그것을 "테스트 실패"와 구분할 길이 없어진다. 여기서 못 찾으면 못 찾았다고 말한다.
+ *
+ * `skipLocal` 은 그 첫 순서를 끈다. **저장소가 실행 파일을 고르면 안 되는 자리**가 있다 —
+ * 플러그인 어댑터는 매니페스트가 아니라 사람이 제 PC 에 등록한 것이고, 그 프로세스에는 등록한
+ * 키가 실린다. 저장소 루트의 `node.cmd` 하나가 등록된 어댑터를 가로채 키를 받아 가는 길을
+ * 여기서 닫는다 (`gradlew` 규칙은 매니페스트가 선언한 빌드 명령의 것이다).
  */
 export function resolveExecutable(
   cwd: string,
   command: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: { skipLocal?: boolean } = {},
 ): string | undefined {
   // 경로를 적었으면(./gradlew, scripts/test.sh, 절대경로) 그 자리에서만 본다.
   if (command.includes("/") || command.includes("\\") || isAbsolute(command)) {
     return findExecutable(resolve(cwd, command), env);
   }
 
-  const local = findExecutable(join(cwd, command), env);
+  const local = options.skipLocal ? undefined : findExecutable(join(cwd, command), env);
   if (local) {
     return local;
   }
@@ -260,7 +266,7 @@ export function resolveExecutable(
 }
 
 /** cmd.exe 에 넘길 인자 하나. 공백·따옴표가 있으면 감싼다 — 감싸지 않으면 갈라진다. */
-function quoteForCmd(argument: string): string {
+export function quoteForCmd(argument: string): string {
   if (argument !== "" && !/[\s"&|<>^()]/.test(argument)) {
     return argument;
   }
@@ -268,7 +274,7 @@ function quoteForCmd(argument: string): string {
 }
 
 /** `.cmd`/`.bat` 은 프로그램이 아니라 cmd.exe 가 읽는 스크립트다. 직접 spawn 하면 EINVAL 이다. */
-function isBatchScript(file: string): boolean {
+export function isBatchScript(file: string): boolean {
   return process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
 }
 

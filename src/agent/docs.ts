@@ -86,8 +86,12 @@ export function normalizeHeading(text: string): string {
     .toLowerCase();
 }
 
-/** 제목과 그 아래 본문(다음 같은·더 높은 수준 제목 전까지). 주석은 본문이 아니다 */
-function sectionsOf(text: string): { heading: string; body: string }[] {
+/**
+ * 제목과 그 아래 본문(다음 같은·더 높은 수준 제목 전까지). 주석은 본문이 아니다.
+ * `line` 은 1부터 센 제목 줄 번호, `level` 은 `#` 의 개수 — `context.docs` 의 기본 구현이
+ * 절을 가리키고 문서 제목(level 1, 본문이 문서 전체다)을 걸러 낼 때 쓴다.
+ */
+export function sectionsOf(text: string): { heading: string; body: string; line: number; level: number }[] {
   const lines = text.replace(/<!--[\s\S]*?-->/g, "").split("\n");
   const found: { heading: string; level: number; start: number }[] = [];
   lines.forEach((line, index) => {
@@ -96,7 +100,12 @@ function sectionsOf(text: string): { heading: string; body: string }[] {
   });
   return found.map((entry, index) => {
     const end = found.slice(index + 1).find((other) => other.level <= entry.level)?.start ?? lines.length;
-    return { heading: entry.heading, body: lines.slice(entry.start + 1, end).join("\n") };
+    return {
+      heading: entry.heading,
+      body: lines.slice(entry.start + 1, end).join("\n"),
+      line: entry.start + 1,
+      level: entry.level,
+    };
   });
 }
 

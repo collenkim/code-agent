@@ -380,34 +380,106 @@ hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 
 **원칙: 무료로 되는 것은 등록 없이 쓰고, 유료는 사용자가 등록해야만 쓴다. 아무것도 없어도 전 과정이 돈다.**
 등록은 **opt-in** 이다 — 등록하지 않은 사람에게는 기본 구현으로만 돈다.
 
+계약·형식·명령의 정본은 [plugins.md](plugins.md). 여기 있는 것은 **왜 그 모양인가**다.
+
 ### 자리(slot) — 플러그인이 끼는 곳
 
 code-agent 코어가 자리를 정의하고, 자리마다 **기본 구현**이 있다. 플러그인은 자리를 대신 채울 뿐이다.
 
-| 자리 | 쓰이는 곳 | 기본 구현 (등록 없이) | 예: 채울 수 있는 플러그인 |
+| 자리 | 쓰이는 곳 (부르는 명령) | 기본 구현 (등록 없이) | 예: 채울 수 있는 플러그인 |
 |---|---|---|---|
-| `survey.classify` | 1 뼈대 역공학 — 파일을 계층·컴포넌트로 분류 | 경로 규칙 + surveyor | Jev |
-| `candidates.rank` | 3 영향도 분석, fix — 요구 항목과 관련된 파일 순위 | ripgrep + explorer | Jev, 코드 검색 서비스 |
-| `review.prefilter` | 9 코드 리뷰 — 규칙 위반 의심 항목 | reviewer 가 전부 봄 | Jev |
-| `context.docs` | 3~5 영향도·설계·계획 — 컨벤션·외부 문서에서 필요한 섹션 | 제목 매칭 | Jev, 문서 MCP |
-| `code.index` | 1 · 3 — 심볼·호출 관계 | ripgrep | LSP 플러그인, 코드 인덱스 MCP |
-| `verify.extra` | 7 정적 분석 — build/test 외 검사 | 매니페스트 `commands` 에 선언한 정적 분석 명령 (P5 의 `check` 가 돌린다) | 정적 분석 도구 |
+| `survey.classify` | 1 뼈대 역공학 (`survey`) — 파일을 계층·컴포넌트로 분류 | 경로 규칙 + surveyor | Jev |
+| `candidates.rank` | 3·4 영향도·설계 (`context`) — 요구 항목과 관련된 파일 순위 | 내장 키워드 스캔 (결정론) | Jev, 코드 검색 서비스 |
+| `review.prefilter` | 9 코드 리뷰 (`review`) — 규칙 위반 의심 항목 | reviewer 가 전부 봄 | Jev |
+| `context.docs` | 3~5 영향도·설계·계획 (`context`) — 컨벤션·KNOWLEDGE 에서 필요한 섹션 | 제목 매칭 | Jev, 문서 MCP |
+| `code.index` | **예약 — 부르는 곳이 없다** | 없음 | LSP 플러그인, 코드 인덱스 MCP |
+| `verify.extra` | 7 정적 분석 (`check`) — build/test 외 검사 | 매니페스트 `commands` 에 선언한 정적 분석 명령 (P5 의 `check` 가 돌린다) | 정적 분석 도구 |
 
-### 등록
+`code.index` 는 이름만 잡아 뒀다 — `--slots code.index` 로 등록은 되지만 호출 지점이 없다.
+`plugin list` 의 `지금 채우는 것` 칸이 **등록·선언이 다 있어도** `예약` 으로 찍고 그 줄을 함께 낸다
+(그 칸에 플러그인 이름이 뜨면 표가 돌지 않는 것을 돈다고 말한다). 쓸 자리가 확인되기 전에 호출 지점을 만들면
+계약이 실사용 없이 굳는다.
+
+### 계약 — 버전 있는 JSON 한 왕복
+
+플러그인은 **명령 어댑터**다 — JSON 을 stdin 으로 받아 JSON 을 stdout 으로 낸다 (hook 과 같은 규약, 언어 무관).
+code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙는 일은 전부 어댑터 안에서 일어난다 —
+그래서 Jev 가 붙을 때 code-agent 에 고칠 코드가 없다.
+
+| 봉투 | `{protocol:"code-agent.plugin", version:"1", op, requestId, repoRoot?, slot?, sendsCode?, secret?, input?}` |
+|---|---|
+| 응답 | `{protocol, version:"1", requestId, ok:true, output}` 또는 `{…, ok:false, error}` |
+| `op` | `describe`(등록 때 한 번, 키 없이) · `probe`(등록 때 한 번, 키를 실어) · `run`(자리마다) |
+| 버리는 응답 | `protocol` 불일치 · `version !== "1"` · **`requestId` 불일치** · `ok` 없음 · `output` 이 자리 스키마와 다름 |
+| 상한 | `describe`·`probe` 10초/256 KiB · 나머지 자리 20초/1 MiB · `verify.extra` 120초/1 MiB. 요청의 목록(`files`·`docs`·`planFiles`·`changed`·`requirements`)은 각각 3000개에서 자른다. `verify.extra` 의 `kind` 는 식별자여야 한다 |
+
+`requestId` 를 대조하는 이유는 앞 호출의 응답을 캐시해 되돌려 주는 어댑터를 막기 위해서다.
+`verify.extra` 만 120초인 것은 두 번째 러너(비동기)를 만들지 않기 위해서다 —
+어댑터 실행은 `spawnSync` 하나로 돈다(필요한 상한 셋이 그 옵션 그대로다). **2분 넘게 도는 검사는 플러그인으로 못 쓴다**;
+긴 정적 분석은 매니페스트 `commands` 로 선언한다 — 그 길은 이미 있고 `check` 가 돌린다.
+
+### 자리를 누가 채우는가 — 해결 순서
 
 ```
-code-agent plugin list                  # 자리, 기본 구현, 감지된 무료 도구, 등록된 플러그인
-code-agent plugin add jev               # 터미널에서 키 입력 → 사용자 설정(저장소 밖)에 저장
-code-agent plugin remove jev
+1. code-agent.json 의 plugins 가 그 자리를 선언했나?    아니면 → 기본 구현, 알림 없음
+2. 그 이름이 이 PC 에 등록돼 있고 그 자리를 덮나?        아니면 → 기본 구현 + 알림 한 줄
+3. 호출 → 실패하면                                      → 기본 구현 + 알림 한 줄 + 로그
 ```
 
-- **무료 도구**(ripgrep, LSP, 매니페스트에 선언한 linter)는 설치돼 있으면 자동으로 쓴다.
-- **유료 도구**는 `plugin add` 로 키를 등록해야만 켜진다. 키는 `~/.code-agent/credentials.json` 에만 있고
-  저장소에는 "어떤 플러그인을 쓰는 프로젝트인가"만 남는다. 외부로 코드를 보내는 플러그인은 등록 시 그 사실을 경고한다.
-- 플러그인은 **명령 어댑터**다 — JSON 을 stdin 으로 받아 JSON 을 stdout 으로 낸다 (hook 과 같은 규약, 언어 무관).
-  모델이 직접 써야 하는 도구(문서 조회 등)는 MCP 서버로 등록해 `.mcp.json` 에 넣는다.
+**선언은 팀 것이고 등록은 개인 것이다.** 개인이 등록해 뒀어도 저장소가 선언하지 않았으면 기본 구현이 돈다 —
+개인 등록이 팀 저장소의 `context` 출력을 조용히 바꾸면 재현이 사람마다 갈린다.
+반대로 저장소가 선언했는데 등록이 없으면 알림 한 줄과 함께 기본 구현으로 돌고, **작업은 막히지 않는다.**
+
+**플러그인 실패는 명령을 세우지 않는다** — `context`·`survey`·`review`·`check` 는 전부 정상 종료하고 알림 한 줄만 는다.
+호출마다 요청 요약·소요·결과가 `.code-agent/log/plugins/<slot>.jsonl` 에 남는다 (마지막 200줄, 키 값은 없다).
+
+### 키와 동의
+
+- `plugin add`·`plugin remove` 는 **TTY 전용**이고 hook 의 사람 전용 목록에 있다 — 모델은 `plugin list` 만 부른다.
+  등록은 사람이 동의를 주는 자리라 `approve`·`confirm doc`·`deliver` 와 같은 문을 쓴다.
+- 키는 `~/.code-agent/credentials.json` 에만 있고 저장소에는 "어떤 자리에 어떤 플러그인을 쓰는가"만 남는다.
+  한 번 쓰고 다시 출력되지 않는다 — `plugin list` 는 `키 등록됨` 만 찍고 길이도 찍지 않는다(길이는 단서다).
+- **모델은 그 파일을 읽지도 못한다.** TTY 로 막은 것은 *쓰는* 길뿐이었다 — 평문 키를 디스크에 두면
+  `Read ~/.code-agent/credentials.json` 한 번이 그것을 모델의 화면에 그대로 올린다. hook 이 그 자리를
+  읽기 도구로도, 그 경로를 가리키는 Bash 로도 막는다. 같은 이유로 문서 세션에서는 선언된 명령을 열지 않는다 —
+  거기는 모델이 `code-agent.json` 을 쓸 수 있는 유일한 자리라, 허용 목록을 제 손으로 넓히는 길이 된다.
+- **저장소는 어댑터를 고르지 못한다.** 어댑터 이름은 PATH 에서만 찾는다 — 저장소 안 래퍼 우선 규칙
+  (gradlew·mvnw)은 매니페스트가 선언한 빌드 명령의 것이고, 개인이 등록한 어댑터에는 키가 실린다.
+  클론한 저장소가 루트에 `node.cmd` 하나를 두는 것으로 그 키를 받아 갈 수 있으면 등록의 동의가 뜻을 잃는다.
+- **키 전달 방식은 어댑터가 정하고 등록이 기록한다.** `describe` 가 `{"delivery":"stdin"}`(기본) 또는
+  `{"delivery":"env","env":"JEV_API_KEY"}` 를 말한다. `plugin add` 에 `--secret-env` 같은 플래그를 두지 않는다 —
+  어댑터만이 제 인터페이스를 알고, 사람에게 환경변수 이름을 묻는 것은 사람이 답할 수 없는 질문이다.
+  argv 는 프로세스 목록에 보이고 환경변수는 손자 프로세스까지 새기 때문에 **stdin 이 기본**이다.
+- 외부로 코드를 보내는 플러그인(`--sends-code` 또는 어댑터가 스스로 밝힌 `sendsCode`)은 등록 때 경고 화면이 뜨고
+  **플러그인 이름을 그대로 입력**해야 통과한다. 다만 `sendsCode` 는 **게이트 대상이 스스로 답한 값**이라 그것만으로는
+  자료가 못 된다 — `false` 라고 답해도 자리를 여는 순간 경로 목록·요구 항목 문장·컨벤션 규칙은 간다.
+  그래서 큰 경고와 이름 입력은 `sendsCode` 에만 두되(힘이 실린 문은 하나여야 한다), **동의 기록은 언제나 남기고**
+  등록 화면이 자리마다 무엇이 나가는지 적는다.
+- 등록 마지막에 `probe` 를 한 번 보낸다. **실패하면 키도 저장하지 않고 등록하지 않는다** —
+  붙지 않는 플러그인을 등록해 두고 매번 실패 한 줄을 보는 일이 없게 하는 문이다.
+- 저장 자리는 `CODE_AGENT_HOME` 이 있으면 그 아래, 없으면 `os.homedir()/.code-agent/`.
+  `%APPDATA%`·`XDG_CONFIG_HOME` 을 따르지 않는 것은 두 플랫폼이 같은 자리를 쓰는 편이 문서·지원이 싸서다.
+  `CODE_AGENT_HOME` 은 테스트가 실제 사용자 홈을 건드리지 않게 둔 knob 이다.
+
+### 판정은 더하기만 한다
+
 - 판정 플러그인은 **CLI 가 부른다**, 모델이 아니라. 쓸지 말지를 모델이 정하면 그 판단에 토큰이 들고 결과가 흔들린다.
-- 플러그인의 판정은 입력 요약·결과·임계값과 함께 `.code-agent/log/` 에 남는다. 실패하면 기본 구현으로 떨어지고 알린다.
+  모델이 직접 써야 하는 도구(문서 조회 등)는 MCP 서버로 등록해 `.mcp.json` 에 넣는다.
+- `verify.extra` 의 결과는 `check` 의 증거에 **런으로 추가**될 뿐 기존 런을 지우거나 결과를 바꾸지 않는다 —
+  **실패한 빌드를 통과로 만드는 길이 원천적으로 닫혀 있다.** 반대 방향은 열려 있어, 플러그인 런이 `failed` 면 막힌다.
+  그 불변식은 **사람이 읽는 ⑧ 에서도** 지켜져야 한다. ⑧ 은 증거에서 다시 렌더되므로 바이트 대조 게이트가
+  "증거와 문서가 같다"만 볼 뿐 문서가 거짓인지는 못 본다 — 그래서 어댑터가 준 `kind` 는 표 행을 가를 수 없는
+  식별자로 묶고, `detail` 안의 울타리는 닫히지 않게 바꾼다. 증거가 옳아도 보고서가 거짓이면 승인하는 사람에게는 같은 일이다.
+- **어댑터가 준 문자열은 화면으로 나갈 때 한 줄로 묶이고 목록은 개수가 잘린다.** 자리 출력은 모델이 지시로 읽는
+  자리다 — 사람이 고른 것은 어댑터 실행 파일이지 그것이 중계하는 서버가 아니다.
+- 그래서 **등록한 사람만 엄격해진다** — 같은 커밋에서 등록자는 막히고 등록하지 않은 팀원은 막히지 않는다.
+  자기 PC 에 린터를 하나 더 건 것과 같은 성질이라 의도대로 둔다.
+- `review.prefilter` 의 의심 항목은 `code-agent review` 의 **stdout 에만** 실리고 ⑨ 에는 쓰지 않는다.
+  지적 표는 모델이 쓰고 회차 구역은 코드가 바이트로 대조하므로, 코드가 지적 표에 쓰면 그 대조가 흔들린다.
+- `manifest.plugins` 는 `hashManifest` 에 넣지 않는다 — 경계도 검증 선언도 아니고, 런을 더하기만 하므로
+  승인이 본 경계를 넓히지 못한다. **`plugins` 를 더해도 기존 계획 승인은 한 건도 무효가 되지 않는다.**
+- `candidates.rank` 의 기본 구현은 ripgrep 이 PATH 에 있어도 **쓰지 않는다** — rg 의 ignore 규칙·유니코드 단어 경계가
+  Node 스캔과 달라 같은 저장소에서 사람마다 다른 순위가 나온다. `plugin list` 가 "감지됨 · 쓰지 않음" 으로 보고한다.
 
 ## 7. 토큰
 
@@ -419,7 +491,8 @@ code-agent plugin remove jev
 | 서브에이전트 새 컨텍스트 | 앞 스테이지 대화 누적 없음 | P1 ✅ |
 | 메인은 코드를 읽지 않는다 — 작업 폴더 문서·`code-agent` 출력·서브에이전트 결과로만 | 메인 컨텍스트가 작아야 긴 작업이 버틴다 | P3 ✅ |
 | explorer 를 요구 항목이 아니라 **닿는 영역별로** · critic 은 계획·분석·작업 문서·계획이 가리키는 파일만 | 같은 저장소를 여러 번 훑지 않는다 (실측: 요구 항목 5개에 explorer 5개가 각자 파일 20~28개를 읽어 조사+계획 $12.58) | P3 ✅ |
-| 판정 플러그인 | 파일을 Claude 컨텍스트에 넣지 않고 분류·순위 | P7 |
+| `code-agent context` 의 후보 파일 순위·참고 문서 섹션 — 등록 없이 도는 기본 구현 | explorer 가 저장소를 다시 훑지 않고, 컨벤션·KNOWLEDGE 를 전문으로 읽지 않는다 | P7 ✅ |
+| 판정 플러그인 | 파일을 Claude 컨텍스트에 넣지 않고 분류·순위 | 코드 P7 ✅ · 효과는 Jev A/B 로 잰다 (§6 · [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
 | `code-agent usage` | 스테이지·에이전트별 토큰 집계 — 줄었는지는 숫자로 본다 | P8 |
 
 ## 8. 배포와 대상 저장소
@@ -434,7 +507,7 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | 대상 저장소에 생기는 것 | 커밋 | 상태 |
 |---|---|---|
 | `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json` 의 PreToolUse hook, `.code-agent/version` | O | P1 ✅ |
-| `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands) | O | P1 ✅ · `prepare` P6 ✅ |
+| `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O | P1 ✅ · `prepare` P6 ✅ · `plugins` P7 ✅ |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 ✅ 갱신 |
 | `doc/work/<ID>/requirement.md` — 작업 지시서. `<ID>` 는 Jira 키 그대로 (`UZRF-145`). **사람이 쓴다** | O | P1 ✅ |
@@ -505,7 +578,8 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY, 기본 opus) | ✅ |
 | `code-agent usage` | 스테이지·에이전트별 토큰 집계 | P8 |
-| `code-agent update` · `plugin list \| add \| remove` | 갱신 · 플러그인 등록 | P7·P8 |
+| `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) | P7 ✅ |
+| `code-agent update` | 갱신 | P8 |
 
 ### 스킬·hook 이 부른다
 
@@ -527,6 +601,7 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 등록 | P2 ✅ |
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드·언어·구조·계층 후보·표본 | P2 ✅ |
 | `code-agent manifest check` | `code-agent.json` 이 실제 참조 파일을 찾는지 | P2 ✅ |
+| `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 이 PC 의 등록 · 저장소 선언 · 지금 무엇이 채우는가. **읽기만 한다** — `add`·`remove` 는 사람의 터미널 명령이다 | P7 ✅ |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON → deny 사유) | P1 ✅ |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 | P5 ✅ |
 
@@ -560,7 +635,7 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | P5 단계 1 증거 코어 | 기준 커밋 고정(`ActiveWork.baseCommit`) · `tree.ts`(변경 목록 · 부분 트리 해시) · 스테이지 `check`·`test`·`review`·`integrate`·`deliver` · `code-agent check`·`test`(증거 `verify.json` · ⑧ 렌더 · 계획↔트리 사전 대조 · 회차) · 수정 루프(`fixRounds`, 기본 2) · 테스트 동결(`kind: "test"`) · Stop hook | ⑧ 이 코드로만 쓰이고, 증거가 트리·매니페스트·계획에 묶이고, 한도를 넘기면 hook 이 막는다 — 전부 테스트로 | ✅ |
 | P5 단계 2 리뷰·통합·반영 | ⑨ `09-review.md`(코드가 쓰는 회차 구역 · 마지막 회차 트리 해시 == 지금 · 범위는 코드가 판정) · `integrate`(기준 커밋 + 변경 파일만 얹은 깨끗한 worktree 에서 전체 build·test) · `deliver`(TTY 확인 → ⑩ `10-pr.md` 추적표 렌더 → **로컬 커밋까지**. push·MR/PR 없음) · KNOWLEDGE upsert · 테스트 동결의 두 번째 탈출구(⑨ 의 지적) | 실제 프로젝트에서 feature 한 건을 로컬 커밋까지 완주 (첫 실측) | 코드 ✅ (리뷰 지적 반영) · 실측 |
 | P6 fix·refactor · 신규 저장소 | ② 현행 분석 필수(`해당 없음` 불가 · 근거 `path:line`) · ⑦ 의 `## 재현` 절과 `code-agent repro`(증거 `Evidence.repro`, 재현 전 쓰기 거부, 재현 뒤 테스트 동결) · `sequence[0]` 이 테스트 단계 · refactor 의 기존 테스트 파일 보호(제출·쓰기·검증 세 자리) · `stages[].kinds` 종류별 단계와 `manifest check` 경고 · 빈 저장소 감지(`survey`)와 참조 없는 `context` · `deliver` 커밋 범위 제한 · `integrate` 의 `prepare` | 각 한 건 완주, 빈 저장소에서 feature 시작 | 코드 ✅ · 완주 실측 |
-| P7 플러그인 | 자리 정의, `plugin add/list/remove`, 무료 도구 감지, Jev 어댑터 — **등록한 사람만 opt-in** | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | |
+| P7 플러그인 | 자리 6개 · 버전 있는 명령 어댑터 계약(stdin JSON → stdout JSON, `describe`·`probe`·`run`) · `plugin list/add/remove`(등록은 TTY·동의·`probe`, 키는 사용자 스토어) · 무료 도구 감지 · 기본 구현 둘(내장 키워드 스캔 · 제목 매칭) · `code-agent.json` 의 `plugins` 선언(해시 중립) · 호출 로그 — **등록한 사람만 opt-in**, 실패하면 기본 구현 + 한 줄 | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | 코드 ✅ · **A/B 는 실제 Jev 가 붙어야 잰다** (절차: [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
 | P8 정리·배포 | 쓰이지 않는 코드·문서 정리, 문서 세트(README 가 이 문서를 가리킴), `usage`, 단일 바이너리 배포, 설치·점검 | 다른 개발자가 혼자 설치부터 반영까지 | |
 
 **P5 뒤로 미룬 것**

@@ -2,9 +2,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { extname, join, posix } from "path";
 
 import { collectExemplars } from "../core/exemplar";
-import { loadManifest } from "../core/manifest";
+import { loadManifest, MANIFEST_FILE } from "../core/manifest";
+import type { Manifest } from "../core/manifest";
 import { KINDS } from "../core/workOrder";
 import { stageTestRoots } from "./evidence";
+import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
+import { callSlot, clamp } from "./plugins/run";
 
 /**
  * 뼈대 역공학의 **결정론적인 절반** — 저장소를 얕게 훑어 사실만 뽑는다.
@@ -115,6 +118,27 @@ function isTest(path: string): boolean {
   return /(^|\/)(src\/test|tests?|__tests__|spec)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path);
 }
 
+/**
+ * 스캔 대상 소스 파일 — `survey` 와 `candidates.rank` 의 기본 구현이 나눠 쓴다.
+ * 건너뛸 디렉토리(`SKIP`)와 확장자 목록(`SOURCE_EXT`)을 둘이 따로 들면 같은 저장소에서
+ * 두 명령이 다른 파일 집합을 본다.
+ */
+export function sourceFiles(repoRoot: string): { path: string; ext: string }[] {
+  return walk(repoRoot).files.filter((file) => SOURCE_EXT.has(file.ext)).map(({ path, ext }) => ({ path, ext }));
+}
+
+/**
+ * 플러그인 자리를 볼 때만 쓰는 매니페스트. 없거나 형식이 틀려도 `survey` 는 돌아야 한다 —
+ * 도입 중(`/ca-adopt`)에 부르는 명령이고, 형식 판정은 `manifest check` 의 자리다.
+ */
+function pluginManifest(repoRoot: string): Manifest | undefined {
+  try {
+    return existsSync(join(repoRoot, MANIFEST_FILE)) ? loadManifest(repoRoot) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function survey(repoRoot: string): string {
   const { files, truncated } = walk(repoRoot);
   const sources = files.filter((file) => SOURCE_EXT.has(file.ext));
@@ -205,6 +229,36 @@ export function survey(repoRoot: string): string {
   const docs = files.filter((file) => file.ext === ".md" && (!file.path.includes("/") || /^(doc|docs)\//.test(file.path))).map((file) => file.path);
   out.push("## 이미 있는 문서", ...(docs.length ? docs.slice(0, 30).map((path) => `- ${path}`) : ["- 없음"]));
   if (docs.length > 30) out.push(`- … 외 ${docs.length - 30}개`);
+
+  // survey.classify — 자리를 채우는 플러그인이 없으면 **여기서 한 글자도 더하지 않는다**
+  const classify = callSlot(
+    repoRoot,
+    pluginManifest(repoRoot),
+    "survey.classify",
+    () => ({
+      files: sources.map((file) => ({ path: file.path, ext: file.ext })),
+      layerCandidates: layers.map(([name, slot]) => ({ name, dirs: [...slot.dirs].sort(), files: [...slot.files].sort() })),
+    }),
+    () => ({ layers: [] }),
+  );
+  if (classify.notice) out.push("", classify.notice);
+  if (classify.source === "plugin" && classify.output.layers.length > 0) {
+    // 개수와 길이를 여기서 묶는다 — 이 블록은 모델이 지시로 읽는 화면이다
+    out.push(
+      "",
+      `## 계층·컴포넌트 분류 (플러그인 ${classify.name})`,
+      ...classify.output.layers.slice(0, MAX_OUTPUT_ITEMS).map(
+        (layer) =>
+          `- ${clamp(layer.name, 60)}: ${clamp(layer.purpose)} — ${clamp(layer.paths.slice(0, 5).join(", "))} (${layer.paths.length})`,
+      ),
+      ...(classify.output.components ?? [])
+        .slice(0, MAX_OUTPUT_ITEMS)
+        .map(
+          (part) =>
+            `- 컴포넌트 ${clamp(part.name, 60)}: ${clamp(part.paths.slice(0, 5).join(", "))}${part.note ? ` — ${clamp(part.note)}` : ""}`,
+        ),
+    );
+  }
   return out.join("\n");
 }
 
