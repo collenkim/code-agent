@@ -1,8 +1,11 @@
+import { existsSync, writeFileSync } from "fs";
 import { hostname, userInfo } from "os";
+import { resolve } from "path";
 
 import { resolveExecutable } from "../../core/build";
 import { MANIFEST_FILE, SLOTS } from "../../core/manifest";
 import type { Manifest, Slot } from "../../core/manifest";
+import { assetBytes, isPackaged } from "../assets";
 import { checkCommands, testCommands } from "../evidence";
 import { Stop } from "../stop";
 import { askOnTerminal, confirmOnTerminal, requireTerminal } from "../tty";
@@ -22,10 +25,18 @@ import type { StoredPlugin } from "./store";
  * 나가는가" 를 모델이 정하게 된다.
  */
 
+/** 번들에 든 예시 어댑터의 자원 키 — 단일 실행 파일에도 **들어 있다** (빌드가 template/ 전부를 담는다) */
+const EXAMPLE_KEY = "template/plugin-example/echo-adapter.js";
+
+/** 어댑터는 `node <경로>` 로 도는 **파일**이라, 바이너리만 있는 PC 는 꺼내 쓸 자리가 필요하다 */
+const EXAMPLE_ADAPTER = isPackaged()
+  ? `예시 어댑터: 단일 실행 파일 안에 들어 있습니다 — code-agent plugin example [--out <경로>] 로 꺼내세요`
+  : `예시 어댑터: <패키지>/${EXAMPLE_KEY} (code-agent plugin example [--out <경로>] 로 꺼낼 수도 있습니다)`;
+
 const NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const PLUGIN_USAGE =
-  '사용법: code-agent plugin list | add <이름> --command "<argv>" [--slots a,b] [--sends-code] | remove <이름>';
+  '사용법: code-agent plugin list | example [--out <경로>] | add <이름> --command "<argv>" [--slots a,b] [--sends-code] | remove <이름>';
 
 export interface AddOptions {
   name?: string;
@@ -141,7 +152,25 @@ export function pluginList(repoRoot: string): string {
       : ["  - 없음"]),
     "",
     `등록·제거는 별도 터미널에서 — ${PLUGIN_USAGE}`,
-    "예시 어댑터: <패키지>/template/plugin-example/echo-adapter.js",
+    EXAMPLE_ADAPTER,
+  ].join("\n");
+}
+
+/**
+ * `code-agent plugin example [--out <경로>]` — 번들에 든 예시 어댑터를 파일로 꺼낸다.
+ *
+ * 어댑터는 `node <경로>` 로 도는 파일이라, 저장소 없이 바이너리만 받은 사람에게는 꺼낼 길이
+ * 있어야 한다. 있는 파일은 덮지 않는다 — 고쳐 둔 어댑터를 지울 이유가 없다.
+ */
+export function pluginExample(out?: string): string {
+  const target = resolve(out ?? "echo-adapter.js");
+  if (existsSync(target)) {
+    throw new Stop(`이미 있는 파일입니다: ${target} — --out 으로 다른 자리를 주세요.`);
+  }
+  writeFileSync(target, assetBytes(EXAMPLE_KEY));
+  return [
+    `예시 어댑터를 꺼냈습니다: ${target}`,
+    `  code-agent plugin add example --command "node ${target.replace(/\\/g, "/")}"`,
   ].join("\n");
 }
 
@@ -219,7 +248,7 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
     throw new Stop(
       `어댑터가 describe 에 답하지 않아 등록하지 않았습니다: ${described.error}\n` +
         `  명령: ${command.join(" ")}\n` +
-        "  예시 어댑터: <패키지>/template/plugin-example/echo-adapter.js",
+        `  ${EXAMPLE_ADAPTER}`,
     );
   }
   const adapter = described.output;
@@ -300,7 +329,7 @@ export function pluginAdd(repoRoot: string, options: AddOptions): string {
 
 // ---- remove ----
 
-export function pluginRemove(repoRoot: string, name: string | undefined): string {
+export function pluginRemove(name: string | undefined): string {
   requireTerminal("플러그인 제거");
   const store = readStore();
   if (!name || !store.plugins[name]) {

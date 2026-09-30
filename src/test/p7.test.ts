@@ -22,7 +22,7 @@ import type { StoredPlugin } from "../agent/plugins/store";
 import { openRound, reviewDocFile, reviewProblems } from "../agent/review";
 import { survey } from "../agent/survey";
 import { check, runTests } from "../agent/validate";
-import { approvalOf, loadWork } from "../agent/work";
+import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
 
 /**
  * P7 — 플러그인(명령 어댑터)과 자리(slot).
@@ -546,7 +546,7 @@ describe("P7 · 등록", () => {
 
   test("14. 비-TTY 에서 plugin add · remove 가 거부된다", () => {
     assert.throws(() => pluginAdd(repo, { name: "jev", command: "node x.js", sendsCode: false }), /터미널에서만 바꿉니다/);
-    assert.throws(() => pluginRemove(repo, "jev"), /터미널에서만 바꿉니다/);
+    assert.throws(() => pluginRemove("jev"), /터미널에서만 바꿉니다/);
   });
 
   test("15. plugin list 는 비-TTY 에서도 돈다", () => {
@@ -741,7 +741,7 @@ describe("P7 · 등록", () => {
     assert.ok(readStore().plugins.jev.consent);
 
     // pluginRemove 는 TTY 전용이라 여기서는 같은 판정을 거치는 것만 보고, 지우기는 스토어로 확인한다
-    assert.throws(() => pluginRemove(repo, "jev"), /터미널에서만 바꿉니다/);
+    assert.throws(() => pluginRemove("jev"), /터미널에서만 바꿉니다/);
     const store = readStore();
     const rest = { ...store.plugins };
     delete rest.jev;
@@ -845,6 +845,9 @@ function approve(): void {
     target: work.active.target,
     plan: work.plan!,
     manifest: work.manifest,
+    // 실제 `decide()` 가 늘 넣는 값이다 — 빼면 stale-docs 판정이 영영 걸리지 않아
+    // 테스트의 승인이 프로덕션보다 약해진다 (checkApproval 의 `record.docsHash !== undefined`).
+    docsHash: approvalDocsHash(work),
     decision: "approved",
     approver: "test",
     presence: { channel: "tty", verified: true, detail: "테스트" },
@@ -1142,6 +1145,17 @@ describe("P7 · hook — plugin list 만 열린다", () => {
     assert.ok(bash("code-agent plugin remove jev"));
     // 접두어 일치로 열리지 않는다
     assert.ok(bash("code-agent plugin"));
+  });
+
+  /**
+   * P8 이 더한 넷은 전부 **사람의 자리**다. `knowledge` 를 열면 접두어 일치로 `knowledge prune` 까지
+   * 열리는데, 그것은 `plugin` → `plugin list` 와 똑같은 함정이다 (`prune` 은 TTY 가 한 번 더 막지만
+   * 두 겹으로 닫는다). `doctor`·`update`·`usage` 는 작업 중에 모델이 부를 이유가 없다.
+   */
+  test("44b. P8 의 doctor · update · usage · knowledge 도 모델의 자리가 아니다", () => {
+    for (const command of ["code-agent doctor", "code-agent update", "code-agent usage", "code-agent knowledge", "code-agent knowledge prune"]) {
+      assert.match(bash(command) ?? "", /Bash 로 code-agent 명령/, command);
+    }
   });
 
   test("48. 모델이 키 파일을 Read·Grep·Glob 으로 읽지 못한다", () => {

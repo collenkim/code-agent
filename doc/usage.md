@@ -35,8 +35,9 @@ code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴�
 ## 1. 설치
 
 ```
-npm install -g <사내 저장소>/code-agent     # 한 번
+npm install -g <사내 저장소>/code-agent     # 한 번 — Node 22 이상
 cd <프로젝트> && code-agent init             # 프로젝트마다
+code-agent doctor                            # 제대로 깔렸는지 — ✗ 가 없으면 종료 코드 0
 ```
 
 `init` 이 대상 저장소에 하는 일.
@@ -57,7 +58,11 @@ cd <프로젝트> && code-agent init             # 프로젝트마다
 code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
-설치한 파일은 커밋해 팀과 공유한다. 배포는 지금 npm 전역 설치다 (단일 실행 파일은 P8).
+설치한 파일은 커밋해 팀과 공유한다.
+
+설치는 두 가지다 — npm 전역, 그리고 Node 가 필요 없는 **단일 실행 파일**(`npm run build:bin` → `dist-bin/code-agent(.exe)`, OS 별 ~90 MB).
+저장소에 들어가는 것은 어느 쪽이든 같다(hook 명령이 PATH 에서 풀린다). 바이너리 만들기와 서명 · `doctor` 의 검사 항목 · `update` 가 보존하는 것 ·
+지우는 순서는 [install.md](install.md).
 
 ---
 
@@ -341,6 +346,8 @@ claude
 | 명령 | 하는 일 | TTY 필요 |
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
+| `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | — |
+| `code-agent update [--cli <경로>]` | 지금 도는 버전의 스킬·에이전트·hook 을 다시 설치. 다른 hook · 블록 밖 · 모델 오버라이드는 그대로 ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
@@ -349,8 +356,12 @@ claude
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다 | — |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 표 · 바꾸기. 설정은 `.code-agent/models.json`, 정의 파일의 `model:` 줄을 코드가 다시 쓴다 | 바꾸기는 **터미널에서만** |
+| `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트별 토큰과 비용 **추정**을 집계 (아래) | — |
+| `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
+| `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
+| `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 `./echo-adapter.js`, 있는 파일은 덮지 않는다) | — |
 
 `abort` 는 작업 폴더·제출된 계획·원장을 남긴다. 같은 지시서로 다시 `start` 할 수 있다.
 
@@ -360,6 +371,83 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 
 `status` 가 보여 주는 것 — 프로젝트 문서 ✓/✗, 작업 id·제목·종류·대상, 지시서 경로, 작업 폴더, 브랜치와 기준,
 스테이지(전체 흐름에서 지금 자리를 `[ ]` 로), `implement` 면 단계 목록, 답 없는 질문, 계획·승인 상태, `다음:` 한 줄.
+
+### `code-agent usage` — 토큰과 비용(추정)
+
+무엇이 비쌌는지를 **스테이지별·에이전트별**로 본다. 숫자의 출처는 Claude Code 가 남기는 대화 기록이다 — code-agent 가 따로 재지 않는다.
+
+| 무엇 | 어디서 |
+|---|---|
+| 토큰 | `~/.claude/projects/<인코딩한 저장소 경로>/*.jsonl` 의 `assistant` 줄에 실린 `usage` (메인) · 그 아래 `<세션>/subagents/agent-*.jsonl` (서브에이전트) |
+| 인코딩 | 저장소 절대경로의 영숫자 아닌 글자를 전부 `-` 로 — `C:\IdeaProjects\code-agent` → `C--IdeaProjects-code-agent` |
+| 스테이지 | `.code-agent/log/stages.jsonl` — 스테이지가 바뀔 때마다 `{at, id, target, phase, stage, by}` 한 줄이 붙는다. 메시지의 시각이 어느 구간에 드는지로 가른다 (커밋되지 않는다 — `.gitignore` 의 `.code-agent/log/`) |
+| 에이전트 | 서브에이전트 기록 짝의 `.meta.json` 에 있는 `agentType`. 메인 세션은 `main`, 알 수 없으면 `(알 수 없음)` |
+
+```
+ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
+기록: ~/.claude/projects/C--IdeaProjects-shop (세션 4 · 서브에이전트 11)
+
+스테이지별
+  스테이지            입력      캐시읽기    캐시쓰기      출력     비용(추정)
+  implement/domain     882   3,104,556     341,020    52,117       $5.40
+  analysis           1,204   1,930,441     212,880    18,302       $2.31
+  …
+  합계                                                            $17.71
+
+에이전트별
+  에이전트        입력      캐시읽기    캐시쓰기      출력     비용(추정)
+  ca-explorer     …                                            $8.90
+  main            …                                            $3.02
+
+비용은 추정치입니다 — 2026-06-24 기준 공개 단가표로 계산했고 실제 청구와 다를 수 있습니다.
+```
+
+두 표 다 **비용이 큰 순서**다 — 스테이지 흐름 순서가 아니다. 무엇이 비쌌는지를 먼저 보려고 그렇게 둔다.
+
+`--work <ID>` 는 그 작업의 구간만, `--since <날짜>` 는 그 시각 이후만 센다. 두 깃발 다 값이 없으면 멈춘다 —
+`--since` 만 치면 전 기간을 세면서 그럴듯한데 틀린 숫자가 나온다.
+
+**단가표** ($/1M 토큰, 2026-06-24 기준). 캐시 읽기 배수가 모델마다 달라 배수가 아니라 값으로 박아 두었다 — 단가가 바뀌면 이 표를 고친다.
+
+| 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 5분 | 캐시 쓰기 1시간 | 출력 |
+|---|---|---|---|---|---|
+| `claude-opus-5` | 5.00 | 0.50 | 6.25 | 10.00 | 25.00 |
+| `claude-opus-5-5` | 4.00 | 0.20 | 5.00 | 8.00 | 20.00 |
+| `claude-sonnet-5` | 2.00 | 0.20 | 2.50 | 4.00 | 10.00 |
+| `claude-haiku-4-5` | 1.00 | 0.10 | 1.25 | 2.00 | 5.00 |
+| `claude-fable-5-1` | 10.00 | 0.25 | 12.50 | 20.00 | 50.00 |
+
+읽을 때 알아 둘 것.
+
+- **같은 요청이 기록에 여러 줄로 나온다** — 같은 `message.id` 의 줄들은 출력 토큰이 늘어나는 중간 상태라서 마지막 줄만 센다. 그냥 더하면 2~3배가 된다.
+- **표에 없는 모델은 비용 0** 으로 세고 꼬리에 그 이름을 적는다. 토큰 수는 그대로 실린다.
+- **기록이 없으면 종료 코드 0 으로 안내만** 한다 — 이 저장소를 이 경로에서 Claude Code 로 연 적이 없거나, 다른 PC 의 기록이다.
+- **`stages.jsonl` 이 없으면** 구간을 가르지 못해 전부 `(작업 전)` 한 칸으로 묶이고 그 사실을 한 줄로 알린다 — 스테이지 기록이 들어오기 전에 시작한 작업이다. 반영·중단 뒤의 메시지는 `(작업 밖)` 이다.
+- 비용은 **추정**이다. 공개 단가표로 곱한 값이고 실제 청구와 다를 수 있다.
+
+### `code-agent knowledge` — 공통 KNOWLEDGE 점검
+
+```
+doc/knowledge/data-dictionary.md (항목 4)
+  ORDER            ORD-1     src/main/java/.../Order.java:31
+  ORDER_ITEM       ORD-1     src/main/java/.../OrderItem.java:12
+  PAYMENT          (미상)     근거 경로 없음
+```
+
+작업 ID 는 문서에 적혀 있는 것이 아니라 **git 이력에서 복원한다** — 항목 제목 줄을 마지막으로 건드린 커밋의 제목(`[<ID>] …`)에서 뽑는다.
+그래서 "그 키를 **마지막으로 쓴** 작업"이고, 사람이 손으로 넣었거나 아직 커밋되지 않았으면 `(미상)` 이다.
+
+`code-agent knowledge prune` 은 **근거가 사라진 항목**을 골라 낸다 (TTY 에서만).
+
+| 규칙 | 왜 |
+|---|---|
+| 항목 본문의 경로 참조가 **전부** 없을 때만 표시한다 | 하나만 없는 것은 리팩터링의 흔적이라 잡음이다 |
+| 참조가 0개인 항목은 표시하지 않고 개수만 센다 | `business-rules` 는 사람의 답에서 오므로 경로가 없는 게 정상이다 |
+| URL 은 참조가 아니다 | 트리에 없는 것이 당연하다 |
+| 항목 한 덩어리는 다음 `#`~`###` 제목까지다 — `####` 이상의 소제목은 **항목 안**이다 | 소제목에서 자르면 그 아래의 살아 있는 경로가 보이지 않아 멀쩡한 항목을 지우자고 묻고, 지울 때는 소제목 덩어리가 문서에 고아로 남는다 |
+| 항목마다 지금 본문과 없는 경로를 보여 주고 하나씩 묻는다 — **`y` 인 것만** 지운다 | 자동 삭제는 되돌릴 근거가 없다 ([design.md §2.2](design.md#22-공통-knowledge--비어서-시작하고-반영마다-자란다-p4--생성--p5-갱신)) |
+
+지운 뒤 `git add`·`commit` 은 사람이 한다 — 명령은 파일만 고치고 커밋하지 않는다.
 
 ---
 
@@ -629,6 +717,7 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 이 PC 의 등록 · 저장소 선언 · **지금 무엇이 채우는가** | — (모델도 부를 수 있다) |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` | 이 PC 에 등록 — `describe` → 동의 → 키 → `probe` 순서로 묻는다 | **O** |
 | `code-agent plugin remove <이름>` | 등록 해제 — 키·동의·probe 기록을 함께 지운다 | **O** |
+| `code-agent plugin example [--out <경로>]` | 예시 어댑터를 파일로 꺼낸다 — 단일 실행 파일 안에도 들어 있다 | — |
 
 `add` · `remove` 는 `approve` · `deliver` 와 같은 문이다 — **모델은 부를 수 없다** (hook 이 막는다).
 등록은 사람이 동의를 주는 자리라서다. `list` 는 상태만 읽으므로 스킬도 부른다.
@@ -826,7 +915,7 @@ deliver 를 그대로 입력하면 반영합니다 (다른 입력은 취소): de
 | P5 구현·검증·반영 | 정적 분석 · 테스트 실행 · 테스트 동결 · 수정 루프 · 코드 리뷰 · 통합 검증 · 반영(TTY 확인 · 로컬 커밋 · `10-pr.md`) · KNOWLEDGE 갱신 · Stop hook | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 먼저(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리 6개 · 명령 어댑터 계약 · `plugin list/add/remove` · 등록한 사람만 opt-in · 기본 구현(내장 키워드 스캔 · 제목 매칭) — [10. 플러그인](#10-플러그인-선택) | 코드 ✅ · Jev A/B 실측 |
-| P8 정리·배포 | 단일 실행 파일 · `usage`(토큰 집계) · 설치 점검 | — |
+| P8 정리·배포 | 단일 실행 파일([install.md](install.md)) · `doctor` · `update` · `usage`(토큰 집계) · `knowledge` · 문서 세트 | ✅ |
 
 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. push · MR/PR 생성 · 병합은 사람이 손으로 한다 —
 git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정한다.

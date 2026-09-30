@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
+import { hashManifest } from "../core/approval";
 import { pinRefs, verifyByBuild } from "../core/build";
 import { loadManifest } from "../core/manifest";
 import type { Manifest } from "../core/manifest";
@@ -268,5 +269,73 @@ describe("pinRefs — 작업·비교 브랜치 굳히기", () => {
     mkdirSync(plain, { recursive: true });
 
     await assert.rejects(() => pinRefs(plain, "master"), /git 저장소가 아닙니다/);
+  });
+});
+
+/**
+ * 매니페스트의 빈 배열 — 두 독자가 어긋나던 자리.
+ *
+ * `evidence.argvOf` 는 `build: []` 를 "선언 없음"(not-run · skipped)으로 보고, `docs.commandProblems`
+ * 는 `manifest.build ? …` 라서 있는 것으로 봤다. 그래서 문서에 `test` 를 적으면 확정 게이트를
+ * 통과하고 `code-agent test` 는 아무것도 돌리지 않은 결과 위에 "돌렸다" 를 세울 수 있었다.
+ * 스키마에서 막아 애초에 로드되지 않게 한다 — 규칙 하나를 세 자리에 다르게 두지 않는다.
+ */
+describe("빈 명령 배열은 형식 오류다", () => {
+  function load(raw: Record<string, unknown>): Manifest {
+    const dir = mkdtempSync(join(tmpdir(), "code-agent-manifest-"));
+    writeFileSync(join(dir, "code-agent.json"), JSON.stringify({
+      domainBase: "src",
+      stages: [{ key: "only", title: "하나", template: "t.md" }],
+      ...raw,
+    }), "utf-8");
+    try {
+      return loadManifest(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("build: [] 은 로드되지 않는다 — 조용한 통과가 여기서 끊긴다", () => {
+    assert.throws(() => load({ build: [] }), /형식 오류[\s\S]*build/);
+  });
+
+  test("test: [] 도 같다", () => {
+    assert.throws(() => load({ test: [] }), /형식 오류[\s\S]*test/);
+  });
+
+  test("commands 의 빈 값도 같은 함정이다", () => {
+    assert.throws(() => load({ commands: { migrate: [] } }), /형식 오류[\s\S]*commands\.migrate/);
+  });
+
+  test("한 원소짜리는 그대로 통과한다 — 막는 것은 빈 것뿐이다", () => {
+    assert.deepEqual(load({ build: ["make"], commands: { lint: ["eslint"] } }).build, ["make"]);
+  });
+
+  /**
+   * **해시 중립 증명.** `.min(1)` 은 *유효한* 매니페스트의 파싱 결과를 한 글자도 바꾸지 않는다.
+   * 아래 두 리터럴은 변경 전(HEAD) 트리를 그대로 빌드해 뽑은 값이다 — 이 테스트가 깨지면
+   * 이미 받은 승인이 전부 stale-manifest 가 된다는 뜻이므로, 값을 고치지 말고 원인을 본다.
+   */
+  test("기존 매니페스트의 hashManifest 는 변경 전과 같다", () => {
+    assert.equal(
+      hashManifest(load({
+        language: "java",
+        domainBase: "src/main/java/com/acme/app/application",
+        domainRoots: ["", "admin"],
+        conventions: ["doc/conventions.md"],
+        referenceDomain: "deal",
+        build: ["./gradlew", "compileJava"],
+        test: ["./gradlew", "test"],
+        prepare: ["npm", "ci"],
+        commands: { migrate: ["./gradlew", "flywayMigrate"], lint: ["./gradlew", "spotlessCheck"] },
+        fixRounds: 3,
+        stages: [
+          { key: "domain", title: "도메인", template: "domain.md", outputDirs: ["domain"], exemplars: ["{Ref}.java"] },
+          { key: "verify", title: "검증", template: "verify.md", kind: "verify", expect: "pass", scope: "project" },
+        ],
+      })),
+      "sha256:da07ca103b10411f",
+    );
+    assert.equal(hashManifest(load({})), "sha256:3e247950176e5efa");
   });
 });

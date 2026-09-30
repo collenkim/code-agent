@@ -9,7 +9,6 @@ import type { Manifest, StageDef } from "./manifest";
  */
 const MAX_FILES_PER_DIR = 5;
 const MAX_LINES_PER_FILE = 500;
-const MAX_TREE_ENTRIES = 300;
 
 export interface ExemplarFile {
   /** 저장소 루트 기준 상대경로 */

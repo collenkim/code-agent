@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "build:bin": "node scripts/build-bin.js",
     "prepare": "tsc",
     "test": "tsc && node --test \"dist/test/**/*.test.js\""
   },
@@ -19,11 +20,16 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^7.0.2"
   }
 }

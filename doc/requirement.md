@@ -314,11 +314,14 @@ SettlementBatchTest · SettlementFacadeTest 가 그대로 통과한다.
 | P1 뼈대 | `start` 가 머리말을 검사하고 작업 브랜치를 딴다. hook 이 지시서 쓰기를 막는다 | ✅ |
 | P2 프로젝트 문서 | 아키텍처·컨벤션이 확정되기 전에는 `start` 가 멈춘다 | ✅ |
 | P3 분석·조사·계획 | 본문이 요구 항목의 근거가 된다. `scope`·`preserve` 가 계획 제출과 매 쓰기에 걸리고, `orderHash` 가 승인을 묶는다 | ✅ |
-| P4 영향도·시스템 설계 | `impact.md` · `design.md` 가 승인 묶음에 더해진다 — 머리말은 그대로 | 예정 |
-| P5 구현·검증·반영 | `scope`·`preserve` 가 정적 분석·테스트·리뷰·통합 검증까지 이어지고, 반영이 PR 본문 `pr.md` 를 낸다 | 예정 |
-| P6 fix·refactor·신규 저장소 | 재현 테스트 우선과 `preserve` 강제가 전 과정에서 완주된다 | 예정 |
+| P4 영향도·시스템 설계 | `02-analysis.md` · `03-design.md` · `04-functional.md` · `07-test-spec.md` 가 승인 묶음에 더해진다 — 머리말은 그대로 | ✅ |
+| P5 구현·검증·반영 | `scope`·`preserve` 가 정적 분석·테스트·리뷰·통합 검증까지 이어지고, 반영이 MR/PR 본문 `10-pr.md` 를 낸다 | ✅ |
+| P6 fix·refactor·신규 저장소 | 재현 테스트 우선과 `preserve` 강제가 전 과정에 걸린다 | 코드 ✅ · 완주 실측 |
 
-오늘 `code-agent next` 는 **구현(implement)까지** 진행한다. 검증 이후는 아직 없다.
+P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 — 머리말은 P1 이후 그대로다.
+
+`code-agent next` 는 **`deliver` 앞까지** 몬다. 반영은 사람이 별도 터미널에서 `code-agent deliver` 로 한다
+([usage.md §9](usage.md#9-승인과-반영--터미널에서)).
 
 ## 시작
 

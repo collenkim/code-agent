@@ -16,15 +16,19 @@ import {
   submitPlan,
 } from "./commands";
 import { deliver } from "./deliver";
+import { doctor } from "./doctor";
 import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, docsStatus } from "./docsCommands";
 import { runHook } from "./hook";
 import { init } from "./init";
+import { knowledge } from "./knowledgeCommands";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel } from "./models";
-import { pluginAdd, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
+import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
 import { openRound } from "./review";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
+import { update } from "./update";
+import { usage } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
@@ -32,6 +36,11 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 사람 (터미널):
   code-agent init [--cli <path>]      이 저장소에 설치 (.claude/ 스킬·에이전트·hook, CLAUDE.md 블록)
   code-agent status                   문서·작업·스테이지·질문·승인 상태
+  code-agent doctor                   설치·환경 점검 — ✓ 확인 · ✗ 막는 것 · · 알림. ✗ 가 없으면 종료 코드 0
+  code-agent update [--cli <path>]    지금 버전의 스킬·에이전트·hook 을 다시 설치 (사람이 바꾼 것은 그대로)
+  code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
+  code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
+  code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
   code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 3종 — 섹션·확정 상태
   code-agent confirm doc <종류>       문서 확정 (TTY 에서만). 종류: architecture | conventions | test-strategy | quality
   code-agent approve                  제출된 계획 승인 (TTY 에서만)
@@ -41,6 +50,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
+  code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
 
 스킬이 부른다 (Claude Code 안):
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
@@ -66,9 +76,23 @@ hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
+/**
+ * `--<이름> <값>`. 깃발이 있으면 **값을 요구한다**.
+ *
+ * 조용히 `undefined` 를 돌려주면 `usage --since` 가 날짜 없이 전 기간을 세고 `usage --work` 가
+ * 저장소 전체를 세면서도 깃발이 무시됐다는 말을 하지 않는다. 오타 하나가 그럴듯한데 틀린 숫자를
+ * 만드는 유일한 자리라 여기서 막는다.
+ */
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(`--${name}`);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) {
+    return undefined;
+  }
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Stop(`--${name} 에 값이 필요합니다: code-agent … --${name} <값>`);
+  }
+  return value;
 }
 
 /** 검증 명령은 자식 프로세스를 기다린다 — main 이 async 인 유일한 이유다 */
@@ -89,6 +113,20 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "status":
       print(status(repoRoot));
+      return 0;
+    case "doctor": {
+      const report = doctor(repoRoot);
+      print(report.text);
+      return report.ok ? 0 : 1;
+    }
+    case "update":
+      print(update(repoRoot, { cli: option(args, "cli") }));
+      return 0;
+    case "usage":
+      print(usage(repoRoot, { work: option(args, "work"), since: option(args, "since") }));
+      return 0;
+    case "knowledge":
+      print(knowledge(repoRoot, args[0]));
       return 0;
     case "start":
       if (!args[0] || args[0].startsWith("--")) {
@@ -175,6 +213,9 @@ async function main(argv: string[]): Promise<number> {
         case "list":
           print(pluginList(repoRoot));
           return 0;
+        case "example":
+          print(pluginExample(option(args, "out")));
+          return 0;
         case "add":
           print(
             pluginAdd(repoRoot, {
@@ -186,7 +227,7 @@ async function main(argv: string[]): Promise<number> {
           );
           return 0;
         case "remove":
-          print(pluginRemove(repoRoot, args[1]));
+          print(pluginRemove(args[1]));
           return 0;
         default:
           throw new Stop(PLUGIN_USAGE);

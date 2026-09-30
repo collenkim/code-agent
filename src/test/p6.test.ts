@@ -27,7 +27,7 @@ import { openRound, reviewDocFile } from "../agent/review";
 import { manifestCheck, survey } from "../agent/survey";
 import { partialTreeHash } from "../agent/tree";
 import { check, integrate, repro, runTests } from "../agent/validate";
-import { loadManifestIfAny, loadWork } from "../agent/work";
+import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
 import { analysisProblems } from "../agent/workDocs";
 
 /**
@@ -123,6 +123,9 @@ function approve(): void {
     target: work.active.target,
     plan: work.plan!,
     manifest: work.manifest,
+    // 실제 `decide()` 가 늘 넣는 값이다 — 빼면 stale-docs 판정이 영영 걸리지 않아
+    // 테스트의 승인이 프로덕션보다 약해진다 (checkApproval 의 `record.docsHash !== undefined`).
+    docsHash: approvalDocsHash(work),
     decision: "approved",
     approver: "test",
     presence: { channel: "tty", verified: true, detail: "테스트" },
