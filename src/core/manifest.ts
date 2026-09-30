@@ -109,6 +109,13 @@ const WorkOrderAttributeSchema = z.object({
   values: z.array(z.string()).optional().describe("허용 값. 생략하면 아무 문자열이나 받는다"),
 });
 
+/**
+ * 빈 배열을 거부할 때의 문구. zod 의 기본값(`Too small: expected array to have >=1 items`)은 영문이고
+ * **무엇을 하라는 말이 없다** — hook 이 이 오류로 모든 도구 호출을 막으므로(`runHook` 은 닫히며 실패한다)
+ * 메시지가 그대로 고치는 법이어야 한다.
+ */
+const EMPTY_ARGV = "빈 배열은 선언하지 않은 것과 같습니다 — 키를 지우거나 실제 명령을 적으세요";
+
 const ManifestSchema = z.object({
   language: z
     .string()
@@ -158,19 +165,27 @@ const ManifestSchema = z.object({
         .describe("작업 브랜치(<종류>/<ID>)를 딸 기준 브랜치. 작업마다 start --base 로 바꿀 수 있다"),
     })
     .default({ base: "master" }),
+  // build·test·commands 의 빈 배열은 prepare 와 **같은 이유로** 형식 오류다. 두 독자가 어긋나기
+  // 때문이다: 증거를 묶는 쪽(evidence.argvOf)은 빈 배열을 "선언 없음"(not-run · skipped)으로 보는데,
+  // 문서 확정 게이트(docs.commandProblems)는 `manifest.build ? …` 라서 있는 것으로 본다. 그래서
+  // 테스트 전략에 `test` 를 적으면 확정을 통과하고, `code-agent test` 는 아무것도 돌리지 않은 결과
+  // 위에 "돌렸다" 를 세운다. 한 규칙을 세 자리에 다르게 두지 않고 **로드되지 않게** 막는다.
+  // 유효한 매니페스트의 파싱 결과는 한 글자도 달라지지 않아 hashManifest 는 중립이다.
   build: z
     .array(z.string())
+    .min(1, EMPTY_ARGV)
     .optional()
     .describe("컴파일 검증 명령. 첫 원소가 저장소 안의 실행 파일이면 그 경로로 실행한다"),
   test: z
     .array(z.string())
+    .min(1, EMPTY_ARGV)
     .optional()
     .describe("테스트 실행 명령. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
   prepare: z
     .array(z.string())
     // 빈 배열은 형식 오류다 — 선언은 hashManifest 를 바꾸고 manifest check 에도 실려 "준비가 돈다" 로
     // 읽히는데 integrate 는 조용히 건너뛴다. commands.build/test/prepare 에 건 superRefine 과 같은 이유다.
-    .min(1)
+    .min(1, EMPTY_ARGV)
     .optional()
     .describe(
       "통합 검증의 깨끗한 worktree 에서 build·test **앞에** 한 번 도는 준비 명령 (예: [\"npm\",\"ci\"]). " +
@@ -179,7 +194,7 @@ const ManifestSchema = z.object({
         "check·test 스테이지에서는 돌지 않는다 (거기는 사람이 보고 있는 작업 트리다)",
     ),
   commands: z
-    .record(z.string(), z.array(z.string()))
+    .record(z.string(), z.array(z.string()).min(1, EMPTY_ARGV))
     .default({})
     .describe(
       "검증(P5)이 build·test 말고 이름으로 돌릴 수 있는 추가 명령. 두 리터럴만으로는 " +

@@ -39,6 +39,16 @@ export interface KnowledgeEntry {
 const ENTRY_KEY = /^###\s+`([^`]+)`/;
 
 /**
+ * 항목이 끝나는 자리 — `#`~`###` 제목뿐이다.
+ *
+ * `####` 이상은 **항목 안의 소제목**이라 경계가 아니다. `##+` 로 보면 두 군데가 같이 깨진다:
+ * `documentEntries` 가 본문을 소제목에서 잘라 그 아래의 살아 있는 근거 경로를 보지 못하고
+ * (`prune` 이 멀쩡한 항목을 지우자고 묻는다), `removeEntry`·`applyEntry` 는 소제목 덩어리를
+ * 문서에 고아로 남긴다.
+ */
+const ENTRY_END = /^#{1,3}\s/;
+
+/**
  * 제안 파일을 항목으로 가른다. `## <종류>` 아래의 `### \`키\` 이름` 이 항목 하나다.
  * R 번호가 없거나 이번 작업의 것이 아닌 항목은 담지 않고 왜 걸렀는지 돌려준다.
  */
@@ -96,7 +106,7 @@ function entryRange(text: string, key: string): { from: number; to: number } | u
   if (from < 0) {
     return undefined;
   }
-  const after = lines.findIndex((line, index) => index > from && /^##+\s/.test(line));
+  const after = lines.findIndex((line, index) => index > from && ENTRY_END.test(line));
   return { from, to: after < 0 ? lines.length : after };
 }
 
@@ -116,7 +126,52 @@ export function applyEntry(text: string, entry: KnowledgeEntry): string {
   return `${text.replace(/\s*$/, "")}\n\n${entry.text}\n`;
 }
 
-export function knowledgePath(manifest: Manifest, kind: KnowledgeKind): string {
+/** 반영이 지운 적은 없지만 **사람은 지운다** — `knowledge prune` 이 고른 항목 하나를 잘라 낸다 */
+export function removeEntry(text: string, key: string): string {
+  const range = entryRange(text, key);
+  if (!range) {
+    return text;
+  }
+  const lines = text.split("\n");
+  return [...lines.slice(0, range.from), ...lines.slice(range.to)].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+/** 쌓인 문서에 든 항목 하나 — `knowledge` 목록·정리가 읽는 단위다 */
+export interface DocumentEntry {
+  key: string;
+  /** 제목 줄 전체 */
+  heading: string;
+  /** 제목 줄의 번호, 1부터. git blame 으로 출처를 되찾는 자리다 */
+  line: number;
+  /** 제목 줄을 뺀 본문 */
+  body: string;
+}
+
+/**
+ * 쌓인 문서를 항목으로 가른다. `parseProposal` 과 나누는 이유: 저쪽은 **제안**을 읽고 R 번호를
+ * 요구하지만, 이쪽은 **이미 반영된 것**을 그냥 센다 — 걸러 내면 목록에서 항목이 사라진다.
+ */
+export function documentEntries(text: string): DocumentEntry[] {
+  const lines = text.split("\n").map((line) => line.replace(/\r$/, ""));
+  const entries: DocumentEntry[] = [];
+  lines.forEach((line, index) => {
+    const key = ENTRY_KEY.exec(line)?.[1];
+    if (key === undefined) {
+      return;
+    }
+    const after = lines.findIndex((candidate, at) => at > index && ENTRY_END.test(candidate));
+    entries.push({
+      key,
+      heading: line.trim(),
+      line: index + 1,
+      body: lines.slice(index + 1, after < 0 ? lines.length : after).join("\n").trim(),
+    });
+  });
+  return entries;
+}
+
+/** 매니페스트가 없어도 기본 경로로 답한다 — 도입 전에도 문서를 열어 볼 수 있어야 한다 */
+export function knowledgePath(manifest: Manifest | undefined, kind: KnowledgeKind): string {
   return docPaths(manifest, kind)[0];
 }
 

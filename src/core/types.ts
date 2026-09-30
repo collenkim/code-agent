@@ -1,5 +1,3 @@
-import type { WorkOrder } from "./workOrder";
-
 /** 이름 하나와, 그 이름이 작업을 만들 때 가리키던 커밋. 커밋은 그 뒤로 움직이지 않는다 */
 export interface RefPin {
   /** 사람이 적은 이름 — `master`·`feat/x`·태그 무엇이든 */

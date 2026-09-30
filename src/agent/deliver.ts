@@ -9,7 +9,7 @@ import { blockCount, stripBlock, upsertBlock } from "./blocks";
 import { loadEvidence, planPaths, runsOf, stageProblems, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
-import { clearActive, questionsFile, STATE_DIR, workDocsDir } from "./layout";
+import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { Stop } from "./stop";
@@ -379,6 +379,7 @@ export function deliver(work: Work): string {
   const knowledge = selectKnowledge(work);
   const commit = commitDelivery(work, evidence!, knowledge);
 
+  logStage(repoRoot, active, "deliver");
   clearActive(repoRoot);
   return [
     `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}`,

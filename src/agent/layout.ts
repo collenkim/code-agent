@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "fs";
 import { basename, dirname, join, posix } from "path";
 
 import { writeAtomic } from "../core/atomic";
@@ -135,11 +135,77 @@ export function loadActive(repoRoot: string): ActiveWork | undefined {
   return JSON.parse(readFileSync(path, "utf-8")) as ActiveWork;
 }
 
-export function saveActive(repoRoot: string, active: ActiveWork): void {
+export function saveActive(repoRoot: string, active: ActiveWork, by?: StageMove): void {
   mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   writeAtomic(join(repoRoot, ACTIVE_FILE), `${JSON.stringify(active, null, 2)}\n`);
+  if (by) {
+    logStage(repoRoot, active, by);
+  }
 }
 
 export function clearActive(repoRoot: string): void {
   rmSync(join(repoRoot, ACTIVE_FILE), { force: true });
+}
+
+// ---- 스테이지 전이 기록 ----
+
+/** 스테이지 전이 기록 — `.gitignore` 의 `.code-agent/log/` 안이라 커밋되지 않는다 */
+export const STAGES_LOG = `${STATE_DIR}/log/stages.jsonl`;
+
+/** 커서를 움직인 명령 */
+export type StageMove = "start" | "next" | "back" | "deliver" | "abort";
+
+/** 전이 한 줄. `code-agent usage` 가 메시지의 timestamp 를 이 구간에 담는다 */
+export interface StageTransition {
+  /** 전이한 시각 (ISO) */
+  at: string;
+  id: string;
+  target: string;
+  phase: Phase;
+  stage?: string;
+  by: StageMove;
+}
+
+/**
+ * 커서가 움직인 시각을 남긴다 — **집계용이고 판정에는 쓰지 않는다.**
+ *
+ * `usage` 가 토큰을 스테이지별로 가르는 유일한 근거다. Claude Code 기록에는 우리 스테이지가 없고
+ * 시각만 있어서, 이 줄이 없으면 "어느 단계에 얼마를 썼는가" 를 물을 자리가 사라진다.
+ *
+ * 쓰기 실패는 **삼킨다**. 통계용 로그가 작업을 세우는 것은 값어치에 비해 비싸다.
+ * `saveActive` 의 `by` 를 생략하면 기록하지 않는다 — 테스트 헬퍼가 조용히 오염시키지 않게.
+ */
+export function logStage(repoRoot: string, active: ActiveWork, by: StageMove): void {
+  const row: StageTransition = {
+    at: new Date().toISOString(),
+    id: active.id,
+    target: active.target,
+    phase: active.phase,
+    ...(active.stage ? { stage: active.stage } : {}),
+    by,
+  };
+  try {
+    mkdirSync(logDir(repoRoot), { recursive: true });
+    appendFileSync(join(repoRoot, STAGES_LOG), `${JSON.stringify(row)}\n`);
+  } catch {
+    // 집계용 로그가 작업을 세우면 안 된다
+  }
+}
+
+/** 시각 순으로 읽는다. 깨진 줄은 그 줄만 버린다 — 쓰는 중일 수 있다 */
+export function readStages(repoRoot: string): StageTransition[] {
+  const path = join(repoRoot, STAGES_LOG);
+  if (!existsSync(path)) {
+    return [];
+  }
+  const rows: StageTransition[] = [];
+  for (const line of readFileSync(path, "utf-8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      rows.push(JSON.parse(line) as StageTransition);
+    } catch {
+      // 반쯤 쓰인 줄
+    }
+  }
+  return rows.sort((a, b) => a.at.localeCompare(b.at));
 }

@@ -283,19 +283,19 @@ function namesFrom(repoRoot: string, manifest: Manifest, kind: "quality" | "test
   return sections.flatMap((section) => firstListNames(sectionBody(SCHEMAS[kind], text, section)).names);
 }
 
-function specs(repoRoot: string, manifest: Manifest, always: string[], names: string[]): CommandSpec[] {
+function specs(manifest: Manifest, always: string[], names: string[]): CommandSpec[] {
   const kinds = [...new Set([...always, ...names])];
   return kinds.map((kind) => ({ kind, argv: argvOf(manifest, kind) }));
 }
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 이름으로 적은 명령 */
 export function checkCommands(repoRoot: string, manifest: Manifest): CommandSpec[] {
-  return specs(repoRoot, manifest, ["build"], namesFrom(repoRoot, manifest, "quality", ["static", "security"]));
+  return specs(manifest, ["build"], namesFrom(repoRoot, manifest, "quality", ["static", "security"]));
 }
 
 /** 8 테스트 — test + 테스트 전략이 이름으로 적은 명령 */
 export function testCommands(repoRoot: string, manifest: Manifest): CommandSpec[] {
-  return specs(repoRoot, manifest, ["test"], namesFrom(repoRoot, manifest, "test-strategy", ["tools"]));
+  return specs(manifest, ["test"], namesFrom(repoRoot, manifest, "test-strategy", ["tools"]));
 }
 
 /**

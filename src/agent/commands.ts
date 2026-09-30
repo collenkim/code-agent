@@ -16,6 +16,7 @@ import {
   canonical,
   clearActive,
   loadActive,
+  logStage,
   PHASES,
   planFile,
   questionsFile,
@@ -311,7 +312,7 @@ export function start(repoRoot: string, spec: string, options: { target?: string
         "<!-- 질문은 `## Q<번호> · <스테이지>` 로 시작하고, 답은 `[Answer]:` 뒤에 적는다. 답이 없으면 다음으로 넘어가지 않는다. -->\n",
     );
   }
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit });
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit }, "start");
   return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}`;
 }
 
@@ -446,7 +447,7 @@ export function next(repoRoot: string): string {
   requireAnswers(repoRoot, active);
 
   const advance = (phase: Phase, stage?: string): string => {
-    saveActive(repoRoot, { ...active, phase, stage });
+    saveActive(repoRoot, { ...active, phase, stage }, "next");
     return status(repoRoot);
   };
 
@@ -558,7 +559,7 @@ export function requireValidatable(
   requireDocs(repoRoot, work);
   requireAnswers(repoRoot, work.active);
   if (phase === "check" && REWINDABLE.includes(work.active.phase)) {
-    saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined });
+    saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined }, "next");
     work = requireWork(repoRoot);
   }
   if (work.active.phase !== phase) {
@@ -614,6 +615,7 @@ export function abort(repoRoot: string): string {
   if (!active) {
     throw new Stop("진행 중인 작업이 없습니다.");
   }
+  logStage(repoRoot, active, "abort");
   clearActive(repoRoot);
   return `작업 커서를 지웠습니다: ${active.id}. 작업 폴더·계획·원장은 남아 있습니다 — 같은 지시서로 다시 시작할 수 있습니다.`;
 }
@@ -675,7 +677,7 @@ export function back(repoRoot: string, to: string): string {
   }
   // implement 로 되감으면 계획의 첫 단계부터 — 단계 키가 비면 hook 이 지금 단계를 찾지 못해 쓰기를 전부 막는다
   const stage = target === "implement" ? plannedStages(work)[0]?.key : undefined;
-  saveActive(repoRoot, { ...active, phase: target, stage });
+  saveActive(repoRoot, { ...active, phase: target, stage }, "back");
   return (
     `커서를 ${PHASE_LABEL[active.phase]}(${active.phase}) 에서 ${PHASE_LABEL[target]}(${target}) 로 되감았습니다.\n` +
     backNotes(target)

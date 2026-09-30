@@ -1,6 +1,7 @@
 # 플러그인 — 명령 어댑터 계약
 
-> 왜 이 모양인가는 [design.md §6](design.md#6-플러그인과-도구-p7), 무엇을 치는가는 [usage.md §10](usage.md#10-플러그인-선택).
+> 왜 이 모양인가는 [design.md §6](design.md#6-플러그인과-도구-p7), 무엇을 치는가는 [usage.md §10](usage.md#10-플러그인-선택),
+> code-agent 자체의 설치·점검·지우기는 [install.md](install.md).
 > 이 문서는 **어댑터를 쓰는 사람**을 위한 정본이다 — 요청·응답 형식, 등록, 키, 실패 규칙.
 
 **원칙: 아무것도 등록하지 않아도 전 과정이 돈다.** 자리마다 기본 구현이 있고, 플러그인은 그 자리를 대신 채울 뿐이다.
@@ -255,6 +256,7 @@ code-agent plugin list                                                          
 
 `plugin remove <이름>` 은 그 항목을 통째로 지운다 — 키·동의·probe 기록이 함께 사라지고 그 자리는 기본 구현으로 돌아간다.
 저장소의 `code-agent.json` 선언은 건드리지 않는다 (그것은 팀의 것이다).
+code-agent 자체를 지울 때도 이 파일은 **따로** 지운다 — 저장소가 아니라 이 PC 의 이 사용자 것이다 ([install.md §6](install.md#6-지우기)).
 
 ---
 
@@ -381,6 +383,16 @@ POSIX 에서 권한이 넓으면(`mode & 0o077`) 읽기를 **막지 않고** 한
 ```
 code-agent plugin add example --command "node <패키지>/template/plugin-example/echo-adapter.js"
 ```
+
+**단일 실행 파일로 깔았으면 이 파일은 실행 파일 안에 있다** — 빌드가 `template/` 전부를 자원으로 담는다.
+어댑터는 `node <경로>` 로 도는 파일이라 꺼내야 쓸 수 있고, 꺼내는 자리가 있다.
+
+```
+code-agent plugin example [--out <경로>]      기본 ./echo-adapter.js. 있는 파일은 덮지 않는다
+```
+
+`plugin list` 가 두 모드 모두 이 명령을 알려 준다 (설치 두 가지는 [install.md §1](install.md#1-두-가지-설치)).
+모델은 이 명령을 부를 수 없다 — 파일을 쓰는 명령이라 `plugin list` 만 열려 있다.
 
 그리고 저장소의 `code-agent.json` 에:
 

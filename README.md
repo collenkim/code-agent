@@ -69,17 +69,18 @@ P4 의 `verify` 한 칸은 `check` · `test` · `review` · `integrate` · `deli
 | P5 단계 2 리뷰·통합·반영 | 11~13 · ⑨⑩ · KNOWLEDGE 갱신 · 로컬 커밋 | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 우선(`code-agent repro`) · 기존 테스트 보호 · 종류별 단계(`stages[].kinds`) · 빈 저장소 도입 · `deliver` 커밋 범위 · `integrate` 의 `prepare` | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리(slot) 6개 · 명령 어댑터 계약(stdin JSON → stdout JSON) · `plugin list/add/remove` · 기본 구현 — 등록한 사람만 opt-in ([`doc/plugins.md`](doc/plugins.md)) | 코드 ✅ · Jev A/B 실측 |
-| P8 정리·배포 | 문서 세트 · `usage` · 단일 실행 파일 | |
+| P8 정리·배포 | 문서 세트 · 단일 실행 파일 · `doctor` · `update` · `usage` · `knowledge` ([`doc/install.md`](doc/install.md)) | ✅ |
 
 ## 설치
 
-| 무엇 | 명령 |
-|---|---|
-| 빌드 | `npm run build` — `dist/` 에 컴파일 (`bin.code-agent` → `dist/agent/cli.js`) |
-| 설치 | `npm install -g <이 저장소 경로>` |
-| 개발 중 | 이 저장소에서 `npm link` — 고칠 때마다 `npm run build` |
-| 프로젝트마다 | `cd <프로젝트> && code-agent init` |
-| 개발용 hook | `code-agent init --cli <이 저장소>/dist/agent/cli.js` — hook 이 PATH 대신 로컬 빌드를 부른다 |
+```
+npm install -g <이 저장소 경로>              # 한 번 — Node 22 이상
+cd <프로젝트> && code-agent init             # 프로젝트마다
+```
+
+Node 를 깔 수 없는 PC 는 **단일 실행 파일**을 쓴다 — 이 저장소에서 `npm run build:bin` 이 `dist-bin/code-agent(.exe)` 를 낸다 (OS 별, ~90 MB).
+설치 두 가지 · 바이너리 만들기와 서명 · `init` · `doctor` · `update` · 지우기는 [`doc/install.md`](doc/install.md).
+code-agent 자체를 고치면서 쓸 때는 `npm link` + `code-agent init --cli <이 저장소>/dist/agent/cli.js`.
 
 `init` 이 대상 저장소에 만드는 것 — 전부 커밋해 팀과 공유한다.
 
@@ -129,12 +130,16 @@ claude
 | 터미널 (사람) | 하는 일 |
 |---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 |
+| `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(→ 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([`doc/install.md`](doc/install.md#4-code-agent-doctor--점검)) |
+| `code-agent update [--cli <경로>]` | 지금 버전의 스킬·에이전트·hook 을 다시 설치 — 사람이 바꾼 것(다른 hook · 블록 밖 · 모델 오버라이드)은 그대로 |
 | `code-agent status` · `code-agent docs` | 문서·작업·스테이지·질문·승인 상태 · 문서 섹션별 상태 |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | 공통 POLICY 문서 확정 (TTY) |
 | `code-agent approve` · `reject --comment <사유>` | 계획 판정 (TTY) |
 | `code-agent deliver` | 반영 — 추적표·검증 증거 확인 후 작업 브랜치 로컬 커밋 (TTY). push·MR/PR 없음 |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) |
 | `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 터미널에서만, 기본 opus) |
+| `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트별 토큰과 **비용 추정**을 집계 ([`doc/usage.md`](doc/usage.md#5-터미널-명령-사람)) |
+| `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 넣은 작업 · 근거 경로가 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY) |
 | `code-agent plugin list` | 자리마다 지금 무엇이 채우는지 · 감지된 무료 도구 · 등록된 플러그인 |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 플러그인 등록 · 해제 (TTY). 키와 동의는 `~/.code-agent/credentials.json` 에만 — 저장소에는 자리 선언만 ([`doc/plugins.md`](doc/plugins.md)) |
 
@@ -179,6 +184,7 @@ hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 
 
 | 문서 | 무엇 |
 |---|---|
+| [`doc/install.md`](doc/install.md) | **설치가 첫 걸음** — npm 전역 vs 단일 실행 파일 · 바이너리 만들기와 서명 · `init` · `doctor` · `update` · 지우기 |
 | [`doc/design.md`](doc/design.md) | **정본** — 역할 · 문서 게이트 · 스테이지 · 강제 · 서브에이전트 · 플러그인 자리 · 구현 순서 · 실측 |
 | [`doc/usage.md`](doc/usage.md) | 설치부터 승인까지 — 무엇을 치고 어디서 멈추는가 |
 | [`doc/requirement.md`](doc/requirement.md) | 작업 지시서 규격 — 자리·머리말 속성·kind 별 필수·승인 묶음 |

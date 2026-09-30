@@ -1,12 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
-import { dirname, join, relative } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 
+import { assetBytes, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
 import { STATE_DIR } from "./layout";
 import { applyModels } from "./models";
-
-/** 이 패키지의 루트 — dist/agent/init.js 기준 두 단계 위 */
-const PACKAGE_ROOT = join(__dirname, "..", "..");
-const TEMPLATE_DIR = join(PACKAGE_ROOT, "template");
+import { Stop } from "./stop";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -18,24 +16,6 @@ const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash";
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
   cli?: string;
-}
-
-function packageVersion(): string {
-  return (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")) as { version: string }).version;
-}
-
-function copyTree(from: string, to: string, copied: string[], repoRoot: string): void {
-  for (const name of readdirSync(from)) {
-    const source = join(from, name);
-    const target = join(to, name);
-    if (statSync(source).isDirectory()) {
-      copyTree(source, target, copied, repoRoot);
-      continue;
-    }
-    mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(source, target);
-    copied.push(relative(repoRoot, target).replace(/\\/g, "/"));
-  }
 }
 
 /** 표시된 블록만 넣거나 바꾼다. 블록 밖은 사람의 것이라 건드리지 않는다 */
@@ -62,18 +42,74 @@ interface HookEntry {
 }
 
 /**
+ * 우리 항목인지 가르는 규칙은 **서브명령 이름**이다 — 이벤트마다 다른 서브명령을 부르므로
+ * 한쪽을 지우면서 다른 쪽을 지우지 않는다. `doctor` · `update` 가 읽을 때도 같은 규칙을 쓴다.
+ */
+function ourEntry(entry: HookEntry, subcommand: string): boolean {
+  return entry.hooks.some(
+    (hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
+  );
+}
+
+/**
+ * 깨진 JSON 은 **던진다** — 조용히 `{}` 로 보면 `upsertHook` 이 사람의 다른 hook·설정을 통째로
+ * 날려 쓴다. settings.json 은 우리만 쓰는 파일이 아니다.
+ */
+function readSettings(path: string): Record<string, unknown> {
+  if (!existsSync(path)) {
+    return {};
+  }
+  try {
+    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+  } catch (error) {
+    throw new Stop(
+      `${path} 을 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}\n  이 파일을 고친 뒤 다시 도세요.`,
+    );
+  }
+}
+
+function settingsFile(repoRoot: string): string {
+  return join(repoRoot, ".claude", "settings.json");
+}
+
+/**
+ * settings.json 이 깨져 있으면 그 사유, 멀쩡하면 undefined.
+ *
+ * `installedHook` 은 "항목이 없다" 와 "파일을 못 읽는다" 를 둘 다 undefined 로 돌려준다. 그것만 보면
+ * doctor 가 `→ code-agent init` 을 처방하는데 그 init 은 같은 파일에서 멈춘다 — 그래서 doctor 는
+ * hook 을 묻기 **전에** 이것을 먼저 묻는다.
+ */
+export function settingsProblem(repoRoot: string): string | undefined {
+  try {
+    readSettings(settingsFile(repoRoot));
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message.split("\n")[0] : String(error);
+  }
+}
+
+/** settings.json 에 설치된 우리 hook 명령. 없거나 파일이 깨졌으면 undefined (사유는 `settingsProblem`) */
+export function installedHook(repoRoot: string, event: string, subcommand: string): string | undefined {
+  let settings: Record<string, unknown>;
+  try {
+    settings = readSettings(settingsFile(repoRoot));
+  } catch {
+    return undefined; // 사유는 doctor 가 `settingsProblem` 으로 따로 말한다
+  }
+  const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[] | undefined>;
+  const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, subcommand));
+  return entry?.hooks.find((hook) => new RegExp(` ${subcommand}$`).test(hook.command))?.command;
+}
+
+/**
  * settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 항목만 하나로 맞춘다.
  *
- * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다. 우리 것인지 가르는 규칙은
- * 서브명령 이름이다 — 이벤트마다 다른 서브명령을 부르므로 한쪽을 지우면서 다른 쪽을 지우지 않는다.
+ * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다.
  */
 function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string): void {
-  const settings = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>) : {};
+  const settings = readSettings(path);
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
-  const ours = (entry: HookEntry) =>
-    entry.hooks.some(
-      (hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
-    );
+  const ours = (entry: HookEntry) => ourEntry(entry, subcommand);
   hooks[event] = [
     ...(hooks[event] ?? []).filter((entry) => !ours(entry)),
     { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] },
@@ -89,24 +125,24 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
     options.cli ? `node "${options.cli.replace(/\\/g, "/")}" ${subcommand}` : `code-agent ${subcommand}`;
   const command = invoke("hook");
 
-  const copied: string[] = [];
-  copyTree(join(TEMPLATE_DIR, "claude"), join(repoRoot, ".claude"), copied, repoRoot);
-  lines.push(`스킬·에이전트 ${copied.length}개: .claude/skills/ca-*, .claude/agents/ca-*`);
+  // 파일이 아니라 자원(asset)에서 설치한다 — 단일 실행 파일에는 패키지 폴더가 없다
+  const keys = assetKeys(CLAUDE_ASSETS);
+  for (const key of keys) {
+    const target = installedPath(repoRoot, key);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, assetBytes(key));
+  }
+  lines.push(`스킬·에이전트 ${keys.length}개: .claude/skills/ca-*, .claude/agents/ca-*`);
   // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
   applyModels(repoRoot);
 
-  const settings = join(repoRoot, ".claude", "settings.json");
+  const settings = settingsFile(repoRoot);
   upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);
   // Stop hook — PreToolUse 가 못 보는 것(도구를 거치지 않고 생긴 파일·남은 질문)을 턴 끝에 한 번 본다
   upsertHook(settings, "Stop", "stop", invoke("stop"));
   lines.push(`hook: .claude/settings.json → PreToolUse ${command} · Stop ${invoke("stop")}`);
 
-  const claude = upsertBlock(
-    join(repoRoot, "CLAUDE.md"),
-    BLOCK_START,
-    BLOCK_END,
-    readFileSync(join(TEMPLATE_DIR, "CLAUDE.block.md"), "utf-8"),
-  );
+  const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);
 
   upsertBlock(

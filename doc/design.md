@@ -69,7 +69,9 @@
 - **게이트는 파일 존재뿐이다.** 섹션 검사도, `확인 필요` 미결 표시도, 원장 확정도 없다. 뼈대에 `확인 필요` 를 넣지 않는다 — 막지 않는 문서에 미결 표시를 남기면 영원히 지워지지 않는다.
 - **승인 해시에 넣지 않는다.** 넣으면 다른 작업의 반영마다 남의 승인이 stale 이 되어 병렬 작업이 막힌다.
   대신 **작업 문서가 전제를 들고 간다** — 03·04 는 인용한 항목의 키와 *그것에 기대는 사실 한 줄*을 옮겨 적고 그 뒤에 차이를 쓴다.
-  그 한 줄은 `workDocsHash` 에 이미 들어가므로 승인의 근거는 옮겨 적은 줄이 덮는다. (항목 단위 해시는 인용 파서가 필요해 P6 으로 미룬다.)
+  그 한 줄은 `workDocsHash` 에 이미 들어가므로 승인의 근거는 옮겨 적은 줄이 덮는다.
+  (**항목 단위 해시는 두지 않는다** — 인용을 기계로 읽는 파서가 필요하고, 옮겨 적은 줄이 이미 해시에 들어가 있다.
+  대신 인용한 원본 항목이 승인 뒤에 바뀌어도 승인은 흔들리지 않는다 — 알고 남긴 선이다.)
 - **쓰는 것은 반영(deliver)뿐이다 (P5 ✅).** 모델이 직접 쓰지 않는다 — 작업 중에는 hook 이 작업 폴더 밖 쓰기를 막으므로 제안은 `doc/work/<ID>/knowledge.proposal.md` 에
   (`## <종류>` 아래 ``### `키` 이름`` 블록으로) 쓰고, `code-agent deliver` 가 TTY 에서 항목마다 지금 것과 제안을 나란히 보여 준 뒤 **코드가** 키로 upsert 한다.
   **삭제는 적용하지 않는다** — 자동 삭제는 되돌릴 근거가 없다. 같은 키는 그 자리에서 갈아 끼우고(문서의 순서가 흔들리지 않게) 새 키만 끝에 붙는다.
@@ -493,16 +495,24 @@ code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙�
 | explorer 를 요구 항목이 아니라 **닿는 영역별로** · critic 은 계획·분석·작업 문서·계획이 가리키는 파일만 | 같은 저장소를 여러 번 훑지 않는다 (실측: 요구 항목 5개에 explorer 5개가 각자 파일 20~28개를 읽어 조사+계획 $12.58) | P3 ✅ |
 | `code-agent context` 의 후보 파일 순위·참고 문서 섹션 — 등록 없이 도는 기본 구현 | explorer 가 저장소를 다시 훑지 않고, 컨벤션·KNOWLEDGE 를 전문으로 읽지 않는다 | P7 ✅ |
 | 판정 플러그인 | 파일을 Claude 컨텍스트에 넣지 않고 분류·순위 | 코드 P7 ✅ · 효과는 Jev A/B 로 잰다 (§6 · [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
-| `code-agent usage` | 스테이지·에이전트별 토큰 집계 — 줄었는지는 숫자로 본다 | P8 |
+| `code-agent usage` | 스테이지·에이전트별 토큰 집계 — 줄었는지는 숫자로 본다. 비용은 **추정**이다(공개 단가표로 곱한 값, 기준일을 출력에 찍는다) | P8 ✅ |
 
 ## 8. 배포와 대상 저장소
 
 ```
-npm install -g <사내 저장소>/code-agent     # 한 번 (단일 바이너리는 P8)
+npm install -g <사내 저장소>/code-agent     # 한 번 — Node 22 이상
+npm run build:bin → dist-bin/code-agent(.exe)  # 또는 단일 실행 파일 (Node 불필요, OS 별 ~90 MB — install.md)
 cd <프로젝트> && code-agent init             # 프로젝트마다 — .claude/ 설치, 버전 고정
+code-agent doctor                            # 설치·환경 점검 (✗ 가 없으면 종료 코드 0)
 claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · conventions · test-strategy · quality
         →  /ca-feature doc/work/UZRF-145/requirement.md  →  (터미널) code-agent approve  →  /ca-next …
 ```
+
+설치·점검·갱신·지우기의 정본은 [install.md](install.md) 다. **템플릿을 읽는 자리는 `src/agent/assets.ts` 하나**이고 —
+npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 내장 자원에서 **같은 키**로 읽는다 — 그래서 `init`·`update`·`doctor` 가
+두 설치에서 갈리지 않는다. 바이너리는 자기 OS 의 node 를 복사해 만들므로 **OS 별로 따로** 만들고, **만드는 Node 는 24.8 이상**이어야 한다
+(`node:sea.getAssetKeys` 가 그 버전에 들어왔다 — 없으면 자원을 못 읽는 바이너리가 나오므로 빌드 스크립트가 막고, 그래도 그런 바이너리가
+돌면 `assets.ts` 가 한 문장으로 세운다).
 
 | 대상 저장소에 생기는 것 | 커밋 | 상태 |
 |---|---|---|
@@ -570,6 +580,7 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
+| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH 의 code-agent · git 저장소 · settings.json 이 읽히는지 · hook 2개가 풀리는지 · 버전 스큐 · 스킬·에이전트가 번들과 같은지(없는 것과 다른 것을 갈라 센다) · 이 버전에 없는 `ca-*` · 매니페스트 · POLICY 4종 · 사용자 키 파일 · TTY. 번들을 못 읽어도 **끝까지 찍고** 요약에 닿는다. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |
 | `code-agent confirm doc <architecture \| conventions>` | 프로젝트 필수 문서 확정 (해시를 원장에, TTY 에서만) | P2 ✅ |
@@ -577,9 +588,11 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) | P1 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY, 기본 opus) | ✅ |
-| `code-agent usage` | 스테이지·에이전트별 토큰 집계 | P8 |
+| `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
+| `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) | P8 ✅ |
+| `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 | P8 ✅ |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) | P7 ✅ |
-| `code-agent update` | 갱신 | P8 |
+| `code-agent update [--cli <경로>]` | 지금 도는 버전의 스킬·에이전트·hook 을 다시 설치 — 보존은 `init` 이 하던 그대로(다른 hook · 블록 밖 · `models.json` 오버라이드)이고 `--cli` 는 승계한다. 이 버전에 없는 `ca-*` 가 남아 있으면 알린다(지우지는 않는다). 작업 중에도 돌고 **막지 않고 경고만** 한다 · TTY 불필요 | P8 ✅ |
 
 ### 스킬·hook 이 부른다
 
@@ -636,7 +649,17 @@ claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · c
 | P5 단계 2 리뷰·통합·반영 | ⑨ `09-review.md`(코드가 쓰는 회차 구역 · 마지막 회차 트리 해시 == 지금 · 범위는 코드가 판정) · `integrate`(기준 커밋 + 변경 파일만 얹은 깨끗한 worktree 에서 전체 build·test) · `deliver`(TTY 확인 → ⑩ `10-pr.md` 추적표 렌더 → **로컬 커밋까지**. push·MR/PR 없음) · KNOWLEDGE upsert · 테스트 동결의 두 번째 탈출구(⑨ 의 지적) | 실제 프로젝트에서 feature 한 건을 로컬 커밋까지 완주 (첫 실측) | 코드 ✅ (리뷰 지적 반영) · 실측 |
 | P6 fix·refactor · 신규 저장소 | ② 현행 분석 필수(`해당 없음` 불가 · 근거 `path:line`) · ⑦ 의 `## 재현` 절과 `code-agent repro`(증거 `Evidence.repro`, 재현 전 쓰기 거부, 재현 뒤 테스트 동결) · `sequence[0]` 이 테스트 단계 · refactor 의 기존 테스트 파일 보호(제출·쓰기·검증 세 자리) · `stages[].kinds` 종류별 단계와 `manifest check` 경고 · 빈 저장소 감지(`survey`)와 참조 없는 `context` · `deliver` 커밋 범위 제한 · `integrate` 의 `prepare` | 각 한 건 완주, 빈 저장소에서 feature 시작 | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리 6개 · 버전 있는 명령 어댑터 계약(stdin JSON → stdout JSON, `describe`·`probe`·`run`) · `plugin list/add/remove`(등록은 TTY·동의·`probe`, 키는 사용자 스토어) · 무료 도구 감지 · 기본 구현 둘(내장 키워드 스캔 · 제목 매칭) · `code-agent.json` 의 `plugins` 선언(해시 중립) · 호출 로그 — **등록한 사람만 opt-in**, 실패하면 기본 구현 + 한 줄 | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | 코드 ✅ · **A/B 는 실제 Jev 가 붙어야 잰다** (절차: [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
-| P8 정리·배포 | 쓰이지 않는 코드·문서 정리, 문서 세트(README 가 이 문서를 가리킴), `usage`, 단일 바이너리 배포, 설치·점검 | 다른 개발자가 혼자 설치부터 반영까지 | |
+| P8 정리·배포 | 단일 실행 파일(Node SEA — 템플릿을 자원으로 안고 `assets.ts` 한 자리에서 읽는다) · `doctor` · `update` · `usage` · `knowledge`/`prune` · 죽은 코드 정리와 매니페스트 `[]` 함정 차단(해시 중립) · 문서 세트(README → [install.md](install.md) · 이 문서 · [usage.md](usage.md) · [requirement.md](requirement.md) · [plugins.md](plugins.md)) | 다른 개발자가 혼자 설치부터 반영까지 | ✅ |
+
+**P8 뒤로 남은 것** (코드가 아니라 실측·결정이 필요한 것들이다)
+
+- **주인이 직접 처음부터 끝까지 한 건 완주** — P5·P6 에 이미 걸려 있는 그 자리다. 코드로 대신할 수 없다.
+- **실제 Jev 플러그인으로 A/B 토큰 비교** — 절차는 [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면).
+- **프런트엔드 제품 방향 결정** — 지금은 CLI + Claude Code 뿐이다.
+- **push · MR/PR** — git 호스트가 붙으면 그때 정한다 (2026-09-29 보류 결정). ⑩ 이 쓸 본문을 이미 들고 있다.
+- **⑦ 대조의 TC 수준 출력 파싱** — 실행 출력에서 TC id 를 읽는 일은 프레임워크마다 형식이 달라 일반적으로 되지 않는다 (아래 "알고 남긴 한계").
+- **플러그인 어댑터가 남긴 손자 프로세스까지 묶는 제한 시간** — [plugins.md §9](plugins.md#9-한계).
+- **`usage` 의 `agentType` 문자열** — 지금 관측된 것은 내장 에이전트(`Explore`) 뿐이다. `ca-implementer` 같은 프로젝트 에이전트가 어떤 문자열로 오는지는 **한 건 돌려 봐야** 확정된다. 코드는 값을 그대로 쓰고 모르는 값을 버리지 않는다.
 
 **P5 뒤로 미룬 것**
 

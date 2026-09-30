@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -168,11 +168,18 @@ function confirmDocs(): void {
 
 function approve(): void {
   const work = loadWork(repo)!;
+  // 헬퍼가 프로덕션보다 약해지지 않았는지 그 자리에서 본다 — 확정된 문서가 없으면
+  // docsHash 가 undefined 가 되고 stale-docs 판정이 다시 꺼진다.
+  assert.ok(approvalDocsHash(work), "승인은 확정된 문서 묶음 위에 서야 한다");
   recordDecision(repo, {
     order: work.order,
     target: work.active.target,
     plan: work.plan!,
     manifest: work.manifest,
+    // 실제 `decide()` 가 늘 넣는 값이다. 빼면 `checkApproval` 의 `record.docsHash !== undefined` 가
+    // 거짓이 되어 **stale-docs 판정이 영영 걸리지 않는다** — 승인 뒤 문서를 고치는 경로가
+    // 여기서만 열려 있게 된다. 테스트의 승인은 프로덕션보다 약하면 안 된다.
+    docsHash: approvalDocsHash(work),
     decision: "approved",
     approver: "test",
     presence: { channel: "tty", verified: true, detail: "테스트" },
@@ -363,7 +370,9 @@ describe("code-agent check", () => {
       () => check(requireValidatable(repo, "check")),
       (error: Error) => error instanceof Stop && /계획 밖 변경 \[A\] .*Sneaky\.java/.test(error.message),
     );
-    assert.equal(existsSync(join(repo, ".code-agent/log")), false);
+    // 이 폴더에는 스테이지 전이 기록(stages.jsonl)이 이미 들어 있다 — 여기서 없어야 하는 것은
+    // **검증 실행 로그**다. 명령을 하나도 돌리지 않았다는 것이 이 테스트가 보는 것이다.
+    assert.deepEqual(readdirSync(join(repo, ".code-agent/log")).filter((name) => name.endsWith(".log")), []);
     assert.equal(loadEvidence(repo, "ORD-1", "order"), undefined);
   });
 
