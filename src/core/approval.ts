@@ -195,6 +195,10 @@ export function hashManifest(manifest: Manifest): string {
       })),
       build: manifest.build,
       test: manifest.test,
+      // prepare 는 통합 검증이 실제로 무엇을 돌리는지를 바꾼다 — build·test 와 같은 부류다.
+      // 빼 두면 승인 뒤에 준비 명령을 갈아 끼워 검증 내용을 바꿀 수 있다. 선언하지 않은
+      // 매니페스트에서는 canonical 이 undefined 키를 떨구므로 기존 해시가 한 글자도 달라지지 않는다.
+      prepare: manifest.prepare,
       commands: manifest.commands,
     }),
   );

@@ -149,6 +149,18 @@ const ManifestSchema = z.object({
     .array(z.string())
     .optional()
     .describe("테스트 실행 명령. 실패는 자동 수정 대상이 아니라 보고 대상이다"),
+  prepare: z
+    .array(z.string())
+    // 빈 배열은 형식 오류다 — 선언은 hashManifest 를 바꾸고 manifest check 에도 실려 "준비가 돈다" 로
+    // 읽히는데 integrate 는 조용히 건너뛴다. commands.build/test/prepare 에 건 superRefine 과 같은 이유다.
+    .min(1)
+    .optional()
+    .describe(
+      "통합 검증의 깨끗한 worktree 에서 build·test **앞에** 한 번 도는 준비 명령 (예: [\"npm\",\"ci\"]). " +
+        "기준 커밋을 뜬 트리에는 의존성처럼 커밋되지 않는 것이 없어서 두는 자리다. 실패하면 build·test 를 " +
+        "돌리지 않고 통합 검증 전체가 실패한다 — 준비되지 않은 트리 위의 통과는 증거가 아니다. " +
+        "check·test 스테이지에서는 돌지 않는다 (거기는 사람이 보고 있는 작업 트리다)",
+    ),
   commands: z
     .record(z.string(), z.array(z.string()))
     .default({})
@@ -192,7 +204,7 @@ const ManifestSchema = z.object({
 }).superRefine((manifest, ctx) => {
   // 주석은 "덮어쓸 수 없다"고 말하는데 검사가 없었다. 그래서 commands.build 를 선언하면
   // 조용히 무시되고, 선언한 사람은 그것이 도는 줄 안다 — 검증 명령에서 그 착각은 비싸다.
-  for (const reserved of ["build", "test"] as const) {
+  for (const reserved of ["build", "test", "prepare"] as const) {
     if (reserved in manifest.commands) {
       ctx.addIssue({
         code: "custom",
@@ -252,10 +264,15 @@ export function stagesFor(manifest: Manifest, kind: WorkKind): StageDef[] {
     (stage) => stage.kinds.length === 0 || stage.kinds.includes(kind),
   );
   if (stages.length === 0) {
+    // 무엇이 막혔는지가 아니라 **무엇을 고치면 풀리는지**를 적는다 — 단계마다 지금 선언된 kinds 를 함께 찍어
+    // 매니페스트를 열어 보지 않고도 어디에 "fix" 를 더할지 보이게 한다.
     throw new Error(
       `이 프로젝트에는 ${kind} 로 돌 단계가 선언돼 있지 않습니다.\n` +
-        `  ${MANIFEST_FILE} 의 stages[].kinds 를 확인하세요 (선언된 단계: ` +
-        `${manifest.stages.map((stage) => stage.key).join(", ")}).`,
+        `  ${MANIFEST_FILE} 의 stages[].kinds 에 "${kind}" 를 더하세요 — kinds 를 비우면 모든 종류에서 돕니다.\n` +
+        `  지금 선언된 단계: ${manifest.stages
+          .map((stage) => `${stage.key}(${stage.kinds.length === 0 ? "모든 종류" : stage.kinds.join(", ")})`)
+          .join(", ")}\n` +
+        "  확인: code-agent manifest check",
     );
   }
   return stages;

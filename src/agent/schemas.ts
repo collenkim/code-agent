@@ -507,6 +507,14 @@ export const TEST_SPEC: DocSchema = {
         "AC 하나당 정상 1 + 04 의 `예외` 에서 온 실패 경로 n 으로 출발한다",
     },
     {
+      // 열 순서·개수가 고정인 표를 건드리지 않으려고 **절**로 뒀다 — TC id 접미사도 6번째 열도
+      // ⑦↔⑧↔⑩ 이 함께 딛는 `TC-<숫자>` 계약을 흔든다.
+      id: "repro", heading: "재현", aliases: ["재현 케이스", "재현 테스트"], required: false, questions: [],
+      guide:
+        "fix 에서만 필수: 결함을 재현하는 TC id 를 `- TC-1` 로 한 줄씩. **수준(Unit/Integration/E2E)은 무엇이든 된다.** " +
+        "여기 적힌 TC 는 표에 실재해야 하고, code-agent repro 가 지금 코드에서 그것이 **실패**하는 것을 보기 전에는 고칠 파일을 쓸 수 없다",
+    },
+    {
       id: "fixtures", heading: "테스트 데이터·환경", aliases: ["테스트 데이터", "환경"], required: false, questions: [],
       guide: "픽스처·더블·외부 연동 — 테스트 전략 문서와 다르게 갈 때만 쓰고 근거를 단다",
     },

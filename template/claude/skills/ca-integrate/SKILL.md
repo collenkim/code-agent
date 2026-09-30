@@ -14,7 +14,10 @@ description: 통합 검증 단계(integrate)를 돌고 반영 준비까지 한�
 ## 1. 통합 검증
 
 1. Bash: `code-agent integrate` — 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
+   `code-agent.json` 에 `prepare` 가 선언돼 있으면 **그것이 build·test 앞에 한 번 먼저** 돈다 (예: `npm ci`).
+   `prepare` 가 실패하면 build·test 는 **돌지 않는다** — 준비되지 않은 트리 위의 통과는 증거가 아니다.
 2. 실패면 `.claude/skills/ca-check/SKILL.md` 의 **↺ 수정 루프** — 여기서 나오는 것은 대개 계획 밖 의존이라 질문으로 가는 쪽이 많다.
+   `prepare: failed` 는 계획이 아니라 **매니페스트나 환경**의 문제다. 계획 파일을 고치지 말고 사유를 그대로 전하고 멈춘다.
 
 ## 2. 게이트
 

@@ -2,12 +2,14 @@ import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join, posix } from "path";
 
+import { APPROVALS_DIR } from "../core/approval";
 import { writeAtomic } from "../core/atomic";
+import { slug } from "../core/workOrder";
 import { blockCount, stripBlock, upsertBlock } from "./blocks";
 import { loadEvidence, planPaths, runsOf, stageProblems, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
-import { clearActive, questionsFile, workDocsDir } from "./layout";
+import { clearActive, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { Stop } from "./stop";
@@ -115,6 +117,9 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined): st
       `- 계획 파일 부분 트리 해시: ${evidence.treeHash}`,
       `- planHash: ${evidence.planHash} · manifestHash: ${evidence.manifestHash}`,
       `- 고쳐 쓰기 회차: ${evidence.rounds}`,
+      ...(evidence.repro
+        ? [`- repro: ${evidence.repro.cases.join(", ")} · 테스트 트리 ${evidence.repro.testTreeHash} (${evidence.repro.at})`]
+        : []),
       ...(["check", "test", "integrate"] as VerifyPhase[]).map(
         (phase) =>
           `- ${phase}: ${runsOf(evidence, phase).map((run) => `${run.kind}=${run.outcome}`).join(" · ") || "돌린 기록 없음"}`,
@@ -280,14 +285,32 @@ function commitMessage(work: Work, evidence: Evidence): string {
 /**
  * 검증된 변경 집합만 커밋한다 — `git add -A` 가 아니라 **경로를 명시해** 넘긴다.
  * 그래야 같은 트리에 있던 무관한 파일이 사람이 확인한 것 밖에서 따라 들어가지 않는다.
- * 증거(`.code-agent/work/.../verify.json`·`review.json`)와 원장이 같은 커밋에 들어가 git 에 남는다.
+ * 증거(`.code-agent/work/<ID>/*.verify.json`·`review.json`)와 원장이 같은 커밋에 들어가 git 에 남는다.
+ *
+ * `.code-agent` 를 통째로 올리지 않는다 — 그러면 **다른 작업의** 증거·계획, 전 작업의 원장·스냅샷,
+ * 도입 설정(`models.json`·`version`·`approvals/docs.jsonl`)까지 이 커밋에 따라 들어온다.
+ * 이 반영이 남기는 것은 **이 작업의** 파일·증거·원장뿐이다.
+ *
+ * `add` 와 `commit` 이 **같은 경로 목록**을 든다 — 올리는 것만 제한하면 이미 인덱스에 있던 것이
+ * 따라 들어와, 제한이 반쪽이 된다. `add` 는 그대로 둔다: 미추적 파일은 git 이 먼저 알아야 담긴다.
  */
 export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): string {
   const { repoRoot, active } = work;
-  const paths = [...planPaths(work), workDocsDir(active.id), ".code-agent", ...knowledge];
+  const mine = [
+    // planFile·verifyFile·reviewFile 은 raw id 를 쓰고 원장·스냅샷은 slug(id) 를 쓴다 — 두 규칙을 각각 그대로
+    `${STATE_DIR}/work/${active.id}`,
+    `${APPROVALS_DIR}/${slug(active.id)}.jsonl`,
+    `${APPROVALS_DIR}/${slug(active.id)}`,
+  ];
+  const paths = [...planPaths(work), workDocsDir(active.id), ...mine, ...knowledge]
+    // 없는 pathspec 은 git add 가 fatal 로 세운다 — 판정 스냅샷 디렉토리는 승인 전에는 없다
+    .filter((path) => existsSync(join(repoRoot, path)));
   git(repoRoot, ["add", "--", ...paths]);
   try {
-    git(repoRoot, ["commit", "-m", commitMessage(work, evidence)]);
+    // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
+    // 올라가 있던 것(사람이 터미널에서 친 git add · 앞서 실패한 deliver 가 남긴 스테이지)이
+    // 이 커밋에 그대로 실려 간다 — 검증된 변경 집합만 커밋한다는 말이 그때 거짓이 된다.
+    git(repoRoot, ["commit", "-m", commitMessage(work, evidence), "--", ...paths]);
   } catch (error) {
     // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다
     throw new Stop(
@@ -363,6 +386,7 @@ export function deliver(work: Work): string {
     ...(knowledge.length > 0 ? [`공통 KNOWLEDGE 갱신: ${knowledge.join(", ")}`] : ["공통 KNOWLEDGE 는 갱신하지 않았습니다."]),
     "",
     `PR 본문은 ${prDocFile(active.id)} 에 있습니다. push · MR/PR 생성은 하지 않았습니다 — git 호스트가 붙을 때까지 보류입니다.`,
+    `커밋한 것은 이 작업의 파일·증거·원장뿐입니다 — 도입 설정(${STATE_DIR}/version · ${STATE_DIR}/models.json · ${APPROVALS_DIR}/docs.jsonl)은 사람이 따로 커밋합니다.`,
     "작업 커서를 지웠습니다.",
   ].join("\n");
 }

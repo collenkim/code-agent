@@ -4,6 +4,7 @@ import { join, posix } from "path";
 import type { Manifest } from "../core/manifest";
 import { formatPlan } from "../core/plan";
 import type { BuildPlan } from "../core/types";
+import type { WorkKind } from "../core/workOrder";
 import { checkSections, docPaths, normalizeHeading, sectionBody, sha } from "./docs";
 import { workDocsDir } from "./layout";
 import { SCHEMAS, WORK_SCHEMAS } from "./schemas";
@@ -135,13 +136,44 @@ function tableRows(body: string): { key: string; rest: string[] }[] {
     .filter((row): row is { key: string; rest: string[] } => row !== undefined);
 }
 
-export function analysisProblems(repoRoot: string, id: string, keys: string[]): string[] {
+/** 근거로 읽는 `path:line` — 스키마 guide 가 이미 요구하는 형태를 코드로 옮긴 것이다 */
+const EVIDENCE_REF = /[\w./-]+\.[A-Za-z]\w*:\d+/;
+
+/**
+ * `기존 시스템 분석` 을 한 단어로 비우는 길을 닫는다 — **fix·refactor 에서만**.
+ *
+ * feature 의 대상은 이제부터 만들 도메인이라 "지금 하는 일" 이 없을 수 있지만, 고치는 작업에서
+ * 그 절이 비면 뒤의 모든 판단(무엇을 고치는가 · 무엇이 보존되는가)이 근거를 잃는다.
+ * 두 규칙을 같이 거는 이유 — `해당 없음` 금지만으로는 "결함이 있다" 한 줄이 통과한다.
+ */
+function currentSectionProblems(id: string, text: string, kind: WorkKind): string[] {
+  if (kind !== "fix" && kind !== "refactor") {
+    return [];
+  }
+  const path = workDocPath(id, "02-analysis");
+  const current = sectionBody(WORK_SCHEMAS["02-analysis"], text, "current");
+  const what = kind === "fix" ? "**결함이 나는 경로**를 적습니다" : "**지금 동작**을 적습니다";
+  const problems: string[] = [];
+  // 03 과 같은 규칙으로 목록 표시·강조를 벗기고 본다
+  const body = lines(current).map((line) => line.replace(/^[-*+]\s+/, "").replace(/\*\*/g, "").trim());
+  // 규칙은 "'해당 없음' 으로 **비울** 수 없다" 이지 "그 말을 쓸 수 없다" 가 아니다. 한 줄이라도 걸면,
+  // 다 쓴 분석에 `- 캐시 계층: 해당 없음 — 이 경로는 캐시를 타지 않는다` 같은 하위 항목 하나로 막힌다.
+  if (body.length > 0 && body.every((line) => NOT_APPLICABLE.test(line))) {
+    problems.push(`${path} — ${kind} 는 기존 시스템 분석에 ${what}: '해당 없음' 으로 비울 수 없습니다`);
+  }
+  if (!EVIDENCE_REF.test(current)) {
+    problems.push(`${path} — ${kind} 는 기존 시스템 분석에 ${what}: 근거 path:line 이 최소 하나 있어야 합니다`);
+  }
+  return problems;
+}
+
+export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind): string[] {
   const text = readWorkDoc(repoRoot, id, "02-analysis");
   if (!text) {
     return [absent(id, "02-analysis")];
   }
   const path = workDocPath(id, "02-analysis");
-  const problems = lackingSections(id, "02-analysis", text);
+  const problems = [...lackingSections(id, "02-analysis", text), ...currentSectionProblems(id, text, kind)];
   const rows = tableRows(sectionBody(WORK_SCHEMAS["02-analysis"], text, "impact"));
   const uncovered = keys.filter((key) => !rows.some((row) => row.key === key));
   if (uncovered.length > 0) {
@@ -255,6 +287,17 @@ export function parseTestCases(text: string): TestCase[] {
     }));
 }
 
+/**
+ * ⑦ 의 `## 재현` 절이 가리키는 TC id — 쓴 순서대로, 중복 제거.
+ *
+ * 표가 아니라 절로 둔 것은 열 순서·개수 계약을 종류마다 갈라 놓지 않기 위해서다
+ * (`sectionsOf` 가 문서의 실제 `##` 로 경계를 잡아 `cases` 파싱에 닿지 않는다).
+ */
+export function reproCases(text: string): string[] {
+  const body = sectionBody(WORK_SCHEMAS["07-test-spec"], text, "repro");
+  return [...new Set([...body.matchAll(/\bTC-\d+\b/g)].map((match) => match[0]))];
+}
+
 const LEVEL_NAMES: Record<TestLevel, RegExp> = {
   Unit: /unit|단위/i,
   Integration: /integration|통합/i,
@@ -301,6 +344,7 @@ export function testSpecProblems(
   id: string,
   acceptance: string[],
   manifest: Manifest | undefined,
+  kind: WorkKind,
 ): { problems: string[]; notes: string[] } {
   const text = readWorkDoc(repoRoot, id, "07-test-spec");
   if (!text) {
@@ -337,6 +381,19 @@ export function testSpecProblems(
   const uncovered = acceptance.filter((ac) => !covered.has(ac));
   if (uncovered.length > 0) {
     problems.push(`${path} — 테스트 케이스가 없는 수락 기준: ${uncovered.join(", ")} (모든 AC 가 최소 한 TC 에 걸립니다)`);
+  }
+
+  // fix 는 '무엇이 결함인가' 를 TC 로 지목해야 재현을 강제할 자리가 생긴다 — 여기서 비면
+  // code-agent repro 가 무엇을 돌려 무엇을 봐야 하는지 알 수 없다.
+  if (kind === "fix") {
+    const repro = reproCases(text);
+    if (repro.length === 0) {
+      problems.push(`${path} — fix 는 \`## 재현\` 절에 결함을 재현하는 TC id 를 최소 하나 적습니다 (\`- TC-1\`). 수준은 무엇이든 됩니다`);
+    }
+    const stray = repro.filter((tc) => !ids.includes(tc));
+    if (stray.length > 0) {
+      problems.push(`${path} — \`## 재현\` 이 표에 없는 TC 를 가리킵니다: ${stray.join(", ")}`);
+    }
   }
 
   // 전략이 '하지 않음' 이라 한 수준을 쓰려면 `안 하는 것` 에 근거가 있어야 한다 — 전략을 조용히 벗어나지 않게.
