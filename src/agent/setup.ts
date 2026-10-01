@@ -16,11 +16,20 @@ const PRESETS = {
 export function recommendSetup(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
   if (manifest) return "추천: 기존 프로젝트 설정 유지. /ca-docs 로 빠진 절만 채우세요. 언어·빌드·테스트 명령을 다시 고르지 않습니다.";
-  return ["프로젝트 시작 구성 — 목적에 맞는 추천 하나 또는 직접 선택", "",
+  return ["프로젝트 시작 구성 — 7개 후보에서 목적에 맞는 하나를 선택", "",
     "- node: 웹·API의 작은 시작 — JavaScript와 Node 내장 도구. 설치할 외부 패키지가 없고 기능별 폴더로 시작합니다.",
     "- python: 자동화·파일 처리 — Python 표준 도구. 스크립트에서 시작해 기능별 모듈로 나눕니다.",
-    "- 직접 선택: 선호 언어·프레임워크 또는 회사 규칙이 있으면 그대로 사용합니다.",
-    "기존 코드가 있으면 기존 구성 유지가 우선입니다. 신규에서 사용자가 추천 구성을 선택한 뒤 code-agent docs setup node 또는 python.",
+    "- typescript: 타입 검사를 쓰는 API — TypeScript + Node.js. 빌드와 테스트 구성을 함께 준비합니다.",
+    "- fastapi: Python API — Python + FastAPI + pytest. 요청 검증과 API 문서가 필요한 경우의 후보입니다.",
+    "- java-spring: Java 서버 — Java + Spring Boot + JUnit. Java 기반 팀 규칙과 서버 개발에 맞출 수 있습니다.",
+    "- kotlin-spring: Kotlin 서버 — Kotlin + Spring Boot + JUnit. Kotlin을 쓰는 팀의 서버 구성 후보입니다.",
+    "- go: 단일 실행 파일 API — Go 표준 HTTP 도구 + testing. 기능별 패키지로 시작합니다.",
+    "그 밖의 언어·프레임워크·회사 규칙은 선택 도구의 직접 입력으로 받습니다.",
+    "먼저 survey로 기존 구성을 확인하세요. 기존 코드가 있으면 재사용이 우선이며 다시 선택시키지 않습니다.",
+    "메인은 요청 목적과 실제 설정을 근거로 추천 하나와 이유를 붙이고, 전체 후보를 보여 준 뒤 AskUserQuestion을 호출합니다. 폴더 이름으로 언어를 추측하지 않습니다.",
+    "화면당 최대 4개 옵션: 처음은 후보 3개 + 다른 선택지, 이후는 앞 선택지 + 후보 + 필요 시 다른 선택지. ca-answer의 공통 절차를 따릅니다.",
+    "node·python 선택은 code-agent docs setup node 또는 python으로 준비합니다. 나머지 후보는 /ca-adopt의 문서·설정 작성 절차로 연결합니다. docs setup의 인자로 넘기지 않습니다.",
+    "프레임워크 구성은 선택 뒤 기존 버전·회사 규칙을 우선하고, 없으면 공식 지원 자료를 확인해 일관된 버전·빌드·테스트 기본안을 제시합니다. 애플리케이션 파일은 승인된 Task에서 만듭니다.",
     "소스 경로·단계·테스트 명령은 추천 구성에 포함됩니다. 제품 동작·권한·데이터 규칙은 임의로 정하지 않습니다."].join("\n");
 }
 

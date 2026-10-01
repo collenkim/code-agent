@@ -181,7 +181,7 @@ function requireAnswers(repoRoot: string, active: ActiveWork): void {
     throw new Stop(
       `답이 없는 질문이 ${open.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
         open.map((question) => `  - ${question.title}`).join("\n") +
-        "\n/ca-answer 로 답하세요.",
+        "\n메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.",
     );
   }
 }
@@ -1053,7 +1053,7 @@ export function context(repoRoot: string): string {
         : "- 아직 없습니다 — code-agent check",
       "",
       "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요.",
-      `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문으로 남기고 멈추세요.`,
+      `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.`,
     );
   }
 

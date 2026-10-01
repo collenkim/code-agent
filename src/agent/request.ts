@@ -547,7 +547,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "",
     "## 질문 — 접수에서 물을 것",
     "- 기술값은 기존 구성·명명 규칙을 근거로 제안한다. 원문으로 정할 수 없는 의미·범위·보존 조건과 두 가지로 읽히는 곳만 묻는다.",
-    "- 턴의 마지막 메시지에 최대 4개씩, 선택지와 함께. 받은 답은 clarifications 에 사람의 말 그대로 남긴다.",
+    "- ca-answer 공통 절차의 AskUserQuestion으로 최대 4개 질문씩 받는다. 추천·이유를 붙이고 5개 이상 후보는 페이지를 나눈다. 질문과 선택지는 questions.md, 실제 답은 해당 질문과 clarifications 에 그대로 남긴다.",
     "- 업무 규칙의 세부 · 설계 · 테스트는 여기서 묻지 않는다 — 분석 단계가 맡는다.",
     "",
     `다음: ${preparationHint(repoRoot) ?? requestHint(repoRoot, id, spec)}`,

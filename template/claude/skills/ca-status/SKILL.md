@@ -3,6 +3,8 @@ name: ca-status
 description: code-agent 작업의 현재 위치(문서·스테이지·질문·승인)와 다음 할 일을 보여 준다.
 ---
 
+**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+
 1. Bash 로 `code-agent status` 를 실행한다.
 2. 결과를 그대로 보여 주고, 마지막 "다음:" 줄을 사용자가 할 일로 한 문장 풀어 준다.
    - 공통 POLICY 문서가 ✗ 면 `/ca-docs` (레거시에 처음 들이는 것이면 `/ca-adopt`). 섹션별 상태는 `code-agent docs`
@@ -10,7 +12,7 @@ description: code-agent 작업의 현재 위치(문서·스테이지·질문·�
    - 작업·접수가 없으면 `/ca-request [ID] <요구사항>` — 모든 종류의 공통 접수. 신규·기능 변경을 명시할 때는 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`도 가능하다
    - 요구사항이 확정 대기 · 확정 뒤 바뀜이면 "별도 터미널에서 `code-agent confirm request <ID>`", 반려됨이면 `/ca-request` — 사유를 읽고 다시 정리한다
    - 요구사항이 확정됐는데 작업이 시작 전이면 `/ca-analyze` (또는 `/ca-next`) — 시작부터 한다
-   - 질문이 남았으면 `/ca-answer`
+   - 질문이 남았으면 미응답 수와 재개 방법(`/ca-answer`)을 안내한다. 상태 조회만 요청했으면 임의로 개발을 재개하지 않는다. 답변까지 요청받았으면 공통 선택 절차로 받는다.
    - 승인 대기면 "별도 터미널에서 `code-agent approve`"
    - 승인이 `rejected` 면 `/ca-plan` — 반려 사유를 읽고 문서부터 다시 본다 (같은 계획을 그대로 다시 내지 않는다)
    - 그 밖이면 `다음:` 줄이 가리키는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`) 하나,

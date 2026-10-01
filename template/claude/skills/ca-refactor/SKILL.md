@@ -4,6 +4,8 @@ description: 리팩토링 요청을 받아 작업을 시작한다 — 접수 →
 argument-hint: [ID] <리팩토링 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
+**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `refactor`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다.
 접수에서 `target` 은 바꿀 코드가 있는 **저장소 경로**, `scope` 와 `preserve` 는 필수다 — 원문으로 정할 수 없으면 묻는다.
 다른 점은 아래 셋이고, **전부 코드가 막는다** (지시가 아니다).
