@@ -1,7 +1,7 @@
 ---
 name: ca-feature
 description: 요구사항을 받아 기능 개발을 시작한다 — 접수 → (사람 확정) → 분석 → 영향도 → 설계 → 계획까지 사이클로 돌고 사람의 승인을 기다린다.
-argument-hint: <ID> <요구사항 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
+argument-hint: [ID] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.** 우회하지 않는다.
@@ -11,9 +11,10 @@ argument-hint: <ID> <요구사항 서술 · 붙여넣은 티켓 · 파일 경로
 Bash: `code-agent status` 로 자리를 본다.
 - 사용자가 요구사항 대신 **손으로 써 둔 지시서**를 쓰라고 하면 접수하지 않는다 — 그 경로로 `/ca-analyze <지시서>` 의 시작을 따른다 (`request submit` 은 사람이 쓴 지시서를 덮지 않는다).
 - 작업도 접수도 없으면 `.claude/skills/ca-request/SKILL.md` 의 절차를 **종류 `feature`** 로 그대로 따른다 —
-  인자의 ID 와 요구사항 서술을 넘긴다 (ID 가 없으면 묻고 멈춘다). 인자에 `--base` · `--target` 이 있으면 `request begin` 에 함께 넘긴다.
+  인자의 ID 와 요구사항 서술을 넘긴다 (ID 가 없으면 생략하고 CLI가 발급한 ID를 쓴다). 인자에 `--base` · `--target` 이 있으면 `request begin` 에 함께 넘긴다.
   제출까지 마치면 **멈춘다**: "별도 터미널에서 `code-agent confirm request <ID>` 로 확정한 뒤 `/ca-next`".
-- 접수 중인데 `요구사항: 확정됨` 이면 Bash: `code-agent start doc/work/<ID>/requirement.md`
+- 접수 중이고 status의 `다음:`이 `/ca-adopt`·`/ca-docs` 또는 공통 문서 확정을 가리키면 해당 준비 절차를 먼저 따른다. 접수 취소나 원문 재입력을 요구하지 않는다.
+- 준비가 끝났고 접수 중인데 `요구사항: 확정됨` 이면 Bash: `code-agent start doc/work/<ID>/requirement.md`
   — 접수 때 넘긴 `--base` · `--target` 은 접수 세션에 남아 있다. 이번에 새로 말한 것만 넘긴다.
 - 접수 중인데 아직 확정 전이면 `/ca-request` 의 절차로 이어 간다 (반려됐으면 그 절의 **반려됐다면**).
 - 이미 진행 중이면 `code-agent status` 의 스테이지에서 이어 간다.

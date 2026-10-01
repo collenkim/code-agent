@@ -1,7 +1,7 @@
 ---
 name: ca-refactor
 description: 리팩토링 요청을 받아 작업을 시작한다 — 접수 → (사람 확정) → 보존 조건을 계획의 중심에 두고 계획 제출까지 진행한다.
-argument-hint: <ID> <리팩토링 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
+argument-hint: [ID] <리팩토링 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `refactor`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다.

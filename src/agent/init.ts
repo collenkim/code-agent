@@ -109,7 +109,7 @@ export function installedHook(repoRoot: string, event: string, subcommand: strin
  * 설치된 PreToolUse 항목의 matcher 가 넘기지 않는 도구 — 없으면 빈 목록.
  * matcher 가 없거나 `*` 면 전부 넘긴다. 옛 설치본(읽기 셋이 없는 matcher)을 doctor 가 짚는 자리다.
  */
-export function unmatchedTools(repoRoot: string): string[] {
+export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected = HOOK_MATCHER): string[] {
   let settings: Record<string, unknown>;
   try {
     settings = readSettings(join(repoRoot, ".claude", "settings.json"));
@@ -117,10 +117,10 @@ export function unmatchedTools(repoRoot: string): string[] {
     return [];
   }
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
-  const entry = (hooks.PreToolUse ?? []).find((candidate) => ourEntry(candidate, "hook"));
+  const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, event === "PreToolUse" ? "hook" : "review-event"));
   if (!entry || !entry.matcher || entry.matcher === "*") return [];
   const covered = entry.matcher.split("|").map((tool) => tool.trim());
-  return HOOK_MATCHER.split("|").filter((tool) => !covered.includes(tool));
+  return expected.split("|").filter((tool) => !covered.includes(tool));
 }
 
 /**
@@ -162,7 +162,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);
   // Stop hook — PreToolUse 가 못 보는 것(도구를 거치지 않고 생긴 파일·남은 질문)을 턴 끝에 한 번 본다
   upsertHook(settings, "Stop", "stop", invoke("stop"));
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · Stop ${invoke("stop")}`);
+  upsertHook(settings, "SubagentStart", "review-event", invoke("review-event"), "ca-reviewer");
+  upsertHook(settings, "SubagentStop", "review-event", invoke("review-event"), "ca-reviewer");
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);

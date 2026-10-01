@@ -1,0 +1,387 @@
+{
+  "at": "2026-10-01T05:35:19.200Z",
+  "claudeVersion": "2.1.286 (Claude Code)",
+  "scenarios": [
+    {
+      "scenario": "new",
+      "kind": "feature",
+      "phase": "deliver",
+      "approval": "test fixture; no human approval",
+      "scope": "model implementation, real tests, independent review and integration; input documents and approved plan are fixtures",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5"
+      ],
+      "reportedCostUSD": 0.7517505999999999,
+      "reportedDurationMs": 42677,
+      "modelReportedError": false,
+      "headUnchanged": true,
+      "baselineTestUnchanged": null,
+      "generatedSource": "// n이 0 이상이면 1을 반환하고, 음수이면 negative 오류를 던진다.\nfunction value(n) {\n  if (n < 0) {\n    throw new Error('negative');\n  }\n  return 1;\n}\n\nmodule.exports = value;\n",
+      "testSource": "const test = require('node:test');\nconst assert = require('node:assert');\nconst value = require('../src/value.js');\n\ntest('TC-1 AC-R1-1: 0과 2를 넣으면 1', () => {\n  assert.strictEqual(value(0), 1);\n  assert.strictEqual(value(2), 1);\n});\n\ntest('TC-2 AC-R1-2: -1을 넣으면 negative 오류', () => {\n  assert.throws(() => value(-1), { name: 'Error', message: 'negative' });\n});\n",
+      "tests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "integrationTests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "runs": [
+        {
+          "phase": "check",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:23:57.241Z"
+        },
+        {
+          "phase": "test",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:24:02.863Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:07.506Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:07.760Z"
+        }
+      ],
+      "review": [
+        {
+          "round": 1,
+          "treeHash": "sha256:7b9e5fcb71459394",
+          "reviewer": {
+            "sessionId": "b7527191-1fc7-46d0-9bd5-ef2c83ca1118",
+            "agentId": "a6c61f6bf5e8a51d3",
+            "startedAt": "2026-10-01T05:24:19.594Z",
+            "result": "- 없음",
+            "completedAt": "2026-10-01T05:24:40.438Z"
+          }
+        }
+      ],
+      "deliverProblems": []
+    },
+    {
+      "scenario": "enhance",
+      "kind": "feature",
+      "phase": "deliver",
+      "approval": "test fixture; no human approval",
+      "scope": "model implementation, real tests, independent review and integration; input documents and approved plan are fixtures",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5"
+      ],
+      "reportedCostUSD": 0.6006146,
+      "reportedDurationMs": 118360,
+      "modelReportedError": false,
+      "headUnchanged": true,
+      "baselineTestUnchanged": null,
+      "generatedSource": "function value(n) {\n  if (n < 0) throw new Error(\"negative\");\n  return 1;\n}\n\nmodule.exports = value;\n",
+      "testSource": "const test = require('node:test');\nconst assert = require('node:assert');\nconst value = require('../src/value');\n\ntest('TC-1 AC-R1-1: 0과 2를 넣으면 1', () => {\n  assert.strictEqual(value(0), 1);\n  assert.strictEqual(value(2), 1);\n});\n\ntest('TC-2 AC-R1-2: -1을 넣으면 negative 오류', () => {\n  assert.throws(() => value(-1), { message: 'negative' });\n});\n",
+      "tests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "integrationTests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "runs": [
+        {
+          "phase": "check",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:56.770Z"
+        },
+        {
+          "phase": "test",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:02.137Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:48.852Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:49.360Z"
+        }
+      ],
+      "review": [
+        {
+          "round": 1,
+          "treeHash": "sha256:dcf9b9d8a417bdc5",
+          "reviewer": {
+            "sessionId": "e2c8b291-061e-45a1-99b3-15d8b4f70050",
+            "agentId": "a8999f3538bfc43eb",
+            "startedAt": "2026-10-01T05:26:12.491Z",
+            "result": "- 없음",
+            "completedAt": "2026-10-01T05:26:36.653Z"
+          }
+        }
+      ],
+      "deliverProblems": []
+    },
+    {
+      "scenario": "fix",
+      "kind": "fix",
+      "phase": "deliver",
+      "approval": "test fixture; no human approval",
+      "scope": "model implementation, real tests, independent review and integration; input documents and approved plan are fixtures",
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "reportedCostUSD": 0.5949937000000001,
+      "reportedDurationMs": 26897,
+      "modelReportedError": false,
+      "headUnchanged": true,
+      "baselineTestUnchanged": null,
+      "generatedSource": "module.exports=n=>{if(n<0)throw Error('negative');return 1;};\n",
+      "testSource": "const test = require('node:test');\nconst assert = require('node:assert');\nconst value = require('../src/value');\n\ntest('TC-1 AC-R1-1: value(0) 과 value(2) 는 1 을 돌려준다', () => {\n  assert.strictEqual(value(0), 1);\n  assert.strictEqual(value(2), 1);\n});\n\ntest('TC-2 AC-R1-2: value(-1) 은 negative 오류를 던진다', () => {\n  assert.throws(() => value(-1), (e) => e instanceof Error && e.message === 'negative');\n});\n",
+      "tests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "integrationTests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "reproduction": {
+        "at": "2026-10-01T05:25:08.295Z",
+        "testTreeHash": "sha256:d4f97b441421a385",
+        "cases": [
+          "TC-1"
+        ],
+        "found": [
+          {
+            "id": "TC-1",
+            "status": "failed",
+            "source": "출력",
+            "where": "테스트 실행 결과 (TAP)"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "phase": "repro",
+          "kind": "test",
+          "outcome": "failed",
+          "status": 1,
+          "at": "2026-10-01T05:25:07.997Z"
+        },
+        {
+          "phase": "check",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:28.216Z"
+        },
+        {
+          "phase": "test",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:34.352Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:06.097Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:06.247Z"
+        }
+      ],
+      "review": [
+        {
+          "round": 1,
+          "treeHash": "sha256:06647fe34bf68b02",
+          "reviewer": {
+            "sessionId": "5b21aef9-2558-48af-8581-b4c278e55e7a",
+            "agentId": "a0e2f098c8233927c",
+            "startedAt": "2026-10-01T05:25:46.065Z",
+            "result": "- 없음",
+            "completedAt": "2026-10-01T05:25:59.515Z"
+          }
+        }
+      ],
+      "deliverProblems": []
+    },
+    {
+      "scenario": "refactor",
+      "kind": "refactor",
+      "phase": "deliver",
+      "approval": "test fixture; no human approval",
+      "scope": "model implementation, real tests, independent review and integration; input documents and approved plan are fixtures",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5"
+      ],
+      "reportedCostUSD": 0.4981378000000001,
+      "reportedDurationMs": 21304,
+      "modelReportedError": false,
+      "headUnchanged": true,
+      "baselineTestUnchanged": true,
+      "generatedSource": "module.exports=function value(n){if(n<0){throw Error('negative');}return 1;};\n",
+      "testSource": "const test=require('node:test'),assert=require('node:assert/strict'),value=require('../src/value');\ntest('TC-1 nonnegative',()=>{assert.equal(value(0),1);assert.equal(value(2),1);});\ntest('TC-2 negative',()=>assert.throws(()=>value(-1),/negative/));\n",
+      "tests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "integrationTests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ],
+      "runs": [
+        {
+          "phase": "check",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:24.800Z"
+        },
+        {
+          "phase": "test",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:25:30.305Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "build",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:15.630Z"
+        },
+        {
+          "phase": "integrate",
+          "kind": "test",
+          "outcome": "passed",
+          "status": 0,
+          "at": "2026-10-01T05:26:15.792Z"
+        }
+      ],
+      "review": [
+        {
+          "round": 1,
+          "treeHash": "sha256:9f5e81ea3c8164a7",
+          "reviewer": {
+            "sessionId": "10ab41ee-eff3-44f0-b3e8-996b8bac4967",
+            "agentId": "af6ac509b4855d301",
+            "startedAt": "2026-10-01T05:25:42.025Z",
+            "result": "- 없음",
+            "completedAt": "2026-10-01T05:26:08.025Z"
+          }
+        }
+      ],
+      "deliverProblems": []
+    }
+  ]
+}

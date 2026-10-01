@@ -5,6 +5,8 @@ import { join, posix } from "path";
 import { APPROVALS_DIR } from "../core/approval";
 import { writeAtomic } from "../core/atomic";
 import { slug } from "../core/workOrder";
+import { planTasks } from "../core/plan";
+import { formatSourceTrace, readSourceTrace } from "./sourceTrace";
 import { blockCount, stripBlock, upsertBlock } from "./blocks";
 import { loadEvidence, planPaths, runsOf, stageProblems, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
@@ -45,7 +47,7 @@ export function prDocFile(id: string): string {
 const PROSE_SECTIONS = ["요약", "확인 방법", "위험·되돌리기"];
 
 /** 코드 구역이 렌더하는 제목들. 구역 **밖**에 같은 제목이 있으면 위조본이다 */
-const CODE_SECTIONS = ["추적표", "검증", "변경 요약"];
+const CODE_SECTIONS = ["접수 요구 추적", "작업 Task", "추적표", "검증", "변경 요약"];
 
 // ---- 추적표 ----
 
@@ -81,7 +83,7 @@ export function traceRows(work: Work, evidence: Evidence | undefined): TraceRow[
       cases: covering.map((entry) => entry.id),
       verified: covering.map((entry) => {
         const found = verified.get(entry.id);
-        return `${entry.id}: ${found ? found.source : "없음"}`;
+        return `${entry.id}: ${found?.status ?? "unknown"} (${found?.source ?? "없음"})`;
       }),
     };
   });
@@ -96,6 +98,12 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined): st
   const { active } = work;
   const rows = traceRows(work, evidence);
   const lines = [
+    formatSourceTrace(readSourceTrace(work.repoRoot, active.id, active.spec).rows),
+    "",
+    "## 작업 Task",
+    "",
+    ...planTasks(work.plan!).map((task) => `- ${task.id} ${task.stage}: ${task.requirements.join(", ")} · ${task.files.join(", ")} — 검증·리뷰 결과는 아래 검증 절`),
+    "",
     "## 추적표",
     "",
     "<!-- 이 구역은 code-agent deliver 가 01·04·05·07·⑧ 에서 렌더한다. 손으로 고치면 다시 렌더되어 사라진다. -->",
@@ -181,6 +189,7 @@ function sectionFilled(text: string, heading: string): boolean {
 export function deliverProblems(work: Work, prText: string): string[] {
   const { repoRoot, active } = work;
   const problems = [
+    ...readSourceTrace(repoRoot, active.id, active.spec).problems,
     ...new Set([
       ...stageProblems(work, "check"),
       ...stageProblems(work, "test"),

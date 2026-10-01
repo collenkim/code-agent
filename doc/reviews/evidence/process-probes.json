@@ -1,0 +1,148 @@
+{
+  "generatedAt": "2026-10-01T02:00:55.735Z",
+  "node": "v24.19.0",
+  "note": "Fixture approvals; no live Claude Code session. PASS means observation reproduced, not product meets requirement.",
+  "results": [
+    {
+      "id": "P01",
+      "observation": "No manifest: request intake stops and refers to ca-adopt",
+      "error": "code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요."
+    },
+    {
+      "id": "P02",
+      "observation": "Missing policy allows intake, blocks start, and blocks docsBegin until intake is aborted",
+      "startError": "프로젝트 필수 문서가 갖춰지지 않아 진행할 수 없습니다.\n  ✗ 아키텍처: 파일이 없습니다: doc/architecture.md\n  ✗ 코드 컨벤션: 파일이 없습니다: doc/conventions.md\n  ✗ 테스트 전략: 파일이 없습니다: doc/test-strategy.md\n  ✗ 품질·보안 기준: 파일이 없습니다: doc/quality.md\n/ca-docs 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결).",
+      "docsError": "요구사항을 접수 중입니다 (REVIEW-0). 문서 세션 열기은(는) 접수를 끝내거나 사람이 code-agent abort 로 닫은 뒤에 합니다."
+    },
+    {
+      "id": "P03",
+      "observation": "Empty requirement citation accepted by parser",
+      "parsed": {
+        "keys": [
+          "R1"
+        ],
+        "assumptions": []
+      }
+    },
+    {
+      "id": "P04",
+      "observation": "Policy interview question catalog size, not measured questions per session",
+      "counts": {
+        "architecture": 15,
+        "conventions": 8,
+        "test-strategy": 9,
+        "quality": 8
+      },
+      "total": 40
+    },
+    {
+      "id": "P05",
+      "observation": "Plan submission accepts an unrelated sequence step and empty why",
+      "sequence": [
+        {
+          "step": "not-a-real-task",
+          "why": ""
+        }
+      ]
+    },
+    {
+      "id": "P06",
+      "observation": "Feature cursor follows manifest order, not approved sequence",
+      "approvedSequence": [
+        {
+          "step": "test",
+          "why": "테스트 먼저"
+        },
+        {
+          "step": "code",
+          "why": "구현 다음"
+        }
+      ],
+      "actualFirstStage": "code"
+    },
+    {
+      "id": "P07",
+      "observation": "A real node:test skipped failing assertion is accepted by test gate",
+      "testRuns": [
+        {
+          "round": 1,
+          "phase": "test",
+          "kind": "test",
+          "command": "node --test",
+          "outcome": "passed",
+          "status": 0,
+          "logFile": ".code-agent/log/test-1-test.log",
+          "tail": "ℹ fail 0\nℹ cancelled 0\nℹ skipped 1\nℹ todo 0\nℹ duration_ms 102.1508",
+          "at": "2026-10-01T02:00:53.148Z"
+        }
+      ],
+      "cases": [
+        {
+          "id": "TC-1",
+          "source": "출력",
+          "where": "테스트 실행 출력"
+        }
+      ],
+      "gateProblems": [],
+      "actualReturn": 0,
+      "requiredReturn": 1
+    },
+    {
+      "id": "P08",
+      "observation": "Review gate checks record and findings; it does not attest that ca-reviewer actually ran",
+      "gateProblems": []
+    },
+    {
+      "id": "P09",
+      "observation": "Frozen planned test labeled outside by reviewer instruction is reclassified inside by code",
+      "parsed": [
+        {
+          "id": "F1",
+          "path": "tests/app.test.js",
+          "written": "계획 밖",
+          "scope": "계획 안",
+          "status": "열림"
+        }
+      ]
+    },
+    {
+      "id": "P10",
+      "observation": "Skipped TC also passes clean-worktree integration and automated delivery checks; no final TTY confirmation or delivery commit performed",
+      "phase": "deliver",
+      "gateProblems": [],
+      "integrationRuns": [
+        {
+          "round": 1,
+          "phase": "integrate",
+          "kind": "build",
+          "command": "node -e process.exit(0)",
+          "outcome": "passed",
+          "status": 0,
+          "logFile": ".code-agent/log/integrate-1-build.log",
+          "tail": "",
+          "at": "2026-10-01T02:00:54.628Z"
+        },
+        {
+          "round": 1,
+          "phase": "integrate",
+          "kind": "test",
+          "command": "node --test",
+          "outcome": "passed",
+          "status": 0,
+          "logFile": ".code-agent/log/integrate-1-test.log",
+          "tail": "ℹ fail 0\nℹ cancelled 0\nℹ skipped 1\nℹ todo 0\nℹ duration_ms 110.0899",
+          "at": "2026-10-01T02:00:54.730Z"
+        }
+      ]
+    },
+    {
+      "id": "P11",
+      "observation": "A second sentence in the confirmed requirement has no R/AC/TC; automated delivery checks still pass",
+      "omittedSentence": "입력 오류는 거부한다.",
+      "analyzedRequirementKeys": [
+        "R1"
+      ],
+      "gateProblems": []
+    }
+  ]
+}

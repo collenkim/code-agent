@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-01",
+  "scopes": {
+    "full": {
+      "tests": 548,
+      "suites": 120,
+      "passed": 544,
+      "failed": 0,
+      "skipped": 4,
+      "durationMs": 355708.6269
+    },
+    "p6": {
+      "tests": 64,
+      "suites": 5,
+      "passed": 64,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 100545.7588
+    },
+    "intake": {
+      "tests": 35,
+      "suites": 5,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 12396.4105
+    }
+  },
+  "scopeNotes": {
+    "full": "Full suite before the final refactor TC preflight and intake guidance improvements.",
+    "p6": "Complete P6 rerun after the refactor TC preflight, including isolated repro recovery.",
+    "intake": "Request and remaining-work suites after the final unmapped-source guidance and Node runtime detection corrections."
+  },
+  "scenarios": [
+    {
+      "scenario": "new",
+      "finished": true,
+      "modelTurns": 3,
+      "fixtureDecisions": 5,
+      "planApprovals": 1,
+      "tests": 7,
+      "integrationTests": 7,
+      "allPassed": true,
+      "observedReview": true,
+      "minutes": 5.5,
+      "baselineTestUnchanged": null
+    },
+    {
+      "scenario": "enhance",
+      "finished": true,
+      "modelTurns": 4,
+      "fixtureDecisions": 4,
+      "planApprovals": 1,
+      "tests": 4,
+      "integrationTests": 4,
+      "allPassed": true,
+      "observedReview": true,
+      "minutes": 7.5,
+      "baselineTestUnchanged": null
+    },
+    {
+      "scenario": "fix",
+      "finished": true,
+      "modelTurns": 6,
+      "fixtureDecisions": 5,
+      "planApprovals": 2,
+      "tests": 4,
+      "integrationTests": 4,
+      "allPassed": true,
+      "observedReview": true,
+      "minutes": 9.6,
+      "baselineTestUnchanged": null
+    },
+    {
+      "scenario": "refactor",
+      "finished": true,
+      "modelTurns": 5,
+      "fixtureDecisions": 5,
+      "planApprovals": 2,
+      "tests": 2,
+      "integrationTests": 2,
+      "allPassed": true,
+      "observedReview": true,
+      "minutes": 7.3,
+      "baselineTestUnchanged": true
+    }
+  ],
+  "limitations": [
+    "Human approvals are explicit automated TTY fixtures, not real novice interaction.",
+    "Question counts only cover questions.md; chat questions are not counted.",
+    "JUnit handling used generated report fixtures, not a real Gradle/Maven project.",
+    "Model runs exposed avoidable plan reapprovals; final instructions and preflight checks were subsequently regression-tested, not remeasured with another full model run."
+  ]
+}

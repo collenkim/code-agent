@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-01",
+  "scope": "Final modified working tree; not committed or deployed",
+  "baseCommit": "2fb68bf673580698b08adc75855a9f371c25b3af",
+  "environment": {
+    "os": "Windows",
+    "node": "v24.19.0",
+    "npm": "11.17.0",
+    "python": "3.12.10"
+  },
+  "fullSuite": {
+    "command": "npm test",
+    "exitCode": 0,
+    "tests": 529,
+    "suites": 120,
+    "passed": 525,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 4,
+    "todo": 0,
+    "durationMs": 357213.0112,
+    "localLog": "dist/process-fix-complete-tests.log"
+  },
+  "focusedSuite": {
+    "command": "node --test dist/test/process.test.js",
+    "exitCode": 0,
+    "tests": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 6698.4235
+  },
+  "skips": {
+    "caseSensitiveFilesystem": 2,
+    "windowsFilePermissions": 2
+  },
+  "limitations": [
+    "Approval and review records in the test projects are fixtures, not observed human approval or independent model reviews.",
+    "Source tracing checks confirmed requirements and exact citations, not semantic completeness of the original-to-summary transformation.",
+    "The original review findings F2, F5 and F6 remain outside this change."
+  ]
+}

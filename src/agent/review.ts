@@ -14,12 +14,11 @@ import type { Work } from "./work";
 /**
  * ⑨ 09-review.md — 9 코드 리뷰.
  *
- * **쓰는 쪽이 둘로 갈린다.** 지적은 판정이라 코드가 만들 수 없고(메인이 ca-reviewer 의 출력을 그대로
- * 옮겨 적는다), 회차의 **기준 트리 해시**는 모델이 적으면 아무것도 묶지 못한다 — 리뷰 뒤에 코드를
- * 고쳐 놓고 재리뷰 없이 반영하는 길이 그 한 값에 달려 있기 때문이다.
+ * 독립 ca-reviewer가 지적을 판정하고 완료 hook이 실행·결과를 기록한다.
+ * 회차의 기준 트리 해시는 코드가 정하며, 수정 뒤 재리뷰 없이 반영할 수 없다.
  *
  * 그래서 회차는 `.code-agent/work/<ID>/<대상>.review.json` 에 **코드만** 쓰고(hook 이 도구 쓰기를
- * 막는다) 거기서 문서의 코드 구역을 렌더한다. 지적 표는 구역 밖이라 모델이 쓴다.
+ * 막는다). 회차 구역과 관찰된 지적 결과를 문서에 렌더하고 게이트에서 다시 대조한다.
  */
 export const REVIEW_DOC_FILE = "09-review.md";
 export const REVIEW_BLOCK = "review";
@@ -37,6 +36,7 @@ export interface ReviewRound {
   baseCommit: string;
   planHash: string;
   manifestHash: string;
+  reviewer?: { sessionId: string; agentId: string; startedAt: string; completedAt?: string; result?: string };
 }
 
 /** 동결을 실제로 푼 지적 — **코드가** 적는다. 쓴 뒤 그 줄을 지워도 게이트가 남는다 */
@@ -68,13 +68,13 @@ export function loadReview(repoRoot: string, id: string, target: string): Review
   }
 }
 
-function saveReview(repoRoot: string, log: ReviewLog): void {
+export function saveReview(repoRoot: string, log: ReviewLog): void {
   const path = reviewFile(repoRoot, log.id, log.target);
   mkdirSync(dirname(path), { recursive: true });
   writeAtomic(path, `${JSON.stringify(log, null, 2)}\n`);
 }
 
-// ---- 지적 표 (모델이 쓴다) ----
+// ---- 지적 표 (독립 리뷰어가 판정하고 hook이 기록한다) ----
 
 /**
  * 상태 칸은 이 둘뿐이고 **글자 그대로** 본다.
@@ -129,7 +129,7 @@ export function parseFindings(text: string, planned: string[]): Finding[] {
 const FINDINGS_HEADING = "지적";
 
 /** `## 지적` 절의 본문 — 다음 `##` 까지. 절이 없으면 undefined */
-function findingsBody(text: string): string | undefined {
+export function findingsBody(text: string): string | undefined {
   const lines = stripBlock(text, REVIEW_BLOCK).split("\n");
   const from = lines.findIndex((line) => new RegExp(`^##\\s*${FINDINGS_HEADING}\\s*$`).test(line.trim()));
   if (from < 0) {
@@ -137,6 +137,15 @@ function findingsBody(text: string): string | undefined {
   }
   const to = lines.findIndex((line, index) => index > from && /^##\s/.test(line));
   return lines.slice(from + 1, to < 0 ? lines.length : to).join("\n");
+}
+
+export function normalizeFindings(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "").split("\n").map((line) => line.trim()).filter(Boolean).join("\n");
+}
+
+function observedFindings(last: ReviewRound, text: string): boolean {
+  return !!last.reviewer?.completedAt && last.reviewer.result !== undefined &&
+    normalizeFindings(findingsBody(text) ?? "") === normalizeFindings(last.reviewer.result);
 }
 
 /**
@@ -174,7 +183,7 @@ const SKELETON = (id: string): string =>
     "",
     "## 지적",
     "",
-    "<!-- ca-reviewer 가 낸 것을 줄이지 말고 그대로 옮긴다. 하나도 없으면 `- 없음`. -->",
+    "<!-- 독립 ca-reviewer의 완료 hook이 결과를 기록한다. 메인은 결과·상태를 대신 쓰지 않는다. -->",
     "<!-- 상태는 열림 · 해결 둘뿐이고 글자 그대로 본다. 계획 밖 경로는 모델이 닫을 수 없다 — 질문(questions.md) 또는 재계획이다. -->",
     "<!-- 계획 파일 칸은 저장소 기준 경로 그대로 — 백틱도 `:줄번호` 도 붙이지 않는다. 줄번호·근거는 지적 칸에 넣는다. -->",
     "",
@@ -224,7 +233,7 @@ export function openRound(work: Work): string {
   if (last && last.treeHash === treeHash) {
     throw new Stop(
       `${last.round}회차가 이미 지금 트리를 보고 있습니다 — 고친 것이 없으면 새 회차를 열지 않습니다.\n` +
-        `지적을 ${reviewDocFile(active.id)} 에 적고, 고친 뒤에는 code-agent check 부터 다시 돌리세요.`,
+        `ca-reviewer를 호출해 결과를 기록하세요. 고친 뒤에는 code-agent check부터 다시 돌리세요.`,
     );
   }
 
@@ -246,9 +255,8 @@ export function openRound(work: Work): string {
   saveReview(repoRoot, log);
   renderReviewDoc(work, log);
 
-  // review.prefilter — **문서는 건드리지 않는다.** 지적 표는 모델이 쓰고 회차 구역은 코드가
-  // 바이트로 대조하는 자리라, 코드가 지적 표에 쓰면 `parseFindings` 와 `renderRoundsBlock` 대조가
-  // 양쪽에서 흔들린다. 단서는 이 출력에만 싣는다 (기록은 .code-agent/log/plugins/ 에 남는다).
+  // review.prefilter의 단서는 stdout에만 싣는다. 지적 표에는 독립 리뷰어가 확인한 결과만 기록한다.
+  // 플러그인 기록은 .code-agent/log/plugins/에 남는다.
   const prefilter = callSlot(
     repoRoot,
     work.manifest,
@@ -282,7 +290,7 @@ export function openRound(work: Work): string {
     ...(prefilter.notice ? [`- ${prefilter.notice}`] : []),
     ...suspects,
     "",
-    `ca-reviewer 를 부르고, 낸 지적을 ${reviewDocFile(active.id)} 의 \`## 지적\` 표에 그대로 옮기세요.`,
+    `ca-reviewer를 호출하세요. hook이 실행·완료와 결과를 기록하고 ${reviewDocFile(active.id)} 의 지적 표를 자동으로 채웁니다.`,
     "| id | 계획 파일 | 범위 | 상태 | 지적 | — 지적이 없으면 `- 없음`.",
     "계획 안 지적은 고친 뒤 code-agent check 부터 다시 돌고, 이 명령으로 다음 회차를 엽니다.",
     "계획 밖 경로를 가리키는 지적은 모델이 닫을 수 없습니다 — questions.md 로 묻거나 계획을 고쳐 재승인받습니다.",
@@ -315,8 +323,14 @@ export function findingOpensFile(work: Work, path: string): boolean {
   if (!existsSync(full)) {
     return false;
   }
-  const finding = parseFindings(readFileSync(full, "utf-8"), planPaths(work)).find(
-    (candidate) => candidate.path === path && candidate.scope === "계획 안" && !isClosed(candidate.status),
+  if (last.baseCommit !== active.baseCommit || last.planHash !== hashPlan(work.plan!) ||
+      last.manifestHash !== hashManifest(work.manifest)) return false;
+  const text = readFileSync(full, "utf-8");
+  if (!observedFindings(last, text)) return false;
+  // 리뷰 뒤 구현 파일을 먼저 고칠 수 있다. 지적은 이 계획·회차의 수정 권한이며,
+  // 완료 게이트는 모든 수정 후 새 트리에서 독립 재검토를 요구한다.
+  const finding = parseFindings(text, planPaths(work)).find(
+    (candidate) => candidate.path === path && candidate.scope === "계획 안" && candidate.written === candidate.scope && candidate.status === FINDING_OPEN,
   );
   if (!finding) {
     return false;
@@ -366,6 +380,11 @@ export function reviewProblems(work: Work): string[] {
 
   const full = join(repoRoot, path);
   const text = existsSync(full) ? readFileSync(full, "utf-8") : "";
+  if (!last.reviewer?.completedAt) {
+    problems.push("독립 리뷰어 실행·완료 기록이 없습니다 — ca-reviewer를 호출하세요. hook 설치는 code-agent doctor로 확인합니다.");
+  } else if (!observedFindings(last, text)) {
+    problems.push("리뷰 문서가 관찰된 ca-reviewer 결과와 다릅니다 — 지적·상태를 임의로 바꾸지 말고 다시 리뷰하세요.");
+  }
   if (readBlock(text, REVIEW_BLOCK) !== renderRoundsBlock(log!).trim()) {
     problems.push(`${path} 의 회차 구역이 기록과 다릅니다 — code-agent review 가 렌더하는 자리입니다`);
   }

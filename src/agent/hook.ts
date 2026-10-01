@@ -96,6 +96,7 @@ function isModelCommand(command: string): boolean {
     return false;
   }
   const rest = command.slice("code-agent ".length);
+  if (rest === "setup") return true; // baseline은 사람의 TTY 확인 전용
   return MODEL_SUBCOMMANDS.some((sub) => rest === sub || rest.startsWith(`${sub} `));
 }
 

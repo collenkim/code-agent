@@ -14,6 +14,8 @@ import { canonical, DOCS_SESSION_FILE, loadActive, logStage, REQUEST_SESSION_FIL
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny, loadWork } from "./work";
+import { checkProjectDocs, docsReady } from "./docs";
+import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
 
 /**
  * 요구사항 접수 — 13단계의 1.
@@ -89,6 +91,7 @@ const RequestSchema = z
     done: z.array(z.string().trim().min(1)).default([]),
     outOfScope: z.array(z.string().trim().min(1)).default([]),
     constraints: z.array(z.string().trim().min(1)).default([]),
+    sourceMap: z.array(z.object({ quote: z.string().trim().min(1), targets: z.array(z.string().trim().min(1)).min(1), note: z.string().optional() })).optional(),
     clarifications: z.array(z.object({ question: z.string().trim().min(1), answer: z.string().trim().min(1) })).default([]),
   })
   .superRefine((request, ctx) => {
@@ -158,17 +161,18 @@ export function renderRequirement(request: RequestDraft, original: string, sourc
     `<!-- ${source} -->`,
     quoted(original),
     "",
+    intakeTrace(original, request).text,
     "## 배경",
     "",
     request.background.trim() === "" ? "- 없음" : request.background.trim(),
     "",
     "## 요구 내용",
     "",
-    bullets(request.requirements, "없음"),
+    request.requirements.map((text, index) => `- [REQ-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n"),
     "",
     "## 완료 조건",
     "",
-    bullets(request.done, "원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다"),
+    request.done.length ? request.done.map((text, index) => `- [DONE-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n") : "- 원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다",
     "",
     "## 범위 밖",
     "",
@@ -176,7 +180,7 @@ export function renderRequirement(request: RequestDraft, original: string, sourc
     "",
     "## 제약",
     "",
-    bullets(request.constraints, "없음"),
+    request.constraints.length ? request.constraints.map((text, index) => `- [CON-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n") : "- 없음",
     "",
     "## 접수 때 정한 것",
     "",
@@ -365,6 +369,7 @@ export function requestHint(repoRoot: string, id: string, spec: string): string 
     case "rejected":
       return `/ca-request — 반려됐습니다: ${state.record.comment ?? "(사유 없음)"} — 사유대로 초안을 고쳐 다시 제출하세요`;
     default:
+      if (hasUnmappedOriginal(readFileSync(join(repoRoot, spec), "utf8"))) return "/ca-request — 원문 대조의 미연결 내용을 sourceMap으로 정리한 뒤 다시 제출합니다";
       return `사람이 별도 터미널에서 ${confirmCommand(id, spec)} (반려는 reject request ${id} --comment "사유")`;
   }
 }
@@ -388,11 +393,18 @@ export function requestBegin(
   kind: string | undefined,
   options: { base?: string; target?: string } = {},
 ): string {
-  requireIntakeAllowed(repoRoot);
-  if (!id || !ID_PATTERN.test(id)) {
+  if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) throw new Stop("문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤 요구사항을 접수하세요.");
+  if (!id) {
+    id = loadRequestSession(repoRoot)?.id;
+    for (let n = 1; !id; n++) {
+      const candidate = `WORK-${String(n).padStart(4, "0")}`;
+      if (!existsSync(join(repoRoot, workDocsDir(candidate))) && !existsSync(requestLedgerFile(repoRoot, candidate))) id = candidate;
+    }
+  }
+  if (!ID_PATTERN.test(id)) {
     throw new Stop(
       `작업 ID 가 필요합니다: ${id || "(없음)"} — 사람이 준 티켓 키를 그대로 씁니다 (영문·숫자로 시작, [A-Za-z0-9._-] 64자 이하).\n` +
-        "ID 는 지어내지 않습니다 — 없으면 사람에게 물으세요. 사용법: code-agent request begin <ID> --kind <feature|fix|refactor>",
+        "ID 를 생략하면 WORK-0001 형식으로 자동 발급합니다. 사용법: code-agent request begin [ID] --kind <feature|fix|refactor>",
     );
   }
   if (!kind || !(KINDS as readonly string[]).includes(kind)) {
@@ -466,16 +478,16 @@ export function requestFormat(repoRoot: string): string {
     return requestContext(repoRoot, { id: active.id, kind, startedAt: "" }, active.spec);
   }
   if (session) return requestContext(repoRoot, session);
-  throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin <ID> --kind <feature|fix|refactor> 로 접수를 여세요 (/ca-request).");
+  throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <feature|fix|refactor> 로 접수를 여세요 (/ca-request).");
 }
 
 export function requestContext(repoRoot: string, session: RequestSession, specPath?: string): string {
-  const manifest = requireIntakeAllowed(repoRoot);
+  const manifest = loadManifestIfAny(repoRoot);
   const { id, kind } = session;
   const spec = specPath ?? requirementFile(id);
   const pathKind = kind !== "feature";
-  const attributes = manifest.workOrder.attributes;
-  const domains = domainCandidates(repoRoot, manifest);
+  const attributes = manifest?.workOrder.attributes ?? [];
+  const domains = manifest ? domainCandidates(repoRoot, manifest) : [];
   const example = {
     kind,
     id,
@@ -490,6 +502,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     outOfScope: ["<원문이나 답이 이번에 하지 않는다고 한 것>"],
     constraints: ["<기한 · 호환 · 성능 등 원문의 제약>"],
     clarifications: [{ question: "<접수 때 물은 것>", answer: "<사람의 답 그대로>" }],
+    sourceMap: [{ quote: "<원문 일부 그대로>", targets: ["REQ-1"], note: "<반영·제외 이유가 필요하면 작성>" }],
   };
   const out = [
     `# code-agent request — ${id} 접수 (${kind})`,
@@ -505,12 +518,13 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "```",
     "- 원문은 `original`(사람이 준 글) 또는 `originalFile`(사람이 준 파일의 저장소 경로 — 코드가 그 파일을 그대로 옮긴다) 중 하나.",
     "- `requirements` 는 1개 이상. 원문에 없는 요구를 더하지 않는다 — 있으면 좋을 것 같은 것은 질문으로.",
+    "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 그대로 옮긴 문장은 자동 연결. 바꿔 쓴 문장·명시적 제외는 연결을 적고 미연결 원문을 남기지 않습니다. 추가 사용자 선택이 아니라 에이전트의 정리 작업입니다.",
     "- 머리말에 들어가는 값(title · target · scope · preserve · approver · extra)은 한 줄씩. 따옴표나 [ ] 로 감싸지 않는다.",
     pathKind
       ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다.`
       : "- feature: target 은 이제부터 만들 도메인·기능 이름이라 경로가 아니어도 된다. scope 를 적으면 실재하는 경로여야 한다.",
   ];
-  if (manifest.workOrder.requireApprover) {
+  if (manifest?.workOrder.requireApprover) {
     out.push("- 이 프로젝트는 approver(승인자)가 필수다.");
   }
   if (attributes.length > 0) {
@@ -526,19 +540,31 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "",
     pathKind
       ? "## 대상 후보 (도메인 디렉토리 — target 은 이 경로나 그 아래 경로)"
-      : "## 대상 후보 (이미 있는 도메인 — target 에는 **이름**만 쓴다. 새 도메인이면 이름을 묻는다)",
+      : "## 대상 후보 (이미 있는 도메인 — target 에는 **이름**만 쓴다. 새 이름은 명명 규칙에 따라 제안한다)",
     ...(domains.length > 0
       ? domains.map((domain) => (pathKind ? `- ${domain.path}` : `- ${domain.name} (${domain.path})`))
       : ["- 없음 — 빈 저장소이거나 domainBase 아래에 디렉토리가 없습니다"]),
     "",
     "## 질문 — 접수에서 물을 것",
-    "- 원문만으로 정할 수 없는 필수값(대상 · 범위 · 보존 · 확장 속성)과, 원문이 두 가지로 읽히는 곳.",
+    "- 기술값은 기존 구성·명명 규칙을 근거로 제안한다. 원문으로 정할 수 없는 의미·범위·보존 조건과 두 가지로 읽히는 곳만 묻는다.",
     "- 턴의 마지막 메시지에 최대 4개씩, 선택지와 함께. 받은 답은 clarifications 에 사람의 말 그대로 남긴다.",
     "- 업무 규칙의 세부 · 설계 · 테스트는 여기서 묻지 않는다 — 분석 단계가 맡는다.",
     "",
-    `다음: ${requestHint(repoRoot, id, spec)}`,
+    `다음: ${preparationHint(repoRoot) ?? requestHint(repoRoot, id, spec)}`,
   );
   return out.join("\n");
+}
+
+/** 접수는 보존하고 준비를 먼저 한다. 분석은 start 의 문서 확정 게이트 뒤에서만 열린다. */
+export function preparationHint(repoRoot: string): string | undefined {
+  const manifest = loadManifestIfAny(repoRoot);
+  if (!manifest) return "/ca-adopt 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend";
+  const checks = checkProjectDocs(repoRoot, manifest);
+  if (!docsReady(checks)) return checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections")
+    ? "/ca-docs 로 빠진 공통 문서 준비 — 접수를 취소하지 않고 code-agent docs begin 으로 이어갑니다"
+    : "공통 문서 확인 후 별도 터미널에서 code-agent confirm doc all, 이어서 /ca-next";
+  if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) return "code-agent docs end 로 준비를 마치고 접수를 이어갑니다";
+  return undefined;
 }
 
 // ---- submit ----
@@ -590,7 +616,7 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     owner = { id: active.id, kind };
   }
   if (!owner) {
-    throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin <ID> --kind <종류> 로 접수를 여세요 (/ca-request).");
+    throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <종류> 로 접수를 여세요 (/ca-request).");
   }
 
   const draftPath = toRepoPath(repoRoot, draftArg);
@@ -649,6 +675,8 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     source = `원문: ${file} 그대로`;
   }
 
+  const traced = intakeTrace(original, request);
+  if (traced.problems.length) throw new Stop(`원문 연결이 올바르지 않습니다:\n${traced.problems.join("\n")}`);
   const text = renderRequirement(request, original, source);
   // 지시서 규칙은 하나다 — 손으로 쓴 지시서와 같은 검사를 렌더한 결과에 그대로 건다
   let order: WorkOrder;
@@ -709,8 +737,8 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     ...(request.preserve.length > 0 ? [`  - 보존: ${request.preserve.join(" / ")}`] : []),
     `  - 요구 내용 ${request.requirements.length}개 · 완료 조건 ${request.done.length}개 · 접수 때 정한 것 ${request.clarifications.length}개`,
     "",
-    note,
-    after.status === "confirmed"
+    traced.missing ? `원문 대조에 미연결 내용이 있습니다: ${traced.missing}\n에이전트가 sourceMap으로 반영·제외를 연결하고 다시 제출하세요. 아직 사용자에게 확정을 요청하지 않습니다.` : note,
+    after.status === "confirmed" || traced.missing
       ? ""
       : `사람이 **별도 터미널**에서 \`${confirmCommand(request.id, spec)}\` 로 원문과 정리를 나란히 읽고 확정합니다 (반려는 \`code-agent reject request ${request.id} --comment "사유"\`).`,
   ]
@@ -753,6 +781,9 @@ export function decideRequest(
   }
   // 사람에게 보여 줄 바이트 — 확정하는 것은 이것이다
   const text = readFileSync(join(repoRoot, spec), "utf-8");
+  if (decision === "confirmed" && hasUnmappedOriginal(text)) {
+    throw new Stop("원문 대조에 미연결 내용이 있습니다 — request.json의 sourceMap으로 반영 항목(REQ/DONE/CON) 또는 명시적인 제외(OUT)를 연결한 뒤 다시 제출하세요. 별도 사용자 질문을 늘리지 말고 원문에 근거해 정리합니다.");
+  }
   // 확정하는 것은 규격을 지난 지시서뿐이다 — 손으로 쓴 지시서도 같은 검사를 지난다
   let order: WorkOrder;
   try {
@@ -810,5 +841,5 @@ export function requestStatusLines(repoRoot: string, session: RequestSession): {
     `초안: ${draft ? requestDraftFile(session.id) : "없음"}`,
     requestStateLine(repoRoot, session.id, spec),
   ];
-  return { lines, hint: requestHint(repoRoot, session.id, spec) };
+  return { lines, hint: preparationHint(repoRoot) ?? requestHint(repoRoot, session.id, spec) };
 }

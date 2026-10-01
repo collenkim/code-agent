@@ -21,6 +21,7 @@ import { callSlot, PLUGIN_LOG_DIR } from "../agent/plugins/run";
 import { readStore, storePath, writeStore } from "../agent/plugins/store";
 import type { StoredPlugin } from "../agent/plugins/store";
 import { openRound, reviewDocFile, reviewProblems } from "../agent/review";
+import { recordReviewFixture } from "./reviewFixture";
 import { survey } from "../agent/survey";
 import { check, runTests } from "../agent/validate";
 import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
@@ -97,7 +98,7 @@ function manifestJson(overrides: Record<string, unknown> = {}): string {
       conventions: ["doc/conventions.md"],
       docs: { architecture: "doc/architecture.md" },
       build: PASS,
-      test: PASS,
+      test: ["node", "-e", "console.log('ok 1 - TC-1')"],
       stages: [
         { key: "code", title: "코드", template: "01-code.md", scope: "project", outputDirs: ["src/main"] },
         { key: "test", title: "테스트", template: "02-test.md", kind: "test", scope: "project", outputDirs: ["src/test"] },
@@ -992,13 +993,14 @@ describe("P7 · 자리 연결 — review · check · survey", () => {
     assert.match(text, /## 의심 항목 \(플러그인 jev — 판정이 아니라 단서다/);
     assert.match(text, new RegExp(`- ${SRC.replace(/[./]/g, "\\$&")}:2 — 널 검사 없이 역참조 \\(예외 처리\\)`));
 
-    // 문서는 건드리지 않는다 — 지적 표는 모델의 자리다
+    // 플러그인은 지적 표를 채우지 않는다. 판정은 독립 리뷰어의 자리다.
     const doc = readFileSync(join(repo, reviewDocFile("FEAT-1")), "utf-8");
     assert.equal(doc.includes("의심 항목"), false);
     assert.equal(doc.includes("널 검사"), false);
 
     // 회차 구역 대조가 그대로 성립한다
     writeFileSync(join(repo, reviewDocFile("FEAT-1")), doc.replace("|---|---|---|---|---|\n", "|---|---|---|---|---|\n\n- 없음\n"));
+    recordReviewFixture(repo);
     assert.deepEqual(reviewProblems(loadWork(repo)!), []);
   });
 

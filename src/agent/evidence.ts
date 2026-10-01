@@ -12,7 +12,9 @@ import { changedPaths, partialTreeHash, trackedPaths } from "./tree";
 import type { Change } from "./tree";
 import { approvalOf } from "./work";
 import type { Work } from "./work";
-import { parseTestCases, readWorkDoc } from "./workDocs";
+import { parseTestCases, readWorkDoc, reproCases } from "./workDocs";
+import { parseTestResults, resultFor } from "./testResults";
+import type { CaseStatus } from "./testResults";
 
 /**
  * ⑧ 의 원본 — `.code-agent/work/<ID>/<대상>.verify.json`.
@@ -54,8 +56,10 @@ export interface VerifyRun {
 /** ⑦ 의 TC 하나가 이번 실행에서 어떻게 확인됐는가 */
 export interface TestCaseEvidence {
   id: string;
+  /** 옛 기록에는 없을 수 있다. 상태 없는 기록은 미검증이며 게이트를 열지 못한다. */
+  status?: CaseStatus;
   /**
-   * `출력` — 테스트 실행 출력에 TC id 가 그대로 나왔다.
+   * `출력` — 파싱한 테스트 결과 행에 TC id와 상태가 있다.
    * `테스트 파일` — 출력에는 없고 kind:"test" 단계의 계획 파일이 그 id 를 들고 있다.
    * `없음` — 어디에도 없다. 통과로 세지 않는다.
    */
@@ -75,7 +79,7 @@ export interface ReproEvidence {
   testTreeHash: string;
   /** ⑦ 의 `## 재현` 이 가리킨 TC id 들 */
   cases: string[];
-  /** 그 id 들이 어디서 확인됐는가 — testCaseEvidence 와 같은 두 갈래 */
+  /** 재현 대상 TC의 실제 실패 결과. 파일에 ID가 있다는 사실은 재현 증거가 아니다. */
   found: TestCaseEvidence[];
 }
 
@@ -98,6 +102,7 @@ export interface Evidence {
   fixRounds?: number;
   runs: VerifyRun[];
   testCases: TestCaseEvidence[];
+  integrationTestCases?: TestCaseEvidence[];
   /**
    * fix 의 재현. 있으면 (a) 비-test 계획 파일 쓰기가 열리고 (b) kind:"test" 단계 파일이 언다.
    * 옛 증거에는 없어 optional 이다. 묶임이 깨지면 증거와 함께 버려진다 — 재승인하면 다시 봐야 한다.
@@ -145,20 +150,27 @@ export function testTreeHashNow(work: Work): string {
   return partialTreeHash(work.repoRoot, testStageFiles(work));
 }
 
+/** 현재 재현 TC마다 실제 실패 결과가 있는지 확인한다. 구버전의 ID만 있는 기록은 인정하지 않는다. */
+export function reproResultProblem(work: Work, evidence: Evidence): string | undefined {
+  const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
+  const cases = spec ? reproCases(spec) : [];
+  const missing = cases.filter((id) => !evidence.repro?.cases.includes(id) ||
+    !evidence.repro?.found.some((entry) => entry.id === id && entry.status === "failed"));
+  if (!cases.length || missing.length) return `재현 TC의 실제 실패 결과가 없습니다: ${missing.join(", ") || "재현 TC 미정의"} — 구버전 기록을 재사용하지 말고 code-agent repro로 다시 확인하세요`;
+  return undefined;
+}
+
 /**
- * 재현 증거가 지금 계획 위의 것인가 — 없으면 왜 없는지 한 줄. 있으면 undefined.
- *
- * **스테이지가 아니라 증거로 잰다** — `code-agent back implement` 로 커서를 빼서 푸는 길을 막는다.
- * 계획을 재승인하면 planHash 가 달라져 동결과 **함께** 풀린다 (같은 규칙, 의도).
- *
- * 첫 `check` 뒤에는 테스트 트리 해시를 대조하지 않는다. ⑨ 지적으로 동결을 풀어 재현 테스트를 고친
- * 순간 고칠 파일이 다시 잠기면 수정 루프가 교착된다 — 재현은 *쓰기 순서* 규칙이지 *영구* 규칙이 아니다.
- * 루프가 시작된 뒤의 강제력은 동결과 ⑦ 대조(재현 TC 가 passed·확인돼야 한다)가 든다.
+ * 재현 증거를 현재 계획과 대조한다. 되감기로 재현 검사를 피할 수 없다.
+ * 첫 check 뒤에는 수정 루프를 위해 테스트 트리 대조를 내려놓지만 실제 실패 결과는 계속 요구한다.
+ * 반영 전에는 stageProblems가 테스트 트리도 다시 확인한다.
  */
 export function reproMissing(work: Work, evidence: Evidence | undefined): string | undefined {
   if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan) || !evidence.repro) {
     return "재현을 본 기록이 없습니다";
   }
+  const resultProblem = reproResultProblem(work, evidence);
+  if (resultProblem) return resultProblem;
   if (evidence.runs.some((run) => run.phase === "check")) {
     return undefined;
   }
@@ -394,6 +406,10 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
     problems.push(`계획에 있는데 없는 파일: ${path}`);
   }
   problems.push(...preservedTestProblems(work));
+  if (work.order.kind === "fix") {
+    const problem = reproResultProblem(work, evidence);
+    if (problem) problems.push(problem);
+  }
 
   // 재현은 "**그 테스트 트리 위에서** 봤다" 는 주장이다. 첫 check 뒤로는 hook 이 대조를 내려
   // (⑨ 지적으로 푼 수정 루프가 교착되지 않게) 재현 테스트를 고칠 길이 생기는데, 그러고도 ⑧·⑩ 은
@@ -403,8 +419,7 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
     if (evidence.repro.testTreeHash !== now) {
       problems.push(
         `재현을 본 테스트 트리가 지금과 다릅니다 (${evidence.repro.testTreeHash.slice(-12)} ≠ ${now.slice(-12)}) — ` +
-          "⑧ 의 재현 줄이 반영될 테스트를 가리키지 않습니다. 재현을 본 상태로 되돌리거나, " +
-          "계획을 재승인해 재현부터 다시 보세요",
+          "code-agent check로 기준 코드 위의 격리 재현부터 갱신하세요. 작업 코드는 보존됩니다",
       );
     }
   }
@@ -419,12 +434,15 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
   for (const run of failedRuns(runs)) {
     problems.push(`${run.kind}: ${run.outcome} (${run.command})`);
   }
-  if (phase === "test") {
-    const uncovered = evidence.testCases.filter((entry) => entry.source === "없음").map((entry) => entry.id);
+  if (phase === "test" || phase === "integrate") {
+    const records = phase === "test" ? evidence.testCases : evidence.integrationTestCases ?? [];
+    const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
+    const uncovered = (spec ? parseTestCases(spec) : []).filter((item) => records.find((entry) => entry.id === item.id)?.status !== "passed")
+      .map((item) => `${item.id}(${records.find((entry) => entry.id === item.id)?.status ?? "unknown"})`);
     if (uncovered.length > 0) {
       problems.push(
         `⑦ 의 테스트 케이스가 확인되지 않았습니다: ${uncovered.join(", ")} — ` +
-          "테스트 출력이나 kind:\"test\" 단계의 테스트 파일에 TC id 를 남기세요",
+          "필수 TC가 실제 실행되어 passed여야 합니다. TAP·unittest verbose·pytest verbose·Go JSON·code-agent-test JSONL 결과에 TC id를 남기세요. 파일의 주석만으로는 통과하지 않습니다",
       );
     }
   }
@@ -488,10 +506,14 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
   if (evidence.testCases.length === 0) {
     lines.push("- ⑦ 의 테스트 케이스를 읽지 못했습니다 (07-test-spec.md 의 표를 확인하세요)");
   } else {
-    lines.push("| TC | 확인된 곳 | 근거 |", "|---|---|---|");
+    lines.push("| TC | 결과 | 확인된 곳 | 근거 |", "|---|---|---|---|");
     for (const entry of evidence.testCases) {
-      lines.push(`| ${entry.id} | ${entry.source} | ${entry.where ?? "-"} |`);
+      lines.push(`| ${entry.id} | ${entry.status ?? "unknown"} | ${entry.source} | ${entry.where ?? "-"} |`);
     }
+  }
+
+  if (evidence.integrationTestCases) {
+    lines.push("", "## 통합 테스트", "", ...evidence.integrationTestCases.map((entry) => `- ${entry.id}: ${entry.status ?? "unknown"} (${entry.where ?? entry.source})`));
   }
 
   // 0회차(재현)는 고쳐 쓰기가 아니다 — 수정 루프 목록에 섞이면 회차 세는 자리가 어긋나 보인다
@@ -521,16 +543,14 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
 /**
  * ⑦ 의 TC id 가 실제로 확인됐는가.
  *
- * **두 갈래를 둔 이유** — 테스트 출력에서 TC id 를 읽어 내는 것은 프레임워크마다 형식이 달라
- * 일반적으로 되지 않는다(JUnit·pytest·go test 가 전부 다르다). 그래서 ① 실행 출력에 id 가 그대로
- * 나오면 그것으로 인정하고, ② 나오지 않으면 `kind: "test"` 단계의 계획 파일이 그 id 를 들고 있는지
- * 본다 — 컨벤션의 `테스트 규칙` 이 "테스트 이름·주석에 TC id 를 남긴다"고 정한 그 자리다.
- * 둘 다 아니면 `없음` 이고, 통과로 세지 않는다.
+ * 실행 결과의 상태만 통과·실패 증거다. 테스트 파일의 id는 위치 안내에만 쓰며
+ * 실제 결과가 없으면 unknown으로 남긴다. skip·누락·미지원 출력은 통과가 아니다.
  */
 export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[] {
   const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
   const cases = spec ? parseTestCases(spec) : [];
   const testFiles = testStageFiles(work);
+  const results = parseTestResults(output);
   const sources = testFiles.map((path) => {
     const full = join(work.repoRoot, path);
     return { path, text: existsSync(full) ? readFileSync(full, "utf-8") : "" };
@@ -539,13 +559,14 @@ export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[]
   return cases.map((entry) => {
     // id 가 다른 id 의 앞부분이면 안 된다 — TC-1 이 TC-12 에 걸리면 덮이지 않은 것이 덮인 것으로 읽힌다
     const token = new RegExp(`\\b${entry.id}\\b`);
-    if (token.test(output)) {
-      return { id: entry.id, source: "출력" as const, where: "테스트 실행 출력" };
+    const result = resultFor(entry.id, results);
+    if (result.status !== "unknown") {
+      return { id: entry.id, status: result.status, source: "출력" as const, where: `테스트 실행 결과 (${result.format})` };
     }
     const found = sources.find((source) => token.test(source.text));
     return found
-      ? { id: entry.id, source: "테스트 파일" as const, where: found.path }
-      : { id: entry.id, source: "없음" as const };
+      ? { id: entry.id, status: "unknown", source: "테스트 파일" as const, where: found.path }
+      : { id: entry.id, status: "unknown", source: "없음" as const };
   });
 }
 
