@@ -3,13 +3,15 @@ name: ca-adopt
 description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학(소스가 없으면 인터뷰)으로 POLICY 4종·KNOWLEDGE 3종 문서와 code-agent.json 을 만든다.
 ---
 
+**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+
 너는 **메인 에이전트**다. 문서와 `code-agent.json` 만 쓴다. `code-agent` 명령이 거부하면 사유를 전하고 멈춘다.
 뼈대 역공학은 **얕게** 한다 — 구조와 규약만. 도메인 하나하나의 깊은 분석은 작업마다 요구사항 범위로 한다.
 
 ## 1. 시작
 
 **간단한 시작이 기본이다.** 접수 중이어도 `docs begin`으로 원문을 유지한 채 준비한다. 사용자에게 내부 설정 이름을 나열하지 않는다.
-기존 프로젝트는 탐지한 언어·폴더·명령을 재사용한다. 새 프로젝트에서는 `code-agent docs recommend`의 선택지를 용도와 함께 보여 준다.
+기존 프로젝트는 탐지한 언어·폴더·명령을 재사용한다. 새 프로젝트에서는 `code-agent docs recommend`의 실제 구성 후보를 최소 5개 보여 주고, 요청 목적에 맞는 하나에 추천과 이유를 붙인다. 공통 선택 절차의 페이지 규칙으로 `AskUserQuestion`을 호출한다. 후보를 문장으로만 보여 주고 끝내지 않는다.
 사용자가 추천 구성(node 또는 python)을 선택했으면 `code-agent docs begin` → `code-agent docs setup <선택>` → `code-agent docs end`로 문서·설정을 만든다.
 이 경우 아래의 세부 인터뷰를 반복하지 않고, 문서 경로와 선택 요약을 보여 준 뒤 `code-agent confirm doc all`을 한 번 안내한다.
 선호 언어·회사 규칙이 있으면 그대로 따르고 아래 절차로 그 구성만 작성한다. `code-agent setup`으로 실행 환경·기존 명령·기준 커밋을 확인한다. 기준 커밋이 없으면 별도 터미널의 `code-agent setup baseline` 한 번으로 준비 파일 목록 확인과 최초 커밋을 진행하도록 안내한다. 접수 원문과 작업 ID는 유지한다.
@@ -35,7 +37,7 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 
 ## 2. 문서
 
-`.claude/skills/ca-docs/SKILL.md` 를 그대로 따른다 — **추천대로 준비 / 직접 선택**을 한 번만 확인하고, 기존 문서를 재사용하며 빠진 부분을 묶어서 채운다.
+`.claude/skills/ca-docs/SKILL.md`를 그대로 따른다. 레거시에서는 **소스·설정 기준으로 작성 / 사용자 선택·입력으로 작성 / 기존 문서 연결**을 선택 도구로 한 번 제시하고 선택한 경로를 따른다. 앞서 선택했으면 다시 묻지 않는다. 빈 저장소는 초기 구성 선택에 따른 문서 작성으로 간다.
 
 - **POLICY 4종** — 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준. `확인 필요` 로 남은 섹션은 **3. 대화로 생성** 으로 채운다.
   테스트 전략과 품질·보안 기준은 도구·명령을 survey 의 도구 후보와 CI 설정에서 초안으로 잡고,
@@ -44,7 +46,7 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
   비어 있어도 작업을 막지 않는다. 확정 절차도 없다.
 
 경로는 기본값(`doc/architecture.md` · `doc/conventions.md` · `doc/test-strategy.md` · `doc/quality.md` · `doc/knowledge/*.md`)을 쓴다.
-이미 비슷한 문서가 있으면(survey 의 "이미 있는 문서") 연결할지 먼저 묻는다.
+이미 비슷한 문서가 있으면(survey의 "이미 있는 문서") 작성 방식 선택에서 근거 경로와 함께 연결을 추천한다. 그때 결정했으면 다시 묻지 않는다.
 
 ## 3. code-agent.json
 

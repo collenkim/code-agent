@@ -561,7 +561,8 @@ export function skeleton(schema: DocSchema): string {
 
 /** 사용자 입력으로 채울 때 묻는 것 — 섹션별로 */
 export function interview(schema: DocSchema, sectionIds?: string[]): string {
-  const lines = [`# ${schema.label} — 사용자 입력 질문`, ""];
+  const lines = [`# ${schema.label} — 사용자 입력 질문`, "",
+    "아래는 질문 후보입니다. 메인은 이미 확인한 것을 제외하고 ca-answer 공통 절차에 따라 추천·이유·선택지를 구성해 AskUserQuestion으로 받습니다. 자유 입력도 도구를 사용하며, 5개 이상 후보는 페이지를 나눕니다.", ""];
   for (const section of schema.sections) {
     if (sectionIds && !sectionIds.includes(section.id)) continue;
     lines.push(`## ${section.heading} (${section.required ? "필수" : "선택"})`, `쓸 것: ${section.guide}`);

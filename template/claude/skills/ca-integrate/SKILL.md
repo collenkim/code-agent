@@ -3,7 +3,9 @@ name: ca-integrate
 description: 통합 검증 단계(integrate)를 돌고 반영 준비까지 한다 — 깨끗한 worktree 에서 전체 build·test 를 돌리고, ⑩ 10-pr.md 의 모델 구역을 쓴 뒤 사람에게 터미널을 넘긴다.
 ---
 
-너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.** 사람에게 물을 것은 턴의 마지막 메시지에 모아서 낸다.
+**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+
+너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
 **반영은 네가 끝낼 수 없다 — 확인도 커밋도 사람의 자리다.**
 
 **자리 확인** — Bash: `code-agent status`. 스테이지가 `integrate` 도 `deliver` 도 아니면 **멈춘다.**

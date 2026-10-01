@@ -47,7 +47,7 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
       ? [
           `답이 없는 질문이 ${open.length}개 있습니다 (${questionsFile(work.active.id)}):`,
           ...open.map((question) => `  - ${question.title}`),
-          `답을 받기 전에는 진행하지 마세요 — 사용자에게 질문을 그대로 전하고 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
+          `답을 받기 전에는 진행하지 마세요 — 메인이 ca-answer 공통 절차의 AskUserQuestion으로 답을 받고 기록합니다. 미응답이면 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
         ]
       : []),
   ].join("\n");
