@@ -156,7 +156,7 @@ function requireWork(repoRoot: string): Work {
     throw new Stop(
       session
         ? `아직 작업이 시작되지 않았습니다 — ${session.id} 요구사항을 접수 중입니다.\n다음: ${requestStatusLines(repoRoot, session).hint}`
-        : "진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor [ID] <요구사항> 으로 접수부터 시작하세요 (또는 /ca-request).",
+        : "진행 중인 작업이 없습니다. /ca-request [ID] <요구사항> 으로 접수부터 시작하세요. 신규·기능 변경은 /ca-feature, 결함 수정은 /ca-fix, 동작 보존은 /ca-refactor 로도 시작할 수 있습니다.",
     );
   }
   requirePhase(work.active);
@@ -426,10 +426,10 @@ export function status(repoRoot: string): string {
       return lines.join("\n");
     }
     const hint = !manifest
-      ? "/ca-feature <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (/ca-adopt)"
+      ? "/ca-request <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (/ca-adopt)"
       : !docsReady(checks)
         ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc all"
-        : "/ca-feature · /ca-fix · /ca-refactor [ID] <요구사항> 으로 접수부터 시작 (또는 /ca-request)";
+        : "/ca-request [ID] <요구사항> 으로 접수 — 신규·기능 변경은 /ca-feature, 결함 수정은 /ca-fix, 동작 보존은 /ca-refactor 로도 시작";
     lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
   }
@@ -1084,7 +1084,7 @@ export function context(repoRoot: string): string {
   if (active.phase === "integrate") {
     out.push(
       "",
-      "## 10 통합 검증",
+      "## 통합 검증",
       "`code-agent integrate` — 굳혀 둔 기준 커밋 위에 깨끗한 worktree 를 만들고 이 작업의 변경만 얹어 전체 build · test 를 돌립니다.",
       "작업 트리에 남아 있던 산출물이 결과를 떠받치지 않는지 보는 자리라, 모델이 할 일은 명령을 부르는 것뿐입니다.",
     );

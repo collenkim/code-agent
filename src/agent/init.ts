@@ -188,9 +188,12 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
     ...lines.map((line) => `  - ${line}`),
     "",
     "다음:",
+    "  init은 설치만 합니다. 서버나 Claude Code를 실행하지 않습니다.",
+    "  이 프로젝트에서 claude 를 실행한 뒤 /ca-request <요구사항> 으로 시작하세요 (ID 생략 가능).",
+    "  스킬·서브에이전트는 프로젝트 설정에서 읽습니다. 별도 에이전트 등록은 필요 없습니다.",
     hasManifest
-      ? "  claude 를 열고 /ca-status 로 문서 상태를 확인하세요."
-      : "  claude 를 열고 /ca-adopt 로 프로젝트를 도입하세요 (code-agent.json · 아키텍처 · 컨벤션).",
+      ? "  기존 설정을 재사용합니다. 진행 중인 접수·작업은 /ca-status 확인 후 /ca-next 로 이어가세요."
+      : "  접수 원문을 보관한 뒤 /ca-adopt · /ca-docs 로 공통 문서와 설정을 준비합니다.",
     "  설치된 파일(.claude/, CLAUDE.md, .code-agent/version)은 커밋해 팀과 공유합니다.",
   ].join("\n");
 }

@@ -1,6 +1,8 @@
 ## code-agent — 이 저장소의 코드 작업 절차
 
-코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor <ID> <요구사항>` 으로 **요구사항 접수부터** 시작한다 (접수만 하려면 `/ca-request`). 사람이 터미널에서 요구사항을 확정해야 분석이 시작된다. 진행은 둘 중 하나다 — 사이클 `/ca-next`, 또는 **단계 명령**(`/ca-request` · `/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`)을 하나씩. 절차는 단계 스킬 하나에만 있어 어느 쪽으로 가도 같다. 지금 위치는 `code-agent status`, 이전 스테이지로 되감기는 `code-agent back <스테이지>` (앞으로는 못 간다).
+모든 코드 작업은 `/ca-request [ID] <요구사항>`으로 **공통 접수**한다. 종류를 명시해 시작할 때는 신규 개발·기능 추가·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존 구조 개선은 `/ca-refactor`를 쓸 수 있다. 세 명령도 같은 접수 절차를 사용한다. 사람이 터미널에서 요구사항을 확정해야 분석이 시작된다. 이후 `/ca-next`로 사이클을 잇거나 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`)을 하나씩 부른다. 절차는 단계 스킬 하나에만 있어 어느 쪽으로 가도 같다. 지금 위치는 `code-agent status`, 이전 스테이지로 되감기는 `code-agent back <스테이지>` (앞으로는 못 간다).
+
+`code-agent init`은 이 프로젝트의 스킬·서브에이전트·hook을 설치하는 명령이다. 실제 진행은 이 프로젝트에서 실행한 Claude Code의 메인 대화가 맡고 필요한 서브에이전트를 호출한다. 별도 서버나 수동 에이전트 등록 절차는 없다.
 
 - ID는 생략할 수 있다. CLI가 WORK 번호를 발급한다. 접수한 원문을 저장한 뒤 공통 문서·설정을 먼저 점검하고, 없으면 `/ca-adopt`·`/ca-docs`로 준비한다. 신규는 용도별 추천 구성, 기존은 설정 재사용이 기본이며 POLICY는 `confirm doc all`로 한 번에 확정한다.
 - 진행 중인 작업이 있으면 **승인된 계획의 파일만** 쓴다. `sequence`가 Task와 실제 구현 순서를 정한다. 계획 밖 쓰기·Bash 우회는 hook 이 거부한다 — 거부되면 사유를 그대로 보고하고 우회하지 않는다.
@@ -10,7 +12,7 @@
 - 검증 결과는 보고하는 것이 아니라 `code-agent check` · `code-agent test` · `code-agent integrate` 가 기록한 것만 유효하다 — 직접 돌린 빌드·테스트는 게이트를 열지 못한다.
 - 검증이 실패하면 **계획 안에서만** 고치고 `code-agent check` 부터 다시 돈다 (기본 2회). 넘으면 덮지 말고 보고한다. 동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정한다. refactor의 기준 커밋 테스트는 계속 보호한다.
 - `fix` 는 **재현이 먼저다** — 재현 테스트를 쓰고 `code-agent repro` 로 지금 코드에서 실패하는 것을 봐야 고칠 파일이 열린다. `refactor` 는 기준 커밋에 이미 있던 테스트 파일을 고치지도 지우지도 못한다.
-- `09-review.md` 의 지적은 `ca-reviewer` 가 낸 것을 **그대로** 옮긴다 — 요약·완화·재분류하지 않는다.
+- `09-review.md`는 독립 `ca-reviewer`의 시작·완료를 관찰한 hook이 결과를 자동 기록한다. 메인은 지적을 복사·요약·완화·재분류하거나 ‘해결’로 바꾸지 않는다. 수정 후 새 독립 리뷰로 해결 여부를 확인한다.
 - 요구사항은 사람이 준 원문을 그대로 보관하고, 원문에 없는 요구를 더하지 않는다. 지시서(`requirement.md`)는 `code-agent request submit` 이 렌더한다 — 직접 쓰거나 고치지 않는다.
 - 승인·확정·반영은 사람이 별도 터미널에서 한다 (`code-agent confirm request` · `confirm doc` · `approve` · `deliver`). 대신 하지 않는다.
 - 사람에게 물을 것은 **턴의 마지막 메시지에 모아서** 낸다 — 작업 보고 중간에 끼우면 묻혀 답이 오지 않는다.

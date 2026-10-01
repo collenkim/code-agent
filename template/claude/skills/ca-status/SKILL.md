@@ -6,8 +6,8 @@ description: code-agent 작업의 현재 위치(문서·스테이지·질문·�
 1. Bash 로 `code-agent status` 를 실행한다.
 2. 결과를 그대로 보여 주고, 마지막 "다음:" 줄을 사용자가 할 일로 한 문장 풀어 준다.
    - 공통 POLICY 문서가 ✗ 면 `/ca-docs` (레거시에 처음 들이는 것이면 `/ca-adopt`). 섹션별 상태는 `code-agent docs`
-   - 확정만 남았으면 "별도 터미널에서 `code-agent confirm doc <architecture | conventions | test-strategy | quality>`" — 넷 다 확정돼야 작업이 시작된다
-   - 작업이 없으면 `/ca-feature` · `/ca-fix` · `/ca-refactor <ID> <요구사항>` (또는 `/ca-request`) — 요구사항 접수부터
+   - 확정만 남았으면 "별도 터미널에서 `code-agent confirm doc all`" — POLICY 4종을 한 번에 확정한다
+   - 작업·접수가 없으면 `/ca-request [ID] <요구사항>` — 모든 종류의 공통 접수. 신규·기능 변경을 명시할 때는 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`도 가능하다
    - 요구사항이 확정 대기 · 확정 뒤 바뀜이면 "별도 터미널에서 `code-agent confirm request <ID>`", 반려됨이면 `/ca-request` — 사유를 읽고 다시 정리한다
    - 요구사항이 확정됐는데 작업이 시작 전이면 `/ca-analyze` (또는 `/ca-next`) — 시작부터 한다
    - 질문이 남았으면 `/ca-answer`

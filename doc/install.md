@@ -3,6 +3,8 @@
 > 흐름과 무엇을 치는가는 [usage.md](usage.md), 설계와 근거는 [design.md](design.md).
 > 이 문서는 **어디에 깔고 · 무엇이 생기고 · 어떻게 점검하고 · 어떻게 지우는가**다.
 
+`code-agent init`은 프로젝트에 절차 파일과 hook을 설치하고 종료한다. 실제 실행은 **같은 프로젝트에서 `claude` → `/ca-request <요구사항>`** 순서다. Claude Code가 프로젝트 스킬·서브에이전트를 읽으므로 별도 에이전트 등록이나 상주 서버는 필요 없다. Claude Code의 설치·인증, Git, 개발할 프로젝트의 실행 환경은 별도로 준비한다.
+
 ---
 
 ## 목차
@@ -21,7 +23,7 @@
 | | npm 전역 | 단일 실행 파일 |
 |---|---|---|
 | 치는 것 | `npm install -g <사내 저장소>/code-agent` | 파일 하나를 PATH 에 둔다 |
-| 전제 | Node 22 이상 (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | **없다** — Node 가 실행 파일 안에 들어 있다. 단, **만드는** PC 는 Node 24.8 이상 ([2절](#2-단일-실행-파일-만들기)) |
+| 전제 | Node 22 이상 (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.8 이상 ([2절](#2-단일-실행-파일-만들기)) |
 | 크기 | 수 MB | **~90 MB** (Node 실행 파일 그대로 + 자원 1 MB) |
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | `npm i -g` 다시 | 새 파일로 바꿔 넣는다 |
@@ -92,7 +94,9 @@ npm 설치도 같지만, 이 바이너리에서 더 중요한 이유가 있다: 
 ## 3. `code-agent init` — 저장소에 생기는 것
 
 ```
-cd <프로젝트> && code-agent init
+cd <프로젝트>
+code-agent init
+claude
 ```
 
 | 무엇 | 자리 | 커밋 |
@@ -109,13 +113,13 @@ cd <프로젝트> && code-agent init
 ```
 code-agent 를 설치했습니다 — C:\work\shop
   - 스킬·에이전트 26개: .claude/skills/ca-*, .claude/agents/ca-*
-  - hook: .claude/settings.json → PreToolUse code-agent hook · Stop code-agent stop
+  - hook: .claude/settings.json → PreToolUse code-agent hook · Stop code-agent stop · SubagentStart/Stop code-agent review-event
   - CLAUDE.md: code-agent 블록 생성
   - .gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/)
   - 버전 고정: .code-agent/version = 1.0.0
 ```
 
-다음은 `claude` 를 열고 `/ca-adopt` — 도입 흐름은 [usage.md §3](usage.md#3-한-바퀴).
+Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접수한 원문을 저장한 뒤 공통 문서·설정이 없으면 `/ca-adopt`·`/ca-docs`로 준비하고 같은 접수로 돌아온다. 준비만 먼저 할 때는 `/ca-adopt`를 직접 사용할 수 있다. 전체 실행 예시는 [usage.md §3](usage.md#3-한-바퀴)에 있다.
 
 ---
 
@@ -186,7 +190,7 @@ code-agent update [--cli <경로>]
 ```
 
 지금 도는 버전의 스킬·에이전트·hook·CLAUDE 블록을 **다시 설치**하고 `.code-agent/version` 을 맞춘다.
-TTY 는 필요 없다 — 사람의 판정이 아니라 파일 복사다. 새 버전을 깐 뒤(`npm i -g …` 또는 새 바이너리) 저장소마다 한 번씩 돌린다.
+TTY는 필요 없다. 현재 설치된 패키지의 템플릿을 복사하는 명령이며 새 버전을 내려받지는 않는다. 패키지를 다시 설치하거나 바이너리를 교체한 뒤 대상 프로젝트마다 `update`를 실행한다. `npm link` 개발본은 먼저 `npm run build`로 CLI를 빌드한다. 갱신 후 `doctor`로 설치 경로·스킬·hook을 확인하고 프로젝트에서 Claude Code를 새로 연다.
 
 **옛 설치본은 `update` 를 돌려야 PreToolUse matcher 가 넓어진다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).
@@ -204,7 +208,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 ```
 code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
   - 스킬·에이전트 3개 갱신: .claude/skills/ca-plan/SKILL.md · …
-  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · Stop code-agent stop)
+  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · Stop code-agent stop · SubagentStart code-agent review-event · SubagentStop code-agent review-event)
   - CLAUDE.md: 갱신
   - .gitignore: 그대로
   - 에이전트 모델 오버라이드 1개 유지: implementer=sonnet
