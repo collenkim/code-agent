@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-01",
+  "scope": "Uncommitted working tree; full regression followed by the complete P6 suite after old reproduction evidence compatibility was hardened.",
+  "baseCommit": "2fb68bf673580698b08adc75855a9f371c25b3af",
+  "environment": {
+    "os": "Windows",
+    "node": "v24.19.0",
+    "npm": "11.17.0",
+    "python": "3.12.10"
+  },
+  "fullSuite": {
+    "command": "npm test",
+    "tests": 540,
+    "suites": 120,
+    "passed": 536,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 4,
+    "todo": 0,
+    "durationMs": 359397.4019,
+    "localLog": "dist/process-confirmed-tests.log",
+    "exitCode": 0
+  },
+  "postCompatibilitySuite": {
+    "command": "npm run build && node --test dist/test/p6.test.js",
+    "tests": 62,
+    "suites": 5,
+    "passed": 62,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "durationMs": 130020.8272,
+    "localLog": "dist/repro-compat-confirmed-tests.log",
+    "exitCode": 0
+  },
+  "skips": {
+    "caseSensitiveFilesystem": 2,
+    "windowsFilePermissions": 2
+  },
+  "liveModelEvidence": "model-evaluation-2026-10-01.json",
+  "limitations": [
+    "Model evaluation starts from prepared document/plan/approval fixtures; it does not measure novice intake or genuine human TTY approvals.",
+    "Four live scenarios verify implementation, actual tests, independent review observation and integration up to deliver; no delivery commit or push.",
+    "Unsupported test output is blocked as unknown; JUnit XML requires an adapter."
+  ]
+}

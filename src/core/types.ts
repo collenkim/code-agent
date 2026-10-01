@@ -37,7 +37,7 @@ export interface PlannedFile {
 
 /** 작업 순서 한 칸 — 무엇을 언제 하는가와 그 차례인 이유 */
 export interface PlanStep {
-  /** 단계 키 또는 파일 묶음 */
+  /** 실행 단계 key. 계획 파일이 있는 각 단계를 정확히 한 번 나열한다. */
   step: string;
   why: string;
 }

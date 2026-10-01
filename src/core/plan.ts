@@ -8,13 +8,14 @@ import { z } from "zod";
 
 import type { WorkKind, WorkOrder } from "./workOrder";
 import type { BuildPlan } from "./types";
+import type { StageDef } from "./manifest";
 
 /** 종류가 무엇이든 계획에 들어가는 것 */
 const COMMON_PLAN_FIELDS = {
   sequence: z
     .array(
       z.object({
-        step: z.string().describe("단계 키 또는 파일 묶음"),
+        step: z.string().describe("실행할 단계 key — 파일이 있는 각 단계를 정확히 한 번"),
         why: z.string().describe("왜 그 차례인지 한 줄"),
       }),
     )
@@ -114,7 +115,7 @@ const PLAN_SHAPE = `{
   "domainRoot": "도메인 분류 (없으면 \\"\\")",
   "domainDirName": "실제 디렉토리 이름",
   "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
-  "sequence": [{ "step": "단계 키 또는 파일 묶음", "why": "왜 그 차례인지" }],
+  "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
@@ -125,7 +126,7 @@ const PLAN_SHAPE = `{
 const REFACTOR_PLAN_SHAPE = `{
   "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지", "requirements": ["R1"] }],
   "preserve": [{ "item": "지시서의 문장 그대로", "how": "이번 변경에서 어떻게 지켜지는지" }],
-  "sequence": [{ "step": "단계 키 또는 파일 묶음", "why": "왜 그 차례인지" }],
+  "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
@@ -195,6 +196,39 @@ export function missingPreserve(order: WorkOrder, plan: BuildPlan): string[] {
   return order.preserve.filter((entry) => !covered.has(entry.trim()));
 }
 
+/** 승인 화면과 실행 커서가 함께 쓰는 순서. 모르는 단계나 누락을 임의로 보충하지 않는다. */
+export function sequenceProblems(plan: BuildPlan, stages: StageDef[], kind: WorkKind): string[] {
+  const used = new Set(plan.files.map((file) => file.stage));
+  const keys = plan.sequence.map((entry) => entry.step);
+  const problems: string[] = [];
+  for (const entry of plan.sequence) if (!entry.why.trim()) problems.push(`sequence 의 ${entry.step} 에 순서의 이유가 없습니다`);
+  for (const key of keys) {
+    if (!used.has(key) || !stages.some((stage) => stage.key === key && stage.kind !== "verify")) {
+      problems.push(`sequence 의 ${key} 는 계획 파일이 있는 실행 단계가 아닙니다`);
+    }
+    if (keys.indexOf(key) !== keys.lastIndexOf(key)) problems.push(`sequence 에 단계가 중복됐습니다: ${key}`);
+  }
+  for (const key of used) if (!keys.includes(key)) problems.push(`sequence 에 계획 단계가 빠졌습니다: ${key}`);
+  if (kind === "fix") {
+    const testKeys = new Set(stages.filter((stage) => stage.kind === "test").map((stage) => stage.key));
+    let sawCode = false;
+    for (const key of keys) {
+      if (!testKeys.has(key)) sawCode = true;
+      else if (sawCode) problems.push("fix 의 테스트 단계는 모두 구현 단계보다 앞이어야 합니다 — 재현 후 구현 순서로 고치세요");
+    }
+  }
+  return [...new Set(problems)];
+}
+
+/** 구현 단계 하나가 Task 하나다. 별도 사본을 저장하지 않아 계획·상태·완료 보고가 갈리지 않는다. */
+export function planTasks(plan: BuildPlan) {
+  return plan.sequence.map((entry, index) => {
+    const files = plan.files.filter((file) => file.stage === entry.step);
+    return { id: `T${index + 1}`, stage: entry.step, why: entry.why,
+      requirements: [...new Set(files.flatMap((file) => file.requirements ?? []))], files: files.map((file) => file.path) };
+  });
+}
+
 /** 계획을 사람이 읽을 형태로 출력한다. */
 export function formatPlan(plan: BuildPlan): string {
   const location = [plan.domainRoot, plan.domainDirName].filter(Boolean).join("/");
@@ -219,6 +253,12 @@ export function formatPlan(plan: BuildPlan): string {
       : []),
     `### 작업 순서`,
     ...plan.sequence.map((entry, index) => `${index + 1}. ${entry.step} — ${entry.why}`),
+    "",
+    "### 작업 Task",
+    "",
+    "| Task | 실행 단계 | 요구사항 | 파일 | 완료 기준 |",
+    "|---|---|---|---|---|",
+    ...planTasks(plan).map((task) => `| ${task.id} | ${task.stage} | ${task.requirements.join(", ")} | ${task.files.join(", ")} | 파일 구현 후 연결된 AC·TC 검증과 리뷰 통과 |`),
     "",
     `### 구현 방법`,
     plan.approach,

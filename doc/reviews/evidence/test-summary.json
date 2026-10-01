@@ -1,0 +1,17 @@
+{
+  "command": "npm test",
+  "node": "v24.19.0",
+  "npm": "11.17.0",
+  "exitCode": 0,
+  "summary": [
+    "ℹ tests 522",
+    "ℹ suites 120",
+    "ℹ pass 518",
+    "ℹ fail 0",
+    "ℹ cancelled 0",
+    "ℹ skipped 4",
+    "ℹ todo 0",
+    "ℹ duration_ms 255158.1114"
+  ],
+  "note": "Initial sandbox run could not spawn children (EPERM). This result is the permitted rerun. Full output was streamed and some tool chunks were truncated; this is the terminal summary, not a full log."
+}

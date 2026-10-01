@@ -15,6 +15,7 @@ import {
   checkCommands,
   integrateCommands,
   loadEvidence,
+  saveEvidence,
   prepareCommand,
   runsOf,
   stageProblems,
@@ -25,6 +26,7 @@ import {
 import { decide } from "../agent/hook";
 import { loadActive } from "../agent/layout";
 import { openRound, reviewDocFile } from "../agent/review";
+import { recordReviewFixture } from "./reviewFixture";
 import { manifestCheck, survey } from "../agent/survey";
 import { partialTreeHash } from "../agent/tree";
 import { check, integrate, repro, runTests } from "../agent/validate";
@@ -51,7 +53,7 @@ const KEPT_TEST = "src/test/existing.test.js";
 const FAIL_UNTIL_FIXED = [
   "node",
   "-e",
-  `console.log('TC-1'); process.exit(require('fs').readFileSync('${SRC}','utf-8').includes('fixed') ? 0 : 3)`,
+  `const fixed=require('fs').readFileSync('${SRC}','utf-8').includes('fixed');console.log((fixed?'ok':'not ok')+' 1 - TC-1'); process.exit(fixed ? 0 : 3)`,
 ];
 /** 같은 판정인데 TC id 를 찍지 않는다 — 출력 갈래가 비는 경우 */
 const SILENT_FAIL = [
@@ -474,6 +476,14 @@ describe("P6 · fix — 재현 먼저", () => {
     await assert.rejects(() => repro(requireReproable(repo)), /재현 TC 가 실패한 실행의 출력에 없습니다: TC-1/);
   });
 
+  test("10d. 같은 실행에서 재현 TC 통과 + 다른 TC 실패는 재현이 아니다", async () => {
+    useManifest({ test: ["node", "-e", "console.log('ok 1 - TC-1\\nnot ok 2 - TC-9'); process.exit(1)"] });
+    toImplement();
+    writeReproTest();
+    await assert.rejects(() => repro(requireReproable(repo)), /실제 실패 결과가 필요합니다/);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro, undefined);
+  });
+
   test("11. 재현을 보면 증거가 테스트 트리 해시에 묶여 0회차로 남는다", async () => {
     toImplement();
     writeReproTest();
@@ -506,6 +516,23 @@ describe("P6 · fix — 재현 먼저", () => {
     // 재현을 봤으므로 테스트 단계를 넘길 수 있다 — 그다음 단계가 고칠 파일의 자리다
     next(repo);
     assert.equal(loadActive(repo)!.stage, "code");
+    assert.equal(writeFileHook(SRC), undefined);
+  });
+
+  test("12b. 실제 실패 상태 없는 구버전 재현 기록은 쓰기·검증·캐시 재사용을 열지 않는다", async () => {
+    toImplement();
+    writeReproTest();
+    await repro(requireReproable(repo));
+    const old = loadEvidence(repo, "FIX-1", SRC)!;
+    delete old.repro!.found[0].status;
+    saveEvidence(repo, old);
+    assert.match(writeFileHook(SRC) ?? "", /실제 실패 결과가 없습니다/);
+    assert.throws(() => next(repo), /실제 실패 결과가 없습니다/);
+    assert.ok(stageProblems(loadWork(repo)!, "test").some((problem) => /실제 실패 결과가 없습니다/.test(problem)));
+    const rerun = await repro(requireReproable(repo));
+    assert.equal(rerun.includes("이미 재현을 봤습니다"), false);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro!.found[0].status, "failed");
+    next(repo);
     assert.equal(writeFileHook(SRC), undefined);
   });
 
@@ -583,13 +610,16 @@ describe("P6 · fix — 재현 먼저", () => {
     openRound(requireValidatable(repo, "review"));
     const path = join(repo, reviewDocFile("FIX-1"));
     writeFileSync(path, `${readFileSync(path, "utf-8")}\n- 없음\n`);
+    recordReviewFixture(repo);
     next(repo);
     assert.equal(loadActive(repo)!.phase, "integrate");
   }
 
-  test("17b. 재현 뒤 테스트를 고쳤으면 통합 검증이 막는다 — ⑧ 의 재현 줄이 반영될 테스트를 가리켜야 한다", async () => {
+  test("17b. 리뷰 후 테스트 보완은 기준 코드에서 격리 재현하고 수정 코드를 보존한 채 통합한다", async () => {
+    useManifest({ test: ["node", "--test", "--test-reporter=tap"] });
     toImplement();
-    writeReproTest();
+    const testBody = "const test=require('node:test'),assert=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1 sum',()=>assert.equal(total([2,3]),5));\n";
+    writeReproTest(testBody);
     await repro(requireReproable(repo));
     fixSource();
     next(repo);
@@ -599,17 +629,26 @@ describe("P6 · fix — 재현 먼저", () => {
     await runTests(requireValidatable(repo, "test"));
     next(repo);
 
-    // ⑨ 지적으로 동결이 풀린 뒤 단언을 약하게 고친 상황. 그러고 check 부터 다시 돌면
-    // 계획 파일 트리 해시(treeHash)는 다시 굳어 묶임 검사를 지나간다 — 재현 묶임만 어긋나 있다
-    writeReproTest("// TC-1 재현 (단언을 뺐다)\n");
+    const fixed = readFileSync(join(repo, SRC), "utf8");
+    writeReproTest(testBody + "test('TC-1 empty',()=>assert.equal(total([]),0));\n");
     await toIntegrateAgain();
+    assert.equal(readFileSync(join(repo, SRC), "utf8"), fixed);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro!.found[0].status, "failed");
+    await integrate(requireValidatable(repo, "integrate"));
+    assert.deepEqual(stageProblems(loadWork(repo)!, "integrate"), []);
+  });
 
-    const problems = stageProblems(loadWork(repo)!, "integrate");
-    assert.ok(
-      problems.some((problem) => /재현을 본 테스트 트리가 지금과 다릅니다/.test(problem)),
-      `재현 묶임을 다시 대조하지 않았습니다: ${problems.join(" | ")}`,
-    );
-    assert.equal(problems.some((problem) => /검증 뒤 계획 파일이 바뀌었습니다/.test(problem)), false);
+  test("17d. 단언을 없애 기준 코드에서도 통과하는 테스트는 재현 갱신에서 차단한다", async () => {
+    useManifest({ test: ["node", "--test", "--test-reporter=tap"] });
+    toImplement();
+    writeReproTest("const test=require('node:test'),assert=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1 sum',()=>assert.equal(total([2,3]),5));\n");
+    await repro(requireReproable(repo)); fixSource(); next(repo); next(repo);
+    await check(requireValidatable(repo, "check"));
+    writeReproTest("require('node:test')('TC-1 weakened',()=>{});\n");
+    const fixed = readFileSync(join(repo, SRC), "utf8");
+    await assert.rejects(() => check(requireValidatable(repo, "check")), /재현하지 못했습니다/);
+    assert.equal(readFileSync(join(repo, SRC), "utf8"), fixed);
+    assert.ok(stageProblems(loadWork(repo)!, "integrate").some(p => /재현을 본 테스트 트리/.test(p)));
   });
 
   test("17c. 재현 뒤 테스트를 고치지 않았으면 통합 검증 앞에서 재현 묶임이 걸리지 않는다", async () => {
@@ -626,14 +665,14 @@ describe("P6 · fix — 재현 먼저", () => {
     );
   });
 
-  test("18. repro 는 fix 의 implement 에서만 돈다", async () => {
+  test("18. repro 는 fix 의 구현·재검증 단계에서 실행 가능하다", async () => {
     toImplement();
     writeReproTest();
     await repro(requireReproable(repo));
     fixSource();
     next(repo);
     next(repo);
-    assert.throws(() => requireReproable(repo), /재현은 implement 스테이지에서 돕니다 \(지금: check\)/);
+    assert.equal(requireReproable(repo).active.phase, "check");
   });
 
   test("18b. feature 작업에서 repro 를 부르면 거부된다", () => {
@@ -668,7 +707,7 @@ const REF_PLAN = {
 describe("P6 · refactor — 동작 보존", () => {
   beforeEach(() => {
     newRepo("ca-p6-ref-");
-    write("code-agent.json", manifest({ test: PASS }));
+    write("code-agent.json", manifest({ test: ["node", "-e", "console.log('ok 1 - TC-1')"] }));
     write(SRC, "function total(items) {\n  return items.reduce((a, b) => a + b, 0);\n}\nmodule.exports = { total };\n");
     write(KEPT_TEST, "// TC-1 기존 테스트\n");
     write("doc/work/REF-1.md", REF_ORDER);
@@ -721,6 +760,17 @@ describe("P6 · refactor — 동작 보존", () => {
     assert.match(submit(), /계획을 제출/);
   });
 
+  test("21b. 기존 테스트만 실행하는 리팩토링에서 존재하지 않는 TC는 승인 전에 막는다", () => {
+    write(KEPT_TEST, "require('node:test')('TC-1 existing',()=>{});\n");
+    git("add", KEPT_TEST); git("commit", "-qm", "existing test id");
+    toPlan();
+    const spec = "doc/work/REF-1/07-test-spec.md";
+    write(spec, specDoc().replace(/TC-1/g, "TC-99"));
+    assert.throws(() => submit(), /기존 테스트에 없는 TC-99를 실행할 계획이 없습니다/);
+    write(spec, specDoc());
+    assert.match(submit(), /계획을 제출/);
+  });
+
   test("22. hook 이 기존 테스트 파일 쓰기를 거부한다", () => {
     start(repo, join(repo, "doc/work/REF-1.md"));
     assert.match(writeFileHook(KEPT_TEST)!, /리팩토링은 기존 테스트를 고치지 않습니다/);
@@ -730,7 +780,7 @@ describe("P6 · refactor — 동작 보존", () => {
 
   /** 매니페스트를 바꿔 끼운다 — 시작 **전에** 부른다 */
   function useManifest(overrides: Record<string, unknown>): void {
-    write("code-agent.json", manifest({ test: PASS, ...overrides }));
+    write("code-agent.json", manifest({ test: ["node", "-e", "console.log('ok 1 - TC-1')"], ...overrides }));
     confirmDocs();
     git("add", "-A");
     git("commit", "-qm", "manifest");
@@ -975,7 +1025,7 @@ describe("P6 · 빈 저장소", () => {
 
 const FEAT_SRC = "src/main/app/greeting.js";
 const FEAT_TEST = "src/test/greeting.test.js";
-const PRINT_TC = ["node", "-e", "console.log('TC-1 ok')"];
+const PRINT_TC = ["node", "-e", "console.log('ok 1 - TC-1')"];
 
 const FEAT_ORDER = ["---", "kind: feature", "id: ORD-9", "title: 인사 기능", "target: greeting", "---", "", "이름을 받아 인사한다.", ""].join("\n");
 
@@ -1051,6 +1101,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     openRound(requireValidatable(repo, "review"));
     const path = join(repo, reviewDocFile("ORD-9"));
     writeFileSync(path, `${readFileSync(path, "utf-8")}\n- 없음\n`);
+    recordReviewFixture(repo);
     next(repo);
     assert.equal(loadActive(repo)!.phase, "integrate");
   }

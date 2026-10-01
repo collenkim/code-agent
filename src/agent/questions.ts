@@ -33,7 +33,9 @@ export function parseQuestions(text: string): Question[] {
         ? ""
         : [body[marker].trim().slice("[Answer]:".length), ...body.slice(marker + 1)]
             .join("\n")
-            .trim();
+            .replace(/<!--[\s\S]*?-->/g, "")
+            .split("\n").filter((line) => !/^\s*(?:([-*_])\s*){3,}$/.test(line))
+            .join("\n").trim();
     questions.push({ id, title: heading.trim(), answer });
   }
   return questions;

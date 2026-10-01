@@ -524,7 +524,7 @@ describe("next — 질문과 승인", () => {
 
   test("계획에 파일이 없는 단계는 구현에서 건너뛴다 — 빈손으로 서브에이전트를 보내지 않는다", () => {
     toPlan();
-    submit({ ...PLAN, files: [{ ...PLAN.files[1], requirements: ["R1", "R2"] }] });
+    submit({ ...PLAN, files: [{ ...PLAN.files[1], requirements: ["R1", "R2"] }], sequence: [PLAN.sequence[1]] });
     approve();
     next(repo);
     assert.deepEqual([loadActive(repo)!.phase, loadActive(repo)!.stage], ["implement", "repository"]);

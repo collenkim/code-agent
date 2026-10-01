@@ -66,6 +66,9 @@ function confirm(id = ID, spec = SPEC): void {
 }
 
 function draft(overrides: Record<string, unknown> = {}): void {
+  const original = typeof overrides.original === "string" ? overrides.original
+    : typeof overrides.originalFile === "string" ? read(overrides.originalFile)
+    : "결제 뒤 24시간 안에는 주문을 취소할 수 있게 해 주세요.\n\n배송이 시작되면 안 됩니다.";
   write(
     DRAFT,
     JSON.stringify({
@@ -76,6 +79,7 @@ function draft(overrides: Record<string, unknown> = {}): void {
       original: "결제 뒤 24시간 안에는 주문을 취소할 수 있게 해 주세요.\n\n배송이 시작되면 안 됩니다.",
       requirements: ["결제 뒤 24시간 안의 주문을 취소한다", "배송이 시작된 주문은 취소하지 않는다"],
       clarifications: [{ question: "24시간은 결제 시각 기준인가요?", answer: "네, 결제 완료 시각부터" }],
+      sourceMap: [{ quote: original, targets: ["REQ-1"], note: "접수 동작 검증용 fixture 연결" }],
       ...overrides,
     }),
   );
@@ -118,8 +122,7 @@ afterEach(() => {
 });
 
 describe("접수 — begin", () => {
-  test("ID 와 종류가 있어야 열린다 — ID 는 지어내지 않는다", () => {
-    assert.throws(() => requestBegin(repo, undefined, "feature"), /작업 ID 가 필요합니다: \(없음\)[\s\S]*지어내지 않습니다/);
+  test("잘못된 ID와 종류는 거부한다 — 생략한 ID는 별도 자동 발급 테스트에서 확인", () => {
     assert.throws(() => requestBegin(repo, "주문 1", "feature"), /작업 ID 가 필요합니다: 주문 1/);
     assert.throws(() => requestBegin(repo, ID, undefined), /작업 종류가 필요합니다/);
     assert.throws(() => requestBegin(repo, ID, "chore"), /작업 종류가 필요합니다: chore/);
@@ -146,7 +149,8 @@ describe("접수 — begin", () => {
     assert.match(requestBegin(repo, ID, "feature"), /이미 접수 중입니다/);
     assert.throws(() => requestBegin(repo, "ORD-8", "feature"), /접수 중인 요구사항이 있습니다: ORD-7/);
     assert.throws(() => requestBegin(repo, ID, "fix"), /feature 로 접수 중입니다/);
-    assert.throws(() => docsBegin(repo), /요구사항을 접수 중입니다 \(ORD-7\)/);
+    assert.match(docsBegin(repo), /접수한 ID·원문 초안은 유지됩니다/);
+    assert.equal(loadRequestSession(repo)?.id, ID);
   });
 });
 
@@ -227,7 +231,7 @@ describe("접수 — submit", () => {
     const text = read(SPEC);
     assert.match(text, /^---\nkind: feature\nid: ORD-7\ntitle: 주문 취소\ntarget:\n {2}- order\n---\n/);
     assert.match(text, /## 원문\n\n<!-- 원문: 사람이 준 글 \(접수 초안의 original\) -->\n> 결제 뒤 24시간 안에는 주문을 취소할 수 있게 해 주세요\.\n>\n> 배송이 시작되면 안 됩니다\./);
-    assert.match(text, /## 요구 내용\n\n- 결제 뒤 24시간 안의 주문을 취소한다\n- 배송이 시작된 주문은 취소하지 않는다/);
+    assert.match(text, /## 요구 내용\n\n- \[REQ-1\] 결제 뒤 24시간 안의 주문을 취소한다\n- \[REQ-2\] 배송이 시작된 주문은 취소하지 않는다/);
     assert.match(text, /## 완료 조건\n\n- 원문에 없음 — 분석 단계의 수락 기준\(AC\)에서 정한다/);
     assert.match(text, /## 접수 때 정한 것\n\n- Q: 24시간은 결제 시각 기준인가요\?\n {2}- A: 네, 결제 완료 시각부터/);
     const order = readOrder(repo, SPEC, loadManifest(repo));

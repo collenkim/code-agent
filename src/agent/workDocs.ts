@@ -85,7 +85,8 @@ export function parseRequirements(text: string): Requirements {
   const duplicated = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicated.length > 0) problems.push(`요구 항목 번호가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`);
   // 인용할 지시서 문장이 없는 요구는 지시서에 없는 요구다 — 모델이 보탠 것이 여기서 드러난다
-  const groundless = items.filter((block) => !/^\s*근거\s*:/m.test(block)).map((block) => /^(R\d+)/.exec(block)![1]);
+  const groundless = items.filter((block) => ![...block.matchAll(/^[ \t]*근거[ \t]*:[ \t]*(.*)$/gm)]
+    .some((match) => match[1].replace(/["“”「」]/g, "").trim() !== "")).map((block) => /^(R\d+)/.exec(block)![1]);
   if (groundless.length > 0) {
     problems.push(`근거: 줄이 없는 요구 항목: ${groundless.join(", ")} — 지시서 문장을 그대로 인용하세요`);
   }

@@ -5,7 +5,7 @@ import { checkApproval } from "../core/approval";
 import type { ApprovalState } from "../core/approval";
 import { loadManifest, MANIFEST_FILE, stagesFor } from "../core/manifest";
 import type { Manifest, StageDef } from "../core/manifest";
-import { planFormatFor } from "../core/plan";
+import { planFormatFor, sequenceProblems } from "../core/plan";
 import type { BuildPlan } from "../core/types";
 import { loadWorkOrder } from "../core/workOrder";
 import type { WorkKind, WorkOrder } from "../core/workOrder";
@@ -73,7 +73,8 @@ function readPlan(repoRoot: string, id: string, target: string, kind: WorkKind):
         `\n${workDocsDir(id)}/plan.json 을 고쳐 code-agent plan submit 으로 다시 제출하세요.`,
     );
   }
-  return format.toPlan(parsed.data);
+  const plan = format.toPlan(parsed.data);
+  return plan;
 }
 
 /**
@@ -84,6 +85,8 @@ export function approvalOf(work: Work): ApprovalState {
   if (!work.plan) {
     return { status: "none" };
   }
+  const problems = sequenceProblems(work.plan, work.stages, work.order.kind);
+  if (problems.length) throw new Stop(`제출된 계획의 실행 순서가 유효하지 않습니다:\n${problems.join("\n")}\nplan.json 의 sequence 를 고쳐 다시 제출하고 승인받으세요.`);
   return checkApproval(work.repoRoot, work.order, work.plan, work.active.target, {
     manifest: work.manifest,
     requireVerifiedApproval: work.manifest.workOrder.requireVerifiedApproval,

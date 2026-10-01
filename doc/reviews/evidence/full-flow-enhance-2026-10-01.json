@@ -1,0 +1,146 @@
+{
+  "scenario": "enhance",
+  "at": "2026-10-01T06:14:08.687Z",
+  "scope": "Live model from intake; automated TTY fixtures, not a real novice or human approval",
+  "repo": "C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-full-enhance-rcka6h",
+  "finished": true,
+  "durationMs": 447888,
+  "reportedCostUSD": 3.7644767999999997,
+  "approvals": [
+    {
+      "word": "confirm",
+      "kind": "automated TTY fixture; not human",
+      "at": "2026-10-01T06:07:11.286Z"
+    },
+    {
+      "word": "confirm",
+      "kind": "automated TTY fixture; not human",
+      "at": "2026-10-01T06:07:40.370Z"
+    },
+    {
+      "word": "approve",
+      "kind": "automated TTY fixture; not human",
+      "at": "2026-10-01T06:11:09.167Z"
+    },
+    {
+      "word": "deliver",
+      "kind": "automated TTY fixture; not human",
+      "at": "2026-10-01T06:14:08.143Z"
+    }
+  ],
+  "questionCount": 0,
+  "unanswered": [],
+  "turns": [
+    {
+      "turn": 1,
+      "exitCode": 0,
+      "durationMs": 28630,
+      "reportedCostUSD": 0.18109139999999996,
+      "modelError": false,
+      "phase": "request",
+      "result": "WORK-0001(feature) 요구사항 접수까지 끝냈습니다. 사람의 확정이 필요해서 여기서 멈춥니다.\n\n- **접수 내용**: \"value(n) 음수 입력 시 Error(\"negative\") 던지기\"를 `doc/work/WORK-0001/requirement.md`로 렌더했습니다. 대상은 `value`이고 범위는 `src/value.js`, `tests/value.test.js`입니다.\n- **요구 항목**: 요구 3개와 제약 2개이고, 완료 조건은 원문에 없어서 비웠습니다.\n  - 요구: 음수 입력 시 `Error(\"negative\")` 던지기, 0 이상이면 1 반환, 테스트에서 0·2·-1 검증.\n  - 제약: CommonJS 함수 export와 시그니처 유지, Node.js·node:test 유지.\n- **원문과 sourceMap**: 원문은 그대로 보관했고, 원문 문장 전부를 REQ, CON, TITLE 항목에 연결했습니다. 제외한 내용은 없습니다.\n- **질문**: 업무상 물을 것은 없어서 남긴 질문이 없습니다.\n- **공통 문서**: POLICY 4종과 KNOWLEDGE 3종은 이미 작성돼 있었고 섹션도 다 찼습니다. POLICY 4종은 아직 확정되지 않았습니다. 이번 턴에서는 문서를 새로 쓰지 않았습니다.\n\n다음은 별도 터미널에서 직접 하셔야 합니다.\n1. `code-agent confirm doc all` — 공통 문서 확정\n2. `code-agent confirm request WORK-0001` — 원문과 정리를 나란히 읽고 확정. 반려하려면 `code-agent reject request WORK-0001 --comment \"사유\"`.\n3. 그다음 `/ca-next`로 분석부터 이어갑니다.\n\n승인, 최초 커밋, deliver는 호출하지 않았습니다.",
+      "fixtureBlocked": "원문 대조에 미연결 내용이 있습니다 — request.json의 sourceMap으로 반영 항목(REQ/DONE/CON) 또는 명시적인 제외(OUT)를 연결한 뒤 다시 제출하세요. 별도 사용자 질문을 늘리지 말고 원문에 근거해 정리합니다."
+    },
+    {
+      "turn": 2,
+      "exitCode": 0,
+      "durationMs": 26388,
+      "reportedCostUSD": 0.28692879999999993,
+      "modelError": false,
+      "phase": "request",
+      "result": "원문 대조의 미연결 한 건(쉼표)은 sourceMap을 고쳐 다시 제출해서 해소했습니다. 그런데 요구사항 확정이 아직 기록되지 않았습니다. 이 확정은 사람이 하는 단계라서 여기서 멈춥니다.\n\n- **미연결 해소**: 원문 \"0 이상이면 1 반환, CommonJS …\"의 쉼표가 어디에도 연결되지 않아 있었습니다. `0 이상이면 1 반환,`을 REQ-2에 연결해 다시 제출했고, 요구 3개와 제약 2개는 그대로입니다.\n- **현재 상태**: 공통 문서 4종은 확정됨으로 나옵니다. 요구사항은 `확정 대기`입니다. 테스트용 TTY fixture가 문서는 처리했지만 방금 다시 제출한 요구사항은 아직 처리하지 못했습니다. 재제출로 이전 확정이 무효가 됐을 수도 있습니다.\n- **다음 단계**: 평가 드라이버가 `code-agent confirm request WORK-0001`을 fixture로 처리하면 `/ca-next`로 분석부터 이어갑니다. 분석, 계획, 구현, 검증, 독립 `ca-reviewer` 리뷰는 아직 시작하지 않았습니다.\n\n승인, 최초 커밋, deliver는 호출하지 않았고, 확정을 실제 사람 승인으로 보고하지도 않습니다."
+    },
+    {
+      "turn": 3,
+      "exitCode": 0,
+      "durationMs": 26816,
+      "reportedCostUSD": 1.2161768,
+      "modelError": false,
+      "phase": "plan",
+      "result": "계획을 제출했고, 사람의 승인(`code-agent approve`)을 기다리느라 여기서 멈춥니다. 상태는 `승인 none`이라, 테스트용 fixture가 아직 이 계획을 처리하지 않았습니다. 승인은 호출하지 않았고 승인된 것으로 보고하지도 않습니다.\n\n**진행**\n- 요구사항 분석, 영향도, 설계, 계획 문서(`01`~`04`, `07`, `plan.json`)를 작성했고 `05-plan.md`가 렌더됐습니다.\n- 서브에이전트를 쓴 곳은 분석(`ca-analyst`)과 계획 검토(`ca-critic`) 두 군데입니다. 영향도·설계 문서는 소스 파일이 한 줄짜리라 분석 결과를 바탕으로 제가 직접 썼습니다.\n\n**계획 요약**\n- T1(code): `src/value.js` — `n < 0`이면 `Error(\"negative\")`를 던지고, 아니면 1을 반환합니다. export 형태와 시그니처는 유지합니다. 담당은 R1, R2, R4입니다.\n- T2(test): `tests/value.test.js` — TC-1~TC-4(0, 2, -1과 export 확인)를 추가합니다. 담당은 R3, R5입니다.\n\n**독립 검토 반영**\n- `ca-critic`이 TC-5가 구현할 수 없는 케이스라고 지적해서, TC-5를 지우고 AC-R5-1을 TC-4에 연결했습니다.\n- NaN이나 숫자가 아닌 입력은 질문으로 올리지 않았습니다. 업무 질문이 아닌 기술 세부로 보고, 현재 동작(1 반환)을 유지하는 가정으로 두었습니다. `ca-critic`은 이것을 업무 규칙으로 물어야 한다고 봤습니다. 승인 화면의 가정 6개에 포함돼 있으니, 다르게 정하려면 계획을 반려해 주세요.\n\n**다음**\n별도 터미널에서 `code-agent approve`를 실행하면 `/ca-next`로 구현, 검증, 독립 리뷰를 진행하고 deliver 대기에서 멈추겠습니다."
+    },
+    {
+      "turn": 4,
+      "exitCode": 0,
+      "durationMs": 31579,
+      "reportedCostUSD": 2.0802798,
+      "modelError": false,
+      "phase": "deliver",
+      "result": "WORK-0001의 구현·검증·독립 리뷰까지 끝냈습니다. 이제 `deliver` 대기 상태입니다. `deliver`와 최초 커밋은 호출하지 않았고, 사람이 승인한 것으로 보고하지도 않습니다.\n\n**검증 결과**\n\n| 단계 | 결과 |\n|---|---|\n| `code-agent check` | build 통과 |\n| `code-agent test` | 통과, 테스트 케이스 4개 중 4개 확인 |\n| 독립 리뷰 `ca-reviewer` | 1회차, 지적 없음 |\n| `code-agent integrate` | 기준 커밋 위의 깨끗한 worktree에서 build와 test 통과 |\n\n- **승인 상태**: 계획 승인은 `approved`로 기록돼 있습니다. 평가 드라이버의 테스트용 TTY fixture가 처리한 것이라 실제 사람의 승인이 아닙니다.\n- **변경 파일**\n  - `src/value.js`: `n<0`이면 `Error(\"negative\")`를 던지고 아니면 1을 반환합니다. export 형태와 시그니처는 그대로입니다.\n  - `tests/value.test.js`: TC-1(0), TC-2(2), TC-3(-1은 `Error`와 메시지 확인), TC-4(함수이고 length 1)를 추가했습니다. 기존 테스트는 그대로입니다.\n- **`10-pr.md`**: 요약·확인 방법·위험 세 구역만 제가 썼습니다. `code-agent docs skeleton`에 `10-pr` 뼈대가 없어서 `code-agent context`가 알려 준 세 섹션 이름대로 작성했습니다. 추적표와 검증 구역은 `deliver`가 렌더합니다.\n\nNaN이나 숫자가 아닌 입력은 현재처럼 1을 반환합니다. 승인 화면의 가정에 올려 두었고, `ca-critic`은 이것을 업무 질문으로 물어야 한다고 봤습니다.\n\n다음은 사람이 별도 터미널에서 `code-agent deliver`를 실행하는 것입니다. 반영은 로컬 커밋까지이고 push나 PR 생성은 하지 않습니다."
+    }
+  ],
+  "taskSequence": [
+    {
+      "step": "code",
+      "why": "동작 변경의 본체이며 테스트가 이를 검증한다"
+    },
+    {
+      "step": "test",
+      "why": "구현된 동작을 07-test-spec 의 TC 로 검증한다"
+    }
+  ],
+  "tests": [
+    {
+      "id": "TC-1",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-2",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-3",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-4",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    }
+  ],
+  "integrationTests": [
+    {
+      "id": "TC-1",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-2",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-3",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    },
+    {
+      "id": "TC-4",
+      "status": "passed",
+      "source": "출력",
+      "where": "테스트 실행 결과 (TAP)"
+    }
+  ],
+  "reviews": [
+    {
+      "round": 1,
+      "observed": true,
+      "result": "- 없음"
+    }
+  ],
+  "source": "module.exports=function value(n){if(n<0)throw new Error(\"negative\");return 1;};\n",
+  "baselineTestUnchanged": false,
+  "finalCommit": "6df09a59f4dfa4aabe780241ae7493fac34ebddc",
+  "activeAfterDelivery": null,
+  "questionCountScope": "questions.md entries only; conversational questions are preserved in turns but not counted here"
+}

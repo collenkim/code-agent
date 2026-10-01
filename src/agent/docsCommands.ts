@@ -7,7 +7,7 @@ import { writeAtomic } from "../core/atomic";
 import { Stop } from "./commands";
 import { checkDoc, checkKnowledge, checkProjectDocs, docsReady, formatDocChecks, formatKnowledgeChecks, recordDocConfirmation } from "./docs";
 import { DOCS_SESSION_FILE, loadActive } from "./layout";
-import { loadRequestSession } from "./request";
+import { loadRequestSession, requestStatusLines } from "./request";
 import { interview, isDocKind, isPolicyKind, isWorkDocKind, KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS, skeleton, WORK_SCHEMAS } from "./schemas";
 import type { DocKind, KnowledgeKind, PolicyKind } from "./schemas";
 import { confirmOnTerminal } from "./tty";
@@ -53,8 +53,7 @@ export function docsStatus(repoRoot: string): string {
       ? "필수 문서가 모두 확정됐습니다."
       : "필수 문서는 모두 확정됐습니다. KNOWLEDGE 빈 뼈대는 code-agent docs begin 이 만듭니다 (없어도 작업은 시작됩니다)"
     : checks.every((entry) => entry.state === "unconfirmed" || entry.state === "stale" || entry.ok)
-      ? "사람이 별도 터미널에서 확정: " +
-        checks.filter((entry) => !entry.ok).map((entry) => `code-agent confirm doc ${entry.kind}`).join(" · ")
+      ? "사람이 별도 터미널에서 code-agent confirm doc all 로 묶어서 확정하세요 (개별 확정: code-agent confirm doc <종류>)."
       : "/ca-docs 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결)";
   return [
     "공통 POLICY (넷 다 확정돼야 작업이 시작됩니다):",
@@ -127,12 +126,12 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
   return `${SCHEMAS[kind].label} 문서를 연결했습니다: ${paths.join(", ")}\n\n${state}`;
 }
 
-/** 근거 문서와 그 자리(code-agent.json)는 접수 · 작업 도중에 바꾸지 않는다 — 열기와 연결이 같은 문을 쓴다 */
+/** 접수 중 문서 연결은 명시적인 준비 세션 안에서만 한다. 작업 시작 후에는 바꾸지 않는다. */
 function requireNoIntake(repoRoot: string, what: string): void {
   const intake = loadRequestSession(repoRoot);
-  if (intake) {
+  if (intake && !existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop(
-      `요구사항을 접수 중입니다 (${intake.id}). ${what}은(는) 접수를 끝내거나 사람이 code-agent abort 로 닫은 뒤에 합니다.`,
+      `요구사항을 접수 중입니다 (${intake.id}). ${what}은(는) code-agent docs begin 으로 준비 세션을 연 뒤에 합니다. 접수는 유지됩니다.`,
     );
   }
 }
@@ -144,12 +143,12 @@ export function docsBegin(repoRoot: string): string {
       `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 code-agent abort 뒤에 여세요.`,
     );
   }
-  requireNoIntake(repoRoot, "문서 세션 열기");
   mkdirSync(dirname(join(repoRoot, DOCS_SESSION_FILE)), { recursive: true });
   writeFileSync(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ startedAt: new Date().toISOString() })}\n`);
   const created = createKnowledgeSkeletons(repoRoot);
   return [
     "문서 작성 세션을 열었습니다. 끝날 때까지 doc/ · 등록된 문서 · code-agent.json 밖은 쓸 수 없습니다.",
+    ...(loadRequestSession(repoRoot) ? ["접수한 ID·원문 초안은 유지됩니다. 준비 뒤 같은 요구사항으로 이어갑니다."] : []),
     ...(created.length > 0 ? [`공통 KNOWLEDGE 빈 뼈대를 만들었습니다: ${created.join(", ")}`] : []),
     "",
     docsStatus(repoRoot),
@@ -176,11 +175,29 @@ function createKnowledgeSkeletons(repoRoot: string): string[] {
 
 export function docsEnd(repoRoot: string): string {
   rmSync(join(repoRoot, DOCS_SESSION_FILE), { force: true });
-  return `문서 작성 세션을 닫았습니다.\n\n${docsStatus(repoRoot)}`;
+  const session = loadRequestSession(repoRoot);
+  return `문서 작성 세션을 닫았습니다.\n\n${docsStatus(repoRoot)}` + (session ? `\n\n접수 ${session.id} 유지 — 다음: ${requestStatusLines(repoRoot, session).hint}` : "");
 }
 
 /** 사람이 문서를 근거로 삼겠다고 확정한다 — 터미널에서만 */
 export function confirmDoc(repoRoot: string, kindArg: string | undefined): string {
+  if (kindArg === "all") {
+    const checks = checkProjectDocs(repoRoot, loadManifestIfAny(repoRoot));
+    if (checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections")) {
+      throw new Stop(`확정할 수 없습니다 — 빠진 문서를 먼저 채우세요.\n${formatDocChecks(checks, true)}`);
+    }
+    if (checks.every((entry) => entry.ok)) return "공통 문서가 지금 내용으로 이미 확정돼 있습니다.";
+    const shown = ["공통 POLICY 4종을 한 번에 확정합니다.", formatDocChecks(checks, true),
+      ...checks.map((entry) => `${entry.label}: ${entry.paths.join(", ")} (${entry.hash})`),
+      "각 문서를 읽고 확인하세요. 이후 계획은 이 문서 묶음을 근거로 삼습니다."].join("\n");
+    const presence = confirmOnTerminal(shown, "confirm");
+    const now = checkProjectDocs(repoRoot, loadManifestIfAny(repoRoot));
+    if (now.some((entry, index) => entry.hash !== checks[index].hash || entry.paths.join("\n") !== checks[index].paths.join("\n") || entry.state === "missing-sections")) {
+      throw new Stop("확정하는 동안 공통 문서가 바뀌었습니다 — 판정을 남기지 않았습니다. 다시 확인하세요.");
+    }
+    for (const entry of checks.filter((entry) => !entry.ok)) recordDocConfirmation(repoRoot, entry, userInfo().username, presence);
+    return `공통 POLICY 4종을 확정했습니다.\n\n${docsStatus(repoRoot)}`;
+  }
   const kind = policyKindOf(kindArg);
   const check = checkDoc(repoRoot, loadManifestIfAny(repoRoot), kind);
   if (check.state === "confirmed") {

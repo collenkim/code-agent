@@ -8,6 +8,14 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 
 ## 1. 시작
 
+**간단한 시작이 기본이다.** 접수 중이어도 `docs begin`으로 원문을 유지한 채 준비한다. 사용자에게 내부 설정 이름을 나열하지 않는다.
+기존 프로젝트는 탐지한 언어·폴더·명령을 재사용한다. 새 프로젝트에서는 `code-agent docs recommend`의 선택지를 용도와 함께 보여 준다.
+사용자가 추천 구성(node 또는 python)을 선택했으면 `code-agent docs begin` → `code-agent docs setup <선택>` → `code-agent docs end`로 문서·설정을 만든다.
+이 경우 아래의 세부 인터뷰를 반복하지 않고, 문서 경로와 선택 요약을 보여 준 뒤 `code-agent confirm doc all`을 한 번 안내한다.
+선호 언어·회사 규칙이 있으면 그대로 따르고 아래 절차로 그 구성만 작성한다. `code-agent setup`으로 실행 환경·기존 명령·기준 커밋을 확인한다. 기준 커밋이 없으면 별도 터미널의 `code-agent setup baseline` 한 번으로 준비 파일 목록 확인과 최초 커밋을 진행하도록 안내한다. 접수 원문과 작업 ID는 유지한다.
+
+**기존 테스트 도구를 유지한다.** 언어·프레임워크와 테스트 도구가 정해져 있으면 다시 선택시키지 않는다. 기존 빌드 설정·테스트 파일·CI에서 명령을 연결하고, 준비 단계에서는 테스트나 러너 적합성 검사를 실행하지 않는다. 신규 추천 구성은 테스트 도구도 포함하므로 별도 선택이 필요 없다. 실제 테스트 작성·실행은 승인된 구현 Task에서 한다. 실행 후 콘솔 결과 또는 이번 실행이 생성한 JUnit 보고서는 에이전트가 자동으로 읽는다.
+
 1. Bash: `code-agent status` — `code-agent.json` 이 이미 있으면 Bash: `code-agent manifest check` 를 보고, 문서만 모자라면 `/ca-docs` 절차로 간다.
 2. Bash: `code-agent docs begin`
 3. Bash: `code-agent survey`
@@ -18,8 +26,8 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 **사용자에게 물어** 빈 저장소가 맞는지 확인하고, 코드가 있으면 그 언어의 파일을 직접 짚어 역공학으로 간다.)
 
 - POLICY 4종은 `code-agent docs skeleton <종류>` + `code-agent docs interview <종류>` 로만 채운다.
-- `code-agent.json` 은 아래를 사용자에게 묻는다 — 언어 · 소스 루트(`domainBase`) · 단계 목록(의존 순서, 각 `outputDirs`, 테스트 단계에 `"kind": "test"`) ·
-  `build` · `test` · `prepare` · `git.base`.
+- 직접 선택인 경우에도 사용자의 목적·선호 언어를 받아 소스 루트·단계·build/test/prepare·git.base는 일관된 기본값으로 제안한다.
+  사용자가 바꾸겠다고 한 항목과 제품 동작에 영향을 주는 결정만 묻는다. 내부 JSON 속성을 초보자에게 결정하게 하지 않는다.
 - **`referenceDomain` 은 적지 않고 `exemplars` 는 전부 `[]` 로 둔다** — 참조할 코드가 없다.
   복제할 표준이 없으므로 단계는 `"scope": "project"` + `outputDirs` 로 선언하는 쪽이 자연스럽다.
 - `manifest check` 가 `- 확인: 참조 파일을 선언한 단계가 없습니다` 만 찍으면 정상이다 (경고이지 ✗ 가 아니다).
@@ -27,11 +35,11 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 
 ## 2. 문서
 
-`.claude/skills/ca-docs/SKILL.md` 를 그대로 따른다 — 문서마다 **기본으로 생성 / 대화로 생성 / 기존 문서 연결** 을 추천과 함께 묻는다.
+`.claude/skills/ca-docs/SKILL.md` 를 그대로 따른다 — **추천대로 준비 / 직접 선택**을 한 번만 확인하고, 기존 문서를 재사용하며 빠진 부분을 묶어서 채운다.
 
 - **POLICY 4종** — 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준. `확인 필요` 로 남은 섹션은 **3. 대화로 생성** 으로 채운다.
   테스트 전략과 품질·보안 기준은 도구·명령을 survey 의 도구 후보와 CI 설정에서 초안으로 잡고,
-  수준별 필수 여부·통과 기준·임계·차단 정책만 사용자에게 묻는다. **적은 명령 이름은 3 의 `code-agent.json` 에 같이 등록한다** — 이름이 매니페스트에 없으면 게이트가 막는다.
+  수준별 필수 여부·통과 기준·임계·차단 정책은 기존 정책을 재사용하거나 기본안을 제시한다. 제품 특성에 따라 정해야 할 결정만 묻는다. **적은 명령 이름은 3 의 `code-agent.json` 에 같이 등록한다** — 이름이 매니페스트에 없으면 게이트가 막는다.
 - **KNOWLEDGE 3종** — 데이터 사전 · API 목록은 기본으로 생성(각각 상위 30·40개), 업무 규칙·용어집은 **빈 뼈대**가 추천이다.
   비어 있어도 작업을 막지 않는다. 확정 절차도 없다.
 
@@ -40,9 +48,9 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 
 ## 3. code-agent.json
 
-survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값은 사용자에게 확인한다.
+survey 와 아키텍처 문서로 초안을 만든다. 기술 기본값은 근거와 함께 묶어서 제안하고, 서로 다른 제품 동작을 만드는 선택만 따로 확인한다.
 
-- **referenceDomain** — 복제의 기준이 될 도메인. 후보 2~3개(계층이 다 갖춰진 것)를 보여 주고 사용자가 고른다.
+- **referenceDomain** — 복제의 기준이 될 도메인. 계층이 갖춰진 대표 후보를 근거와 함께 추천하고, 다른 표준을 원할 때만 고르게 한다.
 - **stages** — survey 의 계층 후보를 의존 순서대로 (예: entity → repository → service → controller → test).
   `exemplars` 는 참조 도메인 디렉토리 기준 상대경로이고 `{Ref}` 는 참조 도메인의 PascalCase 다.
 - **`kinds` 는 `["feature", "fix", "refactor"]` 를 기본으로 단다.** 비우면 모든 종류에서 돌지만,
@@ -61,14 +69,14 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
 - **공통 단계** — 아키텍처의 공통 모듈(예외·응답 래퍼·유틸 등)이 도메인 밖에 있으면 `"scope": "project"` 단계를 하나 둔다
   (예: `{ "key": "common", "title": "공통", "scope": "project", "outputDirs": ["src/main/java/com/acme/crm/common"], "kinds": ["feature", "fix", "refactor"], "exemplars": [], "template": "doc/code-agent/stages/common.md" }`).
   없으면 공통 코드를 고쳐야 하는 기능(새 오류 코드 등)의 계획이 경계 검사에서 거부된다. 순서는 도메인 단계보다 앞.
-- **build · test · commands** — 빌드 파일에서 (예: `["gradlew", "compileJava", "-q"]`). 사용자에게 맞는지 확인한다.
+- **build · test · commands** — 빌드 파일에서 (예: `["gradlew", "compileJava", "-q"]`). 탐지 근거를 설정 요약에 포함한다.
   테스트 전략·품질·보안 기준 문서가 적은 이름(`unit` · `check.style` · `sec.deps` …)은 **여기 키로 실재해야** 문서가 게이트를 통과한다.
   `commands` 에는 `build` · `test` · `prepare` 를 키로 쓸 수 없다 — 예약된 이름이라 `loadManifest` 가 거부한다.
 - **prepare** (선택) — 통합 검증의 **깨끗한 worktree 에서 `build`·`test` 앞에 한 번** 도는 준비 명령 (예: `["npm", "ci"]` · `["gradlew", "--offline", "dependencies"]`).
   기준 커밋을 뜬 트리에는 의존성처럼 커밋되지 않는 것이 없어서 두는 자리다. 실패하면 `build`·`test` 를 돌리지 않고 통합 검증 전체가 실패한다.
   `check`·`test` 스테이지에서는 돌지 않는다 (거기는 사람이 보고 있는 작업 트리다). 설치가 필요 없는 프로젝트면 **적지 않는다.**
 - **docs** — POLICY 는 `architecture` · `conventions` · `testStrategy` · `quality`, KNOWLEDGE 는 `docs.knowledge` 의 세 경로.
-- **git.base** — Bash: `git branch` 로 후보를 보고 확인한다 (기본 master).
+- **git.base** — Bash: `git branch` 와 기존 설정으로 정하고 설정 요약에 포함한다. 팀의 기준 브랜치를 알 수 없을 때만 묻는다.
 
 ```json
 {
@@ -118,7 +126,5 @@ survey 와 아키텍처 문서로 초안을 만든다. 추측이 필요한 값�
 
 1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 3종 파일이 있는지.
 2. Bash: `code-agent docs end`
-3. 사용자에게 알린다: `code-agent.json` 과 POLICY 4종을 **직접 읽고 확인한 뒤, 별도 터미널에서** 네 번 —
-   `code-agent confirm doc architecture` · `code-agent confirm doc conventions` ·
-   `code-agent confirm doc test-strategy` · `code-agent confirm doc quality`.
+3. 사용자에게 알린다: `code-agent.json` 과 POLICY 4종을 **직접 읽고 확인한 뒤, 별도 터미널에서** `code-agent confirm doc all` 한 번.
    KNOWLEDGE 3종은 확정하지 않는다. 그리고 전부 커밋한다.

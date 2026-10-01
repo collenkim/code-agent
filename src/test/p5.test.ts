@@ -17,6 +17,8 @@ import { init } from "../agent/init";
 import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile } from "../agent/review";
+import { recordReviewFixture } from "./reviewFixture";
+import { observeReviewer } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
 import { check, integrate, runTests } from "../agent/validate";
@@ -38,12 +40,12 @@ const PASS = ["node", "-e", "process.exit(0)"];
 const FAIL = ["node", "-e", "process.exit(3)"];
 const NOT_INSTALLED = ["code-agent-does-not-exist-on-this-machine"];
 /** ⑦ 의 TC id 를 출력에 그대로 낸다 — 코드가 출력에서 읽는 갈래 */
-const PRINT_CASES = ["node", "-e", "console.log('TC-1 ok'); console.log('TC-2 ok')"];
+const PRINT_CASES = ["node", "-e", "console.log('ok 1 - TC-1'); console.log('ok 2 - TC-2')"];
 /** Order.java 에 `fixed` 가 들어가기 전에는 실패한다 — 수정 루프를 실제로 한 바퀴 돌리는 갈래 */
 const FAIL_UNTIL_FIXED = [
   "node",
   "-e",
-  `process.exit(require('fs').readFileSync('${ORDER}/domain/Order.java','utf-8').includes('fixed') ? 0 : 3)`,
+  `const ok=require('fs').readFileSync('${ORDER}/domain/Order.java','utf-8').includes('fixed'); console.log((ok?'ok':'not ok')+' 1 - TC-1'); console.log('ok 2 - TC-2'); process.exit(ok ? 0 : 3)`,
 ];
 /** 증거 파일을 읽어 회차를 찍는다 — 회차가 실행 **전에** 올라갔는지 보는 갈래 */
 const PRINT_ROUNDS = [
@@ -62,7 +64,7 @@ function manifest(overrides: Record<string, unknown> = {}): string {
     docs: { architecture: "doc/architecture.md" },
     referenceDomain: "deal",
     build: PASS,
-    test: PASS,
+    test: PRINT_CASES,
     stages: [
       { key: "entity", title: "Entity", template: "01-entity.md", kinds: ["feature"], outputDirs: ["domain"] },
       { key: "repository", title: "Repository", template: "02-repository.md", kinds: ["feature"], outputDirs: ["repository"] },
@@ -238,6 +240,7 @@ async function toReview(): Promise<void> {
 function writeFindings(...rows: string[]): void {
   const path = join(repo, reviewDocFile("ORD-1"));
   writeFileSync(path, `${readFileSync(path, "utf-8")}\n${rows.length > 0 ? rows.join("\n") : "- 없음"}\n`);
+  recordReviewFixture(repo);
 }
 
 /** 회차가 열리기 전에 모델이 ⑨ 를 통째로 지어 쓰는 것 — 작업 폴더 안이라 hook 은 막지 않는다 */
@@ -482,7 +485,8 @@ describe("code-agent test", () => {
     assert.equal(loadActive(repo)!.phase, "review");
   });
 
-  test("출력에서 읽을 수 없으면 kind:\"test\" 단계의 테스트 파일에서 읽는다", async () => {
+  test("테스트 파일에 TC가 있어도 실제 결과가 없으면 진행하지 않는다", async () => {
+    useManifest({ test: PASS });
     toCheck();
     await check(requireValidatable(repo, "check"));
     next(repo);
@@ -490,8 +494,7 @@ describe("code-agent test", () => {
     const evidence = loadEvidence(repo, "ORD-1", "order")!;
     assert.deepEqual(evidence.testCases.map((entry) => entry.source), ["테스트 파일", "테스트 파일"]);
     assert.deepEqual(evidence.testCases.map((entry) => entry.where), [TEST_FILE, TEST_FILE]);
-    next(repo);
-    assert.equal(loadActive(repo)!.phase, "review");
+    assert.throws(() => next(repo), /확인되지 않았습니다/);
   });
 
   test("check 뒤 계획 파일이 바뀌었으면 test 를 돌리지 않는다 — 통과한 코드로 테스트한 것이 아니다", async () => {
@@ -517,12 +520,32 @@ describe("code-agent test", () => {
   });
 
   test("어디에도 없는 TC 가 있으면 next 가 review 를 열지 않는다", async () => {
+    useManifest({ test: ["node", "-e", "console.log('ok 1 - TC-1')"] });
     toCheck();
     write(TEST_FILE, "// TC-1 만 있다\nclass OrderTest {}\n");
     await check(requireValidatable(repo, "check"));
     next(repo);
     await runTests(requireValidatable(repo, "test"));
-    assert.throws(() => next(repo), /테스트 케이스가 확인되지 않았습니다: TC-2/);
+    assert.throws(() => next(repo), /확인되지 않았습니다: TC-2/);
+  });
+
+  test("명령이 성공해도 skip TC는 테스트 게이트를 열지 않는다", async () => {
+    useManifest({ test: ["node", "-e", "console.log('ok 1 - TC-1\\nok 2 - TC-2 # SKIP')"] });
+    toCheck();
+    await check(requireValidatable(repo, "check")); next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    assert.throws(() => next(repo), /TC-2/);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.testCases[1].status, "skipped");
+  });
+
+  test("깨끗한 통합 환경에서 생략된 TC를 이전 테스트 통과로 덮지 않는다", async () => {
+    useManifest({ test: ["node", "-e", "console.log('ok 1 - TC-1\\nok 2 - TC-2'+(require('fs').statSync('.git').isFile()?' # SKIP':''))"] });
+    await toIntegrate();
+    await integrate(requireValidatable(repo, "integrate"));
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.testCases[1].status, "passed");
+    assert.equal(evidence.integrationTestCases![1].status, "skipped");
+    assert.throws(() => next(repo), /TC-2/);
   });
 });
 
@@ -820,6 +843,68 @@ describe("code-agent review — 회차", () => {
 });
 
 describe("코드 리뷰 게이트 (review → integrate)", () => {
+  test("회차와 지적 없음만 작성해서는 독립 리뷰를 대신할 수 없다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const path = join(repo, reviewDocFile("ORD-1"));
+    writeFileSync(path, `${readFileSync(path, "utf-8")}\n- 없음\n`);
+    assert.throws(() => next(repo), /독립 리뷰어 실행·완료 기록이 없습니다/);
+    assert.match(hook("Bash", { command: "code-agent review-event" }) ?? "", /Bash/);
+  });
+
+  test("리뷰어의 짝이 맞는 시작·완료와 수정되지 않은 결과만 통과한다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
+    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }), /시작한 리뷰어/);
+    observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+    assert.throws(() => observeReviewer({ ...event, agent_id: "other", hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }), /시작한 리뷰어/);
+    observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: `| F1 | ${TEST_FILE} | 계획 안 | 열림 | TC-1 단언을 보완해야 한다 |` });
+    assert.equal(writeFileHook(TEST_FILE), undefined);
+    const path = join(repo, reviewDocFile("ORD-1"));
+    writeFileSync(path, readFileSync(path, "utf-8").replace("| 열림 |", "| 해결 |"));
+    assert.throws(() => next(repo), /관찰된 ca-reviewer 결과와 다릅니다/);
+  });
+
+  test("리뷰 중 바뀐 코드에는 완료 기록을 붙이지 않는다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
+    observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+    write(`${ORDER}/domain/Order.java`, "class Order { int changed; }\n");
+    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }), /리뷰 도중/);
+    assert.throws(() => next(repo), /독립 리뷰어 실행·완료 기록이 없습니다/);
+  });
+
+  test("리뷰 지적 수정은 구현 파일을 먼저 고쳐도 동결 테스트를 열 수 있다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings(`| F1 | ${TEST_FILE} | 계획 안 | 열림 | TC-1 단언 누락 |`);
+    write(`${ORDER}/domain/Order.java`, "class Order { /* review fix */ }\n");
+    assert.equal(writeFileHook(TEST_FILE), undefined);
+    assert.throws(() => next(repo), /회차 뒤 계획 파일이 바뀌었습니다/);
+  });
+
+  test("실제 하위 transcript의 SubagentHandback 보고를 기록하며 다른 경로는 거부한다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const transcriptRoot = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-transcript-")));
+    try {
+      const session = "session", agent = "reviewer";
+      const transcript = join(transcriptRoot, session, "subagents", `agent-${agent}.jsonl`);
+      mkdirSync(dirname(transcript), { recursive: true });
+      const event = { cwd: repo, session_id: session, agent_id: agent, agent_type: "ca-reviewer", transcript_path: join(transcriptRoot, `${session}.jsonl`) };
+      observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+      const entry = (timestamp: string, message: string) => JSON.stringify({ timestamp, type: "assistant", message: { content: [{ type: "tool_use", name: "SubagentHandback", input: { message } }] } });
+      writeFileSync(transcript, entry("2000-01-01T00:00:00.000Z", "- 없음") + "\n");
+      assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", agent_transcript_path: join(repo, reviewDocFile("ORD-1")), last_assistant_message: "- 없음" }), /해당 세션의 하위/);
+      assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", agent_transcript_path: transcript, last_assistant_message: "검토 완료" }), /리뷰 결과는 지적 표/);
+      writeFileSync(transcript, entry(new Date().toISOString(), "- 없음") + "\n");
+      observeReviewer({ ...event, hook_event_name: "SubagentStop", agent_transcript_path: transcript, last_assistant_message: "검토 완료" });
+      next(repo);
+      assert.equal(loadActive(repo)!.phase, "integrate");
+    } finally { rmSync(transcriptRoot, { recursive: true, force: true }); }
+  });
   test("마지막 회차 뒤 계획 파일이 바뀌면 거부한다 — 리뷰 뒤 고치고 반영하는 길", async () => {
     await toIntegrate();
     saveActive(repo, { ...loadActive(repo)!, phase: "review" });
@@ -827,7 +912,7 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     assert.throws(() => next(repo), /회차 뒤 계획 파일이 바뀌었습니다/);
   });
 
-  test("열린 지적이 남아 있으면 거부하고, 해결로 바뀌면 열린다", async () => {
+  test("열린 지적은 메인이 닫을 수 없고 독립 재검토가 확인해야 한다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
     writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`);
@@ -835,6 +920,8 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
 
     const path = join(repo, reviewDocFile("ORD-1"));
     writeFileSync(path, readFileSync(path, "utf-8").replace("| 열림 |", "| 해결 |"));
+    assert.throws(() => next(repo), /관찰된 ca-reviewer 결과와 다릅니다/);
+    recordReviewFixture(repo);
     next(repo);
     assert.equal(loadActive(repo)!.phase, "integrate");
   });
@@ -887,7 +974,7 @@ describe("code-agent integrate", () => {
     // build 는 계획 파일이 얹혔는지, test 는 gitignore 된 산출물이 따라왔는지 본다
     useManifest({
       build: ["node", "-e", `process.exit(require('fs').existsSync('${ORDER}/domain/Order.java') ? 0 : 7)`],
-      test: ["node", "-e", "process.exit(require('fs').existsSync('build/stray.txt') ? 0 : 7)"],
+      test: ["node", "-e", "console.log('ok 1 - TC-1\\nok 2 - TC-2'); process.exit(require('fs').existsSync('build/stray.txt') ? 0 : 7)"],
     });
     // .gitignore 된 산출물이라 changedPaths 에 잡히지 않는다 — 작업 트리에서는 test 가 통과한다
     write("build/stray.txt", "작업 트리에만 있는 산출물\n");
@@ -930,7 +1017,7 @@ describe("code-agent deliver", () => {
     assert.deepEqual(first.acceptance, ["AC-R1-1"]);
     assert.deepEqual(first.cases, ["TC-1"]);
     assert.ok(first.files.includes(`${ORDER}/domain/Order.java`));
-    assert.deepEqual(first.verified, ["TC-1: 테스트 파일"]);
+    assert.deepEqual(first.verified, ["TC-1: passed (출력)"]);
   });
 
   test("TTY 가 아니면 커밋하지 않는다 — 게이트를 다 지나도 마지막 문이 닫혀 있다", async () => {
@@ -1172,7 +1259,7 @@ describe("동결을 푸는 지적은 열린 회차에 묶인다", () => {
     assert.throws(() => next(repo), /열린 지적: F1/);
     assert.throws(() => next(repo), /상태 칸은 열림 · 해결 둘뿐입니다/);
     // 열쇠로도 쓰이지 않는다 — 여는 쪽과 닫는 쪽이 같은 규칙을 딛는다
-    assert.equal(writeFileHook(TEST_FILE), undefined, "미해결은 열린 지적이라 동결은 풀린다");
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/, "유효하지 않은 상태는 동결을 풀지 않는다");
 
     const path = join(repo, reviewDocFile("ORD-1"));
     writeFileSync(path, readFileSync(path, "utf-8").replace("| 미해결 |", "| 해결 안 됨 |"));

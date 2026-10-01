@@ -8,13 +8,14 @@ import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
 import type { Manifest, StageDef } from "../core/manifest";
-import { formatPlan, missingPreserve, planFormatFor } from "../core/plan";
+import { formatPlan, missingPreserve, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
 import {
   AFTER_IMPLEMENT,
   canonical,
   clearActive,
+  DOCS_SESSION_FILE,
   loadActive,
   logStage,
   PHASES,
@@ -78,6 +79,7 @@ import {
   workDocPath,
 } from "./workDocs";
 import type { Requirements } from "./workDocs";
+import { formatSourceTrace, readSourceTrace, sourceItems } from "./sourceTrace";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -154,7 +156,7 @@ function requireWork(repoRoot: string): Work {
     throw new Stop(
       session
         ? `아직 작업이 시작되지 않았습니다 — ${session.id} 요구사항을 접수 중입니다.\n다음: ${requestStatusLines(repoRoot, session).hint}`
-        : "진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor <ID> <요구사항> 으로 접수부터 시작하세요 (또는 /ca-request).",
+        : "진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor [ID] <요구사항> 으로 접수부터 시작하세요 (또는 /ca-request).",
     );
   }
   requirePhase(work.active);
@@ -199,6 +201,7 @@ function requireRequirements(repoRoot: string, active: ActiveWork): Requirements
       `요구사항 분석 결과가 없습니다: ${path} 에 요구 항목(## R1 · …)과 ## 가정 을 쓰세요 (code-agent docs skeleton 01-requirements).`,
     );
   }
+  requireWorkDocs(readSourceTrace(repoRoot, active.id, active.spec).problems);
   return requirements;
 }
 
@@ -237,13 +240,9 @@ function coverageProblems(keys: string[], files: { path: string; requirements?: 
  * 서브에이전트를 빈손으로 보내지 않는다.
  */
 function plannedStages(work: Work): StageDef[] {
-  const files = work.plan?.files ?? [];
-  const staged = codeStages(work).filter((stage) => files.some((file) => file.stage === stage.key));
-  // fix 는 재현 테스트가 먼저다 — 커서가 그 단계에 먼저 서야 hook 의 '재현 먼저' 가 교착이 아니라 순서가 된다.
-  // (매니페스트의 선언 순서는 보통 테스트가 마지막이다. hashManifest 는 선언 순서를 그대로 해시하므로 해시 중립이다.)
-  return work.order.kind === "fix"
-    ? [...staged.filter((stage) => stage.kind === "test"), ...staged.filter((stage) => stage.kind !== "test")]
-    : staged;
+  if (!work.plan) return [];
+  requireWorkDocs(sequenceProblems(work.plan, work.stages, work.order.kind));
+  return work.plan.sequence.map((entry) => work.stages.find((stage) => stage.key === entry.step)!);
 }
 
 /** implement 가 도는 단계 — 검증 단계는 verify 스테이지가 맡는다 */
@@ -259,6 +258,9 @@ function toRepoPath(repoRoot: string, path: string): string {
 // ---- start ----
 
 export function start(repoRoot: string, spec: string, startOptions: { target?: string; base?: string } = {}): string {
+  if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
+    throw new Stop("문서 준비 세션이 열려 있습니다. code-agent docs end 뒤에 같은 요구사항으로 시작하세요.");
+  }
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
     throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
@@ -417,17 +419,17 @@ export function status(repoRoot: string): string {
   const work = loadWork(repoRoot);
   if (!work) {
     const session = loadRequestSession(repoRoot);
-    if (session && manifest) {
+    if (session) {
       const intake = requestStatusLines(repoRoot, session);
       lines.push("", "작업: 아직 시작 전", ...intake.lines);
-      lines.push(`다음: ${docsReady(checks) ? intake.hint : `${intake.hint} — 시작하려면 필수 문서도 확정돼 있어야 합니다 (/ca-docs)`}`);
+      lines.push(`다음: ${intake.hint}`);
       return lines.join("\n");
     }
     const hint = !manifest
-      ? "/ca-adopt 로 도입 (레거시) · 신규 프로젝트면 /ca-docs 로 공통 POLICY 4종부터"
+      ? "/ca-feature <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (/ca-adopt)"
       : !docsReady(checks)
-        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc <종류>"
-        : "/ca-feature · /ca-fix · /ca-refactor <ID> <요구사항> 으로 접수부터 시작 (또는 /ca-request)";
+        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc all"
+        : "/ca-feature · /ca-fix · /ca-refactor [ID] <요구사항> 으로 접수부터 시작 (또는 /ca-request)";
     lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
   }
@@ -451,7 +453,17 @@ export function status(repoRoot: string): string {
   }
   lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}`);
   if (work.plan) {
-    lines.push(`계획: 제출됨 · 승인 ${approvalOf(work).status}`);
+    const approval = approvalOf(work).status;
+    lines.push(`계획: 제출됨 · 승인 ${approval}`);
+    const verified = active.phase === "deliver" && approval === "approved" &&
+      stageProblems(work, "integrate").length === 0 && reviewProblems(work).length === 0;
+    const tasks = planTasks(work.plan);
+    const cursor = tasks.findIndex((task) => task.stage === active.stage);
+    lines.push("작업 Task (완료는 검증·리뷰 뒤 최종 확인):", ...tasks.map((task, index) => {
+      const state = active.phase === "implement" ? (index < cursor ? "구현됨·검증 대기" : index === cursor ? "진행 중" : "대기")
+        : AFTER_IMPLEMENT.includes(active.phase) ? (verified ? "검증됨·반영 대기" : "검증 중") : "대기";
+      return `  - ${task.id} ${task.stage}: ${state} · ${task.requirements.join(", ")}`;
+    }));
   } else {
     lines.push("계획: 없음");
   }
@@ -508,6 +520,7 @@ export function next(repoRoot: string): string {
       return advance("plan");
     }
     case "plan": {
+      requireRequirements(repoRoot, active);
       if (!work.plan) {
         throw new Stop("제출된 계획이 없습니다. code-agent plan submit <초안> 으로 제출하세요.");
       }
@@ -518,8 +531,12 @@ export function next(repoRoot: string): string {
       return advance("implement", plannedStages(work)[0]?.key);
     }
     case "implement": {
+      requireRequirements(repoRoot, active);
+      const approval = approvalOf(work);
+      if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 계획 변경 후 다시 승인받아야 진행합니다.`);
       const stages = plannedStages(work);
       const index = stages.findIndex((stage) => stage.key === active.stage);
+      if (index < 0) throw new Stop("현재 구현 단계가 승인된 순서에 없습니다. code-agent back plan 으로 돌아가 계획을 확인하세요.");
       const stage = stages[index];
       if (stage && work.plan) {
         const present = work.plan.files
@@ -597,6 +614,7 @@ export function requireValidatable(
   let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
+  requireRequirements(repoRoot, work.active);
   requireAnswers(repoRoot, work.active);
   if (phase === "check" && REWINDABLE.includes(work.active.phase)) {
     saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined }, "next");
@@ -628,8 +646,8 @@ export function requireReproable(repoRoot: string): Work {
   if (work.order.kind !== "fix") {
     throw new Stop(`code-agent repro 는 fix 작업에서만 돕니다 (지금: ${work.order.kind}).`);
   }
-  if (work.active.phase !== "implement") {
-    throw new Stop(`재현은 implement 스테이지에서 돕니다 (지금: ${work.active.phase}).\n${nextHint(work)}`);
+  if (!["implement", "check", "test", "review", "integrate"].includes(work.active.phase)) {
+    throw new Stop(`재현은 구현·재검증 중에 돕니다 (지금: ${work.active.phase}).\n${nextHint(work)}`);
   }
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
@@ -808,9 +826,10 @@ export function context(repoRoot: string): string {
       "",
       "## ① 01-requirements.md — 요구사항 정의",
       `${workDocPath(active.id, "01-requirements")} 에 쓴다 (뼈대: code-agent docs skeleton 01-requirements).`,
-      "코드가 보는 것은 셋이다 — `## R<번호>` 1개 이상·중복 없음 · R 블록마다 `근거:` 줄 · `## 가정` 섹션. 없으면 code-agent next 가 넘어가지 않는다.",
+      "필수 형식: `## R<번호>` 1개 이상·중복 없음 · R 블록마다 비어 있지 않은 `근거:` · `## 가정`. 아래 접수 요구 목록을 인용의 합으로 전부 연결해야 next 가 넘어간다.",
       "```markdown",
       "## R1 · <요구 한 가지>",
+      "출처: REQ-1 (아래 접수 요구 목록의 ID, 여러 개면 쉼표로 구분)",
       "근거: \"<지시서 문장 그대로>\"",
       "- 데이터: 만든다 | 바꾼다 | 안 건드린다",
       "- 접점(API·화면): 만든다 | 바꾼다 | 안 건드린다",
@@ -822,6 +841,10 @@ export function context(repoRoot: string): string {
       "## 범위 밖   ← 선택",
       "- <이번에 하지 않는 것> — 근거: <왜 밖인가>",
       "```",
+      "",
+      "## 확정된 접수 요구 — 빠짐없이 R에 연결",
+      ...sourceItems(readFileSync(join(repoRoot, active.spec), "utf8")).map((item) => `- ${item.id}: ${item.text}`),
+      "근거는 이 목록의 문장을 그대로 인용합니다. 나누어 분석하면 근거 줄을 여러 개 써서 원문 전체를 덮으세요. 제외하려면 지시서를 고쳐 다시 확정합니다.",
     );
   }
 
@@ -1029,7 +1052,7 @@ export function context(repoRoot: string): string {
           ].join("\n")
         : "- 아직 없습니다 — code-agent check",
       "",
-      "얼어 있는 테스트 파일은 고칠 수 없습니다. 틀렸다고 보이면 고치지 말고 근거와 함께 보고하세요 — hook 이 거부합니다.",
+      "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요.",
       `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문으로 남기고 멈추세요.`,
     );
   }
@@ -1044,7 +1067,7 @@ export function context(repoRoot: string): string {
       "- 회차 구역(`<!-- code-agent:review:... -->`)은 코드가 렌더합니다. 손대면 게이트가 거부합니다.",
       "- ca-reviewer 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.",
       "",
-      "`## 지적` 표에 ca-reviewer 의 지적을 줄이지 말고 그대로 옮깁니다 (하나도 없으면 `- 없음`):",
+      "ca-reviewer를 호출하면 hook이 실행·완료를 관찰하고 `## 지적` 표를 자동 기록합니다. 메인은 결과·상태를 대신 쓰지 않습니다:",
       "```markdown",
       "| id | 계획 파일 | 범위 | 상태 | 지적 |",
       "|---|---|---|---|---|",
@@ -1121,7 +1144,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   const plan = format.toPlan(parsed.data);
 
-  const problems: string[] = [...coverageProblems(requirements.keys, plan.files)];
+  const problems: string[] = [...coverageProblems(requirements.keys, plan.files), ...sequenceProblems(plan, work.stages, order.kind)];
   if (plan.openQuestions.length > 0) {
     problems.push(`남은 질문이 있습니다 — questions.md 로 옮겨 답을 받으세요: ${plan.openQuestions.join(" / ")}`);
   }
@@ -1183,6 +1206,15 @@ export function submitPlan(repoRoot: string, draft: string): string {
   // 리팩토링이 기존 테스트를 고칠 수 있으면 '동작 보존' 을 재는 자가 없어진다. 부하를 지는 자리가 여기다
   if (order.kind === "refactor") {
     const tracked = new Set(trackedTestFiles(work));
+    const createsTests = plan.files.some(file => stages.some(stage => stage.key === file.stage && stage.kind === "test"));
+    const knownCases = new Set([...tracked].flatMap(path => existsSync(join(repoRoot, path))
+      ? readFileSync(join(repoRoot, path), "utf8").match(/\bTC-\d+\b/g) ?? [] : []));
+    if (!createsTests && knownCases.size) {
+      const spec = readWorkDoc(repoRoot, active.id, "07-test-spec");
+      for (const entry of spec ? parseTestCases(spec) : []) if (!knownCases.has(entry.id)) {
+        problems.push(`기존 테스트에 없는 ${entry.id}를 실행할 계획이 없습니다 — refactor는 기존 TC ID를 재사용하세요. 도구·파일 보존 같은 절차 확인을 실행하지 않는 TC로 만들지 않습니다`);
+      }
+    }
     const hit = plan.files.map((file) => file.path).filter((path) => tracked.has(path));
     if (hit.length > 0) {
       problems.push(
@@ -1250,7 +1282,8 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   const docsHash = approvalDocsHash(work);
 
   const state = approvalOf(work);
-  const shown = [formatPlan(plan)];
+  requireWorkDocs(sequenceProblems(plan, work.stages, order.kind));
+  const shown = [formatSourceTrace(readSourceTrace(repoRoot, active.id, active.spec).rows), formatPlan(plan)];
   const assumptions = formatAssumptions(requirements.assumptions);
   if (assumptions) shown.push("", assumptions);
   if (state.status === "stale-plan" && state.diff.length > 0) {

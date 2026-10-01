@@ -26,8 +26,7 @@
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | `npm i -g` 다시 | 새 파일로 바꿔 넣는다 |
 
-어느 쪽이든 **저장소에 들어가는 것은 같다** — `init` 이 쓰는 hook 명령은 `code-agent hook` · `code-agent stop` 이고
-둘 다 PATH 에서 풀린다. 그래서 `.claude/settings.json` 을 팀이 공유해도 팀원마다 무엇을 깔았는지 알 필요가 없다.
+어느 쪽이든 **저장소에 들어가는 것은 같다** — `init`은 PreToolUse(`code-agent hook`), Stop(`code-agent stop`), ca-reviewer의 SubagentStart/Stop(`code-agent review-event`)을 설치한다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -99,7 +98,7 @@ cd <프로젝트> && code-agent init
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| PreToolUse hook · Stop hook | `.claude/settings.json` — `code-agent hook` · `code-agent stop` | O |
+| PreToolUse · Stop · SubagentStart/Stop | `.claude/settings.json` — `code-agent hook` · `code-agent stop` · `code-agent review-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -156,9 +155,9 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | git | `git --version` 이 답한다 | PATH 에 git 을 넣는다 — 브랜치·기준 커밋·반영이 git 을 쓴다 |
 | PATH 의 code-agent | PATH 에서 찾았다. 단일 실행 파일인지 npm 설치/링크인지(그 경우 푼 `cli.js` 경로까지) 함께 찍는다 | hook 명령이 풀리지 않는다. `npm i -g <저장소>` 또는 바이너리를 PATH 에 둔다 |
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
-| git 저장소 | `.git` 이 있다 | `git init` — 기준 커밋이 없으면 검증 스테이지가 거부한다 |
+| git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 `code-agent setup baseline` — 목록 확인 뒤 최초 기준 커밋. 기존 코드가 있는 프로젝트는 기존 Git 이력을 유지 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| PreToolUse hook · Stop hook | `.claude/settings.json` 에 우리 항목이 있고 **그 명령이 이 PC 에서 풀린다**. PreToolUse 는 matcher 가 넘기는 도구까지 본다 | 없으면 `code-agent init`. 가리키는 파일이 없으면 `code-agent init [--cli <경로>]`. 옛 설치본이라 `matcher 가 Read · Grep · Glob 를 넘기지 않습니다` 면 `code-agent update` |
+| PreToolUse · Stop · SubagentStart/Stop | 우리 hook 4종의 명령이 이 PC에서 풀리는지 확인. PreToolUse는 도구 matcher, SubagentStart/Stop은 ca-reviewer matcher 확인 | 없거나 오래된 설정이면 `code-agent update`. 개발 CLI 경로가 잘못됐다면 `code-agent init --cli <경로>` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 `model:` 줄은 빼고 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
@@ -197,7 +196,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 
 | 무엇 | 어떻게 |
 |---|---|
-| `.claude/settings.json` 의 **다른** hook·설정 | 우리 두 항목만 갈아 끼운다 |
+| `.claude/settings.json` 의 **다른** hook·설정 | 우리 PreToolUse·Stop·SubagentStart·SubagentStop 항목만 갱신한다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
 | 에이전트별 모델(`.code-agent/models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
 | 개발용 `--cli` | 인자를 주지 않아도 지금 hook 이 `node "<경로>" hook` 꼴이면 **그 경로를 승계한다** |
@@ -232,7 +231,7 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 | # | 무엇 | 어떻게 |
 |---|---|---|
 | 1 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` 삭제 |
-| 2 | hook | `.claude/settings.json` 의 `code-agent hook`(PreToolUse) · `code-agent stop`(Stop) 항목 둘 제거. **파일을 지우지 않는다** — 다른 설정이 같이 산다 |
+| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent stop`(Stop), `code-agent review-event`(SubagentStart/Stop) 항목을 제거한다. **설정 파일 전체를 지우지 않는다** |
 | 3 | 블록 | `CLAUDE.md` · `.gitignore` 의 `code-agent:start` ~ `end` 블록 제거 (블록 밖은 그대로) |
 | 4 | 진행 상태 | `.code-agent/` 는 **남긴다** — 승인·확정 원장과 검증 증거가 git 이력에 남은 커밋의 근거다. 정말 지울 것이면 그 이력도 근거를 잃는다는 것을 알고 지운다 |
 | 5 | 도구 | npm 전역이면 `npm rm -g code-agent`, 단일 실행 파일이면 그 파일 삭제 |

@@ -26,24 +26,29 @@ import { modelsTable, setModel } from "./models";
 import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
 import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./request";
 import { openRound } from "./review";
+import { runReviewHook } from "./reviewHook";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
 import { update } from "./update";
 import { usage } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
+import { recommendSetup, setupProject } from "./setup";
+import { setupBaseline, setupStatus } from "./bootstrap";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
 사람 (터미널):
   code-agent init [--cli <path>]      이 저장소에 설치 (.claude/ 스킬·에이전트·hook, CLAUDE.md 블록)
   code-agent status                   문서·작업·스테이지·질문·승인 상태
+  code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
+  code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
   code-agent doctor                   설치·환경 점검 — ✓ 확인 · ✗ 막는 것 · · 알림. ✗ 가 없으면 종료 코드 0
   code-agent update [--cli <path>]    지금 버전의 스킬·에이전트·hook 을 다시 설치 (사람이 바꾼 것은 그대로)
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
   code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
   code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 3종 — 섹션·확정 상태
-  code-agent confirm doc <종류>       문서 확정 (TTY 에서만). 종류: architecture | conventions | test-strategy | quality
+  code-agent confirm doc <all|종류>   공통 문서 한 번에 확정 또는 개별 확정 (TTY)
   code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
                                       지시서를 생략하면 doc/work/<ID>/requirement.md (손으로 쓴 지시서가 다른 자리면 경로를 준다)
   code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — /ca-request 가 사유를 읽고 다시 정리한다
@@ -58,13 +63,15 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 
 스킬이 부른다 (Claude Code 안):
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
+  code-agent docs recommend           기존 구성 유지 또는 신규 시작 구성 추천
+  code-agent docs setup <node|python>  선택한 신규 구성의 설정·공통 문서 생성 (기존 파일 보존)
   code-agent docs skeleton <종류>     빈 문서의 섹션 뼈대 (POLICY 4종 · knowledge · 작업 문서 01-requirements · 02-analysis · 03-design · 04-functional · 07-test-spec)
   code-agent docs interview <종류> [--sections a,b]   사용자 입력으로 채울 때 묻는 것
   code-agent docs link <종류> <경로...>  이미 있는 문서를 등록
   code-agent survey                   뼈대 역공학용 저장소 개요 (빌드·언어·구조·계층 후보·표본)
   code-agent manifest check           code-agent.json 이 실제 참조 파일을 찾는지
   code-agent plugin list              자리·기본 구현·감지된 무료 도구·등록된 플러그인·저장소 선언
-  code-agent request begin <ID> --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+  code-agent request begin [ID] --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
                                       1 요구사항 접수를 연다 (도는 동안 그 작업 폴더 밖 쓰기 금지 · 시작 인자는 확정 뒤 start 가 쓴다)
   code-agent request                  접수 초안(request.json) 형식 · 규칙 · 대상 후보 · 지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때)
   code-agent request submit <request.json>   접수 초안 검사 → doc/work/<ID>/requirement.md 렌더 (확정은 사람이)
@@ -82,6 +89,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 
 hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)
+  code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
 /**
@@ -126,10 +134,15 @@ async function main(argv: string[]): Promise<number> {
   if (command === "stop") {
     return runStopHook(readFileSync(0, "utf-8"));
   }
+  if (command === "review-event") return runReviewHook(readFileSync(0, "utf-8"));
 
   const repoRoot = findRepoRoot(process.cwd());
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
+    case "setup":
+      if (args[0] && args[0] !== "baseline") throw new Stop("사용법: code-agent setup [baseline]");
+      print(args[0] === "baseline" ? setupBaseline(repoRoot) : setupStatus(repoRoot));
+      return 0;
     case "init":
       print(init(repoRoot, { cli: option(args, "cli") }));
       return 0;
@@ -217,13 +230,19 @@ async function main(argv: string[]): Promise<number> {
           print(requestSubmit(repoRoot, args[1]));
           return 0;
         default:
-          throw new Stop("사용법: code-agent request [begin <ID> --kind <feature|fix|refactor> | submit <request.json>]");
+          throw new Stop("사용법: code-agent request [begin [ID] --kind <feature|fix|refactor> | submit <request.json>]");
       }
     case "abort":
       print(abort(repoRoot));
       return 0;
     case "docs":
       switch (args[0]) {
+        case "recommend":
+          print(recommendSetup(repoRoot));
+          return 0;
+        case "setup":
+          print(setupProject(repoRoot, args[1]));
+          return 0;
         case undefined:
           print(docsStatus(repoRoot));
           return 0;
@@ -243,7 +262,7 @@ async function main(argv: string[]): Promise<number> {
           print(docsLink(repoRoot, args[1], args.slice(2)));
           return 0;
         default:
-          throw new Stop("사용법: code-agent docs [begin | end | skeleton <종류> | interview <종류> | link <종류> <경로...>]");
+          throw new Stop("사용법: code-agent docs [recommend | setup <node|python> | begin | end | skeleton <종류> | interview <종류> | link <종류> <경로...>]");
       }
     case "confirm":
       if (args[0] === "request") {
@@ -253,7 +272,7 @@ async function main(argv: string[]): Promise<number> {
       }
       if (args[0] !== "doc") {
         throw new Stop(
-          "사용법: code-agent confirm doc <architecture | conventions | test-strategy | quality> | code-agent confirm request <ID>",
+          "사용법: code-agent confirm doc <all | architecture | conventions | test-strategy | quality> | code-agent confirm request <ID>",
         );
       }
       print(confirmDoc(repoRoot, args[1]));

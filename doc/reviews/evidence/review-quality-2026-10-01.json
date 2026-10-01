@@ -1,0 +1,32 @@
+{
+  "at": "2026-10-01T06:13:17.244Z",
+  "scope": "Small live seeded-review benchmark; file-level detection counts require reading the reported reasons; corrections are fixture code, not model implementation; not a general accuracy guarantee",
+  "modelError": false,
+  "exitCode": 0,
+  "models": [
+    "claude-sonnet-5-5",
+    "claude-opus-5-5"
+  ],
+  "durationMs": 20142,
+  "reportedCostUSD": 0.1043234,
+  "expectedDefectFiles": [
+    "authorization.js",
+    "boundary.js",
+    "errors.js"
+  ],
+  "detectedFiles": [
+    "authorization.js",
+    "boundary.js",
+    "errors.js"
+  ],
+  "missedFiles": [],
+  "falsePositiveCount": 0,
+  "reportedFindings": "ca-reviewer 결과입니다. 수정 없이 그대로 전달합니다.\n\n| id | 계획 파일 | 범위 | 상태 | 지적 |\n|---|---|---|---|---|\n| F1 | authorization.js | 계획 안 | 열림 | 1줄: `exportRows`가 `user.role`을 확인하지 않습니다. 그래서 admin이 아닌 사용자에게도 rows를 그대로 반환하고, `Error(\"forbidden\")`은 어떤 경우에도 나지 않습니다 — 근거 AC-R1-1. 고치는 방향: `user.role === \"admin\"`일 때만 rows를 반환하고, 그 밖의 경우에는 `Error(\"forbidden\")`을 던지도록 분기를 추가합니다. |\n| F2 | boundary.js | 계획 안 | 열림 | 1줄: `age>18`이라서 경계값인 18에서 false가 나옵니다. AC는 \"18 이상이면 true\"입니다 — 근거 AC-R2-1. 고치는 방향: 비교를 `age>=18`로 바꿉니다. |\n| F3 | errors.js | 계획 안 | 열림 | 1줄: `catch`가 오류를 삼키고 `null`을 반환해서 원래 오류가 호출자에게 가지 않습니다 — 근거 AC-R3-1. 고치는 방향: `catch`에서 `null`을 반환하지 말고 잡은 오류를 다시 던지거나, try/catch를 없애고 `read()` 결과를 바로 반환합니다. |\n\ncorrect.js(AC-R4-1)는 `n*2`로 요구를 충족해서 지적하지 않았습니다. 받은 입력에는 테스트 파일과 검증 증거가 없어서, 테스트 단언이 위 조건을 검사하는지는 확인하지 못했습니다.",
+  "afterCorrection": {
+    "modelError": false,
+    "reportedFindings": "네 파일 모두 requirements.md의 AC와 대조했고, 동작 결함은 찾지 못했습니다.\n\n- 없음\n\n참고로, 판단은 아래 파일만 직접 읽고 한 것입니다. 테스트나 검증 증거는 받은 것이 없어서 코드와 AC를 대조하는 데까지만 했습니다.\n- C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-review-quality-puA7jP\\requirements.md\n- C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-review-quality-puA7jP\\authorization.js — AC-R1-1: `role!=='admin'`이면 `Error('forbidden')`을 던지고, admin이면 `rows`를 반환합니다. 일치합니다.\n- C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-review-quality-puA7jP\\boundary.js — AC-R2-1: `age>=18`이라 18이면 true, 17이면 false입니다. 경계값까지 일치합니다.\n- C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-review-quality-puA7jP\\errors.js — AC-R3-1: `read()`를 그대로 반환합니다. 성공하면 값을 돌려주고, 실패하면 오류를 감싸거나 삼키지 않고 원래 오류를 호출자에게 넘깁니다. 일치합니다.\n- C:\\Users\\김우석(카이)\\AppData\\Local\\Temp\\ca-review-quality-puA7jP\\correct.js — AC-R4-1: `n*2`를 반환합니다. 일치합니다.",
+    "clear": true,
+    "reportedCostUSD": 0.08381040000000001,
+    "durationMs": 3546
+  }
+}

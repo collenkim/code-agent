@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-01",
+  "scope": "Parser probes only; no real Gradle/Maven execution, model run, or end-to-end gate run.",
+  "questions": [
+    {
+      "inputKind": "empty",
+      "parsedAnswer": "",
+      "treatedAsUnanswered": true
+    },
+    {
+      "inputKind": "commentOnly",
+      "parsedAnswer": "<!-- waiting for user -->",
+      "treatedAsUnanswered": false
+    },
+    {
+      "inputKind": "separatorOnly",
+      "parsedAnswer": "---",
+      "treatedAsUnanswered": false
+    },
+    {
+      "inputKind": "actualAnswer",
+      "parsedAnswer": "A",
+      "treatedAsUnanswered": false
+    }
+  ],
+  "formats": [
+    {
+      "inputKind": "junitXml",
+      "status": "unknown"
+    },
+    {
+      "inputKind": "summaryOnly",
+      "status": "unknown"
+    },
+    {
+      "inputKind": "tap",
+      "status": "passed",
+      "format": "TAP"
+    }
+  ],
+  "originalToStructured": {
+    "omittedFromStructured": "restrict export to admins",
+    "problems": [],
+    "rows": [
+      {
+        "id": "REQ-1",
+        "text": "Export CSV.",
+        "requirements": [
+          "R1"
+        ],
+        "missing": ""
+      }
+    ]
+  }
+}

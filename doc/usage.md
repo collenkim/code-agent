@@ -6,6 +6,12 @@
 code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴다. 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있고,
 강제는 PreToolUse hook 과 `code-agent` CLI 가 한다.
 
+사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 사람의 문서·요구·계획·반영 확인은 아래 터미널 절차를 유지한다.
+
+기존 언어·프레임워크·테스트 도구는 그대로 사용한다. 초기 준비의 `code-agent setup`은 환경·명령·기준 커밋만 확인하며 테스트를 실행하지 않는다. 새 저장소는 `code-agent setup baseline`이 준비 파일을 보여주고 확인 뒤 최초 커밋을 만든다. 실제 소스 뼈대·실행 설정·테스트는 승인된 Task에서 작성한다.
+
+요구사항 적합성 검토에서는 원문→요구→AC→예정 TC를 문서로 대조한다. 구현 후 기존 테스트 명령을 실행하고 콘솔 결과 또는 새로 생성·갱신된 JUnit XML 보고서를 자동으로 읽는다. 사용자에게 러너별 설정 선택을 요구하지 않는다. 성공·실패·생략·결과 미확인을 구분해 보고하며, 오래된 보고서를 이번 성공으로 재사용하지 않는다. fix만 수정 전 실패 재현이 추가된다.
+
 창은 둘 띄운다.
 
 | 창 | 무엇 | 왜 |
@@ -109,10 +115,7 @@ CLI 는 검증 스테이지를 `7 check` · `8 test` · `9 review` · `10 integr
 code-agent init
 claude
   /ca-adopt (또는 /ca-docs)        → POLICY 4종 작성 + KNOWLEDGE 3종 빈 뼈대
-  ────────────────────────────────  터미널: code-agent confirm doc architecture
-                                    터미널: code-agent confirm doc conventions
-                                    터미널: code-agent confirm doc test-strategy
-                                    터미널: code-agent confirm doc quality
+  ────────────────────────────────  터미널: code-agent confirm doc all
   /ca-feature UZRF-145 "결제 뒤 24시간 안에는 주문을 취소할 수 있게"   (= 접수 + 확정 뒤 사이클을 plan 까지)
       접수      /ca-request   → request.json → code-agent request submit
                               → 코드가 doc/work/UZRF-145/requirement.md 를 렌더하고 멈춤
@@ -136,7 +139,9 @@ claude
   ────────────────────────────────  터미널: code-agent deliver  (확인 → 작업 브랜치 로컬 커밋)
 ```
 
-사람이 멈추는 자리는 다섯이다 — **문서 확정 · 요구사항 확정 · 질문 답변 · 계획 승인 · 반영 확인.** 그중 질문 답변만 채팅에서 되고, 나머지 넷은 터미널에서만 된다.
+요구사항부터 `/ca-feature "원하는 기능"`으로 시작해도 된다. ID는 자동 발급하며, 설정·문서가 없으면 원문을 보존한 채 준비하고 같은 접수를 이어간다. 신규 추천은 웹·API(JavaScript), 자동화(Python), 직접 선택이다. 기본 구성은 `docs recommend`와 `docs setup node|python`으로 만든다.
+
+사람이 멈추는 자리는 **문서 확정(처음 또는 변경 시) · 요구사항 확정 · 필요한 질문 답변 · 계획 승인 · 반영 확인**이다. 문서는 한 번에 확정하고 기술 세부는 추천값으로 묶어서 보여 준다. 일반 작업은 요구사항 확정·계획 승인·반영 확인의 세 판정을 유지한다.
 
 가운데 열이 **단계 명령**이다. 한 단계씩 끊어 결과를 보고 보완하고 싶으면 그것을 직접 부르고, 쭉 몰고 싶으면 `/ca-next` 를 부른다 —
 절차는 단계 스킬 **하나**에만 있어 어느 쪽으로 가도 같은 파일을 읽는다. 잘못 온 자리는 `code-agent back <스테이지>` 로 **뒤로만** 되감는다.
@@ -196,7 +201,7 @@ claude
 레거시 저장소에 처음 들일 때. `code-agent docs begin` 으로 문서 세션을 열고 `code-agent survey` 로 저장소 개요와 **도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)를 받은 뒤,
 `ca-surveyor` 여럿을 병렬로 돌려 POLICY 4종 초안과 KNOWLEDGE 3종 뼈대를 쓰고, `code-agent.json` 을 만든다.
 
-사람이 하는 일 — `referenceDomain`(복제 기준 도메인) 고르기, `stages`(계층 순서 · 종류별 `kinds`)·`build`·`test`·`prepare`·`commands`·`git.base` 확인.
+사람이 하는 일 — 신규에서는 목적에 맞는 추천 또는 직접 선택. 기존에서는 탐지한 설정을 묶어서 확인한다. 내부 속성을 하나씩 결정할 필요는 없고, 기술 기본값과 근거는 문서·설정 요약에서 검토한다.
 끝나면 `code-agent manifest check` 가 ✓ 여야 한다. `- 확인:` 으로 시작하는 줄은 **경고**다 (종료 코드 0) —
 종류별로 돌 단계가 0개거나, `kind: "test"` 단계가 없거나, 참조 파일을 선언한 단계가 없으면 여기서 알려 준다.
 
@@ -219,7 +224,7 @@ claude
 
 ### `/ca-docs [종류]`
 
-공통 문서 게이트를 여는 명령. **문서마다** 경로를 묻고 추천을 함께 보여 준다.
+공통 문서 게이트를 여는 명령. **추천대로 준비 / 직접 선택**을 한 번 확인한다. 기존 문서를 연결하고 없는 문서를 작성하며, 업무상 결정만 따로 묻는다.
 
 | 경로 | 언제 | 어떻게 |
 |---|---|---|
@@ -238,8 +243,7 @@ claude
 | 업무 규칙·용어집 | KNOWLEDGE | `doc/knowledge/business-rules.md` | **빈 뼈대** — 작업마다 질문의 답으로 쌓인다 |
 
 **POLICY 4종**의 통과 조건은 셋이다. ① 파일이 있다 ② 필수 섹션이 있고 비어 있지 않다 ③ **사람이 확정했다.**
-확정은 모델이 못 한다 — 터미널에서 네 번:
-`code-agent confirm doc architecture` · `conventions` · `test-strategy` · `quality`.
+확정은 모델이 못 한다 — 문서를 읽고 터미널에서 `code-agent confirm doc all` 한 번. 개별 확정도 유지한다.
 
 테스트 전략의 `도구와 실행 명령`, 품질·보안 기준의 `정적 분석`·`보안 검사` 는 **명령 이름 대조**를 더 받는다 —
 첫 목록의 백틱 이름(``- `unit`: …``)이 `code-agent.json` 의 `build`·`test`·`commands` 키에 실재해야 한다.
@@ -258,7 +262,7 @@ claude
    초안 형식 · 규칙 · **대상 후보**(도메인 디렉토리)를 찍는다 — `feature` 는 `- <이름> (<경로>)` 로 보여 주고 `target` 에는 **이름**만 쓰고, `fix`·`refactor` 는 경로를 보여 주고 경로를 쓴다.
    다시 보려면 `code-agent request` (접수 중에는 `code-agent context` 도 같은 것을 준다).
    `--base`·`--target` 은 세션 파일에 남아 **확정 뒤 `start` 가 쓴다** — 접수와 시작 사이에 사람의 확정이 끼어 명령이 끊기기 때문이다 (`start` 에 직접 준 값이 이긴다).
-   **ID 는 사람이 준다** — 모델이 지어내지 않는다 (영문·숫자로 시작, `[A-Za-z0-9._-]` 64자 이하. 폴더·브랜치 이름이 된다).
+   **ID는 선택이다** — 티켓 ID는 그대로, 생략하면 CLI가 미사용 WORK 번호를 발급한다 (명시적 ID는 영문·숫자로 시작, `[A-Za-z0-9._-]` 64자 이하).
    접수 동안 모델이 쓸 수 있는 곳은 `doc/work/<ID>/` 뿐이고, **지시서 자체는 쓸 수 없다** — hook 이 거부한다.
 2. 모델이 `doc/work/<ID>/request.json` 을 쓴다. **원문은 한 글자도 바꾸지 않는다** — 글이면 `original`,
    파일이면 `originalFile` 에 저장소 기준 경로를 적고 **코드가 그 파일을 그대로 옮긴다**.
@@ -402,7 +406,7 @@ preserve:
 ### `/ca-answer`
 
 `questions.md` 에서 `[Answer]:` 가 빈 질문을 사용자에게 묻고, **사용자가 한 말 그대로** 적는다.
-모르면 비워 둔다 — 대신 답하지 않는다. 답이 없는 질문이 하나라도 있으면 `code-agent next` 가 넘어가지 않는다.
+필수 업무 질문을 모르면 비워 둔다. 기존 구성으로 정할 수 있는 기술 선택은 근거를 가정에 기록하고 다시 묻지 않는다. ‘추천대로’라는 선택은 기술 결정에 적용하며 업무 규칙을 지어내지 않는다. 주석·구분선만 있는 답은 미응답이다. 답이 모두 채워지면 에이전트가 현재 단계부터 자동 재개한다.
 
 ### `/ca-next`
 
@@ -433,11 +437,12 @@ preserve:
   참조 도메인이 없는 저장소에서는 context 가 참조 표준 코드 대신 아키텍처·컨벤션 문서를 가리킨다(`참조 없음 — 아키텍처·컨벤션 문서로`).
 - `check`(`/ca-check`) — `code-agent check` 가 `build` + 품질·보안 기준의 명령을 돌린 결과만 게이트를 연다. 모델이 직접 돌린 빌드는 세지 않는다.
 - `test`(`/ca-test`) — ⑦ 에 코드가 없는 TC 가 남아 있으면 `ca-tester` 가 **그대로, 그것만** 쓰고(매니페스트에 `kind: test` 단계가 있으면 `implement` 에서 이미 다 썼다) `code-agent test` 가 돌린다.
+  필수 TC마다 실제 `passed` 결과가 있어야 한다. skip·미실행·결과 누락은 통과하지 않는다. 같은 기준을 깨끗한 worktree 통합 검증에도 별도로 적용한다.
   이 실행 뒤 `kind: test` 단계의 파일은 **언다** — 실패해도 단언을 고쳐 통과시킬 수 없다.
 - `review`(`/ca-review`) — `code-agent context` 가 고른 것(계획 파일 · 요구 항목 · 검증 증거 요약 · 실패 로그 경로 · 얼어 있는 파일)만 `ca-reviewer` 에게 준다.
   리뷰어는 그 목록 밖을 읽지 않고 `| id | 계획 파일 | 범위 | 상태 | 지적 |` 표로 답한다 — 열 순서는 코드가 칸 위치로 읽어 고정이고,
-  계획 파일은 저장소 기준 경로 그대로(백틱·`:줄번호` 없이), 상태는 `열림` · `해결` 둘뿐이다. 메인은 그 표를 `09-review.md` 의 `## 지적` 에 **그대로** 옮긴다(요약·완화 금지).
-  회차 머리(번호·시각·기준 트리 해시)는 코드가 적는다. 반영은 **마지막 회차의 트리 해시가 지금과 같고 열린 `계획 안` 지적이 0** 이어야 열린다.
+  계획 파일은 저장소 기준 경로 그대로(백틱·`:줄번호` 없이), 상태는 `열림` · `해결` 둘뿐이다. SubagentStart·SubagentStop hook이 실행·결과를 회차에 묶고 `09-review.md`의 `## 지적`을 자동 기록한다. 메인은 표나 상태를 바꾸지 않는다.
+  회차 머리(번호·시각·기준 트리 해시)는 코드가 적는다. 마지막 회차의 **독립 리뷰 완료 기록·결과 일치·현재 트리 일치**가 필요하고 열린 지적이나 계획 밖 지적이 있으면 통과하지 못한다. 설치를 갱신한 뒤 `code-agent doctor`에서 리뷰 hook 두 개도 확인한다.
   얼어 있던 테스트 파일을 지적으로 푼 경우 **그 줄은 코드가 기억한다** — 쓰고 나서 지우면 `review` → `integrate` 가 막힌다.
 - `integrate`(`/ca-integrate`) — `code-agent integrate` 가 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
   매니페스트에 `prepare` 가 있으면 **그것이 먼저** 돌고, 실패하면 build·test 는 돌지 않는다 — 준비되지 않은 트리 위의 통과는 증거가 아니다.
@@ -635,7 +640,8 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent docs begin` · `end` | 문서 작성 세션. 도는 동안 hook 이 문서 자리 밖 쓰기를 막는다 |
 | `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대. 종류 — POLICY: `architecture` `conventions` `test-strategy` `quality` · KNOWLEDGE: `data-dictionary` `api-catalog` `business-rules`(`knowledge` 면 셋을 한 번에) · 작업 문서: `01-requirements` `02-analysis` `03-design` `04-functional` `07-test-spec` |
 | `code-agent docs interview <종류> [--sections a,b]` | 대화로 채울 때 물을 것 |
-| `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 `code-agent.json` 에 등록. 작업이 진행 중이거나 **요구사항을 접수 중이면** 거부한다 (`docs begin` 과 같은 문이다) — 근거 문서는 작업·접수 도중에 바꾸지 않는다 |
+| `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 `code-agent.json`에 등록. 작업 중에는 거부한다. 접수 중에는 `docs begin`으로 준비 세션을 연 뒤 연결하고 `docs end` 후 접수를 이어간다 |
+| `code-agent docs recommend` · `docs setup node\|python` | 신규 추천 설명 · 설정과 POLICY·단계 규칙 생성. setup은 문서 세션에서만 가능하고 기존 프로젝트 파일은 덮지 않는다 |
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드 파일·언어·디렉토리·계층 후보·표본·**도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)·이미 있는 문서 |
 | `code-agent manifest check` | `code-agent.json` 이 참조 파일을 실제로 찾는지 (✗ 면 exit 1) |
 | `code-agent plugin list` | 자리마다 지금 무엇이 채우는지 (읽기만 한다 — `plugin add`·`remove` 는 사람의 터미널 명령이다) |
@@ -696,7 +702,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `doc/work/<ID>/05-plan.md` ⑤ | 사람이 읽는 계획 — `plan.json` 의 뷰 | **`plan submit` 만** (hook 이 모델 쓰기 거부) | O |
 | `doc/work/<ID>/07-test-spec.md` ⑦ | AC 마다 테스트 케이스 — **구현 전에** 쓴다 | 모델 | O |
 | `doc/work/<ID>/08-validation.md` ⑧ | 검증 보고서 — 기준·실행 결과·TC·수정 루프·실패 로그 | **`repro`·`check`·`test`·`integrate` 만** (hook 이 모델 쓰기 거부, 재렌더 바이트 대조) | O |
-| `doc/work/<ID>/09-review.md` ⑨ | 리뷰 회차 · 지적 표(`id · 계획 파일 · 범위 · 상태 · 지적`) | 회차 머리는 코드, 지적 본문은 모델이 `ca-reviewer` 출력 그대로 | O |
+| `doc/work/<ID>/09-review.md` ⑨ | 리뷰 회차 · 지적 표(`id · 계획 파일 · 범위 · 상태 · 지적`) | 독립 리뷰어가 판정하고 hook이 실행 기록과 함께 결과를 기록 | O |
 | `doc/work/<ID>/10-pr.md` ⑩ | MR/PR 본문 — 요약 · 추적표 · 검증 · 확인 방법 · 위험 | `code-agent:trace` 블록은 **`deliver` 만**, 나머지는 모델 | O |
 | `doc/work/<ID>/knowledge.proposal.md` | KNOWLEDGE 갱신 제안 — `deliver` 가 항목별로 물어 고른 것만 반영 | 모델이 적고 사람이 고른다 | O |
 | `.code-agent/work/<ID>/<대상>.plan.json` | 제출된 계획 | `plan submit` 만 | O |
@@ -789,7 +795,7 @@ X. 기타:
   "domainRoot": "도메인 분류 (없으면 \"\")",
   "domainDirName": "실제 디렉토리 이름",
   "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
-  "sequence": [{ "step": "무엇을 먼저", "why": "그 차례인 이유 (02 의 Risk 가 큰 것부터)" }],
+  "sequence": [{ "step": "파일이 있는 단계 key", "why": "그 차례인 이유 (02 의 Risk 가 큰 것부터)" }],
   "approach": "구현 방법 한 문단 — 03 의 설계를 어떤 방식으로 옮기는가",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
   "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
@@ -809,7 +815,9 @@ X. 기타:
 경로가 단계의 위치·지시서 `scope`·계층 경계 안이고, **`07-test-spec.md` 의 모든 TC 가 `04` 에 실재하는 AC 를 가리키며 모든 AC 가 덮여야** 한다.
 통과하면 코드가 `05-plan.md` 를 렌더한다 — 사람이 승인 화면에서 읽는 것이 그것이다. 그 파일은 손으로 고치지 않는다.
 
-`sequence` · `approach` 는 필수다 — 둘이 없는 옛 형식의 제출본은 `plan submit` 으로 다시 제출해야 읽힌다.
+`sequence` · `approach`는 필수다. `sequence.step`에는 계획 파일이 있는 단계 key를 정확히 한 번씩 적는다. 모르는 단계·중복·누락·빈 이유는 거부한다. 실제 실행도 이 순서 그대로이며 매니페스트 순서로 다시 정렬하지 않는다. fix는 모든 테스트 단계가 수정 단계보다 먼저다.
+
+Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도 Task 파일을 중복 관리하지 않는다. 모든 요구 R은 Task 파일에 연결돼야 하고, 승인 화면·진행 상태·완료 보고에서 같은 연결을 보여 준다. 구현 완료와 검증 완료는 구분한다.
 
 ---
 
@@ -1099,7 +1107,7 @@ PR 본문은 doc/work/UZRF-145/10-pr.md 에 있습니다. push · MR/PR 생성�
 | `굳혀 둔 기준 커밋이 없습니다` | 증거 코어 이전에 시작된 커서다. `code-agent abort` 뒤 다시 시작한다 (작업 폴더는 남는다) |
 | `fix 는 기존 시스템 분석에 결함이 나는 경로를 적습니다` · `refactor 는 … 지금 동작을 적습니다` | ② 의 그 절이 `해당 없음` **뿐**이거나(다 쓴 분석에 섞인 한 줄은 막지 않는다) 근거 `path:line` 이 하나도 없다 |
 | `재현을 아직 보지 못했습니다` | `fix` 의 테스트 단계를 끝냈는데 `code-agent repro` 를 돌리지 않았다 |
-| `재현을 본 테스트 트리가 지금과 다릅니다` | 재현을 본 뒤 재현 테스트가 바뀐 채로 통합 검증에 왔다(⑨ 로 동결을 푼 뒤 고친 경우). 재현을 본 상태로 되돌리거나, 계획을 재승인해 재현부터 다시 본다 |
+| `재현을 본 테스트 트리가 지금과 다릅니다` | `code-agent check`가 기준 코드와 수정된 테스트를 임시 worktree에 적용해 재현을 갱신한다. 작업 코드는 보존한다. 재현 실패 확인 후 수정 코드의 check·test·독립 리뷰를 다시 거친다. 기준 코드에서도 통과하는 테스트는 차단한다 |
 | `리팩토링이 기존 테스트를 고쳤습니다: [M] <경로>` | 기준 커밋에 있던 테스트 파일이 바뀌었다(지워도 같다). 되돌린다 |
 | `prepare: failed (…)` · `prepare: error` | 통합 검증의 준비 명령이 실패했다. build·test 는 돌지 않았다 — 매니페스트의 `prepare` 나 환경을 본다 (계획 파일 문제가 아니다) |
 | `test: not-run (선언 없음)` | `code-agent.json` 에 `test` 명령이 없다. 아무것도 돌리지 않은 결과는 통과가 아니다 |
@@ -1108,7 +1116,7 @@ PR 본문은 doc/work/UZRF-145/10-pr.md 에 있습니다. push · MR/PR 생성�
 
 | 문구 | 할 일 |
 |---|---|
-| `작업 ID 가 필요합니다: (없음) — 사람이 준 티켓 키를 그대로 씁니다` | **ID 는 지어내지 않는다.** 사람에게 묻는다 (영문·숫자로 시작, `[A-Za-z0-9._-]` 64자 이하) |
+| ID 형식 오류 | 명시적 ID는 영문·숫자로 시작하고 `[A-Za-z0-9._-]` 64자 이하다. 티켓 번호가 없으면 생략해 자동 발급한다 |
 | `작업 종류가 필요합니다: (없음) — feature \| fix \| refactor` | `--kind` 로 종류를 고른다 — `/ca-feature` · `/ca-fix` · `/ca-refactor` 가 넘기는 값이다 |
 | `문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤…` | 문서 세션과 접수는 같이 돌지 않는다. `code-agent docs end` |
 | `진행 중인 작업이 있습니다: <ID> (<스테이지>)` · `접수 중인 요구사항이 있습니다: <ID>` | 한 번에 하나다. 끝내거나 사람이 `code-agent abort` 로 닫는다 |

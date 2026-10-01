@@ -22,6 +22,7 @@ import {
   runsOf,
   saveEvidence,
   testCaseEvidence,
+  reproResultProblem,
   testCommands,
   testStageFiles,
   testTreeHashNow,
@@ -33,6 +34,7 @@ import { logDir, workDocsDir } from "./layout";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
+import { freshTestReports, reportSnapshot } from "./testReports";
 import { changedPaths } from "./tree";
 import type { Work } from "./work";
 import { reproCases, readWorkDoc, workDocPath } from "./workDocs";
@@ -160,8 +162,11 @@ async function runSpecs(
       outputs.push("");
       continue;
     }
-    const result = await runCommand(cwd, spec.argv);
-    const log = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    // 상위 node:test의 내부 바이너리 전송 모드는 프로젝트 테스트 러너에 물려주지 않는다.
+    const { NODE_TEST_CONTEXT: _parentTestContext, ...commandEnv } = process.env;
+    const reports = phase === "repro" || phase === "test" || (phase === "integrate" && spec.kind === "test") ? reportSnapshot(cwd) : undefined;
+    const result = await runCommand(cwd, spec.argv, commandEnv);
+    const log = [result.stdout, result.stderr, reports ? freshTestReports(cwd, reports) : ""].filter(Boolean).join("\n").trim();
     const outcome = outcomeOf(result);
     const logFile = `.code-agent/log/${phase}-${round}-${spec.kind}.log`;
     writeFileSync(
@@ -190,6 +195,8 @@ function remainingNote(work: Work, evidence: Evidence, phase: VerifyPhase): stri
   const limit = fixLimit(work, evidence);
   const failed = runsOf(evidence, phase).filter((run) => run.outcome !== "passed");
   if (failed.length === 0) {
+    const cases = phase === "test" ? evidence.testCases : phase === "integrate" ? evidence.integrationTestCases ?? [] : [];
+    if (cases.some((entry) => entry.status !== "passed")) return "명령은 끝났지만 필수 TC의 성공이 확인되지 않았습니다. 테스트 결과 형식과 생략·실패 케이스를 확인하세요.";
     return "전부 통과했습니다 — code-agent next 로 다음 스테이지로.";
   }
   // 1회차는 처음 돌려 본 것이라 고쳐 쓰기로 세지 않는다 — 남는 것은 2·3회차다
@@ -222,7 +229,7 @@ function summary(work: Work, evidence: Evidence, phase: VerifyPhase, specs: Comm
     lines.push("", `!! ${phase} 로 돌릴 명령이 하나도 선언돼 있지 않습니다 — 검증 없이 통과할 수 없습니다.`);
   }
   if (phase === "test") {
-    const missing = evidence.testCases.filter((entry) => entry.source === "없음").map((entry) => entry.id);
+    const missing = evidence.testCases.filter((entry) => entry.status !== "passed").map((entry) => `${entry.id}(${entry.status ?? "unknown"})`);
     lines.push(
       "",
       `⑦ 테스트 케이스: ${evidence.testCases.length}개 중 ${evidence.testCases.length - missing.length}개 확인` +
@@ -274,10 +281,10 @@ function reproProblem(runs: VerifyRun[], found: TestCaseEvidence[]): string | un
       "⑦ 의 `## 재현` 케이스가 결함을 실제로 찌르는지 다시 보세요."
     );
   }
-  const uncovered = found.filter((entry) => entry.source === "없음").map((entry) => entry.id);
+  const uncovered = found.filter((entry) => entry.status !== "failed").map((entry) => entry.id);
   if (uncovered.length > 0) {
     return (
-      `재현 TC 가 실패한 실행의 출력에 없습니다: ${uncovered.join(", ")} — ` +
+      `재현 TC 가 실패한 실행의 출력에 없습니다: ${uncovered.join(", ")} (실제 실패 결과가 필요합니다) — ` +
       "재현은 **실패한 실행이 그 TC 를 찍어야** 증거가 됩니다. 테스트 파일에 id 가 적혀 있다는 것은 " +
       "무엇이 실패했는지 말해 주지 않습니다(다른 TC 의 실패·깨진 import 도 같은 실패로 보입니다).\n" +
       "컨벤션의 `테스트 규칙` 대로 테스트 이름에 TC id 를 남겨, 실패 보고에 그 id 가 찍히게 하세요."
@@ -338,7 +345,10 @@ export async function repro(work: Work): Promise<string> {
   const tests = new Set(testStageFiles(work));
   const planned = new Set(planPaths(work));
   const dirty = changedPaths(repoRoot, baseCommit).filter((change) => planned.has(change.path) && !tests.has(change.path));
-  if (dirty.length > 0) {
+  const evidence = carry(work, baseCommit);
+  // 첫 재현은 구현 전에 한다. 검증 이후 테스트 보완은 기준 코드 위에서 다시 재현한다.
+  const refreshing = !!evidence.repro && evidence.runs.some((run) => run.phase === "check");
+  if (dirty.length > 0 && !refreshing) {
     throw new Stop(
       `재현을 보기 전에 이미 바뀐 계획 파일이 있습니다: ${dirty.map((change) => `[${change.status}] ${change.path}`).join(", ")}\n` +
         "재현은 \"테스트만 바뀐 트리\" 에서 봐야 증거가 됩니다 — 되돌린 뒤 다시 돌리세요.",
@@ -353,28 +363,34 @@ export async function repro(work: Work): Promise<string> {
     );
   }
 
-  const evidence = carry(work, baseCommit);
-  if (evidence.repro && evidence.repro.testTreeHash === testTreeHashNow(work)) {
+  if (evidence.repro && evidence.repro.testTreeHash === testTreeHashNow(work) && !reproResultProblem(work, evidence)) {
     return `이미 재현을 봤습니다 (${evidence.repro.cases.join(", ")} · ${evidence.repro.at}). 고칠 파일을 쓰세요.`;
   }
 
   // 0회차 — 고쳐 쓰기 회차가 아니다. 재현이 한도를 잡아먹으면 고칠 기회가 한 번 줄어든다
   const specs = testCommands(repoRoot, work.manifest);
-  const { runs, outputs } = await runSpecs(work, "repro", 0, specs);
+  const testHash = testTreeHashNow(work);
+  const { runs, outputs } = refreshing
+    ? await inCleanWorktree(work, baseCommit, async (cwd) => {
+      const prep = prepareCommand(work.manifest);
+      if (prep) {
+        const prepared = await runSpecs(work, "repro", 0, [prep], cwd);
+        if (prepared.runs.some((run) => run.outcome !== "passed")) {
+          throw new Stop("격리 재현의 의존성 준비에 실패했습니다 — 작업 코드는 보존했습니다. 준비 로그를 확인하고 code-agent repro로 다시 실행하세요.");
+        }
+      }
+      return runSpecs(work, "repro", 0, specs, cwd);
+    }, (path) => tests.has(path))
+    : await runSpecs(work, "repro", 0, specs);
   replaceRuns(evidence, "repro", 0, runs);
 
   // ⑧ 의 두 갈래(출력 · 테스트 파일)를 여기서는 쓰지 않는다. 재현이 주장하는 것은 "그 TC 가 실패했다"
   // 인데, 파일 안에 id 가 있다는 것은 무엇이 실패했는지 말해 주지 않는다 — 다른 TC 의 실패도, 깨진
   // import 도 같은 `failed` 로 보인다. **실패한 실행의 출력**만 본다.
-  // (남는 한계: 한 실행이 TC-1 통과와 TC-9 실패를 함께 찍으면 여기서 갈라내지 못한다. 프레임워크마다
-  //  통과·실패 표기가 달라 일반적으로 파싱되지 않는 자리다 — ⑧ 의 대조와 사람의 리뷰가 그 뒤를 받는다.)
+  // 같은 실행에서 다른 TC가 실패했더라도 재현 대상 TC 자체가 failed여야 한다.
   const failedOutput = outputs.filter((_, index) => runs[index].outcome === "failed").join("\n");
-  const found: TestCaseEvidence[] = cases.map((id) =>
-    // id 가 다른 id 의 앞부분이면 안 된다 — TC-1 이 TC-12 에 걸리면 못 본 것이 본 것으로 읽힌다
-    new RegExp(`\\b${id}\\b`).test(failedOutput)
-      ? { id, source: "출력" as const, where: "실패한 실행의 출력" }
-      : { id, source: "없음" as const },
-  );
+  const found = testCaseEvidence(work, failedOutput).filter((entry) => cases.includes(entry.id));
+  for (const id of cases) if (!found.some((entry) => entry.id === id)) found.push({ id, source: "없음", status: "unknown" });
   const problem = reproProblem(runs, found);
   if (problem) {
     // 판정에 실패해도 무엇을 돌렸는지는 남긴다 — 그러고 나서 세운다
@@ -382,15 +398,21 @@ export async function repro(work: Work): Promise<string> {
     throw new Stop(`${problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.`);
   }
 
-  evidence.repro = { at: new Date().toISOString(), testTreeHash: testTreeHashNow(work), cases, found };
+  if (testHash !== testTreeHashNow(work)) throw new Stop("재현 중 테스트 파일이 바뀌었습니다 — 다시 재현하세요.");
+  evidence.repro = { at: new Date().toISOString(), testTreeHash: testHash, cases, found };
   persist(work, evidence);
-  return reproSummary(work, evidence);
+  return reproSummary(work, evidence) + (refreshing ? "\n기준 코드와 수정된 테스트로 격리 재현을 갱신했습니다. 작업 코드는 그대로 보존했습니다." : "");
 }
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
 export async function check(work: Work): Promise<string> {
   const baseCommit = requireEvidenceBase(work);
   requireCleanPlan(work);
+
+  const previous = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  if (work.order.kind === "fix" && previous?.repro && previous.repro.testTreeHash !== testTreeHashNow(work)) {
+    await repro(work);
+  }
 
   const evidence = carry(work, baseCommit);
   if (overFixLimit(work, evidence)) {
@@ -453,7 +475,7 @@ function git(repoRoot: string, args: string[]): string {
  * (`verifyByBuild` 를 쓰지 않는 이유 — 그것은 커밋을 검증하는데 새 흐름은 반영 전까지 아무것도
  * 커밋하지 않아, 수정이 하나도 없는 트리를 통과시킨다.)
  */
-async function inCleanWorktree<T>(work: Work, baseCommit: string, run: (cwd: string) => Promise<T>): Promise<T> {
+async function inCleanWorktree<T>(work: Work, baseCommit: string, run: (cwd: string) => Promise<T>, include: (path: string) => boolean = () => true): Promise<T> {
   const worktree = mkdtempSync(join(tmpdir(), "code-agent-integrate-"));
   // mkdtemp 가 만든 빈 디렉토리를 git 이 거부하므로 경로만 쓰고 생성은 git 에 맡긴다
   rmSync(worktree, { recursive: true, force: true });
@@ -467,6 +489,7 @@ async function inCleanWorktree<T>(work: Work, baseCommit: string, run: (cwd: str
   }
   try {
     for (const change of changedPaths(work.repoRoot, baseCommit)) {
+      if (!include(change.path)) continue;
       const target = join(worktree, change.path);
       if (change.status === "D") {
         rmSync(target, { force: true });
@@ -513,7 +536,7 @@ export async function integrate(work: Work): Promise<string> {
   // 준비 명령은 선언됐을 때만, build·test 앞에 한 번. 기준 커밋을 뜬 트리에는 의존성처럼
   // 커밋되지 않는 것이 없어서 두는 자리다.
   const prep = prepareCommand(work.manifest);
-  const { runs } = await inCleanWorktree(work, baseCommit, async (cwd) => {
+  const { runs, outputs } = await inCleanWorktree(work, baseCommit, async (cwd) => {
     const first = prep
       ? await runSpecs(work, "integrate", evidence.rounds, [prep], cwd)
       : { runs: [] as VerifyRun[], outputs: [] as string[] };
@@ -522,9 +545,10 @@ export async function integrate(work: Work): Promise<string> {
       return first;
     }
     const rest = await runSpecs(work, "integrate", evidence.rounds, specs, cwd);
-    return { runs: [...first.runs, ...rest.runs], outputs: [] };
+    return { runs: [...first.runs, ...rest.runs], outputs: [...first.outputs, ...rest.outputs] };
   });
   replaceRuns(evidence, "integrate", evidence.rounds, runs);
+  evidence.integrationTestCases = testCaseEvidence(work, outputs.filter((_, index) => runs[index].kind === "test").join("\n"));
   persist(work, evidence);
   const stopped = runs.some((run) => run.kind === "prepare" && run.outcome !== "passed");
   return [

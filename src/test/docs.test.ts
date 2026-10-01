@@ -113,7 +113,7 @@ beforeEach(() => {
   write(`${APP}/customer/repository/CustomerRepository.java`, "public interface CustomerRepository {}\n");
   write("src/test/java/com/acme/app/DealTests.java", "class DealTests {}\n");
   write("build.gradle", "plugins { id 'java' }\n");
-  write("doc/work/ORD-1.md", "---\nkind: feature\nid: ORD-1\ntitle: 주문\ntarget: order\n---\n");
+  write("doc/work/ORD-1.md", "---\nkind: feature\nid: ORD-1\ntitle: 주문\ntarget: order\n---\n주문\n");
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: repo });
   execFileSync("git", ["add", "-A"], { cwd: repo });
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "files"], { cwd: repo });

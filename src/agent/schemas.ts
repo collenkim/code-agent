@@ -389,7 +389,7 @@ export const REQUIREMENTS: DocSchema = {
       id: "items", heading: "R1 · <요구 한 줄>", aliases: [], required: true, questions: [],
       guide:
         "요구 하나에 블록 하나(`## R<번호> · <요구 한 줄>`), 번호는 1부터 중복 없이. 블록마다 `근거: \"<지시서 문장 그대로>\"` 한 줄 필수 — " +
-        "인용할 문장이 없으면 지시서에 없는 요구다. 이어서 데이터 · 접점(API·화면) · 기존 코드를 건드리는지 한 줄씩 (② 와 ③ 의 범위가 여기서 정해진다)",
+        "context의 REQ·DONE·CON ID를 출처: 에 적고 확정된 항목을 빠짐없이 인용한다. 근거 줄은 여러 개 가능하다. 인용할 문장이 없으면 지시서에 없는 요구다. 이어서 데이터 · 접점(API·화면) · 기존 코드를 건드리는지 한 줄씩 (② 와 ③ 의 범위가 여기서 정해진다)",
     },
     {
       id: "assumptions", heading: "가정", aliases: ["가정과 근거"], required: true, questions: [],
