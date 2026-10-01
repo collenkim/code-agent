@@ -192,10 +192,35 @@ Claude Code 창과 **같은 프로젝트 폴더의 별도 터미널**을 사용�
 
 **code-agent 소스를 고친 것과 대상 프로젝트에 설치된 절차를 갱신한 것은 별개입니다.** `init`은 `template/`의 파일을 프로젝트로 복사하므로 이미 설치한 `.claude/`와 `CLAUDE.md`에는 이전 지시가 남을 수 있습니다.
 
-1. npm 설치본을 다시 설치하거나 실행 파일을 새 버전으로 교체합니다. 이 저장소를 `npm link`로 사용하는 개발 환경이라면 `npm run build`로 CLI도 다시 빌드합니다.
-2. **개발 대상 프로젝트에서** `code-agent update`를 실행합니다.
-3. `code-agent doctor`로 실제 실행 경로, 스킬·hook 상태와 다음 조치를 확인합니다. 공통 문서가 아직 없다는 결과는 준비 단계에서 해결합니다.
-4. Claude Code를 프로젝트에서 새로 열어 갱신된 절차로 시작합니다. 기존 접수·작업은 `/ca-status` 확인 후 `/ca-next`로 이어갑니다.
+**`code-agent update`는 Git에서 소스를 받거나 code-agent 자체를 새 버전으로 설치하지 않습니다.** 현재 실행 중인 설치본에 들어 있는 스킬·에이전트·hook과 공통 지시를 개발 대상 프로젝트에 적용하는 명령입니다.
+
+| 설치 방식 | code-agent 자체 갱신 | 개발 대상 프로젝트에 적용 |
+|---|---|---|
+| 로컬 소스 폴더에 연결된 설치 (`npm link` 또는 로컬 경로 설치 후 연결된 경우) | 소스를 갱신하고 `npm run build`. 연결 경로가 같으면 매번 전역 재설치할 필요가 없습니다. | `code-agent update` → `code-agent doctor` |
+| 원본 소스와 별개로 설치된 npm 패키지 | 새 패키지를 전역 설치합니다. | `code-agent update` → `code-agent doctor` |
+| 단일 실행 파일 | PATH에서 사용하는 실행 파일을 새 버전으로 교체합니다. | `code-agent update` → `code-agent doctor` |
+
+이 문서의 `npm install -g "C:\IdeaProjects\code-agent"` 예시처럼 로컬 경로로 설치한 경우, 전역 패키지 경로가 원본 폴더에 연결돼 있다면 첫 번째 방식입니다. `npm root -g`로 전역 패키지 위치를 확인하고, Windows에서는 그 아래 `code-agent` 폴더의 `LinkType`·`Target`을 `Get-Item`으로 확인할 수 있습니다. `Get-Command code-agent`는 실제 실행되는 명령 경로를 보여 줍니다.
+
+로컬 연결 설치에서 원격 저장소의 새 변경을 적용하는 순서는 다음과 같습니다. **code-agent 소스 저장소에서** 실행합니다.
+
+```powershell
+cd "C:\IdeaProjects\code-agent"
+git pull
+npm run build
+```
+
+이미 로컬에서 수정한 내용이라면 `git pull`은 필요 없습니다. 의존성이 변경됐다면 빌드 전에 `npm ci`를 실행합니다. CLI 변경 없이 템플릿만 바뀐 경우에는 다시 빌드하지 않고 다음 단계로 적용할 수 있습니다.
+
+그다음 **실제 개발 대상 프로젝트에서** 실행합니다. 여러 프로젝트에 설치했다면 각 프로젝트에서 적용합니다.
+
+```powershell
+cd "C:\work\my-app"
+code-agent update
+code-agent doctor
+```
+
+`doctor`에서 실제 실행 경로와 스킬·hook 상태를 확인합니다. 공통 문서가 아직 없다는 결과는 준비 단계에서 해결합니다. Claude Code를 종료했다가 같은 프로젝트에서 다시 실행하고, 기존 접수·작업은 `/ca-status` 확인 후 `/ca-next`로 이어갑니다.
 
 | 증상 | 확인할 것 |
 |---|---|
