@@ -19,10 +19,11 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
 ## 흐름
 
 ```
-/ca-feature <ID> <서술·티켓·파일>          (fix 는 /ca-fix, refactor 는 /ca-refactor, 단계만 돌려면 /ca-request)
-  → code-agent request begin <ID> --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+/ca-request [ID] <서술·티켓·파일>          모든 종류의 공통 접수. 종류가 명확하면 모델이 판단
+  → code-agent request begin [ID] --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
                                                                    접수 세션을 연다 (시작 인자는 적어 둔다)
   → 모델이 doc/work/<ID>/request.json 을 쓴다                        원문 + 정리 + 접수 때 물은 것
+  → 공통 문서·설정 확인 → 부족하면 준비·확정 후 같은 접수로 복귀   요구사항 분석보다 먼저
   → code-agent request submit doc/work/<ID>/request.json            검사 → requirement.md 렌더
   → (사람, 별도 터미널) code-agent confirm request <ID>              원문과 정리를 나란히 읽고 confirm
      반려는 code-agent reject request <ID> --comment "사유"
@@ -102,6 +103,8 @@ doc/work/<Jira 키>/requirement.md    작업 지시서 — 코드가 렌더한�
   { "quote": "배송이 시작되면 취소할 수 없습니다.", "targets": ["CON-1"] }
 ]
 ```
+
+종류를 명시할 때는 신규 개발·기능 추가·기능 변경의 `/ca-feature`, 결함 수정의 `/ca-fix`, 동작 보존 구조 개선의 `/ca-refactor`도 사용할 수 있다. 세 명령 모두 위 접수를 공유하며 접수 뒤 `/ca-next`로 진행한다.
 
 형식은 `code-agent request begin` 과 `code-agent request` 가 그 저장소의 값(대상 후보·확장 속성)
 과 함께 찍어 준다. 검사는 `src/agent/request.ts` 가 한다.

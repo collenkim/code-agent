@@ -37,6 +37,11 @@ import { setupBaseline, setupStatus } from "./bootstrap";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
+실행: 프로젝트에서 code-agent init → claude → /ca-request <요구사항>
+  init은 스킬·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
+  /ca-request는 모든 요구사항 접수, /ca-feature는 신규·기능 변경, /ca-fix는 결함 수정, /ca-refactor는 동작 보존 구조 개선입니다.
+  진행 중인 작업은 Claude Code에서 /ca-next 로 이어갑니다.
+
 사람 (터미널):
   code-agent init [--cli <path>]      이 저장소에 설치 (.claude/ 스킬·에이전트·hook, CLAUDE.md 블록)
   code-agent status                   문서·작업·스테이지·질문·승인 상태
@@ -55,7 +60,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent approve                  제출된 계획 승인 (TTY 에서만)
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
-  code-agent deliver                  11 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
+  code-agent deliver                  13 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
   code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
@@ -82,10 +87,10 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent repro                    fix 전용 — 재현 TC 의 실패를 보고 증거로 남긴다 (그 전에는 고칠 파일을 쓸 수 없다)
-  code-agent check                    7 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
-  code-agent test                     8 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC 를 대조
-  code-agent review                   9 코드 리뷰 — 회차를 열고 ⑨ 의 회차 구역을 렌더 (기준 트리 해시를 굳힌다)
-  code-agent integrate                10 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
+  code-agent check                    8 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
+  code-agent test                     9 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC별 실제 결과를 대조
+  code-agent review                   11 코드 리뷰 — 회차를 열고 독립 리뷰어의 시작·완료와 결과는 hook이 기록
+  code-agent integrate                12 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
 
 hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)

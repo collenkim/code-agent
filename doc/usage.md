@@ -3,8 +3,11 @@
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.
 
-code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴다. 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있고,
-강제는 PreToolUse hook 과 `code-agent` CLI 가 한다.
+code-agent는 **Claude Code 안에서** 실행한다. `init`은 스킬·서브에이전트·hook을 프로젝트에 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행한 뒤 `/ca-request <요구사항>`으로 시작한다. 별도 서버나 수동 에이전트 등록은 필요 없다.
+
+일반 요구사항 접수는 `/ca-request`, 신규·기능 추가·기능 변경을 명시하는 진입점은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존 구조 개선은 `/ca-refactor`다. 종류별 명령도 같은 접수 절차를 사용한다. 하나로 접수한 뒤 `/ca-next`로 이어가며 명령들을 순서대로 모두 입력하지 않는다.
+
+모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있다. 강제와 결과 기록은 hook 4종과 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 사람의 문서·요구·계획·반영 확인은 아래 터미널 절차를 유지한다.
 
@@ -41,9 +44,10 @@ code-agent 는 **Claude Code 안에서** 돈다. 모델이 도구를 직접 쓴�
 ## 1. 설치
 
 ```
-npm install -g <사내 저장소>/code-agent     # 한 번 — Node 22 이상
-cd <프로젝트> && code-agent init             # 프로젝트마다
-code-agent doctor                            # 제대로 깔렸는지 — ✗ 가 없으면 종료 코드 0
+npm install -g <code-agent 저장소 경로>   # 한 번 — Node 22 이상
+cd <개발할 프로젝트>
+code-agent init                          # 프로젝트마다 설치
+claude                                   # 이 안에서 /ca-request 입력
 ```
 
 `init` 이 대상 저장소에 하는 일.
@@ -52,6 +56,8 @@ code-agent doctor                            # 제대로 깔렸는지 — ✗ �
 |---|---|---|
 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
 | PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|Read\|Grep\|Glob`, command `code-agent hook` | O |
+| Stop hook | `.claude/settings.json` — `code-agent stop` | O |
+| ca-reviewer SubagentStart/Stop | `.claude/settings.json` — 독립 리뷰 실행·결과를 기록하는 `code-agent review-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -94,7 +100,7 @@ CLI 는 검증 스테이지를 `7 check` · `8 test` · `9 review` · `10 integr
 | 12 | 통합 검증 | `integrate` | ⑧ 의 마지막 회차 | **구현됨** P5 |
 | 13 | 반영 — 사람 최종 확인 → 로컬 커밋 | `deliver` | ⑩ `10-pr.md` + KNOWLEDGE 3종 갱신 | **구현됨** P5 |
 
-- **요구사항은 명령으로 받는다.** 사람이 손으로 `requirement.md` 를 쓰던 자리가 `/ca-feature` · `/ca-fix` · `/ca-refactor`(또는 `/ca-request`)의 **접수**로 바뀌었다 —
+- **요구사항은 명령으로 받는다.** 사람이 손으로 `requirement.md` 를 쓰던 자리가 `/ca-request`의 **공통 접수**로 바뀌었다 —
   사람은 서술·티켓·파일을 말로 주고, 모델이 `request.json` 으로 정리하고, 코드가 지시서를 렌더하고, **사람이 터미널에서 확정**한다.
   확정된 지시서만 `code-agent start` 가 받는다. 손으로 쓴 지시서도 그대로 쓰지만 **확정은 똑같이** 받는다.
 - P3 의 `research` 한 칸은 P4 에서 `impact`(영향도) 와 `design`(설계·정의) 둘로 갈렸다. `02`·`03`·`04` 는 **모든 작업에 필수**다 (크기는 작업에 맞게).
@@ -112,11 +118,13 @@ CLI 는 검증 스테이지를 `7 check` · `8 test` · `9 review` · `10 integr
 ## 3. 한 바퀴
 
 ```
-code-agent init
-claude
-  /ca-adopt (또는 /ca-docs)        → POLICY 4종 작성 + KNOWLEDGE 3종 빈 뼈대
-  ────────────────────────────────  터미널: code-agent confirm doc all
-  /ca-feature UZRF-145 "결제 뒤 24시간 안에는 주문을 취소할 수 있게"   (= 접수 + 확정 뒤 사이클을 plan 까지)
+code-agent init                   # 일반 터미널: 설치만 하고 종료
+claude                           # 같은 프로젝트에서 Claude Code 실행
+  /ca-request UZRF-145 "결제 뒤 24시간 안에는 주문을 취소할 수 있게"
+      원문 보관 → 공통 문서·설정 확인 → 없으면 /ca-adopt · /ca-docs로 준비
+  ────────────────────────────────  초기 준비 시 터미널: code-agent confirm doc all
+                                    최초 커밋이 없으면: code-agent setup baseline
+  /ca-next                         원문·ID를 유지한 채 같은 접수로 복귀
       접수      /ca-request   → request.json → code-agent request submit
                               → 코드가 doc/work/UZRF-145/requirement.md 를 렌더하고 멈춤
   ────────────────────────────────  터미널: code-agent confirm request UZRF-145
@@ -133,13 +141,13 @@ claude
       check     /ca-check     → build · 정적 분석·보안 명령 → 08-validation.md (코드만 쓴다)
       test      /ca-test      → ca-tester 가 ⑦ 의 TC 만 쓰고 CLI 가 돌린다 → 이후 테스트 동결
         실패 → 계획 안이면 고치고 check 부터 다시 (기본 2회) / 계획 밖이면 질문·재승인
-      review    /ca-review    → ca-reviewer 지적 표 → 09-review.md → 지적도 같은 수정 루프로
+      review    /ca-review    → 독립 ca-reviewer 호출·완료 관찰 → hook이 09-review.md 기록 → 수정 루프
       integrate /ca-integrate → 깨끗한 worktree 에서 전체 build · test
       deliver                 → 10-pr.md 의 요약·확인 방법·위험 (/ca-integrate 가 이어서 쓰고 멈춘다)
   ────────────────────────────────  터미널: code-agent deliver  (확인 → 작업 브랜치 로컬 커밋)
 ```
 
-요구사항부터 `/ca-feature "원하는 기능"`으로 시작해도 된다. ID는 자동 발급하며, 설정·문서가 없으면 원문을 보존한 채 준비하고 같은 접수를 이어간다. 신규 추천은 웹·API(JavaScript), 자동화(Python), 직접 선택이다. 기본 구성은 `docs recommend`와 `docs setup node|python`으로 만든다.
+ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자동 발급하며, 설정·문서가 없으면 원문을 보존한 채 준비하고 같은 접수를 이어간다. 신규·기능 변경이라고 정한 경우 `/ca-feature`도 같은 접수를 수행한다. 신규 추천은 웹·API(JavaScript), 자동화(Python), 직접 선택이다. 기본 구성은 `docs recommend`와 `docs setup node|python`으로 만든다.
 
 사람이 멈추는 자리는 **문서 확정(처음 또는 변경 시) · 요구사항 확정 · 필요한 질문 답변 · 계획 승인 · 반영 확인**이다. 문서는 한 번에 확정하고 기술 세부는 추천값으로 묶어서 보여 준다. 일반 작업은 요구사항 확정·계획 승인·반영 확인의 세 판정을 유지한다.
 
@@ -156,12 +164,12 @@ claude
 |---|---|---|---|
 | `/ca-adopt` | 첫 도입 — 뼈대 역공학(소스가 없으면 인터뷰)으로 문서 + `code-agent.json` | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종 · 빈 저장소 P6) |
 | `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 3종) | 문서 확정 안내 | 구현됨 (POLICY 4종 · KNOWLEDGE 3종) |
-| `/ca-feature <ID> <요구사항>` | 요구사항 접수 + (확정 뒤) 사이클을 `plan` 까지 | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (`impact`·`design` 포함) |
+| `/ca-feature [ID] <요구사항>` | 신규 개발·기능 추가·변경의 접수 + (확정 뒤) 사이클을 `plan`까지 | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (`impact`·`design` 포함) |
 | `/ca-answer` | 답 없는 질문을 사용자에게 묻고 기록 | — | 구현됨 |
 | `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고 다음으로 이어 간다 | 사람의 자리마다 · `deliver` 는 사람에게 넘긴다 | 구현됨 (`integrate` 까지) |
 | `/ca-status` | 위치·막힌 이유·다음 할 일 | — | 구현됨 |
-| `/ca-fix <ID> <결함>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 (`code-agent repro` 로 재현을 본 뒤에 고친다) | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (P6) |
-| `/ca-refactor <ID> <요청>` | 리팩토링 — 보존 조건이 계획의 중심, 기존 테스트는 손댈 수 없다 | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (P6) |
+| `/ca-fix [ID] <결함>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 (`code-agent repro` 로 재현을 본 뒤에 고친다) | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (P6) |
+| `/ca-refactor [ID] <요청>` | 리팩토링 — 보존 조건이 계획의 중심, 기존 테스트는 손댈 수 없다 | **요구사항 확정** · 질문 · 계획 승인 | 구현됨 (P6) |
 
 ### 단계별 명령
 
@@ -170,7 +178,7 @@ claude
 
 | 스테이지 | 명령 | 하는 일 | 어디서 멈추나 |
 |---|---|---|---|
-| 접수 (작업 커서 전) | `/ca-request <ID> [--kind <종류>] <요구사항>` | 사람이 준 원문을 보관하고 `request.json` 으로 정리해 제출 → 코드가 지시서를 렌더 | **터미널 `code-agent confirm request <ID>`** |
+| 접수 (작업 커서 전) | `/ca-request [ID] [--kind <종류>] <요구사항>` | 사람이 준 원문을 보관하고 `request.json` 으로 정리해 제출 → 코드가 지시서를 렌더 | **터미널 `code-agent confirm request <ID>`** |
 | `analysis` | `/ca-analyze [--base] [--target]` | ① `01-requirements.md` — analyst. 진행 중인 작업이 없고 요구사항이 `확정됨` 이면 `code-agent start doc/work/<ID>/requirement.md` 부터 | 질문 · `code-agent next` |
 | `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer | 질문 · `code-agent next` |
 | `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — writer | 질문 · `code-agent next` |
@@ -178,7 +186,7 @@ claude
 | `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지. `fix` 는 테스트 단계가 먼저이고 그 뒤 `code-agent repro` | hook 거부 · 재현 실패 · 질문 · `check` 도달 |
 | `check` | `/ca-check` | `code-agent check` — build + 정적 분석·보안. **↺ 수정 루프의 정의가 여기 있다** | 실패 · `code-agent next` |
 | `test` | `/ca-test` | tester 가 ⑦ 의 TC 만 → `code-agent test`, 이후 테스트 동결 | 실패 · `code-agent next` |
-| `review` | `/ca-review` | reviewer 의 지적 표를 ⑨ `09-review.md` 에 그대로 | 열린 지적 · `code-agent next` |
+| `review` | `/ca-review` | 독립 reviewer 실행·완료를 관찰한 hook이 ⑨ `09-review.md`에 자동 기록 | 열린 지적 · `code-agent next` |
 | `integrate` | `/ca-integrate` | `code-agent integrate` → 이어서 ⑩ `10-pr.md` 의 모델 구역 | **터미널 `code-agent deliver`** |
 
 `code-agent approve` · `reject` 는 **스테이지에 묶이지 않는다.** `plan` 에서만 받는 것이 아니라, `implement` 이후에 승인이
@@ -253,19 +261,20 @@ claude
 모델은 작업 중에 이 파일들을 쓰지 않는다 — 인용만 하고, 제안은 `doc/work/<ID>/knowledge.proposal.md` 에 적는다.
 갱신은 반영(`code-agent deliver`)에서 사람이 항목을 고른 뒤 코드가 한다 (키 단위 upsert, 삭제 없음).
 
-### `/ca-request <ID> [--kind <feature|fix|refactor>] <요구사항>`
+### `/ca-request [ID] [--kind <feature|fix|refactor>] <요구사항>`
 
 **요구사항 접수** — 13단계의 1이다. 사람이 손으로 지시서를 쓰던 자리가 여기다.
 요구사항은 **말로** 준다 — 서술이든, 붙여넣은 티켓이든, 저장소 안의 파일 경로든.
 
-1. `code-agent request begin <ID> --kind <종류> [--base <기준 브랜치>] [--target <대상>]` — 접수 세션(`.code-agent/request-session.json`)을 열고
+1. `code-agent request begin [ID] --kind <종류> [--base <기준 브랜치>] [--target <대상>]` — 접수 세션(`.code-agent/request-session.json`)을 열고
    초안 형식 · 규칙 · **대상 후보**(도메인 디렉토리)를 찍는다 — `feature` 는 `- <이름> (<경로>)` 로 보여 주고 `target` 에는 **이름**만 쓰고, `fix`·`refactor` 는 경로를 보여 주고 경로를 쓴다.
    다시 보려면 `code-agent request` (접수 중에는 `code-agent context` 도 같은 것을 준다).
    `--base`·`--target` 은 세션 파일에 남아 **확정 뒤 `start` 가 쓴다** — 접수와 시작 사이에 사람의 확정이 끼어 명령이 끊기기 때문이다 (`start` 에 직접 준 값이 이긴다).
    **ID는 선택이다** — 티켓 ID는 그대로, 생략하면 CLI가 미사용 WORK 번호를 발급한다 (명시적 ID는 영문·숫자로 시작, `[A-Za-z0-9._-]` 64자 이하).
-   접수 동안 모델이 쓸 수 있는 곳은 `doc/work/<ID>/` 뿐이고, **지시서 자체는 쓸 수 없다** — hook 이 거부한다.
+   일반 접수 쓰기는 `doc/work/<ID>/` 안이며 **지시서 자체는 코드가 렌더한다**. 준비가 필요하면 접수를 유지한 채 `docs begin`으로 문서 세션을 열고 그 허용 범위에서 공통 문서·설정을 보완한다.
 2. 모델이 `doc/work/<ID>/request.json` 을 쓴다. **원문은 한 글자도 바꾸지 않는다** — 글이면 `original`,
    파일이면 `originalFile` 에 저장소 기준 경로를 적고 **코드가 그 파일을 그대로 옮긴다**.
+   원문을 먼저 저장하고 설정·공통 문서가 없으면 준비·확정 뒤 같은 접수로 돌아온다. `sourceMap`으로 원문과 구조화 항목을 연결하며 미연결은 확정 요청 전에 보완한다.
    원문에 없는 요구는 더하지 않는다 — 있으면 좋겠다 싶은 것은 질문으로 (한 턴에 최대 4개, 받은 답은 `clarifications` 에 사람의 말 그대로).
 3. `code-agent request submit doc/work/<ID>/request.json` — 형식을 검사하고 `requirement.md` 를 렌더한다.
    렌더한 결과는 **손으로 쓴 지시서와 똑같은 검사**를 받고(머리말 규격 · `target`·`scope` 실재 · 프로젝트 확장 속성),
@@ -378,9 +387,9 @@ preserve:
 확정 뒤에 지시서를 손으로 고치면 그 즉시 확정이 풀리고, 계획 승인도 `stale-docs`(머리말을 고쳤으면 `stale-order`) 가 된다.
 시작은 `/ca-analyze <지시서>` (또는 터미널의 `code-agent start <지시서>`) 로 한다 — 그 자리에 접수를 다시 돌리지 않는다. `request submit` 은 사람이 쓴 지시서를 덮지 않는다.
 
-### `/ca-feature <ID> <요구사항> [--base <기준 브랜치>] [--target <대상>]`
+### `/ca-feature [ID] <요구사항> [--base <기준 브랜치>] [--target <대상>]`
 
-요구사항을 받아 **계획 제출까지** 간다. 인자는 지시서 경로가 아니라 **작업 ID 와 요구사항**이다 (티켓을 그대로 붙여넣어도 된다).
+신규 개발·기능 추가·기능 변경을 `feature`로 접수하고 **계획 제출까지** 간다. 인자는 지시서 경로가 아니라 **작업 ID 와 요구사항**이다 (티켓을 그대로 붙여넣어도 된다).
 
 1. 접수 — 작업도 접수도 없으면 바로 위 `/ca-request` 의 절차를 **종류 `feature`** 로 그대로 돈다.
    제출하면 **멈춘다** — 사람이 터미널에서 확정해야 한다.
@@ -645,7 +654,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드 파일·언어·디렉토리·계층 후보·표본·**도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)·이미 있는 문서 |
 | `code-agent manifest check` | `code-agent.json` 이 참조 파일을 실제로 찾는지 (✗ 면 exit 1) |
 | `code-agent plugin list` | 자리마다 지금 무엇이 채우는지 (읽기만 한다 — `plugin add`·`remove` 는 사람의 터미널 명령이다) |
-| `code-agent request begin <ID> --kind <feature\|fix\|refactor> [--base <기준 브랜치>] [--target <대상>]` | 1 요구사항 접수를 연다. 도는 동안 hook 이 `doc/work/<ID>/` 밖 쓰기와 지시서 쓰기를 막는다. `--base`·`--target` 은 세션에 남아 확정 뒤 `start` 가 쓴다 |
+| `code-agent request begin [ID] --kind <feature\|fix\|refactor> [--base <기준 브랜치>] [--target <대상>]` | 1 요구사항 접수를 연다. 도는 동안 hook 이 `doc/work/<ID>/` 밖 쓰기와 지시서 쓰기를 막는다. `--base`·`--target` 은 세션에 남아 확정 뒤 `start` 가 쓴다 |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 (확정은 사람이). 어긋나면 파일을 쓰지 않는다. 반려된 내용 그대로의 재제출도 거부한다 |
 | `code-agent request` | 접수 중이거나 작업이 진행 중이면 접수 형식을 준다 — 초안 형식·규칙·대상 후보·지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때 쓴다). 둘 다 없으면 접수를 열라고 세우고, 문서 세션이 열려 있어도 거부한다 |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — **사람이 지금 내용으로 확정한 요구사항만** 받는다. 통과하면 접수 세션을 닫는다 |
@@ -654,14 +663,15 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙. 작업 전 접수 중에는 `code-agent request` 와 같은 접수 형식을 준다 (작업 중에는 스테이지 컨텍스트다) |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
 | `code-agent repro` | 재현 — **`fix` 에서만** 돈다 (번호가 없다 — `implement` 안에서 돈다). `kind: "test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 ⑦ 의 `## 재현` TC 가 **실패**하는 것을 확인하고 증거에 적는다. 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 |
-| `code-agent check` | 7 정적 분석·컴파일 — `build` + 품질·보안 기준이 적은 명령을 돌려 증거에 적고 ⑧ 을 렌더 |
-| `code-agent test` | 8 테스트 — `test` + 테스트 전략이 적은 명령을 돌리고 ⑦ 의 TC id 를 대조. 이 실행 뒤 테스트가 언다 |
-| `code-agent review` | 9 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 |
-| `code-agent integrate` | 10 통합 검증 — 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 (`prepare` 가 있으면 그것 먼저) 전체 build·test. `prepare` 가 실패하면 build·test 는 돌지 않는다 |
+| `code-agent check` | 정적 분석·컴파일 — build와 품질·보안 기준 명령 실행 후 ⑧ 기록 |
+| `code-agent test` | 테스트 — 기존 명령을 실행하고 ⑦의 필수 TC별 실제 passed 확인. 이후 테스트 동결 |
+| `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
+| `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단 |
+| `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`integrate` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
 
-모델이 Bash 로 부를 수 있는 것은 이 표에서 **`code-agent hook` · `code-agent stop` 을 뺀** 명령과 `code-agent status` 뿐이다 — 그 둘은 hook 이 부르는 자리라 모델에게 열려 있지 않다.
+`code-agent hook` · `code-agent stop` · `code-agent review-event`는 hook 전용이며 모델 Bash에 허용되지 않는다. 모델은 허용된 절차·상태 명령을 사용하고 사람 전용 승인 명령을 대신 실행하지 않는다.
 `init` · `abort` · `approve` · `reject` · `confirm doc` · `confirm request` · `reject request` · `deliver` · `model` · `plugin add` · `plugin remove` 도 hook 이 거부한다 (사람의 터미널 명령이다).
 열려 있는 것은 `request begin` · `request submit` 까지다 — **확정은 열리지 않는다.**
 이 **명령 허용 목록**은 작업 · 문서 세션 · 접수 세션이 도는 동안에만 선다. 셋 다 없을 때도 hook 이 손을 놓는 것은 아니다 — 아래 네 자리는 **언제나** 막힌다.
@@ -718,8 +728,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `.code-agent/log/` | 검증 명령의 전체 로그 (`<스테이지>-<회차>-<종류>.log` — 재현은 `repro-0-<종류>.log`) — ⑧ 에는 꼬리만 남는다 | `repro` · `check` · `test` · `integrate` | X |
 | `.code-agent/log/plugins/<자리>.jsonl` | 플러그인 호출 기록 — 요청 요약·소요·결과. 마지막 200줄만, **키 값은 들어가지 않는다** | 플러그인을 부르는 명령 | X |
 
-`<ID>` 는 지시서 머리말의 `id` 다 — Jira 키를 그대로 쓴다. **접수에서 사람이 준 그대로**이고 모델이 지어내지 않는다
-(`code-agent request begin <ID>` 가 그 이름으로 작업 폴더를 만든다). **작업 폴더 이름과 같아야** 지시서와 작업 폴더가 한자리에 있다.
+`<ID>`는 지시서 머리말의 `id`다. 티켓 ID를 주면 그대로 쓰고 생략하면 CLI가 미사용 WORK 번호를 발급한다. 모델이 임의 번호를 만들지 않으며 지시서 ID와 작업 폴더 이름은 같아야 한다.
 
 ### `01-requirements.md` ① — 코드가 읽는 형식
 
@@ -1120,11 +1129,11 @@ PR 본문은 doc/work/UZRF-145/10-pr.md 에 있습니다. push · MR/PR 생성�
 | `작업 종류가 필요합니다: (없음) — feature \| fix \| refactor` | `--kind` 로 종류를 고른다 — `/ca-feature` · `/ca-fix` · `/ca-refactor` 가 넘기는 값이다 |
 | `문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤…` | 문서 세션과 접수는 같이 돌지 않는다. `code-agent docs end` |
 | `진행 중인 작업이 있습니다: <ID> (<스테이지>)` · `접수 중인 요구사항이 있습니다: <ID>` | 한 번에 하나다. 끝내거나 사람이 `code-agent abort` 로 닫는다 |
-| `접수 중인 요구사항이 없습니다 — code-agent request begin <ID> --kind <종류> 로…` | 접수를 먼저 연다 (`/ca-request`) |
+| `접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <종류> 로…` | 접수를 먼저 연다 (`/ca-request`) |
 | `접수 초안의 형식이 맞지 않습니다:` | `request.json` 의 형식 오류다. 자리마다 사유가 붙는다 — 형식은 `code-agent request` 가 보여 준다 |
 | `원문은 original … 과 originalFile … 중 정확히 하나로 줍니다` | 둘 다 적었거나 둘 다 비었다 |
 | `originalFile 이 저장소 안의 파일이 아닙니다` · `originalFile 이 비었습니다` | 저장소 밖 파일이면 사람에게 저장소 안에 두라고 묻는다 |
-| `초안의 id(<x>) 가 접수 중인 작업(<y>) 과 다릅니다` · `초안의 kind(...) 가 접수한 종류(...) 와 다릅니다` | ID 와 종류는 사람이 명령으로 준 것이다. 초안을 맞춘다 |
+| `초안의 id(<x>) 가 접수 중인 작업(<y>) 과 다릅니다` · `초안의 kind(...) 가 접수한 종류(...) 와 다릅니다` | 세션의 ID(티켓 ID 또는 CLI 발급 번호)와 접수 때 판단·지정한 종류에 초안을 맞춘다 |
 | `extra 에 예약 속성을 쓸 수 없습니다: <이름…>` | `kind`·`id`·`title`·`target`·`scope`·`preserve`·`approver` 는 같은 이름의 자리에 쓴다 |
 | `extra 의 속성 이름은 영문으로 시작하는 [A-Za-z0-9_-] 입니다: <이름…>` | 머리말 파서가 읽지 못하는 이름이다. `code-agent.json` 의 `workOrder.attributes` 에 선언된 이름을 쓴다 |
 | `접수 내용이 지시서 규격에 맞지 않아 렌더하지 않았습니다:` | 손으로 쓴 지시서와 **같은 검사**다 — `target`·`scope` 가 실재하는 경로인지, 프로젝트 확장 속성이 갖춰졌는지. 머리말을 읽다 난 오류도 전부 여기로 온다. 원문으로 정할 수 없으면 사람에게 묻는다 |
@@ -1170,7 +1179,7 @@ PR 본문은 doc/work/UZRF-145/10-pr.md 에 있습니다. push · MR/PR 생성�
 | `이 프로젝트에는 fix 로 돌 단계가 선언돼 있지 않습니다` | `code-agent.json` 의 `stages[].kinds` 에 그 종류를 더한다 (비우면 모든 종류). 메시지가 단계별 `kinds` 목록을 함께 찍는다 — 확인은 `code-agent manifest check` |
 | `진행 중인 작업이 있습니다: <ID>` | 끝내거나 `code-agent abort` 뒤에 시작 |
 | `작업이 진행 중입니다 ... 근거 문서는 작업 도중에 바꾸지 않습니다` | `/ca-docs` 를 작업 중에 열었다. 작업을 끝내거나 `abort` |
-| `요구사항을 접수 중입니다 (<ID>). 문서 세션 열기는…` · `… 문서 연결은…` | `/ca-docs` 를 접수 중에 열었거나 `docs link` 로 문서를 걸려 했다. 접수를 끝내거나 사람이 `code-agent abort` |
+| `요구사항을 접수 중입니다 (<ID>). … code-agent docs begin 으로 준비 세션을 연 뒤에 합니다` | 원문·ID를 유지한 채 `docs begin`으로 준비 세션을 열어 문서를 보완하고 `docs end` 후 접수로 돌아간다. 접수 취소는 필요 없다 |
 | `진행 중인 작업도 접수 중인 요구사항도 없습니다` | `code-agent abort` 가 닫을 것이 없다 |
 | `지시서가 없습니다: <경로> — /ca-request 로 접수해 …` | `confirm request` 가 확정할 파일이 없다. 접수부터 — **다른 자리에 손으로 쓴 지시서면 경로를 함께 준다** (`code-agent confirm request <ID> <지시서>`, 거부문도 그렇게 안내한다) |
 | `사슬이 끊겼습니다 — 누가 원장을 고쳤는지 확인하세요` | `.code-agent/approvals/*.jsonl` 이 손으로 바뀌었다. git 이력으로 확인한다 |

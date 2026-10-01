@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-01",
+  "scope": "README structure, common request entry point, init/update/help guidance and installed instructions; standalone HTML workflow update",
+  "build": { "command": "npm run build", "exitCode": 0 },
+  "regression": {
+    "command": "node --test dist/test/agent.test.js dist/test/p8.test.js dist/test/process.test.js dist/test/request.test.js dist/test/remaining.test.js",
+    "tests": 173, "suites": 42, "pass": 173, "fail": 0, "skipped": 0,
+    "durationMs": 66307.9901,
+    "log": "dist/entry-documentation-regression.log"
+  },
+  "finalInstallationCheck": {
+    "command": "node --test --test-name-pattern 'init|P8 · update' dist/test/agent.test.js dist/test/p8.test.js",
+    "tests": 12, "suites": 6, "pass": 12, "fail": 0, "skipped": 0,
+    "durationMs": 2663.4754,
+    "log": "dist/entry-install-final.log"
+  },
+  "documentation": {
+    "readme": "Balanced code fences, valid navigation and repository file links, UTF-8 checked",
+    "html": "17 sections, 15 SVG diagrams; desktop 1440px, mobile 390px, dark mode; no page overflow, SVG text outside viewBox or broken anchors"
+  },
+  "limits": [
+    "The two test groups overlap and must not be added together.",
+    "This follow-up did not rerun live-model full flows or novice user studies.",
+    "Existing installations in other development projects were not modified; code-agent update is required there.",
+    "Historical reports and guards rejecting incompatible old work state were intentionally preserved."
+  ]
+}
