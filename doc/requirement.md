@@ -1,57 +1,220 @@
-# 작업 지시서 (requirement.md)
+# 요구사항 접수와 작업 지시서 (requirement.md)
 
-code-agent 로 들어오는 **모든** 작업의 입력이다. 사람이 쓰고, 코드가 읽고, 모델은 고치지 못한다.
+code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13단계의 **1번**이고, 아직 작업 커서가
+없는 자리라 CLI 스테이지 번호가 없다 — 문서 작성 세션과 같은 자리다.
+
+요구사항은 **명령으로** 들어온다. 사람이 말로(서술·붙여넣은 티켓·파일) 주면 모델이 `request.json`
+으로 정리하고, 코드가 지시서 규격으로 검사해 `requirement.md` 를 **렌더**하고, 사람이 별도 터미널에서
+확정한다. 확정된 요구사항만 `code-agent start` 가 받는다.
 
 목적은 셋이다.
 
 1. **모델이 추론으로 메우는 자리를 없앤다.** 정해지지 않은 것은 정해질 때까지 진행되지 않는다.
 2. **봉투를 하나로 둔다.** 회사·프로젝트마다 내용은 달라도 머리말의 모양은 같다.
-3. **사람이 통제한다.** 시작 조건과 승인 지점이 코드로 강제된다.
+3. **사람이 통제한다.** 시작 조건과 승인 지점이 코드로 강제된다. 모델이 지시서를 지어내 스스로
+   시작하는 길과, 정리하다 원문과 뜻이 달라지는 길이 **같은 자리(사람의 확정)** 에서 닫힌다.
 
 > 개념과 스테이지는 [design.md](design.md), 실행 절차는 [usage.md](usage.md) 에 있다.
+
+## 흐름
+
+```
+/ca-feature <ID> <서술·티켓·파일>          (fix 는 /ca-fix, refactor 는 /ca-refactor, 단계만 돌려면 /ca-request)
+  → code-agent request begin <ID> --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+                                                                   접수 세션을 연다 (시작 인자는 적어 둔다)
+  → 모델이 doc/work/<ID>/request.json 을 쓴다                        원문 + 정리 + 접수 때 물은 것
+  → code-agent request submit doc/work/<ID>/request.json            검사 → requirement.md 렌더
+  → (사람, 별도 터미널) code-agent confirm request <ID>              원문과 정리를 나란히 읽고 confirm
+     반려는 code-agent reject request <ID> --comment "사유"
+  → code-agent start doc/work/<ID>/requirement.md                   /ca-next · /ca-analyze 가 부른다 → 분석
+```
+
+- **ID 는 사람이 준다.** 인자에 티켓 키가 없으면 모델은 지어내지 않고 묻고 멈춘다.
+  형식은 `[A-Za-z0-9]` 로 시작하는 `[A-Za-z0-9._-]` 64자 이하 — 작업 폴더 이름과 브랜치 이름
+  (`<kind>/<ID>`)이 되는 값이라 경로 조각으로 안전한 글자만 받는다.
+- **종류도 사람이 고른다.** `/ca-feature` · `/ca-fix` · `/ca-refactor` 가 `--kind` 를 넘긴다.
+  `/ca-request` 를 직접 부르면 `--kind` 가 없을 때 묻고 멈춘다.
+- **시작 인자(`--base` · `--target`)도 접수에서 받는다.** 접수와 시작 사이에는 사람의 확정이 끼어
+  명령이 끊기므로, `request begin` 이 받은 값을 접수 세션(`.code-agent/request-session.json`)에 적어
+  두고 확정 뒤 `start` 가 그대로 쓴다. `start` 에 직접 준 값이 있으면 그쪽이 이긴다.
+  `code-agent status` 가 접수 중에 `시작할 때 기준 브랜치 … · 대상 …` 으로 보여 준다.
+- 접수에서 묻는 것은 **원문만으로 정할 수 없는 필수값**(대상·범위·보존·확장 속성)과 원문이 두 가지로
+  읽히는 곳뿐이다. 업무 규칙의 세부·설계·테스트는 분석 단계가 맡는다.
 
 ## 자리
 
 ```
-doc/work/<Jira 키>/requirement.md
+doc/work/<Jira 키>/request.json      접수 초안 — 모델이 쓴다
+doc/work/<Jira 키>/requirement.md    작업 지시서 — 코드가 렌더한다 (모델 쓰기 거부)
 ```
 
 `<Jira 키>` 는 머리말의 `id` 그대로다. **폴더 이름과 `id` 가 같아야 한다** — 작업 폴더 경로를
 코드가 `id` 로 계산하기 때문이다(`src/agent/layout.ts` 의 `workDocsDir`). 어긋나면 분석·질문이
-지시서와 다른 폴더에 쌓인다.
+지시서와 다른 폴더에 쌓인다. `request submit` 은 초안의 `id` 가 접수한 ID 와 다르면 거부한다.
 
 같은 폴더에 작업의 나머지가 쌓인다.
 
 | 파일 | 누가 쓰나 | 언제 |
 |---|---|---|
-| `requirement.md` | **사람만** | 시작 전 |
-| `questions.md` | 모델(질문) · 사람(답) | 어느 스테이지에서든 |
-| `analysis.md` | 모델 | 요구사항 분석 |
-| `data.md` · `api.md` · `current.md` | 모델 | 범위 조사 — 분석이 필요하다고 한 것만 |
-| `plan.json` | 모델 (초안) | 계획 |
+| `request.json` | 모델 | 접수 |
+| `requirement.md` | **코드** (`request submit` 이 렌더) · 손으로 써도 된다 | 접수 |
+| `questions.md` | 모델(질문) · 사람(답) | `start` 가 만들고, 어느 스테이지에서든 |
+| `01-requirements.md` | 모델 | ① 요구사항 분석 |
+| `02-analysis.md` | 모델 | ② 영향도 분석 |
+| `03-design.md` · `04-functional.md` | 모델 | ③④ 설계·정의 |
+| `plan.json` | 모델 (계획 초안) | ⑤ 계획 |
+| `05-plan.md` | **코드** (`plan submit` 이 `plan.json` 에서 렌더) | ⑤ 계획 |
+| `07-test-spec.md` | 모델 | ⑦ 테스트 명세 (계획과 함께) |
+| `08-validation.md` | **코드** (`check` · `test` · `integrate`) | ⑧ 검증 |
+| `09-review.md` | 코드(회차 구역) · 모델(지적 표) | ⑨ 리뷰 |
+| `10-pr.md` | 코드(추적표·검증·변경 요약) · 모델(요약·확인 방법·위험) | ⑩ 반영 |
+| `knowledge.proposal.md` | 모델 | 반영 전 — `deliver` 가 TTY 에서 하나씩 묻는다 |
 
-제출된 계획과 승인 원장은 `.code-agent/` 아래 따로 쌓인다 — 거기는 코드만 쓴다.
+`06-` 파일은 없다 — ⑥ 은 소스 코드 자체다. 제출된 계획·증거·리뷰 회차·승인 원장은 `.code-agent/`
+아래 따로 쌓인다 — 거기는 코드만 쓴다.
 
-## 형식
+## 접수 세션
 
-파일 **맨 첫 줄**부터 머리말(front-matter)이다.
+접수 동안에는 아직 작업 커서가 없다. 그래서 문서 작성 세션처럼 **접수 세션**(`.code-agent/request-session.json`)
+을 열고, 그동안 hook 이 판정한다.
+
+| 접수 중에 | 어떻게 되나 |
+|---|---|
+| `doc/work/<ID>/` 안 쓰기 | 열려 있다 — `request.json` 과 질문이 여기 쌓인다 |
+| `doc/work/<ID>/requirement.md` 쓰기 | **거부.** 코드가 렌더한다 — 고칠 것은 `request.json` 에 쓰고 다시 제출한다 |
+| 작업 폴더 **밖** 쓰기 | **거부.** 코드와 문서는 사람이 확정하고 분석이 시작된 뒤에 쓴다 |
+| 선언된 빌드·테스트 명령 | 닫혀 있다 — 돌릴 코드가 아직 없는 자리다 |
+| `code-agent docs begin` · `docs link` | 거부 — 접수를 끝내거나 사람이 `code-agent abort` 로 닫은 뒤에 연다·연결한다 |
+
+- 진행 중인 작업이 있으면 `request begin` 이 거부한다. 다른 ID 를 접수 중일 때도 거부한다 —
+  한 번에 하나다. 같은 ID·같은 종류면 **이어서** 정리한다.
+- 종류를 바꾸려면 사람이 `code-agent abort` 로 닫고 다시 접수한다.
+- 작업이 없을 때 `code-agent abort` 는 접수 세션을 닫는다. 작업 폴더와 확정 원장은 남는다 —
+  같은 ID 로 다시 접수할 수 있다.
+- `code-agent start` 가 성공하면 접수 세션은 지워진다 — 그때부터 작업 커서가 hook 의 판정을 맡는다.
+
+## `request.json`
+
+형식은 `code-agent request begin` 과 `code-agent request` 가 그 저장소의 값(대상 후보·확장 속성)
+과 함께 찍어 준다. 검사는 `src/agent/request.ts` 가 한다.
+
+`code-agent request` 는 **작업이 도는 동안에도** 이 접수 형식을 찍는다 — 시작된 작업의 요구사항을
+고치려면 초안 형식이 다시 필요하기 때문이다(그때는 그 작업의 지시서 경로를 가리킨다).
+`code-agent context` 는 접수 중에만 같은 것을 주고, 작업이 시작된 뒤에는 그 스테이지의 컨텍스트를 준다.
+
+| 자리 | 값 | 규칙 |
+|---|---|---|
+| `kind` | `feature` \| `fix` \| `refactor` | 접수한 종류와 같아야 한다 — 종류는 사람이 명령으로 골랐다 |
+| `id` | 티켓 키 | 접수한 ID 와 같아야 한다. **지어내지 않는다** |
+| `title` | 한 줄 | 사람이 목록에서 알아본다 |
+| `target` | 1개 이상 | `fix`·`refactor` 는 저장소에 **실제로 있는 경로**, `feature` 는 만들 도메인·기능 이름 |
+| `scope` · `preserve` | 목록 | `fix`·`refactor` 는 필수. `scope` 는 실재하는 경로여야 한다 |
+| `approver` | 한 줄 | 프로젝트가 `requireApprover` 를 켰으면 필수 |
+| `extra` | `{이름: 값 \| [값]}` | 프로젝트가 `code-agent.json` 의 `workOrder.attributes` 에 선언한 것만 |
+| `original` \| `originalFile` | 원문 | **정확히 하나.** 글이면 `original`, 파일이면 `originalFile` 에 저장소 안 경로 |
+| `background` | 글 | 왜 필요한가 — 원문에 있는 것만. 없으면 빈 값 |
+| `requirements` | **1개 이상** | 요구 한 가지씩. 원문에 없는 요구를 더하지 않는다 |
+| `done` | 목록 | 원문이 말한 완료 조건. 없으면 비운다 |
+| `outOfScope` · `constraints` | 목록 | 원문이 말한 것만 |
+| `clarifications` | `[{question, answer}]` | 접수에서 물은 것과 **사람의 답 그대로** |
+
+- **원문은 한 글자도 바꾸지 않는다.** 요약·교정·번역하지 않는다. `originalFile` 을 주면 모델이
+  옮겨 적지 않고 **코드가 그 파일을 그대로** 지시서에 넣는다 — 옮겨 적다 바뀌는 길을 막는 자리다.
+  저장소 밖 파일·빈 파일은 거부한다.
+- **머리말에 들어가는 값은 한 줄씩**이다 (`title` · `target` · `scope` · `preserve` · `approver` · `extra`).
+  줄바꿈이 있으면 거부한다. 따옴표나 `[ ]` 로 감싸지 않는다.
+- `extra` 에 예약 속성(`kind` · `id` · `title` · `target` · `scope` · `preserve` · `approver`)을 쓰면
+  거부한다 — 그 값은 같은 이름의 자리에 쓴다.
+- `extra` 의 **속성 이름**은 영문으로 시작하는 `[A-Za-z0-9_-]`(`^[A-Za-z][A-Za-z0-9_-]*$`)뿐이다 —
+  머리말 파서가 읽을 수 있는 이름과 같은 규칙이다. 그 밖의 이름은 거부한다(머리말에 써 놓고
+  다시 읽히지 않는 속성이 생기는 자리다). 쓸 이름은 `code-agent.json` 의 `workOrder.attributes` 가 정한다.
+- 접수 뒤 요구사항을 고치는 것도 같은 길이다. **초안을 고쳐 다시 제출한다** — 작업이 이미 시작된
+  뒤여도 된다. 다시 제출하면 확정이 풀리고 사람이 다시 확정해야 진행한다.
+
+### `request submit` 이 하는 검사
+
+1. **스키마** — 위 표. 걸린 것을 모아서 알린다.
+2. **렌더** — 머리말 + 본문 섹션을 만든다.
+3. **지시서 규격** — 렌더한 결과를 손으로 쓴 지시서와 **같은 검사**에 건다(`src/core/workOrder.ts`).
+   규격에 걸리면 파일을 쓰지 않는다 — 깨진 지시서가 자리에 남지 않는다. 머리말 **파싱** 오류
+   (닫는 `---` 가 없는 등)도 여기서 접수 오류로 돌아온다 — 지시서를 읽는 쪽의 일반 메시지가 아니라
+   "초안을 고쳐 다시 내라"는 말로 나오고, 종료 코드는 1 이다.
+4. **왕복 대조** — 머리말에 옮긴 값을 다시 읽어 초안과 같은지 본다. 따옴표나 `[ ]` 로 감싼 값은
+   파서가 벗기거나 배열로 읽으므로, 뜻이 달라지는 값은 여기서 걸린다.
+5. **반려 재제출** — 마지막 판정이 반려인데 이번에 렌더한 내용이 **그때 반려된 것과 같으면** 쓰지 않는다.
+   사유를 함께 찍는다 — `반려된 내용과 같습니다 — 다시 제출하지 않았습니다. 반려 사유: …`.
+   사유를 읽지 않은 재제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다.
+
+## 렌더된 `requirement.md`
+
+머리말 다음에 섹션 일곱이 **항상 같은 순서**로 온다 (`renderRequirement`, `src/agent/request.ts`).
+비어 있는 섹션도 지우지 않는다 — 확정하는 사람이 "없다"와 "안 적었다"를 구분해야 한다.
 
 ```markdown
 ---
-kind: refactor
-id: UZRF-233
-title: 정산 배치의 트랜잭션 경계 정리
-target: src/main/java/com/acme/settlement
-scope: [src/main/java/com/acme/settlement]
+kind: fix
+id: UZRF-212
+title: 정산 배치가 취소 주문을 합계에 넣는다
+target:
+  - src/main/java/com/acme/settlement
+scope:
+  - src/main/java/com/acme/settlement
+  - src/test/java/com/acme/settlement
 preserve:
+  - settlement_daily 테이블 스키마
   - SettlementFacade 공개 시그니처
-  - settlement_* 테이블 스키마
 approver: team-lead
 ---
 
-## 현재 구조의 문제
-...
+<!-- 이 파일은 code-agent request submit 이 doc/work/UZRF-212/request.json 에서 렌더한다. 고칠 것은 request.json 에 쓰고 다시 제출한다 — 사람이 별도 터미널에서 code-agent confirm request UZRF-212 로 확정해야 작업이 시작된다. -->
+
+# UZRF-212 요구사항 — 정산 배치가 취소 주문을 합계에 넣는다
+
+## 원문
+
+<!-- 원문: 사람이 준 글 (접수 초안의 original) -->
+> 9/1 정산 돌렸는데 그날 결제하고 바로 취소된 주문이 합계에 그대로 남아 있어요.
+> 월정산도 같은 쿼리 쓰는 걸로 압니다.
+
+## 배경
+
+- 없음
+
+## 요구 내용
+
+- 취소된 주문은 일일 정산 합계에서 빠진다.
+
+## 완료 조건
+
+- 원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다
+
+## 범위 밖
+
+- 없음
+
+## 제약
+
+- 없음
+
+## 접수 때 정한 것
+
+- Q: 월간 정산도 이번에 같이 고칠까요?
+  - A: 이번엔 일일만. 월간은 확인만 해 주세요.
 ```
+
+| 섹션 | 무엇이 들어가나 |
+|---|---|
+| `## 원문` | 사람이 준 글 **그대로**, 인용(`>`)으로만 감싼다. 주석 한 줄이 출처를 밝힌다 — `원문: 사람이 준 글 (접수 초안의 original)` 또는 `원문: <경로> 그대로` |
+| `## 배경` | `background`. 없으면 `- 없음` |
+| `## 요구 내용` | `requirements` 를 `- ` 목록으로 |
+| `## 완료 조건` | `done`. 없으면 `- 원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다` |
+| `## 범위 밖` · `## 제약` | `outOfScope` · `constraints`. 없으면 `- 없음` |
+| `## 접수 때 정한 것` | `clarifications` 를 `- Q:` / `  - A:` 로. 없으면 `- 없음` |
+
+## 형식 — 머리말
+
+파일 **맨 첫 줄**부터 머리말(front-matter)이다. 렌더한 지시서든 손으로 쓴 지시서든 같은 파서를
+지난다(`src/core/workOrder.ts`).
 
 | 규칙 | 이유 |
 |---|---|
@@ -64,10 +227,9 @@ approver: team-lead
 | `kind` 는 정해진 값 중 하나여야 한다 | 오타 하나가 다른 흐름을 태운다 |
 
 따옴표로 감싼 값(`title: "…"`)은 벗겨서 읽는다. YAML 전체를 지원하지 않는 것은 의도다 —
-스칼라와 문자열 배열만 받는 파서는 의존성 없이 돈다.
+스칼라와 문자열 배열만 받는 파서는 의존성 없이 돈다. 렌더는 배열을 항상 `-` 목록으로 쓴다.
 
-검사는 `src/core/workOrder.ts` 가 한다. **걸린 것을 한 번에 모아** 알린다 — 한 건씩 알리면
-사람이 문서를 여러 번 고치게 된다.
+검사는 **걸린 것을 한 번에 모아** 알린다 — 한 건씩 알리면 사람이 문서를 여러 번 고치게 된다.
 
 ## 속성
 
@@ -76,26 +238,26 @@ approver: team-lead
 | 속성 | 값 | 코드가 이것으로 하는 일 |
 |---|---|---|
 | `kind` | `feature` \| `fix` \| `refactor` | 어느 단계를 도는지(`stages[].kinds`), 계획의 모양(`planFormatFor`), 작업 브랜치 이름 |
-| `id` | 티켓 키 | 작업 폴더 `doc/work/<id>/` · 제출된 계획 · 승인 원장 `.code-agent/approvals/<id>.jsonl` 이 이것에 묶인다 |
+| `id` | 티켓 키 | 작업 폴더 `doc/work/<id>/` · 제출된 계획 · 확정 원장 `.code-agent/approvals/<id>/request.jsonl` · 승인 원장 `.code-agent/approvals/<id>.jsonl` 이 이것에 묶인다 |
 | `title` | 한 줄 | 사람이 목록에서 알아본다 |
 | `target` | 대상 하나 또는 여럿 | 진행이 대상마다 갈린다. `start --target` 으로 고른다 |
 | `scope` | 이번에 건드려도 되는 경로 | 계획 제출과 매 쓰기의 **상한선** |
 | `preserve` | 바뀌면 안 되는 것 | 쓰기 거부(경로형) · 계획 필수 항목(문장형) |
-| `approver` | 승인자 | 승인 원장에 남는 이름 |
+| `approver` | 승인자 | 확정·승인 원장에 남는 이름 |
 
 ### kind
 
 | `kind` | 언제 | 무엇이 달라지나 |
 |---|---|---|
 | `feature` | 기능·도메인을 새로 추가할 때 | 계획이 *만들 파일 목록*. 참조 표준 도메인의 구조를 따른다 |
-| `fix` | 결함을 고칠 때 | 계획이 *고칠 파일 + 보존 조건*. `current.md` 필수, 재현 테스트가 첫 파일 |
+| `fix` | 결함을 고칠 때 | 계획이 *고칠 파일 + 보존 조건*. `07-test-spec.md` 에 `## 재현`, 재현 테스트가 첫 단계 |
 | `refactor` | 동작을 바꾸지 않고 구조만 고칠 때 | 같은 계획 모양. `preserve` 가 작업의 본체다 |
 
-`code-agent start` 는 이 셋만 받는다. 프로젝트 도입(아키텍처·컨벤션·`code-agent.json`)은 작업이
-아니라 `/ca-adopt` 가 하는 일이고, 지시서를 쓰지 않는다.
+`code-agent request begin` 과 `start` 는 이 셋만 받는다. 프로젝트 도입(아키텍처·컨벤션·`code-agent.json`)
+은 작업이 아니라 `/ca-adopt` 가 하는 일이고, 지시서를 쓰지 않는다.
 
-작업 브랜치 이름은 `<kind>/<id>` 다 (`feature/UZRF-145`). 기준은 `start --base` > `code-agent.json`
-의 `git.base` > `master` 순이다.
+작업 브랜치 이름은 `<kind>/<id>` 다 (`feature/UZRF-145`). 기준은 `start --base` > 접수 때 적어 둔
+`request begin --base` > `code-agent.json` 의 `git.base` > `master` 순이다.
 
 ### kind 별 필수
 
@@ -110,10 +272,13 @@ approver: team-lead
 - `feature` 의 `target` 은 **이제부터 만들** 도메인 이름이라 아직 디렉토리가 없다. 실재를 물을 수 있는
   것은 이미 있는 코드를 다루는 둘뿐이다.
 - `scope` 는 종류와 무관하게 **저장소에 실제로 있는 경로**여야 한다. 경로 오타는 분석이 한참 돈 뒤가 아니라
-  작업을 접수하는 자리(`start`)에서 드러나야 한다.
+  접수하는 자리(`request submit` · `start`)에서 드러나야 한다.
 - `preserve` 는 실재를 묻지 않는다 — 경로와 문장을 섞어 쓰기 때문이다.
 - `approver` 의 필수 여부만 프로젝트가 정한다 (`code-agent.json` 의 `workOrder.requireApprover`).
   없으면 원장에는 실행한 계정 이름이 남는다.
+- 대상 후보는 코드가 준다 — `request begin` · `request` 가 매니페스트의 도메인 디렉토리를 찍는다.
+  `fix`·`refactor` 는 경로로 찍고, `feature` 는 `- <이름> (<경로>)` 로 찍는다 — `feature` 의 `target` 에는
+  괄호 안의 경로가 아니라 **이름**을 쓴다. **고르는 것은 사람이다.** 원문으로 정할 수 없으면 모델은 묻고 멈춘다.
 
 ### `scope` 는 상한선이다
 
@@ -153,35 +318,103 @@ approver: team-lead
 }
 ```
 
-- 선언하면 머리말에 쓸 수 있고, `required` 면 없을 때 거부되고, `values` 가 있으면 그 밖의 값이 거부된다.
+- 선언하면 머리말에 쓸 수 있고(초안에서는 `extra`), `required` 면 없을 때 거부되고, `values` 가 있으면
+  그 밖의 값이 거부된다. 접수 때 `request begin` · `request` 가 선언된 속성과 허용 값을 찍어 준다 —
+  원문에 없으면 모델이 묻는다.
 - **존재와 값 유효성만 검사한다.** 흐름은 이 값들을 쳐다보지 않는다.
 - 이 선을 지켜야 특정 회사의 지식이 에이전트 소스에 들어가지 않는다. 예약 속성과 확장 속성을 가르는
   기준은 하나다 — **코드가 그 값으로 분기하는가.**
-- `requireVerifiedApproval` (기본 `false`) 을 켜면 터미널(TTY)이 아닌 곳에서 남은 판정은 원장에 기록만 되고
-  문을 열지 않는다 — 사람이 그 자리에 있었다는 증거가 있는 승인만 통한다. 비대화형 셸·스크립트로 승인하는 길을
-  잃는 대가를 알고 켠다.
+- `requireVerifiedApproval` (기본 `false`) 을 켜면 터미널(TTY)이 아닌 곳에서 남은 판정은 원장에 기록만
+  되고 문을 열지 않는다. **계획 승인과 요구사항 확정에 똑같이 걸린다** — 사람이 관측되지 않은 확정은
+  `확정에 사람이 관측되지 않음` 상태가 되고 `start` · `next` 를 비롯한 모든 스테이지가 거부한다.
+  이 설정을 끄더라도 확정·승인은 **언제나 TTY 에서만** 받는다 — 설정이 더하는 것은 "사람이 거기 있었다는
+  관측까지 남아야 받는다" 는 조건이다. 매니페스트를 읽지 못하면 켠 쪽으로 닫는다.
 
-## 본문 — 형식을 검사하지 않는다
+## 본문 — 분석이 읽는 근거
 
-섹션 제목은 무엇이든 된다. 이미 갖고 있는 요구사항 문서를 양식에 맞춰 다시 쓰게 만드는 순간
-도입 비용이 도입 가치를 넘는다.
+렌더한 섹션 제목은 코드가 정하지만, 그 **내용의 깊이는 원문이 정한다.** 본문은 분석 스테이지가 읽는
+근거다 — 모델은 요구 항목(`01-requirements.md` 의 `## R<n>`)마다 지시서 문장을 그대로 인용해야 하고,
+인용할 문장이 없으면 그 자리는 질문이 된다. 근거를 찾는 곳은 `## 원문` · `## 요구 내용` · `## 완료 조건` ·
+`## 접수 때 정한 것` 이다. 원문이 얇으면 접수의 질문이 늘고, 접수를 넘겨도 분석에서
+다시 는다 — 검사를 안 할 뿐 비용은 사라지지 않는다.
 
-대신 본문은 **분석 스테이지가 읽는 근거**다. 모델은 요구 항목(`analysis.md` 의 `## R<n>`)마다
-지시서 문장을 그대로 인용해야 하고, 인용할 문장이 없으면 그 자리는 질문이 된다. 본문이 얇으면
-질문이 늘고 사람 왕복이 늘어난다 — 검사를 안 할 뿐 비용은 사라지지 않는다.
+`## 완료 조건` 에 문장이 있으면 ④ 의 수락 기준(AC)은 그것을 **그대로 옮기고 번호(`AC-R<n>-<m>`)만 붙인다** —
+사람이 확정한 기준을 두고 새로 짓지 않는다. `원문에 없음` 일 때만 분석이 짓는다.
 
-| `kind` | 본문에 있으면 질문이 줄어드는 것 |
+| `kind` | 원문에 있으면 왕복이 줄어드는 것 |
 |---|---|
 | `feature` | 요구사항 · 워크플로우 · 상태 전이 · 데이터 항목(DDL 을 붙여도 된다) · API·화면 · **수락 기준** |
 | `fix` | **재현 조건**(없으면 재현 테스트를 만들 수 없다) · 현재 동작 · 기대 동작 · 같은 원인이 다른 곳에도 있는지 |
 | `refactor` | 현재 구조의 문제 · 목표 구조 · **동작 보존 근거**(어떤 테스트가 통과하면 보존된 것인가) · **하지 않을 것** |
 
 `refactor` 의 마지막 항목이 중요하다. 리팩토링에서 실패는 "못 고쳐서"가 아니라 **"같이 고쳐서"** 일어난다.
+그 줄은 접수에서 `outOfScope` 로 받는다.
+
+## 확정 — 사람이 터미널에서
+
+```
+code-agent confirm request <ID> [<지시서>]
+code-agent reject  request <ID> [<지시서>] --comment "사유"
+```
+
+- **TTY 에서만** 받는다. 모델 세션 안의 판정은 모델이 한 것과 구분되지 않는다.
+- 지시서 전문을 화면에 띄우고 — 원문과 정리가 나란히 보인다 — `confirm`(또는 `reject`) 을 **그대로
+  입력**해야 판정이 남는다. 다른 입력은 취소다.
+- 확정 전에 머리말 규격을 다시 검사하고, 지시서의 `id` 가 명령의 ID 와 다르면 거부한다.
+- 반려에는 사유가 필수다. 사유는 `code-agent status` 에 그대로 나오고 `/ca-request` 가 그것을 읽고
+  다시 정리한다 — **사유를 읽지 않고 같은 초안을 다시 내지 않는다.**
+- **지시서 경로는 선택이다.** 생략하면 — 그 ID 가 진행 중인 작업이면 그 작업이 시작된 지시서,
+  아니면 `doc/work/<ID>/requirement.md` 다. 다른 자리에 손으로 쓴 지시서는 경로를 함께 준다.
+  확정하는 쪽과 시작하는 쪽이 **같은 파일**을 봐야 하므로, `start` 의 거부문은 그 경로까지 넣은
+  명령을 그대로 찍어 준다.
+- **남는 해시는 사람에게 보여 준 바이트의 해시다.** 프롬프트 앞에서 읽은 내용을 해시하고, 사람이 읽는
+  사이에 파일이 바뀌었으면 — 다시 제출됐거나 손으로 고쳤거나 — 판정을 **남기지 않는다**:
+  `확정하는 동안 지시서가 바뀌었습니다 — 판정을 남기지 않았습니다`. 보여 준 것과 남는 것이 같아야 한다.
+
+판정은 `.code-agent/approvals/<ID>/request.jsonl` 에 **append only** 로 쌓인다.
+
+| 줄에 남는 것 | |
+|---|---|
+| `spec` · `hash` | 확정한 지시서 경로와 그 내용의 해시 |
+| `decision` · `comment` | `confirmed` \| `rejected` 와 반려 사유 |
+| `approver` · `at` · `presence` | 머리말의 `approver`(없으면 실행 계정) · 시각 · 터미널에서 받았다는 관측 |
+| `prev` | 앞 줄의 해시 (첫 줄은 `genesis`) |
+
+사슬이 끊겼으면 **읽지 않고 멈춘다** — 나중에 고친 확정을 조용히 믿지 않는다. 이 디렉토리는 반영
+커밋의 경로 목록에 들어 있어 작업과 함께 커밋된다.
+
+해시는 BOM 과 CRLF 를 지우고 잰다 — `autocrlf` 가 확정을 무효로 만들지 않게.
+
+상태를 읽을 때 세는 줄은 **`id` 와 `spec` 이 둘 다 같은** 줄뿐이다. 원장 파일은 ID 마다 하나지만
+확정 대상 지시서는 여러 자리일 수 있다 — 다른 자리의 지시서를 확정한 줄이 이 자리의 확정으로 읽히면,
+보지 않은 파일로 작업이 시작된다. 사슬 검사는 그와 별개로 **파일 전체**에 건다.
+
+### 확정이 풀리는 때
+
+`code-agent start` 는 물론이고 `next` · `plan submit` · `approve`/`reject` · `repro` · `check` ·
+`test` · `review` · `integrate` · `deliver` 가 전부 **지금 내용 그대로의 확정**을 요구한다.
+
+| 무엇을 했나 | 상태 | 어떻게 되나 |
+|---|---|---|
+| 판정이 아직 없다 | `확정 대기` | 사람이 `confirm request <ID>` 할 때까지 아무것도 진행되지 않는다 |
+| 반려됐다 | `반려됨 — <사유>` | 사유대로 초안을 고쳐 다시 제출한다 |
+| 확정 뒤 지시서가 바뀌었다 (재제출·손수정) | `확정 뒤 바뀜` | **다시 확정**해야 진행한다 |
+| 반려 뒤 다시 제출했다 | `다시 제출됨 — 확정 대기` | 사람의 판정을 기다린다 |
+| 확정은 있는데 사람이 관측되지 않았다 (`requireVerifiedApproval` 켠 프로젝트) | `확정에 사람이 관측되지 않음` | 터미널에서 **다시 확정**해야 진행한다 |
+
+지시서가 바뀌면 그 지시서로 받은 **계획 승인도 함께 무효**가 된다(`stale-order` · `stale-docs`) —
+`requirement.md` 는 승인 묶음의 문서이기도 하기 때문이다. 상태는 `code-agent status` 의
+`요구사항:` 한 줄에 그대로 나온다.
 
 ## 모델은 지시서를 고치지 못한다
 
-PreToolUse hook 이 막는다 (`src/agent/hook.ts`). 작업 폴더 안에 있어도 예외가 아니다 —
-작업 폴더의 다른 파일은 모델이 쓰지만 `requirement.md` 만은 사람의 입력이다.
+PreToolUse hook 이 막는다 (`src/agent/hook.ts`). 접수 중에도, 작업이 도는 동안에도, **작업도 세션도
+없을 때도** 같다 — 작업 폴더의 다른 파일은 모델이 쓰지만 `requirement.md` 만은 사람의 것이다.
+
+```
+doc/work/UZRF-212/requirement.md 는 코드가 렌더합니다 — code-agent request submit 이 doc/work/UZRF-212/request.json 에서 만듭니다.
+고칠 것은 request.json 에 쓰고 다시 제출하세요. 원문은 사람이 준 그대로 둡니다.
+```
 
 ```
 작업 지시서(doc/work/UZRF-145/requirement.md)는 고칠 수 없습니다.
@@ -189,7 +422,47 @@ PreToolUse hook 이 막는다 (`src/agent/hook.ts`). 작업 폴더 안에 있어
 ```
 
 요구가 틀렸다고 보이면 모델이 고치는 것이 아니라 **질문으로 돌린다.** 답이 없는 질문이 하나라도
-있으면 다음 스테이지로 넘어가지 않는다.
+있으면 다음 스테이지로 넘어가지 않는다. 요구 자체를 바꿔야 하면 초안을 고쳐 다시 제출하고
+사람이 다시 확정한다.
+
+### 세션 밖에서도 언제나 막는 것
+
+작업 커서도 세션도 없는 동안 hook 은 대부분 판정하지 않는다 — code-agent 로 하는 작업이 아닐 때까지
+막을 이유는 없다. 그래도 이 다섯은 **언제나** 지킨다. 세션이 열리기 전이 가장 빈 자리이기 때문이다 —
+여기가 열려 있으면 모델이 지시서와 확정 원장을 손으로 써 넣고 사람의 확정 없이 `start` 를 지난다.
+
+| 무엇 | 왜 |
+|---|---|
+| `doc/work/<아무 ID>/requirement.md` 쓰기 | 지시서는 `request submit` 이 렌더한다 — 접수 전에 써 두는 길을 닫는다 |
+| `.code-agent/` 아래 쓰기 (대소문자 무시) | 작업 상태 · 확정과 승인 원장. 판정 한 줄을 손으로 써 넣는 길 |
+| `~/.code-agent/` 읽기·쓰기 (`Read` · `Grep` · `Glob` · `Write`) | 등록된 플러그인 키가 평문으로 사는 자리 |
+| `~/.code-agent` 나 `.code-agent` 경로를 가리키는 Bash | 같은 자리를 셸로 돌아가는 길. CLI 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다 |
+| 경로에 `:` 가 든 쓰기 (**모든 모드**) | Windows 의 대체 데이터 스트림 표기 — `requirement.md::$DATA` 는 이름 대조를 비켜 같은 파일을 쓴다 |
+
+문서 작성 세션 동안에도 `doc/work/<ID>/requirement.md` 는 같은 이유로 거부한다.
+
+**hook 은 사고 방지 장치이지 보안 경계가 아니다.** Bash 는 그 자리를 *가리키는 글자*만 본다 —
+글자를 쪼개거나 돌려 쓰는 셸 명령까지는 막지 못한다. 여기서 닫는 것은 "모르고 지나가는 길"이고,
+작정하고 뚫는 길은 애초에 hook 이 막을 수 있는 종류가 아니다.
+
+## 손으로 쓴 지시서도 받는다
+
+이미 양식에 맞는 지시서가 있거나 사람이 직접 쓰고 싶으면 `doc/work/<ID>/requirement.md` 에 그대로
+두면 된다. 머리말 규격은 같고, **확정도 같다** — `code-agent confirm request <ID>` 를 지나야
+`start` 가 받는다. 손으로 고친 경우에도 확정이 풀리므로 다시 확정해야 한다. 쓰는 것도 사람이 한다 —
+hook 이 그 경로에 대한 모델의 쓰기를 거부하므로 편집기로 쓴다.
+
+**다른 자리에 둔 지시서도 받는다.** 그때는 확정할 때 경로를 함께 준다.
+
+```
+code-agent confirm request <ID> doc/spec/<어디든>.md
+code-agent start doc/spec/<어디든>.md
+```
+
+확정한 경로와 시작한 경로가 같아야 판정이 이 지시서의 것으로 읽힌다 — 어긋나면 `start` 가
+멈추면서 **그 경로까지 넣은 확정 명령을 그대로** 찍어 준다.
+
+접수 명령을 쓰면 원문이 보존되고 질문이 `clarifications` 로 남는다는 것만 다르다.
 
 ## 승인은 이 문서에 묶인다
 
@@ -214,91 +487,73 @@ PreToolUse hook 이 막는다 (`src/agent/hook.ts`). 작업 폴더 안에 있어
 `stale-order` 가 된다** — 원장은 대상별로 읽히지만, 어느 줄이든 판정 당시의 지시서 해시와 대조하기
 때문이다. 새로 더한 대상만 판정이 아예 없는 `none` 이고, 그 대상은 계획부터 다시 돈다.
 
-## 예시
+## 예시 — 접수 초안
 
 ### feature
 
-```markdown
----
-kind: feature
-id: UZRF-145
-title: 주문 등록·조회 API
-target: order
-approver: team-lead
----
-
-## 요구사항
-- 회원이 상품을 주문한다. 주문에는 주문번호, 주문일시, 상태, 금액 합계가 있다.
-- 주문 목록을 조회한다. 회원 본인의 주문만 보인다.
-
-## 상태 전이
-접수 → 결제완료 → 배송중 → 완료 / 취소(결제완료까지만)
-
-## 수락 기준
-- 주문 등록 후 조회에서 같은 주문번호가 보인다.
-- 다른 회원의 주문번호로 조회하면 403.
+```json
+{
+  "kind": "feature",
+  "id": "UZRF-145",
+  "title": "주문 등록·조회 API",
+  "target": ["order"],
+  "approver": "team-lead",
+  "original": "회원이 상품을 주문하고 자기 주문만 조회할 수 있게 해 주세요. 주문에는 주문번호, 주문일시, 상태, 금액 합계가 있습니다. 상태는 접수 → 결제완료 → 배송중 → 완료, 취소는 결제완료까지만 됩니다.",
+  "background": "주문 도메인이 아직 없다.",
+  "requirements": [
+    "회원이 상품을 주문한다. 주문에는 주문번호 · 주문일시 · 상태 · 금액 합계가 있다.",
+    "주문 목록을 조회한다. 회원 본인의 주문만 보인다.",
+    "상태 전이는 접수 → 결제완료 → 배송중 → 완료이고, 취소는 결제완료까지만 된다."
+  ],
+  "done": ["주문 등록 후 조회에서 같은 주문번호가 보인다.", "다른 회원의 주문번호로 조회하면 403."],
+  "clarifications": [{ "question": "도메인 이름을 order 로 둘까요?", "answer": "네, order 로 해 주세요." }]
+}
 ```
 
 `target` 은 도메인 이름이다. `scope` 를 적지 않으면 매니페스트의 단계별 `outputDirs` 가 경계가 된다.
 
 ### fix
 
-```markdown
----
-kind: fix
-id: UZRF-212
-title: 정산 배치가 취소 주문을 합계에 넣는다
-target: src/main/java/com/acme/settlement
-scope:
-  - src/main/java/com/acme/settlement
-  - src/test/java/com/acme/settlement
-preserve:
-  - settlement_daily 테이블 스키마
-  - SettlementFacade 공개 시그니처
-approver: team-lead
----
-
-## 재현 조건
-2026-09-01 에 결제완료 후 같은 날 취소된 주문이 있으면, 그 날짜의 일일 정산 합계에 주문 금액이 남는다.
-
-## 현재 동작 / 기대 동작
-현재: 상태와 무관하게 주문일 기준으로 합산한다.
-기대: 취소된 주문은 합계에서 빠진다.
-
-## 영향 범위
-같은 합산 쿼리를 월간 정산도 쓴다 — 확인이 필요하다.
+```json
+{
+  "kind": "fix",
+  "id": "UZRF-212",
+  "title": "정산 배치가 취소 주문을 합계에 넣는다",
+  "target": ["src/main/java/com/acme/settlement"],
+  "scope": ["src/main/java/com/acme/settlement", "src/test/java/com/acme/settlement"],
+  "preserve": ["settlement_daily 테이블 스키마", "SettlementFacade 공개 시그니처"],
+  "approver": "team-lead",
+  "originalFile": "doc/work/UZRF-212/ticket.txt",
+  "requirements": ["취소된 주문은 일일 정산 합계에서 빠진다."],
+  "outOfScope": ["월간 정산 수정 — 같은 쿼리를 쓰는지 확인만 한다."],
+  "clarifications": [{ "question": "월간 정산도 이번에 같이 고칠까요?", "answer": "이번엔 일일만. 월간은 확인만 해 주세요." }]
+}
 ```
 
 `target` 과 `scope` 의 경로는 저장소에 실제로 있어야 한다. 테스트 디렉토리를 `scope` 에 넣지 않으면
-재현 테스트를 쓸 수 없다.
+재현 테스트를 쓸 수 없다. `originalFile` 은 저장소 안의 파일이어야 하고, 코드가 그 내용을 그대로
+`## 원문` 에 넣는다.
 
 ### refactor
 
-```markdown
----
-kind: refactor
-id: UZRF-233
-title: 정산 배치의 트랜잭션 경계를 Facade 로
-target: src/main/java/com/acme/settlement
-scope: [src/main/java/com/acme/settlement]
-preserve:
-  - SettlementFacade 공개 시그니처
-  - settlement_* 테이블 스키마
-  - 기존 정산 테스트가 그대로 통과한다
-approver: team-lead
----
-
-## 현재 구조의 문제
-Handler 가 트랜잭션을 열고 Facade 가 다시 연다. 부분 커밋이 난다.
-
-## 목표 구조
-트랜잭션은 Facade 에서만 연다. Handler 는 호출만 한다.
-
-## 동작 보존 근거
-SettlementBatchTest · SettlementFacadeTest 가 그대로 통과한다.
-
-## 하지 않을 것
-쿼리 튜닝, 로깅 정리, 패키지 이동.
+```json
+{
+  "kind": "refactor",
+  "id": "UZRF-233",
+  "title": "정산 배치의 트랜잭션 경계를 Facade 로",
+  "target": ["src/main/java/com/acme/settlement"],
+  "scope": ["src/main/java/com/acme/settlement"],
+  "preserve": [
+    "SettlementFacade 공개 시그니처",
+    "settlement_* 테이블 스키마",
+    "기존 정산 테스트가 그대로 통과한다"
+  ],
+  "approver": "team-lead",
+  "original": "Handler 가 트랜잭션을 열고 Facade 가 다시 엽니다. 부분 커밋이 나요. 트랜잭션은 Facade 에서만 열게 정리해 주세요. 쿼리 튜닝이나 로깅 정리, 패키지 이동은 하지 마세요.",
+  "requirements": ["트랜잭션은 Facade 에서만 연다. Handler 는 호출만 한다."],
+  "outOfScope": ["쿼리 튜닝", "로깅 정리", "패키지 이동"],
+  "constraints": ["SettlementBatchTest · SettlementFacadeTest 가 그대로 통과해야 한다."]
+}
 ```
 
 `preserve` 의 세 문장은 계획에 **그대로** 옮겨야 제출된다. 그중 저장소에 실제로 있는 경로를 적었다면
@@ -306,7 +561,7 @@ SettlementBatchTest · SettlementFacadeTest 가 그대로 통과한다.
 
 ## 지금 도는 것과 다음
 
-지시서의 형식과 검사는 P1~P3 으로 닫혔다. 뒤 단계가 더하는 것은 **지시서가 무엇에 묶이는가**이지
+머리말의 형식과 검사는 P1~P3 으로 닫혔다. 뒤 단계가 더한 것은 **지시서가 무엇에 묶이는가**이지
 머리말의 모양이 아니다.
 
 | 단계 | 지시서에 무엇이 걸리나 | 상태 |
@@ -317,6 +572,7 @@ SettlementBatchTest · SettlementFacadeTest 가 그대로 통과한다.
 | P4 영향도·시스템 설계 | `02-analysis.md` · `03-design.md` · `04-functional.md` · `07-test-spec.md` 가 승인 묶음에 더해진다 — 머리말은 그대로 | ✅ |
 | P5 구현·검증·반영 | `scope`·`preserve` 가 정적 분석·테스트·리뷰·통합 검증까지 이어지고, 반영이 MR/PR 본문 `10-pr.md` 를 낸다 | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 우선과 `preserve` 강제가 전 과정에 걸린다 | 코드 ✅ · 완주 실측 |
+| 요구사항 접수 | 지시서를 **명령으로** 받아 코드가 렌더하고, 사람의 터미널 확정이 모든 스테이지의 전제가 된다 | ✅ |
 
 P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 — 머리말은 P1 이후 그대로다.
 
@@ -326,11 +582,17 @@ P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 �
 ## 시작
 
 ```
-/ca-feature doc/work/UZRF-145/requirement.md
-/ca-fix      doc/work/UZRF-212/requirement.md
-/ca-refactor doc/work/UZRF-233/requirement.md
+/ca-feature  ORD-12 결제 수단에 간편결제를 추가해 주세요
+/ca-fix      UZRF-212 doc/work/UZRF-212/ticket.txt
+/ca-refactor UZRF-233 트랜잭션은 Facade 에서만 열게 정리해 주세요
+/ca-request  ORD-12 --kind feature <요구사항>        접수 한 단계만
 ```
 
-스킬이 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` 를 부른다.
-머리말이 규격에 맞지 않으면 여기서 멈춘다 — **모델에게 한 글자도 가지 않는다.**
-대상이 여럿이면 `--target` 으로 하나를 고른다. 고르지 않으면 첫 대상이다.
+스킬이 `code-agent request begin <ID> --kind <종류> [--base <기준 브랜치>] [--target <대상>]` 로 접수를
+열고, 초안을 제출해 지시서를 렌더한다. 사람이 `code-agent confirm request <ID>` 로 확정하면
+`/ca-next`(또는 `/ca-analyze`)가 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`
+로 분석을 시작한다. 대상이 여럿이면 `--target` 으로 하나를 고른다. 고르지 않으면 접수 때 말한 대상,
+그것도 없으면 첫 대상이다 — `--base` 도 같다(접수 때 적어 둔 값을 `start` 가 쓰고, 지금 준 값이 이긴다).
+
+접수 초안이 규격에 맞지 않으면 `request submit` 에서 멈추고, 확정되지 않은 요구사항 위에서는
+`start` 가 멈춘다 — **모델에게 한 글자도 가지 않는다.**

@@ -60,7 +60,7 @@ npm run build:bin
 | 0 | `node:sea.getAssetKeys` 가 있는가 | 없으면 **선다**. 24.8 미만으로 묶으면 빌드는 조용히 끝나고 바이너리가 실행 시점에 맨 ENOENT 로 죽는다 |
 | 1 | `tsc` | 타입이 깨진 채로 바이너리를 내지 않는다 |
 | 2 | esbuild 로 `src/agent/cli.ts` 를 CommonJS 한 파일로 (zod 포함, `--external:node:sea`) | SEA 안에서는 상대경로 `require()` 가 되지 않는다 — 빌트인만 풀린다 |
-| 3 | `dist-bin/sea-config.json` — `template/` 아래 전 파일 + `package.json` 을 **자원(assets)** 으로 (지금 28개) | 실행 파일 안에 스킬·에이전트·CLAUDE 블록이 함께 들어간다 |
+| 3 | `dist-bin/sea-config.json` — `template/` 아래 전 파일 + `package.json` 을 **자원(assets)** 으로 (지금 29개) | 실행 파일 안에 스킬·에이전트·CLAUDE 블록이 함께 들어간다 |
 | 4 | `node --experimental-sea-config dist-bin/sea-config.json` | `prep.blob` |
 | 5 | **지금 도는 `node` 실행 파일을 복사** | ← 크로스 컴파일이 안 되는 이유 |
 | 6 | `postject … --sentinel-fuse NODE_SEA_FUSE_…` 로 blob 주입 | 이 플래그가 없으면 `Could not find the sentinel` 로 실패한다 |
@@ -98,7 +98,7 @@ cd <프로젝트> && code-agent init
 
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
-| 스킬·에이전트 (25개) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
+| 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
 | PreToolUse hook · Stop hook | `.claude/settings.json` — `code-agent hook` · `code-agent stop` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
@@ -109,10 +109,10 @@ cd <프로젝트> && code-agent init
 
 ```
 code-agent 를 설치했습니다 — C:\work\shop
-  - 스킬·에이전트 25개: .claude/skills/ca-*, .claude/agents/ca-*
+  - 스킬·에이전트 26개: .claude/skills/ca-*, .claude/agents/ca-*
   - hook: .claude/settings.json → PreToolUse code-agent hook · Stop code-agent stop
   - CLAUDE.md: code-agent 블록 생성
-  - .gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, log/)
+  - .gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/)
   - 버전 고정: .code-agent/version = 1.0.0
 ```
 
@@ -158,7 +158,7 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
 | git 저장소 | `.git` 이 있다 | `git init` — 기준 커밋이 없으면 검증 스테이지가 거부한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| PreToolUse hook · Stop hook | `.claude/settings.json` 에 우리 항목이 있고 **그 명령이 이 PC 에서 풀린다** | 없으면 `code-agent init`. 가리키는 파일이 없으면 `code-agent init [--cli <경로>]` |
+| PreToolUse hook · Stop hook | `.claude/settings.json` 에 우리 항목이 있고 **그 명령이 이 PC 에서 풀린다**. PreToolUse 는 matcher 가 넘기는 도구까지 본다 | 없으면 `code-agent init`. 가리키는 파일이 없으면 `code-agent init [--cli <경로>]`. 옛 설치본이라 `matcher 가 Read · Grep · Glob 를 넘기지 않습니다` 면 `code-agent update` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 `model:` 줄은 빼고 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
@@ -166,11 +166,11 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 매니페스트 | `code-agent.json` 이 참조 파일을 실제로 찾는다. 파일이 없으면 `·` (도입 전) | 형식 오류면 어느 키가 왜 틀렸는지까지 그대로 (머리말만 남기지 않는다) → `code-agent manifest check` |
 | 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준 | 넷 다 확정됐다 | 상태가 `missing-file` · `missing-sections` · `unconfirmed` · `stale` 중 하나다 → [usage.md §9](usage.md#9-승인과-반영--터미널에서) |
 | 사용자 키 파일 | POSIX: `~/.code-agent/credentials.json` 의 권한이 좁다. Windows: (`·`) 자리와 ACL 안내 | `chmod 700 ~/.code-agent && chmod 600 ~/.code-agent/credentials.json` |
-| 터미널 | (`·`) stdin 이 TTY 다 — `approve` · `confirm` · `deliver` · `plugin add` 가 열린다 | — 막지 않는다. 아래 |
+| 터미널 | stdin 이 TTY 다 — `approve` · `confirm` · `deliver` · `plugin add` 가 열린다 | (`·`) TTY 가 아니면 그 넷이 열리지 않는다고 알리기만 한다 — 막지 않는다. 아래 |
 
 ### Windows 의 TTY — PowerShell vs Git Bash
 
-`approve` · `confirm doc` · `deliver` · `plugin add` 는 stdin 이 TTY 여야 연다.
+`approve` · `confirm doc` · `confirm request` · `reject request` · `deliver` · `plugin add` 는 stdin 이 TTY 여야 연다.
 
 | 어디서 | 되나 |
 |---|---|
@@ -188,6 +188,10 @@ code-agent update [--cli <경로>]
 
 지금 도는 버전의 스킬·에이전트·hook·CLAUDE 블록을 **다시 설치**하고 `.code-agent/version` 을 맞춘다.
 TTY 는 필요 없다 — 사람의 판정이 아니라 파일 복사다. 새 버전을 깐 뒤(`npm i -g …` 또는 새 바이너리) 저장소마다 한 번씩 돌린다.
+
+**옛 설치본은 `update` 를 돌려야 PreToolUse matcher 가 넓어진다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
+hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).
+이 닫힘은 **진행 중인 작업이 없을 때까지** 걸린다(`.code-agent/` 와 작업 지시서도 같다) — 그래서 matcher 가 좁은 옛 설치본은 작업 중이 아니어도 구멍이 난다.
 
 보존은 `init` 이 이미 하던 그대로다.
 

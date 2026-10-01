@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { recordDecision } from "../core/approval";
-import { decide as decideApproval, next, start, Stop, submitPlan } from "../agent/commands";
+import { decide as decideApproval, next, Stop, submitPlan } from "../agent/commands";
+import { start } from "./confirmedStart";
 import { checkDoc, checkProjectDocs, checkSections, DOCS_LEDGER, readDocLedger, recordDocConfirmation } from "../agent/docs";
 import { confirmDoc, docsBegin, docsEnd, docsLink, docsSkeleton, docsStatus } from "../agent/docsCommands";
 import { decide } from "../agent/hook";

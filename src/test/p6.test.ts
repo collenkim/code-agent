@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
-import { back, context, next, requireReproable, requireValidatable, start, Stop, submitPlan } from "../agent/commands";
+import { back, context, next, requireReproable, requireValidatable, Stop, submitPlan } from "../agent/commands";
+import { start } from "./confirmedStart";
 import { commitDelivery, prDocFile } from "../agent/deliver";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import {

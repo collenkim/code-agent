@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { blockCount, readBlock, stripBlock, upsertBlock } from "../agent/blocks";
 import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
-import { abort, back, context, next, requireValidatable, start, status, Stop, submitPlan } from "../agent/commands";
+import { abort, back, context, next, requireValidatable, status, Stop, submitPlan } from "../agent/commands";
+import { start } from "./confirmedStart";
 import { commitDelivery, deliver, deliverProblems, prDocFile, traceRows } from "../agent/deliver";
 import { loadEvidence, outsideChanges, overFixLimit, runsOf, validationDocFile } from "../agent/evidence";
 import { decide } from "../agent/hook";
@@ -1361,7 +1362,7 @@ describe("설치되는 템플릿", () => {
 
   test("init 이 스테이지마다 스킬 하나씩 + 사이클·보조 스킬을 설치한다", () => {
     const report = init(repo);
-    const stages = ["analyze", "impact", "design", "plan", "implement", "check", "test", "review", "integrate"];
+    const stages = ["request", "analyze", "impact", "design", "plan", "implement", "check", "test", "review", "integrate"];
     const skills = [...stages.map((stage) => `ca-${stage}`), "ca-next", "ca-feature", "ca-fix", "ca-refactor", "ca-answer", "ca-status", "ca-docs", "ca-adopt"];
     for (const skill of skills) {
       const text = readFileSync(join(repo, `.claude/skills/${skill}/SKILL.md`), "utf-8");

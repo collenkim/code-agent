@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { recordDecision } from "../core/approval";
-import { abort, context, next, start, status, Stop, submitPlan, decide as decideApproval } from "../agent/commands";
+import { abort, context, next, status, Stop, submitPlan, decide as decideApproval } from "../agent/commands";
+import { start } from "./confirmedStart";
 import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { loadActive, saveActive } from "../agent/layout";

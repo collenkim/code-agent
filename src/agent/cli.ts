@@ -24,6 +24,7 @@ import { knowledge } from "./knowledgeCommands";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel } from "./models";
 import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
+import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./request";
 import { openRound } from "./review";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
@@ -43,9 +44,12 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
   code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 3종 — 섹션·확정 상태
   code-agent confirm doc <종류>       문서 확정 (TTY 에서만). 종류: architecture | conventions | test-strategy | quality
+  code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
+                                      지시서를 생략하면 doc/work/<ID>/requirement.md (손으로 쓴 지시서가 다른 자리면 경로를 준다)
+  code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — /ca-request 가 사유를 읽고 다시 정리한다
   code-agent approve                  제출된 계획 승인 (TTY 에서만)
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
-  code-agent abort                    진행 중인 작업 커서 지우기
+  code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
   code-agent deliver                  11 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
   code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
@@ -60,7 +64,11 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent survey                   뼈대 역공학용 저장소 개요 (빌드·언어·구조·계층 후보·표본)
   code-agent manifest check           code-agent.json 이 실제 참조 파일을 찾는지
   code-agent plugin list              자리·기본 구현·감지된 무료 도구·등록된 플러그인·저장소 선언
-  code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]
+  code-agent request begin <ID> --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+                                      1 요구사항 접수를 연다 (도는 동안 그 작업 폴더 밖 쓰기 금지 · 시작 인자는 확정 뒤 start 가 쓴다)
+  code-agent request                  접수 초안(request.json) 형식 · 규칙 · 대상 후보 · 지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때)
+  code-agent request submit <request.json>   접수 초안 검사 → doc/work/<ID>/requirement.md 렌더 (확정은 사람이)
+  code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]   사람이 확정한 요구사항만 받는다
   code-agent next                     게이트를 확인하고 다음 스테이지·단계로
   code-agent back <스테이지>          커서를 앞 스테이지로 되감기 — 앞으로는 못 가고, 증거·리뷰 회차·원장은 그대로 남는다
                                       ${BACK_PHASES.join(" | ")}
@@ -93,6 +101,20 @@ function option(args: string[], name: string): string | undefined {
     throw new Stop(`--${name} 에 값이 필요합니다: code-agent … --${name} <값>`);
   }
   return value;
+}
+
+/** 깃발과 그 값을 뺀 나머지 인자 — `confirm request <ID> [<지시서>]` 처럼 자리로 받는 것들 */
+function positional(args: string[], valued: string[]): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith("--")) {
+      if (valued.includes(arg.slice(2))) index += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
 }
 
 /** 검증 명령은 자식 프로세스를 기다린다 — main 이 async 인 유일한 이유다 */
@@ -171,8 +193,32 @@ async function main(argv: string[]): Promise<number> {
       print(decide(repoRoot, "approved", option(args, "comment")));
       return 0;
     case "reject":
+      if (args[0] === "request") {
+        const [id, spec] = positional(args.slice(1), ["comment"]);
+        print(decideRequest(repoRoot, id, "rejected", option(args, "comment"), spec));
+        return 0;
+      }
       print(decide(repoRoot, "rejected", option(args, "comment")));
       return 0;
+    case "request":
+      switch (args[0]) {
+        case undefined:
+          print(requestFormat(repoRoot));
+          return 0;
+        case "begin":
+          print(
+            requestBegin(repoRoot, positional(args.slice(1), ["kind", "base", "target"])[0], option(args, "kind"), {
+              base: option(args, "base"),
+              target: option(args, "target"),
+            }),
+          );
+          return 0;
+        case "submit":
+          print(requestSubmit(repoRoot, args[1]));
+          return 0;
+        default:
+          throw new Stop("사용법: code-agent request [begin <ID> --kind <feature|fix|refactor> | submit <request.json>]");
+      }
     case "abort":
       print(abort(repoRoot));
       return 0;
@@ -200,8 +246,15 @@ async function main(argv: string[]): Promise<number> {
           throw new Stop("사용법: code-agent docs [begin | end | skeleton <종류> | interview <종류> | link <종류> <경로...>]");
       }
     case "confirm":
+      if (args[0] === "request") {
+        const [id, spec] = positional(args.slice(1), []);
+        print(decideRequest(repoRoot, id, "confirmed", undefined, spec));
+        return 0;
+      }
       if (args[0] !== "doc") {
-        throw new Stop("사용법: code-agent confirm doc <architecture | conventions | test-strategy | quality>");
+        throw new Stop(
+          "사용법: code-agent confirm doc <architecture | conventions | test-strategy | quality> | code-agent confirm request <ID>",
+        );
       }
       print(confirmDoc(repoRoot, args[1]));
       return 0;
