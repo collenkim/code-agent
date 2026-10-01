@@ -11,7 +11,11 @@ const BLOCK_END = "<!-- code-agent:end -->";
 const GITIGNORE_START = "# code-agent:start";
 const GITIGNORE_END = "# code-agent:end";
 
-const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash";
+/**
+ * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
+ * hook 의 읽기 분기는 여기에 없으면 불리지 않는다.
+ */
+export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|Read|Grep|Glob";
 
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
@@ -102,6 +106,24 @@ export function installedHook(repoRoot: string, event: string, subcommand: strin
 }
 
 /**
+ * 설치된 PreToolUse 항목의 matcher 가 넘기지 않는 도구 — 없으면 빈 목록.
+ * matcher 가 없거나 `*` 면 전부 넘긴다. 옛 설치본(읽기 셋이 없는 matcher)을 doctor 가 짚는 자리다.
+ */
+export function unmatchedTools(repoRoot: string): string[] {
+  let settings: Record<string, unknown>;
+  try {
+    settings = readSettings(join(repoRoot, ".claude", "settings.json"));
+  } catch {
+    return [];
+  }
+  const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
+  const entry = (hooks.PreToolUse ?? []).find((candidate) => ourEntry(candidate, "hook"));
+  if (!entry || !entry.matcher || entry.matcher === "*") return [];
+  const covered = entry.matcher.split("|").map((tool) => tool.trim());
+  return HOOK_MATCHER.split("|").filter((tool) => !covered.includes(tool));
+}
+
+/**
  * settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 항목만 하나로 맞춘다.
  *
  * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다.
@@ -149,9 +171,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
     join(repoRoot, ".gitignore"),
     GITIGNORE_START,
     GITIGNORE_END,
-    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/log/`,
+    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/`,
   );
-  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, log/)");
+  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/)");
 
   mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   const version = packageVersion();

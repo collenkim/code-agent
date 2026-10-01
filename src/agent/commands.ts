@@ -46,6 +46,16 @@ import type { VerifyPhase } from "./evidence";
 import { docRefs, keywordsOf, rankCandidates, relevantDocSections, requirementItems } from "./plugins/defaults";
 import type { RequirementRef } from "./plugins/protocol";
 import { callSlot, clamp, sourceLines } from "./plugins/run";
+import {
+  clearRequestSession,
+  loadRequestSession,
+  requestContext,
+  requestHint,
+  requestState,
+  requestStateLine,
+  requestStatusLines,
+  requireRequestConfirmed,
+} from "./request";
 import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
 import { sourceFiles } from "./survey";
@@ -140,7 +150,12 @@ function requireBaseCommit(active: ActiveWork): void {
 function requireWork(repoRoot: string): Work {
   const work = loadWork(repoRoot);
   if (!work) {
-    throw new Stop("진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor 로 시작하세요.");
+    const session = loadRequestSession(repoRoot);
+    throw new Stop(
+      session
+        ? `아직 작업이 시작되지 않았습니다 — ${session.id} 요구사항을 접수 중입니다.\n다음: ${requestStatusLines(repoRoot, session).hint}`
+        : "진행 중인 작업이 없습니다. /ca-feature · /ca-fix · /ca-refactor <ID> <요구사항> 으로 접수부터 시작하세요 (또는 /ca-request).",
+    );
   }
   requirePhase(work.active);
   requireBaseCommit(work.active);
@@ -243,8 +258,7 @@ function toRepoPath(repoRoot: string, path: string): string {
 
 // ---- start ----
 
-export function start(repoRoot: string, spec: string, options: { target?: string; base?: string } = {}): string {
-  const { target } = options;
+export function start(repoRoot: string, spec: string, startOptions: { target?: string; base?: string } = {}): string {
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
     throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
@@ -253,11 +267,22 @@ export function start(repoRoot: string, spec: string, options: { target?: string
 
   const specPath = toRepoPath(repoRoot, spec);
   const order = readOrder(repoRoot, specPath, manifest);
+  const intake = loadRequestSession(repoRoot);
+  if (intake && intake.id !== order.id) {
+    throw new Stop(
+      `접수 중인 요구사항이 있습니다: ${intake.id} (${intake.kind}). 그것을 끝내거나 사람이 code-agent abort 로 닫은 뒤 시작하세요.`,
+    );
+  }
+  // 접수 때 사람이 말한 기준 브랜치 · 대상 — 확정을 사이에 두고 명령이 끊겨도 잃지 않는다. 지금 준 값이 이긴다
+  const options = { base: startOptions.base ?? intake?.base, target: startOptions.target ?? intake?.target };
+  const { target } = options;
   const chosen = target ?? order.target[0];
   if (!order.target.includes(chosen)) {
     throw new Stop(`지시서의 대상이 아닙니다: ${chosen} (대상: ${order.target.join(", ")})`);
   }
   stagesFor(manifest, order.kind);
+  // 사람이 지금 내용으로 확정한 요구사항만 받는다 — 모델이 지시서를 지어내 스스로 시작하는 길이 여기서 닫힌다
+  requireRequestConfirmed(repoRoot, order.id, specPath);
 
   const current = loadActive(repoRoot);
   if (current && (current.id !== order.id || current.target !== chosen)) {
@@ -313,6 +338,8 @@ export function start(repoRoot: string, spec: string, options: { target?: string
     );
   }
   saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit }, "start");
+  // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
+  if (intake) clearRequestSession(repoRoot);
   return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}`;
 }
 
@@ -320,6 +347,9 @@ export function start(repoRoot: string, spec: string, options: { target?: string
 
 function nextHint(work: Work): string {
   const { repoRoot, active } = work;
+  if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
+    return requestHint(repoRoot, active.id, active.spec);
+  }
   const open = unansweredQuestions(repoRoot, questionsFile(active.id)).length;
   if (open > 0) {
     return `답이 없는 질문 ${open}개 — /ca-answer`;
@@ -386,11 +416,18 @@ export function status(repoRoot: string): string {
 
   const work = loadWork(repoRoot);
   if (!work) {
+    const session = loadRequestSession(repoRoot);
+    if (session && manifest) {
+      const intake = requestStatusLines(repoRoot, session);
+      lines.push("", "작업: 아직 시작 전", ...intake.lines);
+      lines.push(`다음: ${docsReady(checks) ? intake.hint : `${intake.hint} — 시작하려면 필수 문서도 확정돼 있어야 합니다 (/ca-docs)`}`);
+      return lines.join("\n");
+    }
     const hint = !manifest
       ? "/ca-adopt 로 도입 (레거시) · 신규 프로젝트면 /ca-docs 로 공통 POLICY 4종부터"
       : !docsReady(checks)
         ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 별도 터미널에서 code-agent confirm doc <종류>"
-        : "/ca-feature <지시서> 로 시작";
+        : "/ca-feature · /ca-fix · /ca-refactor <ID> <요구사항> 으로 접수부터 시작 (또는 /ca-request)";
     lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
   }
@@ -403,6 +440,7 @@ export function status(repoRoot: string): string {
     "",
     `작업: ${order.id} · ${order.title} (${order.kind}, 대상 ${active.target})`,
     `지시서: ${active.spec}`,
+    requestStateLine(repoRoot, active.id, active.spec),
     `작업 폴더: ${workDocsDir(active.id)}/`,
     `브랜치: ${active.branch ? `${active.branch} (기준 ${active.base})` : "없음"}`,
     `스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`,
@@ -444,6 +482,7 @@ export function next(repoRoot: string): string {
   const work = requireWork(repoRoot);
   const { active } = work;
   requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, active.id, active.spec);
   requireAnswers(repoRoot, active);
 
   const advance = (phase: Phase, stage?: string): string => {
@@ -557,6 +596,7 @@ export function requireValidatable(
 ): Work {
   let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
   requireAnswers(repoRoot, work.active);
   if (phase === "check" && REWINDABLE.includes(work.active.phase)) {
     saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined }, "next");
@@ -583,6 +623,7 @@ export function requireValidatable(
 export function requireReproable(repoRoot: string): Work {
   const work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
   requireAnswers(repoRoot, work.active);
   if (work.order.kind !== "fix") {
     throw new Stop(`code-agent repro 는 fix 작업에서만 돕니다 (지금: ${work.order.kind}).`);
@@ -613,7 +654,13 @@ function requireEvidence(work: Work, phase: Exclude<VerifyPhase, "repro">): void
 export function abort(repoRoot: string): string {
   const active = loadActive(repoRoot);
   if (!active) {
-    throw new Stop("진행 중인 작업이 없습니다.");
+    const session = loadRequestSession(repoRoot);
+    if (session) {
+      logStage(repoRoot, { id: session.id, target: "", phase: "request" }, "abort");
+      clearRequestSession(repoRoot);
+      return `요구사항 접수를 닫았습니다: ${session.id}. 작업 폴더(${workDocsDir(session.id)}/)와 확정 원장은 남아 있습니다 — 같은 ID 로 다시 접수할 수 있습니다.`;
+    }
+    throw new Stop("진행 중인 작업도 접수 중인 요구사항도 없습니다.");
   }
   logStage(repoRoot, active, "abort");
   clearActive(repoRoot);
@@ -737,6 +784,11 @@ function docSectionLines(repoRoot: string, manifest: Manifest, items: Requiremen
 }
 
 export function context(repoRoot: string): string {
+  // 접수 중이면 커서가 없다 — 접수에 필요한 것(초안 형식 · 규칙 · 대상 후보)을 준다
+  const session = loadActive(repoRoot) ? undefined : loadRequestSession(repoRoot);
+  if (session) {
+    return requestContext(repoRoot, session);
+  }
   const work = requireWork(repoRoot);
   const { active, manifest, order } = work;
   const out: string[] = [
@@ -1039,6 +1091,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
     throw new Stop(`계획은 plan 스테이지에서 제출합니다 (지금: ${active.phase}).`);
   }
   requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, active.id, active.spec);
   requireAnswers(repoRoot, active);
 
   // 계획 검사 전에 ①~④·⑦ 을 다시 본다 — 스테이지를 지난 뒤에 문서를 고쳤을 수 있고, 승인은 이 묶음에 대한 것이다.
@@ -1183,6 +1236,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
 
   // 확정되지 않은 문서 위의 계획은 승인하지 않는다 — 승인이 묶을 근거가 없다.
   requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, active.id, active.spec);
   // 제출과 승인 사이에도 작업 폴더는 쓸 수 있다 — 제출 때 지난 게이트를 다시 본다.
   // 여기서 안 보면 02·07 을 빈 파일로 덮은 상태의 docsHash 가 그대로 승인으로 굳는다 (승인 화면에는 계획만 보인다).
   const requirements = requireRequirements(repoRoot, active);

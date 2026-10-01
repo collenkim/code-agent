@@ -20,6 +20,8 @@ import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { loadRequestSession, requirementFile } from "./request";
+import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
@@ -28,7 +30,8 @@ import { planDocFile } from "./workDocs";
  * Claude Code PreToolUse hook 의 판정.
  *
  * 규칙 대조라 모델에게 맡기지 않는다. 거부 사유는 모델에게 그대로 보이므로, 무엇을 하면 풀리는지까지 적는다.
- * 진행 중인 작업이 없으면 관여하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다.
+ * 진행 중인 작업도 세션도 없으면 거의 관여하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다.
+ * 셋만은 언제나 지킨다: `.code-agent/`(상태 · 원장) · 작업 지시서 · 키 자리 (`decideOutside`).
  */
 export interface HookInput {
   cwd: string;
@@ -73,6 +76,8 @@ const MODEL_SUBCOMMANDS = [
   "docs",
   "survey",
   "manifest check",
+  // 요구사항 접수 — begin · submit · 상태. 확정·반려는 `confirm request` · `reject request` 라 여기 걸리지 않는다
+  "request",
   // `plugin list` **만** 연다. `"plugin"` 을 넣으면 isModelCommand 의 접두어 일치로 add·remove 까지
   // 열려, 모델이 "어디로 코드가 나가는가" 를 제 손으로 정하게 된다.
   "plugin list",
@@ -128,12 +133,15 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   const repoRoot = canonical(projectDir ?? input.cwd);
   const work = loadWork(repoRoot);
   const documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
-  if (!work && !documenting) {
-    return undefined;
+  // 접수 세션 — 작업 커서가 생기기 전이다. 작업 · 문서 세션이 있으면 그쪽 규칙이 이긴다
+  const requesting = !work && !documenting ? loadRequestSession(repoRoot) : undefined;
+  if (!work && !documenting && !requesting) {
+    return decideOutside(input, repoRoot);
   }
   const manifest = work ? work.manifest : loadManifestIfAny(repoRoot);
   if (input.tool_name === "Bash") {
-    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting);
+    // 세션 동안에는 선언된 빌드·테스트 명령을 열지 않는다 — 돌릴 코드가 아직 없는 자리다
+    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting || requesting !== undefined);
   }
   // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
   if (READ_TOOLS.includes(input.tool_name)) {
@@ -145,11 +153,90 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   }
   const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
   const path = repoPath(repoRoot, target);
-  const outside = guardRepo(path, target);
+  const outside = guardRepo(path, target) ?? streamGuard(path);
   if (outside) {
     return outside;
   }
-  return work ? decideWrite(work, path) : decideDocWrite(manifest, path);
+  if (work) return decideWrite(work, path);
+  return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(manifest, path);
+}
+
+/**
+ * 작업도 세션도 없을 때. 대부분은 code-agent 의 일이 아니라 관여하지 않지만, 셋은 **언제나** 지킨다 —
+ * 상태 · 원장(`.code-agent/`)은 code-agent 명령만 쓰고, 지시서(`doc/work/<ID>/requirement.md`)는 접수가 렌더하고,
+ * 키 자리(`~/.code-agent/`)는 읽지도 않는다. 이 틈을 열어 두면 새 요구사항을 받기 직전 — 세션이 열리기 전 —
+ * 에 모델이 지시서와 확정 원장을 손으로 써 넣고 사람의 확정 없이 `start` 를 지날 수 있다.
+ *
+ * Bash 는 그 자리를 **가리키는 것**만 막는다. 글자를 쪼개 돌려 쓰는 셸 명령까지는 막지 못한다 —
+ * hook 은 사고 방지 장치이지 보안 경계가 아니다.
+ */
+function decideOutside(input: HookInput, repoRoot: string): string | undefined {
+  if (input.tool_name === "Bash") {
+    const command = (input.tool_input.command ?? "").trim();
+    if (mentionsStore(command)) return STORE_DENIED;
+    return mentionsState(command) ? STATE_BASH_DENIED : undefined;
+  }
+  if (READ_TOOLS.includes(input.tool_name)) {
+    return insideStore(input.tool_input.file_path ?? input.tool_input.path ?? "") ? STORE_DENIED : undefined;
+  }
+  if (!WRITE_TOOLS.includes(input.tool_name)) {
+    return undefined;
+  }
+  const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
+  if (insideStore(target)) return STORE_DENIED;
+  const path = repoPath(repoRoot, target);
+  if (path === "" || path.startsWith("..") || isAbsolute(path)) {
+    return undefined; // 저장소 밖 — code-agent 의 일이 아니다
+  }
+  return streamGuard(path) ?? stateGuard(path) ?? requirementGuard(path);
+}
+
+const STATE_BASH_DENIED =
+  "`.code-agent/` 는 code-agent 명령으로만 바뀝니다 — 작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다. " +
+  "상태는 code-agent status 로 봅니다.";
+
+/** `.code-agent` 를 경로로 가리키는가 — 명령 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다 */
+function mentionsState(command: string): boolean {
+  return /(^|[^A-Za-z0-9_.-])\.code-agent([\\/\s"'`]|$)/.test(command);
+}
+
+/**
+ * 경로에 `:` 가 든 쓰기는 받지 않는다. Windows 에서 `requirement.md::$DATA` 는 대체 데이터 스트림 표기로
+ * 같은 파일을 가리키는데, 아직 없는 파일이면 실제 경로로 풀리지 않아 이름 대조를 비켜 간다.
+ */
+function streamGuard(path: string): string | undefined {
+  return path.includes(":")
+    ? `경로에 ':' 가 든 파일은 쓸 수 없습니다: ${path} — Windows 에서는 대체 데이터 스트림 표기로 다른 이름을 단 같은 파일이 됩니다.`
+    : undefined;
+}
+
+/** 작업 지시서는 `code-agent request submit` 이 렌더한다 — 세션이 있든 없든 모델이 직접 쓰지 않는다 */
+function requirementGuard(path: string): string | undefined {
+  return /^doc\/work\/[^/]+\/requirement\.md$/i.test(path)
+    ? `작업 지시서(${path})는 code-agent request submit 이 렌더합니다 — 요구사항은 /ca-request 로 접수하고, 고칠 것은 request.json 에 씁니다. ` +
+        "사람이 직접 쓰는 지시서는 사람이 편집기로 씁니다."
+    : undefined;
+}
+
+/**
+ * 요구사항 접수 — 쓸 수 있는 곳은 그 작업 폴더뿐이고, 지시서 자체는 코드가 렌더한다.
+ * 확정 전에 코드나 문서를 "미리" 고쳐 두는 일과, 모델이 지시서를 손으로 다듬는 일을 막는다.
+ */
+function decideRequestWrite(session: RequestSession, path: string): string | undefined {
+  const folder = workDocsDir(session.id);
+  if (path.toLowerCase() === requirementFile(session.id).toLowerCase()) {
+    return (
+      `${requirementFile(session.id)} 는 코드가 렌더합니다 — code-agent request submit 이 ${folder}/request.json 에서 만듭니다. ` +
+      "고칠 것은 request.json 에 쓰고 다시 제출하세요. 원문은 사람이 준 그대로 둡니다."
+    );
+  }
+  if (path === folder || path.startsWith(`${folder}/`)) {
+    return undefined;
+  }
+  return (
+    `요구사항 접수 중에는 작업 폴더(${folder}/) 밖은 쓸 수 없습니다: ${path}. ` +
+    "코드와 문서는 사람이 요구사항을 확정하고 분석이 시작된 뒤에 씁니다."
+  );
 }
 
 function repoPath(repoRoot: string, target: string): string {
@@ -157,15 +244,19 @@ function repoPath(repoRoot: string, target: string): string {
   return relative(repoRoot, canonical(absolute)).replace(/\\/g, "/");
 }
 
-/** 어느 모드든 공통 — 저장소 밖과 `.code-agent/` 는 도구로 쓸 수 없다 */
+/** 작업 · 세션 모드 공통 — 저장소 밖과 `.code-agent/` 는 도구로 쓸 수 없다 */
 function guardRepo(path: string, target: string): string | undefined {
   if (path === "" || path.startsWith("..") || isAbsolute(path)) {
     return `저장소 밖의 파일입니다: ${target}`;
   }
-  if (path === STATE_DIR || path.startsWith(`${STATE_DIR}/`)) {
+  return stateGuard(path);
+}
+
+function stateGuard(path: string): string | undefined {
+  if (path.toLowerCase() === STATE_DIR || path.toLowerCase().startsWith(`${STATE_DIR}/`)) {
     return (
-      "작업 상태·제출된 계획·승인 기록은 도구로 고칠 수 없습니다. " +
-      "진행은 code-agent next, 계획은 code-agent plan submit, 확정은 code-agent confirm 으로 바뀝니다."
+      "작업 상태·제출된 계획·승인과 확정 기록은 도구로 고칠 수 없습니다. " +
+      "진행은 code-agent next, 계획은 code-agent plan submit, 확정은 사람이 터미널의 code-agent confirm 으로 바뀝니다."
     );
   }
   return undefined;
@@ -176,6 +267,9 @@ function guardRepo(path: string, target: string): string | undefined {
  * 쓸 수 있는 곳은 `doc/` 아래, 등록된 문서 경로, `code-agent.json`(도입할 때 만든다)뿐이다.
  */
 function decideDocWrite(manifest: Manifest | undefined, path: string): string | undefined {
+  // doc/ 아래라도 지시서는 접수가 렌더한다
+  const order = requirementGuard(path);
+  if (order) return order;
   const allowed = ["doc", ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))];
   if (path === "code-agent.json" || allowed.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
     return undefined;
@@ -232,7 +326,7 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
     `작업 중에는 Bash 로 code-agent 명령(${MODEL_SUBCOMMANDS.join(" · ")}), 선언된 명령` +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
     ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
-    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model·plugin add·plugin remove 는 " +
+    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
     "사람이 터미널에서 실행합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );

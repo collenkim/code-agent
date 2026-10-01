@@ -15,7 +15,7 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { installedHook, settingsProblem } from "./init";
+import { installedHook, settingsProblem, unmatchedTools } from "./init";
 import { STATE_DIR } from "./layout";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
@@ -173,8 +173,11 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
         continue;
       }
       const problem = hookProblem(command, onPath);
+      const unmatched = event === "PreToolUse" ? unmatchedTools(repoRoot) : [];
       if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>]");
-      else add("✓", `${event} hook`, command);
+      else if (unmatched.length > 0) {
+        add("✗", `${event} hook`, `${command} — matcher 가 ${unmatched.join(" · ")} 를 넘기지 않습니다`, "code-agent update");
+      } else add("✓", `${event} hook`, command);
     }
   }
 

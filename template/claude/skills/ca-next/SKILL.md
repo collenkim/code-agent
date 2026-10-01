@@ -11,6 +11,7 @@ description: 진행 중인 code-agent 작업을 사이클로 돈다 — 지금 �
 
 | 스테이지 | 단계 명령 | 절차 |
 |---|---|---|
+| 접수 (작업 시작 전) | `/ca-request` | `.claude/skills/ca-request/SKILL.md` — `요구사항: 확정됨` 이면 `code-agent start doc/work/<ID>/requirement.md` 로 시작하고 `analysis` 로 잇는다 |
 | `analysis` | `/ca-analyze` | `.claude/skills/ca-analyze/SKILL.md` |
 | `impact` | `/ca-impact` | `.claude/skills/ca-impact/SKILL.md` |
 | `design` | `/ca-design` | `.claude/skills/ca-design/SKILL.md` |
@@ -21,10 +22,13 @@ description: 진행 중인 code-agent 작업을 사이클로 돈다 — 지금 �
 | `review` | `/ca-review` | `.claude/skills/ca-review/SKILL.md` |
 | `integrate` · `deliver` | `/ca-integrate` | `.claude/skills/ca-integrate/SKILL.md` |
 
-1. Bash: `code-agent status` — 지금 스테이지를 확인한다.
+1. Bash: `code-agent status` — 지금 스테이지를 확인한다. 작업이 아직 시작 전이고 접수 중이면 표의 첫 줄이 그 자리다.
 2. 표에서 그 스테이지의 절차 파일을 읽고 **그대로 따른다.** 자리 확인은 1 에서 이미 했으니 다시 하지 않는다.
-3. 그 스킬이 게이트(`code-agent next`)를 지났으면 안내만 찍고 끝내지 말고 **다음 스테이지의 절차로 이어 간다** — 2 로 돌아간다.
+3. 그 스킬이 게이트(`code-agent next`)를 지났으면 — 접수라면 요구사항이 확정돼 `code-agent start` 로 시작했으면 —
+   안내만 찍고 끝내지 말고 **다음 스테이지의 절차로 이어 간다** — 2 로 돌아간다.
 4. **사람의 자리가 나오면 멈춘다.** 무엇 때문에 멈췄는지와 사용자가 할 일을 마지막 메시지에 모아서 낸다:
+   - 요구사항을 제출했다 · 확정 뒤 바뀌었다 → 별도 터미널에서 `code-agent confirm request <ID>`
+   - 요구사항이 반려됐다 → `/ca-request` 의 **반려됐다면** 으로 간다
    - 답 없는 질문이 생겼다 → `/ca-answer`
    - 계획을 제출했다 → 별도 터미널에서 `code-agent approve`
      (**이미 `승인 approved`** 면 멈추는 자리가 아니다 — 커서만 `plan` 에 남아 있으니 `code-agent next` 로 넘기고 `implement` 부터 잇는다)

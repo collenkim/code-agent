@@ -1,6 +1,6 @@
 # code-agent 설계 — Claude Code 위에서 도는 코드 작성 에이전트
 
-> 이 문서가 정본이다 (2026-09-29). README 는 여기를 가리킨다.
+> 이 문서가 정본이다 (2026-10-01). README 는 여기를 가리킨다.
 > 표의 **상태** 열에서 `P3 ✅` 는 지금 구현돼 도는 것, 번호만 있는 것(`P4`)은 그 단계에서 만들 것이다. 단계는 11장.
 
 ## 1. 역할
@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | **공통 POLICY** | 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준 | 파일 + 필수 섹션 + **사람 확정** | 예 (`projectDocsHash`) | 도입에 한 번, 작업 도중 변경 불가 |
 | **공통 KNOWLEDGE** | 데이터 사전 · API 목록 · 업무 규칙·용어집 | **파일 존재만** | 아니오 | 도입에 빈 뼈대, 반영마다 그 작업 범위만 자란다 |
-| **작업 문서** | `doc/work/<ID>/` 의 12개 | 문서마다 다르다 (아래 2.4) | 6개만 (`workDocsHash`) | 작업마다 |
+| **작업 문서** | `doc/work/<ID>/` 의 14개 | 문서마다 다르다 (아래 2.4) | 6개만 (`workDocsHash`) + 지시서는 **접수 확정**(`request.jsonl`) | 작업마다 |
 
 **막는 것은 POLICY 4개뿐이다.** KNOWLEDGE 는 비어 있어도 작업을 막지 않는다 — 막으면 첫 도입에서 아무 작업도 시작되지 않는다.
 
@@ -36,11 +36,11 @@
 | 문서 | 기본 경로 | 필수 섹션 (코드가 검사) |
 |---|---|---|
 | **아키텍처** | `doc/architecture.md` | 기술 스택 · 모듈/패키지 구조 · 계층과 책임 · 의존 방향 · 공통 모듈 · 주요 결정 |
-| **코드 컨벤션** | `conventions[]` (기본 `doc/conventions.md`) | 명명 · 계층별 규칙 · 예외 처리 (`테스트 규칙`·`포매팅` 은 선택) |
+| **코드 컨벤션** | `conventions[]` (기본 `doc/conventions.md`) | 명명 · 계층별 규칙 · 예외 처리 (`테스트 규칙`·`포매팅·주석` 은 선택) |
 | **테스트 전략** | `doc/test-strategy.md` | 수준과 범위 · 도구와 실행 명령 · 통과 기준 |
 | **품질·보안 기준** | `doc/quality.md` | 정적 분석 · 보안 검사 · 통과 기준과 반영 차단 |
 
-통과 조건 — 넷 다 셋을 만족해야 `start` · `next` · `plan submit` · `approve` 가 열린다 (`requireDocs`).
+통과 조건 — 넷 다 셋을 만족해야 `start` · `next` · `plan submit` · `approve` 와 그 뒤의 `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가 열린다 (`requireDocs`).
 
 1. **파일이 있다** — `code-agent.json` 의 `docs.*` · `conventions`. 등록이 없으면 기본 경로. 컨벤션은 디렉토리여도 된다(그 아래 `.md` 전부)
 2. **필수 섹션이 있고 비어 있지 않다** — 섹션·별칭은 `schemas.ts` 가 정한다. 제목의 번호와 뒤에 붙은 괄호 설명은 가리지 않는다.
@@ -89,22 +89,25 @@
 
 ### 2.4 작업 문서 — `doc/work/<ID>/`
 
-번호 붙은 파일은 **모델·코드 산출물**이고, `requirement.md` 는 **사람 입력**이다. 그 구분을 이름이 지고 있어 `00-` 을 붙이지 않는다.
+번호 붙은 파일은 **모델·코드 산출물**이다. `requirement.md` 도 이제 코드가 렌더한다 — 사람이 지는 것은 **원문**(`request.json` 에 그대로 보관)과
+**터미널 확정** 둘이고, 그래서 이름만 번호 없이 남는다. `request.json` 은 그 지시서의 재료라 같은 자리에 둔다.
 
 | 문서 | 스테이지 | 누가 쓰나 | 코드가 보는 것 (게이트) | 승인 |
 |---|---|---|---|---|
-| `requirement.md` | 1 시작 전 | **사람** (hook 이 모델 쓰기 거부) | 머리말 규격만 | 머리말=orderHash, **본문=docsHash** |
+| `request.json` | 접수 (시작 전) | 모델 (ca-request) | 스키마 · 원문은 `original`·`originalFile` 중 **정확히 하나** · `requirements` 1개 이상 · 머리말 값은 한 줄 · 예약 속성(`kind`·`id`·`title`·`target`·`scope`·`preserve`·`approver`)을 `extra` 에 못 씀 · `extra` 의 속성 이름은 머리말 파서의 규칙(`[A-Za-z][A-Za-z0-9_-]*`)대로 | — (렌더된 지시서가 확정된다) |
+| `requirement.md` | 접수 (시작 전) | **코드** (`request submit` 이 `request.json` 에서 렌더 · hook 이 모델 쓰기 거부) | 손으로 쓴 지시서와 **같은** 지시서 규격 + 머리말 왕복 대조(옮긴 값이 그대로 읽히는가) | **사람 확정 (TTY)** — `approvals/<slug(ID)>/request.jsonl`. 그 뒤 머리말=orderHash, **본문=docsHash** |
 | `questions.md` | 전 구간 | 모델이 묻고 사람이 답 | `[Answer]:` 가 비면 전환 거부 | — |
 | `01-requirements.md` ① | 2 `analysis` | 모델 (ca-analyst) | `## R<n>` 1개 이상·중복 없음 · 각 R 에 `근거:` · `## 가정` 존재 | ✔ |
 | `02-analysis.md` ② | 3 `impact` | 모델 (explorer→writer) | 필수 3섹션 + **`영향 범위` 표 첫 열에 모든 R** | ✔ |
-| `03-design.md` ③ | 4~5 `design` | 모델 (ca-writer) | 필수 5섹션이 filled 또는 `해당 없음 — <근거>` | ✔ |
-| `04-functional.md` ④ | 4~5 `design` | 모델 (ca-writer) | 필수 4섹션 · AC 중복 없음 · **R 마다 AC 1개 이상** | ✔ |
-| `plan.json` ⑤ | 6 `plan` | 모델 → `plan submit` | 스키마 · R 커버리지 · openQuestions 0 · preserve 전량 · 경로 경계 | planHash |
-| `05-plan.md` ⑤ | 6 `plan` | **코드** (렌더) | 없음 — 파생물. hook 이 모델 쓰기 거부 | — (planHash 가 덮는다) |
-| `07-test-spec.md` ⑦ | 6 `plan` | 모델 (구현 전) | TC 표 파싱 · AC 실재 · **모든 AC 가 TC 에 덮임** | ✔ |
+| `03-design.md` ③ | 4 `design` | 모델 (ca-writer) | 필수 5섹션이 filled 또는 `해당 없음 — <근거>` | ✔ |
+| `04-functional.md` ④ | 4 `design` | 모델 (ca-writer) | 필수 4섹션 · AC 중복 없음 · **R 마다 AC 1개 이상** | ✔ |
+| `plan.json` ⑤ | 5 `plan` | 모델 → `plan submit` | 스키마 · R 커버리지 · openQuestions 0 · preserve 전량 · 경로 경계 | planHash |
+| `05-plan.md` ⑤ | 5 `plan` | **코드** (렌더) | 없음 — 파생물. hook 이 모델 쓰기 거부 | — (planHash 가 덮는다) |
+| `07-test-spec.md` ⑦ | 5 `plan` | 모델 (구현 전) | TC 표 파싱 · AC 실재 · **모든 AC 가 TC 에 덮임** | ✔ |
 | `08-validation.md` ⑧ | 7~8 · 10 | **코드만** (hook 거부 + 재렌더 바이트 대조) | base·부분 트리 해시·manifestHash·planHash 일치 · 선언된 검증 전부 `passed` (`not-run`·`error` 는 통과가 아니다) | 역방향 (P5 ✅) |
-| `09-review.md` ⑨ | 9 `review` | 모델(지적 표) + **코드(회차 구역)** | **마지막 회차 트리 해시 == 지금 트리** · `열림` 0 · `계획 밖` 0 · 회차 구역 재렌더 바이트 대조 | 트리 해시 (P5 ✅) |
-| `10-pr.md` ⑩ | 11 `deliver` | **코드(추적표·검증·변경 요약 구역)** + 모델(나머지) | 추적표 빈 칸 0 · 코드 구역 재렌더 · 모델 3섹션 filled · **사람 TTY 확인** | — (P5 ✅) |
+| `09-review.md` ⑨ | 9 `review` | 모델(지적 표) + **코드(회차 구역)** | **마지막 회차 트리 해시 == 지금 트리** · `## 지적` 절 존재(지적이 하나도 없으면 그 안에 `- 없음`) · `열림` 0 · `계획 밖` 0 · 범위 칸이 계획과 일치 · 동결을 푼 지적 줄 삭제 불가(`review.json` 의 `used[]`) · 회차 구역 재렌더 바이트 대조 | 트리 해시 (P5 ✅) |
+| `10-pr.md` ⑩ | 11 `deliver` | **코드(추적표·검증·변경 요약 구역)** + 모델(나머지) | 추적표 빈 칸 0 · 코드 구역 재렌더 · 코드 구역 제목(`추적표`·`검증`·`변경 요약`)이 구역 밖에 있으면 거부 · 모델 3섹션 filled · **사람 TTY 확인** | — (P5 ✅) |
+| `knowledge.proposal.md` | 11 `deliver` 앞 | 모델 | 없음 — `## <종류>` 아래 ``### `키` 이름`` 블록. `deliver` 가 항목마다 지금 것과 나란히 보여 주고 사람이 고른 것만, 이 작업의 R 번호가 없는 항목은 거른다. 코드가 키로 upsert 하고 삭제는 하지 않는다 | — |
 
 (⑥ Code 는 소스 코드 자체다 — `06-` 파일은 없다.)
 
@@ -120,7 +123,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 02·03·04 가 항상 필수가 되면서 그 판정이 사라졌다 — `## 작업 문서` 섹션과 `workDocProblems` 를 없앴고,
 그 섹션이 열어 두던 "이미 있는 문서가 이 범위를 덮는다" 경로는 03 의 `해당 없음 — <근거>` 와 KNOWLEDGE 인용이 대신한다.
 
-제외하는 것과 이유 — `05-plan.md`·`plan.json`(planHash 가 이미 덮는다) · `questions.md`(구현 중에도 쌓여 승인이 수시로 무효가 된다)
+제외하는 것과 이유 — `request.json`(렌더된 `requirement.md` 본문이 이미 해시에 들어가고, 그 지시서는 따로 **접수 확정**에 묶인다)
+· `05-plan.md`·`plan.json`(planHash 가 이미 덮는다) · `questions.md`(구현 중에도 쌓여 승인이 수시로 무효가 된다)
 · KNOWLEDGE 3종(위 2.2) · `08`·`09`·`10`(승인 뒤 산출물이라 역방향으로 묶인다 — 증거가 어느 승인 아래에서 났는지를 적는다).
 
 > **P4 도입으로 P3 때 받은 계획 승인은 전부 무효가 됐다.** POLICY 가 2 → 4 개가 되고 작업 문서 목록이 바뀌어 `docsHash` 계산식이 달라졌다.
@@ -164,7 +168,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 |---|---|---|---|---|---|---|
 | 0 | 준비 | — | `init` 설치, 워크스페이스 감지 (신규/레거시, 필수 문서 유무) | CLI | — | P1 ✅ |
 | 1 | 공통 문서 | — | POLICY 4종(아키텍처 · 컨벤션 · 테스트 전략 · 품질·보안 기준) 점검·작성, KNOWLEDGE 3종 빈 뼈대. 문서마다 기본으로 생성 / 대화로 생성 | CLI 점검 + surveyor·writer | **POLICY 넷 다 확정돼야 작업 시작** | P2 ✅ 2종 · P4 ✅ 2종 |
-| 2 | 요구사항 분석 `analysis` | 요구사항 · 분석·명세화 | ① `01-requirements.md` — 요구 항목(`## R<n>`), 기본값은 `## 가정`, 모호·누락·충돌은 질문 | 메인 + analyst | 질문 · R 형식 | P4 ✅ (P3 의 `analysis.md`) |
+| — | 요구사항 접수 (`request`) | 요구사항 | 사람이 **말로** 준 것(서술·티켓·파일)을 `request.json` 으로 정리 → 코드가 `requirement.md` 렌더 → **사람이 터미널에서 확정**. 커서가 아직 없어 스테이지 번호가 없다 (문서 세션처럼 **접수 세션**으로 돈다) | 메인 (ca-request) + CLI | **사람 확정 (터미널)** — 확정된 지시서만 `start` 가 받는다 | ✅ (2026-10-01) |
+| 2 | 요구사항 분석 `analysis` | 요구사항 분석·명세화 | ① `01-requirements.md` — 요구 항목(`## R<n>`), 기본값은 `## 가정`, 모호·누락·충돌은 질문 | 메인 + analyst | 질문 · R 형식 | P4 ✅ (P3 의 `analysis.md`) |
 | 3 | 영향도 분석 `impact` | 영향도 분석 | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 · Risk (**항상**, 크기는 작업에 맞게) | 메인 + explorer × 영역 → writer | 질문 · 필수 섹션 · **영향 표에 모든 R** | P4 ✅ |
 | 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + writer | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 ✅ |
 | 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | 메인 → critic | **사람 승인 (터미널)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 ✅ |
@@ -194,7 +199,69 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 (`REWINDABLE` 이 `code-agent check` 에 대해 닫아 둔 것과 같은 자리다).
 (검증 실패로 `check` 로 돌아가는 것은 되감기가 아니다 — `code-agent check` 가 커서를 그 자리로 데려간다.)
 
-**작업 종류**는 어떤 스테이지를 어떻게 도는지로 갈린다.
+### 요구사항 접수 — 명령으로 받는다 (2026-10-01 결정)
+
+전에는 **사람이 `doc/work/<ID>/requirement.md` 를 손으로 써** 두고 모델이 `code-agent start` 를 걸었다. 그래서 요구사항만
+프로세스 밖에 있었다 — 지시서 규격을 아는 사람만 작업을 시작할 수 있었고, 모델이 스스로 지시서를 지어내 시작하는 길도 열려 있었다.
+이제 요구사항도 **명령으로 받는다.** 사람은 말로 주고(서술 · 붙여넣은 티켓 · 파일), 모델이 정리하고, **코드가** 지시서를 렌더하고,
+**사람이 터미널에서 확정한다.** ID 는 언제나 사람이 준다 — 모델이 지어내면 브랜치 이름과 폴더 이름이 그 자리에서 거짓이 된다.
+
+```
+/ca-feature <ID> <서술·티켓·파일>          (또는 /ca-fix · /ca-refactor · /ca-request <ID> --kind <종류>)
+  └─ code-agent request begin <ID> --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+       접수 세션(.code-agent/request-session.json) 을 연다 — 커서가 아직 없으므로 문서 세션과 같은 방식이다.
+       --base·--target 은 세션에 남아 **확정 뒤 start 가 이어받는다** (start 에 직접 준 값이 이긴다) —
+       사람의 확정이 접수와 시작 사이를 끊으므로, 남겨 두지 않으면 /ca-feature … --base develop 의 기준 브랜치가 그 자리에서 사라진다
+       형식 · 프로젝트 확장 속성 · 대상 후보를 함께 찍는다 (다시 보려면 code-agent request)
+       대상 후보는 종류로 갈린다 — feature 는 `- <이름> (<경로>)` 로 찍고 target 에는 **이름**만 쓴다(이제부터 만들 것이라
+       경로가 없을 수 있다), fix·refactor 는 경로를 찍고 target 도 저장소에 실재하는 경로다
+  └─ 모델: doc/work/<ID>/request.json      원문은 original(준 글 그대로) 또는 originalFile(저장소 안 파일) 중 하나.
+       원문에 근거가 없는 요구는 더하지 않는다 — 필수값이 비면 질문으로(최대 4개), 답은 clarifications 에 사람 말 그대로
+  └─ code-agent request submit doc/work/<ID>/request.json
+       스키마 → 렌더 → **손으로 쓴 지시서와 같은 지시서 검사** + 머리말 왕복 대조. 통과해야 requirement.md 가 쓰인다.
+       반려된 내용을 그대로 다시 내면 거부한다 — 사유를 읽지 않은 제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다
+  └─ (사람, 별도 터미널) code-agent confirm request <ID> [<지시서>]   반려는 reject request <ID> [<지시서>] --comment "사유"
+       지시서를 생략하면 그 ID 가 진행 중인 작업이면 그 작업의 지시서, 아니면 doc/work/<ID>/requirement.md.
+       다른 자리에 손으로 쓴 지시서는 **경로를 함께 준다** — start 의 거부문이 그 경로가 든 확정 명령을 그대로 찍어 준다
+       원문과 정리를 나란히 띄우고 confirm 을 입력받아 approvals/<slug(ID)>/request.jsonl 에 해시로 남긴다
+  └─ /ca-next (또는 /ca-analyze) → code-agent start doc/work/<ID>/requirement.md → 2 요구사항 분석
+```
+
+**렌더된 지시서의 모양** — 머리말(`kind`·`id`·`title`·`target`·`scope`·`preserve`·`approver`·확장 속성) 다음에
+`## 원문`(사람이 준 글을 **한 글자도 바꾸지 않고** 인용으로 감싼 것 — `originalFile` 이면 코드가 그 파일을 그대로 옮긴다) ·
+`## 배경` · `## 요구 내용` · `## 완료 조건` · `## 범위 밖` · `## 제약` · `## 접수 때 정한 것`(질문과 답).
+원문을 지시서 안에 함께 싣는 이유는 하나다 — **확정하는 사람이 원문과 정리를 나란히 읽는 자리**가 있어야 하기 때문이다.
+정리하다 뜻이 달라지는 길과, 모델이 지시서를 지어내 스스로 시작하는 길이 여기 한 자리에서 닫힌다.
+그 절들은 뒤 스테이지가 그대로 받는다 — ca-analyst 는 ① 의 `근거:` 를 `## 원문`·`## 요구 내용`·`## 완료 조건`·`## 접수 때 정한 것`
+에서만 끌어오고, ca-writer 는 `## 완료 조건` 의 문장을 ④ 의 AC 로 **글자 그대로** 옮긴다(사람이 확정한 말이 수락 기준에서 다시 쓰이지 않게).
+
+**접수 세션이 막는 것** — 세션이 열려 있는 동안 hook 은 그 작업 폴더(`doc/work/<ID>/`) 밖 쓰기를 전부 거부하고,
+`requirement.md` 는 그 안에 있어도 거부한다(코드가 렌더하는 파일이다). 선언된 빌드·테스트 명령도 열지 않는다 —
+돌릴 코드가 아직 없는 자리다(문서 세션과 같다). 세션은 `start` 가 지우고, 작업이 없을 때 사람이 `code-agent abort` 로 닫을 수 있다.
+작업 폴더와 확정 원장은 남으므로 같은 ID 로 다시 접수할 수 있다. 문서 세션과는 서로 배타적이다 —
+접수 중이면 `docs begin` 과 `docs link` 가 거부하고(근거 문서와 그 자리를 접수 도중에 바꾸지 않는다),
+문서 세션 중이면 `request begin` 이 거부한다.
+
+**확정은 "지금 바이트" 에 걸린다** — 원장에는 그때 확정한 지시서의 해시가 남고(줄바꿈·BOM 은 내용으로 세지 않는다),
+`start` · `next` · `plan submit` · `approve`/`reject` · `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가
+**지금 내용이 확정된 것과 같은가**를 다시 본다(`requireRequestConfirmed`). 그래서 네 가지가 자동으로 따라온다.
+
+남는 해시는 **사람에게 보여 준 바이트**의 것이다 — 프롬프트 뒤에 파일을 다시 읽어 해시하면, 사람이 읽는 사이 다시 제출된
+다른 내용이 확정된 것으로 남는다. 읽는 사이에 바뀌었으면 **판정을 남기지 않고** 세운다(`확정하는 동안 지시서가 바뀌었습니다 — 판정을 남기지 않았습니다`).
+판정을 고를 때는 **ID 와 지시서 경로를 둘 다** 본다 — 원장은 `slug(ID)` 마다 하나라 다른 자리의 지시서가 같은 파일에 섞일 수 있다.
+
+- **다시 제출할 수 있다** — 작업이 시작된 뒤에도 같은 ID 면 `request submit` 이 받는다. 대신 확정이 풀려 사람이 다시 확정해야 진행한다.
+- **손으로 고쳐도 같다** — 사람이 `requirement.md` 를 직접 고치면 해시가 달라져 재확정을 요구한다. 손으로 쓴 지시서도 같은 확정을 지난다 — 시작은 `/ca-analyze <지시서>` (또는 `code-agent start <지시서>`), 접수를 다시 돌리지 않는다. `request submit` 은 코드가 렌더한 표시가 없는(사람이 쓴) 지시서를 덮지 않는다
+  (정해진 자리 밖에 있으면 확정·반려에 그 경로를 함께 준다).
+- **관측되지 않은 확정은 받지 않을 수 있다** — `code-agent.json` 의 `workOrder.requireVerifiedApproval` 이 켜져 있는데 그 확정에
+  사람이 관측된 기록이 없으면 `unverified` 로 떨어져 `start`·`next` 와 그 뒤 명령이 거부하고 터미널에서 다시 확정하게 한다.
+  **이 선언은 계획 승인에만 걸리던 것이 아니다 — 요구사항 확정에도 같이 걸린다.** 매니페스트를 읽지 못하면 받지 않는 쪽으로 닫는다.
+- **계획 승인도 함께 흔들린다** — 지시서 본문은 `docsHash` 안에 있어 승인이 `stale-docs` 가 되고, 머리말을 바꾸면 `orderHash` 도 달라진다.
+
+반려는 사유가 필수고(`--comment`), 사유는 `code-agent status` 와 `/ca-request` 가 읽어 다시 정리하는 근거가 된다.
+원장은 해시 사슬이라 나중에 고치면 읽기를 거부하고, `approvals/<slug(ID)>/` 디렉토리는 `deliver` 의 커밋 목록에 있어 **반영 커밋에 함께 올라간다.**
+
+**작업 종류**는 어떤 스테이지를 어떻게 도는지로 갈린다 — 종류를 고르는 자리가 접수(`--kind`)다.
 
 | 종류 | 스테이지 | 종류별 강제 (P6 ✅) |
 |---|---|---|
@@ -227,7 +294,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 ### 질문은 어느 스테이지에서든 던진다
 
 애매하거나 모호하면 지어내지 않고 묻는다. 질문은 작업 폴더의 `questions.md` 에 쌓이고, **답이 없는 질문이
-있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 이 확인한다. 턴 끝에 보는 Stop hook 은 한 번만 알려 주는 쪽이고, 절대적인 차단은 이 둘이다).
+있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 과 `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가 확인한다.
+턴 끝에 보는 Stop hook 은 `implement`~`integrate` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다).
 
 ```
 ## Q3 · 요구사항 분석
@@ -296,10 +364,10 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | `ca-surveyor` | 1 | 읽기 전용 | 뼈대 역공학 — 영역 하나(빌드·구조·계층 표본)를 맡아 근거 경로가 달린 분석. 여럿 병렬 | P2 ✅ |
 | `ca-analyst` | 2 | 읽기 전용 | 요구 항목화, 모호·누락·충돌을 질문 후보로, 항목별 "데이터·접점을 건드리는가" 판정 | P3 ✅ |
 | `ca-explorer` | 3 | 읽기 전용 | 요구사항 범위 역공학 — 닿는 영역 하나의 관련 파일·호출 경로·현행 데이터·API. 영역마다 병렬 | P3 ✅ · P4 부터 `impact` 에서 돈다 |
-| `ca-writer` | 1, 4 | 쓰기 (문서 경로만) | 분석 결과·사용자 답을 문서 스키마 섹션에 맞춰 문서로 | P2·P3 ✅ |
+| `ca-writer` | 1, 3, 4 | 쓰기 (문서 경로만) | 분석 결과·사용자 답을 문서 스키마 섹션에 맞춰 문서로 | P2·P3 ✅ |
 | `ca-critic` | 5 | 읽기 전용 | 계획 반박 검토 — 빠진 요구 항목, 계획 밖 파일 필요성, 테스트 공백, 작업 문서와의 불일치 | P3 ✅ |
 | `ca-implementer` | 6, ↺ | 쓰기 (hook 강제) | 단계 하나. `code-agent context` 로 받은 것만 읽고 시작 | P3 ✅ |
-| `ca-tester` | 8 | 쓰기 (테스트 경로만) | 테스트 작성. 구현과 다른 컨텍스트라 구현을 베끼지 않는다. 첫 검증 뒤에는 언다 | P5 ✅ |
+| `ca-tester` | 6 (`kind:"test"` 단계), 8 | 쓰기 (테스트 경로만) | 테스트 작성. 구현과 다른 컨텍스트라 구현을 베끼지 않는다. 첫 검증 뒤에는 언다 | P5 ✅ |
 | `ca-reviewer` | 9 | 읽기 전용 | 컨벤션·요구사항 충족·참조 코드와의 차이. 고칠 목록만 낸다 — 항목마다 **계획 파일 경로**를 적고, 저장소를 다시 훑지 않는다(`context` 가 준 목록·증거만) | P5 ✅ |
 
 **2~5 스테이지의 흐름** — 서브에이전트를 가장 적극적으로 쓰는 곳이다.
@@ -329,23 +397,32 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 
 | 무엇 | 어디서 | 시점 | 상태 |
 |---|---|---|---|
-| 프로젝트 필수 문서(아키텍처·컨벤션)가 없거나 미확정이면 작업 시작·스테이지 전환·계획 제출·승인 거부 | `start` · `next` · `plan submit` · `approve` (`requireDocs`) | 스테이지 전환 | P2 ✅ |
-| 분석 결과(`analysis.md` 의 `## R<n>` 요구 항목 · `## 작업 문서`)가 없거나 형식이 틀리면 넘어가지 않음 | `code-agent next` (`requireAnalysis`) | 스테이지 전환 | P3 ✅ |
-| 작업 문서가 분석 결과에 필요하다고 나왔는데 없거나 비었거나 필수 섹션이 비면 계획으로 못 가고, 제출도 거부 | `next` · `plan submit` (`workDocProblems`) | 계획 전 | P3 ✅ |
+| 프로젝트 필수 문서(아키텍처·컨벤션)가 없거나 미확정이면 작업 시작·스테이지 전환·계획 제출·승인 거부 | `start` · `next` · `plan submit` · `approve` · `repro` · `check` · `test` · `review` · `integrate` · `deliver` (`requireDocs`) | 스테이지 전환 · 검증 · 반영 | P2 ✅ |
+| 요구 항목(① `01-requirements.md` 의 `## R<n>` · `## 가정`)이 없거나 형식이 틀리면 넘어가지 않음 | `code-agent next` · `plan submit` · `approve` (`requireRequirements`) | 스테이지 전환 | P3 ✅ |
+| 번호 문서 ②③④⑦ 이 없거나 비었거나 필수 섹션이 비면 계획으로 못 가고, 제출도 거부 | `next` · `plan submit` · `approve` (`analysisProblems` · `designProblems` · `functionalProblems` · `testSpecProblems`) | 계획 전 | P3 ✅ |
 | 계획의 파일마다 담당 요구 항목(`files[].requirements`)이 있고, 모든 요구 항목이 어느 파일엔가 닿아야 제출 | `code-agent plan submit` | 계획 전 | P3 ✅ |
 | 계획에 `openQuestions` 가 남아 있으면 제출 거부 | `code-agent plan submit` | 계획 전 | P3 ✅ |
 | 승인 뒤 필수 문서·분석·작업 문서가 바뀌면 승인 무효 (`stale-docs`) | 승인 판정 (`approvalOf` · `approvalDocsHash`) | 매 쓰기 | P3 ✅ |
-| 작업 지시서(`requirement.md`)는 모델이 고칠 수 없음 — 모호하면 질문으로 | PreToolUse hook | 쓰기 전 | P1 ✅ |
-| 문서 작성 세션 중에는 문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기 금지 | PreToolUse hook | 쓰기 전 | P2 ✅ |
+| 작업 지시서(`requirement.md`)는 모델이 고칠 수 없음 — 접수 중이든 작업 중이든 문서 세션 중이든, **작업도 세션도 없을 때도**(`doc/work/<아무 ID>/requirement.md` 전부). 고칠 것은 `request.json` 에 쓰고 다시 제출하고, 모호하면 질문으로 | PreToolUse hook | 쓰기 전 | P1 ✅ · 접수 ✅ |
+| **요구사항 접수 세션 중에는 그 작업 폴더(`doc/work/<ID>/`) 밖 쓰기 금지** — 확정 전에 코드·문서를 "미리" 고쳐 두는 길을 닫는다 | PreToolUse hook (`decideRequestWrite`) | 쓰기 전 | ✅ |
+| **사람이 지금 내용 그대로 확정한 요구사항 위에서만 진행** — 확정이 없거나 반려됐거나 확정 뒤 바뀌었으면, 그리고 `workOrder.requireVerifiedApproval` 이 켜져 있는데 그 확정에 사람이 관측되지 않았으면(`unverified`) 거부하고 `code-agent confirm request <ID> [<지시서>]` 를 **그 지시서 경로까지 넣어** 안내. 판정은 ID 와 지시서 경로가 **둘 다** 같은 것만 본다 | `start` · `next` · `plan submit` · `approve`/`reject` · `repro` · `check` · `test` · `review` · `integrate` · `deliver` (`requireRequestConfirmed`) | 작업 시작 · 스테이지 전환 · 검증 · 반영 | ✅ |
+| 접수 초안은 **지시서 규격을 지나야** 렌더된다 — 손으로 쓴 지시서와 **같은** `validateWorkOrder` + 머리말 왕복 대조(따옴표·`[ ]` 로 감싼 값, 빈 항목은 파서가 다르게 읽는다) · 원문은 `original`·`originalFile` 중 하나 · `extra` 에 예약 속성 금지 · `extra` 의 속성 이름은 `[A-Za-z][A-Za-z0-9_-]*`. 머리말 규격 위반은 **전부 접수의 말로** 돌려준다(작업 시작 때 쓰는 일반 지시서 오류문이 아니라 — 고칠 곳은 `request.json` 이다) | `code-agent request submit` | 접수 | ✅ |
+| **반려된 내용을 그대로 다시 제출할 수 없다** — 마지막 판정이 반려이고 렌더 결과의 해시가 그때와 같으면 쓰지 않고 사유를 다시 찍는다. 사유를 읽지 않은 제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다 | `code-agent request submit` | 접수 | ✅ |
+| **확정은 사람에게 보여 준 바이트에 걸린다** — 프롬프트 앞에서 읽은 내용으로 해시하고, 사람이 읽는 사이 지시서가 바뀌었으면 **판정을 남기지 않는다**. 보여 준 것과 남는 것이 같아야 확정이 그 내용에 대한 것이 된다 | `confirm request` · `reject request` | 확정 | ✅ |
+| 확정 원장은 해시 사슬 — 나중에 고치면 **읽지 않고 세운다**. `approvals/<slug(ID)>/request.jsonl` 은 반영 커밋에 함께 올라간다 | `readRequestLedger` · `deliver` | 확정 · 반영 | ✅ |
+| 세션은 하나씩 — 접수 중이면 `docs begin`·`docs link` 거부, 문서 세션 중이면 `request begin` 거부, 작업 중이면 둘 다 거부 | `docs begin` · `docs link` · `request begin` | 세션 열 때 · 문서 등록 | P2 ✅ · 접수 ✅ |
+| 문서 작성 세션 중에는 문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기 금지 — `doc/` 아래라도 `doc/work/<ID>/requirement.md` 는 거부한다(접수가 렌더하는 파일이다) | PreToolUse hook | 쓰기 전 | P2 ✅ · 접수 ✅ |
 | 계획 승인 전(분석·조사·계획 스테이지) 작업 폴더 밖 쓰기 금지 | PreToolUse hook → `code-agent hook` | 쓰기 전 | P1 ✅ |
 | 계획에 없는 파일, scope 밖, preserve, 계층 경계 | 같음 (코어 `checkPaths` · `unplannedFiles`) | 쓰기 전 | P1 ✅ |
 | `.code-agent/` 상태·제출된 계획·원장 변조 | 같음 | 쓰기 전 | P1 ✅ |
-| Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model` 은 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰므로 거부). 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부 | 같음 | 실행 전 | P1 ✅ · P4 ✅ |
-| 답 없는 질문이 있으면 진행 금지 | `code-agent next` · `plan submit` (`requireAnswers`) | 스테이지 전환 | P3 ✅ |
+| **작업도 세션도 없을 때 언제나 지키는 넷** (`decideOutside`) — `.code-agent/` 쓰기(대소문자 무시) · `doc/work/<아무 ID>/requirement.md` 쓰기 · `~/.code-agent/`(키 자리) 읽기·쓰기 · `.code-agent` 나 `~/.code-agent` 를 **가리키는** Bash(명령 이름 `code-agent` 는 걸리지 않는다). 그 밖의 세션 밖 도구 호출은 판정하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다. 이 틈을 열어 두면 세션이 열리기 **직전**에 모델이 지시서와 확정 원장을 손으로 써 넣고 사람의 확정 없이 `start` 를 지난다 | PreToolUse hook (`decideOutside`) | 쓰기 · 실행 · 읽기 전 | ✅ |
+| 쓰기 경로에 `:` 가 들어 있으면 거부 — **모든 모드에서**. Windows 의 대체 데이터 스트림 표기(`requirement.md::$DATA`)는 같은 파일을 가리키는데, 아직 없는 파일이면 실제 경로로 풀리지 않아 이름 대조를 비껴간다 | PreToolUse hook (`streamGuard`) | 쓰기 전 | ✅ |
+| **진행 중인 작업이나 문서·접수 세션이 있을 때만** — Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰므로 거부). **단 문서 세션·접수 세션에서는 선언한 명령을 열지 않는다** (`decideBash` 의 `documenting`) — 문서 세션은 모델이 `code-agent.json` 을 쓸 수 있는 유일한 자리라 허용 목록을 제 손으로 넓히는 길이 되고, 접수는 돌릴 코드가 아직 없는 자리다. 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부. **세션 밖에서는 허용 목록을 걸지 않지만**, `.code-agent`·`~/.code-agent` 를 가리키는 명령만은 거기서도 거부한다(위 `decideOutside`) | 같음 | 실행 전 | P1 ✅ · P4 ✅ · 접수 ✅ |
+| 답 없는 질문이 있으면 진행 금지 | `code-agent next` · `plan submit` · `repro` · `check` · `test` · `review` · `integrate` (`requireAnswers`) · `deliver` (`deliverProblems`) | 스테이지 전환 · 검증 · 반영 | P3 ✅ |
 | 단계의 계획 파일이 실제로 생겼는지 확인해야 다음 단계 | `code-agent next` (`missingPlannedFiles`) | 스테이지 전환 | P3 ✅ |
-| 승인·확정은 사람만 | `approve` · `reject` · `confirm doc` 의 TTY 검사 | 승인 시 | P1 ✅ |
-| 승인은 무엇에 대한 것인가 | 원장 해시 사슬 — 지시서·계획·매니페스트·문서 | 매 쓰기 | P1 ✅ |
-| POLICY 4종(테스트 전략 · 품질·보안 기준 추가) 확정 + 명령 이름이 매니페스트에 실재 | `start` · `next` · `plan submit` · `approve` | 스테이지 전환 | P4 ✅ |
+| 승인·확정은 사람만 | `approve` · `reject` · `confirm doc` · **`confirm request`** · **`reject request`** 의 TTY 검사 | 승인 시 | P1 ✅ · 접수 ✅ |
+| 승인은 무엇에 대한 것인가 | 원장 해시 사슬 — 요구사항·지시서·계획·매니페스트·문서 | 매 쓰기 | P1 ✅ |
+| POLICY 4종(테스트 전략 · 품질·보안 기준 추가) 확정 + 명령 이름이 매니페스트에 실재 | `start` · `next` · `plan submit` · `approve` · `repro` · `check` · `test` · `review` · `integrate` · `deliver` (`requireDocs`) | 스테이지 전환 · 검증 · 반영 | P4 ✅ |
 | ②③④⑦ 이 없거나 게이트를 못 지나면 계획으로 못 가고 제출도 거부 — 영향 표에 모든 R · R 마다 AC · 모든 AC 가 TC 에 | `code-agent next` · `plan submit` | 계획 전 | P4 ✅ |
 | `fix`·`refactor` 는 ② 의 `기존 시스템 분석` 을 `해당 없음` 으로 비울 수 없고 근거 `path:line` 이 최소 하나 있어야 한다 — 스키마 guide 가 "근거는 path:line" 이라 적어 둔 문장의 코드화다 (`feature` 는 그대로). **비었는가**로 재지 그 말이 나왔는가로 재지 않는다 — 절의 줄이 전부 `해당 없음` 일 때만 막는다 | `code-agent next`(impact) · `plan submit` · `approve` (`analysisProblems`) | 영향도 · 계획 전 | P6 ✅ |
 | `fix` 는 ⑦ 에 `## 재현` 절이 있어야 하고, 거기 적힌 TC id 가 `테스트 케이스` 표에 실재해야 한다 — 수준(Unit/Integration/E2E)은 무엇이든 된다 | `code-agent next` · `plan submit` (`testSpecProblems`) | 계획 전 | P6 ✅ |
@@ -375,7 +452,8 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 답 없는 질문·계획과 실제 변경(기준 커밋 대비)을 턴 끝에 대조 — **한 번만** 막는다 (`stop_hook_active` 면 통과, 판정 실패도 통과). 절대적인 차단은 `check`·`test`·`next` 가 한다 | Stop hook (`code-agent stop`) | 턴 끝 | P5 ✅ |
 
 경로는 실제 경로로 풀어 비교한다 (`canonical` — Windows 8.3 이름·junction·심볼릭 링크).
-hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있다.
+hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있고, Bash 는 그 자리를 **가리키는 것**만 막으므로
+글자를 쪼개 돌려 쓰는 셸 명령까지는 막지 못한다. 세션 밖에서 언제나 지키는 넷도 같은 성질이다.
 
 ## 6. 플러그인과 도구 (P7)
 
@@ -481,7 +559,9 @@ code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙�
 - `manifest.plugins` 는 `hashManifest` 에 넣지 않는다 — 경계도 검증 선언도 아니고, 런을 더하기만 하므로
   승인이 본 경계를 넓히지 못한다. **`plugins` 를 더해도 기존 계획 승인은 한 건도 무효가 되지 않는다.**
 - `candidates.rank` 의 기본 구현은 ripgrep 이 PATH 에 있어도 **쓰지 않는다** — rg 의 ignore 규칙·유니코드 단어 경계가
-  Node 스캔과 달라 같은 저장소에서 사람마다 다른 순위가 나온다. `plugin list` 가 "감지됨 · 쓰지 않음" 으로 보고한다.
+  Node 스캔과 달라 같은 저장소에서 사람마다 다른 순위가 나온다. `plugin list` 의 `감지된 무료 도구` 가
+  `- ripgrep: 있음 (<경로>) — candidates.rank 는 쓰지 않습니다(사람마다 순위가 갈리지 않게 내장 스캔으로 고정)`
+  (없으면 `- ripgrep: 없음 — …`) 로 보고한다.
 
 ## 7. 토큰
 
@@ -505,7 +585,9 @@ npm run build:bin → dist-bin/code-agent(.exe)  # 또는 단일 실행 파일 (
 cd <프로젝트> && code-agent init             # 프로젝트마다 — .claude/ 설치, 버전 고정
 code-agent doctor                            # 설치·환경 점검 (✗ 가 없으면 종료 코드 0)
 claude  →  /ca-docs  →  (터미널) code-agent confirm doc architecture · conventions · test-strategy · quality
-        →  /ca-feature doc/work/UZRF-145/requirement.md  →  (터미널) code-agent approve  →  /ca-next …
+        →  /ca-feature UZRF-145 <요구사항 서술·티켓·파일>   # 접수 — 코드가 requirement.md 를 렌더한다
+        →  (터미널) code-agent confirm request UZRF-145     # 원문과 정리를 나란히 읽고 확정
+        →  /ca-next  →  (터미널) code-agent approve  →  /ca-next …
 ```
 
 설치·점검·갱신·지우기의 정본은 [install.md](install.md) 다. **템플릿을 읽는 자리는 `src/agent/assets.ts` 하나**이고 —
@@ -520,16 +602,17 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O | P1 ✅ · `prepare` P6 ✅ · `plugins` P7 ✅ |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 ✅ 갱신 |
-| `doc/work/<ID>/requirement.md` — 작업 지시서. `<ID>` 는 Jira 키 그대로 (`UZRF-145`). **사람이 쓴다** | O | P1 ✅ |
+| `doc/work/<ID>/request.json` — 접수 초안(원문 · 정리 · 접수 때 정한 것). **모델이 쓴다** | O | ✅ |
+| `doc/work/<ID>/requirement.md` — 작업 지시서. `<ID>` 는 Jira 키 그대로 (`UZRF-145`). **코드가 `request.json` 에서 렌더하고 사람이 터미널에서 확정한다** (손으로 쓴 지시서도 같은 확정을 지난다 — 다른 자리에 있으면 `confirm request <ID> <지시서>`) | O | P1 ✅ · 접수 ✅ |
 | `doc/work/<ID>/questions.md` — 질문과 답 | O | P3 ✅ |
 | `doc/work/<ID>/01-requirements.md` · `02-analysis.md` · `03-design.md` · `04-functional.md` — ①~④ (P3 의 `analysis.md` · `current.md` · `data.md` · `api.md` 를 흡수) | O | P4 ✅ |
 | `doc/work/<ID>/plan.json` · `05-plan.md` · `07-test-spec.md` — ⑤ 계획(초안 + 코드 렌더) · ⑦ 테스트 명세 | O | P3 ✅ · P4 ✅ |
 | `doc/work/<ID>/08-validation.md` · `09-review.md` · `10-pr.md` — ⑧ 검증(코드만) · ⑨ 리뷰(회차 구역은 코드) · ⑩ PR 본문(추적표 구역은 코드) | O | P5 ✅ |
 | `doc/work/<ID>/knowledge.proposal.md` — 공통 KNOWLEDGE 갱신 제안. 반영 때 사람이 고른 것만 코드가 upsert | O | P5 ✅ |
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
-| `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷 | O (증거) | P1 ✅ |
+| `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) | P1 ✅ · 접수 ✅ |
 | `.code-agent/models.json` — 에이전트별 모델 (바꾼 것만) | O | ✅ |
-| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/log/` | X (`init` 이 `.gitignore` 에 넣는다) | P1 ✅ |
+| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/log/` | X (`init` 이 `.gitignore` 에 넣는다) | P1 ✅ · 접수 ✅ |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
 
@@ -557,11 +640,12 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 스킬 | 하는 일 | 상태 |
 |---|---|---|
-| `/ca-docs [architecture \| conventions]` | 프로젝트 필수 문서 점검·작성 — 빠진 문서마다 역공학 / 사용자 입력 / 기존 문서 연결 중 고르게 한다 | P2 ✅ |
+| `/ca-docs [architecture \| conventions \| test-strategy \| quality \| data-dictionary \| api-catalog \| business-rules]` | 프로젝트 필수 문서 점검·작성 — 빠진 문서마다 역공학 / 사용자 입력 / 기존 문서 연결 중 고르게 한다 | P2 ✅ |
 | `/ca-adopt` | 레거시 첫 도입 — 뼈대 역공학으로 문서와 `code-agent.json` 까지 | P2 ✅ |
-| `/ca-feature <지시서> [--base <기준>] [--target <대상>]` · `/ca-fix` · `/ca-refactor` | `start` + 사이클을 5 까지 — 계획을 제출하고 승인 대기에서 멈춤. `/ca-fix`·`/ca-refactor` 가 더 지는 것(② 의 현행 분석 · ⑦ 의 `## 재현` · `sequence[0]` · 기존 테스트 보호)은 **전부 코드가 막는다** | P3 ✅ · 종류별 강제 P6 ✅ |
-| `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고, 사람의 자리가 나올 때까지 다음 단계 스킬로 이어 간다 | P3 ✅ |
-| `/ca-analyze [<지시서>]` · `/ca-impact` · `/ca-design` · `/ca-plan` | 2 · 3 · 4 · 5 를 하나씩. `/ca-analyze` 는 진행 중인 작업이 없고 인자가 있으면 `start` 부터, `/ca-plan` 은 게이트가 아니라 터미널 승인에서 멈춘다 (반려 사유를 읽는 자리도 여기) | P5 ✅ |
+| `/ca-request <ID> [--kind <종류>] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로>` | **접수 단계만** — 원문을 그대로 보관하고 `request.json` 으로 정리해 제출한 뒤, 사람의 터미널 확정 앞에서 멈춘다. 반려 사유를 읽고 다시 정리하는 자리도 여기 | ✅ |
+| `/ca-feature <ID> <요구사항 서술 · 티켓 · 파일> [--base <기준>] [--target <대상>]` · `/ca-fix` · `/ca-refactor` | 접수 → (사람 확정) → `start` + 사이클을 5 까지 — 계획을 제출하고 승인 대기에서 멈춤. 종류(`--kind`)를 고르는 것이 이 셋이다. `/ca-fix`·`/ca-refactor` 가 더 지는 것(② 의 현행 분석 · ⑦ 의 `## 재현` · `sequence[0]` · 기존 테스트 보호)은 **전부 코드가 막는다** | P3 ✅ · 종류별 강제 P6 ✅ · 접수 ✅ |
+| `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고, 사람의 자리가 나올 때까지 다음 단계 스킬로 이어 간다. 작업이 아직 시작 전이고 접수 중이면 거기부터 | P3 ✅ |
+| `/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` | 2 · 3 · 4 · 5 를 하나씩. `/ca-analyze` 는 진행 중인 작업이 없고 접수한 요구사항이 **확정됨** 이면 `code-agent start doc/work/<ID>/requirement.md` 부터, `/ca-plan` 은 게이트가 아니라 터미널 승인에서 멈춘다 (반려 사유를 읽는 자리도 여기) | P5 ✅ |
 | `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate` | 6 · 7 · 8 · 9 · 10 을 하나씩. `/ca-implement` 는 커서가 `check` 에 닿을 때까지, `/ca-integrate` 는 이어서 ⑩ 을 쓰고 터미널 `deliver` 앞에서 멈춘다 | P5 ✅ |
 | `/ca-answer` | 남은 질문을 하나씩 묻고 `questions.md` 에 기록 | P3 ✅ |
 | `/ca-status` | 위치·막힌 이유·다음 할 일 | P1 ✅ |
@@ -583,9 +667,10 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH 의 code-agent · git 저장소 · settings.json 이 읽히는지 · hook 2개가 풀리는지 · 버전 스큐 · 스킬·에이전트가 번들과 같은지(없는 것과 다른 것을 갈라 센다) · 이 버전에 없는 `ca-*` · 매니페스트 · POLICY 4종 · 사용자 키 파일 · TTY. 번들을 못 읽어도 **끝까지 찍고** 요약에 닿는다. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |
-| `code-agent confirm doc <architecture \| conventions>` | 프로젝트 필수 문서 확정 (해시를 원장에, TTY 에서만) | P2 ✅ |
+| `code-agent confirm doc <architecture \| conventions \| test-strategy \| quality>` | 프로젝트 필수 문서 확정 (해시를 원장에, TTY 에서만) | P2 ✅ |
+| `code-agent confirm request <ID> [<지시서>]` · `reject request <ID> [<지시서>] --comment <사유>` | **요구사항 확정·반려** (TTY 에서만) — 지시서를 통째로 띄워 원문과 정리를 나란히 읽히고, **보여 준 바이트**의 해시로 판정을 `approvals/<slug(ID)>/request.jsonl` 에 남긴다(읽는 사이에 바뀌었으면 아무것도 남기지 않는다). 지시서를 생략하면 그 ID 가 진행 중인 작업이면 그 작업의 지시서, 아니면 `doc/work/<ID>/requirement.md` — 다른 자리에 손으로 쓴 지시서는 경로를 함께 준다. 확정해야 `start` 가 받는다. 확정 뒤 내용이 바뀌면 다시 확정한다 | ✅ |
 | `code-agent approve` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만) | P1 ✅ |
-| `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다) | P1 ✅ |
+| `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY, 기본 opus) | ✅ |
 | `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
@@ -598,20 +683,23 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
-| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, 작업 브랜치, 작업 폴더 | P1 ✅ |
+| `code-agent request begin <ID> --kind <feature \| fix \| refactor> [--base <기준 브랜치>] [--target <대상>]` | **1 요구사항 접수를 연다** — 접수 세션을 만들고(도는 동안 그 작업 폴더 밖 쓰기 금지) 초안 형식 · 프로젝트 확장 속성 · 대상 후보를 찍는다. ID 는 사람이 준 것만 받는다 (형식 검사). `--base`·`--target` 은 세션에 남아 **확정 뒤 `start` 가 이어받는다** — `code-agent status` 가 `시작할 때 기준 브랜치 … · 대상 …` 으로 보여 준다 | ✅ |
+| `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 | ✅ |
+| `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 | ✅ |
+| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, **요구사항이 지금 내용 그대로 확정됐는지** 확인, 작업 브랜치, 작업 폴더. 접수 때 말한 `--base`·`--target` 을 이어받는다(여기서 직접 준 값이 이긴다). 시작하면 접수 세션을 지운다 | P1 ✅ · 확정 게이트 ✅ |
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 | P1 ✅ |
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로만 되감는다 (`analysis`…`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 증거·승인 원장·작업 문서는 그대로 두고 커서만 움직이며(`implement` 로 가면 계획의 첫 단계로), **무엇이 무효가 되는지 함께 찍는다** | P5 ✅ |
-| `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙 | P1 ✅ |
+| `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙. 아직 커서가 없고 접수 중이면 접수 컨텍스트를 준다(그것만 다시 보려면 `code-agent request`) | P1 ✅ |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 | P1 ✅ |
-| `code-agent repro` | 6 재현 (**`fix` 전용**) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 | P6 ✅ |
+| `code-agent repro` | 재현 (**`fix` 전용** — 스테이지가 아니라 `implement` 안에서 돈다) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 | P6 ✅ |
 | `code-agent check` | 7 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 | P5 ✅ |
 | `code-agent test` | 8 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 | P5 ✅ |
 | `code-agent review` | 9 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 | P5 ✅ |
 | `code-agent integrate` | 10 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test` | P5 ✅ · `prepare` P6 ✅ |
-| `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지) | P2 ✅ |
-| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — `architecture` · `conventions` · `data` · `api` · `current` | P2 ✅ |
+| `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지). 요구사항을 접수 중이면 열지 않는다 | P2 ✅ |
+| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — POLICY 4종(`architecture` · `conventions` · `test-strategy` · `quality`) · `knowledge`(KNOWLEDGE 3종을 한 번에) · KNOWLEDGE 낱개(`data-dictionary` · `api-catalog` · `business-rules`) · 작업 문서(`01-requirements` · `02-analysis` · `03-design` · `04-functional` · `07-test-spec`) | P2 ✅ |
 | `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 묻는 것 | P2 ✅ |
-| `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 등록 | P2 ✅ |
+| `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 등록. 요구사항을 접수 중이면 거부한다 (`docs begin` 과 같은 문 — 근거 문서와 그 자리는 접수·작업 도중에 바꾸지 않는다) | P2 ✅ · 접수 ✅ |
 | `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드·언어·구조·계층 후보·표본 | P2 ✅ |
 | `code-agent manifest check` | `code-agent.json` 이 실제 참조 파일을 찾는지 | P2 ✅ |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 이 PC 의 등록 · 저장소 선언 · 지금 무엇이 채우는가. **읽기만 한다** — `add`·`remove` 는 사람의 터미널 명령이다 | P7 ✅ |
@@ -650,6 +738,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | P6 fix·refactor · 신규 저장소 | ② 현행 분석 필수(`해당 없음` 불가 · 근거 `path:line`) · ⑦ 의 `## 재현` 절과 `code-agent repro`(증거 `Evidence.repro`, 재현 전 쓰기 거부, 재현 뒤 테스트 동결) · `sequence[0]` 이 테스트 단계 · refactor 의 기존 테스트 파일 보호(제출·쓰기·검증 세 자리) · `stages[].kinds` 종류별 단계와 `manifest check` 경고 · 빈 저장소 감지(`survey`)와 참조 없는 `context` · `deliver` 커밋 범위 제한 · `integrate` 의 `prepare` | 각 한 건 완주, 빈 저장소에서 feature 시작 | 코드 ✅ · 완주 실측 |
 | P7 플러그인 | 자리 6개 · 버전 있는 명령 어댑터 계약(stdin JSON → stdout JSON, `describe`·`probe`·`run`) · `plugin list/add/remove`(등록은 TTY·동의·`probe`, 키는 사용자 스토어) · 무료 도구 감지 · 기본 구현 둘(내장 키워드 스캔 · 제목 매칭) · `code-agent.json` 의 `plugins` 선언(해시 중립) · 호출 로그 — **등록한 사람만 opt-in**, 실패하면 기본 구현 + 한 줄 | Jev 켜고/끄고 같은 저장소 A/B 토큰 비교 | 코드 ✅ · **A/B 는 실제 Jev 가 붙어야 잰다** (절차: [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
 | P8 정리·배포 | 단일 실행 파일(Node SEA — 템플릿을 자원으로 안고 `assets.ts` 한 자리에서 읽는다) · `doctor` · `update` · `usage` · `knowledge`/`prune` · 죽은 코드 정리와 매니페스트 `[]` 함정 차단(해시 중립) · 문서 세트(README → [install.md](install.md) · 이 문서 · [usage.md](usage.md) · [requirement.md](requirement.md) · [plugins.md](plugins.md)) | 다른 개발자가 혼자 설치부터 반영까지 | ✅ |
+| 요구사항 접수 | 13단계의 1 을 프로세스 안으로 — `code-agent request begin`·`submit`(접수 세션 · `request.json` → `requirement.md` 렌더 · 지시서 규격 재사용) · `confirm request`·`reject request`(TTY · 해시 사슬 원장) · 모든 진행 명령의 확정 게이트(`requireRequestConfirmed`) · `/ca-request` 와 `/ca-feature`·`/ca-fix`·`/ca-refactor` 의 인자 전환(`<ID> <요구사항>`) · 적대적 리뷰 반영(확정에 지시서 경로 인자 · 접수 시작 인자(`--base`·`--target`) 승계 · 보여 준 바이트로 해시 · 반려본 재제출 거부 · ID+지시서로 판정 · `requireVerifiedApproval` 적용 · 세션 밖에서도 도는 hook) | 사람이 지시서 규격을 몰라도 말로 요구사항을 주면 작업이 시작되고, 확정하지 않은 요구사항 위에서는 아무것도 진행되지 않는다 | ✅ (2026-10-01) |
 
 **P8 뒤로 남은 것** (코드가 아니라 실측·결정이 필요한 것들이다)
 

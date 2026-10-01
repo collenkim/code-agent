@@ -14,6 +14,8 @@ export const ACTIVE_FILE = `${STATE_DIR}/active.json`;
 export const WORK_DOCS_DIR = "doc/work";
 /** 문서 작성 세션 — 있는 동안 hook 이 문서 자리 밖 쓰기를 막는다 */
 export const DOCS_SESSION_FILE = `${STATE_DIR}/docs-session.json`;
+/** 요구사항 접수 세션 — 있는 동안 hook 이 그 작업 폴더 밖 쓰기와 지시서 쓰기를 막는다 */
+export const REQUEST_SESSION_FILE = `${STATE_DIR}/request-session.json`;
 
 export const PHASES = [
   "analysis",
@@ -152,8 +154,11 @@ export function clearActive(repoRoot: string): void {
 /** 스테이지 전이 기록 — `.gitignore` 의 `.code-agent/log/` 안이라 커밋되지 않는다 */
 export const STAGES_LOG = `${STATE_DIR}/log/stages.jsonl`;
 
-/** 커서를 움직인 명령 */
-export type StageMove = "start" | "next" | "back" | "deliver" | "abort";
+/** 커서를 움직인 명령. `request` 는 커서가 생기기 전의 접수다 */
+export type StageMove = "request" | "start" | "next" | "back" | "deliver" | "abort";
+
+/** 기록에 남는 자리 — 스테이지 열 개와, 커서가 생기기 전의 접수 */
+export type LoggedPhase = Phase | "request";
 
 /** 전이 한 줄. `code-agent usage` 가 메시지의 timestamp 를 이 구간에 담는다 */
 export interface StageTransition {
@@ -161,7 +166,7 @@ export interface StageTransition {
   at: string;
   id: string;
   target: string;
-  phase: Phase;
+  phase: LoggedPhase;
   stage?: string;
   by: StageMove;
 }
@@ -175,7 +180,11 @@ export interface StageTransition {
  * 쓰기 실패는 **삼킨다**. 통계용 로그가 작업을 세우는 것은 값어치에 비해 비싸다.
  * `saveActive` 의 `by` 를 생략하면 기록하지 않는다 — 테스트 헬퍼가 조용히 오염시키지 않게.
  */
-export function logStage(repoRoot: string, active: ActiveWork, by: StageMove): void {
+export function logStage(
+  repoRoot: string,
+  active: { id: string; target: string; phase: LoggedPhase; stage?: string },
+  by: StageMove,
+): void {
   const row: StageTransition = {
     at: new Date().toISOString(),
     id: active.id,

@@ -7,6 +7,7 @@ import { writeAtomic } from "../core/atomic";
 import { Stop } from "./commands";
 import { checkDoc, checkKnowledge, checkProjectDocs, docsReady, formatDocChecks, formatKnowledgeChecks, recordDocConfirmation } from "./docs";
 import { DOCS_SESSION_FILE, loadActive } from "./layout";
+import { loadRequestSession } from "./request";
 import { interview, isDocKind, isPolicyKind, isWorkDocKind, KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS, skeleton, WORK_SCHEMAS } from "./schemas";
 import type { DocKind, KnowledgeKind, PolicyKind } from "./schemas";
 import { confirmOnTerminal } from "./tty";
@@ -93,6 +94,7 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
       `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 code-agent abort 뒤에 연결하세요.`,
     );
   }
+  requireNoIntake(repoRoot, "문서 연결");
   const manifestPath = join(repoRoot, MANIFEST_FILE);
   if (!existsSync(manifestPath)) {
     throw new Stop(
@@ -125,6 +127,16 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
   return `${SCHEMAS[kind].label} 문서를 연결했습니다: ${paths.join(", ")}\n\n${state}`;
 }
 
+/** 근거 문서와 그 자리(code-agent.json)는 접수 · 작업 도중에 바꾸지 않는다 — 열기와 연결이 같은 문을 쓴다 */
+function requireNoIntake(repoRoot: string, what: string): void {
+  const intake = loadRequestSession(repoRoot);
+  if (intake) {
+    throw new Stop(
+      `요구사항을 접수 중입니다 (${intake.id}). ${what}은(는) 접수를 끝내거나 사람이 code-agent abort 로 닫은 뒤에 합니다.`,
+    );
+  }
+}
+
 export function docsBegin(repoRoot: string): string {
   const active = loadActive(repoRoot);
   if (active) {
@@ -132,6 +144,7 @@ export function docsBegin(repoRoot: string): string {
       `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 code-agent abort 뒤에 여세요.`,
     );
   }
+  requireNoIntake(repoRoot, "문서 세션 열기");
   mkdirSync(dirname(join(repoRoot, DOCS_SESSION_FILE)), { recursive: true });
   writeFileSync(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ startedAt: new Date().toISOString() })}\n`);
   const created = createKnowledgeSkeletons(repoRoot);

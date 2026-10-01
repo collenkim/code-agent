@@ -140,7 +140,7 @@ describe("P8 · init 은 파일이 아니라 자원에서 설치한다", () => {
     bundle[key] = `${bundle[key]}\n<!-- 번들에서 왔다 -->\n`;
     const report = withFakeSea(bundle, (loaded) => loaded.init.init(repo, { cli: CLI }));
 
-    assert.match(report, /스킬·에이전트 25개/);
+    assert.match(report, /스킬·에이전트 26개/);
     assert.equal(read(".claude/skills/ca-plan/SKILL.md"), bundle[key]);
     assert.equal(read(".claude/agents/ca-reviewer.md"), bundle["template/claude/agents/ca-reviewer.md"]);
     assert.ok(read("CLAUDE.md").includes(assetText("template/CLAUDE.block.md").trim()));
@@ -192,7 +192,7 @@ describe("P8 · doctor", () => {
     assert.equal(line(report.text, "PreToolUse hook"), `✓ PreToolUse hook: node "${CLI.replace(/\\/g, "/")}" hook`);
     assert.match(line(report.text, "Stop hook"), /^✓ Stop hook:/);
     assert.equal(line(report.text, "설치 버전"), `✓ 설치 버전: ${packageVersion()}`);
-    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 25개 모두 번들과 같습니다$/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 모두 번들과 같습니다$/);
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
 
@@ -276,6 +276,41 @@ describe("P8 · doctor", () => {
   });
 });
 
+describe("P8 · PreToolUse matcher 는 읽기 도구도 넘긴다", () => {
+  /** 설치된 PreToolUse 항목 — 이 저장소에는 우리 것 하나뿐이다 */
+  function preToolUse(): { matcher?: string } {
+    const settings = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, { matcher?: string }[]> };
+    return settings.hooks.PreToolUse[0];
+  }
+
+  test("init 이 깐 matcher 에 키 파일을 지키는 Read · Grep · Glob 이 들어 있다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    const matcher = preToolUse().matcher ?? "";
+    // Claude Code 는 matcher 를 정규식으로 본다 — 도구 이름 전체가 맞아야 hook 이 불린다
+    for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Read", "Grep", "Glob"]) {
+      assert.match(tool, new RegExp(`^(${matcher})$`), `${tool} 이 hook 에 오지 않습니다`);
+    }
+    assert.match(line(doctor(repo).text, "PreToolUse hook"), /^✓/);
+  });
+
+  test("읽기 셋이 없는 옛 matcher 는 doctor 가 ✗ 로 짚고, update 가 고친다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    const settings = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, { matcher?: string }[]> };
+    settings.hooks.PreToolUse[0].matcher = "Write|Edit|MultiEdit|NotebookEdit|Bash";
+    write(".claude/settings.json", JSON.stringify(settings, null, 2));
+
+    const report = doctor(repo);
+    assert.equal(report.ok, false);
+    assert.match(line(report.text, "PreToolUse hook"), /matcher 가 Read · Grep · Glob 를 넘기지 않습니다$/);
+    assert.match(hint(report.text, "PreToolUse hook"), /code-agent update/);
+
+    update(repo);
+    assert.match(line(doctor(repo).text, "PreToolUse hook"), /^✓/);
+  });
+});
+
 // ---- update ----
 
 describe("P8 · update", () => {
@@ -332,7 +367,7 @@ describe("P8 · update", () => {
     gitInit();
     init(repo, { cli: CLI });
     const report = update(repo);
-    assert.match(report, /스킬·에이전트 25개 그대로/);
+    assert.match(report, /스킬·에이전트 26개 그대로/);
     assert.match(report, /\.claude\/settings\.json: 그대로/);
     assert.match(report, /CLAUDE\.md: 그대로/);
     assert.equal(report.includes("!!"), false);

@@ -1,6 +1,6 @@
 ## code-agent — 이 저장소의 코드 작업 절차
 
-코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor` 로 시작한다. 진행은 둘 중 하나다 — 사이클 `/ca-next`, 또는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`)을 하나씩. 절차는 단계 스킬 하나에만 있어 어느 쪽으로 가도 같다. 지금 위치는 `code-agent status`, 이전 스테이지로 되감기는 `code-agent back <스테이지>` (앞으로는 못 간다).
+코드 작업(기능 개발·버그 수정·리팩토링)은 `/ca-feature` · `/ca-fix` · `/ca-refactor <ID> <요구사항>` 으로 **요구사항 접수부터** 시작한다 (접수만 하려면 `/ca-request`). 사람이 터미널에서 요구사항을 확정해야 분석이 시작된다. 진행은 둘 중 하나다 — 사이클 `/ca-next`, 또는 **단계 명령**(`/ca-request` · `/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`)을 하나씩. 절차는 단계 스킬 하나에만 있어 어느 쪽으로 가도 같다. 지금 위치는 `code-agent status`, 이전 스테이지로 되감기는 `code-agent back <스테이지>` (앞으로는 못 간다).
 
 - 진행 중인 작업이 있으면 **승인된 계획의 파일만** 쓴다. 계획 밖 쓰기·Bash 우회는 hook 이 거부한다 — 거부되면 사유를 그대로 보고하고 우회하지 않는다.
 - 애매하거나 모호한 것은 지어내지 않는다 — 업무 규칙·범위·권한·데이터의 의미처럼 사람이 정할 것은 작업 폴더의 `questions.md` 에 질문으로, 컨벤션·참조 코드로 기본값을 댈 수 있는 기술 세부는 `01-requirements.md` 의 `## 가정` 에 근거와 함께 적는다.
@@ -9,7 +9,8 @@
 - 검증이 실패하면 **계획 안에서만** 고치고 `code-agent check` 부터 다시 돈다 (기본 2회). 넘으면 덮지 말고 보고한다. 테스트는 한 번 돌면 얼어 단언을 고칠 수 없다.
 - `fix` 는 **재현이 먼저다** — 재현 테스트를 쓰고 `code-agent repro` 로 지금 코드에서 실패하는 것을 봐야 고칠 파일이 열린다. `refactor` 는 기준 커밋에 이미 있던 테스트 파일을 고치지도 지우지도 못한다.
 - `09-review.md` 의 지적은 `ca-reviewer` 가 낸 것을 **그대로** 옮긴다 — 요약·완화·재분류하지 않는다.
-- 승인·확정·반영은 사람이 별도 터미널에서 한다 (`code-agent approve` · `confirm doc` · `deliver`). 대신 하지 않는다.
+- 요구사항은 사람이 준 원문을 그대로 보관하고, 원문에 없는 요구를 더하지 않는다. 지시서(`requirement.md`)는 `code-agent request submit` 이 렌더한다 — 직접 쓰거나 고치지 않는다.
+- 승인·확정·반영은 사람이 별도 터미널에서 한다 (`code-agent confirm request` · `confirm doc` · `approve` · `deliver`). 대신 하지 않는다.
 - 사람에게 물을 것은 **턴의 마지막 메시지에 모아서** 낸다 — 작업 보고 중간에 끼우면 묻혀 답이 오지 않는다.
 - `.code-agent/` 는 code-agent 명령으로만 바뀐다.
 - 보고·질문·요약은 **사용자가 쓰는 언어로** 한다 — 요청이 명령뿐이라 알 수 없으면 작업 지시서·questions.md 가 쓰인 언어로. 서브에이전트 결과나 명령 출력이 다른 언어여도 그 언어로 옮겨 전한다.

@@ -1,7 +1,7 @@
 ---
 name: ca-analyze
-description: 요구사항 분석 단계(analysis)만 돈다 — ① 01-requirements.md 를 쓰고 게이트를 지난 뒤 멈춘다. 진행 중인 작업이 없으면 지시서로 시작한다.
-argument-hint: [<지시서 경로>] [--base <기준 브랜치>] [--target <대상>]
+description: 요구사항 분석 단계(analysis)만 돈다 — ① 01-requirements.md 를 쓰고 게이트를 지난 뒤 멈춘다. 확정된 요구사항이 있고 작업이 없으면 시작부터 한다.
+argument-hint: [<사람이 쓴 지시서 경로>] [--base <기준 브랜치>] [--target <대상>]
 ---
 
 너는 **메인 에이전트**다. 소스 코드는 서브에이전트가 읽는다 — 메인은 작업 폴더 문서 · `code-agent` 출력 · 서브에이전트 결과로 일한다.
@@ -9,8 +9,10 @@ argument-hint: [<지시서 경로>] [--base <기준 브랜치>] [--target <대�
 
 **자리 확인** — Bash: `code-agent status`.
 
-- 진행 중인 작업이 없고 인자가 있으면 Bash: `code-agent start $ARGUMENTS` — 기준 브랜치는 사용자가 말했을 때만 `--base` 로 넘긴다.
-  작업도 인자도 없으면 지시서 경로를 묻고 멈춘다.
+- 진행 중인 작업이 없고 접수한 요구사항이 `확정됨` 이면 Bash: `code-agent start doc/work/<ID>/requirement.md $ARGUMENTS`
+  — 기준 브랜치는 사용자가 말했을 때만 `--base` 로 넘긴다.
+  사용자가 **손으로 쓴 지시서**의 경로를 인자로 줬으면 Bash: `code-agent start $ARGUMENTS` — 확정됐는지는 `start` 가 본다 (안 됐으면 확정 명령을 찍고 거부한다).
+  접수도 지시서도 없거나 아직 확정 전이면 **멈춘다** — 접수는 `/ca-request` (또는 `/ca-feature` · `/ca-fix` · `/ca-refactor`), 확정은 별도 터미널의 `code-agent confirm request <ID> [<지시서>]`.
 - 스테이지가 `analysis` 가 아니면 **멈춘다.** 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고,
   이미 지났으면 `code-agent back analysis` 로 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다.
   **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다.
