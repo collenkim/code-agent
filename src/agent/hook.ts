@@ -70,6 +70,7 @@ const MODEL_SUBCOMMANDS = [
   // 승인·증거가 전부 해시에 묶여 있어, 되감아도 통과가 되살아나거나 회차가 줄지 않는다.
   "back",
   "context",
+  "read",
   "status",
   "plan submit",
   "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel",

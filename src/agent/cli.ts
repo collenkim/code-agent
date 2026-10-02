@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "fs";
 import { runCodexHook } from "./codexHook";
+import { readProjectFile } from "./read";
 import { parseHost } from "./hosts";
 
 import {
@@ -97,6 +98,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent back <스테이지>          커서를 앞 스테이지로 되감기 — 앞으로는 못 가고, 증거·리뷰 회차·원장은 그대로 남는다
                                       ${BACK_PHASES.join(" | ")}
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
+  code-agent read <파일> [시작 줄] [줄 수]  저장소 텍스트를 줄 번호와 함께 읽기 (기본 200줄, 최대 400줄)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
   code-agent planning advance         준비·재사용·선행 조건 판정 후 실행할 배정 묶음 반환
@@ -224,6 +226,10 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "context":
       print(context(repoRoot));
+      return 0;
+    case "read":
+      if (args.length < 1 || args.length > 3) throw new Stop("사용법: code-agent read <파일> [시작 줄] [줄 수]");
+      print(readProjectFile(repoRoot, args[0], args[1] === undefined ? 1 : Number(args[1]), args[2] === undefined ? 200 : Number(args[2])));
       return 0;
     case "repro":
       print(await repro(requireReproable(repoRoot)));

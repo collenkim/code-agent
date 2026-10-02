@@ -71,7 +71,8 @@ export function codexHook(input: CodexHookInput): object {
     // Codex의 exec_command도 공식 hook 계약에서는 Bash/command로 정규화된다.
     const event: HookInput = {...common, tool_name: input.tool_name, tool_input: input.tool_input};
     if (["Bash", "PowerShell"].includes(event.tool_name) && typeof event.tool_input.command !== "string") throw new Error("셸 명령이 없습니다.");
-    return deny(decide(event, root));
+    const reason = decide(event, root);
+    return deny(reason?.replace("파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요.", "파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요."));
   }
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.

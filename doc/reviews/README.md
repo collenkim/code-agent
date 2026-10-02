@@ -4,7 +4,8 @@
 
 | 순서 | 기록 | 범위 |
 |---|---|---|
-| 최신 · 2026-10-02 | [우선순위 2와 Codex 실제 검증](2026-10-02-priority-two-native-codex.md) | 작은 조사 통합·작업별 입력·동일 결과 재사용·실제 호스트 검증 |
+| 최신 · 2026-10-02 | [Codex 훅 복구와 실제 완료](2026-10-02-codex-hook-recovery.md) | Windows 신뢰 키·부모 기록·파일 읽기·지침 충돌 수정, 두 호스트 실제 분석·영향도 내용 게이트 통과 |
+| 2026-10-02 | [우선순위 2와 Codex 실제 검증](2026-10-02-priority-two-native-codex.md) | 작은 조사 통합·작업별 입력·동일 결과 재사용·당시 실제 호스트 검증 한계 |
 | 2026-10-02 | [계획 실행 효율과 역할별 모델 설정](2026-10-02-planning-efficiency.md) | 결과 전달 축소·절차 통합·형식 교정·호스트별 모델 기본값·변경·검증 |
 | 2026-10-02 | [Codex 지원](2026-10-02-codex-support.md) | 호스트별 설치·훅·사용자 동의·기준 커밋·회귀 |
 | 2026-10-02 | [요구 분석·설계·계획 작업](2026-10-02-planning-orchestration.md) | 관찰된 배정·병렬 조사·입력 변경·독립 검토·구현 Task·회귀 |
@@ -15,7 +16,9 @@
 | 2026-10-01 | [프로세스 개선](2026-10-01-process-improvements.md) | 접수·계획·실행 흐름 보완 |
 | 2026-10-01 | [프로세스 검토](2026-10-01-process-review.md) | 문제 조사와 초기 검증 |
 
-검증 원자료는 `evidence/`에 보관한다. 최신 결과는 [priority-two-native-codex-2026-10-02.json](evidence/priority-two-native-codex-2026-10-02.json)이다. 전체 회귀는 716개 중 712개 통과·실패 0·생략 4개이며, 설치 범위 보완의 계획·Codex 집중 검사 56개와 호스트 지침 변경 감지까지 보완한 최종 계획 검사 39개가 통과했다. 실제 Codex 연동과 Claude 통합 영향도 완료는 확인하지 못했으며 실패 지점과 한계를 기록했다. 자동 검사와 실계정 검사를 합산하지 않는다.
+검증 원자료는 `evidence/`에 보관한다. 최신 결과는 [codex-hook-recovery-2026-10-02.json](evidence/codex-hook-recovery-2026-10-02.json)이다. 전체 회귀는 720개 중 716개 통과·실패 0·생략 4개이며, 파일 읽기·Codex 집중 검사 20개와 최종 템플릿 설치 검사 2개도 통과했다. Codex는 실제 분석·통합 영향도 및 피드백 보완 뒤 내용 게이트를, Claude는 실제 분석·분할 조사·영향도 정리와 내용 게이트를 통과했다. 초기 동의는 합성 fixture이며 전체 개발·사람 승인 실측과 구분한다. 겹치는 자동 검사 수와 실계정 검사를 합산하지 않는다.
+
+앞선 [priority-two-native-codex-2026-10-02.json](evidence/priority-two-native-codex-2026-10-02.json)은 당시 전체 회귀 716개 중 712개 통과·실패 0·생략 4개, 후속 집중 검사 56개와 39개 통과를 기록한다. 당시 실제 Codex 연동과 Claude 통합 영향도 완료는 확인하지 못했다. 이번 복구가 이전 실패 기록을 소급해 성공으로 바꾸지는 않는다.
 
 앞선 계획 효율·모델 설정 결과는 [planning-efficiency-2026-10-02.json](evidence/planning-efficiency-2026-10-02.json)의 709개 중 705개 통과·실패 0·생략 4개다. Codex 지원 결과는 [codex-support-2026-10-02.json](evidence/codex-support-2026-10-02.json), 계획 작업 결과는 [planning-orchestration-2026-10-02.json](evidence/planning-orchestration-2026-10-02.json), 검증 노드 결과는 [verification-workflow-2026-10-02.json](evidence/verification-workflow-2026-10-02.json)에 보관한다. 이전 종합 실측 [final-validation-summary.json](evidence/final-validation-summary.json)은 2026-10-01 당시 기록이며 최신 회귀 결과로 간주하지 않는다.
 
