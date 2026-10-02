@@ -42,6 +42,8 @@ export type Decision = "approved" | "rejected";
 export type PresenceChannel =
   /** 터미널에서 사람이 직접 확인 문구를 입력했다 */
   | "tty"
+  /** Claude Code의 질문 도구에서 관찰한 명시적 선택 */
+  | "claude-question"
   /** 사람의 입력을 관측하지 못했다 — 스크립트·비대화형 셸·명시적 우회 */
   | "unattended";
 

@@ -1,10 +1,10 @@
 ---
 name: ca-fix
-description: 결함 신고를 받아 버그 수정을 시작한다 — 접수 → (사람 확정) → 현행 분석과 재현 테스트를 앞세워 계획 제출까지 진행한다.
+description: 결함 신고를 받아 버그 수정을 진행한다 — 같은 세션의 동의를 거쳐 현행 분석과 재현 테스트를 앞세우고 구현·검증·반영까지 이어간다.
 argument-hint: [ID] <결함 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `fix`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다.
 접수에서 `target` 은 결함이 있는 **저장소 경로**, `scope`(건드려도 되는 경로)와 `preserve`(바뀌면 안 되는 것)는 필수다 — 원문으로 정할 수 없으면 묻는다.

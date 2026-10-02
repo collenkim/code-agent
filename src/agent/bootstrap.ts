@@ -25,11 +25,11 @@ export function setupStatus(root: string): string {
     `- 빌드: ${manifest?.build?.join(" ") ?? "미정 — 기존 빌드 설정에서 연결"}`,
     `- 테스트: ${manifest?.test?.join(" ") ?? "미정 — 기존 테스트 도구·명령에서 연결"}`,
     `- 의존성 준비: ${manifest?.prepare?.join(" ") ?? "선언 없음 — 외부 의존성이 없으면 추가 불필요"}`,
-    `- 기준 커밋: ${hasBaseline(root) ? "있음" : "없음 — 준비 파일 확인 후 code-agent setup baseline"}`,
+    `- 기준 커밋: ${hasBaseline(root) ? "있음" : "없음 — 현재 세션의 초기 준비 확인에서 생성 (직접 CLI: code-agent setup baseline)"}`,
     "", "지금 테스트를 실행하거나 러너를 다시 선택하지 않습니다. 실제 소스·실행 설정·테스트 생성은 승인된 Task에서 함께 수행합니다."].join("\n");
 }
 
-function baselineFiles(root: string): string[] {
+export function baselineFiles(root: string): string[] {
   const manifest = loadManifestIfAny(root);
   const roots = new Set(["code-agent.json", "CLAUDE.md", ".gitignore", "README.md", ".claude", "doc", ".code-agent/version",
     ...(manifest?.stages.map(stage => stage.template) ?? [])]);
@@ -64,5 +64,5 @@ export function setupBaseline(root: string): string {
   catch { throw new Stop("Git 작성자 이름·이메일 설정이 필요합니다. 설정 후 code-agent setup baseline을 다시 실행하세요."); }
   git(root, ["add", "--", ...files]);
   git(root, ["commit", "-m", "chore: initialize code-agent project documents"]);
-  return "준비 파일의 최초 기준 커밋을 만들었습니다. /ca-next로 같은 접수를 이어가세요. 실제 소스와 테스트는 승인된 Task에서 생성합니다.";
+  return "준비 파일의 최초 기준 커밋을 만들었습니다. 같은 세션에서 접수를 계속합니다. 중단했다면 /ca-next로 재개하세요. 실제 소스와 테스트는 승인된 Task에서 생성합니다.";
 }

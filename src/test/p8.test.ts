@@ -288,7 +288,7 @@ describe("P8 · PreToolUse matcher 는 읽기 도구도 넘긴다", () => {
     init(repo, { cli: CLI });
     const matcher = preToolUse().matcher ?? "";
     // Claude Code 는 matcher 를 정규식으로 본다 — 도구 이름 전체가 맞아야 hook 이 불린다
-    for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Read", "Grep", "Glob"]) {
+    for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "PowerShell", "Read", "Grep", "Glob"]) {
       assert.match(tool, new RegExp(`^(${matcher})$`), `${tool} 이 hook 에 오지 않습니다`);
     }
     assert.match(line(doctor(repo).text, "PreToolUse hook"), /^✓/);
@@ -303,7 +303,7 @@ describe("P8 · PreToolUse matcher 는 읽기 도구도 넘긴다", () => {
 
     const report = doctor(repo);
     assert.equal(report.ok, false);
-    assert.match(line(report.text, "PreToolUse hook"), /matcher 가 Read · Grep · Glob 를 넘기지 않습니다$/);
+    assert.match(line(report.text, "PreToolUse hook"), /matcher 가 PowerShell · Read · Grep · Glob 를 넘기지 않습니다$/);
     assert.match(hint(report.text, "PreToolUse hook"), /code-agent update/);
 
     update(repo);
@@ -341,7 +341,7 @@ describe("P8 · update", () => {
     assert.match(read("CLAUDE.md"), /^# 우리 프로젝트\n\n원래 내용\n/);
     assert.equal(read("CLAUDE.md").split("<!-- code-agent:start -->").length, 2);
     const after = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
-    assert.deepEqual(after.hooks.PreToolUse.map((entry) => entry.hooks[0].command), ["other-check", `node "${CLI.replace(/\\/g, "/")}" hook`]);
+    assert.deepEqual(after.hooks.PreToolUse.map((entry) => entry.hooks[0].command), ["other-check", `node "${CLI.replace(/\\/g, "/")}" hook`, `node "${CLI.replace(/\\/g, "/")}" consent-event`]);
     assert.equal(doctor(repo).text.includes("✗ 스킬·에이전트"), false);
   });
 
@@ -350,7 +350,7 @@ describe("P8 · update", () => {
     init(repo, { cli: CLI });
     update(repo);
     const settings = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
-    assert.deepEqual(settings.hooks.PreToolUse.map((entry) => entry.hooks[0].command), [`node "${CLI.replace(/\\/g, "/")}" hook`]);
+    assert.deepEqual(settings.hooks.PreToolUse.map((entry) => entry.hooks[0].command), [`node "${CLI.replace(/\\/g, "/")}" hook`, `node "${CLI.replace(/\\/g, "/")}" consent-event`]);
     assert.deepEqual(settings.hooks.Stop.map((entry) => entry.hooks[0].command), [`node "${CLI.replace(/\\/g, "/")}" stop`]);
   });
 

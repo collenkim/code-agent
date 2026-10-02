@@ -99,5 +99,5 @@ export function setupProject(repoRoot: string, chosen: string | undefined): stri
     mkdirSync(dirname(join(repoRoot, file)), { recursive: true });
     writeFileSync(join(repoRoot, file), content, { flag: "wx" });
   }
-  return `추천 구성 ${chosen} 의 설정·공통 문서·단계 규칙을 만들었습니다. 소스·실행 설정·테스트 생성은 승인된 구현 Task에서 합니다.\n\n${docsStatus(repoRoot)}\n\n문서를 읽은 뒤 code-agent docs end, 별도 터미널에서 code-agent confirm doc all. code-agent setup으로 환경을 확인하고 기준 커밋이 없으면 별도 터미널에서 code-agent setup baseline으로 준비 파일을 저장하세요.`;
+  return `추천 구성 ${chosen} 의 설정·공통 문서·단계 규칙을 만들었습니다. 소스·실행 설정·테스트 생성은 승인된 구현 Task에서 합니다.\n\n${docsStatus(repoRoot)}\n\n문서를 읽고 code-agent docs end로 준비를 마친 뒤 code-agent setup으로 환경을 확인하세요. 현재 Claude 세션에서 ca-answer의 setup 동의 절차로 공통 문서 확정과 필요한 기준 커밋 생성을 함께 확인합니다 (기준 커밋만 필요하면 baseline). 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. CLI를 직접 쓰려는 사용자는 TTY에서 code-agent confirm doc all과 code-agent setup baseline을 수동 대체 경로로 사용할 수 있습니다.`;
 }

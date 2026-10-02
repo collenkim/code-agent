@@ -25,6 +25,7 @@ import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
+import { consentCommandGuard } from "./consent";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -35,6 +36,7 @@ import { planDocFile } from "./workDocs";
  */
 export interface HookInput {
   cwd: string;
+  session_id?: string;
   tool_name: string;
   tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string };
 }
@@ -56,13 +58,9 @@ const READONLY_GIT = /^git (status|diff|log|show)(\s|$)/;
 const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
 
 /**
- * 모델이 Bash 로 부를 수 있는 `code-agent` 서브명령 — 스킬이 부르는 것뿐이다.
- *
- * `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람이 터미널에서
- * 돌리는 것이다. 열어 두면
- * `abort` 한 줄로 작업 커서가 사라져 hook 이 아무것도 판정하지 않게 되고, `init --cli <제 스크립트>` 로
- * hook 자체가 갈린다. `deliver` 는 TTY 확인 뒤 커밋까지 가므로 모델의 자리가 아니다 —
- * 여기 없어도 `confirmOnTerminal` 이 한 번 더 막지만, 두 겹으로 닫는다.
+ * 모델이 셸에서 직접 부를 수 있는 서브명령. 승인·반영·설정 변경은 아래 목록으로
+ * 직접 열지 않는다. 별도로 검사하는 consent apply가 관찰된 같은 세션 응답을 적용한다.
+ * 독립 CLI에서는 TTY 확인을 유지하고, init의 임의 CLI 교체로 hook을 바꾸는 길도 막는다.
  */
 const MODEL_SUBCOMMANDS = [
   "start",
@@ -96,6 +94,7 @@ function isModelCommand(command: string): boolean {
     return false;
   }
   const rest = command.slice("code-agent ".length);
+  if (/^consent (prepare\s+\S.*|(?:status|apply) [a-f0-9-]+)$/.test(rest)) return true;
   if (rest === "setup") return true; // baseline은 사람의 TTY 확인 전용
   return MODEL_SUBCOMMANDS.some((sub) => rest === sub || rest.startsWith(`${sub} `));
 }
@@ -132,6 +131,12 @@ const STORE_DENIED =
 
 export function decide(input: HookInput, projectDir?: string): string | undefined {
   const repoRoot = canonical(projectDir ?? input.cwd);
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
+    const command = input.tool_input.command ?? "";
+    if (/\bconsent-event\b/.test(command)) return "질문 관찰 명령은 Claude Code hook만 호출합니다.";
+    const denied = consentCommandGuard(repoRoot, command, input.session_id);
+    if (denied) return denied;
+  }
   const work = loadWork(repoRoot);
   const documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
   // 접수 세션 — 작업 커서가 생기기 전이다. 작업 · 문서 세션이 있으면 그쪽 규칙이 이긴다
@@ -140,7 +145,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     return decideOutside(input, repoRoot);
   }
   const manifest = work ? work.manifest : loadManifestIfAny(repoRoot);
-  if (input.tool_name === "Bash") {
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
     // 세션 동안에는 선언된 빌드·테스트 명령을 열지 않는다 — 돌릴 코드가 아직 없는 자리다
     return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting || requesting !== undefined);
   }
@@ -172,7 +177,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
  * hook 은 사고 방지 장치이지 보안 경계가 아니다.
  */
 function decideOutside(input: HookInput, repoRoot: string): string | undefined {
-  if (input.tool_name === "Bash") {
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = (input.tool_input.command ?? "").trim();
     if (mentionsStore(command)) return STORE_DENIED;
     return mentionsState(command) ? STATE_BASH_DENIED : undefined;
@@ -257,7 +262,7 @@ function stateGuard(path: string): string | undefined {
   if (path.toLowerCase() === STATE_DIR || path.toLowerCase().startsWith(`${STATE_DIR}/`)) {
     return (
       "작업 상태·제출된 계획·승인과 확정 기록은 도구로 고칠 수 없습니다. " +
-      "진행은 code-agent next, 계획은 code-agent plan submit, 확정은 사람이 터미널의 code-agent confirm 으로 바뀝니다."
+      "진행은 code-agent next, 계획은 code-agent plan submit, 확정은 현재 세션의 ca-answer 동의 절차로 바뀝니다."
     );
   }
   return undefined;
@@ -328,7 +333,7 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
     ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
     "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
-    "사람이 터미널에서 실행합니다. " +
+    "직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );
 }
@@ -394,7 +399,7 @@ function decideWrite(work: Work, path: string): string | undefined {
   if (approval.status !== "approved") {
     return (
       `계획이 승인되지 않았습니다 (${approval.status}). ` +
-      "사람이 별도 터미널에서 code-agent approve 를 실행해야 쓸 수 있습니다."
+      "현재 Claude 세션에서 ca-answer의 plan 동의 절차로 계획을 승인해야 쓸 수 있습니다."
     );
   }
 

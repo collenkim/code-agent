@@ -4,8 +4,7 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
 없는 자리라 CLI 스테이지 번호가 없다 — 문서 작성 세션과 같은 자리다.
 
 요구사항은 **명령으로** 들어온다. 사람이 말로(서술·붙여넣은 티켓·파일) 주면 모델이 `request.json`
-으로 정리하고, 코드가 지시서 규격으로 검사해 `requirement.md` 를 **렌더**하고, 사람이 별도 터미널에서
-확정한다. 확정된 요구사항만 `code-agent start` 가 받는다.
+으로 정리하고, 코드가 지시서 규격으로 검사해 `requirement.md`를 **렌더**하고, 사람이 같은 Claude Code 선택 화면에서 확정한다. 확정된 요구사항만 `code-agent start`가 받는다. 선택 후에는 자동으로 이어가며 `/ca-next`는 중단한 작업을 재개할 때 사용한다.
 
 목적은 셋이다.
 
@@ -25,9 +24,11 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
   → 모델이 doc/work/<ID>/request.json 을 쓴다                        원문 + 정리 + 접수 때 물은 것
   → 공통 문서·설정 확인 → 부족하면 준비·확정 후 같은 접수로 복귀   요구사항 분석보다 먼저
   → code-agent request submit doc/work/<ID>/request.json            검사 → requirement.md 렌더
-  → (사람, 별도 터미널) code-agent confirm request <ID>              원문과 정리를 나란히 읽고 confirm
-     반려는 code-agent reject request <ID> --comment "사유"
-  → code-agent start doc/work/<ID>/requirement.md                   /ca-next · /ca-analyze 가 부른다 → 분석
+  → code-agent consent prepare <action.json>                      action: "request", id: "<ID>"
+  → 반환된 toolInput 전체로 AskUserQuestion → hook 관찰             같은 화면에서 원문·정리본 확인
+  → code-agent consent status <확인 요청 ID>                       보류·수정 요청은 적용하지 않음
+  → code-agent consent apply <확인 요청 ID>                        승인된 요청만 실행
+  → code-agent start doc/work/<ID>/requirement.md                   자동으로 분석 → 계획·구현·검증·결과 확인
 ```
 
 - **티켓 ID는 그대로 사용한다.** 생략하면 CLI가 사용하지 않은 `WORK-0001` 형식의 ID를 발급한다. 모델이 임의 번호를 만들거나 ID만을 위해 질문하지 않는다.
@@ -40,6 +41,8 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
   `code-agent status` 가 접수 중에 `시작할 때 기준 브랜치 … · 대상 …` 으로 보여 준다.
 - 접수에서 묻는 것은 **원문만으로 정할 수 없는 필수값**(대상·범위·보존·확장 속성)과 원문이 두 가지로
   읽히는 곳뿐이다. 업무 규칙의 세부·설계·테스트는 분석 단계가 맡는다.
+
+초기 준비가 필요하면 POLICY 4종 확정과, 기준 커밋이 없을 때 필요한 준비 파일의 최초 커밋을 `action: "setup"`으로 함께 확인한다. 준비가 끝난 뒤에는 작업마다 다시 요구하지 않는다. 공통 문서가 변경되면 새 내용의 확정이 필요하다. 요구사항·계획·최종 반영은 각각의 내용을 같은 Claude Code 화면에서 확인하며, 별도 TTY를 필수로 요구하지 않는다.
 
 ## 자리
 
@@ -68,7 +71,7 @@ doc/work/<Jira 키>/requirement.md    작업 지시서 — 코드가 렌더한�
 | `08-validation.md` | **코드** (`check` · `test` · `integrate`) | ⑧ 검증 |
 | `09-review.md` | 코드(회차 구역) · 독립 리뷰어 완료 hook(지적 표) | ⑨ 리뷰 |
 | `10-pr.md` | 코드(추적표·검증·변경 요약) · 모델(요약·확인 방법·위험) | ⑩ 반영 |
-| `knowledge.proposal.md` | 모델 | 반영 전 — `deliver` 가 TTY 에서 하나씩 묻는다 |
+| `knowledge.proposal.md` | 모델 | 반영 전 — 같은 세션의 `deliver` 확인에서 항목별 적용 여부를 묻는다. 직접 TTY도 지원한다 |
 
 `06-` 파일은 없다 — ⑥ 은 소스 코드 자체다. 제출된 계획·증거·리뷰 회차·승인 원장은 `.code-agent/`
 아래 따로 쌓인다 — 거기는 코드만 쓴다.
@@ -104,7 +107,7 @@ doc/work/<Jira 키>/requirement.md    작업 지시서 — 코드가 렌더한�
 ]
 ```
 
-종류를 명시할 때는 신규 개발·기능 추가·기능 변경의 `/ca-feature`, 결함 수정의 `/ca-fix`, 동작 보존 구조 개선의 `/ca-refactor`도 사용할 수 있다. 세 명령 모두 위 접수를 공유하며 접수 뒤 `/ca-next`로 진행한다.
+종류를 명시할 때는 신규 개발·기능 추가·기능 변경의 `/ca-feature`, 결함 수정의 `/ca-fix`, 동작 보존 구조 개선의 `/ca-refactor`도 사용할 수 있다. 세 명령 모두 위 접수를 공유하며 질문·확인에 답하면 이어서 진행한다. `/ca-next`는 중단 후 재개할 때 사용한다.
 
 형식은 `code-agent request begin` 과 `code-agent request` 가 그 저장소의 값(대상 후보·확장 속성)
 과 함께 찍어 준다. 검사는 `src/agent/request.ts` 가 한다.
@@ -177,7 +180,7 @@ preserve:
 approver: team-lead
 ---
 
-<!-- 이 파일은 code-agent request submit 이 doc/work/UZRF-212/request.json 에서 렌더한다. 고칠 것은 request.json 에 쓰고 다시 제출한다 — 사람이 별도 터미널에서 code-agent confirm request UZRF-212 로 확정해야 작업이 시작된다. -->
+<!-- 이 파일은 code-agent request submit이 doc/work/UZRF-212/request.json에서 렌더한다. 고칠 것은 request.json에 쓰고 다시 제출한다. 사람이 같은 세션의 선택 화면이나 직접 TTY에서 확정해야 작업이 시작된다. -->
 
 # UZRF-212 요구사항 — 정산 배치가 취소 주문을 합계에 넣는다
 
@@ -335,11 +338,7 @@ approver: team-lead
 - **존재와 값 유효성만 검사한다.** 흐름은 이 값들을 쳐다보지 않는다.
 - 이 선을 지켜야 특정 회사의 지식이 에이전트 소스에 들어가지 않는다. 예약 속성과 확장 속성을 가르는
   기준은 하나다 — **코드가 그 값으로 분기하는가.**
-- `requireVerifiedApproval` (기본 `false`) 을 켜면 터미널(TTY)이 아닌 곳에서 남은 판정은 원장에 기록만
-  되고 문을 열지 않는다. **계획 승인과 요구사항 확정에 똑같이 걸린다** — 사람이 관측되지 않은 확정은
-  `확정에 사람이 관측되지 않음` 상태가 되고 `start` · `next` 를 비롯한 모든 스테이지가 거부한다.
-  이 설정을 끄더라도 확정·승인은 **언제나 TTY 에서만** 받는다 — 설정이 더하는 것은 "사람이 거기 있었다는
-  관측까지 남아야 받는다" 는 조건이다. 매니페스트를 읽지 못하면 켠 쪽으로 닫는다.
+- `requireVerifiedApproval`(기본 `false`)을 켜면 사람의 선택이 관측된 판정만 게이트를 연다. 같은 세션의 hook이 관찰한 질문 응답(`claude-question`)과 직접 TTY(`tty`)를 인정한다. **계획 승인과 요구사항 확정에 똑같이 적용한다.** 관측이 없으면 `확정에 사람이 관측되지 않음` 상태가 되고 `start`·`next`를 비롯한 진행 명령이 거부한다. 이 설정을 끄더라도 모델이 스스로 승인하는 경로를 허용하지 않으며, 매니페스트를 읽지 못하면 켠 쪽으로 닫는다.
 
 ## 본문 — 분석이 읽는 근거
 
@@ -361,16 +360,27 @@ approver: team-lead
 `refactor` 의 마지막 항목이 중요하다. 리팩토링에서 실패는 "못 고쳐서"가 아니라 **"같이 고쳐서"** 일어난다.
 그 줄은 접수에서 `outOfScope` 로 받는다.
 
-## 확정 — 사람이 터미널에서
+## 확정 — 같은 Claude Code 화면에서
+
+에이전트는 다음 action을 파일로 준비한다. `id`는 접수한 작업 ID이며, prepare가 반환하는 확인 요청 ID와 구분한다.
+
+```json
+{ "action": "request", "id": "UZRF-212" }
+```
+
+`code-agent consent prepare <action.json>`이 반환한 `toolInput` 전체(`questions`와 `metadata.source`)를 **그대로** `AskUserQuestion`에 전달한다. PreToolUse `consent-event`가 질문·세션·호출 ID를 묶고, PostToolUse가 실제 사용자 응답을 관찰한다. 이후 `code-agent consent status <확인 요청 ID>`에서 상태와 남은 질문을 확인한다. 남은 질문도 반환된 toolInput으로 표시하며, 승인된 요청만 `code-agent consent apply <확인 요청 ID>`로 실행한다. 확정 후에는 분석을 자동으로 이어간다.
+
+선택은 `확인하고 진행`·`수정 요청`·`보류`다. 수정 요청이나 보류는 확정으로 처리하지 않으며, 모델이 답을 미리 채우거나 일반 채팅의 “승인”을 응답으로 대신할 수 없다. 수정 요청을 받으면 사유를 정리해 초안을 보완하고 새 확인을 준비한다. 반려를 원장에 남기는 action은 `decision: "reject"`와 필수 `comment`를 포함한다. 확인 이후 파일·Git 상태가 달라지면 적용을 중단하고 다시 확인한다.
+
+일반 터미널에서 직접 확정·반려하는 경로도 사용할 수 있다.
 
 ```
 code-agent confirm request <ID> [<지시서>]
 code-agent reject  request <ID> [<지시서>] --comment "사유"
 ```
 
-- **TTY 에서만** 받는다. 모델 세션 안의 판정은 모델이 한 것과 구분되지 않는다.
-- 지시서 전문을 화면에 띄우고 — 원문과 정리가 나란히 보인다 — `confirm`(또는 `reject`) 을 **그대로
-  입력**해야 판정이 남는다. 다른 입력은 취소다.
+- 직접 CLI 명령에는 **TTY 검사**가 적용된다. 같은 세션에서는 위 consent 경로로 실제 질문 응답을 확인한다.
+- 직접 TTY에서는 지시서 전문을 화면에 띄우고 `confirm` 또는 `reject`를 그대로 입력해야 판정이 남는다. 다른 입력은 취소다.
 - 확정 전에 머리말 규격을 다시 검사하고, 지시서의 `id` 가 명령의 ID 와 다르면 거부한다.
 - 반려에는 사유가 필수다. 사유는 `code-agent status` 에 그대로 나오고 `/ca-request` 가 그것을 읽고
   다시 정리한다 — **사유를 읽지 않고 같은 초안을 다시 내지 않는다.**
@@ -388,7 +398,7 @@ code-agent reject  request <ID> [<지시서>] --comment "사유"
 |---|---|
 | `spec` · `hash` | 확정한 지시서 경로와 그 내용의 해시 |
 | `decision` · `comment` | `confirmed` \| `rejected` 와 반려 사유 |
-| `approver` · `at` · `presence` | 머리말의 `approver`(없으면 실행 계정) · 시각 · 터미널에서 받았다는 관측 |
+| `approver` · `at` · `presence` | 머리말의 `approver`(없으면 실행 계정) · 시각 · 같은 세션의 질문 응답(`claude-question`) 또는 직접 터미널(`tty`) 관측 |
 | `prev` | 앞 줄의 해시 (첫 줄은 `genesis`) |
 
 사슬이 끊겼으면 **읽지 않고 멈춘다** — 나중에 고친 확정을 조용히 믿지 않는다. 이 디렉토리는 반영
@@ -407,11 +417,11 @@ code-agent reject  request <ID> [<지시서>] --comment "사유"
 
 | 무엇을 했나 | 상태 | 어떻게 되나 |
 |---|---|---|
-| 판정이 아직 없다 | `확정 대기` | 사람이 `confirm request <ID>` 할 때까지 아무것도 진행되지 않는다 |
+| 판정이 아직 없다 | `확정 대기` | 같은 세션의 request 확인 또는 직접 TTY 확정이 완료될 때까지 진행하지 않는다 |
 | 반려됐다 | `반려됨 — <사유>` | 사유대로 초안을 고쳐 다시 제출한다 |
 | 확정 뒤 지시서가 바뀌었다 (재제출·손수정) | `확정 뒤 바뀜` | **다시 확정**해야 진행한다 |
 | 반려 뒤 다시 제출했다 | `다시 제출됨 — 확정 대기` | 사람의 판정을 기다린다 |
-| 확정은 있는데 사람이 관측되지 않았다 (`requireVerifiedApproval` 켠 프로젝트) | `확정에 사람이 관측되지 않음` | 터미널에서 **다시 확정**해야 진행한다 |
+| 확정은 있는데 사람이 관측되지 않았다 (`requireVerifiedApproval` 켠 프로젝트) | `확정에 사람이 관측되지 않음` | hook이 관찰하는 같은 세션 확인 또는 직접 TTY에서 **다시 확정**해야 진행한다 |
 
 지시서가 바뀌면 그 지시서로 받은 **계획 승인도 함께 무효**가 된다(`stale-order` · `stale-docs`) —
 `requirement.md` 는 승인 묶음의 문서이기도 하기 때문이다. 상태는 `code-agent status` 의
@@ -583,12 +593,11 @@ code-agent start doc/spec/<어디든>.md
 | P4 영향도·시스템 설계 | `02-analysis.md` · `03-design.md` · `04-functional.md` · `07-test-spec.md` 가 승인 묶음에 더해진다 — 머리말은 그대로 | ✅ |
 | P5 구현·검증·반영 | `scope`·`preserve` 가 정적 분석·테스트·리뷰·통합 검증까지 이어지고, 반영이 MR/PR 본문 `10-pr.md` 를 낸다 | ✅ |
 | P6 fix·refactor·신규 저장소 | 재현 테스트 우선과 `preserve` 강제가 전 과정에 걸린다 | 코드 ✅ · 완주 실측 |
-| 요구사항 접수 | 지시서를 **명령으로** 받아 코드가 렌더하고, 사람의 터미널 확정이 모든 스테이지의 전제가 된다 | ✅ |
+| 요구사항 접수 | 지시서를 **명령으로** 받아 코드가 렌더하고, 같은 세션 또는 직접 TTY에서 받은 사람 확정이 모든 스테이지의 전제가 된다 | 구현됨 |
 
 P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 — 머리말은 P1 이후 그대로다.
 
-`code-agent next` 는 **`deliver` 앞까지** 몬다. 반영은 사람이 별도 터미널에서 `code-agent deliver` 로 한다
-([usage.md §9](usage.md#9-승인과-반영--터미널에서)).
+`code-agent next`만으로 반영하지는 않는다. 같은 세션의 결과 확인을 consent로 적용하거나 사람이 직접 TTY에서 `code-agent deliver`를 실행해야 로컬 커밋한다.
 
 ## 시작
 
@@ -596,13 +605,11 @@ P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 �
 /ca-feature  ORD-12 결제 수단에 간편결제를 추가해 주세요
 /ca-fix      UZRF-212 doc/work/UZRF-212/ticket.txt
 /ca-refactor UZRF-233 트랜잭션은 Facade 에서만 열게 정리해 주세요
-/ca-request  ORD-12 --kind feature <요구사항>        접수 한 단계만
+/ca-request  ORD-12 --kind feature <요구사항>        공통 접수부터 질문·확인을 거쳐 자동 진행
 ```
 
 스킬이 `code-agent request begin <ID> --kind <종류> [--base <기준 브랜치>] [--target <대상>]` 로 접수를
-열고, 초안을 제출해 지시서를 렌더한다. 사람이 `code-agent confirm request <ID>` 로 확정하면
-`/ca-next`(또는 `/ca-analyze`)가 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`
-로 분석을 시작한다. 대상이 여럿이면 `--target` 으로 하나를 고른다. 고르지 않으면 접수 때 말한 대상,
+열고, 초안을 제출해 지시서를 렌더한다. 같은 화면에서 사용자가 요구사항을 확인하면 consent 적용 뒤 자동으로 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`를 호출해 분석을 시작한다. 중단된 작업은 `/ca-next`로 재개한다. 대상이 여럿이면 `--target`으로 하나를 고른다. 고르지 않으면 접수 때 말한 대상,
 그것도 없으면 첫 대상이다 — `--base` 도 같다(접수 때 적어 둔 값을 `start` 가 쓰고, 지금 준 값이 이긴다).
 
 접수 초안이 규격에 맞지 않으면 `request submit` 에서 멈추고, 확정되지 않은 요구사항 위에서는

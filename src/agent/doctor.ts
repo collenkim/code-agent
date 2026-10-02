@@ -166,14 +166,14 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
   if (settings) {
     add("✗", "hook 설정 파일", settings, "이 파일을 고친 뒤 code-agent init — 고치기 전에는 init·update 도 멈춥니다");
   } else {
-    for (const [event, subcommand] of [["PreToolUse", "hook"], ["Stop", "stop"], ["SubagentStart", "review-event"], ["SubagentStop", "review-event"]] as const) {
+    for (const [event, subcommand] of [["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"], ["SubagentStart", "review-event"], ["SubagentStop", "review-event"]] as const) {
       const command = installedHook(repoRoot, event, subcommand);
       if (!command) {
         add("✗", `${event} hook`, "없습니다", "code-agent init");
         continue;
       }
       const problem = hookProblem(command, onPath);
-      const unmatched = event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
+      const unmatched = subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
       if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>]");
       else if (unmatched.length > 0) {
         add("✗", `${event} hook`, `${command} — matcher 가 ${unmatched.join(" · ")} 를 넘기지 않습니다`, "code-agent update");
@@ -276,17 +276,15 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
     else add("✓", "사용자 키 파일", STORE_LABEL);
   }
 
-  // 11. TTY — 사람의 판정이 열리는지. 막지는 않는다 (CI 에는 TTY 가 없다)
+  // 11. 직접 CLI 확인은 선택 사항이다. 기본 경로는 Claude Code의 질문 응답이다.
   if (process.stdin.isTTY) {
     add("✓", "터미널", "stdin 이 TTY 입니다 — approve · confirm · deliver · plugin add 가 열립니다");
   } else {
     add(
       "·",
       "터미널",
-      "stdin 이 TTY 가 아닙니다 — approve · confirm · deliver · plugin add 가 열리지 않습니다",
-      win
-        ? "PowerShell·cmd 창에서 직접 실행하세요. Git Bash(mintty)는 Windows 프로그램에 TTY 를 주지 않습니다 — winpty code-agent approve 또는 PowerShell 을 쓰세요."
-        : "Claude Code 밖의 별도 터미널에서 직접 실행하세요.",
+      "stdin 이 TTY 가 아닙니다 — 직접 CLI 확인은 닫혀 있지만 현재 Claude Code 세션의 선택형 확인을 사용할 수 있습니다",
+      "선택 도구의 확인 결과는 consent-event hook이 기록합니다. 별도 터미널은 필요 없습니다.",
     );
   }
 

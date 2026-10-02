@@ -318,7 +318,7 @@ describe("hook — Bash 허용 목록", () => {
       "code-agent model all sonnet",
       "echo hello next", // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다
     ]) {
-      assert.match(bash(human) ?? "", /사람이 터미널에서 실행합니다/, human);
+      assert.match(bash(human) ?? "", /현재 세션의 ca-answer 동의 절차/, human);
     }
     for (const skill of [
       "code-agent start doc/work/ORD-1.md",
@@ -535,7 +535,7 @@ describe("next — 질문과 승인", () => {
     toPlan();
     submit();
     assert.match(status(repo), /계획: 제출됨 · 승인 none/);
-    assert.match(status(repo), /별도 터미널에서 code-agent approve/);
+    assert.match(status(repo), /현재 Claude 세션[\s\S]*plan 동의 절차/);
   });
 });
 
@@ -1010,7 +1010,7 @@ describe("init", () => {
     const settings = JSON.parse(readFileSync(join(repo, ".claude/settings.json"), "utf-8"));
     assert.equal(settings.model, "x");
     const commands = settings.hooks.PreToolUse.map((entry: { hooks: { command: string }[] }) => entry.hooks[0].command);
-    assert.deepEqual(commands, ["other-check", 'node "C:/tools/code-agent/dist/agent/cli.js" hook']);
+    assert.deepEqual(commands, ["other-check", 'node "C:/tools/code-agent/dist/agent/cli.js" hook', 'node "C:/tools/code-agent/dist/agent/cli.js" consent-event']);
 
     const claude = readFileSync(join(repo, "CLAUDE.md"), "utf-8");
     assert.match(claude, /^# 우리 프로젝트\n\n원래 내용\n/);

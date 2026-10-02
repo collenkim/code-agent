@@ -53,7 +53,7 @@ export function docsStatus(repoRoot: string): string {
       ? "필수 문서가 모두 확정됐습니다."
       : "필수 문서는 모두 확정됐습니다. KNOWLEDGE 빈 뼈대는 code-agent docs begin 이 만듭니다 (없어도 작업은 시작됩니다)"
     : checks.every((entry) => entry.state === "unconfirmed" || entry.state === "stale" || entry.ok)
-      ? "사람이 별도 터미널에서 code-agent confirm doc all 로 묶어서 확정하세요 (개별 확정: code-agent confirm doc <종류>)."
+      ? "현재 Claude 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 묶어서 또는 개별 확정하세요. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. 직접 CLI를 원하면 TTY에서 code-agent confirm doc all 또는 code-agent confirm doc <종류>로 확정할 수도 있습니다."
       : "/ca-docs 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결)";
   return [
     "공통 POLICY (넷 다 확정돼야 작업이 시작됩니다):",
@@ -90,7 +90,7 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
   const active = loadActive(repoRoot);
   if (active) {
     throw new Stop(
-      `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 code-agent abort 뒤에 연결하세요.`,
+      `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 연결하세요.`,
     );
   }
   requireNoIntake(repoRoot, "문서 연결");
@@ -140,7 +140,7 @@ export function docsBegin(repoRoot: string): string {
   const active = loadActive(repoRoot);
   if (active) {
     throw new Stop(
-      `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 code-agent abort 뒤에 여세요.`,
+      `작업이 진행 중입니다 (${active.id}). 근거 문서는 작업 도중에 바꾸지 않습니다 — 작업을 끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 여세요.`,
     );
   }
   mkdirSync(dirname(join(repoRoot, DOCS_SESSION_FILE)), { recursive: true });
@@ -179,7 +179,7 @@ export function docsEnd(repoRoot: string): string {
   return `문서 작성 세션을 닫았습니다.\n\n${docsStatus(repoRoot)}` + (session ? `\n\n접수 ${session.id} 유지 — 다음: ${requestStatusLines(repoRoot, session).hint}` : "");
 }
 
-/** 사람이 문서를 근거로 삼겠다고 확정한다 — 터미널에서만 */
+/** 사람이 문서를 근거로 삼겠다고 확정한다 — 현재 세션의 검증된 선택 또는 수동 TTY 입력. */
 export function confirmDoc(repoRoot: string, kindArg: string | undefined): string {
   if (kindArg === "all") {
     const checks = checkProjectDocs(repoRoot, loadManifestIfAny(repoRoot));
