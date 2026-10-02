@@ -34,19 +34,45 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
   if (!input.session_id || !input.agent_id) throw new Error("계획 담당의 세션과 에이전트 식별자가 없습니다.");
   const error = mutatePlanning(work, state => {
     if (input.hook_event_name === "SubagentStart") {
-      if (!state.tasks.some(record => TASK_AGENTS[record.task.role] === input.agent_type && record.attempts.at(-1)?.status === "running")) return;
+      const candidates = state.tasks.filter(record => TASK_AGENTS[record.task.role] === input.agent_type && record.attempts.at(-1)?.status === "running");
+      if (!candidates.length) return;
       if (state.agents.some(agent => agent.id === input.agent_id && agent.session === input.session_id && !agent.finished)) throw new Error("중복 시작 이벤트입니다.");
-      state.agents.push({ id: input.agent_id!, session: input.session_id!, type: input.agent_type!, startedAt: new Date().toISOString() });
+      const dispatchId = candidates.length === 1 ? candidates[0].attempts.at(-1)!.dispatchId : undefined;
+      state.agents.push({ id: input.agent_id!, session: input.session_id!, type: input.agent_type!, startedAt: new Date().toISOString(), dispatchId });
       return;
     }
     const agent = [...state.agents].reverse().find(agent => agent.id === input.agent_id && agent.session === input.session_id);
     if (!agent) return; // 다른 스킬이 부른 동일 이름 에이전트
     if (agent.finished) throw new Error("이미 처리한 완료 이벤트입니다.");
-    let result;
-    try { result = ResultSchema.parse(JSON.parse(handback(input, root, agent.startedAt))); }
-    catch (error) { return `결과 형식 오류: ${error instanceof Error ? error.message : error} — 배정을 취소하고 다시 실행하세요.`; }
+    // 관찰 출처 검증 실패는 모델 출력 형식 오류와 구분한다.
+    const raw = handback(input, root, agent.startedAt);
+    let parsed: unknown, parseError: unknown;
+    try { parsed = JSON.parse(raw); } catch (error) { parseError = error; }
+    const identity = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+    const schema = ResultSchema.safeParse(parsed);
+    if (!schema.success) {
+      // JSON 자체가 깨졌을 때는 시작 시 유일하게 연결된 배정만 교정한다. 병렬 담당을 추측하지 않는다.
+      const record = identity ? state.tasks.find(item => item.task.id === identity.taskId) : state.tasks.find(item => item.attempts.at(-1)?.dispatchId === agent.dispatchId);
+      const last = record?.attempts.at(-1);
+      if (!record || !last || last.status !== "running" || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at) ||
+        (agent.dispatchId && agent.dispatchId !== last.dispatchId) ||
+        (identity && (identity.dispatchId !== last.dispatchId || identity.inputHash !== last.inputHash))) throw new Error("현재 배정에 속한 형식 오류인지 확인할 수 없습니다. 배정을 확인하고 취소 후 다시 실행하세요.");
+      requireRolePhase(work, record.task.role);
+      if (taskHash(work, state, record.task) !== last.inputHash) throw new Error("실행 중 입력이 바뀌었습니다. 새 입력으로 다시 배정하세요.");
+      const detail = (parseError instanceof Error ? parseError.message : schema.error.message).slice(0, 4000);
+      agent.finished = true;
+      last.error = `결과 형식 오류: ${detail}`;
+      if (last.correction?.used) {
+        last.status = "failed";
+        return `${last.error} — 한 번의 교정을 사용했습니다. 원인을 확인하세요.`;
+      }
+      last.correction = { raw, error: detail, agentId: agent.id, sessionId: agent.session, used: false };
+      last.status = "needs-correction";
+      return `${last.error} — planning advance 또는 planning repair ${record.task.id}로 원본 결과의 형식만 교정하세요.`;
+    }
+    const result = schema.data;
     const record = state.tasks.find(record => record.task.id === result.taskId), last = record?.attempts.at(-1);
-    if (!record || !last || last.status !== "running" || last.dispatchId !== result.dispatchId || last.inputHash !== result.inputHash || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at)) throw new Error("현재 배정에 속한 실행 결과가 아닙니다.");
+    if (!record || !last || last.status !== "running" || last.dispatchId !== result.dispatchId || last.inputHash !== result.inputHash || (agent.dispatchId && agent.dispatchId !== last.dispatchId) || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at)) throw new Error("현재 배정에 속한 실행 결과가 아닙니다.");
     agent.finished = true;
     try {
       requireRolePhase(work, record.task.role);
@@ -67,6 +93,17 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       const outputs = result.artifacts.map(artifact => artifact.path);
       if (result.status === "completed" && JSON.stringify([...outputs].sort()) !== JSON.stringify([...record.task.outputs].sort())) throw new Error("배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다.");
       if (result.status !== "completed" && outputs.length) throw new Error("미완료 결과는 확정 문서를 쓰지 않습니다.");
+      if (last.correction?.used && result.status !== "failed") {
+        let original: unknown;
+        try { original = JSON.parse(last.correction.raw); } catch { /* 깨진 JSON은 원본과 근거를 사람이 검토할 수 있도록 보존한다. */ }
+        if (original && typeof original === "object" && !Array.isArray(original)) {
+          const source = original as Record<string, unknown>;
+          for (const key of ["status", "summary", "evidence", "facts", "questions", "artifacts", "findings"] as const) {
+            const value = ResultSchema.shape[key].safeParse(source[key]);
+            if (value.success && JSON.stringify(value.data) !== JSON.stringify(result[key])) throw new Error(`형식 교정에서 유효한 원본 ${key}를 바꿀 수 없습니다. 판단 보완은 새 작업으로 처리하세요.`);
+          }
+        }
+      }
       if (result.status === "completed") for (const artifact of result.artifacts) writeAtomic(planningPath(root, artifact.path), artifact.content);
       if (result.questions.length) {
         const path = planningPath(root, questionsFile(work.active.id));
@@ -78,6 +115,7 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
         writeAtomic(path, body);
       }
       last.status = result.status;
+      delete last.error;
       last.result = result;
       last.resultHash = sha(JSON.stringify(result));
       last.outputs = Object.fromEntries(outputs.map(path => [path, fileHash(root, path)]));

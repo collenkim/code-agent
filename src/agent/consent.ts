@@ -13,7 +13,7 @@ import { confirmDoc } from "./docsCommands";
 import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot } from "./layout";
-import { modelsTable, setModel } from "./models";
+import { modelsTable, setModel, validateModelChange } from "./models";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
 import { decideRequest } from "./request";
@@ -28,6 +28,7 @@ const ActionSchema = z.object({
   kind: z.string().optional(), id: z.string().optional(), spec: z.string().optional(),
   decision: z.enum(["accept", "reject"]).default("accept"), comment: z.string().optional(),
   agent: z.string().optional(), model: z.string().optional(), name: z.string().optional(),
+  host: z.enum(["claude", "codex"]).optional(), reasoning: z.string().optional(),
   command: z.string().optional(), slots: z.string().optional(), sendsCode: z.boolean().default(false),
   secretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
 }).strict();
@@ -218,7 +219,12 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       choices = pruneCandidates(root).found.map(c => ({ shown: [`${c.path} · ${SCHEMAS[c.kind].label}`, "", c.heading, c.body, "", `없는 경로: ${c.missing.join(" · ")}`].join("\n"), prompt: "지우려면 y", target: c.path, key: c.key }));
       summary = "선택한 오래된 지식 문서 항목만 삭제합니다. 파일 삭제나 자동 커밋은 하지 않습니다.";
       break;
-    case "model": summary = `${modelsTable(root)}\n\n변경: ${action.agent} → ${action.model}\n이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.`; break;
+    case "model": {
+      const change = validateModelChange(root, action.agent, action.model, action);
+      const reasoningHint = change.host === "codex" ? "기본값 복원은 모델·추론 강도를 함께 복원합니다. 모델만 변경하면 기존 추론 강도를 유지합니다. " : "";
+      summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${action.model}${action.reasoning ? ` / ${action.reasoning}` : ""}\n${reasoningHint}적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.`;
+      break;
+    }
     case "abort": summary = `${status(root)}\n\n접수 또는 작업 진행 상태를 종료합니다. 소스·작업 문서·Git 이력은 삭제하지 않습니다.`; break;
     case "plugin-add": summary = previewPluginAdd(root, action); break;
     case "plugin-remove": summary = previewPluginRemove(action.name); break;
@@ -409,7 +415,7 @@ function applyLocked(root: string, id: string): string {
         case "plan": return decide(root,action.decision==="reject"?"rejected":"approved",action.comment);
         case "deliver": return deliver(requireValidatable(root,"deliver"));
         case "knowledge-prune": return knowledgePrune(root);
-        case "model": return setModel(root,action.agent,action.model);
+        case "model": return setModel(root,action.agent,action.model,action);
         case "abort": return abort(root);
         case "plugin-add": return pluginAdd(root,action);
         case "plugin-remove": return pluginRemove(action.name);

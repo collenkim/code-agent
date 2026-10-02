@@ -22,13 +22,17 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 | 프로젝트 지침 | `AGENTS.md`의 code-agent 표시 블록 |
 | 설치 이력 | `.code-agent/hosts.json`, `.code-agent/version` |
 
-기존 `AGENTS.md`의 표시 블록 밖 내용, 다른 훅, `.codex/config.toml`은 보존한다. 스킬과 역할 파일은 번들 사본이므로 갱신하면 덮어쓴다. 프로젝트 규칙은 `AGENTS.md`의 블록 밖이나 프로젝트 문서에 둔다. 역할의 모델·추론 강도는 Codex 부모 설정을 상속한다.
+기존 `AGENTS.md`의 표시 블록 밖 내용, 다른 훅, `.codex/config.toml`은 보존한다. 스킬과 역할 파일은 번들 사본이므로 갱신하면 덮어쓴다. 프로젝트 규칙은 `AGENTS.md`의 블록 밖이나 프로젝트 문서에 둔다. 역할마다 제품 기본 모델·추론 강도를 명시하며 사용자의 역할별 변경값은 갱신 뒤에도 유지한다.
 
-설치 후 Codex를 다시 열고 프로젝트 훅을 검토·신뢰한다. 자동으로 신뢰 설정을 바꾸지 않는다. 호스트가 훅을 무시하거나 서브 에이전트를 지원하지 않으면 관찰 결과가 없어 계획·리뷰 게이트를 통과할 수 없다. `doctor`는 설치 파일과 명령을 검사하며 실제 훅 신뢰·모델 실행 성공을 인증하지 않는다. 로컬 기능 조회 기준은 `codex-cli 0.159.3`의 `hooks`, `multi_agent` 활성 상태다. 이를 지원 최소 버전으로 단정하지 않는다.
+설치 후 Codex를 다시 열고 프로젝트 훅을 검토·신뢰한다. 자동으로 신뢰 설정을 바꾸지 않는다. 호스트가 훅을 무시하거나 설치된 역할을 선택하는 서브 에이전트 호출을 지원하지 않으면 관찰 결과가 없어 계획·리뷰 게이트를 통과할 수 없다. `doctor`는 설치 파일과 명령을 검사하며 실제 훅 신뢰·모델 실행 성공을 인증하지 않는다. 2026-10-02 추가 검사는 `codex-cli 0.160.0`에서 수행했다. 앞선 0.159.3 기능 조회와 구분하며 지원 최소 버전으로 단정하지 않는다.
 
 공식 설치 형식은 [로컬 스킬](https://learn.chatgpt.com/docs/build-skills), [커스텀 에이전트](https://learn.chatgpt.com/docs/agent-configuration/subagents), [훅](https://learn.chatgpt.com/docs/hooks)을 참고한다.
 
 ## 동작과 검증
+
+계획의 `planning advance`, 요약 `planning status`, 상세 `planning result <ID>`, 형식 교정 `planning repair <ID>`는 Claude와 같은 구현을 사용한다. Codex 스킬도 같은 배정·대기·차단·게이트 준비 상태와 1회 교정 절차를 제공한다. 설치 후 기존 프로젝트에는 템플릿 갱신과 호스트 재시작이 필요하다. 변경별 검증 범위는 [계획 실행 효율 개선 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
+
+배정의 `agent`와 `hostAgents.claude`는 기존 `ca-analyst` 이름이다. Codex는 `hostAgents.codex`의 `ca_analyst`처럼 밑줄 이름으로 호출한다. 모든 Codex 역할의 TOML `name`과 스킬의 호출 지침을 변환하며, 훅에서는 공통 역할로 연결한다. 기존 설치를 갱신할 수 있도록 역할 파일 경로 `.codex/agents/ca-analyst.toml`은 유지한다. 스킬 이름 `ca-analyze`는 역할 이름과 별개다.
 
 | 이벤트 | code-agent 처리 |
 |---|---|
@@ -65,6 +69,30 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 모든 호스트를 제거했다면 `hosts.json`도 제거한다. 빈 배열로 남기지 않는다. 작업 문서와 증거 보존 여부는 별도로 결정한다.
 
-`code-agent model`은 Claude 모델 설정 전용이다. Codex는 부모 설정에서 모델과 추론 강도를 바꾼다. `code-agent usage`의 토큰·비용 집계도 현재 Claude 기록만 지원하며 Codex 사용량을 0으로 간주하지 않는다. Codex 사용량은 호스트 화면에서 확인한다.
+`code-agent usage`의 토큰·비용 집계는 현재 Claude 기록만 지원하며 Codex 사용량을 0으로 간주하지 않는다. Codex 사용량은 호스트 화면에서 확인한다.
 
-검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. 실계정 모델 호출이나 Codex UI에서 훅을 신뢰한 뒤 수행하는 수동 사용성 측정은 포함하지 않는다. 결과는 [최신 변경·검증 이력](reviews/2026-10-02-codex-support.md)에 기록한다.
+자동 검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. 추가 실제 모델 검사에서는 Claude 분석 담당의 완료 관찰과 게이트 준비를 확인했다. Codex 실행 환경은 설치된 역할 선택 인자를 제공하지 않았고 로컬 훅도 관찰되지 않아 실제 연동 검사를 완료하지 못했다. 두 호스트의 실사용 호환성이 모두 확인되었다는 의미는 아니다. Codex UI의 수동 사용성·실제 사람의 승인·전체 개발 흐름 실계정 측정도 별도 범위다. 결과는 [최신 변경·검증 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
+
+## 역할별 모델 기본값과 변경
+
+초보 사용자가 호스트의 전역 설정을 따로 맞추지 않아도 각 역할의 TOML에 `model`과 `model_reasoning_effort`를 명시한다. 기본값은 다음과 같으며 모델을 자동으로 바꾸는 라우팅은 하지 않는다.
+
+| 역할 | 기본 모델 | 추론 강도 |
+|---|---|---|
+| analyst · critic · reviewer | gpt-6.1-sol | high |
+| surveyor · explorer · writer · implementer · tester | gpt-6.1-sol | medium |
+
+이는 품질과 실행량을 함께 고려한 제품의 시작값이다. 실제 최적 비용·성능 조합을 입증한 벤치마크 결과는 아니다. 계정에서 제공하지 않는 모델이면 사용 가능한 모델을 선택해야 하며 조용히 다른 모델로 대체하지 않는다. 기본 모델과 추론 강도의 근거는 [공식 커스텀 에이전트 문서](https://learn.chatgpt.com/docs/agent-configuration/subagents)다.
+
+```sh
+code-agent model --host codex
+code-agent model writer gpt-6-luna --host codex --reasoning high
+code-agent model writer default --host codex
+code-agent model all default --host codex
+```
+
+조회는 메인도 실행할 수 있다. 위 변경 명령은 사람이 직접 TTY에서 실행한다. 대화에서 변경할 때는 `ca-answer`가 `{"action":"model","host":"codex","agent":"writer","model":"gpt-6-luna","reasoning":"high"}`로 기존 같은 세션 동의 절차를 사용한다. `model:"default"`는 모델·추론 강도를 함께 기본값으로 복원한다. 모델만 지정하면 해당 역할의 기존 추론 강도를 유지한다.
+
+Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 기존 `.code-agent/models.json`에 분리한다. 설정 우선순위는 **역할별 사용자 변경값 → 제품의 역할별 기본값**이다. 양쪽 호스트를 설치했다면 변경 대상 `--host`를 반드시 지정한다. 단독 설치에서는 생략할 수 있다. 재설치·업데이트·doctor도 이 값을 사용하며, 존재하는 Codex 변경값 파일은 기준 커밋과 최종 반영의 명시적 경로에 포함한다.
+
+적용 후 호스트를 재시작해 역할 설정을 다시 읽는다. 실행 중인 담당이나 메인 세션의 모델을 변경하지 않는다. 부모 설정을 상속하던 이전 Codex 설치는 업데이트 후 위 기본값을 사용하며, 원하는 모델은 변경 명령으로 명시한다. 전역 `.codex/config.toml`은 수정하지 않는다.

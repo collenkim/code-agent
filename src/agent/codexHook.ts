@@ -5,6 +5,7 @@ import { observePlanner } from "./planningHook";
 import { observeReviewer, ReviewHookInput } from "./reviewHook";
 import { decideStop } from "./stopHook";
 import { consentStatus, observeConsent } from "./consent";
+import { commonAgentName } from "./hosts";
 
 interface CodexHookInput extends ReviewHookInput {
   tool_name?: string;
@@ -74,7 +75,7 @@ export function codexHook(input: CodexHookInput): object {
   }
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.
-    const event = {...input, transcript_path: undefined, agent_transcript_path: undefined};
+    const event = {...input, agent_type: commonAgentName(input.agent_type), transcript_path: undefined, agent_transcript_path: undefined};
     observePlanner(event, root);
     observeReviewer(event, root);
   } else if (input.hook_event_name === "UserPromptSubmit") {

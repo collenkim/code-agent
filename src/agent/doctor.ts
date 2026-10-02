@@ -248,7 +248,7 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
       add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, "code-agent init --host codex");
     }
     try {
-      const changed = [...hostAssets("codex")].filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
+      const changed = [...hostAssets("codex", repoRoot)].filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
       add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : "26개 모두 번들과 같습니다", "code-agent update --templates-only --host codex");
       const instructions = join(repoRoot, "AGENTS.md");
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());

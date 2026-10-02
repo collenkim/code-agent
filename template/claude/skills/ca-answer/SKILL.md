@@ -75,7 +75,7 @@ description: 모든 code-agent 명령의 공통 업무 질의응답과 같은 �
 | 요구사항·계획 반려 기록 | 해당 `request` 또는 `plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 포함한다. 이 동작도 별도 동의 후 적용한다 |
 | 검증 결과 반영 | `{"action":"deliver"}` |
 | 오래된 지식 항목 정리 | `{"action":"knowledge-prune"}` |
-| 모델 변경 | `{"action":"model","agent":"<에이전트>","model":"<모델>"}` |
+| 모델 변경 | `{"action":"model","host":"claude","agent":"<에이전트|all>","model":"<opus|sonnet|haiku|default>"}` |
 | 접수·작업 종료 | `{"action":"abort"}` |
 | 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |

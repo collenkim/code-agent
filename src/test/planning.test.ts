@@ -10,7 +10,8 @@ import { decide as hook } from "../agent/hook";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { loadActive, saveActive } from "../agent/layout";
 import { init, installedHook, unmatchedTools } from "../agent/init";
-import { cancelPlanning, dispatchPlanning, preparePlanning, planningStatus } from "../agent/planning";
+import { cancelPlanning, dispatchPlanning, preparePlanning, planningStatus, advancePlanning, repairPlanning, planningResult } from "../agent/planning";
+import { codexHook } from "../agent/codexHook";
 import { observePlanner } from "../agent/planningHook";
 import { loadPlanning, planningProblems, TaskSchema, ResultSchema, type PlanningResult } from "../agent/planningState";
 import { planningDocumentProblems } from "../agent/planningValidation";
@@ -34,14 +35,16 @@ const PLAN = { domainName: "Value", domainLabel: "값", domainRoot: "", domainDi
   { id: "T3", stage: "test", title: "검증", requirements: ["R1"], files: ["test/value.test.ts"], dependsOn: ["T2"], acceptance: ["AC-R1-1"] },
 ] };
 let root: string, serial = 0;
+const advance = () => JSON.parse(advancePlanning(root));
 function write(path: string, content: string): void { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
 function phase(phase: "analysis" | "impact" | "design" | "plan"): void { saveActive(root, { ...loadActive(root)!, phase }, "next"); }
 function dispatch(id: string) { return JSON.parse(dispatchPlanning(root, id)); }
-function finish(dispatch: ReturnType<typeof JSON.parse>, artifacts: Record<string, string> = {}, extra: Partial<PlanningResult> = {}) {
-  const event = { cwd: root, session_id: "s", agent_id: `agent-${++serial}`, agent_type: dispatch.agent };
+function finish(dispatch: ReturnType<typeof JSON.parse>, artifacts: Record<string, string> = {}, extra: Partial<PlanningResult> = {}, host: "claude" | "codex" = "claude") {
+  const event = { cwd: root, session_id: "s", agent_id: `agent-${++serial}`, agent_type: dispatch.hostAgents[host] };
   const result: PlanningResult = { taskId: dispatch.task.id, dispatchId: dispatch.resultShape.dispatchId, inputHash: dispatch.resultShape.inputHash, status: "completed", summary: "실제 근거 확인", evidence: [{ path: SPEC, line: 1 }], facts: [], questions: [], findings: [], artifacts: Object.entries(artifacts).map(([path, content]) => ({ path, content })), ...extra };
-  observePlanner({ ...event, hook_event_name: "SubagentStart" });
-  observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
+  const observe = host === "codex" ? codexHook : observePlanner;
+  observe({ ...event, hook_event_name: "SubagentStart" });
+  observe({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
   return { event, result };
 }
 function analysis() { preparePlanning(root); finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS }); next(root); }
@@ -79,6 +82,190 @@ beforeEach(() => {
 afterEach(() => {
   assert.ok(root.startsWith(`${realpathSync.native(tmpdir())}${sep}ca-planning-`));
   rmSync(root, { recursive: true, force: true });
+});
+
+test("계획 전달은 문서 원문을 중복하지 않고 판단·해시·상세 조회를 보존한다", () => {
+  const item = advance().assignments[0];
+  const content = REQUIREMENTS + "\n" + "원문전용 자료\n".repeat(5000);
+  finish(item, { [`${DIR}/01-requirements.md`]: content }, { findings: [{ id: "F1", severity: "advisory", detail: "검토 필요", source: { path: SPEC, line: 1 } }] });
+  const cached = dispatch("analysis");
+  assert.equal(cached.cached, true);
+  assert.equal(cached.result.findings[0].detail, "검토 필요");
+  assert.match(cached.result.artifacts[0].hash, /^[a-f0-9]{64}$/);
+  assert.equal(cached.result.artifacts[0].chars, content.length);
+  assert.equal(cached.result.artifacts[0].content, undefined);
+  const detail = JSON.parse(planningResult(root, "analysis"));
+  assert.equal(detail.current, true);
+  assert.equal(detail.last.result.artifacts[0].content, content);
+  assert.doesNotMatch(planningStatus(root), /원문전용/);
+  next(root);
+  const explorer = advance().assignments[0];
+  assert.equal(explorer.dependencies[0].artifacts[0].content, undefined);
+  assert.equal(explorer.dependencies[0].findings[0].detail, "검토 필요");
+  assert.ok(explorer.inputs.includes(`${DIR}/01-requirements.md`));
+  assert.ok(JSON.stringify(explorer.dependencies).length < JSON.stringify(detail.last.result).length / 10);
+  write(`${DIR}/01-requirements.md`, REQUIREMENTS);
+  assert.equal(JSON.parse(planningResult(root, "analysis")).current, false);
+});
+
+test("계획 진행은 준비·배정을 합치고 반복 호출·캐시·단계 게이트를 구분한다", () => {
+  const first = advance();
+  assert.equal(first.action, "dispatch"); assert.equal(first.assignments.length, 1);
+  assert.equal(advance().action, "wait");
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.length, 1);
+  finish(first.assignments[0], { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+  assert.equal(advance().action, "ready-for-gate");
+  assert.deepEqual(advance().reused, ["analysis"]);
+  assert.equal(loadActive(root)!.phase, "analysis");
+  next(root);
+  const impact = advance();
+  assert.deepEqual(impact.assignments.map((item: any) => item.task.role), ["explore"]);
+  finish(impact.assignments[0]);
+  const synthesis = advance();
+  assert.deepEqual(synthesis.assignments.map((item: any) => item.task.role), ["synthesis"]);
+  finish(synthesis.assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT });
+  assert.equal(advance().action, "ready-for-gate");
+});
+
+test("계획 진행은 사용자 영역 분할·동시 한도·미결 질문과 사실 충돌을 유지한다", () => {
+  analysis();
+  const base = { role: "explore", title: "영역", requirements: ["R1"], inputs: [SPEC], scopes: ["src"], outputs: [], dependsOn: ["analysis"] };
+  preparePlanning(root, { maxParallel: 1, tasks: [{ ...base, id: "left" }, { ...base, id: "right" }] });
+  const first = advance(); assert.equal(first.assignments.length, 1);
+  assert.equal(first.assignments[0].task.id, "left");
+  finish(first.assignments[0], {}, { facts: [{ key: "값", value: "1", source: { path: "src/current.ts", line: 1 } }] });
+  const second = advance(); assert.equal(second.assignments[0].task.id, "right");
+  finish(second.assignments[0], {}, { facts: [{ key: "값", value: "2", source: { path: "src/current.ts", line: 1 } }] });
+  const conflict = advance(); assert.equal(conflict.action, "blocked"); assert.equal(conflict.assignments.length, 0);
+  assert.match(JSON.stringify(conflict.blocked), /충돌/);
+  write(`${DIR}/questions.md`, "# 질문\n## Q1 · 확인\n값은?\n[Requirements]: R1\n[Answer]:\n");
+  assert.equal(advance().action, "blocked");
+  assert.match(JSON.stringify(advance().blocked), /미결 질문/);
+});
+
+function malformed(item: any, options: { codex?: boolean; raw?: string; id?: string } = {}) {
+  const event = { cwd: root, session_id: "format-session", agent_id: options.id ?? `format-${++serial}`, agent_type: item.agent };
+  const value = { ...item.resultShape, status: "completed", summary: 123, artifacts: [{ path: `${DIR}/01-requirements.md`, content: REQUIREMENTS }] };
+  const observe = options.codex ? codexHook : observePlanner;
+  observe({ ...event, hook_event_name: "SubagentStart" });
+  assert.throws(() => observe({ ...event, hook_event_name: "SubagentStop", last_assistant_message: options.raw ?? JSON.stringify(value) }), /결과 형식 오류/);
+  return { event, value };
+}
+
+test("형식 교정은 관찰 원본과 같은 입력을 재사용하고 늦은 결과·무관찰 완료를 막는다", () => {
+  const item = advance().assignments[0], original = malformed(item);
+  assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
+  assert.equal(JSON.parse(planningStatus(root)).tasks[0].state, "needs-correction");
+  assert.throws(() => dispatch("analysis"), /교정/);
+  const repaired = advance().assignments[0];
+  assert.equal(repaired.mode, "correction");
+  assert.equal(JSON.parse(repaired.originalResponse).summary, 123);
+  assert.notEqual(repaired.resultShape.dispatchId, item.resultShape.dispatchId);
+  assert.equal(repaired.resultShape.inputHash, item.resultShape.inputHash);
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.length, 1);
+  assert.throws(() => observePlanner({ ...original.event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...original.value, summary: "교정" }) }), /이미 처리/);
+  observePlanner({ cwd: root, session_id: "forged", agent_id: "forged", agent_type: item.agent, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...repaired.resultShape, status: "completed" }) });
+  assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
+  finish(repaired, { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+  assert.equal(advance().action, "ready-for-gate");
+  assert.equal(JSON.parse(planningResult(root, "analysis")).last.correction.used, true);
+});
+
+test("Codex 관찰에서도 교정은 한 번만 허용하며 CLI 상세 조회에 원본 오류를 노출하지 않는다", () => {
+  const item = advance().assignments[0]; malformed(item, { codex: true });
+  const repaired = JSON.parse(repairPlanning(root, "analysis"));
+  malformed(repaired, { codex: true });
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "failed");
+  assert.throws(() => repairPlanning(root, "analysis"), /한 번/);
+  assert.equal(advance().action, "blocked");
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.length, 1);
+  const detail = JSON.parse(planningResult(root, "analysis"));
+  assert.equal(detail.last.correction.raw, undefined);
+});
+
+test("형식 교정이 유효한 차단 지적과 문서 내용을 조용히 바꾸지 못한다", () => {
+  const item = advance().assignments[0];
+  const findings = [{ id: "F1", severity: "blocking", detail: "확인할 위험", source: { path: SPEC, line: 1 } }];
+  malformed(item, { raw: JSON.stringify({ ...item.resultShape, status: "completed", summary: 123, findings, artifacts: [{ path: `${DIR}/01-requirements.md`, content: REQUIREMENTS }] }) });
+  const repaired = advance().assignments[0];
+  assert.throws(() => finish(repaired, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }), /유효한 원본 findings/);
+  assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
+});
+
+test("교정도 입력 변경·취소·의미상 근거 오류를 우회하지 못한다", () => {
+  const item = advance().assignments[0]; malformed(item);
+  write(SPEC, readFileSync(join(root, SPEC), "utf8") + "\n추가 요구\n");
+  assert.throws(() => repairPlanning(root, "analysis"), /입력이 바뀌/);
+  cancelPlanning(root, "analysis");
+  assert.throws(() => repairPlanning(root, "analysis"), /교정할/);
+  const second = advance().assignments[0]; malformed(second);
+  const repaired = JSON.parse(repairPlanning(root, "analysis"));
+  assert.throws(() => finish(repaired, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, { evidence: [{ path: "outside.ts", line: 1 }] }), /범위 밖/);
+  assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
+});
+
+test("깨진 JSON은 시작 때 배정이 유일한 경우만 교정하며 위조 식별자는 거부한다", () => {
+  const item = advance().assignments[0]; malformed(item, { raw: "{broken" });
+  assert.equal(advance().assignments[0].mode, "correction");
+  cancelPlanning(root, "analysis");
+  const second = advance().assignments[0];
+  const event = { cwd: root, session_id: "s", agent_id: "wrong-identity", agent_type: second.agent };
+  observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  assert.throws(() => observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...second.resultShape, dispatchId: "forged", summary: 1 }) }), /현재 배정/);
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.correction, undefined);
+});
+
+test("계획 CLI와 호스트 허용 명령은 진행·교정·상세 조회 계약을 공유한다", () => {
+  const cli = join(__dirname, "../agent/cli.js");
+  const reply = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" }));
+  assert.equal(reply.action, "dispatch");
+  malformed(reply.assignments[0]);
+  const repaired = JSON.parse(execFileSync(process.execPath, [cli, "planning", "repair", "analysis"], { cwd: root, encoding: "utf8" }));
+  finish(repaired, { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+  const detail = JSON.parse(execFileSync(process.execPath, [cli, "planning", "result", "analysis"], { cwd: root, encoding: "utf8" }));
+  assert.equal(detail.current, true);
+  for (const command of ["advance", "repair analysis", "result analysis"]) assert.equal(hook({ cwd: root, tool_name: "Bash", tool_input: { command: `code-agent planning ${command}` } }), undefined);
+});
+
+for (const host of ["claude", "codex"] as const) test(`${host}: 설치된 절차로 형식 교정부터 독립 검토·승인 게이트까지 같은 기능을 제공한다`, () => {
+  init(root, { host });
+  const skills = host === "claude" ? ".claude/skills" : ".agents/skills";
+  for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
+    const instructions = readFileSync(join(root, skills, name, "SKILL.md"), "utf8");
+    assert.match(instructions, /planning advance/); assert.match(instructions, /mode:correction/);
+    assert.match(instructions, /planning result/); assert.match(instructions, /ready-for-gate/);
+  }
+  const initial = advance().assignments[0];
+  malformed(initial, { codex: host === "codex" });
+  finish(advance().assignments[0], { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, {}, host);
+  assert.equal(advance().action, "ready-for-gate"); next(root);
+  finish(advance().assignments[0], {}, { evidence: [{ path: "src/current.ts", line: 1 }] }, host);
+  finish(advance().assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT }, {}, host);
+  assert.equal(advance().action, "ready-for-gate"); next(root);
+  finish(advance().assignments[0], { [`${DIR}/03-design.md`]: DESIGN, [`${DIR}/04-functional.md`]: FUNCTIONAL }, {}, host);
+  assert.equal(advance().action, "ready-for-gate"); next(root);
+  finish(advance().assignments[0], { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }, {}, host);
+  assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /critic/);
+  finish(advance().assignments[0], {}, {}, host);
+  assert.equal(advance().action, "ready-for-gate");
+  submitPlan(root, join(root, DIR, "plan.json"));
+  assert.throws(() => next(root), /승인/);
+  assert.equal(loadActive(root)!.phase, "plan");
+  const state = loadPlanning(loadWork(root)!);
+  assert.deepEqual(state.tasks.map(item => item.task.role), ["analysis", "explore", "synthesis", "design", "plan", "critic"]);
+  assert.ok(state.tasks.every(item => item.attempts.length === 1));
+  assert.equal(JSON.parse(planningResult(root, "plan")).current, true);
+});
+
+test("병렬 실행의 식별자 없는 깨진 결과를 임의 작업의 교정으로 연결하지 않는다", () => {
+  analysis();
+  const base = { role: "explore", title: "영역", requirements: ["R1"], inputs: [SPEC], scopes: ["src"], outputs: [], dependsOn: ["analysis"] };
+  preparePlanning(root, { tasks: [{ ...base, id: "left" }, { ...base, id: "right" }] });
+  const batch = advance(); assert.equal(batch.assignments.length, 2);
+  const event = { cwd: root, session_id: "s", agent_id: "ambiguous", agent_type: "ca-explorer" };
+  observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  assert.throws(() => observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "{broken" }), /현재 배정/);
+  assert.ok(loadPlanning(loadWork(root)!).tasks.every(item => !item.attempts.at(-1)?.correction));
 });
 
 test("신규 시작은 관찰 결과 없이 다음 단계로 넘어갈 수 없다", () => {
