@@ -1,0 +1,517 @@
+{
+  "at": "2026-10-02T06:37:52.365Z",
+  "baseCommit": "6109278",
+  "environment": {
+    "os": "Windows",
+    "codex": "0.160.0"
+  },
+  "scope": "실제 Codex·Claude 분석/영향도 완료 및 내용 게이트. 초기 동의는 합성 fixture. 전체 개발·사람 승인·비용 최적성 증명 아님.",
+  "diagnosis": {
+    "rootCause": "Windows 프로젝트 신뢰 키의 경로 구분자 변환으로 프로젝트 훅이 실행되지 않음",
+    "additional": "ephemeral 부모 실행 기록 부재, Codex 셸 읽기를 거부하는 공통 게이트·탐색 제목과 문서 미결 표시 계약 충돌"
+  },
+  "notes": [
+    "전체 회귀 실행을 시작한 뒤 설치 지침 문구와 검증 도구를 보완했다. 최종 설치 검사를 별도로 기록한다.",
+    "첫 Codex 분석/영향도 결과 수락 뒤 내용 게이트에서 멈춰 피드백을 새 입력으로 연결했다. 실제 새 담당 관찰로 재검증했으며 원문과 실패 기록을 보존한다."
+  ],
+  "probes": [
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-egtGKn",
+      "standalone": false,
+      "exitCode": 0,
+      "durationMs": 8612,
+      "events": [],
+      "report": "dist/codex-hook-probe-egtGKn/report.json",
+      "sha256": "b49ce4b4b6768a54f511ca12c2e5c5d9059e1fc660d1001be9d9f2699313e5b1"
+    },
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-IX6viE",
+      "standalone": true,
+      "exitCode": 0,
+      "durationMs": 4616,
+      "events": [],
+      "report": "dist/codex-hook-probe-IX6viE/report.json",
+      "sha256": "2e482667a31ffe9465240d80e8090814efb04c8110b82a244304141b10d51474"
+    },
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-tmeo1b",
+      "options": {
+        "standalone": true,
+        "user-config": true,
+        "project-config": true
+      },
+      "standalone": true,
+      "exitCode": 0,
+      "durationMs": 6911,
+      "events": [
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionEnd"
+      ],
+      "report": "dist/codex-hook-probe-tmeo1b/report.json",
+      "sha256": "fd3579bce469badd99d27b2f9081a36af6c99ddb15f3a3f044704b88b9621ac7"
+    },
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-3FSEho",
+      "options": {
+        "standalone": true,
+        "project-config": true
+      },
+      "standalone": true,
+      "exitCode": 0,
+      "durationMs": 5350,
+      "events": [],
+      "report": "dist/codex-hook-probe-3FSEho/report.json",
+      "sha256": "e3e10caf58c70aa24ea5d4415296b0529451ee167197a15a3bf6542640e0622c"
+    },
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-OVKpGc",
+      "options": {
+        "standalone": true,
+        "user-config": true
+      },
+      "standalone": true,
+      "exitCode": 0,
+      "durationMs": 7879,
+      "events": [
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionEnd"
+      ],
+      "report": "dist/codex-hook-probe-OVKpGc/report.json",
+      "sha256": "19d0b8f0be10a522a90a3998167a203217c556c23ea5ba06661fbe36b0cdd0c0"
+    },
+    {
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\codex-hook-probe-w9POeK",
+      "options": {
+        "standalone": true,
+        "native-trust-path": true
+      },
+      "standalone": true,
+      "exitCode": 0,
+      "durationMs": 17985,
+      "events": [
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionEnd"
+      ],
+      "report": "dist/codex-hook-probe-w9POeK/report.json",
+      "sha256": "976db0c6cb725a41d2455481b2f8e329ed5e8b316f8bf1e0b7c572cf00194916"
+    }
+  ],
+  "runs": [
+    {
+      "host": "codex",
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\planning-live-codex-6u3nvc",
+      "completed": false,
+      "analysisCompleted": false,
+      "exitCode": 0,
+      "durationMs": 60000,
+      "observedAgents": [],
+      "hookEventCount": 7,
+      "subagentEvents": [],
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "status": "running"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-codex-hooks-config-fixed.json",
+          "sha256": "8f070bdfd41f49a572e47c11c9484cadada0f0e9745baf4d9e9662a3fa9bb215"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-config-fixed.stdout.log",
+          "sha256": "34fa4a457f1d1408664849d77a849c384dadea3dc75550db7683be9949d0cb85"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-config-fixed.stderr.log",
+          "sha256": "23de2fa170c4f11b7b3c963c450a23db86042b587893e5ee43a82c888b6ba62c"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-config-fixed.hooks.jsonl",
+          "sha256": "b9893e953d814280e3e6722eeb0fc44573d041d2a5034515e22b360d63db6dbe"
+        }
+      ]
+    },
+    {
+      "host": "codex",
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\planning-live-codex-QBVede",
+      "completed": false,
+      "analysisCompleted": false,
+      "exitCode": null,
+      "error": "ETIMEDOUT",
+      "durationMs": 180033,
+      "observedAgents": [
+        {
+          "id": "01a0fb43-c8fb-7f93-8f0b-10291cbde59d",
+          "type": "ca-analyst",
+          "finished": false
+        }
+      ],
+      "hookEventCount": 27,
+      "subagentEvents": [
+        {
+          "event": "SubagentStart",
+          "role": "ca_analyst",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        }
+      ],
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "status": "running"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-codex-native-trust-persistent.json",
+          "sha256": "1ca945bfa95af338a3e215eed662fb68d68a440a575774cf0d8e976a62e78c84"
+        },
+        {
+          "path": "dist/planning-live-codex-native-trust-persistent.stdout.log",
+          "sha256": "1a1d353227894e1be7b50f12d456943c02f6cee31ef9244a0dbcb6956260d50a"
+        },
+        {
+          "path": "dist/planning-live-codex-native-trust-persistent.stderr.log",
+          "sha256": "47c9fa199d084223ab4289e074ede3e47fda313d7fcdb3b32a5fdf0f07044141"
+        },
+        {
+          "path": "dist/planning-live-codex-native-trust-persistent.hooks.jsonl",
+          "sha256": "c9ce7c62f2ba3662cb9126e9bc360efa13d47291b1a7d212fe860f926d61b135"
+        }
+      ]
+    },
+    {
+      "host": "codex",
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\planning-live-codex-c1OqTD",
+      "completed": true,
+      "analysisCompleted": true,
+      "impactCompleted": true,
+      "action": "ready-for-gate",
+      "contentGate": {
+        "passed": false,
+        "error": "작업 문서가 게이트를 지나지 못했습니다:\n  - doc/work/CONSENT-1/02-analysis.md: 미결 표시를 질문으로 옮겨 답을 받고 문서를 확정하세요."
+      },
+      "exitCode": 0,
+      "durationMs": 494579,
+      "observedAgents": [
+        {
+          "id": "01a0fb47-1a97-7a02-915a-c141ca8af4bd",
+          "type": "ca-analyst",
+          "finished": true
+        },
+        {
+          "id": "01a0fb4a-946e-79a1-8147-411215a82a2c",
+          "type": "ca-explorer",
+          "finished": true
+        }
+      ],
+      "hookEventCount": 45,
+      "subagentEvents": [
+        {
+          "event": "SubagentStart",
+          "role": "ca_analyst",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        },
+        {
+          "event": "SubagentStop",
+          "role": "ca_analyst",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        },
+        {
+          "event": "SubagentStart",
+          "role": "ca_explorer",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        },
+        {
+          "event": "SubagentStop",
+          "role": "ca_explorer",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        }
+      ],
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "status": "completed"
+        },
+        {
+          "id": "impact",
+          "role": "impact",
+          "status": "completed"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-codex-hooks-read-impact.json",
+          "sha256": "13764767f17227857b4b6a97588f7fa4947cff049a428ae22f402df00ccee306"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-read-impact.stdout.log",
+          "sha256": "37ee1d03b54b300641060cc92ffa73deae7ffb09007a523579ceaba98bb8aa98"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-read-impact.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-read-impact.hooks.jsonl",
+          "sha256": "064e654a1a9c0c2bdec6c57a77af48289c6a0d1725227b8d8260917ce1027327"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-read-impact.gate.json",
+          "sha256": "35217eb48a105928cca521612d7e34fe07f148ae684a409647f4b32097733511"
+        }
+      ]
+    },
+    {
+      "host": "claude",
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\planning-live-claude-Rpt4lC",
+      "completed": true,
+      "analysisCompleted": true,
+      "impactCompleted": true,
+      "action": "ready-for-gate",
+      "contentGate": {
+        "passed": true,
+        "output": "code-agent — C:\\IdeaProjects\\code-agent\\dist\\planning-live-claude-Rpt4lC\n\n프로젝트 문서:\n  ✓ 아키텍처: doc/architecture.md (확정됨)\n  ✓ 코드 컨벤션: doc/conventions.md (확정됨)\n  ✓ 테스트 전략: doc/test-strategy.md (확정됨)\n  ✓ 품질·보안 기준: doc/quality.md (확정됨)\n\n작업: CONSENT-1 · 숫자 함수의 반환과 예외 (feature, 대상 value)\n지시서: doc/work/CONSENT-1/requirement.md\n요구사항: 확정됨 (0acc35f45276 · 2026-10-02)\n작업 폴더: doc/work/CONSENT-1/\n계획 처리: 관찰 흐름 — code-agent planning status\n브랜치: feature/CONSENT-1 (기준 master)\n스테이지: 설계·정의 — analysis → impact → [design] → plan → implement → check → test → review → integrate → deliver\n질문: 답 없는 질문 없음\n계획: 없음\n다음: /ca-design (또는 /ca-next 로 사이클) — 설계·정의(doc/work/CONSENT-1/ 의 번호 문서)을 마치면 code-agent next"
+      },
+      "exitCode": 0,
+      "durationMs": 175155,
+      "observedAgents": [
+        {
+          "id": "a798e34bb61f96ea9",
+          "type": "ca-analyst",
+          "finished": true
+        },
+        {
+          "id": "a9cf33c59babbb4fa",
+          "type": "ca-explorer",
+          "finished": true
+        },
+        {
+          "id": "a2df4457bb7049308",
+          "type": "ca-writer",
+          "finished": true
+        }
+      ],
+      "hookEventCount": 0,
+      "subagentEvents": [],
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "status": "completed"
+        },
+        {
+          "id": "explore",
+          "role": "explore",
+          "status": "completed"
+        },
+        {
+          "id": "synthesis",
+          "role": "synthesis",
+          "status": "completed"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-claude-hooks-recovery-impact.json",
+          "sha256": "a3366f84df2e33aa1fc5869520c8d999d8e5de7ca29ffea53d262af2d7d600f1"
+        },
+        {
+          "path": "dist/planning-live-claude-hooks-recovery-impact.stdout.log",
+          "sha256": "d2f3abddb252816e6c2b02c5cceab60dd412e5a6c10a1f5abf9947f6aca00dd1"
+        },
+        {
+          "path": "dist/planning-live-claude-hooks-recovery-impact.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "host": "codex",
+      "repo": "C:\\IdeaProjects\\code-agent\\dist\\planning-live-codex-c1OqTD",
+      "completed": true,
+      "analysisCompleted": true,
+      "impactCompleted": true,
+      "action": "ready-for-gate",
+      "contentGate": {
+        "passed": true,
+        "output": "code-agent — C:\\IdeaProjects\\code-agent\\dist\\planning-live-codex-c1OqTD\n\n프로젝트 문서:\n  ✓ 아키텍처: doc/architecture.md (확정됨)\n  ✓ 코드 컨벤션: doc/conventions.md (확정됨)\n  ✓ 테스트 전략: doc/test-strategy.md (확정됨)\n  ✓ 품질·보안 기준: doc/quality.md (확정됨)\n\n작업: CONSENT-1 · 숫자 함수의 반환과 예외 (feature, 대상 value)\n지시서: doc/work/CONSENT-1/requirement.md\n요구사항: 확정됨 (0acc35f45276 · 2026-10-02)\n작업 폴더: doc/work/CONSENT-1/\n계획 처리: 관찰 흐름 — code-agent planning status\n브랜치: feature/CONSENT-1 (기준 master)\n스테이지: 설계·정의 — analysis → impact → [design] → plan → implement → check → test → review → integrate → deliver\n질문: 답 없는 질문 없음\n계획: 없음\n다음: /ca-design (또는 /ca-next 로 사이클) — 설계·정의(doc/work/CONSENT-1/ 의 번호 문서)을 마치면 code-agent next"
+      },
+      "exitCode": 0,
+      "durationMs": 326852,
+      "observedAgents": [
+        {
+          "id": "01a0fb47-1a97-7a02-915a-c141ca8af4bd",
+          "type": "ca-analyst",
+          "finished": true
+        },
+        {
+          "id": "01a0fb4a-946e-79a1-8147-411215a82a2c",
+          "type": "ca-explorer",
+          "finished": true
+        },
+        {
+          "id": "01a0fb51-fe4c-75e1-a181-1a0b5bebc2fd",
+          "type": "ca-explorer",
+          "finished": true
+        }
+      ],
+      "hookEventCount": 35,
+      "subagentEvents": [
+        {
+          "event": "SubagentStart",
+          "role": "ca_explorer",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        },
+        {
+          "event": "SubagentStop",
+          "role": "ca_explorer",
+          "model": "gpt-6.1-sol",
+          "exitCode": 0
+        }
+      ],
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "status": "completed"
+        },
+        {
+          "id": "impact",
+          "role": "impact",
+          "status": "completed"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-codex-hooks-impact-feedback.json",
+          "sha256": "5b9cc08495c96d35a34acc818823877e6dbb24232fa1d815f57ed962ec782478"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-impact-feedback.stdout.log",
+          "sha256": "c1bef25fcae1359d984dfdd929e825b8fe9eec07bd40019b356e965c52409537"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-impact-feedback.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        },
+        {
+          "path": "dist/planning-live-codex-hooks-impact-feedback.hooks.jsonl",
+          "sha256": "4c8e89f59a57139da260830c1e47d7d37f2936f88a838cb81c2917965c1a0fc4"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "path": "dist/codex-hooks-focused.log",
+      "sha256": "17ae6821ea621f0935b3d4de5fd5dd2eabad806f40ec56e5bb2162b400831667",
+      "tests": 20,
+      "pass": 19,
+      "fail": 1,
+      "skipped": 0,
+      "durationMs": 81201.4492
+    },
+    {
+      "path": "dist/codex-hooks-final-focused.log",
+      "sha256": "640b8a1d42c42da8d4e21d626a75847f9e13c7601f6fbf6ddbdf944f34568ae1",
+      "tests": 20,
+      "pass": 20,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 193333.738
+    },
+    {
+      "path": "dist/codex-hooks-regression.log",
+      "sha256": "7d61d945fb729f5399d7cab25bae070633f5800e99a60391fd6befd208aeb9ae",
+      "tests": 720,
+      "pass": 716,
+      "fail": 0,
+      "skipped": 4,
+      "durationMs": 949122.3912
+    },
+    {
+      "path": "dist/codex-hooks-installed-final.log",
+      "sha256": "ad377df498da0dfb9ddd8a3ef3c192c580b5f148fd1db34eaf9029d3b4a8189a",
+      "tests": 2,
+      "pass": 2,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 50198.8362
+    },
+    {
+      "path": "dist/codex-hooks-templates-final.log",
+      "sha256": "7512d0a0fdd5885ae7d2f2d4cdbadf60727fd7b430a91bda9e8ce30fc770c23b",
+      "tests": 2,
+      "pass": 2,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 41774.9759
+    }
+  ],
+  "sources": [
+    {
+      "path": "scripts/evaluate-planning-hosts.cjs",
+      "sha256": "088bffbad742577e2e6e54935e0f43d1770aa27536dffb6b1b10438c0e1b6f77"
+    },
+    {
+      "path": "scripts/diagnose-codex-hooks.cjs",
+      "sha256": "1b4f9119eb04823c15b27b8057402acb4a229f16cd399a245c32d3ba8a6a25af"
+    },
+    {
+      "path": "src/agent/read.ts",
+      "sha256": "2a736568683072f900a05b15844747afb6f2bd5682d68b760c4d844e6cc5344c"
+    },
+    {
+      "path": "src/agent/cli.ts",
+      "sha256": "55e0afc750cab1998af7d5b8003a459f5c315b083910ec458a71683ebbc3ef77"
+    },
+    {
+      "path": "src/agent/hook.ts",
+      "sha256": "7247bd3d683e2d94277d6148092a19728bd6178ecec6a856799db46ab0b45824"
+    },
+    {
+      "path": "src/agent/codexHook.ts",
+      "sha256": "370453342351a16a8b707472502d7143b3864b0c7123c189a731d4dda85c7b76"
+    },
+    {
+      "path": "src/agent/hosts.ts",
+      "sha256": "de0843c1b19f86cd802493943ea33c75badcc70b2b47d4bda67eea9c9e436f0d"
+    },
+    {
+      "path": "src/test/read.test.ts",
+      "sha256": "610842972f94d8312b19534925ecbef657530923067e5f9cc78364b8d8822a6e"
+    },
+    {
+      "path": "src/test/codex.test.ts",
+      "sha256": "0d584a6498e58d0f2441e3ee1767579f9a1a19ba1be4114aa0d583b5be305b95"
+    },
+    {
+      "path": "template/CODEX.block.md",
+      "sha256": "e682ed245752c0af1eeb24efe234607e04cd687beac308966bb68b8bfc7ffbad"
+    },
+    {
+      "path": "template/codex/ca-answer.md",
+      "sha256": "3670bbcd88bf643575e7ffe6a059d024c70c91de66637148fd231a28899fc84f"
+    },
+    {
+      "path": "template/claude/agents/ca-explorer.md",
+      "sha256": "0483ff8e789ac3a9aea25c74d1a64bbc0a704bf78c56d2517158a1e98d409141"
+    }
+  ]
+}

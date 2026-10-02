@@ -2,6 +2,8 @@
 
 호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md), 도입 근거는 [변경 이력](reviews/2026-10-02-codex-support.md)을 따른다. 아래 Claude 경로·도구·8개 훅 설명은 Claude 어댑터 기준이다.
 
+전용 Read 도구가 없는 호스트에는 `read.ts`의 `code-agent read`가 줄 번호 기반 파일 읽기를 제공한다. 실제 경로가 저장소 안인지 확인하고 기존 Read 보호를 적용하며 셸 표현식은 실행하지 않는다. Windows 신뢰 키·부모 실행 기록·실제 훅 호출의 검증 절차는 [훅 복구 이력](reviews/2026-10-02-codex-hook-recovery.md)을 따른다.
+
 > 이 문서가 정본이다 (2026-10-02). README 는 여기를 가리킨다. [문서·검증 이력](reviews/README.md).
 > 표의 **상태** 열에서 `P3 ✅` 는 지금 구현돼 도는 것, 번호만 있는 것(`P4`)은 그 단계에서 만들 것이다. 단계는 11장.
 

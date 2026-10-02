@@ -155,6 +155,22 @@ test("패치의 모든 파일과 이동 목적지를 검사하며 상태·훅 �
   assert.match(pre("Bash","code-agent codex-event").hookSpecificOutput!.permissionDecisionReason,/hook|허용|명령/);
 });
 
+test("Codex는 작업 중 전용 파일 읽기를 제공하고 일반 셸 쓰기·연결은 계속 거부한다", () => {
+  setupConsentProject(root); init(root,{host:"codex",cli});
+  approveAndApplyFixture(root,{action:"setup"},"codex");
+  submitConsentRequest(root);
+  approveAndApplyFixture(root,{action:"request",id:CONSENT_WORK_ID},"codex");
+  start(root,join(root,CONSENT_SPEC));
+  assert.deepEqual(pre("Bash", `code-agent read ${CONSENT_SPEC}`), {});
+  assert.match(pre("Bash", "Get-Content code-agent.json").hookSpecificOutput!.permissionDecisionReason, /code-agent read/);
+  assert.ok(pre("Bash", "code-agent read code-agent.json; Set-Content x y").hookSpecificOutput);
+  const result = spawnSync(process.execPath,[cli,"read",CONSENT_SPEC,"1","2"],{cwd:root,encoding:"utf8"});
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(JSON.parse(result.stdout).lines.length,2);
+  assert.match(read(".codex/agents/ca-analyst.toml"),/code-agent read/);
+  assert.match(read(".agents/skills/ca-analyze/SKILL.md"),/^---/);
+});
+
 test("Codex 실제 사용자 이벤트의 동의만 적용되고 원장에 Codex 출처가 남는다", () => {
   setupConsentProject(root);
   const prepared = JSON.parse(prepareConsent(root,{action:"docs"}));

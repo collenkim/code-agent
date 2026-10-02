@@ -36,7 +36,8 @@ function codexText(text: string): string {
     .replace(/AskUserQuestion/g, "ca-answer의 Codex 응답 절차")
     .replace(/\$ARGUMENTS/g, "<사용자가 전달한 인자>")
     .replace(/\bBash:/g, "셸:")
-    .replace(/subagent_type/g, "agent_type");
+    .replace(/subagent_type/g, "agent_type")
+    + "\n\n파일 읽기는 셸에서 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 줄 수는 최대 400이다. Read/Grep/Glob 전용 도구가 없으면 배정 inputs와 `code-agent survey`의 경로를 이 명령으로 읽는다. 일반 셸 읽기·연결 명령은 작업 게이트가 거부한다.\n";
 }
 export function hostAssets(host: Host, root?: string): Map<string, string> {
   const files = new Map<string, string>();
