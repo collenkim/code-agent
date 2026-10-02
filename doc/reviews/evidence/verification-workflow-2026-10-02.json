@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-02",
+  "feature": "verification workflow nodes",
+  "build": "passed",
+  "full": {
+    "log": "dist/verification-flow-full.log",
+    "tests": 658,
+    "suites": 121,
+    "passed": 654,
+    "failed": 0,
+    "skipped": 4,
+    "durationMs": 477130.8792
+  },
+  "finalNodeRegression": {
+    "log": "dist/verification-flow-final2.log",
+    "tests": 18,
+    "suites": 1,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 57777.9692
+  },
+  "initialFixtureFailures": [
+    {
+      "log": "dist/verification-flow-targeted.log",
+      "tests": 13,
+      "suites": 1,
+      "passed": 11,
+      "failed": 2,
+      "skipped": 0,
+      "durationMs": 30023.4959
+    },
+    {
+      "log": "dist/verification-flow-final.log",
+      "tests": 18,
+      "suites": 1,
+      "passed": 17,
+      "failed": 1,
+      "skipped": 0,
+      "durationMs": 49995.8598
+    }
+  ],
+  "coverage": {
+    "tests": 661,
+    "passed": 657,
+    "failed": 0,
+    "skipped": 4
+  },
+  "scopeNotes": [
+    "Full regression ran before three final CLI/interruption/missing-command tests and the decision resume hint were added.",
+    "Final node regression reran all 15 workflow integration cases and all 3 core runner cases, including those final changes.",
+    "Coverage combines the full run with only the 3 new tests. The other final node cases overlap and are not added twice.",
+    "Initial focused failures were invalid fixtures: fixRounds below the minimum, then a test strategy referencing an undeclared command. Corrected and rechecked.",
+    "The 4 platform skips are existing Windows case-sensitive filename and Unix permission tests."
+  ],
+  "limitations": [
+    "No new live Claude Code interaction or token/time savings measurement.",
+    "Parallel sessions mutating the same work are not validated.",
+    "Agent and human nodes return handoffs; they do not invoke a model or fabricate approvals."
+  ]
+}
