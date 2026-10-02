@@ -16,7 +16,7 @@
 
 실행은 **Claude Code 안에서 모델이 도구를 직접 쓰는 구조**다. `code-agent init`은 스킬(`.claude/skills/ca-*`), 서브에이전트(`.claude/agents/ca-*`), hook과 `CLAUDE.md` 블록을 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`로 공통 접수한다. 신규·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`로 종류를 명시할 수도 있다.
 
-메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 6개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다.
+메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 8개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다. 같은 이벤트의 `planning-event` 2개는 ca-analyst·ca-explorer·ca-writer·ca-critic의 실제 계획 작업 결과를 기록한다.
 
 기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초 기준 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
@@ -95,7 +95,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 | **요구사항 범위 역공학** | 요구사항이 닿는 코드만 **깊게** | 작업마다 | 02 분석 보고서 · 03 기술 설계 | P3 ✅ / P4 ✅ |
 
 전체를 깊게 분석하는 층은 두지 않는다 — 그 자리를 KNOWLEDGE 가 **반영마다 조금씩** 대신한다.
-요구 항목이 닿는 키가 이미 KNOWLEDGE 에 있으면 explorer 를 붙이지 않고 인용한다(토큰이 줄어드는 자리).
+KNOWLEDGE 키가 있어도 explorer가 현재 코드와 호출자 영향을 확인한다. 동일 작업의 입력 해시가 같은 조사 결과만 재사용하며 오래된 지식을 확정 사실로 취급하지 않는다.
 
 ### 2.4 작업 문서 — `doc/work/<ID>/`
 
@@ -109,8 +109,8 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 | `questions.md` | 전 구간 | 모델이 묻고 사람이 답 | `[Answer]:` 가 비면 전환 거부 | — |
 | `01-requirements.md` ① | 2 `analysis` | 모델 (ca-analyst) | `## R<n>` 1개 이상·중복 없음 · 각 R 에 `근거:` · `## 가정` 존재 | ✔ |
 | `02-analysis.md` ② | 3 `impact` | 모델 (explorer→writer) | 필수 3섹션 + **`영향 범위` 표 첫 열에 모든 R** | ✔ |
-| `03-design.md` ③ | 4 `design` | 모델 (ca-writer) | 필수 5섹션이 filled 또는 `해당 없음 — <근거>` | ✔ |
-| `04-functional.md` ④ | 4 `design` | 모델 (ca-writer) | 필수 4섹션 · AC 중복 없음 · **R 마다 AC 1개 이상** | ✔ |
+| `03-design.md` ③ | 4 `design` | 모델 결과 + 관찰 hook | 필수 5섹션이 filled 또는 `해당 없음 — <근거>` | ✔ |
+| `04-functional.md` ④ | 4 `design` | 모델 결과 + 관찰 hook | 필수 4섹션 · AC 중복 없음 · **R 마다 AC 1개 이상** | ✔ |
 | `plan.json` ⑤ | 5 `plan` | 모델 → `plan submit` | 스키마 · R 커버리지 · openQuestions 0 · preserve 전량 · 경로 경계 | planHash |
 | `05-plan.md` ⑤ | 5 `plan` | **코드** (렌더) | 없음 — 파생물. hook 이 모델 쓰기 거부 | — (planHash 가 덮는다) |
 | `07-test-spec.md` ⑦ | 5 `plan` | 모델 (구현 전) | TC 표 파싱 · AC 실재 · **모든 AC 가 TC 에 덮임** | ✔ |
@@ -181,8 +181,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | — | 요구사항 접수 (`request`) | 요구사항 | 사람이 **말로** 준 것(서술·티켓·파일)을 `request.json` 으로 정리 → 코드가 `requirement.md` 렌더 → **사람이 같은 세션에서 확정**. 커서가 아직 없어 스테이지 번호가 없다 (문서 세션처럼 **접수 세션**으로 돈다) | 메인 (ca-request) + CLI | **사람 확정 (같은 세션)** — 확정된 지시서만 `start` 가 받는다 | ✅ (2026-10-01) |
 | 2 | 요구사항 분석 `analysis` | 요구사항 분석·명세화 | ① `01-requirements.md` — 요구 항목(`## R<n>`), 기본값은 `## 가정`, 모호·누락·충돌은 질문 | 메인 + analyst | 질문 · R 형식 | P4 ✅ (P3 의 `analysis.md`) |
 | 3 | 영향도 분석 `impact` | 영향도 분석 | ② `02-analysis.md` — 기존 시스템 분석 · 영향 범위 · Risk (**항상**, 크기는 작업에 맞게) | 메인 + explorer × 영역 → writer | 질문 · 필수 섹션 · **영향 표에 모든 R** | P4 ✅ |
-| 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + writer | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 ✅ |
-| 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | 메인 → critic | **사람 승인 (같은 세션)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 ✅ |
+| 4 | 설계·정의 `design` | 시스템 설계 · 기능/API/데이터 정의 | ③ `03-design.md` — 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 (해당 없으면 `해당 없음 — 근거`) + ④ `04-functional.md` — 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 메인 + analyst | 질문 · 필수 섹션 · **R 마다 AC 1개 이상** | P4 ✅ |
+| 5 | 구현 계획 `plan` | 구현 계획 수립 | ⑤ `plan.json` → 코드가 `05-plan.md` 로 렌더(변경 파일 · 작업 순서 · 구현 방법) + ⑦ `07-test-spec.md` — AC 마다 테스트 케이스 | ca-analyst → 관찰된 critic | **사람 승인 (같은 세션)** — 01~04 · 07 · requirement 본문 한 묶음 | P3 ✅ (`plan.json`) · ⑤ 렌더·⑦ P4 ✅ |
 | 6 | 코드 생성 `implement` | 코드 생성 | ⑥ 계획의 단계마다 새 컨텍스트에서. **`fix` 는 `kind:"test"` 단계를 맨 앞으로 세우고** 그 뒤 `code-agent repro` 로 재현을 본다 | implementer (테스트 단계는 tester) | hook — 계획 밖 쓰기 거부 · `fix` 는 재현 전 비-test 계획 파일 쓰기 거부 | P3 ✅ · 재현 P6 ✅ |
 | 7 | 정적 분석·컴파일 `check` | 정적 분석·컴파일 | 품질·보안 기준이 적은 명령 + `build` 를 돌려 증거로 기록 → ⑧ `08-validation.md` (코드만 씀) | CLI | 코드 — `not-run` 은 통과가 아니다 | P5 ✅ |
 | 8 | 테스트 `test` | 테스트 생성·실행 · 결과 분석 | tester가 ⑦의 케이스 작성 → CLI 실행 → ⑧에 TC별 상태 기록 | tester + CLI | 모든 필수 TC의 실제 passed 결과, 이후 테스트 동결 | 구현됨 |
@@ -242,7 +242,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 원문을 지시서 안에 함께 싣는 이유는 하나다 — **확정하는 사람이 원문과 정리를 나란히 읽는 자리**가 있어야 하기 때문이다.
 정리하다 뜻이 달라지는 길과, 모델이 지시서를 지어내 스스로 시작하는 길이 여기 한 자리에서 닫힌다.
 확정된 요구 내용·완료 조건·제약에는 REQ·DONE·CON ID가 붙는다. `sourceTrace`는 이 목록과 분석 R의 `출처:`·`근거:` 인용을 대조하고, 누락·없는 인용·알 수 없는 출처를 거부한다. 손으로 쓴 지시서는 본문 줄에서 출처 목록을 만든다.
-원문→정리본의 의미 보존은 사람의 확정과 분석 검토가 담당한다. 코드의 인용 검사는 의미를 이해하거나 구현 충족을 증명하는 검사가 아니다. ca-writer는 완료 조건을 AC로 옮기고 기존 R→AC→파일→TC 검증이 이어진다.
+원문→정리본의 의미 보존은 사람의 확정과 분석 검토가 담당한다. 코드의 인용 검사는 의미를 이해하거나 구현 충족을 증명하는 검사가 아니다. ca-analyst는 완료 조건을 AC로 구체화하고 기존 R→AC→파일→TC 검증이 이어진다.
 
 **접수 세션이 막는 것** — 세션이 열려 있는 동안 hook 은 그 작업 폴더(`doc/work/<ID>/`) 밖 쓰기를 전부 거부하고,
 `requirement.md` 는 그 안에 있어도 거부한다(코드가 렌더하는 파일이다). 선언된 빌드·테스트 명령도 열지 않는다 —
@@ -391,11 +391,11 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 서브에이전트 | 스테이지 | 도구 | 하는 일 | 상태 |
 |---|---|---|---|---|
 | `ca-surveyor` | 1 | 읽기 전용 | 뼈대 역공학 — 영역 하나(빌드·구조·계층 표본)를 맡아 근거 경로가 달린 분석. 여럿 병렬 | P2 ✅ |
-| `ca-analyst` | 2 | 읽기 전용 | 요구 항목화, 모호·누락·충돌을 질문 후보로, 항목별 "데이터·접점을 건드리는가" 판정 | P3 ✅ |
+| `ca-analyst` | 2, 4, 5 | 읽기 전용 | 요구 구체화·설계 대안·AC·구현 Task 판단. 신규 작업의 문서는 관찰 hook이 생성 | P3 ✅ |
 | `ca-explorer` | 3 | 읽기 전용 | 요구사항 범위 역공학 — 닿는 영역 하나의 관련 파일·호출 경로·현행 데이터·API. 영역마다 병렬 | P3 ✅ · P4 부터 `impact` 에서 돈다 |
-| `ca-writer` | 1, 3, 4 | 쓰기 (문서 경로만) | 분석 결과·사용자 답을 문서 스키마 섹션에 맞춰 문서로 | P2·P3 ✅ |
+| `ca-writer` | 1, 3 | 문서 도구 (신규 계획 문서는 hook 기록) | 확정 재료 정리. 신규 synthesis는 조사 결과를02 본문으로 반환 | P2·P3 ✅ |
 | `ca-critic` | 5 | 읽기 전용 | 계획 반박 검토 — 빠진 요구 항목, 계획 밖 파일 필요성, 테스트 공백, 작업 문서와의 불일치 | P3 ✅ |
-| `ca-implementer` | 6, ↺ | 쓰기 (hook 강제) | 단계 하나. `code-agent context` 로 받은 것만 읽고 시작 | P3 ✅ |
+| `ca-implementer` | 6, ↺ | 쓰기 (hook 강제) | 현재 Task 하나. `code-agent context` 로 받은 것만 읽고 시작 | P3 ✅ |
 | `ca-tester` | 6 (`kind:"test"` 단계), 8 | 쓰기 (테스트 경로만) | 테스트 작성. 구현과 다른 컨텍스트라 구현을 베끼지 않는다. 첫 검증 뒤에는 언다 | P5 ✅ |
 | `ca-reviewer` | 9 | 읽기 전용 | 컨벤션·요구사항 충족·참조 코드와의 차이. 고칠 목록만 낸다 — 항목마다 **계획 파일 경로**를 적고, 저장소를 다시 훑지 않는다(`context` 가 준 목록·증거만) | P5 ✅ |
 
@@ -406,21 +406,29 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
             ↓ 질문 답변
 [3 영향도] ca-explorer × 닿는 영역 (병렬) ── 관련 코드 · 호출 경로 · 현행 데이터·API · 공통 모듈 파급
            code-agent context ──────────── 참조 도메인의 단계별 표준 파일·컨벤션 (결정론적)
-           KNOWLEDGE 에 키가 있으면 ────── explorer 없이 인용
+           KNOWLEDGE 키 ── explorer가 코드 근거 확인 후 인용
             └─ 메인 + ca-writer → ② 02-analysis.md (기존 시스템 · 영향 범위 · Risk)
-[4 설계]   메인 + ca-writer ── ③ 03-design.md (구성 요소 · 흐름 · API · 데이터 · 결정)
+[4 설계]   메인 + ca-analyst ── ③ 03-design.md (구성 요소 · 흐름 · API · 데이터 · 결정)
                                ④ 04-functional.md (기능 · 업무 규칙 · 예외 · AC)
             └─ 빈칸(확인 필요) → 질문 또는 가정 → 반영
-[5 계획]   메인: ⑤ plan.json (단계·파일·담당 R·작업 순서·구현 방법) + ⑦ 07-test-spec.md (AC 마다 TC)
-            └─ ca-critic ── 반박 → 메인이 반영하거나 질문으로
+[5 계획]   ca-analyst: ⑤ plan.json (단계·파일·담당 R·작업 순서·구현 방법) + ⑦ 07-test-spec.md (AC 마다 TC)
+            └─ ca-critic ── 관찰된 반박 결과 → 원인 작업 재실행 또는 질문
            code-agent plan submit ── 게이트 · 스키마 · R 커버리지 · AC→TC 커버리지 · preserve · 경로, 저장 · 05-plan.md 렌더
            사람: 같은 세션의 plan 확인 ── 계획 + 01~04 · 07 · 지시서 본문 한 묶음
 ```
 
-**단계 병렬** — 계획이 서로 파일을 공유하지 않는 단계를 표시하면, 메인이 implementer 를 병렬로 부른다.
+**영역 조사 병렬** — 선행 결과가 준비된 explore를 기본 3개, 최대 4개까지 배정한다. 구현은 승인된 tasks의 순서대로 현재 Task를 수행한다.
 
 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 — 탐색도 가벼운 모델로 내리지 않는다 (2026-09-29 결정: 품질 우선). 정의 파일마다 `model:` 을 박아 각자 PC 의 기본 모델에 맡기지 않는다. 사람은 `code-agent model <에이전트|all> <opus|sonnet|haiku>` 로 바꿀 수 있고(같은 세션의 model 확인 또는 직접 TTY), 설정은 `.code-agent/models.json` 에 남아 다시 설치해도 유지된다. implementer 를 sonnet 으로 내릴지는 P5 실측(수정 횟수·비용)으로 정한다.
 비용은 모델이 아니라 구조로 줄인다 — 읽을 참조 코드를 코드가 골라 주고, explorer 는 영역별로 묶고, critic 은 계획이 가리키는 것만 읽는다.
+
+### 4.1 관찰된 계획 작업 (2026-10-02)
+
+신규 start는 `planningVersion: 1`을 기록한다. 이전 작업에는 필수 게이트를 소급하지 않는다. `planning.ts`의 준비·배정은 DAG·출력 소유·동시 실행 수·재시도를 검사하고 `planningHook.ts`가 실제 세션·에이전트·배정 식별자·입력 해시를 확인해 결과를 반영한다. 입력·영역 파일·관련 질문·선행 결과 변경은 `planningState.ts`에서 재사용을 무효화한다. 영역 사실의 같은 키가 충돌하면 합성을 막는다.
+
+`planningValidation.ts`는 필수 작업 문서의 미결 표시·실재 근거·AC 내용·BR 근거를 검사한다. plan 제출과 승인에는 현재 입력에 대한 critic 완료와 차단 지적 해소가 필요하다. 승인 해시에 작업 정의와 관찰 결과도 포함한다. 승인 후 정상 구현은 조사 당시 소스 변경만으로 승인을 깨지 않는다.
+
+설계·기능 명세와 계획 판단은 ca-analyst, 영향도 문서 정리는 ca-writer가 맡는다. 구현 tasks는 파일별 단일 소유·선행 Task·AC를 가지며 단계 안에서 별도 커서로 실행한다. 상세 계약과 호환성은 [계획 작업 안내](planning.md)를 따른다.
 
 ## 5. 강제 — 모델이 어겨도 막히는 것
 
@@ -633,7 +641,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 대상 저장소에 생기는 것 | 커밋 | 상태 |
 |---|---|---|
-| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 6개, `.code-agent/version` | O | P1 ✅ |
+| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 8개, `.code-agent/version` | O | P1 ✅ |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O | P1 ✅ · `prepare` P6 ✅ · `plugins` P7 ✅ |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 ✅ 갱신 |
@@ -699,7 +707,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
-| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review hook 등록 6개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
+| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review hook 등록 8개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초 기준 커밋(TTY) | ✅ |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |

@@ -7,7 +7,7 @@
 
 ---
 
-검증 노드 실행기 도입 후에도 새 패키지·서버·필수 설정은 없다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 ca-check·ca-test·ca-next와 CLAUDE 블록을 함께 갱신한다. Claude Code를 다시 열고 `code-agent --help`의 `verify` 항목과 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 기존 증거로 재개한다. 변경 이력은 [문서·검증 이력](reviews/README.md)에 있다.
+관찰된 계획 작업과 검증 노드 실행기 도입 후에도 새 패키지·서버·필수 설정은 없다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 분석·영향도·설계·계획·구현·검증 스킬과 에이전트 정의·CLAUDE 블록·planning-event hook을 함께 갱신한다. Claude Code를 다시 열고 `code-agent --help`의 `planning`·`verify` 항목과 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 기존 증거로 재개한다. 변경 이력은 [문서·검증 이력](reviews/README.md)에 있다.
 
 ## 목차
 
@@ -30,7 +30,7 @@
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | 로컬 Git 소스 연결은 `code-agent update`. 비Git 패키지는 재설치 후 `update --templates-only` | 새 파일로 교체한 뒤 `update --templates-only` |
 
-어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개, 서브에이전트 8개와 hook 6개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
+어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개, 서브에이전트 8개와 hook 8개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -104,7 +104,7 @@ claude
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| hook 등록 6개 | `.claude/settings.json` — PreToolUse `hook`, PreToolUse·PostToolUse `consent-event`, Stop `stop`, SubagentStart·SubagentStop `review-event` | O |
+| hook 등록 8개 | `.claude/settings.json` — PreToolUse `hook`, PreToolUse·PostToolUse `consent-event`, Stop `stop`, SubagentStart·SubagentStop `review-event`·`planning-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -167,7 +167,7 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
 | git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 필요한 최초 기준 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| hook 등록 6개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
+| hook 등록 8개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 `model:` 줄은 빼고 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
@@ -215,7 +215,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 
 | 무엇 | 어떻게 |
 |---|---|
-| `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 6개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
+| `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 8개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
 | 에이전트별 모델(`.code-agent/models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
 | 개발용 `--cli` | 현재 번들만 적용할 때는 기존 개발 CLI 경로를 승계한다. 기본 소스 갱신은 새로 빌드한 CLI를 연결하며, `--cli`를 명시하면 지정한 경로를 적용한다 |
@@ -248,7 +248,7 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 | # | 무엇 | 어떻게 |
 |---|---|---|
 | 1 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` 삭제 |
-| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent consent-event`(PreToolUse·PostToolUse), `code-agent stop`(Stop), `code-agent review-event`(SubagentStart·SubagentStop) 등록 6개를 제거한다. **설정 파일 전체를 지우지 않는다** |
+| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent consent-event`(PreToolUse·PostToolUse), `code-agent stop`(Stop), `code-agent review-event`·`code-agent planning-event`(각 SubagentStart·SubagentStop) 등록 8개를 제거한다. **설정 파일 전체를 지우지 않는다** |
 | 3 | 블록 | `CLAUDE.md` · `.gitignore` 의 `code-agent:start` ~ `end` 블록 제거 (블록 밖은 그대로) |
 | 4 | 진행 상태 | `.code-agent/` 는 **남긴다** — 승인·확정 원장과 검증 증거가 git 이력에 남은 커밋의 근거다. 정말 지울 것이면 그 이력도 근거를 잃는다는 것을 알고 지운다 |
 | 5 | 도구 | npm 전역이면 `npm rm -g code-agent`, 단일 실행 파일이면 그 파일 삭제 |

@@ -1,0 +1,102 @@
+# 요구 분석·설계·계획 작업
+
+2026-10-02부터 새로 시작한 작업은 실제 서브 에이전트 실행 결과를 연결해 다음 단계로 진행한다. 이전 버전에서 시작한 작업은 기존 절차로 재개한다. `code-agent status`의 **계획 처리** 줄로 구분한다.
+
+## 역할과 게이트
+
+| 단계 | 담당 | 입력 | 출력 | 다음으로 넘어가는 조건 |
+|---|---|---|---|---|
+| 요구 구체화 | ca-analyst | 확정 지시서·공통 정책 | 01-requirements.md | 원문 대조·관찰된 완료·미결 없음 |
+| 영역 조사 | ca-explorer | 담당 요구·영역 파일·선행 문서 | 근거·공통 사실·질문 | 각 영역의 현재 입력에 대한 완료 |
+| 영향도 정리 | ca-writer | 모든 영역 조사 결과 | 02-analysis.md | 조사 합류·공통 사실 충돌 없음 |
+| 설계·기능 정의 | ca-analyst | 요구·영향도·실제 근거 | 03-design.md·04-functional.md | 설계 판단·구체적 AC·근거 있는 BR |
+| 구현 계획 | ca-analyst | 설계·기능·정책 | plan.json·07-test-spec.md | Task·파일·AC·TC 연결 |
+| 독립 반박 검토 | ca-critic | 현재 계획과 선행 문서 | 근거와 지적 | 관찰된 완료·blocking 지적 없음 |
+| 승인 | 사용자 | 검토를 마친 문서·계획 | 승인 원장 | 기존 같은 세션 동의 또는 직접 TTY |
+
+배정·입력 해시·의존성·파일과 줄·문서 형식 검사는 코드가 실행한다. 해석·설계·반박은 에이전트가 수행하고 업무 질문과 승인은 사용자가 결정한다. CLI가 모델 API를 직접 호출하지 않는다. 메인이 배정 결과에 지정된 Claude Code 서브 에이전트를 호출한다.
+
+## 기본 진행
+
+```powershell
+code-agent planning prepare
+code-agent planning status
+code-agent planning dispatch analysis
+```
+
+`prepare`를 인자 없이 실행하면 **현재 단계**의 기본 작업을 등록한다. analysis는 `analysis`, impact는 `explore`와 `synthesis`, design은 `design`, plan은 `plan`과 `critic`이다. 의존 순서대로 배정한다. 현재 입력의 완료 결과가 있으면 `dispatch`는 `cached: true`로 결과를 반환한다.
+
+새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 반환한다. 메인은 이 내용을 담당에게 넘긴다. 담당은 파일을 직접 쓰지 않고 계약에 맞는 JSON 하나를 반환한다. SubagentStart·SubagentStop의 `planning-event`가 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 메인이 임의로 완료를 신고하는 명령은 없다.
+
+문서와 결과가 준비되면 기존 `code-agent next`를 사용한다. plan은 `code-agent plan submit doc/work/<ID>/plan.json`으로 제출한 뒤 사용자 승인을 받는다. 신규 작업에서는 메인·서브 에이전트의 일반 Write/Edit로 번호 문서와 plan.json을 덮어쓸 수 없다.
+
+## 영역 분할
+
+영역별 조사 작업과 모든 조사에 의존하는 합성 작업을 같은 배치에 등록한다. 기본 조사를 이미 등록했다면 `explore` ID를 첫 영역으로 갱신하고 다른 영역을 더한다.
+
+```json
+{
+  "maxParallel": 2,
+  "tasks": [
+    {
+      "id": "explore", "role": "explore", "title": "주문 영역 조사",
+      "requirements": ["R1"],
+      "inputs": ["doc/work/ORD-1/requirement.md"],
+      "scopes": ["src/order"], "outputs": [],
+      "dependsOn": ["analysis"], "questionIds": []
+    },
+    {
+      "id": "common", "role": "explore", "title": "공통 영역 조사",
+      "requirements": ["R1"],
+      "inputs": ["doc/work/ORD-1/requirement.md"],
+      "scopes": ["src/common"], "outputs": [],
+      "dependsOn": ["analysis"], "questionIds": []
+    },
+    {
+      "id": "synthesis", "role": "synthesis", "title": "영향도 정리",
+      "requirements": ["R1"],
+      "inputs": ["doc/work/ORD-1/requirement.md"],
+      "scopes": [], "outputs": ["doc/work/ORD-1/02-analysis.md"],
+      "dependsOn": ["explore", "common"], "questionIds": []
+    }
+  ]
+}
+```
+
+```powershell
+code-agent planning prepare doc/work/ORD-1/planning-tasks.json
+code-agent planning dispatch explore
+code-agent planning dispatch common
+```
+
+동시 배정은 기본 3개, 설정 범위는 1~4개다. 영역 밖 호출자나 설정을 발견하면 작업의 `inputs` 또는 `scopes`를 보완해 재배정한다. 서로 다른 조사의 동일 `facts.key` 값이 충돌하면 합성을 막는다. 자연어 표현이 다른 사실의 의미상 충돌은 critic이 추가로 판단한다.
+
+## 재사용·질문·복구
+
+- 같은 작업에서 입력 내용·영역 파일 목록·기준 커밋·매니페스트·공통 정책·선행 결과·관련 질문이 같을 때만 결과를 재사용한다. 파일의 추가·삭제·내용 변경도 반영한다.
+- KNOWLEDGE의 키 존재만으로 조사를 생략하지 않는다. 참조한 KNOWLEDGE는 `inputs`에 넣고 현재 코드 근거를 확인한다. 다른 작업의 지식을 자동으로 최신 사실로 인정하지 않는다. `knowledge prune`은 삭제 후보를 찾는 경로 존재 검사이며 내용의 최신성 검사가 아니다.
+- 질문 결과는 `needs-input`으로 반환한다. 코드가 questions.md에 빈 답변과 영향 요구를 기록한다. 실제 답을 받은 뒤 관련 작업을 다시 배정한다. `[Requirements]: R1`처럼 범위를 적으며 범위 없는 질문은 전체 작업에 영향을 준다.
+- `[Answer]: 보류`, 상태 설명만 있는 답변, 중복 Q 번호는 미응답이다. `[Status]`를 명시한 문서는 실제 답을 기록할 때 `answered`로 갱신해야 한다.
+- 중단된 배정은 `code-agent planning cancel <ID>`로 취소한다. 늦게 온 이전 배정 결과는 적용하지 않는다. 같은 입력에 대한 배정은 최대 3회다. 이후에는 원인을 조사하고 입력·작업 정의를 보완한다.
+- 피드백은 작업 폴더의 별도 파일에 기록해 해당 작업의 `inputs`에 추가한다. 단계가 지났으면 기존 back 정책에 따라 돌아가 원인 작업부터 재실행한다. 후속 결과와 critic 검토도 다시 필요하다.
+- 상태는 `.code-agent/work/<ID>/<target>.planning.json`에 보관한다. 짧은 파일 잠금으로 병렬 완료 기록의 덮어쓰기를 방지한다. 비정상 종료로 `.lock`이 남으면 관련 프로세스가 종료됐음을 확인한 뒤 그 잠금 파일만 제거한다.
+
+필수 작업 문서에 `확인 필요`·`TODO`·`TBD`가 있으면 전환·제출·승인을 막는다. 근거 파일·줄이 존재해야 하고 AC는 번호 외에 완료 조건을 가져야 한다. BR은 실제 파일:줄 또는 답변된 Q 번호를 연결한다. 내용의 타당성·충분성은 독립 검토와 사용자 승인이 판단한다.
+
+## 구현 Task
+
+신규 계획에는 기존 `sequence`와 함께 `tasks`가 필수다.
+
+```json
+{
+  "id": "T1", "stage": "app", "title": "주문 조회 구현",
+  "requirements": ["R1"], "files": ["src/order/query.ts"],
+  "dependsOn": [], "acceptance": ["AC-R1-1"]
+}
+```
+
+각 계획 파일의 소유자는 정확히 하나다. 의존성은 앞 Task를 가리키고 순서는 `sequence`의 단계 순서를 따른다. 같은 단계 안에 여러 Task를 둘 수 있다. `context`와 `status`는 현재 Task를 표시하며 hook은 그 Task에 배정된 파일만 구현하도록 제한한다. `next`는 현재 Task 파일 존재를 확인하고 다음 Task로 이동한다. 파일 존재는 검증 완료를 뜻하지 않는다. 최종 완료는 check·test·독립 리뷰·통합 검증으로 판정한다. fix는 테스트 단계의 마지막 Task를 넘기기 전에 재현 증거가 필요하다.
+
+계획 승인은 관찰된 계획 작업 기록에도 묶인다. 검토·작업 정의를 바꾸면 다시 승인받아야 한다. 승인 전에 소스 입력이 바뀌면 조사·검토를 다시 해야 하며, 승인 후 계획에 따른 정상 구현은 조사 당시 소스와 다르다는 이유만으로 승인을 무효화하지 않는다.
+
+이 변경은 동일 입력의 중복 호출을 줄이는 구조를 제공한다. 실제 모델의 토큰 절감량·지연·판단 품질은 별도 실측 대상이다. 검증 근거는 [변경 기록](reviews/2026-10-02-planning-orchestration.md)에 보관한다.
