@@ -1,9 +1,11 @@
 # 설치 — npm 전역 · 단일 실행 파일
 
+Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host claude|codex|both`를 사용한다. Codex의 설치 경로·사용자 응답·훅 신뢰·갱신·제거는 [Codex 연동](codex.md)에 정리했다. 아래 Claude 전용 경로와 훅 수는 Claude 설치 기준이다. 두 호스트의 기준 커밋에는 `.code-agent/hosts.json`도 포함된다.
+
 > 흐름과 무엇을 치는가는 [usage.md](usage.md), 설계와 근거는 [design.md](design.md).
 > 이 문서는 **어디에 깔고 · 무엇이 생기고 · 어떻게 점검하고 · 어떻게 지우는가**다.
 
-`code-agent init`은 프로젝트에 절차 파일과 hook을 설치하고 종료한다. 실제 실행은 **같은 프로젝트에서 `claude` → `/ca-request <요구사항>`** 순서다. Claude Code가 프로젝트 스킬·서브에이전트를 읽으므로 별도 에이전트 등록이나 상주 서버는 필요 없다. Claude Code의 설치·인증, Git, 개발할 프로젝트의 실행 환경은 별도로 준비한다.
+`code-agent init`은 프로젝트에 절차 파일과 hook을 설치하고 종료한다. 실제 실행은 같은 프로젝트에서 Claude의 `/ca-request <요구사항>` 또는 Codex의 `$ca-request <요구사항>`으로 시작한다. 호스트가 프로젝트 스킬·서브에이전트를 읽으므로 별도 에이전트 등록이나 상주 서버는 필요 없다. 사용할 호스트의 설치·인증, Git, 개발할 프로젝트의 실행 환경은 별도로 준비한다.
 
 ---
 

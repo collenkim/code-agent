@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "fs";
+import { runCodexHook } from "./codexHook";
+import { parseHost } from "./hosts";
 
 import {
   abort,
@@ -42,19 +44,20 @@ import { renderVerification, verify } from "./verificationFlow";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
-실행: 프로젝트에서 code-agent init → claude → /ca-request <요구사항>
+실행: code-agent init --host claude → claude → /ca-request <요구사항>
+      code-agent init --host codex → codex → $ca-request <요구사항>
   init은 스킬·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
   /ca-request는 모든 요구사항 접수, /ca-feature는 신규·기능 변경, /ca-fix는 결함 수정, /ca-refactor는 동작 보존 구조 개선입니다.
   질문·확정·승인은 현재 Claude Code의 선택 도구에서 처리하고 자동으로 이어갑니다. 중단한 작업은 /ca-next 로 재개합니다.
 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
-  code-agent init [--cli <path>]      이 저장소에 설치 (.claude/ 스킬·에이전트·hook, CLAUDE.md 블록)
+  code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 스킬·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
-  code-agent doctor                   설치·환경 점검 — ✓ 확인 · ✗ 막는 것 · · 알림. ✗ 가 없으면 종료 코드 0
+  code-agent doctor [--host claude|codex|both]  설치·환경 점검 (생략하면 설치된 호스트)
   code-agent update [--cli <path>]    Git 소스 설치: upstream 갱신·의존성·빌드·프로젝트 적용·점검
-  code-agent update --templates-only [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
+  code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
   code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
@@ -107,6 +110,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent integrate                12 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
 
 hook 이 부른다:
+  code-agent codex-event              Codex 도구·사용자 메시지·서브 에이전트·종료 관찰 (stdin JSON)
   code-agent hook                     PreToolUse 판정 (stdin JSON)
   code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
   code-agent planning-event           분석·조사·설계·계획 담당의 시작·완료 관찰 (stdin JSON)
@@ -149,6 +153,7 @@ function positional(args: string[], valued: string[]): string[] {
 /** 검증 명령은 자식 프로세스를 기다린다 — main 이 async 인 유일한 이유다 */
 async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
+  if (command === "codex-event") return runCodexHook(readFileSync(0, "utf-8"));
   if (command === "hook") {
     return runHook(readFileSync(0, "utf-8"));
   }
@@ -180,18 +185,18 @@ async function main(argv: string[]): Promise<number> {
       print(args[0] === "baseline" ? setupBaseline(repoRoot) : setupStatus(repoRoot));
       return 0;
     case "init":
-      print(init(repoRoot, { cli: option(args, "cli") }));
+      print(init(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
     case "status":
       print(status(repoRoot));
       return 0;
     case "doctor": {
-      const report = doctor(repoRoot);
+      const report = doctor(repoRoot, parseHost(option(args, "host")));
       print(report.text);
       return report.ok ? 0 : 1;
     }
     case "update":
-      print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli") }) : updateFromSource(repoRoot, { cli: option(args, "cli") }));
+      print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }) : updateFromSource(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
     case "usage":
       print(usage(repoRoot, { work: option(args, "work"), since: option(args, "since") }));

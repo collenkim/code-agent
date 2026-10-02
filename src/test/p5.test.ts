@@ -1010,7 +1010,7 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     const path = join(repo, reviewDocFile("ORD-1"));
     writeFileSync(path, `${readFileSync(path, "utf-8")}\n- 없음\n`);
     assert.throws(() => next(repo), /독립 리뷰어 실행·완료 기록이 없습니다/);
-    assert.match(hook("Bash", { command: "code-agent review-event" }) ?? "", /Bash/);
+    assert.match(hook("Bash", { command: "code-agent review-event" }) ?? "", /호스트 hook/);
   });
 
   test("리뷰어의 짝이 맞는 시작·완료와 수정되지 않은 결과만 통과한다", async () => {
@@ -1661,7 +1661,7 @@ describe("스테이지 명령", () => {
     write("doc/work/ORD-1/plan.json", JSON.stringify(PLAN));
     submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
     // 승인 대기는 사람의 자리라 스킬을 부르지 않는다
-    assert.match(status(repo), /다음: 현재 Claude 세션[\s\S]*plan 동의 절차/);
+    assert.match(status(repo), /다음: 현재 호스트 세션[\s\S]*plan 동의 절차/);
     approve();
     assert.match(status(repo), /승인됨 — code-agent next 로 넘긴 뒤 \/ca-implement/);
     next(repo);
@@ -1688,7 +1688,7 @@ describe("스테이지 명령", () => {
 
     await integrate(requireValidatable(repo, "integrate"));
     next(repo);
-    assert.match(status(repo), /다음: 현재 Claude 세션[\s\S]*deliver 동의 절차/);
+    assert.match(status(repo), /다음: 현재 호스트 세션[\s\S]*deliver 동의 절차/);
   });
 });
 

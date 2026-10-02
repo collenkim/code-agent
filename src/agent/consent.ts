@@ -45,6 +45,7 @@ export interface ConsentRecord {
   observed?: { toolId: string; at: string; answers: Record<string, string> }[];
   result?: string;
   sourceSnapshot?: string;
+  channel?: "claude-question" | "codex-prompt";
 }
 const DIR = ".code-agent/consents";
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -255,7 +256,10 @@ export function consentStatus(root: string, id: string): string {
   const record = loadConsent(root, id);
   const items = record.status === "pending" ? questions(record) : [];
   return JSON.stringify({id, status:record.status, summary:record.summary, questions:items,
-    toolInput:{questions:items,metadata:{source:`code-agent:${id}`}}, result:record.result}, null, 2);
+    toolInput:{questions:items,metadata:{source:`code-agent:${id}`}},
+    codexReply: items.length ? {format:`code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결>`,
+      questions: items.map(q => ({question:q.question, choices:q.options.map((o,index) => ({number:index+1,...o}))}))} : undefined,
+    result:record.result}, null, 2);
 }
 export function prepareConsent(root: string, raw: unknown): string {
   root = canonicalRoot(root);
@@ -281,7 +285,7 @@ export interface ConsentHookInput {
   tool_response?: unknown;
 }
 /** 신뢰하는 로컬 hook의 실행 입력을 관찰한다. OS 보안 경계나 사용자 신원 증명은 아니다. */
-export function observeConsent(input: ConsentHookInput, projectDir?: string): void {
+export function observeConsent(input: ConsentHookInput, projectDir?: string, channel: "claude-question" | "codex-prompt" = "claude-question"): void {
   if (input.tool_name !== "AskUserQuestion") return;
   if (input.hook_event_name !== "PreToolUse" && input.hook_event_name !== "PostToolUse") return;
   const source = input.tool_input?.metadata?.source;
@@ -301,6 +305,7 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string): vo
   const sessionId = input.session_id, toolId = input.tool_use_id;
   withConsentLock(root, () => {
   const record = loadConsent(root,id);
+  if (record.channel && record.channel !== channel) throw new Stop("동의를 시작한 호스트와 다릅니다. 새로 준비하세요.");
   if (record.status !== "pending") throw new Stop("이미 응답했거나 종료한 확인 요청입니다.");
   if (record.snapshot !== consentSnapshot(root,record.action)) throw new Stop("확인 대상이 바뀌었습니다. 변경 내용을 다시 준비해 확인하세요.");
   if (record.sessionId && record.sessionId !== sessionId) throw new Stop("다른 세션의 확인 요청입니다. 현재 세션에서 새로 준비하세요.");
@@ -310,6 +315,7 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string): vo
     if (!isDeepStrictEqual(items, questions(record))) throw new Stop("CLI가 준비한 질문과 선택지를 그대로 사용하세요.");
     if (record.seenToolIds?.includes(toolId) || record.observed?.some(row => row.toolId === toolId)) throw new Stop("이미 관찰한 질문 호출입니다. 새 질문으로 다시 확인하세요.");
     record.sessionId = sessionId;
+    record.channel = channel;
     record.sessionCwd = cwd;
     (record.seenToolIds ??= []).push(toolId);
     record.binding = {toolId,questions:items,cwd};
@@ -386,7 +392,7 @@ function applyLocked(root: string, id: string): string {
   if (pluginPreview !== undefined && record.summary !== `${TITLES[action.action]}\n\n${pluginPreview}`) throw new Stop("플러그인 설명이 바뀌었습니다. 다시 확인하세요.");
   if(record.snapshot!==consentSnapshot(root,record.action))throw new Stop("실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
   record.status="applying";save(root,record);
-  const presence:Presence={channel:"claude-question",verified:true,detail:`Claude Code 질문 ${id} · 세션 ${record.sessionId} · 명시적 선택`};
+  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · 명시적 선택`};
   try {
     record.result=withInteraction({
       confirm(shown,word){
@@ -407,7 +413,7 @@ function applyLocked(root: string, id: string): string {
         case "abort": return abort(root);
         case "plugin-add": return pluginAdd(root,action);
         case "plugin-remove": return pluginRemove(action.name);
-        case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot}) + "\nClaude Code를 다시 열어 새 hook·스킬을 적용한 뒤 /ca-next로 이어가세요.";
+        case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot}) + "\n사용 중인 호스트를 다시 열어 새 훅·스킬을 적용한 뒤 ca-next로 이어가세요.";
       }
     });
     record.status="applied";save(root,record);return record.result;

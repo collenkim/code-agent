@@ -85,7 +85,7 @@ function inventory(root: string): string[] {
     const files: string[] = [];
     const visit = (dir: string): void => {
       for (const entry of readdirSync(resolve(root, dir), { withFileTypes: true })) {
-        if (entry.isSymbolicLink() || [".git", ".code-agent", ".claude", "node_modules", "dist", "build", "target", ".venv", "venv"].includes(entry.name)) continue;
+        if (entry.isSymbolicLink() || [".git", ".code-agent", ".claude", ".codex", ".agents", "node_modules", "dist", "build", "target", ".venv", "venv"].includes(entry.name)) continue;
         const path = dir ? `${dir}/${entry.name}` : entry.name;
         if (entry.isDirectory()) visit(path); else files.push(path);
         if (files.length > 10000) throw new Stop("계획 입력이 1만 파일을 넘었습니다. Git 저장소와 조사 범위를 확인하세요.");
@@ -95,7 +95,7 @@ function inventory(root: string): string[] {
   }
 }
 export function inputFiles(work: Work, task: PlanningTask): string[] {
-  const scoped = task.scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|doc\/work)(?:\/|$)/.test(file) && task.scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
+  const scoped = task.scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(file) && task.scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
   const state = loadPlanning(work), visited = new Set<string>();
   const outputs = (ids: string[]): string[] => ids.flatMap(id => {
     if (visited.has(id)) return [];

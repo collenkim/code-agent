@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-02",
+  "baseCommit": "a887cf02a20cf14ac7f1e4c1a982d92547a73702",
+  "runs": [
+    {
+      "command": "node --test dist/test/codex.test.js",
+      "log": "dist/codex-focused.log",
+      "sha256": "2020da663ea5899b8ecfd1bfff6a42b830228e76e7a974848022cae6c94ae09c",
+      "tests": 15,
+      "suites": 0,
+      "pass": 13,
+      "fail": 2,
+      "skipped": 0,
+      "durationMs": 45097.1896,
+      "note": "최초 검사: 관찰 명령 직접 호출과 기준 커밋 대상 누락 2건을 찾아 수정했다."
+    },
+    {
+      "command": "node --test dist/test/codex.test.js",
+      "log": "dist/codex-focused-final.log",
+      "sha256": "afe5b5507beabbbbf5320e64d2b01f69b708207a330bd037bd9b66b1210ad101",
+      "tests": 15,
+      "suites": 0,
+      "pass": 15,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 44520.29,
+      "note": "두 경로 수정 뒤 집중 검사를 통과했다."
+    },
+    {
+      "command": "npm test",
+      "log": "dist/codex-full-regression.log",
+      "sha256": "1709aeab151e994446ce60b84e212c7f328bfb6f7b5af4fd0ab4cd045e013123",
+      "tests": 695,
+      "suites": 121,
+      "pass": 690,
+      "fail": 1,
+      "skipped": 4,
+      "durationMs": 488848.4173,
+      "note": "전체 회귀. 기존 리뷰 차단 테스트의 과거 안내 문구 기대값 1건은 최종 선택 검사에서 수정·재확인했다."
+    },
+    {
+      "command": "node --test dist/test/codex.test.js dist/test/p8.test.js",
+      "log": "dist/codex-final-install.log",
+      "sha256": "0437115dc242e19eea6ebd478757f43695c9a8b4a0618d3b54134c1e77870d2f",
+      "tests": 68,
+      "suites": 20,
+      "pass": 68,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 50931.0387,
+      "note": "최종 소스의 설치·갱신·점검·동의·계획·전체 Codex 흐름 검사. 초기 검사와 중복이므로 합산하지 않는다."
+    },
+    {
+      "command": "node --test --test-name-pattern '회차와 지적 없음만' dist/test/p5.test.js",
+      "log": "dist/codex-review-message.log",
+      "sha256": "cf4834b520edc143bcc03e17ced37592a8d1246e923901d3caf937f19434c645",
+      "tests": 1,
+      "suites": 1,
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 3476.5083,
+      "note": "전체 회귀에서 실패한 안내 문구 기대값 수정 후 동일 리뷰 차단 사례 재검사. 선택되지 않은 테스트는 이 실행의 검증 범위가 아니다."
+    }
+  ],
+  "finalCoverage": {
+    "uniqueTests": 695,
+    "passed": 691,
+    "failed": 0,
+    "skipped": 4,
+    "method": "전체 회귀의 실패 1개를 동일 테스트의 최종 통과로 대체했다. 후속 설치 검사는 기존 범위와 중복이다."
+  },
+  "checks": {
+    "typecheck": "통과",
+    "diffCheck": "통과",
+    "documentationLinks": "통과"
+  },
+  "codex": {
+    "version": "0.159.3",
+    "features": {
+      "hooks": true,
+      "multi_agent": true
+    },
+    "liveModelRun": false,
+    "uiHookTrustTest": false
+  },
+  "limitations": [
+    "호스트 이벤트는 합성한 테스트 자료다.",
+    "실제 모델 품질·속도·비용은 측정하지 않았다.",
+    "훅 파일 설치와 실제 호스트 신뢰 여부는 다르다.",
+    "Codex 토큰·비용 집계는 아직 지원하지 않는다."
+  ]
+}

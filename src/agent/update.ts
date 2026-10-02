@@ -6,6 +6,7 @@ import { init, installedHook } from "./init";
 import type { InitOptions } from "./init";
 import { loadActive, PHASES, STATE_DIR } from "./layout";
 import { AGENTS, DEFAULT_MODEL, modelOf } from "./models";
+import { hostAssets, selectedHosts } from "./hosts";
 
 // The CLI opts into source updates; update() remains the local template-copy API.
 export { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
@@ -49,6 +50,17 @@ function list(paths: string[]): string {
 }
 
 export function update(repoRoot: string, options: InitOptions = {}): string {
+  return selectedHosts(repoRoot, options.host).map(host => {
+    if (host === "claude") return updateClaude(repoRoot, {...options, host});
+    const assets = hostAssets("codex");
+    const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
+    const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
+    const result = init(repoRoot, {host, cli});
+    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
+  }).join("\n\n");
+}
+
+function updateClaude(repoRoot: string, options: InitOptions): string {
   const version = packageVersion();
   const keys = assetKeys(CLAUDE_ASSETS);
   const before = new Map(keys.map((key) => [key, hashOf(installedPath(repoRoot, key))]));
@@ -60,7 +72,7 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
   // `upsertHook` 은 우리 항목을 걷어내고 새로 넣으므로, 승계하지 않으면 개발용 설치가
   // 조용히 `code-agent hook` 으로 갈아 끼워진다.
   const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "hook"));
-  init(repoRoot, cli ? { cli } : {});
+  init(repoRoot, {cli, host: "claude"});
 
   const shown = (key: string) => `.claude/${key.slice(CLAUDE_ASSETS.length + 1)}`;
   const added = keys.filter((key) => before.get(key) === undefined);

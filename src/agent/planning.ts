@@ -77,7 +77,7 @@ export function preparePlanning(root: string, batch?: unknown): string {
       if (JSON.stringify([...task.outputs].sort()) !== JSON.stringify(outputs.sort())) throw new Stop(`${task.id}: 출력은 ${outputs.join(", ") || "없음"}이어야 합니다.`);
       for (const path of [...task.inputs, ...task.scopes, ...task.outputs]) {
         planningPath(root, path);
-        if (path.includes("\\") || path.startsWith("./") || path.split("/").includes("..") || /^\.(?:git|code-agent|claude)(?:\/|$)/i.test(path)) throw new Stop(`계획 자료 경로가 허용되지 않습니다: ${path}`);
+        if (path.includes("\\") || path.startsWith("./") || path.split("/").includes("..") || /^\.(?:git|code-agent|claude|codex|agents)(?:\/|$)/i.test(path)) throw new Stop(`계획 자료 경로가 허용되지 않습니다: ${path}`);
       }
       if (task.inputs.some(file => task.outputs.includes(file))) throw new Stop("자신의 출력은 입력으로 사용할 수 없습니다.");
       if (task.role !== "explore" && task.scopes.length) throw new Stop("소스 영역은 조사 작업에만 지정합니다. 다른 역할은 선행 조사 결과를 입력으로 받습니다.");

@@ -535,7 +535,7 @@ describe("next — 질문과 승인", () => {
     toPlan();
     submit();
     assert.match(status(repo), /계획: 제출됨 · 승인 none/);
-    assert.match(status(repo), /현재 Claude 세션[\s\S]*plan 동의 절차/);
+    assert.match(status(repo), /현재 호스트 세션[\s\S]*plan 동의 절차/);
   });
 });
 

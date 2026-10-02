@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeAtomic } from "../core/atomic";
 import { STATE_DIR } from "./layout";
 import { requireTerminal } from "./tty";
+import { selectedHosts } from "./hosts";
 
 /**
  * 서브에이전트별 모델.
@@ -52,9 +53,10 @@ export function applyModels(repoRoot: string): void {
 }
 
 export function modelsTable(repoRoot: string): string {
+  if (!selectedHosts(repoRoot).includes("claude")) return "Codex 역할은 부모의 모델·추론 강도를 상속합니다. Codex 설정에서 변경하세요. code-agent model은 Claude 전용입니다.";
   const overrides = readOverrides(repoRoot);
   return [
-    "에이전트별 모델 (기본 opus):",
+    "Claude 에이전트별 모델 (기본 opus):",
     ...AGENTS.map((agent) => `  ${agent.padEnd(12)} ${modelOf(repoRoot, agent)}${overrides[agent] ? "  (바꿈)" : ""}`),
     "",
     `바꾸기: 현재 세션에서 모델 변경을 요청하세요. 수동 TTY 대체 명령: code-agent model <${AGENTS.join("|")}|all> <${MODELS.join("|")}>`,
@@ -62,6 +64,7 @@ export function modelsTable(repoRoot: string): string {
 }
 
 export function setModel(repoRoot: string, who: string | undefined, model: string | undefined): string {
+  if (!selectedHosts(repoRoot).includes("claude")) throw new Error("Codex의 모델·추론 강도는 Codex 설정에서 변경하세요. code-agent model은 Claude 전용입니다.");
   const name = who?.replace(/^ca-/, "");
   if (!name || (name !== "all" && !AGENTS.includes(name as AgentName))) {
     throw new Error(`에이전트는 ${AGENTS.join(", ")} 또는 all 입니다: ${who ?? "(없음)"}`);

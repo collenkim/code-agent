@@ -136,7 +136,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   const repoRoot = canonical(projectDir ?? input.cwd);
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
-    if (/\b(?:consent-event|planning-event)\b/.test(command)) return "실행 관찰 명령은 Claude Code hook만 호출합니다.";
+    if (/\b(?:consent-event|planning-event|review-event|codex-event)\b/.test(command)) return "실행 관찰 명령은 호스트 hook만 호출합니다.";
     const denied = consentCommandGuard(repoRoot, command, input.session_id);
     if (denied) return denied;
   }
@@ -262,6 +262,7 @@ function guardRepo(path: string, target: string): string | undefined {
 }
 
 function stateGuard(path: string): string | undefined {
+  if (/^\.(?:codex|agents|claude)(?:\/|$)/i.test(path)) return "호스트 설정·훅·스킬은 모델이 직접 변경하지 않습니다. 사람이 init 또는 update로 설치합니다.";
   if (path.toLowerCase() === STATE_DIR || path.toLowerCase().startsWith(`${STATE_DIR}/`)) {
     return (
       "작업 상태·제출된 계획·승인과 확정 기록은 도구로 고칠 수 없습니다. " +
@@ -403,7 +404,7 @@ function decideWrite(work: Work, path: string): string | undefined {
   if (approval.status !== "approved") {
     return (
       `계획이 승인되지 않았습니다 (${approval.status}). ` +
-      "현재 Claude 세션에서 ca-answer의 plan 동의 절차로 계획을 승인해야 쓸 수 있습니다."
+      "현재 호스트 세션에서 ca-answer의 plan 동의 절차로 계획을 승인해야 쓸 수 있습니다."
     );
   }
   if (active.phase === "implement" && plan.tasks && !plan.tasks.find(task => task.id === active.task)?.files.includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;

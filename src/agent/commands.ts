@@ -130,7 +130,7 @@ function requirePhase(active: ActiveWork): void {
   if (!(PHASES as readonly string[]).includes(active.phase)) {
     throw new Stop(
       `알 수 없는 스테이지입니다: ${active.phase} (스테이지: ${PHASES.join(" → ")}).\n` +
-        "현재 Claude 세션에서 ca-answer의 abort 동의 절차로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
+        "현재 호스트 세션에서 ca-answer의 abort 동의 절차로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
     );
   }
 }
@@ -146,7 +146,7 @@ function requireBaseCommit(active: ActiveWork): void {
   if (active.branch && !active.baseCommit) {
     throw new Stop(
       "이 작업에는 굳혀 둔 기준 커밋이 없습니다 (P5 이전에 시작된 커서입니다).\n" +
-        "현재 Claude 세션에서 ca-answer의 abort 동의 절차로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
+        "현재 호스트 세션에서 ca-answer의 abort 동의 절차로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
     );
   }
 }
@@ -274,7 +274,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   const intake = loadRequestSession(repoRoot);
   if (intake && intake.id !== order.id) {
     throw new Stop(
-      `접수 중인 요구사항이 있습니다: ${intake.id} (${intake.kind}). 그것을 끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 시작하세요.`,
+      `접수 중인 요구사항이 있습니다: ${intake.id} (${intake.kind}). 그것을 끝내거나 현재 호스트 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 시작하세요.`,
     );
   }
   // 접수 때 사람이 말한 기준 브랜치 · 대상 — 확정을 사이에 두고 명령이 끊겨도 잃지 않는다. 지금 준 값이 이긴다
@@ -292,7 +292,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (current && (current.id !== order.id || current.target !== chosen)) {
     throw new Stop(
       `진행 중인 작업이 있습니다: ${current.id} (${current.target}, ${current.phase}). ` +
-        "끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 시작하세요.",
+        "끝내거나 현재 호스트 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 시작하세요.",
     );
   }
   if (current) {
@@ -378,7 +378,7 @@ function nextHint(work: Work): string {
           `사유가 가리키는 문서(01~04 · 07 · plan.json)를 다시 보고, 정할 수 없는 것은 ${questionsFile(active.id)} 에 질문으로 남긴 뒤 다시 제출하세요`
         );
       }
-      return `현재 Claude 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (현재: ${approval.status})`;
+      return `현재 호스트 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (현재: ${approval.status})`;
     }
     case "implement":
       return `${stageCommand("implement")} — 단계 ${active.stage} 를 구현한 뒤 code-agent next`;
@@ -405,11 +405,11 @@ function nextHint(work: Work): string {
     case "integrate": {
       const evidence = loadEvidence(repoRoot, active.id, active.target);
       return evidence && runsOf(evidence, "integrate").length > 0 && stageProblems(work, "integrate").length === 0
-        ? "통합 검증 통과 — code-agent next 로 넘긴 뒤 현재 Claude 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다"
+        ? "통합 검증 통과 — code-agent next 로 넘긴 뒤 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다"
         : `${stageCommand("integrate")} — code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)`;
     }
     case "deliver":
-      return `현재 Claude 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다 — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
+      return `현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다 — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
   }
 }
 
@@ -430,7 +430,7 @@ export function status(repoRoot: string): string {
     const hint = !manifest
       ? "/ca-request <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (/ca-adopt)"
       : !docsReady(checks)
-        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 현재 Claude 세션에서 ca-answer의 docs 동의 절차로 받고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다"
+        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 현재 호스트 세션에서 ca-answer의 docs 동의 절차로 받고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다"
         : "/ca-request [ID] <요구사항> 으로 접수 — 신규·기능 변경은 /ca-feature, 결함 수정은 /ca-fix, 동작 보존은 /ca-refactor 로도 시작";
     lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
@@ -531,7 +531,7 @@ export function next(repoRoot: string): string {
       }
       const approval = approvalOf(work);
       if (approval.status !== "approved") {
-        throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 현재 Claude 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다.`);
+        throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 현재 호스트 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다.`);
       }
       return advance("implement", plannedStages(work)[0]?.key, work.plan.tasks?.[0]?.id);
     }
@@ -597,7 +597,7 @@ export function next(repoRoot: string): string {
     case "deliver":
       // 반영은 사용자 동의 뒤 적용한다 — next 로 끝낼 수 없고, deliver 가 커밋 뒤 커서를 지운다
       throw new Stop(
-        `반영은 현재 Claude 세션에서 ca-answer의 deliver 동의 절차로 확인한 뒤 로컬 커밋합니다 (직접 CLI를 원하면 TTY에서 code-agent deliver).\n` +
+        `반영은 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인한 뒤 로컬 커밋합니다 (직접 CLI를 원하면 TTY에서 code-agent deliver).\n` +
           `${prDocFile(active.id)} 의 요약·확인 방법·위험·되돌리기를 먼저 쓰세요 — 추적표·검증·변경 요약은 코드가 렌더합니다.`,
       );
   }
@@ -741,7 +741,7 @@ export function back(repoRoot: string, to: string): string {
   if (active.phase === "deliver") {
     throw new Stop(
       "반영은 사용자가 내용을 확인하는 단계라 이 명령으로 커서를 되돌릴 수 없습니다. " +
-        "무엇이 문제인지 보고하고 현재 Claude 세션에서 ca-answer로 처리 방향을 확인하세요. 종료가 필요하면 abort 동의 절차를 따릅니다.",
+        "무엇이 문제인지 보고하고 현재 호스트 세션에서 ca-answer로 처리 방향을 확인하세요. 종료가 필요하면 abort 동의 절차를 따릅니다.",
     );
   }
   if (!(BACK_PHASES as readonly string[]).includes(to)) {
@@ -1114,7 +1114,7 @@ export function context(repoRoot: string): string {
       "추적표(R → AC → 파일 → TC → 검증) · 검증 · 변경 요약은 코드 구역(`<!-- code-agent:trace:... -->`)이라 code-agent deliver 가 렌더합니다.",
       `공통 KNOWLEDGE 에 더할 것이 있으면 ${proposalFile(active.id)} 에 제안으로 씁니다 — 종류(\`## data-dictionary\`)마다 \`### \`키\` 이름\` 블록, 본문에 이번 작업의 R 번호를 답니다.`,
       "",
-      "**현재 Claude 세션에서 ca-answer의 deliver 동의 절차로 확인**한 뒤 작업 브랜치에 로컬 커밋합니다. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 `code-agent deliver`).",
+      "**현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인**한 뒤 작업 브랜치에 로컬 커밋합니다. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 `code-agent deliver`).",
       "push · MR/PR 생성은 하지 않습니다 (git 호스트가 붙을 때까지 보류).",
     );
   }
@@ -1270,7 +1270,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
     `계획을 제출하고 ${planDocFile(active.id)} 를 렌더했습니다.\n\n${formatPlan(plan)}\n\n` +
     (assumptions ? `${assumptions}\n\n` : "") +
     testSpec.notes.map((note) => `참고: ${note}\n\n`).join("") +
-    "현재 Claude 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름에서 구현을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 `code-agent approve`)."
+    "현재 호스트 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름에서 구현을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 `code-agent approve`)."
   );
 }
 
@@ -1324,6 +1324,6 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     docsHash,
   });
   return decision === "approved"
-    ? "승인을 원장에 남겼습니다. 현재 Claude 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: /ca-next)."
+    ? "승인을 원장에 남겼습니다. 현재 호스트 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: /ca-next)."
     : "반려를 원장에 남겼습니다. 계획을 고쳐 다시 제출해야 합니다.";
 }
