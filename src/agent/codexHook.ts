@@ -51,12 +51,18 @@ export function observeCodexConsent(input: CodexHookInput, root: string): void {
   observeConsent({ ...event, hook_event_name: "PostToolUse", tool_response: {questions: status.questions, answers} }, root, "codex-prompt");
 }
 
+/** Claude PreToolUse matcher(쓰기·셸·읽기)에 대응하는 Codex 도구. 그 밖의 도구는 Claude처럼 판정하지 않는다. */
+const GATED_TOOLS = ["Bash", "PowerShell", "apply_patch"];
+
+const deny = (reason?: string): object => reason ? {hookSpecificOutput: {
+  hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason,
+}} : {};
+
 export function codexHook(input: CodexHookInput): object {
+  // Codex 훅에는 matcher가 없다. 판정 대상이 아닌 도구가 상태 오류로 막히지 않게 먼저 통과시킨다.
+  if (input.hook_event_name === "PreToolUse" && !GATED_TOOLS.includes(input.tool_name ?? "")) return {};
   if (typeof input.cwd !== "string" || !isAbsolute(input.cwd)) throw new Error("Codex 이벤트의 작업 경로가 없습니다.");
   const root = findRepoRoot(input.cwd);
-  const deny = (reason?: string): object => reason ? {hookSpecificOutput: {
-    hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason,
-  }} : {};
   if (input.hook_event_name === "PreToolUse") {
     if (!input.tool_name || !input.tool_input) throw new Error("Codex 도구 입력이 없습니다.");
     const common = {cwd: input.cwd, session_id: input.session_id};
@@ -88,7 +94,29 @@ export function codexHook(input: CodexHookInput): object {
   return {};
 }
 
+/**
+ * 판정 실패의 결과를 Claude 훅과 맞춘다. Codex는 exit 2로 도구를 막거나 턴을 이어가지 않는다.
+ * PreToolUse는 `runHook`처럼 막는 쪽으로 닫고, Stop은 `runStopHook`처럼 턴을 막지 않는다.
+ */
 export function runCodexHook(stdin: string): number {
-  try { process.stdout.write(JSON.stringify(codexHook(JSON.parse(stdin)))); return 0; }
-  catch (error) { process.stderr.write(`code-agent codex-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+  let event: string | undefined;
+  try {
+    const input = JSON.parse(stdin) as CodexHookInput;
+    event = input.hook_event_name;
+    process.stdout.write(JSON.stringify(codexHook(input)));
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (event === "PreToolUse") {
+      process.stdout.write(JSON.stringify(deny(`code-agent codex-event 가 판정에 실패해 막았습니다: ${message}`)));
+      return 0;
+    }
+    if (event === "Stop") {
+      process.stderr.write(`code-agent codex-event 가 Stop 판정에 실패했습니다 (턴은 막지 않았습니다): ${message}\n`);
+      process.stdout.write("{}");
+      return 0;
+    }
+    process.stderr.write(`code-agent codex-event: ${message}\n`);
+    return 2;
+  }
 }
