@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync } from "fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync } from "fs";
 import { dirname } from "path";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -9,9 +9,9 @@ import { Stop } from "./stop";
 import { codexAgentName } from "./hosts";
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
-import { inputFiles, loadPlanning, mergeProblems, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs, TASK_AGENTS, taskCurrent, taskHash, TaskSchema, type PlanningState, type PlanningTask, type TaskRecord } from "./planningState";
+import { inputFiles, loadPlanning, mergeProblems, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs, scopedFiles, TASK_AGENTS, taskCurrent, taskHash, TaskSchema, type PlanningState, type PlanningTask, type TaskRecord } from "./planningState";
 
-const PHASE: Record<PlanningTask["role"], string> = { analysis: "analysis", explore: "impact", synthesis: "impact", design: "design", plan: "plan", critic: "plan" };
+const PHASE: Record<PlanningTask["role"], string> = { analysis: "analysis", explore: "impact", impact: "impact", synthesis: "impact", design: "design", plan: "plan", critic: "plan" };
 const BatchSchema = z.object({ maxParallel: z.number().int().min(1).max(4).default(3), tasks: z.array(TaskSchema).min(1).max(100) }).strict();
 
 export function planningWork(root: string): Work {
@@ -45,19 +45,29 @@ export function requireRolePhase(work: Work, role: PlanningTask["role"]): void {
   if (work.active.phase !== PHASE[role]) throw new Stop(`${role} 작업은 ${PHASE[role]} 단계에서 실행합니다. 필요하면 code-agent back ${PHASE[role]} 으로 돌아가세요.`);
 }
 function predecessor(state: PlanningState, role: PlanningTask["role"]): string[] {
-  const previous = role === "explore" ? "analysis" : role === "synthesis" ? "explore" : role === "design" ? "synthesis" : role === "plan" ? "design" : role === "critic" ? "plan" : undefined;
+  const previous = role === "explore" || role === "impact" ? "analysis" : role === "synthesis" ? "explore" : role === "design" ? state.tasks.some(item => item.task.role === "impact") ? "impact" : "synthesis" : role === "plan" ? "design" : role === "critic" ? "plan" : undefined;
   return state.tasks.filter(item => item.task.role === previous).map(item => item.task.id);
 }
 /** 인자 없는 준비는 한 영역을 조사하는 기본 흐름. 큰 작업은 명시한 영역별 작업으로 교체한다. */
-function defaults(work: Work, state: PlanningState): unknown {
-  const roles: PlanningTask["role"][] = work.active.phase === "analysis" ? ["analysis"] : work.active.phase === "impact" ? ["explore", "synthesis"] : work.active.phase === "design" ? ["design"] : work.active.phase === "plan" ? ["plan", "critic"] : [];
+function defaults(work: Work, state: PlanningState, optimize = false): unknown {
   const requirementsPath = `${workDocsDir(work.active.id)}/01-requirements.md`;
   const keys = work.active.phase === "analysis" ? readSourceTrace(work.repoRoot, work.active.id, work.active.spec).rows.map(row => row.id) : existsSync(planningPath(work.repoRoot, requirementsPath)) ? [...readFileSync(planningPath(work.repoRoot, requirementsPath), "utf8").matchAll(/^## (R\d+)\b/gm)].map(match => match[1]) : [];
+  const existingImpact = state.tasks.some(item => item.task.role === "impact");
+  let compact = existingImpact;
+  if (optimize && work.active.phase === "impact" && !state.tasks.some(item => PHASE[item.task.role] === "impact") && keys.length > 0 && keys.length <= 3) {
+    const files = scopedFiles(work, ["."], true);
+    // 범위가 작은 기본 조사만 합친다. 명시적으로 분할한 조사와 독립 critic은 유지한다.
+    compact = files.length <= 12 && files.reduce((bytes, file) => {
+      const full = planningPath(work.repoRoot, file);
+      return bytes + (existsSync(full) && statSync(full).isFile() ? statSync(full).size : 100_000);
+    }, 0) <= 96_000;
+  }
+  const roles: PlanningTask["role"][] = work.active.phase === "analysis" ? ["analysis"] : work.active.phase === "impact" ? compact ? ["impact"] : ["explore", "synthesis"] : work.active.phase === "design" ? ["design"] : work.active.phase === "plan" ? ["plan", "critic"] : [];
   const pending: PlanningState = { ...state, tasks: [...state.tasks] };
   const tasks = roles.map(role => {
     const existing = pending.tasks.find(item => item.task.role === role);
     if (existing) return existing.task;
-    const task: PlanningTask = { id: role, role, title: `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec], scopes: role === "explore" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
+    const task: PlanningTask = { id: role, role, contextVersion: 2, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
     pending.tasks.push({ task, attempts: [] });
     return task;
   });
@@ -83,12 +93,13 @@ function prepareState(root: string, work: Work, state: PlanningState, batch?: un
         if (path.includes("\\") || path.startsWith("./") || path.split("/").includes("..") || /^\.(?:git|code-agent|claude|codex|agents)(?:\/|$)/i.test(path)) throw new Stop(`계획 자료 경로가 허용되지 않습니다: ${path}`);
       }
       if (task.inputs.some(file => task.outputs.includes(file))) throw new Stop("자신의 출력은 입력으로 사용할 수 없습니다.");
-      if (task.role !== "explore" && task.scopes.length) throw new Stop("소스 영역은 조사 작업에만 지정합니다. 다른 역할은 선행 조사 결과를 입력으로 받습니다.");
-      if (task.role === "explore" && !task.scopes.length) throw new Stop("조사할 소스 영역을 지정하세요.");
+      if (!["explore", "impact"].includes(task.role) && task.scopes.length) throw new Stop("소스 영역은 조사 작업에만 지정합니다. 다른 역할은 선행 조사 결과를 입력으로 받습니다.");
+      if (["explore", "impact"].includes(task.role) && !task.scopes.length) throw new Stop("조사할 소스 영역을 지정하세요.");
       for (const scope of task.scopes) if (!existsSync(planningPath(root, scope))) throw new Stop(`조사 영역이 없습니다: ${scope} — 기존 상위 영역이나 관련 영역을 지정하세요.`);
       merged.push({ task, attempts: old?.attempts ?? [] });
     }
     const candidate = { ...state, tasks: merged };
+    if (merged.some(record => record.task.role === "impact") && merged.some(record => ["explore", "synthesis"].includes(record.task.role))) throw new Stop("통합 영향도 작업과 분할 조사·합성 작업을 함께 등록할 수 없습니다. 기본 자동 배정 전에 필요한 조사 방식을 준비하세요.");
     if (merged.length > 100) throw new Stop("계획 작업은 최대 100개까지 등록합니다.");
     for (const role of Object.keys(TASK_AGENTS)) if (role !== "explore" && merged.filter(record => record.task.role === role).length > 1) throw new Stop(`${role} 역할은 한 작업만 소유합니다.`);
     for (const record of merged) {
@@ -152,7 +163,8 @@ function dispatchState(work: Work, state: PlanningState, id: string) {
 function assignment(work: Work, state: PlanningState, record: TaskRecord) {
     const attempt = record.attempts.at(-1)!;
     const dependencies = record.task.dependsOn.map(dep => compactResult(state.tasks.find(item => item.task.id === dep)!));
-    return { cached: false, agent: TASK_AGENTS[record.task.role], hostAgents: { claude: TASK_AGENTS[record.task.role], codex: codexAgentName(TASK_AGENTS[record.task.role]) }, task: record.task, inputs: inputFiles(work, record.task), dependencies,
+    return { cached: false, agent: TASK_AGENTS[record.task.role], hostAgents: { claude: TASK_AGENTS[record.task.role], codex: codexAgentName(TASK_AGENTS[record.task.role]) }, task: record.task, inputs: inputFiles(work, record.task, state), dependencies,
+      ...(record.task.role === "impact" ? { delegation: "조사와 02 영향도 정리를 한 담당이 수행합니다. 입력을 직접 확인하고 모든 요구의 영향·호출자·위험을 기록하세요. 별도 writer를 호출하지 않습니다. 설계·계획·독립 검토·승인은 그대로 유지합니다." } : {}),
       ...(record.task.role === "plan" ? { planShape: planFormatFor(work.order.kind).shape, stages: work.stages, target: work.active.target, kind: work.order.kind } : {}),
       instructions: "지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. 파일을 직접 쓰지 말고 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄입니다. 모든 출력은 artifacts에 완전한 내용으로 넣으세요. 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.",
       resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => ({ path, content: "전체 문서 내용" })), findings: [] },
@@ -198,7 +210,7 @@ export function advancePlanning(root: string): string {
   const work = planningWork(root);
   if (!["analysis", "impact", "design", "plan"].includes(work.active.phase)) throw new Stop("계획 단계에서만 진행할 수 있습니다.");
   const output = mutatePlanning(work, state => {
-    const batch = BatchSchema.parse(defaults(work, state));
+    const batch = BatchSchema.parse(defaults(work, state, true));
     const missing = batch.tasks.filter(task => !state.tasks.some(record => record.task.id === task.id));
     if (missing.length) prepareState(root, work, state, { maxParallel: state.maxParallel, tasks: missing });
     const assignments: unknown[] = [], blocked: { id: string; reasons: string[] }[] = [], reused: string[] = [], waiting: string[] = [];

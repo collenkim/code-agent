@@ -20,7 +20,7 @@ description: 영향도 분석 단계(impact)를 진행한다 — ② 02-analysis
 
 `code-agent status`에 관찰 흐름이 표시된 신규 작업은 아래 절차를 사용한다. 이전 버전에서 시작한 작업만 뒤의 기존 절차를 사용한다.
 
-1. `code-agent planning advance`로 현재 단계의 준비·결과 재사용·선행 조건 확인·배정을 한 번에 진행한다. 이 단계 역할은 **explore → synthesis**다. 영역 분할을 지정할 때만 먼저 `planning prepare <작업.json>`을 사용한다.
+1. `code-agent planning advance`로 현재 단계의 준비·결과 재사용·선행 조건 확인·배정을 한 번에 진행한다. 작은 기본 조사는 **impact 한 담당**이 조사와 02 작성을 함께 수행하고, 나머지는 **explore → synthesis**다. 반환된 배정만 호출하며 별도 writer를 추가하지 않는다. 영역 분할 또는 기존 두 역할 흐름을 선택할 때는 자동 배정 전에 `planning prepare <작업.json>` 또는 인자 없는 `planning prepare`를 사용한다.
 2. `action:dispatch`이면 `assignments` 각각의 `agent`를 실제 서브 에이전트로 호출하고 **해당 배정 JSON**과 이 단계의 문서 뼈대·형식만 넘긴다. `dependencies.artifacts`는 경로·해시이며 원문은 필요할 때 해당 파일을 읽는다. `planning result <ID>`는 원문 상세 조회가 필요할 때만 사용한다. 소스 후보는 해당 영역만 넘기며 전역 context를 각 조사자에게 반복 전달하지 않는다.
 3. 담당은 파일을 직접 쓰지 않고 `resultShape`에 맞는 JSON 하나를 반환한다. 시작·완료 hook이 배정 식별자와 입력 해시를 검사한 뒤 `artifacts`를 기록한다. 메인이 결과를 완료 처리하거나 번호 문서·plan.json을 직접 수정하지 않는다.
 4. 실제 완료 이벤트를 받은 뒤 `planning advance`를 다시 실행한다. `wait`이면 완료를 기다리며 상태를 반복 조회하지 않는다. `blocked`이면 사유를 확인한다. 미결 질문은 ca-answer로 실제 답을 받고, 입력 변경·근거 오류는 원인을 고친다. 보류·상태 메모는 답변이 아니다. 중단되거나 입력이 바뀐 교정 대기 작업만 `planning cancel <ID>`로 취소한다.

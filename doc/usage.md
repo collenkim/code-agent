@@ -1170,4 +1170,4 @@ git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정�
 
 `planning status`는 요약, `planning result <ID>`는 원문 산출물과 현재 입력에 대한 유효성을 조회한다. 선행 결과는 문서 본문 대신 경로·해시를 전달한다. 관찰된 출력 형식 오류는 `planning advance` 또는 `planning repair <ID>`로 같은 입력에서 1회 교정한다. 새 담당의 시작·완료 관찰이 필요하며 입력 변경·근거 오류·미결 질문·승인을 우회하지 않는다. `ready-for-gate`는 기존 게이트로 넘어갈 준비 상태이며 승인 완료가 아니다.
 
-기본 역할 순서는 analysis → explore → synthesis → design → plan → critic이다. 설계·계획 판단은 ca-analyst, 조사 정리는 ca-writer다. 같은 입력 결과는 재사용하고, 영역 조사 완료와 충돌 해소 후 합성한다. 계획 제출·승인은 관찰된 critic 완료가 필수다. 구현은 tasks의 현재 파일 범위만 허용한다. 예시·질문 상태·취소·재시도·피드백 반영은 [계획 작업 안내](planning.md)에 정리했다.
+기본 역할 순서는 analysis → 영향도 → design → plan → critic이다. 작은 기본 영향도는 impact 한 담당이 조사·문서 정리를 함께 하고 나머지는 explore → synthesis로 진행한다. 분할 조사가 필요하면 첫 advance 전에 prepare로 준비한다. 설계·계획 판단은 ca-analyst, 분할 조사 정리는 ca-writer다. 새 작업은 역할별 필요한 입력만 연결하고 선행 실행 ID만 바뀐 동일 결과를 재사용한다. 선행 작업의 현재 입력·완료·충돌은 계속 검사한다. 계획 제출·승인은 관찰된 critic 완료가 필수다. 구현은 tasks의 현재 파일 범위만 허용한다. 선택 기준·예시·질문 상태·취소·재시도·피드백 반영은 [계획 작업 안내](planning.md)에 정리했다.

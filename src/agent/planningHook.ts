@@ -79,7 +79,7 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       if (taskHash(work, state, record.task) !== last.inputHash) throw new Error("실행 중 입력이 바뀌었습니다. 새 입력으로 다시 배정하세요.");
       const problems = readyProblems(work, state, record);
       if (problems.length) throw new Error(problems.join("\n"));
-      const permitted = new Set(inputFiles(work, record.task));
+      const permitted = new Set(inputFiles(work, record.task, state));
       for (const dep of record.task.dependsOn) for (const ref of state.tasks.find(item => item.task.id === dep)?.attempts.at(-1)?.result?.evidence ?? []) permitted.add(ref.path);
       const references = [...result.evidence, ...result.facts.map(fact => fact.source), ...result.findings.map(finding => finding.source)];
       for (const ref of references) {

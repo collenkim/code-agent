@@ -11,6 +11,8 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 
 관찰된 계획 작업과 검증 노드 실행기 도입 후에도 새 패키지·서버·필수 설정은 없다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 분석·영향도·설계·계획·구현·검증 스킬과 에이전트 정의·CLAUDE 블록·planning-event hook을 함께 갱신한다. Claude Code를 다시 열고 `code-agent --help`의 `planning`·`verify` 항목과 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 기존 증거로 재개한다. 변경 이력은 [문서·검증 이력](reviews/README.md)에 있다.
 
+작은 조사 통합과 작업별 입력 최적화도 CLI·영향도 스킬·explorer 정의를 함께 갱신해야 한다. Codex에도 같은 템플릿 변경이 생성되므로 사용 중인 호스트를 재시작한다. 기존 작업은 기존 입력 계약을 유지하고 새 기본 작업부터 contextVersion 2를 사용한다. 설치 점검과 실제 Codex 연동 성공은 구분하며 최신 실행 결과는 [추가 검증 이력](reviews/2026-10-02-priority-two-native-codex.md)을 확인한다.
+
 ## 목차
 
 - [1. 두 가지 설치](#1-두-가지-설치)

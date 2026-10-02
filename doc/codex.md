@@ -32,6 +32,8 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 계획의 `planning advance`, 요약 `planning status`, 상세 `planning result <ID>`, 형식 교정 `planning repair <ID>`는 Claude와 같은 구현을 사용한다. Codex 스킬도 같은 배정·대기·차단·게이트 준비 상태와 1회 교정 절차를 제공한다. 설치 후 기존 프로젝트에는 템플릿 갱신과 호스트 재시작이 필요하다. 변경별 검증 범위는 [계획 실행 효율 개선 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
 
+우선순위 2의 소규모 impact 통합·역할별 입력·동일 결과 재사용도 같은 구현과 생성 템플릿을 사용한다. Codex에서는 통합 조사에 `ca_explorer`를 호출한다. 독립 critic과 승인 절차는 유지한다. [선택 기준](planning.md#위임-수와-입력-범위-선택)과 [추가 실제 검증 이력](reviews/2026-10-02-priority-two-native-codex.md)을 따른다.
+
 배정의 `agent`와 `hostAgents.claude`는 기존 `ca-analyst` 이름이다. Codex는 `hostAgents.codex`의 `ca_analyst`처럼 밑줄 이름으로 호출한다. 모든 Codex 역할의 TOML `name`과 스킬의 호출 지침을 변환하며, 훅에서는 공통 역할로 연결한다. 기존 설치를 갱신할 수 있도록 역할 파일 경로 `.codex/agents/ca-analyst.toml`은 유지한다. 스킬 이름 `ca-analyze`는 역할 이름과 별개다.
 
 | 이벤트 | code-agent 처리 |
@@ -71,7 +73,9 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 `code-agent usage`의 토큰·비용 집계는 현재 Claude 기록만 지원하며 Codex 사용량을 0으로 간주하지 않는다. Codex 사용량은 호스트 화면에서 확인한다.
 
-자동 검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. 추가 실제 모델 검사에서는 Claude 분석 담당의 완료 관찰과 게이트 준비를 확인했다. Codex 실행 환경은 설치된 역할 선택 인자를 제공하지 않았고 로컬 훅도 관찰되지 않아 실제 연동 검사를 완료하지 못했다. 두 호스트의 실사용 호환성이 모두 확인되었다는 의미는 아니다. Codex UI의 수동 사용성·실제 사람의 승인·전체 개발 흐름 실계정 측정도 별도 범위다. 결과는 [최신 변경·검증 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
+자동 검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. 실제 Codex 추가 검사에서는 하위 호출과 결과 반환이 있어도 관찰된 시작·완료가 없어 계획이 running에 머물렀다. 검증 도구의 프로젝트 신뢰 경로 인자를 고친 뒤에도 완료 훅은 관찰되지 않았다. App Server 조회에서 훅 5개를 인식한 것과 실제 실행 성공은 구분한다. 두 호스트의 실사용 호환성이 모두 확인되었다는 의미는 아니다. Codex UI의 수동 사용성·실제 사람의 승인·전체 개발 흐름 실계정 측정도 별도 범위다. 결과와 원인 해석의 한계는 [최신 변경·검증 이력](reviews/2026-10-02-priority-two-native-codex.md)에 기록한다.
+
+재현 검사는 `npm run build` 후 `node scripts/evaluate-planning-hosts.cjs codex <새-기록이름> --vetted-hooks --model gpt-6.1-sol`로 실행한다. 실제 모델 호출이 발생하며 초기 준비·요구 동의는 합성 fixture다. `--model`은 검사 메인만 바꾸고 제품 역할별 기본값은 유지한다. `--vetted-hooks`는 생성된 훅만 확인한 격리 검사에 한정한다. `--through-impact`는 분석 다음 영향도까지 실제 호출로 확인한다. 실사용 설치에서 훅 신뢰 검토를 생략하는 안내가 아니다.
 
 ## 역할별 모델 기본값과 변경
 
