@@ -1,7 +1,7 @@
 {
   "name": "code-agent",
   "version": "1.0.0",
-  "description": "Claude Code 위에서 도는 코드 작성 에이전트",
+  "description": "Claude Code와 Codex에서 동작하는 코드 작성 에이전트",
   "main": "dist/agent/cli.js",
   "bin": {
     "code-agent": "dist/agent/cli.js"

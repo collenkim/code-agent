@@ -6,6 +6,7 @@ import { canonical, readStages } from "./layout";
 import type { StageTransition } from "./layout";
 import { PRICES_AS_OF, priceOf } from "./prices";
 import { Stop } from "./stop";
+import { selectedHosts } from "./hosts";
 
 /**
  * `code-agent usage` — 이 저장소에 쓴 토큰을 **스테이지별·에이전트별**로 센다.
@@ -316,6 +317,7 @@ function day(at: string): string {
 }
 
 export function usage(repoRoot: string, options: UsageOptions = {}): string {
+  if (!options.transcripts && !selectedHosts(repoRoot).includes("claude")) return "code-agent usage는 Claude 실행 기록을 집계합니다. Codex 토큰·비용은 아직 집계하지 않습니다. Codex의 사용량 화면을 확인하세요.";
   let since: number | undefined;
   if (options.since !== undefined) {
     since = Date.parse(options.since);
@@ -356,7 +358,7 @@ export function usage(repoRoot: string, options: UsageOptions = {}): string {
   ].join(" · ");
 
   return [
-    head,
+    `Claude Code 사용량 · ${head}`,
     `기록: ${dir} (세션 ${files.length - subagents} · 서브에이전트 ${subagents})`,
     "",
     ...table("스테이지별", "스테이지", group(messages, (message) => bucketOf(stages, message.at).label)),

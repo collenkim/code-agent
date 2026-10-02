@@ -35,7 +35,7 @@ export function recommendSetup(repoRoot: string): string {
 
 function hasProjectFiles(root: string, relative = ""): boolean {
   for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
-    if ([".git", ".claude", ".code-agent", ".idea", ".vscode", "doc", "docs"].includes(entry.name)) continue;
+    if ([".git", ".claude", ".codex", ".agents", ".code-agent", ".idea", ".vscode", "doc", "docs"].includes(entry.name)) continue;
     const name = join(relative, entry.name);
     if (entry.isDirectory() && hasProjectFiles(root, name)) return true;
     if (entry.isFile() && !/\.md$/i.test(entry.name) && ![".gitignore", "LICENSE"].includes(entry.name)) return true;

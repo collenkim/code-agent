@@ -15,11 +15,12 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { installedHook, settingsProblem, unmatchedTools } from "./init";
+import { codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
 import { STATE_DIR } from "./layout";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
+import { hostAssets, HostSelection, selectedHosts } from "./hosts";
 
 /**
  * `code-agent doctor` — 설치와 환경을 한 화면에서 본다.
@@ -113,7 +114,8 @@ function hookProblem(command: string, onPath: string | undefined): string | unde
   return undefined; // 사람이 제 손으로 바꿔 둔 명령 — 우리가 판정할 것이 아니다
 }
 
-export function doctor(repoRoot: string): { text: string; ok: boolean } {
+export function doctor(repoRoot: string, host?: HostSelection): { text: string; ok: boolean } {
+  const hosts = selectedHosts(repoRoot, host);
   const checks: Check[] = [];
   const add = (mark: Mark, name: string, observed: string, hint?: string) => checks.push({ mark, name, observed, hint });
   const win = process.platform === "win32";
@@ -162,6 +164,7 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
   // 5. hook 설치 — 있는지와 **풀리는지**를 함께 본다.
   // 파일 자체가 깨져 있으면 먼저 그것을 말한다: 그 경우 `installedHook` 은 "없다" 와 구분되지 않고,
   // "없다" 의 처방인 `code-agent init` 은 같은 파일에서 멈춘다.
+  if (hosts.includes("claude")) {
   const settings = settingsProblem(repoRoot);
   if (settings) {
     add("✗", "hook 설정 파일", settings, "이 파일을 고친 뒤 code-agent init — 고치기 전에는 init·update 도 멈춥니다");
@@ -235,6 +238,25 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
     );
   }
 
+  }
+  if (hosts.includes("codex")) {
+    const problem = settingsProblem(repoRoot, "codex");
+    if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
+    else for (const event of ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"]) {
+      const command = installedHook(repoRoot, event, "codex-event", "codex");
+      const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) : "설치되지 않았습니다";
+      add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, "code-agent init --host codex");
+    }
+    try {
+      const changed = [...hostAssets("codex")].filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
+      add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : "26개 모두 번들과 같습니다", "code-agent update --templates-only --host codex");
+      const instructions = join(repoRoot, "AGENTS.md");
+      const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
+      add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");
+    } catch (error) { add("✗", "Codex 번들", String(error)); }
+    add("·", "Codex 훅 실행", "파일 설치만 검사했습니다. Codex에서 프로젝트 훅 신뢰가 필요하며 실제 실행·클라이언트 기능은 별도로 확인하세요.");
+  }
+
   // 8. 매니페스트 — 있을 때만 본다 (도입 전에는 없는 것이 정상)
   //
   // 형식 오류의 첫 줄은 머리말(`code-agent.json 형식 오류:`)뿐이라 **버리지 않는다** — 어느 키가
@@ -283,8 +305,8 @@ export function doctor(repoRoot: string): { text: string; ok: boolean } {
     add(
       "·",
       "터미널",
-      "stdin 이 TTY 가 아닙니다 — 직접 CLI 확인은 닫혀 있지만 현재 Claude Code 세션의 선택형 확인을 사용할 수 있습니다",
-      "선택 도구의 확인 결과는 consent-event hook이 기록합니다. 별도 터미널은 필요 없습니다.",
+      "stdin 이 TTY 가 아닙니다 — 직접 CLI 확인은 닫혀 있지만 호스트 세션에서 관찰한 동의를 사용할 수 있습니다",
+      "Claude는 선택 도구, Codex는 ca-answer가 안내한 사용자 메시지를 훅으로 관찰합니다.",
     );
   }
 

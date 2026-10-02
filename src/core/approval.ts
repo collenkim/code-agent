@@ -44,6 +44,7 @@ export type PresenceChannel =
   | "tty"
   /** Claude Code의 질문 도구에서 관찰한 명시적 선택 */
   | "claude-question"
+  | "codex-prompt"
   /** 사람의 입력을 관측하지 못했다 — 스크립트·비대화형 셸·명시적 우회 */
   | "unattended";
 

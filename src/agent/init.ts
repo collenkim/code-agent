@@ -5,6 +5,7 @@ import { assetBytes, assetKeys, assetText, CLAUDE_ASSETS, installedPath, package
 import { STATE_DIR } from "./layout";
 import { applyModels } from "./models";
 import { Stop } from "./stop";
+import { hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -20,6 +21,7 @@ export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|R
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
   cli?: string;
+  host?: HostSelection;
 }
 
 /** 표시된 블록만 넣거나 바꾼다. 블록 밖은 사람의 것이라 건드리지 않는다 */
@@ -51,7 +53,7 @@ interface HookEntry {
  */
 function ourEntry(entry: HookEntry, subcommand: string): boolean {
   return entry.hooks.some(
-    (hook) => /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
+    (hook) => hook.type === "command" && typeof hook.command === "string" && /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
   );
 }
 
@@ -64,7 +66,15 @@ function readSettings(path: string): Record<string, unknown> {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    const settings = JSON.parse(readFileSync(path, "utf-8"));
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error("설정은 JSON 객체여야 합니다.");
+    if (settings.hooks !== undefined) {
+      if (!settings.hooks || typeof settings.hooks !== "object" || Array.isArray(settings.hooks)) throw new Error("hooks는 객체여야 합니다.");
+      for (const entries of Object.values(settings.hooks)) {
+        if (!Array.isArray(entries) || entries.some(entry => !entry || typeof entry !== "object" || !Array.isArray(entry.hooks) || entry.hooks.some((hook: unknown) => !hook || typeof hook !== "object"))) throw new Error("훅 항목 형식이 잘못되었습니다.");
+      }
+    }
+    return settings;
   } catch (error) {
     throw new Stop(
       `${path} 을 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}\n  이 파일을 고친 뒤 다시 도세요.`,
@@ -72,8 +82,8 @@ function readSettings(path: string): Record<string, unknown> {
   }
 }
 
-function settingsFile(repoRoot: string): string {
-  return join(repoRoot, ".claude", "settings.json");
+function settingsFile(repoRoot: string, host: Host = "claude"): string {
+  return hookFile(repoRoot, host);
 }
 
 /**
@@ -83,9 +93,9 @@ function settingsFile(repoRoot: string): string {
  * doctor 가 `→ code-agent init` 을 처방하는데 그 init 은 같은 파일에서 멈춘다 — 그래서 doctor 는
  * hook 을 묻기 **전에** 이것을 먼저 묻는다.
  */
-export function settingsProblem(repoRoot: string): string | undefined {
+export function settingsProblem(repoRoot: string, host: Host = "claude"): string | undefined {
   try {
-    readSettings(settingsFile(repoRoot));
+    readSettings(settingsFile(repoRoot, host));
     return undefined;
   } catch (error) {
     return error instanceof Error ? error.message.split("\n")[0] : String(error);
@@ -93,16 +103,16 @@ export function settingsProblem(repoRoot: string): string | undefined {
 }
 
 /** settings.json 에 설치된 우리 hook 명령. 없거나 파일이 깨졌으면 undefined (사유는 `settingsProblem`) */
-export function installedHook(repoRoot: string, event: string, subcommand: string): string | undefined {
+export function installedHook(repoRoot: string, event: string, subcommand: string, host: Host = "claude"): string | undefined {
   let settings: Record<string, unknown>;
   try {
-    settings = readSettings(settingsFile(repoRoot));
+    settings = readSettings(settingsFile(repoRoot, host));
   } catch {
     return undefined; // 사유는 doctor 가 `settingsProblem` 으로 따로 말한다
   }
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[] | undefined>;
   const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, subcommand));
-  return entry?.hooks.find((hook) => new RegExp(` ${subcommand}$`).test(hook.command))?.command;
+  return entry?.hooks.find((hook) => ourEntry({hooks:[hook]}, subcommand))?.command;
 }
 
 /**
@@ -134,7 +144,11 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
   const ours = (entry: HookEntry) => ourEntry(entry, subcommand);
   hooks[event] = [
-    ...(hooks[event] ?? []).filter((entry) => !ours(entry)),
+    ...(hooks[event] ?? []).flatMap((entry) => {
+      if (!ours(entry)) return [entry];
+      const remaining = entry.hooks.filter(hook => !ourEntry({hooks:[hook]}, subcommand));
+      return remaining.length ? [{...entry, hooks:remaining}] : [];
+    }),
     { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] },
   ];
   settings.hooks = hooks;
@@ -143,6 +157,49 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
 }
 
 export function init(repoRoot: string, options: InitOptions = {}): string {
+  const hosts = selectedHosts(repoRoot, options.host);
+  // 검증을 먼저 끝내어 깨진 사용자 설정을 덮어쓰지 않는다.
+  for (const host of hosts) readSettings(settingsFile(repoRoot, host));
+  const previous = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) ? selectedHosts(repoRoot) :
+    installedHook(repoRoot, "PreToolUse", "hook") ? ["claude" as Host] : [];
+  const results = hosts.map(host => host === "claude" ? initClaude(repoRoot, options) : initCodex(repoRoot, options));
+  mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
+  writeFileSync(join(repoRoot, STATE_DIR, "hosts.json"), JSON.stringify([...new Set([...previous, ...hosts])]) + "\n");
+  return results.join("\n\n");
+}
+
+export function codexMatcherProblem(repoRoot: string, event: string): string | undefined {
+  const settings = readSettings(settingsFile(repoRoot, "codex"));
+  const entries = (settings.hooks as Record<string, HookEntry[]> | undefined)?.[event] ?? [];
+  const entry = entries.find(candidate => ourEntry(candidate, "codex-event"));
+  return entry?.matcher && entry.matcher !== "*" ? "Codex 공통 훅의 matcher가 이벤트 범위를 제한하고 있습니다." : undefined;
+}
+
+function initCodex(repoRoot: string, options: InitOptions): string {
+  for (const [file, text] of hostAssets("codex")) {
+    const target = join(repoRoot, file);
+    mkdirSync(dirname(target), {recursive: true});
+    writeFileSync(target, text);
+  }
+  const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" codex-event` : "code-agent codex-event";
+  for (const event of ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"]) {
+    upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", command);
+  }
+  upsertBlock(join(repoRoot, "AGENTS.md"), BLOCK_START, BLOCK_END, assetText("template/CODEX.block.md"));
+  upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END,
+    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/\n${STATE_DIR}/consents/`);
+  mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
+  writeFileSync(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
+  return ["Codex용 code-agent를 설치했습니다.",
+    "  스킬 18개: .agents/skills/ca-* · 에이전트 8개: .codex/agents/ca-*.toml",
+    "  훅 5종: .codex/hooks.json · 지침: AGENTS.md · 모델과 추론 강도: 부모 설정 상속",
+    "  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요.",
+    "  승인 응답은 ca-answer가 안내하는 사용자 대화 메시지로 관찰합니다.",
+    "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",
+  ].join("\n");
+}
+
+function initClaude(repoRoot: string, options: InitOptions = {}): string {
   const lines: string[] = [];
   const invoke = (subcommand: string): string =>
     options.cli ? `node "${options.cli.replace(/\\/g, "/")}" ${subcommand}` : `code-agent ${subcommand}`;

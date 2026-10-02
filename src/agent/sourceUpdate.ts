@@ -6,10 +6,12 @@ import { dirname, join, resolve } from "path";
 import { isPackaged } from "./assets";
 import { loadActive } from "./layout";
 import { Stop } from "./stop";
+import { HostSelection } from "./hosts";
 
 export interface SourceUpdateOptions {
   /** Hook CLI override, as in update(). Execution always uses the newly built CLI. */
   cli?: string;
+  host?: HostSelection;
   /** Installation overrides for embedders/tests; never inferred from the target repository. */
   sourceRoot?: string;
   packaged?: boolean;
@@ -243,9 +245,9 @@ export function updateFromSource(repoRoot: string, options: SourceUpdateOptions 
     const cli = join(source, "dist", "agent", "cli.js");
     if (!existsSync(cli)) throw new Stop(`빌드된 CLI가 없습니다: ${cli}`);
     stage = "새 CLI 템플릿 적용";
-    output.push(run(process.execPath, [cli, "update", "--templates-only", "--cli", options.cli ? resolve(initial.target, options.cli) : cli], initial.target, stage));
+    output.push(run(process.execPath, [cli, "update", "--templates-only", "--cli", options.cli ? resolve(initial.target, options.cli) : cli, ...(options.host ? ["--host", options.host] : [])], initial.target, stage));
     stage = "doctor (템플릿 적용 완료 후 점검)";
-    output.push(run(process.execPath, [cli, "doctor"], initial.target, stage));
+    output.push(run(process.execPath, [cli, "doctor", ...(options.host ? ["--host", options.host] : [])], initial.target, stage));
     output.push(`소스 업데이트 완료: ${initial.head} → ${git(source, ["rev-parse", "HEAD"])}`);
     return output.filter(Boolean).join("\n\n");
   } catch (error) {

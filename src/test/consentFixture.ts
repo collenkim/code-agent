@@ -16,6 +16,8 @@ import { check, integrate, runTests } from "../agent/validate";
 import { recordReviewFixture } from "./reviewFixture";
 import { dispatchPlanning, preparePlanning } from "../agent/planning";
 import { observePlanner } from "../agent/planningHook";
+import { codexHook } from "../agent/codexHook";
+import type { Host } from "../agent/hosts";
 
 export const ACCEPT_CONSENT = "확인하고 진행";
 export const DEFER_CONSENT = "보류";
@@ -94,9 +96,11 @@ export function observeConsentFixture(fixture: PreparedConsentFixture, label = A
 }
 
 /** For simple final-confirmation actions. Choice batches must be answered explicitly by the caller. */
-export function approveAndApplyFixture(root: string, action: ConsentAction): PreparedConsentFixture & { result: string } {
+export function approveAndApplyFixture(root: string, action: ConsentAction, host: Host = "claude"): PreparedConsentFixture & { result: string } {
   const fixture = prepareConsentFixture(root, action);
-  observeConsentFixture(fixture);
+  if (host === "codex") codexHook({cwd:root, hook_event_name:"UserPromptSubmit", session_id:fixture.sessionId,
+    turn_id:fixture.toolUseId, prompt:`code-agent consent respond ${fixture.id} 1`});
+  else observeConsentFixture(fixture);
   assert.equal(JSON.parse(consentStatus(root, fixture.id)).status, "approved");
   const result = applyConsent(root, fixture.id);
   assert.equal(JSON.parse(consentStatus(root, fixture.id)).status, "applied");
@@ -117,36 +121,38 @@ export function submitConsentRequest(root: string): void {
 }
 
 /** 모델 대신 합성한 런타임 이벤트로 신규 관찰 계약을 통과시킨다. 실제 모델 실측은 아니다. */
-function completePlanningFixture(root: string, id: string, artifacts: Record<string, string>): void {
+function completePlanningFixture(root: string, id: string, artifacts: Record<string, string>, host: Host): void {
   preparePlanning(root);
   const dispatch = JSON.parse(dispatchPlanning(root, id));
-  const event = { cwd: root, session_id: "planning-fixture", agent_id: randomUUID(), agent_type: dispatch.agent };
-  observePlanner({ ...event, hook_event_name: "SubagentStart" });
-  observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({
+  const event = { cwd: root, session_id: "planning-fixture", agent_id: randomUUID(), agent_type: dispatch.agent,
+    ...(host === "codex" ? {transcript_path:"/codex/parent.jsonl",agent_transcript_path:"/codex/child.jsonl"} : {}) };
+  const observe = host === "codex" ? codexHook : observePlanner;
+  observe({ ...event, hook_event_name: "SubagentStart" });
+  observe({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({
     ...dispatch.resultShape, status: "completed", summary: "고정된 테스트 자료 확인", evidence: [{ path: CONSENT_SPEC, line: 1 }],
     artifacts: Object.entries(artifacts).map(([path, content]) => ({ path, content })),
   }) });
 }
 
 /** Small Node workflow adapted from process.test.ts; all approvals use real consent events. */
-export function preparePlanFixture(root: string): void {
-  approveAndApplyFixture(root, { action: "setup" });
+export function preparePlanFixture(root: string, host: Host = "claude"): void {
+  approveAndApplyFixture(root, { action: "setup" }, host);
   submitConsentRequest(root);
-  approveAndApplyFixture(root, { action: "request", id: CONSENT_WORK_ID });
+  approveAndApplyFixture(root, { action: "request", id: CONSENT_WORK_ID }, host);
   start(root, join(root, CONSENT_SPEC));
   let artifacts: Record<string, string> = {};
   const document = (path: string, content: string) => { artifacts[path] = content; };
   const prefix = `doc/work/${CONSENT_WORK_ID}/`;
   document(prefix + "01-requirements.md", '## R1 · 값\n출처: REQ-1\n근거: "값 1을 반환한다."\n## R2 · 오류\n출처: REQ-2\n근거: "음수는 거부한다."\n## 가정\n- 없음\n');
-  completePlanningFixture(root, "analysis", artifacts); artifacts = {};
+  completePlanningFixture(root, "analysis", artifacts, host); artifacts = {};
   next(root);
   document(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n");
-  completePlanningFixture(root, "explore", {});
-  completePlanningFixture(root, "synthesis", artifacts); artifacts = {};
+  completePlanningFixture(root, "explore", {}, host);
+  completePlanningFixture(root, "synthesis", artifacts, host); artifacts = {};
   next(root);
   document(prefix + "03-design.md", "## 구성 요소\nvalue 함수\n## 처리 흐름\n입력 검사 후 값 반환\n## API\n해당 없음 — 외부 접점 없음\n## 데이터\n해당 없음 — 저장 없음\n## 설계 결정\n순수 함수\n");
   document(prefix + "04-functional.md", "## 기능 정의\n값과 오류\n## 업무 규칙\n음수 거부\n## 예외\n음수는 Error\n## 수락 기준\n- AC-R1-1: 양수이면 1\n- AC-R2-1: 음수이면 Error\n");
-  completePlanningFixture(root, "design", artifacts); artifacts = {};
+  completePlanningFixture(root, "design", artifacts, host); artifacts = {};
   next(root);
   document(prefix + "07-test-spec.md", "## 테스트 케이스\n| TC | 수준 | AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n| TC-1 | Unit | AC-R1-1 | 양수 | 1 |\n| TC-2 | Unit | AC-R2-1 | 음수 | Error |\n");
   const plan = {
@@ -163,15 +169,15 @@ export function preparePlanFixture(root: string): void {
     approach: "순수 함수", conventions: [], conflicts: [], openQuestions: [], reasoning: "테스트 먼저",
   };
   document(prefix + "plan.json", JSON.stringify(plan));
-  completePlanningFixture(root, "plan", artifacts);
-  completePlanningFixture(root, "critic", {});
+  completePlanningFixture(root, "plan", artifacts, host);
+  completePlanningFixture(root, "critic", {}, host);
   submitPlan(root, join(root, prefix + "plan.json"));
   assert.equal(loadActive(root)?.phase, "plan");
 }
 
-export async function prepareDeliveryFixture(root: string): Promise<void> {
-  preparePlanFixture(root);
-  approveAndApplyFixture(root, { action: "plan" });
+export async function prepareDeliveryFixture(root: string, host: Host = "claude"): Promise<void> {
+  preparePlanFixture(root, host);
+  approveAndApplyFixture(root, { action: "plan" }, host);
   next(root);
   writeFixture(root, "tests/value.test.js", "const test=require('node:test'),a=require('node:assert/strict'),v=require('../src/value');\ntest('TC-1',()=>a.equal(v(1),1));\ntest('TC-2',()=>a.throws(()=>v(-1)));\n");
   next(root);
@@ -182,7 +188,7 @@ export async function prepareDeliveryFixture(root: string): Promise<void> {
   openRound(requireValidatable(root, "review"));
   const review = reviewDocFile(CONSENT_WORK_ID);
   writeFixture(root, review, readFileSync(join(root, review), "utf8").replace("## 지적\n", "## 지적\n\n- 없음\n"));
-  recordReviewFixture(root);
+  recordReviewFixture(root, host);
   next(root);
   await integrate(requireValidatable(root, "integrate")); next(root);
   writeFixture(root, prefixPr(), "## 요약\n값과 오류 구현\n## 확인 방법\n함수 호출\n## 위험·되돌리기\n새 파일을 되돌린다.\n");

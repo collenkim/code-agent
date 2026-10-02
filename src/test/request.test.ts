@@ -288,7 +288,7 @@ describe("접수 — 확정 · 시작", () => {
 
   test("확정 전에는 start 가 거부한다 — 모델이 지시서를 지어내 시작하는 길이 여기서 닫힌다", () => {
     assert.throws(() => start(repo, join(repo, SPEC)), /요구사항이 확정되지 않았습니다[\s\S]*code-agent confirm request ORD-7/);
-    assert.match(status(repo), /접수: ORD-7 \(feature\)[\s\S]*요구사항: 확정 대기[\s\S]*다음: 현재 Claude 세션[\s\S]*request 동의 절차/);
+    assert.match(status(repo), /접수: ORD-7 \(feature\)[\s\S]*요구사항: 확정 대기[\s\S]*다음: 현재 호스트 세션[\s\S]*request 동의 절차/);
     assert.equal(loadActive(repo), undefined);
   });
 
@@ -325,7 +325,7 @@ describe("접수 — 확정 · 시작", () => {
     // 사람이 고친 것이든 다시 제출한 것이든 — 확정한 바이트가 아니면 진행하지 않는다
     writeFileSync(join(repo, SPEC), `${read(SPEC)}\n- 추가 요구\n`);
     assert.throws(() => next(repo), /요구사항이 확정 뒤 바뀌었습니다[\s\S]*code-agent confirm request ORD-7/);
-    assert.match(status(repo), /요구사항: 확정 뒤 바뀜 — 다시 확정 필요[\s\S]*다음: 현재 Claude 세션[\s\S]*request 동의 절차/);
+    assert.match(status(repo), /요구사항: 확정 뒤 바뀜 — 다시 확정 필요[\s\S]*다음: 현재 호스트 세션[\s\S]*request 동의 절차/);
     confirm();
     assert.equal(requestState(repo, ID, SPEC).status, "confirmed");
   });
