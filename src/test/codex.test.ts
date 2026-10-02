@@ -225,11 +225,19 @@ test("Codex 접수·계획·승인·Task·검증·리뷰·통합 흐름이 같�
   assert.ok(loadPlanning(loadWork(root)!).tasks.every(task=>task.attempts.at(-1)?.status==="completed"));
 });
 
-test("실제 CLI 훅 프로세스는 JSON을 반환하고 잘못된 패치는 종료 코드 2다", () => {
-  const event = {cwd:root,hook_event_name:"PreToolUse",tool_name:"apply_patch",tool_input:{command:"broken"}};
-  const failed = spawnSync(process.execPath,[cli,"codex-event"],{cwd:root,input:JSON.stringify(event),encoding:"utf8"});
-  assert.equal(failed.status,2,failed.stderr);
-  const stopped = spawnSync(process.execPath,[cli,"codex-event"],{cwd:root,input:JSON.stringify({cwd:root,hook_event_name:"Stop"}),encoding:"utf8"});
+test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결과로 반환한다", () => {
+  const run = (event: object) => spawnSync(process.execPath,[cli,"codex-event"],{cwd:root,input:JSON.stringify(event),encoding:"utf8"});
+  const output = (event: object) => { const result = run(event); assert.equal(result.status,0,result.stderr); return JSON.parse(result.stdout); };
+  assert.deepEqual(output({cwd:root,hook_event_name:"Stop"}),{});
+  // Codex는 exit 2로 도구를 막지 않는다. 판정 실패는 거부 응답으로 닫는다.
+  assert.match(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"apply_patch",tool_input:{command:"broken"}}).hookSpecificOutput.permissionDecisionReason,/판정에 실패해 막았습니다.*패치/);
+  writeFixture(root,".code-agent/active.json","{broken");
+  assert.equal(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:"code-agent status"}}).hookSpecificOutput.permissionDecision,"deny");
+  // Claude matcher 밖의 도구는 판정하지 않으므로 상태 오류로 막히지 않는다.
+  assert.deepEqual(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"spawn_agent",tool_input:{agent_type:"ca_analyst"}}),{});
+  const stopped = run({cwd:root,hook_event_name:"Stop"});
   assert.equal(stopped.status,0,stopped.stderr);
   assert.deepEqual(JSON.parse(stopped.stdout),{});
+  assert.match(stopped.stderr,/턴은 막지 않았습니다/);
+  assert.equal(run({cwd:root,hook_event_name:"SubagentStop",agent_type:"ca_analyst"}).status,2);
 });

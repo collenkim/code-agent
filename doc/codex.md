@@ -44,7 +44,7 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약에 대조 |
 | Stop | 계획 밖 변경·미결 질문 검사와 필요한 후속 안내 |
 
-다섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고, 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
+다섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고, 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 판정 대상은 Claude PreToolUse matcher와 같은 셸과 패치이며, 나머지 도구는 판정하지 않는다. Codex는 종료 코드 2로 도구를 막지 않으므로 판정 실패는 거부 응답으로 막는다. Stop 판정 실패는 Claude와 같이 턴을 막지 않는다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
 
 전용 Read 도구가 없는 Codex에서는 `code-agent read <파일> [시작 줄] [줄 수]`로 파일을 읽는다. 줄 번호를 포함하며 기본 200줄·최대 400줄이다. 저장소 안의 1 MB 이하 텍스트만 허용하고 연결 경로를 통한 저장소 밖 접근도 거부한다. 일반 셸 읽기·연결 명령을 허용하도록 게이트를 풀지 않는다. 기존 설치에는 템플릿 갱신과 호스트 재시작이 필요하다.
 
