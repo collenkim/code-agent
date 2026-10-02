@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,13 +15,15 @@ import { loadEvidence, outsideChanges, overFixLimit, runsOf, validationDocFile }
 import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
-import { loadActive, saveActive } from "../agent/layout";
+import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
 import { observeReviewer } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
 import { check, integrate, runTests } from "../agent/validate";
+import { verify, verificationFlowFile } from "../agent/verificationFlow";
+import type { VerificationHistory } from "../agent/verificationFlow";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 
@@ -295,6 +297,165 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(repo, { recursive: true, force: true });
+});
+
+describe("검증 workflow 노드", () => {
+  test("한 번 호출로 check·test·게이트를 실행하고 리뷰에 인계한다", async () => {
+    toCheck();
+    assert.equal(hook("Bash", { command: "code-agent verify --json" }), undefined);
+    const result = await verify(repo);
+    assert.equal(result.node, "review");
+    assert.equal(loadActive(repo)!.phase, "review");
+    assert.equal(result.executor, "agent");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+    const history = JSON.parse(readFileSync(verificationFlowFile(loadWork(repo)!), "utf8")) as VerificationHistory;
+    assert.deepEqual(history.attempts[0].events.filter((event) => event.status === "completed").map((event) => event.node),
+      ["check.execute", "check.assess", "test.select", "test.execute", "test.assess"]);
+    assert.equal(history.attempts[0].result?.node, "review");
+    await verify(repo);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1, "통과 후 재개는 재실행하지 않는다");
+  });
+
+  test("테스트 실패는 수정 요청으로, 수정 후에는 check부터 재검증한다", async () => {
+    useManifest({ test: FAIL_UNTIL_FIXED });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal(loadActive(repo)!.phase, "test");
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1, "변경 없는 실패를 자동 반복하지 않는다");
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는/);
+    write(`${ORDER}/domain/Order.java`, "class Order {} // fixed\n");
+    assert.equal((await verify(repo)).node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.rounds, 2);
+    assert.equal(runsOf(evidence, "check")[0].round, 2);
+    assert.equal(runsOf(evidence, "test")[0].round, 2);
+  });
+
+  test("check 실패 시 테스트를 실행하지 않는다", async () => {
+    useManifest({ build: FAIL });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal(loadActive(repo)!.phase, "check");
+    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test").length, 0);
+  });
+
+  test("실행 오류·명령 미선언·TC 결과 미확인은 진단 요청이며 통과가 아니다", async () => {
+    useManifest({ build: NOT_INSTALLED });
+    toCheck();
+    const result = await verify(repo);
+    assert.equal(result.node, "diagnose");
+    assert.equal(result.resume, "code-agent verify --retry");
+    assert.match(result.problems.join("\n"), /error/);
+  });
+
+  test("TC 미확인과 exit 0에서도 한도가 적용되고 hook이 추가 수정을 막는다", async () => {
+    useManifest({ test: PASS, fixRounds: 1 });
+    toCheck();
+    assert.equal((await verify(repo)).node, "diagnose");
+    const result = await verify(repo, { retry: true });
+    assert.equal(result.node, "decision");
+    assert.equal(result.executor, "human");
+    assert.equal(result.resume, "/ca-answer");
+    assert.match(result.problems.join("\n"), /TC/);
+    assert.ok(writeFileHook(`${ORDER}/domain/Order.java`));
+    assert.equal((await verify(repo, { retry: true })).node, "decision");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+  });
+
+  test("수정 한도를 사용한 뒤 트리가 바뀌어도 더 실행하지 않는다", async () => {
+    useManifest({ test: FAIL_UNTIL_FIXED, fixRounds: 1 });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal((await verify(repo, { retry: true })).node, "decision");
+    write(`${ORDER}/domain/Order.java`, "class Order {} // fixed\n");
+    assert.equal((await verify(repo)).node, "decision");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+  });
+
+  test("check 완료 직후 중단돼도 같은 회차로 test부터 이어간다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    assert.equal((await verify(repo)).node, "review");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+  });
+
+  test("이전 회차 test 통과로 현재 회차 test를 건너뛰지 않는다", async () => {
+    toCheck();
+    await verify(repo);
+    await check(requireValidatable(repo, "check"));
+    assert.equal((await verify(repo)).node, "review");
+    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].round, 2);
+  });
+
+  test("명시적 retry는 변경 없는 환경 문제도 check부터 다시 실행한다", async () => {
+    useManifest({ test: PASS });
+    toCheck();
+    assert.equal((await verify(repo)).node, "diagnose");
+    assert.equal((await verify(repo, { retry: true })).node, "diagnose");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+  });
+
+  test("계획 밖 변경과 오래된 승인을 자동 실행기로 우회하지 못한다", async () => {
+    toCheck();
+    write("outside.txt", "unexpected");
+    await assert.rejects(verify(repo), /계획.*어긋나/);
+    assert.equal(loadEvidence(repo, "ORD-1", "order"), undefined);
+    const history = JSON.parse(readFileSync(verificationFlowFile(loadWork(repo)!), "utf8")) as VerificationHistory;
+    assert.equal(history.attempts[0].events.at(-1)?.status, "error");
+    write("doc/work/ORD-1/03-design.md", `${DESIGN}\n변경\n`);
+    await assert.rejects(verify(repo), /승인되지 않았습니다/);
+  });
+
+  test("미응답 질문이 있으면 실행하지 않는다", async () => {
+    toCheck();
+    write("doc/work/ORD-1/questions.md", "## Q1\n질문: 범위?\n");
+    await assert.rejects(verify(repo), /질문/);
+    assert.equal(loadEvidence(repo, "ORD-1", "order"), undefined);
+  });
+
+  test("손상된 노드 이력은 통과나 재실행 근거로 사용하지 않는다", async () => {
+    toCheck();
+    writeFileSync(verificationFlowFile(loadWork(repo)!), "{");
+    await assert.rejects(verify(repo), /노드 이력/);
+    assert.equal(loadEvidence(repo, "ORD-1", "order"), undefined);
+  });
+
+  test("CLI JSON과 종료 코드는 통과·수정 요청을 구분한다", () => {
+    useManifest({ test: FAIL_UNTIL_FIXED });
+    toCheck();
+    const cli = join(__dirname, "../agent/cli.js");
+    const failed = spawnSync(process.execPath, [cli, "verify", "--json"], { cwd: repo, encoding: "utf8" });
+    assert.equal(failed.status, 1, failed.stderr);
+    assert.equal(JSON.parse(failed.stdout).node, "repair");
+    write(`${ORDER}/domain/Order.java`, "class Order {} // fixed\n");
+    const passed = spawnSync(process.execPath, [cli, "verify", "--json"], { cwd: repo, encoding: "utf8" });
+    assert.equal(passed.status, 0, passed.stderr);
+    assert.equal(JSON.parse(passed.stdout).node, "review");
+    const invalid = spawnSync(process.execPath, [cli, "verify", "--force"], { cwd: repo, encoding: "utf8" });
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /사용법/);
+  });
+
+  test("check 실행 도중 중단된 회차를 되돌리지 않고 다시 실행한다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    evidence.rounds += 1; // 다음 check가 회차를 저장한 직후, 실행 결과를 남기기 전의 상태
+    writeFileSync(verifyFile(repo, "ORD-1", "order"), JSON.stringify(evidence));
+    assert.equal((await verify(repo)).node, "review");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 3);
+  });
+
+  test("명령 미선언은 진단 요청이며 테스트 통과로 처리하지 않는다", async () => {
+    write("doc/test-strategy.md", STRATEGY.replace("- `test`: 전체 테스트", "- 없음 — 실행 명령 준비 전"));
+    useManifest({ test: undefined });
+    toCheck();
+    const result = await verify(repo);
+    assert.equal(result.node, "diagnose");
+    assert.match(result.problems.join("\n"), /not-run/);
+    assert.equal(loadActive(repo)!.phase, "test");
+  });
 });
 
 // ---- 기준 커밋 ----

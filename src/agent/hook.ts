@@ -82,6 +82,7 @@ const MODEL_SUBCOMMANDS = [
   "repro",
   "check",
   "test",
+  "verify",
   "review",
   "integrate",
 ];

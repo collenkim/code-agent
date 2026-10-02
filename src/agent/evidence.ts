@@ -360,7 +360,9 @@ export function fixLimit(work: Work, evidence: Evidence): number {
 export function overFixLimit(work: Work, evidence: Evidence): boolean {
   return (
     evidence.rounds > fixLimit(work, evidence) &&
-    (["check", "test"] as const).some((phase) => failedRuns(runsOf(evidence, phase)).length > 0)
+    ((["check", "test"] as const).some((phase) => failedRuns(runsOf(evidence, phase)).length > 0) ||
+      (runsOf(evidence, "test").some((run) => run.round === evidence.rounds) &&
+        evidence.testCases.some((entry) => entry.status !== "passed")))
   );
 }
 
