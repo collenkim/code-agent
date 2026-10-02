@@ -19,6 +19,15 @@ export interface Question {
   id: string;
   title: string;
   answer: string;
+  status?: "pending" | "answered" | "deferred";
+  requirements?: string[];
+}
+
+/** 상태 설명과 보류는 업무 결정이 아니다. 기존 문서도 같은 규칙으로 읽는다. */
+export function usableAnswer(answer: string): boolean {
+  const value = answer.trim().replace(/^(?:[A-Z0-9]+[.)]|[-*])\s+/, "");
+  return !!value && !/^(?:(?:보류|취소)(?:합니다|하겠습니다)?|건너뛰기|모르겠(?:다|어요)|미응답|응답\s*대기|pending|deferred|cancelled|skip)(?:[.!。]?(?:$|\r?\n)|\s*[—–-]\s*|\s*[:(])/i.test(value) &&
+    !/^\(?\s*(?:상태|해석|참고)\s*:/.test(value);
 }
 
 export function parseQuestions(text: string): Question[] {
@@ -28,16 +37,24 @@ export function parseQuestions(text: string): Question[] {
     const [heading, ...body] = block.split("\n");
     const id = heading.split(/\s/)[0];
     const marker = body.findIndex((line) => line.trim().startsWith("[Answer]:"));
-    const answer =
+    let answer =
       marker < 0
         ? ""
-        : [body[marker].trim().slice("[Answer]:".length), ...body.slice(marker + 1)]
+        : [body[marker].trim().slice("[Answer]:".length), ...body.slice(marker + 1).filter(line => !/^\s*\[(?:Status|Requirements)\]:/.test(line))]
             .join("\n")
             .replace(/<!--[\s\S]*?-->/g, "")
             .split("\n").filter((line) => !/^\s*(?:([-*_])\s*){3,}$/.test(line))
             .join("\n").trim();
-    questions.push({ id, title: heading.trim(), answer });
+    const state = /^\s*\[Status\]:\s*(\S+)/m.exec(body.join("\n"))?.[1];
+    const requirements = /^[ \t]*\[Requirements\]:[ \t]*(.*)/m.exec(body.join("\n"))?.[1].match(/\b(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)\b/g);
+    if (!usableAnswer(answer) || (state && state !== "answered")) answer = "";
+    questions.push({ id, title: heading.trim(), answer,
+      ...(state ? { status: state === "answered" && answer ? "answered" as const : state === "deferred" ? "deferred" as const : "pending" as const } : {}),
+      ...(requirements ? { requirements: [...new Set(requirements)] } : {}),
+    });
   }
+  // 서로 다른 질문이 같은 ID를 쓰면 어느 답인지 확정할 수 없다.
+  for (const question of questions) if (questions.filter(item => item.id === question.id).length > 1) question.answer = "";
   return questions;
 }
 

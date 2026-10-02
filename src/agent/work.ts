@@ -14,6 +14,7 @@ import { workDocsHash } from "./workDocs";
 import { loadActive, planFile, workDocsDir } from "./layout";
 import type { ActiveWork } from "./layout";
 import { Stop } from "./stop";
+import { loadPlanning } from "./planningState";
 
 /** 진행 중인 작업 하나를 판정에 필요한 만큼 전부 읽은 것 */
 export interface Work {
@@ -50,7 +51,8 @@ export function approvalDocsHash(work: Work): string | undefined {
   if (!project) {
     return undefined;
   }
-  return sha(`${project}\n${workDocsHash(work.repoRoot, work.active.id, work.active.spec)}`);
+  const proof = work.active.planningVersion ? JSON.stringify(loadPlanning(work).tasks.map(record => ({ task: record.task, last: record.attempts.at(-1) }))) : "";
+  return sha(`${project}\n${workDocsHash(work.repoRoot, work.active.id, work.active.spec)}${proof ? `\n${proof}` : ""}`);
 }
 
 /**

@@ -14,6 +14,8 @@ import { openRound, reviewDocFile } from "../agent/review";
 import { setupProject } from "../agent/setup";
 import { check, integrate, runTests } from "../agent/validate";
 import { recordReviewFixture } from "./reviewFixture";
+import { dispatchPlanning, preparePlanning } from "../agent/planning";
+import { observePlanner } from "../agent/planningHook";
 
 export const ACCEPT_CONSENT = "확인하고 진행";
 export const DEFER_CONSENT = "보류";
@@ -114,21 +116,39 @@ export function submitConsentRequest(root: string): void {
   requestSubmit(root, join(root, draft));
 }
 
+/** 모델 대신 합성한 런타임 이벤트로 신규 관찰 계약을 통과시킨다. 실제 모델 실측은 아니다. */
+function completePlanningFixture(root: string, id: string, artifacts: Record<string, string>): void {
+  preparePlanning(root);
+  const dispatch = JSON.parse(dispatchPlanning(root, id));
+  const event = { cwd: root, session_id: "planning-fixture", agent_id: randomUUID(), agent_type: dispatch.agent };
+  observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({
+    ...dispatch.resultShape, status: "completed", summary: "고정된 테스트 자료 확인", evidence: [{ path: CONSENT_SPEC, line: 1 }],
+    artifacts: Object.entries(artifacts).map(([path, content]) => ({ path, content })),
+  }) });
+}
+
 /** Small Node workflow adapted from process.test.ts; all approvals use real consent events. */
 export function preparePlanFixture(root: string): void {
   approveAndApplyFixture(root, { action: "setup" });
   submitConsentRequest(root);
   approveAndApplyFixture(root, { action: "request", id: CONSENT_WORK_ID });
   start(root, join(root, CONSENT_SPEC));
+  let artifacts: Record<string, string> = {};
+  const document = (path: string, content: string) => { artifacts[path] = content; };
   const prefix = `doc/work/${CONSENT_WORK_ID}/`;
-  writeFixture(root, prefix + "01-requirements.md", '## R1 · 값\n출처: REQ-1\n근거: "값 1을 반환한다."\n## R2 · 오류\n출처: REQ-2\n근거: "음수는 거부한다."\n## 가정\n- 없음\n');
+  document(prefix + "01-requirements.md", '## R1 · 값\n출처: REQ-1\n근거: "값 1을 반환한다."\n## R2 · 오류\n출처: REQ-2\n근거: "음수는 거부한다."\n## 가정\n- 없음\n');
+  completePlanningFixture(root, "analysis", artifacts); artifacts = {};
   next(root);
-  writeFixture(root, prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n");
+  document(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n");
+  completePlanningFixture(root, "explore", {});
+  completePlanningFixture(root, "synthesis", artifacts); artifacts = {};
   next(root);
-  writeFixture(root, prefix + "03-design.md", "## 구성 요소\nvalue 함수\n## 처리 흐름\n입력 검사 후 값 반환\n## API\n해당 없음 — 외부 접점 없음\n## 데이터\n해당 없음 — 저장 없음\n## 설계 결정\n순수 함수\n");
-  writeFixture(root, prefix + "04-functional.md", "## 기능 정의\n값과 오류\n## 업무 규칙\n음수 거부\n## 예외\n음수는 Error\n## 수락 기준\n- AC-R1-1: 양수이면 1\n- AC-R2-1: 음수이면 Error\n");
+  document(prefix + "03-design.md", "## 구성 요소\nvalue 함수\n## 처리 흐름\n입력 검사 후 값 반환\n## API\n해당 없음 — 외부 접점 없음\n## 데이터\n해당 없음 — 저장 없음\n## 설계 결정\n순수 함수\n");
+  document(prefix + "04-functional.md", "## 기능 정의\n값과 오류\n## 업무 규칙\n음수 거부\n## 예외\n음수는 Error\n## 수락 기준\n- AC-R1-1: 양수이면 1\n- AC-R2-1: 음수이면 Error\n");
+  completePlanningFixture(root, "design", artifacts); artifacts = {};
   next(root);
-  writeFixture(root, prefix + "07-test-spec.md", "## 테스트 케이스\n| TC | 수준 | AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n| TC-1 | Unit | AC-R1-1 | 양수 | 1 |\n| TC-2 | Unit | AC-R2-1 | 음수 | Error |\n");
+  document(prefix + "07-test-spec.md", "## 테스트 케이스\n| TC | 수준 | AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n| TC-1 | Unit | AC-R1-1 | 양수 | 1 |\n| TC-2 | Unit | AC-R2-1 | 음수 | Error |\n");
   const plan = {
     domainName: "Value", domainLabel: "값", domainRoot: "", domainDirName: "value",
     files: [
@@ -136,9 +156,15 @@ export function preparePlanFixture(root: string): void {
       { stage: "test", path: "tests/value.test.js", purpose: "검증", requirements: ["R1", "R2"] },
     ],
     sequence: [{ step: "test", why: "동작을 먼저 명시" }, { step: "code", why: "명시한 동작 구현" }],
+    tasks: [
+      { id: "T1", stage: "test", title: "동작 테스트", requirements: ["R1", "R2"], files: ["tests/value.test.js"], dependsOn: [], acceptance: ["AC-R1-1", "AC-R2-1"] },
+      { id: "T2", stage: "code", title: "함수 구현", requirements: ["R1", "R2"], files: ["src/value.js"], dependsOn: ["T1"], acceptance: ["AC-R1-1", "AC-R2-1"] },
+    ],
     approach: "순수 함수", conventions: [], conflicts: [], openQuestions: [], reasoning: "테스트 먼저",
   };
-  writeFixture(root, prefix + "plan.json", JSON.stringify(plan));
+  document(prefix + "plan.json", JSON.stringify(plan));
+  completePlanningFixture(root, "plan", artifacts);
+  completePlanningFixture(root, "critic", {});
   submitPlan(root, join(root, prefix + "plan.json"));
   assert.equal(loadActive(root)?.phase, "plan");
 }

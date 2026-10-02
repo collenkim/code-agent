@@ -19,7 +19,19 @@ argument-hint: [<사람이 쓴 지시서 경로>] [--base <기준 브랜치>] [-
   이미 지났으면 `code-agent back analysis` 로 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다.
   **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다.
 
-## 하는 일 — ① `01-requirements.md`
+## 신규 작업: 관찰된 계획 작업
+
+`code-agent status`에 관찰 흐름이 표시된 신규 작업은 아래 절차를 사용한다. 이전 버전에서 시작한 작업만 뒤의 기존 절차를 사용한다.
+
+1. `code-agent planning prepare` → `code-agent planning status`로 현재 단계 작업을 준비한다. 이 단계 역할은 **analysis**다.
+2. 준비된 ID별로 `code-agent planning dispatch <ID>`를 실행한다. `cached:true`이면 반환된 결과를 재사용한다. 그 외에는 반환된 `agent`를 실제 서브 에이전트로 호출하고 **배정 JSON 전체**와 이 단계의 문서 뼈대·형식만 넘긴다. 소스 후보는 해당 영역만 넘기며 전역 context를 각 조사자에게 반복 전달하지 않는다.
+3. 담당은 파일을 직접 쓰지 않고 `resultShape`에 맞는 JSON 하나를 반환한다. 시작·완료 hook이 배정 식별자와 입력 해시를 검사한 뒤 `artifacts`를 기록한다. 메인이 결과를 완료 처리하거나 번호 문서·plan.json을 직접 수정하지 않는다.
+4. `planning status`에서 완료를 확인한다. 미결 질문은 ca-answer로 실제 답을 받은 뒤 관련 작업을 다시 배정한다. 보류·상태 메모는 답변이 아니다. 입력 변경·오류는 원인을 고치고 재배정한다. 중단된 실행만 `planning cancel <ID>`로 취소한다. 같은 입력은 최대 3회까지 배정한다.
+5. 필요한 역할이 모두 완료되면 기존 끝 절의 게이트로 이어간다. plan은 관찰된 critic 완료와 차단 지적 해소 후에만 제출하고 사람의 승인을 받는다.
+
+작업 정의·영역 분할·재개 규칙은 `.claude/skills/ca-plan/SKILL.md`의 **계획 작업 계약**을 따른다. 아래 기존 절의 문서 내용 기준은 신규 작업의 담당에게도 전달한다.
+
+## 기존 작업의 작성 절차
 
 1. Bash: `code-agent context` — 지시서·공통 문서·작업 폴더 경로와 형식이 나온다.
 2. Bash: `code-agent docs skeleton 01-requirements`

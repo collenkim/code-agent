@@ -12,11 +12,23 @@ description: 설계·정의 단계(design)를 진행한다 — ③ 03-design.md 
 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고, 이미 지났으면 `code-agent back design` 으로
 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다.
 
-## 하는 일 — ③ `03-design.md` · ④ `04-functional.md`
+## 신규 작업: 관찰된 계획 작업
+
+`code-agent status`에 관찰 흐름이 표시된 신규 작업은 아래 절차를 사용한다. 이전 버전에서 시작한 작업만 뒤의 기존 절차를 사용한다.
+
+1. `code-agent planning prepare` → `code-agent planning status`로 현재 단계 작업을 준비한다. 이 단계 역할은 **design**다.
+2. 준비된 ID별로 `code-agent planning dispatch <ID>`를 실행한다. `cached:true`이면 반환된 결과를 재사용한다. 그 외에는 반환된 `agent`를 실제 서브 에이전트로 호출하고 **배정 JSON 전체**와 이 단계의 문서 뼈대·형식만 넘긴다. 소스 후보는 해당 영역만 넘기며 전역 context를 각 조사자에게 반복 전달하지 않는다.
+3. 담당은 파일을 직접 쓰지 않고 `resultShape`에 맞는 JSON 하나를 반환한다. 시작·완료 hook이 배정 식별자와 입력 해시를 검사한 뒤 `artifacts`를 기록한다. 메인이 결과를 완료 처리하거나 번호 문서·plan.json을 직접 수정하지 않는다.
+4. `planning status`에서 완료를 확인한다. 미결 질문은 ca-answer로 실제 답을 받은 뒤 관련 작업을 다시 배정한다. 보류·상태 메모는 답변이 아니다. 입력 변경·오류는 원인을 고치고 재배정한다. 중단된 실행만 `planning cancel <ID>`로 취소한다. 같은 입력은 최대 3회까지 배정한다.
+5. 필요한 역할이 모두 완료되면 기존 끝 절의 게이트로 이어간다. plan은 관찰된 critic 완료와 차단 지적 해소 후에만 제출하고 사람의 승인을 받는다.
+
+작업 정의·영역 분할·재개 규칙은 `.claude/skills/ca-plan/SKILL.md`의 **계획 작업 계약**을 따른다. 아래 기존 절의 문서 내용 기준은 신규 작업의 담당에게도 전달한다.
+
+## 기존 작업의 작성 절차
 
 1. Bash: `code-agent context` — **관련 후보 파일 순위**와 **참고 문서 섹션**이 함께 나온다. 컨벤션·KNOWLEDGE 를 전문으로 읽지 말고 그 절부터 본다.
 2. Bash: `code-agent docs skeleton 03-design` · `code-agent docs skeleton 04-functional`
-3. `ca-writer` 에게 뼈대 + `01`·`02` + 아키텍처·컨벤션 경로 + `context` 가 짚은 문서 섹션 + KNOWLEDGE 인용을 넘겨 둘을 쓰게 한다. 같은 스테이지에서 함께 쓴다.
+3. `ca-analyst` 에게 뼈대 + `01`·`02` + 아키텍처·컨벤션 경로 + `context` 가 짚은 문서 섹션 + KNOWLEDGE 인용을 넘겨 설계 판단과 두 문서의 완성 본문을 요청한다. 메인이 반환된 본문을 두 파일에 기록한다.
    - **`03-design.md`** — `구성 요소` · `처리 흐름` · `API` · `데이터` · `설계 결정`.
      API·데이터는 조건부다: 접점이나 데이터를 안 건드리면 `해당 없음 — <근거>` 라고 쓴다. **근거 없는 `해당 없음` 은 미충족이다.**
      KNOWLEDGE 에 있는 것은 키와 기대는 사실 한 줄을 옮겨 적고 **차이만** 쓴다.

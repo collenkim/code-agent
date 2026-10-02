@@ -84,7 +84,7 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
       const same = beforeFiles.get(file) === readIfAny(join(repoRoot, file));
       const detail =
         file === ".claude/settings.json"
-          ? ` (PreToolUse ${installedHook(repoRoot, "PreToolUse", "hook")} · 질문 PreToolUse ${installedHook(repoRoot, "PreToolUse", "consent-event")} · 질문 PostToolUse ${installedHook(repoRoot, "PostToolUse", "consent-event")} · Stop ${installedHook(repoRoot, "Stop", "stop")} · SubagentStart ${installedHook(repoRoot, "SubagentStart", "review-event")} · SubagentStop ${installedHook(repoRoot, "SubagentStop", "review-event")})`
+          ? ` (PreToolUse ${installedHook(repoRoot, "PreToolUse", "hook")} · 질문 PreToolUse ${installedHook(repoRoot, "PreToolUse", "consent-event")} · 질문 PostToolUse ${installedHook(repoRoot, "PostToolUse", "consent-event")} · Stop ${installedHook(repoRoot, "Stop", "stop")} · SubagentStart ${installedHook(repoRoot, "SubagentStart", "review-event")} · SubagentStop ${installedHook(repoRoot, "SubagentStop", "review-event")} · 계획 SubagentStart ${installedHook(repoRoot, "SubagentStart", "planning-event")} · 계획 SubagentStop ${installedHook(repoRoot, "SubagentStop", "planning-event")})`
           : "";
       return `${file}: ${same ? "그대로" : "갱신"}${detail}`;
     }),

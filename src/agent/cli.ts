@@ -27,6 +27,8 @@ import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from
 import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./request";
 import { openRound } from "./review";
 import { runReviewHook } from "./reviewHook";
+import { runPlanningHook } from "./planningHook";
+import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning } from "./planning";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
 import { update } from "./update";
@@ -93,6 +95,10 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
                                       ${BACK_PHASES.join(" | ")}
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
   code-agent plan submit <초안.json>  계획 검사 후 제출
+  code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
+  code-agent planning status          배정·입력 변경·선행 조건·미결 질문·결과 조회
+  code-agent planning dispatch <ID>   입력 묶음·담당 에이전트·결과 계약 반환 (같은 입력은 재사용)
+  code-agent planning cancel <ID>     중단된 배정 취소 (이전 실행 결과는 거부)
   code-agent repro                    fix 전용 — 재현 TC 의 실패를 보고 증거로 남긴다 (그 전에는 고칠 파일을 쓸 수 없다)
   code-agent check                    8 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
   code-agent test                     9 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC별 실제 결과를 대조
@@ -103,6 +109,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)
   code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
+  code-agent planning-event           분석·조사·설계·계획 담당의 시작·완료 관찰 (stdin JSON)
   code-agent consent-event            AskUserQuestion 시작·응답 관찰 및 확인 기록 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
@@ -149,11 +156,19 @@ async function main(argv: string[]): Promise<number> {
     return runStopHook(readFileSync(0, "utf-8"));
   }
   if (command === "review-event") return runReviewHook(readFileSync(0, "utf-8"));
+  if (command === "planning-event") return runPlanningHook(readFileSync(0, "utf-8"));
   if (command === "consent-event") return runConsentHook(readFileSync(0, "utf-8"));
 
   const repoRoot = findRepoRoot(process.cwd());
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
+    case "planning":
+      if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
+      else if (args[0] === "status") print(planningStatus(repoRoot));
+      else if (args[0] === "dispatch" && args[1]) print(dispatchPlanning(repoRoot, args[1]));
+      else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
+      else throw new Stop("planning prepare [작업.json] | status | dispatch <ID> | cancel <ID>");
+      return 0;
     case "consent":
       if (args[0] === "prepare" && args[1]) print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8"))));
       else if (args[0] === "status" && args[1]) print(consentStatus(repoRoot, args[1]));

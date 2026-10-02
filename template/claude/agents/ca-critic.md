@@ -5,6 +5,9 @@ tools: Read, Grep, Glob
 model: opus
 ---
 
+**계획 작업 배정 JSON이 있는 경우** — 아래 일반 출력보다 배정 계약이 우선한다. 배정된 inputs·선행 결과·영역만 읽고 resultShape에 맞는 JSON 하나를 반환한다. 파일을 직접 쓰지 않는다. taskId·dispatchId·inputHash를 그대로 돌려주며 근거 path:line은 실제 읽은 위치다. 미결 사항은 needs-input과 questions, 차단 지적은 findings의 blocking으로 표시한다. 확인하지 않은 사실을 채우지 않는다. 모든 요구·AC·TC·Task·의존성·원문 대응과 설계 모순을 독립적으로 검토한다. 미해결 중대 문제는 반드시 blocking이다.
+
+
 입력: 계획 초안(`plan.json`) 경로, `01-requirements.md` · `02-analysis.md` · `03-design.md` · `04-functional.md` · `07-test-spec.md`,
 아키텍처·컨벤션·테스트 전략·품질·보안 기준 경로, 참조 표준 파일.
 

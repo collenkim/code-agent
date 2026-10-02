@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { hashPlan } from "../core/approval";
+import { requiredOutputs, TASK_AGENTS } from "./planningState";
 import { checkPaths, unplannedFiles } from "../core/gate";
 import type { Manifest, StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
@@ -71,6 +72,7 @@ const MODEL_SUBCOMMANDS = [
   "context",
   "status",
   "plan submit",
+  "planning prepare", "planning status", "planning dispatch", "planning cancel",
   "docs",
   "survey",
   "manifest check",
@@ -134,7 +136,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   const repoRoot = canonical(projectDir ?? input.cwd);
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
-    if (/\bconsent-event\b/.test(command)) return "질문 관찰 명령은 Claude Code hook만 호출합니다.";
+    if (/\b(?:consent-event|planning-event)\b/.test(command)) return "실행 관찰 명령은 Claude Code hook만 호출합니다.";
     const denied = consentCommandGuard(repoRoot, command, input.session_id);
     if (denied) return denied;
   }
@@ -369,6 +371,7 @@ function decideWrite(work: Work, path: string): string | undefined {
   }
   // 작업 폴더(번호 문서·질문·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);
+  if (active.planningVersion && Object.keys(TASK_AGENTS).flatMap(role => requiredOutputs(work, role as keyof typeof TASK_AGENTS)).some(file => file.toLowerCase() === path.toLowerCase())) return "이 계획 문서는 관찰된 담당 에이전트의 결과로 생성합니다. planning prepare·dispatch 후 결과의 artifacts로 반환하세요.";
   if (path === workDir || path.startsWith(`${workDir}/`)) {
     return undefined;
   }
@@ -403,6 +406,7 @@ function decideWrite(work: Work, path: string): string | undefined {
       "현재 Claude 세션에서 ca-answer의 plan 동의 절차로 계획을 승인해야 쓸 수 있습니다."
     );
   }
+  if (active.phase === "implement" && plan.tasks && !plan.tasks.find(task => task.id === active.task)?.files.includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;
 
   // 계획이 이 파일에 배정한 단계. 검증·리뷰는 고쳐 쓰는 자리라 커서가 아니라 이 단계의 규칙으로 본다.
   const planStage = work.stages.find((candidate) =>

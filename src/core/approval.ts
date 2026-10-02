@@ -458,7 +458,7 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
 // ---- 재승인 diff ----
 
 export interface PlanDiffEntry {
-  section: "도메인" | "파일" | "보존" | "규칙" | "충돌" | "질문" | "근거";
+  section: "도메인" | "파일" | "보존" | "규칙" | "충돌" | "질문" | "근거" | "작업 Task";
   change: "+" | "-" | "~";
   text: string;
 }
@@ -543,6 +543,9 @@ export function diffPlans(before: BuildPlan, after: BuildPlan): PlanDiffEntry[] 
     () => undefined,
   );
 
+  if (canonical(before.tasks ?? []) !== canonical(after.tasks ?? [])) {
+    entries.push({ section: "작업 Task", change: "~", text: "파일 소유·의존성·완료 기준이 바뀌었습니다. 현재 작업 Task 표를 확인하세요." });
+  }
   if (before.reasoning !== after.reasoning) {
     entries.push({ section: "근거", change: "~", text: `${before.reasoning} → ${after.reasoning}` });
   }
