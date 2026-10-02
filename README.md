@@ -48,7 +48,7 @@ code-agent는 **Claude Code 안에서 실행하는 개발 절차**입니다. 별
 | Claude Code 메인 대화 | 현재 상태에 맞는 스킬을 읽고 개발을 진행합니다. 필요한 서브에이전트를 호출합니다. |
 | 스킬 18개 | `.claude/skills/ca-*/SKILL.md`에 접수·단계별 절차를 정의합니다. `/ca-request`, `/ca-next` 등의 명령으로 실행합니다. |
 | 서브에이전트 8개 | `.claude/agents/ca-*.md`에 분석·조사·작성·구현·테스트·검토 역할을 정의합니다. 사용자가 매번 등록하거나 선택할 필요는 없습니다. |
-| hook 등록 6개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. |
+| hook 등록 8개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개도 등록합니다. |
 | `code-agent` CLI | 상태 전환, 승인·범위 검사, 검증 명령 실행, 증거 기록, 로컬 반영을 처리하고 종료합니다. 상주 서버가 아닙니다. |
 
 `init`은 위 설정을 **설치만** 합니다. Claude Code나 개발 작업을 자동으로 시작하지 않습니다. 설치한 프로젝트에서 `claude`를 실행하면 프로젝트 스킬·서브에이전트를 사용할 수 있습니다. `claude --agent code-agent`처럼 별도 메인 에이전트를 지정하는 실행 방식은 제공하지 않습니다.
@@ -227,6 +227,12 @@ Claude Code 안에서는 “code-agent를 업데이트해 주세요”라고 요
 
 `update`는 다른 hook, `CLAUDE.md`의 code-agent 블록 밖 내용, 모델 오버라이드를 보존합니다. 번들에 없는 과거 `ca-*` 파일은 사용자 파일일 수 있어 자동 삭제하지 않고 보고합니다. 해당 목록은 검토 후 정리해야 합니다.
 
+## 요구 분석·설계·계획
+
+신규 작업은 `planning prepare`·`dispatch`로 담당·입력·출력·선행 조건을 정하고 실제 서브 에이전트 실행 결과를 확인합니다. 영역 조사는 기본 3개까지 병렬 배정하며, 동일 입력 결과는 재사용합니다. 설계와 계획은 ca-analyst, 영향도 정리는 ca-writer, 독립 반박 검토는 ca-critic이 맡습니다. 미결 질문·오래된 근거·차단 지적이 있으면 진행하지 않습니다.
+
+계획에는 단계 안의 독립 `tasks`를 정의하고 파일 소유·의존성·수락 기준을 연결합니다. 기존 작업은 이전 형식으로 재개합니다. [계획 작업 안내](doc/planning.md)에 계약과 복구 절차를 설명합니다.
+
 ## 검증 노드 실행
 
 전체 작업 흐름에서 `code-agent verify`가 정적 검증·테스트 실행·결과 판정을 연속 처리합니다. `program` 노드는 코드로 실행하고, 실패 분석·수정·독립 리뷰가 필요한 `agent` 노드와 사용자 판단이 필요한 `human` 노드에서는 작업 요청을 반환합니다.
@@ -250,12 +256,13 @@ npm test
 
 대상 프로젝트에서 로컬 개발본을 쓰려면 이 저장소에서 `npm link`를 실행한 다음, 대상 프로젝트에서 `code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js`를 사용합니다. `--cli`에는 PC별 절대 경로가 들어가므로 팀 공용 설치와 구분합니다.
 
-전체 흐름은 신규·기능 개선·버그 수정·리팩토링 4유형에서 실제 모델로 접수부터 로컬 반영까지 확인했습니다. 승인 입력은 명시적인 자동 fixture였으며 **실제 초보자 사용성 측정은 아닙니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도는 추가 확인 범위입니다. 검증 노드 도입 후 회귀 결과는 [최신 검증 기록](doc/reviews/2026-10-02-verification-workflow.md), 이전 같은 세션 확인·업데이트 결과는 [당시 기록](doc/reviews/2026-10-02-session-confirmation-update.md)으로 구분합니다. 실제 사람의 질문 화면 조작과 노드화 이후 토큰·시간 절감량은 별도 실측 대상입니다.
+관찰된 계획 작업 도입 이전의 전체 흐름은 신규·기능 개선·버그 수정·리팩토링 4유형에서 실제 모델로 접수부터 로컬 반영까지 확인했습니다. 승인 입력은 명시적인 자동 fixture였으며 **실제 초보자 사용성 측정은 아닙니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도는 추가 확인 범위입니다. 관찰된 계획 작업의 검증은 [최신 변경 기록](doc/reviews/2026-10-02-planning-orchestration.md)에, 이전 검증 노드 회귀 결과는 [당시 검증 기록](doc/reviews/2026-10-02-verification-workflow.md), 이전 같은 세션 확인·업데이트 결과는 [당시 기록](doc/reviews/2026-10-02-session-confirmation-update.md)으로 구분합니다. 실제 사람의 질문 화면 조작과 노드화 이후 토큰·시간 절감량은 별도 실측 대상입니다.
 
 ## 상세 문서
 
 | 문서 | 읽을 내용 |
 |---|---|
+| [계획 작업 안내](doc/planning.md) | 서브 에이전트 배정·병렬 조사·입력 변경·독립 검토·Task 실행 |
 | [사용 가이드](doc/usage.md) | 단계별 실행, 질문·승인, 예외와 복구 |
 | [설치 문서](doc/install.md) | npm·실행 파일 설치, 빌드, 갱신, 제거 |
 | [요구사항 규격](doc/requirement.md) | 원문 대조, 접수 데이터, 확정·반려 |

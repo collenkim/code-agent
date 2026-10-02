@@ -7,7 +7,7 @@ code-agent는 **Claude Code 안에서** 실행한다. `init`은 스킬·서브�
 
 일반 요구사항 접수는 `/ca-request`, 신규·기능 추가·기능 변경을 명시하는 진입점은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존 구조 개선은 `/ca-refactor`다. 종류별 명령도 같은 접수 절차를 사용한다. 하나로 접수한 뒤 질문·확인에 답하면 이어가며, `/ca-next`는 중단 후 재개할 때 사용한다.
 
-모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있다. 진행 조건 검사와 결과 기록은 hook 등록 6개(이벤트 5종)와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의(`template/` → 설치되면 `.claude/`)에 있다. 진행 조건 검사와 결과 기록은 hook 등록 8개(이벤트 5종)와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인도 같은 세션의 선택 화면에서 받고 이어간다.
 
@@ -454,13 +454,15 @@ preserve:
 
 ### 단계마다 실제로 도는 것
 
+신규 작업의 분석·영향도·설계·계획은 [관찰된 계획 작업](planning.md)의 배정·완료 계약으로 아래 내용을 생성한다. 번호 문서는 관찰 hook이 기록하고, 이전 버전 작업은 기존 작성 절차로 재개한다.
+
 - 접수(`/ca-request`) — `request.json`을 쓰고 `code-agent request submit`으로 지시서를 렌더한 뒤 같은 세션에서 확정받고 분석으로 이어간다. 요구 정리는 원문과 명령 출력을 근거로 하며, 공통 문서 준비가 필요하면 별도의 준비 절차에서 기존 소스를 확인한다.
   확정은 사람이 같은 세션의 선택 화면에서 하고, 그 전에는 작업 폴더 밖이 전부 닫혀 있다 (빌드·테스트 명령도 열리지 않는다 — 돌릴 코드가 아직 없는 자리다).
 - `analysis`(`/ca-analyze`) — ① `01-requirements.md`. `ca-analyst` 가 요구 항목 `## R<n>`(각각 `근거:`)·`## 가정`·`## 범위 밖` 을 뽑는다. 질문은 선택 도구로 받고 답을 반영한다. 필수 답이 없으면 멈춘다.
   `근거:` 는 접수가 렌더한 지시서에서는 `## 원문` · `## 요구 내용` · `## 완료 조건` · `## 접수 때 정한 것` 에서 찾는다 (손으로 쓴 지시서는 그 본문에서 인용한다).
 - `impact`(`/ca-impact`) — ② `02-analysis.md`. 요구 항목을 닿는 영역으로 묶어 `ca-explorer` 를 병렬로 돌리고 `ca-writer` 가 쓴다.
-  `doc/knowledge/` 에 키가 이미 있으면 explorer 를 붙이지 않고 **인용한다.**
-- `design`(`/ca-design`) — ③ `03-design.md` · ④ `04-functional.md` 를 `ca-writer` 가 같은 스테이지에서 함께 쓴다. AC(`AC-R<n>-<m>`)가 여기서 나온다.
+  `doc/knowledge/` 에 키가 있어도 explorer가 현재 코드와 호출자 영향을 확인한 뒤 인용한다.
+- `design`(`/ca-design`) — ③ `03-design.md` · ④ `04-functional.md` 를 `ca-analyst` 가 판단해 같은 스테이지에서 함께 작성한다. AC(`AC-R<n>-<m>`)가 여기서 나온다.
   지시서의 `## 완료 조건`(또는 수락 기준) 문장은 **그대로** AC 에 옮긴다 — 사람이 확정한 완료 조건을 다듬다 뜻이 달라지는 자리를 막는다.
 - `plan`(`/ca-plan`) — ⑤ `plan.json` + ⑦ `07-test-spec.md` → `ca-critic` 반박 검토 → `code-agent plan submit` (통과하면 코드가 `05-plan.md` 를 렌더한다).
   여기서는 `code-agent next` 를 돌리지 않는다 — 이 문을 여는 것은 게이트가 아니라 같은 세션의 관찰된 승인이다. 반려 사유를 읽고 다시 내는 자리도 여기다.
@@ -732,8 +734,8 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `doc/work/<ID>/questions.md` | 질문과 답 | `start` 가 만들고 모델이 덧붙인다 | O |
 | `doc/work/<ID>/01-requirements.md` ① | 요구 항목 `## R<n>` · 가정 · 범위 밖 | 모델 (`ca-analyst` 결과) | O |
 | `doc/work/<ID>/02-analysis.md` ② | 기존 시스템 분석 · 영향 범위 · Risk | 모델 (`ca-explorer` → `ca-writer`) | O |
-| `doc/work/<ID>/03-design.md` ③ | 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 | 모델 (`ca-writer`) | O |
-| `doc/work/<ID>/04-functional.md` ④ | 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 모델 (`ca-writer`) | O |
+| `doc/work/<ID>/03-design.md` ③ | 구성 요소 · 처리 흐름 · API · 데이터 · 설계 결정 | 모델 결과 + 관찰 hook | O |
+| `doc/work/<ID>/04-functional.md` ④ | 기능 · 업무 규칙 · 예외 · 수락 기준(AC) | 모델 결과 + 관찰 hook | O |
 | `doc/work/<ID>/plan.json` ⑤ | 계획 초안 | 모델 | O |
 | `doc/work/<ID>/05-plan.md` ⑤ | 사람이 읽는 계획 — `plan.json` 의 뷰 | **`plan submit` 만** (hook 이 모델 쓰기 거부) | O |
 | `doc/work/<ID>/07-test-spec.md` ⑦ | AC 마다 테스트 케이스 — **구현 전에** 쓴다 | 모델 | O |
@@ -1158,3 +1160,10 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 
 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. push · MR/PR 생성 · 병합은 사람이 손으로 한다 —
 git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정한다.
+
+
+## 관찰된 계획 작업
+
+신규 작업은 `status`의 계획 처리 줄에 관찰 흐름으로 표시된다. 각 단계에서 `planning prepare`로 작업을 등록하고 `planning dispatch <ID>`가 반환한 담당·입력·출력 계약으로 서브 에이전트를 호출한다. 실제 시작·완료 hook이 결과를 기록한다. 전체 단계별 내용 기준은 동일하며 번호 문서와 plan.json은 관찰된 결과로 생성한다. 이전 버전 작업은 기존 작성 절차로 재개한다.
+
+기본 역할 순서는 analysis → explore → synthesis → design → plan → critic이다. 설계·계획 판단은 ca-analyst, 조사 정리는 ca-writer다. 같은 입력 결과는 재사용하고, 영역 조사 완료와 충돌 해소 후 합성한다. 계획 제출·승인은 관찰된 critic 완료가 필수다. 구현은 tasks의 현재 파일 범위만 허용한다. 예시·질문 상태·취소·재시도·피드백 반영은 [계획 작업 안내](planning.md)에 정리했다.
