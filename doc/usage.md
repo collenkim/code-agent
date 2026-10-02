@@ -24,6 +24,25 @@ code-agent는 **Claude Code 안에서** 실행한다. `init`은 스킬·서브�
 
 ---
 
+## 검증 노드 실행기
+
+전체 작업 흐름의 check·test는 `code-agent verify [--json] [--retry]`로 실행한다. 계획된 코드와 테스트 작성이 끝난 뒤 사용한다. check에서 시작하면 정적 검증·게이트·테스트·TC 판정까지 코드가 연속 처리한다. test에서 재개하면 유효한 check 증거를 재사용한다. 통과하면 커서는 review에 있으므로 `next`를 추가 호출하지 않고 `/ca-review`를 진행한다.
+
+| 반환 노드 | 실행 주체 | 다음 행동 |
+|---|---|---|
+| `review` | agent | 독립 리뷰 진행 |
+| `repair` | agent | 증거·로그를 분석하고 계획 안에서 수정 후 같은 verify 실행 |
+| `diagnose` | agent | 미실행·실행 오류·생략·TC 결과 미확인 원인 해결 후 verify --retry |
+| `decision` | human | 한도 초과를 보고하고 기존 질문·재계획·재승인 절차 진행 |
+
+`--json`은 node·executor·task·problems·summaries·evidence·plannedFiles·resume을 반환한다. 종료 코드는 review 인계 시 0, 수정·진단·사용자 판단 요청 시 1이다. 실행 전제 거부는 기존 CLI 오류로 반환하며 유효한 노드 JSON과 구분한다. 프로그램이 에이전트 작업이나 사용자 응답을 대신 완료하지 않는다.
+
+중단 후 같은 명령으로 재개한다. 입력이 같은 실패는 재실행하지 않고 요청을 다시 반환한다. 코드 수정은 check부터 재검증하며, 환경 문제를 해결하고 동일 코드를 재실행할 때만 `--retry`를 사용한다. 최초 1회와 `fixRounds`만큼의 수정 회차를 공유한다. 명령이 exit 0이어도 필수 TC가 passed가 아니면 통과가 아니며 한도를 적용한다. 검증 중 프로세스가 중단돼도 이미 증가한 회차는 되돌리지 않는다.
+
+`.code-agent/work/<ID>/<대상>.verification-flow.json`에는 노드별 실행·대기·오류와 입력 해시를 기록한다. 판정의 근거는 기존 verify.json과 08-validation.md다. 이력 파일을 수정해 완료를 선언하지 않는다. 기존 프로젝트에 새 필수 설정은 없으며 구버전 작업도 재개할 수 있다. 단일 단계만 실행할 때는 기존 `check`, `test`, `next`를 사용한다.
+
+변경·검증 기록은 [문서 이력](reviews/README.md)에서 확인한다.
+
 ## 목차
 
 - [1. 설치](#1-설치)

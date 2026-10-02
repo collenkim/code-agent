@@ -7,6 +7,8 @@
 
 ---
 
+검증 노드 실행기 도입 후에도 새 패키지·서버·필수 설정은 없다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 ca-check·ca-test·ca-next와 CLAUDE 블록을 함께 갱신한다. Claude Code를 다시 열고 `code-agent --help`의 `verify` 항목과 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 기존 증거로 재개한다. 변경 이력은 [문서·검증 이력](reviews/README.md)에 있다.
+
 ## 목차
 
 - [1. 두 가지 설치](#1-두-가지-설치)
