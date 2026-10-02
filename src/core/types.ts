@@ -71,6 +71,8 @@ export interface PreserveNote {
 
 /** "어떤 컨벤션으로 어떻게 만들지"를 정리한 작업 명세서 */
 export interface BuildPlan {
+  /** 단계 안에서도 독립적인 작업·의존 관계·완료 조건을 명시한다. 구버전 계획에는 없다. */
+  tasks?: ImplementationTask[];
   /** 프로젝트 명명 규칙을 따른 도메인 이름 */
   domainName: string;
   /** 사람이 읽는 이름 */
@@ -90,6 +92,16 @@ export interface BuildPlan {
   /** 보존 조건과 지키는 방법. 계획 스키마가 갈리는 종류에서만 채워진다 */
   preserve?: PreserveNote[];
   reasoning: string;
+}
+
+export interface ImplementationTask {
+  id: string;
+  stage: string;
+  title: string;
+  requirements: string[];
+  files: string[];
+  dependsOn: string[];
+  acceptance: string[];
 }
 
 export interface GeneratedFile {

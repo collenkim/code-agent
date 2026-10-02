@@ -163,6 +163,7 @@ export function knowledgeList(repoRoot: string): string {
   return [
     ...lines,
     "",
+    "근거 경로 존재와 마지막 작업 ID는 내용의 최신성을 보장하지 않습니다. 조사에서 현재 코드를 확인하세요.",
     "작업 ID 는 **그 키를 마지막으로 쓴 작업**입니다 — 같은 키를 다시 반영하면 최신 것만 보입니다.",
     `커밋되지 않았거나 사람이 손으로 넣은 항목은 ${UNKNOWN} 입니다.`,
   ].join("\n");

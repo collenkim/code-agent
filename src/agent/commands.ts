@@ -9,6 +9,8 @@ import { checkPaths, missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
 import type { Manifest, StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
+import { planningProblems, requiredOutputs } from "./planningState";
+import { planningDocumentProblems, reviewedPlanProblems } from "./planningValidation";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
 import {
@@ -339,7 +341,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
         "<!-- 질문은 `## Q<번호> · <스테이지>` 로 시작하고, 답은 `[Answer]:` 뒤에 적는다. 답이 없으면 다음으로 넘어가지 않는다. -->\n",
     );
   }
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit }, "start");
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1 }, "start");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
   return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}`;
@@ -444,6 +446,7 @@ export function status(repoRoot: string): string {
     `지시서: ${active.spec}`,
     requestStateLine(repoRoot, active.id, active.spec),
     `작업 폴더: ${workDocsDir(active.id)}/`,
+    `계획 처리: ${active.planningVersion ? "관찰 흐름 — code-agent planning status" : "기존 작업 호환 흐름"}`,
     `브랜치: ${active.branch ? `${active.branch} (기준 ${active.base})` : "없음"}`,
     `스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`,
   );
@@ -458,7 +461,7 @@ export function status(repoRoot: string): string {
     const verified = active.phase === "deliver" && approval === "approved" &&
       stageProblems(work, "integrate").length === 0 && reviewProblems(work).length === 0;
     const tasks = planTasks(work.plan);
-    const cursor = tasks.findIndex((task) => task.stage === active.stage);
+    const cursor = tasks.findIndex((task) => active.task ? task.id === active.task : task.stage === active.stage);
     lines.push("작업 Task (완료는 검증·리뷰 뒤 최종 확인):", ...tasks.map((task, index) => {
       const state = active.phase === "implement" ? (index < cursor ? "구현됨·검증 대기" : index === cursor ? "진행 중" : "대기")
         : AFTER_IMPLEMENT.includes(active.phase) ? (verified ? "검증됨·반영 대기" : "검증 중") : "대기";
@@ -497,8 +500,9 @@ export function next(repoRoot: string): string {
   requireRequestConfirmed(repoRoot, active.id, active.spec);
   requireAnswers(repoRoot, active);
 
-  const advance = (phase: Phase, stage?: string): string => {
-    saveActive(repoRoot, { ...active, phase, stage }, "next");
+  if (["analysis", "impact", "design", "plan"].includes(active.phase)) requireWorkDocs([...planningProblems(work, active.phase as "analysis" | "impact" | "design" | "plan"), ...planningDocumentProblems(work, active.phase)]);
+  const advance = (phase: Phase, stage?: string, task?: string): string => {
+    saveActive(repoRoot, { ...active, phase, stage, task }, "next");
     return status(repoRoot);
   };
 
@@ -521,6 +525,7 @@ export function next(repoRoot: string): string {
     }
     case "plan": {
       requireRequirements(repoRoot, active);
+      requireWorkDocs(reviewedPlanProblems(work));
       if (!work.plan) {
         throw new Stop("제출된 계획이 없습니다. code-agent plan submit <초안> 으로 제출하세요.");
       }
@@ -528,7 +533,7 @@ export function next(repoRoot: string): string {
       if (approval.status !== "approved") {
         throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 현재 Claude 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다.`);
       }
-      return advance("implement", plannedStages(work)[0]?.key);
+      return advance("implement", plannedStages(work)[0]?.key, work.plan.tasks?.[0]?.id);
     }
     case "implement": {
       requireRequirements(repoRoot, active);
@@ -538,6 +543,15 @@ export function next(repoRoot: string): string {
       const index = stages.findIndex((stage) => stage.key === active.stage);
       if (index < 0) throw new Stop("현재 구현 단계가 승인된 순서에 없습니다. code-agent back plan 으로 돌아가 계획을 확인하세요.");
       const stage = stages[index];
+      if (work.plan?.tasks) {
+        const taskIndex = work.plan.tasks.findIndex(task => task.id === active.task);
+        const task = work.plan.tasks[taskIndex];
+        if (!task || task.stage !== active.stage) throw new Stop("현재 구현 Task가 승인된 계획에 없습니다. back plan으로 돌아가세요.");
+        const missing = task.files.filter(file => !existsSync(join(repoRoot, file)));
+        if (missing.length) throw new Stop(`Task ${task.id}의 계획 파일이 아직 없습니다: ${missing.join(", ")}`);
+        const following = work.plan.tasks[taskIndex + 1];
+        if (following?.stage === stage.key) return advance("implement", stage.key, following.id);
+      }
       if (stage && work.plan) {
         const present = work.plan.files
           .filter((file) => file.stage === stage.key && existsSync(join(repoRoot, file.path)))
@@ -559,7 +573,7 @@ export function next(repoRoot: string): string {
         }
       }
       const following = stages[index + 1];
-      return following ? advance("implement", following.key) : advance("check", undefined);
+      return following ? advance("implement", following.key, work.plan?.tasks?.find(task => task.stage === following.key)?.id) : advance("check", undefined);
     }
     // 7·8 은 코드가 남긴 증거만 읽는다 — 모델의 "통과했습니다" 는 여기서 아무 효력이 없다.
     case "check":
@@ -742,7 +756,7 @@ export function back(repoRoot: string, to: string): string {
   }
   // implement 로 되감으면 계획의 첫 단계부터 — 단계 키가 비면 hook 이 지금 단계를 찾지 못해 쓰기를 전부 막는다
   const stage = target === "implement" ? plannedStages(work)[0]?.key : undefined;
-  saveActive(repoRoot, { ...active, phase: target, stage }, "back");
+  saveActive(repoRoot, { ...active, phase: target, stage, task: target === "implement" ? work.plan?.tasks?.[0]?.id : undefined }, "back");
   return (
     `커서를 ${PHASE_LABEL[active.phase]}(${active.phase}) 에서 ${PHASE_LABEL[target]}(${target}) 로 되감았습니다.\n` +
     backNotes(target)
@@ -873,7 +887,7 @@ export function context(repoRoot: string): string {
       "|---|---|---|---|",
       "| R1 | <path:line> | <부르는 곳> | 없음 — <근거> |",
       "```",
-      `- 공통 KNOWLEDGE (읽기만 — 키가 이미 있으면 ca-explorer 를 붙이지 말고 인용한다): ${KNOWLEDGE_KINDS.map((kind) => docPaths(manifest, kind)[0]).join(", ")}`,
+      `- 공통 KNOWLEDGE (읽기만 — 키가 있어도 현재 코드와 호출자 영향을 확인하고 인용한다): ${KNOWLEDGE_KINDS.map((kind) => docPaths(manifest, kind)[0]).join(", ")}`,
     );
   }
 
@@ -1003,7 +1017,9 @@ export function context(repoRoot: string): string {
 
   if (active.phase === "implement" && work.stage && work.plan) {
     const stage = work.stage;
-    const planned = work.plan.files.filter((file) => file.stage === stage.key);
+    const currentTask = work.plan.tasks?.find(task => task.id === active.task);
+    const planned = work.plan.files.filter((file) => currentTask ? currentTask.files.includes(file.path) : file.stage === stage.key);
+    if (currentTask) out.push(`현재 Task: ${currentTask.id} · ${currentTask.title}`, `선행: ${currentTask.dependsOn.join(", ") || "없음"} · 완료 기준: ${currentTask.acceptance.join(", ")}`);
     out.push("", `## 단계 ${stage.key} — ${stage.title}`, "", "만들 파일 (승인된 계획 — 이 밖은 hook 이 거부한다):");
     out.push(...planned.map((file) => `- ${file.path} — ${file.purpose}`));
     const template = join(repoRoot, stage.template);
@@ -1116,6 +1132,8 @@ export function submitPlan(repoRoot: string, draft: string): string {
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, active.id, active.spec);
   requireAnswers(repoRoot, active);
+  requireWorkDocs([...planningProblems(work, "plan"), ...planningDocumentProblems(work, "plan")]);
+  if (active.planningVersion && canonical(resolve(process.cwd(), draft)) !== canonical(join(repoRoot, requiredOutputs(work, "plan")[0]))) throw new Stop("관찰된 계획 작업이 생성한 plan.json만 제출할 수 있습니다.");
 
   // 계획 검사 전에 ①~④·⑦ 을 다시 본다 — 스테이지를 지난 뒤에 문서를 고쳤을 수 있고, 승인은 이 묶음에 대한 것이다.
   const requirements = requireRequirements(repoRoot, active);
@@ -1143,6 +1161,8 @@ export function submitPlan(repoRoot: string, draft: string): string {
     );
   }
   const plan = format.toPlan(parsed.data);
+  if (active.planningVersion && !plan.tasks) throw new Stop("신규 계획에는 파일 소유·의존성·AC를 갖춘 tasks가 필요합니다.");
+  for (const task of plan.tasks ?? []) if (task.acceptance.some(ac => !functional.acceptance.includes(ac))) throw new Stop(`${task.id}: 기능 명세에 없는 완료 기준입니다.`);
 
   const problems: string[] = [...coverageProblems(requirements.keys, plan.files), ...sequenceProblems(plan, work.stages, order.kind)];
   if (plan.openQuestions.length > 0) {
@@ -1270,6 +1290,8 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, active.id, active.spec);
   // 제출과 승인 사이에도 작업 폴더는 쓸 수 있다 — 제출 때 지난 게이트를 다시 본다.
+  requireAnswers(repoRoot, active);
+  if (decision === "approved") requireWorkDocs([...planningProblems(work, "plan"), ...planningDocumentProblems(work, "plan"), ...reviewedPlanProblems(work)]);
   // 여기서 안 보면 02·07 을 빈 파일로 덮은 상태의 docsHash 가 그대로 승인으로 굳는다 (승인 화면에는 계획만 보인다).
   const requirements = requireRequirements(repoRoot, active);
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);

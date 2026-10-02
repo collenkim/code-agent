@@ -109,7 +109,7 @@ export function installedHook(repoRoot: string, event: string, subcommand: strin
  * 설치된 PreToolUse 항목의 matcher 가 넘기지 않는 도구 — 없으면 빈 목록.
  * matcher 가 없거나 `*` 면 전부 넘긴다. 옛 설치본(읽기 셋이 없는 matcher)을 doctor 가 짚는 자리다.
  */
-export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected = HOOK_MATCHER): string[] {
+export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected = HOOK_MATCHER, requestedSubcommand?: string): string[] {
   let settings: Record<string, unknown>;
   try {
     settings = readSettings(join(repoRoot, ".claude", "settings.json"));
@@ -117,7 +117,7 @@ export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected 
     return [];
   }
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
-  const subcommand = event === "PostToolUse" ? "consent-event" : event === "PreToolUse" && expected === "AskUserQuestion" ? "consent-event" : event === "PreToolUse" ? "hook" : "review-event";
+  const subcommand = requestedSubcommand ?? (event === "PostToolUse" ? "consent-event" : event === "PreToolUse" && expected === "AskUserQuestion" ? "consent-event" : event === "PreToolUse" ? "hook" : "review-event");
   const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, subcommand));
   if (!entry || !entry.matcher || entry.matcher === "*") return [];
   const covered = entry.matcher.split("|").map((tool) => tool.trim());
@@ -167,7 +167,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   upsertHook(settings, "Stop", "stop", invoke("stop"));
   upsertHook(settings, "SubagentStart", "review-event", invoke("review-event"), "ca-reviewer");
   upsertHook(settings, "SubagentStop", "review-event", invoke("review-event"), "ca-reviewer");
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")}`);
+  upsertHook(settings, "SubagentStart", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
+  upsertHook(settings, "SubagentStop", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);

@@ -8,7 +8,9 @@ import { sourceItems, sourceTrace } from "../agent/sourceTrace";
 import { confirmDoc, docsBegin, docsEnd } from "../agent/docsCommands";
 import { setupProject } from "../agent/setup";
 import { requestBegin, requestSubmit, loadRequestSession, recordRequestDecision } from "../agent/request";
-import { abort, start, next, status, submitPlan, requireValidatable } from "../agent/commands";
+import { abort, next, status, submitPlan, requireValidatable } from "../agent/commands";
+// 단계별 sequence를 쓰던 기존 작업의 재개 호환성. 신규 Task 흐름은 planning·consent에서 검증한다.
+import { start } from "./confirmedStart";
 import { loadActive, planFile } from "../agent/layout";
 import { checkProjectDocs, recordDocConfirmation, readDocLedger } from "../agent/docs";
 import { approvalDocsHash, loadWork, loadManifestIfAny } from "../agent/work";

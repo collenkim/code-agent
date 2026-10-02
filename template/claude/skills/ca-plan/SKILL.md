@@ -16,7 +16,19 @@ description: 구현 계획 단계(plan)를 진행한다 — ⑤ plan.json 과 �
 
 **`05-plan.md` 는 쓰지 않는다** — `plan submit` 이 `plan.json` 에서 렌더한다 (hook 이 모델의 쓰기를 거부한다).
 
-## 하는 일 — ⑤ `plan.json` · ⑦ `07-test-spec.md`
+## 신규 작업: 관찰된 계획 작업
+
+`code-agent status`에 관찰 흐름이 표시된 신규 작업은 아래 절차를 사용한다. 이전 버전에서 시작한 작업만 뒤의 기존 절차를 사용한다.
+
+1. `code-agent planning prepare` → `code-agent planning status`로 현재 단계 작업을 준비한다. 이 단계 역할은 **plan → critic**다.
+2. 준비된 ID별로 `code-agent planning dispatch <ID>`를 실행한다. `cached:true`이면 반환된 결과를 재사용한다. 그 외에는 반환된 `agent`를 실제 서브 에이전트로 호출하고 **배정 JSON 전체**와 이 단계의 문서 뼈대·형식만 넘긴다. 소스 후보는 해당 영역만 넘기며 전역 context를 각 조사자에게 반복 전달하지 않는다.
+3. 담당은 파일을 직접 쓰지 않고 `resultShape`에 맞는 JSON 하나를 반환한다. 시작·완료 hook이 배정 식별자와 입력 해시를 검사한 뒤 `artifacts`를 기록한다. 메인이 결과를 완료 처리하거나 번호 문서·plan.json을 직접 수정하지 않는다.
+4. `planning status`에서 완료를 확인한다. 미결 질문은 ca-answer로 실제 답을 받은 뒤 관련 작업을 다시 배정한다. 보류·상태 메모는 답변이 아니다. 입력 변경·오류는 원인을 고치고 재배정한다. 중단된 실행만 `planning cancel <ID>`로 취소한다. 같은 입력은 최대 3회까지 배정한다.
+5. 필요한 역할이 모두 완료되면 기존 끝 절의 게이트로 이어간다. plan은 관찰된 critic 완료와 차단 지적 해소 후에만 제출하고 사람의 승인을 받는다.
+
+작업 정의·영역 분할·재개 규칙은 `.claude/skills/ca-plan/SKILL.md`의 **계획 작업 계약**을 따른다. 아래 기존 절의 문서 내용 기준은 신규 작업의 담당에게도 전달한다.
+
+## 기존 작업의 작성 절차
 
 1. Bash: `code-agent context` — 계획 형식과 단계 key·위치가 나온다.
 2. `01`~`04` · explorer 결과로 계획 초안을 작업 폴더의 `plan.json` 에 쓴다.
@@ -66,3 +78,25 @@ description: 구현 계획 단계(plan)를 진행한다 — ⑤ plan.json 과 �
 3. 사유만으로 정할 수 없는 것이 있으면 새 질문을 `questions.md`에 적고 공통 선택 절차로 답을 받는다. 필요한 답이 없을 때만 멈춘다.
    정할 수 있으면 문서와 계획을 고쳐 `code-agent plan submit` 으로 다시 제출하고, **무엇을 왜 바꿨는지** 함께 보고한다.
 4. 재제출 후 새 `plan` 공통 동의 절차로 승인받는다. 사유를 읽지 않고 같은 계획을 다시 내지 않는다.
+
+
+## 계획 작업 계약
+
+기본 흐름은 analysis(ca-analyst) → explore(ca-explorer) → synthesis(ca-writer) → design(ca-analyst) → plan(ca-analyst) → critic(ca-critic)이다. 설계 판단과 계획 작성은 분석 담당, 조사 결과 정리는 작성 담당, 독립 반박 검토는 critic이 맡는다.
+
+큰 영향 영역은 `planning prepare doc/work/<ID>/planning-tasks.json`으로 나눈다. JSON은 `{ "maxParallel": 3, "tasks": [...] }`이며 작업마다 다음 필드를 둔다:
+
+- `id`: 영문 소문자·숫자·하이픈 식별자, `role`, `title`, `requirements`: 담당 R 또는 원문 REQ/DONE/CON ID.
+- `inputs`: 직접 읽을 저장소 상대 파일, `scopes`: 조사 역할의 소스 영역. 기본은 ["."]; 넓은 저장소는 영역별로 좁힌다. 선행 문서·공통 정책·확정 지시서는 자동 연결된다. KNOWLEDGE를 읽으면 inputs에 넣고 코드 근거를 확인한다.
+- `outputs`: 역할별 고정 출력. analysis는01, synthesis는02, design은03·04, plan은plan.json·07, explore·critic은빈 배열. 경로는 doc/work/<ID>/ 아래다.
+- `dependsOn`: 선행 작업 ID. synthesis는 모든 explore에 의존해야 한다. `questionIds`: 관련 질문 ID. 질문에는 [Requirements]: R1 처럼 영향 범위를 기록한다. 범위 없는 질문은 전체를 막는다.
+
+현재 단계의 여러 작업을 한 배치로 등록한다. 이미 기본 explore를 등록했다면 그 ID를 첫 영역으로 갱신하고 다른 영역을 더한다. synthesis 의존성도 같은 배치에서 갱신한다. 준비된 조사 작업만 최대 maxParallel개(1~4, 기본3)까지 동시에 배정·호출한다. 선행 결과와 공통 사실 키의 상충이 있으면 합성을 시작할 수 없다. 의미상 같은 사실은 동일 key를 사용한다. 범위 밖 호출자가 발견되면 근거를 추측하지 않고 입력·영역 정의를 보완하여 재배정한다.
+
+입력 파일 내용·영역 파일 목록·공통 정책·관련 질문·선행 결과가 같을 때만 **같은 작업 안에서** 결과를 재사용한다. 캐시된 KNOWLEDGE 키만으로 조사를 생략하지 않는다. 다른 작업의 오래된 문서는 코드 확인 전까지 단서다.
+
+수정 피드백은 작업 폴더의 별도 파일에 기록하고 해당 작업 inputs에 추가해 prepare한다. 잘못된 문서를 직접 덮어쓰지 않는다. 완료 결과에 차단 지적이 남으면 해당 원인 작업의 입력을 보완해 다시 실행하고 후속 작업과 critic을 다시 실행한다. 중간 단계로 되감는 경우 기존 back 정책을 따른다.
+
+plan.json에는 기존 sequence와 함께 tasks를 넣는다: `{ "id":"T1", "stage":"단계 키", "title":"구체적 작업", "requirements":["R1"], "files":["src/a.ts"], "dependsOn":[], "acceptance":["AC-R1-1"] }`. 파일 소유자는 정확히 하나, 의존성은 앞 Task, 순서는 sequence를 따른다. 같은 단계에 여러 Task를 둘 수 있다. 실제 완료는 구현 후 검증·리뷰로 판정한다.
+
+필수 문서에 확인 필요·TODO·TBD를 남기면 전환을 막는다. 근거 파일과 줄이 실재해야 하고 AC에는 구체적 내용, BR에는 실제 파일:줄 또는 답변된 Q 번호가 있어야 한다. 이는 형식·근거 검사이며 내용의 타당성은 critic과 사용자 승인이 판단한다.

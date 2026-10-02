@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { start as startUnconfirmed } from "../agent/commands";
-import { canonical } from "../agent/layout";
+import { canonical, loadActive, saveActive } from "../agent/layout";
 import { recordRequestDecision, requestState } from "../agent/request";
 import { parseFrontMatter } from "../core/workOrder";
 
@@ -33,7 +33,15 @@ export function confirmForTest(repoRoot: string, spec: string): void {
   });
 }
 
-export function start(repoRoot: string, spec: string, options: { target?: string; base?: string } = {}): string {
+export function start(repoRoot: string, spec: string, options: { target?: string; base?: string; planning?: boolean } = {}): string {
   confirmForTest(repoRoot, spec);
-  return startUnconfirmed(repoRoot, spec, options);
+  const result = startUnconfirmed(repoRoot, spec, options);
+  // 기존 회귀군은 이전 버전에서 시작한 작업의 재개 호환성을 검사한다.
+  // 신규 관찰 흐름 테스트는 planning:true로 실제 start 기본값을 유지한다.
+  if (!options.planning) {
+    const active = loadActive(repoRoot)!;
+    delete active.planningVersion;
+    saveActive(repoRoot, active, "start");
+  }
+  return result;
 }

@@ -5,6 +5,9 @@ tools: Read, Grep, Glob, Write, Edit
 model: opus
 ---
 
+**계획 작업 배정 JSON이 있는 경우** — 아래 일반 출력보다 배정 계약이 우선한다. 배정된 inputs·선행 결과·영역만 읽고 resultShape에 맞는 JSON 하나를 반환한다. 파일을 직접 쓰지 않는다. taskId·dispatchId·inputHash를 그대로 돌려주며 근거 path:line은 실제 읽은 위치다. 미결 사항은 needs-input과 questions, 차단 지적은 findings의 blocking으로 표시한다. 확인하지 않은 사실을 채우지 않는다. synthesis는 모든 영역 조사 결과를 근거로02를 정리한다. 새로운 설계나 업무 결정을 만들어내지 않는다.
+
+
 입력: 쓸 문서 종류와 경로, 문서 뼈대(`code-agent docs skeleton <종류>` 출력), 재료(분석 결과·explorer 결과·사용자 답), 범위(요구 항목).
 
 - 뼈대의 제목을 그대로 쓴다 — 코드가 제목으로 필수 섹션을 찾는다. 안내 주석은 지워도 된다.

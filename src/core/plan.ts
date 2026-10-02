@@ -12,6 +12,11 @@ import type { StageDef } from "./manifest";
 
 /** 종류가 무엇이든 계획에 들어가는 것 */
 const COMMON_PLAN_FIELDS = {
+  tasks: z.array(z.object({
+    id: z.string().regex(/^T[1-9]\d*$/), stage: z.string().min(1), title: z.string().trim().min(1),
+    requirements: z.array(z.string().regex(/^R\d+$/)).min(1), files: z.array(z.string()).min(1),
+    dependsOn: z.array(z.string()), acceptance: z.array(z.string().regex(/^AC-R\d+-\d+$/)).min(1),
+  })).min(1).optional(),
   sequence: z
     .array(
       z.object({
@@ -115,6 +120,7 @@ const PLAN_SHAPE = `{
   "domainRoot": "도메인 분류 (없으면 \\"\\")",
   "domainDirName": "실제 디렉토리 이름",
   "files": [{ "stage": "단계 키", "path": "상대경로", "purpose": "한 줄 설명", "requirements": ["R1"] }],
+  "tasks": [{ "id": "T1", "stage": "단계 키", "title": "구체적 작업", "requirements": ["R1"], "files": ["상대경로"], "dependsOn": [], "acceptance": ["AC-R1-1"] }],
   "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
@@ -126,6 +132,7 @@ const PLAN_SHAPE = `{
 const REFACTOR_PLAN_SHAPE = `{
   "files": [{ "stage": "단계 키", "path": "고칠 파일의 상대경로", "purpose": "무엇을 어떻게 고치는지", "requirements": ["R1"] }],
   "preserve": [{ "item": "지시서의 문장 그대로", "how": "이번 변경에서 어떻게 지켜지는지" }],
+  "tasks": [{ "id": "T1", "stage": "단계 키", "title": "구체적 작업", "requirements": ["R1"], "files": ["상대경로"], "dependsOn": [], "acceptance": ["AC-R1-1"] }],
   "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
@@ -217,11 +224,32 @@ export function sequenceProblems(plan: BuildPlan, stages: StageDef[], kind: Work
       else if (sawCode) problems.push("fix 의 테스트 단계는 모두 구현 단계보다 앞이어야 합니다 — 재현 후 구현 순서로 고치세요");
     }
   }
+  if (plan.tasks) {
+    const seen = new Set<string>();
+    let previousStage = -1;
+    for (const task of plan.tasks) {
+      if (seen.has(task.id)) problems.push(`Task ID 중복: ${task.id}`);
+      if (task.dependsOn.some(id => !seen.has(id))) problems.push(`${task.id}: 의존 Task는 앞에 있어야 합니다 (순환·누락 금지)`);
+      seen.add(task.id);
+      const stage = keys.indexOf(task.stage);
+      if (stage < previousStage || stage < 0) problems.push(`${task.id}: 승인된 단계 순서를 따르세요`);
+      previousStage = stage;
+      for (const path of task.files) {
+        const file = plan.files.find(file => file.path === path);
+        if (!file || file.stage !== task.stage) problems.push(`${task.id}: 단계와 맞지 않는 계획 파일 ${path}`);
+        if (file?.requirements?.some(key => !task.requirements.includes(key))) problems.push(`${task.id}: 파일의 담당 요구 항목을 빠뜨렸습니다`);
+      }
+      if (task.requirements.some(key => !task.files.some(path => plan.files.find(file => file.path === path)?.requirements?.includes(key)))) problems.push(`${task.id}: 담당 요구에 연결된 파일이 없습니다`);
+      if (task.requirements.some(key => !task.acceptance.some(ac => ac.startsWith(`AC-${key}-`)))) problems.push(`${task.id}: 담당 요구의 완료 기준이 없습니다`);
+    }
+    for (const file of plan.files) if (plan.tasks.flatMap(task => task.files).filter(path => path === file.path).length !== 1) problems.push(`Task 파일 소유자는 정확히 하나여야 합니다: ${file.path}`);
+  }
   return [...new Set(problems)];
 }
 
-/** 구현 단계 하나가 Task 하나다. 별도 사본을 저장하지 않아 계획·상태·완료 보고가 갈리지 않는다. */
+/** 명시 Task를 사용하며 이전 계획은 단계별 Task로 해석한다. */
 export function planTasks(plan: BuildPlan) {
+  if (plan.tasks) return plan.tasks.map(task => ({ ...task, why: task.title }));
   return plan.sequence.map((entry, index) => {
     const files = plan.files.filter((file) => file.stage === entry.step);
     return { id: `T${index + 1}`, stage: entry.step, why: entry.why,
@@ -256,9 +284,12 @@ export function formatPlan(plan: BuildPlan): string {
     "",
     "### 작업 Task",
     "",
-    "| Task | 실행 단계 | 요구사항 | 파일 | 완료 기준 |",
-    "|---|---|---|---|---|",
-    ...planTasks(plan).map((task) => `| ${task.id} | ${task.stage} | ${task.requirements.join(", ")} | ${task.files.join(", ")} | 파일 구현 후 연결된 AC·TC 검증과 리뷰 통과 |`),
+    "| Task | 실행 단계 | 요구사항 | 파일 | 선행 Task | 완료 기준 |",
+    "|---|---|---|---|---|---|",
+    ...planTasks(plan).map((task) => {
+      const detail = plan.tasks?.find(item => item.id === task.id);
+      return `| ${task.id}${detail ? ` · ${detail.title}` : ""} | ${task.stage} | ${task.requirements.join(", ")} | ${task.files.join(", ")} | ${detail?.dependsOn.join(", ") || "없음"} | ${detail?.acceptance.join(", ") || "연결된 AC·TC"} 검증과 리뷰 통과 |`;
+    }),
     "",
     `### 구현 방법`,
     plan.approach,
