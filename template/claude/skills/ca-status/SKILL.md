@@ -3,18 +3,19 @@ name: ca-status
 description: code-agent 작업의 현재 위치(문서·스테이지·질문·승인)와 다음 할 일을 보여 준다.
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 1. Bash 로 `code-agent status` 를 실행한다.
-2. 결과를 그대로 보여 주고, 마지막 "다음:" 줄을 사용자가 할 일로 한 문장 풀어 준다.
+2. 결과를 보여 주고 다음 절차를 한 문장으로 설명한다. 상태 조회만 요청했으면 동의 준비·질문·적용이나 개발을 시작하지 않는다. 진행도 요청받았으면 해당 단계에서 공통 동의 절차를 수행한다. CLI의 기존 TTY 안내는 필수 절차로 전달하지 않는다.
    - 공통 POLICY 문서가 ✗ 면 `/ca-docs` (레거시에 처음 들이는 것이면 `/ca-adopt`). 섹션별 상태는 `code-agent docs`
-   - 확정만 남았으면 "별도 터미널에서 `code-agent confirm doc all`" — POLICY 4종을 한 번에 확정한다
+   - 확정만 남았으면 `/ca-docs`의 공통 동의 절차 — 최초 `setup`은 POLICY 전체 확정과 기준 커밋이 없을 때의 생성을 한 질문으로 확인하고, 이후 재확정은 `docs`를 사용한다
    - 작업·접수가 없으면 `/ca-request [ID] <요구사항>` — 모든 종류의 공통 접수. 신규·기능 변경을 명시할 때는 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`도 가능하다
-   - 요구사항이 확정 대기 · 확정 뒤 바뀜이면 "별도 터미널에서 `code-agent confirm request <ID>`", 반려됨이면 `/ca-request` — 사유를 읽고 다시 정리한다
-   - 요구사항이 확정됐는데 작업이 시작 전이면 `/ca-analyze` (또는 `/ca-next`) — 시작부터 한다
+   - 요구사항이 확정 대기 · 확정 뒤 바뀜이면 `/ca-request`의 `request` 동의 절차, 반려됨이면 같은 스킬에서 사유를 읽고 다시 정리한다
+   - 요구사항이 확정됐는데 작업이 시작 전이면 `/ca-analyze`의 시작 절차 — 중단된 전체 흐름은 `/ca-next`로 재개할 수 있다
    - 질문이 남았으면 미응답 수와 재개 방법(`/ca-answer`)을 안내한다. 상태 조회만 요청했으면 임의로 개발을 재개하지 않는다. 답변까지 요청받았으면 공통 선택 절차로 받는다.
-   - 승인 대기면 "별도 터미널에서 `code-agent approve`"
+   - 승인 대기면 `/ca-plan`의 `plan` 동의 절차 — 실제 응답 뒤 승인된 동의만 적용한다
    - 승인이 `rejected` 면 `/ca-plan` — 반려 사유를 읽고 문서부터 다시 본다 (같은 계획을 그대로 다시 내지 않는다)
    - 그 밖이면 `다음:` 줄이 가리키는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`) 하나,
-     또는 `/ca-next` 로 그 자리부터 사이클. 이전 스테이지로 돌아가야 하면 `code-agent back <스테이지>` (앞으로는 못 간다)
-   - 스테이지가 `deliver` 면 "별도 터미널에서 `code-agent deliver`" — 확인 화면과 로컬 커밋은 사람의 자리다
+     또는 중단된 흐름을 `/ca-next`로 재개한다. 승인 적용 후에는 재입력 없이 자동으로 이어간다. 이전 스테이지로 돌아가야 하면 `code-agent back <스테이지>` (앞으로는 못 간다)
+   - 스테이지가 `deliver`면 `/ca-integrate`의 `deliver` 동의 절차 — 지식 선택 후 최종 승인된 동의를 적용해 로컬 커밋한다
+   - `update` 적용 직후면 Claude Code 재시작 — 갱신된 hook을 로드하기 전에는 작업을 재개하지 않는다

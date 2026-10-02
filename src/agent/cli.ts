@@ -34,21 +34,24 @@ import { usage } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
+import { applyConsent, consentStatus, prepareConsent, runConsentHook } from "./consent";
+import { updateFromSource } from "./sourceUpdate";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
 실행: 프로젝트에서 code-agent init → claude → /ca-request <요구사항>
   init은 스킬·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
   /ca-request는 모든 요구사항 접수, /ca-feature는 신규·기능 변경, /ca-fix는 결함 수정, /ca-refactor는 동작 보존 구조 개선입니다.
-  진행 중인 작업은 Claude Code에서 /ca-next 로 이어갑니다.
+  질문·확정·승인은 현재 Claude Code의 선택 도구에서 처리하고 자동으로 이어갑니다. 중단한 작업은 /ca-next 로 재개합니다.
 
-사람 (터미널):
+설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
   code-agent init [--cli <path>]      이 저장소에 설치 (.claude/ 스킬·에이전트·hook, CLAUDE.md 블록)
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
   code-agent doctor                   설치·환경 점검 — ✓ 확인 · ✗ 막는 것 · · 알림. ✗ 가 없으면 종료 코드 0
-  code-agent update [--cli <path>]    지금 버전의 스킬·에이전트·hook 을 다시 설치 (사람이 바꾼 것은 그대로)
+  code-agent update [--cli <path>]    Git 소스 설치: upstream 갱신·의존성·빌드·프로젝트 적용·점검
+  code-agent update --templates-only [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
   code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
@@ -67,6 +70,9 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
 
 스킬이 부른다 (Claude Code 안):
+  code-agent consent prepare <작업.json>   확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음)
+  code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
+  code-agent consent apply <ID>            현재 세션에서 확인된 내용만 실행하고 계속 진행
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
   code-agent docs recommend           기존 구성 유지 또는 신규 시작 구성 추천
   code-agent docs setup <node|python>  선택한 신규 구성의 설정·공통 문서 생성 (기존 파일 보존)
@@ -95,6 +101,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
 hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)
   code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
+  code-agent consent-event            AskUserQuestion 시작·응답 관찰 및 확인 기록 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
 /**
@@ -140,10 +147,17 @@ async function main(argv: string[]): Promise<number> {
     return runStopHook(readFileSync(0, "utf-8"));
   }
   if (command === "review-event") return runReviewHook(readFileSync(0, "utf-8"));
+  if (command === "consent-event") return runConsentHook(readFileSync(0, "utf-8"));
 
   const repoRoot = findRepoRoot(process.cwd());
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
+    case "consent":
+      if (args[0] === "prepare" && args[1]) print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8"))));
+      else if (args[0] === "status" && args[1]) print(consentStatus(repoRoot, args[1]));
+      else if (args[0] === "apply" && args[1]) print(applyConsent(repoRoot, args[1]));
+      else throw new Stop("사용법: code-agent consent prepare <작업.json> | status <ID> | apply <ID>");
+      return 0;
     case "setup":
       if (args[0] && args[0] !== "baseline") throw new Stop("사용법: code-agent setup [baseline]");
       print(args[0] === "baseline" ? setupBaseline(repoRoot) : setupStatus(repoRoot));
@@ -160,7 +174,7 @@ async function main(argv: string[]): Promise<number> {
       return report.ok ? 0 : 1;
     }
     case "update":
-      print(update(repoRoot, { cli: option(args, "cli") }));
+      print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli") }) : updateFromSource(repoRoot, { cli: option(args, "cli") }));
       return 0;
     case "usage":
       print(usage(repoRoot, { work: option(args, "work"), since: option(args, "since") }));
@@ -300,6 +314,7 @@ async function main(argv: string[]): Promise<number> {
               command: option(args, "command"),
               slots: option(args, "slots"),
               sendsCode: args.includes("--sends-code"),
+              secretEnv: option(args, "secret-env"),
             }),
           );
           return 0;

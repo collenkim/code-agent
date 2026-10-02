@@ -26,9 +26,9 @@
 | 전제 | Node 22 이상 (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.8 이상 ([2절](#2-단일-실행-파일-만들기)) |
 | 크기 | 수 MB | **~90 MB** (Node 실행 파일 그대로 + 자원 1 MB) |
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
-| 갱신 | `npm i -g` 다시 | 새 파일로 바꿔 넣는다 |
+| 갱신 | 로컬 Git 소스 연결은 `code-agent update`. 비Git 패키지는 재설치 후 `update --templates-only` | 새 파일로 교체한 뒤 `update --templates-only` |
 
-어느 쪽이든 **저장소에 들어가는 것은 같다** — `init`은 PreToolUse(`code-agent hook`), Stop(`code-agent stop`), ca-reviewer의 SubagentStart/Stop(`code-agent review-event`)을 설치한다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
+어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개, 서브에이전트 8개와 hook 6개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -102,7 +102,7 @@ claude
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| PreToolUse · Stop · SubagentStart/Stop | `.claude/settings.json` — `code-agent hook` · `code-agent stop` · `code-agent review-event` | O |
+| hook 등록 6개 | `.claude/settings.json` — PreToolUse `hook`, PreToolUse·PostToolUse `consent-event`, Stop `stop`, SubagentStart·SubagentStop `review-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -110,16 +110,20 @@ claude
 표시된 **블록 안쪽만** 바꾼다. `settings.json` 의 다른 hook·설정과 `CLAUDE.md` 의 블록 밖은 건드리지 않는다.
 설치한 파일은 커밋해 팀과 공유한다.
 
+작업의 최종 반영에서는 `.code-agent/version`, `.code-agent/models.json`, `.code-agent/approvals/docs.jsonl` 중 존재하는 파일을 실제 커밋 경로 목록에 표시하고 함께 커밋한다. 이 세 파일은 반영 후 별도로 수동 커밋하지 않아도 된다. 같은 화면에는 작업 파일·증거와 선택한 KNOWLEDGE 경로도 표시한다. 그 밖의 설치 설정이나 소스를 일괄 추가하는 것은 아니므로, 별도의 도입·설정 변경은 그 범위에 맞춰 검토한다.
+
 ```
 code-agent 를 설치했습니다 — C:\work\shop
   - 스킬·에이전트 26개: .claude/skills/ca-*, .claude/agents/ca-*
-  - hook: .claude/settings.json → PreToolUse code-agent hook · Stop code-agent stop · SubagentStart/Stop code-agent review-event
+  - hook: .claude/settings.json → PreToolUse hook · PreToolUse/PostToolUse consent-event · Stop stop · SubagentStart/SubagentStop review-event
   - CLAUDE.md: code-agent 블록 생성
   - .gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/)
   - 버전 고정: .code-agent/version = 1.0.0
 ```
 
-Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접수한 원문을 저장한 뒤 공통 문서·설정이 없으면 `/ca-adopt`·`/ca-docs`로 준비하고 같은 접수로 돌아온다. 준비만 먼저 할 때는 `/ca-adopt`를 직접 사용할 수 있다. 전체 실행 예시는 [usage.md §3](usage.md#3-한-바퀴)에 있다.
+Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접수한 원문을 저장한 뒤 공통 문서·설정이 없으면 `/ca-adopt`·`/ca-docs`로 준비하고 같은 접수로 돌아온다. 최초 `setup` 확인은 POLICY 4종 확정과 필요한 최초 기준 커밋의 파일 목록을 함께 보여 준다. 기존 기준 커밋이 있으면 최초 커밋을 다시 만들지 않고, 준비가 끝난 프로젝트는 이 확인을 작업마다 반복하지 않는다.
+
+이후 요구사항·계획·결과 확인도 같은 Claude Code 선택 화면에서 받고 자동으로 이어간다. 별도 터미널은 필수가 아니며 `/ca-next`는 중단하거나 다시 연 세션에서 재개할 때 사용한다. 준비만 먼저 할 때는 `/ca-adopt`를 직접 사용할 수 있다.
 
 ---
 
@@ -159,27 +163,30 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | git | `git --version` 이 답한다 | PATH 에 git 을 넣는다 — 브랜치·기준 커밋·반영이 git 을 쓴다 |
 | PATH 의 code-agent | PATH 에서 찾았다. 단일 실행 파일인지 npm 설치/링크인지(그 경우 푼 `cli.js` 경로까지) 함께 찍는다 | hook 명령이 풀리지 않는다. `npm i -g <저장소>` 또는 바이너리를 PATH 에 둔다 |
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
-| git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 `code-agent setup baseline` — 목록 확인 뒤 최초 기준 커밋. 기존 코드가 있는 프로젝트는 기존 Git 이력을 유지 |
+| git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 필요한 최초 기준 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| PreToolUse · Stop · SubagentStart/Stop | 우리 hook 4종의 명령이 이 PC에서 풀리는지 확인. PreToolUse는 도구 matcher, SubagentStart/Stop은 ca-reviewer matcher 확인 | 없거나 오래된 설정이면 `code-agent update`. 개발 CLI 경로가 잘못됐다면 `code-agent init --cli <경로>` |
+| hook 등록 6개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 `model:` 줄은 빼고 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
 | 번들 자원 | 번들을 읽지 못할 때만 나온다 (24.8 미만으로 만든 바이너리) | `npm run build:bin` 을 Node 24.8 이상에서 다시 돌린다. **이 검사가 서도 doctor 는 끝까지 찍는다** — 깨진 설치를 설명할 유일한 명령이 doctor 다 |
 | 매니페스트 | `code-agent.json` 이 참조 파일을 실제로 찾는다. 파일이 없으면 `·` (도입 전) | 형식 오류면 어느 키가 왜 틀렸는지까지 그대로 (머리말만 남기지 않는다) → `code-agent manifest check` |
-| 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준 | 넷 다 확정됐다 | 상태가 `missing-file` · `missing-sections` · `unconfirmed` · `stale` 중 하나다 → [usage.md §9](usage.md#9-승인과-반영--터미널에서) |
+| 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준 | 넷 다 확정됐다 | `missing-file` · `missing-sections`는 문서를 보완한다. `unconfirmed` · `stale`는 같은 세션의 `setup` 또는 `docs` 확인으로 확정한다 |
 | 사용자 키 파일 | POSIX: `~/.code-agent/credentials.json` 의 권한이 좁다. Windows: (`·`) 자리와 ACL 안내 | `chmod 700 ~/.code-agent && chmod 600 ~/.code-agent/credentials.json` |
-| 터미널 | stdin 이 TTY 다 — `approve` · `confirm` · `deliver` · `plugin add` 가 열린다 | (`·`) TTY 가 아니면 그 넷이 열리지 않는다고 알리기만 한다 — 막지 않는다. 아래 |
+| 터미널 | 직접 CLI의 `approve` · `confirm` · `deliver` · `plugin add`에 필요한 TTY 여부 | (`·`) TTY가 없어도 같은 세션의 consent 확인을 사용할 수 있다. 비대화형 파이프 응답만으로는 승인되지 않는다 |
 
-### Windows 의 TTY — PowerShell vs Git Bash
+### 같은 세션 확인과 직접 TTY 명령
 
-`approve` · `confirm doc` · `confirm request` · `reject request` · `deliver` · `plugin add` 는 stdin 이 TTY 여야 연다.
+기본 경로는 `code-agent consent prepare <action.json>` → 반환된 `toolInput` 전체로 `AskUserQuestion` 호출 → PreToolUse·PostToolUse hook 관찰 → `code-agent consent status <ID>` → 승인된 요청의 `code-agent consent apply <ID>`다. `questions`와 `metadata.source`를 함께 그대로 전달한다. 남은 질문이 있으면 status가 반환한 toolInput으로 이어서 표시한다. 사용자가 선택하면 같은 작업을 계속하며, 모델이 답을 미리 넣거나 채팅 문장을 승인으로 대신할 수 없다. 확인 대상이 바뀌면 새로 준비한다.
+
+일반 터미널에서 직접 실행하는 `approve`·`confirm`·`reject`·`deliver`·`plugin add`도 지원한다. 이 선택 경로에는 기존 TTY 검사가 적용된다.
 
 | 어디서 | 되나 |
 |---|---|
 | PowerShell · Windows Terminal · cmd | 된다 |
 | **Git Bash (mintty)** | **안 된다** — mintty 는 Windows 프로그램에 TTY 를 주지 않는다. `winpty code-agent approve` 로 감싸거나 PowerShell 을 쓴다 |
-| Claude Code 안의 Bash · CI · 파이프 | 안 된다 (설계다 — [usage.md §11](usage.md#11-막히면)) |
+| Claude Code 안 | 직접 TTY 명령 대신 hook이 관찰한 `AskUserQuestion` 응답을 consent로 적용한다 |
+| CI · 파이프 | 직접 TTY 확인이나 실제 질문 응답을 대신할 수 없다 |
 
 ---
 
@@ -187,10 +194,16 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 ```
 code-agent update [--cli <경로>]
+code-agent update --templates-only [--cli <경로>]
 ```
 
-지금 도는 버전의 스킬·에이전트·hook·CLAUDE 블록을 **다시 설치**하고 `.code-agent/version` 을 맞춘다.
-TTY는 필요 없다. 현재 설치된 패키지의 템플릿을 복사하는 명령이며 새 버전을 내려받지는 않는다. 패키지를 다시 설치하거나 바이너리를 교체한 뒤 대상 프로젝트마다 `update`를 실행한다. `npm link` 개발본은 먼저 `npm run build`로 CLI를 빌드한다. 갱신 후 `doctor`로 설치 경로·스킬·hook을 확인하고 프로젝트에서 Claude Code를 새로 연다.
+기본 `update`는 **로컬 Git 소스에 연결된 code-agent 설치본**을 자동 갱신한다. 개발 대상 프로젝트에서 실행하면 code-agent 소스의 upstream을 `git pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 `npm ci --include=dev`로 잠금 파일에 맞춰 설치한 뒤 빌드한다. 새로 빌드한 CLI가 대상 프로젝트의 스킬·에이전트·hook·CLAUDE 블록과 버전 파일을 적용하고 `doctor`를 실행한다. 개발 대상 프로젝트의 애플리케이션 소스를 pull하는 명령이 아니다.
+
+code-agent 소스에 미커밋 변경이 있거나 upstream과 이력이 분기되어 fast-forward할 수 없으면 중단한다. 변경을 버리거나 임의로 병합하지 않는다. upstream이 없거나 갱신·의존성 설치·빌드에 실패하면 사유를 확인하고 해결해야 한다. 이 명령은 변경을 자동 커밋하거나 원격에 push하지 않는다.
+
+**`--templates-only`는 현재 번들만 적용한다.** fetch·pull·의존성 설치·빌드를 수행하지 않는다. Git 소스가 없는 npm 패키지와 단일 실행 파일은 기본 Git 자동 갱신을 지원하지 않는다고 안내하며, 새 패키지 설치·실행 파일 교체 후 이 옵션으로 프로젝트마다 적용한다. 직접 수정 중인 개발본에도 필요한 빌드를 마친 뒤 이 옵션을 사용할 수 있다.
+
+같은 Claude Code에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 반환된 질문을 그대로 표시해 사용자 선택을 받은 뒤 적용한다. **갱신 후에는 Claude Code를 종료하고 같은 프로젝트에서 다시 실행해야 새 hook이 활성화된다.** 재시작 후 `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 작업을 재개한다. 일반 터미널에서 `code-agent update`를 직접 실행하는 경로도 사용할 수 있다.
 
 **옛 설치본은 `update` 를 돌려야 PreToolUse matcher 가 넓어진다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).
@@ -200,15 +213,15 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 
 | 무엇 | 어떻게 |
 |---|---|
-| `.claude/settings.json` 의 **다른** hook·설정 | 우리 PreToolUse·Stop·SubagentStart·SubagentStop 항목만 갱신한다 |
+| `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 6개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
 | 에이전트별 모델(`.code-agent/models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
-| 개발용 `--cli` | 인자를 주지 않아도 지금 hook 이 `node "<경로>" hook` 꼴이면 **그 경로를 승계한다** |
+| 개발용 `--cli` | 현재 번들만 적용할 때는 기존 개발 CLI 경로를 승계한다. 기본 소스 갱신은 새로 빌드한 CLI를 연결하며, `--cli`를 명시하면 지정한 경로를 적용한다 |
 
 ```
 code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
   - 스킬·에이전트 3개 갱신: .claude/skills/ca-plan/SKILL.md · …
-  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · Stop code-agent stop · SubagentStart code-agent review-event · SubagentStop code-agent review-event)
+  - .claude/settings.json: 그대로 (PreToolUse hook · PreToolUse/PostToolUse consent-event · Stop stop · SubagentStart/SubagentStop review-event)
   - CLAUDE.md: 갱신
   - .gitignore: 그대로
   - 에이전트 모델 오버라이드 1개 유지: implementer=sonnet
@@ -224,9 +237,7 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 (판정은 "같은 버전인데 내용이 달랐던 파일". 이전 버전의 번들 해시가 남아 있지 않아 이보다 정확히는 가리지 못한다).
 프로젝트 규칙은 `CLAUDE.md` 의 블록 **밖**이나 `doc/` 에 둔다.
 
-**작업 중에도 돈다 — 막지 않고 경고만 한다.** 템플릿은 *지침*이고 게이트는 *코드*다.
-승인·증거는 `planHash` · `manifestHash` · 트리 해시에 묶여 있어 스킬 파일이 바뀌어도 통과가 되살아나지 않는다.
-거부하면 긴 작업 중에 버그 수정 배포를 받지 못한다. 커서가 `implement`~`integrate` 사이면 `/ca-status` 로 지금 스테이지 스킬을 다시 확인하라고 알린다.
+작업 진행 상태만으로 템플릿 적용을 막지는 않는다. 기본 소스 갱신의 미커밋 변경·분기 검사와 같은 세션 확인은 별도로 적용된다. 승인·증거는 `planHash`·`manifestHash`·트리 해시에 묶여 있어 템플릿을 갱신해도 무효였던 승인이 되살아나지 않는다. 재시작 후 현재 스테이지와 필요한 확인을 다시 점검한다.
 
 ---
 
@@ -235,7 +246,7 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 | # | 무엇 | 어떻게 |
 |---|---|---|
 | 1 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` 삭제 |
-| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent stop`(Stop), `code-agent review-event`(SubagentStart/Stop) 항목을 제거한다. **설정 파일 전체를 지우지 않는다** |
+| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent consent-event`(PreToolUse·PostToolUse), `code-agent stop`(Stop), `code-agent review-event`(SubagentStart·SubagentStop) 등록 6개를 제거한다. **설정 파일 전체를 지우지 않는다** |
 | 3 | 블록 | `CLAUDE.md` · `.gitignore` 의 `code-agent:start` ~ `end` 블록 제거 (블록 밖은 그대로) |
 | 4 | 진행 상태 | `.code-agent/` 는 **남긴다** — 승인·확정 원장과 검증 증거가 git 이력에 남은 커밋의 근거다. 정말 지울 것이면 그 이력도 근거를 잃는다는 것을 알고 지운다 |
 | 5 | 도구 | npm 전역이면 `npm rm -g code-agent`, 단일 실행 파일이면 그 파일 삭제 |

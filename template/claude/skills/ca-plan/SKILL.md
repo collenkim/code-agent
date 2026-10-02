@@ -1,9 +1,9 @@
 ---
 name: ca-plan
-description: 구현 계획 단계(plan)만 돈다 — ⑤ plan.json 과 ⑦ 07-test-spec.md 를 쓰고 제출한 뒤 사람의 승인을 기다린다.
+description: 구현 계획 단계(plan)를 진행한다 — ⑤ plan.json 과 ⑦ 07-test-spec.md 를 제출하고 같은 세션의 동의를 적용한 뒤 작업 흐름을 이어간다.
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 너는 **메인 에이전트**다. 소스 코드는 서브에이전트가 읽는다 — 메인은 작업 폴더 문서 · `code-agent` 출력 · 서브에이전트 결과로 일한다.
 `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
@@ -12,8 +12,7 @@ description: 구현 계획 단계(plan)만 돈다 — ⑤ plan.json 과 ⑦ 07-t
 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고, 이미 지났으면 `code-agent back plan` 으로
 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다.
 승인이 `rejected` 로 나오면 아래 **반려됐다면** 으로 간다.
-승인이 `approved` 면 계획은 이미 통과했다 — **계획을 다시 쓰지 않는다.** 승인은 사람의 자리라 커서가 `plan` 에 그대로 있다:
-Bash: `code-agent next` 로 커서를 옮기고 `/ca-implement` (또는 `/ca-next` 로 사이클) 로 넘긴다.
+승인이 `approved`면 계획은 이미 통과했다 — **계획을 다시 쓰지 않는다.** 커서가 `plan`에 남아 있으면 Bash: `code-agent next`로 옮긴다. 같은 작업 흐름에서는 `/ca-implement` 절차로 자동으로 이어간다. 사용자가 계획 단계만 요청했다면 게이트를 통과한 결과를 보고한다.
 
 **`05-plan.md` 는 쓰지 않는다** — `plan submit` 이 `plan.json` 에서 렌더한다 (hook 이 모델의 쓰기를 거부한다).
 
@@ -50,8 +49,8 @@ Bash: `code-agent next` 로 커서를 옮기고 `/ca-implement` (또는 `/ca-nex
 
 ## 끝
 
-`code-agent next` 를 돌리지 않는다 — 이 자리를 여는 것은 게이트가 아니라 **사람의 승인**이다.
-계획 요약을 보여 주고 **멈춘다**: "별도 터미널에서 `code-agent approve` 로 승인한 뒤 `/ca-implement` (또는 `/ca-next` 로 사이클)".
+승인 적용 전에는 `code-agent next`를 돌리지 않는다. `{"action":"plan"}`으로 공통 동의 절차를 수행하고 계획·지시서·분석·설계·테스트 명세의 링크를 포함한 `summary` 전문을 보여 준다. 실제 응답 뒤 `consent status`가 `approved`이면 적용한다. 성공 후 `code-agent next`로 게이트를 지나 같은 흐름의 구현·검증으로 이어간다. 사용자가 계획 단계만 요청했다면 게이트 통과 결과를 보고한다.
+수정 요청·취소·보류이면 적용하지 않는다. 사용자가 명시적으로 계획 반려 기록을 요청했으면 `decision: "reject"`와 실제 사유인 `comment`를 넣은 `plan` 동작도 별도 공통 동의 절차로 처리한다.
 
 승인은 **한 묶음**이다 — 지시서 본문 · `01` · `02` · `03` · `04` · `07` 과 계획. 승인 뒤 이 중 하나라도 고치면 승인이 무효가 되고(`stale-docs`) 코드 쓰기가 멈춘다.
 `code-agent back` 으로 `design` 이하로 되감아 문서를 고치는 것도 같다 — 계획을 다시 제출하고 다시 승인받아야 한다.
@@ -66,4 +65,4 @@ Bash: `code-agent next` 로 커서를 옮기고 `/ca-implement` (또는 `/ca-nex
    커서를 되감아야 고칠 수 있는 문서면 `code-agent back <스테이지>` 를 쓰고, 그 스테이지의 스킬로 다시 돈다.
 3. 사유만으로 정할 수 없는 것이 있으면 새 질문을 `questions.md`에 적고 공통 선택 절차로 답을 받는다. 필요한 답이 없을 때만 멈춘다.
    정할 수 있으면 문서와 계획을 고쳐 `code-agent plan submit` 으로 다시 제출하고, **무엇을 왜 바꿨는지** 함께 보고한다.
-4. 사유를 읽지 않고 같은 계획을 다시 내지 않는다.
+4. 재제출 후 새 `plan` 공통 동의 절차로 승인받는다. 사유를 읽지 않고 같은 계획을 다시 내지 않는다.

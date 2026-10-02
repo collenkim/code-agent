@@ -1,9 +1,9 @@
 ---
 name: ca-design
-description: 설계·정의 단계(design)만 돈다 — ③ 03-design.md 와 ④ 04-functional.md 를 쓰고 게이트를 지난 뒤 멈춘다.
+description: 설계·정의 단계(design)를 진행한다 — ③ 03-design.md 와 ④ 04-functional.md 를 쓰고 게이트를 통과한다.
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 너는 **메인 에이전트**다. 소스 코드는 서브에이전트가 읽는다 — 메인은 작업 폴더 문서 · `code-agent` 출력 · 서브에이전트 결과로 일한다.
 `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
@@ -30,4 +30,4 @@ description: 설계·정의 단계(design)만 돈다 — ③ 03-design.md 와 �
 ## 끝
 
 Bash: `code-agent next` — AC 가 없는 R 이 있거나 필수 섹션이 비면 넘어가지 않는다. 거부되면 사유를 그대로 전하고 멈춘다.
-통과하면 쓴 문서를 짧게 보고하고 **멈춘다**: "다음: `/ca-plan` (또는 `/ca-next` 로 사이클)".
+통과하면 쓴 문서를 짧게 보고한다. 전체 작업 흐름에서는 `/ca-plan` 절차로 자동으로 이어가고, 설계 단계만 요청받았으면 여기서 마친다.

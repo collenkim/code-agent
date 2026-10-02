@@ -1144,7 +1144,7 @@ describe("P7 · hook — plugin list 만 열린다", () => {
   test("44. 모델이 plugin add · remove 를 부를 수 없고, 사람 전용임을 사유가 말한다", () => {
     const added = bash('code-agent plugin add jev --command "node x.js"');
     assert.ok(added);
-    assert.match(added!, /plugin add·plugin remove 는 사람이 터미널에서 실행합니다/);
+    assert.match(added!, /plugin add·plugin remove 는 직접 호출하지 않고 현재 세션의 ca-answer 동의 절차/);
     assert.ok(bash("code-agent plugin remove jev"));
     // 접두어 일치로 열리지 않는다
     assert.ok(bash("code-agent plugin"));

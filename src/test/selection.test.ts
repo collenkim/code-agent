@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
-test("init과 update가 18개 명령에 선택 절차를 설치하고 옛 질문 지시를 교체한다", () => {
+test("init과 update가 18개 명령에 선택 절차와 같은 세션 동의 절차를 설치한다", () => {
   init(repo, { cli: join(__dirname, "../agent/cli.js") });
   const skills = assetKeys(CLAUDE_ASSETS).filter((key) => key.endsWith("/SKILL.md"));
   assert.equal(skills.length, 18);
@@ -40,6 +40,14 @@ test("init과 update가 18개 명령에 선택 절차를 설치하고 옛 질문
     const key = `${CLAUDE_ASSETS}/skills/${name}/SKILL.md`;
     assert.equal(readFileSync(installedPath(repo, key), "utf8"), assetText(key));
   }
+  const answer = readFileSync(join(repo, ".claude/skills/ca-answer/SKILL.md"), "utf8");
+  for (const command of ["consent prepare", "consent status", "consent apply"]) {
+    assert.ok(answer.includes(`code-agent ${command}`), `설치된 선택 절차에 ${command}가 없습니다`);
+  }
+  assert.match(answer, /toolInput/);
+  assert.match(answer, /metadata\.source/);
+  assert.match(answer, /PreToolUse.*PostToolUse/);
+  assert.doesNotMatch(answer, /사람 터미널 절차는 그대로 따른다/);
 });
 
 test("신규는 7개 실제 후보를 안내하고 기존 설정에는 재선택을 요구하지 않는다", () => {

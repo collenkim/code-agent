@@ -1,15 +1,15 @@
 ---
 name: ca-implement
-description: 코드 생성 단계(implement)를 돈다 — 승인된 계획의 단계마다 서브에이전트에게 코드를 쓰게 하고, 커서가 check 에 닿으면 멈춘다.
+description: 코드 생성 단계(implement)를 진행한다 — 승인된 계획의 단계마다 서브에이전트에게 코드를 쓰게 하고 커서를 check 로 옮긴다.
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 너는 **메인 에이전트**다. 코드는 **네가 쓰지 않는다** — 단계마다 서브에이전트를 새 컨텍스트로 부른다.
 `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
 
-**자리 확인** — Bash: `code-agent status`. 스테이지가 `implement` 가 아니면 **멈춘다.**
-아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고(승인 대기면 "별도 터미널에서 `code-agent approve`"),
+**자리 확인** — Bash: `code-agent status`. `plan`의 승인 대기라면 `/ca-plan`의 공통 동의 절차로 확인받고 승인된 동의 적용과 `code-agent next` 뒤 구현을 이어간다. 그 밖에 스테이지가 `implement`가 아니면 **멈춘다.**
+아직 이르면 status의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고,
 이미 지났으면 `code-agent back implement` 로 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다.
 **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다.
 
@@ -31,4 +31,4 @@ description: 코드 생성 단계(implement)를 돈다 — 승인된 계획의 �
 
 ## 끝
 
-만든 파일 목록을 짧게 보고하고 **멈춘다**: "다음: `/ca-check` (또는 `/ca-next` 로 사이클)".
+만든 파일 목록을 짧게 보고한다. 전체 작업 흐름에서는 `/ca-check` 절차로 자동으로 이어가고, 구현 단계만 요청받았으면 여기서 마친다.

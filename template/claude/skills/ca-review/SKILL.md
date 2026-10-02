@@ -3,7 +3,7 @@ name: ca-review
 description: 독립 ca-reviewer를 호출하고 실행·결과가 기록된 리뷰 게이트를 확인한다.
 ---
 
-**질의응답 공통 규칙** — 사용자에게 물을 일이 생기면 `.claude/skills/ca-answer/SKILL.md`의 공통 절차를 읽고 메인이 `AskUserQuestion`을 호출한다. 추천·이유·선택지를 제시하고 실제 답을 기록한 뒤 이 명령으로 복귀한다. 일반 메시지로 질문만 나열하거나 `/ca-answer` 재입력을 요구하지 않는다.
+**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
 
@@ -32,4 +32,4 @@ description: 독립 ca-reviewer를 호출하고 실행·결과가 기록된 리�
 ## 끝
 
 열린 지적과 미처리 `계획 밖` 지적이 모두 0이면 Bash: `code-agent next` — 거부되면 사유를 그대로 전하고 멈춘다. 범위 변경이 필요한 지적은 공통 선택 절차로 방향을 확인하고 재계획·재승인으로 연결한다.
-통과하면 회차와 지적 수를 짧게 보고하고 **멈춘다**: "다음: `/ca-integrate` (또는 `/ca-next` 로 사이클)".
+통과하면 회차와 지적 수를 짧게 보고한다. 전체 작업 흐름에서는 `/ca-integrate` 절차로 자동으로 이어가고, 리뷰 단계만 요청받았으면 여기서 마친다.

@@ -724,7 +724,7 @@ describe("hook — 검증 명령", () => {
     // 되감기도 모델이 부를 수 있다 — 뒤로만 가고 지우는 것이 없어 건너뛸 수 있는 것이 없다
     assert.equal(hook("Bash", { command: "code-agent back design" }), undefined);
     // 커서를 지우는 abort 는 그대로 사람의 자리다 — 열어 두면 hook 이 아무것도 판정하지 않게 된다
-    assert.match(hook("Bash", { command: "code-agent abort" }) ?? "", /사람이 터미널에서 실행합니다/);
+    assert.match(hook("Bash", { command: "code-agent abort" }) ?? "", /현재 세션의 ca-answer 동의 절차/);
   });
 });
 
@@ -789,7 +789,7 @@ describe("init — Stop hook 설치", () => {
       hooks: Record<string, { hooks: { command: string }[] }[]>;
     };
     assert.equal(settings.env.MINE, "1");
-    assert.deepEqual(settings.hooks.PreToolUse.map((entry) => entry.hooks[0].command), ["code-agent hook"]);
+    assert.deepEqual(settings.hooks.PreToolUse.map((entry) => entry.hooks[0].command), ["code-agent hook", "code-agent consent-event"]);
     assert.deepEqual(settings.hooks.Stop.map((entry) => entry.hooks[0].command), ["my-own thing", "code-agent stop"]);
 
     // 다시 설치해도 우리 것만 하나로 유지된다
@@ -798,7 +798,7 @@ describe("init — Stop hook 설치", () => {
       hooks: Record<string, unknown[]>;
     };
     assert.equal(again.hooks.Stop.length, 2);
-    assert.equal(again.hooks.PreToolUse.length, 1);
+    assert.equal(again.hooks.PreToolUse.length, 2);
   });
 });
 
@@ -1143,7 +1143,7 @@ describe("hook · Stop hook · context — 새 스테이지", () => {
     await toReview();
     assert.equal(hook("Bash", { command: "code-agent review" }), undefined);
     assert.equal(hook("Bash", { command: "code-agent integrate" }), undefined);
-    assert.match(hook("Bash", { command: "code-agent deliver" }) ?? "", /사람이 터미널에서 실행합니다/);
+    assert.match(hook("Bash", { command: "code-agent deliver" }) ?? "", /현재 세션의 ca-answer 동의 절차/);
   });
 
   test("Stop hook 은 implement 에서도 계획 밖 변경을 보고, deliver 에서는 끼어들지 않는다", async () => {
@@ -1472,7 +1472,7 @@ describe("설치되는 템플릿", () => {
     assert.match(firstStep ?? "", /code-agent review/, "ca-review 의 첫 절차가 회차를 열지 않습니다");
     // 승인은 커서를 옮기지 않는다 — 승인된 계획 위에서 갈래가 없으면 사이클이 plan 에서 계획을 다시 쓰며 돈다
     const plan = readFileSync(join(repo, ".claude/skills/ca-plan/SKILL.md"), "utf-8");
-    assert.ok(plan.includes("승인이 `approved` 면"), "ca-plan 에 승인된 계획의 갈래가 없습니다");
+    assert.match(plan, /승인이 `approved`\s*면[\s\S]*code-agent next/, "승인된 계획은 다시 쓰지 않고 다음 단계로 이동해야 합니다");
   });
 });
 
@@ -1500,14 +1500,14 @@ describe("스테이지 명령", () => {
     write("doc/work/ORD-1/plan.json", JSON.stringify(PLAN));
     submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
     // 승인 대기는 사람의 자리라 스킬을 부르지 않는다
-    assert.match(status(repo), /다음: 사람이 별도 터미널에서 code-agent approve/);
+    assert.match(status(repo), /다음: 현재 Claude 세션[\s\S]*plan 동의 절차/);
     approve();
     assert.match(status(repo), /승인됨 — code-agent next 로 넘긴 뒤 \/ca-implement/);
     next(repo);
     assert.match(status(repo), /다음: \/ca-implement \(또는 \/ca-next 로 사이클\)/);
   });
 
-  test("검증 칸도 제 스킬을 부르고, deliver 만은 사람의 터미널로 보낸다", async () => {
+  test("검증 칸도 제 스킬을 부르고 deliver는 같은 세션의 확인으로 이어진다", async () => {
     toCheck();
     assert.match(status(repo), /다음: \/ca-check \(또는 \/ca-next 로 사이클\)/);
 
@@ -1527,7 +1527,7 @@ describe("스테이지 명령", () => {
 
     await integrate(requireValidatable(repo, "integrate"));
     next(repo);
-    assert.match(status(repo), /다음: 사람이 별도 터미널에서 code-agent deliver/);
+    assert.match(status(repo), /다음: 현재 Claude 세션[\s\S]*deliver 동의 절차/);
   });
 });
 
@@ -1551,7 +1551,7 @@ describe("code-agent back", () => {
     // REWINDABLE 이 code-agent check 에 대해 닫아 둔 것과 같은 자리다 — 모델이 커서를 빼면 사람이 보던 화면이 무효가 된다
     assert.throws(
       () => back(repo, "check"),
-      (error: Error) => error instanceof Stop && /사람이 터미널에 서 있는 자리/.test(error.message),
+      (error: Error) => error instanceof Stop && /사용자가 내용을 확인하는 단계/.test(error.message),
     );
     assert.equal(loadActive(repo)!.phase, "deliver");
   });

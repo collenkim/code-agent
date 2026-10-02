@@ -21,7 +21,7 @@ import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
  * 요구사항 접수 — 13단계의 1.
  *
  * 사람은 요구사항을 **말로** 준다(서술 · 붙여넣은 티켓 · 파일). 모델이 그것을 `request.json` 으로 정리하고,
- * 코드가 지시서 규칙으로 검사해 `requirement.md` 를 렌더하고, 사람이 터미널에서 확정한다. 확정된 요구사항만
+ * 코드가 지시서 규칙으로 검사해 `requirement.md` 를 렌더하고, 사람이 현재 Claude 세션의 선택으로 확정한다. 확정된 요구사항만
  * `code-agent start` 가 받는다 — 모델이 지시서를 지어내 스스로 시작하는 길과, 정리하다 원문과 뜻이 달라지는
  * 길이 같은 자리(사람의 확정)에서 닫힌다.
  *
@@ -152,7 +152,7 @@ export function renderRequirement(request: RequestDraft, original: string, sourc
     frontMatter(request),
     "",
     `${RENDER_MARK}${requestDraftFile(request.id)} 에서 렌더한다. 고칠 것은 request.json 에 쓰고 다시 제출한다 — ` +
-      `사람이 별도 터미널에서 code-agent confirm request ${request.id} 로 확정해야 작업이 시작된다. -->`,
+      `현재 Claude 세션에서 ca-answer의 request 동의 절차로 ${request.id} 요구사항을 확정하면 ca-next 흐름이 자동으로 이어진다. -->`,
     "",
     `# ${request.id} 요구사항 — ${request.title}`,
     "",
@@ -317,24 +317,24 @@ export function requireRequestConfirmed(repoRoot: string, id: string, spec: stri
     case "rejected":
       throw new Stop(
         `요구사항이 반려됐습니다 (${spec}): ${state.record.comment ?? "(사유 없음)"}\n` +
-          "/ca-request 로 사유대로 고쳐 다시 제출하세요 — 확정은 사람이 별도 터미널에서 합니다.",
+          "/ca-request 로 사유대로 고쳐 다시 제출하세요 — 확정은 현재 Claude 세션에서 ca-answer의 request 동의 절차로 받습니다.",
       );
     case "unconfirmed":
       throw new Stop(
         (state.record.decision === "confirmed"
           ? `요구사항이 확정 뒤 바뀌었습니다 (${spec}). 다시 확정해야 진행합니다.\n`
           : `요구사항이 다시 제출돼 확정을 기다립니다 (${spec}).\n`) +
-          `사람이 별도 터미널에서 ${confirmCommand(id, spec)}`,
+          `현재 Claude 세션에서 ca-answer의 request 동의 절차로 다시 확인하세요. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
       );
     case "unverified":
       throw new Stop(
         `요구사항 확정에 사람이 관측되지 않았습니다 (${spec} · ${state.record.presence?.detail ?? "기록 없음"}).\n` +
-          `이 프로젝트는 관측된 판정만 받습니다 (code-agent.json 의 workOrder.requireVerifiedApproval) — 사람이 별도 터미널에서 ${confirmCommand(id, spec)}`,
+          `이 프로젝트는 관측된 판정만 받습니다 (code-agent.json 의 workOrder.requireVerifiedApproval) — 현재 Claude 세션에서 ca-answer의 request 동의 절차로 확인하세요 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
       );
     case "none":
       throw new Stop(
         `요구사항이 확정되지 않았습니다 (${spec}).\n` +
-          `사람이 별도 터미널에서 ${confirmCommand(id, spec)} 로 확정해야 시작합니다 — 요구사항 접수는 /ca-request.`,
+          `현재 Claude 세션에서 ca-answer의 request 동의 절차로 확정하면 ca-next 흐름을 자동으로 이어갑니다 — 요구사항 접수는 /ca-request (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
       );
   }
 }
@@ -351,7 +351,7 @@ export function requestStateLine(repoRoot: string, id: string, spec: string): st
     case "unconfirmed":
       return state.record.decision === "confirmed" ? "요구사항: 확정 뒤 바뀜 — 다시 확정 필요" : "요구사항: 다시 제출됨 — 확정 대기";
     case "unverified":
-      return "요구사항: 확정에 사람이 관측되지 않음 — 터미널에서 다시 확정 필요";
+      return "요구사항: 확정에 사람이 관측되지 않음 — 현재 Claude 세션에서 ca-answer의 request 동의 절차로 다시 확정 필요";
     case "none":
       return "요구사항: 확정 대기";
   }
@@ -370,7 +370,7 @@ export function requestHint(repoRoot: string, id: string, spec: string): string 
       return `/ca-request — 반려됐습니다: ${state.record.comment ?? "(사유 없음)"} — 사유대로 초안을 고쳐 다시 제출하세요`;
     default:
       if (hasUnmappedOriginal(readFileSync(join(repoRoot, spec), "utf8"))) return "/ca-request — 원문 대조의 미연결 내용을 sourceMap으로 정리한 뒤 다시 제출합니다";
-      return `사람이 별도 터미널에서 ${confirmCommand(id, spec)} (반려는 reject request ${id} --comment "사유")`;
+      return `현재 Claude 세션에서 ca-answer의 request 동의 절차로 확인한 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}, 반려는 code-agent reject request ${id} --comment "사유").`;
   }
 }
 
@@ -415,17 +415,17 @@ export function requestBegin(
     throw new Stop(
       active.id === id
         ? `${id} 는 이미 시작된 작업입니다 (${active.phase}). 요구사항을 고치려면 ${requestDraftFile(id)} 를 고쳐 code-agent request submit 으로 다시 제출하고, 사람이 다시 확정합니다.`
-        : `진행 중인 작업이 있습니다: ${active.id} (${active.phase}). 끝내거나 사람이 code-agent abort 로 멈춘 뒤 접수하세요.`,
+        : `진행 중인 작업이 있습니다: ${active.id} (${active.phase}). 끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 접수하세요.`,
     );
   }
   const current = loadRequestSession(repoRoot);
   if (current && current.id !== id) {
     throw new Stop(
-      `접수 중인 요구사항이 있습니다: ${current.id} (${current.kind}). 그것을 끝내거나 사람이 code-agent abort 로 닫은 뒤 접수하세요.`,
+      `접수 중인 요구사항이 있습니다: ${current.id} (${current.kind}). 그것을 끝내거나 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 접수하세요.`,
     );
   }
   if (current && current.kind !== kind) {
-    throw new Stop(`${id} 는 ${current.kind} 로 접수 중입니다 — 종류를 바꾸려면 사람이 code-agent abort 로 닫고 다시 접수합니다.`);
+    throw new Stop(`${id} 는 ${current.kind} 로 접수 중입니다 — 종류를 바꾸려면 현재 Claude 세션에서 ca-answer의 abort 동의 절차로 종료하고 다시 접수합니다.`);
   }
   const session: RequestSession = {
     ...(current ?? { id, kind: kind as WorkKind, startedAt: new Date().toISOString() }),
@@ -509,7 +509,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "",
     `- 초안: ${requestDraftFile(id)} — 모델이 쓴다`,
     `- 지시서: ${spec} — code-agent request submit 이 초안에서 렌더한다 (모델 쓰기 거부)`,
-    `- 확정: 사람이 별도 터미널에서 ${confirmCommand(id, spec)} (반려는 code-agent reject request ${id} --comment "사유")`,
+    `- 확정: 현재 Claude 세션에서 ca-answer의 request 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}, 반려는 code-agent reject request ${id} --comment "사유").`,
     `- 지금: ${requestStateLine(repoRoot, id, spec).replace(/^요구사항: /, "")}`,
     "",
     "## request.json",
@@ -562,7 +562,7 @@ export function preparationHint(repoRoot: string): string | undefined {
   const checks = checkProjectDocs(repoRoot, manifest);
   if (!docsReady(checks)) return checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections")
     ? "/ca-docs 로 빠진 공통 문서 준비 — 접수를 취소하지 않고 code-agent docs begin 으로 이어갑니다"
-    : "공통 문서 확인 후 별도 터미널에서 code-agent confirm doc all, 이어서 /ca-next";
+    : "현재 Claude 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 확정하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다";
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) return "code-agent docs end 로 준비를 마치고 접수를 이어갑니다";
   return undefined;
 }
@@ -707,7 +707,7 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
   if (existing !== undefined && !existing.includes(RENDER_MARK)) {
     throw new Stop(
       `사람이 쓴 지시서가 이미 있습니다: ${spec} — 덮어쓰지 않았습니다.\n` +
-        `그 지시서로 하려면 사람이 별도 터미널에서 ${confirmCommand(request.id, spec)} 로 확정한 뒤 code-agent start ${spec} 로 시작합니다. ` +
+        `그 지시서로 하려면 현재 Claude 세션에서 ca-answer의 request 동의 절차로 확정하세요 (직접 CLI를 원하면 TTY에서 ${confirmCommand(request.id, spec)}). 적용 뒤 ca-next 흐름에서 code-agent start ${spec} 로 자동으로 이어갑니다. ` +
         "접수로 새로 받으려면 사람이 그 파일을 옮기거나 지웁니다.",
     );
   }
@@ -740,13 +740,13 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     traced.missing ? `원문 대조에 미연결 내용이 있습니다: ${traced.missing}\n에이전트가 sourceMap으로 반영·제외를 연결하고 다시 제출하세요. 아직 사용자에게 확정을 요청하지 않습니다.` : note,
     after.status === "confirmed" || traced.missing
       ? ""
-      : `사람이 **별도 터미널**에서 \`${confirmCommand(request.id, spec)}\` 로 원문과 정리를 나란히 읽고 확정합니다 (반려는 \`code-agent reject request ${request.id} --comment "사유"\`).`,
+      : `현재 Claude 세션에서 원문과 정리를 나란히 읽고 ca-answer의 request 동의 절차로 확정합니다. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 \`${confirmCommand(request.id, spec)}\`, 반려는 \`code-agent reject request ${request.id} --comment "사유"\`).`,
   ]
     .filter((line, index, all) => !(line === "" && index === all.length - 1))
     .join("\n");
 }
 
-// ---- confirm / reject (TTY) ----
+// ---- confirm / reject (검증된 세션 선택 또는 수동 TTY) ----
 
 export function decideRequest(
   repoRoot: string,
@@ -826,7 +826,7 @@ export function decideRequest(
     hash,
   });
   return decision === "confirmed"
-    ? `${id} 요구사항을 확정했습니다 (${record.hash}). Claude Code 에서 /ca-next (또는 /ca-analyze) 로 분석을 시작하세요.`
+    ? `${id} 요구사항을 확정했습니다 (${record.hash}). 현재 Claude 세션에서는 ca-next 흐름으로 분석을 자동으로 이어갑니다 (수동 재개: /ca-next 또는 /ca-analyze).`
     : `${id} 요구사항 반려를 남겼습니다. Claude Code 에서 /ca-request 가 사유를 읽고 다시 정리합니다.`;
 }
 

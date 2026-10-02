@@ -233,7 +233,7 @@ export function deliverProblems(work: Work, prText: string): string[] {
 
 // ---- KNOWLEDGE 갱신 ----
 
-function selectKnowledge(work: Work): string[] {
+export function knowledgeChoices(work: Work) {
   const { repoRoot, active, manifest } = work;
   const path = join(repoRoot, proposalFile(active.id));
   if (!existsSync(path)) {
@@ -242,13 +242,12 @@ function selectKnowledge(work: Work): string[] {
   const keys = loadRequirements(repoRoot, active.id)?.keys ?? [];
   const { entries, skipped } = parseProposal(readFileSync(path, "utf-8"), keys);
   for (const reason of skipped) {
-    process.stdout.write(`건너뜀: ${reason}\n`);
+    process.stderr.write(`건너뜀: ${reason}\n`);
   }
 
-  const pending = new Map<string, string>();
-  for (const entry of entries) {
+  return entries.map(entry => {
     const target = knowledgePath(manifest, entry.kind);
-    const current = pending.get(target) ?? readKnowledge(repoRoot, manifest, entry.kind);
+    const current = readKnowledge(repoRoot, manifest, entry.kind);
     const before = existingEntry(current, entry.key);
     // 같은 키에 다른 내용이 오면 조용히 덮지 않는다 — 양쪽을 나란히 보여 주고 사람이 고른다
     const shown = [
@@ -256,13 +255,21 @@ function selectKnowledge(work: Work): string[] {
       before ? `[지금]\n${before}\n` : "[지금] 없음 — 새 항목입니다\n",
       `[제안]\n${entry.text}`,
     ].join("\n");
+    return { target, entry, shown };
+  });
+}
+
+function selectKnowledge(work: Work): string[] {
+  const pending = new Map<string, string>();
+  for (const { target, entry, shown } of knowledgeChoices(work)) {
     if (askOnTerminal(shown, "적용하려면 y") !== "y") {
       continue;
     }
+    const current = pending.get(target) ?? readKnowledge(work.repoRoot, work.manifest, entry.kind);
     pending.set(target, applyEntry(current, entry));
   }
   for (const [target, text] of pending) {
-    writeAtomic(join(repoRoot, target), text);
+    writeAtomic(join(work.repoRoot, target), text);
   }
   return [...pending.keys()];
 }
@@ -303,17 +310,25 @@ function commitMessage(work: Work, evidence: Evidence): string {
  * `add` 와 `commit` 이 **같은 경로 목록**을 든다 — 올리는 것만 제한하면 이미 인덱스에 있던 것이
  * 따라 들어와, 제한이 반쪽이 된다. `add` 는 그대로 둔다: 미추적 파일은 git 이 먼저 알아야 담긴다.
  */
-export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): string {
+export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
   const { repoRoot, active } = work;
   const mine = [
     // planFile·verifyFile·reviewFile 은 raw id 를 쓰고 원장·스냅샷은 slug(id) 를 쓴다 — 두 규칙을 각각 그대로
     `${STATE_DIR}/work/${active.id}`,
     `${APPROVALS_DIR}/${slug(active.id)}.jsonl`,
     `${APPROVALS_DIR}/${slug(active.id)}`,
+    `${STATE_DIR}/version`,
+    `${STATE_DIR}/models.json`,
+    `${APPROVALS_DIR}/docs.jsonl`,
   ];
-  const paths = [...planPaths(work), workDocsDir(active.id), ...mine, ...knowledge]
+  return [...planPaths(work), workDocsDir(active.id), ...mine, ...knowledge]
     // 없는 pathspec 은 git add 가 fatal 로 세운다 — 판정 스냅샷 디렉토리는 승인 전에는 없다
     .filter((path) => existsSync(join(repoRoot, path)));
+}
+
+export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): string {
+  const { repoRoot } = work;
+  const paths = deliveryPaths(work, knowledge);
   git(repoRoot, ["add", "--", ...paths]);
   try {
     // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
@@ -332,9 +347,8 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
 // ---- code-agent deliver ----
 
 /**
- * 11 반영. **사람이 별도 터미널에서만** 돌린다 (`confirmOnTerminal`) — 모델 세션 안의 확인은
- * 모델이 한 것과 구분되지 않는다. 화면을 그리기 직전에 게이트를 다시 돌려, 사람이 읽는 것과
- * 커밋되는 것 사이에 틈이 없게 한다.
+ * 11 반영. 관찰된 같은 세션의 선택 또는 직접 TTY로 확인한다.
+ * 화면을 그리기 직전에 게이트를 다시 돌려 확인 대상과 실제 커밋 범위를 대조한다.
  */
 export function deliver(work: Work): string {
   const { repoRoot, active } = work;
@@ -396,7 +410,7 @@ export function deliver(work: Work): string {
     ...(knowledge.length > 0 ? [`공통 KNOWLEDGE 갱신: ${knowledge.join(", ")}`] : ["공통 KNOWLEDGE 는 갱신하지 않았습니다."]),
     "",
     `PR 본문은 ${prDocFile(active.id)} 에 있습니다. push · MR/PR 생성은 하지 않았습니다 — git 호스트가 붙을 때까지 보류입니다.`,
-    `커밋한 것은 이 작업의 파일·증거·원장뿐입니다 — 도입 설정(${STATE_DIR}/version · ${STATE_DIR}/models.json · ${APPROVALS_DIR}/docs.jsonl)은 사람이 따로 커밋합니다.`,
+    "확인한 작업 파일·증거·원장과 표시한 도입 설정을 함께 커밋했습니다. 관련 없는 스테이징 파일은 포함하지 않았습니다.",
     "작업 커서를 지웠습니다.",
   ].join("\n");
 }

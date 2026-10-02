@@ -57,7 +57,7 @@ export function modelsTable(repoRoot: string): string {
     "에이전트별 모델 (기본 opus):",
     ...AGENTS.map((agent) => `  ${agent.padEnd(12)} ${modelOf(repoRoot, agent)}${overrides[agent] ? "  (바꿈)" : ""}`),
     "",
-    `바꾸기 (터미널에서만): code-agent model <${AGENTS.join("|")}|all> <${MODELS.join("|")}>`,
+    `바꾸기: 현재 세션에서 모델 변경을 요청하세요. 수동 TTY 대체 명령: code-agent model <${AGENTS.join("|")}|all> <${MODELS.join("|")}>`,
   ].join("\n");
 }
 

@@ -15,7 +15,7 @@ const GITIGNORE_END = "# code-agent:end";
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
  * hook 의 읽기 분기는 여기에 없으면 불리지 않는다.
  */
-export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|Read|Grep|Glob";
+export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob";
 
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
@@ -117,7 +117,8 @@ export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected 
     return [];
   }
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
-  const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, event === "PreToolUse" ? "hook" : "review-event"));
+  const subcommand = event === "PostToolUse" ? "consent-event" : event === "PreToolUse" && expected === "AskUserQuestion" ? "consent-event" : event === "PreToolUse" ? "hook" : "review-event";
+  const entry = (hooks[event] ?? []).find((candidate) => ourEntry(candidate, subcommand));
   if (!entry || !entry.matcher || entry.matcher === "*") return [];
   const covered = entry.matcher.split("|").map((tool) => tool.trim());
   return expected.split("|").filter((tool) => !covered.includes(tool));
@@ -160,11 +161,13 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
 
   const settings = settingsFile(repoRoot);
   upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);
+  upsertHook(settings, "PreToolUse", "consent-event", invoke("consent-event"), "AskUserQuestion");
+  upsertHook(settings, "PostToolUse", "consent-event", invoke("consent-event"), "AskUserQuestion");
   // Stop hook — PreToolUse 가 못 보는 것(도구를 거치지 않고 생긴 파일·남은 질문)을 턴 끝에 한 번 본다
   upsertHook(settings, "Stop", "stop", invoke("stop"));
   upsertHook(settings, "SubagentStart", "review-event", invoke("review-event"), "ca-reviewer");
   upsertHook(settings, "SubagentStop", "review-event", invoke("review-event"), "ca-reviewer");
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")}`);
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);
@@ -173,9 +176,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
     join(repoRoot, ".gitignore"),
     GITIGNORE_START,
     GITIGNORE_END,
-    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/`,
+    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/\n${STATE_DIR}/consents/`,
   );
-  lines.push(".gitignore: 개인 진행 상태 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/)");
+  lines.push(".gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/)");
 
   mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   const version = packageVersion();

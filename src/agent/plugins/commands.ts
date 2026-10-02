@@ -36,13 +36,15 @@ const EXAMPLE_ADAPTER = isPackaged()
 const NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const PLUGIN_USAGE =
-  '사용법: code-agent plugin list | example [--out <경로>] | add <이름> --command "<argv>" [--slots a,b] [--sends-code] | remove <이름>';
+  '사용법: code-agent plugin list | example [--out <경로>] | add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 환경변수 이름>] | remove <이름>';
 
 export interface AddOptions {
   name?: string;
   command?: string;
   slots?: string;
   sendsCode: boolean;
+  /** Source environment-variable name, never a literal key. */
+  secretEnv?: string;
 }
 
 /** 테스트가 대본을 넣을 수 있게 프롬프트를 밖으로 뺀다 — `hook.ts` 의 `decide`/`runHook` 과 같은 모양 */
@@ -151,7 +153,7 @@ export function pluginList(repoRoot: string): string {
       ? declared.map(([name, entry]) => `  - ${name} · 자리 ${entry.slots.join(", ")}`)
       : ["  - 없음"]),
     "",
-    `등록·제거는 별도 터미널에서 — ${PLUGIN_USAGE}`,
+    `등록·제거는 같은 세션의 사용자 확인 또는 직접 TTY에서 진행합니다 — ${PLUGIN_USAGE}`,
     EXAMPLE_ADAPTER,
   ].join("\n");
 }
@@ -221,14 +223,12 @@ const SENDS_CODE_WARNING = (name: string, note?: string): string =>
     "   회사·고객 코드를 외부로 보내도 되는지 확인한 뒤에만 등록하세요. 되돌리려면 code-agent plugin remove 입니다.",
   ].join("\n");
 
-/**
- * 순수 로직 — 테스트가 대본 프롬프트를 넣어 부른다.
- *
- * 순서가 곧 규칙이다. **앞이 실패하면 뒤가 돌지 않는다** — describe 가 실패하면 아무것도 저장하지
- * 않고, probe 가 실패하면 **키도 저장하지 않는다**. 반쯤 등록된 플러그인은 등록된 것으로 보이면서
- * 돌지 않아, 실패의 이유를 매 호출 다시 찾게 만든다.
- */
-export function registerPlugin(repoRoot: string, options: AddOptions, prompts: Prompts): string {
+/** Shared read-only validation and describe for preview and registration. */
+function inspectPluginAdd(repoRoot: string, options: AddOptions) {
+  if (options.secretEnv !== undefined &&
+      (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.secretEnv) || /[\r\n]/.test(options.secretEnv))) {
+    throw new Stop("secretEnv에는 환경변수 이름만 지정하세요 ([A-Za-z_][A-Za-z0-9_]*).");
+  }
   const name = requireName(options.name);
   const store = readStore();
   if (store.plugins[name]) {
@@ -246,19 +246,85 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
   const described = describeAdapter(repoRoot, command);
   if (!described.ok) {
     throw new Stop(
-      `어댑터가 describe 에 답하지 않아 등록하지 않았습니다: ${described.error}\n` +
+      redactSecret(`어댑터가 describe 에 답하지 않아 등록하지 않았습니다: ${described.error}\n` +
         `  명령: ${command.join(" ")}\n` +
-        `  ${EXAMPLE_ADAPTER}`,
+        `  ${EXAMPLE_ADAPTER}`, options.secretEnv ? process.env[options.secretEnv] : undefined),
     );
   }
   const adapter = described.output;
+  // describe inherits the environment. Do not let an adapter echo a key into approval metadata.
+  const metadata = JSON.stringify({ name, command, adapter });
+  if (metadata !== redactSecret(metadata, options.secretEnv ? process.env[options.secretEnv] : undefined)) {
+    throw new Stop("어댑터 설명이나 명령에 키 값이 포함되어 등록을 준비하지 않았습니다.");
+  }
   const slots = resolveSlots(asked, adapter);
   // 하나만 켜져도 켜진 것이다 — 사람이 몰랐다고 해서 나간 코드가 돌아오지 않는다
   const sendsCode = options.sendsCode || adapter.sendsCode;
+  return { store, name, command, adapter, slots, sendsCode, secretEnv: options.secretEnv };
+}
+
+function redactSecret(text: string, value?: string): string {
+  if (!value) return text;
+  for (const token of new Set([value, value.trim(), JSON.stringify(value).slice(1, -1), JSON.stringify(value.trim()).slice(1, -1)])) {
+    if (token) text = text.split(token).join("(키)");
+  }
+  return text;
+}
+
+type AddPreview = ReturnType<typeof inspectPluginAdd>;
+
+function addPreviewText(plan: AddPreview): string {
+  const { name, command, slots, sendsCode, secretEnv, adapter } = plan;
+  return [
+    `플러그인 등록: ${name}`,
+    // JSON argv preserves argument boundaries, including spaces and quotes.
+    `실행 명령(argv): ${JSON.stringify(command)}`,
+    `사용할 자리(slots): ${slots.join(", ")}`,
+    `코드 외부 전송(sendsCode): ${sendsCode ? "예" : "아니오"}`,
+    ...(sendsCode ? [SENDS_CODE_WARNING(name, adapter.note)] : [
+      "어댑터는 코드 외부 전송을 하지 않는다고 밝혔습니다. 선택한 자리의 입력은 어댑터에 전달됩니다.",
+    ]),
+    ...slots.map((slot) => `  - ${slot} → ${SLOT_SENDS[slot]}`),
+    `키 환경변수(secretEnv): ${secretEnv ?? "(미지정)"}`,
+    ...(adapter.secret?.required && secretEnv === undefined ? [
+      "키가 필요합니다. 같은 세션에서 이미 설정된 환경변수 이름을 secretEnv에 지정하세요. 실제 키 값은 입력하지 마세요.",
+      "기존 직접 TTY 실행에서는 키를 입력할 수도 있습니다.",
+    ] : []),
+    `어댑터 정보: ${JSON.stringify(adapter)}`,
+    `키가 필요하면 probe 성공 후 ${STORE_LABEL} 에 저장합니다.`,
+  ].join("\n");
+}
+
+// An in-process preview is not consent. The transport still checks its approval/hash;
+// this guard closes the extra describe between that check and actual registration.
+const addPreviews = new Map<string, string>();
+
+function previewKey(repoRoot: string, name: string): string {
+  return JSON.stringify([resolve(repoRoot), name]);
+}
+
+/** Describe only: no terminal interaction, probe, registration, or filesystem writes. */
+export function previewPluginAdd(repoRoot: string, options: AddOptions): string {
+  const plan = inspectPluginAdd(repoRoot, options);
+  const shown = addPreviewText(plan);
+  addPreviews.set(previewKey(repoRoot, plan.name), shown);
+  return shown;
+}
+
+/** Describe, confirm, resolve the key, then probe; persist only after all succeed. */
+export function registerPlugin(repoRoot: string, options: AddOptions, prompts: Prompts): string {
+  const plan = inspectPluginAdd(repoRoot, options);
+  const { store, name, command, adapter, slots, sendsCode, secretEnv } = plan;
+  const key = previewKey(repoRoot, name);
+  const expected = addPreviews.get(key);
+  const shown = addPreviewText(plan);
+  if (expected !== undefined && expected !== shown) {
+    throw new Stop("미리보기 이후 플러그인 정보가 바뀌었습니다. 등록 전에 새 미리보기를 준비하고 다시 확인하세요.");
+  }
 
   let typed = "";
   if (sendsCode) {
-    prompts.confirm(SENDS_CODE_WARNING(name, adapter.note), name);
+    prompts.confirm(shown, name);
     typed = name;
   }
   // `sendsCode` 는 **게이트 대상이 스스로 답한 값**이다. `false` 라고 답한 어댑터에도 자리마다
@@ -268,7 +334,7 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
 
   let secret: Secret | undefined;
   if (adapter.secret?.required) {
-    const value = prompts.ask(
+    const value = secretEnv !== undefined ? process.env[secretEnv] : prompts.ask(
       [
         `${name} 는 키가 필요합니다 (어댑터가 ${adapter.secret.delivery} 로 받습니다).`,
         `키는 ${STORE_LABEL} 에만 저장되고 저장소에는 들어가지 않습니다.`,
@@ -276,17 +342,20 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
       ].join("\n"),
       "키",
     );
-    if (value.trim() === "") {
-      throw new Stop("키를 입력하지 않아 등록하지 않았습니다.");
+    if (!value || value.trim() === "") {
+      throw new Stop(secretEnv !== undefined
+        ? `키 환경변수 ${secretEnv}에 값이 없거나 공백뿐입니다. 값이 있는 기존 환경변수 이름을 지정하세요.`
+        : "키를 입력하지 않아 등록하지 않았습니다.");
     }
     secret = { delivery: adapter.secret.delivery, env: adapter.secret.env, value: value.trim() };
   }
 
   const probe = probeAdapter(repoRoot, command, secret);
+  const sensitiveValue = secretEnv !== undefined ? process.env[secretEnv] : secret?.value;
   if (!probe.ok || !probe.output.ready) {
     throw new Stop(
       `probe 가 통과하지 못해 등록하지 않았습니다 — 키도 저장하지 않았습니다: ` +
-        `${probe.ok ? (probe.output.detail ?? "ready: false") : probe.error}`,
+        redactSecret(probe.ok ? (probe.output.detail ?? "ready: false") : probe.error, sensitiveValue),
     );
   }
 
@@ -300,9 +369,10 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
       : {}),
     adapter: { name: adapter.name, version: adapter.adapterVersion, describedAt: now },
     consent: { user: userInfo().username, host: hostname(), at: now, slots, sendsCode, typed },
-    probe: { at: now, ok: true, ...(probe.output.detail ? { detail: probe.output.detail } : {}) },
+    probe: { at: now, ok: true, ...(probe.output.detail ? { detail: redactSecret(probe.output.detail, sensitiveValue) } : {}) },
   };
   writeStore({ ...store, plugins: { ...store.plugins, [name]: stored } });
+  addPreviews.delete(key);
 
   return [
     `${name} 를 등록했습니다 — ${STORE_LABEL}`,
@@ -328,6 +398,25 @@ export function pluginAdd(repoRoot: string, options: AddOptions): string {
 }
 
 // ---- remove ----
+
+/** Read stored public details only; never invoke the adapter or expose its key. */
+export function previewPluginRemove(name: string | undefined): string {
+  const validName = requireName(name);
+  const plugin = readStore().plugins[validName];
+  if (!plugin) throw new Stop(`등록돼 있지 않습니다: ${validName}`);
+  return redactSecret([
+    `플러그인 제거: ${validName}`,
+    `실행 명령(argv): ${JSON.stringify(plugin.command)}`,
+    `사용할 자리(slots): ${plugin.slots.join(", ")}`,
+    `코드 외부 전송(sendsCode): ${plugin.sendsCode ? "예" : "아니오"}`,
+    `어댑터 정보: ${JSON.stringify(plugin.adapter)}`,
+    `키 전달 설정: ${JSON.stringify(plugin.secret ? {
+      required: plugin.secret.required, delivery: plugin.secret.delivery, env: plugin.secret.env,
+    } : null)}`,
+    `등록과 키·동의·probe 기록을 ${STORE_LABEL} 에서 제거합니다.`,
+    `${MANIFEST_FILE} 의 선언은 유지되며 해당 자리는 기본 구현으로 돕니다.`,
+  ].join("\n"), plugin.secret?.value);
+}
 
 export function pluginRemove(name: string | undefined): string {
   requireTerminal("플러그인 제거");

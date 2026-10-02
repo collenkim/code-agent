@@ -7,6 +7,10 @@ import type { InitOptions } from "./init";
 import { loadActive, PHASES, STATE_DIR } from "./layout";
 import { AGENTS, DEFAULT_MODEL, modelOf } from "./models";
 
+// The CLI opts into source updates; update() remains the local template-copy API.
+export { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
+export type { SourceUpdateOptions } from "./sourceUpdate";
+
 /**
  * `code-agent update` — 지금 도는 버전의 스킬·에이전트·hook 을 다시 설치한다.
  *
@@ -80,7 +84,7 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
       const same = beforeFiles.get(file) === readIfAny(join(repoRoot, file));
       const detail =
         file === ".claude/settings.json"
-          ? ` (PreToolUse ${installedHook(repoRoot, "PreToolUse", "hook")} · Stop ${installedHook(repoRoot, "Stop", "stop")} · SubagentStart ${installedHook(repoRoot, "SubagentStart", "review-event")} · SubagentStop ${installedHook(repoRoot, "SubagentStop", "review-event")})`
+          ? ` (PreToolUse ${installedHook(repoRoot, "PreToolUse", "hook")} · 질문 PreToolUse ${installedHook(repoRoot, "PreToolUse", "consent-event")} · 질문 PostToolUse ${installedHook(repoRoot, "PostToolUse", "consent-event")} · Stop ${installedHook(repoRoot, "Stop", "stop")} · SubagentStart ${installedHook(repoRoot, "SubagentStart", "review-event")} · SubagentStop ${installedHook(repoRoot, "SubagentStop", "review-event")})`
           : "";
       return `${file}: ${same ? "그대로" : "갱신"}${detail}`;
     }),
