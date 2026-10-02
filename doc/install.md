@@ -114,7 +114,7 @@ claude
 표시된 **블록 안쪽만** 바꾼다. `settings.json` 의 다른 hook·설정과 `CLAUDE.md` 의 블록 밖은 건드리지 않는다.
 설치한 파일은 커밋해 팀과 공유한다.
 
-작업의 최종 반영에서는 `.code-agent/version`, `.code-agent/models.json`, `.code-agent/approvals/docs.jsonl` 중 존재하는 파일을 실제 커밋 경로 목록에 표시하고 함께 커밋한다. 이 세 파일은 반영 후 별도로 수동 커밋하지 않아도 된다. 같은 화면에는 작업 파일·증거와 선택한 KNOWLEDGE 경로도 표시한다. 그 밖의 설치 설정이나 소스를 일괄 추가하는 것은 아니므로, 별도의 도입·설정 변경은 그 범위에 맞춰 검토한다.
+작업의 최종 반영에서는 `.code-agent/version`, `.code-agent/models.json`·`.code-agent/codex-models.json`, `.code-agent/approvals/docs.jsonl` 중 존재하는 파일을 실제 커밋 경로 목록에 표시하고 함께 커밋한다. 이 설정·확정 파일은 반영 후 별도로 수동 커밋하지 않아도 된다. 같은 화면에는 작업 파일·증거와 선택한 KNOWLEDGE 경로도 표시한다. 그 밖의 설치 설정이나 소스를 일괄 추가하는 것은 아니므로, 별도의 도입·설정 변경은 그 범위에 맞춰 검토한다.
 
 ```
 code-agent 를 설치했습니다 — C:\work\shop
@@ -219,7 +219,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 |---|---|
 | `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 8개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
-| 에이전트별 모델(`.code-agent/models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
+| 에이전트별 모델(`.code-agent/models.json`·`.code-agent/codex-models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
 | 개발용 `--cli` | 현재 번들만 적용할 때는 기존 개발 CLI 경로를 승계한다. 기본 소스 갱신은 새로 빌드한 CLI를 연결하며, `--cli`를 명시하면 지정한 경로를 적용한다 |
 
 ```

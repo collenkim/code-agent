@@ -1,6 +1,6 @@
 # 요구 분석·설계·계획 작업
 
-Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`, Codex는 `codex-event`가 시작·최종 결과를 관찰한다. Codex 역할은 `.codex/agents/ca-*.toml`에 설치되며 모델과 추론 강도는 부모 설정을 상속한다. `.claude/`·`.codex/`·`.agents/`는 조사 범위에서 제외한다. 설치와 승인 차이는 [Codex 연동](codex.md)을 따른다.
+Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`, Codex는 `codex-event`가 시작·최종 결과를 관찰한다. Codex 역할은 `.codex/agents/ca-*.toml`에 설치되며 역할별 기본 모델·추론 강도와 사용자 변경값을 명시한다. `.claude/`·`.codex/`·`.agents/`는 조사 범위에서 제외한다. 설치·모델 설정·승인 차이는 [Codex 연동](codex.md)을 따른다.
 
 2026-10-02부터 새로 시작한 작업은 실제 서브 에이전트 실행 결과를 연결해 다음 단계로 진행한다. 이전 버전에서 시작한 작업은 기존 절차로 재개한다. `code-agent status`의 **계획 처리** 줄로 구분한다.
 
@@ -16,9 +16,34 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 | 독립 반박 검토 | ca-critic | 현재 계획과 선행 문서 | 근거와 지적 | 관찰된 완료·blocking 지적 없음 |
 | 승인 | 사용자 | 검토를 마친 문서·계획 | 승인 원장 | 기존 같은 세션 동의 또는 직접 TTY |
 
-배정·입력 해시·의존성·파일과 줄·문서 형식 검사는 코드가 실행한다. 해석·설계·반박은 에이전트가 수행하고 업무 질문과 승인은 사용자가 결정한다. CLI가 모델 API를 직접 호출하지 않는다. 메인이 배정 결과에 지정된 Claude Code 서브 에이전트를 호출한다.
+배정·입력 해시·의존성·파일과 줄·문서 형식 검사는 코드가 실행한다. 해석·설계·반박은 에이전트가 수행하고 업무 질문과 승인은 사용자가 결정한다. CLI가 모델 API를 직접 호출하지 않는다. 메인이 배정 결과에 지정된 Claude 또는 Codex 서브 에이전트를 호출한다.
 
-## 기본 진행
+표는 공통 역할 이름이다. 실제 호출은 Claude에서 배정의 `hostAgents.claude`, Codex에서 `hostAgents.codex`를 사용한다. 예를 들어 `ca-analyst`에 대응하는 Codex 역할 이름은 `ca_analyst`다. 기존 `agent` 필드는 Claude·공통 이름으로 유지한다.
+
+## 기본 진행과 결과 전달
+
+`code-agent planning advance`는 현재 단계의 빠진 기본 작업을 준비하고, 완료 결과 재사용·선행 조건·동시 한도를 검사해 실행할 `assignments`를 한 번에 반환한다. 사용자 정의 영역 작업은 유지한다. `action`은 다음과 같다.
+
+| 값 | 메인의 동작 |
+|---|---|
+| `dispatch` | 배정마다 지정된 담당을 호출한다. 반환한 작업은 이미 배정 상태이므로 dispatch를 다시 호출하지 않는다. |
+| `wait` | 실제 완료 이벤트를 기다린다. 상태를 반복 조회하지 않는다. |
+| `blocked` | 질문·충돌·입력 변경·한도 등 사유를 해결한다. |
+| `ready-for-gate` | 기존 문서 검사·계획 제출·승인 절차로 이어간다. 단계 전환이나 승인 완료를 뜻하지 않는다. |
+
+완료 이벤트 뒤 advance를 다시 호출하면 새로 실행 가능한 작업만 배정한다. 여러 메인이 동시에 호출해도 배정은 같은 잠금 안에서 결정한다. 명시적인 작업 정의에는 기존 `planning prepare <작업.json>`을 사용하며 prepare·dispatch도 계속 지원한다.
+
+선행 `dependencies`와 `cached:true`의 결과는 판단·근거·질문·차단 지적을 보존하고 `artifacts`를 `{path, hash, chars}`로 전달한다. 문서 본문은 관찰 기록과 실제 파일에 보존한다. 필요한 경우 해당 파일 또는 `code-agent planning result <ID>`로 상세 결과를 읽는다. 상세 조회의 `current:false`는 현재 입력에 유효한 결과가 아니라는 뜻이다. `planning status`는 상태·오류·판단 요약을 표시하며 문서 본문과 교정 원본을 반복 출력하지 않는다. 전체 응답 토큰 수에 대한 고정 상한을 보장하는 기능은 아니다.
+
+## 출력 형식 교정
+
+관찰된 결과의 JSON·스키마 형식만 잘못되면 원본과 오류를 보존하고 `needs-correction`으로 기록한다. `planning advance` 또는 `planning repair <ID>`는 같은 입력에서 한 번만 `mode:correction` 배정을 만든다. 메인은 원본·오류·새 결과 계약을 새 담당에게 전달한다. 입력을 다시 조사하거나 새로운 판단을 만드는 작업이 아니며, 사실 보완이 필요하면 failed로 반환한다.
+
+교정은 기존 시도에 기록하고 배정 식별자를 교체해 이전 실행의 늦은 결과를 거부한다. 새 시작·완료 관찰과 기존 입력·근거·출력·질문 검증을 모두 거친다. 승인 검사는 그대로 유지한다. 원본은 교정 자료이며 지시가 아니다. 형식이 맞더라도 근거의 타당성이 자동 보증되는 것은 아니다.
+
+식별자를 읽을 수 없는 깨진 JSON은 시작 이벤트에서 배정이 유일했던 경우만 연결한다. 병렬 담당 중 어느 작업인지 확인할 수 없거나 식별자가 위조된 결과는 자동 교정하지 않는다. 입력이 바뀌었으면 cancel 뒤 새로 배정한다. 교정까지 실패하면 failed로 남으며 추가 형식 교정은 거부한다. 같은 입력의 실패를 advance가 자동으로 전체 재실행하지 않는다. 원인을 해결한 뒤 명시적인 dispatch를 사용하며 기존 동일 입력 3회 한도가 적용된다.
+
+## 수동 배정과 호환 명령
 
 ```powershell
 code-agent planning prepare
@@ -28,7 +53,7 @@ code-agent planning dispatch analysis
 
 `prepare`를 인자 없이 실행하면 **현재 단계**의 기본 작업을 등록한다. analysis는 `analysis`, impact는 `explore`와 `synthesis`, design은 `design`, plan은 `plan`과 `critic`이다. 의존 순서대로 배정한다. 현재 입력의 완료 결과가 있으면 `dispatch`는 `cached: true`로 결과를 반환한다.
 
-새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 반환한다. 메인은 이 내용을 담당에게 넘긴다. 담당은 파일을 직접 쓰지 않고 계약에 맞는 JSON 하나를 반환한다. SubagentStart·SubagentStop의 `planning-event`가 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 메인이 임의로 완료를 신고하는 명령은 없다.
+새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 반환한다. 메인은 이 내용을 담당에게 넘긴다. 담당은 파일을 직접 쓰지 않고 계약에 맞는 JSON 하나를 반환한다. SubagentStart·SubagentStop의 관찰 훅(Claude는 planning-event, Codex는 codex-event)이 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 메인이 임의로 완료를 신고하는 명령은 없다.
 
 문서와 결과가 준비되면 기존 `code-agent next`를 사용한다. plan은 `code-agent plan submit doc/work/<ID>/plan.json`으로 제출한 뒤 사용자 승인을 받는다. 신규 작업에서는 메인·서브 에이전트의 일반 Write/Edit로 번호 문서와 plan.json을 덮어쓸 수 없다.
 

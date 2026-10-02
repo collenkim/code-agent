@@ -15,7 +15,8 @@ import { dispatchPlanning, preparePlanning } from "../agent/planning";
 import { loadPlanning } from "../agent/planningState";
 import { update } from "../agent/update";
 import { loadWork } from "../agent/work";
-import { modelsTable, setModel } from "../agent/models";
+import { modelsTable, setModel, codexModelOf } from "../agent/models";
+import { defaultCodexModel } from "../agent/modelPolicy";
 import { usage } from "../agent/usage";
 import { start } from "../agent/commands";
 import { approveAndApplyFixture, CONSENT_SPEC, CONSENT_WORK_ID, prepareDeliveryFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
@@ -50,17 +51,62 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   for (const [path,text] of hostAssets("codex")) {
     assert.equal(read(path),text);
     assert.doesNotMatch(text,/AskUserQuestion|\.claude\//);
+    if (path.endsWith(".toml")) assert.match(text, /^name = "[a-z0-9_]+"/);
   }
   const agent = read(".codex/agents/ca-analyst.toml");
-  assert.match(agent,/^name = "ca-analyst"/);
-  assert.doesNotMatch(agent,/^model(?:_reasoning_effort)?\s*=/m);
-  assert.match(modelsTable(root),/Codex.*상속/);
-  assert.throws(()=>setModel(root,"all","opus"),/Claude 전용/);
+  assert.match(agent,/^name = "ca_analyst"/);
+  assert.match(read(".agents/skills/ca-analyze/SKILL.md"), /hostAgents\.codex/);
+  assert.match(read(".agents/skills/ca-analyze/SKILL.md"), /ca_analyst/);
+  assert.match(agent,/^model = "gpt-6.1-sol"$/m);
+  assert.match(agent,/^model_reasoning_effort = "high"$/m);
+  assert.match(modelsTable(root),/Codex.*제품 기본값/);
+  assert.throws(()=>setModel(root,"all","opus"),/Codex 모델 식별자/);
   assert.match(usage(root),/아직 집계하지 않습니다/);
   update(root);
   assert.equal(read(".codex/hooks.json"),before);
   assert.match(installedHook(root,"PreToolUse","codex-event","codex")!,/node .*cli\.js.*codex-event/);
   assert.equal((read("AGENTS.md").match(/<!-- code-agent:start -->/g) ?? []).length,1);
+});
+
+test("역할별 Codex 모델은 동의 후 적용되고 다른 호스트와 역할을 보존하며 갱신·복원한다", () => {
+  setupConsentProject(root); init(root,{host:"both",cli});
+  const claude = read(".claude/agents/ca-writer.md");
+  assert.deepEqual(codexModelOf(root,"writer"), defaultCodexModel("writer"));
+  assert.throws(()=>setModel(root,"writer","gpt-6-luna"),/--host/);
+  assert.throws(()=>setModel(root,"writer","gpt-6-luna",{host:"codex",reasoning:"high"}),/터미널에서만/);
+  approveAndApplyFixture(root,{action:"model",host:"codex",agent:"ca_writer",model:"gpt-6-luna",reasoning:"high"},"codex");
+  assert.deepEqual(codexModelOf(root,"writer"),{model:"gpt-6-luna",reasoning:"high"});
+  assert.deepEqual(codexModelOf(root,"reviewer"), defaultCodexModel("reviewer"));
+  assert.equal(read(".claude/agents/ca-writer.md"),claude);
+  assert.match(read(".codex/agents/ca-writer.toml"),/^model = "gpt-6-luna"$/m);
+  const changed = read(".codex/agents/ca-writer.toml");
+  update(root);
+  assert.equal(read(".codex/agents/ca-writer.toml"),changed);
+  assert.doesNotMatch(doctor(root,"codex").text,/✗ Codex 스킬·에이전트/);
+  approveAndApplyFixture(root,{action:"model",host:"codex",agent:"writer",model:"default"},"codex");
+  assert.deepEqual(codexModelOf(root,"writer"),defaultCodexModel("writer"));
+  assert.equal(read(".claude/agents/ca-writer.md"),claude);
+  approveAndApplyFixture(root,{action:"model",host:"codex",agent:"all",model:"gpt-6-luna"},"codex");
+  assert.deepEqual(codexModelOf(root,"writer"),{model:"gpt-6-luna",reasoning:"medium"});
+  assert.deepEqual(codexModelOf(root,"reviewer"),{model:"gpt-6-luna",reasoning:"high"});
+  approveAndApplyFixture(root,{action:"model",host:"codex",agent:"all",model:"default"},"codex");
+  assert.deepEqual(JSON.parse(read(".code-agent/codex-models.json")),{});
+});
+
+test("Codex 모델 명령은 호스트 조회를 제공하고 잘못된 변경과 비대화형 직접 변경을 거부한다", () => {
+  init(root,{host:"codex",cli});
+  const run = (...args:string[]) => spawnSync(process.execPath,[cli,"model",...args],{cwd:root,encoding:"utf8"});
+  const shown = run("--host","codex");
+  assert.equal(shown.status,0,shown.stderr);
+  assert.match(shown.stdout,/analyst\s+gpt-6\.1-sol \/ high/);
+  assert.match(shown.stdout,/writer\s+gpt-6\.1-sol \/ medium/);
+  const denied = run("writer","gpt-6-luna","--host","codex","--reasoning","high");
+  assert.notEqual(denied.status,0);
+  assert.match(denied.stderr,/터미널에서만/);
+  assert.throws(()=>prepareConsent(root,{action:"model",host:"codex",agent:"writer",model:'bad"\nmodel = "x'}),/Codex 모델 식별자/);
+  assert.throws(()=>prepareConsent(root,{action:"model",host:"codex",agent:"writer",model:"gpt-6-luna",reasoning:"invalid"}),/추론 강도/);
+  assert.throws(()=>prepareConsent(root,{action:"model",host:"codex",agent:"all",model:"default",reasoning:"high"}),/기본값 복원/);
+  assert.equal(existsSync(join(root,".code-agent/codex-models.json")),false);
 });
 
 test("양쪽 호스트를 추가 설치하고 기본 update는 둘 다 갱신한다", () => {
@@ -147,7 +193,7 @@ test("Codex 계획 결과는 실제 배정에 묶이고 입력 변경 결과는 
   approveAndApplyFixture(root,{action:"request",id:CONSENT_WORK_ID},"codex");
   start(root,join(root,CONSENT_SPEC)); preparePlanning(root);
   const task = JSON.parse(dispatchPlanning(root,"analysis"));
-  const event = {cwd:root,session_id:"parent",agent_id:"child",agent_type:task.agent};
+  const event = {cwd:root,session_id:"parent",agent_id:"child",agent_type:task.hostAgents.codex};
   codexHook({...event,hook_event_name:"SubagentStart"});
   const result = {...task.resultShape,status:"completed",summary:"분석",evidence:[{path:CONSENT_SPEC,line:1}],
     artifacts:[{path:`doc/work/${CONSENT_WORK_ID}/01-requirements.md`,content:"오래된 결과"}]};

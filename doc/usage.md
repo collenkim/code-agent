@@ -560,7 +560,7 @@ preserve:
 | `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
-| `code-agent model [<에이전트\|all> <opus\|sonnet\|haiku>]` | 에이전트별 모델 표 · 바꾸기. 설정은 `.code-agent/models.json`, 정의 파일의 `model:` 줄을 코드가 다시 쓴다 | 바꾸기는 **터미널에서만** |
+| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning 강도]` | 호스트별 역할 모델 조회·변경·복원. Claude와 Codex의 변경값을 각각 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
 | `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트별 토큰과 비용 **추정**을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
@@ -907,7 +907,7 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 
 ### 최종 반영 범위
 
-반영 직전에 기존 검증 게이트를 다시 검사한다. 필수 증거가 현재 트리와 맞고 승인과 최신 독립 리뷰가 유효해야 한다. 작업 파일·작업 문서·증거·해당 작업 승인 원장·선택한 KNOWLEDGE, 존재하는 `.code-agent/version`·`.code-agent/models.json`·`.code-agent/approvals/docs.jsonl`을 명시적으로 커밋한다. 다른 작업의 스테이징된 파일은 포함하지 않는다.
+반영 직전에 기존 검증 게이트를 다시 검사한다. 필수 증거가 현재 트리와 맞고 승인과 최신 독립 리뷰가 유효해야 한다. 작업 파일·작업 문서·증거·해당 작업 승인 원장·선택한 KNOWLEDGE, 존재하는 `.code-agent/version`·`.code-agent/models.json`·`.code-agent/codex-models.json`·`.code-agent/approvals/docs.jsonl`을 명시적으로 커밋한다. 다른 작업의 스테이징된 파일은 포함하지 않는다.
 
 확인하면 작업 브랜치에 로컬 커밋하고 작업 커서를 지운다. push·PR/MR 생성·배포는 하지 않는다. 검증 결과와 남은 위험은 `10-pr.md`에 남긴다.
 
@@ -1166,6 +1166,8 @@ git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정�
 
 ## 관찰된 계획 작업
 
-신규 작업은 `status`의 계획 처리 줄에 관찰 흐름으로 표시된다. 각 단계에서 `planning prepare`로 작업을 등록하고 `planning dispatch <ID>`가 반환한 담당·입력·출력 계약으로 서브 에이전트를 호출한다. 실제 시작·완료 hook이 결과를 기록한다. 전체 단계별 내용 기준은 동일하며 번호 문서와 plan.json은 관찰된 결과로 생성한다. 이전 버전 작업은 기존 작성 절차로 재개한다.
+신규 작업은 `status`의 계획 처리 줄에 관찰 흐름으로 표시된다. 각 단계에서 `planning advance`가 준비·재사용·선행 조건·동시 한도를 확인하고 반환한 배정별로 서브 에이전트를 호출한다. 실제 시작·완료 hook이 결과를 기록한다. 영역을 직접 나눌 때는 `planning prepare <작업.json>`을 먼저 사용한다. 전체 단계별 내용 기준은 동일하며 번호 문서와 plan.json은 관찰된 결과로 생성한다. 이전 버전 작업은 기존 작성 절차로 재개한다.
+
+`planning status`는 요약, `planning result <ID>`는 원문 산출물과 현재 입력에 대한 유효성을 조회한다. 선행 결과는 문서 본문 대신 경로·해시를 전달한다. 관찰된 출력 형식 오류는 `planning advance` 또는 `planning repair <ID>`로 같은 입력에서 1회 교정한다. 새 담당의 시작·완료 관찰이 필요하며 입력 변경·근거 오류·미결 질문·승인을 우회하지 않는다. `ready-for-gate`는 기존 게이트로 넘어갈 준비 상태이며 승인 완료가 아니다.
 
 기본 역할 순서는 analysis → explore → synthesis → design → plan → critic이다. 설계·계획 판단은 ca-analyst, 조사 정리는 ca-writer다. 같은 입력 결과는 재사용하고, 영역 조사 완료와 충돌 해소 후 합성한다. 계획 제출·승인은 관찰된 critic 완료가 필수다. 구현은 tasks의 현재 파일 범위만 허용한다. 예시·질문 상태·취소·재시도·피드백 반영은 [계획 작업 안내](planning.md)에 정리했다.

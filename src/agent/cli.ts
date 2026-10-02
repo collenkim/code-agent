@@ -30,7 +30,7 @@ import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./req
 import { openRound } from "./review";
 import { runReviewHook } from "./reviewHook";
 import { runPlanningHook } from "./planningHook";
-import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning } from "./planning";
+import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, advancePlanning, repairPlanning, planningResult } from "./planning";
 import { runStopHook } from "./stopHook";
 import { manifestCheck, survey } from "./survey";
 import { update } from "./update";
@@ -70,7 +70,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
   code-agent deliver                  13 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
-  code-agent model [<에이전트|all> <opus|sonnet|haiku>]   에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY 에서만, 기본 opus)
+  code-agent model [<에이전트|all> <모델|default>] [--host claude|codex] [--reasoning 강도]   역할별 모델 조회·변경·기본값 복원
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
@@ -99,7 +99,10 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
-  code-agent planning status          배정·입력 변경·선행 조건·미결 질문·결과 조회
+  code-agent planning advance         준비·재사용·선행 조건 판정 후 실행할 배정 묶음 반환
+  code-agent planning status          배정·입력 변경·선행 조건·미결 질문 요약
+  code-agent planning result <ID>     원문 산출물을 포함한 상세 결과와 최신성 조회
+  code-agent planning repair <ID>     관찰된 출력 형식 오류를 같은 입력에서 한 번 교정
   code-agent planning dispatch <ID>   입력 묶음·담당 에이전트·결과 계약 반환 (같은 입력은 재사용)
   code-agent planning cancel <ID>     중단된 배정 취소 (이전 실행 결과는 거부)
   code-agent repro                    fix 전용 — 재현 TC 의 실패를 보고 증거로 남긴다 (그 전에는 고칠 파일을 쓸 수 없다)
@@ -169,10 +172,13 @@ async function main(argv: string[]): Promise<number> {
   switch (command) {
     case "planning":
       if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
+      else if (args[0] === "advance") print(advancePlanning(repoRoot));
       else if (args[0] === "status") print(planningStatus(repoRoot));
+      else if (args[0] === "result" && args[1]) print(planningResult(repoRoot, args[1]));
+      else if (args[0] === "repair" && args[1]) print(repairPlanning(repoRoot, args[1]));
       else if (args[0] === "dispatch" && args[1]) print(dispatchPlanning(repoRoot, args[1]));
       else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
-      else throw new Stop("planning prepare [작업.json] | status | dispatch <ID> | cancel <ID>");
+      else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID>");
       return 0;
     case "consent":
       if (args[0] === "prepare" && args[1]) print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8"))));
@@ -324,9 +330,14 @@ async function main(argv: string[]): Promise<number> {
       }
       print(confirmDoc(repoRoot, args[1]));
       return 0;
-    case "model":
-      print(args.length === 0 ? modelsTable(repoRoot) : setModel(repoRoot, args[0], args[1]));
+    case "model": {
+      const host = parseHost(option(args, "host"));
+      if (host === "both") throw new Stop("모델 변경 호스트는 claude 또는 codex 하나를 지정하세요.");
+      const values = positional(args, ["host", "reasoning"]), reasoning = option(args, "reasoning");
+      if (values.length > 2 || (!values.length && reasoning)) throw new Stop("모델 조회에는 --host만, 변경에는 역할·모델과 선택적인 --reasoning을 지정하세요.");
+      print(values.length === 0 ? modelsTable(repoRoot, host) : setModel(repoRoot, values[0], values[1], {host,reasoning}));
       return 0;
+    }
     case "plugin":
       switch (args[0]) {
         case "list":

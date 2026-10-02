@@ -38,15 +38,16 @@ export const ResultSchema = z.object({
 export type PlanningResult = z.infer<typeof ResultSchema>;
 export interface TaskAttempt {
   dispatchId: string; inputHash: string; at: string;
-  status: "running" | "completed" | "needs-input" | "failed" | "cancelled";
+  status: "running" | "completed" | "needs-input" | "needs-correction" | "failed" | "cancelled";
   result?: PlanningResult; resultHash?: string; outputs?: Record<string, string>;
   agentId?: string; sessionId?: string; error?: string;
+  correction?: { raw: string; error: string; agentId: string; sessionId: string; used: boolean };
 }
 export interface TaskRecord { task: PlanningTask; attempts: TaskAttempt[] }
 export interface PlanningState {
   version: 1; id: string; target: string; maxParallel: number;
   tasks: TaskRecord[];
-  agents: { id: string; session: string; type: string; startedAt: string; finished?: boolean }[];
+  agents: { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string }[];
 }
 
 export function planningFile(work: Work): string {

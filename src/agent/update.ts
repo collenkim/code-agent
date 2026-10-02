@@ -52,7 +52,7 @@ function list(paths: string[]): string {
 export function update(repoRoot: string, options: InitOptions = {}): string {
   return selectedHosts(repoRoot, options.host).map(host => {
     if (host === "claude") return updateClaude(repoRoot, {...options, host});
-    const assets = hostAssets("codex");
+    const assets = hostAssets("codex", repoRoot);
     const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
     const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
     const result = init(repoRoot, {host, cli});

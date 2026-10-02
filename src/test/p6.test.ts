@@ -1119,6 +1119,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     // 같은 트리에 남의 증거와 도입 설정을 둔다. 명시된 도입 설정만 반영한다.
     write(".code-agent/work/OTHER-1/x.verify.json", "{}\n");
     write(".code-agent/models.json", "{}\n");
+    write(".code-agent/codex-models.json", "{}\n");
     write("unrelated.txt", "상관없는 파일\n");
 
     const work = loadWork(repo)!;
@@ -1127,6 +1128,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
 
     assert.equal(files.includes(".code-agent/work/OTHER-1/x.verify.json"), false);
     assert.equal(files.includes(".code-agent/models.json"), true);
+    assert.equal(files.includes(".code-agent/codex-models.json"), true);
     assert.equal(files.includes("unrelated.txt"), false);
     // 커밋되지 않았을 뿐 아니라 스테이지에도 올라가지 않았다 — 여전히 미추적이다
     const untracked = git("status", "--porcelain");

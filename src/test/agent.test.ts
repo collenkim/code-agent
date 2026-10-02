@@ -316,6 +316,7 @@ describe("hook — Bash 허용 목록", () => {
       "code-agent reject --comment x",
       "code-agent confirm doc architecture",
       "code-agent model all sonnet",
+      "code-agent model writer gpt-6-luna --host codex --reasoning high",
       "echo hello next", // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다
     ]) {
       assert.match(bash(human) ?? "", /현재 세션의 ca-answer 동의 절차/, human);
@@ -325,6 +326,9 @@ describe("hook — Bash 허용 목록", () => {
       "code-agent next",
       "code-agent context",
       "code-agent status",
+      "code-agent model",
+      "code-agent model --host codex",
+      "code-agent model --host claude",
       "code-agent plan submit doc/work/ORD-1/plan.json",
       "code-agent docs",
       "code-agent docs begin",

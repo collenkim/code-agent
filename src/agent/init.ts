@@ -176,7 +176,7 @@ export function codexMatcherProblem(repoRoot: string, event: string): string | u
 }
 
 function initCodex(repoRoot: string, options: InitOptions): string {
-  for (const [file, text] of hostAssets("codex")) {
+  for (const [file, text] of hostAssets("codex", repoRoot)) {
     const target = join(repoRoot, file);
     mkdirSync(dirname(target), {recursive: true});
     writeFileSync(target, text);
@@ -192,7 +192,8 @@ function initCodex(repoRoot: string, options: InitOptions): string {
   writeFileSync(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
   return ["Codex용 code-agent를 설치했습니다.",
     "  스킬 18개: .agents/skills/ca-* · 에이전트 8개: .codex/agents/ca-*.toml",
-    "  훅 5종: .codex/hooks.json · 지침: AGENTS.md · 모델과 추론 강도: 부모 설정 상속",
+    "  훅 5종: .codex/hooks.json · 지침: AGENTS.md · 모델·추론 강도: 역할별 제품 기본값과 사용자 변경값",
+    "  code-agent model --host codex로 역할별 설정을 확인하고 변경할 수 있습니다.",
     "  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요.",
     "  승인 응답은 ca-answer가 안내하는 사용자 대화 메시지로 관찰합니다.",
     "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",

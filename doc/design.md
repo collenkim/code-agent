@@ -421,7 +421,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 
 **영역 조사 병렬** — 선행 결과가 준비된 explore를 기본 3개, 최대 4개까지 배정한다. 구현은 승인된 tasks의 순서대로 현재 Task를 수행한다.
 
-서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 — 탐색도 가벼운 모델로 내리지 않는다 (2026-09-29 결정: 품질 우선). 정의 파일마다 `model:` 을 박아 각자 PC 의 기본 모델에 맡기지 않는다. 사람은 `code-agent model <에이전트|all> <opus|sonnet|haiku>` 로 바꿀 수 있고(같은 세션의 model 확인 또는 직접 TTY), 설정은 `.code-agent/models.json` 에 남아 다시 설치해도 유지된다. implementer 를 sonnet 으로 내릴지는 P5 실측(수정 횟수·비용)으로 정한다.
+Claude 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 — 탐색도 가벼운 모델로 내리지 않는다 (2026-09-29 결정: 품질 우선). 정의 파일마다 `model:` 을 박아 각자 PC 의 기본 모델에 맡기지 않는다. 사람은 `code-agent model <에이전트|all> <opus|sonnet|haiku>` 로 바꿀 수 있고(같은 세션의 model 확인 또는 직접 TTY), Claude 설정은 `.code-agent/models.json` 에 남아 다시 설치해도 유지된다. implementer 를 sonnet 으로 내릴지는 P5 실측(수정 횟수·비용)으로 정한다. Codex는 gpt-6.1-sol을 역할별 기본값으로 명시하며 분석·독립 검토는 high, 나머지는 medium으로 시작한다. 변경값은 `.code-agent/codex-models.json`에 분리한다. 두 호스트 모두 사용자 변경·기본값 복원·업데이트 보존을 지원한다. [설정 절차](codex.md)를 따른다.
 비용은 모델이 아니라 구조로 줄인다 — 읽을 참조 코드를 코드가 골라 주고, explorer 는 영역별로 묶고, critic 은 계획이 가리키는 것만 읽는다.
 
 ### 4.1 관찰된 계획 작업 (2026-10-02)
@@ -431,6 +431,8 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 `planningValidation.ts`는 필수 작업 문서의 미결 표시·실재 근거·AC 내용·BR 근거를 검사한다. plan 제출과 승인에는 현재 입력에 대한 critic 완료와 차단 지적 해소가 필요하다. 승인 해시에 작업 정의와 관찰 결과도 포함한다. 승인 후 정상 구현은 조사 당시 소스 변경만으로 승인을 깨지 않는다.
 
 설계·기능 명세와 계획 판단은 ca-analyst, 영향도 문서 정리는 ca-writer가 맡는다. 구현 tasks는 파일별 단일 소유·선행 Task·AC를 가지며 단계 안에서 별도 커서로 실행한다. 상세 계약과 호환성은 [계획 작업 안내](planning.md)를 따른다.
+
+계획의 `advance`는 준비·캐시·선행 조건·동시 한도를 하나의 상태 잠금에서 판정하고 실제 호스트 호출에 필요한 배정만 반환한다. 단계 전환과 승인은 기존 게이트가 수행한다. 선행 결과와 캐시 응답은 문서 본문을 경로·해시·길이로 바꾸고 판단·질문·차단 지적을 유지한다. 상태 조회와 상세 결과 조회를 분리한다. 형식 오류는 관찰 원본을 보존해 동일 입력에서 1회 교정하며, 새 배정 식별자와 시작·완료 이벤트를 요구한다. 병렬 실행의 출처를 확정할 수 없는 깨진 결과는 교정하지 않는다. Claude와 Codex가 이 공통 처리 코드를 사용한다.
 
 ## 5. 강제 — 모델이 어겨도 막히는 것
 
@@ -486,7 +488,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 통합 검증은 기준 커밋 위의 **깨끗한 worktree** 에서 전체 `build`·`test` — 작업 트리의 산출물이 결과를 떠받치지 못한다 | `code-agent integrate` | 스테이지 전환 | P5 ✅ |
 | 매니페스트에 `prepare` 가 선언돼 있으면 그 worktree 에서 `build`·`test` **앞에** 한 번 돌고, 실패하면 build·test 를 **돌리지 않는다** — 준비되지 않은 트리 위의 통과는 증거가 아니다. 결과는 `integrate/prepare` 로 증거에 남아 `failedRuns` 가 막는다. `hashManifest` 에 들어가 승인 뒤 갈아 끼울 수 없다 (선언하지 않은 매니페스트의 해시는 그대로 — `canonical` 이 undefined 키를 떨군다). 빈 배열은 **형식 오류**다(선언은 해시를 바꾸고 `manifest check` 에도 실려 "돈다" 로 읽히는데 `integrate` 는 건너뛴다), 그리고 `check`·`test`·`repro` 는 문서가 `prepare` 를 명령 이름으로 적어도 그것을 풀지 않는다 — 준비 명령은 깨끗한 worktree 의 것이다 | `code-agent integrate` · `next`(`stageProblems`) | 스테이지 전환 | P6 ✅ |
 | 반영은 사람만 — 같은 세션 또는 직접 TTY 확인 + 게이트 재검사(⑧ 셋 · ⑨ · 추적표 빈 칸 0 · 모델 3섹션) 뒤에야 커밋, **검증된 변경 집합만** (`git add -A` 아님). 확인·적용 시 `HEAD`와 작업 브랜치가 일치하는지도 검사한다 | `code-agent deliver` · consent | 반영 시 | 구현됨 |
-| 반영 경로는 `deliveryPaths()`로 정한다. 이 작업의 `.code-agent/work/<ID>/` · `approvals/<slug(ID)>.jsonl` · `approvals/<slug(ID)>/`와 존재하는 `.code-agent/version` · `.code-agent/models.json` · `.code-agent/approvals/docs.jsonl`을 포함한다. 같은 세션의 최종 확인은 실제 커밋 경로와 선택한 KNOWLEDGE를 보여 준다. `git add`와 `git commit`은 **같은 경로 목록**을 사용하며 `.code-agent/` 전체나 다른 설정·소스를 일괄 추가하지 않는다. 없는 경로는 제외한다 | `code-agent deliver` (`deliveryPaths` · `commitDelivery`) · consent | 반영 시 | 구현됨 |
+| 반영 경로는 `deliveryPaths()`로 정한다. 이 작업의 `.code-agent/work/<ID>/` · `approvals/<slug(ID)>.jsonl` · `approvals/<slug(ID)>/`와 존재하는 `.code-agent/version` · `.code-agent/models.json`·`.code-agent/codex-models.json` · `.code-agent/approvals/docs.jsonl`을 포함한다. 같은 세션의 최종 확인은 실제 커밋 경로와 선택한 KNOWLEDGE를 보여 준다. `git add`와 `git commit`은 **같은 경로 목록**을 사용하며 `.code-agent/` 전체나 다른 설정·소스를 일괄 추가하지 않는다. 없는 경로는 제외한다 | `code-agent deliver` (`deliveryPaths` · `commitDelivery`) · consent | 반영 시 | 구현됨 |
 | ⑩ 의 추적표·검증·변경 요약은 코드 구역이다 — 손으로 고치면 `deliver` 가 다시 렌더해 덮고 확인 화면에 알린다. 표시 짝이 둘 이상이면 전부 걷어 내 하나로 만들고, 표시 **밖**에 같은 제목의 절을 따로 써 두면 커밋을 세운다 (재렌더가 덮지 못하고 아래에 덧붙어, 화면에는 진짜가 보이는데 커밋에는 지어낸 표가 함께 실린다) | `code-agent deliver` (`blocks.ts` · `deliverProblems`) | 반영 시 | P5 ✅ |
 | 답 없는 질문·계획과 실제 변경(기준 커밋 대비)을 턴 끝에 대조 — **한 번만** 막는다 (`stop_hook_active` 면 통과, 판정 실패도 통과). 절대적인 차단은 `check`·`test`·`next` 가 한다 | Stop hook (`code-agent stop`) | 턴 끝 | P5 ✅ |
 
@@ -656,12 +658,12 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `doc/work/<ID>/knowledge.proposal.md` — 공통 KNOWLEDGE 갱신 제안. 반영 때 사람이 고른 것만 코드가 upsert | O | P5 ✅ |
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) | P1 ✅ · 접수 ✅ |
-| `.code-agent/models.json` — 에이전트별 모델 (바꾼 것만) | O | ✅ |
+| `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델 (바꾼 것만) | O | ✅ |
 | `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`, `.code-agent/log/` | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
 
-**최종 확인과 커밋은 같은 경로 목록을 사용한다.** `deliveryPaths()`에는 계획 파일, `doc/work/<ID>/`, `.code-agent/work/<ID>/`, 해당 작업의 계획·요구사항 승인 원장, 선택한 KNOWLEDGE 파일이 들어간다. 존재하는 `.code-agent/version`, `.code-agent/models.json`, `.code-agent/approvals/docs.jsonl`도 명시적으로 포함해 최종 확인 화면에 표시하고 함께 커밋한다. 이 세 파일을 반영 뒤 따로 수동 커밋할 필요는 없다.
+**최종 확인과 커밋은 같은 경로 목록을 사용한다.** `deliveryPaths()`에는 계획 파일, `doc/work/<ID>/`, `.code-agent/work/<ID>/`, 해당 작업의 계획·요구사항 승인 원장, 선택한 KNOWLEDGE 파일이 들어간다. 존재하는 `.code-agent/version`, `.code-agent/models.json`·`.code-agent/codex-models.json`, `.code-agent/approvals/docs.jsonl`도 명시적으로 포함해 최종 확인 화면에 표시하고 함께 커밋한다. 이 설정·확정 파일을 반영 뒤 따로 수동 커밋할 필요는 없다.
 
 그 밖의 `code-agent.json`·POLICY·설치 템플릿·다른 소스 파일을 자동으로 전부 추가하지 않는다. 해당 변경은 도입·설정 또는 승인된 작업 범위에 맞춰 관리하며, 최초 기준 커밋이 없으면 `setup` 확인의 준비 파일 목록으로 커밋한다. `.code-agent/` 전체를 올려 다른 작업의 증거·원장을 섞지 않는다.
 
@@ -718,7 +720,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent approve` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만) | P1 ✅ |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
-| `code-agent model [<에이전트\|all> <모델>]` | 에이전트별 모델 보기 · 바꾸기 (바꾸기는 TTY, 기본 opus) | ✅ |
+| `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델 조회·변경·복원 (--host, Codex --reasoning; 변경은 같은 세션 동의 또는 TTY) | ✅ |
 | `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
 | `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) | P8 ✅ |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 | P8 ✅ |

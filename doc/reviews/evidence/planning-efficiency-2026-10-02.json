@@ -1,0 +1,312 @@
+{
+  "date": "2026-10-02",
+  "baseCommit": "d1045d0657a0a9563a2a206d6e4382010b641885",
+  "runs": [
+    {
+      "command": "node --test dist/test/planning.test.js",
+      "log": "dist/planning-efficiency-focused.log",
+      "sha256": "9e297b52b74e1d7d4c4113d48902cdf8aa45cf3b3c3b4679bd3c4421632039e7",
+      "note": "마지막 원본 필드 보존·실패 자동 재배정 방지 보완 이전 집중 검사",
+      "tests": 30,
+      "suites": 0,
+      "pass": 30,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 60396.3444
+    },
+    {
+      "command": "npm test",
+      "log": "dist/planning-efficiency-regression.log",
+      "sha256": "cfd094f88d89917b1d76d37d4fdb7007a2faeb5311617daa41af962b68c76c33",
+      "note": "계획 효율 개선 전체 회귀. 실제 Codex 역할 이름 보완 이전",
+      "tests": 707,
+      "suites": 121,
+      "pass": 703,
+      "fail": 0,
+      "skipped": 4,
+      "durationMs": 527809.9052
+    },
+    {
+      "command": "npm test",
+      "log": "dist/planning-efficiency-final-regression.log",
+      "sha256": "48d9ec4174077e99ed99ae0563b07d77aa42a8dc2c50d8d77331ec3c7d6a319e",
+      "note": "Codex 역할 이름 보완까지 포함한 회귀. 역할별 Codex 모델 설정 추가 전",
+      "tests": 707,
+      "suites": 121,
+      "pass": 703,
+      "fail": 0,
+      "skipped": 4,
+      "durationMs": 510965.4893
+    },
+    {
+      "command": "node --test dist/test/codex.test.js dist/test/consent.test.js",
+      "log": "dist/role-models-focused.log",
+      "sha256": "c12f852df0928517cce427b5d168f527cb05d4d33e91718567f8f8f9eab4f17d",
+      "note": "역할별 모델·동의 집중 검사. 전체 역할 일괄 변경과 조회 허용·반영 경로 후속 보완 전",
+      "tests": 74,
+      "suites": 0,
+      "pass": 74,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 279184.4504
+    },
+    {
+      "command": "npm test",
+      "log": "dist/role-models-regression.log",
+      "sha256": "e47e43a2faa0cb7616827dce5b6716ba1f1c1d36df79f2f02db00fd967e7c7fb",
+      "note": "계획 효율·Codex 역할 이름·역할별 모델 설정과 후속 보완을 모두 포함한 최종 전체 회귀",
+      "tests": 709,
+      "suites": 121,
+      "pass": 705,
+      "fail": 0,
+      "skipped": 4,
+      "durationMs": 548948.2733
+    }
+  ],
+  "actualHostRuns": [
+    {
+      "name": "claude",
+      "host": "claude",
+      "at": "2026-10-02T04:44:20.595Z",
+      "durationMs": 96804,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 1,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "failed",
+          "error": "배정 범위 밖 근거입니다: doc/knowledge/business-rules.md"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-claude.json",
+          "sha256": "80b7e0296981b6ccb2b63b327cf1f265500202956e295ef21c097ef8bba1ff2b"
+        },
+        {
+          "path": "dist/planning-live-claude.stdout.log",
+          "sha256": "568bb97284013937e10b664c8ecbdbc337311b83391d25778e2f0c1aae3734fe"
+        },
+        {
+          "path": "dist/planning-live-claude.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "name": "claude-scoped",
+      "host": "claude",
+      "at": "2026-10-02T04:47:09.391Z",
+      "durationMs": 81253,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 1,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "failed",
+          "error": "미완료 결과는 확정 문서를 쓰지 않습니다."
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-claude-scoped.json",
+          "sha256": "f09641cb60dbda1ae73d863e44dfc685fd23b0ff19aa766d4c09a5256c5c978e"
+        },
+        {
+          "path": "dist/planning-live-claude-scoped.stdout.log",
+          "sha256": "ddd93897efdbbaedc6dcb2213b9ed6bdb6bd187273a9b34845dbc8ccf7cfe558"
+        },
+        {
+          "path": "dist/planning-live-claude-scoped.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "name": "claude-explicit",
+      "host": "claude",
+      "at": "2026-10-02T04:49:27.925Z",
+      "durationMs": 56808,
+      "completed": true,
+      "action": "ready-for-gate",
+      "exitCode": 0,
+      "observedAgents": 1,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "completed"
+        }
+      ],
+      "vettedHooks": false,
+      "files": [
+        {
+          "path": "dist/planning-live-claude-explicit.json",
+          "sha256": "71f73c93492af29c768f67dee73a4dbd28648646ca47f4e87b35847d339986eb"
+        },
+        {
+          "path": "dist/planning-live-claude-explicit.stdout.log",
+          "sha256": "dbf97458373f08911f965235eb87db0011e04a99a9943d87aac39280f611aa19"
+        },
+        {
+          "path": "dist/planning-live-claude-explicit.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "name": "codex",
+      "host": "codex",
+      "at": "2026-10-02T04:45:24.933Z",
+      "durationMs": 151076,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 0,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "running"
+        }
+      ],
+      "files": [
+        {
+          "path": "dist/planning-live-codex.json",
+          "sha256": "6ffe3cfcbcf23fe25c68570be0170553eea49d696d07dce067219886bf2f2949"
+        },
+        {
+          "path": "dist/planning-live-codex.stdout.log",
+          "sha256": "82c0e500e01ff939434f87db6391b7392a9b706442b69bf094cb0a9ced6c4562"
+        },
+        {
+          "path": "dist/planning-live-codex.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ]
+    },
+    {
+      "name": "codex-vetted",
+      "host": "codex",
+      "at": "2026-10-02T04:49:27.410Z",
+      "durationMs": 16705,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 0,
+      "taskStates": [],
+      "vettedHooks": true,
+      "files": [
+        {
+          "path": "dist/planning-live-codex-vetted.json",
+          "sha256": "814ad7bd5ad2a28d6e4e42550e11d6c9f8430726c95760a570e2f89115046c69"
+        },
+        {
+          "path": "dist/planning-live-codex-vetted.stdout.log",
+          "sha256": "24c0b8cdbbaf1428f48a07d402144f7617ccd9bb8a769bdcb112d642a5a4883f"
+        },
+        {
+          "path": "dist/planning-live-codex-vetted.stderr.log",
+          "sha256": "5063fb1b99f33cfd5eb13170ce1b632a9d374f9d9b5fd83d7871befc1f52429d"
+        }
+      ]
+    },
+    {
+      "name": "codex-trace",
+      "host": "codex",
+      "at": "2026-10-02T04:51:17.888Z",
+      "durationMs": 24158,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 0,
+      "taskStates": [],
+      "vettedHooks": true,
+      "files": [
+        {
+          "path": "dist/planning-live-codex-trace.json",
+          "sha256": "3d0763857fb4f312a52e0d2dc342b63944968a2a3394bc4e2a79f37360a0f3fc"
+        },
+        {
+          "path": "dist/planning-live-codex-trace.stdout.log",
+          "sha256": "6782c21e992018ec8848df77ce13c5063df13bf0e3d68a6693671236498dbc8f"
+        },
+        {
+          "path": "dist/planning-live-codex-trace.stderr.log",
+          "sha256": "3068bd3e0a8d6c1ff8693eefa51f06f574e09849877bf8fa5b2ba406a8851b06"
+        }
+      ]
+    },
+    {
+      "name": "codex-native",
+      "host": "codex",
+      "at": "2026-10-02T04:54:25.597Z",
+      "durationMs": 56472,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 0,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "running"
+        }
+      ],
+      "vettedHooks": true,
+      "windowsSandbox": "unelevated",
+      "files": [
+        {
+          "path": "dist/planning-live-codex-native.json",
+          "sha256": "83919abddffcca1a5d5cbf6a144dfbc14bec73a5ff69ab3d83840169ea2b6f50"
+        },
+        {
+          "path": "dist/planning-live-codex-native.stdout.log",
+          "sha256": "f59d44f4ae2683fcd0a9435dfeba8f6eee601a18e3fc39bd4a53f920841416a3"
+        },
+        {
+          "path": "dist/planning-live-codex-native.stderr.log",
+          "sha256": "c987d249417b4adb926cd6a0e17dd2457c5a40588b86911f5384fda019f49c7f"
+        }
+      ]
+    },
+    {
+      "name": "codex-names",
+      "host": "codex",
+      "at": "2026-10-02T04:56:13.954Z",
+      "durationMs": 34022,
+      "completed": false,
+      "exitCode": 0,
+      "observedAgents": 0,
+      "taskStates": [
+        {
+          "id": "analysis",
+          "state": "running"
+        }
+      ],
+      "vettedHooks": true,
+      "windowsSandbox": "unelevated",
+      "files": [
+        {
+          "path": "dist/planning-live-codex-names.json",
+          "sha256": "63455480ddbb9a51dd0c58a967d7f7f5f000cb1c37e1267ca2abcd130a0a2b6f"
+        },
+        {
+          "path": "dist/planning-live-codex-names.stdout.log",
+          "sha256": "c128c42a2dd7d9a0eea73c776a00b9192f17cafee9718729c0eb61a1250e4f2d"
+        },
+        {
+          "path": "dist/planning-live-codex-names.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ]
+    }
+  ],
+  "versions": {
+    "claude": "2.1.287",
+    "codex": "0.160.0"
+  },
+  "conclusions": {
+    "commonBehavior": "양쪽 호스트 설치·합성 이벤트·CLI 프로세스 회귀 통과",
+    "claudeLive": "명시적인 함수 요구 fixture에서 분석 담당·실제 완료 훅·게이트 준비 확인",
+    "codexLive": "현재 호스트 도구에 설치 역할 선택 인자가 없고 로컬 훅이 관찰되지 않아 실제 연동 미완료",
+    "modelPolicy": "Claude 기존 기본값 유지. Codex는 gpt-6.1-sol과 역할별 high/medium을 명시하며 호스트별 변경·복원·갱신 보존 지원. 실제 모델 검사는 이 설정 추가 전의 기록",
+    "measurement": "긴 문서 fixture의 전달 JSON이 원문 결과 크기의 10분의 1 미만. 실제 토큰·비용·전체 시간 절감률은 측정하지 않음",
+    "scope": "초기 준비·요구 확정·Claude 모델 선택 동의는 합성 fixture. 실제 사람 승인이나 전체 개발 흐름 실사용 측정 아님"
+  }
+}

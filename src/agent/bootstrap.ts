@@ -31,7 +31,7 @@ export function setupStatus(root: string): string {
 
 export function baselineFiles(root: string): string[] {
   const manifest = loadManifestIfAny(root);
-  const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", "README.md", ".claude", ".agents/skills", ".codex/agents", ".codex/hooks.json", ".codex/config.toml", "doc", ".code-agent/version", ".code-agent/hosts.json",
+  const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", "README.md", ".claude", ".agents/skills", ".codex/agents", ".codex/hooks.json", ".codex/config.toml", "doc", ".code-agent/version", ".code-agent/hosts.json", ".code-agent/codex-models.json",
     ...(manifest?.stages.map(stage => stage.template) ?? [])]);
   const found = new Set<string>();
   function walk(file: string) {

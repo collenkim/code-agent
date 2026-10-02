@@ -319,6 +319,7 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
     `${APPROVALS_DIR}/${slug(active.id)}`,
     `${STATE_DIR}/version`,
     `${STATE_DIR}/models.json`,
+    `${STATE_DIR}/codex-models.json`,
     `${APPROVALS_DIR}/docs.jsonl`,
   ];
   return [...planPaths(work), workDocsDir(active.id), ...mine, ...knowledge]
