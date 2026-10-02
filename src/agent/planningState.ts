@@ -11,10 +11,11 @@ import { parseQuestions, unansweredQuestions } from "./questions";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 
-export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", synthesis: "ca-writer", design: "ca-analyst", plan: "ca-analyst", critic: "ca-critic" } as const;
+export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", impact: "ca-explorer", synthesis: "ca-writer", design: "ca-analyst", plan: "ca-analyst", critic: "ca-critic" } as const;
 export const TaskSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-  role: z.enum(["analysis", "explore", "synthesis", "design", "plan", "critic"]),
+  role: z.enum(["analysis", "explore", "impact", "synthesis", "design", "plan", "critic"]),
+  contextVersion: z.literal(2).optional(),
   title: z.string().trim().min(1).max(500).regex(/^[^\r\n]+$/),
   requirements: z.array(z.string().regex(/^(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)$/)).min(1),
   inputs: z.array(z.string().min(1)).min(1).max(100),
@@ -95,22 +96,44 @@ function inventory(root: string): string[] {
     visit(""); return files;
   }
 }
-export function inputFiles(work: Work, task: PlanningTask): string[] {
-  const scoped = task.scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(file) && task.scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
-  const state = loadPlanning(work), visited = new Set<string>();
+export function scopedFiles(work: Work, scopes: string[], focused = false): string[] {
+  return scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(file)
+    && !(focused && (/^(?:CLAUDE|AGENTS)\.md$/i.test(file) || /^doc\/code-agent(?:\/|$)/.test(file)))
+    && scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
+}
+/** 새 작업만 좁은 전달 계약을 사용한다. 저장된 기존 작업의 해시 계약은 유지한다. */
+export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(work)): string[] {
+  const visited = new Set<string>();
   const outputs = (ids: string[]): string[] => ids.flatMap(id => {
     if (visited.has(id)) return [];
     visited.add(id);
     const dep = state.tasks.find(record => record.task.id === id)?.task;
-    return dep ? [...dep.outputs, ...outputs(dep.dependsOn)] : [];
+    return dep ? [...dep.outputs, ...(task.contextVersion === 2 ? [] : outputs(dep.dependsOn))] : [];
   });
-  return [...new Set([work.active.spec, "code-agent.json", ...POLICY_KINDS.flatMap(kind => docPaths(work.manifest, kind)), ...task.inputs, ...scoped, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
+  const policies = task.contextVersion === 2 && ["explore", "synthesis"].includes(task.role) ? ["architecture", "conventions"] as const : POLICY_KINDS;
+  const policyFiles = policies.flatMap(kind => docPaths(work.manifest, kind));
+  const allPolicyFiles = POLICY_KINDS.flatMap(kind => docPaths(work.manifest, kind));
+  const scoped = scopedFiles(work, task.scopes, task.contextVersion === 2).filter(file => !allPolicyFiles.includes(file) || policyFiles.includes(file) || task.inputs.includes(file) || task.scopes.includes(file));
+  const docs = task.contextVersion === 2 && task.role !== "analysis" ? [`${workDocsDir(work.active.id)}/01-requirements.md`] : [];
+  // 계획의 회귀 TC는 영향도에서 확인한 호출자·공유 모듈 위험을 반드시 이어받는다.
+  if (task.contextVersion === 2 && task.role === "plan") docs.push(`${workDocsDir(work.active.id)}/02-analysis.md`);
+  // 독립 검토는 전체 판단 문서를 읽어 범위 축소로 지적이 사라지지 않게 한다.
+  if (task.contextVersion === 2 && task.role === "critic") docs.push(...["02-analysis.md", "03-design.md", "04-functional.md"].map(file => `${workDocsDir(work.active.id)}/${file}`));
+  return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
+}
+export function dependencyHash(record: TaskRecord | undefined): string | undefined {
+  const result = record?.attempts.at(-1)?.result;
+  if (!result) return undefined;
+  const { taskId, dispatchId, inputHash, ...content } = result;
+  return sha(JSON.stringify(content));
 }
 export function taskHash(work: Work, state: PlanningState, task: PlanningTask): string {
   return sha(JSON.stringify({
     task, base: work.active.baseCommit, manifest: hashManifest(work.manifest),
-    inputs: inputFiles(work, task).map(file => [file, fileHash(work.repoRoot, file)]),
-    dependencies: task.dependsOn.map(id => [id, state.tasks.find(item => item.task.id === id)?.attempts.at(-1)?.resultHash]),
+    inputs: inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)]),
+    // 호스트가 직접 주입하는 지침은 중복 전달하지 않지만 변경 시 기존 판단을 재사용하지 않는다.
+    ...(task.contextVersion === 2 ? { hostInstructions: ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)]) } : {}),
+    dependencies: task.dependsOn.map(id => { const dep = state.tasks.find(item => item.task.id === id); return [id, task.contextVersion === 2 ? dependencyHash(dep) : dep?.attempts.at(-1)?.resultHash]; }),
     questions: relevantQuestions(work, task),
   }));
 }
@@ -143,14 +166,15 @@ export function readyProblems(work: Work, state: PlanningState, record: TaskReco
 }
 
 const OUTPUTS: Record<PlanningTask["role"], string[]> = {
-  analysis: ["01-requirements.md"], explore: [], synthesis: ["02-analysis.md"], design: ["03-design.md", "04-functional.md"], plan: ["plan.json", "07-test-spec.md"], critic: [],
+  analysis: ["01-requirements.md"], explore: [], impact: ["02-analysis.md"], synthesis: ["02-analysis.md"], design: ["03-design.md", "04-functional.md"], plan: ["plan.json", "07-test-spec.md"], critic: [],
 };
 export function requiredOutputs(work: Work, role: PlanningTask["role"]): string[] { return OUTPUTS[role].map(file => `${workDocsDir(work.active.id)}/${file}`); }
 
 export function planningProblems(work: Work, phase: "analysis" | "impact" | "design" | "plan"): string[] {
   if (!work.active.planningVersion) return [];
   const state = loadPlanning(work);
-  const roles: PlanningTask["role"][] = phase === "analysis" ? ["analysis"] : phase === "impact" ? ["analysis", "synthesis"] : phase === "design" ? ["analysis", "synthesis", "design"] : ["analysis", "synthesis", "design", "plan", "critic"];
+  const impactRole = state.tasks.some(record => record.task.role === "impact") ? "impact" : "synthesis";
+  const roles: PlanningTask["role"][] = phase === "analysis" ? ["analysis"] : phase === "impact" ? ["analysis", impactRole] : phase === "design" ? ["analysis", impactRole, "design"] : ["analysis", impactRole, "design", "plan", "critic"];
   const problems: string[] = [];
   for (const role of roles) {
     const records = state.tasks.filter(record => record.task.role === role);
@@ -159,7 +183,7 @@ export function planningProblems(work: Work, phase: "analysis" | "impact" | "des
     if (result?.findings.some(item => item.severity === "blocking")) problems.push(`${role}: 차단 지적이 남아 있습니다`);
   }
   if (phase !== "analysis") {
-    const explorers = state.tasks.filter(record => record.task.role === "explore");
+    const explorers = state.tasks.filter(record => record.task.role === "explore" || record.task.role === "impact");
     if (!explorers.length) problems.push("영역 조사 작업이 필요합니다. 빈 저장소도 조사 결과로 기록하세요");
     for (const record of explorers) if (!taskCurrent(work, state, record)) problems.push(`영역 조사 ${record.task.id}가 완료되지 않았거나 오래됐습니다`);
     problems.push(...mergeProblems(state));
@@ -169,7 +193,7 @@ export function planningProblems(work: Work, phase: "analysis" | "impact" | "des
 export function mergeProblems(state: PlanningState): string[] {
   const facts = new Map<string, string>();
   const problems: string[] = [];
-  for (const record of state.tasks.filter(item => item.task.role === "explore")) {
+  for (const record of state.tasks.filter(item => item.task.role === "explore" || item.task.role === "impact")) {
     for (const fact of record.attempts.at(-1)?.result?.facts ?? []) {
       if (facts.has(fact.key) && facts.get(fact.key) !== fact.value) problems.push(`영역 조사 결과 충돌: ${fact.key} — 근거 확인 후 관련 조사 작업을 다시 실행하세요`);
       facts.set(fact.key, fact.value);

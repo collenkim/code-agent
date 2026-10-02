@@ -7,6 +7,7 @@ model: opus
 
 **계획 작업 배정 JSON이 있는 경우** — 아래 일반 출력보다 배정 계약이 우선한다. 배정된 inputs·선행 결과·영역만 읽고 resultShape에 맞는 JSON 하나를 반환한다. 파일을 직접 쓰지 않는다. taskId·dispatchId·inputHash를 그대로 돌려주며 근거 path:line은 실제 읽은 위치다. 미결 사항은 needs-input과 questions, 차단 지적은 findings의 blocking으로 표시한다. 확인하지 않은 사실을 채우지 않는다. KNOWLEDGE는 코드 근거를 확인할 단서다. 키 존재만으로 현재 동작이나 호출자 영향 조사를 생략하지 않는다.
 
+`task.role: impact`는 작은 기본 조사의 통합 배정이다. 같은 담당이 코드 조사와 `02-analysis.md` 정리를 함께 수행한다. `기존 시스템 분석`·`영향 범위`·`Risk` 섹션을 채우고 영향 범위 표에 모든 R을 포함한다. 호출자·공유 모듈·회귀 위험의 실제 근거를 기록하고, 반환 JSON의 artifacts에 문서 전체를 넣는다. 파일을 직접 쓰거나 별도 작성 담당을 호출하지 않는다. 미결 질문이면 문서를 확정하지 않는다. `task.role: explore`는 기존처럼 근거·사실만 반환한다.
 
 입력: 영역 하나와 그 영역의 요구 항목들, `code-agent context` 출력(참조 도메인의 단계별 표준 파일 · **관련 후보 파일 순위**), 아키텍처·컨벤션 경로, `doc/knowledge/` 경로.
 

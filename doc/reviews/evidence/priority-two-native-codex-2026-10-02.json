@@ -1,0 +1,499 @@
+{
+  "at": "2026-10-02T06:02:42.952Z",
+  "baseCommit": "13e5a14bb53538799bea8fc679a7d70cc1373e5b",
+  "scope": "우선순위 2의 소규모 조사 통합·작업별 컨텍스트·동일 내용 재사용과 실제 호스트 검증. 준비·요구·모델 선택 동의는 합성 fixture이며 실제 사람 승인·전체 개발 흐름 실측이 아니다.",
+  "implementation": {
+    "smallDefaultImpact": {
+      "requirementsMax": 3,
+      "filesMax": 12,
+      "bytesMax": 96000,
+      "roleCallsBefore": 6,
+      "roleCallsAfter": 5
+    },
+    "contextVersion": 2,
+    "independentCriticRetained": true,
+    "legacyHashContractRetained": true,
+    "tokenSavingsMeasured": false
+  },
+  "tests": [
+    {
+      "command": "node --test dist/test/planning.test.js",
+      "log": "dist/priority-two-focused.log",
+      "sha256": "92c13fa51baae58ee0fa4dbbff102420709042f85fbde7916cd9dd2d7318c8e0",
+      "tests": 37,
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 92249.0769,
+      "note": "초기 집중 검사. 최종 보완과 추가 충돌 검사는 전체 회귀에 포함."
+    },
+    {
+      "command": "npm test",
+      "log": "dist/priority-two-regression.log",
+      "sha256": "8e8e3c8b7f3f8c0898f554c8634367f6bc4b4fdc6bcb125e720efe4c34e16ab5",
+      "tests": 716,
+      "passed": 712,
+      "failed": 0,
+      "skipped": 4,
+      "durationMs": 674912.4891,
+      "note": "전체 회귀. 실행 말미에 설치 생성 파일 제외 보완을 적용했고, 해당 최종 보완은 별도 집중 검사로 검증했다."
+    },
+    {
+      "command": "node --test dist/test/planning.test.js dist/test/codex.test.js",
+      "log": "dist/priority-two-final-focused.log",
+      "sha256": "d3512ba14c2d0b89019b768da4241efa94bdf04384cd2ee9aeb69c9d1dc4a615",
+      "tests": 56,
+      "passed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 106522.865,
+      "note": "설치 생성 파일 제외까지 포함한 최종 계획·Codex 검사. 전체 회귀와 중복 수치를 합산하지 않는다."
+    },
+    {
+      "command": "node --test dist/test/planning.test.js",
+      "log": "dist/priority-two-guidance-focused.log",
+      "sha256": "8f53bb7100ccb30c925ca9518d7e90c36f4e2e3648335eb10ae97bdc8d59a5ed",
+      "tests": 39,
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 80487.1042,
+      "note": "호스트 지침의 변경 감지를 유지하는 최종 보완까지 포함한 계획 검사. 양쪽 호스트 통합 흐름 포함."
+    }
+  ],
+  "nativeRuns": [
+    {
+      "label": "codex-v1-parent",
+      "host": "codex",
+      "at": "2026-10-02T05:28:35.502Z",
+      "parentModel": "gpt-5.6-luna",
+      "declaredCodexRoleModel": "gpt-6.1-sol",
+      "completed": false,
+      "throughImpact": false,
+      "exitCode": 0,
+      "durationMs": 136478,
+      "observedAgents": [],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "running",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-codex-v1-parent.json",
+          "sha256": "7da894ae3c7d2ecabb98c97ef08bc0744c005c386a94957e07707d1fc37a3d17"
+        },
+        {
+          "path": "dist/planning-live-codex-v1-parent.stdout.log",
+          "sha256": "4e42e6ac4ea65811d80e40af8931efc19d767459bfdbaf35251ee223b633623c"
+        },
+        {
+          "path": "dist/planning-live-codex-v1-parent.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ],
+      "hookCaptureExists": false
+    },
+    {
+      "label": "codex-local-parent",
+      "host": "codex",
+      "at": "2026-10-02T05:32:05.284Z",
+      "parentModel": "gpt-5.5",
+      "declaredCodexRoleModel": "gpt-6.1-sol",
+      "completed": false,
+      "throughImpact": false,
+      "exitCode": null,
+      "error": "ETIMEDOUT",
+      "durationMs": 180032,
+      "observedAgents": [],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "running",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-codex-local-parent.json",
+          "sha256": "45aa9331954caa20a3c1c434fd48505d094b51ccafbf8ae9fee3931be2c7f257"
+        },
+        {
+          "path": "dist/planning-live-codex-local-parent.stdout.log",
+          "sha256": "74b4f83e8ace477c468347fff5c17338393f79642a744417ec60350cf528f526"
+        },
+        {
+          "path": "dist/planning-live-codex-local-parent.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ],
+      "hookCaptureExists": false
+    },
+    {
+      "label": "codex-trusted-default",
+      "host": "codex",
+      "at": "2026-10-02T05:35:01.288Z",
+      "parentModel": "호스트 기본값",
+      "declaredCodexRoleModel": "gpt-6.1-sol",
+      "completed": false,
+      "throughImpact": false,
+      "exitCode": 0,
+      "durationMs": 177332,
+      "observedAgents": [],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "running",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-codex-trusted-default.json",
+          "sha256": "9f14419927a3ea4a870689b4915192d5bd7ee9a38b7c71986262d23e29ad53e3"
+        },
+        {
+          "path": "dist/planning-live-codex-trusted-default.stdout.log",
+          "sha256": "edbed2f1e27c9353e6b6e06bb1092b2cc28c7e0ffd57fef5b19f6372d9b63cd3"
+        },
+        {
+          "path": "dist/planning-live-codex-trusted-default.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ],
+      "hookCaptureExists": false
+    },
+    {
+      "label": "codex-final-sol",
+      "host": "codex",
+      "at": "2026-10-02T05:45:36.301Z",
+      "parentModel": "gpt-6.1-sol",
+      "declaredCodexRoleModel": "gpt-6.1-sol",
+      "completed": false,
+      "throughImpact": false,
+      "exitCode": null,
+      "error": "ETIMEDOUT",
+      "durationMs": 180129,
+      "observedAgents": [],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "running",
+          "attempts": 1
+        }
+      ],
+      "runtime": {
+        "nativeSpawnCount": 0,
+        "returnedAgentIds": [],
+        "hookCaptureEnabled": true,
+        "hookEventCount": 0,
+        "hookEvents": [],
+        "diagnosis": "host-process-error"
+      },
+      "logs": [
+        {
+          "path": "dist/planning-live-codex-final-sol.json",
+          "sha256": "eca1edbee93984addc3bdfacd0bbdf0432356df4cde74f9744cc9e30867de4e2"
+        },
+        {
+          "path": "dist/planning-live-codex-final-sol.stdout.log",
+          "sha256": "687d5cc3db51637ac3ba27a6d5681dc5eb7674cd10a55a25310a80faab300d93"
+        },
+        {
+          "path": "dist/planning-live-codex-final-sol.stderr.log",
+          "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+        }
+      ],
+      "hookCaptureExists": false
+    },
+    {
+      "label": "claude-compact-impact",
+      "host": "claude",
+      "at": "2026-10-02T05:46:35.413Z",
+      "parentModel": "sonnet",
+      "completed": false,
+      "throughImpact": true,
+      "analysisCompleted": true,
+      "impactCompleted": false,
+      "exitCode": 0,
+      "durationMs": 84657,
+      "observedAgents": [
+        {
+          "id": "ac73cb6bc77401f01",
+          "type": "ca-analyst",
+          "finished": true
+        }
+      ],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "completed",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-claude-compact-impact.json",
+          "sha256": "bb72c191747170d311ac648d11c14fd57192a6772007c9a0a09cafab76475cce"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-impact.stdout.log",
+          "sha256": "6dba1f8758d89d5587839bf41f691026b9af813978d1cdb587612ac5e5ec74c6"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-impact.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "actualModels": [
+        "claude-sonnet-5-5"
+      ],
+      "actualModelCostUsd": 0.22691930000000005,
+      "hostResult": "`code-agent next`가 게이트에서 막혀 impact 단계에 들어가지 못했습니다. 여기서 멈춥니다.\n\n- **분석 단계:** `code-agent planning advance`가 `ca-analyst` 배정을 하나 냈고, 실제 `ca-analyst` 하위 에이전트를 호출했습니다. 완료 hook이 결과를 기록해서 다시 실행한 `planning advance`는 `ready-for-gate`를 반환했습니다. 질문은 없었습니다.\n- **게이트 실패:** `code-agent next`는 다음 오류로 실패했습니다.\n  ```\n  doc/work/CONSENT-1/01-requirements.md: 근거 파일이 없습니다: requirement.md\n  ```\n- **원인으로 보이는 부분:** 생성된 `01-requirements.md`의 일부 근거 표기가 `requirement.md`로만 적혀 있습니다. 게이트는 이를 `doc/work/CONSENT-1/requirement.md` 전체 경로가 아니라 존재하지 않는 파일로 읽은 것으로 보입니다. 아직 문서 본문은 열어 보지 않았습니다.\n- **미실행:** `planning advance`가 형식 교정(correction) 배정을 내지 않았습니다. 지침이 교정 배정이 있을 때만 새 담당에게 넘기라고 하므로 새 담당을 호출하지 않았습니다. 메인이 문서를 직접 고치는 것도 금지돼 있어 고치지 않았습니다. impact 단계는 시작하지 않았습니다.\n- **참고:** 분석 담당이 `code-agent.json`의 `git.base`가 `master`인데 저장소 주 브랜치는 `main`이라는 점을 참고 지적(advisory)으로 남겼습니다. 이번 요구 범위 밖입니다.\n\n이어가려면 근거 경로를 전체 경로로 고치는 교정 배정이 필요합니다. 그 방법을 알려 주세요."
+    },
+    {
+      "label": "claude-compact-paths",
+      "host": "claude",
+      "at": "2026-10-02T05:49:04.126Z",
+      "parentModel": "sonnet",
+      "completed": false,
+      "throughImpact": true,
+      "analysisCompleted": true,
+      "impactCompleted": false,
+      "exitCode": 0,
+      "durationMs": 64786,
+      "observedAgents": [
+        {
+          "id": "ade9c0bd875e319fa",
+          "type": "ca-analyst",
+          "finished": true
+        }
+      ],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "completed",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-claude-compact-paths.json",
+          "sha256": "0d7f389c66baa9e927e4414fd917986fda7253193dae949aa8b53e8ec1b6c54e"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-paths.stdout.log",
+          "sha256": "bb2c5819e7c6b6b2afd5b15a538a10a2302f6d5d7b9102899f04803d2f741a51"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-paths.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "actualModels": [
+        "claude-sonnet-5-5"
+      ],
+      "actualModelCostUsd": 0.2103112,
+      "hostResult": "분석 단계에서 멈췄습니다. `code-agent next`가 게이트를 통과하지 못해 impact 단계에는 들어가지 못했습니다.\n\n**진행한 일**\n- `code-agent planning advance`로 `assignments[0]`(`ca-analyst`)을 받아 실제 하위 에이전트로 호출했습니다. 배정 JSON 전체와 파일 근거 표기 규칙(저장소 루트 기준 전체 경로와 줄)을 함께 전달했습니다.\n- 담당이 `completed` 결과를 반환했습니다. R1~R3, 가정, 범위 밖을 담은 `01-requirements.md`가 `artifacts`에 들어 있었습니다. 질문과 차단 지적은 없었습니다.\n- 그 뒤 `planning advance`가 `ready-for-gate`를 반환했습니다.\n\n**실패한 지점**\n- `code-agent next`가 다음 사유로 거부했습니다.\n  - R2의 근거 인용이 확정된 요구 내용에 없다고 합니다. 인용문에 `Error(\\\"negative\\\")`처럼 백슬래시가 들어간 상태로 문서에 쓰였습니다. 원문은 `Error(\"negative\")`라서 문자열이 일치하지 않은 것으로 보입니다.\n  - 같은 이유로 REQ-2가 분석에서 빠진 요구로 판정됐습니다.\n- `planning advance`를 다시 실행했지만 correction 배정이 나오지 않았습니다. 응답은 여전히 `ready-for-gate`, `assignments: []`, `problems: []`였습니다. 그래서 새 담당에게 전달할 교정 배정이 없습니다.\n\n**멈춘 이유**\n- 지시상 메인은 문서나 상태 파일을 직접 고칠 수 없고, 교정은 planning advance가 내는 correction 배정으로만 진행할 수 있습니다.\n- 지금은 그 배정이 없습니다. 게이트가 반복해서 거부하는데 `planning advance`가 이를 교정 대상으로 인식하지 못하는 것으로 보입니다. 이 경우 호스트 연동이나 CLI 쪽 문제로 보고 멈춥니다.\n\nimpact 단계의 설계, 승인, 구현은 진행하지 않았습니다."
+    },
+    {
+      "label": "claude-compact-plain",
+      "host": "claude",
+      "at": "2026-10-02T05:52:41.600Z",
+      "parentModel": "sonnet",
+      "completed": false,
+      "throughImpact": true,
+      "analysisCompleted": true,
+      "impactCompleted": false,
+      "exitCode": 0,
+      "durationMs": 131239,
+      "observedAgents": [
+        {
+          "id": "a04fa0a18a0ead422",
+          "type": "ca-analyst",
+          "finished": true
+        },
+        {
+          "id": "ae5680c1efbfae3dc",
+          "type": "ca-explorer",
+          "finished": true
+        }
+      ],
+      "phase": "impact",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "completed",
+          "attempts": 1
+        },
+        {
+          "id": "explore",
+          "role": "explore",
+          "state": "failed",
+          "attempts": 1
+        },
+        {
+          "id": "synthesis",
+          "role": "synthesis",
+          "state": "pending",
+          "attempts": 0
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-claude-compact-plain.json",
+          "sha256": "e322bb4e4b3d1d0a31de73b22877aa1727eb7af0b32b533e36c241408b4d144b"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-plain.stdout.log",
+          "sha256": "957f1cb80af4dc9fc52bfdbe4d578e70e7d5d989024fe2775b98bdce76d6dc17"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-plain.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "actualModels": [
+        "claude-sonnet-5-5"
+      ],
+      "actualModelCostUsd": 0.4284429000000001,
+      "hostResult": "영향도 단계에서 멈췄습니다. `ready-for-gate`에 도달하지 못했습니다.\n\n**분석 단계: 완료**\n- `ca-analyst`가 `doc/work/CONSENT-1/01-requirements.md`(R1~R4)를 반환했고, hook이 이를 기록했습니다.\n- `planning advance`가 `ready-for-gate`를 반환했고, `code-agent next`로 impact 단계에 들어갔습니다.\n\n**영향도 단계: 막힘**\n- `planning advance`가 `explore`(ca-explorer)를 배정했고, 이를 호출했습니다.\n- 담당이 결과 JSON을 반환하지 않았습니다. \"이미 처리된 완료 이벤트라서 더 할 작업이 없다\"는 문장만 반환했습니다.\n- hook은 이를 `failed`로 기록했습니다. 사유는 \"배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다.\"입니다.\n- 이 상태에서 `planning advance`는 `action: blocked`를 반환했습니다. `explore`는 `failed`, `synthesis`는 선행 작업 미완료로 대기 중입니다.\n- 이 배정에는 correction 안내가 없었습니다. 막힘 사유에는 \"planning dispatch로 명시적으로 재배정하라\"고만 적혀 있습니다. 지시에 없는 단계이고 상태를 임의로 바꾸는 일이라 직접 실행하지 않았습니다.\n- 담당이 \"이미 처리된 이벤트\"라고 한 이유는 확인하지 못했습니다. 하위 에이전트가 앞선 호출의 결과를 본 것처럼 말했을 수 있습니다.\n\n**참고**\n- `code-agent.json`의 `git.base`는 `master`인데 저장소 주 브랜치는 `main`입니다. 이번 요구의 동작에는 영향이 없다고 분석 담당이 advisory로 남겼습니다.\n\n`planning dispatch`로 `explore`를 재배정할지 알려 주세요."
+    },
+    {
+      "label": "claude-compact-installed",
+      "host": "claude",
+      "at": "2026-10-02T05:56:32.779Z",
+      "parentModel": "sonnet",
+      "completed": false,
+      "throughImpact": true,
+      "analysisCompleted": true,
+      "impactCompleted": false,
+      "exitCode": 0,
+      "durationMs": 103460,
+      "observedAgents": [
+        {
+          "id": "aae603c1451353c1c",
+          "type": "ca-analyst",
+          "finished": true
+        }
+      ],
+      "phase": "analysis",
+      "tasks": [
+        {
+          "id": "analysis",
+          "role": "analysis",
+          "state": "completed",
+          "attempts": 1
+        }
+      ],
+      "logs": [
+        {
+          "path": "dist/planning-live-claude-compact-installed.json",
+          "sha256": "6941deb917d1e2931afe3efcb90d621bbba86cb7ab49839eeb2bdfaf9d78f5a9"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-installed.stdout.log",
+          "sha256": "b77eb884acb5c51937830c285c910fed7dc76c3b05157b941af2fe0422ac3040"
+        },
+        {
+          "path": "dist/planning-live-claude-compact-installed.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "actualModels": [
+        "claude-sonnet-5-5"
+      ],
+      "actualModelCostUsd": 0.3365587000000001,
+      "hostResult": "분석 단계는 완료됐지만 `code-agent next`가 게이트에서 막혀 impact 단계에는 들어가지 못했습니다. 지금은 멈춘 상태입니다.\n\n- **진행한 것:** `code-agent planning advance`로 받은 `ca-analyst` 배정을 실제 하위 에이전트로 호출했습니다. 배정 JSON 전체와 근거 경로 규칙을 함께 전달했고, 담당이 `01-requirements.md` 내용을 담은 완료 JSON을 반환했습니다. 이어서 `planning advance`가 `ready-for-gate`를 반환했습니다.\n- **막힌 이유:** `code-agent next`가 다음 두 가지를 이유로 거부했습니다.\n  - REQ-2의 \"숫자 이외의 입력은 이번 요구 범위 밖이다.\"가 R 블록에 출처와 원문 근거로 연결되지 않았습니다.\n  - REQ-3의 \"웹 서버, 외부 API, 데이터베이스, 추가 패키지는 사용하지 않는다.\"도 R 블록에 연결되지 않았습니다.\n  - 담당은 두 문장을 R 블록이 아니라 '가정'과 '범위 밖' 섹션에 넣었습니다.\n- **교정 배정이 없는 이유:** `planning advance`와 `planning status`를 다시 확인했는데, 교정(correction) 배정이 나오지 않았습니다. 분석 작업은 `completed`, 시도 1회, 문제 없음으로 표시됩니다. 문서와 상태 파일은 직접 쓰지 말라는 지시가 있어서 제가 문서를 고치지 않았고, planning-event도 호출하지 않았습니다. 필요한 것은 `01-requirements.md`의 R 블록 보완입니다.\n\n다음 단계는 새 분석 담당을 호출해 위 두 문장을 각각 R 블록에 출처와 원문 근거로 연결하게 하는 것입니다. 진행할지 알려 주세요."
+    }
+  ],
+  "configProbe": {
+    "command": "codex app-server: initialize → hooks/list, config/read",
+    "withUserConfig": true,
+    "persistedHookTrustChangedByProbe": false,
+    "events": [
+      {
+        "event": "preToolUse",
+        "enabled": true,
+        "trustStatus": "untrusted"
+      },
+      {
+        "event": "userPromptSubmit",
+        "enabled": true,
+        "trustStatus": "untrusted"
+      },
+      {
+        "event": "subagentStart",
+        "enabled": true,
+        "trustStatus": "untrusted"
+      },
+      {
+        "event": "subagentStop",
+        "enabled": true,
+        "trustStatus": "untrusted"
+      },
+      {
+        "event": "stop",
+        "enabled": true,
+        "trustStatus": "untrusted"
+      }
+    ],
+    "errors": [],
+    "warnings": [],
+    "note": "조회 성공은 exec의 실제 훅 실행 증거가 아니다. 프로젝트 신뢰 경로 인자 수정 후에도 실제 훅은 관찰되지 않았다."
+  },
+  "limitations": [
+    "Codex 실제 연동 미완료: 공식 훅 관찰이 없어 완료 결과로 수락하지 않았다.",
+    "모델 목록의 에이전트 버전 또는 클라우드 조정 제한이 원인이라는 추정은 확정하지 않았다.",
+    "자동 호스트 동등성 검사는 합성 이벤트와 실제 CLI 검사이며 native 실계정 성공으로 해석하지 않는다."
+  ],
+  "sourceFiles": [
+    {
+      "path": "src/agent/planning.ts",
+      "sha256": "c8888c625831a19717e645dddce5fd82bd3b4f2a02fcb504984be4b1d41bb167"
+    },
+    {
+      "path": "src/agent/planningState.ts",
+      "sha256": "bf4295ddf9aafeb2b6fa5faca9ce416c677fa7b70b6b57577820ede21e245371"
+    },
+    {
+      "path": "src/agent/planningHook.ts",
+      "sha256": "ddf613573d128391a53a8877b68c5dc08bc297b069762a6b25a20e393a177d5b"
+    },
+    {
+      "path": "src/test/planning.test.ts",
+      "sha256": "7fb95b3b24f337f68cd395d767ba5c9060ef3c9b77b3493304374db920b8442d"
+    },
+    {
+      "path": "template/claude/agents/ca-explorer.md",
+      "sha256": "4f6f62b33c512d62f837fe2993f0794dfb664c2bf20fb61f713a27cc5f7f90b3"
+    },
+    {
+      "path": "template/claude/skills/ca-impact/SKILL.md",
+      "sha256": "9860fcc449fed744687a6629d58c57b5b32accec07b559cf961c6bff538f6ba0"
+    },
+    {
+      "path": "template/claude/skills/ca-plan/SKILL.md",
+      "sha256": "509133dc2db5121e8fe729e65968e7d8dc477e614c41aa28cc41cbdf29985d4d"
+    },
+    {
+      "path": "scripts/evaluate-planning-hosts.cjs",
+      "sha256": "79981d5f414acddf5e1409f860580e62a5c2ac9eb59d8015c6597cf7917c1020"
+    }
+  ]
+}

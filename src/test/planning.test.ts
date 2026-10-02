@@ -13,7 +13,7 @@ import { init, installedHook, unmatchedTools } from "../agent/init";
 import { cancelPlanning, dispatchPlanning, preparePlanning, planningStatus, advancePlanning, repairPlanning, planningResult } from "../agent/planning";
 import { codexHook } from "../agent/codexHook";
 import { observePlanner } from "../agent/planningHook";
-import { loadPlanning, planningProblems, TaskSchema, ResultSchema, type PlanningResult } from "../agent/planningState";
+import { inputFiles, loadPlanning, planningProblems, taskHash, TaskSchema, ResultSchema, type PlanningResult } from "../agent/planningState";
 import { planningDocumentProblems } from "../agent/planningValidation";
 import { parseQuestions } from "../agent/questions";
 import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
@@ -119,12 +119,103 @@ test("계획 진행은 준비·배정을 합치고 반복 호출·캐시·단계
   assert.equal(loadActive(root)!.phase, "analysis");
   next(root);
   const impact = advance();
-  assert.deepEqual(impact.assignments.map((item: any) => item.task.role), ["explore"]);
-  finish(impact.assignments[0]);
-  const synthesis = advance();
-  assert.deepEqual(synthesis.assignments.map((item: any) => item.task.role), ["synthesis"]);
-  finish(synthesis.assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT });
+  assert.deepEqual(impact.assignments.map((item: any) => item.task.role), ["impact"]);
+  assert.match(impact.assignments[0].delegation, /한 담당/);
+  finish(impact.assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT });
   assert.equal(advance().action, "ready-for-gate");
+});
+
+for (const size of ["files", "bytes", "requirements"] as const) test(`자동 영향도 통합은 작은 범위만 선택한다: ${size}`, () => {
+  preparePlanning(root);
+  finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS + (size === "requirements" ? [2, 3, 4].map(n => `\n## R${n} · 값 확인\n근거: "값을 반환한다."`).join("") : "") });
+  next(root);
+  if (size === "files") for (let i = 0; i < 13; i++) write(`src/file${i}.ts`, "export const value=1;");
+  if (size === "bytes") write("src/large.ts", " ".repeat(96_001));
+  const reply = advance();
+  assert.equal(reply.assignments[0].task.role, "explore");
+  assert.deepEqual(loadPlanning(loadWork(root)!).tasks.map(record => record.task.role), ["analysis", "explore", "synthesis"]);
+});
+
+test("설치된 호스트 지침·단계 템플릿은 작은 조사 판정과 새 범위 입력에서 제외한다", () => {
+  init(root, { host: "both" });
+  analysis();
+  const item = advance().assignments[0];
+  assert.equal(item.task.role, "impact");
+  assert.ok(!item.inputs.includes("CLAUDE.md")); assert.ok(!item.inputs.includes("AGENTS.md"));
+  assert.ok(!item.inputs.some((file: string) => file.startsWith("doc/code-agent/")));
+  const legacy = { ...item.task }; delete legacy.contextVersion;
+  assert.ok(inputFiles(loadWork(root)!, legacy).includes("CLAUDE.md"));
+  assert.ok(inputFiles(loadWork(root)!, { ...item.task, inputs: [...item.task.inputs, "AGENTS.md"] }).includes("AGENTS.md"));
+  const work = loadWork(root)!, state = loadPlanning(work), before = taskHash(work, state, item.task);
+  write("AGENTS.md", readFileSync(join(root, "AGENTS.md"), "utf8") + "\n사용자가 보완한 프로젝트 지침\n");
+  assert.notEqual(taskHash(work, state, item.task), before);
+});
+
+test("통합 조사도 실제 관찰·출력·질문·차단 지적을 요구하고 분할 조사와 중복하지 않는다", () => {
+  analysis();
+  const item = advance().assignments[0];
+  assert.equal(item.task.role, "impact");
+  assert.throws(() => next(root), /관찰된 완료/);
+  assert.throws(() => finish(item), /출력 문서 전체/);
+  assert.equal(advance().action, "blocked");
+  finish(dispatch("impact"), { [`${DIR}/02-analysis.md`]: IMPACT }, { findings: [{ id: "F1", severity: "blocking", detail: "영향 재확인", source: { path: SPEC, line: 1 } }] });
+  assert.equal(advance().action, "blocked");
+  assert.throws(() => next(root), /차단 지적/);
+  assert.throws(() => preparePlanning(root, { tasks: [{ id: "extra", role: "explore", title: "추가", requirements: ["R1"], inputs: [SPEC], scopes: ["src"], dependsOn: ["analysis"] }] }), /함께 등록/);
+});
+
+test("좁은 전달은 직접 선행 문서와 역할 정책만 보내고 독립 검토·명시 입력·기존 계약은 보존한다", () => {
+  analysis();
+  const task = TaskSchema.parse({ id: "scoped", role: "explore", contextVersion: 2, title: "영역", requirements: ["R1"], inputs: [SPEC], scopes: ["src"], dependsOn: ["analysis"] });
+  const work = loadWork(root)!;
+  const files = inputFiles(work, task);
+  assert.ok(files.includes("doc/architecture.md")); assert.ok(files.includes("doc/conventions.md"));
+  assert.ok(!files.includes("doc/quality.md")); assert.ok(!files.includes("doc/test-strategy.md")); assert.ok(!files.includes("other/current.ts"));
+  assert.ok(!inputFiles(work, { ...task, scopes: ["."] }).includes("doc/quality.md"));
+  assert.ok(inputFiles(work, { ...task, inputs: [...task.inputs, "doc/quality.md"] }).includes("doc/quality.md"));
+  const legacy = { ...task }; delete legacy.contextVersion;
+  assert.ok(inputFiles(work, legacy).includes("doc/quality.md"));
+  preparePlanning(root); finish(dispatch("explore")); finish(dispatch("synthesis"), { [`${DIR}/02-analysis.md`]: IMPACT }); next(root);
+  preparePlanning(root); finish(dispatch("design"), { [`${DIR}/03-design.md`]: DESIGN, [`${DIR}/04-functional.md`]: FUNCTIONAL }); next(root);
+  preparePlanning(root);
+  const plan = dispatch("plan");
+  assert.ok(plan.inputs.includes(`${DIR}/01-requirements.md`)); assert.ok(plan.inputs.includes(`${DIR}/03-design.md`));
+  assert.ok(plan.inputs.includes(`${DIR}/02-analysis.md`));
+  assert.ok(inputFiles(loadWork(root)!, { ...plan.task, contextVersion: undefined }).includes(`${DIR}/02-analysis.md`));
+  finish(plan, { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS });
+  const critic = dispatch("critic");
+  for (const file of ["01-requirements.md", "02-analysis.md", "03-design.md", "04-functional.md", "plan.json", "07-test-spec.md"]) assert.ok(critic.inputs.includes(`${DIR}/${file}`));
+});
+
+test("통합 영향도 결과의 상충하는 사실도 게이트를 통과하지 못한다", () => {
+  analysis();
+  finish(advance().assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT }, { facts: [
+    { key: "반환값", value: "1", source: { path: "src/current.ts", line: 1 } },
+    { key: "반환값", value: "2", source: { path: "src/current.ts", line: 1 } },
+  ] });
+  assert.equal(advance().action, "blocked");
+  assert.throws(() => next(root), /충돌/);
+});
+
+test("선행 실행 ID만 바뀌면 새 계약의 결과를 재사용하고 내용 변경·미완료는 구분한다", () => {
+  analysis();
+  const scoped = TaskSchema.parse({ id: "scoped", role: "explore", contextVersion: 2, title: "영역", requirements: ["R1"], inputs: [SPEC], scopes: ["src"], dependsOn: ["analysis"] });
+  preparePlanning(root, { tasks: [scoped] }); finish(dispatch("scoped"));
+  const before = loadPlanning(loadWork(root)!);
+  const legacy = { ...scoped }; delete legacy.contextVersion;
+  const legacyHash = taskHash(loadWork(root)!, before, legacy);
+  phase("analysis");
+  write(`${DIR}/feedback.md`, "인용을 다시 확인한다");
+  const analysisTask = before.tasks.find(record => record.task.role === "analysis")!.task;
+  preparePlanning(root, { tasks: [{ ...analysisTask, inputs: [...analysisTask.inputs, `${DIR}/feedback.md`] }] });
+  const rerun = dispatch("analysis"); phase("impact");
+  assert.throws(() => dispatch("scoped"), /선행 작업/);
+  phase("analysis"); finish(rerun, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }); phase("impact");
+  assert.equal(dispatch("scoped").cached, true);
+  assert.notEqual(taskHash(loadWork(root)!, loadPlanning(loadWork(root)!), legacy), legacyHash);
+  phase("analysis"); write(`${DIR}/feedback.md`, "판단을 다시 확인한다");
+  finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, { summary: "영향 판단을 보완했다" }); phase("impact");
+  assert.equal(dispatch("scoped").cached, false);
 });
 
 test("계획 진행은 사용자 영역 분할·동시 한도·미결 질문과 사실 충돌을 유지한다", () => {
@@ -239,8 +330,7 @@ for (const host of ["claude", "codex"] as const) test(`${host}: 설치된 절차
   malformed(initial, { codex: host === "codex" });
   finish(advance().assignments[0], { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, {}, host);
   assert.equal(advance().action, "ready-for-gate"); next(root);
-  finish(advance().assignments[0], {}, { evidence: [{ path: "src/current.ts", line: 1 }] }, host);
-  finish(advance().assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT }, {}, host);
+  finish(advance().assignments[0], { [`${DIR}/02-analysis.md`]: IMPACT }, { evidence: [{ path: "src/current.ts", line: 1 }] }, host);
   assert.equal(advance().action, "ready-for-gate"); next(root);
   finish(advance().assignments[0], { [`${DIR}/03-design.md`]: DESIGN, [`${DIR}/04-functional.md`]: FUNCTIONAL }, {}, host);
   assert.equal(advance().action, "ready-for-gate"); next(root);
@@ -252,7 +342,7 @@ for (const host of ["claude", "codex"] as const) test(`${host}: 설치된 절차
   assert.throws(() => next(root), /승인/);
   assert.equal(loadActive(root)!.phase, "plan");
   const state = loadPlanning(loadWork(root)!);
-  assert.deepEqual(state.tasks.map(item => item.task.role), ["analysis", "explore", "synthesis", "design", "plan", "critic"]);
+  assert.deepEqual(state.tasks.map(item => item.task.role), ["analysis", "impact", "design", "plan", "critic"]);
   assert.ok(state.tasks.every(item => item.attempts.length === 1));
   assert.equal(JSON.parse(planningResult(root, "plan")).current, true);
 });
