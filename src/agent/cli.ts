@@ -36,6 +36,7 @@ import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
 import { applyConsent, consentStatus, prepareConsent, runConsentHook } from "./consent";
 import { updateFromSource } from "./sourceUpdate";
+import { renderVerification, verify } from "./verificationFlow";
 
 const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
 
@@ -95,6 +96,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent repro                    fix 전용 — 재현 TC 의 실패를 보고 증거로 남긴다 (그 전에는 고칠 파일을 쓸 수 없다)
   code-agent check                    8 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
   code-agent test                     9 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC별 실제 결과를 대조
+  code-agent verify [--json] [--retry]  check·test 노드를 연속 실행하고 수정·실행 문제 확인·리뷰 요청을 반환 (retry는 check부터 재실행)
   code-agent review                   11 코드 리뷰 — 회차를 열고 독립 리뷰어의 시작·완료와 결과는 hook이 기록
   code-agent integrate                12 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
 
@@ -206,6 +208,12 @@ async function main(argv: string[]): Promise<number> {
     case "test":
       print(await runTests(requireValidatable(repoRoot, "test")));
       return 0;
+    case "verify": {
+      if (args.some((arg) => arg !== "--json" && arg !== "--retry")) throw new Stop("사용법: code-agent verify [--json] [--retry]");
+      const result = await verify(repoRoot, { retry: args.includes("--retry") });
+      print(args.includes("--json") ? JSON.stringify(result, null, 2) : renderVerification(result));
+      return result.node === "review" ? 0 : 1;
+    }
     case "review":
       print(openRound(requireValidatable(repoRoot, "review")));
       return 0;
