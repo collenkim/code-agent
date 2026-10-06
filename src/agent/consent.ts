@@ -1,6 +1,7 @@
 import { execFileSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
-import { closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, unlinkSync } from "fs";
+import { closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, unlinkSync, writeSync } from "fs";
+import { hostname } from "os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { isDeepStrictEqual } from "util";
 import { z } from "zod";
@@ -110,17 +111,39 @@ export function loadConsent(root: string, id: string): ConsentRecord {
   if (record.id !== id || !samePath(record.root, root)) throw new Stop("다른 프로젝트의 확인 요청입니다.");
   return record;
 }
-/** 같은 저장소의 확인·적용을 직렬화한다. 비정상 종료의 잠금은 자동으로 훔치지 않는다. */
+/** 잠금을 쥔 프로세스가 아직 있는가. 권한이 없어 못 보는 프로세스는 있는 것으로 본다 */
+function alive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+/**
+ * 같은 저장소의 확인·적용을 직렬화한다. 잠금에는 주인(pid·호스트·시작 시각)을 적고, 같은 PC 에서 그 프로세스가
+ * 끝났을 때만 되찾는다 — Bash 시간 제한에 죽은 apply 의 잠금이 이후의 모든 확인을 막지 않게. 주인을 모르는 잠금은
+ * 훔치지 않고 경로를 알린다.
+ */
 function withConsentLock<T>(root: string, run: () => T): T {
   const dir = localPath(root, DIR);
   mkdirSync(dir, { recursive: true });
   const lock = localPath(root, `${DIR}/apply.lock`);
-  let fd: number;
-  try { fd = openSync(lock, "wx", 0o600); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Stop("다른 확인·적용이 진행 중입니다. 이전 프로세스가 종료됐는지 확인하세요.");
-    throw error;
+  let fd: number | undefined;
+  for (let attempt = 0; fd === undefined; attempt++) {
+    try { fd = openSync(lock, "wx", 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let text = "", owner: { pid?: unknown; host?: unknown; at?: unknown } | undefined;
+      try { text = readFileSync(lock, "utf8"); owner = JSON.parse(text); } catch { owner = undefined; }
+      const pid = typeof owner?.pid === "number" ? owner.pid : undefined;
+      if (attempt === 0 && pid !== undefined && owner?.host === hostname() && !alive(pid)) {
+        // 그 사이 다른 프로세스가 되찾아 새로 잡았으면 건드리지 않는다
+        try { if (readFileSync(lock, "utf8") === text) unlinkSync(lock); } catch { /* 이미 치워졌다 */ }
+        continue;
+      }
+      throw new Stop(pid !== undefined
+        ? `다른 확인·적용이 진행 중입니다 (pid ${pid}, ${String(owner?.at ?? "")} 시작). 그 프로세스가 끝난 뒤 다시 실행하세요.`
+        : `다른 확인·적용이 진행 중이거나 이전 프로세스가 비정상 종료했습니다. 실행 중인 code-agent 가 없으면 ${lock} 을 지운 뒤 다시 실행하세요.`);
+    }
   }
+  writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), at: new Date().toISOString() }));
   try { return run(); }
   finally { closeSync(fd); unlinkSync(lock); }
 }
@@ -188,11 +211,24 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
     state("Git 브랜치", JSON.stringify(git(root, ["symbolic-ref", "-q", "HEAD"], true)));
     state("Git 스테이지 diff", git(root, ["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"]));
     state("Git index", git(root, ["ls-files", "--stage", "-z"]));
-    state("Git 설정", git(root, ["config", "--null", "--list", "--show-origin"]));
+    state("Git 설정", gitConfigState(root));
   }
   if (action.action.startsWith("plugin-")) state("플러그인 저장소", JSON.stringify(readStore()));
   if (action.action === "update") state("업데이트 소스", sourceUpdateSnapshot(root));
   return { hash: hash.digest("hex"), entries };
+}
+
+/**
+ * Git 설정 — 적용(커밋·hook·신원)에 닿는 값만 묶는다. 다른 worktree 의 `git push -u` 가 공유 .git/config 에 남기는
+ * 추적 정보(branch.*)는 적용 내용과 무관한데, 묶으면 응답을 기다리는 동안 동의가 깨진다.
+ */
+function gitConfigState(root: string): string {
+  const parts = git(root, ["config", "--null", "--list", "--show-origin"]).split("\0");
+  let kept = "";
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    if (!/^branch\./i.test(parts[index + 1])) kept += `${parts[index]}\0${parts[index + 1]}\0`;
+  }
+  return kept;
 }
 
 function requireConsentSnapshot(root: string, record: Pick<ConsentRecord, "snapshot" | "snapshotEntries" | "action">, message: string,
@@ -429,6 +465,11 @@ function applyLocked(root: string, id: string): string {
   // 잠금을 얻기 전에 읽은 승인 상태를 재사용하지 않는다.
   const record = loadConsent(root, id);
   if (record.status === "applied") return cachedResult(record);
+  if (record.status === "applying") {
+    // 잠금을 쥔 지금 applying 이면 이전 적용 프로세스가 끝맺지 못하고 죽은 것이다 — 같은 동의로 다시 돌리지 않는다
+    record.status = "failed"; save(root, record);
+    throw new Stop("이전 적용이 끝나지 않은 채 중단됐습니다 — 일부만 반영됐을 수 있습니다. code-agent status 와 git status 로 상태를 확인하고, 필요하면 code-agent consent prepare 로 새로 확인하세요.");
+  }
   if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
   requireConsentSnapshot(root, record, "확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
   const action=record.action;

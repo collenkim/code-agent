@@ -327,7 +327,18 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
     .filter((path) => existsSync(join(repoRoot, path)));
 }
 
-export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): string {
+/**
+ * 방금 커밋에 반영 목록 밖으로 들어간 파일. 경로 목록 커밋도 저장소의 pre-commit hook 은 돌고, hook 이 임시 index 에
+ * `git add` 한 것(예: 다른 도구의 감사 기록)은 그대로 실린다. 사람이 확인한 커밋을 되돌리지는 않고 드러낸다.
+ */
+function committedOutside(repoRoot: string, paths: string[]): string[] {
+  const roots = paths.map((path) => path.replace(/\\/g, "/").replace(/\/+$/, ""));
+  return git(repoRoot, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", "HEAD"])
+    .split("\0")
+    .filter((file) => file !== "" && !roots.some((root) => file === root || file.startsWith(`${root}/`)));
+}
+
+export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): { commit: string; outside: string[] } {
   const { repoRoot } = work;
   const paths = deliveryPaths(work, knowledge);
   try {
@@ -348,7 +359,7 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
       `git commit 이 실패했습니다 (변경은 스테이지에 올라가 있습니다): ${error instanceof Error ? error.message : error}`,
     );
   }
-  return git(repoRoot, ["rev-parse", "HEAD"]);
+  return { commit: git(repoRoot, ["rev-parse", "HEAD"]), outside: committedOutside(repoRoot, paths) };
 }
 
 // ---- code-agent deliver ----
@@ -407,7 +418,7 @@ export function deliver(work: Work): string {
   const presence = confirmOnTerminal(shown, "deliver");
 
   const knowledge = selectKnowledge(work);
-  const commit = commitDelivery(work, evidence!, knowledge);
+  const { commit, outside } = commitDelivery(work, evidence!, knowledge);
 
   logStage(repoRoot, active, "deliver");
   clearActive(repoRoot);
@@ -418,6 +429,9 @@ export function deliver(work: Work): string {
     "",
     `PR 본문은 ${prDocFile(active.id)} 에 있습니다. push · MR/PR 생성은 하지 않았습니다 — git 호스트가 붙을 때까지 보류입니다.`,
     "확인한 작업 파일·증거·원장과 표시한 도입 설정을 함께 커밋했습니다. 관련 없는 스테이징 파일은 포함하지 않았습니다.",
+    ...(outside.length > 0
+      ? [`주의: 저장소의 pre-commit hook 등이 반영 목록 밖 파일을 커밋에 더했습니다 — ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` 외 ${outside.length - 10}개` : ""}. 의도한 것인지 확인하세요(되돌리지 않았습니다).`]
+      : []),
     "작업 커서를 지웠습니다.",
   ].join("\n");
 }

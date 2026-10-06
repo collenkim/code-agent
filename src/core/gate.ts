@@ -94,8 +94,10 @@ export function checkPaths({
       continue;
     }
 
-    // 지시서가 건드려도 되는 곳을 적었으면 그것이 상한선이다.
-    if (order.scope.length > 0 && !order.scope.some((entry) => under(path, entry))) {
+    // 지시서가 건드려도 되는 곳을 적었으면 그것이 상한선이다. 테스트 단계(kind: test)의 파일은 그 상한을 받지
+    // 않는다 — scope 는 바꿀 제품 코드의 경계이고, fix 의 재현 테스트는 필수인데 접수자가 테스트 경로까지 적지는
+    // 않는다. 테스트 파일도 단계 outputDirs·보존 대상은 그대로 지키고, 계획 승인에서 사람이 경로를 본다.
+    if (order.scope.length > 0 && stage.kind !== "test" && !order.scope.some((entry) => under(path, entry))) {
       violations.push({
         item: "지시서 scope 밖",
         file: path,

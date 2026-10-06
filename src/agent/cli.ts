@@ -42,6 +42,7 @@ import { setupBaseline, setupStatus } from "./bootstrap";
 import { applyConsent, consentStatus, finishConsent, prepareConsent, runConsentHook } from "./consent";
 import { contextHandoff, handoffPlanning } from "./handoff";
 import { runSessionHook } from "./sessionHook";
+import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSource } from "./sourceUpdate";
 import { renderVerification, verify } from "./verificationFlow";
 
@@ -110,11 +111,13 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent planning repair <ID>     관찰된 출력 형식 오류를 같은 입력에서 한 번 교정
   code-agent planning dispatch <ID>   입력 묶음·담당 에이전트·결과 계약 반환 (같은 입력은 재사용)
   code-agent planning cancel <ID>     중단된 배정 취소 (이전 실행 결과는 거부)
+  code-agent planning cross --by <claude|codex>   두 호스트 설치 시 — 다른 호스트가 critic 입력으로 계획을 교차 검토 (읽기 전용 실행)
   code-agent repro                    fix 전용 — 재현 TC 의 실패를 보고 증거로 남긴다 (그 전에는 고칠 파일을 쓸 수 없다)
   code-agent check                    8 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
   code-agent test                     9 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC별 실제 결과를 대조
   code-agent verify [--json] [--retry]  check·test 노드를 연속 실행하고 수정·실행 문제 확인·리뷰 요청을 반환 (retry는 check부터 재실행)
   code-agent review                   11 코드 리뷰 — 회차를 열고 독립 리뷰어의 시작·완료와 결과는 hook이 기록
+  code-agent review cross --by <claude|codex>   두 호스트 설치 시 — 다른 호스트가 같은 회차를 교차 리뷰 (읽기 전용 실행)
   code-agent integrate                12 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
 
 hook 이 부른다:
@@ -185,7 +188,8 @@ async function main(argv: string[]): Promise<number> {
       else if (args[0] === "repair" && args[1]) print(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1])));
       else if (args[0] === "dispatch" && args[1]) print(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1])));
       else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
-      else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID>");
+      else if (args[0] === "cross") print(crossCritic(repoRoot, option(args, "by")));
+      else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID> | cross --by <claude|codex>");
       return 0;
     case "consent":
       if (args[0] === "prepare" && args[1]) print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8"))));
@@ -253,7 +257,7 @@ async function main(argv: string[]): Promise<number> {
       return result.node === "review" ? 0 : 1;
     }
     case "review":
-      print(openRound(requireValidatable(repoRoot, "review")));
+      print(args[0] === "cross" ? crossReview(repoRoot, option(args, "by")) : openRound(requireValidatable(repoRoot, "review")));
       return 0;
     case "integrate":
       print(await integrate(requireValidatable(repoRoot, "integrate")));

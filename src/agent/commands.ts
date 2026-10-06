@@ -83,6 +83,7 @@ import {
 } from "./workDocs";
 import type { Requirements } from "./workDocs";
 import { formatSourceTrace, readSourceTrace, sourceItems } from "./sourceTrace";
+import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -264,6 +265,8 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop("문서 준비 세션이 열려 있습니다. code-agent docs end 뒤에 같은 요구사항으로 시작하세요.");
   }
+  const aidlc = aidlcBlock(repoRoot);
+  if (aidlc) throw new Stop(aidlc);
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
     throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
@@ -419,6 +422,8 @@ export function status(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
   const checks = checkProjectDocs(repoRoot, manifest);
   const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checks)];
+  const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
+  if (aidlc) lines.push("", aidlc);
 
   const work = loadWork(repoRoot);
   if (!work) {
@@ -495,7 +500,14 @@ export function status(repoRoot: string): string {
 
 // ---- next ----
 
+/** 작업 도중 AI-DLC 가 시작됐으면 다음 단계·검증으로 넘어가지 않는다 */
+function requireNoAidlc(repoRoot: string): void {
+  const aidlc = aidlcBlock(repoRoot);
+  if (aidlc) throw new Stop(aidlc);
+}
+
 export function next(repoRoot: string): string {
+  requireNoAidlc(repoRoot);
   const work = requireWork(repoRoot);
   const { active } = work;
   requireDocs(repoRoot, work);
@@ -627,6 +639,7 @@ export function requireValidatable(
   repoRoot: string,
   phase: "check" | "test" | "review" | "integrate" | "deliver",
 ): Work {
+  requireNoAidlc(repoRoot);
   let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);

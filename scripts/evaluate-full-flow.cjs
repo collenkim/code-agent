@@ -1,7 +1,8 @@
 /* Opt-in live evaluation from intake through local delivery in disposable repositories.
  * Only TTY interaction is mocked by this driver; every such decision is labelled as a fixture.
  * Never claims to measure a real beginner or human approval. No push or external publication.
- * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--label 기록이름] [--budget USD] [--timeout 분]
+ * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both]
+ * --hosts both 는 Codex 도 설치해 계획 검토·코드 리뷰의 교차 검증을 실제 Codex 로 돈다(로그인된 codex 필요).
  * 기본은 2026-10-01 기록과 같은 sonnet·$5 한도다. --model opus는 설치 기본 모델 그대로 실행한다.
  * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다(2026-10-01 기록은 누적값을 더해 과대 집계됐다).
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.
@@ -27,8 +28,8 @@ const { usage } = use('agent/usage');
 const scenario = process.argv[3], resume = process.argv[2] === 'resume';
 if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'refactor'].includes(scenario)) throw Error('Use run|resume <new|enhance|fix|refactor>');
 const option = name => { const at = process.argv.indexOf(`--${name}`); return at > 0 ? process.argv[at + 1] : undefined; };
-const hostModel = option('model') ?? 'sonnet', label = option('label') ?? '2026-10-01', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
-if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
+const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ?? 'sonnet', label = option('label') ?? '2026-10-01', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
+if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
 const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
 if (previous?.finished) throw Error('Scenario already completed; preserve the recorded result.');
@@ -38,7 +39,7 @@ const write = (file, text) => { fs.mkdirSync(path.dirname(path.join(repo, file))
 const git = (...args) => cp.execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim();
 if (!resume) {
 git('init', '-q', '-b', 'master'); git('config', 'user.name', 'evaluation-fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'core.autocrlf', 'false');
-init(repo, { cli: path.join(root, 'dist/agent/cli.js') });
+init(repo, { cli: path.join(root, 'dist/agent/cli.js'), host: installHosts });
 }
 for (const file of hostModel === 'opus' ? [] : fs.readdirSync(path.join(repo, '.claude/agents'))) {
   const full = path.join(repo, '.claude/agents', file);
@@ -121,10 +122,11 @@ const questionFile = id && path.join(repo, `doc/work/${id}/questions.md`);
 const questions = questionFile && fs.existsSync(questionFile) ? parseQuestions(fs.readFileSync(questionFile, 'utf8')) : [];
 const evidence = work && loadEvidence(repo, id, work.active.target);
 const review = work && loadReview(repo, id, work.active.target);
-const report = { scenario, model:hostModel, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval', repo, finished, blocked,
+const report = { scenario, model:hostModel, hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval', repo, finished, blocked,
   durationMs:(previous?.durationMs || 0)+Date.now()-started, reportedCostUSD:cost, costNote:'turn cost = delta of cumulative total_cost_usd; usage is transcript-based', approvals, questionFixtures, questionCount:questions.length, questionCountScope:'questions.md entries only; conversational questions are preserved in turns but not counted here', unanswered:questions.filter(q=>!q.answer).map(q=>q.title), turns,
   taskSequence:work?.plan?.sequence, tests:evidence?.testCases, integrationTests:evidence?.integrationTestCases, reproduction:evidence?.repro,
-  reviews:review?.rounds.map(r=>({round:r.round,observed:!!r.reviewer?.completedAt,result:r.reviewer?.result})),
+  reviews:review?.rounds.map(r=>({round:r.round,observed:!!r.reviewer?.completedAt,result:r.reviewer?.result,cross:r.cross&&{host:r.cross.host,model:r.cross.model,completed:!!r.cross.completedAt,result:r.cross.result,error:r.cross.error}})),
+  planningCross:(()=>{try{const s=use('agent/planningState').loadPlanning(work);return s.cross&&{host:s.cross.host,model:s.cross.model,status:s.cross.status,findings:s.cross.findings.length,questions:s.cross.questions};}catch{return undefined;}})(),
   source:fs.existsSync(path.join(repo,'src/value.js'))?fs.readFileSync(path.join(repo,'src/value.js'),'utf8'):null,
   baselineTestUnchanged:scenario==='refactor' && fs.readFileSync(path.join(repo,'tests/value.test.js'),'utf8')===tests,
   finalCommit:hasBaseline(repo)?git('rev-parse','HEAD'):null, activeAfterDelivery:loadActive(repo)?.phase || null,

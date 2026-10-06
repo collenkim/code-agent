@@ -5,7 +5,7 @@ import { sha } from "./docs";
 import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
 import { mutatePlanning, requireRolePhase, stagingPath } from "./planning";
 import { fileHash, inputFiles, planningPath, readyProblems, referenceProblem, ResultSchema, TASK_AGENTS, taskHash, type PlanningResult, type ResolvedResult } from "./planningState";
-import type { ReviewHookInput } from "./reviewHook";
+import { RecordedFailure, subagentExitCode, type ReviewHookInput } from "./reviewHook";
 import { loadWork } from "./work";
 
 /** hook의 세션별 실제 하위 transcript만 읽는다. 저장소 안의 임의 JSON은 실행 증거가 아니다. */
@@ -59,7 +59,7 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
     }
     const agent = [...state.agents].reverse().find(agent => agent.id === input.agent_id && agent.session === input.session_id);
     if (!agent) return; // 다른 스킬이 부른 동일 이름 에이전트
-    if (agent.finished) throw new Error("이미 처리한 완료 이벤트입니다.");
+    if (agent.finished) throw new RecordedFailure("이미 처리한 완료 이벤트입니다.");
     // 관찰 출처 검증 실패는 모델 출력 형식 오류와 구분한다.
     const raw = handback(input, root, agent.startedAt);
     let parsed: unknown, parseError: unknown;
@@ -107,7 +107,6 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       }
       if (result.status === "completed" && (!result.evidence.length || result.questions.length)) throw new Error("완료 결과에는 실제 근거가 필요하며 미결 질문이 없어야 합니다.");
       if (result.questions.some(question => question.requirements.some(key => !record.task.requirements.includes(key)))) throw new Error("배정 요구 범위 밖 질문입니다.");
-      if (new Set(result.questions.map(question => question.id)).size !== result.questions.length) throw new Error("중복 질문 번호입니다.");
       const outputs = reported.artifacts.map(artifact => artifact.path);
       if (result.status === "completed" && JSON.stringify([...outputs].sort()) !== JSON.stringify([...record.task.outputs].sort())) throw new Error("배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다.");
       if (result.status !== "completed" && outputs.length) throw new Error("미완료 결과는 확정 문서를 쓰지 않습니다.");
@@ -128,10 +127,12 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
         rmSync(planningPath(root, `${workDocsDir(work.active.id)}/.staging/${last.dispatchId}`), { recursive: true, force: true });
       }
       if (result.questions.length) {
+        // 질문 번호는 코드가 매긴다 — 병렬 담당이 각자 Q1 을 내도 겹치지 않고, 결과의 번호도 문서와 같게 고친다
         const path = planningPath(root, questionsFile(work.active.id));
         let body = existsSync(path) ? readFileSync(path, "utf8") : "# 질문\n";
+        let next = Math.max(0, ...[...body.matchAll(/^## Q(\d+)\b/gm)].map((match) => Number(match[1]))) + 1;
+        result.questions = result.questions.map((question) => ({ ...question, id: `Q${next++}` }));
         for (const question of result.questions) {
-          if (new RegExp(`^## ${question.id}\\b`, "m").test(body)) throw new Error(`기존 질문 번호와 겹칩니다: ${question.id}`);
           body += `\n## ${question.id} · ${record.task.title}\n${question.question}\n[Requirements]: ${question.requirements.join(", ")}\n[Answer]:\n`;
         }
         writeAtomic(path, body);
@@ -149,9 +150,10 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       return last.error;
     }
   });
-  if (error) throw new Error(error);
+  if (error) throw new RecordedFailure(error);
 }
 export function runPlanningHook(stdin: string): number {
-  try { observePlanner(JSON.parse(stdin), process.env.CLAUDE_PROJECT_DIR); return 0; }
-  catch (error) { process.stderr.write(`code-agent planning-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+  let input: ReviewHookInput | undefined;
+  try { input = JSON.parse(stdin) as ReviewHookInput; observePlanner(input, process.env.CLAUDE_PROJECT_DIR); return 0; }
+  catch (error) { process.stderr.write(`code-agent planning-event: ${error instanceof Error ? error.message : error}\n`); return subagentExitCode(input, error); }
 }

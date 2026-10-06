@@ -45,6 +45,27 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 전달 파일과 staging에는 `.gitignore`(`*`)를 두어 반영 커밋에 들어가지 않는다. Agent 도구의 PostToolUse `updatedToolOutput`으로 결과를 줄이는 방법은 실험에서 쓸 수 없었다 — 서브에이전트가 비동기로 시작돼 PostToolUse가 시작 응답에 붙고, 결과는 별도 알림으로 온다.
 
+### Claude·Codex 교차 검증
+
+두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다. 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
+
+| 지점 | 명령 | 기록 | 게이트 |
+|---|---|---|---|
+| 계획 검토 | `code-agent planning cross --by <다른 호스트>` | `.planning.json` 의 `cross` — 그 critic 배정(`criticDispatchId`)에 묶인다 | 완료 · 차단 지적 0 · 질문은 questions.md 로(번호는 코드가 매긴다) |
+| 코드 리뷰 | `code-agent review cross --by <다른 호스트>` | 회차의 `cross`, ⑨ `## 교차 지적`(id `X<번호>`) | 회차 트리 일치 · 문서 절 = 기록 · 열린·계획 밖 지적 0 |
+
+CLI 가 다른 호스트를 **읽기 전용·비대화형**으로 직접 실행한다 — Claude 는 `claude -p --agent ca-reviewer|ca-critic --allowedTools Read,Grep,Glob`, Codex 는 `codex exec -s read-only --ephemeral` 에 설치된 역할 지침을 앞에 붙인다. 모델은 각 호스트의 역할별 설정(`models.json` · `codex-models.json`)을 따른다. 실행 출처는 CLI 가 보증하므로 hook 관찰이 필요 없다. 스킬은 Claude 에서 `--by codex`, Codex 에서 `--by claude` 로 설치된다. 어느 쪽이든 차단 지적이 남으면 막고, 의견이 갈리면 사람이 판단한다. 교차 실행은 몇 분 걸릴 수 있어 도구 timeout 을 최대로 주거나 백그라운드로 돌린다(`CODE_AGENT_CROSS_TIMEOUT_MIN`, 기본 20분). 실행 파일은 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꿀 수 있다.
+
+다른 호스트를 실행할 수 없으면(미설치·로그인 만료·사용 한도·장애) 교차 결과가 생기지 않아 게이트가 계속 막는다. 우회 명령은 없다 — 2026-10-06 실측에서 Codex 워크스페이스 사용 한도에 걸리자 메인은 게이트를 넘지 않고 원인과 재개 방법을 보고한 뒤 같은 실패의 재시도를 멈췄다.
+
+### AWS AI-DLC 와 같은 저장소
+
+두 워크플로는 **번갈아 쓰고 동시에 진행하지 않는다.** 브랜치 담당자는 바뀌지 않는다는 전제로, 같은 브랜치에 진행 중인 AI-DLC 의도(`aidlc/spaces/*/intents/*/aidlc-state.md` · `intents.json` 의 `in-flight`, 이전 배치 `aidlc-docs/aidlc-state.md`)가 있으면 — 팀원이 커밋해 둔 것이어도 — `request begin` · `docs begin` · `start` 를 막고 `next` 와 검증 게이트에서 다시 막는다(`src/agent/aidlc.ts`). code-agent 작업·세션 중에는 hook 이 AI-DLC 명령을 분명한 사유로 거부한다.
+
+진행 중이 아니어도 AI-DLC 훅(`record-human-turn` 등)이 설치돼 있고 의도가 해석되면(사용자별 커서, 또는 보관되지 않은 기록이 하나뿐) 그 훅이 질문·답변·세션마다 **추적되는 감사 파일**에 기록해 동의 스냅샷과 계획 밖 변경 검사를 흔든다. 이 상태는 막지 않고 status · 접수 출력 · doctor · 시작 hook 에서 경고한다 — `/aidlc intent archive`(2.9 이상)나 커서 정리 뒤 진행한다. AI-DLC 가 `.claude/settings.json` 을 통째로 다시 쓰면 code-agent 훅이 빠질 수 있으니 AI-DLC 갱신 뒤에는 `code-agent doctor` 로 확인한다. AI-DLC 자체 훅과 다른 터미널의 실행은 code-agent 가 막지 못한다.
+
+준비 커밋(`setup`·`baseline`)에는 code-agent 가 만들거나 고치는 파일만 담는다 — `ca-*` 스킬·에이전트, `settings.json`·`hooks.json`, 지시 블록 파일, POLICY·KNOWLEDGE·단계 템플릿. 다른 도구가 `.claude/`·`.codex/`·`doc/` 에 둔 파일과 README 같은 사용자 파일(최초 커밋 제외)은 담지 않는다.
+
 ## 2. 문서 모델
 
 문서가 근거다. 없는 문서는 모델이 지어내는 자리가 된다. 그렇다고 모든 문서를 미리 요구하면 레거시에서는 시작조차 못 한다.
@@ -385,7 +406,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 **리뷰가 서는 자리** (P5 단계 2 ✅) — 리뷰의 강제력은 **마지막 회차의 기준 트리 해시**다.
 그 값을 모델이 적으면 아무것도 묶지 못하므로 회차는 `.code-agent/work/<ID>/<대상>.review.json` 에
 **코드만** 쓰고(`code-agent review`), ⑨ 의 회차 구역(`<!-- code-agent:review:... -->`)을 거기서 렌더한다.
-지적은 독립 `ca-reviewer`가 판정하고 SubagentStart·SubagentStop hook이 세션·agent id·시작/완료와 결과를 회차에 기록한다.
+지적은 독립 `ca-reviewer`가 판정하고 SubagentStart·SubagentStop hook이 세션·agent id·시작/완료와 결과를 회차에 기록한다. 결과가 지적 표 형식이 아니면 리뷰어에게 한 번만 돌려보내고, 이미 기록한 결과나 한 번 막힌 재시도(`stop_hook_active`)는 막지 않는다.
 관찰된 결과를 코드가 ⑨에 옮기고 게이트에서 대조한다. **범위(계획 안/밖)는
 코드가 계획 파일 목록과 대조해 정한다** — 동결 여부는 범위 분류와 별개다. 경로 단위 hook 으로
 구역 안쪽만 막으려면 Edit 의 부분 치환까지 봐야 해 비싸므로, ⑨·⑩ 은 **다시 렌더해 바이트로 대조한다**.
@@ -469,11 +490,11 @@ Claude 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 —
 | 접수 도중 준비 문서 세션을 열 수 있다. 그동안 문서 쓰기 제한이 우선하고 접수는 유지된다. 문서 세션 중 새 접수와 작업 시작, 작업 중 문서 세션은 거부한다 | `docs begin` · `docs link` · `request begin` · `start` | 세션 열 때 · 문서 등록 | ✅ |
 | 문서 작성 세션 중에는 문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기 금지 — `doc/` 아래라도 `doc/work/<ID>/requirement.md` 는 거부한다(접수가 렌더하는 파일이다) | PreToolUse hook | 쓰기 전 | P2 ✅ · 접수 ✅ |
 | 계획 승인 전(분석·조사·계획 스테이지) 작업 폴더 밖 쓰기 금지 | PreToolUse hook → `code-agent hook` | 쓰기 전 | P1 ✅ |
-| 계획에 없는 파일, scope 밖, preserve, 계층 경계 | 같음 (코어 `checkPaths` · `unplannedFiles`) | 쓰기 전 | P1 ✅ |
+| 계획에 없는 파일, scope 밖(테스트 단계 파일은 제외 — fix 재현 테스트), preserve, 계층 경계 | 같음 (코어 `checkPaths` · `unplannedFiles`) | 쓰기 전 | P1 ✅ |
 | `.code-agent/` 상태·제출된 계획·원장 변조 | 같음 | 쓰기 전 | P1 ✅ |
 | **작업도 세션도 없을 때 언제나 지키는 넷** (`decideOutside`) — `.code-agent/` 쓰기(대소문자 무시) · `doc/work/<아무 ID>/requirement.md` 쓰기 · `~/.code-agent/`(키 자리) 읽기·쓰기 · `.code-agent` 나 `~/.code-agent` 를 **가리키는** Bash(명령 이름 `code-agent` 는 걸리지 않는다). 그 밖의 세션 밖 도구 호출은 판정하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다. 이 틈을 열어 두면 세션이 열리기 **직전**에 모델이 지시서와 확정 원장을 손으로 써 넣고 사람의 확정 없이 `start` 를 지난다 | PreToolUse hook (`decideOutside`) | 쓰기 · 실행 · 읽기 전 | ✅ |
 | 쓰기 경로에 `:` 가 들어 있으면 거부 — **모든 모드에서**. Windows 의 대체 데이터 스트림 표기(`requirement.md::$DATA`)는 같은 파일을 가리키는데, 아직 없는 파일이면 실제 경로로 풀리지 않아 이름 대조를 비껴간다 | PreToolUse hook (`streamGuard`) | 쓰기 전 | ✅ |
-| **진행 중인 작업이나 문서·접수 세션이 있을 때만** — Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰므로 거부). **단 문서 세션·접수 세션에서는 선언한 명령을 열지 않는다** (`decideBash` 의 `documenting`) — 문서 세션은 모델이 `code-agent.json` 을 쓸 수 있는 유일한 자리라 허용 목록을 제 손으로 넓히는 길이 되고, 접수는 돌릴 코드가 아직 없는 자리다. 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부. **세션 밖에서는 허용 목록을 걸지 않지만**, `.code-agent`·`~/.code-agent` 를 가리키는 명령만은 거기서도 거부한다(위 `decideOutside`) | 같음 | 실행 전 | P1 ✅ · P4 ✅ · 접수 ✅ |
+| **진행 중인 작업이나 문서·접수 세션이 있을 때만** — Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰고 `--no-index` 는 저장소 밖 파일을 읽으므로 거부). 연결·리다이렉트와 줄바꿈(CR·LF)은 거부하고, PowerShell(Windows 의 Codex 셸 포함)은 인자 자리를 먼저 평가하므로 작은따옴표 밖의 `( ) { } @ $` 도 거부한다. **단 문서 세션·접수 세션에서는 선언한 명령을 열지 않는다** (`decideBash` 의 `documenting`) — 문서 세션은 모델이 `code-agent.json` 을 쓸 수 있는 유일한 자리라 허용 목록을 제 손으로 넓히는 길이 되고, 접수는 돌릴 코드가 아직 없는 자리다. 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부. **세션 밖에서는 허용 목록을 걸지 않지만**, `.code-agent`·`~/.code-agent` 를 가리키는 명령만은 거기서도 거부한다(위 `decideOutside`) | 같음 | 실행 전 | P1 ✅ · P4 ✅ · 접수 ✅ |
 | 답 없는 질문이 있으면 진행 금지 | `code-agent next` · `plan submit` · `repro` · `check` · `test` · `review` · `integrate` (`requireAnswers`) · `deliver` (`deliverProblems`) | 스테이지 전환 · 검증 · 반영 | P3 ✅ |
 | 단계의 계획 파일이 실제로 생겼는지 확인해야 다음 단계 | `code-agent next` (`missingPlannedFiles`) | 스테이지 전환 | P3 ✅ |
 | 승인·확정은 사람만 | 같은 세션의 consent 질문·응답 관찰과 스냅샷 검사. 직접 `approve`·`reject`·`confirm` 실행은 TTY 검사 | 승인 시 | 구현됨 |
@@ -775,7 +796,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(consents 제외)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다.
 
-준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정, 해당 action의 플러그인 저장소·업데이트 소스 해시를 보관한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
+준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시를 보관한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
 
 ## 10. core 재사용
 

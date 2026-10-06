@@ -219,8 +219,9 @@ function ledgerLines(repoRoot: string, id: string): string[] {
   if (!existsSync(path)) {
     return [];
   }
+  // autocrlf 체크아웃이 붙인 CR 은 쓰인 바이트가 아니다 — 원장은 LF 로만 쓴다
   return readFileSync(path, "utf-8")
-    .split("\n")
+    .split(/\r?\n/)
     .filter((line) => line.trim() !== "");
 }
 

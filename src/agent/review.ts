@@ -10,6 +10,7 @@ import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
 import { callSlot, clamp } from "./plugins/run";
 import { Stop } from "./stop";
 import type { Work } from "./work";
+import { selectedHosts } from "./hosts";
 
 /**
  * ⑨ 09-review.md — 9 코드 리뷰.
@@ -37,6 +38,8 @@ export interface ReviewRound {
   planHash: string;
   manifestHash: string;
   reviewer?: { sessionId: string; agentId: string; startedAt: string; completedAt?: string; result?: string };
+  /** 두 호스트가 설치된 프로젝트의 교차 리뷰 — 다른 호스트를 CLI 가 직접 실행해 같은 트리를 독립 검토한 결과 */
+  cross?: { host: string; model: string; startedAt: string; completedAt?: string; result?: string; error?: string };
 }
 
 /** 동결을 실제로 푼 지적 — **코드가** 적는다. 쓴 뒤 그 줄을 지워도 게이트가 남는다 */
@@ -109,14 +112,14 @@ export interface Finding {
  * **범위는 모델이 적은 것을 믿지 않는다.** 계획 파일 목록과 대조해 코드가 정하고, 모델이 다르게
  * 적었으면 그것도 문제로 올린다 (사람이 읽는 문서가 사실과 달라지면 안 된다).
  */
-export function parseFindings(text: string, planned: string[]): Finding[] {
+export function parseFindings(text: string, planned: string[], idPattern: RegExp = /^F\d+$/): Finding[] {
   const allowed = new Set(planned);
   return stripBlock(text, REVIEW_BLOCK)
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.startsWith("|"))
     .map((line) => line.split("|").slice(1).map((cell) => cell.trim()))
-    .filter((cells) => cells.length >= 4 && /^F\d+$/.test(cells[0]))
+    .filter((cells) => cells.length >= 4 && idPattern.test(cells[0]))
     .map((cells) => ({
       id: cells[0],
       path: cells[1],
@@ -127,11 +130,14 @@ export function parseFindings(text: string, planned: string[]): Finding[] {
 }
 
 const FINDINGS_HEADING = "지적";
+/** 교차 리뷰의 지적 절 — id 는 X<번호> */
+export const CROSS_HEADING = "교차 지적";
+export const CROSS_ID = /^X\d+$/;
 
-/** `## 지적` 절의 본문 — 다음 `##` 까지. 절이 없으면 undefined */
-export function findingsBody(text: string): string | undefined {
+/** `## 지적`(또는 지정한 절)의 본문 — 다음 `##` 까지. 절이 없으면 undefined */
+export function findingsBody(text: string, heading: string = FINDINGS_HEADING): string | undefined {
   const lines = stripBlock(text, REVIEW_BLOCK).split("\n");
-  const from = lines.findIndex((line) => new RegExp(`^##\\s*${FINDINGS_HEADING}\\s*$`).test(line.trim()));
+  const from = lines.findIndex((line) => new RegExp(`^##\\s*${heading}\\s*$`).test(line.trim()));
   if (from < 0) {
     return undefined;
   }
@@ -146,6 +152,17 @@ export function normalizeFindings(text: string): string {
 function observedFindings(last: ReviewRound, text: string): boolean {
   return !!last.reviewer?.completedAt && last.reviewer.result !== undefined &&
     normalizeFindings(findingsBody(text) ?? "") === normalizeFindings(last.reviewer.result);
+}
+
+/** 교차 리뷰 결과가 문서의 `## 교차 지적` 절과 같은가 */
+function observedCross(last: ReviewRound, text: string): boolean {
+  return !!last.cross?.completedAt && last.cross.result !== undefined &&
+    normalizeFindings(findingsBody(text, CROSS_HEADING) ?? "") === normalizeFindings(last.cross.result);
+}
+
+/** 두 호스트가 설치돼 있으면 교차 검증이 필수다 */
+export function crossRequired(repoRoot: string): boolean {
+  return selectedHosts(repoRoot).length > 1;
 }
 
 /**
@@ -326,10 +343,11 @@ export function findingOpensFile(work: Work, path: string): boolean {
   if (last.baseCommit !== active.baseCommit || last.planHash !== hashPlan(work.plan!) ||
       last.manifestHash !== hashManifest(work.manifest)) return false;
   const text = readFileSync(full, "utf-8");
-  if (!observedFindings(last, text)) return false;
+  const primary = observedFindings(last, text), cross = observedCross(last, text);
+  if (!primary && !cross) return false;
   // 리뷰 뒤 구현 파일을 먼저 고칠 수 있다. 지적은 이 계획·회차의 수정 권한이며,
   // 완료 게이트는 모든 수정 후 새 트리에서 독립 재검토를 요구한다.
-  const finding = parseFindings(text, planPaths(work)).find(
+  const finding = [...(primary ? parseFindings(text, planPaths(work)) : []), ...(cross ? parseFindings(text, planPaths(work), CROSS_ID) : [])].find(
     (candidate) => candidate.path === path && candidate.scope === "계획 안" && candidate.written === candidate.scope && candidate.status === FINDING_OPEN,
   );
   if (!finding) {
@@ -389,8 +407,15 @@ export function reviewProblems(work: Work): string[] {
     problems.push(`${path} 의 회차 구역이 기록과 다릅니다 — code-agent review 가 렌더하는 자리입니다`);
   }
 
-  const findings = parseFindings(text, planPaths(work));
-  problems.push(...findingsSectionProblems(path, text, findings));
+  if (crossRequired(repoRoot)) {
+    if (!last.cross?.completedAt) {
+      problems.push(`두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by <다른 호스트>${last.cross?.error ? ` (직전 실행: ${last.cross.error})` : ""}`);
+    } else if (!observedCross(last, text)) {
+      problems.push(`리뷰 문서의 ## ${CROSS_HEADING} 이 기록된 교차 리뷰 결과와 다릅니다 — 임의로 바꾸지 말고 다시 교차 리뷰하세요.`);
+    }
+  }
+  const findings = [...parseFindings(text, planPaths(work)), ...(crossRequired(repoRoot) ? parseFindings(text, planPaths(work), CROSS_ID) : [])];
+  problems.push(...findingsSectionProblems(path, text, findings.filter((finding) => !CROSS_ID.test(finding.id))));
   const open = findings.filter((finding) => !isClosed(finding.status));
   if (open.length > 0) {
     problems.push(`열린 지적: ${open.map((finding) => `${finding.id}(${finding.path})`).join(", ")} — 고치고 상태를 ${FINDING_CLOSED} 로 바꾸세요`);

@@ -245,7 +245,9 @@ export function updateFromSource(repoRoot: string, options: SourceUpdateOptions 
     const cli = join(source, "dist", "agent", "cli.js");
     if (!existsSync(cli)) throw new Stop(`빌드된 CLI가 없습니다: ${cli}`);
     stage = "새 CLI 템플릿 적용";
-    output.push(run(process.execPath, [cli, "update", "--templates-only", "--cli", options.cli ? resolve(initial.target, options.cli) : cli, ...(options.host ? ["--host", options.host] : [])], initial.target, stage));
+    // 훅 명령은 지정했을 때만 바꾼다. 지정이 없으면 update 가 설치된 꼴(`code-agent …` 또는 `node "<경로>" …`)을
+    // 그대로 잇는다 — 새로 빌드한 절대 경로를 박으면 공유 커밋된 설정이 다른 PC 에서 시작조차 못 해 게이트가 꺼진다.
+    output.push(run(process.execPath, [cli, "update", "--templates-only", ...(options.cli ? ["--cli", resolve(initial.target, options.cli)] : []), ...(options.host ? ["--host", options.host] : [])], initial.target, stage));
     stage = "doctor (템플릿 적용 완료 후 점검)";
     output.push(run(process.execPath, [cli, "doctor", ...(options.host ? ["--host", options.host] : [])], initial.target, stage));
     output.push(`소스 업데이트 완료: ${initial.head} → ${git(source, ["rev-parse", "HEAD"])}`);

@@ -43,6 +43,7 @@ const MANIFEST: Manifest = {
   domainRoots: [],
   conventions: [],
   fixRounds: 2,
+  commandTimeoutMinutes: 10,
   plugins: {},
   commands: {},
   docs: {},

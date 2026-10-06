@@ -128,6 +128,15 @@ describe("보존 대상은 코드가 막는다", () => {
     assert.match(violation.detail, /app\/features\/settlement/);
   });
 
+  test("테스트 단계 파일은 scope 상한을 받지 않지만 단계 위치와 보존 대상은 그대로 지킨다", () => {
+    const run = (path: string, stage: StageDef = { ...STAGE, kind: "test", scope: "project", outputDirs: ["tests"] }) =>
+      checkPaths({ repoRoot: repo, order: ORDER, manifest: MANIFEST, plan: PLAN, stage, files: [{ path, content: "" }] });
+    assert.deepEqual(run("tests/settlement/test_repro.py"), [], "fix 의 재현 테스트를 scope 에 적지 않아도 계획할 수 있다");
+    assert.equal(run("app/common/test_tx.py")[0].item, "do-not-touch 경계", "테스트 단계 위치 밖은 그대로 막는다");
+    assert.equal(run("app/features/settlement/facade.py", { ...STAGE, kind: "test" as const })[0].item, "보존 대상");
+    assert.equal(check("tests/settlement/test_repro.py")[0].item, "지시서 scope 밖", "제품 코드 단계는 그대로 scope 를 받는다");
+  });
+
   test("scope 안의 보존 대상 아닌 파일은 통과시킨다", () => {
     assert.deepEqual(check("app/features/settlement/service.py"), []);
   });

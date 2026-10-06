@@ -232,7 +232,9 @@ test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결�
   // Codex는 exit 2로 도구를 막지 않는다. 판정 실패는 거부 응답으로 닫는다.
   assert.match(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"apply_patch",tool_input:{command:"broken"}}).hookSpecificOutput.permissionDecisionReason,/판정에 실패해 막았습니다.*패치/);
   writeFixture(root,".code-agent/active.json","{broken");
-  assert.equal(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:"code-agent status"}}).hookSpecificOutput.permissionDecision,"deny");
+  // 상태를 못 읽으면 고치고 확인하는 길만 연다 — 나머지 셸 명령은 원인과 함께 거부한다
+  assert.match(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:"git status"}}).hookSpecificOutput.permissionDecisionReason,/상태·설정을 읽지 못했습니다/);
+  assert.deepEqual(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:"code-agent status"}}),{});
   // Claude matcher 밖의 도구는 판정하지 않으므로 상태 오류로 막히지 않는다.
   assert.deepEqual(output({cwd:root,hook_event_name:"PreToolUse",tool_name:"spawn_agent",tool_input:{agent_type:"ca_analyst"}}),{});
   const stopped = run({cwd:root,hook_event_name:"Stop"});

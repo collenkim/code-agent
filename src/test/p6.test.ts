@@ -1162,7 +1162,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     write("doc/knowledge/selected.md", "selected\n"); write("doc/knowledge/unrelated.md", "unrelated\n");
     write("doc/work/OTHER/raw.md", "other work\n"); write(".code-agent/work/OTHER/evidence.json", "{}\n");
     write("unrelated.txt", "already staged\n"); git("add", "unrelated.txt");
-    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, ["doc/knowledge/selected.md"]);
+    const { commit } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, ["doc/knowledge/selected.md"]);
     const files = git("show", "--name-only", "--format=", commit);
     for (const file of [FEAT_SRC, prDocFile("ORD-9"), "doc/knowledge/selected.md", ".code-agent/work/ORD-9/greeting.verify.json"]) assert.ok(files.includes(file));
     assert.doesNotMatch(files, /OTHER|unrelated/);
@@ -1198,7 +1198,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     write("unrelated.txt", "상관없는 파일\n");
 
     const work = loadWork(repo)!;
-    const commit = commitDelivery(work, loadEvidence(repo, "ORD-9", "greeting")!, []);
+    const { commit } = commitDelivery(work, loadEvidence(repo, "ORD-9", "greeting")!, []);
     const files = git("show", "--name-only", "--format=", commit).split("\n").map((line) => line.trim()).filter(Boolean);
 
     assert.equal(files.includes(".code-agent/work/OTHER-1/x.verify.json"), false);
@@ -1219,7 +1219,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     write(prDocFile("ORD-9"),
       ["# ORD-9 변경 보고서", "", "## 요약", "인사 함수를 더했다.", "", "## 확인 방법", "greet 를 부른다.", "", "## 위험·되돌리기", "없음.", ""].join("\n"));
 
-    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, []);
+    const { commit } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, []);
     const files = git("show", "--name-only", "--format=", commit).split("\n").map((line) => line.trim()).filter(Boolean);
     for (const expected of [
       FEAT_SRC,
@@ -1250,7 +1250,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     write(".code-agent/work/OTHER-1/x.verify.json", "{}\n");
     git("add", "--", "unrelated.txt", ".code-agent/work/OTHER-1/x.verify.json");
 
-    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, []);
+    const { commit } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, []);
     const files = git("show", "--name-only", "--format=", commit).split("\n").map((line) => line.trim()).filter(Boolean);
     assert.equal(files.includes("unrelated.txt"), false);
     assert.equal(files.includes(".code-agent/work/OTHER-1/x.verify.json"), false);
@@ -1269,7 +1269,7 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
 
     // 판정 스냅샷 디렉토리가 없는 상태 · 아직 쓰이지 않은 KNOWLEDGE 경로
     rmSync(join(repo, ".code-agent/approvals/ORD-9"), { recursive: true, force: true });
-    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, ["doc/knowledge/없는-파일.md"]);
+    const { commit } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, ["doc/knowledge/없는-파일.md"]);
     assert.equal(commit.length, 40);
   });
 

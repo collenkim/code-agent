@@ -18,6 +18,18 @@ export interface ReviewHookInput {
   transcript_path?: string;
   agent_transcript_path?: string;
   last_assistant_message?: string;
+  stop_hook_active?: boolean;
+}
+
+/** 결과까지 기록한 뒤의 실패 — 담당이 다시 멈춰도 바뀌는 것이 없다 */
+export class RecordedFailure extends Error {}
+
+/**
+ * SubagentStop 의 exit 2 는 담당을 멈추지 못하게 하고 이어서 일하게 한다. 담당이 고칠 수 있는 실패(형식·식별 오류)만
+ * 한 번 돌려보내고, 기록이 끝난 실패나 이미 한 번 막힌 재시도(stop_hook_active)는 기록만 남겨 무한 반복을 막는다.
+ */
+export function subagentExitCode(input: ReviewHookInput | undefined, error: unknown): number {
+  return input?.hook_event_name === "SubagentStop" && (error instanceof RecordedFailure || input.stop_hook_active === true) ? 0 : 2;
 }
 
 /** Runtime lifecycle events are the trust boundary; this command is not model-callable. */
@@ -41,9 +53,10 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string): vo
     return;
   }
   const observer = last.reviewer;
-  if (!observer || observer.sessionId !== input.session_id || observer.agentId !== input.agent_id || observer.completedAt) {
+  if (!observer || observer.sessionId !== input.session_id || observer.agentId !== input.agent_id) {
     throw new Error("이 회차에서 시작한 리뷰어의 완료 이벤트가 아닙니다.");
   }
+  if (observer.completedAt) throw new RecordedFailure("이 리뷰어의 결과는 이미 기록했습니다.");
   let result = input.last_assistant_message ?? "";
   // New Claude versions can return the report via SubagentHandback rather than final text.
   if (input.agent_transcript_path) {
@@ -73,17 +86,19 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string): vo
   saveReview(repoRoot, log);
   const path = join(repoRoot, reviewDocFile(work.active.id));
   const text = stripBlock(readFileSync(path, "utf-8"), REVIEW_BLOCK);
-  if (!/^## 지적\s*$/m.test(text)) throw new Error("리뷰 문서의 ## 지적 절이 없습니다.");
+  if (!/^## 지적\s*$/m.test(text)) throw new RecordedFailure("리뷰 문서의 ## 지적 절이 없습니다.");
   const rendered = text.replace(/(^## 지적[^\S\n]*\n)[\s\S]*?(?=^## |$(?![\s\S]))/m, (_, heading: string) => `${heading}\n${body}\n\n`);
   writeAtomic(path, upsertBlock(rendered, REVIEW_BLOCK, renderRoundsBlock(log)));
 }
 
 export function runReviewHook(stdin: string): number {
+  let input: ReviewHookInput | undefined;
   try {
-    observeReviewer(JSON.parse(stdin), process.env.CLAUDE_PROJECT_DIR);
+    input = JSON.parse(stdin) as ReviewHookInput;
+    observeReviewer(input, process.env.CLAUDE_PROJECT_DIR);
     return 0;
   } catch (error) {
     process.stderr.write(`code-agent review-event: ${error instanceof Error ? error.message : error}\n`);
-    return 2;
+    return subagentExitCode(input, error);
   }
 }

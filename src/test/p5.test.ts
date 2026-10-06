@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -11,18 +11,19 @@ import { loadManifest } from "../core/manifest";
 import { abort, back, context, next, requireValidatable, status, Stop, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
 import { commitDelivery, deliver, deliverProblems, prDocFile, traceRows } from "../agent/deliver";
-import { loadEvidence, outsideChanges, overFixLimit, runsOf, validationDocFile } from "../agent/evidence";
+import { loadEvidence, outsideChanges, overFixLimit, runsOf, saveEvidence, validationDocFile } from "../agent/evidence";
 import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
-import { observeReviewer } from "../agent/reviewHook";
+import { observeReviewer, runReviewHook } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
 import { check, integrate, runTests } from "../agent/validate";
 import { verify, verificationFlowFile } from "../agent/verificationFlow";
+import { crossReview } from "../agent/crossCheck";
 import type { VerificationHistory } from "../agent/verificationFlow";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
@@ -396,6 +397,21 @@ describe("검증 workflow 노드", () => {
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
   });
 
+  test("H8: 실행 기록 없이 끊긴 회차는 계획 파일이 그대로면 같은 회차로 다시 돈다 — 한도만 줄지 않는다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    const before = loadEvidence(repo, "ORD-1", "order")!;
+    // 도구 타임아웃으로 check 가 회차만 올리고 끊긴 자리
+    saveEvidence(repo, { ...before, rounds: before.rounds + 1 });
+    await check(requireValidatable(repo, "check"));
+    const after = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(after.rounds, before.rounds + 1);
+    assert.ok(runsOf(after, "check").some((run) => run.round === after.rounds));
+    // 기록이 남은 회차 뒤의 재실행은 새 회차다
+    await check(requireValidatable(repo, "check"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, before.rounds + 2);
+  });
+
   test("계획 밖 변경과 오래된 승인을 자동 실행기로 우회하지 못한다", async () => {
     toCheck();
     write("outside.txt", "unexpected");
@@ -437,14 +453,20 @@ describe("검증 workflow 노드", () => {
     assert.match(invalid.stderr, /사용법/);
   });
 
-  test("check 실행 도중 중단된 회차를 되돌리지 않고 다시 실행한다", async () => {
+  test("check 실행 도중 중단된 회차 — 코드가 그대로면 그 회차를 다시 쓰고, 고쳤으면 새 회차로 센다", async () => {
     toCheck();
     await check(requireValidatable(repo, "check"));
     const evidence = loadEvidence(repo, "ORD-1", "order")!;
     evidence.rounds += 1; // 다음 check가 회차를 저장한 직후, 실행 결과를 남기기 전의 상태
     writeFileSync(verifyFile(repo, "ORD-1", "order"), JSON.stringify(evidence));
     assert.equal((await verify(repo)).node, "review");
-    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 3);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2, "끊긴 회차는 되돌리지도 늘리지도 않고 다시 쓴다");
+    // 끊긴 뒤 코드를 고쳤으면 새 회차다 — 끊어서 카운터를 피하는 길이 없다
+    const interrupted = loadEvidence(repo, "ORD-1", "order")!;
+    writeFileSync(verifyFile(repo, "ORD-1", "order"), JSON.stringify({ ...interrupted, rounds: interrupted.rounds + 1 }));
+    write(`${ORDER}/domain/Order.java`, "package x; class Order { int v = 2; }\n");
+    await check(requireValidatable(repo, "check"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 4);
   });
 
   test("명령 미선언은 진단 요청이며 테스트 통과로 처리하지 않는다", async () => {
@@ -513,6 +535,23 @@ describe("changedPaths · partialTreeHash", () => {
     assert.equal(changes.get("new.txt"), "A");
     assert.equal(changes.has("b.txt"), false);
     assert.equal(changes.has("build/artifact.jar"), false);
+  });
+
+  test("core.quotePath 기본값에서도 한글·공백 경로를 원문 그대로 잡는다", () => {
+    git("config", "core.quotePath", "true");
+    write("문서/기존 안내.md", "a\n");
+    write("문서/옛 이름.md", "same\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const base = commitOf(repo, "HEAD")!;
+    write("문서/기존 안내.md", "changed\n");
+    git("mv", "문서/옛 이름.md", "문서/새 이름.md");
+    write("문서/새 파일.md", "new\n");
+    const changes = new Map(changedPaths(repo, base).map((change) => [change.path, change.status]));
+    assert.equal(changes.get("문서/기존 안내.md"), "M");
+    assert.equal(changes.get("문서/옛 이름.md"), "D");
+    assert.equal(changes.get("문서/새 이름.md"), "R");
+    assert.equal(changes.get("문서/새 파일.md"), "A");
   });
 
   test("계획 파일이 한 글자 바뀌거나 사라지면 부분 트리 해시가 달라진다", () => {
@@ -1027,6 +1066,26 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     assert.throws(() => next(repo), /관찰된 ca-reviewer 결과와 다릅니다/);
   });
 
+  test("리뷰어 완료 hook은 형식 오류만 한 번 돌려보내고, 기록이 끝났거나 이미 막힌 재시도는 막지 않는다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
+    const stop = (message: string, extra = {}) => runReviewHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", last_assistant_message: message, ...extra }));
+    const saved = process.env.CLAUDE_PROJECT_DIR, quiet = process.stderr.write;
+    process.env.CLAUDE_PROJECT_DIR = repo; process.stderr.write = (() => true) as typeof process.stderr.write;
+    try {
+      observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+      assert.equal(stop("검토 완료"), 2, "리뷰어가 지적 표로 다시 낼 수 있다");
+      assert.equal(stop("검토 완료", { stop_hook_active: true }), 0);
+      assert.equal(stop("- 없음"), 0);
+      assert.equal(stop("- 없음"), 0, "이미 기록한 결과의 완료 이벤트가 반복돼도 막지 않는다");
+      assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewer!.result, "- 없음");
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+      process.stderr.write = quiet;
+    }
+  });
+
   test("리뷰 중 바뀐 코드에는 완료 기록을 붙이지 않는다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
@@ -1158,6 +1217,23 @@ describe("code-agent integrate", () => {
     assert.equal(loadActive(repo)!.phase, "deliver");
   });
 
+  test("임시 worktree 를 지우지 못해도 끝난 결과는 남긴다 — 남은 프로세스가 디렉토리를 잡는 경우", async () => {
+    // test 명령이 worktree 를 작업 디렉토리로 잡은 자식을 남긴다(빌드 데몬 모사). Windows 는 그동안 지울 수 없다
+    const hold = "if(process.cwd().includes('code-agent-integrate-'))require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},6000)'],{detached:true,stdio:'ignore',windowsHide:true,cwd:process.cwd()}).unref();";
+    useManifest({ test: ["node", "-e", `${hold}console.log('ok 1 - TC-1\\nok 2 - TC-2')`] });
+    await toIntegrate();
+    const warnings: string[] = [], original = process.stderr.write;
+    process.stderr.write = ((chunk: string) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { await integrate(requireValidatable(repo, "integrate")); } finally { process.stderr.write = original; }
+    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "integrate").length, 2, "정리 실패가 build·test 결과를 지우지 않는다");
+    const left = /: (.+?code-agent-integrate-\w+) \(/.exec(warnings.join(""))?.[1];
+    if (process.platform === "win32") assert.ok(left, "잡힌 디렉토리는 경고로 알린다");
+    for (let tries = 0; left; tries++) {
+      try { rmSync(left, { recursive: true, force: true }); break; }
+      catch (error) { if (tries > 60) throw error; await new Promise((done) => setTimeout(done, 250)); }
+    }
+  });
+
   test("리뷰가 지금 트리 위에서 닫혀 있지 않으면 돌리지 않는다", async () => {
     await toIntegrate();
     write(`${ORDER}/domain/Order.java`, "class Order { }\n");
@@ -1234,7 +1310,8 @@ describe("code-agent deliver", () => {
     assert.throws(() => deliver(requireValidatable(repo, "deliver")), /터미널/);
 
     write("unrelated.txt", "이 작업과 상관없는 파일\n");
-    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-1", "order")!, []);
+    const { commit, outside } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-1", "order")!, []);
+    assert.deepEqual(outside, []);
     const files = git("show", "--name-only", "--format=", commit).split("\n").map((line) => line.trim()).filter(Boolean);
     assert.ok(files.includes(`${ORDER}/domain/Order.java`));
     assert.ok(files.includes(validationDocFile("ORD-1")));
@@ -1246,6 +1323,19 @@ describe("code-agent deliver", () => {
     const message = git("log", "-1", "--format=%B");
     assert.match(message, /^\[ORD-1\] 주문 도메인 추가/);
     assert.match(message, /요구: R1, R2/);
+  });
+
+  test("저장소 pre-commit hook 이 커밋에 더한 목록 밖 파일을 드러낸다", async () => {
+    await toDeliver();
+    writePr();
+    write("audit/turns.md", "기존 감사 기록\n");
+    git("add", "audit/turns.md"); git("commit", "-qm", "audit");
+    // 다른 도구의 hook 처럼 커밋마다 추적 중인 감사 파일을 고쳐 임시 index 에 올린다
+    write(".git/hooks/pre-commit", "#!/bin/sh\necho turn >> audit/turns.md\ngit add audit/turns.md\n");
+    chmodSync(join(repo, ".git/hooks/pre-commit"), 0o755);
+    const { commit, outside } = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-1", "order")!, []);
+    assert.deepEqual(outside, ["audit/turns.md"]);
+    assert.ok(git("show", "--name-only", "--format=", commit).includes("audit/turns.md"));
   });
 
   test("next 는 반영을 끝내지 않는다 — 사람의 자리로 넘긴다", async () => {
@@ -1774,5 +1864,40 @@ describe("code-agent back", () => {
     assert.equal(approvalOf(loadWork(repo)!).status, "approved", "같은 문서 위의 같은 계획은 해시가 같다");
     next(repo);
     assert.equal(loadActive(repo)!.phase, "implement");
+  });
+});
+
+describe("교차 리뷰 — 두 호스트 설치", () => {
+  test("리뷰 게이트가 다른 호스트의 교차 리뷰를 요구하고, 열린 교차 지적·위조된 절을 막는다", async () => {
+    await toReview();
+    write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
+    openRound(requireValidatable(repo, "review"));
+    const doc = join(repo, reviewDocFile("ORD-1"));
+    writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
+    recordReviewFixture(repo, "claude", { cross: false });
+    assert.throws(() => next(repo), /교차 리뷰가 필요합니다/);
+    const fake = mkdtempSync(join(tmpdir(), "ca-fake-codex-")), script = join(fake, "codex.cjs");
+    writeFileSync(script, "const a = process.argv; require('fs').writeFileSync(a[a.indexOf('-o') + 1], process.env.FAKE_CROSS);\n");
+    process.env.CODE_AGENT_CODEX_BIN = script;
+    try {
+      process.env.FAKE_CROSS = `| X1 | ${TEST_FILE} | 계획 안 | 열림 | TC-2 의 오류 경로 단언이 없다 |`;
+      assert.match(crossReview(repo, "codex"), /열린 지적 1개/);
+      assert.match(readFileSync(join(repo, reviewDocFile("ORD-1")), "utf-8"), /## 교차 지적[\s\S]*\| X1 \|/);
+      assert.throws(() => next(repo), /열린 지적: X1/);
+      process.env.FAKE_CROSS = "설명문만 있는 응답";
+      assert.throws(() => crossReview(repo, "codex"), /지적 표 또는/);
+      process.env.FAKE_CROSS = "- 없음";
+      crossReview(repo, "codex");
+      const path = join(repo, reviewDocFile("ORD-1"));
+      const recorded = readFileSync(path, "utf-8");
+      writeFileSync(path, recorded.replace(/(## 교차 지적[\s\S]*?)- 없음/, `$1| X9 | ${TEST_FILE} | 계획 안 | 해결 | 임의 기록 |`));
+      assert.throws(() => next(repo), /기록된 교차 리뷰 결과와 다릅니다/);
+      writeFileSync(path, recorded);
+      next(repo);
+      assert.equal(loadActive(repo)!.phase, "integrate");
+    } finally {
+      delete process.env.CODE_AGENT_CODEX_BIN; delete process.env.FAKE_CROSS;
+      rmSync(fake, { recursive: true, force: true });
+    }
   });
 });

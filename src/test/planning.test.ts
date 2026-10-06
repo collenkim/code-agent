@@ -8,6 +8,7 @@ import { start } from "./confirmedStart";
 import { next, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff } from "../agent/handoff";
+import { crossCritic } from "../agent/crossCheck";
 import { sessionAnchor } from "../agent/sessionHook";
 import { context } from "../agent/commands";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
@@ -17,7 +18,7 @@ import { cancelPlanning, dispatchPlanning, preparePlanning, planningStatus, adva
 import { codexHook } from "../agent/codexHook";
 import { hostAssets } from "../agent/hosts";
 import { readProjectFile } from "../agent/read";
-import { observePlanner } from "../agent/planningHook";
+import { observePlanner, runPlanningHook } from "../agent/planningHook";
 import { inputFiles, loadPlanning, planningProblems, taskHash, TaskSchema, ResultSchema, type PlanningResult } from "../agent/planningState";
 import { planningDocumentProblems } from "../agent/planningValidation";
 import { parseQuestions } from "../agent/questions";
@@ -493,6 +494,20 @@ test("병렬 배정 한도와 관련 질문에 따른 선택적 무효화", () =
   write(`${DIR}/questions.md`, "## Q9 결정\n바뀐 질문의 의미\n[Requirements]: R2\n[Answer]: 기존 반환 유지\n");
   assert.equal(dispatch("left").cached, true); assert.equal(dispatch("right").cached, false);
 });
+test("병렬 담당이 같은 Q 번호를 내도 버리지 않고 코드가 이어 붙인 번호로 기록한다", () => {
+  preparePlanning(root);
+  finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS + '\n## R2 · 다른 반환\n근거: "값을 반환한다."' }); next(root);
+  const base = { role: "explore", title: "영역", inputs: [SPEC], outputs: [], dependsOn: ["analysis"] };
+  preparePlanning(root, { tasks: [{ ...base, id: "left", requirements: ["R1"], scopes: ["src"] }, { ...base, id: "right", requirements: ["R2"], scopes: ["other"] }] });
+  const left = dispatch("left"), right = dispatch("right");
+  const ask = (requirement: string): Partial<PlanningResult> => ({ status: "needs-input", questions: [{ id: "Q1", question: `${requirement} 값은?`, requirements: [requirement] }] });
+  finish(left, {}, ask("R1"));
+  finish(right, {}, ask("R2"));
+  const body = readFileSync(join(root, DIR, "questions.md"), "utf8");
+  assert.deepEqual([...body.matchAll(/^## (Q\d+)/gm)].map((match) => match[1]), ["Q1", "Q2"]);
+  assert.equal(loadPlanning(loadWork(root)!).tasks.find((task) => task.task.id === "right")!.attempts.at(-1)!.result!.questions[0].id, "Q2", "결과의 번호도 문서와 같다");
+});
+
 test("관찰되지 않은 결과는 문서를 만들지 않으며 잘못된 출력 경로는 거부한다", () => {
   preparePlanning(root); const item = dispatch("analysis");
   observePlanner({ cwd: root, session_id: "forged", agent_id: "forged", agent_type: item.agent, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...item.resultShape, status: "completed", artifacts: [{ path: `${DIR}/01-requirements.md`, content: REQUIREMENTS }] }) });
@@ -597,6 +612,25 @@ test("배정 밖 staging 경로나 쓰지 않은 staging 문서는 완료로 받
   assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
 });
 
+test("완료 hook은 담당이 고칠 수 있는 실패만 한 번 돌려보내고, 기록이 끝난 실패와 이미 막힌 재시도는 막지 않는다", () => {
+  const item = advance().assignments[0], event = { cwd: root, session_id: "s", agent_id: "looping", agent_type: item.agent };
+  const report = { ...item.resultShape, status: "completed", summary: "확인", evidence: [{ path: SPEC, line: 1 }] };
+  const stop = (message: unknown, extra = {}) => runPlanningHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(message), ...extra }));
+  const saved = process.env.CLAUDE_PROJECT_DIR, quiet = process.stderr.write;
+  process.env.CLAUDE_PROJECT_DIR = root; process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    observePlanner({ ...event, hook_event_name: "SubagentStart" });
+    assert.equal(stop({ ...report, dispatchId: "other" }), 2, "배정 식별 오류는 담당이 고쳐 다시 보고할 수 있다");
+    assert.equal(stop({ ...report, dispatchId: "other" }, { stop_hook_active: true }), 0, "한 번 막힌 재시도는 놓아 준다");
+    assert.equal(stop(report), 0, "staging 이 없어 실패로 기록되면 담당이 다시 멈춰도 바뀌지 않는다");
+    assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "failed");
+    assert.equal(stop(report), 0, "이미 처리한 완료 이벤트가 반복되지 않는다");
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+    process.stderr.write = quiet;
+  }
+});
+
 test("context --file은 전문을 전달 파일로 두고 메인에게는 첫 줄과 경로만 준다", () => {
   const text = contextHandoff(root), file = `.code-agent/work/${ID}/handoff/context.md`;
   assert.equal(readFileSync(join(root, file), "utf8"), `${context(root)}\n`);
@@ -644,4 +678,36 @@ test("형식 교정은 원본의 staging 본문을 지우지 않고 새 배정�
 test("계획 단계가 아니면 staging은 닫힌다", () => {
   saveActive(root, { ...loadActive(root)!, phase: "implement" }, "next");
   assert.match(hook({ cwd: root, session_id: "s", agent_id: "implementer", tool_name: "Write", tool_input: { file_path: join(root, DIR, ".staging/x/01-requirements.md") } })!, /계획 단계/);
+});
+
+test("두 호스트가 설치되면 critic 뒤 다른 호스트의 교차 검토가 계획 제출 조건이고, 질문 번호는 코드가 매긴다", () => {
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  write(`${DIR}/questions.md`, "# 질문\n\n## Q4 · 기존\n앞선 질문\n[Answer]: 예\n");
+  throughDesign(); preparePlanning(root);
+  const planAndCritic = () => { finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }); finish(dispatch("critic")); };
+  planAndCritic();
+  assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토/);
+  const fake = mkdtempSync(join(tmpdir(), "ca-fake-claude-")), script = join(fake, "claude.cjs");
+  writeFileSync(script, "process.stdout.write(JSON.stringify({ result: process.env.FAKE_CROSS }));\n");
+  process.env.CODE_AGENT_CLAUDE_BIN = script;
+  const answer = (cross: unknown) => { process.env.FAKE_CROSS = JSON.stringify(cross); return crossCritic(root, "claude"); };
+  try {
+    assert.match(answer({ status: "completed", summary: "AC 하나가 TC에 걸리지 않는다", findings: [{ id: "C1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: SPEC, line: 1 } }] }), /차단 지적 1개/);
+    assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토: 차단 지적/);
+    assert.throws(() => answer({ status: "completed", summary: "x", findings: [{ id: "C1", severity: "advisory", detail: "x", source: { path: "../outside.md", line: 1 } }] }), /입력 밖/);
+    answer({ status: "completed", summary: "문제 없음", findings: [] });
+    assert.ok(!planningProblems(loadWork(root)!, "plan").some((problem) => /교차/.test(problem)));
+    assert.match(answer({ status: "needs-input", summary: "경계값 범위를 정해야 한다", questions: [{ id: "Q1", question: "경계값을 포함할까요?", requirements: ["R1"] }] }), /질문 1개/);
+    const questions = readFileSync(join(root, DIR, "questions.md"), "utf8");
+    assert.ok(questions.includes("## Q5 · 교차 계획 검토(claude)"), "기존 Q4 다음 번호를 코드가 매긴다");
+    assert.ok(planningProblems(loadWork(root)!, "plan").some((problem) => /질문에 답한 뒤/.test(problem)));
+    // R1 에 걸린 답은 R1 계획 작업과 critic 을 낡게 한다 — 교차 검토는 새 critic 뒤에만 다시 돈다
+    write(`${DIR}/questions.md`, questions.replace(/(## Q5[\s\S]*?\[Answer\]:)/, "$1 포함한다"));
+    assert.ok(planningProblems(loadWork(root)!, "plan").some((problem) => /critic: 현재 입력/.test(problem)));
+    assert.throws(() => answer({ status: "completed", summary: "x", findings: [] }), /critic 완료 결과가 먼저/);
+    assert.throws(() => crossCritic(root, "gemini"), /--by claude 또는 --by codex/);
+  } finally {
+    delete process.env.CODE_AGENT_CLAUDE_BIN; delete process.env.FAKE_CROSS;
+    rmSync(fake, { recursive: true, force: true });
+  }
 });

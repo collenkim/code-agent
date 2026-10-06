@@ -42,6 +42,7 @@ const MANIFEST: Manifest = {
   conventions: ["doc/conventions.md"],
   referenceDomain: "orders",
   fixRounds: 2,
+  commandTimeoutMinutes: 10,
   plugins: {},
   commands: {},
   docs: {},
@@ -451,6 +452,12 @@ describe("원장 사슬 — 나중에 고친 것이 드러난다", () => {
     assert.throws(() => ledger(), LedgerTamperError);
     // 읽기를 지나는 모든 길이 같은 예외를 밖으로 던진다 — 조용히 넘기는 자리가 없어야 한다.
     assert.throws(() => checkApproval(repo, ORDER, PLAN, TARGET), /나중에 고쳐졌습니다/);
+  });
+
+  test("autocrlf 체크아웃이 붙인 CR 은 고친 것이 아니다", () => {
+    twoDecisions();
+    writeFileSync(ledgerFile(), readFileSync(ledgerFile(), "utf-8").replace(/\n/g, "\r\n"), "utf-8");
+    assert.equal(ledger().length, 2);
   });
 
   test("손으로 승인 줄을 끼워 넣으면 드러난다", () => {

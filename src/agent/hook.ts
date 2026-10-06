@@ -1,12 +1,12 @@
 import { basename, isAbsolute, relative, resolve } from "path";
 
-import { existsSync } from "fs";
+import { existsSync, realpathSync } from "fs";
 import { join } from "path";
 
 import { hashPlan } from "../core/approval";
 import { loadPlanning, requiredOutputs, TASK_AGENTS } from "./planningState";
 import { checkPaths, unplannedFiles } from "../core/gate";
-import type { Manifest, StageDef } from "../core/manifest";
+import { MANIFEST_FILE, type Manifest, type StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
 import {
   fixLimit,
@@ -27,6 +27,7 @@ import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
 import { consentCommandGuard } from "./consent";
+import { mentionsAidlc } from "./aidlc";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -40,6 +41,8 @@ export interface HookInput {
   session_id?: string;
   /** 서브에이전트 안의 도구 호출에만 있다 — 메인과 계획 담당을 가른다 */
   agent_id?: string;
+  /** 명령을 실제로 해석하는 셸. Windows 의 Codex 셸 명령은 PowerShell 로 돈다 */
+  shell?: "powershell";
   tool_name: string;
   tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string };
 }
@@ -50,7 +53,22 @@ const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 const READ_TOOLS = ["Read", "Grep", "Glob"];
 
 /** 셸 연결·리다이렉트·치환. 허용 목록의 명령 뒤에 무엇이든 붙일 수 있게 되는 자리다 */
-const SHELL_META = /[;&|<>`\n]|\$\(/;
+const SHELL_META = /[;&|<>`\r\n]|\$\(/;
+
+/**
+ * PowerShell 은 인자 자리의 ( ) · @( ) · { } 와 $ 를 먼저 평가한다 — `git status (Remove-Item src)` 가 읽기용 git 으로 통과하면
+ * 괄호 안이 실행된다. 작은따옴표 안만 글자 그대로이고, 큰따옴표 안에서는 $ 가 여전히 펼쳐진다.
+ */
+function powershellMeta(command: string): boolean {
+  let quote: string | undefined;
+  for (const ch of command) {
+    if (quote === "'") { if (ch === "'") quote = undefined; continue; }
+    if (quote === '"') { if (ch === '"') quote = undefined; else if (ch === "$") return true; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if ("(){}@$".includes(ch)) return true;
+  }
+  return false;
+}
 
 const READONLY_GIT = /^git (status|diff|log|show)(\s|$)/;
 
@@ -59,6 +77,9 @@ const READONLY_GIT = /^git (status|diff|log|show)(\s|$)/;
  * 커밋된 내용을 바이트 그대로 아무 자리에 떨군다. 셸 메타 문자가 없어 SHELL_META 에도 걸리지 않는다.
  */
 const WRITES_FILE = /(^|\s)(-o|--output)(=|\s|$)/;
+
+/** `git diff --no-index` 는 저장소 밖 아무 파일이나 읽어 보여 준다 — 상대 경로로 키 자리를 가리켜도 지나간다 */
+const READS_OUTSIDE = /(^|\s)--no-index(=|\s|$)/;
 
 /**
  * 모델이 셸에서 직접 부를 수 있는 서브명령. 승인·반영·설정 변경은 아래 목록으로
@@ -75,7 +96,7 @@ const MODEL_SUBCOMMANDS = [
   "read",
   "status",
   "plan submit",
-  "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel",
+  "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel", "planning cross",
   "docs",
   "survey",
   "manifest check",
@@ -121,16 +142,33 @@ const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--v
  * 온다. 경로 비교는 구분자와 대소문자를 접어 본다 (Windows 는 둘 다 흔들린다).
  */
 function normalized(path: string): string {
-  return resolve(path).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  // `\\?\C:\…`·`\\?\UNC\…` 는 같은 파일의 긴 경로 표기다 — 접두를 걷고 견준다
+  const plain = path.replace(/^[\\/]{2}\?[\\/](UNC[\\/])?/i, (_, unc?: string) => (unc ? "//" : ""));
+  return resolve(plain).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
+
+/** 8.3 짧은 이름·링크·접합점은 실제 경로로 접는다. 없는 경로는 그대로 */
+function realOrSelf(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
+/** 키 파일 이름 — 경로를 어떻게 적든(상대·UNC 공유 등) 이 이름이면 키 자리다 */
+const STORE_FILE_NAME = /(^|[\\/])\.code-agent[\\/]+credentials\.json/i;
 
 function insideStore(target: string): boolean {
   if (target.trim() === "") {
     return false;
   }
-  const root = normalized(storeDir());
-  const path = normalized(target);
-  return path === root || path.startsWith(`${root}/`);
+  if (STORE_FILE_NAME.test(target)) {
+    return true;
+  }
+  const roots = [storeDir(), realOrSelf(storeDir())].map(normalized);
+  const paths = [target, realOrSelf(target)].map(normalized);
+  return paths.some((path) => roots.some((root) => path === root || path.startsWith(`${root}/`)));
 }
 
 const STORE_DENIED =
@@ -145,17 +183,23 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     const denied = consentCommandGuard(repoRoot, command, input.session_id);
     if (denied) return denied;
   }
-  const work = loadWork(repoRoot);
-  const documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
-  // 접수 세션 — 작업 커서가 생기기 전이다. 작업 · 문서 세션이 있으면 그쪽 규칙이 이긴다
-  const requesting = !work && !documenting ? loadRequestSession(repoRoot) : undefined;
+  let work: Work | undefined, documenting: boolean, requesting: RequestSession | undefined, manifest: Manifest | undefined;
+  try {
+    work = loadWork(repoRoot);
+    documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
+    // 접수 세션 — 작업 커서가 생기기 전이다. 작업 · 문서 세션이 있으면 그쪽 규칙이 이긴다
+    requesting = !work && !documenting ? loadRequestSession(repoRoot) : undefined;
+    manifest = work ? work.manifest : documenting || requesting ? loadManifestIfAny(repoRoot) : undefined;
+  } catch (error) {
+    return decideUnreadable(input, repoRoot, error);
+  }
   if (!work && !documenting && !requesting) {
     return decideOutside(input, repoRoot);
   }
-  const manifest = work ? work.manifest : loadManifestIfAny(repoRoot);
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     // 세션 동안에는 선언된 빌드·테스트 명령을 열지 않는다 — 돌릴 코드가 아직 없는 자리다
-    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting || requesting !== undefined);
+    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting || requesting !== undefined,
+      input.tool_name === "PowerShell" || input.shell === "powershell");
   }
   // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
   if (READ_TOOLS.includes(input.tool_name)) {
@@ -176,6 +220,27 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     return planner === undefined ? decideWrite(work, path) : planner || undefined;
   }
   return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(manifest, path);
+}
+
+/**
+ * 상태·설정을 읽지 못했을 때. 모든 도구를 막으면 고칠 길까지 막힌다 — 문서 세션에서 잘못 쓴 code-agent.json
+ * 하나가 Read 와 그 파일을 고칠 Edit 까지 막았다. 읽기, code-agent.json 고치기, 고친 것을 확인하는 명령만 열고
+ * 나머지는 원인과 함께 막는다. 상태 원장(.code-agent/)과 지시서는 여기서도 쓰지 못한다.
+ */
+function decideUnreadable(input: HookInput, repoRoot: string, error: unknown): string | undefined {
+  const reason = `code-agent 상태·설정을 읽지 못했습니다: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}` +
+    ` — Read 로 원인을 확인하고 Write/Edit 로 ${MANIFEST_FILE} 을 고친 뒤 code-agent manifest check 로 확인하세요.`;
+  if (READ_TOOLS.includes(input.tool_name)) {
+    return insideStore(input.tool_input.file_path ?? input.tool_input.path ?? "") ? STORE_DENIED : undefined;
+  }
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
+    return /^code-agent (?:manifest check|status|help)$/.test((input.tool_input.command ?? "").trim()) ? undefined : reason;
+  }
+  if (!WRITE_TOOLS.includes(input.tool_name)) {
+    return undefined;
+  }
+  const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
+  return repoPath(repoRoot, target) === MANIFEST_FILE ? undefined : reason;
 }
 
 /**
@@ -316,12 +381,16 @@ const STORE_MARKERS = [
 
 function mentionsStore(command: string): boolean {
   const text = command.replace(/\\/g, "/").toLowerCase();
-  return text.includes(normalized(storeDir())) || STORE_MARKERS.some((marker) => text.includes(marker));
+  return text.includes(normalized(storeDir())) || STORE_MARKERS.some((marker) => text.includes(marker)) || STORE_FILE_NAME.test(command);
 }
 
-function decideBash(manifest: Manifest | undefined, command: string, documenting: boolean): string | undefined {
+function decideBash(manifest: Manifest | undefined, command: string, documenting: boolean, powershell = false): string | undefined {
   if (mentionsStore(command)) {
     return STORE_DENIED;
+  }
+  if (mentionsAidlc(command)) {
+    return "code-agent 작업·세션이 진행 중이라 AWS AI-DLC 를 실행하지 않습니다 — 두 워크플로를 동시에 진행하지 않습니다. " +
+      "현재 작업을 반영(deliver)하거나 ca-answer의 abort 동의로 끝낸 뒤 사용하세요.";
   }
   // 문서 세션에서는 **선언된 명령을 열지 않는다.** 그 세션은 `code-agent.json` 을 쓸 수 있는
   // 유일한 자리라(`decideDocWrite`), 허용 목록을 모델이 제 손으로 넓히고 그것을 그대로 돌리는
@@ -333,10 +402,10 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
         .map((argv) => argv.join(" "));
 
   const allowed =
-    !SHELL_META.test(command) &&
+    !SHELL_META.test(command) && !(powershell && powershellMeta(command)) &&
     (isModelCommand(command) ||
       declared.includes(command) ||
-      (!WRITES_FILE.test(command) && (READONLY_GIT.test(command) || READONLY_BRANCH.test(command))));
+      (!WRITES_FILE.test(command) && !READS_OUTSIDE.test(command) && (READONLY_GIT.test(command) || READONLY_BRANCH.test(command))));
   if (allowed) {
     return undefined;
   }
@@ -344,7 +413,8 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
     `작업 중에는 Bash 로 code-agent 명령(${MODEL_SUBCOMMANDS.join(" · ")}), 선언된 명령` +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
     ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
-    "연결·리다이렉트(; && | >)는 안 됩니다. init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
+    "연결·리다이렉트(; && | >)와 줄바꿈(CR·LF)은 안 됩니다" + (powershell ? ", PowerShell 에서는 작은따옴표 밖의 ( ) { } @ $ 도 안 됩니다(경로는 작은따옴표로 감싸세요)" : "") + ". " +
+    "init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
     "직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );

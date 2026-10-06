@@ -22,6 +22,7 @@ import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
 import { hostAssets, HostSelection, selectedHosts } from "./hosts";
+import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
  * `code-agent doctor` — 설치와 환경을 한 화면에서 본다.
@@ -285,10 +286,14 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
     add("·", "매니페스트", `${MANIFEST_FILE} 이 없습니다 — 아직 도입 전입니다 (/ca-adopt)`);
   }
 
-  // 9. 공통 POLICY 4종
-  for (const doc of checkProjectDocs(repoRoot, manifest)) {
-    if (doc.ok) add("✓", doc.label, "확정됨");
-    else add("✗", doc.label, doc.state, doc.problem);
+  // 9. 공통 POLICY 4종 — 확정 원장이 깨져 있어도 진단은 끝까지 낸다
+  try {
+    for (const doc of checkProjectDocs(repoRoot, manifest)) {
+      if (doc.ok) add("✓", doc.label, "확정됨");
+      else add("✗", doc.label, doc.state, doc.problem);
+    }
+  } catch (error) {
+    add("✗", "공통 문서 확정", (error instanceof Error ? error.message : String(error)).split("\n")[0], "원장 파일의 변경 이력(git log)을 확인하세요");
   }
 
   // 10. 사용자 키 파일 — 등록된 플러그인의 키가 사는 자리
@@ -311,6 +316,10 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
       "Claude는 선택 도구, Codex는 ca-answer가 안내한 사용자 메시지를 훅으로 관찰합니다.",
     );
   }
+
+  // AI-DLC 공존 — 설치 문제는 아니라 실패로 세지 않는다. 진행 중이면 code-agent 가 멈추고, 훅이 기록할 수 있으면 경고한다
+  const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
+  if (aidlc) add("·", "AWS AI-DLC", aidlc.replace(/\n\s*/g, " "));
 
   const failed = checks.filter((check) => check.mark === "✗");
   return {

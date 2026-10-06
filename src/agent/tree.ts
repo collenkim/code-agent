@@ -45,10 +45,8 @@ export function mergeBase(repoRoot: string, a: string, b: string): string | unde
  */
 export function trackedPaths(repoRoot: string, commit: string): string[] {
   try {
-    return git(repoRoot, ["ls-tree", "-r", "--name-only", commit])
-      .split("\n")
-      .map((line) => line.replace(/\r$/, "").trim())
-      .filter(Boolean);
+    // -z: core.quotePath 기본값에서 한글·공백 경로가 "\352…" 처럼 따옴표·8진 이스케이프로 오지 않게 원문으로 받는다
+    return git(repoRoot, ["ls-tree", "-r", "-z", "--name-only", commit]).split("\0").filter(Boolean);
   } catch {
     // 커밋을 읽을 수 없으면 '이미 있던 파일' 을 셀 수 없다 — 여기서 던지면 판정 경로 전체가 선다
     return [];
@@ -72,23 +70,29 @@ export interface Change {
 export function changedPaths(repoRoot: string, baseCommit: string): Change[] {
   const changes = new Map<string, Change>();
   const put = (status: ChangeStatus, path: string) => {
-    if (path !== "") changes.set(path, { status, path });
+    if (path) changes.set(path, { status, path });
   };
 
-  for (const line of git(repoRoot, ["diff", "--name-status", "-M", baseCommit, "--"]).split("\n")) {
-    const cells = line.replace(/\r$/, "").split("\t");
-    const code = (cells[0] ?? "")[0];
-    if (!code) continue;
-    if (code === "R") {
-      // 이름변경은 두 경로를 건드린 것이다 — 옛 이름이 사라진 것도 변경이다
-      put("D", cells[1]);
-      put("R", cells[2]);
+  // -z: 경로를 따옴표·8진 이스케이프 없이 원문으로 받는다 — 상태 코드와 경로가 NUL 로 번갈아 온다
+  const fields = git(repoRoot, ["diff", "--name-status", "-z", "-M", baseCommit, "--"]).split("\0");
+  for (let index = 0; index < fields.length; ) {
+    const code = fields[index][0];
+    if (!code) {
+      index += 1;
       continue;
     }
-    put(code === "A" ? "A" : code === "D" ? "D" : "M", cells[1]);
+    if (code === "R") {
+      // 이름변경은 두 경로를 건드린 것이다 — 옛 이름이 사라진 것도 변경이다
+      put("D", fields[index + 1]);
+      put("R", fields[index + 2]);
+      index += 3;
+      continue;
+    }
+    put(code === "A" ? "A" : code === "D" ? "D" : "M", fields[index + 1]);
+    index += 2;
   }
-  for (const line of git(repoRoot, ["ls-files", "--others", "--exclude-standard"]).split("\n")) {
-    put("A", line.replace(/\r$/, "").trim());
+  for (const path of git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0")) {
+    put("A", path);
   }
   return [...changes.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
 }

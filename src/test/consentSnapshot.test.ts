@@ -78,11 +78,18 @@ test("snapshot: ignored custom POLICY, KNOWLEDGE, stage template and spec paths 
   }
 });
 
-test("setup: ignored preparation README is included in consent before the question", () => {
-  writeFixture(root, "README.md", "reviewed preparation\n");
+test("setup: ignored preparation document is included in consent before the question", () => {
   const fixture = prepareConsentFixture(root, { action: "setup" });
-  appendFileSync(join(root, "README.md"), "changed\n");
-  assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /README\.md/);
+  appendFileSync(join(root, "doc/architecture.md"), "changed\n");
+  assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /doc\/architecture\.md/);
+  assert.equal(loadConsent(root, fixture.id).status, "pending");
+});
+
+test("setup: an existing repository's README is not a preparation file and does not invalidate consent", () => {
+  writeFixture(root, "README.md", "team readme\n");
+  const fixture = prepareConsentFixture(root, { action: "setup" });
+  appendFileSync(join(root, "README.md"), "edited while answering\n");
+  observeConsent(consentEvent(fixture, "PreToolUse"));
   assert.equal(loadConsent(root, fixture.id).status, "pending");
 });
 
@@ -114,6 +121,14 @@ for (const change of ["index", "branch", "config"] as const) {
     });
   });
 }
+
+test("snapshot: branch tracking written by another worktree's push -u does not invalidate consent", () => {
+  const fixture = prepareConsentFixture(root, { action: "docs" });
+  gitFixture(root, "config", "branch.other.remote", "origin");
+  gitFixture(root, "config", "branch.other.merge", "refs/heads/other");
+  observeConsent(consentEvent(fixture, "PreToolUse"));
+  assert.equal(loadConsent(root, fixture.id).status, "pending");
+});
 
 test("snapshot: old records without per-path hashes still reject changed targets with reprepare guidance", () => {
   const fixture = prepareConsentFixture(root, { action: "docs" }), record = loadConsent(root, fixture.id);

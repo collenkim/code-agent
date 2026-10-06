@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-06",
+  "baseCommit": "d7edb18",
+  "scope": "AWS AI-DLC coexistence block/warn, Claude-Codex cross verification (plan critic and code review), defect fixes H4 H5 H6 H7 H8 H9 M1 M4 M6 M10 M17 M18-residual L3 L9 L12",
+  "runs": {
+    "full": {
+      "command": "npm test",
+      "log": "dist/coexistence-cross-regression.log",
+      "sha256": "952345ad62a48d219f0bd51b5af33404fcb81ac367dbf915af984d0530a1d00a",
+      "tests": 786,
+      "passed": 782,
+      "failed": 0,
+      "skipped": 4,
+      "cancelled": 0,
+      "durationMs": 673986.3186
+    },
+    "earlierFullRuns": [
+      { "stage": "step 1 + cross verification", "tests": 770, "passed": 765, "failed": 1, "skipped": 4, "note": "Failure: process test installs both hosts and its review fixture did not record a cross review; fixture fixed." },
+      { "stage": "after step 2", "tests": 786, "passed": 780, "failed": 2, "skipped": 4, "note": "Failures: review fixture auto-cross defeated the missing-cross test; Codex hook-process test expected code-agent status to be denied with broken state, which M1 now opens for recovery. Both tests updated." }
+    ]
+  },
+  "liveRuns": {
+    "fullFlowBothHosts": {
+      "command": "node scripts/evaluate-full-flow.cjs run new --model opus --label 2026-10-06-opus-both --budget 15 --timeout 40 --hosts both",
+      "report": "doc/reviews/evidence/full-flow-new-2026-10-06-opus-both.json",
+      "hosts": { "claude": "Claude Code 2.1.291 (opus)", "codex": "codex-cli 0.160.1 (gpt-6.1-sol/high)" },
+      "turns": 8,
+      "durationMs": 2274324,
+      "reportedCostUSD": 12.6265964,
+      "finished": false,
+      "stoppedAt": "plan",
+      "observed": [
+        "Codex cross critic completed twice: first needs-input with one question recorded as Q1 by code; second completed with 2 blocking findings while the in-session Claude critic had only advisory findings.",
+        "From turn 4 Codex exec failed with 'You hit your spend cap set by the owner of your workspace.'; the main session did not bypass the gate, reported cause and resume path, and stopped retrying after four identical failures.",
+        "Code review cross was not reached with a real host."
+      ]
+    },
+    "claudeCrossCritic": {
+      "command": "code-agent planning cross --by claude (run in the same evaluation repository)",
+      "durationSeconds": 68,
+      "model": "opus via claude -p --agent ca-critic",
+      "status": "completed",
+      "findings": { "blocking": 1, "advisory": 2 },
+      "note": "Blocking: design added a root package.json but 02 impact analysis was not updated."
+    }
+  },
+  "sourceHashes": {
+    "src/agent/aidlc.ts": "d5a8745af9cb5dde5110350507a9278480d4811aeb60c70d241076d25b930b2c",
+    "src/agent/crossCheck.ts": "af3d57c9e274bcb552e4da2b0a6dde7eb9d0dcf48b72fad2a1893c937c686e72",
+    "src/agent/hook.ts": "4c465ce15c955d5859e92a9181397bbae4e643ef81bdc581aba7429ff1f0d15a",
+    "src/agent/consent.ts": "2b6fed712f65cb65f1dd050d96024cba1810358e207f6055bdd15a29ed8c8c58",
+    "src/agent/planningHook.ts": "c06e8d32a33c5fe6abd8795580280a1fc0881e73515b2b64a9c55e95f36433b9",
+    "src/agent/reviewHook.ts": "20800fef4bb6cf00dc4c808009ef86edb6e8e58104f38a76e17a25557fef9535",
+    "src/agent/validate.ts": "427a6eecf42d8b6bc973de2b3b41aad0b6febad0cb811c47cdc4009a9b774012",
+    "src/core/build.ts": "06abcec6e80eda709148c9490f4b6e74b27c570718924a99a7f0571815b91ebc",
+    "src/agent/tree.ts": "76b99a435eae4f8f501dd134b05c07543e9e3ca9269c100a31e68cfd80304083",
+    "src/agent/deliver.ts": "516d445dc24362893ff10e5d8cb5931e7077f6926eceabc55ef98e4d767a01a0"
+  },
+  "skippedReasons": [
+    "Two case-sensitive filename tests on Windows.",
+    "Two POSIX permission tests on Windows."
+  ],
+  "pendingDecisions": [
+    "M11/M12: classify environment failures (e.g. Docker down, ApplicationContext load failure) separately from code failures for repair routing, --retry round accounting and reproduction acceptance.",
+    "Cross verification when the other host cannot run (quota, login, outage): currently blocks with no bypass."
+  ],
+  "limits": [
+    "Other-host execution in automated tests uses fake executables via CODE_AGENT_CLAUDE_BIN / CODE_AGENT_CODEX_BIN.",
+    "Real code review cross was not executed because the Codex workspace spend cap was reached.",
+    "AI-DLC records are fixtures; the AI-DLC engine itself was not run.",
+    "Windows process-tree kill verified on Windows only; POSIX keeps child.kill with exit-based settlement."
+  ],
+  "documentationValidation": {
+    "documents": 9,
+    "localLinks": 122,
+    "missing": 0
+  }
+}

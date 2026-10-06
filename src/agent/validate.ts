@@ -165,7 +165,7 @@ async function runSpecs(
     // 상위 node:test의 내부 바이너리 전송 모드는 프로젝트 테스트 러너에 물려주지 않는다.
     const { NODE_TEST_CONTEXT: _parentTestContext, ...commandEnv } = process.env;
     const reports = phase === "repro" || phase === "test" || (phase === "integrate" && spec.kind === "test") ? reportSnapshot(cwd) : undefined;
-    const result = await runCommand(cwd, spec.argv, commandEnv);
+    const result = await runCommand(cwd, spec.argv, commandEnv, work.manifest.commandTimeoutMinutes * 60_000);
     const log = [result.stdout, result.stderr, reports ? freshTestReports(cwd, reports) : ""].filter(Boolean).join("\n").trim();
     const outcome = outcomeOf(result);
     const logFile = `.code-agent/log/${phase}-${round}-${spec.kind}.log`;
@@ -422,8 +422,12 @@ export async function check(work: Work): Promise<string> {
         "계획 자체를 고쳐야 하면 사람이 재승인해야 합니다.",
     );
   }
-  // 회차는 실행 **전에** 올리고 저장한다 — 뒤에 올리면 프로세스를 죽여 카운터를 피하는 길이 생긴다
-  evidence.rounds += 1;
+  // 회차는 실행 **전에** 올리고 저장한다 — 뒤에 올리면 프로세스를 죽여 카운터를 피하는 길이 생긴다.
+  // 다만 직전 회차가 실행 기록 하나 없이 끊겼고(도구 타임아웃·강제 종료) 계획 파일이 그대로면 같은 회차를 다시 쓴다 —
+  // 코드를 고치지 않은 재실행이라 카운터를 피할 이득이 없고, 기록 없이 한도만 줄어드는 일을 막는다.
+  const interrupted = !!previous && evidence.rounds > 0 && previous.treeHash === evidence.treeHash &&
+    !evidence.runs.some((run) => run.round === evidence.rounds);
+  if (!interrupted) evidence.rounds += 1;
   saveEvidence(work.repoRoot, evidence);
 
   const specs = checkCommands(work.repoRoot, work.manifest);
@@ -500,12 +504,30 @@ async function inCleanWorktree<T>(work: Work, baseCommit: string, run: (cwd: str
     }
     return await run(worktree);
   } finally {
-    try {
-      git(work.repoRoot, ["worktree", "remove", "--force", worktree]);
-    } catch {
-      // 지우지 못해도 검증 결과는 이미 증거에 남았다 — 여기서 던지면 통과를 잃는다
-      rmSync(worktree, { recursive: true, force: true });
-    }
+    removeWorktree(work.repoRoot, worktree);
+  }
+}
+
+/**
+ * 임시 worktree 정리는 결과를 잃게 하지 않는다 — Windows 에서는 남은 빌드 데몬·백신이 파일·디렉토리를 잡고 있어
+ * 지우기가 EBUSY·EPERM 으로 실패할 수 있다. 여기서 던지면 이미 끝난 build·test 결과가 저장되기 전에 사라진다.
+ */
+function removeWorktree(repoRoot: string, worktree: string): void {
+  try {
+    git(repoRoot, ["worktree", "remove", "--force", worktree]);
+    return;
+  } catch {
+    // 아래에서 직접 지우고 등록을 정리한다
+  }
+  try {
+    rmSync(worktree, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+  } catch (error) {
+    process.stderr.write(`임시 worktree 를 지우지 못했습니다 — 잡고 있는 프로세스가 끝난 뒤 지우세요: ${worktree} (${error instanceof Error ? error.message : error})\n`);
+  }
+  try {
+    git(repoRoot, ["worktree", "prune"]);
+  } catch {
+    // 등록만 남은 worktree 는 다음 prune 이 치운다
   }
 }
 
