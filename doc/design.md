@@ -773,6 +773,10 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent hook` | PreToolUse 판정 (stdin JSON → deny 사유) | P1 ✅ |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 | P5 ✅ |
 
+동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(consents 제외)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다.
+
+준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정, 해당 action의 플러그인 저장소·업데이트 소스 해시를 보관한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
+
 ## 10. core 재사용
 
 `src/agent/` 가 쓰는 것은 `src/core/` 에 이미 있다. 다시 쓰지 않는다.

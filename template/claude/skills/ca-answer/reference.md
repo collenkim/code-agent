@@ -44,6 +44,10 @@
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |
 | 사용자가 code-agent 업데이트를 요청함 | `{"action":"update"}` — 소스 갱신의 Git pull·빌드·설치 적용 범위를 확인받는다 |
 
+## 대상 변경 안내
+
+대상 변경 오류에는 `변경 대상:`으로 경로와 Git 상태가 표시된다. 표시된 변경을 검토한 뒤 새 동의를 준비한다. 경로별 해시가 없는 이전 기록은 재준비 안내만 나올 수 있다. Git에서 무시된 외부 세션·캐시는 기본 스냅샷에서 제외되지만 명시된 제어·문서 경로와 추적 파일은 계속 검사한다. 동의 통과를 위해 hook을 지우거나 감사 파일을 임의로 무시하지 않는다. 접수 중에도 `code-agent help`·`code-agent --help`로 명령을 조회할 수 있다.
+
 ## 수동 대체 경로
 
 독립 TTY CLI는 사용자가 직접 선택하는 **수동 대체 경로**다. 같은 세션의 도구·hook을 사용할 수 없으면 미승인 상태와 사유를 알리고 이 경로를 안내할 수 있다. `code-agent confirm doc all`, `code-agent setup baseline`, `code-agent confirm request <ID> [<지시서>]`, `code-agent approve`, `code-agent deliver` 등은 사용자가 직접 실행할 때만 사용하며 필수 절차로 요구하지 않는다. 에이전트가 TTY 입력을 대신하거나 다른 명령으로 동의를 우회하지 않는다. 수동 처리 뒤에는 현재 상태를 확인하고 중단된 흐름을 재개한다.

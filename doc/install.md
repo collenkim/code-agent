@@ -185,6 +185,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 기본 경로는 `code-agent consent prepare <action.json>` → 반환된 `toolInput` 전체로 `AskUserQuestion` 호출 → PreToolUse·PostToolUse hook 관찰 → `code-agent consent finish <ID>`(승인된 요청만 그 자리에서 적용)다. `consent status <ID>` 확인 뒤 `consent apply <ID>`로 나눠도 같다. `questions`와 `metadata.source`를 함께 그대로 전달한다. 남은 질문이 있으면 status가 반환한 toolInput으로 이어서 표시한다. 사용자가 선택하면 같은 작업을 계속하며, 모델이 답을 미리 넣거나 채팅 문장을 승인으로 대신할 수 없다. 확인 대상이 바뀌면 새로 준비한다.
 
+외부 hook이 Git 무시 경로에 사용량·세션·캐시를 쓰는 환경의 동의 차단은 CLI의 스냅샷 수집 범위에서 수정했다. 스킬만 갱신하는 `update --templates-only`로는 설치된 구버전 CLI가 바뀌지 않는다. 아래 설치 방식에 맞춰 CLI도 갱신하고 템플릿을 반영한 뒤 호스트를 다시 열고 동의를 새로 준비한다. 외부 hook을 삭제할 필요는 없다. 계속 거부되면 `변경 대상:`의 경로/Git 상태를 확인한다. 추적된 감사 파일과 명시된 제어·문서 경로는 여전히 검사한다. 범위와 재현 근거는 [동의 스냅샷 수정 이력](reviews/2026-10-06-consent-snapshot.md)을 참고한다.
+
 일반 터미널에서 직접 실행하는 `approve`·`confirm`·`reject`·`deliver`·`plugin add`도 지원한다. 이 선택 경로에는 기존 TTY 검사가 적용된다.
 
 | 어디서 | 되나 |
