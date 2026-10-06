@@ -1,0 +1,742 @@
+{
+  "date": "2026-10-06",
+  "baseCommit": "62bef62",
+  "scope": "Opus 기본값 실제 모델 전체 흐름(신규 value(n) 함수 1건)과 Codex 실제 호스트 분석·영향도. 동의는 TTY·합성 fixture이며 실제 사람 승인이 아니다. 조건별 실행 1회라 모델 편차를 분리하지 못한다.",
+  "regression": {
+    "command": "npm test",
+    "tests": 729,
+    "pass": 725,
+    "fail": 0,
+    "skipped": 4
+  },
+  "instructionChars": {
+    "note": "CRLF를 LF로 센 글자 수. 메인이 전체 흐름에서 읽는 CLAUDE 블록+접수·응답·재개·단계 스킬 13개",
+    "claudeBlock": [
+      4511,
+      1493
+    ],
+    "caAnswer": [
+      9045,
+      7088
+    ],
+    "caPlan": [
+      8674,
+      3734
+    ],
+    "flowTotal": [
+      54494,
+      38882
+    ]
+  },
+  "claudeRuns": {
+    "baseline": {
+      "finished": true,
+      "blocked": null,
+      "minutes": 17.7,
+      "usageTotalUSD": 7.87,
+      "correctedCostUSD": 7.87,
+      "costNote": "reportedCostUSD는 --continue 세션 누적값(total_cost_usd)을 턴마다 더한 과대 집계다(평가 스크립트 결함, 2026-10-06 수정). 이 실행은 2턴이 시간 한도(600초)로 중단돼 누적값이 끊겼으므로 실행 기록 기반 usage 합계 $7.87을 정정값으로 둔다. 중단 때 버려진 plan 배정의 재실행분이 포함된다.",
+      "reviews": [
+        {
+          "round": 1,
+          "observed": true,
+          "result": "- 없음"
+        }
+      ],
+      "testCases": 8,
+      "localCommit": true,
+      "questionFixtures": 0,
+      "main": {
+        "input": 138,
+        "cacheRead": 10453321,
+        "cacheWrite": 252734,
+        "output": 42800,
+        "usd": 4.97
+      },
+      "stages": {
+        "impact": {
+          "input": 100,
+          "cacheRead": 1831843,
+          "cacheWrite": 145350,
+          "output": 46949,
+          "usd": 2.22
+        },
+        "plan": {
+          "input": 38,
+          "cacheRead": 2815487,
+          "cacheWrite": 112401,
+          "output": 28504,
+          "usd": 1.85
+        },
+        "design": {
+          "input": 16,
+          "cacheRead": 838735,
+          "cacheWrite": 39914,
+          "output": 11346,
+          "usd": 0.65
+        },
+        "request": {
+          "input": 26,
+          "cacheRead": 787143,
+          "cacheWrite": 33256,
+          "output": 5545,
+          "usd": 0.53
+        },
+        "review": {
+          "input": 20,
+          "cacheRead": 1050389,
+          "cacheWrite": 33181,
+          "output": 4676,
+          "usd": 0.49
+        },
+        "analysis": {
+          "input": 14,
+          "cacheRead": 437371,
+          "cacheWrite": 30623,
+          "output": 6987,
+          "usd": 0.42
+        },
+        "(작업 전)": {
+          "input": 6,
+          "cacheRead": 67669,
+          "cacheWrite": 45986,
+          "output": 510,
+          "usd": 0.39
+        },
+        "implement/code": {
+          "input": 12,
+          "cacheRead": 698779,
+          "cacheWrite": 20825,
+          "output": 2245,
+          "usd": 0.31
+        },
+        "implement/test": {
+          "input": 10,
+          "cacheRead": 499975,
+          "cacheWrite": 20054,
+          "output": 3919,
+          "usd": 0.29
+        },
+        "deliver": {
+          "input": 8,
+          "cacheRead": 1002363,
+          "cacheWrite": 3390,
+          "output": 2455,
+          "usd": 0.28
+        },
+        "implement/config": {
+          "input": 10,
+          "cacheRead": 494003,
+          "cacheWrite": 17320,
+          "output": 2116,
+          "usd": 0.24
+        },
+        "integrate": {
+          "input": 4,
+          "cacheRead": 494674,
+          "cacheWrite": 3411,
+          "output": 294,
+          "usd": 0.13
+        },
+        "check": {
+          "input": 2,
+          "cacheRead": 235146,
+          "cacheWrite": 3820,
+          "output": 107,
+          "usd": 0.08
+        },
+        "합계": {
+          "input": 266,
+          "cacheRead": 11253577,
+          "cacheWrite": 509531,
+          "output": 115653,
+          "usd": 7.87
+        }
+      },
+      "agents": {
+        "main": {
+          "input": 138,
+          "cacheRead": 10453321,
+          "cacheWrite": 252734,
+          "output": 42800,
+          "usd": 4.97
+        },
+        "ca-analyst": {
+          "input": 16,
+          "cacheRead": 75852,
+          "cacheWrite": 73038,
+          "output": 27599,
+          "usd": 0.93
+        },
+        "ca-explorer": {
+          "input": 40,
+          "cacheRead": 271304,
+          "cacheWrite": 40595,
+          "output": 18495,
+          "usd": 0.63
+        },
+        "ca-writer": {
+          "input": 38,
+          "cacheRead": 249817,
+          "cacheWrite": 43190,
+          "output": 14364,
+          "usd": 0.55
+        },
+        "ca-critic": {
+          "input": 4,
+          "cacheRead": 14246,
+          "cacheWrite": 29359,
+          "output": 5399,
+          "usd": 0.26
+        },
+        "ca-reviewer": {
+          "input": 12,
+          "cacheRead": 85142,
+          "cacheWrite": 26214,
+          "output": 2849,
+          "usd": 0.21
+        },
+        "ca-implementer": {
+          "input": 12,
+          "cacheRead": 66768,
+          "cacheWrite": 28980,
+          "output": 1744,
+          "usd": 0.19
+        },
+        "ca-tester": {
+          "input": 6,
+          "cacheRead": 37127,
+          "cacheWrite": 15421,
+          "output": 2403,
+          "usd": 0.13
+        },
+        "합계": {
+          "input": 266,
+          "cacheRead": 11253577,
+          "cacheWrite": 509531,
+          "output": 115653,
+          "usd": 7.87
+        }
+      },
+      "planningAttempts": {
+        "analysis": [
+          "completed"
+        ],
+        "explore": [
+          "completed"
+        ],
+        "synthesis": [
+          "completed"
+        ],
+        "design": [
+          "completed"
+        ],
+        "plan": [
+          "cancelled",
+          "completed"
+        ],
+        "critic": [
+          "completed"
+        ]
+      },
+      "mainAgentPrompts": {
+        "count": 13,
+        "chars": 38507
+      }
+    },
+    "optimizedV1": {
+      "finished": false,
+      "usageTotalUSD": 6.45,
+      "note": "reportedCostUSD는 누적값을 더한 과대 집계다. 마지막 턴의 누적값 $6.45가 usage 합계와 같다. 이 실행은 수정 전 빌드이며 (1) 배정 파일에 넣은 영향도 문서 기준이 `확인 필요`를 남기라고 해 게이트와 충돌한 회귀로 explore 2회·synthesis 4회가 돌았고 (2) critic의 업무 질문에 평가 드라이버가 답하지 않아 계획 단계에서 멈췄다. 비교에는 쓰지 않는다."
+    },
+    "optimizedV2": {
+      "finished": true,
+      "blocked": null,
+      "minutes": 16.4,
+      "usageTotalUSD": 6.72,
+      "correctedCostUSD": null,
+      "costNote": "turn cost = delta of cumulative total_cost_usd; usage is transcript-based",
+      "reviews": [
+        {
+          "round": 1,
+          "observed": true,
+          "result": "- 없음"
+        }
+      ],
+      "testCases": 7,
+      "localCommit": true,
+      "questionFixtures": 0,
+      "main": {
+        "input": 164,
+        "cacheRead": 8065344,
+        "cacheWrite": 143017,
+        "output": 23012,
+        "usd": 3.22
+      },
+      "stages": {
+        "plan": {
+          "input": 62,
+          "cacheRead": 1969395,
+          "cacheWrite": 177375,
+          "output": 37615,
+          "usd": 2.12
+        },
+        "analysis": {
+          "input": 76,
+          "cacheRead": 1894283,
+          "cacheWrite": 85348,
+          "output": 20092,
+          "usd": 1.29
+        },
+        "impact": {
+          "input": 26,
+          "cacheRead": 563375,
+          "cacheWrite": 56244,
+          "output": 11781,
+          "usd": 0.65
+        },
+        "design": {
+          "input": 16,
+          "cacheRead": 386456,
+          "cacheWrite": 34085,
+          "output": 9185,
+          "usd": 0.45
+        },
+        "review": {
+          "input": 22,
+          "cacheRead": 711678,
+          "cacheWrite": 38238,
+          "output": 4820,
+          "usd": 0.44
+        },
+        "request": {
+          "input": 26,
+          "cacheRead": 646466,
+          "cacheWrite": 27911,
+          "output": 4391,
+          "usd": 0.44
+        },
+        "deliver": {
+          "input": 12,
+          "cacheRead": 939779,
+          "cacheWrite": 4158,
+          "output": 3474,
+          "usd": 0.29
+        },
+        "implement/test": {
+          "input": 18,
+          "cacheRead": 500350,
+          "cacheWrite": 15431,
+          "output": 3248,
+          "usd": 0.25
+        },
+        "implement/code": {
+          "input": 12,
+          "cacheRead": 435032,
+          "cacheWrite": 21150,
+          "output": 1459,
+          "usd": 0.23
+        },
+        "implement/config": {
+          "input": 12,
+          "cacheRead": 451000,
+          "cacheWrite": 15799,
+          "output": 2171,
+          "usd": 0.22
+        },
+        "(작업 전)": {
+          "input": 6,
+          "cacheRead": 79039,
+          "cacheWrite": 18982,
+          "output": 353,
+          "usd": 0.17
+        },
+        "integrate": {
+          "input": 4,
+          "cacheRead": 306374,
+          "cacheWrite": 3218,
+          "output": 150,
+          "usd": 0.09
+        },
+        "check": {
+          "input": 2,
+          "cacheRead": 143307,
+          "cacheWrite": 3669,
+          "output": 98,
+          "usd": 0.06
+        },
+        "합계": {
+          "input": 294,
+          "cacheRead": 9026534,
+          "cacheWrite": 501608,
+          "output": 98837,
+          "usd": 6.72
+        }
+      },
+      "agents": {
+        "main": {
+          "input": 164,
+          "cacheRead": 8065344,
+          "cacheWrite": 143017,
+          "output": 23012,
+          "usd": 3.22
+        },
+        "ca-analyst": {
+          "input": 64,
+          "cacheRead": 551439,
+          "cacheWrite": 164171,
+          "output": 43128,
+          "usd": 1.79
+        },
+        "ca-critic": {
+          "input": 12,
+          "cacheRead": 54577,
+          "cacheWrite": 69781,
+          "output": 12998,
+          "usd": 0.62
+        },
+        "ca-writer": {
+          "input": 8,
+          "cacheRead": 52798,
+          "cacheWrite": 28459,
+          "output": 6169,
+          "usd": 0.28
+        },
+        "ca-reviewer": {
+          "input": 14,
+          "cacheRead": 116045,
+          "cacheWrite": 33343,
+          "output": 3605,
+          "usd": 0.26
+        },
+        "ca-implementer": {
+          "input": 12,
+          "cacheRead": 62149,
+          "cacheWrite": 30687,
+          "output": 2479,
+          "usd": 0.22
+        },
+        "ca-explorer": {
+          "input": 8,
+          "cacheRead": 47320,
+          "cacheWrite": 19564,
+          "output": 4843,
+          "usd": 0.2
+        },
+        "ca-tester": {
+          "input": 12,
+          "cacheRead": 76862,
+          "cacheWrite": 12586,
+          "output": 2603,
+          "usd": 0.13
+        },
+        "합계": {
+          "input": 294,
+          "cacheRead": 9026534,
+          "cacheWrite": 501608,
+          "output": 98837,
+          "usd": 6.72
+        }
+      },
+      "planningAttempts": {
+        "analysis": [
+          "completed",
+          "completed",
+          "completed"
+        ],
+        "explore": [
+          "completed"
+        ],
+        "synthesis": [
+          "completed"
+        ],
+        "design": [
+          "completed"
+        ],
+        "plan": [
+          "completed",
+          "completed"
+        ],
+        "critic": [
+          "completed",
+          "completed"
+        ]
+      },
+      "mainAgentPrompts": {
+        "count": 14,
+        "chars": 2976
+      }
+    },
+    "optimizedV3": {
+      "finished": true,
+      "blocked": null,
+      "minutes": 14.4,
+      "usageTotalUSD": 6.35,
+      "correctedCostUSD": null,
+      "costNote": "turn cost = delta of cumulative total_cost_usd; usage is transcript-based",
+      "reviews": [
+        {
+          "round": 1,
+          "observed": true,
+          "result": "- 없음"
+        }
+      ],
+      "testCases": 6,
+      "localCommit": true,
+      "questionFixtures": 0,
+      "main": {
+        "input": 148,
+        "cacheRead": 7733682,
+        "cacheWrite": 160163,
+        "output": 20854,
+        "usd": 3.25
+      },
+      "stages": {
+        "plan": {
+          "input": 44,
+          "cacheRead": 1714256,
+          "cacheWrite": 101567,
+          "output": 22663,
+          "usd": 1.36
+        },
+        "design": {
+          "input": 46,
+          "cacheRead": 1472269,
+          "cacheWrite": 92472,
+          "output": 22570,
+          "usd": 1.28
+        },
+        "impact": {
+          "input": 30,
+          "cacheRead": 655436,
+          "cacheWrite": 64930,
+          "output": 11977,
+          "usd": 0.73
+        },
+        "request": {
+          "input": 30,
+          "cacheRead": 846221,
+          "cacheWrite": 33405,
+          "output": 4967,
+          "usd": 0.54
+        },
+        "deliver": {
+          "input": 12,
+          "cacheRead": 945580,
+          "cacheWrite": 20984,
+          "output": 3852,
+          "usd": 0.43
+        },
+        "review": {
+          "input": 22,
+          "cacheRead": 587347,
+          "cacheWrite": 37473,
+          "output": 4333,
+          "usd": 0.4
+        },
+        "analysis": {
+          "input": 18,
+          "cacheRead": 374966,
+          "cacheWrite": 30634,
+          "output": 7277,
+          "usd": 0.39
+        },
+        "implement/test": {
+          "input": 20,
+          "cacheRead": 541100,
+          "cacheWrite": 23047,
+          "output": 4491,
+          "usd": 0.32
+        },
+        "implement/code": {
+          "input": 12,
+          "cacheRead": 436694,
+          "cacheWrite": 22305,
+          "output": 1448,
+          "usd": 0.24
+        },
+        "implement/config": {
+          "input": 18,
+          "cacheRead": 492326,
+          "cacheWrite": 16112,
+          "output": 2250,
+          "usd": 0.23
+        },
+        "(작업 전)": {
+          "input": 6,
+          "cacheRead": 80518,
+          "cacheWrite": 25004,
+          "output": 577,
+          "usd": 0.23
+        },
+        "integrate": {
+          "input": 6,
+          "cacheRead": 457845,
+          "cacheWrite": 4448,
+          "output": 526,
+          "usd": 0.14
+        },
+        "check": {
+          "input": 2,
+          "cacheRead": 143419,
+          "cacheWrite": 3707,
+          "output": 145,
+          "usd": 0.06
+        },
+        "합계": {
+          "input": 266,
+          "cacheRead": 8747977,
+          "cacheWrite": 476088,
+          "output": 87076,
+          "usd": 6.35
+        }
+      },
+      "agents": {
+        "main": {
+          "input": 148,
+          "cacheRead": 7733682,
+          "cacheWrite": 160163,
+          "output": 20854,
+          "usd": 3.25
+        },
+        "ca-analyst": {
+          "input": 44,
+          "cacheRead": 446290,
+          "cacheWrite": 134693,
+          "output": 38327,
+          "usd": 1.53
+        },
+        "ca-critic": {
+          "input": 8,
+          "cacheRead": 67234,
+          "cacheWrite": 41249,
+          "output": 7200,
+          "usd": 0.36
+        },
+        "ca-writer": {
+          "input": 8,
+          "cacheRead": 58030,
+          "cacheWrite": 30682,
+          "output": 5669,
+          "usd": 0.28
+        },
+        "ca-reviewer": {
+          "input": 16,
+          "cacheRead": 141924,
+          "cacheWrite": 33638,
+          "output": 3235,
+          "usd": 0.26
+        },
+        "ca-explorer": {
+          "input": 10,
+          "cacheRead": 78809,
+          "cacheWrite": 23281,
+          "output": 5375,
+          "usd": 0.24
+        },
+        "ca-implementer": {
+          "input": 18,
+          "cacheRead": 104125,
+          "cacheWrite": 32244,
+          "output": 2603,
+          "usd": 0.23
+        },
+        "ca-tester": {
+          "input": 14,
+          "cacheRead": 117883,
+          "cacheWrite": 20138,
+          "output": 3813,
+          "usd": 0.2
+        },
+        "합계": {
+          "input": 266,
+          "cacheRead": 8747977,
+          "cacheWrite": 476088,
+          "output": 87076,
+          "usd": 6.35
+        }
+      },
+      "planningAttempts": {
+        "analysis": [
+          "completed"
+        ],
+        "explore": [
+          "completed"
+        ],
+        "synthesis": [
+          "completed"
+        ],
+        "design": [
+          "completed",
+          "completed"
+        ],
+        "plan": [
+          "completed"
+        ],
+        "critic": [
+          "completed"
+        ]
+      },
+      "mainAgentPrompts": {
+        "count": 11,
+        "chars": 2813
+      }
+    }
+  },
+  "codexLive": [
+    {
+      "label": "token-efficiency",
+      "completed": true,
+      "analysisCompleted": true,
+      "impactCompleted": true,
+      "seconds": 314,
+      "parentModel": "gpt-6.1-sol",
+      "attempts": {
+        "analysis": 1,
+        "impact": 1
+      },
+      "hookEvents": 48,
+      "hookFailures": 0
+    },
+    {
+      "label": "token-efficiency-final",
+      "completed": true,
+      "analysisCompleted": true,
+      "impactCompleted": true,
+      "seconds": 251,
+      "parentModel": "gpt-6.1-sol",
+      "attempts": {
+        "analysis": 1,
+        "impact": 1
+      },
+      "hookEvents": 43,
+      "hookFailures": 0
+    }
+  ],
+  "postToolUseExperiment": {
+    "claudeCode": "2.1.289",
+    "result": "Agent 도구는 비동기로 시작돼 PostToolUse가 시작 응답(async_launched)에 붙고 updatedToolOutput은 메인이 받은 결과를 바꾸지 못했다. 서브에이전트 결과 축소 수단으로 쓰지 않는다."
+  },
+  "costAccounting": {
+    "finding": "claude -p --continue 의 total_cost_usd는 세션 누적값이다(v1에서 마지막 누적값 $6.45 = usage 합계 $6.45). 2026-10-01 기록은 누적값을 더해 과대 집계됐다.",
+    "fullFlow20261001": {
+      "new": {
+        "summed": 2.65,
+        "last": 1.75
+      },
+      "enhance": {
+        "summed": 3.76,
+        "last": 2.08
+      },
+      "fix": {
+        "summed": 8.83,
+        "last": 2.89
+      },
+      "refactor": {
+        "summed": 5.53,
+        "last": 1.96
+      }
+    },
+    "pricingGap": "claude-sonnet-5-5가 prices.ts 단가표에 없어 usage가 0으로 센다(미수정)"
+  }
+}

@@ -37,6 +37,10 @@ function codexText(text: string): string {
     .replace(/\$ARGUMENTS/g, "<사용자가 전달한 인자>")
     .replace(/\bBash:/g, "셸:")
     .replace(/subagent_type/g, "agent_type")
+    // Codex hook에는 서브 에이전트 식별자가 없어 staging을 열 수 없다 — 본문을 결과에 싣는 문장으로 바꾼다
+    .replace("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용).")
+    .replace("출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.", "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다.")
+    .replace("문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나", "문서 전체는 artifacts의 `{path, content}`로 넣는다. 파일을 쓰거나")
     + "\n\n파일 읽기는 셸에서 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 줄 수는 최대 400이다. Read/Grep/Glob 전용 도구가 없으면 배정 inputs와 `code-agent survey`의 경로를 이 명령으로 읽는다. 일반 셸 읽기·연결 명령은 작업 게이트가 거부한다.\n";
 }
 export function hostAssets(host: Host, root?: string): Map<string, string> {
@@ -56,7 +60,7 @@ export function hostAssets(host: Host, root?: string): Map<string, string> {
       const body = codexText(source.slice(header[0].length));
       files.set(`.codex/agents/${name}.toml`, codexModelText([
         `name = ${JSON.stringify(codexAgentName(name))}`, `description = ${JSON.stringify(description)}`,
-        `developer_instructions = ${JSON.stringify("계획 배정 결과와 리뷰 결과는 최종 응답으로 반환한다. 승인 질문은 메인만 담당한다.\n\n" + body)}`, "",
+        `developer_instructions = ${JSON.stringify("계획 배정 결과와 리뷰 결과는 최종 응답으로 반환한다. 승인 질문은 메인만 담당한다. Codex에서는 staging에 쓰지 않는다 — 배정의 resultShape가 artifacts를 {path, staged}로 보여 줘도 {path, content}로 전체 내용을 넣는다.\n\n" + body)}`, "",
       ].join("\n"), codexModelOf(root, name.replace(/^ca-/, "") as AgentName)));
     }
   }

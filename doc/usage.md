@@ -900,7 +900,7 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 2. `code-agent consent prepare <action.json>`이 표시할 요약과 질문을 생성한다.
 3. 메인은 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다.
 4. 질문의 PreToolUse·PostToolUse hook이 같은 세션·호출·작업 경로의 실제 응답을 관찰한다.
-5. `code-agent consent status <ID>`에 남은 질문이 있으면 다시 표시한다. `approved`일 때만 `code-agent consent apply <ID>`를 실행한다.
+5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다.
 6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 새 hook을 읽도록 Claude Code를 재시작한 뒤 재개한다.
 
 취소·보류·응답 누락·시간 초과·추가 질문·다른 세션은 승인으로 처리하지 않는다. 확인 이후 파일·설정·Git 상태가 바뀌면 새로 준비하여 확인한다. 같은 요청을 중복 적용해도 커밋을 반복하지 않는다. 이 기록은 신뢰하는 로컬 hook의 관찰이며 사용자 신원 증명이나 OS 보안 경계는 아니다.

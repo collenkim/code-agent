@@ -3,7 +3,7 @@ name: ca-integrate
 description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에서 전체 build·test 를 돌리고 ⑩ 10-pr.md 를 준비한 뒤 같은 세션의 동의로 로컬 커밋까지 적용한다.
 ---
 
-**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
 **반영은 사용자의 실제 동의가 필요하다.** 메인이 공통 동의 절차로 확인받고 승인된 `deliver` 동의만 적용한다.
@@ -33,5 +33,5 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
 
 ## 끝
 
-`{"action":"deliver"}`로 공통 동의 절차를 수행한다. 결과·검증·변경 파일·문서 링크가 포함된 `summary` 전문을 보여 주고 반환된 `toolInput` 전체를 그대로 호출한다. 지식 항목 선택이 남으면 매번 `consent status`가 새로 반환한 `toolInput`으로 반복하고, **항목 선택 후 최종 승인**을 받는다. `approved`일 때만 동의를 적용한다. 적용 성공 후 로컬 커밋과 반영 결과를 보고하며 `/ca-next` 재입력을 요구하지 않는다. 수정 요청·취소·보류이면 적용하지 않는다.
+`{"action":"deliver"}`로 공통 동의 절차를 수행한다. 결과·검증·변경 파일·문서 링크가 포함된 `summary` 전문을 보여 주고 반환된 `toolInput` 전체를 그대로 호출한다. 지식 항목 선택이 남으면 매번 `consent finish`가 새로 반환한 `toolInput`으로 반복하고, **항목 선택 후 최종 승인**을 받는다. `approved`일 때만 동의가 적용된다. 적용 성공 후 로컬 커밋과 반영 결과를 보고하며 `/ca-next` 재입력을 요구하지 않는다. 수정 요청·취소·보류이면 적용하지 않는다.
 반영은 작업 브랜치 **로컬 커밋까지**다 — push·MR/PR 생성은 하지 않는다.

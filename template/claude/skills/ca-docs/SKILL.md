@@ -4,7 +4,7 @@ description: 공통 문서를 점검하고 없거나 모자라면 작성한다 �
 argument-hint: [architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules]
 ---
 
-**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 너는 **메인 에이전트**다. 문서만 쓴다 — 문서 작성 세션 동안 hook 이 코드 쓰기를 막는다.
 `code-agent` 명령이 거부하면 사유를 그대로 전하고 멈춘다. 인자가 있으면 그 문서만 다룬다.
@@ -106,6 +106,6 @@ Bash: `code-agent docs skeleton <data-dictionary | api-catalog | business-rules>
 
 1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 3종 파일이 있는지 본다. ✗ 가 남으면 1 로.
 2. 최초 준비는 `{"action":"setup"}`으로 POLICY 전체 확정과 기준 커밋이 없을 때의 생성을 사용자 질문 하나로 묶는다. 이후 문서 재확정은 `{"action":"docs","kind":"all"}`을 사용하며, 특정 문서만 요청받았으면 `kind`를 그 종류로 지정한다. JSON은 접수·작업 중 허용된 `doc/work/<ID>/`에, 작업 ID가 없으면 문서 준비 중 허용된 `doc/`에 작성한다. 문서 세션이 필요하면 `code-agent docs begin`으로 열고 작성한다.
-3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. 요약 전문·문서 링크를 보여 주고 실제 응답과 `consent status`를 확인한 뒤 승인된 동의만 적용한다.
+3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. 요약 전문·문서 링크를 보여 주고 실제 응답 뒤 `consent finish`(또는 `status` 확인 후 `apply`)로 승인된 동의만 적용한다.
    **넷 다 확정해야** 작업(`/ca-feature` 등)이 시작된다. KNOWLEDGE 3종은 확정하지 않는다.
 4. 적용 성공 후 원래 접수·작업으로 자동 복귀한다. 문서 재확정 자체를 별도 커밋의 승인으로 취급하지 않는다.

@@ -33,14 +33,17 @@ export const ResultSchema = z.object({
   evidence: z.array(Reference).max(100),
   facts: z.array(z.object({ key: z.string().min(1), value: z.string().min(1), source: Reference }).strict()).max(100),
   questions: z.array(z.object({ id: z.string().regex(/^Q\d+$/), question: z.string().min(1).refine(text => !/^[ \t]*(?:##|\[(?:Answer|Status|Requirements)\]:)/m.test(text), "질문 본문에 질문 제목·답변·상태 필드를 넣을 수 없습니다"), requirements: z.array(z.string()).min(1) }).strict()).max(30),
-  artifacts: z.array(z.object({ path: z.string(), content: z.string().max(131072) }).strict()).max(3),
+  // 본문은 staging 파일로 넘기는 것이 기본이다. Write 도구가 없는 호스트는 content로 직접 싣는다.
+  artifacts: z.array(z.union([z.object({ path: z.string(), content: z.string().max(131072) }).strict(), z.object({ path: z.string(), staged: z.string() }).strict()])).max(3),
   findings: z.array(z.object({ id: z.string().min(1), severity: z.enum(["blocking", "advisory"]), detail: z.string().min(1), source: Reference }).strict()).max(100),
 }).strict();
 export type PlanningResult = z.infer<typeof ResultSchema>;
+/** staging 본문을 읽어 들인 결과. 상태에는 이 형태로 보존한다 */
+export type ResolvedResult = Omit<PlanningResult, "artifacts"> & { artifacts: { path: string; content: string }[] };
 export interface TaskAttempt {
   dispatchId: string; inputHash: string; at: string;
   status: "running" | "completed" | "needs-input" | "needs-correction" | "failed" | "cancelled";
-  result?: PlanningResult; resultHash?: string; outputs?: Record<string, string>;
+  result?: ResolvedResult; resultHash?: string; outputs?: Record<string, string>;
   agentId?: string; sessionId?: string; error?: string;
   correction?: { raw: string; error: string; agentId: string; sessionId: string; used: boolean };
 }

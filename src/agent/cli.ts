@@ -39,7 +39,9 @@ import { usage } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
-import { applyConsent, consentStatus, prepareConsent, runConsentHook } from "./consent";
+import { applyConsent, consentStatus, finishConsent, prepareConsent, runConsentHook } from "./consent";
+import { contextHandoff, handoffPlanning } from "./handoff";
+import { runSessionHook } from "./sessionHook";
 import { updateFromSource } from "./sourceUpdate";
 import { renderVerification, verify } from "./verificationFlow";
 
@@ -80,6 +82,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent consent prepare <작업.json>   확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음)
   code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
   code-agent consent apply <ID>            현재 세션에서 확인된 내용만 실행하고 계속 진행
+  code-agent consent finish <ID>           응답 뒤 한 번에 — 승인이면 적용하고, 아니면 status와 같은 내용
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
   code-agent docs recommend           기존 구성 유지 또는 신규 시작 구성 추천
   code-agent docs setup <node|python>  선택한 신규 구성의 설정·공통 문서 생성 (기존 파일 보존)
@@ -97,11 +100,11 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent next                     게이트를 확인하고 다음 스테이지·단계로
   code-agent back <스테이지>          커서를 앞 스테이지로 되감기 — 앞으로는 못 가고, 증거·리뷰 회차·원장은 그대로 남는다
                                       ${BACK_PHASES.join(" | ")}
-  code-agent context                  지금 스테이지에 필요한 것 (참조 코드·계획·규칙)
+  code-agent context [--file]         지금 스테이지에 필요한 것 (참조 코드·계획·규칙). --file은 전문을 파일로 두고 경로만 출력
   code-agent read <파일> [시작 줄] [줄 수]  저장소 텍스트를 줄 번호와 함께 읽기 (기본 200줄, 최대 400줄)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
-  code-agent planning advance         준비·재사용·선행 조건 판정 후 실행할 배정 묶음 반환
+  code-agent planning advance         준비·재사용·선행 조건 판정 후 실행할 배정 묶음 반환 (배정 전문은 assignmentFile에)
   code-agent planning status          배정·입력 변경·선행 조건·미결 질문 요약
   code-agent planning result <ID>     원문 산출물을 포함한 상세 결과와 최신성 조회
   code-agent planning repair <ID>     관찰된 출력 형식 오류를 같은 입력에서 한 번 교정
@@ -120,6 +123,7 @@ hook 이 부른다:
   code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
   code-agent planning-event           분석·조사·설계·계획 담당의 시작·완료 관찰 (stdin JSON)
   code-agent consent-event            AskUserQuestion 시작·응답 관찰 및 확인 기록 (stdin JSON)
+  code-agent session-event            SessionStart — 대화 시작·재개·압축·비우기 뒤 진행 상태 요약을 붙인다 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
 /**
@@ -168,17 +172,18 @@ async function main(argv: string[]): Promise<number> {
   if (command === "review-event") return runReviewHook(readFileSync(0, "utf-8"));
   if (command === "planning-event") return runPlanningHook(readFileSync(0, "utf-8"));
   if (command === "consent-event") return runConsentHook(readFileSync(0, "utf-8"));
+  if (command === "session-event") return runSessionHook(readFileSync(0, "utf-8"));
 
   const repoRoot = findRepoRoot(process.cwd());
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
     case "planning":
       if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
-      else if (args[0] === "advance") print(advancePlanning(repoRoot));
+      else if (args[0] === "advance") print(handoffPlanning(repoRoot, advancePlanning(repoRoot)));
       else if (args[0] === "status") print(planningStatus(repoRoot));
       else if (args[0] === "result" && args[1]) print(planningResult(repoRoot, args[1]));
-      else if (args[0] === "repair" && args[1]) print(repairPlanning(repoRoot, args[1]));
-      else if (args[0] === "dispatch" && args[1]) print(dispatchPlanning(repoRoot, args[1]));
+      else if (args[0] === "repair" && args[1]) print(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1])));
+      else if (args[0] === "dispatch" && args[1]) print(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1])));
       else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
       else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID>");
       return 0;
@@ -186,7 +191,8 @@ async function main(argv: string[]): Promise<number> {
       if (args[0] === "prepare" && args[1]) print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8"))));
       else if (args[0] === "status" && args[1]) print(consentStatus(repoRoot, args[1]));
       else if (args[0] === "apply" && args[1]) print(applyConsent(repoRoot, args[1]));
-      else throw new Stop("사용법: code-agent consent prepare <작업.json> | status <ID> | apply <ID>");
+      else if (args[0] === "finish" && args[1]) print(finishConsent(repoRoot, args[1]));
+      else throw new Stop("사용법: code-agent consent prepare <작업.json> | status <ID> | apply <ID> | finish <ID>");
       return 0;
     case "setup":
       if (args[0] && args[0] !== "baseline") throw new Stop("사용법: code-agent setup [baseline]");
@@ -225,7 +231,7 @@ async function main(argv: string[]): Promise<number> {
       print(back(repoRoot, args[0] ?? ""));
       return 0;
     case "context":
-      print(context(repoRoot));
+      print(args.includes("--file") ? contextHandoff(repoRoot) : context(repoRoot));
       return 0;
     case "read":
       if (args.length < 1 || args.length > 3) throw new Stop("사용법: code-agent read <파일> [시작 줄] [줄 수]");

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
-import { applyConsent, consentCommandGuard, loadConsent, observeConsent } from "../agent/consent";
+import { applyConsent, consentCommandGuard, finishConsent, loadConsent, observeConsent } from "../agent/consent";
 import type { ConsentHookInput } from "../agent/consent";
 import { hasBaseline } from "../agent/bootstrap";
 import { checkProjectDocs, readDocLedger } from "../agent/docs";
@@ -37,6 +37,21 @@ afterEach(() => {
 });
 
 function docsFixture(): PreparedConsentFixture { return prepareConsentFixture(root, { action: "docs" }); }
+
+test("finish는 응답 전에는 status와 같고, 승인이 관찰된 뒤에만 한 번에 적용한다", () => {
+  const fixture = docsFixture();
+  const pending = JSON.parse(finishConsent(root, fixture.id));
+  assert.equal(pending.status, "pending");
+  assert.deepEqual(pending.toolInput, fixture.toolInput);
+  assertNoDocs();
+  observeConsent(consentEvent(fixture, "PreToolUse"));
+  observeConsent(consentEvent(fixture, "PostToolUse", { tool_response: nativeResponse(fixture) }));
+  const applied = JSON.parse(finishConsent(root, fixture.id));
+  assert.equal(applied.status, "applied");
+  assert.equal(readDocLedger(root).length, 4);
+  assert.deepEqual(JSON.parse(finishConsent(root, fixture.id)), applied, "재호출은 다시 적용하지 않고 같은 결과를 돌려준다");
+  assert.match(consentCommandGuard(root, `code-agent consent finish ${fixture.id}`, "other-session")!, /현재 세션/);
+});
 function assertNoDocs(): void { assert.equal(readDocLedger(root).length, 0); }
 
 /** Invalid runtime events may be ignored or rejected, but must never authorize an action. */

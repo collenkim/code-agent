@@ -94,6 +94,12 @@ export function assetBytes(key: string): Buffer {
 }
 
 /** `prefix/` 로 시작하는 키를 정렬해서. 두 모드가 같은 목록을 돌려준다 */
+/** 스킬·에이전트 수와 보조 문서 수 — 보조 문서(criteria·legacy·reference 등)는 스킬이 필요할 때 읽는 파일이다 */
+export function assetCount(paths: string[]): string {
+  const entries = paths.filter((path) => path.endsWith("/SKILL.md") || /(^|\/)agents\//.test(path)).length;
+  return entries === paths.length ? `${entries}개` : `${entries}개 · 보조 문서 ${paths.length - entries}개`;
+}
+
 export function assetKeys(prefix: string): string[] {
   const module = usableSea();
   if (module) {

@@ -14,7 +14,7 @@ Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합�
 
 두 호스트 모두 역할별 기본 모델을 제공하므로 처음부터 모델을 직접 설정할 필요는 없습니다. `code-agent model`로 현재값을 확인하고, 필요하면 역할별로 변경하거나 `default`로 복원합니다. Codex는 모델과 추론 강도를 함께 설정하며 사용자 변경값은 업데이트 후에도 유지합니다. [역할별 모델 설정](doc/codex.md#역할별-모델-기본값과-변경)을 참고하세요.
 
-작은 기본 조사는 조사와 영향도 문서 작성을 한 담당에게 맡겨 호출을 줄입니다. 새 작업은 역할별 입력을 좁히고 선행 실행 ID만 달라진 동일 결과를 재사용합니다. [선택 기준](doc/planning.md#위임-수와-입력-범위-선택)을 참고하세요. Codex 검증의 Windows 신뢰 경로·부모 실행 기록 문제와 파일 읽기·문서 지침 충돌을 수정했습니다. Claude와 Codex 모두 실제 분석·영향도 완료 및 문서 게이트 통과를 확인했습니다. 초기 동의는 합성 fixture이며 전체 개발·사람 승인 실측과 구분합니다. 상세 결과는 [훅 복구 이력](doc/reviews/2026-10-02-codex-hook-recovery.md)에 기록합니다.
+작은 기본 조사는 조사와 영향도 문서 작성을 한 담당에게 맡겨 호출을 줄입니다. 새 작업은 역할별 입력을 좁히고 선행 실행 ID만 달라진 동일 결과를 재사용합니다. [선택 기준](doc/planning.md#위임-수와-입력-범위-선택)을 참고하세요. Codex 검증의 Windows 신뢰 경로·부모 실행 기록 문제와 파일 읽기·문서 지침 충돌을 수정했습니다. Claude와 Codex 모두 실제 분석·영향도 완료 및 문서 게이트 통과를 확인했습니다. 초기 동의는 합성 fixture이며 전체 개발·사람 승인 실측과 구분합니다. 상세 결과는 [훅 복구 이력](doc/reviews/2026-10-02-codex-hook-recovery.md)에 기록합니다. 메인 대화가 문서 본문을 옮기거나 받아 들이지 않도록 서브에이전트 입력은 전달 파일로, 계획 문서는 staging 경로로 넘기고 상시 지침을 줄였습니다. 실측 비교는 [토큰 효율 개선](doc/reviews/2026-10-06-token-efficiency.md)에 기록합니다.
 
 ## 목차
 
@@ -60,10 +60,10 @@ Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합�
 | Claude Code·Codex 메인 대화 | 현재 상태에 맞는 스킬을 읽고 개발을 진행합니다. 필요한 서브에이전트를 호출합니다. |
 | 호스트별 스킬 18개 | Claude는 `.claude/skills/`, Codex는 `.agents/skills/`의 `ca-*/SKILL.md`에 접수·단계별 절차를 정의합니다. |
 | 호스트별 서브에이전트 8개 | Claude는 `.claude/agents/ca-*.md`, Codex는 `.codex/agents/ca-*.toml`에 분석·조사·작성·구현·테스트·검토 역할을 정의합니다. |
-| hook 등록 8개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개도 등록합니다. |
+| hook 등록 9개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개와, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart `session-event` 1개도 등록합니다. |
 | `code-agent` CLI | 상태 전환, 승인·범위 검사, 검증 명령 실행, 증거 기록, 로컬 반영을 처리하고 종료합니다. 상주 서버가 아닙니다. |
 
-위 8개 훅은 Claude 기준입니다. Codex는 도구 실행 전·사용자 메시지·서브 에이전트 시작과 종료·턴 종료의 5종 훅을 하나의 어댑터에 연결합니다.
+위 9개 훅은 Claude 기준입니다. Codex는 도구 실행 전·사용자 메시지·서브 에이전트 시작과 종료·턴 종료의 5종 훅을 하나의 어댑터에 연결합니다.
 
 `init`은 위 설정을 **설치만** 합니다. 호스트나 개발 작업을 자동으로 시작하지 않습니다. 설치한 프로젝트에서 사용할 호스트를 실행합니다. 별도 메인 에이전트를 등록할 필요는 없습니다.
 
@@ -141,7 +141,7 @@ claude
 | 6. 개발·검증 | Claude Code | 승인된 순서의 구현 → 빌드·테스트 → 독립 리뷰 → 통합 검증을 진행합니다. 계획 안의 실패·지적은 수정 후 다시 검증합니다. |
 | 7. 결과 반영 | Claude Code | KNOWLEDGE 갱신 항목을 고르고, 요구사항별 결과와 실제 커밋할 경로 목록을 확인하면 작업 브랜치에 로컬 커밋합니다. |
 
-확인 절차는 에이전트가 `code-agent consent prepare <action.json>`을 호출하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달하는 순서입니다. PreToolUse·PostToolUse hook이 같은 세션의 질문과 응답을 관찰하면 `code-agent consent status <ID>`로 상태를 확인하고, 승인된 요청만 `code-agent consent apply <ID>`로 실행합니다. 남은 질문이 있으면 반환된 질문을 이어서 표시합니다. 확인 이후 파일·Git 상태나 플러그인 설명이 바뀌면 새 확인이 필요합니다.
+확인 절차는 에이전트가 `code-agent consent prepare <action.json>`을 호출하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달하는 순서입니다. PreToolUse·PostToolUse hook이 같은 세션의 질문과 응답을 관찰하면 `code-agent consent finish <ID>`가 상태를 확인하고 승인된 요청만 그 자리에서 실행합니다(`consent status <ID>` 확인 뒤 `consent apply <ID>`로 나눠도 같습니다). 남은 질문이 있으면 반환된 질문을 이어서 표시합니다. 확인 이후 파일·Git 상태나 플러그인 설명이 바뀌면 새 확인이 필요합니다.
 
 기존 `confirm`·`approve`·`deliver`를 일반 터미널에서 직접 실행하는 방식도 사용할 수 있습니다. 이 경로는 화면에 표시된 단어를 입력하는 TTY 확인을 유지합니다.
 
@@ -235,7 +235,7 @@ Claude Code 안에서는 “code-agent를 업데이트해 주세요”라고 요
 | `init` 뒤 아무 개발도 시작되지 않음 | 정상입니다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`를 입력합니다. |
 | `/ca-request`가 보이지 않음 | 실행 폴더와 `.claude/skills/ca-request/SKILL.md`를 확인합니다. `update`·`doctor` 후 Claude Code를 다시 엽니다. |
 | 수정했는데 옛 안내가 나옴 | CLI 빌드·전역 설치 경로·프로젝트 설치 사본을 각각 확인합니다. Windows의 `Get-Command code-agent`와 `code-agent doctor`가 경로 확인에 도움이 됩니다. |
-| 같은 화면의 확인이 처리되지 않음 | `consent status`와 `doctor`에서 질문 상태·consent hook 설치를 확인합니다. 갱신했다면 Claude Code를 다시 엽니다. 직접 CLI 승인 명령은 일반 TTY에서도 사용할 수 있습니다. |
+| 같은 화면의 확인이 처리되지 않음 | `consent status`(또는 `finish`)와 `doctor`에서 질문 상태·consent hook 설치를 확인합니다. 갱신했다면 Claude Code를 다시 엽니다. 직접 CLI 승인 명령은 일반 TTY에서도 사용할 수 있습니다. |
 | 소스 자동 갱신이 중단됨 | code-agent 소스 저장소의 미커밋 변경·upstream·분기 상태를 확인합니다. 강제 초기화나 임의 병합으로 넘어가지 않습니다. 현재 번들 적용만 필요하면 `--templates-only`를 사용합니다. |
 | 준비 또는 작업이 중단됨 | `/ca-status`의 이유와 다음 할 일을 확인합니다. 문서 미확정·미응답·계획 변경·검증 실패를 해결한 뒤 `/ca-next`로 이어갑니다. |
 
@@ -243,7 +243,7 @@ Claude Code 안에서는 “code-agent를 업데이트해 주세요”라고 요
 
 ## 요구 분석·설계·계획
 
-신규 작업은 `planning advance`로 준비·재사용·선행 조건 확인·배정을 한 번에 진행하고 실제 서브 에이전트 실행 결과를 확인합니다. 작은 기본 조사는 조사와 영향도 작성을 한 ca-explorer가 수행합니다. 분할 영역은 기본 3개까지 병렬 배정하며, 사용자 정의 영역에는 `planning prepare`를 사용합니다. 선행 문서는 본문 대신 판단과 파일 참조를 전달하고, 상세 내용은 `planning result <ID>`로 조회합니다. 관찰된 출력 형식 오류는 같은 입력에서 한 번만 교정합니다. 설계와 계획은 ca-analyst, 분할 조사 정리는 ca-writer, 독립 반박 검토는 ca-critic이 맡습니다. 미결 질문·오래된 근거·차단 지적이 있으면 진행하지 않습니다.
+신규 작업은 `planning advance`로 준비·재사용·선행 조건 확인·배정을 한 번에 진행하고 실제 서브 에이전트 실행 결과를 확인합니다. 작은 기본 조사는 조사와 영향도 작성을 한 ca-explorer가 수행합니다. 분할 영역은 기본 3개까지 병렬 배정하며, 사용자 정의 영역에는 `planning prepare`를 사용합니다. 선행 문서는 본문 대신 판단과 파일 참조를 전달하고, 상세 내용은 `planning result <ID>`로 조회합니다. 배정 전문·문서 기준·뼈대·단계 context는 배정 파일(`assignmentFile`)에 두고 메인은 경로와(재배정이면) 파일에 없는 사유 메모만 넘기며, Claude 담당은 출력 문서를 staging에 써서 결과 보고에는 경로만 남깁니다. 관찰된 출력 형식 오류는 같은 입력에서 한 번만 교정합니다. 설계와 계획은 ca-analyst, 분할 조사 정리는 ca-writer, 독립 반박 검토는 ca-critic이 맡습니다. 미결 질문·오래된 근거·차단 지적이 있으면 진행하지 않습니다.
 
 계획에는 단계 안의 독립 `tasks`를 정의하고 파일 소유·의존성·수락 기준을 연결합니다. 기존 작업은 이전 형식으로 재개합니다. [계획 작업 안내](doc/planning.md)에 계약과 복구 절차를 설명합니다.
 

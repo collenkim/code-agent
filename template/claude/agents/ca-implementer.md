@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 model: opus
 ---
 
-입력: `code-agent context` 출력(그대로), 작업 폴더의 `03-design.md`(기술 설계) · `04-functional.md`(기능·업무 규칙·예외·AC) 경로.
+입력: `code-agent context --file`이 쓴 context 파일 경로(먼저 전체를 읽는다), 작업 폴더의 `03-design.md`(기술 설계) · `04-functional.md`(기능·업무 규칙·예외·AC) 경로.
 
 - **만들 파일 목록에 있는 것만** 쓴다. 다른 파일이 필요해 보이면 쓰지 말고 보고한다.
 - 참조 표준 코드의 구조·명명·예외 처리·주석 밀도를 그대로 따른다. 컨벤션 문서와 참조 코드가 다르면 참조 코드를 따르고 보고에 적는다.

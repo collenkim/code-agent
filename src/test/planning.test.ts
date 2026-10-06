@@ -7,11 +7,16 @@ import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
 import { next, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
+import { contextHandoff } from "../agent/handoff";
+import { sessionAnchor } from "../agent/sessionHook";
+import { context } from "../agent/commands";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { loadActive, saveActive } from "../agent/layout";
 import { init, installedHook, unmatchedTools } from "../agent/init";
 import { cancelPlanning, dispatchPlanning, preparePlanning, planningStatus, advancePlanning, repairPlanning, planningResult } from "../agent/planning";
 import { codexHook } from "../agent/codexHook";
+import { hostAssets } from "../agent/hosts";
+import { readProjectFile } from "../agent/read";
 import { observePlanner } from "../agent/planningHook";
 import { inputFiles, loadPlanning, planningProblems, taskHash, TaskSchema, ResultSchema, type PlanningResult } from "../agent/planningState";
 import { planningDocumentProblems } from "../agent/planningValidation";
@@ -46,6 +51,12 @@ function finish(dispatch: ReturnType<typeof JSON.parse>, artifacts: Record<strin
   observe({ ...event, hook_event_name: "SubagentStart" });
   observe({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
   return { event, result };
+}
+/** CLI는 배정 전문을 파일로 넘기고 경로만 출력한다 — 메인이 본문을 옮겨 쓰지 않도록 */
+function handed(summary: { assignmentFile: string; resultShape?: unknown }) {
+  assert.equal(summary.resultShape, undefined);
+  const text = readFileSync(join(root, summary.assignmentFile), "utf8"), from = text.indexOf("```json\n") + 8;
+  return JSON.parse(text.slice(from, text.indexOf("\n```", from)));
 }
 function analysis() { preparePlanning(root); finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS }); next(root); }
 function throughDesign() {
@@ -310,8 +321,9 @@ test("계획 CLI와 호스트 허용 명령은 진행·교정·상세 조회 계
   const cli = join(__dirname, "../agent/cli.js");
   const reply = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" }));
   assert.equal(reply.action, "dispatch");
-  malformed(reply.assignments[0]);
-  const repaired = JSON.parse(execFileSync(process.execPath, [cli, "planning", "repair", "analysis"], { cwd: root, encoding: "utf8" }));
+  malformed(handed(reply.assignments[0]));
+  const repaired = handed(JSON.parse(execFileSync(process.execPath, [cli, "planning", "repair", "analysis"], { cwd: root, encoding: "utf8" })));
+  assert.equal(repaired.mode, "correction");
   finish(repaired, { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
   const detail = JSON.parse(execFileSync(process.execPath, [cli, "planning", "result", "analysis"], { cwd: root, encoding: "utf8" }));
   assert.equal(detail.current, true);
@@ -492,7 +504,8 @@ test("관찰되지 않은 결과는 문서를 만들지 않으며 잘못된 출�
 test("설치와 재설치는 계획 관찰 hook 둘을 중복 없이 유지한다", () => {
   init(root); init(root);
   const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
-  assert.equal(Object.values(settings.hooks).flat().length, 8);
+  assert.equal(Object.values(settings.hooks).flat().length, 9);
+  assert.match(installedHook(root, "SessionStart", "session-event")!, /session-event$/);
   for (const event of ["SubagentStart", "SubagentStop"]) {
     assert.match(installedHook(root, event, "planning-event")!, /planning-event$/);
     assert.match(installedHook(root, event, "review-event")!, /review-event$/);
@@ -538,4 +551,97 @@ test("동시에 도착한 세 프로세스의 조사 완료 기록을 모두 보
   })));
   const completed = loadPlanning(loadWork(root)!).tasks.filter(record => record.task.role === "explore" && record.attempts.at(-1)?.status === "completed");
   assert.equal(completed.length, 3);
+});
+
+test("CLI 출력에는 배정 요약과 파일 경로만 남고, 파일에 계약·문서 기준·뼈대가 들어 있다", () => {
+  const cli = join(__dirname, "../agent/cli.js");
+  const [summary] = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" })).assignments;
+  assert.deepEqual(Object.keys(summary).sort(), ["agent", "assignmentFile", "dispatchId", "hostAgents", "role", "taskId", "title"]);
+  const text = readFileSync(join(root, summary.assignmentFile), "utf8");
+  assert.match(text, /## 문서 기준[\s\S]*01-requirements\.md 작성 기준/);
+  assert.match(text, /## 단계 context[\s\S]*확정된 접수 요구/, "이전 흐름에서 담당이 받던 접수 요구 원문 목록을 함께 넘긴다");
+  assert.ok(text.includes(`## 뼈대 — ${DIR}/01-requirements.md`));
+  assert.equal(readFileSync(join(root, ".code-agent/work", ID, "handoff/.gitignore"), "utf8"), "*\n");
+  assert.equal(handed(summary).resultShape.artifacts[0].staged, `${DIR}/.staging/${summary.dispatchId}/01-requirements.md`);
+});
+
+test("담당이 staging에 쓴 문서를 완료 hook이 정식 문서로 옮기고, 결과 보고에는 본문이 없다", () => {
+  const item = advance().assignments[0], staged = item.staging[`${DIR}/01-requirements.md`];
+  const event = { cwd: root, session_id: "s", agent_id: "planner-1", agent_type: item.agent };
+  const write_ = (file: string, agent?: string) => hook({ cwd: root, session_id: "s", agent_id: agent, tool_name: "Write", tool_input: { file_path: join(root, file) } });
+  observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  assert.match(write_(staged)!, /계획 담당만/, "메인은 staging에 대신 쓰지 못한다");
+  assert.equal(write_(staged, "planner-1"), undefined);
+  assert.match(write_(`${DIR}/questions.md`, "planner-1")!, /staging 경로에만/);
+  assert.match(write_(`${DIR}/.staging/forged/01-requirements.md`, "planner-1")!, /staging 경로가 아닙니다/);
+  write(staged, REQUIREMENTS);
+  const message = JSON.stringify({ ...item.resultShape, status: "completed", summary: "근거 확인", evidence: [{ path: SPEC, line: 1 }] });
+  assert.ok(!message.includes("값 반환"));
+  observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: message });
+  assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
+  assert.equal(existsSync(join(root, DIR, ".staging", item.resultShape.dispatchId)), false);
+  assert.equal(readFileSync(join(root, DIR, ".staging/.gitignore"), "utf8"), "*\n");
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.result!.artifacts[0].content, REQUIREMENTS);
+});
+
+test("배정 밖 staging 경로나 쓰지 않은 staging 문서는 완료로 받지 않는다", () => {
+  const stop = (item: ReturnType<typeof advance>, agent: string, artifacts?: unknown) => {
+    const event = { cwd: root, session_id: "s", agent_id: agent, agent_type: item.agent };
+    observePlanner({ ...event, hook_event_name: "SubagentStart" });
+    observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...item.resultShape, status: "completed", summary: "확인", evidence: [{ path: SPEC, line: 1 }], ...(artifacts ? { artifacts } : {}) }) });
+  };
+  assert.throws(() => stop(advance().assignments[0], "planner-a"), /staging 문서가 없습니다/);
+  const again = dispatch("analysis");
+  write(`${DIR}/.staging/forged/01-requirements.md`, REQUIREMENTS);
+  assert.throws(() => stop(again, "planner-b", [{ path: `${DIR}/01-requirements.md`, staged: `${DIR}/.staging/forged/01-requirements.md` }]), /배정된 staging 경로가 아닙니다/);
+  assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
+});
+
+test("context --file은 전문을 전달 파일로 두고 메인에게는 첫 줄과 경로만 준다", () => {
+  const text = contextHandoff(root), file = `.code-agent/work/${ID}/handoff/context.md`;
+  assert.equal(readFileSync(join(root, file), "utf8"), `${context(root)}\n`);
+  assert.ok(text.includes(`전문: ${file}`));
+  assert.ok(text.split("\n").length <= 3);
+});
+
+test("대화 시작·압축 뒤 붙는 진행 상태 — 진행 중인 것이 없으면 아무것도 붙이지 않는다", () => {
+  assert.ok(sessionAnchor(root).includes(`작업 ${ID} (feature) · 스테이지 analysis`));
+  const empty = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-planning-")));
+  try { execFileSync("git", ["init", "-q"], { cwd: empty }); assert.equal(sessionAnchor(empty), ""); }
+  finally { rmSync(empty, { recursive: true, force: true }); }
+});
+
+test("Codex 담당은 배정 파일을 code-agent read로 읽고, staging 대신 본문을 실어 완료한다", () => {
+  const cli = join(__dirname, "../agent/cli.js");
+  const [summary] = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" })).assignments;
+  const shell = (command: string) => codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
+  assert.deepEqual(shell(`code-agent read ${summary.assignmentFile}`), {});
+  assert.ok(JSON.parse(readProjectFile(root, summary.assignmentFile)).lines.length > 10);
+  const item = handed(summary), staged = item.staging[`${DIR}/01-requirements.md`];
+  const patch = codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${staged}\n+x\n*** End Patch` } }) as { hookSpecificOutput?: { permissionDecisionReason: string } };
+  assert.match(patch.hookSpecificOutput!.permissionDecisionReason, /Codex.*\{path, content\}/);
+  assert.match(hostAssets("codex").get(".codex/agents/ca-analyst.toml")!, /Codex에서는 staging에 쓰지 않는다/);
+  finish(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, {}, "codex");
+  assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
+});
+
+test("형식 교정은 원본의 staging 본문을 지우지 않고 새 배정으로 옮겨 그대로 보존한다", () => {
+  const item = advance().assignments[0], original = item.staging[`${DIR}/01-requirements.md`];
+  const event = { cwd: root, session_id: "s", agent_id: "origin", agent_type: item.agent };
+  observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  write(original, REQUIREMENTS);
+  assert.throws(() => observePlanner({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...item.resultShape, status: "completed", summary: 7, evidence: [{ path: SPEC, line: 1 }] }) }), /결과 형식 오류/);
+  const repaired = advance().assignments[0];
+  assert.equal(repaired.mode, "correction");
+  assert.ok(existsSync(join(root, original)), "교정 담당이 다시 읽을 원본 staging 이 남아 있다");
+  const moved = repaired.staging[`${DIR}/01-requirements.md`], corrector = { cwd: root, session_id: "s", agent_id: "corrector", agent_type: repaired.agent };
+  observePlanner({ ...corrector, hook_event_name: "SubagentStart" });
+  write(moved, REQUIREMENTS);
+  observePlanner({ ...corrector, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ ...repaired.resultShape, status: "completed", summary: "요구 정리", evidence: [{ path: SPEC, line: 1 }] }) });
+  assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
+});
+
+test("계획 단계가 아니면 staging은 닫힌다", () => {
+  saveActive(root, { ...loadActive(root)!, phase: "implement" }, "next");
+  assert.match(hook({ cwd: root, session_id: "s", agent_id: "implementer", tool_name: "Write", tool_input: { file_path: join(root, DIR, ".staging/x/01-requirements.md") } })!, /계획 단계/);
 });

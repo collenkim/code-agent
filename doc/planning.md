@@ -66,7 +66,7 @@ code-agent planning dispatch analysis
 
 `prepare`를 인자 없이 실행하면 **현재 단계**의 기본 작업을 등록한다. analysis는 `analysis`, impact는 `explore`와 `synthesis`, design은 `design`, plan은 `plan`과 `critic`이다. 의존 순서대로 배정한다. 현재 입력의 완료 결과가 있으면 `dispatch`는 `cached: true`로 결과를 반환한다.
 
-새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 반환한다. 메인은 이 내용을 담당에게 넘긴다. 담당은 파일을 직접 쓰지 않고 계약에 맞는 JSON 하나를 반환한다. SubagentStart·SubagentStop의 관찰 훅(Claude는 planning-event, Codex는 codex-event)이 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 메인이 임의로 완료를 신고하는 명령은 없다.
+새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 갖는다. CLI(`advance`·`dispatch`·`repair`)는 배정 전문에 역할별 문서 기준(`ca-*/criteria.md`)과 출력 문서 뼈대를 붙여 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고, 출력에는 요약과 `assignmentFile`만 남긴다. 배정 파일에는 단계 context(`code-agent context` 출력 — 접수 요구 원문 목록·문서 형식·후보 파일·계획 형식)도 함께 넣는다. 메인은 그 경로를 담당에게 넘기고, 재배정이면 직전 실패·게이트 거부 사유처럼 파일에 없는 작업별 메모만 2~3줄 덧붙인다 — 배정 본문을 Agent 프롬프트에 옮겨 쓰지 않는다. 담당은 출력 문서를 배정의 `staging` 경로(`doc/work/<ID>/.staging/<dispatchId>/`)에 쓰고 계약에 맞는 JSON 하나를 반환하며, 그 JSON의 `artifacts`에는 `{path, staged}`만 넣는다. staging은 PreToolUse가 실행 중인 그 배정의 담당(`agent_id`)에게만 열고, 계획 담당은 그 밖을 쓰지 못한다. Write 도구가 없거나 hook에 `agent_id`가 오지 않는 호스트(Codex)는 `{path, content}`로 전체 내용을 싣는다. 함수(`advancePlanning` 등)의 반환은 전체 배정 그대로다. SubagentStart·SubagentStop의 관찰 훅(Claude는 planning-event, Codex는 codex-event)이 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 메인이 임의로 완료를 신고하는 명령은 없다.
 
 문서와 결과가 준비되면 기존 `code-agent next`를 사용한다. plan은 `code-agent plan submit doc/work/<ID>/plan.json`으로 제출한 뒤 사용자 승인을 받는다. 신규 작업에서는 메인·서브 에이전트의 일반 Write/Edit로 번호 문서와 plan.json을 덮어쓸 수 없다.
 

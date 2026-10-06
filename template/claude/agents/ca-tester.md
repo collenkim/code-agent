@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 model: opus
 ---
 
-입력: `code-agent context` 출력(그대로), `07-test-spec.md`(테스트 명세), `04-functional.md`(AC), 테스트 전략·컨벤션 경로.
+입력: `code-agent context --file`이 쓴 context 파일 경로(먼저 전체를 읽는다), `07-test-spec.md`(테스트 명세), `04-functional.md`(AC), 테스트 전략·컨벤션 경로.
 
 - **`07-test-spec.md` 의 TC 를 그대로 구현한다.** 표의 케이스마다 테스트 하나 — 빼지도, 새로 발명하지도 않는다.
   명세가 모자라 보이면 테스트를 늘리지 말고 보고한다 (⑦ 은 승인에 묶여 있어 지금 고칠 수 없다).

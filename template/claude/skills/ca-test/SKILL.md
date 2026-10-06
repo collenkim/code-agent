@@ -3,7 +3,7 @@ name: ca-test
 description: 테스트 단계(test)를 진행한다 — ⑦ 의 TC 만 쓰게 하고 code-agent test 로 돌린 뒤 게이트를 통과한다. 이 실행 뒤 테스트는 언다.
 ---
 
-**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
 검증 결과는 **네가 보고하는 것이 아니라 명령이 돌아서 남은 것만** 유효하다.
@@ -14,9 +14,9 @@ description: 테스트 단계(test)를 진행한다 — ⑦ 의 TC 만 쓰게 �
 
 ## 하는 일
 
-1. Bash: `code-agent context` — 이 스테이지에서 쓸 테스트 파일과 ⑦ 의 TC 가 나온다.
+1. Bash: `code-agent context --file` — 이 스테이지에서 쓸 테스트 파일과 ⑦ 의 TC 를 파일로 쓰고 `전문` 경로를 출력한다.
 2. ⑦ 에 아직 코드가 없는 TC 가 남아 있으면 `ca-tester` 를 부른다 (매니페스트에 `kind: test` 단계가 있어 `implement` 에서 이미 다 썼으면 이 자리는 **실행만** 한다).
-   context 출력을 **그대로** 넘기고 `07-test-spec.md` · `04-functional.md` 경로를 함께 준다.
+   `전문` 경로와 `07-test-spec.md` · `04-functional.md` 경로를 준다 — context 본문을 옮겨 쓰지 않는다.
    **⑦ 의 TC 를 그대로, 그것만** 쓰게 한다 — 빼지도 더하지도 않는다. 명세가 모자라 보인다는 보고가 오면 고치지 말고 그대로 사용자에게 전한다 (⑦ 은 승인에 묶여 있다).
 3. Bash: `code-agent test` — `test` 와 테스트 전략이 적은 명령을 돌리고 ⑦ 의 TC id 를 대조한다.
    전체 작업 흐름에서는 테스트 작성 후 `code-agent verify --json`을 사용한다. 유효한 check 증거는 재사용하고 test 실행·판정·review 전이를 코드가 처리한다. 반환 노드 처리는 ca-check의 전체 흐름 규칙을 따른다. `review`를 반환했으면 아래 `next`를 중복 호출하지 않는다. 이미 verify가 review로 이동했다면 이 테스트 절차도 반복하지 않는다.

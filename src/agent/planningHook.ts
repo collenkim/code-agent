@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, realpathSync } from "fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "fs";
 import { basename, dirname, relative, resolve, sep } from "path";
 import { writeAtomic } from "../core/atomic";
 import { sha } from "./docs";
-import { findRepoRoot, questionsFile } from "./layout";
-import { mutatePlanning, requireRolePhase } from "./planning";
-import { fileHash, inputFiles, planningPath, readyProblems, referenceProblem, ResultSchema, TASK_AGENTS, taskHash } from "./planningState";
+import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
+import { mutatePlanning, requireRolePhase, stagingPath } from "./planning";
+import { fileHash, inputFiles, planningPath, readyProblems, referenceProblem, ResultSchema, TASK_AGENTS, taskHash, type PlanningResult, type ResolvedResult } from "./planningState";
 import type { ReviewHookInput } from "./reviewHook";
 import { loadWork } from "./work";
 
@@ -26,6 +26,22 @@ function handback(input: ReviewHookInput, root: string, startedAt: string): stri
   }
   if (result.length > 500_000) throw new Error("계획 결과가 크기 한도를 넘었습니다.");
   return result.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, "$1");
+}
+/** 담당이 staging에 쓴 출력 문서를 읽는다. 배정된 경로가 아니면 받지 않는다. */
+function stagedContent(root: string, id: string, dispatchId: string, item: { path: string; staged: string }): string {
+  if (item.staged !== stagingPath(id, dispatchId, item.path)) throw new Error(`배정된 staging 경로가 아닙니다: ${item.staged}`);
+  const file = planningPath(root, item.staged);
+  if (!existsSync(file)) throw new Error(`staging 문서가 없습니다: ${item.staged}`);
+  const content = readFileSync(file, "utf8");
+  if (content.length > 131072) throw new Error(`staging 문서가 크기 한도를 넘었습니다: ${item.staged}`);
+  return content;
+}
+/** 형식 교정 비교용 — 원본이 staging으로 냈다면 그 파일이 남아 있을 때 본문으로 바꿔 대조한다 */
+function comparable(root: string, items: PlanningResult["artifacts"]): unknown {
+  return items.map(item => {
+    if (!("staged" in item)) return item;
+    try { return { path: item.path, content: readFileSync(planningPath(root, item.staged), "utf8") }; } catch { return item; }
+  });
 }
 export function observePlanner(input: ReviewHookInput, projectDir?: string): void {
   if (!Object.values(TASK_AGENTS).includes(input.agent_type as never) || !["SubagentStart", "SubagentStop"].includes(input.hook_event_name ?? "")) return;
@@ -70,13 +86,15 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       last.status = "needs-correction";
       return `${last.error} — planning advance 또는 planning repair ${record.task.id}로 원본 결과의 형식만 교정하세요.`;
     }
-    const result = schema.data;
-    const record = state.tasks.find(record => record.task.id === result.taskId), last = record?.attempts.at(-1);
-    if (!record || !last || last.status !== "running" || last.dispatchId !== result.dispatchId || last.inputHash !== result.inputHash || (agent.dispatchId && agent.dispatchId !== last.dispatchId) || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at)) throw new Error("현재 배정에 속한 실행 결과가 아닙니다.");
+    const reported = schema.data;
+    const record = state.tasks.find(record => record.task.id === reported.taskId), last = record?.attempts.at(-1);
+    if (!record || !last || last.status !== "running" || last.dispatchId !== reported.dispatchId || last.inputHash !== reported.inputHash || (agent.dispatchId && agent.dispatchId !== last.dispatchId) || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at)) throw new Error("현재 배정에 속한 실행 결과가 아닙니다.");
     agent.finished = true;
     try {
       requireRolePhase(work, record.task.role);
       if (taskHash(work, state, record.task) !== last.inputHash) throw new Error("실행 중 입력이 바뀌었습니다. 새 입력으로 다시 배정하세요.");
+      const result: ResolvedResult = { ...reported, artifacts: reported.status === "completed"
+        ? reported.artifacts.map(item => "staged" in item ? { path: item.path, content: stagedContent(root, work.active.id, last.dispatchId, item) } : item) : [] };
       const problems = readyProblems(work, state, record);
       if (problems.length) throw new Error(problems.join("\n"));
       const permitted = new Set(inputFiles(work, record.task, state));
@@ -90,7 +108,7 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
       if (result.status === "completed" && (!result.evidence.length || result.questions.length)) throw new Error("완료 결과에는 실제 근거가 필요하며 미결 질문이 없어야 합니다.");
       if (result.questions.some(question => question.requirements.some(key => !record.task.requirements.includes(key)))) throw new Error("배정 요구 범위 밖 질문입니다.");
       if (new Set(result.questions.map(question => question.id)).size !== result.questions.length) throw new Error("중복 질문 번호입니다.");
-      const outputs = result.artifacts.map(artifact => artifact.path);
+      const outputs = reported.artifacts.map(artifact => artifact.path);
       if (result.status === "completed" && JSON.stringify([...outputs].sort()) !== JSON.stringify([...record.task.outputs].sort())) throw new Error("배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다.");
       if (result.status !== "completed" && outputs.length) throw new Error("미완료 결과는 확정 문서를 쓰지 않습니다.");
       if (last.correction?.used && result.status !== "failed") {
@@ -100,11 +118,15 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string): voi
           const source = original as Record<string, unknown>;
           for (const key of ["status", "summary", "evidence", "facts", "questions", "artifacts", "findings"] as const) {
             const value = ResultSchema.shape[key].safeParse(source[key]);
-            if (value.success && JSON.stringify(value.data) !== JSON.stringify(result[key])) throw new Error(`형식 교정에서 유효한 원본 ${key}를 바꿀 수 없습니다. 판단 보완은 새 작업으로 처리하세요.`);
+            const now = key === "artifacts" ? comparable(root, reported.artifacts) : result[key];
+            if (value.success && JSON.stringify(key === "artifacts" ? comparable(root, value.data as PlanningResult["artifacts"]) : value.data) !== JSON.stringify(now)) throw new Error(`형식 교정에서 유효한 원본 ${key}를 바꿀 수 없습니다. 판단 보완은 새 작업으로 처리하세요.`);
           }
         }
       }
-      if (result.status === "completed") for (const artifact of result.artifacts) writeAtomic(planningPath(root, artifact.path), artifact.content);
+      if (result.status === "completed") {
+        for (const artifact of result.artifacts) writeAtomic(planningPath(root, artifact.path), artifact.content);
+        rmSync(planningPath(root, `${workDocsDir(work.active.id)}/.staging/${last.dispatchId}`), { recursive: true, force: true });
+      }
       if (result.questions.length) {
         const path = planningPath(root, questionsFile(work.active.id));
         let body = existsSync(path) ? readFileSync(path, "utf8") : "# 질문\n";

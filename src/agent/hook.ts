@@ -1,10 +1,10 @@
-import { isAbsolute, relative, resolve } from "path";
+import { basename, isAbsolute, relative, resolve } from "path";
 
 import { existsSync } from "fs";
 import { join } from "path";
 
 import { hashPlan } from "../core/approval";
-import { requiredOutputs, TASK_AGENTS } from "./planningState";
+import { loadPlanning, requiredOutputs, TASK_AGENTS } from "./planningState";
 import { checkPaths, unplannedFiles } from "../core/gate";
 import type { Manifest, StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
@@ -38,6 +38,8 @@ import { consentCommandGuard } from "./consent";
 export interface HookInput {
   cwd: string;
   session_id?: string;
+  /** 서브에이전트 안의 도구 호출에만 있다 — 메인과 계획 담당을 가른다 */
+  agent_id?: string;
   tool_name: string;
   tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string };
 }
@@ -99,7 +101,7 @@ function isModelCommand(command: string): boolean {
   }
   const rest = command.slice("code-agent ".length);
   if (/^model(?: --host (?:claude|codex))?$/.test(rest)) return true; // 조회만 허용한다. 변경은 관찰된 동의로 적용한다.
-  if (/^consent (prepare\s+\S.*|(?:status|apply) [a-f0-9-]+)$/.test(rest)) return true;
+  if (/^consent (prepare\s+\S.*|(?:status|apply|finish) [a-f0-9-]+)$/.test(rest)) return true;
   if (rest === "setup") return true; // baseline은 사람의 TTY 확인 전용
   return MODEL_SUBCOMMANDS.some((sub) => rest === sub || rest.startsWith(`${sub} `));
 }
@@ -168,7 +170,10 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   if (outside) {
     return outside;
   }
-  if (work) return decideWrite(work, path);
+  if (work) {
+    const planner = decidePlanner(work, path, input);
+    return planner === undefined ? decideWrite(work, path) : planner || undefined;
+  }
   return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(manifest, path);
 }
 
@@ -342,6 +347,27 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
     "직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다. " +
     "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
   );
+}
+
+/**
+ * 계획 담당의 출력 문서 자리(staging). 실행 중인 그 배정의 담당만 쓰고, 계획 담당은 그 밖을 쓰지 않는다.
+ * 본문을 결과 보고에 싣지 않으려고 연 자리라 메인이 대신 쓸 수 없다 — 쓰면 관찰된 결과가 아니게 된다.
+ * 둘 다 아니면 undefined로 기존 판정에 넘기고, 허용이면 빈 문자열이다.
+ */
+function decidePlanner(work: Work, path: string, input: HookInput): string | undefined {
+  const staging = `${workDocsDir(work.active.id)}/.staging/`;
+  const inside = path.toLowerCase().startsWith(staging.toLowerCase());
+  const planning = work.active.planningVersion && ["analysis", "impact", "design", "plan"].includes(work.active.phase);
+  if (!planning) return inside ? "staging은 계획 단계의 배정 담당만 씁니다." : undefined;
+  const state = inside || input.agent_id ? loadPlanning(work) : undefined;
+  const agent = input.agent_id ? state?.agents.find((item) => item.id === input.agent_id && item.session === input.session_id && !item.finished) : undefined;
+  if (!inside) return agent ? `계획 담당은 배정 파일의 staging 경로에만 씁니다: ${path}` : undefined;
+  if (!agent) return "staging은 실행 중인 배정의 계획 담당만 씁니다. 메인은 계획 문서를 대신 쓰지 않습니다. 서브 에이전트 식별자를 hook에 주지 않는 호스트(Codex)의 담당은 artifacts에 {path, content}로 전체 내용을 넣습니다.";
+  const [dispatchId, name, ...rest] = path.slice(staging.length).split("/");
+  const record = state!.tasks.find((item) => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === dispatchId);
+  if (!record || rest.length || TASK_AGENTS[record.task.role] !== agent.type || (agent.dispatchId && agent.dispatchId !== dispatchId) ||
+    !record.task.outputs.some((output) => basename(output) === name)) return `실행 중인 배정의 staging 경로가 아닙니다: ${path}`;
+  return "";
 }
 
 function decideWrite(work: Work, path: string): string | undefined {
