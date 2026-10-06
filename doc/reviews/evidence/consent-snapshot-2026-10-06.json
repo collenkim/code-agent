@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-06",
+  "baseCommit": "202f8ba",
+  "scope": "Consent ignored external hook noise, protected inputs, changed-path diagnostics, intake help",
+  "runs": {
+    "full": {
+      "command": "npm test",
+      "log": "dist/consent-snapshot-regression.log",
+      "sha256": "2e6d9ffae1b90524621d21de545f8db2415b70dc859381a7686c8e147c639c41",
+      "tests": 759,
+      "passed": 755,
+      "failed": 0,
+      "skipped": 4,
+      "cancelled": 0,
+      "durationMs": 816916.728
+    },
+    "focused": {
+      "command": "node --test dist/test/consentSnapshot.test.js",
+      "log": "dist/consent-snapshot-focused.log",
+      "sha256": "47129b1f16a5731e1b3eca28c93cd1a7aa368a902a28f94245a19ac1f7542ae9",
+      "tests": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 68992.4654
+    }
+  },
+  "sourceHashes": {
+    "src/agent/consent.ts": "54f34feb5f6bc4f1d4efb18a7e4edc5e2ea36d918daa93ad65b645e717a4a36c",
+    "src/agent/hook.ts": "e605bc00a032ae67ad1146d83408064249dc83fe3e69e09e2e837004113b7ac0",
+    "src/test/consentSnapshot.test.ts": "cd74452069e4cbd5443df4921ac1f22192b917fd841bf4a6123181b1f88b0833"
+  },
+  "skippedReasons": [
+    "Two case-sensitive filename tests on Windows.",
+    "Two POSIX permission tests on Windows."
+  ],
+  "limits": [
+    "External hook writes and host question events are synthetic fixtures; actual AI-DLC and human UI were not run.",
+    "Explicit control/document paths and tracked audit files remain protected; ignored runtime settings outside explicit paths are excluded.",
+    "No large-repository performance benchmark.",
+    "No global package or user project hook configuration was modified."
+  ],
+  "documentationValidation": {
+    "documents": 8,
+    "localLinks": 108,
+    "missing": 0
+  }
+}

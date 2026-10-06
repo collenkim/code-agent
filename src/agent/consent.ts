@@ -7,7 +7,7 @@ import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
 import { abort, decide, requireValidatable, status } from "./commands";
-import { setupBaseline } from "./bootstrap";
+import { baselineFiles, setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
 import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
@@ -37,6 +37,7 @@ type Action = z.output<typeof ActionSchema>;
 interface Prompt { shown: string; word: string }
 interface Question { question: string; header: string; options: { label: string; description: string }[]; multiSelect: false }
 interface Choice { shown: string; prompt: string; target?: string; key?: string; answer?: string }
+interface SnapshotEntries { files: Record<string, string>; state: Record<string, string> }
 export interface ConsentRecord {
   id: string; root: string; action: Action; snapshot: string; createdAt: string;
   status: "pending" | "approved" | "changes-requested" | "deferred" | "applying" | "applied" | "failed";
@@ -46,6 +47,7 @@ export interface ConsentRecord {
   observed?: { toolId: string; at: string; answers: Record<string, string> }[];
   result?: string;
   sourceSnapshot?: string;
+  snapshotEntries?: SnapshotEntries;
   channel?: "claude-question" | "codex-prompt";
 }
 const DIR = ".code-agent/consents";
@@ -132,6 +134,9 @@ function git(root: string, args: string[], optional = false): string {
 
 /** 승인 대상은 작업 트리·index·기준·진행 상태다. 확인 기록 자체는 비교에서 제외한다. */
 export function consentSnapshot(root: string, action: Action): string {
+  return inspectConsentSnapshot(root, action).hash;
+}
+function inspectConsentSnapshot(root: string, action: Action): { hash: string; entries: SnapshotEntries } {
   root = canonicalRoot(root);
   const files = new Set<string>();
   const skipped = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", ".idea", "__pycache__", ".pytest_cache"]);
@@ -157,29 +162,52 @@ export function consentSnapshot(root: string, action: Action): string {
     if (!samePath(git(root, ["rev-parse", "--show-toplevel"]).trim(), root)) throw new Stop("Git 루트와 확인 대상 저장소가 다릅니다.");
     for (const file of git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]).split("\0")) if (file) files.add(file);
   }
-  // Git에서 무시하는 문서·설정도 사람이 본 내용과 실행 환경을 바꾸므로 포함한다.
-  walk("");
+  // Git 저장소는 추적 파일과 무시되지 않은 새 파일만 기본 대상으로 삼는다.
+  // 외부 hook의 무시된 세션·캐시는 제외하되 아래 제어 파일·문서는 반드시 포함한다.
+  if (!hasGit) walk("");
   for (const dir of [".code-agent", ".claude", ".agents", ".codex", "doc", "docs"]) walk(dir, true);
-  localPath(root, "code-agent.json");
+  for (const file of ["code-agent.json", "CLAUDE.md", "AGENTS.md"]) walk(file, true);
   const manifest = loadManifestIfAny(root);
   for (const file of [...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap(kind => docPaths(manifest, kind))) walk(file, true);
   for (const stage of manifest?.stages ?? []) if (stage.template) walk(stage.template, true);
   if (action.spec) walk(action.spec, true);
+  if (action.action === "setup" || action.action === "baseline") for (const file of baselineFiles(root)) walk(file, true);
   const hash = createHash("sha256");
+  const entries: SnapshotEntries = { files: Object.create(null), state: Object.create(null) };
+  const digest = (value: string) => createHash("sha256").update(value).digest("hex");
   for (const file of [...files].filter(f => !excluded(f)).sort()) {
     const full = localPath(root, file, true), stat = statIfPresent(full);
     const content = !stat ? "missing" : stat.isSymbolicLink() ? `link:${readlinkSync(full)}` : stat.isFile() ? createHash("sha256").update(readFileSync(full)).digest("hex") : stat.isDirectory() ? "directory" : "special";
-    hash.update(JSON.stringify([file, stat?.mode, content]));
+    const value = JSON.stringify([file, stat?.mode, content]);
+    hash.update(value);
+    entries.files[file] = digest(value);
   }
+  const state = (name: string, value: string) => { hash.update(value); entries.state[name] = digest(value); };
   if (hasGit) {
-    for (const args of [["rev-parse", "--verify", "--quiet", "HEAD"], ["symbolic-ref", "-q", "HEAD"]]) hash.update(JSON.stringify(git(root, args, true)));
-    hash.update(git(root, ["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"]));
-    hash.update(git(root, ["ls-files", "--stage", "-z"]));
-    hash.update(git(root, ["config", "--null", "--list", "--show-origin"]));
+    state("Git HEAD", JSON.stringify(git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], true)));
+    state("Git 브랜치", JSON.stringify(git(root, ["symbolic-ref", "-q", "HEAD"], true)));
+    state("Git 스테이지 diff", git(root, ["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"]));
+    state("Git index", git(root, ["ls-files", "--stage", "-z"]));
+    state("Git 설정", git(root, ["config", "--null", "--list", "--show-origin"]));
   }
-  if (action.action.startsWith("plugin-")) hash.update(JSON.stringify(readStore()));
-  if (action.action === "update") hash.update(sourceUpdateSnapshot(root));
-  return hash.digest("hex");
+  if (action.action.startsWith("plugin-")) state("플러그인 저장소", JSON.stringify(readStore()));
+  if (action.action === "update") state("업데이트 소스", sourceUpdateSnapshot(root));
+  return { hash: hash.digest("hex"), entries };
+}
+
+function requireConsentSnapshot(root: string, record: Pick<ConsentRecord, "snapshot" | "snapshotEntries" | "action">, message: string,
+  current = inspectConsentSnapshot(root, record.action)): void {
+  if (record.snapshot === current.hash) return;
+  const previous = record.snapshotEntries;
+  if (!previous) throw new Stop(`${message}\n이전 동의 기록에는 경로별 해시가 없습니다. 동의를 다시 준비하세요.`);
+  const changes: string[] = [];
+  for (const group of ["files", "state"] as const) {
+    for (const key of [...new Set([...Object.keys(previous[group]), ...Object.keys(current.entries[group])])].sort()) {
+      if (previous[group][key] !== current.entries[group][key]) changes.push(group === "files" ? `파일 ${JSON.stringify(key)}` : key);
+    }
+  }
+  const limit = 6;
+  throw new Stop(`${message}\n변경 대상: ${changes.slice(0, limit).join(" · ") || "스냅샷 수집 범위"}${changes.length > limit ? ` 외 ${changes.length - limit}건` : ""}`);
 }
 
 const CAPTURE = Symbol("capture confirmation");
@@ -273,11 +301,13 @@ export function prepareConsent(root: string, raw: unknown): string {
   return withConsentLock(root, () => {
     // 미리보기가 문서·설정을 읽기 전에 링크 경로를 차단한다. 확인 지점에서 실행을 끊으므로
     // 도메인 변경은 하지 않는다. deliver의 보고서 렌더만 의도한 준비 산출물이다.
-    const before = consentSnapshot(root, action);
+    const before = inspectConsentSnapshot(root, action);
     const displayed = preview(root, action);
-    const snapshot = consentSnapshot(root, action);
-    if (action.action !== "deliver" && before !== snapshot) throw new Stop("확인 준비 중 대상이 바뀌었습니다. 현재 내용을 다시 준비하세요.");
-    const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,createdAt:new Date().toISOString(),status:"pending",
+    const inspected = inspectConsentSnapshot(root, action);
+    const snapshot = inspected.hash;
+    if (action.action !== "deliver") requireConsentSnapshot(root, { action, snapshot: before.hash, snapshotEntries: before.entries },
+      "확인 준비 중 대상이 바뀌었습니다. 현재 내용을 다시 준비하세요.", inspected);
+    const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,snapshotEntries:inspected.entries,createdAt:new Date().toISOString(),status:"pending",
       ...(action.action === "update" ? {sourceSnapshot:sourceUpdateSnapshot(root)} : {})};
     save(root,record);
     return consentStatus(root,record.id);
@@ -313,7 +343,7 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
   const record = loadConsent(root,id);
   if (record.channel && record.channel !== channel) throw new Stop("동의를 시작한 호스트와 다릅니다. 새로 준비하세요.");
   if (record.status !== "pending") throw new Stop("이미 응답했거나 종료한 확인 요청입니다.");
-  if (record.snapshot !== consentSnapshot(root,record.action)) throw new Stop("확인 대상이 바뀌었습니다. 변경 내용을 다시 준비해 확인하세요.");
+  requireConsentSnapshot(root, record, "확인 대상이 바뀌었습니다. 변경 내용을 다시 준비해 확인하세요.");
   if (record.sessionId && record.sessionId !== sessionId) throw new Stop("다른 세션의 확인 요청입니다. 현재 세션에서 새로 준비하세요.");
   if (record.sessionCwd && !samePath(record.sessionCwd, cwd)) throw new Stop("확인을 시작한 작업 경로와 다릅니다. 새로 준비하세요.");
   if (input.hook_event_name === "PreToolUse") {
@@ -400,11 +430,11 @@ function applyLocked(root: string, id: string): string {
   const record = loadConsent(root, id);
   if (record.status === "applied") return cachedResult(record);
   if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
-  if(record.snapshot!==consentSnapshot(root,record.action))throw new Stop("확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
+  requireConsentSnapshot(root, record, "확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
   const action=record.action;
   const pluginPreview = action.action === "plugin-add" ? previewPluginAdd(root, action) : action.action === "plugin-remove" ? previewPluginRemove(action.name) : undefined;
   if (pluginPreview !== undefined && record.summary !== `${TITLES[action.action]}\n\n${pluginPreview}`) throw new Stop("플러그인 설명이 바뀌었습니다. 다시 확인하세요.");
-  if(record.snapshot!==consentSnapshot(root,record.action))throw new Stop("실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
+  requireConsentSnapshot(root, record, "실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
   record.status="applying";save(root,record);
   const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · 명시적 선택`};
   try {
