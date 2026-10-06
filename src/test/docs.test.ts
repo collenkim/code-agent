@@ -11,6 +11,7 @@ import { start } from "./confirmedStart";
 import { checkDoc, checkProjectDocs, checkSections, DOCS_LEDGER, readDocLedger, recordDocConfirmation } from "../agent/docs";
 import { confirmDoc, docsBegin, docsEnd, docsLink, docsSkeleton, docsStatus } from "../agent/docsCommands";
 import { decide } from "../agent/hook";
+import { doctor } from "../agent/doctor";
 import { ARCHITECTURE, CONVENTIONS, QUALITY, skeleton, TEST_STRATEGY } from "../agent/schemas";
 import { manifestCheck, survey } from "../agent/survey";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
@@ -241,6 +242,16 @@ describe("확정", () => {
     const lines = readFileSync(path, "utf-8").trim().split("\n");
     writeFileSync(path, `${lines[1]}\n`);
     assert.throws(() => readDocLedger(repo), /사슬이 끊겼습니다/);
+    const report = doctor(repo);
+    assert.match(report.text, /✗ 공통 문서 확정.*사슬이 끊겼습니다/, "doctor 는 던지지 않고 진단을 끝까지 낸다");
+  });
+
+  test("autocrlf 체크아웃이 원장에 CR 을 붙여도 사슬은 그대로다", () => {
+    confirmAll();
+    const path = join(repo, DOCS_LEDGER);
+    writeFileSync(path, readFileSync(path, "utf-8").replace(/\n/g, "\r\n"));
+    assert.equal(readDocLedger(repo).length, 4);
+    assert.ok(checkProjectDocs(repo, loadManifestIfAny(repo)).every((c) => c.ok));
   });
 
   test("터미널이 아니면 확정하지 않는다", () => {
@@ -293,6 +304,20 @@ describe("문서 작성 세션", () => {
     assert.equal(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent survey" } }), undefined);
     docsEnd(repo);
     assert.equal(hookWrite(`${APP}/deal/domain/Deal.java`), undefined);
+  });
+
+  test("세션 중 code-agent.json 을 잘못 써도 읽기·그 파일 고치기·확인 명령은 열려 있다", () => {
+    docsBegin(repo);
+    write("code-agent.json", JSON.stringify(MANIFEST).slice(0, -1));
+    assert.equal(decide({ cwd: repo, tool_name: "Read", tool_input: { file_path: join(repo, "code-agent.json") } }), undefined);
+    assert.equal(hookWrite("code-agent.json"), undefined, "고칠 파일은 쓸 수 있다");
+    assert.equal(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent manifest check" } }), undefined);
+    assert.match(hookWrite(`${APP}/deal/domain/Deal.java`) ?? "", /상태·설정을 읽지 못했습니다.*code-agent\.json 을 고친 뒤/);
+    assert.match(hookWrite(".code-agent/approvals/docs.jsonl") ?? "", /읽지 못했습니다/, "상태 원장은 여전히 쓰지 못한다");
+    assert.ok(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git status" } }));
+    write("code-agent.json", JSON.stringify(MANIFEST));
+    assert.match(hookWrite(`${APP}/deal/domain/Deal.java`) ?? "", /문서 작성 중에는/, "고치면 원래 규칙으로 돌아간다");
+    docsEnd(repo);
   });
 
   test("작업 중에는 문서 세션을 열지 않는다", () => {

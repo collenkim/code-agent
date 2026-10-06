@@ -4,6 +4,7 @@ import { join } from "path";
 import { canonical, DOCS_SESSION_FILE, findRepoRoot, workDocsDir } from "./layout";
 import { loadRequestSession } from "./request";
 import { approvalOf, loadWork } from "./work";
+import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume) 비워지거나(clear) 압축된(compact) 뒤
@@ -13,6 +14,12 @@ import { approvalOf, loadWork } from "./work";
  * 압축 요약이 동의 ID·단계를 잃어도 여기서 다시 잡는다. 진행 중인 것이 없으면 아무것도 붙이지 않는다.
  */
 export function sessionAnchor(repoRoot: string): string {
+  const anchor = progress(repoRoot);
+  const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
+  return aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
+}
+
+function progress(repoRoot: string): string {
   const work = loadWork(repoRoot);
   if (work) {
     const { active, order } = work;

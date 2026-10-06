@@ -1176,6 +1176,15 @@ describe("P7 · hook — plugin list 만 열린다", () => {
     assert.equal(decide({ cwd: repo, tool_name: "Read", tool_input: { file_path: join(repo, SRC) } }), undefined);
   });
 
+  test("48b. 긴 경로 표기·UNC·상대 경로·git --no-index 로도 키 자리를 읽지 못한다", () => {
+    const read = (file_path: string) => decide({ cwd: repo, tool_name: "Read", tool_input: { file_path } }) ?? "";
+    assert.match(read(`\\\\?\\${storePath()}`), /키가 있는 자리/);
+    assert.match(read("\\\\localhost\\c$\\Users\\someone\\.code-agent\\credentials.json"), /키가 있는 자리/);
+    assert.match(bash("git diff --no-index ../../Users/someone/.code-agent/credentials.json README.md") ?? "", /키가 있는 자리/);
+    assert.match(bash("git diff --no-index ../outside.txt README.md") ?? "", /Bash 로 code-agent 명령/, "저장소 밖 파일을 읽는 --no-index 는 열지 않는다");
+    assert.equal(bash("git diff README.md"), undefined);
+  });
+
   test("49. 모델이 매니페스트에 제 명령을 선언해 키 파일을 읽는 길이 막힌다", () => {
     // 모델은 문서 세션에서 code-agent.json 을 쓸 수 있다 — 허용 목록을 제 손으로 넓혀 놓아도,
     // 그 자리는 **선언된 명령으로도** 열리지 않는다 (argv 를 그대로 선언해 정확히 일치시킨다)

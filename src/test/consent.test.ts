@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
@@ -53,6 +54,33 @@ test("finish는 응답 전에는 status와 같고, 승인이 관찰된 뒤에만
   assert.match(consentCommandGuard(root, `code-agent consent finish ${fixture.id}`, "other-session")!, /현재 세션/);
 });
 function assertNoDocs(): void { assert.equal(readDocLedger(root).length, 0); }
+
+test("죽은 apply 가 남긴 잠금은 되찾고, 주인을 모르거나 살아 있는 잠금은 경로·pid 를 알린다", () => {
+  const fixture = docsFixture();
+  observeConsent(consentEvent(fixture, "PreToolUse"));
+  observeConsent(consentEvent(fixture, "PostToolUse", { tool_response: nativeResponse(fixture) }));
+  const lock = join(root, ".code-agent/consents/apply.lock");
+  writeFileSync(lock, "");
+  assert.throws(() => applyConsent(root, fixture.id), /apply\.lock 을 지운 뒤/, "주인을 모르는 잠금은 훔치지 않는다");
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, host: hostname(), at: "t" }));
+  assert.throws(() => applyConsent(root, fixture.id), new RegExp(`pid ${process.pid}`), "살아 있는 주인은 기다린다");
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), at: "t" }));
+  applyConsent(root, fixture.id);
+  assert.equal(loadConsent(root, fixture.id).status, "applied");
+  assert.equal(existsSync(lock), false);
+});
+
+test("끝맺지 못한 applying 은 '응답 없음' 이 아니라 중단으로 알리고 같은 동의로 다시 돌리지 않는다", () => {
+  const fixture = docsFixture();
+  observeConsent(consentEvent(fixture, "PreToolUse"));
+  observeConsent(consentEvent(fixture, "PostToolUse", { tool_response: nativeResponse(fixture) }));
+  const file = join(root, ".code-agent/consents", `${fixture.id}.json`);
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), status: "applying" }));
+  assert.throws(() => applyConsent(root, fixture.id), /이전 적용이 끝나지 않은 채 중단됐습니다/);
+  assert.equal(loadConsent(root, fixture.id).status, "failed");
+  assertNoDocs();
+});
 
 /** Invalid runtime events may be ignored or rejected, but must never authorize an action. */
 function assertNotAuthorized(fixture: PreparedConsentFixture, event: ConsentHookInput): void {

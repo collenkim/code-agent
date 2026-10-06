@@ -201,6 +201,16 @@ const ManifestSchema = z.object({
         "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
         "덮어쓸 수 없다 — 그 둘은 최상위 선언이 이미 쓰고 있는 이름이다",
     ),
+  commandTimeoutMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(240)
+    .default(10)
+    .describe(
+      "검증 명령(build·test·prepare·commands) 한 번의 제한 시간(분). 넘으면 프로세스 트리째 끝내고 실패가 아닌 " +
+        "실행 오류로 남긴다. hashManifest 에는 넣지 않는다: 무엇을 돌리는지가 아니라 얼마나 기다리는지다",
+    ),
   fixRounds: z
     .number()
     .int()

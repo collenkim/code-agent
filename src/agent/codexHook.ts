@@ -65,7 +65,8 @@ export function codexHook(input: CodexHookInput): object {
   const root = findRepoRoot(input.cwd);
   if (input.hook_event_name === "PreToolUse") {
     if (!input.tool_name || !input.tool_input) throw new Error("Codex 도구 입력이 없습니다.");
-    const common = {cwd: input.cwd, session_id: input.session_id};
+    // Windows 의 Codex 는 셸 명령을 PowerShell 로 돌린다 — 괄호·$ 평가를 같은 규칙으로 막는다
+    const common = {cwd: input.cwd, session_id: input.session_id, ...(process.platform === "win32" ? {shell: "powershell" as const} : {})};
     if (input.tool_name === "apply_patch") {
       if (typeof input.tool_input.command !== "string") throw new Error("패치 내용이 없습니다.");
       for (const path of patchPaths(input.tool_input.command)) {

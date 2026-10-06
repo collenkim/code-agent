@@ -10,6 +10,7 @@ import { POLICY_KINDS } from "./schemas";
 import { parseQuestions, unansweredQuestions } from "./questions";
 import { Stop } from "./stop";
 import type { Work } from "./work";
+import { selectedHosts } from "./hosts";
 
 export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", impact: "ca-explorer", synthesis: "ca-writer", design: "ca-analyst", plan: "ca-analyst", critic: "ca-critic" } as const;
 export const TaskSchema = z.object({
@@ -52,6 +53,9 @@ export interface PlanningState {
   version: 1; id: string; target: string; maxParallel: number;
   tasks: TaskRecord[];
   agents: { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string }[];
+  /** 두 호스트가 설치된 프로젝트의 교차 계획 검토 — 다른 호스트를 CLI 가 실행해 같은 critic 입력을 독립 검토한 결과 */
+  cross?: { host: string; model: string; at: string; criticDispatchId: string; status: "completed" | "needs-input" | "failed"; summary: string;
+    findings: { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } }[]; questions: number };
 }
 
 export function planningFile(work: Work): string {
@@ -173,6 +177,17 @@ const OUTPUTS: Record<PlanningTask["role"], string[]> = {
 };
 export function requiredOutputs(work: Work, role: PlanningTask["role"]): string[] { return OUTPUTS[role].map(file => `${workDocsDir(work.active.id)}/${file}`); }
 
+/** 현재 critic 결과에 대한 교차 검토가 끝났는지 — 두 호스트가 설치된 프로젝트의 계획 제출 조건 */
+export function crossCriticProblems(root: string, state: PlanningState): string[] {
+  const critic = state.tasks.find((record) => record.task.role === "critic")?.attempts.at(-1);
+  if (selectedHosts(root).length < 2 || critic?.status !== "completed") return [];
+  const cross = state.cross;
+  if (!cross || cross.criticDispatchId !== critic.dispatchId) return ["교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by <다른 호스트>"];
+  if (cross.status === "needs-input") return ["교차 검토: 질문에 답한 뒤 code-agent planning cross 를 다시 실행하세요"];
+  if (cross.status !== "completed") return [`교차 검토가 끝나지 않았습니다: ${cross.summary}`];
+  return cross.findings.some((finding) => finding.severity === "blocking") ? ["교차 검토: 차단 지적이 남아 있습니다 — 계약의 수정 피드백으로 원인 작업을 다시 배정하세요"] : [];
+}
+
 export function planningProblems(work: Work, phase: "analysis" | "impact" | "design" | "plan"): string[] {
   if (!work.active.planningVersion) return [];
   const state = loadPlanning(work);
@@ -191,6 +206,7 @@ export function planningProblems(work: Work, phase: "analysis" | "impact" | "des
     for (const record of explorers) if (!taskCurrent(work, state, record)) problems.push(`영역 조사 ${record.task.id}가 완료되지 않았거나 오래됐습니다`);
     problems.push(...mergeProblems(state));
   }
+  if (phase === "plan") problems.push(...crossCriticProblems(work.repoRoot, state));
   return problems;
 }
 export function mergeProblems(state: PlanningState): string[] {

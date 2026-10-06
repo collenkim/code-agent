@@ -46,7 +46,7 @@ const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync('child-invocations.jsonl', JSON.stringify({args, pid: process.pid, version: ${JSON.stringify(version)}}) + '\\n');
 if (args[0] === 'update') {
-  if (args[1] !== '--templates-only' || args[2] !== '--cli') throw new Error('recursive source update');
+  if (args[1] !== '--templates-only') throw new Error('recursive source update');
   fs.writeFileSync('installed-template', fs.readFileSync(path.join(__dirname, '../../template/value')));
   fs.writeFileSync('installed-version', ${JSON.stringify(version)});
   console.log('templates ${version} applied');
@@ -138,7 +138,7 @@ test("one shot fast-forwards, installs, builds, applies fresh CLI templates and 
   assert.equal(readFileSync(join(target, "installed-template"), "utf8"), "template new");
   assert.equal(readFileSync(join(target, "installed-version"), "utf8"), "new");
   const children = readFileSync(join(target, "child-invocations.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
-  assert.deepEqual(children.map(child => child.args), [["update", "--templates-only", "--cli", join(source, "dist/agent/cli.js")], ["doctor"]]);
+  assert.deepEqual(children.map(child => child.args), [["update", "--templates-only"], ["doctor"]], "훅 명령은 설치된 꼴을 잇는다 — 이 PC 의 빌드 경로를 공유 설정에 박지 않는다");
   assert.ok(children.every(child => child.pid !== process.pid && child.version === "new"));
   assert.equal(git(target, "rev-parse", "HEAD"), targetHead);
   assert.equal(readFileSync(join(target, "user.txt"), "utf8"), "uncommitted target change");

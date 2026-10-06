@@ -12,6 +12,7 @@ import { interview, isDocKind, isPolicyKind, isWorkDocKind, KNOWLEDGE_KINDS, POL
 import type { DocKind, KnowledgeKind, PolicyKind } from "./schemas";
 import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny } from "./work";
+import { aidlcBlock } from "./aidlc";
 
 const KINDS = `${POLICY_KINDS.join(" · ")} · ${KNOWLEDGE_KINDS.join(" · ")}`;
 
@@ -137,6 +138,8 @@ function requireNoIntake(repoRoot: string, what: string): void {
 }
 
 export function docsBegin(repoRoot: string): string {
+  const aidlc = aidlcBlock(repoRoot);
+  if (aidlc) throw new Stop(aidlc);
   const active = loadActive(repoRoot);
   if (active) {
     throw new Stop(

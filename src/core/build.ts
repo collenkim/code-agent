@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, resolve } from "path";
@@ -6,7 +6,24 @@ import { delimiter, isAbsolute, join, resolve } from "path";
 import type { Manifest } from "./manifest";
 import type { BuildResult, JobRefs, StageResult } from "./types";
 
-const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+/** 명령 한 번의 기본 제한 시간. 프로젝트는 code-agent.json 의 commandTimeoutMinutes 로 바꾼다 */
+export const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** 시간 초과로 끝낸 뒤 남은 출력을 기다리는 시간 — 손자 프로세스가 파이프를 쥐고 있으면 close 가 오지 않는다 */
+const DRAIN_AFTER_KILL_MS = 2000;
+
+/**
+ * 시간 초과한 명령을 끝낸다. Windows 의 `child.kill()` 은 직계 프로세스만 끝내 gradle·java 처럼
+ * 셸 아래에서 뜬 손자가 남는다 — 남은 손자는 다음 실행의 결과 파일까지 건드린다. 그래서 트리째 끝낸다.
+ */
+function killTree(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid) {
+    const killer = spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true, stdio: "ignore" });
+    killer.on("error", () => child.kill());
+    return;
+  }
+  child.kill();
+}
 
 /**
  * 한 스트림에서 받아 둘 최대 바이트. `spawnSync` 의 maxBuffer 가 하던 몫이다 —
@@ -36,6 +53,7 @@ function spawnAsync(
   file: string,
   args: string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean },
+  timeoutMs: number = BUILD_TIMEOUT_MS,
 ): Promise<CommandResult> {
   return new Promise((settle) => {
     const child = spawn(file, args, { ...options, windowsHide: true });
@@ -56,8 +74,8 @@ function spawnAsync(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill();
-    }, BUILD_TIMEOUT_MS);
+      killTree(child);
+    }, timeoutMs);
 
     child.stdout?.setEncoding("utf-8");
     child.stderr?.setEncoding("utf-8");
@@ -76,7 +94,7 @@ function spawnAsync(
       clearTimeout(timer);
       settle({ stdout: note() + stdout, stderr, status: null, signal: null, error });
     });
-    child.on("close", (status, signal) => {
+    const finish = (status: number | null, signal: NodeJS.Signals | null): void => {
       clearTimeout(timer);
       settle({
         stdout: note() + stdout,
@@ -84,9 +102,19 @@ function spawnAsync(
         status,
         signal,
         error: timedOut
-          ? new Error(`제한 시간 ${BUILD_TIMEOUT_MS / 1000}초를 넘겨 중단했습니다`)
+          ? new Error(`제한 시간 ${timeoutMs / 1000}초를 넘겨 중단했습니다 — 더 걸리는 명령이면 code-agent.json 의 commandTimeoutMinutes 를 늘리세요`)
           : undefined,
       });
+    };
+    child.on("close", finish);
+    // 시간 초과로 끝낸 뒤에는 close 만 기다리지 않는다 — 끝나지 않은 손자가 파이프를 쥐면 영영 오지 않는다
+    child.on("exit", (status, signal) => {
+      if (!timedOut) return;
+      setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        finish(status, signal);
+      }, DRAIN_AFTER_KILL_MS);
     });
   });
 }
@@ -293,6 +321,7 @@ export async function runCommand(
   cwd: string,
   command: string[],
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs: number = BUILD_TIMEOUT_MS,
 ): Promise<CommandResult> {
   const [name, ...args] = command;
   const file = resolveExecutable(cwd, name, env);
@@ -316,9 +345,9 @@ export async function runCommand(
       cwd,
       env,
       windowsVerbatimArguments: true,
-    });
+    }, timeoutMs);
   }
-  return spawnAsync(file, args, { cwd, env });
+  return spawnAsync(file, args, { cwd, env }, timeoutMs);
 }
 
 // ---- worktree 검증 ----

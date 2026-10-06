@@ -229,7 +229,8 @@ interface DocRecord {
 
 function ledgerLines(repoRoot: string): string[] {
   const path = join(repoRoot, DOCS_LEDGER);
-  return existsSync(path) ? readFileSync(path, "utf-8").split("\n").filter((line) => line.trim() !== "") : [];
+  // autocrlf 체크아웃이 붙인 CR 은 쓰인 바이트가 아니다 — 원장은 LF 로만 쓴다
+  return existsSync(path) ? readFileSync(path, "utf-8").split(/\r?\n/).filter((line) => line.trim() !== "") : [];
 }
 
 /** 사슬을 검사하며 읽는다. 끊겼으면 던진다 — 나중에 고친 확정을 조용히 믿지 않는다 */

@@ -37,6 +37,8 @@ function codexText(text: string): string {
     .replace(/\$ARGUMENTS/g, "<사용자가 전달한 인자>")
     .replace(/\bBash:/g, "셸:")
     .replace(/subagent_type/g, "agent_type")
+    // 교차 검증은 지금 호스트가 아닌 쪽이 맡는다
+    .replace(/--by codex/g, "--by claude")
     // Codex hook에는 서브 에이전트 식별자가 없어 staging을 열 수 없다 — 본문을 결과에 싣는 문장으로 바꾼다
     .replace("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용).")
     .replace("출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.", "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다.")

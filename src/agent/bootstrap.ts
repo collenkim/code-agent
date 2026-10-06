@@ -8,7 +8,7 @@ import { confirmOnTerminal } from "./tty";
 import { Stop } from "./stop";
 import { commitOf, mergeBase } from "./tree";
 import { docPaths } from "./docs";
-import { POLICY_KINDS } from "./schemas";
+import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -32,11 +32,21 @@ export function setupStatus(root: string): string {
     "", "지금 테스트를 실행하거나 러너를 다시 선택하지 않습니다. 실제 소스·실행 설정·테스트 생성은 승인된 Task에서 함께 수행합니다."].join("\n");
 }
 
+/**
+ * 준비 커밋에 담는 것 — **code-agent 가 만들거나 고치는 파일만.** 다른 도구(AWS AI-DLC 등)가 `.claude/`·`.codex/`·`doc/` 에
+ * 둔 파일은 그 도구의 몫이라 담지 않는다. 담으면 그 도구가 고칠 때마다 시작이 막히거나 계획 밖 변경이 된다.
+ * README·.codex/config.toml 은 사용자 파일이라 최초 커밋에서만 함께 담는다.
+ */
 export function baselineFiles(root: string): string[] {
   const manifest = loadManifestIfAny(root);
-  const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", "README.md", ".claude", ".agents/skills", ".codex/agents", ".codex/hooks.json", ".codex/config.toml", "doc", ".code-agent/version", ".code-agent/hosts.json", ".code-agent/codex-models.json",
+  const owned = [".claude/skills", ".claude/agents", ".agents/skills", ".codex/agents"].flatMap(dir => {
+    try { return readdirSync(join(root, dir)).filter(name => name.startsWith("ca-")).map(name => `${dir}/${name}`); } catch { return []; }
+  });
+  const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", ".claude/settings.json", ".codex/hooks.json", "doc/code-agent",
+    ".code-agent/version", ".code-agent/hosts.json", ".code-agent/models.json", ".code-agent/codex-models.json", ...owned,
+    ...(hasBaseline(root) ? [] : ["README.md", ".codex/config.toml"]),
     ...(manifest?.stages.map(stage => stage.template) ?? []),
-    ...POLICY_KINDS.flatMap(kind => docPaths(manifest, kind))]);
+    ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap(kind => docPaths(manifest, kind))]);
   const found = new Set<string>();
   function walk(file: string) {
     const full = resolve(root, file);

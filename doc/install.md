@@ -224,7 +224,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 | `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 9개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
 | 에이전트별 모델(`.code-agent/models.json`·`.code-agent/codex-models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
-| 개발용 `--cli` | 현재 번들만 적용할 때는 기존 개발 CLI 경로를 승계한다. 기본 소스 갱신은 새로 빌드한 CLI를 연결하며, `--cli`를 명시하면 지정한 경로를 적용한다 |
+| 개발용 `--cli` | 기본 소스 갱신과 `--templates-only` 모두 설치된 hook 명령의 꼴을 승계한다 — `code-agent …` 은 그대로 두고, 개발 CLI 경로(`node "<경로>" …`)는 그 경로를 잇는다. 새로 빌드한 이 PC 의 절대 경로를 공유 설정에 새로 박지 않는다. `--cli`를 명시하면 지정한 경로를 적용한다 |
 
 ```
 code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
@@ -246,6 +246,10 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 프로젝트 규칙은 `CLAUDE.md` 의 블록 **밖**이나 `doc/` 에 둔다.
 
 작업 진행 상태만으로 템플릿 적용을 막지는 않는다. 기본 소스 갱신의 미커밋 변경·분기 검사와 같은 세션 확인은 별도로 적용된다. 승인·증거는 `planHash`·`manifestHash`·트리 해시에 묶여 있어 템플릿을 갱신해도 무효였던 승인이 되살아나지 않는다. 재시작 후 현재 스테이지와 필요한 확인을 다시 점검한다.
+
+### AWS AI-DLC 가 함께 설치된 저장소
+
+AI-DLC 와 code-agent 는 번갈아 쓴다. 같은 브랜치에 진행 중인 AI-DLC 의도가 있으면 code-agent 가 시작하지 않는다. 순서는 AI-DLC 작업 완료 → `/aidlc intent archive <이름>`(2.9 이상) → 그 기록 커밋 → `git status` 가 깨끗한지 확인 → code-agent 시작이다. 2.8.2 는 archive 가 없어 끝난 의도가 하나뿐이면 계속 기록 대상이 되므로 업그레이드를 권한다. AI-DLC 를 설치·갱신(`--force`)한 뒤에는 `code-agent doctor` 로 hook 등록을 확인하고, 빠졌으면 `code-agent init` 으로 다시 넣는다.
 
 ---
 

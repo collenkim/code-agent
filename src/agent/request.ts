@@ -16,6 +16,7 @@ import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny, loadWork } from "./work";
 import { checkProjectDocs, docsReady } from "./docs";
 import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
+import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
  * 요구사항 접수 — 13단계의 1.
@@ -226,7 +227,8 @@ function confirmCommand(id: string, spec: string): string {
 
 function ledgerLines(repoRoot: string, id: string): string[] {
   const path = requestLedgerFile(repoRoot, id);
-  return existsSync(path) ? readFileSync(path, "utf-8").split("\n").filter((line) => line.trim() !== "") : [];
+  // autocrlf 체크아웃이 붙인 CR 은 쓰인 바이트가 아니다 — 원장은 LF 로만 쓴다
+  return existsSync(path) ? readFileSync(path, "utf-8").split(/\r?\n/).filter((line) => line.trim() !== "") : [];
 }
 
 /** 사슬을 검사하며 읽는다. 끊겼으면 던진다 — 나중에 고친 확정을 조용히 믿지 않는다 */
@@ -394,6 +396,8 @@ export function requestBegin(
   options: { base?: string; target?: string } = {},
 ): string {
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) throw new Stop("문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤 요구사항을 접수하세요.");
+  const aidlc = aidlcBlock(repoRoot);
+  if (aidlc) throw new Stop(aidlc);
   if (!id) {
     id = loadRequestSession(repoRoot)?.id;
     for (let n = 1; !id; n++) {
@@ -442,6 +446,7 @@ export function requestBegin(
     current
       ? `이미 접수 중입니다: ${id} (${kind}) — 이어서 정리합니다.`
       : `요구사항 접수를 열었습니다: ${id} (${kind}). 끝날 때까지 ${workDocsDir(id)}/ 밖은 쓸 수 없고, 지시서(requirement.md)는 코드만 씁니다.`,
+    ...[aidlcWarning(repoRoot)].filter((line): line is string => !!line),
     "",
     requestContext(repoRoot, session),
   ].join("\n");
@@ -521,7 +526,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 그대로 옮긴 문장은 자동 연결. 바꿔 쓴 문장·명시적 제외는 연결을 적고 미연결 원문을 남기지 않습니다. 추가 사용자 선택이 아니라 에이전트의 정리 작업입니다.",
     "- 머리말에 들어가는 값(title · target · scope · preserve · approver · extra)은 한 줄씩. 따옴표나 [ ] 로 감싸지 않는다.",
     pathKind
-      ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다.`
+      ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다. scope 는 바꿀 제품 코드의 경계라 테스트 경로는 적지 않아도 된다(테스트 단계 위치 안에서 계획한다).`
       : "- feature: target 은 이제부터 만들 도메인·기능 이름이라 경로가 아니어도 된다. scope 를 적으면 실재하는 경로여야 한다.",
   ];
   if (manifest?.workOrder.requireApprover) {

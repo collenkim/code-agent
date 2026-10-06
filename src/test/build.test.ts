@@ -7,13 +7,13 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { hashManifest } from "../core/approval";
-import { pinRefs, verifyByBuild } from "../core/build";
+import { pinRefs, runCommand, verifyByBuild } from "../core/build";
 import { loadManifest } from "../core/manifest";
 import type { Manifest } from "../core/manifest";
 
@@ -38,6 +38,7 @@ function manifestWith(build: string[]): Manifest {
     conventions: [],
     build,
     fixRounds: 2,
+    commandTimeoutMinutes: 10,
     plugins: {},
     commands: {},
     docs: {},
@@ -337,5 +338,38 @@ describe("빈 명령 배열은 형식 오류다", () => {
       "sha256:da07ca103b10411f",
     );
     assert.equal(hashManifest(load({})), "sha256:3e247950176e5efa");
+  });
+});
+
+describe("검증 명령 제한 시간", () => {
+  function load(raw: Record<string, unknown>): Manifest {
+    const dir = mkdtempSync(join(tmpdir(), "code-agent-manifest-"));
+    writeFileSync(join(dir, "code-agent.json"), JSON.stringify({ domainBase: "src", stages: [{ key: "only", title: "하나", template: "t.md" }], ...raw }), "utf-8");
+    try { return loadManifest(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  test("시간을 넘기면 출력 파이프를 쥔 손자까지 끝내고 기다림 없이 실행 오류로 돌아온다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ca-timeout-")), pidFile = join(dir, "grandchild.pid");
+    // gradle 처럼 셸 아래 손자가 stdout 을 물려받아 오래 산다
+    const script = `const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'inherit'});require('fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setTimeout(()=>{},30000)`;
+    try {
+      const started = Date.now();
+      const result = await runCommand(dir, ["node", "-e", script], process.env, 1500);
+      assert.ok(Date.now() - started < 15000, "close 를 기다리며 멈추지 않는다");
+      assert.match(result.error?.message ?? "", /제한 시간 1\.5초.*commandTimeoutMinutes/);
+      if (process.platform === "win32" && existsSync(pidFile)) {
+        const pid = Number(readFileSync(pidFile, "utf8"));
+        assert.throws(() => process.kill(pid, 0), "Windows 에서는 프로세스 트리째 끝낸다");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  });
+
+  test("제한 시간은 code-agent.json 으로 바꾸고, 바꿔도 승인 해시는 그대로다", () => {
+    assert.equal(load({}).commandTimeoutMinutes, 10);
+    assert.equal(load({ commandTimeoutMinutes: 45 }).commandTimeoutMinutes, 45);
+    assert.equal(hashManifest(load({ commandTimeoutMinutes: 45 })), hashManifest(load({})));
+    assert.throws(() => load({ commandTimeoutMinutes: 0 }));
   });
 });
