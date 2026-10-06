@@ -127,7 +127,7 @@ code-agent 를 설치했습니다 — C:\work\shop
   - 버전 고정: .code-agent/version = 1.0.0
 ```
 
-Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접수한 원문을 저장한 뒤 공통 문서·설정이 없으면 `/ca-adopt`·`/ca-docs`로 준비하고 같은 접수로 돌아온다. 최초 `setup` 확인은 POLICY 4종 확정과 필요한 최초 기준 커밋의 파일 목록을 함께 보여 준다. 기존 기준 커밋이 있으면 최초 커밋을 다시 만들지 않고, 준비가 끝난 프로젝트는 이 확인을 작업마다 반복하지 않는다.
+Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접수한 원문을 저장한 뒤 공통 문서·설정이 없으면 `/ca-adopt`·`/ca-docs`로 준비하고 같은 접수로 돌아온다. 최초 `setup` 확인은 POLICY 4종 확정과 필요한 준비 커밋의 파일 목록을 함께 보여 준다. 기존 저장소에서도 미커밋 도입 파일이 있으면 현재 브랜치에 준비 커밋을 추가한다. 이미 반영된 파일은 다시 커밋하지 않으며, 준비가 끝난 프로젝트는 이 확인을 작업마다 반복하지 않는다. 작업 기준 브랜치에도 도입 커밋이 있어야 하며, 없으면 `start`가 전환 전에 멈추고 기준 지정·반영 방법을 안내한다.
 
 이후 요구사항·계획·결과 확인도 같은 Claude Code 선택 화면에서 받고 자동으로 이어간다. 별도 터미널은 필수가 아니며 `/ca-next`는 중단하거나 다시 연 세션에서 재개할 때 사용한다. 준비만 먼저 할 때는 `/ca-adopt`를 직접 사용할 수 있다.
 
@@ -169,7 +169,7 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | git | `git --version` 이 답한다 | PATH 에 git 을 넣는다 — 브랜치·기준 커밋·반영이 git 을 쓴다 |
 | PATH 의 code-agent | PATH 에서 찾았다. 단일 실행 파일인지 npm 설치/링크인지(그 경우 푼 `cli.js` 경로까지) 함께 찍는다 | hook 명령이 풀리지 않는다. `npm i -g <저장소>` 또는 바이너리를 PATH 에 둔다 |
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
-| git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 필요한 최초 기준 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
+| git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 최초 커밋 또는 기존 저장소의 도입 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
 | hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |

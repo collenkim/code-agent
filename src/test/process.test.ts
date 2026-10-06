@@ -21,7 +21,9 @@ import { parseRequirements } from "../agent/workDocs";
 import { check, runTests, integrate } from "../agent/validate";
 import { openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
-import { deliverProblems, renderTraceBlock } from "../agent/deliver";
+import { deliver, deliverProblems, renderTraceBlock } from "../agent/deliver";
+import { init } from "../agent/init";
+import { setupBaseline } from "../agent/bootstrap";
 import { loadEvidence } from "../agent/evidence";
 import * as tty from "../agent/tty";
 
@@ -121,10 +123,12 @@ test("Python 추천 명령은 실제 코드를 검사하고 TC를 실행하며 �
 
 async function preparedPlan() {
   git("init", "-q", "-b", "master");
+  git("config", "user.name", "test"); git("config", "user.email", "test@example.invalid");
+  write(".gitignore", "doc/\n"); git("add", ".gitignore"); git("commit", "-qm", "existing repository");
+  init(repo, { host: "both" });
   docsBegin(repo); setupProject(repo, "node"); docsEnd(repo);
   for (const entry of checkProjectDocs(repo, loadManifestIfAny(repo))) recordDocConfirmation(repo, entry, "test", presence);
-  write(".gitignore", ".code-agent/active.json\n.code-agent/request-session.json\n.code-agent/docs-session.json\n.code-agent/log/\n");
-  git("add", "."); git("commit", "-qm", "initial setup");
+  tty.withInteraction({ confirm: () => presence, ask: () => "n" }, () => setupBaseline(repo));
   requestBegin(repo, "FLOW-1", "feature");
   const draft = "doc/work/FLOW-1/request.json";
   write(draft, JSON.stringify({ id: "FLOW-1", kind: "feature", title: "값과 오류", target: ["value"], original: "값 1을 반환한다. 음수는 거부한다.", requirements: ["값 1을 반환한다.", "음수는 거부한다."] }));
@@ -198,4 +202,10 @@ test("승인한 test→code 순서로 구현하고 실제 테스트·리뷰·통
   const report = renderTraceBlock(work, loadEvidence(repo, "FLOW-1", "value"));
   assert.match(report, /REQ-2.*R2/); assert.match(report, /T1 test/);
   assert.match(status(repo), /검증됨·반영 대기/);
+  write(prefix + "10-pr.md", "## 요약\n값과 오류 구현\n## 확인 방법\n함수 호출\n## 위험·되돌리기\n테스트 fixture\n");
+  assert.match(tty.withInteraction({ confirm: () => presence, ask: () => "n" }, () => deliver(requireValidatable(repo, "deliver"))), /반영했습니다/);
+  assert.equal(loadActive(repo), undefined);
+  const committed = git("show", "--name-only", "--format=", "HEAD");
+  assert.match(committed, /src\/value.js/); assert.match(committed, /doc\/work\/FLOW-1\/10-pr.md/);
+  assert.equal(git("status", "--porcelain").trim(), "");
 });

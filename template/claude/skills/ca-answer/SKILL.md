@@ -41,7 +41,7 @@ description: 모든 code-agent 명령의 공통 업무 질의응답과 같은 �
 
 실행할 동작의 JSON 파일은 **작업 중에는 허용된 `doc/work/<ID>/` 아래**, **문서 준비 세션 중에는 허용된 `doc/` 아래**에 먼저 작성한다(예: `doc/work/<ID>/consent-action.json`, `doc/consent-action.json`). 임의의 임시 디렉토리나 `.code-agent/`에 직접 쓰지 않는다. 쓰기 가능한 문서 세션이 없으면 먼저 허용된 문서 준비 절차로 진입한다. 키와 문자열은 큰따옴표를 쓰고, 필요한 선택 필드만 넣는다. 동작을 준비하는 것은 사용자의 승인 응답을 만드는 일이 아니다.
 
-흔한 동작은 `{"action":"setup"}`(POLICY 전체 확정과 기준 커밋이 없을 때의 생성을 **사용자 질문 하나**로 묶는다) · `{"action":"request","id":"<작업 ID>"}` · `{"action":"plan"}` · `{"action":"deliver"}`다. 반려 기록은 해당 `request`·`plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 더한다. 그 밖의 동작(`docs`·`baseline`·`knowledge-prune`·`model`·`abort`·`plugin-add`·`plugin-remove`·`update`)과 필드 형식은 `.claude/skills/ca-answer/reference.md`를 읽는다.
+흔한 동작은 `{"action":"setup"}`(POLICY 전체 확정과 필요한 준비 커밋을 **사용자 질문 하나**로 묶는다. 최초 커밋과 기존 저장소의 도입 파일 반영을 모두 지원한다) · `{"action":"request","id":"<작업 ID>"}` · `{"action":"plan"}` · `{"action":"deliver"}`다. 반려 기록은 해당 `request`·`plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 더한다. 그 밖의 동작(`docs`·`baseline`·`knowledge-prune`·`model`·`abort`·`plugin-add`·`plugin-remove`·`update`)과 필드 형식은 `.claude/skills/ca-answer/reference.md`를 읽는다.
 
 비밀값은 질문·요약·작업 JSON·명령 인자·문서·대화에 넣지 않는다. 환경변수 값을 조회하거나 출력해 질문을 채우지 않는다. 필요한 환경변수가 없으면 사용자가 대화 밖에서 설정해야 하며, 키 값을 질문으로 받지 않는다. 플러그인의 실행 명령에도 키 값을 삽입하지 않는다. 비밀값이 준비 결과에 포함됐다면 표시하거나 질문하지 말고 해당 동의 절차를 멈춘다.
 

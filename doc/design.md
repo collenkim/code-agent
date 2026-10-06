@@ -22,7 +22,7 @@
 
 메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 9개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다. 같은 이벤트의 `planning-event` 2개는 ca-analyst·ca-explorer·ca-writer·ca-critic의 실제 계획 작업 결과를 기록한다. SessionStart의 `session-event`는 대화 시작·재개·압축·비우기 뒤 진행 중인 작업의 위치를 몇 줄로 붙인다.
 
-기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초 기준 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
+기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초/도입 준비 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
 ### 같은 세션의 사람 확인
 
@@ -182,7 +182,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 `code-agent.json` 은 `referenceDomain` 없이, 단계는 `exemplars: []` 로 만든다 — 복제할 표준이 없으므로 `scope: "project"` + `outputDirs` 가 자연스럽다.
 그 뒤가 갈리지 않도록 `manifest check` 는 무-exemplar 단계를 받고(요약 한 줄만 찍는다), `code-agent context` 는 참조 표준 대신
 **아키텍처·컨벤션 문서**를 가리킨다(`참조 없음 — 아키텍처·컨벤션 문서로`). "빈 저장소" 는 **소스가 없는 저장소**이지 커밋이 없는 저장소가 아니다 —
-`start`는 기준 커밋을 굳힐 수 없으면 거부한다. 최초 준비의 `setup` 확인에서 POLICY 4종과 준비 파일 목록을 함께 검토하고 필요한 최초 기준 커밋을 만든 뒤 작업을 시작한다. 기존 기준 커밋은 유지한다.
+`start`는 기준 커밋을 굳힐 수 없거나 도입 파일이 기준에 반영되지 않았으면 거부한다. 최초 준비의 `setup` 확인에서 POLICY 4종과 준비 파일 목록을 함께 검토하고 최초 커밋 또는 기존 저장소의 도입 커밋을 만든 뒤 작업을 시작한다. 기존 Git 이력은 유지한다.
 매니페스트 인터뷰는 코드로 만들지 않았다 — 질문 목록이 정적 텍스트라 스킬이 더 싸다. POLICY 문서 인터뷰만 `docs interview` 가 소유한다.
 
 ## 3. 스테이지
@@ -619,7 +619,7 @@ code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙�
 
 ### 2026-10-01 잔여 보완의 실행 원칙
 
-- 준비는 기존 언어·프레임워크·빌드·테스트 명령을 재사용한다. CLI `setup`은 환경과 설정을 조회하며 테스트를 실행하지 않는다. consent의 `setup` action은 POLICY 4종 확정과 필요한 최초 기준 커밋을 한 번의 확인으로 묶는다. 기준 커밋에는 준비 파일만 담으며 기존 index와 접수 원문·작업 소스는 포함하지 않는다. 직접 TTY의 `setup baseline`도 지원한다.
+- 준비는 기존 언어·프레임워크·빌드·테스트 명령을 재사용한다. CLI `setup`은 환경·설정·도입 파일 반영 상태를 조회하며 테스트를 실행하지 않는다. consent의 `setup` action은 POLICY 4종 확정과 필요한 준비 커밋을 한 번의 확인으로 묶는다. 최초 커밋뿐 아니라 기존 저장소의 미커밋 도입 파일도 대상이다. 준비 파일만 담으며 기존 index와 접수 원문·작업 소스는 포함하지 않는다. 직접 TTY의 `setup baseline`도 지원한다.
 - 접수의 `intakeTrace`는 원문 인용을 구조화 항목에 연결해 반영·제외·미연결을 렌더한다. 미연결이 있으면 요구 확정을 막는다. `sourceTrace`는 확정된 구조화 항목부터 분석·Task를 연결한다. 두 검사 모두 의미 보존 자체를 자동 증명하지 않으며 critic과 사람이 원문 대조를 확인한다.
 - 요구사항 적합성 검토는 문서 대조다. 테스트 실행은 구현 후에 하며 fix의 실패 재현만 구현 전이다. 결과 수집은 테스트 명령의 콘솔 출력과 이번 실행이 만든 JUnit 보고서를 읽는다. 보고서의 전후 지문이 같으면 재사용하지 않는다. 성공·실패·생략·미확인을 각각 보존한다.
 - 리뷰 지적으로 fix 테스트를 보완하면 `check`가 기준 커밋의 코드에 현재 테스트만 얹은 임시 worktree에서 재현을 갱신한다. 작업 코드를 되돌리지 않는다. 대상 TC의 실패를 확인한 뒤 현재 코드에서 check·test·새 독립 리뷰·통합 검증을 거친다. 기준 코드에서도 통과하는 약화된 테스트는 차단한다.
@@ -647,7 +647,7 @@ npm run build:bin → dist-bin/code-agent(.exe)  # 또는 단일 실행 파일 (
 cd <프로젝트> && code-agent init             # 프로젝트마다 — .claude/ 설치, 버전 고정
 code-agent doctor                            # 설치·환경 점검 (✗ 가 없으면 종료 코드 0)
 claude  →  /ca-request [ID] <요구사항 서술·티켓·파일>
-        →  필요한 초기 준비 확인(setup: POLICY 4종 + 필요한 최초 기준 커밋)
+        →  필요한 초기 준비 확인(setup: POLICY 4종 + 최초/도입 준비 커밋)
         →  같은 화면에서 요구사항 확인 → 자동 분석·계획 → 계획 확인
         →  자동 구현·검증 → 결과 확인 → 로컬 커밋 (중단 후 재개만 /ca-next)
 ```
@@ -680,11 +680,12 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 **최종 확인과 커밋은 같은 경로 목록을 사용한다.** `deliveryPaths()`에는 계획 파일, `doc/work/<ID>/`, `.code-agent/work/<ID>/`, 해당 작업의 계획·요구사항 승인 원장, 선택한 KNOWLEDGE 파일이 들어간다. 존재하는 `.code-agent/version`, `.code-agent/models.json`·`.code-agent/codex-models.json`, `.code-agent/approvals/docs.jsonl`도 명시적으로 포함해 최종 확인 화면에 표시하고 함께 커밋한다. 이 설정·확정 파일을 반영 뒤 따로 수동 커밋할 필요는 없다.
 
-그 밖의 `code-agent.json`·POLICY·설치 템플릿·다른 소스 파일을 자동으로 전부 추가하지 않는다. 해당 변경은 도입·설정 또는 승인된 작업 범위에 맞춰 관리하며, 최초 기준 커밋이 없으면 `setup` 확인의 준비 파일 목록으로 커밋한다. `.code-agent/` 전체를 올려 다른 작업의 증거·원장을 섞지 않는다.
+그 밖의 `code-agent.json`·POLICY·설치 템플릿·다른 소스 파일을 자동으로 전부 추가하지 않는다. 도입 파일은 새 저장소와 기존 저장소 모두 `setup` 확인의 준비 파일 목록으로 커밋하고 작업 기준에도 반영한다. `.code-agent/` 전체를 올려 다른 작업의 증거·원장을 섞지 않는다. `commitDelivery`는 동일한 명시적 경로에 `git --literal-pathspecs add -f`와 경로 제한 커밋을 적용하므로 `doc/` 무시 규칙에도 해당 문서·증거가 남는다. 추가 실패도 `Stop`으로 안내하며 작업 커서를 지우지 않는다.
 
 ### 작업 브랜치
 
 `code-agent start` 가 `<종류>/<ID>`(예: `feature/ORD-1`, `fix/BUG-3`)를 기준 브랜치에서 따서 옮긴다. 이미 있으면 전환만 한다.
+전환 전에 `requirePreparedBranch`가 미커밋 도입 파일과 기준·전환 대상의 도입 파일 차이를 검사한다. 불일치하면 파일과 브랜치를 보존하고 준비 커밋 또는 올바른 기준 지정을 안내한다. 기존 작업 브랜치는 갈라진 기준 커밋도 검사한다. 도입 경로를 `outsideChanges`의 영구 예외로 추가하지 않는다.
 기준 브랜치는 **사용자 입력(`--base`) > `code-agent.json` 의 `git.base` > `master`** 순이다. git 저장소가 아니면 브랜치를 만들지 않는다.
 모델은 브랜치를 바꿀 수 없다 — hook 이 읽기용 git(status·diff·log·show, branch 는 목록 보기만)만 허용한다.
 
@@ -728,7 +729,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
 | `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
-| `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초 기준 커밋(TTY) | ✅ |
+| `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) | ✅ |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |
 | `code-agent confirm doc <all \| architecture \| conventions \| test-strategy \| quality>` | POLICY 일괄 또는 개별 확정 (해시를 원장에, TTY 에서만) | ✅ |
 | `code-agent confirm request <ID> [<지시서>]` · `reject request <ID> [<지시서>] --comment <사유>` | **요구사항 확정·반려** (TTY 에서만) — 지시서를 통째로 띄워 원문과 정리를 나란히 읽히고, **보여 준 바이트**의 해시로 판정을 `approvals/<slug(ID)>/request.jsonl` 에 남긴다(읽는 사이에 바뀌었으면 아무것도 남기지 않는다). 지시서를 생략하면 그 ID 가 진행 중인 작업이면 그 작업의 지시서, 아니면 `doc/work/<ID>/requirement.md` — 다른 자리에 손으로 쓴 지시서는 경로를 함께 준다. 확정해야 `start` 가 받는다. 확정 뒤 내용이 바뀌면 다시 확정한다 | ✅ |
@@ -790,6 +791,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 매니페스트는 넓힌다 — 지금은 "도메인 디렉토리 + 계층" 레이아웃을 전제하지만, 경계의 중심은 **승인된 계획의 파일 목록**이다.
 계층 `outputDirs` 는 선언한 프로젝트에서만 추가로 건다. 그래야 레이아웃이 다른 프로젝트에서도 쓸 수 있다.
+`fix`·`refactor`에서는 `checkPaths`가 파일별로 단계의 base·선언된 분류·도메인 한 조각을 소비한 뒤 계층을 검사한다. 빈 계획 도메인 때문에 소스 루트의 첫 분류를 계층으로 읽지 않으며, scope·preserve·다른 계층 제한은 유지한다.
 
 ## 11. 구현 순서
 

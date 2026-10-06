@@ -330,12 +330,18 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
 export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): string {
   const { repoRoot } = work;
   const paths = deliveryPaths(work, knowledge);
-  git(repoRoot, ["add", "--", ...paths]);
+  try {
+    // 저장소가 doc/를 무시해도 사람이 확인한 이 작업의 문서·증거는 함께 남긴다.
+    // 강제 추가 범위도 deliveryPaths로 제한한다. 저장소 전체를 추가하지 않는다.
+    git(repoRoot, ["--literal-pathspecs", "add", "-f", "--", ...paths]);
+  } catch (error) {
+    throw new Stop(`git add 가 실패했습니다. 반영하지 않았습니다 — 스테이지 상태를 확인하고 code-agent deliver 를 다시 실행하세요: ${error instanceof Error ? error.message : error}`);
+  }
   try {
     // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
     // 올라가 있던 것(사람이 터미널에서 친 git add · 앞서 실패한 deliver 가 남긴 스테이지)이
     // 이 커밋에 그대로 실려 간다 — 검증된 변경 집합만 커밋한다는 말이 그때 거짓이 된다.
-    git(repoRoot, ["commit", "-m", commitMessage(work, evidence), "--", ...paths]);
+    git(repoRoot, ["--literal-pathspecs", "commit", "-m", commitMessage(work, evidence), "--", ...paths]);
   } catch (error) {
     // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다
     throw new Stop(

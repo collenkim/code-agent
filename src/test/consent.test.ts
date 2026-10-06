@@ -318,6 +318,18 @@ test("baseline: successful consent commits preparation files without confirming 
   assertNoDocs();
 });
 
+test("H1: 기존 커밋이 있어도 setup 동의에 도입 커밋을 표시하고 승인 후 반영한다", () => {
+  writeFixture(root, "existing.txt", "existing\n");
+  gitFixture(root, "add", "existing.txt"); gitFixture(root, "commit", "-qm", "existing repository");
+  const fixture = prepareConsentFixture(root, { action: "setup" });
+  assert.match(loadConsent(root, fixture.id).summary, /준비 커밋|도입 파일/);
+  assert.equal(gitFixture(root, "rev-list", "--count", "HEAD"), "1");
+  observeConsentFixture(fixture); applyConsent(root, fixture.id);
+  assert.equal(gitFixture(root, "rev-list", "--count", "HEAD"), "2");
+  assert.match(gitFixture(root, "ls-tree", "-r", "--name-only", "HEAD"), /code-agent\.json/);
+  assert.equal(readDocLedger(root).length, 4);
+});
+
 test("baseline: cancellation and a newly staged file leave HEAD absent and preserve the index", () => {
   const cancelled = prepareConsentFixture(root, { action: "baseline" });
   observeConsentFixture(cancelled, DEFER_CONSENT);

@@ -105,7 +105,7 @@ Bash: `code-agent docs skeleton <data-dictionary | api-catalog | business-rules>
 ## 6. 마무리
 
 1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 3종 파일이 있는지 본다. ✗ 가 남으면 1 로.
-2. 최초 준비는 `{"action":"setup"}`으로 POLICY 전체 확정과 기준 커밋이 없을 때의 생성을 사용자 질문 하나로 묶는다. 이후 문서 재확정은 `{"action":"docs","kind":"all"}`을 사용하며, 특정 문서만 요청받았으면 `kind`를 그 종류로 지정한다. JSON은 접수·작업 중 허용된 `doc/work/<ID>/`에, 작업 ID가 없으면 문서 준비 중 허용된 `doc/`에 작성한다. 문서 세션이 필요하면 `code-agent docs begin`으로 열고 작성한다.
+2. 최초 준비는 `{"action":"setup"}`으로 POLICY 전체 확정과 필요한 준비 커밋(최초 커밋 또는 기존 저장소의 도입 파일 반영)을 사용자 질문 하나로 묶는다. 이후 문서 재확정은 `{"action":"docs","kind":"all"}`을 사용하며, 특정 문서만 요청받았으면 `kind`를 그 종류로 지정한다. JSON은 접수·작업 중 허용된 `doc/work/<ID>/`에, 작업 ID가 없으면 문서 준비 중 허용된 `doc/`에 작성한다. 문서 세션이 필요하면 `code-agent docs begin`으로 열고 작성한다.
 3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. 요약 전문·문서 링크를 보여 주고 실제 응답 뒤 `consent finish`(또는 `status` 확인 후 `apply`)로 승인된 동의만 적용한다.
    **넷 다 확정해야** 작업(`/ca-feature` 등)이 시작된다. KNOWLEDGE 3종은 확정하지 않는다.
 4. 적용 성공 후 원래 접수·작업으로 자동 복귀한다. 문서 재확정 자체를 별도 커밋의 승인으로 취급하지 않는다.
