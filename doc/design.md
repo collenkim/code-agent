@@ -20,7 +20,7 @@
 
 실행은 **Claude Code 안에서 모델이 도구를 직접 쓰는 구조**다. `code-agent init`은 스킬(`.claude/skills/ca-*`), 서브에이전트(`.claude/agents/ca-*`), hook과 `CLAUDE.md` 블록을 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`로 공통 접수한다. 신규·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`로 종류를 명시할 수도 있다.
 
-메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 8개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다. 같은 이벤트의 `planning-event` 2개는 ca-analyst·ca-explorer·ca-writer·ca-critic의 실제 계획 작업 결과를 기록한다.
+메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 9개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다. 같은 이벤트의 `planning-event` 2개는 ca-analyst·ca-explorer·ca-writer·ca-critic의 실제 계획 작업 결과를 기록한다. SessionStart의 `session-event`는 대화 시작·재개·압축·비우기 뒤 진행 중인 작업의 위치를 몇 줄로 붙인다.
 
 기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초 기준 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
@@ -31,6 +31,19 @@
 질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
 
 AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름을 수행한다는 실행 방식에 한정한다. 상대 제품이 사후 검증만 한다는 과거 설명은 현재 근거가 없어 삭제했다. 참고: [AI-DLC Claude Code 구성](https://github.com/awslabs/aidlc-workflows/blob/main/docs/reference/14-claude-features.md), [Claude Code 프로젝트 스킬](https://code.claude.com/docs/en/skills).
+
+### 메인 컨텍스트로 들어가는 것
+
+메인 대화는 흐름 전체에 걸쳐 이어지고, 쌓인 내용은 이후 모든 호출에서 다시 읽힌다(캐시 읽기). 2026-10-06 실측(Opus, 신규 함수 하나)에서 추정 비용의 63%가 메인이었다. 그래서 메인을 거치지 않아도 되는 본문은 메인에 넣지 않는다.
+
+| 경로 | 방식 |
+|---|---|
+| 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 `code-agent context --file`이 전문을 `handoff/context.md`에 쓴다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 2026-10-06 기준선에서 메인이 쓴 프롬프트는 13회 38.5K자였고 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주던 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
+| 서브에이전트 → 메인 | 계획 담당(Claude)은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 Write로 쓰고 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 기존과 같은 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. Codex는 `agent_id`가 hook에 오지 않아 기존처럼 `{path, content}`로 싣는다 |
+| 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문 페이지·동작 JSON 표(`ca-answer/reference.md`). ca-answer는 질문·승인 직전에만 읽는다 |
+| 압축·비우기 | 상태는 파일에 있으므로 `/clear` 뒤 `/ca-next`로 손실 없이 잇는다. 자동 압축 요약이 단계·동의를 잃어도 SessionStart hook이 현재 위치를 다시 붙인다 |
+
+전달 파일과 staging에는 `.gitignore`(`*`)를 두어 반영 커밋에 들어가지 않는다. Agent 도구의 PostToolUse `updatedToolOutput`으로 결과를 줄이는 방법은 실험에서 쓸 수 없었다 — 서브에이전트가 비동기로 시작돼 PostToolUse가 시작 응답에 붙고, 결과는 별도 알림으로 온다.
 
 ## 2. 문서 모델
 
@@ -234,8 +247,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
        스키마 → 렌더 → **손으로 쓴 지시서와 같은 지시서 검사** + 머리말 왕복 대조. 통과해야 requirement.md 가 쓰인다.
        반려된 내용을 그대로 다시 내면 거부한다 — 사유를 읽지 않은 제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다
   └─ code-agent consent prepare <action.json>     action: "request", id: "<ID>", 필요한 경우 spec: "<지시서>"
-       반환된 toolInput 전체로 AskUserQuestion → hook이 실제 응답 관찰 → consent status <확인 요청 ID>
-       승인된 요청의 consent apply <확인 요청 ID> → approvals/<slug(ID)>/request.jsonl에 해시로 남긴다
+       반환된 toolInput 전체로 AskUserQuestion → hook이 실제 응답 관찰 → consent finish <확인 요청 ID>
+       (승인된 요청만 그 자리에서 적용 — status·apply 로 나눠도 같다) → approvals/<slug(ID)>/request.jsonl에 해시로 남긴다
        반려를 기록할 때는 decision: "reject"와 comment에 사유를 담아 다시 확인한다
   └─ 자동으로 code-agent start doc/work/<ID>/requirement.md → 2 요구사항 분석 (중단 후 재개는 /ca-next)
 ```
@@ -647,7 +660,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 대상 저장소에 생기는 것 | 커밋 | 상태 |
 |---|---|---|
-| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 8개, `.code-agent/version` | O | P1 ✅ |
+| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 9개, `.code-agent/version` | O | P1 ✅ |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O | P1 ✅ · `prepare` P6 ✅ · `plugins` P7 ✅ |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` (P2 ✅) · `doc/test-strategy.md` · `doc/quality.md` (P4) | O | P2 ✅ · P4 ✅ |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O | P4 ✅ 생성 · P5 ✅ 갱신 |
@@ -713,7 +726,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
-| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review hook 등록 8개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
+| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초 기준 커밋(TTY) | ✅ |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |
@@ -735,7 +748,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent request begin [ID] --kind <feature \| fix \| refactor> [--base <기준 브랜치>] [--target <대상>]` | 접수 세션·초안 형식·대상 후보를 제공한다. ID 생략 시 WORK 번호를 발급한다. 매니페스트가 없어도 원문 보관부터 시작하며, `--base`·`--target`은 세션에 남아 `start`가 이어받는다 | ✅ |
-| `code-agent consent prepare <action.json>` · `consent status <ID>` · `consent apply <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. 파일·Git 상태·세션과 적용 대상을 대조한다 | 구현됨 |
+| `code-agent consent prepare <action.json>` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다 | 구현됨 |
 | `code-agent consent-event` | AskUserQuestion의 PreToolUse·PostToolUse hook에서 질문·세션·호출 ID·실제 응답을 관찰한다. 모델이 직접 관찰 기록을 작성하지 않는다 | 구현됨 |
 | `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 | ✅ |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 | ✅ |

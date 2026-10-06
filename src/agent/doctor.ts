@@ -5,6 +5,7 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "path";
 import { MANIFEST_FILE } from "../core/manifest";
 import type { Manifest } from "../core/manifest";
 import {
+  assetCount,
   assetKeys,
   assetText,
   CLAUDE_ASSETS,
@@ -169,7 +170,7 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
   if (settings) {
     add("✗", "hook 설정 파일", settings, "이 파일을 고친 뒤 code-agent init — 고치기 전에는 init·update 도 멈춥니다");
   } else {
-    for (const [event, subcommand] of [["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"], ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"]] as const) {
+    for (const [event, subcommand] of [["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"], ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"], ["SessionStart", "session-event"]] as const) {
       const command = installedHook(repoRoot, event, subcommand);
       if (!command) {
         add("✗", `${event} hook`, "없습니다", "code-agent init");
@@ -215,7 +216,7 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
     if (missing.length === keys.length) {
       add("✗", "스킬·에이전트", "설치되지 않았습니다 (.claude/skills/ca-*, .claude/agents/ca-*)", "code-agent init");
     } else if (missing.length + differing.length === 0) {
-      add("✓", "스킬·에이전트", `${keys.length}개 모두 번들과 같습니다`);
+      add("✓", "스킬·에이전트", `${assetCount(keys)} 모두 번들과 같습니다`);
     } else {
       const parts = [
         ...(missing.length > 0 ? [`없는 것 ${missing.length}개: ${shown(missing.map(asPath))}`] : []),
@@ -248,8 +249,9 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
       add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, "code-agent init --host codex");
     }
     try {
-      const changed = [...hostAssets("codex", repoRoot)].filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
-      add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : "26개 모두 번들과 같습니다", "code-agent update --templates-only --host codex");
+      const codexAssets = [...hostAssets("codex", repoRoot)];
+      const changed = codexAssets.filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
+      add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : `${assetCount(codexAssets.map(([path]) => path))} 모두 번들과 같습니다`, "code-agent update --templates-only --host codex");
       const instructions = join(repoRoot, "AGENTS.md");
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
       add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");

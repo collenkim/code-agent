@@ -69,10 +69,10 @@ start(repo, path.join(repo, fixture.CONSENT_SPEC));
 }
 const prompt = [
   ...(resumeImpact ? ['분석을 다시 하지 않습니다. 기존 통합 영향도 결과의 내용 게이트 피드백만 새 ca_explorer에게 배정하세요. inputs의 impact-feedback.md와 impact-previous-result.json을 읽어 유효한 조사 결과를 재사용합니다. 영향도 ready-for-gate에서 멈춥니다. code-agent next는 검사 도구가 나중에 실행합니다.'] : []),
-  'Read 전용 도구가 없으면 code-agent read <파일> [시작 줄] [줄 수]로 읽으세요. 문서 내용 계약은 code-agent context로 확인해 담당에게 함께 전달하세요. R 블록의 근거 인용 합계가 확정된 요구 문장 전체(입력·범위 제한 포함)를 덮어야 합니다.',
+  'Read 전용 도구가 없으면 code-agent read <파일> [시작 줄] [줄 수]로 읽으세요. 문서 내용 계약은 배정 파일(assignmentFile)에 들어 있습니다. R 블록의 근거 인용 합계가 확정된 요구 문장 전체(입력·범위 제한 포함)를 덮어야 합니다.',
   '설치된 코드 에이전트의 실제 호스트 연동 검사입니다. 초기 준비와 요구 확정은 합성 테스트 fixture이며 사람의 승인으로 보고하지 마세요.',
   `셸에서 code-agent planning advance를 실행하고 assignments[0]의 hostAgents.${host}를 실제 하위 에이전트로 호출하세요.`,
-  '하위 담당에게 배정 JSON 전체를 전달하고 해당 역할의 작업을 수행해 결과 계약에 맞는 JSON으로 반환하도록 하세요. artifacts에는 배정 outputs만 정확히 반환하세요. outputs가 비어 있으면 artifacts도 비웁니다.',
+  '하위 담당에게는 assignments[0]의 assignmentFile 경로만 전달하고, 그 파일을 읽어 해당 역할의 작업을 수행한 뒤 결과 계약에 맞는 JSON으로 반환하도록 하세요. 배정 본문을 옮겨 쓰지 마세요. artifacts에는 배정 outputs만 정확히 반환하세요. outputs가 비어 있으면 artifacts도 비웁니다.',
   '현재 배정의 inputs와 선행 결과에 있는 경로만 읽고 근거로 쓰세요. 역할 설명의 일반 입력 예시는 이번 배정에 파일을 추가하는 지시가 아닙니다. 배정하지 않은 KNOWLEDGE는 읽거나 인용하지 마세요.',
   'JSON evidence와 문서 본문 모두 파일 근거는 저장소 루트 기준 전체 상대 경로와 줄로 적으세요. 예: doc/work/CONSENT-1/requirement.md:16. requirement.md:16처럼 파일명만 쓰거나 존재하지 않는 미래 구현 파일을 현재 근거로 인용하지 마세요. 이 지시도 하위 담당에게 전달하세요.',
   '메인은 문서·상태 파일을 직접 쓰거나 planning-event 또는 codex-event를 호출하지 마세요. 실제 시작·완료 hook만 결과를 기록합니다.',

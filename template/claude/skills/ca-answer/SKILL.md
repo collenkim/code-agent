@@ -3,7 +3,7 @@ name: ca-answer
 description: 모든 code-agent 명령의 공통 업무 질의응답과 같은 세션 동의 절차 — 메인이 AskUserQuestion으로 실제 응답을 받고 승인된 동의만 적용한다. 직접 호출하면 미응답 질문부터 재개한다.
 ---
 
-너는 **메인 에이전트**다. 모든 `/ca-*` 명령의 일반 업무 질문은 아래 1~3절, 승인·확정·반영은 **같은 세션 동의 절차**를 사용한다. 두 절차의 질문과 응답을 섞지 않는다. 서브에이전트는 질문 후보만 반환하고, 메인만 `AskUserQuestion`과 `consent prepare/status/apply`를 호출한다.
+너는 **메인 에이전트**다. 모든 `/ca-*` 명령의 일반 업무 질문은 아래 1~3절, 승인·확정·반영은 **같은 세션 동의 절차**를 사용한다. 두 절차의 질문과 응답을 섞지 않는다. 서브에이전트는 질문 후보만 반환하고, 메인만 `AskUserQuestion`과 `consent prepare/status/apply/finish`를 호출한다.
 질문 목록을 마지막 메시지에 출력하고 답을 기다리는 방식으로 대신하지 않는다. 사용자에게 `/ca-answer`를 다시 입력하게 하지 않는다.
 
 ## 1. 질문 생성
@@ -23,18 +23,7 @@ description: 모든 code-agent 명령의 공통 업무 질의응답과 같은 �
 - 각 질문은 `question`, 12자 이하 `header`, `options`의 `label`·`description`, `multiSelect`로 구성한다. `multiSelect`는 기본 `false`, 서로 함께 선택할 수 있는 항목만 `true`다.
 - 한 화면의 `options`는 **2~4개**다. 내장 Other/직접 입력으로 다른 답이나 경로·버전을 입력할 수 있다고 처음 한 번만 안내한다. 내장 입력과 중복되는 `X. 기타` 옵션을 넣지 않는다. 추천 표시나 기본 강조는 사용자 응답이 아니다.
 - 경로·버전·회사 규칙처럼 자유 입력이 필요한 질문도 도구를 사용한다. 관측한 후보가 없으면 `직접 입력으로 지정` / `아직 정하지 않음`을 제시하고 내장 입력을 안내한다. `직접 입력으로 지정`만 선택하고 실제 값이 없으면 미응답이며 필요한 값을 같은 도구로 받는다. 경로를 지어내지 않는다.
-- 선택지가 5개 이상이면 아래 절차를 사용한다. `options`에 5개 이상 넣지 않는다.
-
-### 5개 이상 선택지
-
-전체 후보의 이름과 한 줄 설명을 먼저 짧은 표로 보여 주고, 선택은 도구로 받는다. 추천을 첫 번째로 정렬하고 고유한 후보 이름은 페이지 사이에 바꾸지 않는다.
-
-- 첫 화면: 후보 3개 + `다른 선택지`(설명에 남은 후보 이름).
-- 중간 화면: `앞 선택지` + 다음 후보 2개 + `다른 선택지`.
-- 마지막 화면: `앞 선택지` + 남은 후보 최대 3개. 따라서 모든 화면은 2~4개 옵션이고 어떤 후보든 선택할 수 있다.
-- 5개 후보 예: 첫 화면 A·B·C·다른 선택지 → 마지막 화면 앞 선택지·D·E. 7개 후보 예: A·B·C·다른 선택지 → 앞 선택지·D·E·다른 선택지 → 앞 선택지·F·G.
-- 페이지 이동은 답으로 저장하지 않는다. 후보를 고르면 그 결정은 끝내고 다른 페이지를 강제로 질문하지 않는다. 내장 직접 입력으로 다른 페이지의 후보를 명시해도 그 선택을 기록한다.
-- 5개 이상을 복수 선택해야 하면 먼저 3개 이하의 의미 있는 그룹을 도구로 선택하게 하고, 선택한 각 그룹의 후보를 최대 4개씩 복수 선택으로 받는다. 이동·그룹 이름을 최종 선택으로 간주하지 않고, 실제 선택한 후보들을 합쳐 기록한다.
+- 선택지가 5개 이상이면 `.claude/skills/ca-answer/reference.md`의 **5개 이상 선택지** 절차를 읽고 따른다. `options`에 5개 이상 넣지 않는다.
 
 ## 3. 답 기록과 진행
 
@@ -50,54 +39,25 @@ description: 모든 code-agent 명령의 공통 업무 질의응답과 같은 �
 
 ### 작업 JSON
 
-실행할 동작의 JSON 파일은 **작업 중에는 허용된 `doc/work/<ID>/` 아래**, **문서 준비 세션 중에는 허용된 `doc/` 아래**에 먼저 작성한다. 예를 들어 `doc/work/<ID>/consent-action.json` 또는 문서 준비 중 `doc/consent-action.json`을 사용한다. 임의의 임시 디렉토리나 `.code-agent/`에 직접 쓰지 않는다. 쓰기 가능한 문서 세션이 없으면 먼저 허용된 문서 준비 절차로 진입한다. 키와 문자열은 큰따옴표를 쓰고, 필요한 선택 필드만 넣는다. 동작을 준비하는 것은 사용자의 승인 응답을 만드는 일이 아니다.
+실행할 동작의 JSON 파일은 **작업 중에는 허용된 `doc/work/<ID>/` 아래**, **문서 준비 세션 중에는 허용된 `doc/` 아래**에 먼저 작성한다(예: `doc/work/<ID>/consent-action.json`, `doc/consent-action.json`). 임의의 임시 디렉토리나 `.code-agent/`에 직접 쓰지 않는다. 쓰기 가능한 문서 세션이 없으면 먼저 허용된 문서 준비 절차로 진입한다. 키와 문자열은 큰따옴표를 쓰고, 필요한 선택 필드만 넣는다. 동작을 준비하는 것은 사용자의 승인 응답을 만드는 일이 아니다.
 
-| 필드 | 형식과 용도 |
-|---|---|
-| `action` | 필수 문자열: `setup`, `docs`, `baseline`, `request`, `plan`, `deliver`, `knowledge-prune`, `model`, `abort`, `plugin-add`, `plugin-remove`, `update` 중 하나 |
-| `kind` | 선택 문자열: 문서 종류 또는 `all` |
-| `id` | 선택 문자열: 요구사항의 작업 ID. `prepare`가 반환하는 동의 UUID와 구분한다 |
-| `spec` | 선택 문자열: 사람이 작성한 지시서 경로 |
-| `decision` | 선택 문자열: `accept` 또는 `reject`. 실행할 확정·반려 동작이며 실제 동의 응답을 대신하지 않는다 |
-| `comment` | 선택 문자열: 사용자가 제시한 반려 사유 등 |
-| `agent`, `model` | 선택 문자열: 모델을 바꿀 에이전트와 모델 |
-| `name`, `command`, `slots` | 선택 문자열: 플러그인 이름·실행 명령·슬롯 |
-| `sendsCode` | 선택 불리언: 플러그인의 코드 전송 여부 |
-| `secretEnv` | 선택 문자열: **이미 설정된 환경변수 이름만** 참조한다. 키 값은 넣지 않는다 |
-
-| 상황 | 작업 JSON 예시 |
-|---|---|
-| 최초 준비 | `{"action":"setup"}` — POLICY 전체 확정(`confirm doc all`)과 기준 커밋이 없을 때의 생성(`setup baseline`)을 **사용자 질문 하나**로 묶는다 |
-| 준비 이후 문서 확정 | `{"action":"docs","kind":"all"}` — 특정 문서만이면 해당 종류를 쓴다 |
-| 기준 커밋만 별도 준비 | `{"action":"baseline"}` |
-| 접수 요구사항 확정 | `{"action":"request","id":"<작업 ID>"}` — 수기 지시서는 필요하면 `spec`을 포함한다 |
-| 계획 승인 | `{"action":"plan"}` |
-| 요구사항·계획 반려 기록 | 해당 `request` 또는 `plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 포함한다. 이 동작도 별도 동의 후 적용한다 |
-| 검증 결과 반영 | `{"action":"deliver"}` |
-| 오래된 지식 항목 정리 | `{"action":"knowledge-prune"}` |
-| 모델 변경 | `{"action":"model","host":"claude","agent":"<에이전트|all>","model":"<opus|sonnet|haiku|default>"}` |
-| 접수·작업 종료 | `{"action":"abort"}` |
-| 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
-| 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |
-| 사용자가 code-agent 업데이트를 요청함 | `{"action":"update"}` — 소스 갱신의 Git pull·빌드·설치 적용 범위를 확인받는다 |
+흔한 동작은 `{"action":"setup"}`(POLICY 전체 확정과 기준 커밋이 없을 때의 생성을 **사용자 질문 하나**로 묶는다) · `{"action":"request","id":"<작업 ID>"}` · `{"action":"plan"}` · `{"action":"deliver"}`다. 반려 기록은 해당 `request`·`plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 더한다. 그 밖의 동작(`docs`·`baseline`·`knowledge-prune`·`model`·`abort`·`plugin-add`·`plugin-remove`·`update`)과 필드 형식은 `.claude/skills/ca-answer/reference.md`를 읽는다.
 
 비밀값은 질문·요약·작업 JSON·명령 인자·문서·대화에 넣지 않는다. 환경변수 값을 조회하거나 출력해 질문을 채우지 않는다. 필요한 환경변수가 없으면 사용자가 대화 밖에서 설정해야 하며, 키 값을 질문으로 받지 않는다. 플러그인의 실행 명령에도 키 값을 삽입하지 않는다. 비밀값이 준비 결과에 포함됐다면 표시하거나 질문하지 말고 해당 동의 절차를 멈춘다.
 
-### 준비 → 실제 응답 → 상태 확인 → 적용
+### 준비 → 실제 응답 → 확인·적용
 
 1. 승인할 문서·계획·제안을 완성하고 일반 업무 질문의 답을 반영한 뒤, 메인이 Bash: `code-agent consent prepare <json-path>`를 실행한다. `prepare`와 `status`의 반환 JSON에는 `{id,status,summary,questions,toolInput}`이 포함된다. `id`는 동의 UUID, `questions`는 기본 `AskUserQuestion` 형식의 질문 객체 배열이며 `toolInput`은 CLI가 생성한 `{questions,metadata:{source:'code-agent:'+id}}` 객체다. UUID는 상태 조회·적용에 사용하며 사용자에게 보이는 질문에는 UUID 접두사가 없다.
 2. 반환된 **`summary` 전문과 그 안의 모든 문서·파일 링크**를 사용자에게 보여 준다. 링크 대상이 경로로만 나오면 원문을 유지하고 클릭 가능한 링크를 함께 제공한다. 요약을 축약하거나 확인 대상·변경 범위·로컬 커밋 내용을 생략하지 않는다.
 3. `status`가 `pending`이고 `questions`가 있으면 메인이 `AskUserQuestion`을 실제 호출한다. 도구 입력은 **반환된 `toolInput` 객체 전체를 정확히 그대로** 전달한다. `{questions}`만 추려 새 객체를 만들지 않는다. CLI가 생성한 `metadata.source`는 내부 상관관계 식별용이므로 그대로 유지하고 사용자에게 표시하지 않는다. 메인이 메타데이터를 직접 만들거나 고치지 않는다. 질문·순서·선택지·문구를 수정하거나 번역·재정렬·분할하지 않고, 질문에 UUID 접두사를 붙이지 않는다. `answers`·`annotations`·기본 응답 등 어떤 필드도 수동으로 추가하거나 미리 채우지 않는다. 일반 업무 질문을 같은 배열에 섞지 않는다. `toolInput`이 없거나 불완전하면 임의로 재구성하지 말고 미승인 상태와 사유를 알린다.
 4. `PreToolUse`·`PostToolUse` hook이 같은 세션의 실제 질문 호출과 사용자 응답을 관찰·기록한다. 메인은 hook을 직접 호출하거나 응답·승인 기록을 생성·수정하지 않는다. 대화의 ‘진행해’, 과거 승인, 추천 선택, Claude 권한 창은 이 기록을 대신하지 못한다.
-5. 매 질문 응답 뒤 Bash: `code-agent consent status <uuid>`로 상태를 확인한다. 남은 `questions`가 있으면 반환된 `summary` 전문과 링크를 다시 보여 주고 **이번 응답의 `toolInput`**으로 3~5를 반복한다. 이전 질문 입력을 재사용하지 않는다. `deliver`와 `knowledge-prune`의 **지식 항목 선택을 먼저 모두 받은 뒤 최종 승인**을 받는다. 항목 선택만으로 반영하지 않는다.
-6. 방금 조회한 `status`가 **`approved`일 때만** Bash: `code-agent consent apply <uuid>`를 실행한다. 질문 응답을 보고 메인이 승인 여부를 추정하지 않는다. 준비부터 적용까지 대상 파일·Git 상태·설정을 바꾸지 않고, 일반 업무 답 기록이나 임시 파일 정리도 끼워 넣지 않는다. 바뀌었으면 이전 UUID를 적용하지 않고 변경을 마친 뒤 새로 `prepare`하여 전부 다시 확인받는다.
+5. 매 질문 응답 뒤 Bash: `code-agent consent finish <uuid>` — 상태 확인과 승인된 경우의 적용을 한 번에 한다. 남은 `questions`가 있으면(`pending`) 반환된 `summary` 전문과 링크를 다시 보여 주고 **이번 응답의 `toolInput`**으로 3~5를 반복한다. 이전 질문 입력을 재사용하지 않는다. `deliver`와 `knowledge-prune`의 **지식 항목 선택을 먼저 모두 받은 뒤 최종 승인**을 받는다. 항목 선택만으로 반영하지 않는다.
+6. `finish`는 방금 읽은 상태가 **`approved`일 때만** 적용하고 `{status:"applied", result}`를 돌려준다. 나눠서 `code-agent consent status <uuid>`로 확인하고 `approved`일 때만 `code-agent consent apply <uuid>`를 실행해도 같다. 질문 응답을 보고 메인이 승인 여부를 추정하지 않는다. 준비부터 적용까지 대상 파일·Git 상태·설정을 바꾸지 않고, 일반 업무 답 기록이나 임시 파일 정리도 끼워 넣지 않는다. 바뀌었으면 이전 UUID를 적용하지 않고 변경을 마친 뒤 새로 `prepare`하여 전부 다시 확인받는다.
 7. 적용 성공을 확인한 뒤 `code-agent status`로 현재 위치를 읽고 **호출한 작업 흐름을 같은 세션에서 자동으로 이어간다.** 준비 후 접수, 요구 확정 후 분석, 계획 승인 후 `code-agent next`와 구현·검증, 반영 후 결과 보고로 잇는다. 반려 동작 적용 후에는 해당 스킬의 반려 처리로 돌아간다. 사용자가 단계 하나만 요청했다면 그 범위를 지키되 승인 적용 뒤 남은 해당 단계 작업은 마친다. `/ca-next` 재입력을 완료 조건으로 두지 않는다. **`update`만은 적용 결과를 보고한 뒤 멈추고, 갱신된 hook을 로드하도록 Claude Code 재시작을 안내한다.** 재시작 전에는 다음 작업으로 이어가지 않는다. 재시작 후 중단된 작업은 `/ca-next`로 재개한다.
 
 `changes-requested` 등 수정 요청, 취소, `deferred`, 빈 응답·미응답, 대상 변경, 다른 세션, hook 누락·거부에서는 **`apply`하지 않는다**. 수정 요청은 필요한 내용을 일반 업무 질문으로 확인해 문서·제안을 고친 다음 새로 `prepare`한다. 취소·보류는 해당 흐름을 멈추고 자동으로 재질문하지 않는다. `failed`나 알 수 없는 상태도 승인으로 간주하지 않는다. `applied`면 재적용하지 않고 결과와 현재 위치를 확인한다. 중단된 흐름은 `/ca-next`로 재개할 수 있으며, 다른 세션에서는 새 동의를 준비한다.
 
-### 수동 대체 경로
-
-독립 TTY CLI는 사용자가 직접 선택하는 **수동 대체 경로**다. 같은 세션의 도구·hook을 사용할 수 없으면 미승인 상태와 사유를 알리고 이 경로를 안내할 수 있다. `code-agent confirm doc all`, `code-agent setup baseline`, `code-agent confirm request <ID> [<지시서>]`, `code-agent approve`, `code-agent deliver` 등은 사용자가 직접 실행할 때만 사용하며 필수 절차로 요구하지 않는다. 에이전트가 TTY 입력을 대신하거나 다른 명령으로 동의를 우회하지 않는다. 수동 처리 뒤에는 현재 상태를 확인하고 중단된 흐름을 재개한다.
+같은 세션의 도구·hook을 쓸 수 없으면 미승인 상태와 사유를 알린다. 사용자가 직접 실행하는 TTY 대체 경로는 `.claude/skills/ca-answer/reference.md`의 **수동 대체 경로**를 안내할 수 있다.
 
 ## 도구를 쓸 수 없는 경우
 

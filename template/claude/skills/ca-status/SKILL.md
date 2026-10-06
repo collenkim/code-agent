@@ -3,7 +3,7 @@ name: ca-status
 description: code-agent 작업의 현재 위치(문서·스테이지·질문·승인)와 다음 할 일을 보여 준다.
 ---
 
-**질의응답·동의 공통 규칙** — `.claude/skills/ca-answer/SKILL.md`를 읽는다. 일반 업무 질문은 공통 선택 절차로 받고 실제 답을 기록한다. 승인·확정·반영은 별도의 **같은 세션 동의 절차**로 메인만 `consent prepare` → `AskUserQuestion` → `consent status` → 승인된 `consent apply`를 수행한다. 일반 답변을 승인으로 적용하지 않는다. 적용 후 이 작업 흐름을 자동으로 이어가며 `/ca-next`는 중단 후 재개용이다. `update` 적용 후에는 멈추고 hook 로드를 위한 Claude Code 재시작을 안내한다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 1. Bash 로 `code-agent status` 를 실행한다.
 2. 결과를 보여 주고 다음 절차를 한 문장으로 설명한다. 상태 조회만 요청했으면 동의 준비·질문·적용이나 개발을 시작하지 않는다. 진행도 요청받았으면 해당 단계에서 공통 동의 절차를 수행한다. CLI의 기존 TTY 안내는 필수 절차로 전달하지 않는다.

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
-import { assetBytes, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
+import { assetBytes, assetCount, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
 import { STATE_DIR } from "./layout";
 import { applyModels } from "./models";
 import { Stop } from "./stop";
@@ -213,7 +213,7 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, assetBytes(key));
   }
-  lines.push(`스킬·에이전트 ${keys.length}개: .claude/skills/ca-*, .claude/agents/ca-*`);
+  lines.push(`스킬·에이전트 ${assetCount(keys)}: .claude/skills/ca-*, .claude/agents/ca-*`);
   // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
   applyModels(repoRoot);
 
@@ -227,7 +227,9 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
   upsertHook(settings, "SubagentStop", "review-event", invoke("review-event"), "ca-reviewer");
   upsertHook(settings, "SubagentStart", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
   upsertHook(settings, "SubagentStop", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")}`);
+  // 시작·재개·비우기·압축 뒤 진행 상태를 붙인다 — 대화 요약이 단계·동의를 잃어도 상태 파일에서 다시 잡는다
+  upsertHook(settings, "SessionStart", "session-event", invoke("session-event"));
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")} · SessionStart ${invoke("session-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);

@@ -377,6 +377,14 @@ function unqualifiedAnnotations(value: unknown, bound: Question[]): boolean {
       key === "notes" && typeof note === "string" && note.trim() === ""));
 }
 
+/** 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용을 돌려준다. */
+export function finishConsent(root: string, id: string): string {
+  const status = loadConsent(root, id).status;
+  if (status !== "approved" && status !== "applied") return consentStatus(root, id);
+  const result = applyConsent(root, id);
+  return JSON.stringify({ id, status: "applied", result }, null, 2);
+}
+
 export function applyConsent(root: string, id: string): string {
   root = canonicalRoot(root);
   const cached = loadConsent(root, id);
@@ -426,7 +434,7 @@ function applyLocked(root: string, id: string): string {
   }catch(error){record.status="failed";save(root,record);throw error;}
 }
 export function consentCommandGuard(root:string,command:string,sessionId?:string):string|undefined {
-  const match=/^code-agent consent apply ([a-f0-9-]+)$/.exec(command.trim());
+  const match=/^code-agent consent (?:apply|finish) ([a-f0-9-]+)$/.exec(command.trim());
   if(!match)return;
   try {const record=loadConsent(root,match[1]);if(!sessionId||record.sessionId!==sessionId)return "현재 세션에서 확인한 요청만 실행할 수 있습니다.";}
   catch{return "확인 요청을 읽을 수 없습니다.";}
