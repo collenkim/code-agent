@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-06",
+  "baseCommit": "9bd628ae9fd00e48dd7b25c4c66d07878bbc56fb",
+  "scope": "H1 adoption/start, H2 ignored delivery docs, H3 domain-scoped fix/refactor",
+  "runs": {
+    "firstFull": {
+      "command": "npm test",
+      "log": "dist/final-regression.log",
+      "sha256": "2bd0c44f3a88cd75b41e59735ce03d29ff23821ffb84cc9f5a44785df1c3ed14",
+      "tests": 740,
+      "passed": 730,
+      "failed": 6,
+      "skipped": 4,
+      "cancelled": 0,
+      "durationMs": 1020259.4271
+    },
+    "correctedFixtureRetest": {
+      "command": "node --test --test-name-pattern \"사용자가 준 기준|매니페스트의 기준|kind: refactor|전략이|수준 줄|전략에서\" dist/test/agent.test.js",
+      "log": "dist/adoption-fixture-regression.log",
+      "sha256": "dfde1a6dc11fa7b3e8939287cdeafa518d5f334ed52695b24e0b4576f379019b",
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 34068.6794
+    },
+    "defectFocused": {
+      "command": "node --test --test-name-pattern \"H[123]|승인한 test\" dist/test/adoption.test.js dist/test/gate.test.js dist/test/consent.test.js dist/test/p6.test.js dist/test/process.test.js",
+      "log": "dist/workflow-defects-focused.log",
+      "sha256": "e32575059c46a2111453802c95208f2748a84eed431c174b2ac680f8ae6d2ede",
+      "tests": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 40102.3979
+    },
+    "adoptionConsentAndGate": {
+      "command": "node --test dist/test/adoption.test.js dist/test/gate.test.js dist/test/remaining.test.js dist/test/consent.test.js",
+      "log": "dist/adoption-focused.log",
+      "sha256": "d0fc4a1a763d067158029ae387b317bdb1c35cbec14b50890ba68af45bed1981",
+      "tests": 80,
+      "passed": 80,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 334547.1318
+    }
+  },
+  "finalUniqueCoverage": {
+    "tests": 740,
+    "passed": 736,
+    "failed": 0,
+    "skipped": 4,
+    "basis": "Full regression plus exact rerun of all six corrected fixture failures; not a single clean full-suite run. Overlapping focused suites are not added."
+  },
+  "correctedFailures": [
+    "사용자가 준 기준 브랜치가 매니페스트보다 앞선다",
+    "매니페스트의 기준 브랜치를 쓴다",
+    "kind: refactor — 보존 조건이 빠진 계획은 제출되지 않는다",
+    "전략이 '하지 않음' 이라 한 수준은 `안 하는 것` 에 근거가 있어야 쓴다",
+    "수준 줄의 조건 설명은 '하지 않음' 이 아니다",
+    "전략에서 수준을 읽지 못하면 대조를 건너뛰고 그 사실을 알린다"
+  ],
+  "skippedReasons": [
+    "Two case-sensitive filename tests are not applicable on the Windows case-insensitive filesystem.",
+    "Two POSIX permission tests are not applicable to Windows ACL behavior."
+  ],
+  "documentationValidation": {
+    "documents": 7,
+    "localLinks": 104,
+    "missing": 0
+  },
+  "endToEnd": [
+    "feature: existing Git repository, both-host init, preparation commit, intake, plan, implementation, actual node:test, review, worktree integration, delivery including ignored docs, clean Git status",
+    "fix: domain-scoped plan, actual failing repro then successful fix, check/test/review/integration/local delivery",
+    "refactor: domain-scoped plan, existing tests unchanged, check/test/review/integration/local delivery"
+  ],
+  "limits": [
+    "Approval and review observations are automated fixtures. Git operations, test commands and integration worktrees execute for real.",
+    "No new live model or real-user approval measurement. Existing live-run evidence remains historical."
+  ]
+}

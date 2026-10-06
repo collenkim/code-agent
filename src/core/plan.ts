@@ -179,8 +179,8 @@ export function planFormatFor(kind: WorkKind): PlanFormat {
     schema: RefactorPlanSchema,
     shape: REFACTOR_PLAN_SHAPE,
     requiresPreserve: true,
-    // 고치는 작업에는 만들 도메인이 없다. 도메인 자리를 비워 두면 경계 검사도
-    // 도메인 디렉토리가 아니라 지시서의 scope 를 보게 된다.
+    // 고치는 작업에는 만들 도메인이 없다. 경계 검사는 각 파일의 분류/도메인을 풀어
+    // 지시서 scope와 해당 단계의 계층 제한을 함께 적용한다.
     toPlan: (parsed) => ({
       domainName: "",
       domainLabel: "",

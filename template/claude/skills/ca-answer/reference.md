@@ -30,7 +30,7 @@
 
 | 상황 | 작업 JSON 예시 |
 |---|---|
-| 최초 준비 | `{"action":"setup"}` — POLICY 전체 확정(`confirm doc all`)과 기준 커밋이 없을 때의 생성(`setup baseline`)을 **사용자 질문 하나**로 묶는다 |
+| 최초 준비 | `{"action":"setup"}` — POLICY 전체 확정(`confirm doc all`)과 필요한 준비 커밋(`setup baseline`: 최초 커밋 또는 기존 저장소의 도입 파일 반영)을 **사용자 질문 하나**로 묶는다 |
 | 준비 이후 문서 확정 | `{"action":"docs","kind":"all"}` — 특정 문서만이면 해당 종류를 쓴다 |
 | 기준 커밋만 별도 준비 | `{"action":"baseline"}` |
 | 접수 요구사항 확정 | `{"action":"request","id":"<작업 ID>"}` — 수기 지시서는 필요하면 `spec`을 포함한다 |

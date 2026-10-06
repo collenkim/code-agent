@@ -7,7 +7,7 @@ import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
 import { abort, decide, requireValidatable, status } from "./commands";
-import { hasBaseline, setupBaseline } from "./bootstrap";
+import { setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
 import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
@@ -196,7 +196,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
   switch (action.action) {
     case "setup":
       confirmations = capture(() => confirmDoc(root, "all"));
-      if (!hasBaseline(root)) confirmations.push(...capture(() => setupBaseline(root)));
+      confirmations.push(...capture(() => setupBaseline(root)));
       break;
     case "docs": confirmations = capture(() => confirmDoc(root, action.kind ?? "all")); break;
     case "baseline": confirmations = capture(() => setupBaseline(root)); break;

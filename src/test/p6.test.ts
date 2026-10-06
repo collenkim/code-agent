@@ -9,7 +9,8 @@ import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
 import { back, context, next, requireReproable, requireValidatable, Stop, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
-import { commitDelivery, prDocFile } from "../agent/deliver";
+import { commitDelivery, deliver, prDocFile } from "../agent/deliver";
+import { withInteraction } from "../agent/tty";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import {
   checkCommands,
@@ -151,6 +152,24 @@ function dropRepo(): void {
   rmSync(repo, { recursive: true, force: true });
 }
 
+/** 승인·리뷰 관찰만 fixture로 제공하고 검증·통합·반영은 실제 코드로 끝까지 실행한다. */
+async function finishDelivery(id: string, target: string): Promise<void> {
+  await check(requireValidatable(repo, "check")); next(repo);
+  await runTests(requireValidatable(repo, "test")); next(repo);
+  openRound(requireValidatable(repo, "review"));
+  const review = reviewDocFile(id);
+  write(review, readFileSync(join(repo, review), "utf8") + "\n- 없음\n");
+  recordReviewFixture(repo);
+  next(repo); await integrate(requireValidatable(repo, "integrate")); next(repo);
+  write(prDocFile(id), "## 요약\n회귀 수정\n## 확인 방법\n실제 테스트 실행\n## 위험·되돌리기\n테스트 fixture\n");
+  const output = withInteraction({ confirm: () => ({ channel: "tty", verified: true, detail: "automated fixture" }), ask: () => "n" },
+    () => deliver(requireValidatable(repo, "deliver")));
+  assert.match(output, /반영했습니다/);
+  assert.equal(loadActive(repo), undefined);
+  assert.match(git("show", "--name-only", "--format=", "HEAD"), /10-pr\.md/);
+  assert.equal(loadEvidence(repo, id, target)!.integrationTestCases!.every(entry => entry.status === "passed"), true);
+}
+
 /** 두 단계(코드·테스트)짜리 매니페스트 — 종류는 셋 다 돈다 */
 function manifest(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -287,6 +306,19 @@ describe("P6 · fix — 재현 먼저", () => {
   function fixSource(): void {
     write(SRC, "function total(items) {\n  // fixed\n  return items.reduce((a, b) => a + b, 0);\n}\nmodule.exports = { total };\n");
   }
+
+  test("H3: 도메인 단계의 fix를 제출하고 실제 실패 재현→수정→검증→통합→반영까지 완료한다", async () => {
+    useManifest({ domainRoots: [], test: ["node", "--test", "--test-reporter=tap"], stages: [
+      { key: "code", title: "코드", template: "01-code.md", scope: "domain", outputDirs: ["."] },
+      { key: "test", title: "테스트", template: "02-test.md", kind: "test", scope: "project", outputDirs: ["src/test"] },
+    ] });
+    toImplement();
+    writeReproTest("const {test}=require('node:test'),a=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1',()=>a.equal(total([2,3]),5));\n");
+    await repro(requireReproable(repo)); next(repo);
+    assert.equal(writeFileHook(SRC), undefined);
+    fixSource(); next(repo);
+    await finishDelivery("FIX-1", SRC);
+  });
 
   // ---- ② 기존 시스템 분석 ----
 
@@ -786,6 +818,20 @@ describe("P6 · refactor — 동작 보존", () => {
     git("commit", "-qm", "manifest");
   }
 
+  test("H3: 도메인 단계의 refactor는 기존 테스트를 유지하며 제출부터 반영까지 완료한다", async () => {
+    write(KEPT_TEST, "const {test}=require('node:test'),a=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1',()=>a.equal(total([2,3]),5));\n");
+    useManifest({ domainRoots: [], test: ["node", "--test", KEPT_TEST], stages: [
+      { key: "code", title: "코드", template: "01-code.md", scope: "domain", outputDirs: ["."] },
+      { key: "test", title: "테스트", template: "02-test.md", kind: "test", scope: "project", outputDirs: ["src/test"] },
+    ] });
+    const originalTest = readFileSync(join(repo, KEPT_TEST));
+    toPlan(); submit(); approve(); next(repo);
+    assert.equal(writeFileHook(SRC), undefined);
+    write(SRC, "module.exports.total=items=>items.reduce((sum,item)=>sum+item,0);\n"); next(repo);
+    await finishDelivery("REF-1", SRC);
+    assert.deepEqual(readFileSync(join(repo, KEPT_TEST)), originalTest);
+  });
+
   test("22b. 테스트 단계가 kinds 에서 refactor 를 뺐어도 기존 테스트는 보호된다", () => {
     // 리팩토링은 새 테스트를 만들지 않으니 kinds 에서 빼는 것이 자연스럽다. 그때 보호가 꺼지면 안 된다.
     // 코드 단계의 자리는 src 전체라 이름표만으로는 기존 테스트가 계획에 들어온다.
@@ -1107,6 +1153,35 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
   }
 
   // ---- deliver 커밋 범위 ----
+
+  test("H2: doc/와 상태 경로를 무시해도 지정한 문서·증거·지식만 커밋한다", async () => {
+    useManifest();
+    write(".gitignore", "build/\ndoc/\n.code-agent/\n"); git("add", ".gitignore"); git("commit", "-qm", "ignore generated docs");
+    await runToIntegrate(); await integrate(requireValidatable(repo, "integrate")); next(repo);
+    write(prDocFile("ORD-9"), "## 요약\n인사\n## 확인 방법\n테스트\n## 위험·되돌리기\n없음\n");
+    write("doc/knowledge/selected.md", "selected\n"); write("doc/knowledge/unrelated.md", "unrelated\n");
+    write("doc/work/OTHER/raw.md", "other work\n"); write(".code-agent/work/OTHER/evidence.json", "{}\n");
+    write("unrelated.txt", "already staged\n"); git("add", "unrelated.txt");
+    const commit = commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, ["doc/knowledge/selected.md"]);
+    const files = git("show", "--name-only", "--format=", commit);
+    for (const file of [FEAT_SRC, prDocFile("ORD-9"), "doc/knowledge/selected.md", ".code-agent/work/ORD-9/greeting.verify.json"]) assert.ok(files.includes(file));
+    assert.doesNotMatch(files, /OTHER|unrelated/);
+    assert.equal(git("diff", "--cached", "--name-only"), "unrelated.txt");
+  });
+
+  test("H2: add 실패는 Stop으로 안내하고 기존 index와 작업 커서를 유지한다", async () => {
+    useManifest(); await runToIntegrate(); await integrate(requireValidatable(repo, "integrate")); next(repo);
+    write(prDocFile("ORD-9"), "review\n");
+    write("unrelated.txt", "already staged\n"); git("add", "unrelated.txt");
+    const before = readFileSync(join(repo, ".git/index"));
+    write(".git/index.lock", "fixture lock\n");
+    try {
+      assert.throws(() => commitDelivery(loadWork(repo)!, loadEvidence(repo, "ORD-9", "greeting")!, []),
+        (error: unknown) => error instanceof Stop && /git add 가 실패/.test(error.message));
+      assert.deepEqual(readFileSync(join(repo, ".git/index")), before);
+      assert.equal(loadActive(repo)?.phase, "deliver");
+    } finally { rmSync(join(repo, ".git/index.lock")); }
+  });
 
   test("33. 반영 커밋은 도입 설정을 포함하고 다른 작업 증거와 무관한 파일은 제외한다", async () => {
     useManifest();

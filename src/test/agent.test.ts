@@ -454,15 +454,17 @@ describe("start — 문서 게이트와 작업 브랜치", () => {
   });
 
   test("사용자가 준 기준 브랜치가 매니페스트보다 앞선다", () => {
-    git("branch", "develop");
     write("code-agent.json", JSON.stringify({ ...MANIFEST, git: { base: "release" } }));
+    git("add", "code-agent.json"); git("commit", "-qm", "prepare manifest");
+    git("branch", "develop");
     start(repo, join(repo, "doc/work/ORD-1.md"), { base: "develop" });
     assert.equal(loadActive(repo)!.base, "develop");
   });
 
   test("매니페스트의 기준 브랜치를 쓴다", () => {
-    git("branch", "develop");
     write("code-agent.json", JSON.stringify({ ...MANIFEST, git: { base: "develop" } }));
+    git("add", "code-agent.json"); git("commit", "-qm", "prepare manifest");
+    git("branch", "develop");
     start(repo, join(repo, "doc/work/ORD-1.md"));
     assert.equal(loadActive(repo)!.base, "develop");
   });
@@ -575,6 +577,7 @@ describe("plan submit — 제출 전 검사", () => {
   test("kind: refactor — 보존 조건이 빠진 계획은 제출되지 않는다", () => {
     const DEAL = `${APP}/deal`;
     abort(repo);
+    git("switch", "-q", "master");
     // 고치는 작업은 Entity~Controller 를 순차 생성하지 않는다 — 경계는 지시서가 정한다.
     write("code-agent.json", JSON.stringify({
       ...MANIFEST,
@@ -583,6 +586,7 @@ describe("plan submit — 제출 전 검사", () => {
         kinds: ["refactor"], scope: "project", exemplars: [], outputDirs: [],
       }],
     }));
+    git("add", "code-agent.json"); git("commit", "-qm", "prepare refactor manifest");
     write("doc/work/REF-1.md", [
       "---", "kind: refactor", "id: REF-1", "title: 거래 경계 정리",
       `target: ${DEAL}`, `scope: [${DEAL}]`,
@@ -778,6 +782,7 @@ describe("⑦ 07-test-spec.md — 모든 AC 가 TC 에", () => {
   test("전략이 '하지 않음' 이라 한 수준은 `안 하는 것` 에 근거가 있어야 쓴다", () => {
     write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- Unit: 필수\n- E2E: 하지 않음"));
     confirmDocs();
+    git("add", "doc/test-strategy.md"); git("commit", "-qm", "prepare strategy");
     toPlan();
     const e2e = TEST_SPEC.replace("| TC-2 | Unit | AC-R2-1", "| TC-2 | E2E | AC-R2-1");
     write("doc/work/ORD-1/07-test-spec.md", e2e);
@@ -793,6 +798,7 @@ describe("⑦ 07-test-spec.md — 모든 AC 가 TC 에", () => {
   test("수준 줄의 조건 설명은 '하지 않음' 이 아니다", () => {
     write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- Unit: 분기 있는 로직만 — 단순 위임은 하지 않음"));
     confirmDocs();
+    git("add", "doc/test-strategy.md"); git("commit", "-qm", "prepare strategy");
     toPlan();
     assert.match(submit(), /계획을 제출하고/);
   });
@@ -810,6 +816,7 @@ describe("⑦ 07-test-spec.md — 모든 AC 가 TC 에", () => {
   test("전략에서 수준을 읽지 못하면 대조를 건너뛰고 그 사실을 알린다", () => {
     write("doc/test-strategy.md", TEST_STRATEGY_DOC.replace("- Unit: 필수", "- 자세한 것은 팀 위키를 따른다"));
     confirmDocs();
+    git("add", "doc/test-strategy.md"); git("commit", "-qm", "prepare strategy");
     toPlan();
     assert.match(submit(), /참고: 테스트 전략의 `수준과 범위` 에서 수준을 읽지 못해 수준 대조는 건너뛰었습니다/);
   });

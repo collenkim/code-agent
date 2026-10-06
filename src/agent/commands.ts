@@ -29,6 +29,7 @@ import {
 import type { ActiveWork, Phase } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { isGitRepo, switchToWorkBranch } from "./git";
+import { requirePreparedBranch } from "./bootstrap";
 import { commitOf, mergeBase } from "./tree";
 import { prDocFile } from "./deliver";
 import { proposalFile } from "./knowledge";
@@ -307,6 +308,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (isGitRepo(repoRoot)) {
     base = options.base ?? manifest.git.base;
     branch = `${order.kind}/${order.id}`;
+    requirePreparedBranch(repoRoot, branch, base);
     let how: "created" | "switched" | "already";
     try {
       how = switchToWorkBranch(repoRoot, branch, base);

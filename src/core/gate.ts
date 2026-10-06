@@ -5,7 +5,7 @@
  * 경로·계획 대조처럼 비교 연산으로 끝나는 것들이고, 그것이 hook 이 딛는 자리다.
  */
 import { existsSync } from "fs";
-import { join } from "path";
+import { join, posix } from "path";
 
 import { domainDirOf } from "./exemplar";
 import type { WorkOrder } from "./workOrder";
@@ -15,6 +15,19 @@ import type { BuildPlan, GateViolation, GeneratedFile } from "./types";
 /** 경로 하나가 어떤 경로(파일 또는 디렉토리) 안에 드는가. */
 function under(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
+}
+
+/** 고치는 작업은 여러 기존 도메인을 다룬다. 분류/도메인 한 단계씩만 소비하고 계층 제한은 유지한다. */
+function existingDomainDir(manifest: Manifest, stage: StageDef, path: string): string | undefined {
+  const roots = manifest.domainRoots.length ? manifest.domainRoots : [""];
+  for (const root of [...roots].sort((a, b) => b.length - a.length)) {
+    const base = posix.join(stage.base ?? manifest.domainBase, root);
+    const prefix = base === "." ? "" : `${base}/`;
+    if (!path.startsWith(prefix)) continue;
+    const rest = path.slice(prefix.length).split("/");
+    if (rest.length >= 2 && rest[0]) return posix.join(base, rest[0]);
+  }
+  return undefined;
 }
 
 /**
@@ -57,7 +70,6 @@ export function checkPaths({
   files,
 }: BoundaryInput): GateViolation[] {
   const violations: GateViolation[] = [];
-  const domainDir = domainDirOf(manifest, plan.domainRoot, plan.domainDirName, stage.base);
   const preserved = preservedPaths(repoRoot, order);
 
   for (const file of files) {
@@ -109,11 +121,14 @@ export function checkPaths({
       }
       continue;
     }
-    if (!path.startsWith(`${domainDir}/`)) {
+    const domainDir = order.kind === "fix" || order.kind === "refactor"
+      ? existingDomainDir(manifest, stage, path)
+      : domainDirOf(manifest, plan.domainRoot, plan.domainDirName, stage.base);
+    if (domainDir === undefined || !path.startsWith(`${domainDir}/`)) {
       violations.push({
         item: "do-not-touch 경계",
         file: path,
-        detail: `이번 도메인 디렉토리(${domainDir}) 밖의 파일`,
+        detail: `이번 도메인 디렉토리(${domainDir ?? stage.base ?? manifest.domainBase}) 밖의 파일`,
       });
       continue;
     }

@@ -19,6 +19,7 @@ import type { Manifest, StageDef } from "../core/manifest";
 import type { BuildPlan } from "../core/types";
 import { validateWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
+import { planFormatFor } from "../core/plan";
 
 const STAGE: StageDef = {
   key: "restructure",
@@ -178,3 +179,27 @@ describe("계획 준수 — 경계는 '어디에' 를, 계획은 '무엇을' 을
     );
   });
 });
+
+for (const kind of ["fix", "refactor"] as const) {
+  test(`H3: ${kind}는 파일별 도메인을 풀고 분류·계층·scope·preserve 경계를 유지한다`, () => {
+    const format = planFormatFor(kind);
+    const plan = format.toPlan(format.schema.parse({ ...PLAN, preserve: [] }));
+    const manifest = { ...MANIFEST, domainBase: "src/main", domainRoots: ["admin", "application"] };
+    const stage = { ...STAGE, scope: "domain" as const, outputDirs: ["domain"] };
+    const order = { ...ORDER, kind, scope: ["src/main", "src/test"], preserve: [] };
+    const input = { repoRoot: repo, order, manifest, plan, stage };
+    const run = (path: string, overrides = {}) => checkPaths({ ...input, files: [{ path, content: "" }], ...overrides });
+    for (const root of ["admin", "application"]) {
+      assert.deepEqual(run(`src/main/${root}/orders/domain/Order.java`), []);
+      assert.equal(run(`src/main/${root}/orders/repository/Order.java`)[0].item, "do-not-touch 경계");
+      assert.deepEqual(run(`src/test/${root}/orders/domain/OrderTest.java`, { stage: { ...stage, base: "src/test" } }), []);
+    }
+    assert.equal(run("src/main/unknown/orders/domain/Order.java")[0].item, "do-not-touch 경계");
+    assert.equal(run("src/main/application/Order.java")[0].item, "do-not-touch 경계");
+    assert.equal(run("src/main/admin/orders/domain/Order.java", { order: { ...order, scope: ["src/main/application"] } })[0].item, "지시서 scope 밖");
+    write("src/main/admin/orders/domain/Order.java");
+    assert.equal(run("src/main/admin/orders/domain/Order.java", { order: { ...order, preserve: ["src/main/admin/orders/domain/Order.java"] } })[0].item, "보존 대상");
+    assert.deepEqual(run("src/main/orders/service.py", { manifest: { ...manifest, domainRoots: [] }, stage: { ...stage, outputDirs: ["."] } }), []);
+    assert.equal(run("src/main/orders/sub/service.py", { manifest: { ...manifest, domainRoots: [] }, stage: { ...stage, outputDirs: ["."] } })[0].item, "do-not-touch 경계");
+  });
+}
