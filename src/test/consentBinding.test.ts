@@ -161,7 +161,8 @@ test("검토 #1 hook·consent-event 진입은 judgment 소유 모듈(retryGrant�
   };
   for (const entry of ["hook.js", "consent.js"]) {
     const loaded = probe(entry);
-    assert.ok(loaded.some((file) => file.endsWith("/agent/consent.js")), entry);
+    // hook 은 consent.ts 를 적용 명령 꼴에서만 지연 로드한다(C7 OPT-15 — hookLoad.test 가 실행 경로를 본다)
+    assert.equal(loaded.some((file) => file.endsWith("/agent/consent.js")), entry === "consent.js", entry);
     for (const name of ["retryGrant.js", "reviewJudgment.js", "crossCheck.js", "verificationFlow.js"]) {
       assert.equal(loaded.some((file) => file.endsWith(`/agent/${name}`)), false, `${entry} → ${name}`);
     }

@@ -30,7 +30,6 @@ import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
-import { consentCommandGuard } from "./consent";
 import { consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
@@ -411,7 +410,11 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
     if (/\b(?:consent-event|planning-event|review-event|codex-event)\b/.test(command)) return "실행 관찰 명령은 호스트 hook만 호출합니다.";
-    const denied = consentCommandGuard(repoRoot, command, input.session_id);
+    // consent.ts 는 무겁다(commands·deliver·validate·sourceUpdate 그래프) — 적용 명령 꼴일 때만 읽는다. 접두어가 가드의 정규식보다
+    // 넓어 가드가 보던 명령은 모두 가드를 지난다(hookLoad.test 가 그래프와 지연 로드를 본다)
+    const denied = /^code-agent consent (?:apply|finish) /.test(command.trim())
+      ? (require("./consent") as typeof import("./consent")).consentCommandGuard(repoRoot, command, input.session_id)
+      : undefined;
     if (denied) return denied;
   }
   let work: Work | undefined, documenting: boolean, requesting: RequestSession | undefined, manifest: Manifest | undefined;

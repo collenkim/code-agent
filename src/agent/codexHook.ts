@@ -3,11 +3,8 @@ import { isAbsolute, join, resolve } from "path";
 import { writeAtomic } from "../core/atomic";
 import { decide, HookInput } from "./hook";
 import { findRepoRoot } from "./layout";
-import { observePlanner } from "./planningHook";
-import { observeReviewer, RecordedFailure, ReviewHookInput } from "./reviewHook";
+import type { ReviewHookInput } from "./reviewHook";
 import { hookFailureExit, hookFailureInput, subagentExit } from "./retryPolicy";
-import { decideStop } from "./stopHook";
-import { codexReplyCode, consentStatus, observeConsent } from "./consent";
 import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
 import { commonAgentName, withNotation } from "./hostText";
 import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
@@ -42,6 +39,8 @@ export function patchPaths(command: string): string[] {
  */
 export function observeCodexConsent(input: CodexHookInput, root: string): void {
   if (input.hook_event_name !== "UserPromptSubmit" || !input.prompt?.trim().startsWith("code-agent consent respond")) return;
+  // 사용자 메시지마다 도는 이벤트다 — 동의 응답일 때만 consent 그래프를 읽는다(hookLoad.test)
+  const { codexReplyCode, consentStatus, observeConsent } = require("./consent") as typeof import("./consent");
   const match = /^code-agent consent respond ([a-f0-9-]{36}) ([1-3](?:,[1-3]){0,3})(?: ([a-f0-9]{6}))?$/.exec(input.prompt.trim());
   if (!match || !input.turn_id) throw new Error("현재 consent status의 codexReply 형식으로 답하세요.");
   const status = JSON.parse(consentStatus(root, match[1]));
@@ -133,13 +132,14 @@ function codexEvent(input: CodexHookInput): object {
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.
     const event = {...input, agent_type: commonAgentName(input.agent_type), transcript_path: undefined, agent_transcript_path: undefined};
-    // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 계획 담당의 실패는 되돌림 없이 바로 기록한다
-    observePlanner(event, root, {host: "codex"});
-    observeReviewer(event, root, "codex");
+    // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 계획 담당의 실패는 되돌림 없이 바로 기록한다.
+    // 이벤트별 모듈은 그 분기에서만 읽는다 — 모든 이벤트가 담당 관찰·Stop 판정 그래프를 함께 읽지 않게(hookLoad.test)
+    (require("./planningHook") as typeof import("./planningHook")).observePlanner(event, root, {host: "codex"});
+    (require("./reviewHook") as typeof import("./reviewHook")).observeReviewer(event, root, "codex");
   } else if (input.hook_event_name === "UserPromptSubmit") {
     observeCodexConsent(input, root);
   } else if (input.hook_event_name === "Stop") {
-    const reason = decideStop(input, root);
+    const reason = (require("./stopHook") as typeof import("./stopHook")).decideStop(input, root);
     return reason ? {decision: "block", reason} : {};
   }
   return {};
@@ -155,6 +155,11 @@ export function runCodexHook(stdin: string): number {
   return withNotation("codex", () => runCodexEvent(stdin));
 }
 
+/** 기록한 담당 실패인가 — Subagent 분기에서 이미 읽은 reviewHook 의 클래스로 본다. 모듈을 읽지 못하면 기록하지 못한 실패다 */
+function recordedFailure(error: unknown): boolean {
+  try { return error instanceof (require("./reviewHook") as typeof import("./reviewHook")).RecordedFailure; } catch { return false; }
+}
+
 function runCodexEvent(stdin: string): number {
   let event: string | undefined;
   try {
@@ -168,7 +173,7 @@ function runCodexEvent(stdin: string): number {
       // 기록한 실패든 기록하지 못한 판정 실패든 Codex 는 exit 2 로 턴을 잇지 않는다 — 사유만 남기고 통과한다
       process.stderr.write(`code-agent codex-event: ${message}\n`);
       process.stdout.write("{}");
-      return subagentExit({host: "codex", event, recorded: error instanceof RecordedFailure});
+      return subagentExit({host: "codex", event, recorded: recordedFailure(error)});
     }
     const result = hookFailureExit(hookFailureInput("codex-event", stdin), message);
     process.stderr.write(event === "Stop" ? `code-agent codex-event 가 Stop 판정에 실패했습니다 (턴은 막지 않았습니다): ${message}\n`
