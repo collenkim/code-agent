@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join, posix } from "path";
 
 import { APPROVALS_DIR } from "../core/approval";
@@ -8,12 +8,15 @@ import { slug } from "../core/workOrder";
 import { planTasks } from "../core/plan";
 import { formatSourceTrace, readSourceTrace } from "./sourceTrace";
 import { blockCount, stripBlock, upsertBlock } from "./blocks";
-import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, validationDocFile } from "./evidence";
+import { crossAttemptsOf, planningCrossAttemptsOf, planningCrossView, pointLabel, type CrossAttempt, type PlanningCrossView } from "./crossRecord";
+import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, treeHashNow, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
 import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { unansweredQuestions } from "./questions";
-import { loadReview, reviewDocFile, reviewProblems } from "./review";
+import { crossQuestionViews, loadPlanning } from "./planningState";
+import { crossPointState } from "./retryPolicy";
+import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./review";
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
 import { askOnTerminal, confirmOnTerminal } from "./tty";
@@ -93,8 +96,88 @@ function cell(values: string[]): string {
   return values.join("<br>") || "없음";
 }
 
-/** 코드 구역 — 추적표 · 검증 · 변경 요약. 다시 렌더해 바이트로 대조한다 */
-export function renderTraceBlock(work: Work, evidence: Evidence | undefined): string {
+const oneLine = (text: string | undefined, max = 200): string => (text ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const openCrossFindings = (result: string | undefined): number =>
+  (result ?? "").split("\n").filter((line) => /^\|\s*X\d+\s*\|/.test(line) && /\|\s*열림\s*\|/.test(line)).length;
+
+/**
+ * 교차 검증·사람 판단의 기록 요약 — ⑩ 검증 절과 커밋 메시지가 같은 값을 쓴다. 시각에 따라 바뀌는 보기(고아 보기)는 쓰지 않는다 —
+ * 반영 확인 화면을 두 번 그려도 같은 바이트여야 한다.
+ */
+function crossSummary(work: Work) {
+  const { repoRoot, active } = work;
+  const log = loadReview(repoRoot, active.id, active.target);
+  const planned = planPaths(work);
+  const rounds = (log?.rounds ?? []).map((round) => {
+    const attempts = crossAttemptsOf(round, planned);
+    const done = crossPointState(attempts).completed as CrossAttempt | undefined;
+    const usage = attempts.reduce((sum, attempt) => ({ ms: sum.ms + (attempt.usage?.durationMs ?? 0), cost: sum.cost + (attempt.usage?.costUsd ?? 0) }), { ms: 0, cost: 0 });
+    return { round: round.round, attempts, label: pointLabel(attempts), done, usage,
+      stops: attempts.filter((attempt) => attempt.class === "cross-stop") };
+  });
+  let planning: { label: string; dispatchId: string; done?: PlanningCrossView; waivers: { id: string; reason: string; consent: string }[]; stops: CrossAttempt[] } | undefined;
+  if (active.planningVersion) {
+    try {
+      const state = loadPlanning(work);
+      const dispatchId = state.tasks.find((record) => record.task.role === "critic")?.attempts.at(-1)?.dispatchId;
+      const attempts = dispatchId ? planningCrossAttemptsOf(state, dispatchId) : [];
+      if (dispatchId && attempts.length) {
+        const { view, awaiting } = planningCrossView(attempts, crossQuestionViews(work));
+        planning = { label: pointLabel(view, awaiting), dispatchId, done: crossPointState(view).completed as PlanningCrossView | undefined,
+          waivers: (state.crossWaivers ?? []).filter((waiver) => waiver.criticDispatchId === dispatchId),
+          stops: attempts.filter((attempt) => attempt.class === "cross-stop") };
+      }
+    } catch { /* 계획 기록을 읽지 못하면 계획 검토 줄을 내지 않는다 */ }
+  }
+  return { required: crossRequired(repoRoot), log, rounds, planning };
+}
+
+/** ⑩ 검증 절의 교차 검증·사람 판단 줄 — 두 호스트 설치 프로젝트이거나 기록이 있을 때만 */
+function crossTraceLines(work: Work): string[] {
+  const { required, log, rounds, planning } = crossSummary(work);
+  const lines: string[] = [];
+  if (required || rounds.some((round) => round.attempts.length)) {
+    const parts = rounds.map((round) => `${round.round}회차 ${round.label}${round.done ? `(열린 ${openCrossFindings(round.done.result)})` : ""}` +
+      (round.usage.ms ? ` · ${(round.usage.ms / 60_000).toFixed(1)}분${round.usage.cost ? ` · $${round.usage.cost.toFixed(2)}` : ""}` : ""));
+    lines.push(`- 교차 리뷰: ${parts.join(" · ") || "회차 없음"}`);
+  }
+  if (planning) {
+    const findings = planning.done?.outcome;
+    lines.push(`- 교차 계획 검토: ${planning.label}${findings ? `(차단 ${findings.findings.filter((finding) => finding.severity === "blocking").length} · 질문 ${findings.questions})` : ""} · critic ${planning.dispatchId.slice(0, 8)}`);
+  }
+  for (const waiver of log?.waivers ?? []) {
+    lines.push(`- 사람 판단: ${waiver.id}(${waiver.path}) ${waiver.verdict} — ${oneLine(waiver.reason)} · ${waiver.round}회차 · 동의 ${waiver.consent.slice(0, 8)}`);
+  }
+  for (const round of rounds) for (const stop of round.stops) {
+    lines.push(`- 사람 판단: 리뷰 ${round.round}회차 교차 검증 중지 — ${oneLine(stop.detail)} · 동의 ${(stop.consent ?? "").slice(0, 8)}`);
+  }
+  for (const waiver of planning?.waivers ?? []) {
+    lines.push(`- 사람 판단: ${waiver.id}(교차 계획 검토) 기각 — ${oneLine(waiver.reason)} · critic ${planning!.dispatchId.slice(0, 8)} · 동의 ${waiver.consent.slice(0, 8)}`);
+  }
+  for (const stop of planning?.stops ?? []) {
+    lines.push(`- 사람 판단: 계획 검토 critic ${planning!.dispatchId.slice(0, 8)} 교차 검증 중지 — ${oneLine(stop.detail)} · 동의 ${(stop.consent ?? "").slice(0, 8)}`);
+  }
+  return lines;
+}
+
+/** 커밋 메시지의 교차 검증·사람 판단 줄 */
+function crossCommitLines(work: Work): string[] {
+  const { required, log, rounds, planning } = crossSummary(work);
+  const lines: string[] = [];
+  if (required) lines.push(`교차 검증: 리뷰 ${rounds.at(-1)?.label ?? "없음"} · 계획 검토 ${planning?.label ?? "없음"}`);
+  const waived = [...(log?.waivers ?? []).map((waiver) => waiver.id), ...(planning?.waivers ?? []).map((waiver) => waiver.id)];
+  const stops = [...rounds.filter((round) => round.stops.length).map((round) => `리뷰 ${round.round}회차`), ...(planning?.stops.length ? ["계획 검토"] : [])];
+  if (waived.length || stops.length) {
+    lines.push(`사람 판단: ${[waived.length ? `기각 ${[...new Set(waived)].join(", ")}` : "", stops.length ? `교차 중지 ${stops.join(", ")}` : ""].filter(Boolean).join(" · ")}`);
+  }
+  return lines;
+}
+
+/**
+ * 코드 구역 — 추적표 · 검증 · 변경 요약. 다시 렌더해 바이트로 대조한다.
+ * legacy 는 교차 검증·사람 판단 줄을 더하기 전 판의 렌더다 — 갱신 전에 렌더된 구역을 손 수정으로 오인하지 않으려고 대조에만 쓴다.
+ */
+export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean } = {}): string {
   const { active } = work;
   const rows = traceRows(work, evidence);
   const lines = [
@@ -134,6 +217,7 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined): st
           `- ${phase}: ${runsOf(evidence, phase).map((run) => `${run.kind}=${run.outcome}`).join(" · ") || "돌린 기록 없음"}`,
       ),
       `- 코드 리뷰: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "회차 없음"} — ${reviewDocFile(active.id)}`,
+      ...(options.legacy ? [] : crossTraceLines(work)),
       `- 자세한 것: ${validationDocFile(active.id)} · ${planDocFile(active.id)}`,
     );
   }
@@ -260,7 +344,8 @@ export function knowledgeChoices(work: Work) {
   });
 }
 
-function selectKnowledge(work: Work): string[] {
+/** 고른 KNOWLEDGE 갱신을 쓴다. 쓰기 전 원본(없던 파일은 undefined)을 돌려준다 — 커밋이 실패하면 되돌린다 */
+function selectKnowledge(work: Work): { targets: string[]; originals: Map<string, string | undefined> } {
   const pending = new Map<string, string>();
   for (const { target, entry, shown } of knowledgeChoices(work)) {
     if (askOnTerminal(shown, "적용하려면 y") !== "y") {
@@ -269,10 +354,24 @@ function selectKnowledge(work: Work): string[] {
     const current = pending.get(target) ?? readKnowledge(work.repoRoot, work.manifest, entry.kind);
     pending.set(target, applyEntry(current, entry));
   }
+  const originals = new Map<string, string | undefined>();
   for (const [target, text] of pending) {
-    writeAtomic(join(work.repoRoot, target), text);
+    const full = join(work.repoRoot, target);
+    originals.set(target, existsSync(full) ? readFileSync(full, "utf-8") : undefined);
+    writeAtomic(full, text);
   }
-  return [...pending.keys()];
+  return { targets: [...pending.keys()], originals };
+}
+
+/** 커밋 실패 때 고른 KNOWLEDGE 갱신을 스테이지에서 내리고 원본으로 되돌린다(없던 파일은 지운다). 되돌렸으면 true */
+function restoreKnowledge(repoRoot: string, originals: ReadonlyMap<string, string | undefined> | undefined): boolean {
+  if (!originals?.size) return false;
+  for (const [target, text] of originals) {
+    try { git(repoRoot, ["--literal-pathspecs", "reset", "-q", "--", target]); } catch { /* 스테이지에 없다 */ }
+    const full = join(repoRoot, target);
+    try { if (text === undefined) unlinkSync(full); else writeAtomic(full, text); } catch { /* 이미 없다 */ }
+  }
+  return true;
 }
 
 // ---- 커밋 ----
@@ -296,6 +395,7 @@ function commitMessage(work: Work, evidence: Evidence): string {
       .map((phase) => `${phase}=${runsOf(evidence, phase).every((run) => run.outcome === "passed") ? "passed" : "?"}`)
       .join(" · ")} · 기준 커밋 ${evidence.baseCommit.slice(0, 12)} · 트리 ${evidence.treeHash.slice(-12)}`,
     ...(evidence.repro?.mode === "log" ? [`재현: ${reproLine(evidence.repro)}`] : []),
+    ...crossCommitLines(work),
     `근거: ${prDocFile(active.id)} · ${validationDocFile(active.id)} · ${reviewDocFile(active.id)}`,
   ].join("\n");
 }
@@ -340,7 +440,7 @@ function committedOutside(repoRoot: string, paths: string[]): string[] {
     .filter((file) => file !== "" && !roots.some((root) => file === root || file.startsWith(`${root}/`)));
 }
 
-export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[]): { commit: string; outside: string[] } {
+export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[], originals?: ReadonlyMap<string, string | undefined>): { commit: string; outside: string[] } {
   const { repoRoot } = work;
   const paths = deliveryPaths(work, knowledge);
   try {
@@ -348,7 +448,8 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
     // 강제 추가 범위도 deliveryPaths로 제한한다. 저장소 전체를 추가하지 않는다.
     git(repoRoot, ["--literal-pathspecs", "add", "-f", "--", ...paths]);
   } catch (error) {
-    throw new Stop(`git add 가 실패했습니다. 반영하지 않았습니다 — 스테이지 상태를 확인하고 code-agent deliver 를 다시 실행하세요: ${error instanceof Error ? error.message : error}`);
+    const restored = restoreKnowledge(repoRoot, originals);
+    throw new Stop(`git add 가 실패했습니다. 반영하지 않았습니다${restored ? " — 선택한 KNOWLEDGE 갱신은 되돌렸습니다(다시 반영할 때 다시 고릅니다)" : ""} — 스테이지 상태를 확인하고 code-agent deliver 를 다시 실행하세요: ${error instanceof Error ? error.message : error}`);
   }
   try {
     // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
@@ -356,10 +457,12 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
     // 이 커밋에 그대로 실려 간다 — 검증된 변경 집합만 커밋한다는 말이 그때 거짓이 된다.
     git(repoRoot, ["--literal-pathspecs", "commit", "-m", commitMessage(work, evidence), "--", ...paths]);
   } catch (error) {
-    // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다
-    throw new Stop(
-      `git commit 이 실패했습니다 (변경은 스테이지에 올라가 있습니다): ${error instanceof Error ? error.message : error}`,
-    );
+    // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다. 고른 KNOWLEDGE 갱신은 되돌린다(확인한 반영이 없었으므로)
+    const message = error instanceof Error ? error.message : String(error);
+    if (restoreKnowledge(repoRoot, originals)) {
+      throw new Stop(`git commit 이 실패했습니다 — 선택한 KNOWLEDGE 갱신은 되돌렸습니다(다시 반영할 때 다시 고릅니다). 나머지 변경은 스테이지에 올라가 있습니다: ${message}`);
+    }
+    throw new Stop(`git commit 이 실패했습니다 (변경은 스테이지에 올라가 있습니다): ${message}`);
   }
   return { commit: git(repoRoot, ["rev-parse", "HEAD"]), outside: committedOutside(repoRoot, paths) };
 }
@@ -385,7 +488,8 @@ export function deliver(work: Work): string {
   const block = renderTraceBlock(work, evidence);
   const had = blockCount(text, PR_BLOCK);
   const rendered = upsertBlock(text, PR_BLOCK, block);
-  const tampered = had > 0 && rendered !== text;
+  // 갱신 전 판이 렌더한 구역(교차 검증·사람 판단 줄 없음)과 파일 전체가 같으면 손 수정이 아니다
+  const tampered = had > 0 && rendered !== text && upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { legacy: true })) !== text;
   writeAtomic(path, rendered);
 
   const problems = deliverProblems(work, rendered);
@@ -419,8 +523,18 @@ export function deliver(work: Work): string {
   ].join("\n");
   const presence = confirmOnTerminal(shown, "deliver");
 
-  const knowledge = selectKnowledge(work);
-  const { commit, outside } = commitDelivery(work, evidence!, knowledge);
+  const { targets: knowledge, originals } = selectKnowledge(work);
+  const { commit, outside } = commitDelivery(work, evidence!, knowledge, originals);
+  // 커밋 중 계획 파일이 바뀌었는가(pre-commit hook 등) — 검증한 부분 트리와 지금, 커밋본과 작업 트리를 대조한다. 되돌리지 않는다
+  const planned = planPaths(work);
+  const nowTree = treeHashNow(work);
+  let differs: string[] = [];
+  if (planned.length) {
+    try { differs = git(repoRoot, ["--literal-pathspecs", "diff", "--name-only", "HEAD", "--", ...planned]).split("\n").filter(Boolean); } catch { differs = []; }
+  }
+  const drift = nowTree !== evidence!.treeHash || differs.length > 0
+    ? [`주의: 커밋 중 계획 파일 내용이 바뀌었습니다(pre-commit hook 등) — 검증한 부분 트리 ${evidence!.treeHash.slice(-12)} → 지금 ${nowTree.slice(-12)}${differs.length ? ` · 커밋과 다른 파일: ${differs.join(", ")}` : ""}. 되돌리지 않았습니다 — 확인하세요.`]
+    : [];
 
   logStage(repoRoot, active, "deliver");
   clearActive(repoRoot);
@@ -434,6 +548,7 @@ export function deliver(work: Work): string {
     ...(outside.length > 0
       ? [`주의: 저장소의 pre-commit hook 등이 반영 목록 밖 파일을 커밋에 더했습니다 — ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` 외 ${outside.length - 10}개` : ""}. 의도한 것인지 확인하세요(되돌리지 않았습니다).`]
       : []),
+    ...drift,
     "작업 커서를 지웠습니다.",
   ].join("\n");
 }

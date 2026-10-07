@@ -487,6 +487,8 @@ preserve:
   계획 파일은 저장소 기준 경로 그대로(백틱·`:줄번호` 없이), 상태는 `열림` · `해결` 둘뿐이다. SubagentStart·SubagentStop hook이 실행·결과를 회차에 묶고 `09-review.md`의 `## 지적`을 자동 기록한다. 메인은 표나 상태를 바꾸지 않는다.
   회차 머리(번호·시각·기준 트리 해시)는 코드가 적는다. 마지막 회차의 **독립 리뷰 완료 기록·결과 일치·현재 트리 일치**가 필요하고 열린 지적이나 계획 밖 지적이 있으면 통과하지 못한다. 설치를 갱신한 뒤 `code-agent doctor`에서 리뷰 hook 두 개도 확인한다.
   얼어 있던 테스트 파일을 지적으로 푼 경우 **그 줄은 코드가 기억한다** — 쓰고 나서 지우면 `review` → `integrate` 가 막힌다.
+  같은 회차는 한 번만 기록된다 — 같은 회차에 `ca-reviewer` 를 다시 불러도 결과는 바뀌지 않고(무시 기록만 남는다), 리뷰어는 한 번에 하나만 받아들인다(먼저 시작한 실행이 결과다. 15분 넘게 끝나지 않으면 멈춘 실행으로 보고 새로 부를 수 있다). 결과의 표 규칙(상태·범위·경로)은 기록 전에 검사해 같은 리뷰어에게 한 번 돌려보내고, 그래도 틀리면 형식 오류로 기록한 뒤 새로 부른다(회차당 2회). 지적을 다시 받으려면 고친 뒤 새 회차를 연다. 사용자가 지적이 틀렸거나 범위 밖이라고 판단하면 ca-answer 의 judgment `waive-finding` 동의로 기록한다 — 표의 줄은 남고 게이트가 그 회차에서 세지 않는다.
+  두 호스트 설치 프로젝트는 독립 리뷰 뒤 `code-agent review cross --by <다른 호스트>` 로 교차 리뷰를 받는다. 회차마다 한 번 기록되고 완료된 회차는 다시 실행하지 않는다. 다른 호스트를 실행할 수 없으면(미설치·로그인·사용 한도·장애) 중지로 기록하고 진행하며, 설정 오류·형식 오류·시간 초과·샌드박스 거부는 게이트를 막고 출력이 다음 행동과 남은 횟수를 알려 준다. 원인별 처리는 [프로세스 흐름도](process-flow.md) §6.3.
 - `integrate`(`/ca-integrate`) — `code-agent integrate` 가 기준 커밋에서 뜬 깨끗한 worktree 에 계획 파일만 얹고 전체 build·test 를 돌린다.
   매니페스트에 `prepare` 가 있으면 **그것이 먼저** 돌고, 실패하면 build·test 는 돌지 않는다 — 준비되지 않은 트리 위의 통과는 증거가 아니다.
 - `deliver` — 같은 `/ca-integrate` 가 이어서 한다. 모델은 ⑩ `10-pr.md`의 `요약`·`확인 방법`·`위험·되돌리기`를 작성한 뒤 같은 세션에서 최종 확인을 받는다. 추적표·검증 블록과 커밋은 `code-agent deliver` 의 몫이다.
@@ -723,6 +725,9 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
 | `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단 |
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
+| `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분(`CODE_AGENT_CROSS_TIMEOUT_MIN`)에 끊는다 |
+| `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번 |
+| `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 작업 중에는 사람이 별도 터미널에서 실행한다 |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`integrate` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
 

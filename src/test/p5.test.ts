@@ -19,8 +19,8 @@ import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile, saveReview } from "../agent/review";
 import { doctor } from "../agent/doctor";
-import { recordReviewFixture } from "./reviewFixture";
-import { observeReviewer, runReviewHook } from "../agent/reviewHook";
+import { recordReviewFixture, withCaller } from "./reviewFixture";
+import { observeReviewer, RecordedFailure, runReviewHook } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
 import { check, checkoutKey, integrate, runTests, worktreeMarkerFile } from "../agent/validate";
@@ -245,10 +245,15 @@ async function toReview(): Promise<void> {
   assert.equal(loadActive(repo)!.phase, "review");
 }
 
-/** 모델이 ⑨ 의 `## 지적` 에 쓰는 것 — 코드 구역 밖이라 그냥 이어 붙인다 */
-function writeFindings(...rows: string[]): void {
+/** 모델이 ⑨ 의 `## 지적` 에 쓰는 것 — 코드 구역 밖이라 그냥 이어 붙인다(기록은 하지 않는다) */
+function writeFindingsDoc(...rows: string[]): void {
   const path = join(repo, reviewDocFile("ORD-1"));
   writeFileSync(path, `${readFileSync(path, "utf-8")}\n${rows.length > 0 ? rows.join("\n") : "- 없음"}\n`);
+}
+
+/** 문서에 쓰고 리뷰어 실행으로 기록한다(같은 회차에 이미 유효한 결과가 있으면 기록은 바뀌지 않는다) */
+function writeFindings(...rows: string[]): void {
+  writeFindingsDoc(...rows);
   recordReviewFixture(repo);
 }
 
@@ -1324,20 +1329,25 @@ describe("테스트 동결", () => {
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
   });
 
+  // 같은 회차의 리뷰는 한 번만 기록된다(PVR-2) — 지적 두 줄은 한 실행의 결과로 함께 기록한다
   test("⑨ 에 그 파일을 가리키는 열린 계획 안 지적이 있으면 풀린다 — 해결로 닫으면 다시 언다", async () => {
     await toReview();
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
 
     openRound(requireValidatable(repo, "review"));
-    // 다른 파일을 가리키는 지적은 열쇠가 아니다 — 열쇠는 그 경로를 가리킨 줄 하나다
-    writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`);
-    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
-
-    writeFindings(`| F2 | ${TEST_FILE} | 계획 안 | 열림 | 단언이 기대 결과를 확인하지 않는다 |`);
+    writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`,
+      `| F2 | ${TEST_FILE} | 계획 안 | 열림 | 단언이 기대 결과를 확인하지 않는다 |`);
     assert.equal(writeFileHook(TEST_FILE), undefined);
 
     const path = join(repo, reviewDocFile("ORD-1"));
     writeFileSync(path, readFileSync(path, "utf-8").replace(/\| 열림 \|/g, "| 해결 |"));
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
+  });
+
+  test("다른 파일을 가리키는 지적은 열쇠가 아니다 — 열쇠는 그 경로를 가리킨 줄 하나다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`);
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
   });
 });
@@ -1551,8 +1561,15 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
       observeReviewer({ ...event, hook_event_name: "SubagentStart" });
       assert.equal(stop("검토 완료"), 2, "리뷰어가 지적 표로 다시 낼 수 있다");
       assert.equal(stop("검토 완료", { stop_hook_active: true }), 0);
+      // 이미 한 번 막힌 재시도의 형식 오류는 기록한다 — 그 실행의 뒤 완료는 결과를 쓰지 않는다
+      assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![0].failure!.class, "agent-format-error");
       assert.equal(stop("- 없음"), 0);
-      assert.equal(stop("- 없음"), 0, "이미 기록한 결과의 완료 이벤트가 반복돼도 막지 않는다");
+      assert.equal(stop("- 없음"), 0, "이미 기록한 실패의 완료 이벤트가 반복돼도 막지 않는다");
+      assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewer!.result, undefined);
+      // 새로 호출한 리뷰어(이 회차 남은 호출 1회)의 결과가 기록된다 — 옛 필드 reviewer 는 파생 사본이다
+      const second = { ...event, agent_id: "reviewer-2" };
+      observeReviewer({ ...second, hook_event_name: "SubagentStart" });
+      observeReviewer({ ...second, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" });
       assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewer!.result, "- 없음");
     } finally {
       if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
@@ -1567,7 +1584,9 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     observeReviewer({ ...event, hook_event_name: "SubagentStart" });
     write(`${ORDER}/domain/Order.java`, "class Order { int changed; }\n");
     assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }), /리뷰 도중/);
-    assert.throws(() => next(repo), /독립 리뷰어 실행·완료 기록이 없습니다/);
+    // 완료 기록은 붙지 않았다 — 시작한 실행이 끝나지 않은 채로 남는다
+    assert.throws(() => next(repo), /독립 리뷰어가 실행 중입니다/);
+    assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![0].completedAt, undefined);
   });
 
   test("리뷰 지적 수정은 구현 파일을 먼저 고쳐도 동결 테스트를 열 수 있다", async () => {
@@ -1606,15 +1625,29 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     assert.throws(() => next(repo), /회차 뒤 계획 파일이 바뀌었습니다/);
   });
 
-  test("열린 지적은 메인이 닫을 수 없고 독립 재검토가 확인해야 한다", async () => {
+  test("열린 지적은 메인이 닫을 수 없고 독립 재검토가 확인해야 한다 — 같은 회차는 다시 리뷰하지 않는다 (PVR-2)", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
     writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`);
     assert.throws(() => next(repo), /열린 지적: F1/);
 
     const path = join(repo, reviewDocFile("ORD-1"));
-    writeFileSync(path, readFileSync(path, "utf-8").replace("| 열림 |", "| 해결 |"));
+    const recorded = readFileSync(path, "utf-8");
+    writeFileSync(path, recorded.replace("| 열림 |", "| 해결 |"));
     assert.throws(() => next(repo), /관찰된 ca-reviewer 결과와 다릅니다/);
+    // 같은 회차에 리뷰어를 다시 불러도 기록은 바뀌지 않는다
+    const again = { cwd: repo, session_id: "session-2", agent_id: "reviewer-2", agent_type: "ca-reviewer" };
+    observeReviewer({ ...again, hook_event_name: "SubagentStart" });
+    assert.throws(() => observeReviewer({ ...again, hook_event_name: "SubagentStop", last_assistant_message: `| F1 | ${ORDER}/domain/Order.java | 계획 안 | 해결 | 필드가 public 이다 |` }),
+      (error: Error) => error instanceof RecordedFailure && /이미 기록했습니다/.test(error.message));
+    assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![1].ignored!.reason, "completed-round");
+    writeFileSync(path, recorded);
+
+    // 고친 뒤 새 회차에서 독립 재검토가 해결을 확인한다
+    write(`${ORDER}/domain/Order.java`, "class Order { private int id; }\n");
+    assert.equal((await verify(repo)).node, "review");
+    openRound(requireValidatable(repo, "review"));
+    writeFileSync(path, readFileSync(path, "utf-8").replace(/^\| F1 \|.*\| 열림 \|.*$/m, `| F1 | ${ORDER}/domain/Order.java | 계획 안 | 해결 | 필드가 public 이다 |`));
     recordReviewFixture(repo);
     next(repo);
     assert.equal(loadActive(repo)!.phase, "integrate");
@@ -1630,7 +1663,16 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
   test("범위 칸은 코드가 계획과 대조해 정한다 — 모델이 다르게 적으면 드러난다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
-    writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 밖 | 해결 | 이름이 다르다 |`);
+    const row = `| F1 | ${ORDER}/domain/Order.java | 계획 밖 | 해결 | 이름이 다르다 |`;
+    writeFindingsDoc(row);
+    // hook 이 기록 전에 같은 표 규칙으로 돌려보낸다 — 같은 회차 재리뷰가 막혀 있어 기록 뒤에는 고칠 길이 없다
+    const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
+    observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row }), /F1 범위 칸이 계획과 다릅니다\(계획 밖 → 계획 안\)/);
+    const run = loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![0];
+    assert.equal(run.returns, 1);
+    assert.equal(run.result, undefined);
+    // 게이트는 문서의 표도 본다
     assert.throws(() => next(repo), /범위 칸이 계획과 다릅니다: F1/);
   });
 
@@ -2114,7 +2156,12 @@ describe("동결을 푸는 지적은 열린 회차에 묶인다", () => {
   test("상태 칸은 글자 그대로 본다 — 미해결 은 해결이 아니다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
-    writeFindings(`| F1 | ${TEST_FILE} | 계획 안 | 미해결 | 단언이 틀렸다 |`);
+    const row = `| F1 | ${TEST_FILE} | 계획 안 | 미해결 | 단언이 틀렸다 |`;
+    writeFindingsDoc(row);
+    // hook 이 기록 전에 상태 값을 돌려보낸다 — 기록이 없으므로 열쇠도 될 수 없다
+    const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
+    observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row }), /상태 칸은 열림 · 해결 둘뿐입니다\(미해결\)/);
     assert.throws(() => next(repo), /열린 지적: F1/);
     assert.throws(() => next(repo), /상태 칸은 열림 · 해결 둘뿐입니다/);
     // 열쇠로도 쓰이지 않는다 — 여는 쪽과 닫는 쪽이 같은 규칙을 딛는다
@@ -2478,26 +2525,45 @@ describe("code-agent back", () => {
 });
 
 describe("교차 리뷰 — 두 호스트 설치", () => {
-  test("리뷰 게이트가 다른 호스트의 교차 리뷰를 요구하고, 열린 교차 지적·위조된 절을 막는다", async () => {
+  /** 두 호스트 설치 + 리뷰 1회차(독립 리뷰 `- 없음` 기록) + FAKE_CROSS 를 마지막 응답으로 남기는 가짜 codex */
+  async function crossFixture(): Promise<{ fake: string; cleanup: () => void }> {
     await toReview();
     write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
     openRound(requireValidatable(repo, "review"));
     const doc = join(repo, reviewDocFile("ORD-1"));
     writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
     recordReviewFixture(repo, "claude", { cross: false });
-    assert.throws(() => next(repo), /교차 리뷰가 필요합니다/);
     const fake = mkdtempSync(join(tmpdir(), "ca-fake-codex-")), script = join(fake, "codex.cjs");
     writeFileSync(script, "const a = process.argv; require('fs').writeFileSync(a[a.indexOf('-o') + 1], process.env.FAKE_CROSS);\n");
     process.env.CODE_AGENT_CODEX_BIN = script;
+    return { fake, cleanup: () => { delete process.env.CODE_AGENT_CODEX_BIN; delete process.env.FAKE_CROSS; rmSync(fake, { recursive: true, force: true }); } };
+  }
+
+  test("리뷰 게이트가 다른 호스트의 교차 리뷰를 요구하고, 완료된 회차의 교차 리뷰는 다시 실행하지 않는다 (PVR-1)", async () => {
+    const fixture = await crossFixture();
     try {
-      process.env.FAKE_CROSS = `| X1 | ${TEST_FILE} | 계획 안 | 열림 | TC-2 의 오류 경로 단언이 없다 |`;
-      assert.match(crossReview(repo, "codex"), /열린 지적 1개/);
-      assert.match(readFileSync(join(repo, reviewDocFile("ORD-1")), "utf-8"), /## 교차 지적[\s\S]*\| X1 \|/);
-      assert.throws(() => next(repo), /열린 지적: X1/);
-      process.env.FAKE_CROSS = "설명문만 있는 응답";
-      assert.throws(() => crossReview(repo, "codex"), /지적 표 또는/);
-      process.env.FAKE_CROSS = "- 없음";
-      crossReview(repo, "codex");
+      assert.throws(() => next(repo), /교차 리뷰가 필요합니다/);
+      withCaller("claude", () => {
+        process.env.FAKE_CROSS = `| X1 | ${TEST_FILE} | 계획 안 | 열림 | TC-2 의 오류 경로 단언이 없다 |`;
+        assert.match(crossReview(repo, "codex"), /열린 지적 1개/);
+        assert.match(readFileSync(join(repo, reviewDocFile("ORD-1")), "utf-8"), /## 교차 지적[\s\S]*\| X1 \|/);
+        assert.throws(() => next(repo), /열린 지적: X1/);
+        // 다시 실행해 지적을 지우는 길은 없다 — 완료된 지점은 거부한다
+        process.env.FAKE_CROSS = "- 없음";
+        assert.throws(() => crossReview(repo, "codex"), (error: Error) => error instanceof RetryRefused && /이미 기록했습니다/.test(error.message));
+        assert.throws(() => next(repo), /열린 지적: X1/);
+        assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.crossAttempts!.length, 1);
+      });
+    } finally { fixture.cleanup(); }
+  });
+
+  test("기록된 교차 지적 절을 손으로 바꾸면 리뷰 게이트가 막는다", async () => {
+    const fixture = await crossFixture();
+    try {
+      withCaller("claude", () => {
+        process.env.FAKE_CROSS = "- 없음";
+        crossReview(repo, "codex");
+      });
       const path = join(repo, reviewDocFile("ORD-1"));
       const recorded = readFileSync(path, "utf-8");
       writeFileSync(path, recorded.replace(/(## 교차 지적[\s\S]*?)- 없음/, `$1| X9 | ${TEST_FILE} | 계획 안 | 해결 | 임의 기록 |`));
@@ -2505,10 +2571,7 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
       writeFileSync(path, recorded);
       next(repo);
       assert.equal(loadActive(repo)!.phase, "integrate");
-    } finally {
-      delete process.env.CODE_AGENT_CODEX_BIN; delete process.env.FAKE_CROSS;
-      rmSync(fake, { recursive: true, force: true });
-    }
+    } finally { fixture.cleanup(); }
   });
 
   test("다른 호스트를 실행할 수 없으면 그 회차의 교차 리뷰는 중지로 기록되고 리뷰 게이트를 지난다", async () => {
@@ -2523,9 +2586,15 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
     writeFileSync(script, "process.stderr.write('ERROR: You hit your spend cap set by the owner of your workspace.'); process.exit(1);\n");
     process.env.CODE_AGENT_CODEX_BIN = script;
     try {
-      assert.match(crossReview(repo, "codex"), /교차 검증 중지[\s\S]*spend cap[\s\S]*교차 검증 없이 진행/);
-      assert.match(readFileSync(doc, "utf-8"), /## 교차 지적[\s\S]*- 교차 검증 중지 — codex 를 실행할 수 없습니다/);
-      assert.match(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.cross!.unavailable!, /spend cap/);
+      withCaller("claude", () => {
+        assert.match(crossReview(repo, "codex"), /교차 검증 중지[\s\S]*spend cap[\s\S]*교차 검증 없이 진행/);
+        assert.match(readFileSync(doc, "utf-8"), /## 교차 지적[\s\S]*- 교차 검증 중지 — codex 를 실행할 수 없습니다/);
+        assert.match(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.cross!.unavailable!, /spend cap/);
+        assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.crossAttempts![0].class, "cross-unavailable");
+        // 사람이 아닌 중지 지점은 지점 한도 안에서 다시 실행할 수 있다 — 다시 실행할 수 없으면 중지 그대로 진행한다
+        assert.match(crossReview(repo, "codex"), /교차 검증 중지/);
+        assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.crossAttempts!.length, 2);
+      });
       next(repo);
       assert.equal(loadActive(repo)!.phase, "integrate");
     } finally {
@@ -2545,7 +2614,7 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
       const doc = join(repo, reviewDocFile("ORD-1"));
       writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
       recordReviewFixture(repo, "claude", { cross: false });
-      assert.match(crossReview(repo, "codex"), /교차 검증 중지[\s\S]*가리키는 파일이 없습니다/);
+      assert.match(withCaller("claude", () => crossReview(repo, "codex")), /교차 검증 중지[\s\S]*가리키는 파일이 없습니다/);
       next(repo);
       assert.equal(loadActive(repo)!.phase, "integrate");
     } finally {

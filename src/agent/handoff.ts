@@ -18,8 +18,11 @@ export function handoffDir(id: string): string {
   return posix.join(STATE_DIR, "work", id, "handoff");
 }
 
-/** 반영 커밋은 `.code-agent/work/<ID>`를 통째로 담는다 — 전달용 사본은 `.gitignore`로 뺀다 */
-function writeHandoff(root: string, id: string, name: string, text: string): string {
+/**
+ * 작업의 handoff 폴더에 전달용 파일을 쓴다(폴더 `.gitignore *`를 둔다). 반영은 `.code-agent/work/<ID>`를 `git add -f` 로 폴더째 담으므로
+ * 이 파일도 커밋에 들어간다(흐름도 §8).
+ */
+export function writeHandoff(root: string, id: string, name: string, text: string): string {
   const dir = join(root, handoffDir(id));
   mkdirSync(dir, { recursive: true });
   if (!existsSync(join(dir, ".gitignore"))) writeFileSync(join(dir, ".gitignore"), "*\n");

@@ -32,7 +32,7 @@
 - **완주 작업당 비용·품질(A/B)** — 실행 역할을 sonnet/medium으로 내려 생기는 check 실패·리뷰 지적·재배정 증가가 절감을 상쇄하는지는 실제 모델 비용이 들어 사용자 승인 뒤에 잰다. 측정 도구만 준비했다: `node scripts/evaluate-full-flow.cjs run new --model opus --agents exec-opus --label c6-execopus-<n>`와 `--agents policy --label c6-policy-<n>`를 각 3회. 두 쪽은 실행 역할의 모델 하나만 다르다(판단 역할은 둘 다 opus/high, 실행 역할 강도는 둘 다 medium). 보고서의 `agents`(역할별 model/effort)를 결과 기록에 싣는다. `--agents opus`는 2026-10-06 기준선과 잇는 용도로만 쓴다. `--agents` 머리말 재작성은 sandbox에서 네 모드 모두 확인했다(모델 호출 없음).
 - 판단 역할의 강도가 이전보다 낮아질 수 있음 — 강도를 비워 두던 이전 설치에서 하위 에이전트가 세션 강도를 물려받았는지(Claude Code 기본 `xhigh`) 확인하지 못했다. 필요하면 `code-agent model analyst opus --effort xhigh`로 바꾼다.
 - 지원 단계가 좁은 모델(Opus 4.5의 `xhigh`·`max` 없음 등)을 Claude Code가 `high`로 낮추는 것은 바이너리 문자열로만 확인했다.
-- 교차 실행 Claude 인자에 `--effort`를 넣는 단계(C1 뒤)와 그 분류 fixture(가짜 claude argv에 `--model opus --effort high`, haiku면 `--effort` 없음)는 C1이 `runOtherHost`를 재구성한 뒤 넣는다.
+- 교차 실행 Claude 인자의 `--effort`는 C1(교차 검증 무결성, [기록](2026-10-07-cross-integrity.md))이 `crossInvocationArgs`로 연결했다 — `claudeModelArgs`·`codexModelArgs`·`modelLabel`을 쓰고, 단위 시험(`cross.test.ts`)이 `--model opus --effort high`·`models.json` 의 sonnet/max·haiku(강도 없음)·Codex `-m gpt-6.1-sol -c model_reasoning_effort="high"` 를 고정한다. 실제 호스트로 돌린 확인은 미측정이다.
 
 ## 구현 검토 반영
 

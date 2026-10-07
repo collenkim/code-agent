@@ -110,4 +110,9 @@ test("교차 검증 명령은 호스트마다 상대 호스트를 가리킨다",
   assert.match(claude, /review cross --by codex/);
   assert.match(codex, /review cross --by claude/);
   assert.match(hostAssets("codex").get(".agents/skills/ca-plan/SKILL.md")!, /planning cross --by claude/);
+  // Codex 메인의 교차 명령은 샌드박스 밖(권한 상승)으로 — 다른 호스트를 띄우고 네트워크를 쓴다. Claude 사본에는 없다
+  assert.match(codex, /셸\(Codex 샌드박스 밖[\s\S]*권한 상승[\s\S]*review cross --by claude/);
+  assert.match(hostAssets("codex").get(".agents/skills/ca-plan/SKILL.md")!, /셸\(Codex 샌드박스 밖[\s\S]*권한 상승[\s\S]*planning cross --by claude/);
+  assert.doesNotMatch(claude, /권한 상승/);
+  assert.match(claude, /"action":"judgment","kind":"waive-finding"/);
 });

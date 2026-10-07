@@ -21,6 +21,9 @@
   - 역할 모델 정책(`modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`)을 바꾸면 `template/claude/agents/ca-*.md` 머리말의 `model`·`effort`와 `doc/codex.md` 역할별 모델 표를 같이 고친다(`modelPolicy.test.ts`가 대조한다). 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다.
   - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `commands.ts`의 `PHASE_LABEL`·`PHASE_COMMAND`와 `ca-next` 표도 고친다.
   - 계획 advance의 action(`dispatch`·`stale`·`wait`·`rewind-required`·`blocked`·`ready-for-gate`)을 바꾸면 `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` 4항(또는 통합된 루프 문단)과 `doc/planning.md` action 표도 고친다.
+  - `ca-review`·`ca-plan` 4-1의 `` Bash: `code-agent … cross --by codex` `` 문장을 바꾸면 `hosts.ts` `codexText`의 권한 상승 치환 정규식과 맞춘다.
+  - `ca-reviewer.md`의 출력 표(열·상태 값·경로 규칙)를 바꾸면 `crossRecord.ts` `reviewResultProblems`·`review.ts` `parseFindings`와 맞춘다(hook·교차·게이트가 같은 표 규칙을 쓴다).
+  - Codex exec 배너 라벨·오류 줄 꼴이 바뀌면 `retryPolicy.ts` `crossFailureText`를 고친다. 교차 실행 인자의 doctor 점검 목록은 `crossCheck.ts` `crossFlags`가 인자에서 만들므로 따로 맞출 것이 없다.
 - `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 고정 문장 치환(`.replace("문장", …)`)의 원문이 여전히 템플릿과 글자 그대로 같은지 확인한다. 다르면 오류 없이 치환되지 않는다. 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
 - 현행 문서(`README.md`, `doc/*.md`)에는 현재 동작만 쓴다. 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
 - 사용자에게 보이는 문서는 한국어로, 기존 문체를 따른다.

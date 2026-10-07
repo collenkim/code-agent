@@ -8,10 +8,15 @@ import { sha, docPaths } from "./docs";
 import { canonical, STATE_DIR, workDocsDir } from "./layout";
 import { POLICY_KINDS } from "./schemas";
 import { parseQuestions, structuralLine, type Question } from "./questions";
-import { orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
+import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
+import { otherHost, runtimeHost } from "./crossEnv";
+import {
+  orphanView, planningCrossAttemptsOf, planningCrossView, pointLabel,
+  type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
+} from "./crossRecord";
 
 export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", impact: "ca-explorer", synthesis: "ca-writer", design: "ca-analyst", plan: "ca-analyst", critic: "ca-critic" } as const;
 export const TaskSchema = z.object({
@@ -89,9 +94,16 @@ export interface PlanningState {
   version: 1; id: string; target: string; maxParallel: number;
   tasks: TaskRecord[];
   agents: PlanningAgent[];
-  /** 두 호스트가 설치된 프로젝트의 교차 계획 검토 — 다른 호스트를 CLI 가 실행해 같은 critic 입력을 독립 검토한 결과 */
+  /**
+   * 파생 사본(옛 필드) — 두 호스트 설치 프로젝트의 교차 계획 검토. crossAttempts 가 저장된 뒤에는 syncLegacyPlanning 이 그 지점이
+   * completed·stopped 일 때 다시 쓴다. 판정은 crossAttempts(없으면 이 필드에서 추정한 시도)만 본다
+   */
   cross?: { host: string; model: string; at: string; criticDispatchId: string; status: "completed" | "needs-input" | "failed" | "unavailable"; summary: string;
     findings: { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } }[]; questions: number };
+  /** 교차 계획 검토 시도 — critic 배정(criticDispatchId)마다 지점 하나, append-only. 승인 해시(작업별 마지막 시도) 밖이다 */
+  crossAttempts?: PlanningCrossAttempt[];
+  /** 사람 판단으로 기각한 교차 계획 검토의 차단 지적 — 그 critic 지점에만 묶인다 */
+  crossWaivers?: CrossWaiver[];
   /** 재시도 카운터의 이행 시각·사람 허용·자동 되감기 기록. 승인 해시(작업별 마지막 시도) 밖이다 */
   retry?: PlanningRetry;
   /**
@@ -441,17 +453,63 @@ const OUTPUTS: Record<PlanningTask["role"], string[]> = {
 };
 export function requiredOutputs(work: Work, role: PlanningTask["role"]): string[] { return OUTPUTS[role].map(file => `${workDocsDir(work.active.id)}/${file}`); }
 
-/** 현재 critic 결과에 대한 교차 검토가 끝났는지 — 두 호스트가 설치된 프로젝트의 계획 제출 조건 */
-export function crossCriticProblems(root: string, state: PlanningState): string[] {
-  const critic = state.tasks.find((record) => record.task.role === "critic")?.attempts.at(-1);
-  if (selectedHosts(root).length < 2 || critic?.status !== "completed") return [];
-  const cross = state.cross;
-  if (!cross || cross.criticDispatchId !== critic.dispatchId) return ["교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by <다른 호스트> (실행할 수 없으면 중지로 기록되고 진행합니다)"];
-  // 다른 호스트를 실행할 수 없었던 critic 결과는 교차 검토 없이 진행한다 — 두 호스트를 모두 쓸 수 있을 때만 교차 검증이다
-  if (cross.status === "unavailable") return [];
-  if (cross.status === "needs-input") return ["교차 검토: 질문에 답한 뒤 code-agent planning cross 를 다시 실행하세요"];
-  if (cross.status !== "completed") return [`교차 검토가 끝나지 않았습니다: ${cross.summary}`];
-  return cross.findings.some((finding) => finding.severity === "blocking") ? ["교차 검토: 차단 지적이 남아 있습니다 — 고칠 작업을 지적 내용으로 정해 계약의 수정 피드백으로 다시 배정하세요(앞 단계 작업이면 사용자에게 보고하고 지시를 받습니다)"] : [];
+/** questions.md 의 질문 보기 — 계획 교차 지점의 needs-input 판정(질문을 모두 답했는가)에 쓴다 */
+export function crossQuestionViews(work: Work): QuestionView[] {
+  const text = questionsText(work);
+  return text === undefined ? [] : parseQuestions(text).map(question => ({ id: question.id, title: question.title, answered: question.answer !== "" }));
+}
+/**
+ * 현재 critic 지점(마지막 critic 시도가 completed 일 때)의 교차 검토 보기 — 게이트 쪽 고아 보기와 질문 판정(answered-input)을 거친다.
+ * 저장된 시도(attempts)와 판정용 보기(view)를 함께 돌려준다
+ */
+export function criticCrossPoint(work: Work, state: PlanningState, now = Date.now()) {
+  const critic = state.tasks.find(record => record.task.role === "critic")?.attempts.at(-1);
+  if (!critic || critic.status !== "completed") return undefined;
+  const attempts = planningCrossAttemptsOf(state, critic.dispatchId);
+  const { view, awaiting } = planningCrossView(orphanView(attempts, now), crossQuestionViews(work));
+  return { dispatchId: critic.dispatchId, attempts, view, awaiting, point: crossPointState(view) };
+}
+/**
+ * 현재 critic 결과에 대한 교차 검토가 끝났는지 — 두 호스트가 설치된 프로젝트의 계획 제출 조건. 중지 지점은 통과하고,
+ * 완료 지점은 질문 대기·실패·기각되지 않은 차단 지적이 없어야 한다. 열린 지점은 직전 실행의 원인을 붙인다.
+ */
+export function crossCriticProblems(work: Work, state: PlanningState): string[] {
+  if (selectedHosts(work.repoRoot).length < 2) return [];
+  const current = criticCrossPoint(work, state);
+  if (!current) return [];
+  const { dispatchId, view, awaiting, point } = current;
+  const caller = runtimeHost();
+  const by = `--by ${view[0]?.host ?? (caller ? otherHost(caller) : "<다른 호스트>")}`;
+  switch (point.state) {
+    // 다른 호스트를 실행할 수 없었던(또는 사람이 중지를 결정한) critic 결과는 교차 검토 없이 진행한다
+    case "stopped": return [];
+    case "running": return ["교차 검토: 실행 중입니다 — 끝난 뒤 planning advance 로 확인하세요"];
+    case "completed": {
+      const outcome = (point.completed as PlanningCrossView).outcome;
+      if (outcome?.status === "needs-input") {
+        return [`교차 검토: 질문에 답하세요(${(awaiting ?? []).join(", ")}) — 답하면 critic 이 다시 배정되거나, critic 입력이 그대로면 같은 critic 결과로 교차 검토를 한 번 더 실행합니다`];
+      }
+      if (outcome?.status === "failed") {
+        if (view.some(attempt => attempt.class === "cross-stop")) return [];
+        return [`교차 검토가 실패로 끝났습니다: ${outcome.summary.replace(/\s+/g, " ").slice(0, 300)} — 같은 critic 결과로는 다시 실행하지 않습니다. ` +
+          "원인 작업을 수정 피드백으로 다시 배정하거나, 사용자가 이 지점의 중지를 결정하면 ca-answer 동의 judgment cross-stop 으로 기록하세요"];
+      }
+      const waivers = state.crossWaivers ?? [];
+      const blocking = (outcome?.findings ?? []).filter(finding => finding.severity === "blocking"
+        && !waivers.some(waiver => waiver.criticDispatchId === dispatchId && waiver.id === finding.id));
+      return blocking.length ? [`교차 검토: 차단 지적이 남아 있습니다(${blocking.map(finding => finding.id).join(", ")}) — 고칠 작업을 지적 내용으로 정해 계약의 수정 피드백으로 다시 배정하세요(앞 단계 작업이면 사용자에게 보고하고 지시를 받습니다). ` +
+        "사용자가 지적을 기각하면 ca-answer 동의 judgment waive-finding 으로 기록합니다"] : [];
+    }
+    default: {
+      let line = view.some(attempt => attempt.class === "answered-input")
+        ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
+        : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
+      const hint = crossPointHint({ attempts: view, grants: state.retry?.grants, scope: grantScope({ file: "planning", key: "crossPoint", criticDispatchId: dispatchId }),
+        rawExists: path => existsSync(join(work.repoRoot, path)) });
+      if (hint) line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}`;
+      return [line];
+    }
+  }
 }
 
 export function planningProblems(work: Work, phase: "analysis" | "impact" | "design" | "plan"): string[] {
@@ -477,7 +535,7 @@ export function planningProblems(work: Work, phase: "analysis" | "impact" | "des
       for (const record of explorers) if (!taskCurrent(work, state, record)) problems.push(`영역 조사 ${record.task.id}가 완료되지 않았거나 오래됐습니다`);
       problems.push(...mergeProblems(state));
     }
-    if (phase === "plan") problems.push(...crossCriticProblems(work.repoRoot, state));
+    if (phase === "plan") problems.push(...crossCriticProblems(work, state));
     return problems;
   });
 }

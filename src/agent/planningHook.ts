@@ -10,6 +10,7 @@ import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, typ
 import { RecordedFailure, type ReviewHookInput } from "./reviewHook";
 import { stagedDocumentProblems } from "./stagedChecks";
 import { loadWork, type Work } from "./work";
+import { crossChild } from "./crossEnv";
 
 /** 기록하지 않고 같은 담당에게 한 번 돌려보낸다(Claude SubagentStop exit 2) — 담당이 고쳐 다시 멈추면 처음부터 다시 판정한다 */
 export class ReturnToAgent extends Error { constructor(message: string, readonly failureClass: FailureClass) { super(message); } }
@@ -356,6 +357,8 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
   });
 }
 export function runPlanningHook(stdin: string): number {
+  // 교차 실행이 띄운 다른 호스트 안에서는 계획 담당을 관찰하지 않는다
+  if (crossChild()) return 0;
   let input: ReviewHookInput | undefined;
   try { input = JSON.parse(stdin) as ReviewHookInput; observePlanner(input, process.env.CLAUDE_PROJECT_DIR, { host: "claude" }); return 0; }
   catch (error) {

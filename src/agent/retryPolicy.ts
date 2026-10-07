@@ -326,7 +326,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `설정 오류 재실행 ${LIMITS.crossError}, 지점 시도 ${LIMITS.crossPoint}`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "stop", onExhausted: "decision", exceededText: "decision(게이트 막힘)",
-    guide: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 원인을 사용자에게 전하세요 — 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 code-agent doctor --cross 로 점검하며, CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 과 CLI 설치는 사람이 셸에서 고칩니다. 고친 뒤 같은 명령을 한 번 더 실행할 수 있습니다(남은 {left}회). 고칠 수 없으면 사람이 중지를 결정해 ca-answer 동의 judgment cross-stop 으로 기록합니다.",
+    guide: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 원인을 사용자에게 전하세요 — 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 사람이 별도 터미널에서 code-agent doctor --cross 로 점검하며(작업 중에는 모델이 doctor 를 실행할 수 없다), CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 과 CLI 설치는 사람이 셸에서 고칩니다. 고친 뒤 같은 명령을 한 번 더 실행할 수 있습니다(남은 {left}회). 고칠 수 없으면 사람이 중지를 결정해 ca-answer 동의 judgment cross-stop 으로 기록합니다.",
     enforcedAt: ["crossCheck.ts", "retryPolicy.CROSS_PATTERNS·classifyCrossFailure"],
   },
   "cross-timeout": {

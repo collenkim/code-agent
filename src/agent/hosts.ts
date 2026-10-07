@@ -74,6 +74,9 @@ function codexText(text: string): string {
     .replace(/subagent_type/g, "agent_type")
     // 교차 검증은 지금 호스트가 아닌 쪽이 맡는다
     .replace(/--by codex/g, "--by claude")
+    // Codex 메인의 교차 명령은 다른 호스트를 띄우고 네트워크를 쓴다 — 샌드박스 밖(권한 상승)으로 실행하게 한다(`Bash:`·`--by` 치환 뒤의 글자)
+    .replace(/셸: `code-agent (review|planning) cross --by claude`/g,
+      "셸(Codex 샌드박스 밖 — 다른 호스트를 띄우고 네트워크를 쓰므로 권한 상승을 요청해 실행한다): `code-agent $1 cross --by claude`")
     // Codex hook에는 서브 에이전트 식별자가 없어 staging을 열 수 없다 — 본문을 결과에 싣는 문장으로 바꾼다
     .replace("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용).")
     .replace("출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.", "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다.")

@@ -6,6 +6,7 @@ import { loadPlanning, runView, TASK_AGENTS } from "./planningState";
 import { loadRequestSession } from "./request";
 import { approvalOf, loadWork, type Work } from "./work";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
+import { crossChild } from "./crossEnv";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume) 비워지거나(clear) 압축된(compact) 뒤
@@ -79,6 +80,8 @@ function progress(repoRoot: string, source?: string): string {
 
 /** 막지 않는다 — 실패해도 대화 시작을 방해하지 않고 사유만 stderr로 남긴다 */
 export function runSessionHook(stdin: string): number {
+  // 교차 실행이 띄운 다른 호스트 안에서는 진행 상태를 넣지 않는다
+  if (crossChild()) return 0;
   try {
     const input = JSON.parse(stdin || "{}") as { cwd?: string; source?: string };
     const projectDir = process.env.CLAUDE_PROJECT_DIR;

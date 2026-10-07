@@ -1,4 +1,4 @@
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "path";
 
@@ -23,7 +23,10 @@ import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
-import { crossNotice, hostAssets, HostSelection, selectedHosts } from "./hosts";
+import { crossNotice, hostAssets, hostCommand, HostSelection, selectedHosts, type Host } from "./hosts";
+import { crossStopStreak } from "./crossRecord";
+import { CROSS_CHILD_ENV } from "./crossEnv";
+import { crossFlags } from "./crossCheck";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
@@ -118,7 +121,50 @@ function hookProblem(command: string, onPath: string | undefined): string | unde
   return undefined; // 사람이 제 손으로 바꿔 둔 명령 — 우리가 판정할 것이 아니다
 }
 
-export function doctor(repoRoot: string, host?: HostSelection): { text: string; ok: boolean } {
+/**
+ * 교차 검증 점검 — 연속 중지 기록, 교차 실행 자식 표지가 셸에 남았는지, (--cross) 다른 호스트의 --help 에 교차 실행이 쓰는 옵션이
+ * 모두 있는지. --help 만 돌리므로 모델 호출·비용이 없고 아무것도 쓰지 않는다.
+ */
+function crossChecks(repoRoot: string, add: (mark: Mark, name: string, observed: string, hint?: string) => void, cross: boolean): void {
+  let hosts: Host[];
+  try { hosts = selectedHosts(repoRoot); } catch { return; }
+  const both = hosts.length > 1;
+  if (both) {
+    const streak = crossStopStreak(repoRoot);
+    if (streak.count >= 1) {
+      add("·", "교차 검증 기록", `최근 ${streak.count}개 지점이 연속 중지 — 마지막: ${streak.last?.host ?? "?"} — ${(streak.last?.detail ?? "").replace(/\s+/g, " ").slice(0, 120)}`);
+    }
+  }
+  if (process.env[CROSS_CHILD_ENV]) {
+    add("·", "교차 실행 표지", `${CROSS_CHILD_ENV} 가 설정돼 있습니다 — 교차 실행 자식의 표지라 Stop·SessionStart hook 이 꺼집니다. 셸 설정에서 지우세요`);
+  }
+  if (!both) return;
+  if (!cross) {
+    add("·", "교차 실행 옵션", "점검하려면 code-agent doctor --cross (다른 호스트의 --help 만 실행한다)");
+    return;
+  }
+  for (const target of ["claude", "codex"] as Host[]) {
+    const name = `교차 실행 옵션(${target})`;
+    const resolved = hostCommand(target);
+    if (typeof resolved === "string") { add("·", name, `점검하지 못했습니다 — ${resolved}`); continue; }
+    const help = spawnSync(resolved.file, [...resolved.prefix, ...(target === "codex" ? ["exec", "--help"] : ["--help"])],
+      { cwd: repoRoot, encoding: "utf8", windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 });
+    const text = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
+    if (help.error || help.status !== 0) {
+      add("·", name, `--help 를 실행하지 못했습니다 — ${help.error?.message ?? `종료 코드 ${help.status}`}`);
+      continue;
+    }
+    let flags: string[];
+    try { flags = crossFlags(repoRoot, target); }
+    catch (error) { add("·", name, `점검하지 못했습니다 — ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`); continue; }
+    const missing = flags.filter((flag) => !new RegExp(`(^|[\\s,=\\[])${flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(text));
+    if (missing.length === 0) add("✓", name, "사용하는 옵션이 모두 있습니다");
+    else add("✗", name, `없는 옵션: ${missing.join(", ")} — 이 버전에서는 교차 검증이 설정 오류로 막힙니다`,
+      `${target} CLI 를 업데이트하거나 CODE_AGENT_${target.toUpperCase()}_BIN 을 확인하세요`);
+  }
+}
+
+export function doctor(repoRoot: string, host?: HostSelection, options: { cross?: boolean } = {}): { text: string; ok: boolean } {
   const hosts = selectedHosts(repoRoot, host);
   const checks: Check[] = [];
   const add = (mark: Mark, name: string, observed: string, hint?: string) => checks.push({ mark, name, observed, hint });
@@ -350,6 +396,7 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
   // 교차 검증 — 두 호스트를 모두 실행할 수 있을 때만 돈다. 못 쓰면 그 지점을 중지로 기록하고 진행하므로 실패로 세지 않는다
   const cross = crossNotice(repoRoot);
   if (cross) add(cross.includes("켜짐") ? "✓" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""));
+  crossChecks(repoRoot, add, options.cross === true);
 
   const failed = checks.filter((check) => check.mark === "✗");
   return {

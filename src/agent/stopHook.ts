@@ -2,6 +2,7 @@ import { outsideChanges } from "./evidence";
 import { canonical, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
 import { unansweredQuestions } from "./questions";
 import { loadWork } from "./work";
+import { crossChild } from "./crossEnv";
 
 /**
  * Claude Code Stop hook 의 판정 — **턴이 끝날 때 한 번만** 본다.
@@ -55,6 +56,8 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
 
 /** stdin JSON → stdout JSON. 판정이 실패해도 **막지 않는다** — 고장 난 hook 이 턴을 못 끝내게 하는 것이 더 나쁘다 */
 export function runStopHook(stdin: string): number {
+  // 교차 실행이 띄운 다른 호스트 안에서는 진행 판정을 하지 않는다
+  if (crossChild()) return 0;
   try {
     const reason = decideStop(JSON.parse(stdin) as StopHookInput, process.env.CLAUDE_PROJECT_DIR);
     if (reason) {

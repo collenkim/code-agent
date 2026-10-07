@@ -392,8 +392,10 @@ function feedbackOf(work: Work, state: PlanningState) {
     for (const finding of record.attempts.at(-1)?.result?.findings ?? []) if (finding.severity === "blocking") add(record.task.id, finding);
   }
   const critic = state.tasks.find(record => record.task.role === "critic")?.attempts.at(-1);
-  if (state.cross && critic && state.cross.criticDispatchId === critic.dispatchId) {
-    for (const finding of state.cross.findings) if (finding.severity === "blocking") add("cross", finding);
+  // 교차 검토의 차단 지적은 지금 critic 지점의 완료 결과(파생 사본 cross)에서 — 사람 판단으로 기각한 것은 뺀다
+  if (state.cross && critic && state.cross.criticDispatchId === critic.dispatchId && state.cross.status !== "unavailable") {
+    const waived = (id: string) => (state.crossWaivers ?? []).some(waiver => waiver.criticDispatchId === critic.dispatchId && waiver.id === id);
+    for (const finding of state.cross.findings) if (finding.severity === "blocking" && !waived(finding.id)) add("cross", finding);
   }
   return items;
 }

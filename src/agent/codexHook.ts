@@ -7,6 +7,7 @@ import { subagentExit } from "./retryPolicy";
 import { decideStop } from "./stopHook";
 import { consentStatus, observeConsent } from "./consent";
 import { commonAgentName } from "./hosts";
+import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
 
 interface CodexHookInput extends ReviewHookInput {
   tool_name?: string;
@@ -60,6 +61,8 @@ const deny = (reason?: string): object => reason ? {hookSpecificOutput: {
 }} : {};
 
 export function codexHook(input: CodexHookInput): object {
+  // 교차 실행이 띄운 Codex 안에서는 진행 기록(Stop·담당 관찰·동의 응답·세션 시작)을 하지 않는다 — PreToolUse 판정은 그대로 한다
+  if (crossChild() && (CROSS_CHILD_PASS_EVENTS as readonly string[]).includes(input.hook_event_name ?? "")) return {};
   // Codex 훅에는 matcher가 없다. 판정 대상이 아닌 도구가 상태 오류로 막히지 않게 먼저 통과시킨다.
   if (input.hook_event_name === "PreToolUse" && !GATED_TOOLS.includes(input.tool_name ?? "")) return {};
   if (typeof input.cwd !== "string" || !isAbsolute(input.cwd)) throw new Error("Codex 이벤트의 작업 경로가 없습니다.");
@@ -87,7 +90,7 @@ export function codexHook(input: CodexHookInput): object {
     const event = {...input, agent_type: commonAgentName(input.agent_type), transcript_path: undefined, agent_transcript_path: undefined};
     // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 계획 담당의 실패는 되돌림 없이 바로 기록한다
     observePlanner(event, root, {host: "codex"});
-    observeReviewer(event, root);
+    observeReviewer(event, root, "codex");
   } else if (input.hook_event_name === "UserPromptSubmit") {
     observeCodexConsent(input, root);
   } else if (input.hook_event_name === "Stop") {

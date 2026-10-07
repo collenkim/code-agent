@@ -175,7 +175,8 @@ export function preparePlanFixture(root: string, host: Host = "claude"): void {
   assert.equal(loadActive(root)?.phase, "plan");
 }
 
-export async function prepareDeliveryFixture(root: string, host: Host = "claude"): Promise<void> {
+/** 계획 승인 → 구현 → check·test 통과 → 리뷰 1회차를 연 자리까지(리뷰어·교차 기록 없음) */
+export async function prepareReviewFixture(root: string, host: Host = "claude"): Promise<void> {
   preparePlanFixture(root, host);
   approveAndApplyFixture(root, { action: "plan" }, host);
   next(root);
@@ -186,6 +187,10 @@ export async function prepareDeliveryFixture(root: string, host: Host = "claude"
   await check(requireValidatable(root, "check")); next(root);
   await runTests(requireValidatable(root, "test")); next(root);
   openRound(requireValidatable(root, "review"));
+}
+
+export async function prepareDeliveryFixture(root: string, host: Host = "claude"): Promise<void> {
+  await prepareReviewFixture(root, host);
   const review = reviewDocFile(CONSENT_WORK_ID);
   writeFixture(root, review, readFileSync(join(root, review), "utf8").replace("## 지적\n", "## 지적\n\n- 없음\n"));
   recordReviewFixture(root, host);

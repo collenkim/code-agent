@@ -59,7 +59,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
-  code-agent doctor [--host claude|codex|both]  설치·환경 점검 (생략하면 설치된 호스트)
+  code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음)
   code-agent update [--cli <path>]    Git 소스 설치: upstream 갱신·의존성·빌드·프로젝트 적용·점검
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
@@ -209,7 +209,7 @@ async function main(argv: string[]): Promise<number> {
       print(status(repoRoot));
       return 0;
     case "doctor": {
-      const report = doctor(repoRoot, parseHost(option(args, "host")));
+      const report = doctor(repoRoot, parseHost(option(args, "host")), { cross: args.includes("--cross") });
       print(report.text);
       return report.ok ? 0 : 1;
     }
