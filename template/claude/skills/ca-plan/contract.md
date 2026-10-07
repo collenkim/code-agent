@@ -7,7 +7,7 @@
 - `id`: 영문 소문자·숫자·하이픈 식별자, `role`, `title`, `requirements`: 담당 R 또는 원문 REQ/DONE/CON ID.
 - `inputs`: 직접 읽을 저장소 상대 파일, `scopes`: 조사 역할의 소스 영역. 기본은 ["."]; 넓은 저장소는 영역별로 좁힌다. 선행 문서·공통 정책·확정 지시서는 자동 연결된다. KNOWLEDGE를 읽으면 inputs에 넣고 코드 근거를 확인한다.
 - `outputs`: 역할별 고정 출력. analysis는01, impact·synthesis는02, design은03·04, plan은plan.json·07, explore·critic은빈 배열. 경로는 doc/work/<ID>/ 아래다. impact와 explore·synthesis를 섞어 등록하지 않는다.
-- `dependsOn`: 선행 작업 ID. synthesis는 모든 explore에 의존해야 한다. `questionIds`: 관련 질문 ID. 담당·교차 검토가 낸 질문에는 코드가 `[Origin]: <작업 ID>`를 붙여, 답하면 그 작업과 후속 작업만 다시 돈다. 메인이 직접 적는 질문에는 `[Requirements]: R1`과, 원인 작업을 알면 `[Origin]: <작업 ID>`를 `[Answer]:` 줄 앞에 함께 적는다. 출처가 없으면 범위가 겹치는 모든 작업이, 범위도 없으면 전체가 다시 돈다(앞 단계 작업이 낡으면 advance가 되감기를 알린다).
+- `dependsOn`: 선행 작업 ID. synthesis는 모든 explore에 의존해야 한다. `questionIds`: 관련 질문 ID. 담당·교차 검토가 낸 질문에는 코드가 `[Origin]: <작업 ID>`를 붙여, 답하면 그 작업과 후속 작업만 다시 돈다. 메인이 직접 적는 질문에는 `[Requirements]: R1`을 `[Answer]:` 줄 앞에 적는다. `[Origin]`은 코드가 질문을 쓰면서 계획 기록에도 남긴 출처만 효력이 있다 — 메인이 적은 `[Origin]`은 무시된다. 출처가 없으면 범위가 겹치는 모든 작업이, 범위도 없으면 전체가 다시 돈다(앞 단계 작업이 낡으면 advance가 되감기를 알린다).
 
 현재 단계의 여러 작업을 한 배치로 등록한다. 이미 기본 explore를 등록했다면 그 ID를 첫 영역으로 갱신하고 다른 영역을 더한다. synthesis 의존성도 같은 배치에서 갱신한다. 준비된 조사 작업만 최대 maxParallel개(1~4, 기본3)까지 동시에 배정·호출한다. 선행 결과와 공통 사실 키의 상충이 있으면 합성을 시작할 수 없다. 의미상 같은 사실은 동일 key를 사용한다. 범위 밖 호출자가 발견되면 근거를 추측하지 않고 입력·영역 정의를 보완하여 재배정한다.
 

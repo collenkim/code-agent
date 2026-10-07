@@ -32,11 +32,11 @@
 
 ## 명세와 다르게 정한 것
 
-- advance의 같은 입력 failed 항목은 같은 입력 실패 한도를 다 썼을 때 `class: same-input-repeat`(그 전에는 시도의 `failure.class`)로 낸다 — 한도를 다 쓴 작업은 명시 배정도 거부되므로 재배정 안내 대신 한도 안내를 준다(테스트 T13이 기대하는 값).
+- advance의 같은 입력 failed 항목은 같은 입력 실패 한도를 다 썼을 때 `class: same-input-repeat`(그 전에는 시도의 `failure.class`)로 낸다 — 한도를 다 쓴 작업은 명시 배정도 거부되므로 재배정 안내 대신 한도 안내를 준다(테스트 T13이 기대하는 값). 그래서 `reasons` 둘째 줄도 명세 §3.5의 "그대로"(`원인을 해결한 뒤 planning dispatch로 명시적으로 재배정하세요.`)가 아니라 `guidance("same-input-repeat")` 문구로 바뀐다(한도 전에는 그대로다).
 - 입력 해시 메모 키에 작업 그래프(조상·작업 목록)를 더했다. 명세의 키보다 넓어 같은 명령 안의 작업 등록 변화도 놓치지 않는다.
 - 실행 관찰(`runView`)은 `planningState.ts`에 두었다 — SessionStart hook이 `planning.ts`를 읽지 않게 하려고.
 - SessionStart의 취소 안내는 실제 ID를 넣는다(`code-agent planning cancel analysis`).
-- 500,000자를 넘는 결과는 형식 오류로 다루되 원본을 보존하지 않는다(상태 파일 비대 방지). 교정으로 기록된 결과는 이전 형식 오류의 `failure`를 지운다.
+- 500,000자를 넘는 결과는 형식 오류로 다루되 원본을 보존하지 않는다(상태 파일 비대 방지). 교정할 원본이 없으므로 Claude 첫 Stop의 되돌림 뒤(또는 Codex)에는 `needs-correction`이 아니라 `failed`로 기록한다(독립 검토 반영 1). 교정으로 기록된 결과는 이전 형식 오류의 `failure`를 지운다.
 - 교차 critic 결과 스키마(`CrossCriticSchema`)를 테스트를 위해 export했다.
 
 ## 검증
@@ -50,5 +50,27 @@
 - 시작 관찰 60분은 근거 없는 보수적 값이다. 큰 영역 조사가 넘으면 `stale`로 보여 살아 있는 담당이 취소될 수 있다(`elapsedMin`·`observedStart`를 함께 보인다).
 - 같은 사유 판정 키는 낡은 원인 문구로 만든다. 같은 파일을 정당하게 두 번 고쳐도 두 번째는 사람에게 묻는다(보수 쪽).
 - 메인이 쓰는 출처 없는 질문은 여전히 겹치는 모든 작업을 낡게 한다(안내만 한다).
-- 작업 총 배정 6회는 질문 답에 따른 정상 재배정도 센다. 사람 허용을 동의로 기록하는 경로(`judgment retry-grant`)는 동의 묶음과 같은 릴리스에 들어가야 막힌 작업의 탈출구가 생긴다.
+- 작업 총 배정 6회는 질문 답에 따른 정상 재배정도 센다(plan·critic은 critic 지적·교차 지적·critic 질문만으로도 닿을 수 있다). 사람 허용을 동의로 기록하는 경로(`judgment retry-grant` → `grantPlanningRetry`)는 동의 묶음과 같은 릴리스에 들어가야 막힌 작업의 탈출구가 생긴다 — 이 커밋까지는 같은 작업을 다시 준비해도 시도 기록이 남아 남는 길이 작업 종료(abort)뿐이다. 거부 문구와 현행 문서는 지금 실행할 수 있는 길만 적었다(독립 검토 반영 7).
 - Codex 담당 이벤트의 판정 실패를 언제나 0으로 통과시키므로, 리뷰어 형식 오류를 기록하도록 바꾸기 전에는 Codex 리뷰어 형식 오류가 stderr에만 남는다.
+
+## 독립 검토 반영
+
+독립 검토의 지적 13건(major 1·minor 12)을 코드와 sandbox(`s4-late-start`·`s5-total`·`s6-source-orphan`·`s7-handback` 재현 스크립트)로 하나씩 확인했다. 모두 재현됐고, 아래처럼 반영했다.
+
+| # | 지적 | 판단 | 반영 |
+|---|---|---|---|
+| 1 | minor — 500,000자를 넘는 결과가 빈 원본으로 `needs-correction`이 되어 교정 대조가 건너뛰어진다 | 반영 | 교정할 원본이 없으므로 Claude 첫 Stop의 되돌림 뒤(또는 Codex)에는 `failed`(`agent-format-error`)로 기록한다. 교정은 거부된다 |
+| 2 | minor — 연결하지 못한 담당이 취소·교체된 배정의 결과를 늦게 내면 복사 오류로 되돌린다 | 반영 | 보고한 시도가 이미 running이 아니면(취소·고아·교체·종료) 담당의 시작 연결과 상관없이 늦은 결과다. 형식 오류 분기도 식별 필드로 같은 판정을 한다 — 늦은 담당이 형식까지 틀린 결과를 내면 같은 이유로 새 배정이 되돌림·고아 표시를 받았기 때문이다 |
+| 3 | minor — 같은 입력 failed의 `reasons` 둘째 줄이 명세와 다르다 | 코드 유지 | 한도를 다 쓴 작업은 명시 배정도 거부되므로 한도 안내가 맞다. 위 "명세와 다르게 정한 것"에 적고, C7 `planningNextLine`이 이 문구를 기대하도록 병합 계약에 넘긴다 |
+| 4·10 | minor — ca-plan 4-1항·반려 절차·`crossCriticProblems`가 아직 "원인 작업을 다시 배정" | 반영 | 세 곳을 4항·`contract.md:16`과 같은 뜻으로 맞췄다: 고칠 작업은 지적(사유) 내용으로 정하고, 앞 단계 작업이면 원인과 비용을 보고하고 지시를 받는다. Codex 사본의 고정 치환 문장과는 겹치지 않는다 |
+| 5 | minor — `planning.md`의 잠금 주인 필드에 `nonce`가 없다 | 반영 | `{pid, host, at, nonce}`로 고쳤다(`planning.ts` 주석도) |
+| 6 | minor — plan 문서 검사 실패와 메모 범위 밖 재계산의 단언이 약하다 | 반영 | plan 시도의 `failed`·`agent-content-error`, 범위 밖에서 같은 stat·다른 내용이면 새 sha를 단언한다 |
+| 7 | major — 작업 총 배정 한도를 다 쓰면 탈출 경로가 없는데 문구·문서는 사람 허용·재계획을 지금 있는 것처럼 안내한다 | 부분 반영 | 거부 문구(`retryPolicy.ts` `reassign-total` guide — 공통 모듈의 한 문장)와 `planning.md`·`usage.md`·`design.md`·흐름도에서 지금 실행할 수 없는 선택지를 뺐다. 같은 작업을 다시 준비해도 시도 기록이 남는다는 것과 지금 남는 길(abort)을 적고 테스트로 고정했다. 사람 허용을 기록하는 동의(`judgment retry-grant` → `grantPlanningRetry`)는 동의 묶음이 같은 릴리스에서 연결하는 병합 전제로 넘긴다(통합 테스트: 소진 → 동의 → 한도 9 → 배정) |
+| 8 | minor — 취소된 배정의 담당이 재배정 뒤 늦게 시작해 새 배정에 연결되면 새 배정이 고아가 된다 | 반영 | 2의 늦은 결과 판정에 더해, 늦은 담당의 연결을 보고한 시도로 옮긴다(새 배정이 그 담당의 종료로 고아 판정되지 않는다). 시도를 고아로 둘 때는 같은 시도에 연결된 다른 미완료 담당이 없을 때만이다(`orphanLinked`). **반영하지 않음**: SubagentStart에서 유일 후보에 미완료 연결 담당이 있으면 연결하지 않는 안. 그러면 s4의 진짜 담당이 미연결이 되고, 늦은 담당이 끝나는 순간 연결 담당이 모두 끝난 것으로 보여 새 배정이 고아로 판정된다. 위 두 변경으로 같은 문제가 막히므로 시작 연결은 그대로 둔다 |
+| 9 | minor — 완료 hook이 기록한 고아·실패를 advance가 사유 없이 다시 배정하고, 출처 확인 실패를 반복한다 | 반영 | 다시 배정할 때 직전 시도가 `orphaned`·`failed`면 배정과 CLI 요약에 `previous`(상태·원인·사유)를 싣는다. 출처(transcript) 확인 실패로 고아가 된 시도(`failure.kind: source`)가 두 번 이어지면 자동 재배정 대신 `blocked`(`class: hook-failure`)다. 명시 `planning dispatch`는 받는다 |
+| 11 | minor — 메인이 잘못 적은 `[Origin]`이 앞 단계 작업의 무효화를 막는다 | 반영(다른 방식) | 제안된 "출처 작업의 요구와 겹치지 않으면 무시"는 지적한 예(R1 업무 결정에 `[Origin]: critic` — critic도 R1을 가진다)를 막지 못한다. 그래서 질문을 쓴 코드(완료 hook·교차 검토)가 `planning.json` `questionOrigins`에 출처를 남기고, `[Origin]` 줄은 그 기록과 같을 때만 믿는다. 메인이 적은 출처는 무시되고 요구 겹침 규칙을 따른다. 계약(`contract.md:10`)에서 메인의 `[Origin]` 작성 안내를 뺐다. 교차 질문은 계획 기록 잠금 안에서 써서 질문과 출처 기록이 함께 보인다 |
+| 12 | minor — 되돌린 뒤 담당이 고친 결과를 최종 응답으로 내도 transcript의 옛 SubagentHandback으로 다시 판정한다 | 반영(시각 대신 순서) | 제안된 `returnedAt` 시각 대신 되돌릴 때까지 판정한 보고 수(`agents[].judgedHandbacks`)를 남기고 그 뒤의 보고만 본다. 없으면 최종 응답을 쓴다. 보고 시각이 되돌린 시각보다 늦게 찍히면(s7처럼) 시각 기준은 옛 보고를 다시 읽기 때문이다 |
+| 13 | minor — Codex는 SessionStart가 없어 시작이 관찰된 담당이 끊기면 60분 동안 `wait`이다 | 반영 | `ca-next` 1항에 재개 때 `planning status`의 실행 중 배정을 확인해 이 대화에서 부른 담당이 아니면 cancel 뒤 advance 하는 문장을 넣었다. `codex.md`·흐름도 §7에 60분 경우를 적었다 |
+
+- 하위 호환: 새 필드(`questionOrigins`, `agents[].judgedHandbacks`, 시도 `failure.kind: source`)는 모두 선택이다. 이 브랜치의 앞 커밋으로 진행한 작업에 `[Origin]` 줄은 있고 `questionOrigins` 기록이 없는 질문이 있으면 출처 없는 질문으로 다룬다(더 넓게 무효화하는 쪽). `planningVersion`이 없는 옛 작업과 `[Origin]`이 없는 옛 `questions.md`는 영향이 없다(해시 골든 그대로).
+- 검증: 재현 스크립트 넷이 모두 기대대로 바뀌었다(s4: `cancelled,completed`, s5: 거부 문구에 실행할 수 없는 선택지 없음, s6: 두 번째 뒤 `blocked`·`hook-failure`, s7: `completed`). 새 테스트 9개(크기 한도 Claude·Codex, 늦은 결과 세 경우(미연결 담당·재배정 뒤 늦은 시작·형식까지 틀린 늦은 결과), 고아 표시 범위, 출처 반복·`previous`, 되돌린 보고 두 경우)는 이 반영 전 코드에서 실패한다(되돌린 뒤 새 보고를 내는 경우는 반영 전에도 통과하는 대조 사례다). `npm run build && npm test` 전체: **924개 중 920개 통과·실패 0개·생략 4개**.

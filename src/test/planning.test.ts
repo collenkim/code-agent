@@ -1,13 +1,14 @@
 import { strict as assert } from "node:assert";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
 import { back, next, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
-import { contextHandoff } from "../agent/handoff";
+import { contextHandoff, handoffPlanning } from "../agent/handoff";
 import { crossCritic, CrossCriticSchema } from "../agent/crossCheck";
 import { sessionAnchor } from "../agent/sessionHook";
 import { context } from "../agent/commands";
@@ -479,11 +480,14 @@ test("취소는 같은 입력 한도에 세지 않고 작업별 총 배정 6회�
   assert.doesNotThrow(() => dispatch("analysis"), "세 번 취소한 뒤 네 번째 배정은 허용한다 — 취소는 같은 입력 실패가 아니다");
   cancelPlanning(root, "analysis");
   for (let index = 0; index < 2; index++) { dispatch("analysis"); cancelPlanning(root, "analysis"); }
-  assert.throws(() => dispatch("analysis"), /총 6회/);
+  // 거부 문구는 지금 실행할 수 있는 길만 안내한다 — 다시 준비해도 시도 기록이 남아 한도가 풀리지 않는다
+  assert.throws(() => dispatch("analysis"), (error: Error) => /총 6회/.test(error.message) && /다시 준비[^.]*그대로/.test(error.message) && !/한도 \+3|재계획/.test(error.message));
   assert.equal(JSON.parse(planningStatus(root)).tasks[0].attempts, 6);
   const blocked = advance().blocked[0];
   assert.equal(blocked.class, "reassign-total");
   assert.deepEqual(blocked.counter, { key: "taskTotal", used: 6, limit: 6 });
+  preparePlanning(root);
+  assert.throws(() => dispatch("analysis"), /총 6회/);
 });
 test("보류·설명 메모·명시 미응답 상태와 중복 질문은 답변이 아니다", () => {
   for (const value of ["보류", "보류합니다.", "보류\n나중에 결정할 예정", "C. 보류 — 나중에 결정", "\n상태: 답변 대기", "A\n[Status]: deferred"]) assert.equal(parseQuestions(`## Q1 질문\n[Answer]: ${value}`)[0].answer, "");
@@ -800,6 +804,7 @@ test("design 단계 질문은 출처를 기록하고, 답해도 앞 단계 결�
   assert.equal(asked.task.id, "design");
   finish(asked, {}, { status: "needs-input", questions: [{ id: "Q1", question: "경계값을 포함할까요?", requirements: ["R1"] }] });
   assert.match(readFileSync(join(root, DIR, "questions.md"), "utf8"), /\[Requirements\]: R1\n\[Origin\]: design\n\[Answer\]:/);
+  assert.deepEqual(loadPlanning(loadWork(root)!).questionOrigins, { Q1: "design" }, "코드가 쓴 질문의 출처는 상태에도 남는다");
   answer("Q1", "포함한다");
   const reply = advance();
   assert.equal(reply.action, "dispatch");
@@ -909,7 +914,13 @@ test("메모 범위 — 같은 stat 이면 sha 를 재사용하고 크기가 바
     invalidatePlanningCache();
     assert.notEqual(taskHash(work, state, task), before, "무효화 뒤에는 stat 으로 검증한 부품으로 다시 조립한다");
   });
-  assert.notEqual(fileHash(root, file), "missing");
+  // 범위 밖에서는 stat 이 같아도(같은 크기·mtime 복원) 언제나 새로 읽는다
+  utimesSync(full, fixed, fixed);
+  const outside = fileHash(root, file);
+  writeFileSync(full, "export const current = 11;\n");
+  utimesSync(full, fixed, fixed);
+  assert.notEqual(fileHash(root, file), outside, "범위 밖에서는 메모 없이 새로 계산한다");
+  assert.equal(fileHash(root, file), createHash("sha256").update("export const current = 11;\n").digest("hex"));
 });
 
 test("교차 검토 질문은 요구 키만 적고 출처를 critic 으로 기록한다 — 답은 critic 만 낡게 하고, 결과의 줄바꿈은 답이 되지 않는다", () => {
@@ -930,6 +941,7 @@ test("교차 검토 질문은 요구 키만 적고 출처를 critic 으로 기�
   try {
     const first = ask([]);
     assert.match(first.body, /\[Requirements\]: R1\n\[Origin\]: critic\n\[Answer\]:/, "빈 범위는 critic 작업의 요구로 채운다");
+    assert.equal(loadPlanning(loadWork(root)!).questionOrigins![first.id], "critic", "교차 검토 질문의 출처도 상태에 남는다");
     answer(first.id, "포함한다");
     const problems = planningProblems(loadWork(root)!, "plan");
     assert.ok(problems.some((problem) => /^critic: 현재 입력/.test(problem)));
@@ -982,7 +994,7 @@ test("해시 계약 — 질문은 고정 투영으로 직렬화하고 옛 questi
   }
 });
 
-test("출처가 기록된 질문은 출처 작업과 그 후손만 낡게 한다", () => {
+test("코드가 기록한 출처의 질문은 출처 작업과 그 후손만 낡게 하고, 기록 없는 [Origin] 줄은 요구 겹침 규칙을 따른다", () => {
   preparePlanning(root);
   finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS + '\n## R2 · 다른 반환\n근거: "값을 반환한다."' }); next(root);
   const base = { role: "explore", title: "영역", inputs: [SPEC], outputs: [], dependsOn: ["analysis"] };
@@ -990,11 +1002,19 @@ test("출처가 기록된 질문은 출처 작업과 그 후손만 낡게 한다
     { id: "synthesis", role: "synthesis", title: "합성", requirements: ["R1", "R2"], inputs: [SPEC], outputs: [`${DIR}/02-analysis.md`], dependsOn: ["left", "right"] }] });
   finish(dispatch("left")); finish(dispatch("right"));
   finish(dispatch("synthesis"), { [`${DIR}/02-analysis.md`]: IMPACT.replace("| R1 | src/current.ts:1 | 없음 | 새 진입점 |", "| R1 | src/current.ts:1 | 없음 | 새 진입점 |\n| R2 | src/current.ts:1 | 없음 | 새 진입점 |") });
-  // 범위(R2)만 보면 right 가 낡지만, 출처 규칙은 left 와 그 후손(synthesis)만 낡게 한다
   write(`${DIR}/questions.md`, "# 질문\n\n## Q1 · 영역\n경계값?\n[Requirements]: R2\n[Origin]: left\n[Answer]: 포함한다\n");
-  const work = loadWork(root)!, state = loadPlanning(work);
-  const current = (id: string) => taskCurrent(work, state, state.tasks.find((record) => record.task.id === id)!);
+  const current = (id: string) => { const work = loadWork(root)!, state = loadPlanning(work); return taskCurrent(work, state, state.tasks.find((record) => record.task.id === id)!); };
+  const because = (id: string) => (JSON.parse(planningStatus(root)).tasks.find((task: any) => task.id === id).staleBecause ?? []).join("\n");
+  // 메인이 적은 [Origin] 은 검증할 수 없다 — 범위(R2)가 겹치는 right 와 그 후손 synthesis 가 낡는다
+  assert.deepEqual(["left", "synthesis", "right"].map(current), [true, false, false]);
+  assert.match(because("right"), /질문 Q1 추가·변경\(출처 없음/);
+  // 완료 hook·교차 검토가 쓴 질문은 출처를 상태에도 남긴다 — 출처 규칙은 left 와 그 후손(synthesis)만 낡게 한다
+  editPlanning((state) => { state.questionOrigins = { Q1: "left" }; });
   assert.deepEqual(["left", "synthesis", "right"].map(current), [false, false, true]);
+  assert.match(because("left"), /질문 Q1 추가·변경\(출처 left\)/);
+  // 기록과 다른 [Origin] 줄은 믿지 않는다
+  editPlanning((state) => { state.questionOrigins = { Q1: "right" }; });
+  assert.deepEqual(["left", "synthesis", "right"].map(current), [true, false, false]);
 });
 
 test("시작이 관찰되지 않은 채 10분이 지난 배정은 stale 로 보이고 cancel 목록을 낸다", () => {
@@ -1173,6 +1193,9 @@ test("plan 결과도 plan.json 의 요구 커버리지를 완료 전에 받는�
   const uncovered = { ...PLAN, files: PLAN.files.map((file) => ({ ...file, requirements: ["R2"] })) };
   assert.throws(() => finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(uncovered), [`${DIR}/07-test-spec.md`]: TESTS }), /어떤 파일에도 닿지 않는 요구 항목/);
   assert.equal(existsSync(join(root, DIR, "plan.json")), false);
+  const last = loadPlanning(loadWork(root)!).tasks.find((record) => record.task.id === "plan")!.attempts.at(-1)!;
+  assert.equal(last.status, "failed");
+  assert.equal(last.failure!.class, "agent-content-error");
 });
 
 test("교정 시도의 문서 검사 실패는 되돌리지 않고 실패로 기록한다", () => {
@@ -1358,4 +1381,158 @@ test("차단 지적은 인용 문서를 낸 작업만 후보로 보이고 자동
   assert.equal(reply.feedback[0].citedPhase, "design");
   assert.match(reply.feedback[0].note, /근거 문서가 앞 단계\(design\) 출력입니다/);
   assert.equal("command" in reply.feedback[0], false);
+});
+
+// ---- 검토 반영: 크기 한도·늦은 결과·고아 표시·직전 실패·되돌린 보고 ----
+
+for (const via of ["claude", "codex"] as const) test(`크기 한도를 넘은 결과는 원본을 보존하지 않으므로 교정 대기 대신 실패로 기록하고 교정을 받지 않는다: ${via}`, () => {
+  const item = advance().assignments[0];
+  const huge = "x".repeat(500_001);
+  if (via === "codex") {
+    const event = { cwd: root, session_id: "s", agent_id: "codex-large", agent_type: item.hostAgents.codex };
+    codexHook({ ...event, hook_event_name: "SubagentStart" });
+    const result = captured(() => runCodexHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", last_assistant_message: huge })));
+    assert.equal(result.value, 0);
+    assert.equal(result.out, "{}");
+    assert.match(result.err, /크기 한도[\s\S]*형식 교정 대상이 아닙니다/);
+  } else {
+    startAgent(item, "large");
+    quiet((stderr) => {
+      assert.equal(runPlanningHook(stopEvent(item, "large", huge)), 2, "첫 Stop 은 같은 담당에게 되돌린다");
+      assert.match(stderr(), /크기 한도/);
+      assert.equal(runPlanningHook(stopEvent(item, "large", huge, { stop_hook_active: true })), 0);
+    });
+  }
+  const last = loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!;
+  assert.equal(last.status, "failed");
+  assert.equal(last.failure!.class, "agent-format-error");
+  assert.equal(last.correction, undefined, "원본이 없는 교정 대기를 만들지 않는다");
+  assert.throws(() => repairPlanning(root, "analysis"), /교정할 관찰 결과가 없거나/);
+  assert.equal(advance().blocked[0].class, "agent-format-error");
+});
+
+test("연결하지 못한 담당이 취소·교체된 배정의 결과를 늦게 내면 되돌리지 않고 늦은 결과로만 기록한다", () => {
+  analysis();
+  const base = { role: "explore", title: "영역", requirements: ["R1"], inputs: [SPEC], outputs: [], dependsOn: ["analysis"] };
+  preparePlanning(root, { tasks: [{ ...base, id: "left", scopes: ["src"] }, { ...base, id: "right", scopes: ["other"] }] });
+  const oldLeft = dispatch("left"); dispatch("right");
+  startAgent(oldLeft, "old-left");
+  assert.equal(loadPlanning(loadWork(root)!).agents.find((agent) => agent.id === "old-left")!.dispatchId, undefined, "후보가 둘이라 연결하지 않는다");
+  cancelPlanning(root, "left");
+  const newLeft = dispatch("left");
+  quiet((stderr) => {
+    assert.equal(runPlanningHook(stopEvent(oldLeft, "old-left", completed(oldLeft, {}, { evidence: [{ path: "src/current.ts", line: 1 }] }))), 0);
+    assert.match(stderr(), /현재 배정에 속한 실행 결과가 아닙니다/);
+  });
+  const state = loadPlanning(loadWork(root)!);
+  const agent = state.agents.find((item) => item.id === "old-left")!;
+  assert.equal(agent.failure!.detail, "취소·교체된 배정의 늦은 결과");
+  assert.equal(agent.returns, undefined, "식별 복사 오류로 되돌리지 않는다");
+  const left = state.tasks.find((record) => record.task.id === "left")!;
+  assert.deepEqual(left.attempts.map((attempt) => attempt.status), ["cancelled", "running"]);
+  assert.equal(left.attempts.at(-1)!.dispatchId, newLeft.resultShape.dispatchId);
+});
+
+test("취소된 배정의 담당이 재배정 뒤 늦게 시작해 새 배정에 연결돼도 그 늦은 결과는 새 배정을 고아로 만들지 않는다", () => {
+  const first = advance().assignments[0];
+  editPlanning((state) => { state.tasks[0].attempts[0].at = ago(11); });
+  assert.equal(advance().action, "stale");
+  cancelPlanning(root, "analysis");
+  const second = advance().assignments[0];
+  // 옛 배정 파일로 부른 담당이 늦게 시작했다 — 후보가 하나라 새 배정에 연결된다
+  startAgent(first, "late-old");
+  startAgent(second, "current");
+  assert.deepEqual(loadPlanning(loadWork(root)!).agents.map((agent) => agent.dispatchId), [second.resultShape.dispatchId, second.resultShape.dispatchId]);
+  quiet(() => assert.equal(runPlanningHook(stopEvent(first, "late-old", completed(first, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))), 0, "늦은 결과는 되돌리지 않는다"));
+  let state = loadPlanning(loadWork(root)!);
+  assert.equal(state.tasks[0].attempts.at(-1)!.status, "running", "새 배정은 고아가 아니다");
+  assert.equal(state.agents[0].dispatchId, first.resultShape.dispatchId, "늦은 담당의 연결은 보고한 배정으로 옮긴다");
+  quiet(() => assert.equal(runPlanningHook(stopEvent(second, "current", completed(second, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))), 0));
+  state = loadPlanning(loadWork(root)!);
+  assert.deepEqual(state.tasks[0].attempts.map((attempt) => attempt.status), ["cancelled", "completed"]);
+});
+
+test("취소된 배정의 늦은 결과가 형식까지 틀려도 되돌리지 않고 늦은 결과로만 기록한다", () => {
+  const first = advance().assignments[0];
+  cancelPlanning(root, "analysis");
+  const second = advance().assignments[0];
+  startAgent(first, "late-broken");
+  quiet(() => assert.equal(runPlanningHook(stopEvent(first, "late-broken", { ...first.resultShape, status: "completed", summary: 7 })), 0));
+  const state = loadPlanning(loadWork(root)!);
+  assert.equal(state.agents[0].failure!.detail, "취소·교체된 배정의 늦은 결과");
+  assert.equal(state.agents[0].dispatchId, first.resultShape.dispatchId, "연결을 보고한 배정으로 옮긴다");
+  assert.equal(state.tasks[0].attempts.at(-1)!.status, "running");
+  assert.equal(state.tasks[0].attempts.at(-1)!.dispatchId, second.resultShape.dispatchId);
+});
+
+test("늦은 결과의 담당만 새 배정에 연결됐으면 새 배정은 담당을 기다리고, 다른 담당이 일하는 배정은 식별 오류로 고아가 되지 않는다", () => {
+  const first = advance().assignments[0];
+  cancelPlanning(root, "analysis");
+  const second = advance().assignments[0];
+  startAgent(first, "late-only");
+  quiet(() => runPlanningHook(stopEvent(first, "late-only", completed(first, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))));
+  const waiting = advance();
+  assert.equal(waiting.action, "wait", JSON.stringify(waiting));
+  assert.equal(waiting.orphaned, undefined, "늦은 담당의 종료로 새 배정을 고아로 판정하지 않는다");
+  // 같은 배정에 두 담당이 연결됐다 — 한 담당의 식별 복사 오류가 다른 담당이 일하는 배정을 고아로 만들지 않는다
+  startAgent(second, "duplicate"); startAgent(second, "worker");
+  const copy = { ...completed(second, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }), dispatchId: "other" };
+  quiet(() => {
+    assert.equal(runPlanningHook(stopEvent(second, "duplicate", copy)), 2);
+    assert.equal(runPlanningHook(stopEvent(second, "duplicate", copy, { stop_hook_active: true })), 0);
+  });
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "running");
+  quiet(() => assert.equal(runPlanningHook(stopEvent(second, "worker", completed(second, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))), 0));
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "completed");
+});
+
+test("출처 검증 실패로 고아가 된 배정은 다시 배정할 때 직전 실패를 보이고, 두 번 이어지면 자동으로 다시 배정하지 않는다", () => {
+  const outside = mkdtempSync(join(tmpdir(), "ca-transcript-"));
+  try {
+    const run = (item: any, agent: string) => {
+      const event = { cwd: root, session_id: "s", agent_id: agent, agent_type: item.agent, transcript_path: join(outside, "s.jsonl") };
+      observePlanner({ ...event, hook_event_name: "SubagentStart" });
+      const elsewhere = join(outside, `${agent}.jsonl`);
+      writeFileSync(elsewhere, "");
+      quiet(() => assert.equal(runPlanningHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", agent_transcript_path: elsewhere,
+        last_assistant_message: JSON.stringify(completed(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS })) })), 0));
+    };
+    run(advance().assignments[0], "first");
+    const again = advance();
+    assert.equal(again.action, "dispatch");
+    const previous = again.assignments[0].previous;
+    assert.deepEqual({ status: previous.status, class: previous.class }, { status: "orphaned", class: "dispatch-orphan" });
+    assert.match(previous.detail, /하위 에이전트 기록이 아닙니다/);
+    assert.deepEqual(JSON.parse(handoffPlanning(root, JSON.stringify(again))).assignments[0].previous, previous, "CLI 요약에도 남는다");
+    run(again.assignments[0], "second");
+    const stopped = advance();
+    assert.equal(stopped.assignments.length, 0);
+    assert.equal(stopped.action, "blocked");
+    assert.equal(stopped.blocked[0].class, "hook-failure");
+    assert.match(stopped.blocked[0].reasons.join("\n"), /두 번 이어서[\s\S]*planning dispatch analysis/);
+    assert.equal(dispatch("analysis").cached, false, "명시 배정은 받는다");
+  } finally { rmSync(outside, { recursive: true, force: true }); }
+});
+
+for (const via of ["text", "handback"] as const) test(`되돌린 뒤의 완료는 되돌릴 때 판정한 SubagentHandback 을 다시 읽지 않는다: ${via}`, () => {
+  const item = advance().assignments[0];
+  const outside = mkdtempSync(join(tmpdir(), "ca-transcript-"));
+  try {
+    const event = { cwd: root, session_id: "s", agent_id: "handback", agent_type: item.agent, transcript_path: join(outside, "s.jsonl") };
+    observePlanner({ ...event, hook_event_name: "SubagentStart" });
+    const transcript = join(outside, "s", "subagents", "agent-handback.jsonl");
+    mkdirSync(dirname(transcript), { recursive: true });
+    // 기록 시각에 기대지 않는다 — 옛 보고의 시각이 되돌린 시각보다 늦어도 순서로 나눈다
+    const handback = (message: unknown) => appendFileSync(transcript, `${JSON.stringify({ timestamp: new Date(Date.now() + 60_000).toISOString(), type: "assistant", message: { content: [{ type: "tool_use", name: "SubagentHandback", input: { message: JSON.stringify(message) } }] } })}\n`);
+    const good = completed(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+    handback({ ...good, dispatchId: "wrong-copy" });
+    const stop = (message: string, extra: object = {}) => runPlanningHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", agent_transcript_path: transcript, last_assistant_message: message, ...extra }));
+    quiet(() => {
+      assert.equal(stop(""), 2);
+      if (via === "handback") handback(good);
+      // 고친 결과를 최종 응답(text)이나 새 보고(handback)로 냈다 — 되돌린 옛 보고는 다시 판정하지 않는다
+      assert.equal(stop(via === "text" ? JSON.stringify(good) : "끝", { stop_hook_active: true }), 0);
+    });
+    assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "completed");
+  } finally { rmSync(outside, { recursive: true, force: true }); }
 });

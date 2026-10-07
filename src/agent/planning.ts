@@ -14,7 +14,7 @@ import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, plann
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
 import { businessRuleFiles, dropPlanningCache, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
-  ROLE_PHASE, runView, scopedFiles, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
+  ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
   type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 
 /** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
@@ -43,7 +43,7 @@ export function planningWork(root: string): Work {
 }
 /**
  * 병렬 완료 이벤트는 짧은 파일 잠금 안에서 읽고 갱신한다. 에이전트 실행 동안 잠그지 않는다.
- * 잠금은 공통 acquireLock 이다 — 주인 {pid, host, at} 을 적고, 같은 PC 의 죽은 주인과 주인 기록 없는 10분 잠금은 회수한다.
+ * 잠금은 공통 acquireLock 이다 — 주인 {pid, host, at, nonce} 를 적고, 같은 PC 의 죽은 주인과 주인 기록 없는 10분 잠금은 회수한다.
  */
 export function mutatePlanning<T>(work: Work, fn: (state: PlanningState) => T, options: { waitMs?: number } = {}): T {
   const path = planningFile(work);
@@ -268,10 +268,20 @@ function dispatchState(work: Work, state: PlanningState, id: string, swept?: Swe
     const { hash: inputHash, parts } = hashInput(work, state, record.task);
     const decision = planningDispatchDecision({ attempts: record.attempts, inputHash, since: state.retry?.since, grants: state.retry?.grants, taskId: record.task.id });
     if (!decision.allow) throw new RetryRefused(decision.failure);
+    const prior = record.attempts.at(-1);
     const attempt: TaskAttempt = { dispatchId: randomUUID(), inputHash, inputParts: parts, at: new Date().toISOString(), status: "running" };
     record.attempts.push(attempt);
-    try { return assignment(work, state, record); }
+    try { return { ...assignment(work, state, record), ...previousOf(prior) }; }
     catch (error) { record.attempts.pop(); throw error; }
+}
+/**
+ * 다시 배정할 때 직전 시도의 실패(완료 hook 이 기록한 고아·실패 포함) — 메인의 재배정 메모와 담당이 같은 원인을 되풀이하지 않게
+ * 배정에 싣는다. Claude 완료 hook 의 기록 뒤 실패는 exit 0 이라 메인에게 사유가 보이지 않기 때문이다.
+ */
+function previousOf(attempt: TaskAttempt | undefined): { previous?: { dispatchId: string; status: string; class?: FailureClass; detail: string } } {
+  if (!attempt || (attempt.status !== "orphaned" && attempt.status !== "failed")) return {};
+  const detail = attempt.error ?? attempt.failure?.detail ?? attempt.result?.summary ?? "";
+  return { previous: { dispatchId: attempt.dispatchId, status: attempt.status, ...(attempt.failure ? { class: attempt.failure.class } : {}), detail: detail.slice(0, 1000) } };
 }
 function assignment(work: Work, state: PlanningState, record: TaskRecord) {
     const attempt = record.attempts.at(-1)!;
@@ -436,6 +446,15 @@ export function advancePlanning(root: string): string {
               counter: { key: "sameInput", used: budget.used, limit: budget.limit } });
             continue;
           }
+        }
+        // 출처(transcript) 검증 실패는 담당이 고칠 수 없는 hook·환경 원인이다 — 두 번 이어지면 자동으로 다시 배정하지 않는다
+        const [before, latest] = record.attempts.slice(-2);
+        if (latest?.failure?.kind === SOURCE_FAILURE && before?.failure?.kind === SOURCE_FAILURE && latest.status === "orphaned" && before.status === "orphaned") {
+          // reasons[0] 은 원인 그대로(다른 blocked 항목과 같다) — 안내는 class 의 guidance 와 둘째 줄이 맡는다
+          blocked.push({ id: record.task.id, class: "hook-failure", reasons: [
+            `담당 결과의 출처(transcript)를 두 번 이어서 확인하지 못했습니다 — ${latest.failure.detail.replace(/\.$/, "")}`,
+            `자동으로 다시 배정하지 않습니다. 사유를 사용자에게 알리고, 원인을 고친 뒤 code-agent planning dispatch ${record.task.id} 로 명시적으로 다시 배정하세요 — 같은 실패가 반복되면 사람이 별도 터미널에서 code-agent doctor 로 점검합니다.`] });
+          continue;
         }
         if (runningCount(state) >= state.maxParallel) {
           blocked.push({ id: record.task.id, reasons: ["동시 실행 한도에 도달했습니다."], class: "precondition" }); continue;

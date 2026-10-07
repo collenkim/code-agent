@@ -4,7 +4,7 @@ import { writeAtomic } from "../core/atomic";
 import { sha } from "./docs";
 import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
 import { mutatePlanning, requireRolePhase, stagingPath } from "./planning";
-import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, ResultSchema, TASK_AGENTS, withPlanningCache,
+import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
   type PlanningAgent, type PlanningResult, type PlanningState, type ResolvedResult, type TaskAttempt, type TaskRecord } from "./planningState";
 import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, type FailureRecord } from "./retryPolicy";
 import { RecordedFailure, type ReviewHookInput } from "./reviewHook";
@@ -16,13 +16,18 @@ export class ReturnToAgent extends Error { constructor(message: string, readonly
 /** 실패를 기록한 뒤의 실패 — 담당이 다시 멈춰도 바뀌는 것이 없다 */
 export class PlanningFailure extends RecordedFailure { constructor(message: string, readonly failureClass: FailureClass) { super(message); } }
 
-type Received = { raw: string; sourceError?: undefined; tooLarge?: boolean } | { sourceError: string; raw?: undefined };
+/** handbacks: 읽은 SubagentHandback 보고 수(담당 시작 뒤) — 되돌릴 때 기록해 다음 완료가 그 뒤의 보고만 보게 한다 */
+type Received = { raw: string; handbacks: number; sourceError?: undefined; tooLarge?: boolean } | { sourceError: string; raw?: undefined };
+/** 결과 크기 한도(글자) — 넘으면 원본을 보존하지 않는다(상태 비대 방지) */
+const RESULT_LIMIT = 500_000;
 /**
  * hook의 세션별 실제 하위 transcript만 읽는다. 저장소 안의 임의 JSON은 실행 증거가 아니다.
  * 출처 검증 실패(경로·세션·transcript 줄)는 되돌릴 수 없는 실패로, 크기 한도는 형식 오류로 나눈다.
+ * 되돌린 담당이면 되돌릴 때까지 판정한 보고(`judgedHandbacks`개) 뒤의 SubagentHandback 만 본다 — 되돌린 옛 보고를 다시 판정하지 않고,
+ * 뒤에 보고가 없으면 최종 응답(last_assistant_message)을 쓴다. 시각이 아니라 순서로 나누므로 기록 시각의 오차에 기대지 않는다.
  */
-function receive(input: ReviewHookInput, root: string, startedAt: string): Received {
-  let result = input.last_assistant_message ?? "";
+function receive(input: ReviewHookInput, root: string, startedAt: string, judged = 0): Received {
+  let result = input.last_assistant_message ?? "", handbacks = 0;
   if (input.agent_transcript_path) {
     try {
       if (!input.transcript_path || !/^[\w-]+$/.test(input.agent_id ?? "")) throw new Error("계획 실행 기록 경로가 유효하지 않습니다.");
@@ -34,12 +39,14 @@ function receive(input: ReviewHookInput, root: string, startedAt: string): Recei
       for (const line of readFileSync(actual, "utf8").split("\n").filter(Boolean)) {
         const entry = JSON.parse(line);
         if (!(Date.parse(entry.timestamp) >= Date.parse(startedAt)) || entry.type !== "assistant" || !Array.isArray(entry.message?.content)) continue;
-        for (const block of entry.message.content) if (block.type === "tool_use" && block.name === "SubagentHandback" && typeof block.input?.message === "string") result = block.input.message;
+        for (const block of entry.message.content) {
+          if (block.type === "tool_use" && block.name === "SubagentHandback" && typeof block.input?.message === "string" && ++handbacks > judged) result = block.input.message;
+        }
       }
     } catch (error) { return { sourceError: error instanceof Error ? error.message : String(error) }; }
   }
-  if (result.length > 500_000) return { raw: "", tooLarge: true };
-  return { raw: result.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, "$1") };
+  if (result.length > RESULT_LIMIT) return { raw: "", handbacks, tooLarge: true };
+  return { handbacks, raw: result.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, "$1") };
 }
 /** 담당이 staging에 쓴 출력 문서를 읽는다. 배정된 경로가 아니면 받지 않는다. */
 function stagedContent(root: string, id: string, dispatchId: string, item: { path: string; staged: string }): string {
@@ -90,9 +97,9 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   const snapshot = loadPlanning(work);
   const agent = [...snapshot.agents].reverse().find(agent => agent.id === input.agent_id && agent.session === input.session_id);
   if (!agent) return undefined;
-  const received = receive(input, work.repoRoot, agent.startedAt);
+  const received = receive(input, work.repoRoot, agent.startedAt, agent.judgedHandbacks);
   if (received.sourceError !== undefined) return { received };
-  if (received.tooLarge) return { received, formatError: "계획 결과가 크기 한도를 넘었습니다." };
+  if (received.tooLarge) return { received, formatError: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` };
   let parsed: unknown, parseError: unknown;
   try { parsed = JSON.parse(received.raw); } catch (error) { parseError = error; }
   const schema = ResultSchema.safeParse(parsed);
@@ -117,10 +124,18 @@ function endAgent(agent: PlanningAgent, record?: FailureRecord): void {
   agent.endedAt = new Date().toISOString();
   if (record) agent.failure = record;
 }
-function markOrphaned(attempt: TaskAttempt, detail: string): void {
+function markOrphaned(attempt: TaskAttempt, detail: string, kind?: string): void {
   attempt.status = "orphaned";
   attempt.error = detail;
-  attempt.failure = failure("dispatch-orphan", detail);
+  attempt.failure = failure("dispatch-orphan", detail, kind ? { kind } : {});
+}
+/**
+ * 이 담당이 연결된 시도를 고아로 둔다. 같은 시도에 연결된 다른 미완료 담당이 있으면 두지 않는다 — 그 담당의 결과를 기다린다
+ * (advance 의 고아 판정 orphanState 와 같은 기준: 연결된 담당이 모두 끝나야 고아다).
+ */
+function orphanLinked(state: PlanningState, agent: PlanningAgent, linked: TaskAttempt | undefined, detail: string, kind?: string): void {
+  if (!linked || state.agents.some(other => other !== agent && !other.finished && other.dispatchId === linked.dispatchId)) return;
+  markOrphaned(linked, detail, kind);
 }
 /** 실행 중 단계·입력이 바뀌었으면 그 사유. 진행 중 배정은 취소한다(늦은 결과는 새 입력의 결과가 아니다) */
 function inputChanged(work: Work, state: PlanningState, record: TaskRecord, last: TaskAttempt): string | undefined {
@@ -139,15 +154,28 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   if (!agent) return { kind: "ignored" }; // 다른 스킬이 부른 동일 이름 에이전트
   if (agent.finished) return recorded("이미 처리한 완료 이벤트입니다.", "dispatch-orphan");
   const canReturn = host === "claude" && input.stop_hook_active !== true && (agent.returns ?? 0) < LIMITS.agentReturn;
-  const giveBack = (message: string, cls: FailureClass): Decision => { agent.returns = (agent.returns ?? 0) + 1; return { kind: "return", message, cls }; };
+  const giveBack = (message: string, cls: FailureClass): Decision => {
+    agent.returns = (agent.returns ?? 0) + 1;
+    if (prepared.received.sourceError === undefined) agent.judgedHandbacks = prepared.received.handbacks;
+    return { kind: "return", message, cls };
+  };
   const linkedRecord = agent.dispatchId ? state.tasks.find(item => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === agent.dispatchId) : undefined;
   const linked = linkedRecord?.attempts.at(-1);
+  /**
+   * 취소·교체된 배정의 늦은 결과 — 되돌리지 않고 담당 기록만 남기며 시도는 건드리지 않는다. 보고한 시도가 이미 실행 중이 아니면
+   * 담당의 연결을 그 시도로 옮긴다 — 재배정 뒤 늦게 시작해 후보가 하나라 새 배정에 연결됐던 담당의 종료가 새 배정을 고아로 만들지 않게.
+   */
+  const lateResult = (reportedAttempt?: TaskAttempt): Decision => {
+    if (reportedAttempt && reportedAttempt.status !== "running") agent.dispatchId = reportedAttempt.dispatchId;
+    endAgent(agent, failure("dispatch-orphan", "취소·교체된 배정의 늦은 결과"));
+    return recorded("현재 배정에 속한 실행 결과가 아닙니다.", "dispatch-orphan");
+  };
 
   // 출처 검증 실패 — 되돌릴 수 없다
   if (prepared.received.sourceError !== undefined) {
     const detail = prepared.received.sourceError;
-    endAgent(agent, failure("dispatch-orphan", detail));
-    if (linked) markOrphaned(linked, detail);
+    endAgent(agent, failure("dispatch-orphan", detail, { kind: SOURCE_FAILURE }));
+    orphanLinked(state, agent, linked, detail, SOURCE_FAILURE);
     return recorded(detail, "dispatch-orphan");
   }
 
@@ -159,13 +187,16 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
     // JSON 자체가 깨졌을 때는 시작 시 유일하게 연결된 배정만 교정한다. 병렬 담당을 추측하지 않는다.
     const record = identity ? state.tasks.find(item => item.task.id === identity.taskId) : state.tasks.find(item => item.attempts.at(-1)?.dispatchId === agent.dispatchId);
     const last = record?.attempts.at(-1);
+    // 식별 필드가 이미 실행 중이 아닌 시도(취소·고아·교체·종료)를 가리키면 형식과 상관없이 그 배정의 늦은 결과다(아래 식별과 같다)
+    const reportedAttempt = identity && typeof identity.dispatchId === "string" ? record?.attempts.find(attempt => attempt.dispatchId === identity.dispatchId) : undefined;
+    if (reportedAttempt && reportedAttempt.status !== "running") return lateResult(reportedAttempt);
     if (!record || !last || last.status !== "running" || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at) ||
       (agent.dispatchId && agent.dispatchId !== last.dispatchId) ||
       (identity && (identity.dispatchId !== last.dispatchId || identity.inputHash !== last.inputHash))) {
       if (canReturn && linked) return giveBack(`${guidance("agent-format-error", { detail })} 식별 필드(taskId·dispatchId·inputHash)는 배정 파일 resultShape의 값을 그대로 씁니다.`, "dispatch-orphan");
       const message = "현재 배정에 속한 형식 오류인지 확인할 수 없습니다. 배정을 확인하고 취소 후 다시 실행하세요.";
       endAgent(agent, failure("dispatch-orphan", message));
-      if (linked) markOrphaned(linked, message);
+      orphanLinked(state, agent, linked, message);
       return recorded(message, "dispatch-orphan");
     }
     const changed = inputChanged(work, state, record, last);
@@ -183,6 +214,11 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
       last.status = "failed";
       return recorded(`${last.error} — 한 번의 교정을 사용했습니다. 원인을 확인하세요.`, "agent-format-error");
     }
+    // 크기 한도를 넘은 결과는 원본을 보존하지 않는다 — 교정 담당에게 넘길 원본이 없으므로(빈 원본은 대조 없이 새 판단을 받게 된다) 교정 대기로 두지 않는다
+    if (prepared.received.tooLarge) {
+      last.status = "failed";
+      return recorded(`${last.error} — 원본을 보존하지 않아 형식 교정 대상이 아닙니다. 결과를 한도 안으로 줄이라는 수정 피드백을 남겨 다시 배정하세요.`, "agent-format-error");
+    }
     last.correction = { raw: prepared.received.raw ?? "", error: detail, agentId: agent.id, sessionId: agent.session, used: false };
     last.status = "needs-correction";
     return recorded(`${last.error} — planning advance 또는 planning repair ${record.task.id}로 원본 결과의 형식만 교정하세요.`, "agent-format-error");
@@ -193,19 +229,16 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   const record = state.tasks.find(item => item.task.id === reported.taskId), last = record?.attempts.at(-1);
   if (!record || !last || last.status !== "running" || last.dispatchId !== reported.dispatchId || last.inputHash !== reported.inputHash || (agent.dispatchId && agent.dispatchId !== last.dispatchId) || TASK_AGENTS[record.task.role] !== agent.type || Date.parse(agent.startedAt) < Date.parse(last.at)) {
     const reportedAttempt = record?.attempts.find(attempt => attempt.dispatchId === reported.dispatchId);
-    const late = agent.dispatchId
+    // 보고한 시도가 이미 실행 중이 아니다(취소·고아·교체·종료) — 담당의 시작 연결과 상관없이 그 배정의 늦은 결과다
+    const superseded = !!reportedAttempt && reportedAttempt.status !== "running";
+    const late = superseded || (agent.dispatchId
       ? !state.tasks.some(item => item.attempts.some(attempt => attempt.dispatchId === agent.dispatchId && attempt.status === "running"))
-      : !!reportedAttempt && Date.parse(agent.startedAt) < Date.parse(reportedAttempt.at);
-    const message = "현재 배정에 속한 실행 결과가 아닙니다.";
-    if (late) {
-      // 취소·교체된 배정의 늦은 결과 — 담당 기록만 남기고 시도는 건드리지 않는다
-      endAgent(agent, failure("dispatch-orphan", "취소·교체된 배정의 늦은 결과"));
-      return recorded(message, "dispatch-orphan");
-    }
+      : !!reportedAttempt && Date.parse(agent.startedAt) < Date.parse(reportedAttempt.at));
+    if (late) return lateResult(reportedAttempt);
     if (canReturn) return giveBack("결과의 식별 필드가 배정과 다릅니다 — 배정 파일 resultShape의 taskId·dispatchId·inputHash를 그대로 써서 같은 결과를 다시 반환하세요.", "dispatch-orphan");
     endAgent(agent, failure("dispatch-orphan", "결과의 식별 필드가 배정과 다릅니다"));
-    if (linked) markOrphaned(linked, "결과의 식별 필드가 배정과 다릅니다");
-    return recorded(message, "dispatch-orphan");
+    orphanLinked(state, agent, linked, "결과의 식별 필드가 배정과 다릅니다");
+    return recorded("현재 배정에 속한 실행 결과가 아닙니다.", "dispatch-orphan");
   }
 
   // 실행 중 단계·입력 변경, 선행 조건
@@ -270,13 +303,14 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   }
   if (result.questions.length) {
     // 질문 번호는 코드가 매긴다 — 병렬 담당이 각자 Q1 을 내도 겹치지 않고, 결과의 번호도 문서와 같게 고친다.
-    // 출처(`[Origin]`)를 적어 답이 그 작업과 후속 작업만 다시 돌게 한다
+    // 출처(`[Origin]`)를 적고 상태에도 남겨(questionOrigins — 검증된 출처) 답이 그 작업과 후속 작업만 다시 돌게 한다
     const path = planningPath(root, questionsFile(work.active.id));
     let body = existsSync(path) ? readFileSync(path, "utf8") : "# 질문\n";
     let next = Math.max(0, ...[...body.matchAll(/^## Q(\d+)\b/gm)].map((match) => Number(match[1]))) + 1;
     result.questions = result.questions.map((question) => ({ ...question, id: `Q${next++}` }));
     for (const question of result.questions) {
       body += `\n## ${question.id} · ${record.task.title}\n${question.question}\n[Requirements]: ${question.requirements.join(", ")}\n[Origin]: ${record.task.id}\n[Answer]:\n`;
+      state.questionOrigins = { ...state.questionOrigins, [question.id]: record.task.id };
     }
     writeAtomic(path, body);
     invalidatePlanningCache();

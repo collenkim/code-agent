@@ -72,6 +72,8 @@ export interface PlanningAgent {
   id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string;
   /** 같은 담당에게 되돌린 횟수(Claude SubagentStop exit 2) */
   returns?: number;
+  /** 되돌릴 때까지 판정한 SubagentHandback 보고 수 — 다음 완료는 그 뒤의 보고만 결과로 본다(되돌린 옛 보고를 다시 읽지 않는다) */
+  judgedHandbacks?: number;
   failure?: FailureRecord;
   endedAt?: string;
 }
@@ -92,6 +94,11 @@ export interface PlanningState {
     findings: { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } }[]; questions: number };
   /** 재시도 카운터의 이행 시각·사람 허용·자동 되감기 기록. 승인 해시(작업별 마지막 시도) 밖이다 */
   retry?: PlanningRetry;
+  /**
+   * 코드가 questions.md 에 쓴 질문의 출처(질문 ID → 작업 ID) — 완료 hook·교차 검토가 질문을 쓸 때 남긴다.
+   * `[Origin]` 줄은 이 기록과 같을 때만 무효화 범위를 줄인다(questionOrigin). 승인 해시 밖이다
+   */
+  questionOrigins?: Record<string, string>;
 }
 
 export function planningFile(work: Work): string {
@@ -250,12 +257,22 @@ export function ancestorsOf(state: PlanningState, id: string, seen = new Set<str
   return seen;
 }
 /**
- * 질문이 이 작업의 입력인가 — 출처가 기록된 질문은 출처 작업과 그 후손만, 없는 질문은 기존 규칙(요구 겹침·범위 없음).
+ * 질문의 출처 — 질문을 쓴 코드(완료 hook·교차 검토)가 planning.json `questionOrigins` 에 남긴 출처와 `[Origin]` 줄이 같고
+ * 그 작업이 상태에 있을 때만 믿는다. 메인이 직접 적은 `[Origin]` 은 검증할 수 없으므로 출처 없는 질문으로 본다 —
+ * 잘못 적은 한 줄이 앞 단계 작업의 무효화를 막지 못하게 한다.
+ */
+export function questionOrigin(question: { id: string; origin?: string }, state: PlanningState): string | undefined {
+  const origin = question.origin;
+  return origin && state.questionOrigins?.[question.id] === origin && state.tasks.some(record => record.task.id === origin) ? origin : undefined;
+}
+/**
+ * 질문이 이 작업의 입력인가 — 코드가 기록한 출처가 있는 질문은 출처 작업과 그 후손만, 없는 질문은 기존 규칙(요구 겹침·범위 없음).
  * 출처 작업이 상태에 없으면(작업 삭제·이름 변경) 기존 규칙으로 떨어진다.
  */
 export function questionApplies(question: Question, task: PlanningTask, state: PlanningState): boolean {
   if (task.questionIds.includes(question.id)) return true;
-  if (question.origin && state.tasks.some(record => record.task.id === question.origin)) return task.id === question.origin || ancestorsOf(state, task.id).has(question.origin);
+  const origin = questionOrigin(question, state);
+  if (origin) return task.id === origin || ancestorsOf(state, task.id).has(origin);
   return !question.requirements?.length || question.requirements.some(key => task.requirements.includes(key));
 }
 /** 해시에 들어가는 질문 모양 — parseQuestions 에 키(options·source 등)가 늘어도 해시가 바뀌지 않는다. 키 순서는 옛 `{...question, content}` 와 같다 */
@@ -298,7 +315,11 @@ export function hashInput(work: Work, state: PlanningState, task: PlanningTask):
   const value: HashedInput = { hash, parts: {
     task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)),
     ...(inputs.length <= 50 ? { files: Object.fromEntries(inputs) } : {}), ...(host ? { host: sha(JSON.stringify(host)) } : {}), dependencies,
-    questions: questions.map(question => [question.id, sha(JSON.stringify(question)), ...(question.origin ? [question.origin] : [])] as [string, string, string?]),
+    // 셋째 칸은 적용 범위를 정한 출처(코드가 기록한 출처만) — 낡은 이유 문구가 실제 적용 규칙을 보인다
+    questions: questions.map(question => {
+      const origin = questionOrigin(question, state);
+      return [question.id, sha(JSON.stringify(question)), ...(origin ? [origin] : [])] as [string, string, string?];
+    }),
   } };
   if (memoKey !== undefined) cache!.hashes.set(memoKey, value);
   return value;
@@ -340,6 +361,8 @@ export interface RunView {
 }
 const minutesSince = (now: number, at: string): number => Math.max(0, Math.floor((now - Date.parse(at)) / 60_000));
 export const ORPHANED_REASON = "연결된 담당이 끝났는데 결과가 기록되지 않았습니다";
+/** 출처(transcript) 검증 실패로 고아가 된 시도의 failure.kind — 담당이 고칠 수 없는 hook·환경 원인이라 advance 는 연속이면 자동 재배정을 멈춘다 */
+export const SOURCE_FAILURE = "source";
 export function runView(state: PlanningState, record: TaskRecord, attempt: TaskAttempt, now: number): RunView {
   const agentType = TASK_AGENTS[record.task.role];
   const verdict = orphanState({ attempt, agentType, agents: state.agents, now });
@@ -428,7 +451,7 @@ export function crossCriticProblems(root: string, state: PlanningState): string[
   if (cross.status === "unavailable") return [];
   if (cross.status === "needs-input") return ["교차 검토: 질문에 답한 뒤 code-agent planning cross 를 다시 실행하세요"];
   if (cross.status !== "completed") return [`교차 검토가 끝나지 않았습니다: ${cross.summary}`];
-  return cross.findings.some((finding) => finding.severity === "blocking") ? ["교차 검토: 차단 지적이 남아 있습니다 — 계약의 수정 피드백으로 원인 작업을 다시 배정하세요"] : [];
+  return cross.findings.some((finding) => finding.severity === "blocking") ? ["교차 검토: 차단 지적이 남아 있습니다 — 고칠 작업을 지적 내용으로 정해 계약의 수정 피드백으로 다시 배정하세요(앞 단계 작업이면 사용자에게 보고하고 지시를 받습니다)"] : [];
 }
 
 export function planningProblems(work: Work, phase: "analysis" | "impact" | "design" | "plan"): string[] {
