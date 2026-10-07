@@ -1,10 +1,11 @@
 # 문서·검증 이력
 
-현재 동작은 [README](../../README.md), [사용 가이드](../usage.md), [설계](../design.md), [계획 작업](../planning.md), [요구사항](../requirement.md), [설치](../install.md), [플러그인](../plugins.md), [Codex 연동](../codex.md)을 기준으로 읽는다. 아래 기록은 각 변경 시점의 근거이며 과거 테스트 수를 현재 결과와 합산하지 않는다.
+현재 동작은 [프로세스 흐름도](../process-flow.md), [README](../../README.md), [사용 가이드](../usage.md), [설계](../design.md), [계획 작업](../planning.md), [요구사항](../requirement.md), [설치](../install.md), [플러그인](../plugins.md), [Codex 연동](../codex.md)을 기준으로 읽는다. 아래 기록은 각 변경 시점의 근거이며 과거 테스트 수를 현재 결과와 합산하지 않는다.
 
 | 순서 | 기록 | 범위 |
 |---|---|---|
-| 최신 · 2026-10-06 | [AI-DLC 공존·교차 검증·결함 2단계](2026-10-06-coexistence-cross-defects.md) | 같은 브랜치 AI-DLC 차단·경고, Claude·Codex 교차 계획 검토·코드 리뷰, SubagentStop 반복·worktree 정리·손자 프로세스·절대 경로·잠금·CRLF 원장·키 경로 등 결함 수정, 두 호스트 실측 |
+| 최신 · 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | 코드 수정 없는 감사. 두 호스트 동등성·절차·동의·검증·자기학습(헤르메스 대비)·최적화·하네스 원칙 대조, 지적 160건(high 7), 프로세스 흐름도와 개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`) 작성 |
+| 2026-10-06 | [AI-DLC 공존·교차 검증·결함 2단계](2026-10-06-coexistence-cross-defects.md) | 같은 브랜치 AI-DLC 차단·경고, Claude·Codex 교차 계획 검토·코드 리뷰, SubagentStop 반복·worktree 정리·손자 프로세스·절대 경로·잠금·CRLF 원장·키 경로 등 결함 수정, 두 호스트 실측 |
 | 2026-10-06 | [동의 스냅샷의 외부 hook 간섭 수정](2026-10-06-consent-snapshot.md) | 무시된 외부 세션·캐시 제외, 필수 설정·문서와 준비 커밋 대상 보호, 변경 경로 진단, 접수 중 도움말 |
 | 2026-10-06 | [도입·반영·도메인 경계 결함 수정](2026-10-06-workflow-boundaries.md) | 기존 저장소의 준비 커밋과 시작 전 검사, 무시된 문서 반영, fix/refactor 도메인 경계, 실제 Git·테스트 기반 전체 흐름과 문서 최신화 |
 | 2026-10-06 | [메인 컨텍스트 토큰 효율](2026-10-06-token-efficiency.md) | 상시 지침 축소·전달 파일·staging·SessionStart·consent finish, 회귀 수정, Opus 전체 흐름 비교와 Codex 실제 분석·영향도, 비용 집계 정정 |
@@ -20,7 +21,7 @@
 | 2026-10-01 | [프로세스 개선](2026-10-01-process-improvements.md) | 접수·계획·실행 흐름 보완 |
 | 2026-10-01 | [프로세스 검토](2026-10-01-process-review.md) | 문제 조사와 초기 검증 |
 
-검증 원자료는 `evidence/`에 보관한다. 최신 결과는 [coexistence-cross-2026-10-06.json](evidence/coexistence-cross-2026-10-06.json)이다. `npm test` 단일 전체 실행은 **786개 중 782개 통과·실패 0개·생략 4개**였고, 후속(환경 오류 분류·로그 기반 fix·교차 검증 중지) 뒤 최종 전체는 **802개 중 798개 통과·실패 0개·생략 4개**다. 두 호스트 실측([full-flow-new-2026-10-06-opus-both.json](evidence/full-flow-new-2026-10-06-opus-both.json))은 실제 Codex 교차 계획 검토 두 번과 Claude 교차 계획 검토 한 번을 확인했고, Codex 워크스페이스 사용 한도로 계획 단계에서 멈춰 코드 리뷰 교차는 실제 호스트로 확인하지 못했다.
+검증 원자료는 `evidence/`에 보관한다. 최신 감사 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다. 코드 변경이 없는 감사이며, 같은 기준 커밋 `c4f3fbf`의 `npm test` 단일 전체 실행은 **802개 중 798개 통과·실패 0개·생략 4개**(133초)로 아래 최종 결과와 같다. 최신 수정 결과는 [coexistence-cross-2026-10-06.json](evidence/coexistence-cross-2026-10-06.json)이다. `npm test` 단일 전체 실행은 **786개 중 782개 통과·실패 0개·생략 4개**였고, 후속(환경 오류 분류·로그 기반 fix·교차 검증 중지) 뒤 최종 전체는 **802개 중 798개 통과·실패 0개·생략 4개**다. 두 호스트 실측([full-flow-new-2026-10-06-opus-both.json](evidence/full-flow-new-2026-10-06-opus-both.json))은 실제 Codex 교차 계획 검토 두 번과 Claude 교차 계획 검토 한 번을 확인했고, Codex 워크스페이스 사용 한도로 계획 단계에서 멈춰 코드 리뷰 교차는 실제 호스트로 확인하지 못했다.
 
 앞선 [consent-snapshot-2026-10-06.json](evidence/consent-snapshot-2026-10-06.json)의 동의 스냅샷 수정 후 `npm test` 단일 전체 실행은 **759개 중 755개 통과·실패 0개·생략 4개**다. 집중 검사 19개는 중복 합산하지 않는다. 외부 hook 파일 쓰기와 질문 이벤트는 자동 fixture이며, Git·파일 시스템·준비 커밋은 실제 실행이다. 실제 AI-DLC 엔진/사람 질문 화면과 대형 저장소 성능은 별도 검증 범위다.
 

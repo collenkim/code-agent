@@ -1,0 +1,39 @@
+# code-agent 개발 지침
+
+이 저장소는 Claude Code·Codex 위에서 도는 개발 절차 `code-agent` **자체의 소스**다. 대상 프로젝트에 설치되는 지침은 `template/`(`CLAUDE.block.md`·`CODEX.block.md`·`claude/skills`·`claude/agents`·`codex/`)에 있다. 이 파일과 혼동하지 않는다.
+
+## 먼저 읽는다
+
+1. [`doc/process-flow.md`](doc/process-flow.md) — 접수부터 반영까지의 단계·게이트·동의·hook·호스트 차이·파일 지도·모듈 지도. 바꾸려는 동작이 어느 칸에 있는지 여기서 찾고, §9 모듈 지도로 파일을 연다.
+2. 해당 코드. 흐름도와 코드가 다르면 코드가 맞다. 이때는 흐름도를 고친다.
+3. 필요할 때만 읽는다: [`doc/design.md`](doc/design.md)(설계 근거), [`doc/codex.md`](doc/codex.md)(Codex 차이), [`doc/planning.md`](doc/planning.md)(계획 작업), [`doc/reviews/README.md`](doc/reviews/README.md)(변경·검증 이력).
+
+흐름도에 없는 동작은 추측하지 말고 코드를 연다. 줄 번호를 인용할 때는 실제로 연 파일의 줄만 쓴다.
+
+## 바꿀 때 지킨다
+
+- 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 한 줄을 남긴다.
+- 함께 맞출 중복 정의가 있다:
+  - 동의 동작(`consent.ts` `ActionSchema`)을 바꾸면 `template/claude/skills/ca-answer/SKILL.md`·`reference.md`와 `template/codex/ca-answer.md`의 목록도 고친다.
+  - hook 등록(`init.ts`)을 바꾸면 `doctor.ts` 목록, `update.ts`의 hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 hook 수도 고친다.
+  - 서브에이전트를 추가·삭제하면 `hosts.ts`의 `ROLE_NAMES`와 `codexText` 역할 정규식, `modelPolicy.ts`의 `AGENTS`도 고친다. 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher도 고친다.
+  - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `commands.ts`의 `PHASE_LABEL`·`PHASE_COMMAND`와 `ca-next` 표도 고친다.
+- `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 고정 문장 치환(`.replace("문장", …)`)의 원문이 여전히 템플릿과 글자 그대로 같은지 확인한다. 다르면 오류 없이 치환되지 않는다. 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
+- 현행 문서(`README.md`, `doc/*.md`)에는 현재 동작만 쓴다. 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
+- 사용자에게 보이는 문서는 한국어로, 기존 문체를 따른다.
+
+## 빌드와 테스트
+
+```sh
+npm ci
+npm run build
+npm test
+```
+
+Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2~3분 걸리며, 플랫폼 조건으로 4개가 생략된다.
+
+## 실험할 때
+
+- 대상 프로젝트 동작은 임시 git 저장소에서 `node <이 저장소>/dist/agent/cli.js <명령>`으로 확인한다. 이 저장소 루트에 `init`을 실행하지 않는다.
+- 실험 중 `code-agent update`(소스 업데이트)를 실행하지 않는다. 이 명령은 확인 없이 이 저장소에서 fetch·pull·(의존성이 바뀌었거나 없으면) `npm ci`·build를 실행한다. 템플릿 적용 확인은 `update --templates-only`로 한다.
+- 다른 작업이 테스트를 돌리는 동안 `npm run build`를 다시 실행하면 `dist`가 경합한다.
