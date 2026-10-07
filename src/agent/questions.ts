@@ -21,7 +21,19 @@ export interface Question {
   answer: string;
   status?: "pending" | "answered" | "deferred";
   requirements?: string[];
+  /** 이 질문을 낸 계획 작업 — 담당·교차 검토 질문에 코드가 `[Origin]:` 줄로 기록한다 */
+  origin?: string;
 }
+
+/**
+ * 질문 블록의 구조 필드 줄. 파서가 m 플래그 정규식(`split(/^## /m)`, [Status]·[Requirements])으로 읽으므로
+ * 줄 경계도 그와 같게 본다 — JS 의 m 플래그 `^` 는 \n·\r·U+2028·U+2029 뒤에서 모두 맞는다.
+ * `\s` 는 `trim()` 이 지우는 문자 집합(U+3000·NBSP·BOM 포함)과 같다. 담당·교차 결과의 질문 본문에는 둘 수 없다
+ */
+export const QUESTION_FIELD_LINE = /^\s*(?:##|\[(?:Answer|Status|Requirements|Origin|Source)\]:)/m;
+export function structuralLine(text: string): boolean { return QUESTION_FIELD_LINE.test(text); }
+/** `[Origin]:` 값 — 계획 작업 ID 형식(TaskSchema.id)과 같다 */
+export const ORIGIN_ID = /^[a-z][a-z0-9-]{0,63}$/;
 
 /** 상태 설명과 보류는 업무 결정이 아니다. 기존 문서도 같은 규칙으로 읽는다. */
 export function usableAnswer(answer: string): boolean {
@@ -40,17 +52,23 @@ export function parseQuestions(text: string): Question[] {
     let answer =
       marker < 0
         ? ""
-        : [body[marker].trim().slice("[Answer]:".length), ...body.slice(marker + 1).filter(line => !/^\s*\[(?:Status|Requirements)\]:/.test(line))]
+        : [body[marker].trim().slice("[Answer]:".length), ...body.slice(marker + 1).filter(line => !/^\s*\[(?:Status|Requirements|Origin|Source)\]:/.test(line))]
             .join("\n")
             .replace(/<!--[\s\S]*?-->/g, "")
             .split("\n").filter((line) => !/^\s*(?:([-*_])\s*){3,}$/.test(line))
             .join("\n").trim();
     const state = /^\s*\[Status\]:\s*(\S+)/m.exec(body.join("\n"))?.[1];
     const requirements = /^[ \t]*\[Requirements\]:[ \t]*(.*)/m.exec(body.join("\n"))?.[1].match(/\b(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)\b/g);
+    // 출처는 `[Answer]:` 앞의 \n 줄 중 마지막 `[Origin]:` 줄이다 — 코드가 쓰는 블록은 그 줄을 `[Answer]:` 바로 앞에 둔다.
+    // m 플래그 정규식을 쓰지 않으므로 한 줄 안의 \r·U+2028 뒤 글자는 줄 머리로 읽히지 않는다(본문 검사와 이중 방어)
+    const head = marker < 0 ? body : body.slice(0, marker);
+    const raw = head.map((line) => line.trim()).filter((line) => line.startsWith("[Origin]:")).at(-1)?.slice("[Origin]:".length).trim();
+    const origin = raw && ORIGIN_ID.test(raw) ? raw : undefined;
     if (!usableAnswer(answer) || (state && state !== "answered")) answer = "";
     questions.push({ id, title: heading.trim(), answer,
       ...(state ? { status: state === "answered" && answer ? "answered" as const : state === "deferred" ? "deferred" as const : "pending" as const } : {}),
       ...(requirements ? { requirements: [...new Set(requirements)] } : {}),
+      ...(origin ? { origin } : {}),
     });
   }
   // 서로 다른 질문이 같은 ID를 쓰면 어느 답인지 확정할 수 없다.

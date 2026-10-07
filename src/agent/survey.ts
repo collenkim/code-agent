@@ -7,6 +7,7 @@ import type { Manifest } from "../core/manifest";
 import { KINDS } from "../core/workOrder";
 import { stageTestRoots } from "./evidence";
 import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
+import { isTestPath } from "./plugins/defaults";
 import { callSlot, clamp } from "./plugins/run";
 
 /**
@@ -84,6 +85,10 @@ interface Entry {
   ext: string;
 }
 
+/**
+ * 저장소 파일 — 오름차순 전위 깊이 우선(한 폴더의 파일, 그다음 하위 폴더를 이름순으로). 하위 폴더를 역순으로 쌓아
+ * 꺼내는 순서가 이름순이 되게 한다 — `src/main` 이 `src/test` 보다 먼저 나와, 상한에서 잘려도 소스가 먼저 남는다.
+ */
 function walk(repoRoot: string): { files: Entry[]; truncated: boolean } {
   const files: Entry[] = [];
   const stack = [""];
@@ -95,6 +100,7 @@ function walk(repoRoot: string): { files: Entry[]; truncated: boolean } {
     } catch {
       continue;
     }
+    const subdirs: string[] = [];
     for (const name of names) {
       const path = dir ? posix.join(dir, name) : name;
       let stat;
@@ -104,28 +110,31 @@ function walk(repoRoot: string): { files: Entry[]; truncated: boolean } {
         continue;
       }
       if (stat.isDirectory()) {
-        if (!SKIP.has(name) && !name.startsWith(".")) stack.push(path);
+        if (!SKIP.has(name) && !name.startsWith(".")) subdirs.push(path);
         continue;
       }
       files.push({ path, dir, ext: extname(name).toLowerCase() });
       if (files.length >= MAX_FILES) return { files, truncated: true };
     }
+    for (const path of subdirs.reverse()) stack.push(path);
   }
   return { files, truncated: false };
-}
-
-function isTest(path: string): boolean {
-  return /(^|\/)(src\/test|tests?|__tests__|spec)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path);
 }
 
 /**
  * 스캔 대상 소스 파일 — `survey` 와 `candidates.rank` 의 기본 구현이 나눠 쓴다.
  * 건너뛸 디렉토리(`SKIP`)와 확장자 목록(`SOURCE_EXT`)을 둘이 따로 들면 같은 저장소에서
- * 두 명령이 다른 파일 집합을 본다.
+ * 두 명령이 다른 파일 집합을 본다. `truncated` 는 저장소 파일이 상한(20000)을 넘어 앞부분만 본 것이다.
  */
-export function sourceFiles(repoRoot: string): { path: string; ext: string }[] {
-  return walk(repoRoot).files.filter((file) => SOURCE_EXT.has(file.ext)).map(({ path, ext }) => ({ path, ext }));
+export function sourceFileScan(repoRoot: string): { files: { path: string; ext: string }[]; truncated: boolean } {
+  const { files, truncated } = walk(repoRoot);
+  return { files: files.filter((file) => SOURCE_EXT.has(file.ext)).map(({ path, ext }) => ({ path, ext })), truncated };
 }
+export function sourceFiles(repoRoot: string): { path: string; ext: string }[] {
+  return sourceFileScan(repoRoot).files;
+}
+/** 저장소 파일 상한 — 넘으면 앞부분(경로 사전순)만 본다 */
+export const SURVEY_MAX_FILES = MAX_FILES;
 
 /**
  * 플러그인 자리를 볼 때만 쓰는 매니페스트. 없거나 형식이 틀려도 `survey` 는 돌아야 한다 —
@@ -169,7 +178,7 @@ export function survey(repoRoot: string): string {
   out.push(
     "## 언어 (소스 파일 수)",
     ...[...byExt.entries()].sort((a, b) => b[1] - a[1]).map(([ext, count]) => `- ${ext}: ${count}`),
-    `- 전체 파일 ${files.length}개 중 소스 ${sources.length}개, 테스트 ${sources.filter((file) => isTest(file.path)).length}개`,
+    `- 전체 파일 ${files.length}개 중 소스 ${sources.length}개, 테스트 ${sources.filter((file) => isTestPath(file.path)).length}개`,
     "",
   );
 
@@ -183,7 +192,7 @@ export function survey(repoRoot: string): string {
 
   // 계층 후보 — 소스가 놓인 디렉토리의 마지막 이름. 도메인 → 계층 구조면 같은 이름이 여러 도메인에 반복된다.
   const leaf = new Map<string, { dirs: Set<string>; files: string[] }>();
-  for (const file of sources.filter((entry) => !isTest(entry.path))) {
+  for (const file of sources.filter((entry) => !isTestPath(entry.path))) {
     const name = posix.basename(file.dir);
     if (!name) continue;
     const slot = leaf.get(name) ?? { dirs: new Set(), files: [] };
@@ -200,7 +209,7 @@ export function survey(repoRoot: string): string {
   for (const [name, slot] of layers.slice(0, 8)) {
     out.push(`- ${name}: ${slot.files.sort().slice(0, 2).join(", ")}`);
   }
-  const tests = sources.filter((file) => isTest(file.path)).map((file) => file.path).sort();
+  const tests = sources.filter((file) => isTestPath(file.path)).map((file) => file.path).sort();
   if (tests.length) out.push(`- 테스트: ${tests.slice(0, 3).join(", ")}`);
   out.push("");
 

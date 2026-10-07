@@ -16,7 +16,7 @@ import { questionsFile, workDocsDir } from "./layout";
 import { codexModelOf } from "./modelPolicy";
 import { modelOf } from "./models";
 import { mutatePlanning, planningWork } from "./planning";
-import { inputFiles, loadPlanning, referenceProblem, taskCurrent } from "./planningState";
+import { inputFiles, loadPlanning, questionText, referenceProblem, taskCurrent } from "./planningState";
 import { CROSS_HEADING, crossRequired, loadReview, normalizeFindings, renderRoundsBlock, REVIEW_BLOCK, reviewDocFile, saveReview } from "./review";
 import { Stop } from "./stop";
 
@@ -166,12 +166,13 @@ export function crossReview(root: string, by: string | undefined): string {
 
 // ---- 계획 반박 검토 ----
 
-const CrossCriticSchema = z.object({
+export const CrossCriticSchema = z.object({
   status: z.enum(["completed", "needs-input", "failed"]),
   summary: z.string().trim().min(1).max(4000),
   findings: z.array(z.object({ id: z.string().min(1), severity: z.enum(["blocking", "advisory"]), detail: z.string().min(1),
     source: z.object({ path: z.string(), line: z.number().int().positive() }) })).max(100).default([]),
-  questions: z.array(z.object({ id: z.string().min(1), question: z.string().min(1), requirements: z.array(z.string()).default([]) })).max(20).default([]),
+  // 질문 본문 검사는 담당 결과(ResultSchema)와 같다 — 구조 필드 줄(제목·답변·상태·범위·출처)을 끼워 넣지 못한다
+  questions: z.array(z.object({ id: z.string().min(1), question: questionText, requirements: z.array(z.string()).default([]) })).max(20).default([]),
 });
 
 export function crossCritic(root: string, by: string | undefined): string {
@@ -213,15 +214,23 @@ export function crossCritic(root: string, by: string | undefined): string {
   const permitted = new Set(inputs);
   const bad = parsed.findings.map((finding) => finding.source).find((ref) => !permitted.has(ref.path) || referenceProblem(root, ref));
   if (bad) throw new Stop(`${host} 교차 검토의 근거가 입력 밖이거나 없는 줄입니다: ${bad.path}:${bad.line} — 다시 실행하세요.`);
-  // 질문 번호는 코드가 매긴다 — 담당이 정한 번호는 기존 질문과 겹칠 수 있다
-  const questionPath = join(root, questionsFile(work.active.id));
-  let body = existsSync(questionPath) ? readFileSync(questionPath, "utf8") : "# 질문\n";
-  let next = Math.max(0, ...[...body.matchAll(/^## Q(\d+)\b/gm)].map((match) => Number(match[1]))) + 1;
-  for (const question of parsed.questions) {
-    body += `\n## Q${next++} · 교차 계획 검토(${host})\n${question.question}\n[Requirements]: ${question.requirements.join(", ")}\n[Answer]:\n`;
-  }
-  if (parsed.questions.length) writeAtomic(questionPath, body);
   mutatePlanning(work, (current) => {
+    // 질문은 계획 기록 잠금 안에서 쓴다 — 번호가 완료 hook 의 질문과 겹치지 않고, 잠금 안의 판정은 출처 기록(questionOrigins)과 질문을 함께 본다.
+    // 질문 번호는 코드가 매긴다 — 담당이 정한 번호는 기존 질문과 겹칠 수 있다
+    if (parsed.questions.length) {
+      const questionPath = join(root, questionsFile(work.active.id));
+      let body = existsSync(questionPath) ? readFileSync(questionPath, "utf8") : "# 질문\n";
+      let next = Math.max(0, ...[...body.matchAll(/^## Q(\d+)\b/gm)].map((match) => Number(match[1]))) + 1;
+      for (const question of parsed.questions) {
+        // [Requirements] 줄에는 결과 원소에서 뽑은 요구 키만 쓴다 — 원소의 줄바꿈이 답·질문 블록을 위조하지 못하게 한다.
+        // 키가 없으면 critic 작업의 요구로 채우고, 출처를 critic 으로 적고 기록해 답이 critic 만 낡게 한다
+        const keys = [...new Set(question.requirements.flatMap((item) => item.match(/\b(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)\b/g) ?? []))];
+        const id = `Q${next++}`;
+        body += `\n## ${id} · 교차 계획 검토(${host})\n${question.question}\n[Requirements]: ${(keys.length ? keys : critic.task.requirements).join(", ")}\n[Origin]: ${critic.task.id}\n[Answer]:\n`;
+        current.questionOrigins = { ...current.questionOrigins, [id]: critic.task.id };
+      }
+      writeAtomic(questionPath, body);
+    }
     current.cross = { host, model: outcome.model, at: new Date().toISOString(), criticDispatchId: last.dispatchId,
       status: parsed.status, summary: parsed.summary, findings: parsed.findings, questions: parsed.questions.length };
   });

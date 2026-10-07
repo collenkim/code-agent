@@ -55,6 +55,8 @@ interface Assignment {
   task: { id: string; role: string; title: string };
   resultShape: { dispatchId: string };
   mode?: string;
+  /** 다시 배정할 때 직전 시도의 실패(planning.ts previousOf) — 메인의 재배정 메모 근거라 요약에도 남긴다 */
+  previous?: unknown;
 }
 
 function assignmentText(item: Assignment & { staging?: Record<string, string> }, stage: string): string {
@@ -102,7 +104,7 @@ export function handoffPlanning(root: string, json: string): string {
     return {
       taskId: assignment.task.id, role: assignment.task.role, title: assignment.task.title,
       agent: assignment.agent, hostAgents: assignment.hostAgents, dispatchId: assignment.resultShape.dispatchId,
-      ...(assignment.mode ? { mode: assignment.mode } : {}), assignmentFile: file,
+      ...(assignment.mode ? { mode: assignment.mode } : {}), ...(assignment.previous ? { previous: assignment.previous } : {}), assignmentFile: file,
     };
   };
   if (Array.isArray(value.assignments)) return JSON.stringify({ ...value, assignments: value.assignments.map(move) }, null, 2);

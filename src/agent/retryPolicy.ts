@@ -302,7 +302,9 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `작업 총 배정 ${LIMITS.taskTotal}(+${GRANT_STEP.taskTotal}/사람)`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "blocked", onExhausted: "consent:judgment", exceededText: "사람 판단(judgment)",
-    guide: "작업 {id}의 배정이 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 사람 판단(한도 +3)·재계획·중단 중에서 고르게 하세요.",
+    // 실행할 수 있는 선택지만 적는다 — 사람 허용(judgment retry-grant)을 부르는 동의가 연결되기 전에도 거짓이 되지 않는 문구.
+    // 같은 작업을 다시 준비해도 시도 기록이 남으므로 "재계획"으로 한도가 풀린다고 안내하지 않는다
+    guide: "작업 {id}의 배정이 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 같은 작업을 다시 준비(planning prepare)해도 배정 기록은 그대로라 한도가 풀리지 않습니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 지시를 받으세요.",
     enforcedAt: ["planning.ts dispatchState·repairState"],
   },
   "cross-unavailable": {
