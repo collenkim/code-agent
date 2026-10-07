@@ -341,7 +341,7 @@ stateDiagram-v2
 
 **연결 상태** — 지금은 규약 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)만 있고, 판정 지점(§4 동의, §5 hook, §6.1 계획, §6.2 검증, §6.3 리뷰·교차)에는 아직 연결되지 않았다. 각 지점의 현재 동작은 그 절이 정본이다. 지점을 연결하는 커밋이 그 절을 이 표에 맞춰 고친다.
 
-아래 표는 `renderRetryPolicyTable()`이 `POLICIES`에서 렌더한 생성 블록이다. 손으로 고치지 말고 `POLICIES`를 고친 뒤 다시 렌더해 붙인다 — `src/test/docSync.test.ts`가 바이트를 대조한다(줄바꿈 CRLF·LF 차이만 무시). 한도 칸의 숫자는 `LIMITS`·`GRANT_STEP`·`TIMING`에서 온다. 보조 원인 둘(`precondition`·`hook-failure`)은 분류 밖으로 새는 Stop과 hook 예외를 담는다.
+아래 표는 `renderRetryPolicyTable()`이 `POLICIES`에서 렌더한 생성 블록이다. 손으로 고치지 말고 `POLICIES`를 고친 뒤 다시 렌더해 붙인다 — `src/test/docSync.test.ts`가 바이트를 대조한다(줄바꿈 CRLF·LF 차이만 무시). 표의 숫자는 `LIMITS`·`GRANT_STEP`·`TIMING`에서 렌더된다(`code-defect`의 fixRounds 기본값은 매니페스트 스키마의 값이고 `retryPolicy.test.ts`가 대조한다). 대조는 렌더되는 값에만 걸린다 — 표에 나오지 않는 값(`TIMING.crossTimeoutMin`, 표에 없는 `GRANT_STEP`)은 docSync가 잡지 못하므로 이 절의 산문에는 숫자를 쓰지 않는다. 렌더되지 않는 정책 필드 `onExhausted`·`consumesFixRound`는 `retryPolicy.test.ts`가 넘으면·고쳐 쓰기 회차 칸과 맞는지 본다. 보조 원인 둘(`precondition`·`hook-failure`)은 분류 밖으로 새는 Stop과 hook 예외를 담는다.
 
 <!-- generated:retry-policy -->
 | 원인 | 판별 | 재시도 | 한도 | 고쳐 쓰기 회차 | 넘으면 |
@@ -372,12 +372,12 @@ stateDiagram-v2
 | 판정 | 함수 (`retryPolicy.ts`) |
 |---|---|
 | 검증 회차 | `runCauseOf`·`runClass`·`verifyState`·`roundStateOf`·`verifyRetryOf`(옛 증거는 `deriveLegacyCauses`)·`verifyBudget`·`nextRoundDecision`·`sameRoundDecision`·`verifyNode`·`nodeCounter`·`writeBlockReason`·`budgetText`·`environmentMatch` |
-| 계획 배정 | `planningDispatchDecision`(같은 입력 failed 3·작업 총 배정 6)·`orphanState`(시작 미관찰 10분·시작 관찰 60분)·`subagentExit` |
-| 교차 실행 | `crossFailureText`(오류 채널만)·`classifyCrossFailure`·`crossPreflight`·`crossPointState`·`crossPointDecision`·`crossPointHint`·`consecutiveCrossStops` |
-| 잠금·hook | `lockDecision`(`lock.ts` `acquireLock`이 쓴다)·`hookFailureExit`·`hookFailureInput` |
-| 한도·허용·안내 | `limitOf`·`budgetOf`·`grantScope`·`grantFor`·`guidance`(`GUIDE_KEYS`·`GUIDE_VARIANTS`)·`limitExceededText`·`retrySummary`(측정 전용) |
+| 계획 배정 | `planningDispatchDecision`(같은 입력 실패·작업 총 배정)·`orphanState`(시작 미관찰·시작 관찰 기한)·`subagentExit` |
+| 교차 실행 | `crossFailureText`(오류 채널만 — Codex 세션 출력은 끝에서 이어진 `ERROR:` 줄만)·`classifyCrossFailure`·`crossPreflight`·`crossPointState`·`crossBudgets`(지점·원인별 예산)·`crossPointDecision`·`crossPointHint`·`consecutiveCrossStops` |
+| 잠금·hook | `lockDecision`(`lock.ts` `acquireLock`이 쓴다 — 회수는 `<잠금>.reclaim` 가드를 잡은 프로세스 하나만, 해제는 자기 기록일 때만)·`hookFailureExit`(입력은 `hookFailureInput`으로만 만든다) |
+| 한도·허용·안내 | `limitOf`·`budgetOf`·`grantScope`·`grantFor`·`guidance`(`GUIDE_KEYS`·`GUIDE_VARIANTS`, 기록된 실패는 `recordedVariant`로 변형을 고른다)·`limitExceededText`·`COUNTER_LABEL`(카운터 이름표의 단일 원천)·`retrySummary`(측정 전용) |
 
-**카운터** — 규약상 고쳐 쓰기·수집 수정·같은 코드 재실행·통합 재실행·재현 카운터는 `verify.json` `retry`, 리뷰 회차·리뷰어 호출·교차 지점 시도는 `review.json`, 같은 입력·작업 총 배정·교차 critic 시도는 `planning.json` `retry`·`attempts`에 둔다. 범위는 각 파일의 묶임(기준 커밋·계획·매니페스트)이고, 묶임이 바뀌면 카운터와 사람 허용이 함께 버려진다. 옛 기록은 읽을 때 추정하고(`deriveLegacyCauses`, 리뷰 회차 유예 1회) 쓸 때 기록한다. 사람 허용의 범위 문자열은 `grantScope` 하나가 만든다(검증 `""`·`round:<r>`·`tree:<해시>`, 리뷰 `""`·`round:<n>`, 계획 `planning:<작업>`·`planning:<작업>:<입력 해시>`·`critic:<배정>`).
+**카운터** — 규약상 고쳐 쓰기·수집 수정·같은 코드 재실행·통합 재실행·재현 카운터는 `verify.json` `retry`, 리뷰 회차·리뷰어 호출·교차 지점 시도는 `review.json`, 같은 입력·작업 총 배정·교차 critic 시도는 `planning.json` `retry`·`attempts`에 둔다. 범위는 각 파일의 묶임(기준 커밋·계획·매니페스트)이고, 묶임이 바뀌면 카운터와 사람 허용이 함께 버려진다. 옛 기록은 읽을 때 추정하고(`deriveLegacyCauses`, 리뷰 회차 유예 1회) 쓸 때 기록한다. 추정 카운터는 옛 규칙보다 엄격해지지 않는다. 엄격해지는 판정은 하나다: 마지막 회차가 실행 기록 없이 끊긴 뒤 코드를 고치면 새 규칙은 고쳐 쓰기를 쓴다(옛 규칙은 마지막으로 기록된 실행을 봤다) — 진행 중 작업이 여기서 막히면 `judgment retry-grant`로 넘긴다. 카운터의 사용 수는 이미 쓴 시도·재실행 수이고 사용 수가 한도에 닿으면 소진이다(`Budget`). 교차 설정 오류·제한 시간 초과 재실행은 첫 실패 뒤부터 센다(`crossBudgets`). 사람 허용의 범위 문자열은 `grantScope` 하나가 만든다(검증 `""`·`round:<r>`·`tree:<해시>`, 리뷰 `""`·`round:<n>`, 계획 `planning:<작업>`·`planning:<작업>:<입력 해시>`·`critic:<배정>`).
 
 **사람 판단** — 상한에 닿으면 자동 재시도를 멈추고 사람에게 넘긴다. 규약상 사람은 동의 `judgment`로 고른다: `retry-grant`(카운터별 증분, `GRANT_STEP`), `waive-finding`(지적 기각), `cross-stop`(막힌 교차 지점을 중지로 기록). 재계획·재승인·abort는 그대로 있다. 소진되지 않은 카운터에는 허용을 기록하지 않는다(`grantFor`).
 
@@ -467,7 +467,7 @@ stateDiagram-v2
 | 반영·지식 | `deliver.ts`, `knowledge.ts`, `knowledgeCommands.ts` |
 | 동의 | `consent.ts`, `tty.ts` |
 | hook | `hook.ts`, `stopHook.ts`, `sessionHook.ts`, `codexHook.ts` |
-| 재시도 규약·공통 기반 (§6.4, 아직 판정 지점에 연결 전) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia` 등) |
+| 재시도 규약·공통 기반 (§6.4, 아직 판정 지점에 연결 전) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia` 등) |
 | 기타 | `aidlc.ts`(AI-DLC 공존), `usage.ts`·`prices.ts`(사용량), `plugins/`, `read.ts`(`code-agent read`), `stop.ts`(`Stop` 예외), `core/exemplar.ts`(참조 코드), `core/atomic.ts`(`writeAtomic`), `core/types.ts`(공통 타입) |
 | 절차 템플릿 | `template/claude/skills/ca-*/SKILL.md`(+`criteria.md`·`legacy.md`·`contract.md`·`reference.md`), `template/claude/agents/ca-*.md`, `template/CLAUDE.block.md`, `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 
@@ -484,4 +484,5 @@ stateDiagram-v2
 | 날짜 | 변경 | 기준 커밋 | 대상 섹션 |
 |---|---|---|---|
 | 2026-10-07 | 최초 작성. 코드 판독과 sandbox(`init --host both` 설치, `hook`·`codex-event`·`stop`·`session-event` 이벤트 주입, git 실험)로 확인했고, 별도 검증자가 진술 24곳을 코드에 맞춰 고쳤다 | `c4f3fbf` | 전체 |
-| 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록(`docSync.test.ts`가 대조). 판정 지점에는 아직 연결하지 않아 §4·§5·§6.1~§6.3의 현재 동작은 그대로다 | 이 커밋(부모 `ff13950`) | §1.1, §6.4, §9 |
+| 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록(`docSync.test.ts`가 대조). 판정 지점에는 아직 연결하지 않아 §4·§5·§6.1~§6.3의 현재 동작은 그대로다 | `2327975` | §1.1, §6.4, §9 |
+| 2026-10-07 | 공통 모듈 검토 반영: 잠금 회수 직렬화(`.reclaim` 가드)·자기 기록 해제·읽기 실패와 Windows EPERM 처리, 교차 실패 분류 범위(Codex 세션은 끝의 `ERROR:` 줄만·stdout 은 마지막 응답·Claude stderr 도 오류 줄만), 교차 예산 `crossBudgets`(설정 오류·시간 초과는 첫 실패 뒤부터), 담당 형식·내용 오류의 기본 문구를 되돌림으로(기록은 `record` 변형), 끊긴 교차 실행 안내 변형, 결과 미확인 노드의 재실행 조건. 판정 지점 연결 전이라 §4·§5·§6.1~§6.3은 그대로다 | 이 커밋(부모 `2327975`) | §6.4, §9 |

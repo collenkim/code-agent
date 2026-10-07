@@ -6,16 +6,17 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { Stop } from "../agent/stop";
 import {
-  budgetOf, budgetText, classifyCrossFailure, consecutiveCrossStops, COUNTER_KEYS, COUNTER_LABEL, CROSS_PATTERNS, crossFailureText,
-  crossPointDecision, crossPointHint, crossPointState, crossPreflight, deriveLegacyCauses, environmentMatch, failure, FAILURE_CLASSES,
-  grantFor, grantScope, GRANT_STEP, guidance, GUIDE_KEYS, GUIDE_VARIANT_KEYS, GUIDE_VARIANTS, hookFailureExit, hookFailureInput,
+  budgetOf, budgetText, classifyCrossFailure, consecutiveCrossStops, COUNTER_KEYS, COUNTER_LABEL, CROSS_NO_ANSWER, CROSS_PATTERNS, crossBudgets,
+  crossFailureText, crossPointDecision, crossPointHint, crossPointState, crossPreflight, deriveLegacyCauses, environmentMatch, failure,
+  FAILURE_CLASSES, grantFor, grantScope, GRANT_STEP, guidance, GUIDE_KEYS, GUIDE_VARIANT_KEYS, GUIDE_VARIANTS, hookFailureExit, hookFailureInput,
   isFailureClass, LIMITS, limitExceededText, limitOf, lockDecision, nextRoundDecision, nodeCounter, orphanState, placeholdersOf,
-  planningDispatchDecision, POLICIES, refuse, renderRetryPolicyTable, retrySummary, RetryRefused, roundStateOf, runCauseOf, runClass,
-  sameRoundDecision, subagentExit, TIMING, verifyBudget, verifyNode, verifyRetryOf, verifyState, writeBlockReason,
+  planningDispatchDecision, POLICIES, recordedVariant, refuse, renderRetryPolicyTable, retrySummary, RetryRefused, roundStateOf, runCauseOf,
+  runClass, sameRoundDecision, subagentExit, TIMING, verifyBudget, verifyNode, verifyRetryOf, verifyState, writeBlockReason,
   type AgentView, type Budget, type CrossAttemptView, type CrossProbe, type RetryGrant, type RunView,
   type VerifyBudget, type VerifyState,
 } from "../agent/retryPolicy";
@@ -73,8 +74,48 @@ describe("원인 정책 표는 21개 원인을 빠짐없이 같은 꼴로 정한
     assert.match(guidance("same-input-repeat"), /\{limit\}번 실패/);
     assert.match(guidance("same-input-repeat", { limit: 3 }), /같은 입력으로 3번 실패했습니다/);
     assert.throws(() => guidance("code-defect", {}, "없는-변형"), /안내 문구가 없습니다/);
-    assert.match(guidance("agent-format-error", { detail: "JSON 아님" }, "return"), /^결과 형식 오류입니다 — JSON 아님/);
     assert.match(guidance("interrupted", { round: 3, phase: "test", rerunLeft: 1 }, "empty"), /^3회차 test 가 끝 기록 없이 끊겼습니다.*셸 명령의 제한 시간을 가장 길게/);
+  });
+
+  test("담당 형식·내용 오류 — 변형 없는 호출은 같은 담당에게 돌려보내는 문구(C2 SubagentStop), 기록된 시도는 record 변형", () => {
+    // C2 §3.6 은 되돌림 경로에서 guidance(cls, { detail }) 를 변형 없이 부른다 — 기록 문구가 나가면 안 된다
+    const format = guidance("agent-format-error", { detail: "JSON 아님" });
+    assert.match(format, /^결과 형식 오류입니다 — JSON 아님\. 같은 배정의 resultShape 형태 JSON 하나로 다시 반환하세요/);
+    const content = guidance("agent-content-error", { detail: "- 근거 없음" });
+    assert.match(content, /^결과가 검사에 걸렸습니다 — 고친 뒤 같은 형태의 결과 JSON을 다시 반환하세요\(한 번만 돌려보냅니다\):\n- 근거 없음$/);
+    for (const text of [format, content]) {
+      assert.equal(/기록했습니다|planning advance|\{/.test(text), false, text);
+    }
+    const recorded = (cls: "agent-format-error" | "agent-content-error") => guidance(cls, { id: "design", detail: "d" }, recordedVariant({ class: cls }));
+    assert.match(recorded("agent-format-error"), /^결과 형식 오류로 기록했습니다 — d\. planning advance 또는 planning repair design 로/);
+    assert.match(recorded("agent-content-error"), /^결과가 검사에 걸려 실패로 기록했습니다 — d\. .*design 의 inputs/);
+    assert.equal(recordedVariant({ class: "cross-timeout", kind: "interrupted" }), "interrupted");
+    assert.equal(recordedVariant({ class: "cross-timeout", kind: "timeout" }), undefined);
+    assert.equal(recordedVariant({ class: "dispatch-orphan" }), undefined);
+    for (const cls of FAILURE_CLASSES) {
+      const variant = recordedVariant({ class: cls, kind: "interrupted" });
+      if (variant) assert.ok(GUIDE_VARIANTS[cls]?.[variant], `${cls}/${variant}`);
+    }
+  });
+
+  test("표에 렌더되지 않는 정책 필드는 렌더되는 문구와 맞는다", () => {
+    const exceeded: Readonly<Record<string, RegExp>> = {
+      decision: /decision/, "consent:judgment": /사람|judgment/, "stop-record-proceed": /진행/, stop: /Stop|사람/, blocked: /사람 판단|같은 입력 규칙/,
+    };
+    const fixRound: Readonly<Record<string, RegExp>> = {
+      true: /^씀/, false: /^(?:안 씀|—)/, "after-change": /^같은 코드면 안 씀, .*고치면 씀$/, "after-collect": /^수집 수정 1회는 안 씀, 그 뒤 씀$/,
+    };
+    for (const cls of FAILURE_CLASSES) {
+      const policy = POLICIES[cls];
+      assert.ok(exceeded[policy.onExhausted], `${cls}: onExhausted ${policy.onExhausted}`);
+      assert.match(policy.exceededText, exceeded[policy.onExhausted], `${cls}: onExhausted ${policy.onExhausted} ↔ ${policy.exceededText}`);
+      assert.match(policy.fixRoundText, fixRound[String(policy.consumesFixRound)], `${cls}: consumesFixRound ${policy.consumesFixRound} ↔ ${policy.fixRoundText}`);
+    }
+    // code-defect 한도 칸의 fixRounds 기본값은 매니페스트 스키마(core/manifest.ts)에서 온다 — retryPolicy 는 zod 모듈을 import 하지 않는다
+    const manifest = readFileSync(join(__dirname, "..", "..", "src", "core", "manifest.ts"), "utf8");
+    const fixDefault = /fixRounds: z[\s\S]*?\.default\((\d+)\)/.exec(manifest)?.[1];
+    assert.ok(fixDefault, "manifest.ts 의 fixRounds 기본값을 찾지 못했습니다");
+    assert.ok(POLICIES["code-defect"].limitText.includes(`fixRounds(기본 ${fixDefault})`), POLICIES["code-defect"].limitText);
   });
 
   test("한도 거부 문구는 카운터 이름표와 원래 원인을 쓴다", () => {
@@ -102,7 +143,8 @@ describe("한도와 사람 허용", () => {
     assert.equal(limitOf("fix", 2, [grant("fix", ""), grant("fix", ""), grant("fix", "round:1"), grant("rerun", "")]), 4);
     assert.equal(limitOf("rerun", undefined, [grant("rerun", "round:2"), grant("rerun", "round:3")], "round:2"), 3);
     assert.equal(limitOf("taskTotal", undefined, [grant("taskTotal", "planning:a", 3)], "planning:a"), 9);
-    assert.equal(limitOf("rerun", undefined, [grant("rerun", "", -5), grant("rerun", "", Number.NaN)]), LIMITS.rerun, "손상된 허용은 세지 않는다");
+    assert.equal(limitOf("rerun", undefined, [grant("rerun", "", -5), grant("rerun", "", Number.NaN), grant("rerun", "", 0.5), grant("rerun", "", 0)]), LIMITS.rerun,
+      "손상된 허용(음수·NaN·소수·0)은 세지 않는다");
     assert.throws(() => limitOf("fix", undefined), /기본 한도가 없습니다/);
     assert.deepEqual(budgetOf("rerun", 2, undefined), { key: "rerun", used: 2, limit: 2, left: 0, exhausted: true });
     assert.deepEqual(budgetOf("rerun", 3, undefined, [grant("rerun", "")]), { key: "rerun", used: 3, limit: 3, left: 0, exhausted: true });
@@ -131,6 +173,9 @@ describe("한도와 사람 허용", () => {
     for (const key of ["collect", "totalRounds", "agentReturn", "correction", "crossTimeout", "lockBusy", "없는키"]) {
       assert.throws(() => grantFor({ key, scope: "", budget: exhausted, consent: "id", reason: "r" }), /사람 허용으로 늘리지 않습니다/, key);
     }
+    // 다른 카운터의 소진된 예산으로 소진 검사를 우회하지 못한다
+    assert.throws(() => grantFor({ key: "fix", scope: "", budget: exhausted, consent: "id", reason: "r" }),
+      (error: unknown) => error instanceof Error && !(error instanceof Stop) && /fix.*taskTotal/.test(error.message));
   });
 });
 
@@ -303,8 +348,26 @@ describe("검증 카운터·회차 판정", () => {
     assert.deepEqual(node("interrupted", { rerun: true }), ["decision", "rerun"]);
     assert.deepEqual(node("result-unconfirmed", { rerun: true, fix: true }), ["diagnose", undefined], "수집 수정이 남았다");
     assert.deepEqual(node("result-unconfirmed", { collect: true, fix: true, rerun: true }), ["decision", "fix"]);
-    assert.deepEqual(node("result-unconfirmed", { totalRounds: true }), ["decision", "totalRounds"]);
+    assert.deepEqual(node("result-unconfirmed", { totalRounds: true }), ["diagnose", undefined], "같은 코드 재실행은 회차를 열지 않아 총 회차와 무관하다");
+    assert.deepEqual(node("result-unconfirmed", { totalRounds: true, rerun: true }), ["decision", "totalRounds"]);
+    assert.deepEqual(node("result-unconfirmed", { fix: true, totalRounds: true, rerun: true }), ["decision", "totalRounds"], "수집 수정이 남았으면 막는 것은 총 회차");
     assert.deepEqual(node("precondition"), ["diagnose", undefined]);
+    // nodeCounter 는 VerifyBudget 의 키다 — C3 assess 의 budget[counter] 가 그대로 컴파일된다
+    const exhausted = budgets({ fix: true });
+    const key = nodeCounter("code-defect", exhausted);
+    assert.equal(key && exhausted[key].limit, 2);
+  });
+
+  test("결과 미확인 노드는 재개 가능성과 같다 — 같은 코드 재실행과 고친 뒤 회차가 모두 거부될 때만 decision 이고, 카운터는 고치는 길을 막은 것", () => {
+    const keys: BudgetKey[] = ["fix", "collect", "rerun", "totalRounds"];
+    for (let mask = 0; mask < 1 << keys.length; mask++) {
+      const budget = budgets(Object.fromEntries(keys.map((key, index) => [key, (mask >> index & 1) === 1])));
+      const decide = (treeChanged: boolean) => nextRoundDecision({ previous: "result-unconfirmed", emptyRound: false, treeChanged, budget, reviewOpenFindings: false });
+      const same = decide(false), changed = decide(true);
+      const blocked = same.action === "refuse" && changed.action === "refuse";
+      assert.equal(verifyNode("result-unconfirmed", budget) === "decision", blocked, `mask ${mask}`);
+      if (blocked && changed.action === "refuse") assert.equal(nodeCounter("result-unconfirmed", budget), changed.failure.counter?.key, `mask ${mask}`);
+    }
   });
 
   test("쓰기 차단은 다음 회차가 거부될 때와 정확히 같다(T-P4)", () => {
@@ -384,30 +447,30 @@ const banner = ["OpenAI Codex v0.160.1 (research preview)", "--------", "workdir
 const prompt = "code-agent 교차 리뷰 — 작업 X 2회차.\n직전 회차의 교차 지적이다 —\n| X1 | src/agent/modelPolicy.ts | 계획 안 | 열림 | 'ERROR: unknown model' 와 429 quota 를 분류하지 않는다 |\nERROR: invalid model gpt-x";
 const toolOut = "exec\nnode -e … in C:/w/repo\n succeeded in 12ms:\nconst config = [/selected model/i, /unknown (?:option|argument)/i];";
 const CROSS_FIXTURES: [string, string, CrossProbe][] = [
-  ["cross-unavailable/quota", "spend cap", { host: "codex", stderr: "ERROR: You hit your spend cap set by the owner of your workspace.", status: 1 }],
-  ["cross-unavailable/auth", "Not logged in", { host: "codex", stderr: "Not logged in. Run codex login.", status: 1 }],
-  ["cross-unavailable/missing", "BIN 없음", { host: "codex", unresolved: "CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다" }],
-  ["cross-config-error/config", "unexpected argument", { host: "codex", stderr: "error: unexpected argument '--ephemeral' found\n\nUsage: codex exec [OPTIONS] [PROMPT]", status: 2 }],
+  ["cross-unavailable/quota", "spend cap", { host: "codex", sentPrompt: "", stderr: "ERROR: You hit your spend cap set by the owner of your workspace.", status: 1 }],
+  ["cross-unavailable/auth", "Not logged in", { host: "codex", sentPrompt: "", stderr: "Not logged in. Run codex login.", status: 1 }],
+  ["cross-unavailable/missing", "BIN 없음", { host: "codex", sentPrompt: "", unresolved: "CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다" }],
+  ["cross-config-error/config", "unexpected argument", { host: "codex", sentPrompt: "", stderr: "error: unexpected argument '--ephemeral' found\n\nUsage: codex exec [OPTIONS] [PROMPT]", status: 2 }],
   ["cross-config-error/config", "unknown option", { host: "claude", stderr: "error: unknown option '--permission-prompts'", status: 1 }],
   ["cross-config-error/config", "selected model", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, result: "There's an issue with the selected model (claude-sonnet-9). It may not exist or you may not have access to it." }) }],
-  ["cross-config-error/config", "model does not exist", { host: "codex", stderr: "stream error: model gpt-6.1-sol does not exist", status: 1 }],
-  ["cross-config-error/config", "invalid value effort", { host: "codex", stderr: "Error: invalid value 'ultra' for model_reasoning_effort", status: 1 }],
+  ["cross-config-error/config", "model does not exist", { host: "codex", sentPrompt: "", stderr: "stream error: model gpt-6.1-sol does not exist", status: 1 }],
+  ["cross-config-error/config", "invalid value effort", { host: "codex", sentPrompt: "", stderr: "Error: invalid value 'ultra' for model_reasoning_effort", status: 1 }],
   ["cross-unavailable/quota", "usage limit reached", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, result: "Claude AI usage limit reached|1760000000", usage: { input_tokens: 500 } }) }],
   ["cross-unavailable/auth", "Invalid API key", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, result: "Invalid API key · Please run /login" }) }],
-  ["cross-unavailable/network", "ENOTFOUND", { host: "codex", stderr: "ERROR: request failed: getaddrinfo ENOTFOUND api.openai.com", status: 1 }],
+  ["cross-unavailable/network", "ENOTFOUND", { host: "codex", sentPrompt: "", stderr: "ERROR: request failed: getaddrinfo ENOTFOUND api.openai.com", status: 1 }],
   ["cross-unavailable/outage", "529", { host: "claude", stderr: "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}", status: 1 }],
-  ["cross-timeout/timeout", "ETIMEDOUT", { host: "codex", spawnCode: "ETIMEDOUT" }],
+  ["cross-timeout/timeout", "ETIMEDOUT", { host: "codex", sentPrompt: "", spawnCode: "ETIMEDOUT" }],
   ["host-sandbox-denied/sandbox", "spawn EPERM", { host: "claude", spawnCode: "EPERM" }],
   ["host-sandbox-denied/sandbox", "stderr EPERM", { host: "claude", stderr: "Error: spawn EPERM", status: 1 }],
-  ["cross-config-error/unclassified", "panic", { host: "codex", stderr: "panic: something odd", status: 101 }],
+  ["cross-config-error/unclassified", "panic", { host: "codex", sentPrompt: "", stderr: "panic: something odd", status: 101 }],
   ["cross-config-error/unclassified", "JSON 아님", { host: "claude", stdout: "not json at all", status: 0 }],
   ["host-sandbox-denied/sandbox-network", "ENOTFOUND+sandboxed", { host: "claude", stderr: "Error: getaddrinfo ENOTFOUND api.anthropic.com", status: 1, sandboxed: true }],
   // 반박 검토의 거짓 양성 — 사용량 숫자·전사가 화이트리스트에 걸리면 안 된다
   ["cross-config-error/unclassified", "claude error_during_execution + usage 500", { host: "claude", status: 1, stdout: JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, num_turns: 12, usage: { input_tokens: 500, output_tokens: 1873 }, total_cost_usd: 0.31 }) }],
   ["cross-config-error/unclassified", "claude error_max_turns + usage 429", { host: "claude", status: 1, stdout: JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, usage: { input_tokens: 9123, output_tokens: 429 } }) }],
-  ["cross-config-error/unclassified", "codex panic + 전사 429·401", { host: "codex", status: 101, stderr: "exec bash -lc 'sed -n 1,80p src/api/client.ts'\n  if (res.status === 429) return retry();\n  if (res.status === 401) throw new Unauthorized();\nthread 'main' panicked at core/src/foo.rs:88: index out of bounds" }],
-  ["cross-config-error/unclassified", "codex quota.ts 전사 + EOF", { host: "codex", status: 1, stderr: "codex> reading src/billing/quota.ts\n export function checkQuota() {}\nError: unexpected EOF while parsing event stream" }],
-  ["cross-config-error/unclassified", "codex 전사 끝줄 status 500", { host: "codex", status: 1, stderr: "exec\ncat src/http.ts\n succeeded in 3ms:\nif (status === 500) throw new Error('internal');" }],
+  ["cross-config-error/unclassified", "codex panic + 전사 429·401", { host: "codex", sentPrompt: "", status: 101, stderr: "exec bash -lc 'sed -n 1,80p src/api/client.ts'\n  if (res.status === 429) return retry();\n  if (res.status === 401) throw new Unauthorized();\nthread 'main' panicked at core/src/foo.rs:88: index out of bounds" }],
+  ["cross-config-error/unclassified", "codex quota.ts 전사 + EOF", { host: "codex", sentPrompt: "", status: 1, stderr: "codex> reading src/billing/quota.ts\n export function checkQuota() {}\nError: unexpected EOF while parsing event stream" }],
+  ["cross-config-error/unclassified", "codex 전사 끝줄 status 500", { host: "codex", sentPrompt: "", status: 1, stderr: "exec\ncat src/http.ts\n succeeded in 3ms:\nif (status === 500) throw new Error('internal');" }],
   ["cross-config-error/unclassified", "claude 거부된 도구 입력에 rate limit", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, subtype: "error_during_execution", permission_denials: [{ tool_input: { command: "grep -n 'rate limit\\|quota exceeded\\|401' src" } }] }) }],
   // C6 모델·강도 문구와 배너·되풀이된 프롬프트
   ["cross-unavailable/quota", "C6 codex 배너 + spend cap", { host: "codex", sentPrompt: prompt, stderr: `${banner}\nuser\n${prompt}\nERROR: You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.` }],
@@ -421,18 +484,40 @@ const CROSS_FIXTURES: [string, string, CrossProbe][] = [
   ["cross-config-error/config", "C6 claude unknown option(--effort)", { host: "claude", status: 1, stderr: "error: unknown option '--effort'", stdout: "" }],
   ["cross-config-error/config", "C6 claude fable 계정", { host: "claude", status: 1, stderr: "Claude Fable 5.1 isn't available for your account yet.", stdout: "" }],
   // 문맥이 있는 숫자 코드·일반어
-  ["cross-unavailable/quota", "status 429 Too Many Requests", { host: "codex", stderr: "ERROR: unexpected status 429 Too Many Requests: rate limited", status: 1 }],
-  ["cross-unavailable/auth", "status 401 Unauthorized", { host: "codex", stderr: "ERROR: unexpected status 401 Unauthorized", status: 1 }],
+  ["cross-unavailable/quota", "status 429 Too Many Requests", { host: "codex", sentPrompt: "", stderr: "ERROR: unexpected status 429 Too Many Requests: rate limited", status: 1 }],
+  ["cross-unavailable/auth", "status 401 Unauthorized", { host: "codex", sentPrompt: "", stderr: "ERROR: unexpected status 401 Unauthorized", status: 1 }],
   ["cross-unavailable/outage", "API Error 503", { host: "claude", stderr: "API Error: 503 upstream connect error", status: 1 }],
-  ["cross-unavailable/quota", "quota exceeded", { host: "codex", stderr: "ERROR: You exceeded your current quota", status: 1 }],
+  ["cross-unavailable/quota", "quota exceeded", { host: "codex", sentPrompt: "", stderr: "ERROR: You exceeded your current quota", status: 1 }],
   // 오류 줄 없는 실패 — 전사에 화이트리스트 문구가 있고 마지막 줄이 알 수 없는 종료
-  ["cross-config-error/unclassified", "codex 전사(usage limit 주석) + panicked 끝줄", { host: "codex", status: 101, stderr: ["exec", "rg -n 'limit' src", " succeeded in 9ms:", "src/billing.ts:12: // usage limit reached -> stop", "src/billing.ts:30: // Not logged in -> login", "thread 'main' panicked at core/src/exec.rs:88: index out of bounds"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 전사(usage limit 주석) + panicked 끝줄", { host: "codex", sentPrompt: "", status: 101, stderr: ["exec", "rg -n 'limit' src", " succeeded in 9ms:", "src/billing.ts:12: // usage limit reached -> stop", "src/billing.ts:30: // Not logged in -> login", "thread 'main' panicked at core/src/exec.rs:88: index out of bounds"].join("\n") }],
   ["cross-config-error/unclassified", "claude JSON 아님 + 끝 몇 줄에 rate limit 주석", { host: "claude", status: 1, stdout: ["reading src/net.ts", "// rate limit handled upstream", "// retry on overload", "x", "y", "z", "segfault"].join("\n") }],
+  // 독립 검토의 거짓 양성 — 전사(읽은 파일)의 error 로 시작하는 줄·모델 문장·Claude stderr 의 안내 줄이 화이트리스트로 새면 안 된다
+  ["cross-config-error/unclassified", "codex 전사 로그 줄(Error: connect ECONNREFUSED) + panic", { host: "codex", sentPrompt: prompt, status: 101,
+    stderr: [banner, "user", prompt, "exec", "cat test/fixtures/server.log", " succeeded in 4ms:", "Error: connect ECONNREFUSED 127.0.0.1:5432", "thread 'main' panicked at core/src/exec.rs:88: index out of bounds"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 전사 TS 객체(error: \"Not logged in\") + 끊김", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, "exec", "sed -n 1,20p src/messages.ts", " succeeded in 3ms:", "export const MESSAGES = {", "  error: \"Not logged in\",", "};", "stream disconnected before completion"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 전사 Rust(Error::Unauthorized) + panicked", { host: "codex", sentPrompt: prompt, status: 101,
+    stderr: [banner, "user", prompt, "exec", "rg -n -A3 'match' src/api.rs", "    Error::Unauthorized => retry_login(),", "thread 'main' panicked at core/src/foo.rs:1"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 전사 문서(Error handling for rate limits) + Killed", { host: "codex", sentPrompt: prompt, status: 137,
+    stderr: [banner, "user", prompt, "exec", "cat docs/api.md", "## Errors", "Error handling for rate limits is done by the gateway.", "Killed"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 마지막 응답 문장(Error path for usage limit)", { host: "codex", sentPrompt: prompt, status: 1,
+    stdout: "| F1 | src/a.ts | 계획 안 | 열림 | 처리 누락 |\nError path for 'usage limit' responses is untested.", stderr: "" }],
+  ["cross-config-error/unclassified", "claude stderr 경고(rate limit) + Segmentation fault", { host: "claude", status: 1, stdout: "",
+    stderr: "Warning: rate limit headers missing from proxy response\nSegmentation fault (core dumped)" }],
+  ["cross-config-error/unclassified", "claude stderr hook 안내(Not logged in) + TypeError", { host: "claude", status: 1, stdout: "",
+    stderr: "SessionStart hook: npm notice: Not logged in to registry (optional)\nError: Cannot read properties of undefined (reading 'x')" }],
+  ["cross-config-error/unclassified", "codex 반향이 접두(> )로 바뀌어 남음 + panicked", { host: "codex", sentPrompt: prompt, status: 101,
+    stderr: [banner, "user", ...prompt.split("\n").map((line) => `> ${line}`), "thread 'main' panicked"].join("\n") }],
+  // 맺음 줄(CROSS_NO_ANSWER·토큰 줄)은 꼬리로 보지 않는다 — 앞의 오류를 그대로 분류한다
+  ["cross-unavailable/quota", "codex 세션 ERROR + 마지막 응답 없음 줄", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, toolOut, "ERROR: You've hit your usage limit.", "tokens used", "1,234", CROSS_NO_ANSWER].join("\n") }],
+  ["cross-unavailable/auth", "codex 세션 전 Not logged in + 마지막 응답 없음 줄", { host: "codex", sentPrompt: prompt, status: 1, stderr: ["Not logged in", CROSS_NO_ANSWER].join("\n") }],
+  ["cross-config-error/unclassified", "codex 출력 없이 마지막 응답 없음 줄만", { host: "codex", sentPrompt: prompt, status: 0, stderr: CROSS_NO_ANSWER }],
 ];
 
 describe("교차 실행 실패 분류", () => {
-  test("분류 fixture 40건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
-    assert.equal(CROSS_FIXTURES.length, 40);
+  test("분류 fixture 51건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
+    assert.equal(CROSS_FIXTURES.length, 51);
     for (const [expected, name, probe] of CROSS_FIXTURES) {
       const got = classifyCrossFailure(probe);
       assert.equal(`${got.class}/${got.kind}`, expected, `${name} — text=${JSON.stringify(crossFailureText(probe))}`);
@@ -449,18 +534,26 @@ describe("교차 실행 실패 분류", () => {
     const codexNoError = crossFailureText({ host: "codex", sentPrompt: prompt, stderr: `${banner}\nuser\n${prompt}\nNot logged in` });
     assert.equal(codexNoError, "Not logged in", "오류 줄이 없으면 마지막 한 줄");
     const claude = crossFailureText({ host: "claude", stderr: "warn\nboom", stdout: JSON.stringify({ is_error: true, result: "r", subtype: "s", usage: { input_tokens: 401 }, total_cost_usd: 1, permission_denials: [{ x: "quota exceeded" }] }) });
-    assert.equal(claude, "warn\nboom\nr\ns");
+    assert.equal(claude, "boom\nr\ns", "Claude stderr 도 오류 줄(없으면 마지막 한 줄)만");
+    assert.equal(crossFailureText({ host: "claude", stderr: "hook: rate limit note\nError: x\n    at f (a.js:1:1)" }), "Error: x");
+    // Codex 세션 출력은 끝에서 이어진 ERROR: 줄만 — 전사 중간의 ERROR: 인용은 보지 않는다
+    const quoted = crossFailureText({ host: "codex", sentPrompt: "", stderr: [banner, "exec", "cat ops.log", " succeeded in 2ms:", "ERROR: You've hit your usage limit", "codex", "검토를 마쳤습니다", "thread 'main' panicked"].join("\n") });
+    assert.equal(quoted, "thread 'main' panicked");
+    assert.equal(crossFailureText({ host: "codex", sentPrompt: "", stderr: `${banner}\nERROR: stream disconnected - retrying turn (1/5)\nERROR: unexpected status 503 Service Unavailable` }),
+      "ERROR: stream disconnected - retrying turn (1/5)\nERROR: unexpected status 503 Service Unavailable");
+    // stdout 은 Codex 의 마지막 응답이다 — 끝에서 이어진 ERROR: 줄만 본다
+    assert.equal(crossFailureText({ host: "codex", sentPrompt: "", stdout: "검토 결과\nERROR: You've hit your usage limit", stderr: "" }), "ERROR: You've hit your usage limit");
     assert.equal(crossFailureText({ host: "claude", stderr: "only stderr", stdout: JSON.stringify({ is_error: false, result: "fine" }) }), "only stderr", "성공 JSON 은 넣지 않는다");
-    const many = crossFailureText({ host: "codex", stderr: ["error: 1", "error: 2", "error: 3", "error: 4", "error: 5", "error: 6", "[2026-10-07] ERROR: 7"].join("\r\n") });
+    const many = crossFailureText({ host: "codex", sentPrompt: "", stderr: ["error: 1", "error: 2", "error: 3", "error: 4", "error: 5", "error: 6", "[2026-10-07] ERROR: 7"].join("\r\n") });
     assert.equal(many, "error: 3\nerror: 4\nerror: 5\nerror: 6\n[2026-10-07] ERROR: 7", "오류 줄은 마지막 5줄");
-    assert.equal(classifyCrossFailure({ host: "codex", spawnCode: "ENOENT", spawnMessage: "spawn codex ENOENT" }).reason, "실행 파일 없음(missing): spawn codex ENOENT");
+    assert.equal(classifyCrossFailure({ host: "codex", sentPrompt: "", spawnCode: "ENOENT", spawnMessage: "spawn codex ENOENT" }).reason, "실행 파일 없음(missing): spawn codex ENOENT");
   });
 
   test("설정 패턴은 고정된 꼴만 쓴다 — Codex 배너의 reasoning effort 에 걸리지 않는다", () => {
     const sources = CROSS_PATTERNS.config.map((pattern) => pattern.source);
     for (const banned of ["reasoning[_ ]effort", "model_reasoning_effort", "unknown variant"]) assert.equal(sources.includes(banned), false, banned);
     assert.equal(CROSS_PATTERNS.config.some((pattern) => pattern.test("reasoning effort: high")), false);
-    assert.equal(classifyCrossFailure({ host: "codex", stderr: `${banner}\nreasoning effort: high\npanic: x` }).kind, "unclassified");
+    assert.equal(classifyCrossFailure({ host: "codex", sentPrompt: "", stderr: `${banner}\nreasoning effort: high\npanic: x` }).kind, "unclassified");
   });
 
   test("Codex 샌드박스 사전 판정", () => {
@@ -477,7 +570,7 @@ describe("교차 지점 상태와 판정", () => {
   const ended = (cls?: CrossAttemptView["class"], extra: Partial<CrossAttemptView> = {}): CrossAttemptView =>
     ({ n: ++seq, host: "codex", mode: "review", startedAt: "2026-10-07T00:00:00.000Z", endedAt: "2026-10-07T00:01:00.000Z", class: cls, ...extra });
   const timeout = () => ended("cross-timeout", { kind: "timeout" });
-  const interrupted = () => ended("cross-timeout", { kind: "interrupted" });
+  const interrupted = (extra: Partial<CrossAttemptView> = {}) => ended("cross-timeout", { kind: "interrupted", ...extra });
   const before = (attempts: CrossAttemptView[], extra: { grants?: RetryGrant[]; rawExists?: (path: string) => boolean } = {}) =>
     crossPointDecision({ attempts, scope: "round:1", phase: "before", ...extra });
   const refusal = (decision: ReturnType<typeof before>) => decision.action === "refuse" ? [decision.refusal, decision.failure.class, decision.failure.counter?.key] : decision.action;
@@ -529,11 +622,15 @@ describe("교차 지점 상태와 판정", () => {
     assert.deepEqual(after([ended("cross-unavailable", { detail: "Not logged in" })]), { action: "record-unavailable", reason: "Not logged in" });
     const first = after([timeout()]);
     assert.ok(first.action === "refuse" && first.failure.class === "cross-timeout");
-    assert.deepEqual(first.action === "refuse" && first.failure.counter, { key: "crossTimeout", used: 1, limit: 1 });
+    assert.deepEqual(first.action === "refuse" && first.failure.counter, { key: "crossTimeout", used: 0, limit: 1 }, "첫 제한 시간 초과 뒤 재실행 1회가 남았다");
     const second = after([timeout(), timeout()]);
-    assert.ok(second.action === "record-unavailable" && /두 번 연속 9분 제한/.test(second.reason));
+    assert.ok(second.action === "record-unavailable" && /^두 번 연속 9분 제한/.test(second.reason));
+    const apart = after([timeout(), ended("cross-config-error"), timeout()]);
+    assert.ok(apart.action === "record-unavailable" && /^이 지점에서 두 번 9분 제한/.test(apart.reason), "연속이 아니면 연속이라 쓰지 않는다");
     const config = after([ended("cross-config-error", { detail: "unknown option" })]);
-    assert.deepEqual(config.action === "refuse" && config.failure.counter, { key: "crossError", used: 1, limit: 1 });
+    assert.deepEqual(config.action === "refuse" && config.failure.counter, { key: "crossError", used: 0, limit: 1 }, "첫 설정 오류 뒤 남은 1회");
+    const config2 = after([ended("cross-config-error"), ended("cross-config-error")]);
+    assert.deepEqual(config2.action === "refuse" && config2.failure.counter, { key: "crossError", used: 1, limit: 1 }, "두 번째 설정 오류 뒤 남은 0회");
     const invalid = after([ended("cross-result-invalid", { detail: "표 아님" })]);
     assert.deepEqual(invalid.action === "refuse" && [invalid.failure.class, invalid.failure.counter], ["cross-result-invalid", { key: "crossFormat", used: 0, limit: 1 }]);
     const sandbox = after([ended("host-sandbox-denied", { detail: "EPERM" })]);
@@ -546,16 +643,58 @@ describe("교차 지점 상태와 판정", () => {
     assert.throws(() => after([ended("completed")]), /실패로 끝난 시도에만/);
   });
 
+  test("교차 예산은 Budget 규약을 따른다 — 남은 횟수는 실행이 받아 주는 횟수와 같고, 사람 허용은 소진된 뒤에만", () => {
+    const left = (attempts: CrossAttemptView[]) => Object.fromEntries(Object.entries(crossBudgets(attempts, [], "round:1")).map(([key, budget]) => [key, budget.left]));
+    assert.deepEqual(left([]), { crossPoint: 3, crossTimeout: 1, crossError: 1, crossFormat: 1 });
+    assert.deepEqual(left([ended("cross-config-error")]), { crossPoint: 2, crossTimeout: 1, crossError: 1, crossFormat: 1 });
+    assert.deepEqual(left([ended("cross-config-error"), ended("cross-config-error")]), { crossPoint: 1, crossTimeout: 1, crossError: 0, crossFormat: 1 });
+    assert.deepEqual(left([timeout(), interrupted()]), { crossPoint: 1, crossTimeout: 1, crossError: 1, crossFormat: 1 }, "끊긴 실행은 시간 초과 재실행에 세지 않는다");
+    assert.deepEqual(left([ended("cross-result-invalid"), ended("cross-result-invalid", { mode: "correct" })]), { crossPoint: 1, crossTimeout: 1, crossError: 1, crossFormat: 0 });
+    // 실행 전 판정의 원인별 거부는 그 원인의 예산이 소진됐을 때와 같다
+    const kinds: (() => CrossAttemptView)[] = [() => ended("cross-config-error"), () => ended("cross-result-invalid"), () => ended("cross-result-invalid", { mode: "correct" }),
+      () => ended("cross-unavailable"), timeout, interrupted, () => ended("host-sandbox-denied")];
+    const refusalKey = { "point-limit": "crossPoint", "format-limit": "crossFormat", "error-limit": "crossError" } as const;
+    const walk = (attempts: CrossAttemptView[]): void => {
+      {
+        const decision = before(attempts);
+        const budgets = crossBudgets(attempts, [], "round:1");
+        if (decision.action === "refuse" && decision.refusal in refusalKey) {
+          const key = refusalKey[decision.refusal as keyof typeof refusalKey];
+          assert.equal(budgets[key].exhausted, true, `${attempts.map((a) => a.class).join(",")} → ${decision.refusal}`);
+          assert.deepEqual(decision.failure.counter, { key, used: budgets[key].used, limit: budgets[key].limit });
+        }
+        if (decision.action !== "refuse") assert.equal(budgets.crossPoint.exhausted || budgets.crossError.exhausted && attempts.at(-1)?.class !== "cross-result-invalid", false,
+          `${attempts.map((a) => a.class).join(",")} → ${decision.action}`);
+      }
+      if (attempts.length < 3) for (const make of kinds) walk([...attempts, make()]);
+    };
+    walk([]);
+    // C5 retryGrant 의 소진 검사 — 첫 설정 오류 뒤에는 아직 재실행이 남아 허용을 기록하지 않는다
+    const grant = (attempts: CrossAttemptView[]) => grantFor({ key: "crossError", scope: "round:1", budget: crossBudgets(attempts, [], "round:1").crossError, consent: "c", reason: "r", at: "t" });
+    assert.throws(() => grant([ended("cross-config-error")]), /한도가 남아 있어\(사용 0 \/ 한도 1\)/);
+    assert.equal(grant([ended("cross-config-error"), ended("cross-config-error")]).step, 1);
+    const granted = crossBudgets([ended("cross-config-error"), ended("cross-config-error")], [{ key: "crossError", scope: "round:1", step: 1, consent: "c", at: "t", reason: "r" }], "round:1");
+    assert.deepEqual([granted.crossError.limit, granted.crossError.left], [2, 1]);
+  });
+
   test("지점 안내는 열린 지점에서만 낸다 — 한도 거부도 시도 기록 없이 보인다", () => {
     const hint = (attempts: CrossAttemptView[]) => crossPointHint({ attempts, scope: "round:1" });
     const config = hint([ended("cross-config-error", { detail: "unknown option", kind: "config" })]);
-    assert.deepEqual(config && [config.class, config.detail, config.kind, config.counter], ["cross-config-error", "unknown option", "config", { key: "crossError", used: 1, limit: 1 }]);
-    const limit = hint([interrupted(), interrupted(), interrupted()]);
-    assert.deepEqual(limit && [limit.class, limit.counter?.key], ["limit-exceeded", "crossPoint"]);
+    assert.deepEqual(config && [config.class, config.detail, config.kind, config.counter], ["cross-config-error", "unknown option", "config", { key: "crossError", used: 0, limit: 1 }]);
+    const limit = hint([interrupted(), interrupted(), interrupted({ endedAt: "2026-10-07T03:00:00.000Z" })]);
+    assert.deepEqual(limit && [limit.class, limit.counter?.key, limit.at], ["limit-exceeded", "crossPoint", "2026-10-07T03:00:00.000Z"], "거부 갈래의 at 도 마지막 실패의 endedAt");
     assert.equal(hint([ended("completed")]), undefined);
     assert.equal(hint([timeout(), timeout()]), undefined, "중지 지점");
     assert.equal(hint([]), undefined);
     assert.equal(hint([{ ...ended(), endedAt: undefined }]), undefined, "실행 중");
+    // 끊긴 실행의 안내는 제한 시간 문구가 아니다 — recordedVariant 가 interrupted 변형을 고른다
+    const cut = hint([interrupted()])!;
+    assert.deepEqual([cut.class, cut.kind, cut.counter], ["cross-timeout", "interrupted", { key: "crossPoint", used: 1, limit: 3 }]);
+    const text = guidance(cut.class, { host: "codex", left: cut.counter!.limit - cut.counter!.used, min: 9 }, recordedVariant(cut));
+    assert.match(text, /^codex 교차 실행이 끝 기록 없이 끊겼습니다 — 끊긴 실행은 중지로 기록하지 않고 .*남은 지점 시도 2회/);
+    assert.equal(/두 번째도 넘기면|제한을 넘겨/.test(text), false);
+    const timedOut = hint([timeout()])!;
+    assert.match(guidance(timedOut.class, { host: "codex", min: 9 }, recordedVariant(timedOut)), /9분 제한을 넘겨 중단했습니다/);
   });
 
   test("연속 중지 — 사람 중지는 건너뛰고 완료에서 멈춘다", () => {
@@ -675,5 +814,11 @@ describe("순수 모듈 — hook 이 매번 읽으므로 무거운 의존이 없
     const entries = loaded(join(agentDir, "crossEnv.js"));
     assert.deepEqual(entries.filter(heavy), []);
     assert.deepEqual(local(entries), ["crossEnv.js"]);
+  });
+
+  test("hostText.js 는 로드할 때 crossEnv.js 말고 읽지 않는다(hosts.json 은 notationFor 가 부를 때만 fs 를 지연 로드)", () => {
+    const entries = loaded(join(agentDir, "hostText.js"));
+    assert.deepEqual(entries.filter(heavy), []);
+    assert.deepEqual(local(entries), ["crossEnv.js", "hostText.js"]);
   });
 });

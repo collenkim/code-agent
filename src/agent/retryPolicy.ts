@@ -39,13 +39,16 @@ export const COUNTER_KEYS = [
 ] as const;
 export type CounterKey = typeof COUNTER_KEYS[number];
 
-/** 카운터 이름표 — 한도 문구(`{counterLabel} 한도 N회`)와 사람 허용 미리보기가 쓴다 */
+/**
+ * 카운터 이름표의 단일 원천 — 한도 문구(`{counterLabel} 한도 N회`)·거부 문구·사람 허용 미리보기(retryGrant)·측정 보고(retryReport)가
+ * 모두 이 표를 import 해 쓴다. 다른 모듈에 이름표를 따로 정의하지 않는다(같은 동의 흐름에서 이름이 갈리지 않게).
+ */
 export const COUNTER_LABEL: Readonly<Record<CounterKey, string>> = {
   fix: "고쳐 쓰기", collect: "수집 수정", rerun: "같은 코드 재실행", integrateRerun: "통합 검증 재실행",
   reproRerun: "재현 재실행", reproAttempt: "재현 시도", reviewRounds: "리뷰 회차", totalRounds: "검증 회차 총합",
   reviewerRuns: "리뷰어 호출", agentReturn: "담당 되돌림", correction: "형식 교정", sameInput: "같은 입력 실패",
   taskTotal: "작업 총 배정", crossPoint: "교차 지점 시도", crossTimeout: "교차 시간 초과 재실행",
-  crossError: "교차 설정 오류 재실행", crossFormat: "교차 형식 교정", lockBusy: "잠금 대기 재실행",
+  crossError: "교차 설정 오류 재실행", crossFormat: "교차 형식 교정 재실행", lockBusy: "잠금 대기 재실행",
 };
 
 /** 기본 한도. fix 는 매니페스트 fixRounds(증거에 고정), totalRounds 는 구성 한도에서 나온다 — 여기 없다 */
@@ -110,13 +113,13 @@ export function refuse(cls: FailureClass, detail: string, extra?: Partial<Omit<F
 
 // ---- 한도·사람 허용 ----
 
-/** 유효 한도 = 기본 한도 + 같은 key·scope 의 사람 허용 합. base 를 주지 않으면 LIMITS 의 값이다 */
+/** 유효 한도 = 기본 한도 + 같은 key·scope 의 사람 허용 합. base 를 주지 않으면 LIMITS 의 값이다. 양의 정수가 아닌 step(손상 기록)은 세지 않는다 */
 export function limitOf(key: CounterKey, base: number | undefined, grants: readonly RetryGrant[] = [], scope = ""): number {
   const start = base ?? limitTable[key];
   if (start === undefined) throw new Error(`${key} 의 기본 한도가 없습니다 — base 를 넘기세요`);
   return grants
     .filter((grant) => grant.key === key && grant.scope === scope)
-    .reduce((sum, grant) => sum + (Number.isFinite(grant.step) && grant.step > 0 ? grant.step : 0), start);
+    .reduce((sum, grant) => sum + (Number.isInteger(grant.step) && grant.step > 0 ? grant.step : 0), start);
 }
 export interface Budget { key: CounterKey; used: number; limit: number; left: number; exhausted: boolean }
 export function budgetOf(key: CounterKey, used: number, base: number | undefined, grants?: readonly RetryGrant[], scope?: string): Budget {
@@ -153,6 +156,8 @@ export function grantFor(input: { key: string; scope: string; budget: Budget; co
       `허용할 수 있는 카운터: ${Object.keys(GRANT_STEP).join(", ")}`);
   }
   const { budget } = input;
+  // 다른 카운터의 예산으로 소진 검사를 우회하지 못하게 한다(호출자 실수)
+  if (budget.key !== input.key) throw new Error(`grantFor: 허용할 카운터(${input.key})와 예산의 카운터(${budget.key})가 다릅니다`);
   if (!budget.exhausted) {
     throw new Stop(`${COUNTER_LABEL[budget.key]} 한도가 남아 있어(사용 ${budget.used} / 한도 ${budget.limit}) 허용을 기록하지 않습니다 — 한도를 미리 늘리지 않습니다.`);
   }
@@ -251,7 +256,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `되돌림 ${LIMITS.agentReturn}, 교정 ${LIMITS.correction}, 리뷰어 호출 ${LIMITS.reviewerRuns}/회차`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "none", onExhausted: "blocked", exceededText: "같은 입력 규칙, 리뷰어는 decision",
-    guide: "결과 형식 오류로 기록했습니다 — {detail}. planning advance 또는 planning repair {id} 로 원본 결과의 형식만 한 번 교정하세요.",
+    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(C2 SubagentStop). 기록된 시도는 record 변형(recordedVariant)
+    guide: "결과 형식 오류입니다 — {detail}. 같은 배정의 resultShape 형태 JSON 하나로 다시 반환하세요(문서 본문은 staging 그대로).",
     enforcedAt: ["planningHook.ts observePlanner", "reviewHook.ts observeReviewer", "retryPolicy.subagentExit", "planning.ts repairState"],
   },
   "agent-content-error": {
@@ -262,7 +268,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `되돌림 ${LIMITS.agentReturn}, 같은 입력 실패 ${LIMITS.sameInput}, 작업 총 배정 ${LIMITS.taskTotal}`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "none", onExhausted: "blocked", exceededText: "총 배정 상한 → 사람 판단",
-    guide: "결과가 검사에 걸려 실패로 기록했습니다 — {detail}. 사유를 수정 피드백 파일로 남겨 {id} 의 inputs 에 넣고 planning prepare 뒤 planning advance 로 다시 배정하세요.",
+    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(C2 SubagentStop). 기록된 시도는 record 변형(recordedVariant)
+    guide: "결과가 검사에 걸렸습니다 — 고친 뒤 같은 형태의 결과 JSON을 다시 반환하세요(한 번만 돌려보냅니다):\n{detail}",
     enforcedAt: ["planningHook.ts observePlanner", "stagedChecks.ts(결정적 문서 검사)", "commands.ts next(최종 게이트)"],
   },
   "dispatch-orphan": {
@@ -434,11 +441,16 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     rerun: "실행은 모두 통과했지만 증거가 지금과 맞지 않습니다: {problems}. 코드 결함이 아닙니다 — 검증 명령이 계획 파일을 고쳤거나(포맷터 등) ⑧ 이 손으로 바뀌었거나 회차·묶임이 어긋난 경우라 code-agent verify 로 다시 돌리면 맞춰집니다. 다시 돈 회차는 통과 뒤 변경으로 세며 고쳐 쓰기 회차를 쓰지 않습니다({budget}). 돌 때마다 같은 문제가 되풀이되면(검증 명령이 매번 계획 파일을 바꿈) 고치지 말고 사용자에게 보고하세요.",
   },
   "agent-format-error": {
-    /** Claude SubagentStop 에서 같은 담당에게 돌려보낼 때(기록 전) */
-    return: "결과 형식 오류입니다 — {detail}. 같은 배정의 resultShape 형태 JSON 하나로 다시 반환하세요(문서 본문은 staging 그대로).",
+    /** 기록된 형식 오류(needs-correction·failed) — planning advance 의 blocked 줄 등. 기본 문구는 기록 전 되돌림이다 */
+    record: "결과 형식 오류로 기록했습니다 — {detail}. planning advance 또는 planning repair {id} 로 원본 결과의 형식만 한 번 교정하세요.",
   },
   "agent-content-error": {
-    return: "결과가 검사에 걸렸습니다 — 고친 뒤 같은 형태의 결과 JSON을 다시 반환하세요(한 번만 돌려보냅니다):\n{detail}",
+    /** 기록된 내용 오류(failed). 기본 문구는 기록 전 되돌림이다 */
+    record: "결과가 검사에 걸려 실패로 기록했습니다 — {detail}. 사유를 수정 피드백 파일로 남겨 {id} 의 inputs 에 넣고 planning prepare 뒤 planning advance 로 다시 배정하세요.",
+  },
+  "cross-timeout": {
+    /** 끝 기록 없이 끊긴 실행(kind interrupted) — 중지가 되지 않고 지점 시도 한도에만 든다 */
+    interrupted: "{host} 교차 실행이 끝 기록 없이 끊겼습니다 — 끊긴 실행은 중지로 기록하지 않고 게이트는 막혀 있습니다. 같은 명령을 백그라운드로 다시 실행할 수 있습니다(남은 지점 시도 {left}회).",
   },
   "cross-unavailable": {
     /** 지점 한도가 남아 같은 지점을 다시 실행할 수 있을 때 */
@@ -461,8 +473,8 @@ export const GUIDE_KEYS: Readonly<Record<FailureClass, readonly string[]>> = {
   interrupted: ["kind", "logFile", "minutes", "rerunLeft"],
   "result-unconfirmed": ["cases", "collectNote", "rerunLeft"],
   precondition: ["problems"],
-  "agent-format-error": ["detail", "id"],
-  "agent-content-error": ["detail", "id"],
+  "agent-format-error": ["detail"],
+  "agent-content-error": ["detail"],
   "dispatch-orphan": ["detail", "id"],
   "same-input-repeat": ["limit"],
   "reassign-total": ["id", "limit"],
@@ -483,8 +495,9 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   "code-defect": { "same-tree": [] },
   interrupted: { empty: ["phase", "rerunLeft", "round"] },
   precondition: { rerun: ["budget", "problems"] },
-  "agent-format-error": { return: ["detail"] },
-  "agent-content-error": { return: ["detail"] },
+  "agent-format-error": { record: ["detail", "id"] },
+  "agent-content-error": { record: ["detail", "id"] },
+  "cross-timeout": { interrupted: ["host", "left"] },
   "cross-unavailable": { rerunnable: ["detail", "host", "left"] },
   "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"] },
 };
@@ -510,6 +523,17 @@ export function guidance(cls: FailureClass, values: Readonly<Record<string, stri
   const text = variant === undefined ? POLICIES[cls].guide : GUIDE_VARIANTS[cls]?.[variant];
   if (text === undefined) throw new Error(`${cls} 에 ${variant} 안내 문구가 없습니다`);
   return text.replace(/\{([A-Za-z]\w*)\}/g, (whole, key: string) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : whole);
+}
+/**
+ * 기록된 실패를 안내할 때 고르는 변형 — 기록(시도의 failure·지점 안내의 crossPointHint·blocked[].class)을 렌더하는 호출은
+ * `guidance(record.class, values, recordedVariant(record))` 로 쓴다. 담당 형식·내용 오류의 기본 문구는 기록 전 같은 담당에게
+ * 돌려보내는 문구라 기록된 시도에는 record 변형을, 끊긴 교차 실행(cross-timeout·interrupted)에는 제한 시간 문구 대신
+ * interrupted 변형을 쓴다. 그 밖은 기본 문구(undefined)다.
+ */
+export function recordedVariant(record: { class: string; kind?: string }): string | undefined {
+  if (record.class === "agent-format-error" || record.class === "agent-content-error") return "record";
+  if (record.class === "cross-timeout" && record.kind === "interrupted") return "interrupted";
+  return undefined;
 }
 /** 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다 */
 export function limitExceededText(record: FailureRecord, evidence: string): string {
@@ -617,7 +641,9 @@ export function roundStateOf(input: {
 
 /**
  * 원인 기록이 없는 옛 증거의 회차 원인 추정 — 직전 회차가 모두 통과면 review, 그 밖(기록 없음 포함)은 fix.
- * 옛 규칙은 실패한 채 한도를 넘는 회차를 거부했으므로 추정한 fix 수는 rounds−1 과 fixRounds 를 넘지 않는다.
+ * 옛 규칙은 실패한 채 한도를 넘는 회차를 거부했으므로 추정한 fix 수는 rounds−1 과 fixRounds 를 넘지 않는다 — 추정 카운터는
+ * 옛 규칙보다 엄격해지지 않는다. 엄격해지는 것은 판정 규칙 하나다: 마지막 회차가 실행 기록 없이 끊긴 뒤 코드를 고치면
+ * 새 규칙은 고쳐 쓰기를 쓴다(옛 규칙은 마지막으로 기록된 실행을 봤다). 진행 중 작업이 여기서 막히면 judgment retry-grant 로 넘긴다.
  */
 export function deriveLegacyCauses(rounds: number, runs: readonly RunView[]): Record<string, RoundCause> {
   const causes: Record<string, RoundCause> = {};
@@ -717,21 +743,29 @@ export function sameRoundDecision(input: { previous: VerifyState; budget: Verify
     }
   }
 }
-/** verify 노드. precondition 은 assess 가 Stop 을 던지므로 노드로 오지 않는다(오면 diagnose) */
+/**
+ * verify 노드. precondition 은 assess 가 Stop 을 던지므로 노드로 오지 않는다(오면 diagnose).
+ * 같은 코드 재실행(rerun)은 회차를 열지 않으므로 총 회차와 무관하다 — nextRoundDecision(treeChanged=false)이 재실행을
+ * 받아 주는 동안은 decision 이 아니다(환경·중단과 결과 미확인이 같은 규칙이다).
+ */
 export function verifyNode(state: VerifyState, budget: VerifyBudget): "passed" | "repair" | "diagnose" | "decision" {
   switch (state) {
     case "passed": return "passed";
     case "code-defect": return budget.fix.left > 0 && budget.totalRounds.left > 0 ? "repair" : "decision";
     case "environment": case "interrupted": return budget.rerun.left > 0 ? "diagnose" : "decision";
     case "result-unconfirmed":
-      return (budget.collect.left > 0 || budget.fix.left > 0 || budget.rerun.left > 0) && budget.totalRounds.left > 0 ? "diagnose" : "decision";
+      return budget.rerun.left > 0 || ((budget.collect.left > 0 || budget.fix.left > 0) && budget.totalRounds.left > 0) ? "diagnose" : "decision";
     case "precondition": return "diagnose";
   }
 }
-/** decision 일 때 소진된 카운터 */
-export function nodeCounter(state: VerifyState, budget: VerifyBudget): CounterKey | undefined {
+/**
+ * decision 일 때 소진된 카운터 — VerifyBudget 의 키라 `budget[counter]` 로 바로 읽는다. 코드를 고치는 길은
+ * nextRoundDecision(treeChanged=true)과 같은 카운터가 막는다(결과 미확인은 수집 수정이 남았으면 총 회차).
+ */
+export function nodeCounter(state: VerifyState, budget: VerifyBudget): "fix" | "rerun" | "totalRounds" | undefined {
   if (verifyNode(state, budget) !== "decision") return undefined;
   if (state === "environment" || state === "interrupted") return "rerun";
+  if (state === "result-unconfirmed" && budget.collect.left > 0) return "totalRounds";
   return budget.fix.exhausted ? "fix" : "totalRounds";
 }
 /**
@@ -852,35 +886,66 @@ export const CROSS_PATTERNS: Readonly<Record<"sandbox" | "config" | "auth" | "qu
   outage: [/overloaded/i, /service unavailable/i, /internal server error/i, /bad gateway/i, ...statusCode("500|502|503|529")],
 };
 
-export interface CrossProbe {
-  host: "claude" | "codex";
+interface CrossProbeOutput {
   /** hostCommand 가 실행 파일을 찾지 못한 이유 */
   unresolved?: string;
   spawnCode?: string; spawnMessage?: string;
   status?: number | null; stderr?: string; stdout?: string;
-  /** 다른 호스트에 보낸 프롬프트 전문(Codex 는 지침 + 프롬프트) — 출력에 되풀이된 줄을 분류에서 뺀다 */
-  sentPrompt?: string;
   /** 지금 프로세스 환경에 Codex 샌드박스 표지가 있는가(crossEnv.sandboxMarkers) */
   sandboxed?: boolean;
 }
+export type CrossProbe = CrossProbeOutput & (
+  | { host: "claude"; sentPrompt?: string }
+  /**
+   * Codex 는 보낸 프롬프트를 전사에 되풀이하므로 sentPrompt(지침 + 프롬프트 전문)가 필수다 — 되풀이된 줄을 분류에서 뺀다.
+   * 프롬프트를 만들기 전에 실패했으면 "" 를 넘긴다.
+   */
+  | { host: "codex"; sentPrompt: string });
 
+/** 교차 실행이 Codex 마지막 응답 파일을 남기지 않았을 때 호출자가 출력 끝에 더하는 줄 — 분류는 이 줄을 꼬리로 보지 않는다 */
+export const CROSS_NO_ANSWER = "마지막 응답을 남기지 않았습니다";
 /** Codex exec 사람용 출력의 배너 줄 — 라벨이 바뀌면 이 식을 고친다 */
 const CODEX_BANNER = /^(?:OpenAI Codex v.*|-{4,}|user|codex|(?:workdir|model|provider|approval|sandbox|reasoning effort|reasoning summaries|session id):.*)$/i;
+const STAMP = String.raw`(?:\[[^\]\n]*\]\s*)?`;
+/**
+ * Codex 세션이 시작됐다는 표지 — 배너 첫 줄·설정 줄·전사 라벨(user·codex·exec·thinking)·명령 끝 줄(`succeeded in 12ms:`)·토큰 줄.
+ * 이 표지가 있는 출력에는 읽은 파일·도구 출력·모델 문장이 섞인다(전사). 라벨이 바뀌면 이 식을 고친다.
+ */
+const CODEX_SESSION = new RegExp(String.raw`^${STAMP}(?:OpenAI Codex v|(?:workdir|session id):|(?:user|codex|exec|thinking)$|tokens used\b|.*\b(?:succeeded|exited -?\d+) in \d[\d.]*\s*m?s:$)`, "i");
+/** 세션 안에서 Codex 가 직접 내는 오류 줄의 라벨(대문자 `ERROR:`). 전사의 `Error:`·`error:` 줄(로그·코드·문서)은 여기에 맞지 않는다 */
+const CODEX_ERROR = new RegExp(String.raw`^${STAMP}ERROR:`);
+/** 세션 밖(실행 전 실패 — 인자·설정·인증) 출력의 오류 줄 */
 const ERROR_LINE = /^(?:\[[^\]\n]*\]\s*)?(?:error|fatal)\b/i;
 const lines = (text?: string): string[] => (text ?? "").replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter(Boolean);
-/** 오류 줄(error·fatal 로 시작)이 있으면 그 마지막 5줄, 없으면 마지막 1줄 — 앞줄의 전사(읽은 코드·주석)를 분류에 넣지 않는다 */
+/** 오류 줄(error·fatal 로 시작)이 있으면 그 마지막 5줄, 없으면 마지막 1줄 — 앞줄을 분류에 넣지 않는다 */
 const tailErrors = (all: readonly string[]): string => {
   const errors = all.filter((line) => ERROR_LINE.test(line));
   return (errors.length ? errors.slice(-5) : all.slice(-1)).join("\n");
 };
+const epilogue = (line: string): boolean => line.includes(CROSS_NO_ANSWER) || /^tokens used\b/i.test(line) || /^[\d,]+$/.test(line);
+/** 끝의 맺음 줄(토큰 줄·CROSS_NO_ANSWER)을 뗀다 */
+const withoutEpilogue = (all: readonly string[]): string[] => {
+  let end = all.length;
+  while (end > 0 && epilogue(all[end - 1])) end--;
+  return all.slice(0, end);
+};
+/** 끝에서부터 이어진 pattern 줄들 */
+const trailing = (all: readonly string[], pattern: RegExp): string[] => {
+  let start = all.length;
+  while (start > 0 && pattern.test(all[start - 1])) start--;
+  return all.slice(start);
+};
 /**
- * 분류에 쓰는 글 — 호스트의 오류 채널만. 전사·사용량·배너·되풀이된 프롬프트는 넣지 않는다. 이 함수 하나가 분류 범위의 정의다.
- * claude: stderr 마지막 10줄 + stdout JSON 이 실패(is_error·result 없음)면 result·subtype, JSON 이 아니면 stdout 의 오류 줄.
- * codex: stderr·stdout 에서 보낸 프롬프트의 줄과 배너를 뺀 뒤 오류 줄.
+ * 분류에 쓰는 글 — 호스트의 오류 채널만. 전사·사용량·배너·되풀이된 프롬프트·모델 문장은 넣지 않는다. 이 함수 하나가 분류 범위의 정의다.
+ * claude: stderr 마지막 10줄의 오류 줄(없으면 마지막 1줄) + stdout JSON 이 실패(is_error·result 없음)면 result·subtype,
+ *   JSON 이 아니면 stdout 의 오류 줄(없으면 마지막 1줄).
+ * codex: 보낸 프롬프트의 줄과 배너를 뺀다. 세션이 시작된 출력(CODEX_SESSION)은 전사가 섞이므로 stderr 끝에서 이어진 `ERROR:` 줄만
+ *   (맺음 줄 앞, 최대 5줄), 없으면 stderr 마지막 1줄이다 — 전사 중간의 오류처럼 보이는 줄은 보지 않는다. 세션 전 출력은 오류 줄
+ *   (없으면 맺음 줄 앞 마지막 1줄)이다. stdout 은 Codex 의 마지막 응답(모델 문장)이라 끝에서 이어진 `ERROR:` 줄만 본다.
  */
 export function crossFailureText(probe: CrossProbe): string {
   if (probe.host === "claude") {
-    const parts = [lines(probe.stderr).slice(-10).join("\n")];
+    const parts = [tailErrors(lines(probe.stderr).slice(-10))];
     let json: unknown;
     try { json = JSON.parse(probe.stdout ?? ""); } catch { json = undefined; }
     if (json && typeof json === "object") {
@@ -892,8 +957,20 @@ export function crossFailureText(probe: CrossProbe): string {
     return parts.filter(Boolean).join("\n").slice(-4000);
   }
   const sent = new Set(lines(probe.sentPrompt));
-  const all = [...lines(probe.stderr), ...lines(probe.stdout)].filter((line) => !sent.has(line) && !CODEX_BANNER.test(line));
-  return tailErrors(all).slice(-4000);
+  const rawErr = lines(probe.stderr), rawOut = lines(probe.stdout);
+  const session = [...rawErr, ...rawOut].some((line) => CODEX_SESSION.test(line));
+  const keep = (line: string) => !sent.has(line) && !CODEX_BANNER.test(line);
+  const err = rawErr.filter(keep), body = withoutEpilogue(err);
+  let picked: string[];
+  if (session) {
+    const run = trailing(body, CODEX_ERROR);
+    picked = run.length ? run.slice(-5) : err.slice(-1);
+  } else {
+    const errors = body.filter((line) => ERROR_LINE.test(line));
+    picked = errors.length ? errors.slice(-5) : (body.length ? body : err).slice(-1);
+  }
+  const answerErrors = trailing(withoutEpilogue(rawOut.filter(keep)), CODEX_ERROR).slice(-5);
+  return [...picked, ...answerErrors].join("\n").slice(-4000);
 }
 const KIND_LABEL: Readonly<Record<CrossKind, string>> = {
   missing: "실행 파일 없음", auth: "인증", quota: "사용 한도", network: "네트워크", outage: "서비스 장애",
@@ -958,6 +1035,28 @@ export function crossPointState(attempts: readonly CrossAttemptView[]): {
   return { state: "open", ...base };
 }
 
+export type CrossCounterKey = "crossPoint" | "crossTimeout" | "crossError" | "crossFormat";
+/**
+ * 교차 지점의 카운터 예산 — Budget 규약(used = 이미 쓴 시도·재실행 수, exhausted = used ≥ limit 이면 그 원인으로 다시 실행하지
+ * 않는다)을 따르는 유일한 계산이다. crossPointDecision·crossPointHint 와 리뷰·계획 쪽 예산 보고(C1 reviewBudgets·
+ * planningCrossBudgets)·사람 허용(retryGrant)·안내의 `{left}` 는 이 값만 쓴다(원인별 수를 따로 세지 않는다).
+ * - crossPoint: 지점 시도(review·correct — preflight·human 제외) 수.
+ * - crossFormat: 형식 교정(correct) 수.
+ * - crossError: 첫 설정 오류 뒤의 재실행 수(설정 오류 수 − 1). 첫 오류 뒤에는 used 0 이라 1회 남았고 허용 대상이 아니다.
+ * - crossTimeout: 첫 제한 시간 초과 뒤의 재실행 수(kind timeout 수 − 1, 끊긴 실행은 세지 않는다).
+ */
+export function crossBudgets(attempts: readonly CrossAttemptView[], grants: readonly RetryGrant[] = [], scope = ""): Record<CrossCounterKey, Budget> {
+  const runs = attempts.filter((attempt) => attempt.mode === "review" || attempt.mode === "correct");
+  const after = (count: number) => Math.max(0, count - 1);
+  return {
+    crossPoint: budgetOf("crossPoint", runs.length, undefined, grants, scope),
+    crossTimeout: budgetOf("crossTimeout", after(attempts.filter((attempt) => attempt.class === "cross-timeout" && attempt.kind === "timeout").length), undefined, grants, scope),
+    crossError: budgetOf("crossError", after(runs.filter((attempt) => attempt.class === "cross-config-error").length), undefined, grants, scope),
+    crossFormat: budgetOf("crossFormat", runs.filter((attempt) => attempt.mode === "correct").length, undefined, grants, scope),
+  };
+}
+const counterOf = (budget: Budget): NonNullable<FailureRecord["counter"]> => ({ key: budget.key, used: budget.used, limit: budget.limit });
+
 /** 교차 지점 거부의 종류 — 호출자가 그 자리의 값(지점 이름·열린 지적 수·회차)으로 문구를 만든다 */
 export type CrossRefusal = "cross-busy" | "cross-done" | "cross-stopped" | "point-limit" | "format-limit" | "error-limit" | "failed";
 export type CrossPointDecision =
@@ -968,45 +1067,37 @@ const WAS_STOPPED_SUFFIX = " — 이 지점은 이전 중지 기록대로 교차
 /**
  * 교차 지점 판정. before(실행 전, 호출자가 고아를 먼저 정리한 뒤): 실행·형식 교정·거부.
  * after(방금 끝난 실패 시도를 포함한 배열): 중지 기록 또는 거부. completed 지점은 다시 실행하지 않고,
- * 사람이 아닌 중지 지점은 지점 한도 안에서 다시 실행할 수 있다(게이트를 강하게만 한다).
+ * 사람이 아닌 중지 지점은 지점 한도 안에서 다시 실행할 수 있다(게이트를 강하게만 한다). 한도는 crossBudgets 다.
  */
 export function crossPointDecision(input: { attempts: readonly CrossAttemptView[]; grants?: readonly RetryGrant[]; scope: string;
   phase?: "before" | "after"; rawExists?: (path: string) => boolean; wasStopped?: boolean; timeoutMin?: number }): CrossPointDecision {
-  const limit = (key: CounterKey) => limitOf(key, undefined, input.grants, input.scope);
+  const budgets = crossBudgets(input.attempts, input.grants, input.scope);
   const runs = input.attempts.filter((attempt) => attempt.mode === "review" || attempt.mode === "correct");
-  const corrections = runs.filter((attempt) => attempt.mode === "correct").length;
-  const configErrors = runs.filter((attempt) => attempt.class === "cross-config-error").length;
   const point = crossPointState(input.attempts);
   const reject = (record: FailureRecord, refusal: CrossRefusal): CrossPointDecision => ({ action: "refuse", failure: record, refusal });
+  const spent = (budget: Budget) => `${COUNTER_LABEL[budget.key]} 한도 ${budget.limit}회 소진`;
   if ((input.phase ?? "before") === "before") {
     if (point.state === "running") return reject(failure("lock-stale", "다른 교차 실행이 진행 중입니다 — 끝날 때까지 기다리세요. 같은 명령을 다시 실행하지 않습니다"), "cross-busy");
     if (point.state === "completed") return reject(failure("precondition", "이미 기록한 교차 지점입니다 — 같은 지점을 다시 실행해 결과를 바꾸지 않습니다"), "cross-done");
     if (point.state === "stopped" && point.stoppedBy?.class === "cross-stop") {
       return reject(failure("precondition", "사람 판단으로 중지한 교차 지점입니다 — 같은 지점을 다시 실행하지 않습니다"), "cross-stopped");
     }
-    const pointLimit = limit("crossPoint");
-    if (runs.length >= pointLimit) {
+    if (budgets.crossPoint.exhausted) {
       const origin = point.lastFailure?.class;
-      return reject(failure("limit-exceeded", `교차 지점 시도 한도 ${pointLimit}회 소진${point.state === "stopped" ? STOPPED_SUFFIX : ""}`, {
-        ...(isFailureClass(origin) ? { origin } : {}), counter: { key: "crossPoint", used: runs.length, limit: pointLimit },
+      return reject(failure("limit-exceeded", `${spent(budgets.crossPoint)}${point.state === "stopped" ? STOPPED_SUFFIX : ""}`, {
+        ...(isFailureClass(origin) ? { origin } : {}), counter: counterOf(budgets.crossPoint),
       }), "point-limit");
     }
     const last = runs.filter((attempt) => attempt.endedAt !== undefined).at(-1);
     if (last?.class === "cross-result-invalid") {
-      const formatLimit = limit("crossFormat");
-      if (corrections >= formatLimit) {
-        return reject(failure("limit-exceeded", `교차 형식 교정 한도 ${formatLimit}회 소진`, {
-          origin: "cross-result-invalid", counter: { key: "crossFormat", used: corrections, limit: formatLimit },
-        }), "format-limit");
+      if (budgets.crossFormat.exhausted) {
+        return reject(failure("limit-exceeded", spent(budgets.crossFormat), { origin: "cross-result-invalid", counter: counterOf(budgets.crossFormat) }), "format-limit");
       }
       const exists = input.rawExists ?? (() => true);
       return last.rawPath && exists(last.rawPath) ? { action: "correct", rawPath: last.rawPath } : { action: "run" };
     }
-    const errorLimit = limit("crossError");
-    if (configErrors > errorLimit) {
-      return reject(failure("limit-exceeded", `교차 설정 오류 재실행 한도 ${errorLimit}회 소진`, {
-        origin: "cross-config-error", counter: { key: "crossError", used: configErrors, limit: errorLimit },
-      }), "error-limit");
+    if (budgets.crossError.exhausted) {
+      return reject(failure("limit-exceeded", spent(budgets.crossError), { origin: "cross-config-error", counter: counterOf(budgets.crossError) }), "error-limit");
     }
     return { action: "run" };
   }
@@ -1016,18 +1107,20 @@ export function crossPointDecision(input: { attempts: readonly CrossAttemptView[
   }
   if (last.class === "cross-unavailable") return { action: "record-unavailable", reason: last.detail ?? "" };
   const min = input.timeoutMin ?? TIMING.crossTimeoutMin;
-  const timeouts = input.attempts.filter((attempt) => attempt.class === "cross-timeout" && attempt.kind === "timeout").length;
-  if (last.class === "cross-timeout" && last.kind === "timeout" && timeouts >= 1 + LIMITS.crossTimeout && !input.wasStopped) {
-    return { action: "record-unavailable", reason: `두 번 연속 ${min}분 제한을 넘겼습니다(CODE_AGENT_CROSS_TIMEOUT_MIN)` };
+  const isTimeout = (attempt?: CrossAttemptView) => attempt?.class === "cross-timeout" && attempt.kind === "timeout";
+  if (isTimeout(last) && budgets.crossTimeout.used >= LIMITS.crossTimeout && !input.wasStopped) {
+    // 두 번째 제한 시간 초과 — 바로 앞 시도도 제한 시간 초과일 때만 "연속"이다
+    const consecutive = isTimeout(runs.filter((attempt) => attempt !== last && attempt.endedAt !== undefined).at(-1));
+    return { action: "record-unavailable", reason: `${consecutive ? "두 번 연속" : "이 지점에서 두 번"} ${min}분 제한을 넘겼습니다(CODE_AGENT_CROSS_TIMEOUT_MIN)` };
   }
   const suffix = input.wasStopped ? WAS_STOPPED_SUFFIX : "";
   switch (last.class) {
     case "cross-timeout":
-      return reject(failure("cross-timeout", `${min}분 제한을 넘겨 중단했습니다${suffix}`, { kind: last.kind, counter: { key: "crossTimeout", used: Math.min(timeouts, LIMITS.crossTimeout), limit: LIMITS.crossTimeout } }), "failed");
+      return reject(failure("cross-timeout", `${min}분 제한을 넘겨 중단했습니다${suffix}`, { kind: last.kind, counter: counterOf(budgets.crossTimeout) }), "failed");
     case "cross-config-error":
-      return reject(failure("cross-config-error", `${last.detail ?? ""}${suffix}`, { kind: last.kind, counter: { key: "crossError", used: configErrors, limit: limit("crossError") } }), "failed");
+      return reject(failure("cross-config-error", `${last.detail ?? ""}${suffix}`, { kind: last.kind, counter: counterOf(budgets.crossError) }), "failed");
     case "cross-result-invalid":
-      return reject(failure("cross-result-invalid", `${last.detail ?? ""}${suffix}`, { kind: last.kind, counter: { key: "crossFormat", used: corrections, limit: limit("crossFormat") } }), "failed");
+      return reject(failure("cross-result-invalid", `${last.detail ?? ""}${suffix}`, { kind: last.kind, counter: counterOf(budgets.crossFormat) }), "failed");
     case "host-sandbox-denied":
       return reject(failure("host-sandbox-denied", `${last.detail ?? ""}${suffix}`, { kind: last.kind }), "failed");
     default:
@@ -1036,25 +1129,22 @@ export function crossPointDecision(input: { attempts: readonly CrossAttemptView[
 }
 /**
  * 지금 지점이 막혀 있다면 그 실패 — 게이트·status 안내가 쓴다(마지막 시도의 class 를 직접 읽지 않는다 — 한도 거부는
- * 시도로 저장되지 않는다). 지점이 open 일 때만 값이 있다.
+ * 시도로 저장되지 않는다). 지점이 open 일 때만 값이 있다. at 은 마지막 실패 시도의 endedAt 이다(부를 때마다 바뀌지 않는다).
+ * 렌더는 guidance(hint.class, values, recordedVariant(hint)) — 끊긴 실행(kind interrupted)은 제한 시간 문구가 아니다.
  */
 export function crossPointHint(input: { attempts: readonly CrossAttemptView[]; grants?: readonly RetryGrant[]; scope: string;
   rawExists?: (path: string) => boolean }): FailureRecord | undefined {
   const point = crossPointState(input.attempts);
   if (point.state !== "open") return undefined;
-  const decision = crossPointDecision({ ...input, phase: "before" });
-  if (decision.action === "refuse") return decision.failure;
   const last = point.lastFailure;
+  const at = last?.endedAt ? { at: last.endedAt } : {};
+  const decision = crossPointDecision({ ...input, phase: "before" });
+  if (decision.action === "refuse") return { ...decision.failure, ...at };
   if (!last || !isFailureClass(last.class)) return undefined;
-  const runs = input.attempts.filter((attempt) => attempt.mode === "review" || attempt.mode === "correct");
-  const key: CounterKey = last.class === "cross-config-error" ? "crossError" : last.class === "cross-result-invalid" ? "crossFormat"
+  const budgets = crossBudgets(input.attempts, input.grants, input.scope);
+  const key: CrossCounterKey = last.class === "cross-config-error" ? "crossError" : last.class === "cross-result-invalid" ? "crossFormat"
     : last.class === "cross-timeout" && last.kind === "timeout" ? "crossTimeout" : "crossPoint";
-  const used = key === "crossError" ? runs.filter((attempt) => attempt.class === "cross-config-error").length
-    : key === "crossFormat" ? runs.filter((attempt) => attempt.mode === "correct").length
-      : key === "crossTimeout" ? input.attempts.filter((attempt) => attempt.class === "cross-timeout" && attempt.kind === "timeout").length
-        : runs.length;
-  return failure(last.class, last.detail ?? "", { ...(last.kind ? { kind: last.kind } : {}), ...(last.endedAt ? { at: last.endedAt } : {}),
-    counter: { key, used, limit: limitOf(key, undefined, input.grants, input.scope) } });
+  return failure(last.class, last.detail ?? "", { ...(last.kind ? { kind: last.kind } : {}), ...at, counter: counterOf(budgets[key]) });
 }
 /**
  * 최근 지점부터 이어진 "사람이 아닌 중지" 수 — status·doctor 경고. completed 를 만나면 멈추고,
@@ -1115,6 +1205,9 @@ export function hookFailureInput(command: HookFailureInput["command"], stdin: st
 /**
  * hook 이 판정(또는 모듈 로드)에 실패했을 때의 종료 코드와 stdout. 판정하는 PreToolUse 와 동의 질문·응답은 막고(fail-closed),
  * Stop·SessionStart·SubagentStop·업무 질문·사용자 메시지는 막지 않는다. 알 수 없으면(읽지 못함·필드 없음) 막는 쪽이다.
+ * 입력은 언제나 hookFailureInput(command, stdin) 으로 만든다 — `{ command, event }` 를 손으로 만들거나 parsed 를 채워 넣지 않는다
+ * (parsed:false 는 "stdin 을 읽지 못함"이라 codex-event Stop 에도 deny JSON 을 낸다). 진입점의 꼴:
+ * hookFailureExit(hookFailureInput(command, stdin), "hook 을 실행하지 못했습니다: " + message).
  */
 export function hookFailureExit(input: HookFailureInput, message = "판정 모듈을 실행하지 못했습니다"): { code: 0 | 2; stdout?: string } {
   switch (input.command) {
