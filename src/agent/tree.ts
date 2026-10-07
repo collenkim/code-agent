@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -105,14 +106,30 @@ export function changedPaths(repoRoot: string, baseCommit: string): Change[] {
  * 그대로인가" 만 남는다. 계획 밖 변경은 해시가 아니라 `changedPaths` 대조가 따로 막는다.
  *
  * 없는 파일은 빈 내용으로 담는다 — 지워서 통과시키는 길이 해시 변화로 드러나게.
+ *
+ * 파일은 **바이트로** 해시한다. 문자열로 읽으면 유효하지 않은 UTF-8 이 U+FFFD 로 뭉개져, 바이너리 fixture 를
+ * 바꿔도 해시가 같을 수 있다. 유효한 UTF-8 파일(BOM·CRLF 포함)은 두 방식의 값이 같다.
  */
 export function partialTreeHash(repoRoot: string, paths: string[]): string {
   const entries = [...paths]
     .sort()
     .map((path) => {
       const full = join(repoRoot, path);
-      const content = existsSync(full) ? readFileSync(full, "utf-8") : "";
-      return `${path}:${sha(content)}`;
+      return `${path}:${existsSync(full) ? shaBytes(readFileSync(full)) : sha("")}`;
     });
   return sha(entries.join("\n"));
+}
+
+function shaBytes(bytes: Buffer): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}`;
+}
+
+/** 경로마다 파일 바이트 해시 — 테스트 동결의 기준(testFreeze)과 대조에 쓴다. 없는 파일은 `missing` */
+export function fileHashes(repoRoot: string, paths: string[]): Record<string, string> {
+  const hashes: Record<string, string> = {};
+  for (const path of [...paths].sort()) {
+    const full = join(repoRoot, path);
+    hashes[path] = existsSync(full) ? shaBytes(readFileSync(full)) : "missing";
+  }
+  return hashes;
 }

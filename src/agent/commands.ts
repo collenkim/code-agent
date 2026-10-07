@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { userInfo } from "os";
 
-import { formatDiff, recordDecision } from "../core/approval";
+import { formatDiff, hashPlan, recordDecision } from "../core/approval";
 import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
@@ -35,19 +35,22 @@ import { commitOf, mergeBase } from "./tree";
 import { prDocFile } from "./deliver";
 import { proposalFile } from "./knowledge";
 import {
-  fixLimit,
+  collectWindowOpen,
   loadEvidence,
   outsideChanges,
-  overFixLimit,
   reproMissing,
+  reviewRoundUsage,
   runsOf,
   stageProblems,
+  testFrozen,
   testRoots,
   testStageFiles,
   trackedTestFiles,
   validationDocFile,
+  verifyView,
 } from "./evidence";
-import type { VerifyPhase } from "./evidence";
+import type { VerifyPhase, VerifyView } from "./evidence";
+import { budgetText, nextRoundDecision, verifyNode, verifyState, writeBlockReason } from "./retryPolicy";
 import { docRefs, keywordsOf, rankCandidates, relevantDocSections, requirementItems } from "./plugins/defaults";
 import type { RequirementRef } from "./plugins/protocol";
 import { callSlot, clamp, sourceLines } from "./plugins/run";
@@ -359,6 +362,44 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
 
 // ---- status ----
 
+/**
+ * check·test 의 한도 소진 줄 — **증거로** 판정한다(check() 직접 호출에는 verify 기록이 없고, 사람이 회차를 허용한 뒤에는
+ * 마지막 verify 기록의 한도 줄이 낡는다). 다음 회차가 거부되거나(writeBlockReason 과 같은 판정) 노드가 decision 이면
+ * 카운터별 문구를 낸다. 한도 줄은 이 자리 하나다.
+ */
+export function verifyLimitHint(work: Work): string | undefined {
+  const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) return undefined;
+  const view = verifyView(work, evidence);
+  if (writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path: "", questionsPath: questionsFile(work.active.id) })) {
+    return exhaustedHint(view, work.active.id);
+  }
+  const phase = work.active.phase === "test" ? "test" : "check";
+  const state = verifyState({ phase, round: evidence.rounds, runs: evidence.runs, cases: phase === "test" ? evidence.testCases : undefined });
+  if (state !== "passed" && state !== "precondition" && verifyNode(state, view.budget) === "decision") return exhaustedHint(view, work.active.id, state);
+  return undefined;
+}
+
+/** 카운터별 한도 소진 문구 — 고쳐 쓰기 한도 문구는 이 자리 하나다 */
+function exhaustedHint(view: VerifyView, id: string, state?: string): string {
+  const questions = questionsFile(id);
+  // 막은 카운터 — 고쳐도 다음 회차가 거부되면 그 카운터, 아니면 같은 코드 재실행(노드가 decision)
+  const next = nextRoundDecision({ previous: view.state, emptyRound: view.emptyRound, treeChanged: true, budget: view.budget,
+    reviewOpenFindings: view.budget.reviewRounds.used > 0 });
+  const key = next.action === "refuse" && next.failure.counter && !(state === "environment" || state === "interrupted")
+    ? next.failure.counter.key : "rerun";
+  switch (key) {
+    case "fix":
+      return `고쳐 쓰기 ${view.budget.fix.limit}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${questions} 에 적고 사람에게 보고하세요`;
+    case "reviewRounds":
+      return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — 남은 지적은 사람이 판단합니다. ${questions} 에 적고 보고하세요`;
+    case "totalRounds":
+      return `검증 회차가 총 ${view.budget.totalRounds.limit}회에 닿아 막혔습니다 — ${questions} 에 적고 사람에게 보고하세요`;
+    default:
+      return `같은 코드 재실행 ${view.budget.rerun.limit}회를 모두 썼습니다 — 환경을 사람이 확인해야 합니다. 막힌 이유를 보고하세요`;
+  }
+}
+
 function nextHint(work: Work): string {
   const { repoRoot, active } = work;
   if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
@@ -394,17 +435,22 @@ function nextHint(work: Work): string {
       return `${stageCommand("implement")} — 단계 ${active.stage} 를 구현한 뒤 code-agent next`;
     case "check":
     case "test": {
+      // 한도 줄은 verifyLimitHint 한 곳에서만 낸다 — 증거가 정본이다(check 직접 호출에는 verify 기록이 없다)
+      const limited = verifyLimitHint(work);
+      if (limited) return limited;
       const evidence = loadEvidence(repoRoot, active.id, active.target);
       if (!evidence) {
         return `${stageCommand(active.phase)} — code-agent ${active.phase}`;
       }
-      if (overFixLimit(work, evidence)) {
-        return `고쳐 쓰기 ${fixLimit(work, evidence)}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${workDocsDir(active.id)}/questions.md 에 적고 사람에게 보고하세요`;
-      }
+      const view = verifyView(work, evidence);
       const failed = runsOf(evidence, active.phase).filter((run) => run.outcome !== "passed");
-      return failed.length === 0 && runsOf(evidence, active.phase).length > 0
-        ? `검증 통과 — code-agent next 로 넘긴 뒤 ${stageCommand(active.phase === "check" ? "test" : "review")}`
-        : `${stageCommand(active.phase)} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — 계획 안에서 고치고 code-agent ${active.phase} (${evidence.rounds}/${fixLimit(work, evidence) + 1}회차)`;
+      if (failed.length === 0 && runsOf(evidence, active.phase).length > 0) {
+        return `검증 통과 — code-agent next 로 넘긴 뒤 ${stageCommand(active.phase === "check" ? "test" : "review")}`;
+      }
+      const state = verifyState({ phase: active.phase, round: evidence.rounds, runs: evidence.runs, cases: active.phase === "test" ? evidence.testCases : undefined });
+      const node = state === "precondition" || state === "passed" ? "diagnose" : verifyNode(state, view.budget);
+      return `${stageCommand(active.phase)} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — ` +
+        `${node === "repair" ? "계획 안에서 고치고" : "원인을 확인하고"} code-agent ${active.phase} (${budgetText(view.budget)})`;
     }
     case "review": {
       const problems = reviewProblems(work);
@@ -732,7 +778,7 @@ export const BACK_PHASES: readonly Phase[] = PHASES.filter((phase) => phase !== 
 function backNotes(to: Phase): string[] {
   const notes = [
     "증거(⑧) · 리뷰 회차(⑨) · 승인 원장 · 작업 문서는 그대로 둡니다 — 커서만 옮겼습니다.",
-    "고쳐 쓰기 회차는 planHash 에 묶여 있어 되감아도 줄지 않습니다. 계획을 재승인해야 처음부터 셉니다.",
+    "검증 회차와 재시도 카운터는 planHash 에 묶여 있어 되감아도 줄지 않습니다. 계획을 재승인해야 처음부터 셉니다.",
   ];
   if (to === "analysis" || to === "impact" || to === "design") {
     notes.push(
@@ -1067,22 +1113,29 @@ export function context(repoRoot: string): string {
   // 긴 것(실패 로그)은 내용이 아니라 경로만 준다.
   if (AFTER_IMPLEMENT.includes(active.phase) && work.plan) {
     const frozen = testStageFiles(work);
+    const evidence = loadEvidence(repoRoot, active.id, active.target);
+    const view = evidence ? verifyView(work, evidence) : undefined;
+    // 동결 표시 셋 — 결과 미확인의 수집 수정 창, 얼어 있음, 아직 얼지 않음(결과가 인식된 test 실행부터 언다)
+    const frozenNote = !evidence || !view
+      ? " · kind:test (결과가 인식된 test 실행부터 언다)"
+      : testFrozen(evidence) && collectWindowOpen(view)
+        ? " · **결과 미확인 — 수집 수정 1회 동안 TC 이름만 고칠 수 있음**"
+        : testFrozen(evidence) ? " · **얼어 있음 (kind:test)**" : " · kind:test (결과가 인식된 test 실행부터 언다)";
     out.push(
       "",
       "## 계획 파일",
       ...work.plan.files.map(
         (file) =>
           `- [${file.stage}] ${file.path} — ${file.purpose} · 요구 ${(file.requirements ?? []).join(", ") || "없음"}` +
-          (frozen.includes(file.path) ? " · **얼어 있음 (kind:test)**" : ""),
+          (frozen.includes(file.path) ? frozenNote : ""),
       ),
     );
-    const evidence = loadEvidence(repoRoot, active.id, active.target);
     out.push(
       "",
       `## 검증 증거 (${validationDocFile(active.id)})`,
-      evidence
+      evidence && view
         ? [
-            `- ${evidence.rounds}회차 · 한도 ${fixLimit(work, evidence) + 1}회차`,
+            `- ${evidence.rounds}회차 · ${budgetText(view.budget)}`,
             ...(["check", "test"] as const).flatMap((phase) =>
               runsOf(evidence, phase).map(
                 (run) => `- ${phase}/${run.kind}: ${run.outcome}${run.logFile ? ` · 로그 ${run.logFile}` : ""}`,
@@ -1091,7 +1144,8 @@ export function context(repoRoot: string): string {
           ].join("\n")
         : "- 아직 없습니다 — code-agent check",
       "",
-      "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요.",
+      "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요." +
+        " 결과가 하나도 인식되지 않고 실패도 없던 test 실행은 얼리지 않습니다. 일부만 인식됐으면 수집 수정 1회 동안 TC 이름을 고칠 수 있습니다.",
       `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.`,
     );
   }
@@ -1099,10 +1153,11 @@ export function context(repoRoot: string): string {
   if (active.phase === "review") {
     const review = loadReview(repoRoot, active.id, active.target);
     const last = review?.rounds[review.rounds.length - 1];
+    const usage = reviewRoundUsage(work);
     out.push(
       "",
       `## ⑨ ${reviewDocFile(active.id)} — 코드 리뷰`,
-      `- 회차: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "없음 — code-agent review 로 먼저 여세요"}`,
+      `- 회차: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "없음 — code-agent review 로 먼저 여세요"} · 남은 리뷰 회차 ${Math.max(0, usage.limit - usage.used)}회`,
       "- 회차 구역(`<!-- code-agent:review:... -->`)은 코드가 렌더합니다. 손대면 게이트가 거부합니다.",
       "- ca-reviewer 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.",
       "",
@@ -1115,7 +1170,7 @@ export function context(repoRoot: string): string {
       "- **열 순서는 고정입니다** — 코드가 칸 위치로 읽습니다. 상태는 `열림` · `해결` 둘뿐이고 글자 그대로 봅니다.",
       "- 계획 파일 칸은 **저장소 기준 경로 그대로** — 백틱도 `:줄번호` 도 붙이지 마세요 (줄번호·근거는 지적 칸에).",
       "- **범위는 코드가 계획과 대조해 정합니다** — 적은 것이 다르면 게이트가 알려 줍니다.",
-      "- 계획 안 지적: 고친 뒤 code-agent check → test → review 로 다음 회차를 엽니다 (check 가 이 자리에서 되감습니다).",
+      `- 계획 안 지적: 고친 뒤 code-agent verify 로 check·test 를 다시 돌고 code-agent review 로 다음 회차를 엽니다. 리뷰 회차는 ${usage.limit}회까지입니다.`,
       `- 계획 밖 지적: 모델이 닫을 수 없습니다. ${questionsFile(active.id)} 로 묻거나 계획을 고쳐 재승인받습니다.`,
     );
   }

@@ -357,12 +357,30 @@ describe("검증 명령 제한 시간", () => {
       const result = await runCommand(dir, ["node", "-e", script], process.env, 1500);
       assert.ok(Date.now() - started < 15000, "close 를 기다리며 멈추지 않는다");
       assert.match(result.error?.message ?? "", /제한 시간 1\.5초.*commandTimeoutMinutes/);
+      assert.equal(result.timedOut, true, "시간 초과는 메시지가 아니라 필드로 판정한다");
+      assert.equal(result.notFound, undefined);
       if (process.platform === "win32" && existsSync(pidFile)) {
         const pid = Number(readFileSync(pidFile, "utf8"));
         assert.throws(() => process.kill(pid, 0), "Windows 에서는 프로세스 트리째 끝낸다");
       }
     } finally {
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  });
+
+  test("실행 파일이 없으면 notFound, 정상 실패는 timedOut·notFound 둘 다 없다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ca-notfound-"));
+    try {
+      const missing = await runCommand(dir, ["code-agent-does-not-exist-on-this-machine"], process.env, 5000);
+      assert.equal(missing.notFound, true);
+      assert.equal(missing.timedOut, undefined);
+      assert.match(missing.error?.message ?? "", /실행 파일을 찾을 수 없습니다/);
+      const failed = await runCommand(dir, ["node", "-e", "process.exit(3)"], process.env, 30000);
+      assert.equal(failed.status, 3);
+      assert.equal(failed.timedOut, undefined);
+      assert.equal(failed.notFound, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

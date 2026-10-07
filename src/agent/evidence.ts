@@ -6,9 +6,22 @@ import type { Manifest, StageDef } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
 import { docPaths, firstListNames, sectionBody } from "./docs";
 import { knowledgePath } from "./knowledge";
-import { verifyFile, workDocsDir } from "./layout";
+import { reviewFile, verifyFile, workDocsDir } from "./layout";
+import {
+  grantScope,
+  LIMITS,
+  limitOf,
+  nextRoundDecision,
+  roundStateOf,
+  runClass,
+  verifyBudget,
+  verifyRetryOf,
+  verifyState,
+} from "./retryPolicy";
+import type { RoundCause, RunCause, VerifyBudget, VerifyRetryState, VerifyRetryView, VerifyState } from "./retryPolicy";
+import type { ReviewLog } from "./review";
 import { KNOWLEDGE_KINDS, SCHEMAS } from "./schemas";
-import { changedPaths, partialTreeHash, trackedPaths } from "./tree";
+import { changedPaths, fileHashes, partialTreeHash, trackedPaths } from "./tree";
 import type { Change } from "./tree";
 import { approvalOf } from "./work";
 import type { Work } from "./work";
@@ -38,7 +51,7 @@ export type VerifyPhase = "repro" | "check" | "test" | "integrate";
 
 /** 검증 명령 한 번 */
 export interface VerifyRun {
-  /** 고쳐 쓰기 회차. 명령을 돌리기 **전에** 올린다 */
+  /** 검증 회차. 명령을 돌리기 **전에** 올린다 — 회차를 연 원인은 `Evidence.retry.causes` */
   round: number;
   phase: VerifyPhase;
   /** 매니페스트의 명령 이름 (build · test · 선언된 commands 의 키) */
@@ -53,6 +66,10 @@ export interface VerifyRun {
   at: string;
   /** 출력이 code-agent.json 의 environmentErrors 와 맞아 환경 오류(error)로 분류됐을 때 맞은 패턴 */
   environment?: string;
+  /** 실행이 끝난 원인(시간 초과·실행 실패·실행 파일 없음·환경 오류). 없는 옛 기록은 runCauseOf 가 tail 문구로 추정한다 */
+  cause?: RunCause;
+  /** 보고서 탐색이 상한(2만 항목·깊이 12)에서 끊겼다 — JUnit 보고서를 놓쳤을 수 있다 */
+  reportScan?: "truncated";
 }
 
 /** ⑦ 의 TC 하나가 이번 실행에서 어떻게 확인됐는가 */
@@ -106,7 +123,7 @@ export interface Evidence {
   treeHash: string;
   manifestHash: string;
   planHash: string;
-  /** 고쳐 쓰기 회차 — check 를 한 번 돌 때마다 +1 */
+  /** 검증 회차 — 새 회차를 열 때 +1. 같은 코드 재실행은 회차를 다시 쓴다 */
   rounds: number;
   /**
    * 이 증거가 시작될 때의 고쳐 쓰기 한도. **매니페스트를 매번 읽지 않는 이유**가 여기 있다 —
@@ -123,11 +140,28 @@ export interface Evidence {
    * 옛 증거에는 없어 optional 이다. 묶임이 깨지면 증거와 함께 버려진다 — 재승인하면 다시 봐야 한다.
    */
   repro?: ReproEvidence;
-  /** 로컬 재현이 안 된 마지막 시도 — 사람이 로그 근거 전환을 확인할 때 보여 준다 */
-  reproAttempt?: ReproEvidence & { problem: string };
+  /**
+   * 로컬 재현이 안 된 마지막 시도 — 사람이 로그 근거 전환을 확인할 때 보여 준다. class 는 같은 테스트 트리로 다시
+   * 시도할 수 있는가를 정한다(없는 옛 기록은 problem 문구로 추정한다)
+   */
+  reproAttempt?: ReproEvidence & { problem: string; class?: ReproAttemptClass };
   /** 재현 실패 뒤 사람이 확인한 로그 근거 전환. 테스트를 다시 쓴 뒤의 재실행에도 이어진다 */
   logBasis?: LogBasis;
+  /** 원인별 재시도 카운터 — 없으면 옛 증거다. verifyRetryOf 가 읽을 때 추정하고 다음 저장 때 기록한다 */
+  retry?: VerifyRetryState;
+  /** 테스트 동결의 기준 — 결과가 인식된(또는 코드 결함으로 실패한) 첫 test 실행 때의 kind:test 파일별 해시 */
+  testFreeze?: TestFreeze;
   at: string;
+}
+
+export type ReproAttemptClass = "environment" | "interrupted" | "result-unconfirmed" | "precondition";
+
+export interface TestFreeze {
+  round: number;
+  at: string;
+  files: Record<string, string>;
+  /** 새 회차를 열며 기준을 다시 굳힌 파일 — 수집 수정 회차의 파일과 ⑨ 지적으로 연 파일만이다 */
+  rebased?: { round: number; at: string; by?: "collect" | "finding"; files: string[] }[];
 }
 
 export function loadEvidence(repoRoot: string, id: string, target: string): Evidence | undefined {
@@ -397,33 +431,139 @@ export function failedRuns(runs: VerifyRun[]): VerifyRun[] {
 }
 
 /**
- * 이번 회차가 **선언된 환경 오류로만** 막혔는가 — 통과하지 못한 실행이 전부 environmentErrors 에 맞았다.
- * 코드를 그대로 둔 재실행은 이 회차를 다시 쓴다(고쳐 쓰기 한도를 쓰지 않는다). 시간 초과·실행 파일 없음은
- * 선언된 패턴이 아니라 여기 들지 않는다.
- */
-export function environmentBlocked(evidence: Evidence): boolean {
-  const current = evidence.runs.filter((run) => run.round > 0 && run.round === evidence.rounds);
-  return current.some((run) => run.environment !== undefined) &&
-    current.every((run) => run.outcome === "passed" || run.environment !== undefined);
-}
-
-/**
- * 고쳐 쓰기 한도를 넘겼는가. **실패한 채로** 넘긴 경우만이다 —
- * 통과한 뒤 회차가 남아 있는 것은 막을 이유가 없다.
- *
- * 1회차는 처음 돌려 본 것이라 고쳐 쓰기로 세지 않는다. 한도 2면 3회차 실패까지가 끝이다.
+ * 고쳐 쓰기 한도 — 증거가 시작될 때 굳은 값(`fixRounds`), 없으면 매니페스트 값이다.
+ * 1회차는 처음 돌려 본 것이라 고쳐 쓰기로 세지 않는다. 고쳐 쓰기는 실패를 고쳐 연 회차만 센다(retry.causes 의 fix).
  */
 export function fixLimit(work: Work, evidence: Evidence): number {
   return evidence.fixRounds ?? work.manifest.fixRounds;
 }
 
+// ---- 원인별 재시도 카운터 (판정은 retryPolicy.ts, 여기는 증거를 그 입력으로 바꾼다) ----
+
+/** 리뷰 회차 사용량 — 리뷰 회차 한도의 판정은 이 값 하나다(openRound·check()·hook·verify 가 같이 쓴다) */
+export interface ReviewRoundUsage { used: number; base: number; limit: number; usedPaths: string[]; stale: boolean }
+
+/**
+ * 리뷰 회차 사용량. 순수 함수다 — 파일을 읽지 않으므로 review.json 잠금 안에서 다시 읽은 log 로도 부른다.
+ * log 가 없거나 회차 하나라도 지금 묶임(기준 커밋·계획·매니페스트)과 다르면 openRound 가 회차를 버리므로
+ * 사용량 0 이다(사람 허용도 함께 버려진다). `limit` 이 없는 옛 log 는 이미 3회차 이상이면 한 회차 유예를 받고,
+ * 다음 openRound 가 limit 을 기록하면서 유예가 끝난다.
+ */
+export function reviewRoundUsageOf(log: ReviewLog | undefined, binding: { baseCommit: string; planHash: string; manifestHash: string }): ReviewRoundUsage {
+  const stale = !log || !Array.isArray(log.rounds) || log.rounds.some((round) =>
+    round.baseCommit !== binding.baseCommit || round.planHash !== binding.planHash || round.manifestHash !== binding.manifestHash);
+  if (stale) return { used: 0, base: LIMITS.reviewRounds, limit: LIMITS.reviewRounds, usedPaths: [], stale: true };
+  const used = log!.rounds.length;
+  const base = log!.limit ?? (used >= LIMITS.reviewRounds ? used + 1 : LIMITS.reviewRounds);
+  return {
+    used,
+    base,
+    limit: limitOf("reviewRounds", base, log!.grants ?? [], grantScope({ file: "review", key: "reviewRounds" })),
+    usedPaths: (log!.used ?? []).map((entry) => entry.path),
+    stale: false,
+  };
+}
+
+/** review.json 을 읽어 지금 묶임의 리뷰 회차 사용량을 낸다. 읽지 못하면 없는 것으로 본다 */
+export function reviewRoundUsage(work: Work): ReviewRoundUsage {
+  const path = reviewFile(work.repoRoot, work.active.id, work.active.target);
+  let log: ReviewLog | undefined;
+  try {
+    log = existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) as ReviewLog : undefined;
+  } catch {
+    log = undefined;
+  }
+  if (!work.plan || !work.active.baseCommit) return reviewRoundUsageOf(undefined, { baseCommit: "", planHash: "", manifestHash: "" });
+  return reviewRoundUsageOf(log, { baseCommit: work.active.baseCommit, planHash: hashPlan(work.plan), manifestHash: hashManifest(work.manifest) });
+}
+
+/** 회차 전체 상태 — check() 의 다음 회차 판정과 hook 이 쓴다(앞 회차 test 상태를 이어받는다) */
+export function roundState(evidence: Evidence): { state: VerifyState | "none"; emptyRound: boolean } {
+  return roundStateOf({
+    rounds: evidence.rounds, runs: evidence.runs, started: verifyRetryOf(evidence).started,
+    testCases: evidence.testCases, integrationTestCases: evidence.integrationTestCases,
+  });
+}
+
+export interface VerifyView {
+  round: number;
+  state: VerifyState | "none";
+  emptyRound: boolean;
+  /** 이 회차 test 의 상태 — 끊긴 test 표지가 있거나 이 회차 test 실행이 있을 때만(앞 회차를 이어받지 않는다) */
+  testState?: VerifyState;
+  retry: VerifyRetryView;
+  budget: VerifyBudget;
+}
+
+/** 증거 하나의 판정 입력 — 상태·카운터·예산. check()·verify·hook·status·context 가 같은 값을 본다 */
+export function verifyView(work: Work, evidence: Evidence): VerifyView {
+  const retry = verifyRetryOf(evidence);
+  const budget = verifyBudget({
+    retry, round: evidence.rounds, fixRounds: fixLimit(work, evidence),
+    // fix 는 재현부터 테스트가 얼어 있다 — 수집 수정 창이 재현 동결을 열지 않게 0 이다
+    collectLimit: evidence.repro ? 0 : LIMITS.collect,
+    reviewRounds: reviewRoundUsage(work),
+  });
+  const { state, emptyRound } = roundState(evidence);
+  const r = evidence.rounds;
+  const testState: VerifyState | undefined = retry.started?.phase === "test" && retry.started.round === r ? "interrupted"
+    : evidence.runs.some((run) => run.phase === "test" && run.round === r)
+      ? verifyState({ phase: "test", round: r, runs: evidence.runs, cases: evidence.testCases })
+      : undefined;
+  return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget };
+}
+
+/**
+ * kind:test 파일이 얼어 있는가 — 결과가 인식된(또는 코드 결함으로 실패한) test 실행, 또는 재현부터다.
+ * 앞의 둘(testFreeze·repro)은 새 기록이고, 뒤의 둘은 testFreeze 가 없는 옛 증거를 위한 추정이다.
+ * 결과가 하나도 인식되지 않고 실패도 없던 test 실행(결과 미확인)은 얼리지 않는다.
+ */
+export function testFrozen(evidence: Evidence): boolean {
+  return !!evidence.testFreeze || !!evidence.repro ||
+    evidence.runs.some((run) => run.phase === "test" && runClass(run) === "defect") ||
+    evidence.testCases.some((entry) => entry.source === "출력");
+}
+
+/** 결과 미확인 회차의 수집 수정 창 — 그동안 kind:test 파일의 TC 이름을 고칠 수 있다. fix 작업은 수집 한도가 0 이라 없다 */
+export function collectWindowOpen(view: VerifyView): boolean {
+  return view.testState === "result-unconfirmed" && view.budget.collect.left > 0 && view.budget.totalRounds.left > 0;
+}
+
+/** ⑦ 의 TC id 중 찾는 파일 어디에도 `TC-n` 토큰이 없는 것 — test 전 사전 점검(막지 않는다) */
+export function tcPrecheck(work: Work): string[] {
+  const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
+  const cases = spec ? parseTestCases(spec) : [];
+  if (cases.length === 0) return [];
+  const files = work.stages.some((stage) => stage.kind === "test")
+    ? [...testStageFiles(work), ...(work.order.kind === "refactor" ? trackedTestFiles(work) : [])]
+    : planPaths(work);
+  const texts = [...new Set(files)].map((path) => {
+    const full = join(work.repoRoot, path);
+    return existsSync(full) ? readFileSync(full, "utf-8") : "";
+  });
+  return cases.map((entry) => entry.id).filter((id) => !texts.some((text) => new RegExp(`\\b${id}\\b`).test(text)));
+}
+
+/**
+ * 테스트 동결 뒤 바뀐 kind:test 파일 — 증거의 기준(testFreeze)과 지금 파일 해시를 대조한다.
+ * review.json 을 읽지 않는다: ⑨ 지적으로 연 파일과 수집 수정 회차의 파일은 check() 가 새 회차를 열 때 기준을 다시 굳힌다.
+ */
+export function testFreezeProblems(work: Work, evidence: Evidence): string[] {
+  const freeze = evidence.testFreeze;
+  if (!freeze) return [];
+  const now = fileHashes(work.repoRoot, testStageFiles(work));
+  const paths = [...new Set([...Object.keys(freeze.files), ...Object.keys(now)])].sort();
+  return paths.filter((path) => freeze.files[path] !== now[path]).map((path) =>
+    `테스트 동결 뒤 바뀐 kind:test 파일: ${path} — 동결(${freeze.round}회차) 뒤에는 ⑨ 지적으로 연 파일만 바뀔 수 있고, ` +
+    "바꾼 뒤에는 code-agent verify 로 check 부터 다시 돌아야 기준이 갱신됩니다. 지적 없이 바꿨으면 되돌리세요");
+}
+
+/** 다음 수정 회차가 고쳐 쓰기 한도로 거부되는가 — hook·check() 와 같은 판정(nextRoundDecision)이다 */
 export function overFixLimit(work: Work, evidence: Evidence): boolean {
-  return (
-    evidence.rounds > fixLimit(work, evidence) &&
-    ((["check", "test"] as const).some((phase) => failedRuns(runsOf(evidence, phase)).length > 0) ||
-      (runsOf(evidence, "test").some((run) => run.round === evidence.rounds) &&
-        evidence.testCases.some((entry) => entry.status !== "passed")))
-  );
+  const view = verifyView(work, evidence);
+  const decision = nextRoundDecision({ previous: view.state, emptyRound: view.emptyRound, treeChanged: true, budget: view.budget,
+    reviewOpenFindings: view.budget.reviewRounds.used > 0 });
+  return decision.action === "refuse" && decision.failure.counter?.key === "fix";
 }
 
 /**
@@ -448,29 +588,45 @@ export function bindingProblems(work: Work, evidence: Evidence): string[] {
   return problems;
 }
 
+/**
+ * 게이트 문제 한 줄과 그 종류 — 다시 돌려서 풀리는가로 나눈다(verify 의 assess 만 종류를 쓴다).
+ * stop: 다시 돌려도 남는다(되돌리기·사람 판단·다른 명령이 필요). rerun: 다시 돌리면 맞춰진다(증거·묶임·회차·⑧).
+ * result: 실행 결과(실패한 실행·확인되지 않은 TC).
+ */
+export interface StageProblem { kind: "stop" | "rerun" | "result"; text: string }
+
 /** 스테이지 하나를 마쳤다고 할 수 있는가 — 증거 · 묶임 · 계획 대조 · 결과 전부 */
 export function stageProblems(work: Work, phase: VerifyPhase): string[] {
-  const problems: string[] = [];
+  return stageProblemEntries(work, phase).map((entry) => entry.text);
+}
+
+export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProblem[] {
+  const problems: StageProblem[] = [];
+  const add = (kind: StageProblem["kind"], text: string) => problems.push({ kind, text });
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
-    problems.push(`계획 승인이 ${approval.status} 입니다 — 승인 위에서 난 증거가 아니면 통과가 아닙니다`);
+    add("stop", `계획 승인이 ${approval.status} 입니다 — 승인 위에서 난 증거가 아니면 통과가 아닙니다`);
   }
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
   if (!evidence) {
-    problems.push(`검증 증거가 없습니다 — code-agent ${phase} 를 돌리세요`);
+    add("rerun", `검증 증거가 없습니다 — code-agent ${phase} 를 돌리세요`);
     return problems;
   }
-  problems.push(...bindingProblems(work, evidence));
+  for (const problem of bindingProblems(work, evidence)) add("rerun", problem);
   for (const change of outsideChanges(work)) {
-    problems.push(`계획 밖 변경: [${change.status}] ${change.path}`);
+    add("stop", `계획 밖 변경: [${change.status}] ${change.path}`);
   }
   for (const path of missingPlanFiles(work)) {
-    problems.push(`계획에 있는데 없는 파일: ${path}`);
+    add("stop", `계획에 있는데 없는 파일: ${path}`);
   }
-  problems.push(...preservedTestProblems(work));
+  for (const problem of preservedTestProblems(work)) add("stop", problem);
+  // 동결 뒤 바뀐 테스트 파일 — 게이트가 증거(testFreeze)로 다시 대조한다. 되돌리거나 ⑨ 지적으로 연 뒤 다시 돌아야 한다
+  if (phase === "test" || phase === "integrate") {
+    for (const problem of testFreezeProblems(work, evidence)) add("stop", problem);
+  }
   if (work.order.kind === "fix") {
     const problem = reproResultProblem(work, evidence);
-    if (problem) problems.push(problem);
+    if (problem) add("stop", problem);
   }
 
   // 재현은 "**그 테스트 트리 위에서** 봤다" 는 주장이다. 첫 check 뒤로는 hook 이 대조를 내려
@@ -479,7 +635,9 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
   if (phase === "integrate" && evidence.repro) {
     const now = testTreeHashNow(work);
     if (evidence.repro.testTreeHash !== now) {
-      problems.push(
+      // check() 가 격리 재현을 갱신하므로 다시 돌리면 맞춰진다
+      add(
+        "rerun",
         `재현을 본 테스트 트리가 지금과 다릅니다 (${evidence.repro.testTreeHash.slice(-12)} ≠ ${now.slice(-12)}) — ` +
           "code-agent check로 기준 코드 위의 격리 재현부터 갱신하세요. 작업 코드는 보존됩니다",
       );
@@ -488,13 +646,13 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
 
   const runs = runsOf(evidence, phase);
   if (runs.length === 0) {
-    problems.push(`${phase} 를 돌린 기록이 없습니다 — code-agent ${phase} 를 돌리세요`);
+    add("rerun", `${phase} 를 돌린 기록이 없습니다 — code-agent ${phase} 를 돌리세요`);
   } else if (Math.max(...runs.map((run) => run.round)) !== evidence.rounds) {
     // 앞 회차의 통과로 지금 회차를 덮지 않는다 — 고쳐 쓴 뒤 check 만 다시 돌리고 test 는 건너뛰는 길
-    problems.push(`${phase} 결과가 ${evidence.rounds}회차의 것이 아닙니다 — code-agent ${phase} 를 다시 돌리세요`);
+    add("rerun", `${phase} 결과가 ${evidence.rounds}회차의 것이 아닙니다 — code-agent ${phase} 를 다시 돌리세요`);
   }
   for (const run of failedRuns(runs)) {
-    problems.push(`${run.kind}: ${run.outcome} (${run.command})`);
+    add("result", `${run.kind}: ${run.outcome} (${run.command})`);
   }
   if (phase === "test" || phase === "integrate") {
     const records = phase === "test" ? evidence.testCases : evidence.integrationTestCases ?? [];
@@ -502,7 +660,8 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
     const uncovered = (spec ? parseTestCases(spec) : []).filter((item) => records.find((entry) => entry.id === item.id)?.status !== "passed")
       .map((item) => `${item.id}(${records.find((entry) => entry.id === item.id)?.status ?? "unknown"})`);
     if (uncovered.length > 0) {
-      problems.push(
+      add(
+        "result",
         `⑦ 의 테스트 케이스가 확인되지 않았습니다: ${uncovered.join(", ")} — ` +
           "필수 TC가 실제 실행되어 passed여야 합니다. TAP·unittest verbose·pytest verbose·Go JSON·code-agent-test JSONL 결과에 TC id를 남기세요. 파일의 주석만으로는 통과하지 않습니다",
       );
@@ -513,7 +672,7 @@ export function stageProblems(work: Work, phase: VerifyPhase): string[] {
   const rendered = join(work.repoRoot, validationDocFile(work.active.id));
   const expected = renderValidationDoc(work, evidence);
   if (!existsSync(rendered) || readFileSync(rendered, "utf-8") !== expected) {
-    problems.push(`${validationDocFile(work.active.id)} 가 증거와 다릅니다 — code-agent ${phase} 가 다시 렌더합니다`);
+    add("rerun", `${validationDocFile(work.active.id)} 가 증거와 다릅니다 — code-agent ${phase} 가 다시 렌더합니다`);
   }
   return problems;
 }
@@ -526,6 +685,21 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
   "not-run": "not-run (선언 없음)",
   error: "error (돌지 못함)",
 };
+
+/** 실행 원인 표지 — 결과 칸·실패 로그 머리에 붙는다. 원인 필드가 없는 옛 기록은 표지가 없다 */
+export const RUN_CAUSE_LABEL: Record<RunCause, string> = {
+  timeout: "시간 초과",
+  spawn: "실행 실패",
+  "missing-tool": "실행 파일 없음",
+  environment: "환경 오류",
+};
+
+/** 회차를 연 원인 — ⑧ 수정 루프 줄에 붙는다 */
+const CAUSE_LABEL: Record<RoundCause, string> = { first: "첫 실행", fix: "고쳐 쓰기", collect: "수집 수정", review: "통과 뒤 변경" };
+
+function outcomeText(run: VerifyRun): string {
+  return `${OUTCOME_LABEL[run.outcome]}${run.cause ? ` · ${RUN_CAUSE_LABEL[run.cause]}` : ""}`;
+}
 
 /**
  * 증거를 사람이 읽는 문서로. **입력은 증거뿐이다** — 로그 파일이나 지금 시각을 읽으면 다시 렌더할 때
@@ -557,7 +731,7 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
   ];
   for (const run of evidence.runs) {
     lines.push(
-      `| ${run.round} | ${run.phase} | ${run.kind} | ${run.command || "(선언 없음)"} | ${OUTCOME_LABEL[run.outcome]} | ${run.status ?? "-"} |`,
+      `| ${run.round} | ${run.phase} | ${run.kind} | ${run.command || "(선언 없음)"} | ${outcomeText(run)} | ${run.status ?? "-"} |`,
     );
   }
   if (evidence.runs.length === 0) {
@@ -573,6 +747,9 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
       lines.push(`| ${entry.id} | ${entry.status ?? "unknown"} | ${entry.source} | ${entry.where ?? "-"} |`);
     }
   }
+  if (evidence.testFreeze) {
+    lines.push("", `- 테스트 동결: ${evidence.testFreeze.round}회차부터 · kind:test 파일 ${Object.keys(evidence.testFreeze.files).length}개`);
+  }
 
   if (evidence.integrationTestCases) {
     lines.push("", "## 통합 테스트", "", ...evidence.integrationTestCases.map((entry) => `- ${entry.id}: ${entry.status ?? "unknown"} (${entry.where ?? entry.source})`));
@@ -584,8 +761,15 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
     lines.push("", "## 수정 루프", "");
     for (const round of rounds) {
       const failed = evidence.runs.filter((run) => run.round === round && run.outcome !== "passed");
+      // 원인·재실행·기준 갱신은 새 기록(retry·testFreeze)이 있을 때만 붙인다 — 옛 증거의 ⑧ 은 바이트가 그대로다
+      const cause = evidence.retry?.causes?.[String(round)];
+      const reruns = evidence.retry?.reruns?.[String(round)] ?? 0;
+      const rebased = (evidence.testFreeze?.rebased ?? []).filter((entry) => entry.round === round);
       lines.push(
-        `- ${round}회차: ${failed.length === 0 ? "전부 통과" : `실패 ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ")}`}`,
+        `- ${round}회차${cause ? ` (${CAUSE_LABEL[cause]})` : ""}: ` +
+          `${failed.length === 0 ? "전부 통과" : `실패 ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ")}`}` +
+          (reruns ? ` · 같은 코드 재실행 ${reruns}회` : "") +
+          rebased.map((entry) => ` · ${entry.by === "finding" ? "⑨ 지적" : "수집 수정"}으로 바뀐 테스트 파일: ${entry.files.join(", ")}`).join(""),
       );
     }
   }
@@ -594,7 +778,7 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
   if (failures.length > 0) {
     lines.push("", "## 실패 로그", "");
     for (const run of failures) {
-      lines.push(`### ${run.round}회차 ${run.kind} — ${OUTCOME_LABEL[run.outcome]}`, "", "```", run.tail.trimEnd() || "(출력 없음)", "```", "");
+      lines.push(`### ${run.round}회차 ${run.kind} — ${outcomeText(run)}`, "", "```", run.tail.trimEnd() || "(출력 없음)", "```", "");
     }
   }
   return `${lines.join("\n").trimEnd()}\n`;

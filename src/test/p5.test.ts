@@ -1,33 +1,35 @@
 import { strict as assert } from "node:assert";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, test } from "node:test";
+import { hostname, tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, mock, test } from "node:test";
 
 import { blockCount, readBlock, stripBlock, upsertBlock } from "../agent/blocks";
 import { hashManifest, recordDecision } from "../core/approval";
+import * as build from "../core/build";
 import { loadManifest } from "../core/manifest";
 import { abort, back, context, next, requireValidatable, status, Stop, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
 import { commitDelivery, deliver, deliverProblems, prDocFile, traceRows } from "../agent/deliver";
-import { loadEvidence, outsideChanges, overFixLimit, runsOf, saveEvidence, validationDocFile } from "../agent/evidence";
+import { loadEvidence, outsideChanges, overFixLimit, runsOf, saveEvidence, stageProblems, validationDocFile, verifyView } from "../agent/evidence";
 import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
-import { loadReview, openRound, reviewDocFile } from "../agent/review";
+import { loadReview, openRound, reviewDocFile, saveReview } from "../agent/review";
 import { doctor } from "../agent/doctor";
 import { recordReviewFixture } from "./reviewFixture";
 import { observeReviewer, runReviewHook } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
 import { changedPaths, commitOf, partialTreeHash } from "../agent/tree";
-import { check, integrate, runTests } from "../agent/validate";
+import { check, checkoutKey, integrate, runTests, worktreeMarkerFile } from "../agent/validate";
 import { verify, verificationFlowFile } from "../agent/verificationFlow";
 import { crossReview } from "../agent/crossCheck";
 import type { VerificationHistory } from "../agent/verificationFlow";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
+import { grantScope, RetryRefused } from "../agent/retryPolicy";
 
 /**
  * P5 — 증거 코어(단계 1)와 리뷰·통합 검증·반영(단계 2).
@@ -334,7 +336,7 @@ describe("검증 workflow 노드", () => {
     assert.equal(runsOf(evidence, "test")[0].round, 2);
   });
 
-  test("선언된 환경 오류는 수정이 아니라 진단으로 가고, 코드 그대로의 재실행은 회차를 쓰지 않는다", async () => {
+  test("선언된 환경 오류는 수정이 아니라 진단으로 가고, 코드 그대로의 재실행은 회차를 쓰지 않는다 — 재실행은 회차당 2회", async () => {
     const DOCKER = "Could not find a valid Docker environment";
     // 환경(여기서는 환경 변수)이 준비될 때까지 같은 문구로 실패하는 테스트
     useManifest({
@@ -343,19 +345,38 @@ describe("검증 workflow 노드", () => {
     });
     toCheck();
     try {
-      assert.equal((await verify(repo)).node, "diagnose");
+      const first = await verify(repo);
+      assert.equal(first.node, "diagnose");
+      assert.equal(first.failure?.class, "environment");
       const failed = runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0];
       assert.equal(failed.outcome, "error");
       assert.equal(failed.environment, DOCKER);
+      assert.equal(failed.cause, "environment");
       assert.match(failed.tail, /환경 오류: 출력에 선언된 문구/);
-      for (let tries = 0; tries < 4; tries++) {
-        assert.equal((await verify(repo, { retry: true })).node, "diagnose", "고쳐 쓰기 한도(2)를 넘겨 재시도해도 결정으로 막히지 않는다");
-      }
-      assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1, "코드 그대로의 재실행은 회차를 쓰지 않는다");
+      // 1회째 재실행은 진단, 2회째 재실행도 실패하면 사람 판단 — 고쳐 쓰기 회차는 쓰지 않는다
+      assert.equal((await verify(repo, { retry: true })).node, "diagnose");
+      assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.reruns["1"], 1);
+      const second = await verify(repo, { retry: true });
+      assert.equal(second.node, "decision");
+      assert.equal(second.failure?.counter?.key, "rerun");
+      assert.equal(second.failure?.origin, "environment");
+      assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.reruns["1"], 2);
+      // 3회째는 check() 가 실행 전에 거부한다 — 실행 기록이 그대로다
+      const at = runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].at;
+      const third = await verify(repo, { retry: true });
+      assert.equal(third.node, "decision");
+      assert.match(third.problems.join("\n"), /같은 코드 재실행 한도 2회를 모두 썼습니다/);
+      const refused = loadEvidence(repo, "ORD-1", "order")!;
+      assert.equal(runsOf(refused, "test")[0].at, at, "거부는 실행하지 않는다");
+      assert.equal(refused.retry!.reruns["1"], 2);
+      assert.equal(refused.rounds, 1, "코드 그대로의 재실행은 회차를 쓰지 않는다");
+      // 사람이 한 번 더 허용한다(judgment 동의 모사) — 그 회차의 재실행 한도가 하나 는다
+      saveEvidence(repo, { ...refused, retry: { ...refused.retry!, grants: [{ key: "rerun", scope: grantScope({ file: "verify", key: "rerun", round: 1 }), step: 1, consent: "fixture", at: new Date().toISOString(), reason: "환경 확인" }] } });
       process.env.CA_FAKE_DOCKER = "1";
       assert.equal((await verify(repo, { retry: true })).node, "review");
       const evidence = loadEvidence(repo, "ORD-1", "order")!;
       assert.equal(evidence.rounds, 1);
+      assert.equal(evidence.retry!.reruns["1"], 3);
       assert.deepEqual(runsOf(evidence, "test").map((run) => run.outcome), ["passed"], "환경 오류 회차의 옛 기록은 남지 않는다");
     } finally {
       delete process.env.CA_FAKE_DOCKER;
@@ -386,18 +407,24 @@ describe("검증 workflow 노드", () => {
     assert.match(result.problems.join("\n"), /error/);
   });
 
-  test("TC 미확인과 exit 0에서도 한도가 적용되고 hook이 추가 수정을 막는다", async () => {
+  test("TC 미확인 재실행은 회차를 쓰지 않고 재실행 2회 뒤 사람 판단으로 간다", async () => {
     useManifest({ test: PASS, fixRounds: 1 });
     toCheck();
-    assert.equal((await verify(repo)).node, "diagnose");
+    const first = await verify(repo);
+    assert.equal(first.node, "diagnose");
+    assert.equal(first.failure?.class, "result-unconfirmed");
+    assert.match(first.task, /수집 수정 회차라 고쳐 쓰기 회차를 쓰지 않고/);
+    assert.equal((await verify(repo, { retry: true })).node, "diagnose");
+    assert.equal((await verify(repo, { retry: true })).node, "diagnose", "수집 수정이 남아 있어 재실행이 소진돼도 진단이다");
     const result = await verify(repo, { retry: true });
     assert.equal(result.node, "decision");
     assert.equal(result.executor, "human");
     assert.equal(result.resume, "/ca-answer");
-    assert.match(result.problems.join("\n"), /TC/);
-    assert.ok(writeFileHook(`${ORDER}/domain/Order.java`));
-    assert.equal((await verify(repo, { retry: true })).node, "decision");
-    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+    assert.equal(result.failure?.origin, "result-unconfirmed");
+    assert.match(result.problems.join("\n"), /같은 코드 재실행 한도 2회/);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+    // 결과 수집을 고치는 길(수집 수정 회차)은 남아 있다
+    assert.equal(writeFileHook(`${ORDER}/domain/Order.java`), undefined);
   });
 
   test("수정 한도를 사용한 뒤 트리가 바뀌어도 더 실행하지 않는다", async () => {
@@ -422,7 +449,10 @@ describe("검증 workflow 노드", () => {
     await verify(repo);
     await check(requireValidatable(repo, "check"));
     assert.equal((await verify(repo)).node, "review");
-    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].round, 2);
+    // 통과한 같은 트리의 check 는 그 회차를 다시 쓰며 그 회차의 test 기록을 비운다 — test 가 다시 돈다
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+    const history = JSON.parse(readFileSync(verificationFlowFile(loadWork(repo)!), "utf8")) as VerificationHistory;
+    assert.ok(history.attempts[1].events.some((event) => event.node === "test.execute" && event.status === "completed"));
   });
 
   test("명시적 retry는 변경 없는 환경 문제도 check부터 다시 실행한다", async () => {
@@ -430,7 +460,11 @@ describe("검증 workflow 노드", () => {
     toCheck();
     assert.equal((await verify(repo)).node, "diagnose");
     assert.equal((await verify(repo, { retry: true })).node, "diagnose");
-    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.rounds, 1, "같은 코드 재실행은 회차를 다시 쓴다");
+    assert.equal(evidence.retry!.reruns["1"], 1);
+    const history = JSON.parse(readFileSync(verificationFlowFile(loadWork(repo)!), "utf8")) as VerificationHistory;
+    assert.ok(history.attempts[1].events.some((event) => event.node === "check.execute" && event.status === "completed"));
   });
 
   test("H8: 실행 기록 없이 끊긴 회차는 계획 파일이 그대로면 같은 회차로 다시 돈다 — 한도만 줄지 않는다", async () => {
@@ -443,9 +477,9 @@ describe("검증 workflow 노드", () => {
     const after = loadEvidence(repo, "ORD-1", "order")!;
     assert.equal(after.rounds, before.rounds + 1);
     assert.ok(runsOf(after, "check").some((run) => run.round === after.rounds));
-    // 기록이 남은 회차 뒤의 재실행은 새 회차다
+    // 기록이 남은 통과 회차 뒤의 같은 트리 재실행은 그 회차를 다시 쓴다
     await check(requireValidatable(repo, "check"));
-    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, before.rounds + 2);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, before.rounds + 1);
   });
 
   test("계획 밖 변경과 오래된 승인을 자동 실행기로 우회하지 못한다", async () => {
@@ -479,7 +513,11 @@ describe("검증 workflow 노드", () => {
     const cli = join(__dirname, "../agent/cli.js");
     const failed = spawnSync(process.execPath, [cli, "verify", "--json"], { cwd: repo, encoding: "utf8" });
     assert.equal(failed.status, 1, failed.stderr);
-    assert.equal(JSON.parse(failed.stdout).node, "repair");
+    const repair = JSON.parse(failed.stdout);
+    assert.equal(repair.node, "repair");
+    // 원인과 남은 회차가 결과 JSON 에 실린다
+    assert.equal(repair.failure.class, "code-defect");
+    assert.equal(typeof repair.budget.fix.left, "number");
     write(`${ORDER}/domain/Order.java`, "class Order {} // fixed\n");
     const passed = spawnSync(process.execPath, [cli, "verify", "--json"], { cwd: repo, encoding: "utf8" });
     assert.equal(passed.status, 0, passed.stderr);
@@ -487,6 +525,164 @@ describe("검증 workflow 노드", () => {
     const invalid = spawnSync(process.execPath, [cli, "verify", "--force"], { cwd: repo, encoding: "utf8" });
     assert.equal(invalid.status, 1);
     assert.match(invalid.stderr, /사용법/);
+  });
+
+  test("리뷰 지적을 고친 통과 뒤 변경은 고쳐 쓰기가 아니라 리뷰 회차로 센다 (PVR-3)", async () => {
+    toCheck();
+    assert.equal((await verify(repo)).node, "review");
+    openRound(requireValidatable(repo, "review"));
+    writeFindings(`| F1 | ${ORDER}/domain/Order.java | 계획 안 | 열림 | 필드가 public 이다 |`);
+    write(`${ORDER}/domain/Order.java`, "class Order { private int id; }\n");
+    const result = await verify(repo);
+    assert.equal(result.node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.rounds, 2);
+    assert.equal(evidence.retry!.causes["2"], "review");
+    const budget = verifyView(loadWork(repo)!, evidence).budget;
+    assert.equal(budget.fix.used, 0);
+    assert.equal(budget.reviewRounds.used, 1);
+  });
+
+  test("리뷰 회차는 3회까지다 — 넘으면 verify 는 사람 판단, hook·check·openRound 가 같은 문구로 막는다 (FLOW-06)", async () => {
+    toCheck();
+    assert.equal((await verify(repo)).node, "review");
+    for (let round = 1; round <= 3; round++) {
+      openRound(requireValidatable(repo, "review"));
+      writeFindings(`| F${round} | ${ORDER}/domain/Order.java | 계획 안 | 열림 | ${round}번째 지적 |`);
+      write(`${ORDER}/domain/Order.java`, `class Order { int v = ${round}; }\n`);
+      if (round < 3) assert.equal((await verify(repo)).node, "review");
+    }
+    const result = await verify(repo);
+    assert.equal(result.node, "decision");
+    assert.equal(result.failure?.counter?.key, "reviewRounds");
+    assert.deepEqual([result.failure?.counter?.used, result.failure?.counter?.limit], [3, 3]);
+    assert.match(result.problems.join("\n"), /리뷰 회차 한도 3회를 모두 썼습니다/);
+    assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /리뷰 회차 한도 3회를 모두 써서/);
+    await assert.rejects(() => check(requireValidatable(repo, "check")),
+      (error: Error) => error instanceof RetryRefused && /리뷰 회차 한도 3회/.test(error.message));
+    assert.match(status(repo), /리뷰 회차 한도 3회를 모두 써서 막혔습니다/);
+    // 회차를 여는 자리도 같은 판정이다 — 같은 트리 거부를 피하려고 3회차의 트리 해시를 바꿔 둔다
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 2; }\n");
+    saveActive(repo, { ...loadActive(repo)!, phase: "review" });
+    const log = loadReview(repo, "ORD-1", "order")!;
+    saveReview(repo, { ...log, rounds: log.rounds.map((round, index) => index === 2 ? { ...round, treeHash: "sha256:fake" } : round) });
+    assert.throws(() => openRound(requireValidatable(repo, "review")),
+      (error: Error) => error instanceof RetryRefused && /리뷰 회차 한도 3회/.test(error.message));
+  });
+
+  test("통과한 회차 뒤의 변경은 고쳐 쓰기 한도를 쓰지 않는다 — 통과 세 번 뒤의 실패도 수정 요청이다 (PVR-3)", async () => {
+    useManifest({ build: ["node", "-e", `process.exit(require('fs').readFileSync('${ORDER}/domain/Order.java','utf-8').includes('broken') ? 3 : 0)`] });
+    toCheck();
+    assert.equal((await verify(repo)).node, "review");
+    for (const version of [2, 3]) {
+      write(`${ORDER}/domain/Order.java`, `class Order { int v = ${version}; }\n`);
+      assert.equal((await verify(repo)).node, "review");
+    }
+    write(`${ORDER}/domain/Order.java`, "class Order { broken }\n");
+    const result = await verify(repo);
+    assert.equal(result.node, "repair");
+    assert.equal(result.budget?.fix.left, 2);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 4);
+  });
+
+  test("실패한 TC 가 함께 찍힌 실행은 선언된 환경 문구가 있어도 환경이 아니다 (PVR-4)", async () => {
+    useManifest({
+      test: ["node", "-e", "console.log('not ok 1 - TC-1');console.log('ok 2 - TC-2');console.error('Connection refused: localhost:5432 (cache, retrying)');process.exit(1)"],
+      environmentErrors: ["Connection refused: localhost:5432"],
+    });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    const run = runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0];
+    assert.equal(run.outcome, "failed");
+    assert.equal(run.environment, undefined);
+    assert.equal(run.cause, undefined);
+  });
+
+  test("명령 시간 초과는 원인 필드로 남고 같은 회차를 다시 쓴다 — 재실행 2회 뒤 사람 판단 (PVR-17)", async () => {
+    const original = build.runCommand;
+    // test 명령만 제한 시간 초과로 끝난 것처럼 돌려준다(실제 시간 초과는 최소 1분이라 느리다)
+    mock.method(build, "runCommand", async (cwd: string, argv: string[], env?: NodeJS.ProcessEnv, timeout?: number): Promise<build.CommandResult> =>
+      argv.join(" ") === PRINT_CASES.join(" ")
+        ? { status: null, signal: "SIGTERM", stdout: "", stderr: "", error: new Error("제한 시간 600초를 넘겨 중단했습니다 — 더 걸리는 명령이면 code-agent.json 의 commandTimeoutMinutes 를 늘리세요"), timedOut: true }
+        : original(cwd, argv, env, timeout));
+    try {
+      toCheck();
+      const first = await verify(repo);
+      assert.equal(first.node, "diagnose");
+      assert.equal(first.failure?.class, "interrupted");
+      assert.match(first.task, /제한 시간 10분을 넘겨 중단됐습니다/);
+      assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].cause, "timeout");
+      assert.equal((await verify(repo, { retry: true })).node, "diagnose");
+      const second = await verify(repo, { retry: true });
+      assert.equal(second.node, "decision");
+      assert.equal(second.failure?.counter?.key, "rerun");
+      const at = runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].at;
+      assert.equal((await verify(repo, { retry: true })).node, "decision");
+      assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].at, at, "거부는 실행하지 않는다");
+      assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  test("retry 가 없는 옛 증거는 읽을 때 추정하고 다음 check 가 기록한다 — 총 회차 유예 1회 (이행)", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    const fresh = loadEvidence(repo, "ORD-1", "order")!;
+    const base = fresh.runs[0];
+    const { retry: _retry, ...legacy } = {
+      ...fresh, rounds: 3,
+      runs: [{ ...base, round: 1, outcome: "failed" as const }, { ...base, round: 2, outcome: "failed" as const }, { ...base, round: 3 }],
+    };
+    saveEvidence(repo, legacy);
+    const view = verifyView(loadWork(repo)!, loadEvidence(repo, "ORD-1", "order")!);
+    assert.equal(view.budget.fix.used, 2);
+    assert.equal(view.budget.totalRounds.limit, 7);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry, undefined, "읽기는 기록하지 않는다");
+    await check(requireValidatable(repo, "check"));
+    const migrated = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(migrated.rounds, 3, "통과한 같은 트리는 그 회차를 다시 쓴다");
+    assert.equal(migrated.retry!.legacyRounds, 3);
+    assert.deepEqual(migrated.retry!.causes, { 1: "first", 2: "fix", 3: "fix" });
+  });
+
+  test("limit 이 없는 옛 리뷰 기록은 한 회차 유예를 받고, 회차를 열 때 한도를 고정한다 (이행)", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const log = loadReview(repo, "ORD-1", "order")!;
+    const round = log.rounds[0];
+    saveReview(repo, { id: log.id, target: log.target, used: [],
+      rounds: [1, 2, 3, 4].map((n) => ({ ...round, round: n, treeHash: `sha256:fake${n}` })) });
+    assert.match(openRound(requireValidatable(repo, "review")), /리뷰 회차 5\/5/);
+    const saved = loadReview(repo, "ORD-1", "order")!;
+    assert.equal(saved.rounds.length, 5);
+    assert.equal(saved.limit, 5);
+    saveReview(repo, { ...saved, rounds: saved.rounds.map((entry) => entry.round === 5 ? { ...entry, treeHash: "sha256:fake5" } : entry) });
+    assert.throws(() => openRound(requireValidatable(repo, "review")),
+      (error: Error) => error instanceof RetryRefused && /리뷰 회차 한도 5회/.test(error.message));
+  });
+
+  test("검증 명령이 계획 파일을 고쳐 대조만 어긋나면 진단이고, 다시 돌면 통과 뒤 변경으로 맞춰진다", async () => {
+    // 포맷터 모사 — Order.java 끝에 표시를 붙인다. 한 번 붙으면 더 바꾸지 않는다
+    useManifest({ build: ["node", "-e", `const f='${ORDER}/domain/Order.java',fs=require('fs'),t=fs.readFileSync(f,'utf-8');if(!t.includes('// fmt'))fs.writeFileSync(f,t+'// fmt\\n')`] });
+    toCheck();
+    const first = await verify(repo);
+    assert.equal(first.node, "diagnose");
+    assert.equal(first.failure?.class, "precondition");
+    assert.match(first.problems.join("\n"), /검증 뒤 계획 파일이 바뀌었습니다/);
+    assert.match(first.task, /다시 돌리면 맞춰집니다/);
+    const second = await verify(repo);
+    assert.equal(second.node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.retry!.causes["2"], "review");
+    assert.equal(verifyView(loadWork(repo)!, evidence).budget.fix.used, 0);
+  });
+
+  test("다시 돌려도 남는 게이트 문제(계획 밖 변경)는 노드 없이 Stop 이다", async () => {
+    useManifest({ build: ["node", "-e", "require('fs').writeFileSync('out.txt','x')"] });
+    toCheck();
+    await assert.rejects(verify(repo), (error: Error) => error instanceof Stop && /검증 전제가 맞지 않습니다[\s\S]*계획 밖 변경/.test(error.message));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
   });
 
   test("check 실행 도중 중단된 회차 — 코드가 그대로면 그 회차를 다시 쓰고, 고쳤으면 새 회차로 센다", async () => {
@@ -497,21 +693,21 @@ describe("검증 workflow 노드", () => {
     writeFileSync(verifyFile(repo, "ORD-1", "order"), JSON.stringify(evidence));
     assert.equal((await verify(repo)).node, "review");
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2, "끊긴 회차는 되돌리지도 늘리지도 않고 다시 쓴다");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.reruns["2"], 1, "같은 코드 재실행으로 센다");
     // 끊긴 뒤 코드를 고쳤으면 새 회차다 — 끊어서 카운터를 피하는 길이 없다
     const interrupted = loadEvidence(repo, "ORD-1", "order")!;
     writeFileSync(verifyFile(repo, "ORD-1", "order"), JSON.stringify({ ...interrupted, rounds: interrupted.rounds + 1 }));
     write(`${ORDER}/domain/Order.java`, "package x; class Order { int v = 2; }\n");
     await check(requireValidatable(repo, "check"));
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 4);
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.causes["4"], "fix", "끊긴 뒤 고친 것은 고쳐 쓰기다");
   });
 
-  test("명령 미선언은 진단 요청이며 테스트 통과로 처리하지 않는다", async () => {
+  test("명령 미선언은 진단 요청이 아니라 전제 미충족 Stop 이며 테스트 통과로 처리하지 않는다", async () => {
     write("doc/test-strategy.md", STRATEGY.replace("- `test`: 전체 테스트", "- 없음 — 실행 명령 준비 전"));
     useManifest({ test: undefined });
     toCheck();
-    const result = await verify(repo);
-    assert.equal(result.node, "diagnose");
-    assert.match(result.problems.join("\n"), /not-run/);
+    await assert.rejects(verify(repo), (error: Error) => error instanceof Stop && /검증 전제가 맞지 않습니다[\s\S]*not-run/.test(error.message));
     assert.equal(loadActive(repo)!.phase, "test");
   });
 });
@@ -598,6 +794,19 @@ describe("changedPaths · partialTreeHash", () => {
     rmSync(join(repo, "x.java"));
     assert.notEqual(before, partialTreeHash(repo, ["x.java"]));
   });
+
+  test("바이너리 파일은 바이트로 해시한다 — U+FFFD 로 뭉개지는 변경도 드러난다", () => {
+    writeFileSync(join(repo, "fixture.bin"), Buffer.from([0x50, 0xff, 0x00, 0xfe]));
+    const before = partialTreeHash(repo, ["fixture.bin"]);
+    writeFileSync(join(repo, "fixture.bin"), Buffer.from([0x50, 0xfe, 0x00, 0xc0]));
+    assert.notEqual(partialTreeHash(repo, ["fixture.bin"]), before);
+  });
+
+  test("유효한 UTF-8 파일(BOM·한글·CRLF)의 해시는 바이트 해시로 바꿔도 그대로다 — 진행 중 작업의 증거가 유지된다", () => {
+    // 골든은 바이트 해시로 바꾸기 전 dist(문자열 해시)로 계산한 값이다
+    writeFileSync(join(repo, "k.txt"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("한글 첫 줄\r\n둘째 줄 — CRLF\r\n", "utf-8")]));
+    assert.equal(partialTreeHash(repo, ["k.txt", "missing.txt"]), "sha256:060e0e246900df38");
+  });
 });
 
 // ---- check ----
@@ -663,6 +872,14 @@ describe("code-agent check", () => {
     await check(requireValidatable(repo, "check"));
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.runs[0].outcome, "error");
     assert.throws(() => next(repo), /build: error/);
+  });
+
+  test("⑦ 의 TC id 가 계획 파일 어디에도 없으면 test 전에 알려 준다 — 막지는 않는다 (FLOW-05)", async () => {
+    toCheck();
+    write(TEST_FILE, "// TC-1 만 있다\nclass OrderTest {}\n");
+    const out = await check(requireValidatable(repo, "check"));
+    assert.match(out, /!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다: TC-2/);
+    assert.match(out, /build: passed/);
   });
 
   test("선언되지 않은 검증은 not-run 이고 통과로 세지 않는다", async () => {
@@ -841,6 +1058,49 @@ describe("수정 루프", () => {
     assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /고쳐 쓰기 2회를 넘겨/);
   });
 
+  test("마지막 고쳐 쓰기 회차의 test 가 끝 기록 없이 끊긴 뒤 고치면 고쳐 쓰기를 쓴다 — 끊어서 피하는 길이 없다", async () => {
+    useManifest({ build: PASS, test: FAIL });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal((await verify(repo, { retry: true })).node, "repair");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2);
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 3; }\n");
+    await check(requireValidatable(repo, "check"));
+    // test 가 앞 명령의 로그를 남기고 끊긴 자리 — 시작 표지만 남았다
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const third = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(third.rounds, 3);
+    saveEvidence(repo, { ...third, retry: { ...third.retry!, started: { phase: "test", round: 3, pid: dead, host: hostname(), at: new Date().toISOString() } } });
+    assert.match(writeFileHook(`${ORDER}/domain/Order.java`) ?? "", /고쳐 쓰기 2회를 넘겨/);
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 4; }\n");
+    await assert.rejects(() => check(requireValidatable(repo, "check")), /덮지 않고 보고하는 자리/);
+    assert.match(status(repo), /고쳐 쓰기 2회를 넘겨 막혔습니다/);
+    // 고친 것을 되돌리면 같은 코드 재실행이다 — 끊긴 test 를 같은 회차로 다시 돈다
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 3; }\n");
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    const after = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(after.rounds, 3);
+    assert.equal(after.retry!.reruns["3"], 1);
+    assert.equal(after.retry!.started, undefined);
+  });
+
+  test("check 가 회차를 선반영하고 끊긴 뒤 고치면 고쳐 쓰기로 거부되고, 그대로면 같은 회차를 다시 쓴다", async () => {
+    useManifest({ build: FAIL, fixRounds: 1 });
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    const first = loadEvidence(repo, "ORD-1", "order")!;
+    saveEvidence(repo, { ...first, rounds: 2, retry: { ...first.retry!, causes: { ...first.retry!.causes, 2: "fix" } } });
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 2; }\n");
+    await assert.rejects(() => check(requireValidatable(repo, "check")),
+      (error: Error) => error instanceof RetryRefused && error.failure.counter?.key === "fix" && error.failure.origin === "interrupted");
+    write(`${ORDER}/domain/Order.java`, "class Order {}\n");
+    await check(requireValidatable(repo, "check"));
+    const after = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(after.rounds, 2);
+    assert.equal(after.retry!.reruns["2"], 1);
+  });
+
   test("계획이 재승인되면 회차와 동결이 함께 풀린다 — 옛 증거는 다른 계획 위의 것이다", async () => {
     toCheck();
     await burnRounds(3);
@@ -873,6 +1133,57 @@ describe("테스트 동결", () => {
     next(repo);
     await runTests(requireValidatable(repo, "test"));
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
+  });
+
+  test("결과가 하나도 인식되지 않고 실패도 없던 test 실행은 얼리지 않는다 (PVR-9)", async () => {
+    useManifest({ test: PASS });
+    toCheck();
+    const result = await verify(repo);
+    assert.equal(result.node, "diagnose");
+    assert.equal(result.failure?.class, "result-unconfirmed");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.testFreeze, undefined);
+    assert.equal(writeFileHook(TEST_FILE), undefined);
+  });
+
+  test("일부만 인식된 회차는 수집 수정 1회 동안 열리고, 그 회차는 고쳐 쓰기를 쓰지 않는다 (PVR-9)", async () => {
+    // 테스트 파일에 적힌 TC 만 결과로 찍는 러너
+    useManifest({ test: ["node", "-e", `const t=require('fs').readFileSync('${TEST_FILE}','utf-8');['TC-1','TC-2'].forEach((id,i)=>{if(t.includes(id))console.log('ok '+(i+1)+' - '+id)})`] });
+    toCheck();
+    write(TEST_FILE, "// TC-1\nclass OrderTest {}\n");
+    assert.equal((await verify(repo)).node, "diagnose");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.testFreeze!.round, 1);
+    assert.equal(writeFileHook(TEST_FILE), undefined, "수집 수정 창이 열려 있다");
+    assert.match(context(repo), /결과 미확인 — 수집 수정 1회 동안 TC 이름만 고칠 수 있음/);
+    write(TEST_FILE, "// TC-1 · TC-2\nclass OrderTest {}\n");
+    const result = await verify(repo);
+    assert.equal(result.node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.retry!.causes["2"], "collect");
+    assert.equal(verifyView(loadWork(repo)!, evidence).budget.fix.used, 0);
+    assert.ok(evidence.testFreeze!.rebased![0].files.includes(TEST_FILE));
+    assert.equal(evidence.testFreeze!.rebased![0].by, "collect");
+    assert.match(readFileSync(join(repo, validationDocFile("ORD-1")), "utf-8"), /2회차 \(수집 수정\): 전부 통과 · 수집 수정으로 바뀐 테스트 파일/);
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는/);
+  });
+
+  test("동결 뒤 바뀐 테스트 파일은 게이트가 증거로 다시 대조한다 — ⑨ 지적으로 연 파일만 다음 회차가 기준을 갱신한다 (PVR-15)", async () => {
+    await toReview();
+    // hook 을 거치지 않고 바꾼 경우
+    write(TEST_FILE, "// TC-1 · TC-2 (몰래)\nclass OrderTest {}\n");
+    assert.ok(stageProblems(loadWork(repo)!, "test").some((problem) => /테스트 동결 뒤 바뀐 kind:test 파일/.test(problem)));
+    await assert.rejects(verify(repo), (error: Error) => error instanceof Stop && /검증 전제가 맞지 않습니다[\s\S]*테스트 동결 뒤 바뀐/.test(error.message));
+  });
+
+  test("⑨ 지적으로 연 테스트 파일은 다음 check 가 동결 기준을 갱신한다 (PVR-15)", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings(`| F1 | ${TEST_FILE} | 계획 안 | 열림 | 단언이 기대 결과를 확인하지 않는다 |`);
+    assert.equal(writeFileHook(TEST_FILE), undefined);
+    write(TEST_FILE, "// TC-1 · TC-2 (지적 반영)\nclass OrderTest {}\n");
+    assert.equal((await verify(repo)).node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.testFreeze!.rebased![0].by, "finding");
+    assert.equal(stageProblems(loadWork(repo)!, "test").some((problem) => /테스트 동결 뒤 바뀐/.test(problem)), false);
   });
 
   test("implement 스테이지에서는 같은 파일을 쓴다", () => {
@@ -1072,6 +1383,16 @@ describe("code-agent review — 회차", () => {
     );
   });
 
+  test("마지막 회차가 지금 트리를 보고 있으면 한도보다 같은 트리 안내가 먼저다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const log = loadReview(repo, "ORD-1", "order")!;
+    const now = log.rounds[0];
+    saveReview(repo, { ...log, rounds: [{ ...now, round: 1, treeHash: "sha256:fake1" }, { ...now, round: 2, treeHash: "sha256:fake2" }, { ...now, round: 3 }] });
+    assert.throws(() => openRound(requireValidatable(repo, "review")),
+      (error: Error) => error instanceof Stop && !(error instanceof RetryRefused) && /이미 지금 트리를 보고 있습니다/.test(error.message));
+  });
+
   test("회차 없이 next 를 부르면 넘어가지 않는다", async () => {
     await toReview();
     assert.throws(() => next(repo), /리뷰 회차가 없습니다/);
@@ -1262,11 +1583,87 @@ describe("code-agent integrate", () => {
     process.stderr.write = ((chunk: string) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
     try { await integrate(requireValidatable(repo, "integrate")); } finally { process.stderr.write = original; }
     assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "integrate").length, 2, "정리 실패가 build·test 결과를 지우지 않는다");
-    const left = /: (.+?code-agent-integrate-\w+) \(/.exec(warnings.join(""))?.[1];
+    // 임시 worktree 이름에 체크아웃 키가 들어간다(code-agent-integrate-<키 8자>-XXXXXX)
+    const left = /: (.+?code-agent-integrate-[\w-]+) \(/.exec(warnings.join(""))?.[1];
     if (process.platform === "win32") assert.ok(left, "잡힌 디렉토리는 경고로 알린다");
     for (let tries = 0; left; tries++) {
       try { rmSync(left, { recursive: true, force: true }); break; }
       catch (error) { if (tries > 60) throw error; await new Promise((done) => setTimeout(done, 250)); }
+    }
+  });
+
+  test("코드 결함으로 실패한 통합 검증은 같은 코드로 다시 돌리지 않는다", async () => {
+    useManifest({ test: ["node", "-e", "console.log('ok 1 - TC-1\\nok 2 - TC-2'); process.exit(require('fs').existsSync('build/stray.txt') ? 0 : 7)"] });
+    write("build/stray.txt", "작업 트리에만 있는 산출물\n");
+    await toIntegrate();
+    await integrate(requireValidatable(repo, "integrate"));
+    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "integrate").find((run) => run.kind === "test")!.outcome, "failed");
+    await assert.rejects(() => integrate(requireValidatable(repo, "integrate")),
+      (error: Error) => error instanceof RetryRefused && /코드 결함으로 실패한 트리입니다/.test(error.message));
+  });
+
+  test("끊긴 통합 검증은 다음 실행이 자기 체크아웃의 임시 worktree 를 정리하고 같은 회차로 다시 돈다 (PVR-8)", async () => {
+    await toIntegrate();
+    const leftover = join(tmpdir(), `code-agent-integrate-${checkoutKey(repo)}-test01`);
+    rmSync(leftover, { recursive: true, force: true });
+    git("worktree", "add", "--detach", leftover, "HEAD");
+    try {
+      const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+      const at = new Date().toISOString();
+      const evidence = loadEvidence(repo, "ORD-1", "order")!;
+      mkdirSync(dirname(worktreeMarkerFile(repo)), { recursive: true });
+      writeFileSync(worktreeMarkerFile(repo), JSON.stringify({ pid: dead, host: hostname(), at, id: "ORD-1", target: "order", phase: "integrate", round: evidence.rounds, worktree: leftover }));
+      saveEvidence(repo, { ...evidence, retry: { ...evidence.retry!, started: { phase: "integrate", round: evidence.rounds, pid: dead, host: hostname(), at } } });
+      const out = await integrate(requireValidatable(repo, "integrate"));
+      assert.match(out, /임시 worktree 1개를 정리했습니다/);
+      assert.match(out, /끝 기록 없이 끊겼습니다/);
+      assert.equal(git("worktree", "list", "--porcelain").includes(basename(leftover)), false);
+      const after = loadEvidence(repo, "ORD-1", "order")!;
+      assert.equal(after.retry!.integrateReruns[String(after.rounds)], 1);
+      assert.equal(after.retry!.started, undefined);
+      assert.equal(existsSync(worktreeMarkerFile(repo)), false, "끝나면 표지를 지운다");
+    } finally {
+      rmSync(leftover, { recursive: true, force: true });
+    }
+  });
+
+  test("이 체크아웃에서 다른 통합 검증이 실행 중이면 아무것도 기록하지 않고 멈춘다 (PVR-8)", async () => {
+    await toIntegrate();
+    const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},5000)"], { stdio: "ignore" });
+    try {
+      mkdirSync(dirname(worktreeMarkerFile(repo)), { recursive: true });
+      writeFileSync(worktreeMarkerFile(repo), JSON.stringify({ pid: child.pid, host: hostname(), at: new Date().toISOString(), id: "ORD-1", target: "order", phase: "integrate", round: 1, worktree: join(tmpdir(), "x") }));
+      const before = readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8");
+      await assert.rejects(() => integrate(requireValidatable(repo, "integrate")),
+        (error: Error) => error instanceof Stop && /다른 통합 검증이 이 체크아웃에서 실행 중입니다/.test(error.message));
+      assert.equal(readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8"), before, "카운터·표지를 쓰지 않았다");
+    } finally {
+      child.kill();
+    }
+  });
+
+  test("다른 체크아웃·이전 버전 이름의 임시 worktree 는 지우지 않고 보고한다 (PVR-8)", async () => {
+    await toIntegrate();
+    const sibling = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-sibling-")));
+    rmSync(sibling, { recursive: true, force: true });
+    git("worktree", "add", "--detach", sibling, "HEAD");
+    const theirs = join(tmpdir(), `code-agent-integrate-${checkoutKey(sibling)}-abc123`);
+    const legacy = join(tmpdir(), "code-agent-integrate-aB3xYz");
+    try {
+      for (const path of [theirs, legacy]) rmSync(path, { recursive: true, force: true });
+      execFileSync("git", ["worktree", "add", "--detach", theirs, "HEAD"], { cwd: sibling });
+      git("worktree", "add", "--detach", legacy, "HEAD");
+      const out = await integrate(requireValidatable(repo, "integrate"));
+      const listed = git("worktree", "list", "--porcelain");
+      assert.ok(listed.includes(basename(theirs)) && listed.includes(basename(legacy)), "다른 체크아웃·이전 버전의 것은 지우지 않는다");
+      assert.match(out, /지우지 않았습니다/);
+      assert.ok(out.includes(basename(theirs)) && out.includes(basename(legacy)));
+      assert.equal(existsSync(join(sibling, ".code-agent/log/worktree.lock")), false, "형제 체크아웃의 상태는 건드리지 않는다");
+    } finally {
+      for (const path of [theirs, legacy, sibling]) {
+        try { git("worktree", "remove", "--force", path); } catch { /* 이미 없다 */ }
+        rmSync(path, { recursive: true, force: true });
+      }
     }
   });
 
@@ -1873,7 +2270,8 @@ describe("code-agent back", () => {
     assert.throws(() => next(repo), /승인되지 않았습니다 \(stale-docs\)/);
   });
 
-  test("되감아도 고쳐 쓰기 회차는 줄지 않는다 — 증거는 planHash 에 묶여 있다", async () => {
+  test("되감아도 검증 회차·카운터는 줄지 않는다 — 증거는 planHash 에 묶여 있다", async () => {
+    useManifest({ build: FAIL });
     toCheck();
     await check(requireValidatable(repo, "check"));
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1);
@@ -1889,6 +2287,7 @@ describe("code-agent back", () => {
     assert.equal(loadActive(repo)!.phase, "check");
     await check(requireValidatable(repo, "check"));
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 2, "되감기로 한도를 다시 벌 수는 없다");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.causes["2"], "fix");
   });
 
   test("plan 으로 되감아 같은 계획을 다시 제출하면 승인은 그대로다", () => {
