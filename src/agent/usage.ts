@@ -122,10 +122,22 @@ interface Transcript {
 
 /**
  * 읽을 파일. 메인 세션은 폴더 바로 아래 `<세션>.jsonl` 이고, 서브에이전트는 **프로젝트 루트가 아니라**
- * `<세션>/subagents/agent-*.jsonl` 이다 — 짝 `.meta.json` 에 `agentType` 이 들어 있다.
+ * `<세션>/subagents/agent-*.jsonl` 이다 — 짝 `.meta.json` 에 `agentType` 이 들어 있다. 그 아래 하위 폴더(워크플로가 띄운
+ * 서브에이전트 `subagents/workflows/<실행>/agent-*.jsonl`)도 읽는다 — 하위 폴더에서는 `agent-*.jsonl` 만(같은 폴더의
+ * `journal.jsonl` 같은 실행 기록은 대화 기록이 아니다).
  */
 function transcripts(dir: string): Transcript[] {
   const found: Transcript[] = [];
+  const subagentFiles = (folder: string, depth: number): void => {
+    let entries;
+    try { entries = readdirSync(folder, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); } catch { return; }
+    for (const entry of entries) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) { if (depth < 4) subagentFiles(path, depth + 1); continue; }
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl") || (depth > 0 && !entry.name.startsWith("agent-"))) continue;
+      found.push({ path, agent: agentTypeOf(path.replace(/\.jsonl$/, ".meta.json")) });
+    }
+  };
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.isFile() && entry.name.endsWith(".jsonl")) {
       found.push({ path: join(dir, entry.name), agent: MAIN_AGENT });
@@ -133,11 +145,7 @@ function transcripts(dir: string): Transcript[] {
     }
     if (!entry.isDirectory()) continue;
     const subagents = join(dir, entry.name, "subagents");
-    if (!existsSync(subagents)) continue;
-    for (const name of readdirSync(subagents).sort()) {
-      if (!name.endsWith(".jsonl")) continue;
-      found.push({ path: join(subagents, name), agent: agentTypeOf(join(subagents, name.replace(/\.jsonl$/, ".meta.json"))) });
-    }
+    if (existsSync(subagents)) subagentFiles(subagents, 0);
   }
   return found;
 }

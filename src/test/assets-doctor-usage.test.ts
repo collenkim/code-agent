@@ -17,6 +17,7 @@ import { MODELS_FILE } from "../agent/models";
 import { Stop } from "../agent/stop";
 import { update } from "../agent/update";
 import { commandKey, encodeRepoPath, usage, usageReport } from "../agent/usage";
+import { unwrapShellArgv } from "../agent/codexUsage";
 import { retryReports } from "../agent/retryReport";
 import { loadManifestIfAny } from "../agent/work";
 
@@ -672,6 +673,19 @@ describe("P8 · usage 집계", () => {
     assert.match(text, /세션 1 · 서브에이전트 1/);
   });
 
+  test("subagents 아래 하위 폴더(워크플로 실행)의 agent-*.jsonl 도 서브에이전트로 읽고, 같은 폴더의 실행 기록은 읽지 않는다", () => {
+    const nested = join(dir, "s1", "subagents", "workflows", "wf_1");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "agent-w1.jsonl"), `${assistant("2026-09-30T02:40:00.000Z", "claude-haiku-4-5", { input_tokens: 1_000_000, output_tokens: 0 }, "msg-wf")}\n`);
+    writeFileSync(join(nested, "agent-w1.meta.json"), JSON.stringify({ agentType: "workflow-subagent" }));
+    writeFileSync(join(nested, "journal.jsonl"), `${assistant("2026-09-30T02:41:00.000Z", OPUS, { input_tokens: 5_000_000, output_tokens: 0 }, "msg-journal")}\n`);
+    const text = usage(repo, { transcripts: dir });
+    assert.deepEqual(table(text, "에이전트별").get("workflow-subagent"), ["1,000,000", "0", "0", "0", "$1.00"]);
+    assert.match(text, /세션 1 · 서브에이전트 2/);
+    assert.deepEqual(table(text, "에이전트별").get("합계"), table(text, "스테이지별").get("합계"));
+    assert.deepEqual(table(text, "스테이지별").get("implement/domain"), ["2,000,000", "2,000,000", "0", "217", "$3.01"]);
+  });
+
   test("모르는 모델은 0 으로 세고 이름만 꼬리에 남긴다 — 지어낸 단가로 합계를 물들이지 않는다", () => {
     const text = usage(repo, { transcripts: dir });
     assert.match(text, /비용 미산정 모델: claude-mystery-9/);
@@ -812,6 +826,20 @@ describe("P8 · usage 호출·재시도 집계", () => {
     assert.deepEqual(readdirSync(work).sort(), before, "측정은 기록을 쓰지 않는다");
   });
 
+  test("옛 기록 — 배열 없는 교차(cross)·단수 리뷰어(reviewer)의 실패 원인도 카운터와 같은 범위로 센다", () => {
+    const work = join(repo, STATE_DIR, "work", "ORD-2");
+    mkdirSync(work, { recursive: true });
+    const at = "2026-09-30T02:00:00.000Z";
+    writeFileSync(join(work, "order.review.json"), JSON.stringify({ rounds: [{ round: 1,
+      cross: { host: "codex", startedAt: at, unavailable: "codex 미설치" },
+      reviewer: { agentId: "a1", startedAt: at, failure: { class: "agent-format-error", at, detail: "표가 아니다" } } }] }));
+    writeFileSync(join(work, "order.planning.json"), JSON.stringify({ tasks: [], cross: { host: "codex", at, criticDispatchId: "d1", status: "unavailable", summary: "인증 없음" } }));
+    const [report] = retryReports(repo, "ORD-2");
+    assert.equal(report.counters.crossPoint, 2, "카운터(retrySummary)는 옛 교차 지점을 센다");
+    assert.deepEqual(report.failures, { "agent-format-error": 1, "cross-unavailable": 2 });
+    assert.equal(report.cross.attempts, 0, "옛 시도에는 usage 가 없다");
+  });
+
   test("Codex 세션 기록 — 저장소의 세션만 세고 비용은 내지 않는다(형식 미확인 표시)", () => {
     const sessions = join(repo, "codex-sessions");
     const day = join(sessions, "2026", "10", "01");
@@ -824,12 +852,28 @@ describe("P8 · usage 호출·재시도 집계", () => {
       line({ timestamp: "2026-09-30T02:00:04.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "1234567" } }),
       "",
     ].join("\n"));
+    // 셸 래퍼로 감싼 명령(bash -lc · powershell -Command · cmd /c)도 code-agent 명령·스킬 읽기로 센다
+    const call = (n: number, command: string[], type = "function_call") => line({ timestamp: `2026-09-30T02:00:0${n}.000Z`, type: "response_item",
+      payload: type === "local_shell_call" ? { type, call_id: `w${n}`, action: { type: "exec", command } } : { type, name: "shell", call_id: `w${n}`, arguments: JSON.stringify({ command }) } });
+    writeFileSync(join(day, "rollout-wrapped.jsonl"), [
+      line({ timestamp: "2026-09-30T02:00:00.000Z", type: "session_meta", payload: { cwd: repo } }),
+      call(1, ["bash", "-lc", "code-agent consent finish 1234"]),
+      call(2, ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoProfile", "-Command", "code-agent next"]),
+      call(3, ["cmd.exe", "/c", "code-agent read .agents/skills/ca-answer/SKILL.md"], "local_shell_call"),
+      call(4, ["bash", "-lc", "git", "status"]),
+      "",
+    ].join("\n"));
+    assert.equal(unwrapShellArgv(["bash", "-lc", "code-agent next"]), "code-agent next");
+    assert.equal(unwrapShellArgv(["code-agent", "next"]), "code-agent next");
+    assert.equal(unwrapShellArgv(["bash", "script.sh", "code-agent"]), "bash script.sh code-agent", "스크립트 깃발이 없으면 벗기지 않는다");
     writeFileSync(join(day, "rollout-other.jsonl"), [line({ timestamp: "2026-09-30T02:00:00.000Z", type: "session_meta", payload: { cwd: join(tmpdir(), "다른-저장소") } }), tokens(1), ""].join("\n"));
     const text = usage(repo, { codexSessions: sessions });
     assert.match(text, /^Codex 사용량 · /m);
     assert.match(text, /형식은 공개 Codex 기록 기준이며 실제 기록으로 확인하기 전입니다/);
-    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["200", "100", "14", "6", "2", "1", "7"]);
-    assert.match(text, /^code-agent 명령별 호출: next 1$/m);
+    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["200", "100", "14", "6", "2", "5", "7"]);
+    assert.match(text, /^도구별 호출: shell 4 · local_shell_call 1$/m);
+    assert.match(text, /^code-agent 명령별 호출: next 2 · consent finish 1 · read 1$/m);
+    assert.match(text, /^스킬 읽기: ca-answer\/SKILL\.md 1$/m);
     assert.match(text, /Codex 비용은 단가표가 없어 산정하지 않습니다/);
     assert.match(usage(repo, { codexSessions: join(repo, "없는-폴더") }), /Codex 기록을 찾지 못했습니다/);
   });

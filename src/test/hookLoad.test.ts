@@ -112,7 +112,9 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
   function failing(command: string, module: string, stdin: string): { status: number | null; stdout: string; stderr: string } {
     const preload = join(scratch, "fail-require.cjs");
     writeFileSync(preload, "const M=require('module');const o=M._resolveFilename;M._resolveFilename=function(r,...a){if(r===process.env.CA_FAIL_MODULE)throw new Error('Cannot find module '+r);return o.call(this,r,...a)}");
-    const result = spawnSync(process.execPath, ["-r", preload, CLI, command], { cwd: scratch, input: stdin, encoding: "utf8", env: { ...process.env, CA_FAIL_MODULE: module } });
+    const env: NodeJS.ProcessEnv = { ...process.env, CA_FAIL_MODULE: module };
+    delete env.CLAUDE_PROJECT_DIR; delete env.CODE_AGENT_CROSS;
+    const result = spawnSync(process.execPath, ["-r", preload, CLI, command], { cwd: scratch, input: stdin, encoding: "utf8", env });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
   const ROWS: [HookFailureInput["command"], string, string][] = [
@@ -128,6 +130,8 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "Stop" })],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "UserPromptSubmit" })],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "안녕하세요" })],
+    ["planning-event", "./planningHook", "not json"],
+    ["review-event", "./reviewHook", "not json"],
   ];
   for (const [command, module, stdin] of ROWS) {
     test(`${command} · ${stdin.slice(0, 50)}`, () => {
@@ -140,6 +144,45 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
       else assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny");
     });
   }
+  /**
+   * 분기 안의 지연 require 가 실패해도 같은 표다 — 진입 모듈은 읽혔고 그 분기에서 읽는 모듈이 없다. 가드를 try/catch 로 감싸
+   * undefined 로 넘기는 변경(동의 적용 가드가 열린 채 통과 — fail-open)은 여기서 잡힌다
+   */
+  const UUID = "12345678-1234-1234-1234-123456789abc";
+  const lazyRows = (): [HookFailureInput["command"], string, string][] => [
+    ["hook", "./consent", JSON.stringify({ hook_event_name: "PreToolUse", session_id: "s1", cwd: scratch, tool_name: "Bash", tool_input: { command: `code-agent consent finish ${UUID}` } })],
+    ["codex-event", "./consent", JSON.stringify({ hook_event_name: "PreToolUse", session_id: "s1", turn_id: "t", cwd: scratch, tool_name: "Bash", tool_input: { command: `code-agent consent finish ${UUID}` } })],
+    ["codex-event", "./consent", JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "s1", turn_id: "t", cwd: scratch, prompt: `code-agent consent respond ${UUID} 1 abcdef` })],
+    ["codex-event", "./stopHook", JSON.stringify({ hook_event_name: "Stop", session_id: "s1", turn_id: "t", cwd: scratch })],
+    ["codex-event", "./planningHook", JSON.stringify({ hook_event_name: "SubagentStart", session_id: "s1", cwd: scratch, agent_id: "a1", agent_type: "ca_analyst" })],
+  ];
+  test("분기 안의 지연 로드 실패 — 동의 적용 가드·Codex 동의 응답은 막고, Codex Stop·담당 이벤트는 막지 않는다", () => {
+    for (const [command, module, stdin] of lazyRows()) {
+      const result = failing(command, module, stdin);
+      const label = `${command} · ${module} · ${stdin.slice(0, 60)}`;
+      const expected = hookFailureExit(hookFailureInput(command, stdin), "x");
+      assert.match(result.stderr, new RegExp(`Cannot find module \\${module}`), `${label}: 그 분기의 모듈이 실제로 실패해야 한다`);
+      assert.equal(result.status, expected.code, `${label}\n${result.stderr}`);
+      if (!expected.stdout) assert.equal(result.stdout, "", label);
+      else if (expected.stdout === "{}") assert.equal(result.stdout, "{}", label);
+      else assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny", label);
+    }
+    // 표의 값 그대로 — Claude 적용 가드 2, Codex 적용 가드 deny, 동의 응답 2, Stop·담당 0
+    assert.deepEqual(lazyRows().map(([command, , stdin]) => hookFailureExit(hookFailureInput(command, stdin)).code), [2, 0, 2, 0, 0]);
+  });
+
+  test("깨진 stdin — 계획·리뷰 담당 hook 의 진입 함수(subagentExit)와 모듈 로드 실패(hookFailureExit)가 같은 종료 코드다", () => {
+    for (const command of ["planning-event", "review-event"] as const) {
+      for (const stdin of ["not json", ""]) {
+        const env = { ...process.env };
+        delete env.CODE_AGENT_CROSS; delete env.CLAUDE_PROJECT_DIR;
+        const result = spawnSync(process.execPath, [CLI, command], { cwd: scratch, input: stdin, encoding: "utf8", env });
+        assert.equal(result.status, hookFailureExit(hookFailureInput(command, stdin)).code, `${command} ${stdin}: ${result.stderr}`);
+        assert.equal(result.status, 2, `${command} ${stdin}`);
+      }
+    }
+  });
+
   test("표의 값 — Stop·SessionStart·SubagentStop 은 막지 않고 PreToolUse·SubagentStart 와 Codex 도구 호출은 막는다", () => {
     const code = (command: HookFailureInput["command"], stdin: string) => hookFailureExit(hookFailureInput(command, stdin)).code;
     assert.deepEqual([code("stop", "{}"), code("session-event", "{}"), code("hook", "{}"), code("consent-event", "{\"hook_event_name\":\"PreToolUse\"}"),

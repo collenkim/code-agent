@@ -14,7 +14,7 @@ import { crossCritic, CrossCriticSchema, planningCrossBudgets } from "../agent/c
 import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "../agent/reviewJudgment";
 import { withCaller } from "./reviewFixture";
 import { sessionAnchor } from "../agent/sessionHook";
-import { planningAdvanceCli } from "../agent/planningChain";
+import { planningAdvanceCli, planningNextLine } from "../agent/planningChain";
 import { context } from "../agent/commands";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { loadActive, saveActive } from "../agent/layout";
@@ -1759,6 +1759,22 @@ test("C7 연쇄 — 답 없는 질문으로 게이트가 거부되면 질문 수
   assert.equal(loadActive(root)!.phase, "analysis");
 });
 
+test("C7 연쇄 — 질문이 열려 있어도 다른 사유(AI-DLC)로 거부되면 질문 수를 싣지 않고 그 사유를 전하게 한다", () => {
+  write(`${DIR}/questions.md`, "# 질문\n## Q1 · 확인\n값은?\n[Requirements]: R1\n[Answer]:\n");
+  preparePlanning(root); finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+  write("aidlc/spaces/default/intents/x/aidlc-state.md", "# 상태\n- **Status**: in-progress\n");
+  let expected = "";
+  try { next(root); } catch (error) { expected = (error as Error).message; }
+  assert.doesNotMatch(expected, /질문/, "next 는 질문보다 AI-DLC 를 먼저 본다");
+  const out = chain();
+  assert.equal(out.view.action, "ready-for-gate", JSON.stringify(out.view));
+  assert.equal(out.exit, 1);
+  assert.equal(out.view.chain.reason, expected);
+  assert.equal(out.view.chain.questions, undefined);
+  assert.match(out.view.next, /^게이트 거부\(analysis\) — chain\.reason/);
+  assert.doesNotMatch(out.view.next, /ca-answer/);
+});
+
 test("C7 연쇄 — 실패로 막히면 게이트를 시도하지 않고 advance 가 적은 원인·재배정 안내를 낸다", () => {
   const item = advance().assignments[0]; malformed(item);
   malformed(JSON.parse(repairPlanning(root, "analysis")));
@@ -1768,6 +1784,51 @@ test("C7 연쇄 — 실패로 막히면 게이트를 시도하지 않고 advance
   assert.equal(out.view.chain, undefined);
   assert.match(out.view.next, /^analysis: [\s\S]*planning dispatch로 명시적으로 재배정하세요\.$/);
   assert.equal(loadActive(root)!.phase, "analysis");
+});
+
+/** 실제 advance 출력(파일 픽스처)의 next 가 같은 출력으로 만든 표의 행과 같고, 연쇄는 게이트를 시도하지 않는다 */
+function chainedWithoutGate(action: string) {
+  const out = chain();
+  assert.equal(out.view.action, action, JSON.stringify(out.view));
+  assert.equal(out.exit, 0);
+  assert.equal(out.view.chain, undefined);
+  assert.equal(out.view.next, planningNextLine(out.view, { chained: true, workDir: DIR }));
+  return out.view;
+}
+
+test("C7 실제 출력 — 되감기(rewind-required)는 rewind.phase·command·auto 로 next 를 만든다", () => {
+  toDesign();
+  write("src/current.ts", "export const current = 2;\n");
+  const first = chainedWithoutGate("rewind-required");
+  assert.match(first.next, /^앞 단계\(impact\) 계획 작업이 지금 입력과 맞지 않는다 — code-agent back impact 를 실행하고\(같은 사유의 첫 자동 되감기라 사용자 지시 없이 한다\) ca-impact 절차로 잇는다$/);
+  const again = chainedWithoutGate("rewind-required");
+  assert.equal(again.rewind.auto, false);
+  assert.match(again.next, /^앞 단계\(impact\) 계획 작업이 같은 사유로 다시 낡았다 — 자동으로 되감지 않는다\. rewind\.reason 과 rewind\.tasks\[\]\.staleBecause/);
+  assert.equal(loadActive(root)!.phase, "design");
+});
+
+test("C7 실제 출력 — stale 은 stale[].id·reason 으로 고아 안내를 만들고 --chain 을 유지한다", () => {
+  advance();
+  editPlanning((state) => { state.tasks[0].attempts[0].at = ago(11); });
+  const view = chainedWithoutGate("stale");
+  assert.ok(view.next.includes("planning cancel analysis"), view.next);
+  assert.ok(view.next.includes("담당 시작이 관찰되지 않았습니다(배정 11분 전)"), view.next);
+  assert.ok(view.next.includes("code-agent planning advance --chain"), view.next);
+  assert.doesNotMatch(view.next, /planning advance(?! --chain)/);
+});
+
+test("C7 실제 출력 — 차단 지적(feedback)은 다시 배정 안내를 덧붙이고 되감기 명령을 내지 않는다", () => {
+  throughDesign(); preparePlanning(root);
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS });
+  const line = FUNCTIONAL.split("\n").findIndex((row) => row.startsWith("- AC-R1-1")) + 1;
+  finish(dispatch("critic"), {}, { findings: [{ id: "F1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: `${DIR}/04-functional.md`, line } }] });
+  const out = chain();
+  assert.equal(out.view.chain, undefined);
+  assert.equal(out.view.next, planningNextLine(out.view, { chained: true, workDir: DIR }));
+  assert.equal(out.view.feedback.length, 1);
+  assert.match(out.view.next, / — 차단 지적 1건: 계약의 수정 피드백으로 고칠 작업을 다시 배정한다\(feedback\[\]\.citedTask 는 근거 문서를 낸 작업일 뿐/);
+  assert.doesNotMatch(out.view.next, /code-agent back/);
+  assert.equal(loadActive(root)!.phase, "plan");
 });
 
 test("C7 연쇄 — plan 단계의 ready-for-gate 는 제출을 안내하고 게이트를 지나지 않는다", () => {
@@ -1795,4 +1856,12 @@ test("C7 SessionStart — 압축·비우기 뒤에는 ca-answer 를 다시 읽�
   assert.match(sessionAnchor(root, "compact"), line);
   assert.match(sessionAnchor(root, "clear"), line);
   for (const source of ["startup", "resume", undefined]) assert.doesNotMatch(sessionAnchor(root, source), line);
+  // 실제 hook 경로 — stdin 의 source 를 읽는다
+  const env = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR; delete env.CODE_AGENT_CROSS;
+  const hookRun = (source: string) => spawnSync(process.execPath, [join(__dirname, "../agent/cli.js"), "session-event"], { cwd: root, env, encoding: "utf8", input: JSON.stringify({ cwd: root, source }) });
+  const cleared = hookRun("clear");
+  assert.equal(cleared.status, 0, cleared.stderr);
+  assert.match(cleared.stdout, line);
+  assert.doesNotMatch(hookRun("startup").stdout, line);
 });

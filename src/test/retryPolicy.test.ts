@@ -776,6 +776,8 @@ describe("잠금·hook 실패 코드", () => {
     for (const command of ["planning-event", "review-event"] as const) {
       assert.deepEqual(exit(command, "{\"hook_event_name\":\"SubagentStart\"}"), { code: 2 });
       assert.deepEqual(exit(command, "{\"hook_event_name\":\"SubagentStop\"}"), { code: 0 });
+      assert.deepEqual(exit(command, "not json"), { code: 2 }, "읽지 못한 이벤트는 막는다(진입 함수의 subagentExit 와 같다)");
+      assert.deepEqual(exit(command, "{}"), { code: 2 }, "이벤트를 알 수 없으면 막는다");
     }
     for (const stdin of ["{\"hook_event_name\":\"PreToolUse\"}", "not json"]) {
       const result = exit("codex-event", stdin);

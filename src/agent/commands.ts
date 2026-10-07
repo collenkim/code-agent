@@ -166,23 +166,34 @@ function requireDocs(repoRoot: string, work?: Work): void {
   }
 }
 
+/**
+ * 답 없는·출처 미확인 질문 때문에 멈춘 Stop(`requireAnswers`). `count` 는 둘을 합한 수다 — 연쇄 게이트(`planningChain.ts`)가
+ * 거부 원인을 질문으로 짚을 때 이 종류만 본다(AI-DLC·문서·요구 확정 거부에 질문이 열려 있어도 질문 탓으로 안내하지 않는다)
+ */
+export class OpenQuestionsStop extends Stop {
+  constructor(message: string, readonly count: number) { super(message); }
+}
+
 function requireAnswers(repoRoot: string, active: ActiveWork): void {
   const { unanswered: open, unverified } = openQuestions(repoRoot, questionsFile(active.id));
+  const count = open.length + unverified.length;
   if (open.length > 0) {
-    throw new Stop(
+    throw new OpenQuestionsStop(
       `답이 없는 질문이 ${open.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
         open.map((question) => `  - ${question.title}`).join("\n") +
         `\n메인은 ${skill("ca-answer")} 공통 절차의 ${askVia()} 답을 받아 기록하세요.`,
+      count,
     );
   }
   if (unverified.length > 0) {
     // 답 출처 — 관찰된 질문 도구 응답과 맞거나, 접수 때 확정 화면에 실린 답이거나, 대화로 받았다고 밝힌 답만 받는다
-    throw new Stop(
+    throw new OpenQuestionsStop(
       `답의 출처를 확인할 수 없는 질문이 ${unverified.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
         unverified.map((question) => `  - ${question.title}`).join("\n") +
         "\nhook 이 관찰한 질문 도구의 답이면 선택한 label(또는 직접 입력 원문)을 그대로 [Answer]: 에 적습니다. " +
         "hook 이 관찰하지 못하는 답(사용자가 대화로 직접 준 답, Codex 에서 받은 모든 답)은 그 원문을 적고 다음 줄에 [Source]: 대화 를 붙입니다. " +
         "모델이 정한 값은 답이 아닙니다 — 질문으로 받으세요.",
+      count,
     );
   }
 }

@@ -4,7 +4,8 @@
  * **형식은 공개 Codex 기록 형식을 가정했고 실제 기록으로 확인하기 전이다**(이 PC 에 Codex 기록이 없다). 가정:
  * `$CODEX_HOME/sessions/**\/rollout-*.jsonl`, 줄마다 `{timestamp, type, payload}`. `session_meta` 의 `payload.cwd` 로 저장소를 고르고,
  * `event_msg` 의 `payload.type:"token_count"` 에 `payload.info.last_token_usage` 가 있으면 요청 1건, `response_item` 의
- * `function_call`·`custom_tool_call`·`local_shell_call` 이 도구 호출, `function_call_output`·`custom_tool_call_output` 의 `output` 이 도구 결과다.
+ * `function_call`·`custom_tool_call`·`local_shell_call` 이 도구 호출(셸 명령 배열은 `bash -lc`·`powershell -Command`·`cmd /c` 래퍼를 벗긴다),
+ * `function_call_output`·`custom_tool_call_output` 의 `output` 이 도구 결과다.
  * 모르는 줄·깨진 줄은 버리고 0 으로 센다. 단가표가 없어 비용은 내지 않는다.
  */
 import { existsSync, readdirSync, readFileSync } from "fs";
@@ -56,12 +57,34 @@ function inside(root: string, cwd: unknown): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-/** 셸 호출의 명령 문자열 — arguments(JSON 문자열)의 command(배열이면 공백으로 잇는다) */
+/** 셸 래퍼의 실행 파일 이름(경로·`.exe` 뺀 소문자)별 스크립트 깃발 */
+const SHELL_SCRIPT_FLAG: [RegExp, RegExp][] = [
+  [/^(?:ba|z|da|k)?sh$/, /^-[a-z]*c$/],
+  [/^(?:powershell|pwsh)$/, /^-(?:c|command)$/i],
+  [/^cmd$/, /^\/c$/i],
+];
+/**
+ * 셸 래퍼를 벗긴 명령 — Codex 셸 도구는 명령을 `["bash","-lc","code-agent next"]`·`["powershell.exe","-Command","…"]`·
+ * `["cmd","/c","…"]` 처럼 감싸 보낼 수 있다(형식 미확인). 래퍼 꼴(셸, 그 사이의 다른 깃발, 스크립트 깃발, 스크립트 하나)이면
+ * 마지막 요소, 아니면 공백으로 이은 배열이다. 벗기지 못하면 명령별 호출·스킬 읽기가 code-agent 명령으로 잡히지 않는다
+ */
+export function unwrapShellArgv(argv: string[]): string {
+  if (argv.length >= 3) {
+    const exe = (argv[0].split(/[\\/]/).pop() ?? "").toLowerCase().replace(/\.exe$/, "");
+    const rule = SHELL_SCRIPT_FLAG.find(([name]) => name.test(exe));
+    const flag = argv[argv.length - 2];
+    const between = argv.slice(1, -2);
+    if (rule && rule[1].test(flag) && between.every((part) => /^[-/]/.test(part))) return argv[argv.length - 1];
+  }
+  return argv.join(" ");
+}
+
+/** 셸 호출의 명령 문자열 — arguments(JSON 문자열)의 command(배열이면 셸 래퍼를 벗기거나 공백으로 잇는다) */
 function shellCommand(payload: Json): string | undefined {
   let args: unknown = payload.arguments;
   if (typeof args === "string") { try { args = JSON.parse(args); } catch { return undefined; } }
   const command = record(args)?.command ?? record(payload.action)?.command;
-  if (Array.isArray(command)) return command.filter((part) => typeof part === "string").join(" ");
+  if (Array.isArray(command)) return unwrapShellArgv(command.filter((part): part is string => typeof part === "string"));
   return typeof command === "string" ? command : undefined;
 }
 

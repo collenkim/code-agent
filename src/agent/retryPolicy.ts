@@ -1247,7 +1247,9 @@ export function hookFailureExit(input: HookFailureInput, message = "판정 모�
     case "hook": return { code: 2 };
     case "consent-event": return { code: !input.parsed || input.consentQuestion !== false ? 2 : 0 };
     case "stop": case "session-event": return { code: 0 };
-    case "review-event": case "planning-event": return { code: input.event === "SubagentStart" ? 2 : 0 };
+    // SubagentStop 만 막지 않는다 — Start 와 알 수 없는 이벤트(읽지 못함·깨진 JSON·필드 없음)는 막는다. 진입 함수
+    // (runPlanningHook·runReviewHook)가 깨진 stdin 을 subagentExit(event 없음 → 2)로 끝내는 것과 같은 규칙이다
+    case "review-event": case "planning-event": return { code: input.event === "SubagentStop" ? 0 : 2 };
     case "codex-event": {
       if (!input.parsed || input.event === "PreToolUse") {
         return { code: 0, stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny",

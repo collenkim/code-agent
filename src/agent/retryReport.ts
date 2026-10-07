@@ -7,7 +7,9 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
-import type { CrossAttempt } from "./crossRecord";
+import { crossAttemptsOf, legacyPlanningAttempts, type CrossAttempt } from "./crossRecord";
+import type { PlanningState } from "./planningState";
+import type { ReviewRound } from "./review";
 import { CONSENT_DIR } from "./consentState";
 import { STATE_DIR } from "./layout";
 import { COUNTER_KEYS, COUNTER_LABEL, isFailureClass, retrySummary, type CounterKey, type FailureClass } from "./retryPolicy";
@@ -58,6 +60,24 @@ function addCross(totals: CrossTotals, attempts: unknown[]): void {
   }
 }
 
+/**
+ * 교차 시도 — 배열이 없는 옛 기록은 옛 `cross` 필드에서 만든 시도(crossRecord 의 접근 함수)로 본다. retrySummary 의 카운터가 옛 기록도
+ * 세므로 실패 원인도 같은 범위를 센다. 옛 시도에는 usage 가 없어 교차 실행 합계는 달라지지 않는다
+ */
+function reviewCrossAttempts(round: Json): unknown[] {
+  if (Array.isArray(round.crossAttempts)) return round.crossAttempts;
+  return crossAttemptsOf({ cross: record(round.cross) } as unknown as ReviewRound);
+}
+function planningCrossAttempts(plan: Json): unknown[] {
+  if (Array.isArray(plan.crossAttempts)) return plan.crossAttempts;
+  return legacyPlanningAttempts(record(plan.cross) as PlanningState["cross"]);
+}
+/** 리뷰어 실행 — 옛 기록의 단수 `reviewer` 도 하나로 본다(crossRecord.reviewersOf·retrySummary 와 같다) */
+function reviewerRuns(round: Json): unknown[] {
+  if (Array.isArray(round.reviewers)) return round.reviewers;
+  return record(round.reviewer) ? [round.reviewer] : [];
+}
+
 /** 작업 하나·대상 하나의 기록 */
 function reportOf(dir: string, id: string, target: string): RetryReport {
   const unreadable: string[] = [];
@@ -77,15 +97,18 @@ function reportOf(dir: string, id: string, target: string): RetryReport {
       for (const attempt of attempts) countFailure(failures, record(attempt?.failure)?.class);
     }
     for (const agent of list(plan.agents).map(record)) countFailure(failures, record(agent?.failure)?.class);
-    for (const attempt of list(plan.crossAttempts).map(record)) countFailure(failures, attempt?.class);
-    addCross(cross, list(plan.crossAttempts));
+    const attempts = planningCrossAttempts(plan);
+    for (const attempt of attempts.map(record)) countFailure(failures, attempt?.class);
+    addCross(cross, attempts);
   }
   const log = record(review);
   if (log) {
     for (const round of list(log.rounds).map(record)) {
-      for (const attempt of list(round?.crossAttempts).map(record)) countFailure(failures, attempt?.class);
-      for (const reviewer of list(round?.reviewers).map(record)) countFailure(failures, record(reviewer?.failure)?.class);
-      addCross(cross, list(round?.crossAttempts));
+      if (!round) continue;
+      const attempts = reviewCrossAttempts(round);
+      for (const attempt of attempts.map(record)) countFailure(failures, attempt?.class);
+      for (const reviewer of reviewerRuns(round).map(record)) countFailure(failures, record(reviewer?.failure)?.class);
+      addCross(cross, attempts);
     }
   }
   for (const attempt of list(record(flow)?.attempts).map(record)) countFailure(failures, record(record(attempt?.result)?.failure)?.class);

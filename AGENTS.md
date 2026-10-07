@@ -29,7 +29,7 @@
   - 계획 advance의 action(`dispatch`·`stale`·`wait`·`rewind-required`·`blocked`·`ready-for-gate`)이나 출력 키를 바꾸면 action별 다음 행동의 원천인 `planningChain.ts` `planningNextLine` 표(`planningChain.test.ts`), `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` 4항(행동 요지 — 네 스킬이 2·3·4항을 같은 글자로 둔다, `templateText.test.ts`)과 `doc/planning.md` action 표도 고친다. 연쇄(`--chain`)는 program 게이트(analysis·impact·design)만 잇는다 — 사람 확인(계획 제출·승인)을 잇지 않고 실패·거부에서 자동으로 다시 시도하지 않는다.
   - `ca-review`·`ca-plan` 4-1의 `` Bash: `code-agent … cross --by codex` `` 문장을 바꾸면 `hosts.ts` `codexText`의 권한 상승 치환 정규식과 맞춘다.
   - `ca-reviewer.md`의 출력 표(열·상태 값·경로 규칙)를 바꾸면 `crossRecord.ts` `reviewResultProblems`·`review.ts` `parseFindings`와 맞춘다(hook·교차·게이트가 같은 표 규칙을 쓴다).
-  - hook 하위 명령은 `cli.ts` `HOOKS`가 지연 로드하고 모듈 로드 실패는 `retryPolicy.ts` `hookFailureExit` 표로 끝낸다 — 새 하위 명령은 두 곳에 함께 더한다. hook 경로 모듈(`hook.ts`·`codexHook.ts`·`stopHook.ts`·`sessionHook.ts`와 그것들이 import 하는 모듈)에서 명령 모듈(`consent`·`commands`·`deliver`·`validate`·`init` 등)을 정적으로 import 하지 않는다 — 필요하면 쓰는 분기 안에서 `require`한다(`hookLoad.test.ts`가 그래프·실행 경로·로드 실패 표를 본다).
+  - hook 하위 명령은 `cli.ts` `HOOKS`가 지연 로드하고 모듈 로드 실패는 `retryPolicy.ts` `hookFailureExit` 표로 끝낸다 — 새 하위 명령은 두 곳에 함께 더한다. hook 경로 모듈(`hook.ts`·`codexHook.ts`·`stopHook.ts`·`sessionHook.ts`와 그것들이 import 하는 모듈)에서 명령 모듈(`consent`·`commands`·`deliver`·`validate`·`init` 등)을 정적으로 import 하지 않는다 — 필요하면 쓰는 분기 안에서 `require`한다 — 그 `require`를 `try`로 감싸 실패를 통과시키지 않는다(`hookLoad.test.ts`가 그래프·실행 경로·진입과 분기 안의 로드 실패 표를 본다).
   - Codex exec 배너 라벨·전사 라벨(`CODEX_TURN`)·오류 줄 꼴이 바뀌면 `retryPolicy.ts` `crossFailureText`를 고친다. 교차 자식에서 여는 `code-agent` 명령을 바꾸면 `hook.ts` `CROSS_CHILD_READONLY`와 흐름도 §5.3 0단계를 함께 고친다. 교차 실행 인자의 doctor 점검 목록은 `crossCheck.ts` `crossFlags`가 인자에서 만들므로 따로 맞출 것이 없다.
 - `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 문장째 치환(`hosts.ts` `CODEX_SENTENCES`)의 원문이 여전히 템플릿과 글자 그대로 같은지 확인한다 — 다르면 오류 없이 치환되지 않는다(`templateText.test.ts`가 원문이 Claude 템플릿에 있고 Codex 사본에 남지 않는지 본다). 17개 스킬의 질문·동의 공통 문단도 같은 글자여야 한다(같은 테스트). 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
 - 템플릿 문장을 늘려 `src/test/templateBudget.test.ts` 예산을 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`).
@@ -44,7 +44,7 @@ npm run build
 npm test
 ```
 
-Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2분 걸리며(파일 단위 병렬 — 가장 긴 파일이 벽시계를 정한다, 한 파일이 1분을 넘으면 주제별로 나눈다), 플랫폼 조건으로 4개가 생략된다. `npm test`는 `tsc` 뒤 `scripts/prune-dist-tests.cjs`로 지운·옮긴 시험의 옛 `dist/test` 산출물을 지운다.
+Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2분 걸리며(파일 단위 병렬 — 벽시계는 가장 긴 파일과 동시에 도는 파일들의 CPU·프로세스 경합이 함께 정한다. 한 파일이 약 90초를 넘거나 그 파일 하나가 벽시계를 정하면 주제별로 나눈다), 플랫폼 조건으로 4개가 생략된다. `npm test`는 `tsc` 뒤 `scripts/prune-dist-tests.cjs`로 지운·옮긴 시험의 옛 `dist/test` 산출물을 지운다.
 
 ## 실험할 때
 

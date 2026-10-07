@@ -11,9 +11,8 @@
  */
 import { advancePlanning } from "./planning";
 import { handoffPlanning } from "./handoff";
-import { next } from "./commands";
-import { loadActive, questionsFile, workDocsDir } from "./layout";
-import { openQuestions } from "./answers";
+import { next, OpenQuestionsStop } from "./commands";
+import { loadActive, workDocsDir } from "./layout";
 import { FAILURE_CLASSES, guidance, recordedVariant, type FailureClass } from "./retryPolicy";
 import { Stop } from "./stop";
 
@@ -138,10 +137,8 @@ export function planningAdvanceCli(root: string, options: { chain: boolean }): {
     } catch (error) {
       if (!(error instanceof Stop)) throw error;
       gate = { from: view.phase, gate: "rejected", reason: error.message };
-      if (active) {
-        const { unanswered, unverified } = openQuestions(root, questionsFile(active.id));
-        if (unanswered.length + unverified.length > 0) gate.questions = unanswered.length + unverified.length;
-      }
+      // 질문 수는 답 없는·출처 미확인 질문 때문에 거부됐을 때만 싣는다 — AI-DLC·문서·요구 확정 거부는 질문이 열려 있어도 그 사유다
+      if (error instanceof OpenQuestionsStop && error.count > 0) gate.questions = error.count;
     }
   }
   const workDir = active ? workDocsDir(active.id) : "doc/work/<ID>";

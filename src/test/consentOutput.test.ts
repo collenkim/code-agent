@@ -4,16 +4,17 @@
  */
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { nextStep, status } from "../agent/commands";
-import { applyConsent, consentStatus, finishConsent, loadConsent, observeConsent, prepareConsent, renderConsentOutput } from "../agent/consent";
-import { consentCommandOf, parsePrepareArgs, splitCommandArgs } from "../agent/consentTicket";
+import { applyConsent, CONSENT_ACTIONS, consentStatus, finishConsent, loadConsent, observeConsent, prepareConsent, renderConsentOutput } from "../agent/consent";
+import { consentCommandOf, INLINE_ACTIONS, parsePrepareArgs, splitCommandArgs } from "../agent/consentTicket";
 import { codexHook } from "../agent/codexHook";
 import { decide } from "../agent/hook";
+import { sessionAnchor } from "../agent/sessionHook";
 import { ACCEPT_CONSENT, observeConsentFixture, prepareConsentFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
 
 let root: string;
@@ -124,6 +125,23 @@ test("문법 오류는 티켓을 꺼내기 전에 사용법으로 멈추고, hoo
   assert.equal(splitCommandArgs("x.json > out"), undefined);
 });
 
+test("인라인 동작 목록 — INLINE_ACTIONS 와 ca-answer(Claude 동작 준비 절·Codex 인라인 문장)가 같고, 나머지 동작은 파일 준비 문단에 있다", () => {
+  const template = (path: string): string => readFileSync(join(__dirname, "../../template", path), "utf8").split("\r\n").join("\n");
+  /** 백틱으로 감싼 동의 동작 이름 */
+  const actionsIn = (text: string): string[] => [...new Set([...text.matchAll(/`([a-z-]+)`/g)].map((match) => match[1]).filter((name) => CONSENT_ACTIONS.includes(name)))].sort();
+  const inline: string[] = [...INLINE_ACTIONS].sort();
+  const fileOnly = CONSENT_ACTIONS.filter((name) => !(inline as string[]).includes(name)).sort();
+  const claude = template("claude/skills/ca-answer/SKILL.md");
+  const section = claude.slice(claude.indexOf("### 동작 준비"), claude.indexOf("### 준비 → 실제 응답"));
+  const [, inlineParagraph, fileParagraph] = section.split("\n\n");
+  assert.match(inlineParagraph, /^자유 문구가 없는 동작은 파일 없이 준비한다/);
+  assert.deepEqual(actionsIn(inlineParagraph), inline, "ca-answer/SKILL.md 동작 준비 절의 인라인 동작");
+  assert.deepEqual(actionsIn(fileParagraph), fileOnly, "ca-answer/SKILL.md 동작 준비 절의 파일 준비 동작");
+  const codex = /자유 문구가 없는 동작\(([^)]*)\)은 파일 없이/.exec(template("codex/ca-answer.md"));
+  assert.ok(codex, "template/codex/ca-answer.md 의 인라인 문장");
+  assert.deepEqual(actionsIn(codex[1]), inline, "template/codex/ca-answer.md 의 인라인 동작");
+});
+
 test("CLI finish 는 적용 티켓의 세션으로 적용하고 phase·next 를 돌려준다 — caller 없이는 적용하지 않는다", () => {
   const { id } = JSON.parse(observed("code-agent consent prepare --action docs --for claude", "S1", "claude").stdout);
   answerAs(id, "S1");
@@ -147,4 +165,16 @@ test("흐름을 멈추는 동작은 적용 뒤 고정 문구를 돌려주고, �
   const first = JSON.parse(finishConsent(root, fixture.id));
   assert.match(first.next, /^진행을 종료했습니다/);
   assert.deepEqual(JSON.parse(finishConsent(root, fixture.id)), first);
+});
+
+test("SessionStart — 작업·접수·문서 세션 밖에서 응답을 기다리는 동의만 있어도 압축·비우기 뒤에는 ca-answer 를 다시 읽게 한다", () => {
+  const line = /대화가 압축·비워졌다 — 질문·동의 전에 ca-answer 절차/;
+  assert.equal(sessionAnchor(root, "compact"), "", "기다리는 동의가 없으면 붙이지 않는다");
+  prepareConsentFixture(root, { action: "docs" });
+  for (const source of ["compact", "clear"]) {
+    const text = sessionAnchor(root, source);
+    assert.match(text, line, source);
+    assert.match(text, /응답·적용을 기다리는 동의가 있다\(공통 문서 확정\)/, source);
+  }
+  for (const source of ["startup", "resume", undefined]) assert.equal(sessionAnchor(root, source), "", String(source));
 });
