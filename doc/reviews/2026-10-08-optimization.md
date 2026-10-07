@@ -88,3 +88,8 @@ pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은
 | Codex 흐름 합계(CODEX.block + .agents 스킬 12) | 48,127 | 48,442 | +315 |
 
 늘어난 것은 공통 문단(+38×17), 자리 확인(+35×10), ca-answer 동작 준비 절(+218)·Codex ca-answer 인라인 문장(+461), ca-next 연쇄 문장이다. 줄어든 것은 계획 스킬 반복 문단이다. 대신 `planning advance` 출력마다 `next` 한 줄(약 70~300자)이 더해진다.
+
+## OPT-16 — context 렌더러 분리(출력 바이트 동일)
+
+- 커밋 a: `commands.ts` `context()`(약 300줄)를 `contextRender.ts` 의 절 함수 12개(`analysisSection`·`questionsAndAssumptions`·`impactSection`·`designSection`·`planningSupport`·`planSection`·`fixImplementSection`·`implementSection`·`verificationSection`·`reviewSection`·`integrateSection`·`deliverSection`)와 `renderContext`(조건·순서), 후보 파일·참고 문서 절(`candidateLines`·`docSectionLines`)로 옮겼다. 본문은 글자 그대로 옮겼고(스크립트 `scratchpad/sandbox-stage6/split-context.cjs`), 바깥 조건으로 좁히던 타입은 같은 조건의 조기 반환으로 좁힌다. `PHASE_LABEL`·`codeStages` 는 `phaseInfo.ts` 로. `context()` 는 접수 분기·작업 읽기·요구 키(`requireRequirements` — 순환 import 를 피해 commands.ts 에 남김)만 한다(약 13줄). `commands.ts` 1,572줄 → 1,176줄.
+- 확인: `scratchpad/sandbox-stage6/context-golden.cjs` — 같은 준비(접수·analysis~deliver·feature/fix/refactor 의 implement·check·test·review, context --file)에서 32개 출력을 분리 전 dist 와 분리 후 dist 로 만들어 `diff -r` 이 비었다(56,311바이트, 커밋 시각 고정으로 두 번 돌려 같은지도 먼저 확인).
