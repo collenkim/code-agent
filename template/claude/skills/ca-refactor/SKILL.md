@@ -4,7 +4,7 @@ description: 리팩토링 요청을 진행한다 — 같은 세션의 동의를 
 argument-hint: [ID] <리팩토링 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `refactor`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다.
 접수에서 `target` 은 바꿀 코드가 있는 **저장소 경로**, `scope` 와 `preserve` 는 필수다 — 원문으로 정할 수 없으면 묻는다.

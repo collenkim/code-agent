@@ -4,7 +4,7 @@ description: 공통 문서를 점검하고 없거나 모자라면 작성한다 �
 argument-hint: [architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules]
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받기 직전에 `.claude/skills/ca-answer/SKILL.md`를 읽고 그 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 너는 **메인 에이전트**다. 문서만 쓴다 — 문서 작성 세션 동안 hook 이 코드 쓰기를 막는다.
 `code-agent` 명령이 거부하면 사유를 그대로 전하고 멈춘다. 인자가 있으면 그 문서만 다룬다.

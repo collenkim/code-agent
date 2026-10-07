@@ -63,3 +63,28 @@
 | `docs --kind architecture` | 3,203 | 1,374(−57%) | 1,469(−54%) |
 
 pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은 비율로 준다. 적용 뒤에는 `code-agent status`(작업이 없는 저장소 623자, 작업 중 1~2K자) 한 번이 준다. 실제 흐름에서의 호출 수 감소는 유료 평가를 돌리지 않아 미측정이다(평가 드라이버는 동의를 TTY fixture 로 대신해 원래 이 왕복을 재지 못한다 — OPT-6 의 `consent prepare`·`consent finish`·`status` 명령별 호출로 실제 세션에서 잰다).
+
+## OPT-14·OPT-1(연쇄)·OPT-3·PVR-19 — 계획 next 줄·연쇄 모드·스킬 문단·Task 완료 판정
+
+| 바꾼 것 | 비고 |
+|---|---|
+| `planningChain.ts`(새) — `planning advance`·`dispatch`·`repair` CLI 출력에 다음 행동 한 줄 `next`(`planningNextLine`). action별 행동의 원천이 이 표 하나다: 배정(경로만·여럿이면 함께·교정은 형식만), `stale`·`cancel`(`guidance("dispatch-orphan")`), `wait`, 되감기(`rewind.auto`·`notice`), 막힘, 게이트·제출, 차단 지적 덧붙임. 호스트 중립 문구. 기존 키·`problems` 는 그대로 | **명세와 다름**: 막힘 행은 advance 가 원인과 행동을 함께 적은 항목(reasons 둘 — 같은 입력 실패의 명시 재배정·한도 문구, 출처 확인 실패의 명시 재배정)이면 그 두 줄을 그대로 쓴다. 기록 변형 `guidance(cls, …, recordedVariant)` 는 사유 하나뿐인 항목에만 — 실패로 끝난 형식 오류 시도에 "planning repair 로 교정" 을 안내하면 교정할 수 없는 시도에 교정을 시키게 된다(`repairState` 는 needs-correction 만 받는다) |
+| `planning advance --chain` — analysis·impact·design 에서 결과가 모두 준비돼 `ready-for-gate` 일 때만 같은 호출로 program 게이트(`next()`)를 한 번. `chain{from, gate, to?, reason?, questions?}`, 거부면 exit 1. 다음 단계 배정·plan 게이트(계획 제출·사람 승인)는 하지 않고, 다른 action·실패·거부에서는 게이트를 시도하지 않으며 자동으로 다시 시도하지 않는다. `--chain` 호출의 안내는 `--chain` 을 유지한다 | 사용자 결정(사람 확인 유지·실패 즉시 멈춤)대로. 게이트 경계마다 메인의 `code-agent next` 호출 1회와 그 status 전문이 준다(흐름당 3회) |
+| 계획 스킬 4개의 관찰 절 1~6항 → 1~5항: 1항 `--chain`(ca-plan 은 없음), 2·3·4항은 네 스킬이 같은 글자(`templateText.test.ts`), 4항은 C2 4항의 행동 요지(`planning cancel <ID>`·`rewind.auto`·`rewind.command`·`same-input-repeat` — Codex 사본 시험 그대로) — 다르면 `next` 줄을 따른다, 5항 `ready-for-gate`·`chain.gate`. 한도 숫자 문장(3회·6회·1회) 삭제(재시도 규약이 원천, `next` 가 안내) | **명세와 다름**: 명세는 4·5·6항의 action별 행동을 모두 지우고 `next` 줄로만 옮기라고 했지만, 지시(C2 4항 문장 보존)대로 요지를 한 곳(4항)에 남겼다. 그래서 글자 감소는 명세 추정(−1.46K)보다 작다 |
+| `hosts.ts` `CODEX_SENTENCES` — 문장째 치환 6개(장시간 실행·교차 4-1 셋·staging 셋)를 데이터로, 모든 등장을 바꾼다. `templateText.test.ts` 가 원문이 Claude 템플릿에 있고 Codex 사본에 남지 않는지 본다 | 치환 결과는 같다(시험 통과) |
+| `request`·`request begin` 출력에서 `## 질문 — 접수에서 물을 것` 절과 sourceMap 절차 문장 삭제(원천은 ca-request 스킬) | 2,161 → 1,810자(−16%, 접수 중 1~3회) |
+| 단계 스킬 10개의 자리 확인을 "방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 status", `ca-next` 3항에 `chain.gate` 문장 | 직접 단계 경로의 status 재호출이 준다 |
+| 17개 스킬 공통 문단 — ca-answer 는 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 그 직전에" 읽는다. SessionStart 가 `source` compact·clear 이고 진행 중인 것이 있으면 다시 읽으라는 한 줄(`withReread`) | 재읽기 상한 3회×8.1K자 → 0~1회(압축 뒤). 실제 횟수는 `usage` 의 스킬 읽기로 잰다 |
+| PVR-19: implement `next` 가 Task 의 계획 파일이 **모두** 기준 커밋과 같으면 다음 Task 로 넘기지 않는다(`untouchedTaskFiles` — 새 파일·일부만 그대로는 막지 않음, git 을 읽지 못하면 판단하지 않음, `precondition`). `ca-implement` 5항 한 문장 | 기존 시험 중 이 판정에 걸린 것은 없었다(모두 새 파일을 만들거나 고친다). 기준 커밋이 없는 커서는 implement `next` 가 이미 거부하므로 그 분기는 방어용이다 |
+
+시험: `planningChain.test.ts`(새, 8 — 합성 출력으로 표의 행·호스트 중립), `planning.test.ts` C7 8개(실제 advance 의 next·연쇄 통과·AI-DLC 로 게이트 거부·답 없는 질문 거부의 질문 수·실패 막힘·plan 미연쇄·CLI 사용법과 hook 허용·SessionStart 재확인 줄)와 PVR-19 1개, `templateText.test.ts`(새, 3), `request.test.ts`·`hostNotation.test.ts` 기대값(접수 출력에 질문 절·질문 도구 이름 없음).
+
+템플릿 크기(LF 글자, `scripts/template-sizes.cjs`·`--ref 4b1333b`):
+
+| | 기준 | 뒤 | 차이 |
+|---|---|---|---|
+| 계획 스킬 4개(analyze·impact·design·plan SKILL.md) | 14,248 | 13,545 | −703 |
+| Claude 흐름 합계(CLAUDE.block + 흐름 스킬 12) | 50,566 | 50,638 | +72 |
+| Codex 흐름 합계(CODEX.block + .agents 스킬 12) | 48,127 | 48,442 | +315 |
+
+늘어난 것은 공통 문단(+38×17), 자리 확인(+35×10), ca-answer 동작 준비 절(+218)·Codex ca-answer 인라인 문장(+461), ca-next 연쇄 문장이다. 줄어든 것은 계획 스킬 반복 문단이다. 대신 `planning advance` 출력마다 `next` 한 줄(약 70~300자)이 더해진다.

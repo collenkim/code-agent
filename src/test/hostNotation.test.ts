@@ -129,7 +129,8 @@ describe("CLI 표기 — 설치·실행 환경", () => {
   test("Claude 바이트 — 배선 전 문자열과 같고 예외 세 줄만 바뀐다", () => {
     // next 의 미응답 질문·context 의 계획 밖 질문은 아래 'hook·검증' 의 실제 함수 시험이, fix 재현 줄은 p6 이 본다
     withNotation("claude", () => {
-      assert.match(requestContext(root, { id: "W-1", kind: "feature", startedAt: "" }), /- ca-answer 공통 절차의 AskUserQuestion으로 최대 4개 질문씩 받는다\./);
+      // 접수 출력은 질문 규칙을 다시 싣지 않는다(C7 OPT-14 — 원천은 ca-request 스킬) — 질문 도구 이름도 없다
+      assert.doesNotMatch(requestContext(root, { id: "W-1", kind: "feature", startedAt: "" }), /AskUserQuestion|최대 4개 질문/);
       assert.match(interview(SCHEMAS.architecture), /추천·이유·선택지를 구성해 AskUserQuestion으로 받습니다\./);
       assert.match(decide({ cwd: root, tool_name: "Bash", tool_input: { command: "cat .code-agent/active.json" } }) ?? "", /작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다/);
     });

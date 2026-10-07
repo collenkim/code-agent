@@ -32,7 +32,7 @@ import { formatAnswerSources, openQuestions, writeAnswerBaseline } from "./answe
 import { hookInstallWarning, requireStartHooks } from "./init";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { requirePreparedBranch } from "./bootstrap";
-import { commitOf, mergeBase } from "./tree";
+import { changedPaths, commitOf, mergeBase, trackedPaths } from "./tree";
 import { prDocFile } from "./deliver";
 import { proposalFile } from "./knowledge";
 import {
@@ -712,6 +712,11 @@ export function next(repoRoot: string): string {
         if (!task || task.stage !== active.stage) throw new Stop("현재 구현 Task가 승인된 계획에 없습니다. back plan으로 돌아가세요.");
         const missing = task.files.filter(file => !existsSync(join(repoRoot, file)));
         if (missing.length) throw new Stop(`Task ${task.id}의 계획 파일이 아직 없습니다: ${missing.join(", ")}`);
+        const untouched = untouchedTaskFiles(repoRoot, active.baseCommit, task.files);
+        if (untouched) {
+          // 파일이 있다는 것만으로 Task 를 넘기지 않는다 — 옮긴 뒤에는 hook 이 새 Task 의 파일만 허용해 고칠 수단이 없다(precondition, 카운터 없음)
+          throw new Stop(`Task ${task.id}의 계획 파일이 기준 커밋과 같습니다(바뀐 파일 없음): ${untouched.join(", ")} — 파일이 있다는 것만으로 Task를 마치지 않습니다. 이 Task를 맡은 서브에이전트에게 다시 맡기고, 바꿀 것이 없다는 판단이면 사용자에게 알린 뒤 계획을 고칩니다(code-agent back plan → 다시 승인).`);
+        }
         const following = work.plan.tasks[taskIndex + 1];
         if (following?.stage === stage.key) return advance("implement", stage.key, following.id);
       }
@@ -763,6 +768,23 @@ export function next(repoRoot: string): string {
         `반영은 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인한 뒤 로컬 커밋합니다 (직접 CLI를 원하면 TTY에서 code-agent deliver).\n` +
           `${prDocFile(active.id)} 의 요약·확인 방법·위험·되돌리기를 먼저 쓰세요 — 추적표·검증·변경 요약은 코드가 렌더합니다.`,
       );
+  }
+}
+
+/**
+ * Task 의 계획 파일이 **모두** 기준 커밋에 있던 그대로인가 — 그렇다면 그 목록, 하나라도 바뀌었거나 새 파일·무시된 파일이 있으면 undefined.
+ * 기준 커밋이 없는 이전 작업과 git 을 읽지 못하는 경우는 판단하지 않는다(지금처럼 넘긴다). 일부만 그대로인 것은 막지 않는다 —
+ * 한 파일은 읽기 기준일 수 있다. Task 소유 파일은 한 Task 만 가진다(`plan.ts`)라 앞 Task 의 변경이 뒤 Task 의 완료로 세지지 않는다.
+ */
+function untouchedTaskFiles(repoRoot: string, baseCommit: string | undefined, files: string[]): string[] | undefined {
+  if (!baseCommit || files.length === 0) return undefined;
+  try {
+    const before = new Set(trackedPaths(repoRoot, baseCommit));
+    const changed = new Set(changedPaths(repoRoot, baseCommit).map((change) => change.path));
+    const untouched = files.filter((file) => before.has(file) && !changed.has(file));
+    return untouched.length === files.length ? untouched : undefined;
+  } catch {
+    return undefined;
   }
 }
 

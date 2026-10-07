@@ -18,7 +18,7 @@ import { loadManifestIfAny, loadWork } from "./work";
 import { checkProjectDocs, docsReady } from "./docs";
 import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
-import { askVia, skill } from "./hostText";
+import { skill } from "./hostText";
 import { isGitRepo } from "./git";
 import { changedPaths, commitOf, type Change } from "./tree";
 import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
@@ -576,7 +576,8 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "```",
     "- 원문은 `original`(사람이 준 글) 또는 `originalFile`(사람이 준 파일의 저장소 경로 — 코드가 그 파일을 그대로 옮긴다) 중 하나.",
     "- `requirements` 는 1개 이상. 원문에 없는 요구를 더하지 않는다 — 있으면 좋을 것 같은 것은 질문으로.",
-    "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 그대로 옮긴 문장은 자동 연결. 바꿔 쓴 문장·명시적 제외는 연결을 적고 미연결 원문을 남기지 않습니다. 추가 사용자 선택이 아니라 에이전트의 정리 작업입니다.",
+    // 연결·질문 규칙의 원천은 ca-request 스킬이다(정리 절·질문 절) — 여기에는 형식과 데이터만 싣는다
+    "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 연결 규칙은 ca-request 의 정리 절.",
     "- 머리말에 들어가는 값(title · target · scope · preserve · approver · extra)은 한 줄씩. 따옴표나 [ ] 로 감싸지 않는다.",
     pathKind
       ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다. scope 는 바꿀 제품 코드의 경계라 테스트 경로는 적지 않아도 된다(테스트 단계 위치 안에서 계획한다).`
@@ -603,11 +604,6 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     ...(domains.length > 0
       ? domains.map((domain) => (pathKind ? `- ${domain.path}` : `- ${domain.name} (${domain.path})`))
       : ["- 없음 — 빈 저장소이거나 domainBase 아래에 디렉토리가 없습니다"]),
-    "",
-    "## 질문 — 접수에서 물을 것",
-    "- 기술값은 기존 구성·명명 규칙을 근거로 제안한다. 원문으로 정할 수 없는 의미·범위·보존 조건과 두 가지로 읽히는 곳만 묻는다.",
-    `- ca-answer 공통 절차의 ${askVia()} 최대 4개 질문씩 받는다. 추천·이유를 붙이고 5개 이상 후보는 페이지를 나눈다. 질문과 선택지는 questions.md, 실제 답은 해당 질문과 clarifications 에 그대로 남긴다.`,
-    "- 업무 규칙의 세부 · 설계 · 테스트는 여기서 묻지 않는다 — 분석 단계가 맡는다.",
     "",
     `다음: ${preparationHint(repoRoot) ?? requestHint(repoRoot, id, spec)}`,
   );

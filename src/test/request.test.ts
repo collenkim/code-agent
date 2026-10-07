@@ -186,7 +186,11 @@ describe("접수 — 세션이 없을 때도 hook 이 지키는 것", () => {
     requestSubmit(repo, DRAFT);
     confirm();
     start(repo, join(repo, SPEC));
-    assert.match(requestFormat(repo), /# code-agent request — ORD-7 접수 \(feature\)[\s\S]*"requirements"[\s\S]*다음: 확정됨/);
+    const format = requestFormat(repo);
+    assert.match(format, /# code-agent request — ORD-7 접수 \(feature\)[\s\S]*"requirements"[\s\S]*다음: 확정됨/);
+    // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다(C7 OPT-14)
+    assert.match(format, /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\. 연결 규칙은 ca-request 의 정리 절\.$/m);
+    assert.doesNotMatch(format, /## 질문 — 접수에서 물을 것|AskUserQuestion/);
     // context 는 스테이지 컨텍스트다
     assert.match(context(repo), /# code-agent context — ORD-7 · 요구사항 분석/);
   });

@@ -30,7 +30,7 @@ import { modelsTable, setModel } from "./models";
 import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
 import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./request";
 import { openRound } from "./review";
-import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, advancePlanning, repairPlanning, planningResult } from "./planning";
+import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repairPlanning, planningResult } from "./planning";
 import { manifestCheck, survey } from "./survey";
 import { update } from "./update";
 import { usage, usageReport } from "./usage";
@@ -40,6 +40,7 @@ import { setupBaseline, setupStatus } from "./bootstrap";
 import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
 import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
 import { contextHandoff, handoffPlanning } from "./handoff";
+import { planningAdvanceCli, planningAssignmentCli } from "./planningChain";
 import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSourceConfirmed } from "./sourceUpdate";
 import { renderVerification, verify } from "./verificationFlow";
@@ -108,7 +109,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent read <파일> [시작 줄] [줄 수]  저장소 텍스트를 줄 번호와 함께 읽기 (기본 200줄, 최대 400줄)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
-  code-agent planning advance         준비·재사용·선행 조건 판정 후 실행할 배정 묶음 반환 (배정 전문은 assignmentFile에)
+  code-agent planning advance [--chain]   준비·재사용·선행 조건 판정 후 실행할 배정 묶음과 다음 행동(next) 반환 (배정 전문은 assignmentFile에)
+                                      --chain 이면 analysis·impact·design 결과가 모두 준비됐을 때 같은 호출에서 게이트(next)까지 지난다 (거부되면 exit 1, 다음 단계 배정은 하지 않는다)
   code-agent planning status          배정·입력 변경·선행 조건·미결 질문 요약
   code-agent planning result <ID>     원문 산출물을 포함한 상세 결과와 최신성 조회
   code-agent planning repair <ID>     관찰된 출력 형식 오류를 같은 입력에서 한 번 교정
@@ -173,15 +175,22 @@ export async function runCommand(command: string | undefined, args: string[]): P
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
     case "planning":
+      if (args[0] === "advance") {
+        // --chain: analysis·impact·design 결과가 모두 준비됐으면 같은 호출에서 게이트(next)까지 — 거부면 exit 1(JSON 은 그대로)
+        const rest = args.slice(1);
+        if (rest.length > 1 || (rest.length === 1 && rest[0] !== "--chain")) throw new Stop("사용법: code-agent planning advance [--chain]");
+        const out = planningAdvanceCli(repoRoot, { chain: rest[0] === "--chain" });
+        print(out.text);
+        return out.exit;
+      }
       if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
-      else if (args[0] === "advance") print(handoffPlanning(repoRoot, advancePlanning(repoRoot)));
       else if (args[0] === "status") print(planningStatus(repoRoot));
       else if (args[0] === "result" && args[1]) print(planningResult(repoRoot, args[1]));
-      else if (args[0] === "repair" && args[1]) print(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1])));
-      else if (args[0] === "dispatch" && args[1]) print(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1])));
+      else if (args[0] === "repair" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1]))));
+      else if (args[0] === "dispatch" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1]))));
       else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
       else if (args[0] === "cross") print(crossCritic(repoRoot, option(args, "by")));
-      else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID> | cross --by <claude|codex>");
+      else throw new Stop("planning advance [--chain] | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID> | cross --by <claude|codex>");
       return 0;
     case "consent":
       if (args[0] === "prepare") {

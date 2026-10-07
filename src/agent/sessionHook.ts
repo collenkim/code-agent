@@ -21,7 +21,7 @@ import { sessionStartLease } from "./lease";
  * 넘겨받는다(압축 `compact` 은 빼고 — lease.ts sessionStartLease). 이전 세션이 있었으면 작업 줄 뒤에 한 줄로 알린다.
  */
 export function sessionAnchor(repoRoot: string, source?: string, session?: string): string {
-  const anchor = progress(repoRoot, source, session);
+  const anchor = withReread(progress(repoRoot, source, session), source);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   const text = aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
   // 빠진 hook 은 진행 상태와 무관하게 알린다 — hook 이 없으면 쓰기 판정·동의 관찰이 꺼진다
@@ -55,6 +55,16 @@ function runningPlanning(work: Work, source?: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * 압축·비우기 뒤에는 이전 대화가 읽은 ca-answer 절차가 사라진다 — 스킬은 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 읽는다" 이므로
+ * 진행 중인 것이 있을 때 다시 읽으라고 한 줄 붙인다. SessionStart 는 Claude 에만 등록하므로 경로는 Claude 설치 자리다
+ */
+function withReread(anchor: string, source?: string): string {
+  return anchor && (source === "compact" || source === "clear")
+    ? `${anchor}\n- 대화가 압축·비워졌다 — 질문·동의 전에 ca-answer 절차(.claude/skills/ca-answer/SKILL.md)를 다시 읽는다.`
+    : anchor;
 }
 
 /** 작업 임대 넘겨받기 줄 — 이 hook 은 막지 않으므로 실패는 삼킨다 */

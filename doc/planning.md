@@ -25,7 +25,7 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 ## 기본 진행과 결과 전달
 
-`code-agent planning advance`는 현재 단계의 빠진 기본 작업을 준비하고, 완료 결과 재사용·선행 조건·동시 한도를 검사해 실행할 `assignments`를 한 번에 반환한다. 사용자 정의 영역 작업은 유지한다. `action`은 다음과 같다.
+`code-agent planning advance`는 현재 단계의 빠진 기본 작업을 준비하고, 완료 결과 재사용·선행 조건·동시 한도를 검사해 실행할 `assignments`를 한 번에 반환한다. 사용자 정의 영역 작업은 유지한다. `action`은 다음과 같다. CLI 출력에는 메인이 할 일 한 줄 `next`가 함께 실린다 — 메인 행동의 원천은 그 줄이고(실패는 재시도 규약의 원인별 문구), 아래 표는 요약이다.
 
 | 값 | 메인의 동작 |
 |---|---|
@@ -35,6 +35,8 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 | `wait` | 실제 완료 이벤트를 기다린다. 상태를 반복 조회하지 않는다. 담당 호출이 이미 끝났는데도 `wait`이면 `planning cancel <ID>` 뒤 advance 한다. |
 | `blocked` | 질문·충돌·입력 변경·한도 등 사유를 해결한다. 항목의 `class`가 `same-input-repeat`·`reassign-total`이면 다시 배정하지 말고 사유와 한도(`counter`)를 사용자에게 보고한다. `hook-failure`(담당 결과의 출처 확인이 두 번 이어서 실패)면 사유를 사용자에게 알리고, 원인을 고친 뒤 `planning dispatch <ID>`로 명시적으로 배정한다. |
 | `ready-for-gate` | 기존 문서 검사·계획 제출·승인 절차로 이어간다. 단계 전환이나 승인 완료를 뜻하지 않는다. |
+
+**연쇄(`--chain`)** — `planning advance --chain`은 analysis·impact·design 에서 결과가 모두 준비돼 `ready-for-gate`일 때만 같은 호출에서 그 단계의 게이트(`code-agent next`)를 한 번 지난다. 결과는 `chain{from, gate, to?, reason?, questions?}`에 싣고, 거부면 exit 1 이며 커서는 그대로다. 다음 단계 배정은 하지 않는다 — 다음 단계 절차가 자기 1항에서 advance 를 다시 부르므로 배정 전 선택(영역 분할 `planning prepare`)이 그대로 있고 시작이 관찰되지 않은 배정이 연쇄 때문에 생기지 않는다. plan 은 잇지 않는다(계획 제출과 승인은 사람 확인이다). 다른 action·실패·거부에서는 게이트를 시도하지 않고 자동으로 다시 시도하지 않는다. `--chain`으로 부른 호출의 `next` 안내는 다음 advance 에도 `--chain`을 유지한다. 사용자가 한 단계만 요청했으면 스킬이 `--chain`을 빼고 부른다.
 
 우선순위는 표의 위에서 아래다(`rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`). `running`(실행 중 배정의 담당 시작 관찰 여부·배정 뒤 경과 분), `orphaned`(이번 호출이 고아로 표시한 배정), `stale`·`cancel`, `rewind`, `feedback`은 해당할 때만 실린다.
 

@@ -30,7 +30,7 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 ## 동작과 검증
 
-계획의 `planning advance`, 요약 `planning status`, 상세 `planning result <ID>`, 형식 교정 `planning repair <ID>`는 Claude와 같은 구현을 사용한다. Codex 스킬도 같은 배정·대기·차단·게이트 준비 상태와 1회 교정 절차를 제공한다. 설치 후 기존 프로젝트에는 템플릿 갱신과 호스트 재시작이 필요하다. 변경별 검증 범위는 [계획 실행 효율 개선 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
+계획의 `planning advance [--chain]`(출력의 `next` 줄이 다음 행동), 요약 `planning status`, 상세 `planning result <ID>`, 형식 교정 `planning repair <ID>`는 Claude와 같은 구현을 사용한다. Codex 스킬도 같은 배정·대기·차단·게이트 준비 상태와 1회 교정 절차를 제공한다. 설치 후 기존 프로젝트에는 템플릿 갱신과 호스트 재시작이 필요하다. 변경별 검증 범위는 [계획 실행 효율 개선 이력](reviews/2026-10-02-planning-efficiency.md)에 기록한다.
 
 우선순위 2의 소규모 impact 통합·역할별 입력·동일 결과 재사용도 같은 구현과 생성 템플릿을 사용한다. Codex에서는 통합 조사에 `ca_explorer`를 호출한다. 독립 critic과 승인 절차는 유지한다. [선택 기준](planning.md#위임-수와-입력-범위-선택)과 [추가 실제 검증 이력](reviews/2026-10-02-priority-two-native-codex.md)을 따른다.
 

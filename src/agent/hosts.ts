@@ -63,8 +63,28 @@ export function hookFile(root: string, host: Host): string {
 }
 
 /** 업무 지침은 공유하고 호스트 도구·설치 경로만 변환한다. 승인 절차는 별도 계약이다. */
+/**
+ * Codex 사본의 문장째 치환 — 원문이 Claude 템플릿에 글자 그대로 있어야 걸린다(어긋나면 오류 없이 치환되지 않는다).
+ * `templateText.test.ts` 가 원문마다 Claude 템플릿 하나 이상에 있고 Codex 사본 어디에도 남지 않는지 대조한다. 모든 등장을 바꾼다($ 패턴 해석 없음).
+ */
+export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
+  // 장시간 실행 정본 문장(ca-check·ca-test·ca-integrate·ca-implement 에 글자 그대로). Codex 셸 도구의 제한 시간
+  // 인자 이름·상한은 미확인이라 숫자를 옮기지 않는다. 정본이 바뀌면 이 치환이 걸리지 않고 Codex 사본 점검(Bash·600000ms 0건)이 잡는다
+  ["Bash 도구의 timeout 을 최대(600000ms)로 주고, 그보다 긴 저장소는 백그라운드 실행(`run_in_background`) 뒤 완료 알림을 기다린다.",
+    "셸 명령의 제한 시간을 가장 길게 주고, 그보다 긴 저장소는 백그라운드로 실행한 뒤 끝날 때까지 기다린다."],
+  // 교차 실행(ca-review·ca-plan 4-1) — CLI 가 9분에 끊으므로 셸 쪽 제한은 그보다 길어야 한다는 뜻만 남긴다
+  ["CLI 가 9분에 끊고 기록하므로 timeout 을 600000ms 로 주거나 백그라운드로 실행한다.",
+    "CLI 가 9분에 끊고 기록하므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드로 실행한다."],
+  ["(CLI 가 9분에 끊으므로 timeout 600000ms 또는 백그라운드)", "(CLI 가 9분에 끊으므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드)"],
+  // Codex hook에는 서브 에이전트 식별자가 없어 staging을 열 수 없다 — 본문을 결과에 싣는 문장으로 바꾼다(계획 스킬 4개 3항·담당 에이전트)
+  ["담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용)."],
+  ["출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.",
+    "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다."],
+  ["문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나", "문서 전체는 artifacts의 `{path, content}`로 넣는다. 파일을 쓰거나"],
+];
+
 function codexText(text: string): string {
-  return text.replace(ROLE_PATTERN, codexAgentName)
+  return CODEX_SENTENCES.reduce((out, [from, to]) => out.split(from).join(to), text).replace(ROLE_PATTERN, codexAgentName)
     .replace(/`agent`/g, "`hostAgents.codex`")
     .replace(/\.claude\/skills\//g, ".agents/skills/")
     .replace(/\.claude\/agents\/([\w-]+)\.md/g, ".codex/agents/$1.toml")
@@ -73,14 +93,6 @@ function codexText(text: string): string {
     .replace(/AskUserQuestion/g, "ca-answer의 Codex 응답 절차")
     .replace(/\$ARGUMENTS/g, "<사용자가 전달한 인자>")
     .replace(/\bBash:/g, "셸:")
-    // 장시간 실행 정본 문장(ca-check·ca-test·ca-integrate·ca-implement 에 글자 그대로) — 문장째 바꾼다. Codex 셸 도구의 제한 시간
-    // 인자 이름·상한은 미확인이라 숫자를 옮기지 않는다. 정본이 바뀌면 이 치환이 걸리지 않고 Codex 사본 점검(Bash·600000ms 0건)이 잡는다
-    .replaceAll("Bash 도구의 timeout 을 최대(600000ms)로 주고, 그보다 긴 저장소는 백그라운드 실행(`run_in_background`) 뒤 완료 알림을 기다린다.",
-      "셸 명령의 제한 시간을 가장 길게 주고, 그보다 긴 저장소는 백그라운드로 실행한 뒤 끝날 때까지 기다린다.")
-    // 교차 실행(ca-review·ca-plan 4-1) — CLI 가 9분에 끊으므로 셸 쪽 제한은 그보다 길어야 한다는 뜻만 남긴다
-    .replaceAll("CLI 가 9분에 끊고 기록하므로 timeout 을 600000ms 로 주거나 백그라운드로 실행한다.",
-      "CLI 가 9분에 끊고 기록하므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드로 실행한다.")
-    .replaceAll("(CLI 가 9분에 끊으므로 timeout 600000ms 또는 백그라운드)", "(CLI 가 9분에 끊으므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드)")
     .replace(/\bBash 로 /g, "셸로 ")
     .replace(/\bBash 등으로/g, "셸 등으로")
     .replace(/subagent_type/g, "agent_type")
@@ -89,10 +101,6 @@ function codexText(text: string): string {
     // Codex 메인의 교차 명령은 다른 호스트를 띄우고 네트워크를 쓴다 — 샌드박스 밖(권한 상승)으로 실행하게 한다(`Bash:`·`--by` 치환 뒤의 글자)
     .replace(/셸: `code-agent (review|planning) cross --by claude`/g,
       "셸(Codex 샌드박스 밖 — 다른 호스트를 띄우고 네트워크를 쓰므로 권한 상승을 요청해 실행한다): `code-agent $1 cross --by claude`")
-    // Codex hook에는 서브 에이전트 식별자가 없어 staging을 열 수 없다 — 본문을 결과에 싣는 문장으로 바꾼다
-    .replace("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용).")
-    .replace("출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.", "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다.")
-    .replace("문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나", "문서 전체는 artifacts의 `{path, content}`로 넣는다. 파일을 쓰거나")
     + "\n\n파일 읽기는 셸에서 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 줄 수는 최대 400이다. Read/Grep/Glob 전용 도구가 없으면 배정 inputs와 `code-agent survey`의 경로를 이 명령으로 읽는다. 일반 셸 읽기·연결 명령은 작업 게이트가 거부한다.\n";
 }
 export function hostAssets(host: Host, root?: string): Map<string, string> {
