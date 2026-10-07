@@ -9,6 +9,8 @@
  * 정책 효과 비교는 policy 대 exec-opus 로 한다 — 실행 역할의 모델 하나만 다르다. 보고서의 agents 에 역할별 model/effort 를 싣는다.
  * 판단 역할 목록은 modelPolicy ROLE_POLICY 의 등급에서 가져온다. resume 은 기록된 agentsMode 를 잇고 다른 --agents 는 거부한다
  * (agentsMode 가 없는 이전 기록은 그 기록의 --model 값 opus·sonnet 을 모드로 본다).
+ * 보고서에는 usage 텍스트와 함께 usageData(usageReport — 요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기)·retry(retryReports — 읽기 전용)·
+ * 턴별 numTurns·codexAgents 를 싣는다. 반복 실행 편차는 scripts/summarize-evaluations.cjs 로 요약한다.
  * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다(2026-10-01 기록은 누적값을 더해 과대 집계됐다).
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.
  */
@@ -29,7 +31,8 @@ const { loadEvidence } = use('agent/evidence');
 const { loadReview } = use('agent/review');
 const { parseQuestions } = use('agent/questions');
 const tty = use('agent/tty');
-const { usage } = use('agent/usage');
+const { usage, usageReport } = use('agent/usage');
+const { retryReports } = use('agent/retryReport');
 const { AGENTS, ROLE_POLICY, claudeFrontmatter, frontmatterModel } = use('agent/modelPolicy');
 const scenario = process.argv[3], resume = process.argv[2] === 'resume';
 if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'refactor'].includes(scenario)) throw Error('Use run|resume <new|enhance|fix|refactor>');
@@ -66,6 +69,11 @@ const agentsReport = () => Object.fromEntries(fs.readdirSync(path.join(repo, '.c
   const config = frontmatterModel(fs.readFileSync(path.join(repo, '.claude/agents', name), 'utf8'));
   return [name.replace(/^ca-|\.md$/g, ''), config.effort ? `${config.model}/${config.effort}` : config.model];
 }));
+// Codex 역할 설정 — .codex/agents/*.toml 의 model·model_reasoning_effort(두 호스트 설치일 때만)
+const codexAgentsReport = () => { const dir = path.join(repo, '.codex/agents'); if (!fs.existsSync(dir)) return undefined;
+  return Object.fromEntries(fs.readdirSync(dir).filter(name => name.endsWith('.toml')).map(name => { const text = fs.readFileSync(path.join(dir, name), 'utf8');
+    const value = key => (new RegExp(`^${key} = "([^"]*)"`, 'm').exec(text) || [])[1];
+    return [name.replace(/\.toml$/, ''), { model: value('model'), effort: value('model_reasoning_effort') }]; })); };
 const correct = "module.exports=function value(n){if(n<0)throw Error('negative');return 1;};\n";
 const tests = "const test=require('node:test'),assert=require('node:assert/strict'),value=require('../src/value');test('TC-1 nonnegative',()=>{assert.equal(value(0),1);assert.equal(value(2),1);});test('TC-2 negative',()=>assert.throws(()=>value(-1),/negative/));\n";
 if (!resume && scenario !== 'new') {
@@ -130,7 +138,7 @@ for (let turn = startingTurn; turn < startingTurn + 8 && !finished && cost < cos
   try { model = JSON.parse(result.stdout); } catch { blocked = result.error?.message || result.stderr || 'Model returned no JSON'; break; }
   const reported = model.total_cost_usd || 0, turnCost = reported >= cumulative ? reported - cumulative : reported;
   cumulative = reported; cost += turnCost;
-  const record = { turn:turn + 1, exitCode:result.status, durationMs:model.duration_ms, reportedCostUSD:reported, turnCostUSD:+turnCost.toFixed(4), modelError:!!model.is_error, phase:loadActive(repo)?.phase || 'request', result:model.result };
+  const record = { turn:turn + 1, exitCode:result.status, durationMs:model.duration_ms, ...(typeof model.num_turns === 'number' ? { numTurns:model.num_turns } : {}), reportedCostUSD:reported, turnCostUSD:+turnCost.toFixed(4), modelError:!!model.is_error, phase:loadActive(repo)?.phase || 'request', result:model.result };
   turns.push(record);
   try { fixtureActions(); blocked = undefined; } catch (error) { record.fixtureBlocked = error.message; blocked = error.message; }
   console.log(JSON.stringify({ scenario, turn:turn + 1, phase:loadActive(repo)?.phase, finished, cost, blocked }));
@@ -143,7 +151,7 @@ const questionFile = id && path.join(repo, `doc/work/${id}/questions.md`);
 const questions = questionFile && fs.existsSync(questionFile) ? parseQuestions(fs.readFileSync(questionFile, 'utf8')) : [];
 const evidence = work && loadEvidence(repo, id, work.active.target);
 const review = work && loadReview(repo, id, work.active.target);
-const report = { scenario, model:hostModel, agentsMode, agents:agentsReport(), hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval', repo, finished, blocked,
+const report = { scenario, model:hostModel, agentsMode, agents:agentsReport(), hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval. Consent questions and the consent prepare/finish round trip are replaced by TTY fixtures, so usageData does not contain them', repo, finished, blocked,
   durationMs:(previous?.durationMs || 0)+Date.now()-started, reportedCostUSD:cost, costNote:'turn cost = delta of cumulative total_cost_usd; usage is transcript-based', approvals, questionFixtures, questionCount:questions.length, questionCountScope:'questions.md entries only; conversational questions are preserved in turns but not counted here', unanswered:questions.filter(q=>!q.answer).map(q=>q.title), turns,
   taskSequence:work?.plan?.sequence, tests:evidence?.testCases, integrationTests:evidence?.integrationTestCases, reproduction:evidence?.repro,
   reviews:review?.rounds.map(r=>({round:r.round,observed:!!r.reviewer?.completedAt,result:r.reviewer?.result,cross:r.cross&&{host:r.cross.host,model:r.cross.model,completed:!!r.cross.completedAt,result:r.cross.result,error:r.cross.error}})),
@@ -151,7 +159,8 @@ const report = { scenario, model:hostModel, agentsMode, agents:agentsReport(), h
   source:fs.existsSync(path.join(repo,'src/value.js'))?fs.readFileSync(path.join(repo,'src/value.js'),'utf8'):null,
   baselineTestUnchanged:scenario==='refactor' && fs.readFileSync(path.join(repo,'tests/value.test.js'),'utf8')===tests,
   finalCommit:hasBaseline(repo)?git('rev-parse','HEAD'):null, activeAfterDelivery:loadActive(repo)?.phase || null,
-  usage:usage(repo).split(/\r?\n/) };
+  usage:usage(repo).split(/\r?\n/), usageData:usageReport(repo), retry:retryReports(repo, id),
+  codexAgents:installHosts === 'both' ? codexAgentsReport() : undefined };
 if (!finished && !report.blocked) report.blocked = cost >= costLimit ? 'Per-run evaluation cost limit reached; resume preserves evidence.' : 'Model stopped before delivery.';
 fs.writeFileSync(reportPath, JSON.stringify(report,null,2)+'\n');
 if (!finished) process.exitCode = 1;

@@ -33,7 +33,7 @@ import { openRound } from "./review";
 import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, advancePlanning, repairPlanning, planningResult } from "./planning";
 import { manifestCheck, survey } from "./survey";
 import { update } from "./update";
-import { usage } from "./usage";
+import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
@@ -61,7 +61,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음) — 작업 중에도 조회할 수 있다
   code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 갱신·의존성·빌드·프로젝트 적용·점검 (호스트 밖 TTY 에서만)
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
-  code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
+  code-agent usage [--work <ID>] [--since <날짜>] [--json]   이 저장소에 쓴 토큰·비용(추정)·요청·도구 호출·재시도 기록을 스테이지별·에이전트별로
   code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
   code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 3종 — 섹션·확정 상태
@@ -217,9 +217,14 @@ export async function runCommand(command: string | undefined, args: string[]): P
       // 소스 업데이트(fetch·pull·npm ci·build)는 미리보기를 보여 주고 터미널에서 확인받는다 — 동의 적용은 이미 확인을 받았다
       print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }) : updateFromSourceConfirmed(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
-    case "usage":
-      print(usage(repoRoot, { work: option(args, "work"), since: option(args, "since") }));
+    case "usage": {
+      // 값 없는 깃발이 먼저다 — `--work --since x` 는 사용법이 아니라 --work 의 값이 없다고 알린다
+      const options = { work: option(args, "work"), since: option(args, "since") };
+      const extra = positional(args, ["work", "since"]).concat(args.filter((arg) => arg.startsWith("--") && !["--work", "--since", "--json"].includes(arg)));
+      if (extra.length) throw new Stop("사용법: code-agent usage [--work <ID>] [--since <날짜>] [--json]");
+      print(args.includes("--json") ? JSON.stringify(usageReport(repoRoot, options), null, 2) : usage(repoRoot, options));
       return 0;
+    }
     case "knowledge":
       print(knowledge(repoRoot, args[0]));
       return 0;

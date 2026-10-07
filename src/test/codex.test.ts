@@ -61,7 +61,8 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   assert.match(agent,/^model_reasoning_effort = "high"$/m);
   assert.match(modelsTable(root),/Codex.*제품 기본값/);
   assert.throws(()=>setModel(root,"all","opus"),/Codex 모델 식별자/);
-  assert.match(usage(root),/아직 집계하지 않습니다/);
+  // Codex 단독 설치는 Codex 세션 기록을 센다 — 사용자 홈의 실제 기록을 읽지 않도록 폴더를 준다
+  assert.match(usage(root,{codexSessions:join(root,"없는-codex")}),/Codex 기록을 찾지 못했습니다/);
   update(root);
   assert.equal(read(".codex/hooks.json"),before);
   assert.match(installedHook(root,"PreToolUse","codex-event","codex")!,/node .*cli\.js.*codex-event/);

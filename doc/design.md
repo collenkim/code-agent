@@ -671,7 +671,7 @@ code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙�
 | explorer 를 요구 항목이 아니라 **닿는 영역별로** · critic 은 계획·분석·작업 문서·계획이 가리키는 파일만 | 같은 저장소를 여러 번 훑지 않는다 (실측: 요구 항목 5개에 explorer 5개가 각자 파일 20~28개를 읽어 조사+계획 $12.58) | P3 ✅ |
 | `code-agent context` 의 후보 파일 순위·참고 문서 섹션 — 등록 없이 도는 기본 구현 | explorer 가 저장소를 다시 훑지 않고, 컨벤션·KNOWLEDGE 를 전문으로 읽지 않는다 | P7 ✅ |
 | 판정 플러그인 | 파일을 Claude 컨텍스트에 넣지 않고 분류·순위 | 코드 P7 ✅ · 효과는 Jev A/B 로 잰다 (§6 · [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)) |
-| `code-agent usage` | 스테이지·에이전트별 토큰 집계 — 줄었는지는 숫자로 본다. 비용은 **추정**이다(공개 단가표로 곱한 값, 기준일을 출력에 찍는다) | P8 ✅ |
+| `code-agent usage` | 스테이지·에이전트별 토큰 집계 — 줄었는지는 숫자로 본다. 비용은 **추정**이다(공개 단가표로 곱한 값, 기준일을 출력에 찍는다). 요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기와 작업 기록의 재시도·재배정(읽기만)도 센다(`--json`) | P8 ✅ |
 
 ## 8. 배포와 대상 저장소
 
@@ -773,7 +773,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델·추론 강도 조회·변경·복원 (--host, --reasoning·--effort; 변경은 같은 세션 동의 또는 TTY) | ✅ |
-| `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트·모델별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
+| `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 스테이지·에이전트·모델별 토큰과 호출 통계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)과 Codex 세션 기록(형식 미확인)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정(Claude 만) | P8 ✅ |
 | `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) | P8 ✅ |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 | P8 ✅ |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 변수 이름>]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) | P7 ✅ |

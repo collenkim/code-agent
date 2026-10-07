@@ -585,7 +585,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 스킬 규칙이다 | — |
 | `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
-| `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트·모델별 토큰과 비용 **추정**을 집계 (아래) | — |
+| `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
@@ -653,6 +653,39 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
 ```
 
 세 표 모두 **비용이 큰 순서**다 — 스테이지 흐름 순서가 아니다. 무엇이 비쌌는지를 먼저 보려고 그렇게 둔다.
+
+토큰 표 뒤에 **호출 통계**가 붙는다 — 흐름을 줄였는지(요청·도구 호출 수)는 비용보다 이 숫자로 먼저 본다.
+
+```
+호출별 (스테이지)
+  스테이지          요청  도구 호출  도구 결과(자)
+  plan                42         61       120,334
+  …
+  합계               150        210       512,000
+
+호출별 (에이전트)
+  에이전트          요청  도구 호출  도구 결과(자)
+  …
+
+도구별 호출: Bash 58 · Read 22 · Agent 11 · Skill 9 · Write 3
+code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning advance --chain 3 · next 2 · verify 1
+스킬 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
+재시도·재배정 (작업 기록, 읽기 전용)
+  ORD-1/order: 배정 14회(재배정 3) · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD
+```
+
+| 무엇 | 어떻게 센다 |
+|---|---|
+| 요청 | `message.id` 하나가 한 요청 — 토큰과 같은 단위 |
+| 도구 호출 | `assistant` 줄의 `tool_use` 블록, 같은 `id` 는 한 번 |
+| 도구 결과(자) | `user` 줄의 `tool_result` 블록 글자(같은 `tool_use_id` 는 한 번). 큰 결과가 파일로 빠지면 대화에 들어간 미리보기만 센다 |
+| 명령별 호출 | 셸 도구의 `code-agent <명령>` — `planning`·`consent`·`docs`·`request`·`review`·`plan`·`plugin`·`setup`·`manifest`·`knowledge`·`model` 은 셋째 낱말까지, `--chain`·`--json`·`--retry` 는 키에 붙인다 |
+| 스킬 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
+| 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용의 합. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
+
+Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자. 형식은 공개 Codex 기록 형식을 가정했고 실제 기록으로 확인하기 전이라 출력 첫머리에 그렇게 적는다. 단가표가 없어 비용은 내지 않는다.
+
+`--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, models, tools, commands, skillReads, …}], retry[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
 
 `--work <ID>` 는 그 작업의 구간만, `--since <날짜>` 는 그 시각 이후만 센다. 두 깃발 다 값이 없으면 멈춘다 —
 `--since` 만 치면 전 기간을 세면서 그럴듯한데 틀린 숫자가 나온다.

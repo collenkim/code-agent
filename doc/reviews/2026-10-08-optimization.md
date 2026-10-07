@@ -30,3 +30,15 @@
 | Stop·SessionStart·SubagentStart | 85·93·87ms | 85·93·88ms(바뀌지 않음 — 원래 명령 모듈을 읽지 않았다) |
 
 남는 고정 비용은 zod(79 파일, `core/manifest.ts`)와 Node 기동이다. hook 전용 번들은 명세대로 미룬다(설치 세 경로의 hook 명령 문자열이 갈린다).
+
+## OPT-6 — 측정(읽기 전용)
+
+| 바꾼 것 | 비고 |
+|---|---|
+| `usage` 가 토큰 표 뒤에 호출 통계를 낸다 — `호출별 (스테이지)`·`호출별 (에이전트)`(요청·도구 호출·도구 결과 글자), `도구별 호출`·`code-agent 명령별 호출`·`스킬 읽기` 줄 | 기존 세 표와 꼬리 두 줄은 한 글자도 바꾸지 않았다(P8 `table()` 기대값 그대로). 새 절은 `$` 를 쓰지 않는다 |
+| `retryReport.ts`(새) — `.code-agent/work/<ID>/` 의 verify·planning·review·verification-flow 기록에서 `retrySummary` 카운터, 배정·재배정 수, 정해진 경로의 `failure.class`, 교차 시도 `usage` 합(C1 이 넘긴 몫). `--work` 가 없으면 동의 기록의 실패 원인 `(동의)` | 쓰기·환류 없음(시험이 기록 폴더가 그대로인지 본다). 카운터 이름표는 `COUNTER_LABEL` import(기반 인계 #7) |
+| `codexUsage.ts`(새) — `$CODEX_HOME/sessions/**/rollout-*.jsonl` 에서 이 저장소 세션의 토큰·요청·도구 호출·도구 결과 | 이 PC 에 Codex 기록이 없어 **형식 미확인**(공개 형식 가정). 출력에 그렇게 적고 비용은 내지 않는다 |
+| `usage --json`(`usageReport`), 모르는 깃발은 사용법으로 멈춤 | — |
+| `scripts/evaluate-full-flow.cjs` 보고서에 `usageData`·`retry`·턴별 `numTurns`·`codexAgents`, scope 에 "동의 왕복은 fixture 라 usageData 에 없다". 새 `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>`(n·평균·최소·최대, 파일을 쓰지 않는다) | 실제 모델을 부르는 평가 실행은 하지 않았다(사용자 결정 — 측정 도구만 준비) |
+
+확인: 이 PC 의 실제 Claude 기록으로 `node dist/agent/cli.js usage --json` 이 JSON 을 낸다(이 저장소 기록 세션 1 — 요청 96·도구 호출 125·도구 결과 443,665자, 도구 Bash 61·Edit 28·Read 12). `summarize-evaluations.cjs new 2026` 은 기존 보고서 6개의 비용·소요만 내고 새 지표는 n=0 이다(옛 보고서에 `usageData` 가 없다).

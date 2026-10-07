@@ -194,7 +194,7 @@ claude
 | `code-agent reject --comment "사유"` | 계획 반려. 요구사항 반려는 `reject request <ID> --comment "사유"` |
 | `code-agent deliver` | 결과 확인 후 로컬 커밋 |
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록을 풀어 이 세션이 이어받게 한다 — 저쪽 세션을 멈춘 것을 확인한 뒤 |
-| `code-agent status` · `code-agent usage` | 진행 상태 · 토큰과 추정 비용 확인 |
+| `code-agent status` · `code-agent usage` | 진행 상태 · 토큰·추정 비용·요청·도구 호출·재시도 기록 확인 (`--json`) |
 
 ## 문서와 결과물
 

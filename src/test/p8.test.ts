@@ -16,7 +16,8 @@ import { logStage, readStages, saveActive, STAGES_LOG, STATE_DIR } from "../agen
 import { MODELS_FILE } from "../agent/models";
 import { Stop } from "../agent/stop";
 import { update } from "../agent/update";
-import { encodeRepoPath, usage } from "../agent/usage";
+import { commandKey, encodeRepoPath, usage, usageReport } from "../agent/usage";
+import { retryReports } from "../agent/retryReport";
 import { loadManifestIfAny } from "../agent/work";
 
 /**
@@ -713,6 +714,124 @@ describe("P8 · usage 집계", () => {
     const text = usage(repo, { transcripts: dir });
     assert.deepEqual([...table(text, "스테이지별").keys()], ["(작업 전)", "합계"]);
     assert.match(text, /스테이지 기록이 없습니다/);
+  });
+});
+
+describe("P8 · usage 호출·재시도 집계", () => {
+  let dir: string;
+  const line = (value: object) => JSON.stringify(value);
+
+  beforeEach(() => {
+    dir = join(repo, "transcripts");
+    mkdirSync(dir, { recursive: true });
+    write(STAGES_LOG, `${JSON.stringify({ at: "2026-09-30T01:00:00.000Z", id: "ORD-1", target: "order", phase: "analysis", by: "start" })}\n`);
+    const use = (id: string, name: string, input: object) => ({ type: "tool_use", id, name, input });
+    const usageOf = { input_tokens: 10, output_tokens: 5 };
+    writeFileSync(join(dir, "s1.jsonl"), [
+      // 같은 message.id 세 줄 — 요청 1건, 블록마다 도구 호출 하나(같은 id 중복 한 줄)
+      line({ type: "assistant", timestamp: "2026-09-30T02:00:00.000Z", message: { id: "m1", model: "claude-opus-5", usage: usageOf, content: [use("t1", "Bash", { command: "code-agent planning advance --chain" })] } }),
+      line({ type: "assistant", timestamp: "2026-09-30T02:00:01.000Z", message: { id: "m1", model: "claude-opus-5", usage: usageOf, content: [use("t2", "Bash", { command: "code-agent consent prepare --action plan --for claude" })] } }),
+      line({ type: "assistant", timestamp: "2026-09-30T02:00:02.000Z", message: { id: "m1", model: "claude-opus-5", usage: usageOf, content: [use("t3", "Read", { file_path: join(repo, ".claude", "skills", "ca-answer", "SKILL.md") })] } }),
+      line({ type: "assistant", timestamp: "2026-09-30T02:00:03.000Z", message: { id: "m1", model: "claude-opus-5", usage: usageOf, content: [use("t3", "Read", { file_path: "x" })] } }),
+      line({ type: "user", timestamp: "2026-09-30T02:00:04.000Z", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "0123456789" }] } }),
+      line({ type: "user", timestamp: "2026-09-30T02:00:05.000Z", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: [{ type: "text", text: "12345" }] }] } }),
+      line({ type: "user", timestamp: "2026-09-30T02:00:06.000Z", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "중복은 세지 않는다" }] } }),
+      "",
+    ].join("\n"));
+  });
+
+  /** 열이 2칸 이상 공백으로 갈린 표 — `$` 없는 호출 표 */
+  function rows(text: string, title: string): Map<string, string[]> {
+    const lines = text.split("\n");
+    const start = lines.indexOf(title);
+    assert.ok(start >= 0, `${title} 표가 없습니다:\n${text}`);
+    const out = new Map<string, string[]>();
+    for (let index = start + 2; index < lines.length && lines[index].startsWith("  "); index += 1) {
+      const cells = lines[index].trim().split(/\s{2,}/);
+      out.set(cells[0], cells.slice(1));
+    }
+    return out;
+  }
+
+  test("요청·도구 호출·도구 결과 글자를 스테이지·에이전트별로 세고, 도구·명령·스킬 읽기를 줄로 낸다", () => {
+    const text = usage(repo, { transcripts: dir });
+    assert.deepEqual(rows(text, "호출별 (스테이지)").get("analysis"), ["1", "3", "15"]);
+    assert.deepEqual(rows(text, "호출별 (에이전트)").get("main"), ["1", "3", "15"]);
+    assert.match(text, /^도구별 호출: Bash 2 · Read 1$/m);
+    assert.match(text, /^code-agent 명령별 호출: consent prepare 1 · planning advance --chain 1$/m);
+    assert.match(text, /^스킬 읽기: ca-answer\/SKILL\.md 1$/m);
+    // 토큰 표는 그대로다 — 새 절에는 `$` 가 없다
+    assert.ok(!/\$\d/.test(text.slice(text.indexOf("호출별 (스테이지)"))));
+    assert.match(text, /비용은 추정치입니다/);
+  });
+
+  test("--json 은 같은 값을 객체로 낸다", () => {
+    const report = usageReport(repo, { transcripts: dir });
+    assert.equal(report.sections[0].source, "claude");
+    assert.deepEqual(report.sections[0].stages.find((row) => row.label === "analysis")?.calls, { requests: 1, toolCalls: 3, toolResultChars: 15 });
+    assert.equal(report.sections[0].tools.Bash, 2);
+    assert.equal(report.sections[0].commands["planning advance --chain"], 1);
+    const cli = spawnSync(process.execPath, [join(__dirname, "..", "agent", "cli.js"), "usage", "--json", "--bogus"], { cwd: repo, encoding: "utf8" });
+    assert.equal(cli.status, 1);
+    assert.match(cli.stderr, /사용법: code-agent usage/);
+  });
+
+  test("명령 키 — 셋째 낱말·깃발·도움말", () => {
+    assert.equal(commandKey("code-agent consent finish 1234"), "consent finish");
+    assert.equal(commandKey("code-agent verify --json --retry"), "verify --json --retry");
+    assert.equal(commandKey("code-agent next"), "next");
+    assert.equal(commandKey("code-agent review cross --by codex"), "review cross");
+    assert.equal(commandKey("code-agent"), "(도움말)");
+    assert.equal(commandKey("git status"), undefined);
+  });
+
+  test("재시도·재배정은 작업 기록을 읽기만 하고 교차 실행 합계를 낸다 — `$` 를 쓰지 않는다", () => {
+    const work = join(repo, STATE_DIR, "work", "ORD-1");
+    mkdirSync(work, { recursive: true });
+    const attempt = (status: string, extra: object = {}) => ({ dispatchId: Math.random().toString(16).slice(2), inputHash: "h", at: "2026-09-30T02:00:00.000Z", status, ...extra });
+    writeFileSync(join(work, "order.planning.json"), JSON.stringify({ tasks: [
+      { task: { id: "analysis" }, attempts: [attempt("failed", { failure: { class: "agent-format-error", at: "", detail: "x" } }), attempt("failed"), attempt("completed")] },
+      { task: { id: "impact" }, attempts: [attempt("completed")] },
+    ] }));
+    writeFileSync(join(work, "order.review.json"), JSON.stringify({ rounds: [{ round: 1, crossAttempts: [
+      { n: 1, host: "codex", mode: "review", startedAt: "", class: "cross-unavailable" },
+      { n: 2, host: "codex", mode: "review", startedAt: "", class: "completed", usage: { durationMs: 412_000, costUsd: 0.81 } },
+    ] }] }));
+    writeFileSync(join(work, "order.verify.json"), "{ 깨진");
+    const before = readdirSync(work).sort();
+    const [report] = retryReports(repo, "ORD-1");
+    assert.equal(report.dispatches, 4);
+    assert.equal(report.reassignments, 2);
+    assert.deepEqual(report.failures, { "agent-format-error": 1, "cross-unavailable": 1 });
+    assert.deepEqual(report.cross, { attempts: 1, durationMs: 412_000, costUsd: 0.81, inputTokens: 0, outputTokens: 0 });
+    assert.deepEqual(report.unreadable, [".code-agent/work/ORD-1/order.verify.json"]);
+    const text = usage(repo, { transcripts: dir });
+    assert.match(text, /재시도·재배정 \(작업 기록, 읽기 전용\)\n  ORD-1\/order: 배정 4회\(재배정 2\)/);
+    assert.match(text, /교차 실행 1회 412초 비용 0\.81 USD/);
+    assert.ok(!text.split("\n").some((row) => row.startsWith("  ORD-1/order") && row.includes("$")));
+    assert.deepEqual(readdirSync(work).sort(), before, "측정은 기록을 쓰지 않는다");
+  });
+
+  test("Codex 세션 기록 — 저장소의 세션만 세고 비용은 내지 않는다(형식 미확인 표시)", () => {
+    const sessions = join(repo, "codex-sessions");
+    const day = join(sessions, "2026", "10", "01");
+    mkdirSync(day, { recursive: true });
+    const tokens = (n: number) => line({ timestamp: `2026-09-30T02:00:0${n}.000Z`, type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 50, output_tokens: 7, reasoning_output_tokens: 3 } } } });
+    writeFileSync(join(day, "rollout-x.jsonl"), [
+      line({ timestamp: "2026-09-30T02:00:00.000Z", type: "session_meta", payload: { cwd: repo } }),
+      tokens(1), tokens(2),
+      line({ timestamp: "2026-09-30T02:00:03.000Z", type: "response_item", payload: { type: "function_call", name: "shell", call_id: "c1", arguments: JSON.stringify({ command: ["code-agent", "next"] }) } }),
+      line({ timestamp: "2026-09-30T02:00:04.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "1234567" } }),
+      "",
+    ].join("\n"));
+    writeFileSync(join(day, "rollout-other.jsonl"), [line({ timestamp: "2026-09-30T02:00:00.000Z", type: "session_meta", payload: { cwd: join(tmpdir(), "다른-저장소") } }), tokens(1), ""].join("\n"));
+    const text = usage(repo, { codexSessions: sessions });
+    assert.match(text, /^Codex 사용량 · /m);
+    assert.match(text, /형식은 공개 Codex 기록 기준이며 실제 기록으로 확인하기 전입니다/);
+    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["200", "100", "14", "6", "2", "1", "7"]);
+    assert.match(text, /^code-agent 명령별 호출: next 1$/m);
+    assert.match(text, /Codex 비용은 단가표가 없어 산정하지 않습니다/);
+    assert.match(usage(repo, { codexSessions: join(repo, "없는-폴더") }), /Codex 기록을 찾지 못했습니다/);
   });
 });
 
