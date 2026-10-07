@@ -47,7 +47,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 ### Claude·Codex 교차 검증
 
-두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다. 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
+두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다. 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과(또는 아래의 중지 기록)가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
 
 | 지점 | 명령 | 기록 | 게이트 |
 |---|---|---|---|
@@ -56,7 +56,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 CLI 가 다른 호스트를 **읽기 전용·비대화형**으로 직접 실행한다 — Claude 는 `claude -p --agent ca-reviewer|ca-critic --allowedTools Read,Grep,Glob`, Codex 는 `codex exec -s read-only --ephemeral` 에 설치된 역할 지침을 앞에 붙인다. 모델은 각 호스트의 역할별 설정(`models.json` · `codex-models.json`)을 따른다. 실행 출처는 CLI 가 보증하므로 hook 관찰이 필요 없다. 스킬은 Claude 에서 `--by codex`, Codex 에서 `--by claude` 로 설치된다. 어느 쪽이든 차단 지적이 남으면 막고, 의견이 갈리면 사람이 판단한다. 교차 실행은 몇 분 걸릴 수 있어 도구 timeout 을 최대로 주거나 백그라운드로 돌린다(`CODE_AGENT_CROSS_TIMEOUT_MIN`, 기본 20분). 실행 파일은 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꿀 수 있다.
 
-다른 호스트를 실행할 수 없으면(미설치·로그인 만료·사용 한도·장애) 교차 결과가 생기지 않아 게이트가 계속 막는다. 우회 명령은 없다 — 2026-10-06 실측에서 Codex 워크스페이스 사용 한도에 걸리자 메인은 게이트를 넘지 않고 원인과 재개 방법을 보고한 뒤 같은 실패의 재시도를 멈췄다.
+**교차 검증은 두 호스트를 모두 실행할 수 있을 때만 쓴다 (2026-10-07 결정).** 다른 호스트를 실행할 수 없으면 — 실행 파일 없음(`hostCommand` 가 PATH·설정값에서 못 찾음, 이때는 띄우지 않는다)·로그인 만료·사용 한도·장애·시간 초과로 비정상 종료하거나 결과 없이 끝남 — CLI 가 그 지점(critic 배정의 `cross.status: "unavailable"` · 리뷰 회차의 `cross.unavailable` 과 ⑨ `## 교차 지적` 의 중지 줄)에 사유를 기록하고 게이트는 통과시킨다. 호스트가 돌았는데 결과 형식이 틀린 것은 중지가 아니라 재실행이다. 다음 지점(새 critic · 새 회차)에서는 다시 시도하므로 두 호스트를 다시 쓸 수 있게 되면 교차 검증이 돌아온다. `init --host both` · `status` · `doctor` 는 두 실행 파일을 찾을 수 있는지 보여 주고, 못 찾으면 설치·로그인하거나 한 호스트만 설치하라고 안내한다(`crossNotice`). 2026-10-06 실측에서 Codex 워크스페이스 사용 한도로 게이트가 계속 막혔던 것이 이 결정의 계기다.
 
 ### AWS AI-DLC 와 같은 저장소
 
@@ -312,7 +312,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | 종류 | 스테이지 | 종류별 강제 (P6 ✅) |
 |---|---|---|
 | `feature` | 1 (점검) → 2 → 3 → 4 → 5 → 6 → 7 ⇄ 8 ⇄ 9 (수정 루프) → 10 → 11 | — |
-| `fix` | 같음. 다만 **6 은 `kind:"test"` 단계부터** 돈다 | ② 의 `기존 시스템 분석` 에 결함이 나는 경로(`해당 없음` 불가 · 근거 `path:line` 최소 하나) · ⑦ 의 `## 재현` 절에 재현 TC id · 계획의 `sequence[0]` 이 `kind:"test"` 단계이고 그 단계의 파일이 계획에 있을 것 · **`code-agent repro` 가 지금 코드에서 그 TC 의 실패를 보기 전에는 고칠 파일을 쓸 수 없다** |
+| `fix` | 같음. 다만 **6 은 `kind:"test"` 단계부터** 돈다 | 지시서의 `## 오류 로그`(없으면 `## 오류 로그 없음` 의 사유·재현 절차) · ② 의 `기존 시스템 분석` 에 결함이 나는 경로(`해당 없음` 불가 · 근거 `path:line` 최소 하나 · 로그가 있으면 로그 문구 → 원인 `path:line` 대응) · ⑦ 의 `## 재현` 절에 재현 TC id(로컬에서 만들 수 없으면 `방식: 로그 근거 — 사유`) · 계획의 `sequence[0]` 이 `kind:"test"` 단계이고 그 단계의 파일이 계획에 있을 것 · **`code-agent repro` 가 지금 코드에서 그 TC 의 실패를 보거나(로컬 재현) 로그 근거로 수정 전 결과를 남기기 전에는 고칠 파일을 쓸 수 없다** |
 | `refactor` | 같음 | ② 의 `기존 시스템 분석` 에 지금 동작(같은 두 규칙) · 계획에 preserve 전량 · **기준 커밋에 이미 있던 `kind:"test"` 단계 파일은 고치지도 지우지도 못한다** · 8·10 에서 기존 테스트 스위트가 그대로 통과 (`not-run` 은 통과가 아니다) |
 
 **fix 의 재현이 서는 자리** — 강제력은 스테이지가 아니라 **증거**다. `code-agent repro` 는 (a) 비-`kind:"test"` 계획 파일이 기준 커밋과
@@ -324,6 +324,14 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 단언을 약하게 하면 그 재현이 증거가 아니게 되기 때문이다. 동결을 푸는 길은 그대로 둘이다: ⑨ 의 그 파일을 가리키는 열린 계획 안 지적, 또는 계획 재승인.
 회차는 올리지 않는다(`round: 0`) — 재현은 고쳐 쓰기가 아니라 순서다. 푼 뒤 테스트를 고쳤으면 **통합 검증 앞에서 한 번 더 대조한다**:
 `Evidence.repro.testTreeHash` 가 지금 테스트 트리와 다르면 `integrate` 를 막는다 — ⑧·⑩ 이 찍는 재현 줄이 반영될 테스트를 가리켜야 한다.
+
+**fix 는 오류 로그로 고친다 (2026-10-07 결정)** — 로컬 재현은 될 수도 안 될 수도 있어 오류 로그가 1차 근거다. 접수·확정·새 `start` 는 지시서에
+`## 오류 로그`(로그 원문 코드 블록) 또는 `## 오류 로그 없음`(사유·재현 절차)을 요구하고(`errorLogProblems`), 그 절의 줄은 요구 항목으로 세지 않는다
+(`withoutErrorLog`). 로그가 있으면 ② 에 로그 문구를 그대로 인용하고 실재하는 원인 `path:line` 을 같은 줄에 둔 대응이 있어야 한다. **로그 근거**
+(`Evidence.repro.mode: "log"`)는 두 길로만 선다 — ⑦ `방식: 로그 근거 — 사유` 를 사람이 계획 승인으로 봤거나, 로컬 재현 시도(`Evidence.reproAttempt`)가
+실패한 뒤 같은 세션 동의 `repro-log` 로 사람이 확인했다(`Evidence.logBasis`). 이때 `repro` 는 수정 전 결과를 기록만 하고, 같은 TC 는 회귀 TC 로
+수정 후 통과해야 하며 테스트는 똑같이 언다. 로그가 없는 결함은 로그 근거로 넘어갈 수 없다. ⑧ · 반영 보고 · 커밋에는 `로그 근거 · 운영 로그로 확인
+필요` 가 남고, 리뷰어는 로그 대응 줄을 따라 수정이 원인 줄을 고쳤는지 대조한다.
 
 **'재현 먼저' 는 단계 이름표로 판정된다** (hook 도 `repro` 의 깨끗한 트리 검사도 `kind:"test"` 단계에 속하느냐로 본다). 그래서 계획이
 고칠 파일을 테스트 단계에 적어 넣으면 이름표만으로 재현을 비껴간다 — `plan submit` 이 **테스트 단계의 계획 파일은 그 단계가 밝힌 자리 안**
@@ -507,7 +515,7 @@ Claude 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 —
 | `refactor` 의 계획에는 **기준 커밋에 이미 있던 `kind:"test"` 단계 파일**을 넣을 수 없다 — 동작이 보존되는지 보는 것이 그 테스트다 | `code-agent plan submit` | 계획 전 | P6 ✅ |
 | 선언된 종류로 돌 단계가 0개면 `start` 가 거부하고 **무엇을 고칠지** 찍는다(단계별 `kinds` 목록 · `manifest check` 안내). `manifest check` 는 종류별 0단계 · `kind:"test"` 단계 없음 · **자리를 밝히지 않은 `kind:"test"` 단계** · 참조 파일 0 을 **경고**로 미리 낸다 (종료 코드 0) | `code-agent start` (`stagesFor`) · `manifest check` | 작업 시작 전 | P6 ✅ |
 | `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 바이트 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 ✅ · P5 ✅ |
-| 정적 분석을 통과해야 테스트로, 수정은 N회까지 (`fixRounds`, 기본 2 — 넘으면 hook 이 계획 파일 쓰기를 전부 거부). 한도는 **증거가 시작될 때 굳는다**(`Evidence.fixRounds`) — `fixRounds` 는 `hashManifest` 밖이라, 매번 매니페스트에서 읽으면 `code-agent.json` 이 계획 파일인 작업에서 루프 도중에 올릴 수 있다 | `check` · `test` · hook | 스테이지 전환 · 쓰기 전 | P5 ✅ |
+| 정적 분석을 통과해야 테스트로, 수정은 N회까지 (`fixRounds`, 기본 2 — 넘으면 hook 이 계획 파일 쓰기를 전부 거부). 한도는 **증거가 시작될 때 굳는다**(`Evidence.fixRounds`) — `fixRounds` 는 `hashManifest` 밖이라, 매번 매니페스트에서 읽으면 `code-agent.json` 이 계획 파일인 작업에서 루프 도중에 올릴 수 있다. 회차를 쓰지 않는 재실행은 계획 파일이 그대로일 때 둘뿐이다 — 실행 기록 없이 끊긴 회차, 그리고 실패가 전부 선언된 환경 오류(`environmentErrors`, 선언 시 `hashManifest` 안)인 회차. 후자는 수정이 아니라 진단으로 가고 fix 재현으로도 인정하지 않는다 | `check` · `test` · hook | 스테이지 전환 · 쓰기 전 | P5 ✅ |
 | 검증 명령(`build` · `test` · `prepare` · `commands`)이 이 계획이 쓰는 파일을 가리키면 제출 거부 — 제 검증기를 쓰는 계획은 모든 묶임이 들어맞아도 증거가 아니다 | `code-agent plan submit` | 계획 전 | P5 ✅ · `prepare` P6 ✅ |
 | 검증 증거는 기준 커밋 · 계획 파일 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 통과가 무효 | `code-agent next` (`stageProblems`) | 스테이지 전환 | P5 ✅ |
 | 테스트가 한 번 돈 뒤 — **또는 `fix` 에서 `code-agent repro` 가 재현을 본 뒤** — `kind: "test"` 단계의 계획 파일 동결. 푸는 길은 ⑨ 의 **그 파일을 가리키는 열린 계획 안 지적** 또는 계획 재승인. 지적이 열쇠가 되려면 셋이 함께다: **`review` 스테이지**일 것 · `code-agent review` 가 연 **회차가 있을 것** · 푼 사실이 `review.json` 에 남을 것(남기지 못하면 풀지 않는다). ⑨ 는 작업 폴더 안이라 아무 때나 쓸 수 있어, 이 셋이 없으면 `test` 에서 미리 적어 두고 풀 수 있다 | PreToolUse hook (`findingOpensFile`) | 쓰기 전 | P5 ✅ · 재현 P6 ✅ |

@@ -6,7 +6,7 @@ import { hashManifest, hashPlan } from "../core/approval";
 import { runWorkflow } from "../core/workflow";
 import type { NodeEvent, WorkflowHandoff, WorkflowNode } from "../core/workflow";
 import { next, requireValidatable } from "./commands";
-import { bindingProblems, fixLimit, loadEvidence, runsOf, stageProblems, treeHashNow } from "./evidence";
+import { bindingProblems, environmentBlocked, fixLimit, loadEvidence, runsOf, stageProblems, treeHashNow } from "./evidence";
 import type { Evidence } from "./evidence";
 import { STATE_DIR, verifyFile } from "./layout";
 import { Stop } from "./stop";
@@ -64,6 +64,8 @@ function assess(context: FlowContext, phase: "check" | "test"): string {
     return "passed";
   }
   const evidence = evidenceOf(work)!;
+  // 선언된 환경 오류로만 막혔으면 코드 수정이 아니라 환경 진단이다 — 같은 코드의 재실행은 회차를 쓰지 않아 한도와 무관하다
+  if (environmentBlocked(evidence)) return "diagnose";
   // 완료되지 않은 TC도 실패다. 명령의 exit 0만 보고 수정 한도를 무시하지 않는다.
   if (evidence.rounds >= fixLimit(work, evidence) + 1) return "blocked";
   if (runsOf(evidence, phase).some((run) => run.outcome === "error" || run.outcome === "not-run") ||
@@ -82,7 +84,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
       const evidence = evidenceOf(work);
       // 중단된 실행도 check가 선반영한 회차를 소비한다. 입력 변경으로 한도를 초기화하지 않는다.
       if (evidence && evidence.baseCommit === work.active.baseCommit &&
-          evidence.rounds >= fixLimit(work, evidence) + 1 &&
+          evidence.rounds >= fixLimit(work, evidence) + 1 && !environmentBlocked(evidence) &&
           bindingProblems(work, { ...evidence, treeHash: treeHashNow(work) }).length === 0) {
         context.problems = ["고쳐 쓰기 한도를 모두 사용했습니다. 재계획·재승인이 필요합니다."];
         return "blocked";
@@ -117,7 +119,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
     edges: { passed: "review", repair: "repair", diagnose: "diagnose", blocked: "decision" },
   },
   repair: { executor: "agent", task: "검증 증거와 로그를 분석하고 승인된 계획 안에서 수정하세요. ca-check의 수정 루프와 테스트 동결 규칙을 따릅니다. 수정 후 code-agent verify로 재검증하세요." },
-  diagnose: { executor: "agent", task: "미실행·실행 오류·TC 결과 미확인 원인을 확인하세요. 이를 코드 결함이나 통과로 단정하지 않습니다. 환경·결과 수집 문제를 해결한 뒤 code-agent verify --retry로 다시 검증하세요." },
+  diagnose: { executor: "agent", task: "미실행·실행 오류·TC 결과 미확인 원인을 확인하세요. 이를 코드 결함이나 통과로 단정하지 않습니다. 환경·결과 수집 문제를 해결한 뒤 code-agent verify --retry로 다시 검증하세요. 선언된 환경 오류(environmentErrors)로 막힌 회차는 코드를 그대로 둔 재실행에 회차를 쓰지 않습니다." },
   review: { executor: "agent", task: "검증을 통과했습니다. ca-review 절차로 독립 리뷰를 진행하세요." },
   decision: { executor: "human", task: "수정 한도를 사용했습니다. 막힌 이유를 보고하고 ca-check의 질문·재계획·재승인 절차를 따르세요." },
 };

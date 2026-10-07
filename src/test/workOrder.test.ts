@@ -12,11 +12,14 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 
 import {
+  errorLogOf,
+  errorLogProblems,
   loadWorkOrder,
   slug,
   parseFrontMatter,
   validateWorkOrder,
   WorkOrderError,
+  withoutErrorLog,
 } from "../core/workOrder";
 import type { WorkOrderPolicy } from "../core/workOrder";
 
@@ -266,5 +269,26 @@ describe("slug — 이름이 경로가 될 때", () => {
     assert.equal(slug("."), "unnamed");
     assert.equal(slug(".."), "unnamed");
     assert.equal(slug("주문 도메인"), "unnamed", "ASCII 밖은 이름으로 쓰지 않는다");
+  });
+});
+
+describe("fix 의 오류 로그", () => {
+  const head = "---\nkind: fix\nid: B-1\ntitle: t\ntarget: src\n---\n\n총액이 틀린다\n";
+
+  test("로그 원문 코드 블록 · 없는 사유와 재현 절차 중 하나가 있어야 한다 — fix 에서만", () => {
+    assert.equal(errorLogProblems("fix", head).length, 1);
+    assert.deepEqual(errorLogProblems("feature", head), []);
+    assert.equal(errorLogProblems("fix", `${head}\n## 오류 로그\n\n\`\`\`text\n\n\`\`\`\n`).length, 1, "빈 로그는 로그가 아니다");
+    assert.equal(errorLogProblems("fix", `${head}\n## 오류 로그 없음\n\n- 사유: 화면 증상\n`).length, 1, "재현 절차가 있어야 한다");
+    assert.deepEqual(errorLogProblems("fix", `${head}\n## 오류 로그 없음\n\n- 사유: 화면 증상\n- 재현 절차:\n  1. 연다\n`), []);
+  });
+
+  test("로그 안의 `## ` 줄과 백틱은 절 경계가 아니고, 로그는 요구 본문에서 빠진다", () => {
+    const log = "ERROR boom\n## not a heading\n```inner```\n    at x(Foo.java:3)";
+    const text = `${head}\n## 오류 로그\n\n\`\`\`\`text\n${log}\n\`\`\`\`\n\n## 배경\n- 지난주부터\n`;
+    assert.deepEqual(errorLogOf(text), { log });
+    const body = withoutErrorLog(text);
+    assert.ok(!body.includes("ERROR boom") && !body.includes("not a heading"));
+    assert.ok(body.includes("## 배경") && body.includes("총액이 틀린다"));
   });
 });

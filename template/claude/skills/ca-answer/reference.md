@@ -43,6 +43,7 @@
 | 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |
 | 사용자가 code-agent 업데이트를 요청함 | `{"action":"update"}` — 소스 갱신의 Git pull·빌드·설치 적용 범위를 확인받는다 |
+| fix 의 로컬 재현 실패 뒤 오류 로그 근거로 진행 | `{"action":"repro-log"}` — `code-agent repro` 가 전환을 안내했을 때만. 확인 화면은 CLI 가 재현 시도 결과와 오류 로그 앞부분으로 만든다 |
 
 ## 대상 변경 안내
 

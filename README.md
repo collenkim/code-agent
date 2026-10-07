@@ -8,7 +8,7 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 |---|---|---|
 | Claude Code | `code-agent init --host claude` | `/ca-request <요구사항>` |
 | Codex | `code-agent init --host codex` | `$ca-request <요구사항>` |
-| 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증 |
+| 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행) |
 
 Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 스킬을 사용합니다.
 

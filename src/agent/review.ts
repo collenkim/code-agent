@@ -39,7 +39,7 @@ export interface ReviewRound {
   manifestHash: string;
   reviewer?: { sessionId: string; agentId: string; startedAt: string; completedAt?: string; result?: string };
   /** 두 호스트가 설치된 프로젝트의 교차 리뷰 — 다른 호스트를 CLI 가 직접 실행해 같은 트리를 독립 검토한 결과 */
-  cross?: { host: string; model: string; startedAt: string; completedAt?: string; result?: string; error?: string };
+  cross?: { host: string; model: string; startedAt: string; completedAt?: string; result?: string; error?: string; unavailable?: string };
 }
 
 /** 동결을 실제로 푼 지적 — **코드가** 적는다. 쓴 뒤 그 줄을 지워도 게이트가 남는다 */
@@ -160,7 +160,10 @@ function observedCross(last: ReviewRound, text: string): boolean {
     normalizeFindings(findingsBody(text, CROSS_HEADING) ?? "") === normalizeFindings(last.cross.result);
 }
 
-/** 두 호스트가 설치돼 있으면 교차 검증이 필수다 */
+/**
+ * 두 호스트가 설치돼 있으면 교차 검증을 요구한다. 다른 호스트를 실행할 수 없으면 `review cross`·`planning cross` 가
+ * 그 지점을 중지로 기록하고 게이트는 통과시킨다 — 두 호스트를 모두 쓸 수 있을 때만 교차 검증이 실제로 돈다.
+ */
 export function crossRequired(repoRoot: string): boolean {
   return selectedHosts(repoRoot).length > 1;
 }
@@ -408,8 +411,10 @@ export function reviewProblems(work: Work): string[] {
   }
 
   if (crossRequired(repoRoot)) {
-    if (!last.cross?.completedAt) {
-      problems.push(`두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by <다른 호스트>${last.cross?.error ? ` (직전 실행: ${last.cross.error})` : ""}`);
+    if (last.cross?.unavailable && !last.cross.completedAt) {
+      // 다른 호스트를 실행할 수 없었던 회차는 교차 리뷰 없이 진행한다 — 중지 사유는 회차 기록과 ⑨ 에 남는다
+    } else if (!last.cross?.completedAt) {
+      problems.push(`두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by <다른 호스트> (실행할 수 없으면 중지로 기록되고 진행합니다)${last.cross?.error ? ` (직전 실행: ${last.cross.error})` : ""}`);
     } else if (!observedCross(last, text)) {
       problems.push(`리뷰 문서의 ## ${CROSS_HEADING} 이 기록된 교차 리뷰 결과와 다릅니다 — 임의로 바꾸지 말고 다시 교차 리뷰하세요.`);
     }

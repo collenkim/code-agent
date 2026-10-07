@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { assetKeys, assetText, CLAUDE_ASSETS } from "./assets";
+import { isBatchScript, resolveExecutable } from "../core/build";
 import { Stop } from "./stop";
 import { codexModelOf, codexModelText, type AgentName } from "./modelPolicy";
 
@@ -21,6 +22,40 @@ export function selectedHosts(root: string, selected?: HostSelection): Host[] {
   if (!Array.isArray(value) || !value.length || value.some(host => host !== "claude" && host !== "codex")) throw new Stop("설치 호스트 기록이 잘못되었습니다: .code-agent/hosts.json");
   return [...new Set(value)] as Host[];
 }
+/**
+ * 교차 검증이 다른 호스트를 실행할 명령. 테스트·사내 배포는 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꾼다
+ * (.js 면 node 로). 못 쓰면 그 이유(문자열)를 돌려준다 — 교차 검증은 두 호스트를 모두 실행할 수 있을 때만 돈다.
+ */
+export function hostCommand(host: Host): { file: string; prefix: string[] } | string {
+  const key = host === "claude" ? "CODE_AGENT_CLAUDE_BIN" : "CODE_AGENT_CODEX_BIN";
+  const configured = process.env[key];
+  if (configured) {
+    if (!existsSync(configured)) return `${key} 가 가리키는 파일이 없습니다: ${configured}`;
+    return /\.c?js$/i.test(configured) ? { file: process.execPath, prefix: [configured] } : { file: configured, prefix: [] };
+  }
+  // npm 의 .cmd 는 셸 없이 실행되지 않고 여러 줄 프롬프트를 cmd.exe 로 넘길 수 없다 — 설치된 Node 진입점을 직접 부른다
+  if (process.platform === "win32" && process.env.APPDATA) {
+    const script = host === "codex"
+      ? join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
+      : join(process.env.APPDATA, "npm", "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+    if (existsSync(script)) return { file: process.execPath, prefix: [script] };
+  }
+  const found = resolveExecutable(process.cwd(), host, process.env, { skipLocal: true });
+  if (!found) return `${host} 실행 파일을 PATH 에서 찾지 못했습니다`;
+  if (isBatchScript(found)) return `${found} 는 셸 스크립트라 직접 실행할 수 없습니다 — ${key} 에 실행 파일(.exe·.js)을 지정하세요`;
+  return { file: found, prefix: [] };
+}
+
+/** 교차 검증 안내 한 줄 — 두 호스트가 설치된 프로젝트에서만. 둘 다 실행할 수 있을 때만 교차 검증이 실제로 돈다 */
+export function crossNotice(root: string): string | undefined {
+  if (selectedHosts(root).length < 2) return undefined;
+  const missing = (["claude", "codex"] as Host[]).map((host) => hostCommand(host)).filter((value): value is string => typeof value === "string");
+  return missing.length === 0
+    ? "교차 검증: 켜짐 — 계획 검토·코드 리뷰를 다른 호스트가 한 번 더 본다"
+    : `교차 검증: 다른 호스트를 실행할 수 없으면 그 지점의 교차 검증은 중지로 기록하고 진행한다 — ${missing.join(" · ")}. ` +
+      "두 호스트를 모두 설치·로그인해 쓸 수 있을 때만 교차 검증을 쓰고, 한쪽만 쓸 거면 code-agent init --host <호스트> 로 하나만 설치하세요";
+}
+
 export function hookFile(root: string, host: Host): string {
   return join(root, host === "claude" ? ".claude/settings.json" : ".codex/hooks.json");
 }

@@ -680,6 +680,26 @@ test("계획 단계가 아니면 staging은 닫힌다", () => {
   assert.match(hook({ cwd: root, session_id: "s", agent_id: "implementer", tool_name: "Write", tool_input: { file_path: join(root, DIR, ".staging/x/01-requirements.md") } })!, /계획 단계/);
 });
 
+test("다른 호스트를 실행할 수 없으면 그 critic 결과의 교차 검토는 중지로 기록되고 계획을 제출할 수 있다", () => {
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  throughDesign(); preparePlanning(root);
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }); finish(dispatch("critic"));
+  assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토[\s\S]*실행할 수 없으면 중지로 기록되고 진행합니다/);
+  const fake = mkdtempSync(join(tmpdir(), "ca-fake-codex-")), script = join(fake, "codex.cjs");
+  writeFileSync(script, "process.stderr.write('Not logged in. Run codex login.'); process.exit(1);\n");
+  process.env.CODE_AGENT_CODEX_BIN = script;
+  try {
+    assert.match(crossCritic(root, "codex"), /교차 검증 중지[\s\S]*Not logged in/);
+    const cross = loadPlanning(loadWork(root)!).cross!;
+    assert.equal(cross.status, "unavailable");
+    assert.ok(!planningProblems(loadWork(root)!, "plan").some((problem) => /교차/.test(problem)));
+    submitPlan(root, join(root, DIR, "plan.json"));
+  } finally {
+    delete process.env.CODE_AGENT_CODEX_BIN;
+    rmSync(fake, { recursive: true, force: true });
+  }
+});
+
 test("두 호스트가 설치되면 critic 뒤 다른 호스트의 교차 검토가 계획 제출 조건이고, 질문 번호는 코드가 매긴다", () => {
   writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
   write(`${DIR}/questions.md`, "# 질문\n\n## Q4 · 기존\n앞선 질문\n[Answer]: 예\n");

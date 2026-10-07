@@ -21,7 +21,7 @@ import { STATE_DIR } from "./layout";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
-import { hostAssets, HostSelection, selectedHosts } from "./hosts";
+import { crossNotice, hostAssets, HostSelection, selectedHosts } from "./hosts";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
@@ -320,6 +320,9 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
   // AI-DLC 공존 — 설치 문제는 아니라 실패로 세지 않는다. 진행 중이면 code-agent 가 멈추고, 훅이 기록할 수 있으면 경고한다
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   if (aidlc) add("·", "AWS AI-DLC", aidlc.replace(/\n\s*/g, " "));
+  // 교차 검증 — 두 호스트를 모두 실행할 수 있을 때만 돈다. 못 쓰면 그 지점을 중지로 기록하고 진행하므로 실패로 세지 않는다
+  const cross = crossNotice(repoRoot);
+  if (cross) add(cross.includes("켜짐") ? "✓" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""));
 
   const failed = checks.filter((check) => check.mark === "✗");
   return {
