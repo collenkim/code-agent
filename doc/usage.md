@@ -566,7 +566,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | — |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. `--templates-only`는 현재 번들만 적용. 다른 hook · 블록 밖 · 모델 오버라이드는 그대로 ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
+| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. `--templates-only`는 현재 번들만 적용. 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
@@ -576,8 +576,8 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
-| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning 강도]` | 호스트별 역할 모델 조회·변경·복원. Claude와 Codex의 변경값을 각각 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
-| `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트별 토큰과 비용 **추정**을 집계 (아래) | — |
+| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
+| `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트·모델별 토큰과 비용 **추정**을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
@@ -609,7 +609,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 
 ### `code-agent usage` — 토큰과 비용(추정)
 
-무엇이 비쌌는지를 **스테이지별·에이전트별**로 본다. 숫자의 출처는 Claude Code 가 남기는 대화 기록이다 — code-agent 가 따로 재지 않는다.
+무엇이 비쌌는지를 **스테이지별·에이전트별·모델별**로 본다. 숫자의 출처는 Claude Code 가 남기는 대화 기록이다 — code-agent 가 따로 재지 않는다.
 
 | 무엇 | 어디서 |
 |---|---|
@@ -617,6 +617,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 | 인코딩 | 저장소 절대경로의 영숫자 아닌 글자를 전부 `-` 로 — `C:\IdeaProjects\code-agent` → `C--IdeaProjects-code-agent` |
 | 스테이지 | `.code-agent/log/stages.jsonl` — 스테이지가 바뀔 때마다 `{at, id, target, phase, stage, by}` 한 줄이 붙는다. 메시지의 시각이 어느 구간에 드는지로 가른다 (커밋되지 않는다 — `.gitignore` 의 `.code-agent/log/`). **요구사항 접수는 `request`** 로 뜬다 — 커서가 생기기 전이라 `phase` 자리에 그 이름이 들어간다 |
 | 에이전트 | 서브에이전트 기록 짝의 `.meta.json` 에 있는 `agentType`. 메인 세션은 `main`, 알 수 없으면 `(알 수 없음)` |
+| 모델 | 기록 줄의 `message.model` 을 단가표 키로 — 날짜 접미사(`-YYYYMMDD`)를 뗀다. 없으면 `(모델 없음)` |
 
 ```
 ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
@@ -634,15 +635,20 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
   ca-explorer     …                                            $8.90
   main            …                                            $3.02
 
-비용은 추정치입니다 — 2026-06-24 기준 공개 단가표로 계산했고 실제 청구와 다를 수 있습니다.
+모델별
+  모델                 입력      캐시읽기    캐시쓰기      출력     비용(추정)
+  claude-opus-5-5      …                                            $12.10
+  claude-sonnet-5-5    …                                             $5.61
+
+비용은 추정치입니다 — 2026-09-25 기준 공개 단가표로 계산했고 실제 청구와 다를 수 있습니다.
 ```
 
-두 표 다 **비용이 큰 순서**다 — 스테이지 흐름 순서가 아니다. 무엇이 비쌌는지를 먼저 보려고 그렇게 둔다.
+세 표 모두 **비용이 큰 순서**다 — 스테이지 흐름 순서가 아니다. 무엇이 비쌌는지를 먼저 보려고 그렇게 둔다.
 
 `--work <ID>` 는 그 작업의 구간만, `--since <날짜>` 는 그 시각 이후만 센다. 두 깃발 다 값이 없으면 멈춘다 —
 `--since` 만 치면 전 기간을 세면서 그럴듯한데 틀린 숫자가 나온다.
 
-**단가표** ($/1M 토큰, 2026-06-24 기준). 캐시 읽기 배수가 모델마다 달라 배수가 아니라 값으로 박아 두었다 — 단가가 바뀌면 이 표를 고친다.
+**단가표** ($/1M 토큰, 2026-09-25 기준). 캐시 읽기 배수가 모델마다 달라 배수가 아니라 값으로 박아 두었다 — 단가가 바뀌면 이 표를 고친다.
 
 | 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 5분 | 캐시 쓰기 1시간 | 출력 |
 |---|---|---|---|---|---|
@@ -651,11 +657,14 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
 | `claude-sonnet-5` | 2.00 | 0.20 | 2.50 | 4.00 | 10.00 |
 | `claude-haiku-4-5` | 1.00 | 0.10 | 1.25 | 2.00 | 5.00 |
 | `claude-fable-5-1` | 10.00 | 0.25 | 12.50 | 20.00 | 50.00 |
+| `claude-sonnet-5-5` | 2.00 | 0.20 | 2.50 | 4.00 | 10.00 |
+| `claude-fable-5` | 10.00 | 1.00 | 12.50 | 20.00 | 50.00 |
 
 읽을 때 알아 둘 것.
 
 - **같은 요청이 기록에 여러 줄로 나온다** — 같은 `message.id` 의 줄들은 출력 토큰이 늘어나는 중간 상태라서 마지막 줄만 센다. 그냥 더하면 2~3배가 된다.
-- **표에 없는 모델은 비용 0** 으로 세고 꼬리에 그 이름을 적는다. 토큰 수는 그대로 실린다.
+- **표에 없는 모델은 비용 0** 으로 세고 꼬리에 그 이름을 적는다. 토큰 수는 그대로 실린다. 사용량이 0 인 모델(`<synthetic>`)은 미산정 목록에 적지 않는다.
+- **기록의 날짜 접미사(`-YYYYMMDD`)는 떼고** 단가를 찾는다 — `claude-haiku-4-5-20251001` 은 `claude-haiku-4-5` 다. Bedrock·Vertex 형식 ID(`anthropic.` 접두어, `@날짜`)는 단가가 달라 매핑하지 않는다.
 - **기록이 없으면 종료 코드 0 으로 안내만** 한다 — 이 저장소를 이 경로에서 Claude Code 로 연 적이 없거나, 다른 PC 의 기록이다.
 - **`stages.jsonl` 이 없으면** 구간을 가르지 못해 전부 `(작업 전)` 한 칸으로 묶이고 그 사실을 한 줄로 알린다 — 스테이지 기록이 들어오기 전에 시작한 작업이다. 반영·중단 뒤의 메시지는 `(작업 밖)` 이다.
 - 비용은 **추정**이다. 공개 단가표로 곱한 값이고 실제 청구와 다를 수 있다.

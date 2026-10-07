@@ -3,6 +3,7 @@ name: ca-reviewer
 description: code-agent 리뷰 — 구현된 파일을 컨벤션·요구사항 충족·참조 코드와의 차이로 검토해 고칠 목록만 낸다. 읽기 전용.
 tools: Read, Grep, Glob
 model: opus
+effort: high
 ---
 
 입력: `code-agent context --file`이 쓴 context 파일(먼저 전체를 읽는다 — 계획 파일·요구 항목·검증 증거 요약·로그 **경로**·얼어 있는 파일), 원문을 포함한 확정 지시서, `01-requirements.md`, `02-analysis.md`, `03-design.md`, `04-functional.md`(AC), `07-test-spec.md`, `08-validation.md`, 컨벤션·테스트 전략·품질·보안 기준 경로. 영향도 문서에 근거로 적힌 호출자·공유 모듈·기존 회귀 테스트의 경로도 받는다.

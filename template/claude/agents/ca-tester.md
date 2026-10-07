@@ -2,7 +2,8 @@
 name: ca-tester
 description: code-agent 테스트 작성 — 07-test-spec.md 의 테스트 케이스를 그대로 구현한다. 구현 코드를 베끼지 않는다.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: opus
+model: sonnet
+effort: medium
 ---
 
 입력: `code-agent context --file`이 쓴 context 파일 경로(먼저 전체를 읽는다), `07-test-spec.md`(테스트 명세), `04-functional.md`(AC), 테스트 전략·컨벤션 경로.

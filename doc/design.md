@@ -54,7 +54,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 | 계획 검토 | `code-agent planning cross --by <다른 호스트>` | `.planning.json` 의 `cross` — 그 critic 배정(`criticDispatchId`)에 묶인다 | 완료 · 차단 지적 0 · 질문은 questions.md 로(번호는 코드가 매긴다) |
 | 코드 리뷰 | `code-agent review cross --by <다른 호스트>` | 회차의 `cross`, ⑨ `## 교차 지적`(id `X<번호>`) | 회차 트리 일치 · 문서 절 = 기록 · 열린·계획 밖 지적 0 |
 
-CLI 가 다른 호스트를 **읽기 전용·비대화형**으로 직접 실행한다 — Claude 는 `claude -p --agent ca-reviewer|ca-critic --allowedTools Read,Grep,Glob`, Codex 는 `codex exec -s read-only --ephemeral` 에 설치된 역할 지침을 앞에 붙인다. 모델은 각 호스트의 역할별 설정(`models.json` · `codex-models.json`)을 따른다. 실행 출처는 CLI 가 보증하므로 hook 관찰이 필요 없다. 스킬은 Claude 에서 `--by codex`, Codex 에서 `--by claude` 로 설치된다. 어느 쪽이든 차단 지적이 남으면 막고, 의견이 갈리면 사람이 판단한다. 교차 실행은 몇 분 걸릴 수 있어 도구 timeout 을 최대로 주거나 백그라운드로 돌린다(`CODE_AGENT_CROSS_TIMEOUT_MIN`, 기본 20분). 실행 파일은 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꿀 수 있다.
+CLI 가 다른 호스트를 **읽기 전용·비대화형**으로 직접 실행한다 — Claude 는 `claude -p --agent ca-reviewer|ca-critic --allowedTools Read,Grep,Glob`, Codex 는 `codex exec -s read-only --ephemeral` 에 설치된 역할 지침을 앞에 붙인다. 모델·추론 강도는 각 호스트의 역할별 설정(`models.json` · `codex-models.json`)을 따른다 — Claude 는 `--model`(강도 `--effort` 는 아직 넘기지 않는다), Codex 는 `-m` · `model_reasoning_effort`. 실행 출처는 CLI 가 보증하므로 hook 관찰이 필요 없다. 스킬은 Claude 에서 `--by codex`, Codex 에서 `--by claude` 로 설치된다. 어느 쪽이든 차단 지적이 남으면 막고, 의견이 갈리면 사람이 판단한다. 교차 실행은 몇 분 걸릴 수 있어 도구 timeout 을 최대로 주거나 백그라운드로 돌린다(`CODE_AGENT_CROSS_TIMEOUT_MIN`, 기본 20분). 실행 파일은 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꿀 수 있다.
 
 **교차 검증은 두 호스트를 모두 실행할 수 있을 때만 쓴다 (2026-10-07 결정).** 다른 호스트를 실행할 수 없으면 — 실행 파일 없음(`hostCommand` 가 PATH·설정값에서 못 찾음, 이때는 띄우지 않는다)·로그인 만료·사용 한도·장애·시간 초과로 비정상 종료하거나 결과 없이 끝남 — CLI 가 그 지점(critic 배정의 `cross.status: "unavailable"` · 리뷰 회차의 `cross.unavailable` 과 ⑨ `## 교차 지적` 의 중지 줄)에 사유를 기록하고 게이트는 통과시킨다. 호스트가 돌았는데 결과 형식이 틀린 것은 중지가 아니라 재실행이다. 다음 지점(새 critic · 새 회차)에서는 다시 시도하므로 두 호스트를 다시 쓸 수 있게 되면 교차 검증이 돌아온다. `init --host both` · `status` · `doctor` 는 두 실행 파일을 찾을 수 있는지 보여 주고, 못 찾으면 설치·로그인하거나 한 호스트만 설치하라고 안내한다(`crossNotice`). 2026-10-06 실측에서 Codex 워크스페이스 사용 한도로 게이트가 계속 막혔던 것이 이 결정의 계기다.
 
@@ -465,8 +465,8 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 
 **영역 조사 병렬** — 선행 결과가 준비된 explore를 기본 3개, 최대 4개까지 배정한다. 구현은 승인된 tasks의 순서대로 현재 Task를 수행한다.
 
-Claude 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 — 탐색도 가벼운 모델로 내리지 않는다 (2026-09-29 결정: 품질 우선). 정의 파일마다 `model:` 을 박아 각자 PC 의 기본 모델에 맡기지 않는다. 사람은 `code-agent model <에이전트|all> <opus|sonnet|haiku>` 로 바꿀 수 있고(같은 세션의 model 확인 또는 직접 TTY), Claude 설정은 `.code-agent/models.json` 에 남아 다시 설치해도 유지된다. implementer 를 sonnet 으로 내릴지는 P5 실측(수정 횟수·비용)으로 정한다. Codex는 gpt-6.1-sol을 역할별 기본값으로 명시하며 분석·독립 검토는 high, 나머지는 medium으로 시작한다. 변경값은 `.code-agent/codex-models.json`에 분리한다. 두 호스트 모두 사용자 변경·기본값 복원·업데이트 보존을 지원한다. [설정 절차](codex.md)를 따른다.
-비용은 모델이 아니라 구조로 줄인다 — 읽을 참조 코드를 코드가 골라 주고, explorer 는 영역별로 묶고, critic 은 계획이 가리키는 것만 읽는다.
+서브에이전트 모델은 **역할의 업무 성격**으로 정한다(2026-10-07 결정, 사용자). 판단 역할(analyst·critic·reviewer)은 Claude opus/high·Codex gpt-6.1-sol/high, 실행 역할(surveyor·explorer·writer·implementer·tester)은 Claude sonnet/medium·Codex gpt-6.1-sol/medium이다. 실행 역할의 결과는 check·test·review·integrate 게이트와 critic·reviewer가 검증한다. 정책 원천은 `modelPolicy.ts` `ROLE_POLICY`이고 역할별 이유도 거기 있다. 정의 파일마다 `model:`·`effort:`를 박아 각자 PC의 기본값에 맡기지 않는다. 사람은 `code-agent model <역할|all> <모델> [--effort <강도>]`로 바꾸고(같은 세션의 model 확인 또는 직접 TTY) 값은 `.code-agent/models.json`·`codex-models.json`에 남아 다시 설치해도 유지된다. 완주 작업당 비용·품질 실측(A/B)은 아직 없다 — `scripts/evaluate-full-flow.cjs --agents policy` 와 `--agents exec-opus`(실행 역할만 opus, 강도는 같게)로 리뷰 지적·재배정·check 실패 회차·비용을 비교한다. [설정 절차](codex.md)를 따른다.
+비용은 모델 등급만이 아니라 구조로도 줄인다 — 읽을 참조 코드를 코드가 골라 주고, explorer 는 영역별로 묶고, critic 은 계획이 가리키는 것만 읽는다.
 
 ### 4.1 관찰된 계획 작업 (2026-10-02)
 
@@ -702,7 +702,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `doc/work/<ID>/knowledge.proposal.md` — 공통 KNOWLEDGE 갱신 제안. 반영 때 사람이 고른 것만 코드가 upsert | O | P5 ✅ |
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) | P1 ✅ · 접수 ✅ |
-| `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델 (바꾼 것만) | O | ✅ |
+| `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델·추론 강도 (바꾼 것만) | O | ✅ |
 | `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`, `.code-agent/log/` | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
@@ -765,8 +765,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent approve` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만) | P1 ✅ |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
-| `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델 조회·변경·복원 (--host, Codex --reasoning; 변경은 같은 세션 동의 또는 TTY) | ✅ |
-| `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
+| `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델·추론 강도 조회·변경·복원 (--host, --reasoning·--effort; 변경은 같은 세션 동의 또는 TTY) | ✅ |
+| `code-agent usage [--work <ID>] [--since <날짜>]` | 스테이지·에이전트·모델별 토큰 집계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정 | P8 ✅ |
 | `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) | P8 ✅ |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 | P8 ✅ |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 변수 이름>]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) | P7 ✅ |
@@ -804,7 +804,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(consents 제외)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다.
 
-준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시를 보관한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
+준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시, model 동의의 모델 정책(`modelPolicyFingerprint` — 역할 등급·등급별 기본값·강도 미지원 규칙의 지문, 이유 문장 제외) 해시를 보관한다. 적용은 준비 때의 확인 문구를 다시 만들지 않으므로, 준비 뒤 code-agent의 모델 정책이 바뀌면 model 동의를 `변경 대상: 모델 정책`으로 거부한다. 이 항목이 없는 갱신 전의 model 동의도 같은 사유로 거부되며 다시 준비한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
 
 ## 10. core 재사용
 
@@ -865,7 +865,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 - **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 화면에 싣고, 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.
 - **KNOWLEDGE 3종은 계획 밖 변경 대조에서 빠진다** — `deliver` 가 사람이 고른 항목을 코드로 적용하는 자리라 모델이 쓸 수 없고(hook), 넣어 두지 않으면 커밋이 실패했을 때 적용본만 남아 다시 반영할 길이 영영 막힌다.
 
-**P3 실측 기준치** (2026-09-29, 가짜 레거시 — Spring, 도메인 3 × 계층 5, Java 23파일 · 지시서 "주문을 등록·조회한다" 한 줄 · 서브에이전트 전부 opus)
+**P3 실측 기준치** (2026-09-29, 가짜 레거시 — Spring, 도메인 3 × 계층 5, Java 23파일 · 지시서 "주문을 등록·조회한다" 한 줄 · 서브에이전트는 당시 기본값인 opus)
 
 | 구간 | 비용 | 시간 | 결과 |
 |---|---|---|---|

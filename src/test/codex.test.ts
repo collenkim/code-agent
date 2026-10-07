@@ -91,6 +91,36 @@ test("역할별 Codex 모델은 동의 후 적용되고 다른 호스트와 역�
   assert.deepEqual(codexModelOf(root,"reviewer"),{model:"gpt-6-luna",reasoning:"high"});
   approveAndApplyFixture(root,{action:"model",host:"codex",agent:"all",model:"default"},"codex");
   assert.deepEqual(JSON.parse(read(".code-agent/codex-models.json")),{});
+  // 반대 방향 — Claude 역할 변경은 Codex 역할 정의를 건드리지 않는다
+  const codexWriter = read(".codex/agents/ca-writer.toml");
+  approveAndApplyFixture(root,{action:"model",host:"claude",agent:"writer",model:"opus",reasoning:"low"});
+  assert.equal(read(".codex/agents/ca-writer.toml"),codexWriter);
+  assert.match(read(".claude/agents/ca-writer.md"),/^model: opus\r?$/m);
+  assert.match(read(".claude/agents/ca-writer.md"),/^effort: low\r?$/m);
+});
+
+test("Codex 사본의 동의 필드 표는 JSON 필드 이름 \"agent\" 를 그대로 둔다 — 계획 배정 필드 치환에 걸리지 않는다", () => {
+  const reference = hostAssets("codex").get(".agents/skills/ca-answer/reference.md")!;
+  assert.match(reference, /\| `"agent"`, `"model"` \|/);
+  assert.doesNotMatch(reference, /`hostAgents\.codex`, `model`/);
+  assert.match(reference, /\| `reasoning` \| 선택 문자열: 추론 강도/);
+  assert.match(hostAssets("codex").get(".agents/skills/ca-answer/SKILL.md")!, /"host":"claude"/);
+});
+
+test("Claude 모델 명령은 --effort 를 --reasoning 과 같은 뜻으로 받고 둘을 함께 주면 거부한다", () => {
+  init(root,{host:"both",cli});
+  const run = (...args:string[]) => spawnSync(process.execPath,[cli,"model",...args],{cwd:root,encoding:"utf8"});
+  const shown = run("--host","claude");
+  assert.equal(shown.status,0,shown.stderr);
+  assert.match(shown.stdout,/analyst\s+opus \/ high/);
+  assert.match(shown.stdout,/writer\s+sonnet \/ medium/);
+  const denied = run("writer","sonnet","--host","claude","--effort","high");
+  assert.notEqual(denied.status,0);
+  assert.match(denied.stderr,/터미널에서만/);
+  const both = run("writer","sonnet","--host","claude","--reasoning","high","--effort","high");
+  assert.notEqual(both.status,0);
+  assert.match(both.stderr,/하나로 지정하세요/);
+  assert.equal(existsSync(join(root,".code-agent/models.json")),false);
 });
 
 test("Codex 모델 명령은 호스트 조회를 제공하고 잘못된 변경과 비대화형 직접 변경을 거부한다", () => {

@@ -3,7 +3,8 @@ import { dirname, join } from "path";
 
 import { assetBytes, assetCount, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
 import { STATE_DIR } from "./layout";
-import { applyModels } from "./models";
+import { applyModels, policySummary } from "./models";
+import { readClaudeOverrides, readCodexOverrides } from "./modelPolicy";
 import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 
@@ -156,10 +157,24 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
   writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+/**
+ * 아무것도 쓰기 전에 사람의 설정 파일을 모두 읽어 본다 — hook 설정과 역할 모델 설정(`models.json`·`codex-models.json`).
+ * 깨진 hook 설정을 덮어쓰지 않고, 모델 설정에서 멈출 때 스킬·에이전트만 번들로 덮인 반쯤 설치된 상태를 남기지 않는다.
+ * 모델 설정은 형식까지 검사하므로 이전 버전이 그대로 쓰던 손 입력 값(대문자 별칭 등)도 여기서 멈춘다. update 는 호스트마다
+ * init 을 부르므로 시작할 때 설치된 호스트 전부로 한 번 부른다.
+ */
+export function requireInstallSettings(repoRoot: string, hosts: readonly Host[]): void {
+  for (const host of hosts) {
+    readSettings(settingsFile(repoRoot, host));
+    if (host === "claude") readClaudeOverrides(repoRoot);
+    else readCodexOverrides(repoRoot);
+  }
+}
+
 export function init(repoRoot: string, options: InitOptions = {}): string {
   const hosts = selectedHosts(repoRoot, options.host);
   // 검증을 먼저 끝내어 깨진 사용자 설정을 덮어쓰지 않는다.
-  for (const host of hosts) readSettings(settingsFile(repoRoot, host));
+  requireInstallSettings(repoRoot, hosts);
   const previous = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) ? selectedHosts(repoRoot) :
     installedHook(repoRoot, "PreToolUse", "hook") ? ["claude" as Host] : [];
   const results = hosts.map(host => host === "claude" ? initClaude(repoRoot, options) : initCodex(repoRoot, options));
@@ -216,8 +231,9 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     writeFileSync(target, assetBytes(key));
   }
   lines.push(`스킬·에이전트 ${assetCount(keys)}: .claude/skills/ca-*, .claude/agents/ca-*`);
-  // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
+  // 템플릿 머리말은 제품 기본값(ROLE_POLICY)이다. 사람이 바꿔 둔 모델·강도가 있으면 다시 설치해도 그대로 바른다.
   applyModels(repoRoot);
+  lines.push(`모델·추론 강도: ${policySummary(repoRoot, "claude")} — code-agent model 로 확인·변경`);
 
   const settings = settingsFile(repoRoot);
   upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);

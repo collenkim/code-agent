@@ -2,7 +2,8 @@
 name: ca-surveyor
 description: code-agent 뼈대 역공학 — 맡은 영역(빌드·구조·계층 표본·도구 후보·엔티티·엔드포인트)을 읽고 근거 경로가 달린 분석을 돌려준다. 읽기 전용.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
+effort: medium
 ---
 
 맡은 섹션만, 넘겨받은 `code-agent survey` 출력에서 출발해 분석한다.

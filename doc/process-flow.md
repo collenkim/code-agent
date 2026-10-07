@@ -31,9 +31,10 @@
 | `deliver.ts`·`knowledge.ts` | §3.2 deliver, §8 | `ca-integrate/SKILL.md` |
 | `hosts.ts` `codexText`(64-82) | §7 | 치환 대상 문장: `hosts.ts:78-80`의 리터럴이 `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` SKILL.md와 `ca-analyst`·`ca-explorer`·`ca-writer` 에이전트 원문과 글자 그대로 같아야 치환된다 |
 | `retryPolicy.ts` `POLICIES`·`LIMITS`·`GRANT_STEP`·`TIMING`·`GUIDE_KEYS`·`GUIDE_VARIANTS`·판정 함수, `lock.ts`, `crossEnv.ts`, `hostText.ts` | §6.4(표는 생성 블록 — `renderRetryPolicyTable()` 출력으로 다시 붙인다), 연결된 판정 지점의 §4·§5·§6.1~§6.3 | §6.4 생성 블록(`docSync.test.ts`가 바이트 대조), 안내 문구 자리표시와 `GUIDE_KEYS`·`GUIDE_VARIANT_KEYS`(`retryPolicy.test.ts`가 대조), `crossFailureText`의 Codex 배너 식(Codex exec 출력 라벨이 바뀌면), `hostText.ts` `SKILL_NAMES`·`ROLE_NAMES`(템플릿 폴더·`hosts.ts` `ROLE_NAMES`와 같아야 한다 — `hostText.test.ts`가 대조) |
+| `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`·`CLAUDE_EFFORTS`·`CLAUDE_NO_EFFORT`, `models.ts`, `prices.ts` | §4.1 model 행, §6.3 다른 호스트 실행, §7 모델 기본값 행, §8 `models.json` 행 | `template/claude/agents/ca-*.md` 머리말 `model`·`effort`(`modelPolicy.test.ts`가 대조), `doc/codex.md` 역할별 모델 표(같은 테스트가 대조), `doc/design.md` 모델 문단, `ca-answer/reference.md`·`template/codex/ca-answer.md` 모델 예시, `retryPolicy.ts` `CROSS_PATTERNS.config`·`crossFailureText`(모델·강도 오류 문구, Codex 배너 라벨), `doc/usage.md` 단가표 |
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts:191-192`), `baselineFiles`(`bootstrap.ts:40-62`) |
 | 새 파일·모듈 이동 | §9 | — |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:188`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hosts.ts` `ROLE_NAMES`(10)·`codexText` 역할 정규식(65)과 `modelPolicy.ts` `AGENTS`(5)도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181` matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:188`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hosts.ts` `ROLE_NAMES`(10)·`codexText` 역할 정규식(65)과 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181` matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 한 줄을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -123,13 +124,13 @@ flowchart TD
 | plan | 작업 계획 확인 | `decide` | 같음 | `approve` · `reject --comment` |
 | deliver | 결과와 로컬 커밋 확인 | `deliver`를 두 번 캡처하고 `knowledgeChoices`를 만든다 | `deliver` | `deliver` |
 | knowledge-prune | 지식 문서 정리 | `pruneCandidates` | `knowledgePrune` | `knowledge prune` |
-| model | 에이전트 모델 변경 | `validateModelChange` + 표 | `setModel` | `model <역할\|all> <모델>` |
+| model | 에이전트 모델 변경 | `validateModelChange` + 표. 스냅샷에 `모델 정책` 상태(`modelPolicyFingerprint` — 등급·기본값·강도 미지원 규칙)를 묶어, 준비 뒤 CLI 의 정책이 바뀌면 `consent-target-changed`로 거부된다. 지문은 그 시점에 도는 CLI가 계산하므로 셸의 code-agent와 hook 명령이 다른 빌드여도 거부되며, 거부 문구에 두 설치본을 확인하라는 안내가 붙는다(`requireConsentSnapshot`) | `setModel` | `model <역할\|all> <모델\|default> [--reasoning\|--effort 강도]` |
 | abort | 작업 진행 종료 | `status` | `abort` | `abort` |
 | plugin-add · plugin-remove | 플러그인 등록·제거 | `previewPlugin*` | `pluginAdd` · `pluginRemove` | `plugin add` · `plugin remove` |
 | update | code-agent 업데이트 | `previewSourceUpdate` | `updateFromSource` | `update` |
 | repro-log | 오류 로그 근거로 수정 진행 | `approveLogBasis` | 같음 | 없음 |
 
-- 직접 CLI의 사람 확인은 명령마다 다르다. `confirm doc`·`confirm request`·`reject request`·`approve`·`reject`·`setup baseline`·`deliver`·`plugin add`는 `confirmOnTerminal`(`tty.ts:76-90`)이 TTY에서 확인 단어 입력을 요구한다. `model` 변경·`plugin remove`·`knowledge prune`은 TTY만 요구한다(`requireTerminal` `tty.ts:55-63`, `models.ts:102`, `plugins/commands.ts:422`, `knowledgeCommands.ts:217`). `abort`(`commands.ts:708-722`)와 `update`(`sourceUpdate.ts`)에서는 TTY 확인 호출을 찾지 못했다.
+- 직접 CLI의 사람 확인은 명령마다 다르다. `confirm doc`·`confirm request`·`reject request`·`approve`·`reject`·`setup baseline`·`deliver`·`plugin add`는 `confirmOnTerminal`(`tty.ts:76-90`)이 TTY에서 확인 단어 입력을 요구한다. `model` 변경·`plugin remove`·`knowledge prune`은 TTY만 요구한다(`requireTerminal` `tty.ts:55-63`, `models.ts` `setModel`, `plugins/commands.ts:422`, `knowledgeCommands.ts:217`). `abort`(`commands.ts:708-722`)와 `update`(`sourceUpdate.ts`)에서는 TTY 확인 호출을 찾지 못했다.
 - 동의 적용 중에는 준비 때 캡처한 문구와 같은 확인만 통과한다(`consent.ts:485-487`).
 - 작업·접수·문서 세션 중에 모델이 셸에서 이 동작들을 직접 부르면 hook이 거부한다(§5.4). 세션이 없으면 hook은 `.code-agent`·키 자리 언급만 막으므로(§5.3 3단계) `init`·`update`·`approve`·`setup baseline` 같은 명령도 hook을 지난다(2026-10-07 sandbox 확인). 이때는 위의 TTY 확인과 각 명령의 전제 검사만 남는다.
 
@@ -385,7 +386,7 @@ stateDiagram-v2
 | 리뷰 | `review cross --by <호스트>` (116-165) | `crossRequired`, `requireValidatable('review')`, 열린 회차가 있고 그 회차의 트리·계획·매니페스트가 지금과 일치 | 다른 호스트의 `ca-reviewer` | `review.json`의 `last.cross`, ⑨ `## 교차 지적`(X 번호) | `reviewProblems` 413-421: completed이면서 문서가 기록과 같거나, unavailable |
 
 **다른 호스트 실행** (`runOtherHost` 60-95)
-- Claude: `claude -p <prompt> --agent <역할> --model <modelOf: models.json 값, 없으면 opus> --output-format json --setting-sources project --permission-prompts none --allowedTools Read,Grep,Glob`
+- Claude: `claude -p <prompt> --agent <역할> --model <m> --output-format json --setting-sources project --permission-prompts none --allowedTools Read,Grep,Glob`. `<m>`은 `modelOf`(= `claudeModelOf(역할).model` — `models.json` 값, 없으면 역할 기본 모델. critic·reviewer는 판단 역할이라 opus)다. 추론 강도(`--effort`)는 아직 넘기지 않는다 — 정의 파일 머리말의 `effort`를 `--agent` 실행이 따르는지는 미확인. 같은 출처의 인자 함수 `claudeModelArgs`·`codexModelArgs`(`modelPolicy.ts`)는 있으나 교차 실행에는 아직 연결하지 않았다
 - Codex: `codex exec -s read-only -C <root> --ephemeral -m <model> -c model_reasoning_effort="<r>" -o <tmp> "<developer_instructions>\n\n---\n\n<prompt>"`
 - 시간 제한은 기본 20분이다(`CODE_AGENT_CROSS_TIMEOUT_MIN`).
 - 실행 파일 위치는 `hostCommand`(`hosts.ts:29-47`)가 이 순서로 찾는다: `CODE_AGENT_*_BIN` → Windows `%APPDATA%\npm\node_modules`의 Node 진입점 → PATH. Windows에서 PATH로 찾은 `.cmd`·`.bat`는 거부한다(`core/build.ts:305-307`).
@@ -461,7 +462,7 @@ stateDiagram-v2
 | 설치 위치 | `.claude/skills`·`.claude/agents/*.md`·`.claude/settings.json`·`CLAUDE.md` | `.agents/skills`·`.codex/agents/*.toml`·`.codex/hooks.json`·`AGENTS.md` | `hosts.ts:83-105`, `init.ts:180-203` |
 | 스킬 본문 | 번들 원본 | `codexText` 정규식 변환. `ca-answer`만 `template/codex/ca-answer.md`로 바꾼다 | `hosts.ts:64-90` |
 | 서브에이전트 이름 | `ca-analyst` | `ca_analyst`(배정의 `hostAgents.codex`) | `hosts.ts:11`, `planning.ts:291` |
-| 모델 기본값 | 모두 opus, 변경값은 `.code-agent/models.json` | `gpt-6.1-sol`. analyst·critic·reviewer는 high, 나머지는 medium. 변경값은 `.code-agent/codex-models.json` | `models.ts:25`, `modelPolicy.ts:16-25` |
+| 모델 기본값 | 판단(analyst·critic·reviewer) opus/high, 실행(그 밖) sonnet/medium. 정의 파일 머리말 `model`·`effort`(강도를 받지 않는 haiku·Sonnet 4.5 이하·Opus 4.1 이하·`claude-<숫자>` 이전 ID는 `effort` 줄 없음 — `CLAUDE_NO_EFFORT`). 변경값은 `.code-agent/models.json`(역할 키=모델, 예약 키 `effort`) | `gpt-6.1-sol`. 판단 high, 실행 medium. 변경값은 `.code-agent/codex-models.json` | `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS` |
 | 파일 읽기 | Read·Grep·Glob(키 자리만 막음) | 셸의 `code-agent read <파일> [시작] [줄 수]` | `hook.ts:205-208`, `hosts.ts:81` |
 | 파일 쓰기 판정 | Write·Edit·MultiEdit·NotebookEdit | `apply_patch`의 각 경로를 `Edit`로 판정 | `codexHook.ts:71-78` |
 | 계획 담당 출력 | staging 파일 + `{path, staged}`. `agent_id`로 담당에게만 연다 | artifacts `{path, content}`. staging은 열리지 않는다 | `hook.ts:428-442`, `hosts.ts:78-80` |
@@ -481,7 +482,7 @@ stateDiagram-v2
 | `active.json` | `saveActive`(`layout.ts:144-150`): start·next·back·check 되감기. 삭제는 deliver·abort | 모든 명령·hook | 무시(`init.ts:191-192`) |
 | `request-session.json` · `docs-session.json` | `request begin` · `docs begin/end` | hook 모드 판정, start | 무시 |
 | `hosts.json` · `version` | init | `selectedHosts`, update·doctor | 준비 커밋(`bootstrap.ts:45-46`). `version`은 반영 커밋에도 들어간다(`deliver.ts:321`) |
-| `models.json` · `codex-models.json` | 동의 `model` | `modelOf`·`codexModelOf` | 준비·반영 커밋 |
+| `models.json`(역할 키=모델 문자열, 예약 키 `effort`={역할: 강도}) · `codex-models.json` | 동의 `model`(`setModel` — 대상 역할 항목만 바꾼다) | `claudeModelOf`·`codexModelOf`(형식 오류는 고치는 법과 함께 `Stop`. init·update는 아무 파일도 쓰기 전에 설치 호스트 전부의 hook 설정과 이 파일을 읽어 본다 — `init.ts` `requireInstallSettings`). init·update·doctor는 다시 쓰지 않는다 | 준비·반영 커밋 |
 | `approvals/<slug>.jsonl` | `recordDecision`(계획 승인·반려 해시 사슬) | `checkApproval`(`core/approval.ts:342-387`) | 반영 커밋 |
 | `approvals/<slug>/request.jsonl` · `<target>-<seq>.plan.json` | `recordRequestDecision` · 승인 스냅샷(`core/approval.ts:438`) | `requestState` · `stale-plan` diff | 반영 커밋 |
 | `approvals/docs.jsonl` | `confirmDoc` | 문서 게이트 | 반영 커밋 |
@@ -515,7 +516,7 @@ stateDiagram-v2
 | 단계·기능 | 파일 (`src/agent/` 기준) |
 |---|---|
 | CLI 진입·hook 하위 명령 분기 | `cli.ts`(hook 168-178, 명령 182-396) |
-| 설치·갱신·점검 | `init.ts`, `hosts.ts`, `assets.ts`, `update.ts`, `sourceUpdate.ts`, `doctor.ts`, `models.ts`, `modelPolicy.ts` |
+| 설치·갱신·점검 | `init.ts`, `hosts.ts`, `assets.ts`, `update.ts`, `sourceUpdate.ts`, `doctor.ts`, `models.ts`, `modelPolicy.ts`(역할 모델·추론 강도 정책 `ROLE_POLICY`·`TIER_DEFAULTS`) |
 | 준비·공통 문서 | `docsCommands.ts`, `docs.ts`, `schemas.ts`, `setup.ts`, `bootstrap.ts`, `survey.ts` |
 | 접수 | `request.ts`, `intakeTrace.ts` |
 | 커서·게이트·context | `commands.ts`, `work.ts`, `layout.ts`, `git.ts`, `tree.ts` |
@@ -529,7 +530,7 @@ stateDiagram-v2
 | 동의 | `consent.ts`, `tty.ts` |
 | hook | `hook.ts`, `stopHook.ts`, `sessionHook.ts`, `codexHook.ts` |
 | 재시도 규약·공통 기반 (§6.4, 계획 쪽과 검증·리뷰 회차 한도에 연결됨) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia` 등) |
-| 기타 | `aidlc.ts`(AI-DLC 공존), `usage.ts`·`prices.ts`(사용량), `plugins/`, `read.ts`(`code-agent read`), `stop.ts`(`Stop` 예외), `core/exemplar.ts`(참조 코드), `core/atomic.ts`(`writeAtomic`), `core/types.ts`(공통 타입) |
+| 기타 | `aidlc.ts`(AI-DLC 공존), `usage.ts`·`prices.ts`(사용량 — 스테이지·에이전트·모델별, 단가표 `PRICES`·`priceKey`), `plugins/`, `read.ts`(`code-agent read`), `stop.ts`(`Stop` 예외), `core/exemplar.ts`(참조 코드), `core/atomic.ts`(`writeAtomic`), `core/types.ts`(공통 타입) |
 | 절차 템플릿 | `template/claude/skills/ca-*/SKILL.md`(+`criteria.md`·`legacy.md`·`contract.md`·`reference.md`), `template/claude/agents/ca-*.md`, `template/CLAUDE.block.md`, `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 
 단계 스킬은 `ca-next/SKILL.md:14-25` 표를 따른다. 서브에이전트 사용처는 다음과 같다.
@@ -551,3 +552,5 @@ stateDiagram-v2
 | 2026-10-07 | 계획 오케스트레이션 독립 검토 반영: 크기 한도를 넘은 결과는 교정 대기 대신 `failed`, 보고한 시도가 이미 running이 아니면 늦은 결과(담당 연결을 보고한 시도로 옮긴다), 다른 미완료 담당이 연결된 시도는 고아로 두지 않음(`orphanLinked`), 출처 확인 실패가 두 번 이어지면 `blocked`(`hook-failure`), 재배정의 `previous`(직전 실패), 되돌린 뒤에는 그때까지 판정한 SubagentHandback 뒤의 보고만(`judgedHandbacks`), 질문 출처는 코드가 기록한 것(`questionOrigins`)만 믿음(교차 질문은 잠금 안에서 쓴다), `reassign-total` 안내에서 지금 실행할 수 없는 선택지를 뺌, ca-plan 4-1항·반려 절차·`crossCriticProblems`의 고칠 작업 문장, ca-next 재개 때 실행 중 배정 확인 | `110ec6a` | 머리말, §1.1, §6.1, §6.3, §6.4 연결 상태, §7, §8 |
 | 2026-10-07 | 검증 재시도를 원인별 카운터로 나누고(고쳐 쓰기·수집 수정·같은 코드 재실행·통합 검증 재실행·리뷰 회차·총 회차) `check()`·`verify`·hook·`status` 가 한 판정 함수로 통일. 통과 뒤 변경은 고쳐 쓰기가 아니라 리뷰 회차·총 회차가 묶는다. 환경 분류는 실패 결과가 없을 때만(재현은 문구만으로), 시간 초과는 원인 필드로, 동결은 결과가 인식된 실행부터(수집 수정 1회 예외)·증거(`testFreeze`)로 게이트 대조, test·통합 검증 시작 표지(끊고 고치면 고쳐 쓰기), 체크아웃별 worktree 표지와 자기 키 잔여 worktree 정리, 파일 바이트 해시, 실패한 재현 갱신이 `treeHash` 를 바꾸지 않음, 재현 시도 한도. 옛 증거에서 엄격해지는 판정은 '끊긴 회차 뒤 수정'(고쳐 쓰기를 쓴다) 하나다. §6.2 는 함수 이름 기준으로 다시 썼다 | `e3e082d` | §1.1, §3.2, §6.2, §6.3, §6.4 연결 상태, §8, §9 |
 | 2026-10-07 | 검증 재시도 검토 반영: 통합 검증 결과 줄의 재개 안내를 `code-agent integrate`·통합 검증 재실행 하나로(`GUIDE_VARIANTS` `integrate` 변형), test 실행 전 저장도 ⑧ 을 렌더하고 대조 불일치 진단의 재개는 `verify --retry`, 같은 회차 재사용이 지운 test·통합 검증 상태(`retry.wiped`)를 판정에 남김, 통합 검증·격리 재현은 임시 worktree 를 만든 뒤 카운터·표지 기록, 재현 트리별 원인(`retry.repro.classes`)과 로그 근거 확인의 시도 카운터 비움, ⑨ 지적 재기준은 리뷰 회차마다 한 번, 낡은 worktree 표지 회수 가드와 없는 worktree 미보고, ⑧·⑩ 회차 줄을 `검증 회차 · 고쳐 쓰기 사용/한도`로(옛 증거는 그대로), §6.4 환경 판별에 재현 예외 | `53368a4` | §6.2, §6.3, §6.4 생성 블록, §8 |
+| 2026-10-07 | 역할별 모델·추론 강도 정책(`modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`): Claude 판단 opus/high·실행 sonnet/medium, 템플릿 머리말 `effort`, `models.json` 예약 키 `effort`(역할 값은 이전처럼 문자열), `model` 명령 `--effort`, model 동의 스냅샷의 모델 정책 상태, doctor "에이전트 모델"·update 전후 보고, 단가표 `claude-sonnet-5-5`·`claude-fable-5`와 모델별 usage. 교차 실행 `--effort`는 C1 연결 뒤 | `eaad713` | §1.1, §4.1, §6.3, §7, §8, §9 |
+| 2026-10-07 | 역할별 모델 검토 반영: init·update가 쓰기 전에 설치 호스트 전부의 `models.json`·`codex-models.json`도 읽어 형식 오류면 아무 파일도 쓰지 않고 멈춘다(이전에는 스킬·에이전트를 번들로 덮은 뒤 멈췄다), 강도 미지원 목록 `CLAUDE_NO_EFFORT`에 Sonnet 4.5 이하·Opus 4·4.1·`claude-<숫자>` 이전 ID를 더했다, doctor "에이전트 모델"은 정의 파일이 없으면 `·`로 낮춘다, model 동의의 `모델 정책` 불일치에 설치본 확인 안내. 이 문서의 `file:line` 기준은 그대로 `c4f3fbf`이고, 이후 커밋이 더하거나 고친 인용은 줄 번호 없이 함수·상수 이름으로 적는다(앞 행에서 넣은 `models.ts`·`modelPolicy.ts` 줄 번호를 이름으로 바꿈) | `ca36d3e` | §1.1, §4.1, §7, §8 |

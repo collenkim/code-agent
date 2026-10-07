@@ -21,7 +21,9 @@
 | `spec` | 선택 문자열: 사람이 작성한 지시서 경로 |
 | `decision` | 선택 문자열: `accept` 또는 `reject`. 실행할 확정·반려 동작이며 실제 동의 응답을 대신하지 않는다 |
 | `comment` | 선택 문자열: 사용자가 제시한 반려 사유 등 |
-| `agent`, `model` | 선택 문자열: 모델을 바꿀 에이전트와 모델 |
+| `"agent"`, `"model"` | 선택 문자열: 바꿀 역할(`all`은 모든 역할)과 모델. `model:"default"`는 그 역할의 모델·추론 강도를 제품 기본값으로 되돌린다 |
+| `host` | 선택 문자열: `claude` 또는 `codex`. 두 호스트를 함께 설치했으면 반드시 넣는다 |
+| `reasoning` | 선택 문자열: 추론 강도. Claude는 `low`·`medium`·`high`·`xhigh`·`max`(haiku는 강도를 받지 않으니 넣지 않는다), Codex는 여기에 `ultra`까지. 생략하면 그 역할의 지금 강도를 유지한다. `default` 복원에는 넣지 않는다 |
 | `name`, `command`, `slots` | 선택 문자열: 플러그인 이름·실행 명령·슬롯 |
 | `sendsCode` | 선택 불리언: 플러그인의 코드 전송 여부 |
 | `secretEnv` | 선택 문자열: **이미 설정된 환경변수 이름만** 참조한다. 키 값은 넣지 않는다 |
@@ -38,7 +40,7 @@
 | 요구사항·계획 반려 기록 | 해당 `request` 또는 `plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 포함한다. 이 동작도 별도 동의 후 적용한다 |
 | 검증 결과 반영 | `{"action":"deliver"}` |
 | 오래된 지식 항목 정리 | `{"action":"knowledge-prune"}` |
-| 모델 변경 | `{"action":"model","host":"claude","agent":"<에이전트|all>","model":"<opus|sonnet|haiku|default>"}` |
+| 모델·추론 강도 변경 | 먼저 `code-agent model --host claude`로 지금 값을 조회한다. `{"action":"model","host":"claude","agent":"<역할|all>","model":"<opus|sonnet|haiku|fable|claude-…|default>","reasoning":"<low|medium|high|xhigh|max>"}` — `reasoning`은 바꿀 때만 넣는다. 사용자가 고른 값만 넣고 임의로 다른 모델로 바꾸지 않는다 |
 | 접수·작업 종료 | `{"action":"abort"}` |
 | 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |

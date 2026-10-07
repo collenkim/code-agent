@@ -74,7 +74,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
   code-agent deliver                  13 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
-  code-agent model [<에이전트|all> <모델|default>] [--host claude|codex] [--reasoning 강도]   역할별 모델 조회·변경·기본값 복원
+  code-agent model [<역할|all> <모델|default>] [--host claude|codex] [--reasoning|--effort 강도]   역할별 모델·추론 강도 조회·변경·기본값 복원
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
@@ -349,9 +349,12 @@ async function main(argv: string[]): Promise<number> {
     case "model": {
       const host = parseHost(option(args, "host"));
       if (host === "both") throw new Stop("모델 변경 호스트는 claude 또는 codex 하나를 지정하세요.");
-      const values = positional(args, ["host", "reasoning"]), reasoning = option(args, "reasoning");
-      if (values.length > 2 || (!values.length && reasoning)) throw new Stop("모델 조회에는 --host만, 변경에는 역할·모델과 선택적인 --reasoning을 지정하세요.");
-      print(values.length === 0 ? modelsTable(repoRoot, host) : setModel(repoRoot, values[0], values[1], {host,reasoning}));
+      const values = positional(args, ["host", "reasoning", "effort"]);
+      const reasoning = option(args, "reasoning"), effort = option(args, "effort");
+      if (reasoning !== undefined && effort !== undefined) throw new Stop("추론 강도는 --reasoning 또는 --effort 하나로 지정하세요 — 두 깃발은 같은 뜻입니다.");
+      const strength = reasoning ?? effort;
+      if (values.length > 2 || (!values.length && strength)) throw new Stop("모델 조회에는 --host만, 변경에는 역할·모델과 선택적인 --reasoning(또는 --effort)을 지정하세요.");
+      print(values.length === 0 ? modelsTable(repoRoot, host) : setModel(repoRoot, values[0], values[1], { host, reasoning: strength }));
       return 0;
     }
     case "plugin":

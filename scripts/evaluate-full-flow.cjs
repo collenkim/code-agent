@@ -1,9 +1,14 @@
 /* Opt-in live evaluation from intake through local delivery in disposable repositories.
  * Only TTY interaction is mocked by this driver; every such decision is labelled as a fixture.
  * Never claims to measure a real beginner or human approval. No push or external publication.
- * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both]
+ * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--agents policy|exec-opus|opus|sonnet] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both]
  * --hosts both 는 Codex 도 설치해 계획 검토·코드 리뷰의 교차 검증을 실제 Codex 로 돈다(로그인된 codex 필요).
- * 기본은 2026-10-01 기록과 같은 sonnet·$5 한도다. --model opus는 설치 기본 모델 그대로 실행한다.
+ * 기본은 2026-10-01 기록과 같은 sonnet·$5 한도다. --model 은 메인 세션 모델이다. 담당(서브에이전트) 모델은 --agents 가 정한다 —
+ * policy = 설치 정책 그대로(판단 opus/high · 실행 sonnet/medium, --model opus 의 기본), exec-opus = 실행 역할만 model: opus(강도 줄 유지),
+ * opus·sonnet = 모든 역할을 그 모델로 바꾸고 effort 줄을 지운다(--model sonnet 의 기본 = 이전 동작, opus 는 2026-10-06 기준선 재현용).
+ * 정책 효과 비교는 policy 대 exec-opus 로 한다 — 실행 역할의 모델 하나만 다르다. 보고서의 agents 에 역할별 model/effort 를 싣는다.
+ * 판단 역할 목록은 modelPolicy ROLE_POLICY 의 등급에서 가져온다. resume 은 기록된 agentsMode 를 잇고 다른 --agents 는 거부한다
+ * (agentsMode 가 없는 이전 기록은 그 기록의 --model 값 opus·sonnet 을 모드로 본다).
  * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다(2026-10-01 기록은 누적값을 더해 과대 집계됐다).
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.
  */
@@ -25,6 +30,7 @@ const { loadReview } = use('agent/review');
 const { parseQuestions } = use('agent/questions');
 const tty = use('agent/tty');
 const { usage } = use('agent/usage');
+const { AGENTS, ROLE_POLICY, claudeFrontmatter, frontmatterModel } = use('agent/modelPolicy');
 const scenario = process.argv[3], resume = process.argv[2] === 'resume';
 if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'refactor'].includes(scenario)) throw Error('Use run|resume <new|enhance|fix|refactor>');
 const option = name => { const at = process.argv.indexOf(`--${name}`); return at > 0 ? process.argv[at + 1] : undefined; };
@@ -32,6 +38,13 @@ const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ??
 if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
 const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
+// resume 은 기록된 담당 모델 모드를 잇는다 — 도중에 바꾸면 A/B 기록이 틀어진다. agentsMode 가 없는 이전 기록(C6 전)은
+// 설치본이 전부 그 기록의 --model 값(강도 줄 없음)이었으므로 opus·sonnet 모드로 본다
+const recordedAgents = previous && (previous.agentsMode ?? (['opus', 'sonnet'].includes(previous.model) ? previous.model : undefined));
+if (resume && !recordedAgents) throw Error('Resume needs agentsMode or model (opus|sonnet) in the previous report.');
+if (resume && option('agents') && option('agents') !== recordedAgents) throw Error(`Resume keeps the recorded --agents ${recordedAgents}; start a new --label to run another mode.`);
+const agentsMode = resume ? recordedAgents : option('agents') ?? (hostModel === 'opus' ? 'policy' : 'sonnet');
+if (!['policy', 'exec-opus', 'opus', 'sonnet'].includes(agentsMode)) throw Error('Use --agents policy|exec-opus|opus|sonnet');
 if (previous?.finished) throw Error('Scenario already completed; preserve the recorded result.');
 const repo = resume ? fs.realpathSync.native(previous.repo) : fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `ca-full-${scenario}-`)));
 if (resume && (path.dirname(repo) !== fs.realpathSync.native(os.tmpdir()) || !path.basename(repo).startsWith(`ca-full-${scenario}-`))) throw Error('Resume is limited to the disposable evaluation repository.');
@@ -41,10 +54,18 @@ if (!resume) {
 git('init', '-q', '-b', 'master'); git('config', 'user.name', 'evaluation-fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'core.autocrlf', 'false');
 init(repo, { cli: path.join(root, 'dist/agent/cli.js'), host: installHosts });
 }
-for (const file of hostModel === 'opus' ? [] : fs.readdirSync(path.join(repo, '.claude/agents'))) {
-  const full = path.join(repo, '.claude/agents', file);
-  fs.writeFileSync(full, fs.readFileSync(full, 'utf8').replace(/^model: .+$/m, `model: ${hostModel}`));
+// 담당 모델 — 비교하려는 변수 하나만 다르게 둔다(policy 대 exec-opus 는 실행 역할의 모델만 다르다)
+const JUDGMENT_AGENTS = AGENTS.filter(agent => ROLE_POLICY[agent].tier === 'judgment').map(agent => `ca-${agent}.md`);
+for (const file of agentsMode === 'policy' ? [] : fs.readdirSync(path.join(repo, '.claude/agents')).filter(name => /^ca-.+\.md$/.test(name))) {
+  if (agentsMode === 'exec-opus' && JUDGMENT_AGENTS.includes(file)) continue;
+  const full = path.join(repo, '.claude/agents', file), text = fs.readFileSync(full, 'utf8');
+  const config = agentsMode === 'exec-opus' ? { model: 'opus', effort: frontmatterModel(text).effort } : { model: agentsMode };
+  fs.writeFileSync(full, claudeFrontmatter(text, config));
 }
+const agentsReport = () => Object.fromEntries(fs.readdirSync(path.join(repo, '.claude/agents')).filter(name => /^ca-.+\.md$/.test(name)).map(name => {
+  const config = frontmatterModel(fs.readFileSync(path.join(repo, '.claude/agents', name), 'utf8'));
+  return [name.replace(/^ca-|\.md$/g, ''), config.effort ? `${config.model}/${config.effort}` : config.model];
+}));
 const correct = "module.exports=function value(n){if(n<0)throw Error('negative');return 1;};\n";
 const tests = "const test=require('node:test'),assert=require('node:assert/strict'),value=require('../src/value');test('TC-1 nonnegative',()=>{assert.equal(value(0),1);assert.equal(value(2),1);});test('TC-2 negative',()=>assert.throws(()=>value(-1),/negative/));\n";
 if (!resume && scenario !== 'new') {
@@ -122,7 +143,7 @@ const questionFile = id && path.join(repo, `doc/work/${id}/questions.md`);
 const questions = questionFile && fs.existsSync(questionFile) ? parseQuestions(fs.readFileSync(questionFile, 'utf8')) : [];
 const evidence = work && loadEvidence(repo, id, work.active.target);
 const review = work && loadReview(repo, id, work.active.target);
-const report = { scenario, model:hostModel, hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval', repo, finished, blocked,
+const report = { scenario, model:hostModel, agentsMode, agents:agentsReport(), hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval', repo, finished, blocked,
   durationMs:(previous?.durationMs || 0)+Date.now()-started, reportedCostUSD:cost, costNote:'turn cost = delta of cumulative total_cost_usd; usage is transcript-based', approvals, questionFixtures, questionCount:questions.length, questionCountScope:'questions.md entries only; conversational questions are preserved in turns but not counted here', unanswered:questions.filter(q=>!q.answer).map(q=>q.title), turns,
   taskSequence:work?.plan?.sequence, tests:evidence?.testCases, integrationTests:evidence?.integrationTestCases, reproduction:evidence?.repro,
   reviews:review?.rounds.map(r=>({round:r.round,observed:!!r.reviewer?.completedAt,result:r.reviewer?.result,cross:r.cross&&{host:r.cross.host,model:r.cross.model,completed:!!r.cross.completedAt,result:r.cross.result,error:r.cross.error}})),

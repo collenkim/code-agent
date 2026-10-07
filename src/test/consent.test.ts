@@ -12,7 +12,7 @@ import { checkProjectDocs, readDocLedger } from "../agent/docs";
 import { deliveryPaths } from "../agent/deliver";
 import { decide as guardTool } from "../agent/hook";
 import { loadActive } from "../agent/layout";
-import { modelOf } from "../agent/models";
+import { claudeModelOf, modelOf } from "../agent/models";
 import { loadRequestSession, readRequestLedger, requestState } from "../agent/request";
 import { approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 import { hashPlan, readLedger } from "../core/approval";
@@ -417,15 +417,60 @@ test("request: an explicitly confirmed rejection retains its reason instead of a
 });
 
 test("model: applying observed consent changes only the selected agent", () => {
-  writeFixture(root, ".claude/agents/ca-writer.md", "---\nname: ca-writer\nmodel: opus\n---\nWriter instructions.\n");
-  const fixture = prepareConsentFixture(root, { action: "model", agent: "writer", model: "sonnet" });
-  assert.equal(modelOf(root, "writer"), "opus");
-  observeConsentFixture(fixture);
-  assert.equal(modelOf(root, "writer"), "opus");
-  applyConsent(root, fixture.id);
+  writeFixture(root, ".claude/agents/ca-writer.md", "---\nname: ca-writer\nmodel: sonnet\neffort: medium\n---\nWriter instructions.\n");
+  const fixture = prepareConsentFixture(root, { action: "model", agent: "writer", model: "opus", reasoning: "low" });
   assert.equal(modelOf(root, "writer"), "sonnet");
+  observeConsentFixture(fixture);
+  assert.equal(modelOf(root, "writer"), "sonnet");
+  applyConsent(root, fixture.id);
+  assert.equal(modelOf(root, "writer"), "opus");
+  assert.deepEqual(claudeModelOf(root, "writer"), { model: "opus", effort: "low" });
+  assert.deepEqual(JSON.parse(readFileSync(join(root, ".code-agent/models.json"), "utf8")), { writer: "opus", effort: { writer: "low" } });
   assert.equal(modelOf(root, "reviewer"), "opus");
-  assert.match(readFileSync(join(root, ".claude/agents/ca-writer.md"), "utf8"), /model: sonnet/);
+  const writer = readFileSync(join(root, ".claude/agents/ca-writer.md"), "utf8");
+  assert.match(writer, /^model: opus$/m);
+  assert.match(writer, /^effort: low$/m);
+});
+
+test("model: all 은 모델만 바꾸고 역할별 강도를 유지하며, default 는 모델·강도를 함께 되돌린다", () => {
+  for (const agent of ["writer", "reviewer"]) writeFixture(root, `.claude/agents/ca-${agent}.md`, `---\nname: ca-${agent}\nmodel: x\n---\n본문\n`);
+  approveAndApplyFixture(root, { action: "model", host: "claude", agent: "all", model: "opus" });
+  assert.deepEqual(claudeModelOf(root, "writer"), { model: "opus", effort: "medium" });
+  assert.deepEqual(claudeModelOf(root, "reviewer"), { model: "opus", effort: "high" });
+  const file = () => JSON.parse(readFileSync(join(root, ".code-agent/models.json"), "utf8")) as Record<string, unknown>;
+  assert.deepEqual(file(), { surveyor: "opus", explorer: "opus", writer: "opus", implementer: "opus", tester: "opus" });
+  assert.ok(Object.values(file()).every((value) => typeof value === "string"));
+  approveAndApplyFixture(root, { action: "model", host: "claude", agent: "reviewer", model: "opus", reasoning: "max" });
+  assert.deepEqual(file().effort, { reviewer: "max" });
+  assert.equal("reviewer" in file(), false);
+  assert.match(readFileSync(join(root, ".claude/agents/ca-reviewer.md"), "utf8"), /^effort: max$/m);
+  approveAndApplyFixture(root, { action: "model", host: "claude", agent: "all", model: "default" });
+  assert.deepEqual(file(), {});
+  assert.match(readFileSync(join(root, ".claude/agents/ca-writer.md"), "utf8"), /^model: sonnet\neffort: medium\n---/m);
+});
+
+test("model: 동의 스냅샷은 모델 정책을 묶는다 — 정책 상태가 없는 이전 동의는 다시 준비하게 된다", () => {
+  const fixture = prepareConsentFixture(root, { action: "model", host: "claude", agent: "writer", model: "opus" });
+  assert.ok("모델 정책" in loadConsent(root, fixture.id).snapshotEntries!.state);
+  observeConsentFixture(fixture);
+  const record = loadConsent(root, fixture.id);
+  delete record.snapshotEntries!.state["모델 정책"];
+  record.snapshot = "0".repeat(64);
+  writeFixture(root, `.code-agent/consents/${fixture.id}.json`, JSON.stringify(record));
+  assert.throws(() => applyConsent(root, fixture.id), /변경 대상: .*모델 정책\n이 동의를 준비한 code-agent와 지금 code-agent의 모델 정책이 다릅니다\. .*PATH의 code-agent와 hook 명령이 같은 설치본인지/);
+  assert.equal(existsSync(join(root, ".code-agent/models.json")), false);
+});
+
+test("동의 스냅샷: 모델 정책이 아닌 변경에는 설치본 안내를 붙이지 않는다", () => {
+  const fixture = prepareConsentFixture(root, { action: "model", host: "claude", agent: "writer", model: "opus" });
+  observeConsentFixture(fixture);
+  writeFixture(root, "doc/extra.md", "바뀐 문서\n");
+  assert.throws(() => applyConsent(root, fixture.id), (error: unknown) =>
+    error instanceof Error && /변경 대상: 파일 "doc\/extra\.md"/.test(error.message) && !error.message.includes("설치본"));
+});
+
+test("model: 강도를 받지 않는 모델에 강도를 함께 준비하면 미리보기에서 거부한다", () => {
+  assert.throws(() => prepareConsentFixture(root, { action: "model", host: "claude", agent: "reviewer", model: "haiku", reasoning: "high" }), /받지 않습니다/);
 });
 
 test("abort: only apply closes intake, preserving requirements and their approval", () => {
