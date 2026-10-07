@@ -215,12 +215,13 @@ describe("hook·검증의 Codex 표기", () => {
     assert.match(patched.hookSpecificOutput?.permissionDecisionReason ?? "", /code-agent read 로 원인을 확인하고 apply_patch 로/);
   });
 
-  test("Claude 바이트 — next 의 미응답 질문·context 의 계획 밖 질문 문장이 배선 전 문자열과 같다", () => {
+  test("Claude 바이트 — next 의 미응답 질문 문장이 배선 전 문자열과 같고, context 의 계획 밖 문장은 서브에이전트 제약이다", () => {
     toCheck();
-    // 배선 전(6584910) 리터럴 — 둘레 문장까지 줄 전체를 견준다
-    const outside = "계획 밖을 고쳐야 하면 doc/work/ORD-1/questions.md 에 질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.";
+    // context --file 은 서브에이전트가 읽는다 — 사람에게 묻는 것은 메인이라 질문 도구 이름이 없고 두 호스트가 같다(C7 OPT-16)
+    const outside = "계획 밖을 고쳐야 하면 고치지 말고 메인에게 보고합니다 — 메인이 doc/work/ORD-1/questions.md 에 질문으로 남기고, 사람의 답과 재계획·재승인 뒤에만 구현합니다.";
     assert.ok(withNotation("claude", () => context(repo)).split("\n").includes(outside));
-    assert.ok(withNotation("codex", () => context(repo)).split("\n").includes(outside.replace("AskUserQuestion으로", "Codex 질문 도구(없으면 대화)로")));
+    assert.ok(withNotation("codex", () => context(repo)).split("\n").includes(outside));
+    assert.doesNotMatch(withNotation("claude", () => context(repo)), /AskUserQuestion/);
     write("doc/work/ORD-1/questions.md", "## Q1 · 검증\n무엇을 더 볼까?\n[Answer]:\n");
     const stopOf = (run: () => unknown): string => { try { run(); } catch (error) { return (error as Error).message; } return ""; };
     const claude = stopOf(() => withNotation("claude", () => next(repo))).split("\n");

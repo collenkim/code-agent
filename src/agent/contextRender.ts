@@ -25,7 +25,7 @@ import { sourceFileScan, SURVEY_MAX_FILES } from "./survey";
 import type { Work } from "./work";
 import { acceptanceCriteria, parseTestCases, planDocFile, readWorkDoc, workDocPath } from "./workDocs";
 import { sourceItems } from "./sourceTrace";
-import { agentName, askVia, shellLabel } from "./hostText";
+import { agentName } from "./hostText";
 import { codeStages, PHASE_LABEL } from "./phaseInfo";
 
 /** 렌더러가 읽는 것 — 작업(커서·매니페스트·지시서)과, impact·design·plan 이면 확인된 요구 키 */
@@ -285,17 +285,18 @@ export function planSection({ repoRoot, work }: RenderInput, out: string[]): voi
 
 }
 
-/** fix 구현 — 재현 먼저 */
+/**
+ * fix 구현 — 재현 먼저. `context --file` 은 서브에이전트(implementer·tester)가 읽는다 — 메인 절차(`repro` 실행·`repro-log` 동의)는 싣지 않고
+ * 서브에이전트가 지킬 제약만 둔다(메인 절차의 원천은 ca-implement 3항·ca-fix)
+ */
 export function fixImplementSection({ work }: RenderInput, out: string[]): void {
   const { active } = work;
   out.push(
     "",
     "## fix — 재현 먼저",
-    `1. kind:"test" 단계의 계획 파일에 ⑦ ${workDocPath(active.id, "07-test-spec")} 의 \`## 재현\` 이 가리키는 TC 를 씁니다.`,
-    `2. ${shellLabel()} \`code-agent repro\` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 \`{"action":"repro-log"}\` 동의로 로그 근거 전환을 확인받습니다.`,
-    "3. repro 를 지난 뒤에야 고칠 파일을 쓸 수 있습니다 (hook 이 그 전에는 거부합니다). 재현 테스트는 그때 얼어붙습니다.",
+    `- 테스트 단계에서 ⑦ ${workDocPath(active.id, "07-test-spec")} 의 \`## 재현\` 이 가리키는 TC 를 먼저 씁니다. 메인이 code-agent repro 로 그 TC 의 **실패**를 확인하기 전에는 고칠 파일 쓰기를 hook 이 거부합니다 — 거부되면 우회하지 말고 메인에게 보고합니다.`,
+    "- repro 를 지나면 재현 테스트(kind:\"test\" 단계 파일)는 얼어붙습니다. 이후에는 고치지 않습니다.",
   );
-
 }
 
 /** 구현 단계 — 현재 Task·만들 파일·단계 규칙·참조 표준 */
@@ -365,7 +366,8 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
     "",
     "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요." +
       " 결과가 하나도 인식되지 않고 실패도 없던 test 실행은 얼리지 않습니다. 일부만 인식됐으면 수집 수정 1회 동안 TC 이름을 고칠 수 있습니다.",
-    `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문을 기록하고 ${askVia()} 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.`,
+    // 읽는 쪽은 서브에이전트다 — 사람에게 묻는 것은 메인이 한다(질문 도구 이름을 싣지 않는다)
+    `계획 밖을 고쳐야 하면 고치지 말고 메인에게 보고합니다 — 메인이 ${questionsFile(active.id)} 에 질문으로 남기고, 사람의 답과 재계획·재승인 뒤에만 구현합니다.`,
   );
 
 }

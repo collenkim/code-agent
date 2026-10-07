@@ -93,3 +93,10 @@ pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은
 
 - 커밋 a: `commands.ts` `context()`(약 300줄)를 `contextRender.ts` 의 절 함수 12개(`analysisSection`·`questionsAndAssumptions`·`impactSection`·`designSection`·`planningSupport`·`planSection`·`fixImplementSection`·`implementSection`·`verificationSection`·`reviewSection`·`integrateSection`·`deliverSection`)와 `renderContext`(조건·순서), 후보 파일·참고 문서 절(`candidateLines`·`docSectionLines`)로 옮겼다. 본문은 글자 그대로 옮겼고(스크립트 `scratchpad/sandbox-stage6/split-context.cjs`), 바깥 조건으로 좁히던 타입은 같은 조건의 조기 반환으로 좁힌다. `PHASE_LABEL`·`codeStages` 는 `phaseInfo.ts` 로. `context()` 는 접수 분기·작업 읽기·요구 키(`requireRequirements` — 순환 import 를 피해 commands.ts 에 남김)만 한다(약 13줄). `commands.ts` 1,572줄 → 1,176줄.
 - 확인: `scratchpad/sandbox-stage6/context-golden.cjs` — 같은 준비(접수·analysis~deliver·feature/fix/refactor 의 implement·check·test·review, context --file)에서 32개 출력을 분리 전 dist 와 분리 후 dist 로 만들어 `diff -r` 이 비었다(56,311바이트, 커밋 시각 고정으로 두 번 돌려 같은지도 먼저 확인).
+- 커밋 b: 서브에이전트(implementer·tester·reviewer)가 읽는 `context --file` 본문에서 메인 절차 문장 2곳을 제약 문장으로 바꿨다 — fix 구현 절(`repro` 실행과 `repro-log` 동의 → "메인이 code-agent repro 로 실패를 확인하기 전에는 hook 이 고칠 파일 쓰기를 거부한다 — 거부되면 우회하지 말고 메인에게 보고", 재현 테스트는 repro 뒤 얼어붙는다), 검증·리뷰 스테이지의 계획 밖 문장(질문 도구로 처리 방향을 받으라 → "고치지 말고 메인에게 보고, 메인이 질문으로 남기고 사람의 답과 재계획·재승인 뒤에만 구현"). 메인 절차의 원천은 ca-implement 3항·ca-fix 다. 골든 비교에서 달라진 것은 이 두 절뿐이다(32개 중 15개 파일, 다른 줄 0). 시험 `p6`(재현 절 — 두 호스트 같은 글자, 셸 표기·repro-log 없음)·`hostNotation`(계획 밖 문장 — 질문 도구 이름 없음)을 새 문장으로.
+
+## OPT-4 — 템플릿 크기 예산
+
+- `src/test/templateBudget.test.ts`(새, 2) — `template/` 의 모든 `.md` 39개에 파일별 예산(LF 글자 수, 지금 크기×1.03 을 100 단위로 올림), 흐름 합계 예산(Claude: CLAUDE.block + 흐름 스킬 12 = 50,638자 → 51,700, Codex: CODEX.block + 변환된 흐름 스킬 12 = 48,442자 → 49,500). 예산이 없는 템플릿·없어진 템플릿의 예산도 실패. 넘기면 보조 문서로 옮기거나 근거를 doc/reviews 에 남기고 예산을 올린다(실패 문구가 안내). `AGENTS.md` 에 같은 줄.
+- `scripts/template-sizes.cjs`(새) — 파일별 크기·두 흐름 합계, `--suggest` 는 예산 리터럴, `--ref <커밋>` 은 그 커밋의 템플릿(파일을 쓰지 않는다).
+- 확인: ca-answer/SKILL.md 에 `예산 − 현재 + 1`자(8401자 > 8400자)를 덧붙이면 파일 예산으로, 흐름 파일 여럿에 파일별 여유 안에서 합계 여유 + 1자(1,063자)를 나눠 덧붙이면 Claude 흐름 합계(51,701자 > 51,700자)로 실패하고, 되돌리면 통과한다(`scratchpad/sandbox-stage6/flow-overrun.cjs`).

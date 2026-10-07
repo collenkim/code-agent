@@ -32,6 +32,7 @@
   - hook 하위 명령은 `cli.ts` `HOOKS`가 지연 로드하고 모듈 로드 실패는 `retryPolicy.ts` `hookFailureExit` 표로 끝낸다 — 새 하위 명령은 두 곳에 함께 더한다. hook 경로 모듈(`hook.ts`·`codexHook.ts`·`stopHook.ts`·`sessionHook.ts`와 그것들이 import 하는 모듈)에서 명령 모듈(`consent`·`commands`·`deliver`·`validate`·`init` 등)을 정적으로 import 하지 않는다 — 필요하면 쓰는 분기 안에서 `require`한다(`hookLoad.test.ts`가 그래프·실행 경로·로드 실패 표를 본다).
   - Codex exec 배너 라벨·전사 라벨(`CODEX_TURN`)·오류 줄 꼴이 바뀌면 `retryPolicy.ts` `crossFailureText`를 고친다. 교차 자식에서 여는 `code-agent` 명령을 바꾸면 `hook.ts` `CROSS_CHILD_READONLY`와 흐름도 §5.3 0단계를 함께 고친다. 교차 실행 인자의 doctor 점검 목록은 `crossCheck.ts` `crossFlags`가 인자에서 만들므로 따로 맞출 것이 없다.
 - `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 문장째 치환(`hosts.ts` `CODEX_SENTENCES`)의 원문이 여전히 템플릿과 글자 그대로 같은지 확인한다 — 다르면 오류 없이 치환되지 않는다(`templateText.test.ts`가 원문이 Claude 템플릿에 있고 Codex 사본에 남지 않는지 본다). 17개 스킬의 질문·동의 공통 문단도 같은 글자여야 한다(같은 테스트). 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
+- 템플릿 문장을 늘려 `src/test/templateBudget.test.ts` 예산을 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`).
 - 현행 문서(`README.md`, `doc/*.md`)에는 현재 동작만 쓴다. 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
 - 사용자에게 보이는 문서는 한국어로, 기존 문체를 따른다.
 

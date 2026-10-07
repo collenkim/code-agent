@@ -318,12 +318,13 @@ describe("P6 · fix — 재현 먼저", () => {
     write(SRC, "function total(items) {\n  // fixed\n  return items.reduce((a, b) => a + b, 0);\n}\nmodule.exports = { total };\n");
   }
 
-  test("context 의 재현 절차 줄 — Claude 표기는 호스트 표기 배선 전 문자열과 바이트가 같다(Codex 는 셸:)", () => {
+  test("context 의 재현 절 — 서브에이전트 제약만 싣는다(메인 절차인 repro 실행·repro-log 동의는 스킬이 원천), 두 호스트가 같다", () => {
     toImplement();
-    const reproLine = (text: string) => text.split("\n").find((line) => line.startsWith("2. ") && line.includes("code-agent repro"));
-    const tail = " `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 `{\"action\":\"repro-log\"}` 동의로 로그 근거 전환을 확인받습니다.";
-    assert.equal(withNotation("claude", () => reproLine(context(repo))), `2. Bash:${tail}`);
-    assert.equal(withNotation("codex", () => reproLine(context(repo))), `2. 셸:${tail}`);
+    const section = (text: string) => text.slice(text.indexOf("## fix — 재현 먼저")).split("\n").slice(0, 3).join("\n");
+    const claude = withNotation("claude", () => section(context(repo)));
+    assert.match(claude, /^## fix — 재현 먼저\n- 테스트 단계에서 ⑦ [^\n]*의 `## 재현` 이 가리키는 TC 를 먼저 씁니다\. 메인이 code-agent repro 로 그 TC 의 \*\*실패\*\*를 확인하기 전에는 고칠 파일 쓰기를 hook 이 거부합니다 — 거부되면 우회하지 말고 메인에게 보고합니다\.\n- repro 를 지나면 재현 테스트/);
+    assert.equal(withNotation("codex", () => section(context(repo))), claude);
+    assert.doesNotMatch(claude, /Bash:|셸:|repro-log/);
   });
 
   test("H3: 도메인 단계의 fix를 제출하고 실제 실패 재현→수정→검증→통합→반영까지 완료한다", async () => {
