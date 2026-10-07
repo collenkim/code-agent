@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { userInfo } from "os";
 
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
-import type { Decision } from "../core/approval";
+import type { ApprovalState, Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
@@ -1379,6 +1379,23 @@ export function submitPlan(repoRoot: string, draft: string): string {
 
 // ---- approve / reject ----
 
+/**
+ * 재판정 화면의 "이전 판정 이후 바뀐 것" 절 — 승인 화면(decide)이 현재 계획·경계·답 출처 절 뒤에 붙인다.
+ * 경계 스냅샷·문서별 해시가 없는 이전 승인 기록은 차이 대신 그 사실을 적는다. 바뀐 것이 없으면 빈 배열이다.
+ */
+export function approvalChangeLines(state: ApprovalState): string[] {
+  if (state.status === "stale-plan" && state.diff.length > 0) return ["", "이전 판정 이후 바뀐 곳:", formatDiff(state.diff)];
+  if (state.status === "stale-manifest") {
+    return ["", "이전 판정 이후 바뀐 경계·검증 선언:", state.diff.length
+      ? state.diff.map((entry) => `  ${entry.change} ${entry.text}`).join("\n")
+      : "  이전 승인 기록에 경계 스냅샷이 없어 차이를 보일 수 없습니다 — 위 현재 선언 전체를 확인하세요."];
+  }
+  if (state.status === "stale-docs") {
+    return ["", `이전 판정 이후 바뀐 근거 문서: ${state.changed.join(" · ") || "이전 승인 기록에 문서별 해시가 없어 무엇이 바뀌었는지 보일 수 없습니다"}`];
+  }
+  return [];
+}
+
 export function decide(repoRoot: string, decision: Decision, comment?: string): string {
   const work = requireWork(repoRoot);
   const { active, order, manifest, plan } = work;
@@ -1414,17 +1431,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   if (assumptions) shown.push("", assumptions);
   const sources = formatAnswerSources(repoRoot, active.id);
   if (sources) shown.push("", sources);
-  if (state.status === "stale-plan" && state.diff.length > 0) {
-    shown.push("", "이전 판정 이후 바뀐 곳:", formatDiff(state.diff));
-  }
-  if (state.status === "stale-manifest") {
-    shown.push("", "이전 판정 이후 바뀐 경계·검증 선언:", state.diff.length
-      ? state.diff.map((entry) => `  ${entry.change} ${entry.text}`).join("\n")
-      : "  이전 승인 기록에 경계 스냅샷이 없어 차이를 보일 수 없습니다 — 위 현재 선언 전체를 확인하세요.");
-  }
-  if (state.status === "stale-docs") {
-    shown.push("", `이전 판정 이후 바뀐 근거 문서: ${state.changed.join(" · ") || "이전 승인 기록에 문서별 해시가 없어 무엇이 바뀌었는지 보일 수 없습니다"}`);
-  }
+  shown.push(...approvalChangeLines(state));
   const presence = confirmOnTerminal(shown.join("\n"), decision === "approved" ? "approve" : "reject");
   recordDecision(repoRoot, {
     order,

@@ -1,6 +1,7 @@
 import { basename, isAbsolute, relative, resolve } from "path";
 
 import { existsSync, realpathSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import { fileURLToPath } from "url";
 
@@ -23,7 +24,7 @@ import { TIMING, writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
@@ -158,6 +159,16 @@ function normalized(path: string): string {
   return resolve(plain).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+/**
+ * 맨 앞의 `~`(뒤가 끝이거나 구분자)를 홈 폴더로 푼다. Claude Code 의 Read·Write·Grep·Glob 은 경로의 `~` 를 홈으로 풀어 실행하는데,
+ * 호스트가 PreToolUse 입력을 정규화하는 것은 일부 필드뿐이라(Grep·Glob 의 path 는 원문) hook 이 스스로 푼다 — 그러지 않으면
+ * `~/.code-agent` 가 작업 경로 아래 `~` 폴더로 해석돼 키 자리·상태 판정을 비켜 간다. MCP 파일 서버도 `~` 를 홈으로 푼다.
+ * `~user` 꼴은 풀지 않는다.
+ */
+export function expandTilde(path: string, home: string = homedir()): string {
+  return /^~(?=$|[\\/])/.test(path) ? home + path.slice(1) : path;
+}
+
 /** 8.3 짧은 이름·링크·접합점은 실제 경로로 접는다. 없는 경로는 그대로 */
 function realOrSelf(path: string): string {
   try {
@@ -174,6 +185,7 @@ function insideStore(target: string): boolean {
   if (target.trim() === "") {
     return false;
   }
+  target = expandTilde(target);
   if (STORE_FILE_NAME.test(target)) {
     return true;
   }
@@ -189,6 +201,7 @@ const STORE_DENIED =
 /** 키 저장소의 상위 폴더인가 — 그 폴더를 통째로 검색하면 키 파일까지 읽힌다 */
 function ancestorOfStore(path: string): boolean {
   if (path.trim() === "") return false;
+  path = expandTilde(path);
   const roots = [storeDir(), realOrSelf(storeDir())].map(normalized);
   const bases = [path, realOrSelf(path)].map(normalized);
   return bases.some((base) => roots.some((root) => root.startsWith(`${base}/`)));
@@ -208,11 +221,11 @@ function staticPrefix(glob: string): string {
  * 검색(Grep·Glob)은 키 저장소의 상위 폴더 자체도 거부한다(그 아래를 통째로 훑는다). 모든 모드(작업·세션 밖·상태 읽기 실패)에 같다.
  */
 function readDenied(input: HookInput): string | undefined {
-  const raw = input.tool_input.path ?? input.tool_input.file_path ?? input.cwd ?? "";
+  const raw = expandTilde(input.tool_input.path ?? input.tool_input.file_path ?? input.cwd ?? "");
   const base = raw && !isAbsolute(foldWindowsAlias(raw)) && input.cwd ? resolve(input.cwd, raw) : raw;
   const roots = [base];
-  const pattern = typeof input.tool_input.pattern === "string" ? input.tool_input.pattern : undefined;
-  const glob = typeof input.tool_input.glob === "string" ? input.tool_input.glob : undefined;
+  const pattern = typeof input.tool_input.pattern === "string" ? expandTilde(input.tool_input.pattern) : undefined;
+  const glob = typeof input.tool_input.glob === "string" ? expandTilde(input.tool_input.glob) : undefined;
   if (input.tool_name === "Glob" && pattern) roots.push(resolve(base || ".", staticPrefix(pattern)));
   if (input.tool_name === "Grep" && glob) roots.push(resolve(base || ".", staticPrefix(glob)));
   const texts = [glob, input.tool_name === "Glob" ? pattern : undefined].filter((text): text is string => !!text);
@@ -270,7 +283,8 @@ function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: 
   for (const raw of values) {
     const value = raw.trim();
     if (!value) continue;
-    let path = value;
+    // 로컬 파일 서버(예: server-filesystem)는 `~` 를 홈으로 푼다
+    let path = expandTilde(value);
     if (/^file:\/\//i.test(value)) {
       try { path = fileURLToPath(value); } catch { continue; }
     } else if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:([\\/]|$)/i.test(value)) continue;
@@ -300,10 +314,19 @@ function consentWriteGuard(repoRoot: string): string | undefined {
   return held ? `확인·적용이 진행 중입니다(pid ${held.pid}) — 끝난 뒤 다시 쓰세요. 그 사이의 쓰기는 확인한 대상과 실제 반영을 갈라 놓습니다.` : undefined;
 }
 
-/** 세션 밖 셸이 호스트 hook 설정을 가리키는가 — settings.local.json 에는 disableAllHooks 를 둘 수 있다 */
-const HOST_CONFIG = /(^|[^A-Za-z0-9_.-])\.(?:claude[\\/]+settings(?:\.local)?\.json|codex[\\/]+(?:hooks\.json|config\.toml))/i;
+/**
+ * 세션 밖 셸이 호스트 hook 설정을 가리키는가 — settings.local.json 에는 disableAllHooks 를 둘 수 있다.
+ * Windows 는 이름 끝의 점·공백을 버리고(`.claude./settings.json`) 8.3 짧은 이름(`CLAUDE~1\SETTIN~1.JSO`)도 같은 파일이며 `./` 는 같은 폴더다 —
+ * 글자 그대로 쓴 이 별칭들도 본다. 와일드카드·변수로 조립한 이름은 잡지 못한다(가리키는 것만 막는다).
+ */
+const HOST_CONFIG = /(?:(?:^|[^A-Za-z0-9_.-])\.claude[. ]*|(?:^|[^A-Za-z0-9_.~-])claude~\d)[\\/]+(?:\.[\\/]+)*(?:settings(?:\.local)?\.json|settin~\d\.jso)|(?:(?:^|[^A-Za-z0-9_.-])\.codex[. ]*|(?:^|[^A-Za-z0-9_.~-])codex~\d)[\\/]+(?:\.[\\/]+)*(?:hooks\.json|config\.toml|hooks~\d\.jso|config~\d\.tom)/i;
 const HOST_CONFIG_BASH_DENIED = "호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 Read 도구로 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.";
-const SOURCE_UPDATE_DENIED = "code-agent 소스 업데이트(fetch · pull · npm ci · build)는 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 터미널에서 직접 실행합니다. 번들 템플릿만 다시 적용하려면 code-agent update --templates-only 를 씁니다.";
+/**
+ * 소스 update 명령 — `code-agent update` 를 어떻게 부르든(공백 여러 칸, `npx`, 경로·`.cmd`, `node <dist>/cli.js update`) 본다.
+ * 진짜 관문은 CLI 쪽(updateFromSourceConfirmed — 호스트 셸 거부·TTY 확인)이고, 이 판정은 그 앞의 안내다.
+ */
+const SOURCE_UPDATE = /(?:^|[\s&;|("'\\/])code-agent(?:\.cmd|\.ps1)?["']?\s+update(?=\s|$)|\bcli\.js["']?\s+update(?=\s|$)/i;
+const SOURCE_UPDATE_DENIED = "code-agent 소스 업데이트(fetch · pull · npm ci · build)는 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 호스트 밖의 터미널에서 직접 실행합니다(미리보기 뒤 update 입력). 번들 템플릿만 다시 적용하려면 code-agent update --templates-only 를 씁니다.";
 
 /**
  * 교차 실행이 띄운 다른 호스트 안(CODE_AGENT_CROSS)에서 여는 code-agent 명령 — 읽기 전용 검토에 필요한 것만(파일 읽기·상태·조사).
@@ -448,7 +471,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     if (mentionsState(command)) return STATE_BASH_DENIED;
     if (HOST_CONFIG.test(command)) return HOST_CONFIG_BASH_DENIED;
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
-    if (/^code-agent update(?:\s|$)/.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
+    if (SOURCE_UPDATE.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
     return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {
@@ -470,9 +493,12 @@ const STATE_BASH_DENIED =
   "`.code-agent/` 는 code-agent 명령으로만 바뀝니다 — 작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다. " +
   "상태는 code-agent status 로 봅니다.";
 
-/** `.code-agent` 를 경로로 가리키는가 — 명령 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다 */
+/**
+ * `.code-agent` 를 경로로 가리키는가 — 명령 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다. Windows 의 글자 그대로의 별칭
+ * (대소문자, 이름 끝의 점·공백 `.code-agent./`, 8.3 짧은 이름 `CODE-A~1`)도 같은 폴더로 본다.
+ */
 function mentionsState(command: string): boolean {
-  return /(^|[^A-Za-z0-9_.-])\.code-agent([\\/\s"'`]|$)/.test(command);
+  return /(?:^|[^A-Za-z0-9_.-])\.code-agent[. ]*(?:[\\/\s"'`]|$)|(?:^|[^A-Za-z0-9_.~-])code-a~\d(?:[\\/\s"'`]|$)/i.test(command);
 }
 
 /**
@@ -515,9 +541,11 @@ function decideRequestWrite(session: RequestSession, path: string): string | und
 }
 
 function repoPath(repoRoot: string, target: string): string {
-  // 로컬 관리 공유·장치 경로는 드라이브 경로로 접어 판정한다(win32) — 같은 파일을 다른 이름으로 가리켜 저장소 밖으로 보이지 않게
-  const folded = foldWindowsAlias(target);
-  const absolute = isAbsolute(folded) ? folded : resolve(repoRoot, folded);
+  // 로컬 관리 공유·장치 경로는 드라이브 경로로 접어 판정한다(win32) — 같은 파일을 다른 이름으로 가리켜 저장소 밖으로 보이지 않게.
+  // `~` 는 홈으로 푼다(도구가 그렇게 실행한다)
+  const folded = foldWindowsAlias(expandTilde(target));
+  // 이름으로 접지 못한 UNC(FQDN·다른 주소·사용자 공유)는 공유 쪽 조상의 (dev, ino)로 저장소 안인지 본다
+  const absolute = shareInside(repoRoot, folded) ?? (isAbsolute(folded) ? folded : resolve(repoRoot, folded));
   return relative(repoRoot, canonical(absolute)).replace(/\\/g, "/");
 }
 

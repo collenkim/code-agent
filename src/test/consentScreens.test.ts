@@ -16,7 +16,7 @@ import { loadPlanning } from "../agent/planningState";
 import { manifestCheck } from "../agent/survey";
 import { approvalDocsHash, approvalDocsState, approvalOf, loadWork } from "../agent/work";
 import { workDocsHash } from "../agent/workDocs";
-import { start } from "../agent/commands";
+import { approvalChangeLines, start } from "../agent/commands";
 import {
   CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, consentEvent, gitFixture, prepareConsentFixture, prepareDeliveryFixture, preparePlanFixture,
   setupConsentProject, submitConsentRequest, writeFixture,
@@ -135,6 +135,11 @@ test("T-4-3·T-4-4·T-4-5 승인이 경계 스냅샷과 문서별 해시를 남�
   const docs = approvalOf(loadWork(root)!);
   assert.equal(docs.status, "stale-docs");
   assert.deepEqual(docs.status === "stale-docs" ? docs.changed : [], [design]);
+  // 재승인 화면(decide)의 바뀐 것 절 — 문서별 해시가 있으면 경로를, 없는 이전 기록이면 그 사실을 보인다
+  assert.deepEqual(approvalChangeLines(docs), ["", `이전 판정 이후 바뀐 근거 문서: ${design}`]);
+  if (docs.status === "stale-docs") {
+    assert.deepEqual(approvalChangeLines({ ...docs, changed: [] }), ["", "이전 판정 이후 바뀐 근거 문서: 이전 승인 기록에 문서별 해시가 없어 무엇이 바뀌었는지 보일 수 없습니다"]);
+  }
   writeFileSync(join(root, design), original);
   const value = manifest();
   value.commands = { lint: ["npm", "run", "lint"] };
@@ -144,10 +149,16 @@ test("T-4-3·T-4-4·T-4-5 승인이 경계 스냅샷과 문서별 해시를 남�
   assert.equal(stale.status, "stale-manifest");
   const lines = stale.status === "stale-manifest" ? stale.diff.map((entry) => `${entry.change} ${entry.text}`) : [];
   assert.ok(lines.some((line) => line.startsWith("+ commands.lint")) && lines.some((line) => line.startsWith("~ 단계 test")), lines.join("\n"));
+  const screen = approvalChangeLines(stale);
+  assert.equal(screen[1], "이전 판정 이후 바뀐 경계·검증 선언:");
+  assert.match(screen[2], /^ {2}\+ commands\.lint/m);
+  assert.match(screen[2], /^ {2}~ 단계 test/m);
   // 경계 스냅샷이 없는 이전 기록은 차이를 보이지 않는다(현재 선언 전체를 보인다)
   rmSync(join(root, `.code-agent/approvals/${CONSENT_WORK_ID}/value-1.manifest.json`));
   const legacy = approvalOf(loadWork(root)!);
   assert.deepEqual(legacy.status === "stale-manifest" ? legacy.diff : ["?"], []);
+  assert.deepEqual(approvalChangeLines(legacy), ["", "이전 판정 이후 바뀐 경계·검증 선언:", "  이전 승인 기록에 경계 스냅샷이 없어 차이를 보일 수 없습니다 — 위 현재 선언 전체를 확인하세요."]);
+  assert.deepEqual(approvalChangeLines({ status: "none" }), []);
 });
 
 // ---- CON-14·CON-15 스냅샷 ----

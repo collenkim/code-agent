@@ -1,5 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "fs";
-import { hostname } from "os";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "fs";
+import { hostname, networkInterfaces } from "os";
 import { basename, dirname, join, posix } from "path";
 
 import { writeAtomic } from "../core/atomic";
@@ -119,9 +119,24 @@ export function canonical(path: string): string {
   return join(realpathSync.native(head), ...rest);
 }
 
-/** 로컬 관리 공유로 보는 호스트 이름 */
-function localHosts(): string[] {
-  return ["localhost", "127.0.0.1", "::1", "[::1]", hostname().toLowerCase()];
+/** IPv6 주소의 비교용 꼴 — 영역(`%n`)을 떼고 URL 정규화로 줄인다(`0::1` → `::1`). IPv6 가 아니면 소문자 그대로 */
+function ipv6Key(address: string): string {
+  const bare = address.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+  if (!bare.includes(":")) return address.toLowerCase();
+  try { return new URL(`http://[${bare}]/`).hostname.slice(1, -1).toLowerCase(); } catch { return bare.toLowerCase(); }
+}
+/** UNC 용 IPv6 리터럴 이름(`0--1.ipv6-literal.net` — `-`는 `:`, `s`는 영역 구분 `%`)의 주소. 그 꼴이 아니면 undefined */
+function ipv6Literal(host: string): string | undefined {
+  const match = /^([0-9a-f-]+(?:s[0-9a-z]+)?)\.ipv6-literal\.net$/i.exec(host);
+  return match ? match[1].replace(/-/g, ":").replace(/s/i, "%") : undefined;
+}
+/** 로컬 관리 공유로 보는 호스트 — 이름(localhost·이 PC 이름)과 이 PC 의 네트워크 주소(IPv4·IPv6, IPv6 리터럴 이름 포함) */
+function localHost(host: string): boolean {
+  const name = host.toLowerCase();
+  if (["localhost", hostname().toLowerCase()].includes(name)) return true;
+  const address = ipv6Key(ipv6Literal(name) ?? name);
+  const known = ["127.0.0.1", "::1", ...Object.values(networkInterfaces()).flatMap((list) => (list ?? []).map((entry) => entry.address))];
+  return known.some((entry) => ipv6Key(entry) === address);
 }
 /**
  * win32 전용 — 로컬 관리 공유·장치 경로를 드라이브 경로로 접는다(그 밖은 그대로). 같은 파일을 다른 이름으로 가리켜 경로 대조를
@@ -135,8 +150,31 @@ export function foldWindowsAlias(path: string, platform: string = process.platfo
   const unc = /^[\\/]{2}\?[\\/]UNC[\\/]([\s\S]*)$/i.exec(folded);
   if (unc) folded = `\\\\${unc[1]}`;
   const share = /^[\\/]{2}([^\\/]+)[\\/]([A-Za-z])\$([\\/][\s\S]*)?$/.exec(folded);
-  if (share && localHosts().includes(share[1].toLowerCase())) return `${share[2].toUpperCase()}:${share[3] ?? "\\"}`;
+  if (share && localHost(share[1])) return `${share[2].toUpperCase()}:${share[3] ?? "\\"}`;
   return folded;
+}
+
+/**
+ * win32 전용 — 접히지 않은 UNC 경로(`\\<이름>\<공유>\…`, 이름 목록에 없는 FQDN·별칭·사용자 공유)가 저장소 안을 가리키는가.
+ * 공유 루트에 닿을 수 있으면 가장 가까운 기존 조상부터 위로 (dev, ino)를 저장소 루트와 견주어, 같으면 그 아래 경로를 저장소 기준으로 돌려준다.
+ * 닿지 못하거나 저장소 밖이면 undefined. 쓰기 판정만 부른다(UNC 경로일 때만 파일 시스템을 본다).
+ */
+export function shareInside(root: string, path: string, platform: string = process.platform): string | undefined {
+  if (platform !== "win32") return undefined;
+  const unc = /^[\\/]{2}([^\\/?.][^\\/]*)[\\/]([^\\/]+)([\\/][\s\S]*)?$/.exec(path);
+  if (!unc) return undefined;
+  const shareRoot = `\\\\${unc[1]}\\${unc[2]}\\`;
+  try {
+    const want = statSync(root, { bigint: true });
+    statSync(shareRoot);   // 닿지 않는 이름은 여기서 한 번만 기다린다
+    const parts = (unc[3] ?? "").split(/[\\/]/).filter(Boolean);
+    for (let depth = parts.length; depth >= 0; depth--) {
+      let stat;
+      try { stat = statSync(shareRoot + parts.slice(0, depth).join("\\"), { bigint: true }); } catch { continue; }
+      if (stat.dev === want.dev && stat.ino === want.ino) return join(root, ...parts.slice(depth));
+    }
+  } catch { /* 닿지 않는 공유 — 저장소 밖으로 본다 */ }
+  return undefined;
 }
 
 /**

@@ -150,10 +150,14 @@ function candidates(question: Question): string[] {
   if (letter && question.options?.[letter]) values.push(normalizeAnswer(question.options[letter]));
   return values.filter(Boolean);
 }
+/**
+ * 관찰된 응답이 이 질문의 답인가 — 같은 Q 번호의 응답만 본다. Q 번호 없는 질문 호출(예: "다음으로 넘어갈까요?" → "예")의 응답은
+ * 어느 질문에도 맞추지 않는다 — 맞추면 같은 답(예·A)을 가진 다른 질문이 사람이 받은 적 없이 '관찰됨'이 된다(ca-answer 1-5: 질문은 Q 번호로 시작한다).
+ */
 function observedMatch(question: Question, rows: AnswerRow[]): boolean {
   const wanted = candidates(question);
   return rows.some((row) => row.type === "answer" && row.items.some((item) =>
-    (item.q === undefined || item.q === question.id) && wanted.includes(normalizeAnswer(item.answer))));
+    item.q === question.id && wanted.includes(normalizeAnswer(item.answer))));
 }
 
 /**

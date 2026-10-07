@@ -36,7 +36,8 @@ export function patchPaths(command: string): string[] {
 
 /**
  * 실제 UserPromptSubmit만 동의 응답으로 받는다. 모델이 실행할 수 있는 CLI 명령이 아니다.
- * 새 기록(format 2)은 응답 끝에 확인 코드(codexReply 마지막 질문 끝의 6자)를 요구한다 — 사용자가 요약과 질문을 끝까지 본 것을 묶는다.
+ * 새 기록(format 2)은 응답 끝에 확인 코드(codexReply 마지막 질문 끝의 6자)를 요구한다 — 요약이 잘려 코드 줄이 빠지는 실수를 막는다.
+ * 코드는 모델도 보는 값이라 사람 입력을 증명하지 않는다(같은 세션의 `codex exec resume` 프롬프트도 사용자 메시지로 보인다).
  * 이전 형식 기록은 코드 없이도 받는다(붙어 있으면 무시한다). 동의 응답이 아닌 사용자 메시지에는 아무것도 쓰지 않는다.
  */
 export function observeCodexConsent(input: CodexHookInput, root: string): void {

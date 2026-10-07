@@ -78,8 +78,26 @@ test("끝맺지 못한 applying 은 '응답 없음' 이 아니라 중단으로 �
   const file = join(root, ".code-agent/consents", `${fixture.id}.json`);
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), status: "applying" }));
   assert.throws(() => applyConsent(root, fixture.id), /이전 적용이 끝나지 않은 채 중단됐습니다/);
-  assert.equal(loadConsent(root, fixture.id).status, "failed");
+  const record = loadConsent(root, fixture.id);
+  assert.equal(record.status, "failed");
+  assert.equal(record.failure?.class, "consent-apply-failed");
+  assert.equal(record.failure?.kind, "apply");
+  assert.equal(record.failure?.detail, "이전 적용이 끝나지 않은 채 중단");
   assertNoDocs();
+});
+
+test("적용 중 도메인 함수가 실패하면 적용 실패(kind apply)로 남고 첫 줄을 사유로 적는다 — 같은 동의로 다시 적용하지 않는다", () => {
+  // 진행 중인 작업도 접수도 없는 저장소의 abort — 준비(status 화면)는 되고 적용 때 abort 가 Stop 을 던진다
+  const fixture = prepareConsentFixture(root, { action: "abort" });
+  observeConsentFixture(fixture);
+  assert.equal(loadConsent(root, fixture.id).status, "approved");
+  assert.throws(() => applyConsent(root, fixture.id), /진행 중인 작업도 접수 중인 요구사항도 없습니다/);
+  const record = loadConsent(root, fixture.id);
+  assert.equal(record.status, "failed");
+  assert.equal(record.failure?.class, "consent-apply-failed");
+  assert.equal(record.failure?.kind, "apply");
+  assert.equal(record.failure?.detail, "진행 중인 작업도 접수 중인 요구사항도 없습니다.");
+  assert.throws(() => applyConsent(root, fixture.id), /명시적으로 확인한 응답이 없습니다/, "실패한 동의는 다시 적용하지 않는다");
 });
 
 /** Invalid runtime events may be ignored or rejected, but must never authorize an action. */
@@ -298,6 +316,12 @@ for (const phase of ["before asking", "while answering", "before applying"] as c
     else if (phase === "while answering") assertNotAuthorized(fixture, consentEvent(fixture, "PostToolUse", { tool_response: nativeResponse(fixture) }));
     else { assert.throws(() => applyConsent(root, fixture.id)); assertNoDocs(); }
     assert.equal(hasBaseline(root), false);
+    // 세 시점 모두 그 동의를 대상 변경으로 폐기한다(응답 관찰 Pre·Post, 적용)
+    const record = loadConsent(root, fixture.id);
+    assert.equal(record.status, "failed");
+    assert.equal(record.failure?.class, "consent-target-changed");
+    assert.equal(record.failure?.kind, "target");
+    assert.match(record.failure?.detail ?? "", /^확인 대상 변경: 파일 "doc\/architecture\.md"/);
   });
 }
 
@@ -510,6 +534,8 @@ test("plan: a changed supporting document cannot receive the prepared approval",
   writeFixture(root, doc, readFileSync(join(root, doc), "utf8") + "\nDifferent design.\n");
   assert.throws(() => applyConsent(root, fixture.id));
   assert.equal(readLedger(root, CONSENT_WORK_ID).length, 0);
+  assert.equal(loadConsent(root, fixture.id).status, "failed");
+  assert.equal(loadConsent(root, fixture.id).failure?.kind, "target");
 });
 
 test("deliver: commits approved docs and validated work once, preserving unrelated staged evidence", async () => {

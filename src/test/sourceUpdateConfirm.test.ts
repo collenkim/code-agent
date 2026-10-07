@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
-import { updateFromSourceConfirmed } from "../agent/sourceUpdate";
+import { CODEX_MARKERS } from "../agent/crossEnv";
+import { HOST_SHELL_UPDATE, updateFromSourceConfirmed } from "../agent/sourceUpdate";
 
 // LRN-5 — 직접 CLI 소스 업데이트는 미리보기를 보여 주고 터미널 확인을 받은 뒤에만 fetch 한다.
 // 이 저장소를 소스로 쓰지 않도록 임시 upstream·설치본을 만든다(sourceUpdate.test.ts 와 같은 꼴, npm 은 부르지 않는다).
@@ -41,7 +42,27 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 test("T-L5-2 비TTY 의 직접 소스 업데이트는 확인 단계에서 멈추고 fetch 하지 않는다", { skip: !!process.stdin.isTTY }, () => {
   let npm = 0;
-  assert.throws(() => updateFromSourceConfirmed(target, { sourceRoot: source, runNpm: () => { npm++; } }), /터미널에서 받습니다/);
+  // 사람의 터미널(호스트 표지 없음)에서 부른 것으로 둔다 — 이 시험을 호스트 안에서 돌려도 확인 단계까지 간다
+  const saved = Object.fromEntries(["CLAUDECODE", ...CODEX_MARKERS].map((key) => [key, process.env[key]]));
+  for (const key of Object.keys(saved)) delete process.env[key];
+  try {
+    assert.throws(() => updateFromSourceConfirmed(target, { sourceRoot: source, runNpm: () => { npm++; } }), /터미널에서 받습니다/);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value;
+  }
   assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false, "git fetch 가 돌지 않았다");
+  assert.equal(npm, 0);
+});
+
+test("검토 #14 호스트 셸(표지 있음)의 직접 소스 업데이트는 TTY 여부와 관계없이 거부하고 fetch 하지 않는다", () => {
+  const saved = process.env.CLAUDECODE;
+  process.env.CLAUDECODE = "1";
+  let npm = 0;
+  try {
+    assert.throws(() => updateFromSourceConfirmed(target, { sourceRoot: source, runNpm: () => { npm++; } }), (error: Error) => error.message === HOST_SHELL_UPDATE);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDECODE; else process.env.CLAUDECODE = saved;
+  }
+  assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false);
   assert.equal(npm, 0);
 });

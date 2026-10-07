@@ -158,3 +158,18 @@ test("T-6-11 동의를 준비한 뒤의 업무 질문은 기록에 남아 그 �
   assert.equal(loadConsent(root, consent.id).failure?.kind, "target");
   assert.match(loadConsent(root, consent.id).failure!.detail, /answers\.jsonl/);
 });
+
+test("검토 #11 Q 번호 없는 질문 호출의 응답은 어느 질문에도 맞추지 않는다 — 같은 답(예·A)을 가진 다른 질문이 관찰됨이 되지 않는다", () => {
+  startWork();
+  writeQuestions("## Q4 · 범위\n이 범위로 진행할까요?\n[Answer]: 예\n\n## Q5 · 결제\n어느 결제?\nA. 토스\nB. 카드\n[Answer]: A\n");
+  ask("다음으로 넘어갈까요?", ["예", "아니오"], "예");
+  ask("어느 쪽?", ["A", "B"], "A");
+  const rows = readAnswerRows(root, CONSENT_WORK_ID).filter((row) => row.type === "answer");
+  assert.equal(rows.length, 2, "응답은 기록한다");
+  assert.equal(sources().get("Q4"), "unverified");
+  assert.equal(sources().get("Q5"), "unverified");
+  assert.deepEqual(openQuestions(root, QUESTIONS).unverified.map((question) => question.id), ["Q4", "Q5"]);
+  ask("Q4. 이 범위로 진행할까요?", ["예", "아니오"], "예");
+  assert.equal(sources().get("Q4"), "observed", "같은 Q 번호의 응답은 관찰됨");
+  assert.equal(sources().get("Q5"), "unverified");
+});

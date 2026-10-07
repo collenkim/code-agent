@@ -58,7 +58,7 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
   code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음)
-  code-agent update [--cli <path>]    Git 소스 설치: upstream 갱신·의존성·빌드·프로젝트 적용·점검
+  code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 갱신·의존성·빌드·프로젝트 적용·점검 (호스트 밖 TTY 에서만)
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
   code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
@@ -82,6 +82,8 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
   code-agent consent apply <ID>            현재 세션에서 확인된 내용만 실행하고 계속 진행
   code-agent consent finish <ID>           응답 뒤 한 번에 — 승인이면 적용하고, 아니면 status와 같은 내용
+                                      prepare·apply·finish 는 hook 이 있는 그 세션의 셸에서 이 꼴 그대로만 실행된다
+                                      (hook 이 본 명령의 티켓이 필요하다 — apply·finish 는 호스트 밖 사람의 TTY 에서도 된다)
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
   code-agent docs recommend           기존 구성 유지 또는 신규 시작 구성 추천
   code-agent docs setup <node|python>  선택한 신규 구성의 설정·공통 문서 생성 (기존 파일 보존)

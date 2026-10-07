@@ -40,5 +40,107 @@
     "CODEX_MARKERS 실제 셸 표지·PTY 여부",
     "Codex commandWindows 실행 셸",
     "Claude Code PowerShell 대체 버전"
-  ]
+  ],
+  "independentReview": {
+    "base": "248e704",
+    "findings": 16,
+    "applied": 14,
+    "partial": [
+      "#8 안 b(문서) — 응답 구간을 창과 맞추지 않음",
+      "#16 Codex session_id — 스키마로 존재만 확인, 실측은 인계"
+    ],
+    "npmTest": {
+      "tests": 1134,
+      "pass": 1130,
+      "fail": 0,
+      "skipped": 4,
+      "durationMs": 165512,
+      "platform": "win32",
+      "note": "구현 커밋 1123개 + 11 (consent 1·consentBinding 2·hookPaths 6·answers 1·sourceUpdateConfirm 1)"
+    },
+    "mutations": {
+      "count": 15,
+      "allFailed": true,
+      "script": "scratchpad/c5/mutate.cjs (+ 스냅샷 폐기 kind 수동 변이)"
+    },
+    "hookModuleGraph": {
+      "base77407a9": {
+        "modules": 53,
+        "medianMs": 71.1
+      },
+      "implementation248e704": {
+        "modules": 66
+      },
+      "afterReview": {
+        "modules": 59,
+        "medianMs": 70.4
+      },
+      "addedSinceBase": [
+        "agent/answers.js",
+        "agent/init.js",
+        "agent/consentReceipts.js",
+        "agent/consentState.js",
+        "agent/snapshotCache.js",
+        "agent/consentTicket.js"
+      ],
+      "note": "require('./hook') 7회 중앙값. judgment 모듈(retryGrant·reviewJudgment·crossCheck·verificationFlow·core/workflow)은 그래프에 없다"
+    },
+    "smbLoopback": {
+      "sameDevIno": [
+        "\\\\localhost\\C$",
+        "\\\\0--1.ipv6-literal.net\\C$",
+        "\\\\127.0.0.1\\C$",
+        "\\\\<hostname>\\C$"
+      ],
+      "unreachable": [
+        "\\\\127.0.0.2",
+        "\\\\127.1",
+        "\\\\2130706433",
+        "\\\\0x7f000001",
+        "\\\\localhost.",
+        "\\\\<hostname>.local"
+      ]
+    },
+    "shortNames83": {
+      ".claude": "CLAUDE~1",
+      ".code-agent": "CODE-A~1",
+      ".codex": "CODEX~1",
+      "settings.json": "SETTIN~1.JSO",
+      "settings.local.json": "SETTIN~2.JSO",
+      "hooks.json": "HOOKS~1.JSO",
+      "config.toml": "CONFIG~1.TOM"
+    },
+    "codexHookSchema": {
+      "codex": "0.160.1",
+      "login": "Not logged in (실제 이벤트 실측 불가)",
+      "preToolUseRequired": [
+        "cwd",
+        "hook_event_name",
+        "model",
+        "permission_mode",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_use_id",
+        "transcript_path",
+        "turn_id"
+      ],
+      "userPromptSubmitRequired": [
+        "cwd",
+        "hook_event_name",
+        "model",
+        "permission_mode",
+        "prompt",
+        "session_id",
+        "transcript_path",
+        "turn_id"
+      ],
+      "note": "codex.exe 에 든 pre-tool-use.command.input·user-prompt-submit.command.input JSON 스키마. 두 값이 같은지는 미확인"
+    },
+    "reviewerScripts": {
+      "hookpaths.cjs": "R1~R4b·R10·W4·B6·B7·B7b·M3 이 DENY 로 바뀜",
+      "shellalias.cjs": "requirement.md 끝 공백(세션 밖 셸 — 원래 판정 대상 아님) 외 모두 DENY",
+      "subdir.cjs": "finish hook ALLOW·적용 티켓 발급·CLI finish applied"
+    }
+  }
 }

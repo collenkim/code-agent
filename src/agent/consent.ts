@@ -21,8 +21,6 @@ import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "
 import { readStore } from "./plugins/store";
 import { decideRequest, loadRequestSession } from "./request";
 import { failure, TIMING, type FailureRecord } from "./retryPolicy";
-import { budgetReport, grantRetry } from "./retryGrant";
-import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "./reviewJudgment";
 import { KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS } from "./schemas";
 import { SnapshotCache } from "./snapshotCache";
 import { Stop } from "./stop";
@@ -346,6 +344,13 @@ function capture(run: () => string): Prompt[] {
   return prompts;
 }
 const JUDGMENT_KINDS = { "retry-grant": "재시도 한도 추가", "waive-finding": "지적 기각", "cross-stop": "교차 검증 중지 결정" } as const;
+/**
+ * judgment 소유 함수(retryGrant·reviewJudgment)는 그 동작의 준비·적용 때만 읽는다 — hook(PreToolUse)·consent-event 가
+ * 매 도구 호출마다 이 파일을 읽으므로, 정적으로 import 하면 교차·검증 흐름 모듈까지 hook 기동 비용에 든다(C5 §3.2.1, C7 OPT-15).
+ */
+function judgmentModules(): { grant: typeof import("./retryGrant"); review: typeof import("./reviewJudgment") } {
+  return { grant: require("./retryGrant") as typeof import("./retryGrant"), review: require("./reviewJudgment") as typeof import("./reviewJudgment") };
+}
 type JudgmentKind = keyof typeof JUDGMENT_KINDS;
 /** judgment 의 공통 검증 — kind·comment(500자)·id·name. 소유 함수(retryGrant·reviewJudgment)는 자기 도메인 전제만 본다 */
 function judgmentOf(action: Action): { kind: JudgmentKind; reason: string } {
@@ -407,9 +412,10 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       break;
     case "judgment": {
       const { kind, reason } = judgmentOf(action);
-      const report = kind === "retry-grant" ? budgetReport(root, action.name ?? "", action.id)
-        : kind === "waive-finding" ? previewWaiveFinding(root, action.id!)
-        : previewCrossStop(root, action.name as "review" | "planning");
+      const { grant, review } = judgmentModules();
+      const report = kind === "retry-grant" ? grant.budgetReport(root, action.name ?? "", action.id)
+        : kind === "waive-finding" ? review.previewWaiveFinding(root, action.id!)
+        : review.previewCrossStop(root, action.name as "review" | "planning");
       summary = [`종류: ${JUDGMENT_KINDS[kind]}`, `사유: ${reason}`, report].join("\n");
       break;
     }
@@ -439,7 +445,10 @@ function questions(record: ConsentRecord): Question[] {
   return [{ question: `${record.summary}${selected}\n이 내용으로 진행할까요?`, header: "진행 확인", multiSelect: false,
     options: [{label: ACCEPT,description: "표시한 내용과 선택한 범위에 한해 실행합니다."}, {label: CHANGE,description: "수정할 내용을 정리한 뒤 다시 확인합니다."}, {label: DEFER,description: "현재 상태를 유지하고 나중에 이어갑니다."}]}];
 }
-/** Codex 응답의 확인 코드(CON-5) — 지금 묻는 질문 묶음의 해시 앞 6자. 사용자가 요약과 질문 끝까지 본 것을 묶는다 */
+/**
+ * Codex 응답의 확인 코드(CON-5) — 지금 묻는 질문 묶음의 해시 앞 6자. prepare·status 출력에 실려 모델도 보는 값이다 — 요약을 줄이다
+ * 마지막 질문·코드 줄까지 빠지는 실수를 막을 뿐, 사람이 입력했다는 증명은 아니다(`codex exec resume` 한계와 같다).
+ */
 function replyCode(items: Question[]): string {
   return createHash("sha256").update(JSON.stringify(items)).digest("hex").slice(0, 6);
 }
@@ -694,9 +703,10 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
         case "judgment": {
           // 각 함수가 소유 기록의 잠금 안에서 전제(카운터 소진·지적 존재·교차 지점 막힘)를 다시 확인한다
           const { kind, reason } = judgmentOf(action);
-          if (kind === "retry-grant") return grantRetry(root, action.name ?? "", id, reason, action.id);
-          if (kind === "waive-finding") return waiveFinding(root, action.id!, id, reason);
-          return recordCrossStop(root, action.name as "review" | "planning", id, reason);
+          const { grant, review } = judgmentModules();
+          if (kind === "retry-grant") return grant.grantRetry(root, action.name ?? "", id, reason, action.id);
+          if (kind === "waive-finding") return review.waiveFinding(root, action.id!, id, reason);
+          return review.recordCrossStop(root, action.name as "review" | "planning", id, reason);
         }
       }
     });
@@ -716,7 +726,8 @@ export function consentCommandGuard(root:string,command:string,sessionId?:string
   const match=/^code-agent consent (?:apply|finish) ([a-f0-9-]+)$/.exec(command.trim());
   if(!match)return;
   try {
-    const record=loadConsent(root,match[1]);
+    // 하위 폴더에서 연 세션(projectDir 가 저장소 안 폴더)도 티켓·CLI 와 같은 저장소 루트의 기록을 읽는다
+    const record=loadConsent(findRepoRoot(root),match[1]);
     // 응답 전에는 준비 세션이 기준이다 — Codex 가 응답 전에 finish 로 상태를 볼 수 있다
     const owner = record.sessionId ?? record.preparedSession?.id;
     if(!sessionId||owner!==sessionId)return "현재 세션에서 확인한 요청만 실행할 수 있습니다.";

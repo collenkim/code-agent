@@ -183,7 +183,7 @@ claude
 | 명령 | 용도 |
 |---|---|
 | `code-agent init` | 현재 프로젝트에 스킬·서브에이전트·hook 설치 |
-| `code-agent update` | 로컬 Git 소스 설치본을 upstream에서 fast-forward로 갱신하고 의존성·빌드·프로젝트 적용·doctor 실행 |
+| `code-agent update` | 갱신 순서 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스 설치본을 upstream에서 fast-forward로 갱신하고 의존성·빌드·프로젝트 적용·doctor 실행 |
 | `code-agent update --templates-only` | 다운로드 없이 현재 번들의 프로젝트 설정만 적용 |
 | `code-agent doctor` | 설치 경로·스킬·hook·문서 상태 점검과 조치 안내 |
 | `code-agent setup` | 기존 명령·실행 환경·Git 준비 확인. 테스트 실행 없음 |
@@ -213,7 +213,7 @@ claude
 
 **code-agent 소스를 고친 것과 대상 프로젝트에 설치된 절차를 갱신한 것은 별개입니다.** `init`은 `template/`의 파일을 프로젝트로 복사하므로 이미 설치한 `.claude/`와 `CLAUDE.md`에는 이전 지시가 남을 수 있습니다.
 
-**`code-agent update`는 로컬 Git 소스에 연결된 설치본의 자동 갱신 명령입니다.** code-agent 소스 저장소의 upstream을 `pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 잠금 파일 기준으로 `npm ci --include=dev`를 실행하고 빌드합니다. 이어서 새로 빌드한 CLI로 대상 프로젝트의 스킬·에이전트·hook·공통 지시를 적용하고 `doctor`로 점검합니다. 소스 저장소에 미커밋 변경이 있거나 이력이 분기되어 fast-forward할 수 없으면 중단합니다.
+**`code-agent update`는 로컬 Git 소스에 연결된 설치본의 갱신 명령입니다.** 먼저 소스 위치·브랜치·실행할 단계(fetch·pull·의존성 설치·빌드·적용)를 미리 보여 주고, 터미널에서 `update`를 그대로 입력해야 진행합니다. 비TTY(파이프·CI)나 Claude Code·Codex 가 띄운 셸에서는 진행하지 않고 멈춥니다 — 대화 안에서는 아래의 같은 세션 확인을 씁니다. 확인한 뒤 code-agent 소스 저장소의 upstream을 `pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 잠금 파일 기준으로 `npm ci --include=dev`를 실행하고 빌드합니다. 이어서 새로 빌드한 CLI로 대상 프로젝트의 스킬·에이전트·hook·공통 지시를 적용하고 `doctor`로 점검합니다. 소스 저장소에 미커밋 변경이 있거나 이력이 분기되어 fast-forward할 수 없으면 중단합니다.
 
 | 설치 방식 | code-agent 자체 갱신 | 개발 대상 프로젝트에 적용 |
 |---|---|---|
@@ -230,9 +230,9 @@ cd "C:\work\my-app"
 code-agent update
 ```
 
-현재 설치본의 템플릿만 적용하려면 `code-agent update --templates-only`를 사용합니다. 이 옵션은 fetch·pull·의존성 설치·빌드를 하지 않습니다. 직접 수정한 개발본은 필요한 빌드를 먼저 수행한 뒤 이 옵션으로 적용할 수 있습니다.
+현재 설치본의 템플릿만 적용하려면 `code-agent update --templates-only`를 사용합니다. 이 옵션은 fetch·pull·의존성 설치·빌드를 하지 않으며 미리보기·`update` 입력 확인도 없습니다. 직접 수정한 개발본은 필요한 빌드를 먼저 수행한 뒤 이 옵션으로 적용할 수 있습니다.
 
-Claude Code 안에서는 “code-agent를 업데이트해 주세요”라고 요청하면 `action: "update"`의 같은 세션 확인을 거쳐 실행합니다. 갱신 후에는 **Claude Code를 종료하고 같은 프로젝트에서 다시 열어야 새 hook이 활성화됩니다.** `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 접수·작업을 재개합니다. `doctor`에서 공통 문서가 아직 없다고 나오면 준비 단계에서 해결합니다.
+Claude Code 안에서는 “code-agent를 업데이트해 주세요”라고 요청하면 `action: "update"`의 같은 세션 확인을 거쳐 실행합니다. 모델이 셸에서 `code-agent update`를 직접 부르는 것은 진행 중인 작업이 없어도 hook 이 거부합니다. 갱신 후에는 **Claude Code를 종료하고 같은 프로젝트에서 다시 열어야 새 hook이 활성화됩니다.** `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 접수·작업을 재개합니다. `doctor`에서 공통 문서가 아직 없다고 나오면 준비 단계에서 해결합니다.
 
 | 증상 | 확인할 것 |
 |---|---|

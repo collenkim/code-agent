@@ -8,6 +8,7 @@ import { loadActive } from "./layout";
 import { Stop } from "./stop";
 import { HostSelection } from "./hosts";
 import { confirmOnTerminal } from "./tty";
+import { hostMarked } from "./crossEnv";
 
 export interface SourceUpdateOptions {
   /** Hook CLI override, as in update(). Execution always uses the newly built CLI. */
@@ -258,11 +259,17 @@ export function updateFromSource(repoRoot: string, options: SourceUpdateOptions 
   }
 }
 
+export const HOST_SHELL_UPDATE =
+  "호스트(Claude Code·Codex) 셸 안에서는 code-agent 소스 업데이트를 터미널 확인으로 받지 않습니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, " +
+  "호스트 밖의 터미널에서 직접 실행하세요. 번들 템플릿만 다시 적용하려면 code-agent update --templates-only 를 씁니다.";
 /**
  * 직접 CLI 소스 업데이트 — 미리보기를 보여 주고 터미널에서 `update` 를 입력받은 뒤에만 실행한다(비TTY 면 동의 절차를 안내하고 거부한다).
  * 확인한 미리보기와 실행 직전 상태가 다르면 fetch 전에 멈춘다(expectedSourceSnapshot). 동의 적용은 이미 확인을 받았으므로 updateFromSource 를 그대로 부른다.
  */
 export function updateFromSourceConfirmed(repoRoot: string, options: SourceUpdateOptions = {}): string {
+  // 호스트 셸(CLAUDECODE·Codex 표지)에서는 터미널 확인을 받지 않는다 — 모델 명령을 PTY 로 돌리고 입력을 넣을 수 있는 호스트에서는
+  // TTY 가 사람의 입력을 뜻하지 않는다(consent apply 의 TTY 경로와 같은 규칙, consentTicket.terminalCaller)
+  if (hostMarked(process.env)) throw new Stop(HOST_SHELL_UPDATE);
   const shown = previewSourceUpdate(repoRoot, options);
   if (shown.includes("업데이트 중단:")) throw new Stop(shown);
   const expectedSourceSnapshot = sourceUpdateSnapshot(repoRoot, options);

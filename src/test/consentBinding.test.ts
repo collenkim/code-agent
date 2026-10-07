@@ -133,6 +133,41 @@ test("T-1-6 하위 폴더에서 연 세션도 저장소 루트에 티켓을 낸�
   assert.equal(takeTicket(findRepoRoot(sub), "prepare")?.sessionId, "S1");
 });
 
+test("T-1-6b 하위 폴더에서 연 세션의 적용 명령도 저장소 루트의 동의 기록으로 결속을 확인하고 적용 티켓을 낸다", () => {
+  const sub = join(root, "doc");
+  const inSub = (command: string, session = "S1") => decide({ cwd: sub, session_id: session, tool_name: "Bash", tool_input: { command } }, sub);
+  assert.equal(inSub("code-agent consent prepare consent-action.json"), undefined);
+  writeFixture(root, "doc/consent-action.json", JSON.stringify({ action: "docs" }));
+  const ready = runCli(["consent", "prepare", "consent-action.json"], sub);
+  assert.equal(ready.status, 0, ready.stderr);
+  const id = JSON.parse(ready.stdout).id as string;
+  answerAs(id, "S1");
+  assert.equal(loadConsent(root, id).status, "approved");
+  assert.match(inSub(`code-agent consent finish ${id}`, "OTHER") ?? "", /현재 세션에서 확인한 요청만/, "다른 세션은 그대로 거부한다");
+  assert.equal(inSub(`code-agent consent finish ${id}`), undefined, "하위 폴더 세션도 기록을 읽는다");
+  assert.equal(existsSync(join(sub, ".code-agent")), false);
+  const finished = runCli(["consent", "finish", id], sub);
+  assert.equal(finished.status, 0, finished.stderr);
+  assert.equal(JSON.parse(finished.stdout).status, "applied");
+});
+
+test("검토 #1 hook·consent-event 진입은 judgment 소유 모듈(retryGrant·reviewJudgment)을 읽지 않는다", () => {
+  const probe = (entry: string) => {
+    const script = `require(${JSON.stringify(join(__dirname, "../agent", entry))});` +
+      "process.stdout.write(JSON.stringify(Object.keys(require.cache).map((file) => file.split(String.fromCharCode(92)).join('/'))));";
+    const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout) as string[];
+  };
+  for (const entry of ["hook.js", "consent.js"]) {
+    const loaded = probe(entry);
+    assert.ok(loaded.some((file) => file.endsWith("/agent/consent.js")), entry);
+    for (const name of ["retryGrant.js", "reviewJudgment.js", "crossCheck.js", "verificationFlow.js"]) {
+      assert.equal(loaded.some((file) => file.endsWith(`/agent/${name}`)), false, `${entry} → ${name}`);
+    }
+  }
+});
+
 test("T-1-7 동시 준비는 결속이 어긋나 거부된다(fail-closed)", () => {
   bash("code-agent consent prepare doc/x.json", "S1");
   bash("code-agent consent prepare doc/x.json", "S2");

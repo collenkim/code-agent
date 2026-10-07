@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -9,7 +9,8 @@ import { codexHook, runCodexHook } from "../agent/codexHook";
 import { start } from "../agent/commands";
 import { docsBegin, docsEnd } from "../agent/docsCommands";
 import { doctor } from "../agent/doctor";
-import { decide, type HookInput } from "../agent/hook";
+import { decide, expandTilde, type HookInput } from "../agent/hook";
+import { foldWindowsAlias, shareInside } from "../agent/layout";
 import { hookInstallProblems, init, installedHook } from "../agent/init";
 import { requestBegin } from "../agent/request";
 import { sessionAnchor } from "../agent/sessionHook";
@@ -202,4 +203,95 @@ test("T-12-1 Codex 사용자 메시지 판정 실패는 동의 응답만 막는�
   const business = spawnSync(process.execPath, [cli, "consent-event"], { cwd: root, encoding: "utf8",
     input: JSON.stringify({ cwd: root, hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: [] } }) });
   assert.equal(business.status, 0, "업무 질문은 막지 않는다");
+});
+
+// ---- 독립 검토 반영: `~` 전개·Windows 별칭·소스 update 명령 꼴 ----
+
+/** os.homedir() 가 읽는 환경(USERPROFILE·HOME)을 잠시 바꾼다 — hook 이 `~` 를 이 폴더로 푼다 */
+function withHome<T>(dir: string, run: () => T): T {
+  const saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+  process.env.USERPROFILE = dir; process.env.HOME = dir;
+  try { return run(); }
+  finally { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
+}
+
+test("검토 #7 Grep·Glob·MCP 의 `~` 는 홈으로 풀어 키 자리를 판정한다 — 모든 모드", () => {
+  assert.equal(expandTilde("~/x", "H"), "H/x");
+  assert.equal(expandTilde("~", "H"), "H");
+  assert.equal(expandTilde("~user/x", "H"), "~user/x", "~user 꼴은 풀지 않는다");
+  assert.equal(expandTilde("a/~/x", "H"), "a/~/x");
+  const check = (mode: string) => withHome(home, () => {
+    for (const [name, input] of [
+      ["Grep", { pattern: ".", path: "~/.code-agent" }],
+      ["Grep", { pattern: ".", path: "~", glob: ".code-agent/*" }],
+      ["Grep", { pattern: ".", path: "~", glob: "**/credentials.json" }],
+      ["Glob", { pattern: "*", path: "~/.code-agent" }],
+      ["Glob", { pattern: "~/.code-agent/*" }],
+      ["Read", { file_path: "~/.code-agent/credentials.json" }],
+      ["mcp__filesystem__search_files", { path: "~/.code-agent", pattern: "*" }],
+    ] as const) {
+      assert.match(tool(name, input) ?? "", /등록된 플러그인 키가 (있는 자리는 읽을 수 없습니다|들어 있는 상위 폴더)/, `${mode} ${name} ${JSON.stringify(input)}`);
+    }
+    assert.equal(tool("Grep", { pattern: ".", path: root }), undefined, mode);
+  });
+  check("세션 밖");
+  startWork();
+  check("작업 중");
+});
+
+test("검토 #7 세션 밖 쓰기의 `~/<저장소>/…` 도 저장소 안으로 판정한다", () => {
+  withHome(dirname(root), () => {
+    const rel = `~/${root.slice(dirname(root).length + 1)}`;
+    for (const path of [`${rel}/.code-agent/active.json`, `${rel}/.code-agent/consents/index.json`, `${rel}/.code-agent/consents/tickets/prepare.json`, `${rel}/doc/work/W-1/requirement.md`]) {
+      assert.match(write(path) ?? "", /도구로 고칠 수 없습니다|code-agent request submit 이 렌더합니다/, path);
+    }
+    assert.match(write(`${rel}/.claude/settings.json`) ?? "", /호스트 설정·훅·스킬은 모델이 직접 변경하지 않습니다/);
+    assert.equal(write(`${rel}/src/a.ts`), undefined, "세션 밖의 저장소 코드 쓰기는 관여하지 않는다");
+  });
+});
+
+test("검토 #9 IPv6 리터럴·이 PC 주소의 관리 공유도 드라이브 경로로 접는다", () => {
+  const B = "\\";
+  const unc = (...parts: string[]) => B + B + parts.join(B);
+  assert.equal(foldWindowsAlias(unc("0--1.ipv6-literal.net", "C$", "x", "y"), "win32"), ["C:", "x", "y"].join(B));
+  assert.equal(foldWindowsAlias(unc("[::1]", "d$", "x"), "win32"), ["D:", "x"].join(B));
+  assert.equal(foldWindowsAlias(unc("0--2.ipv6-literal.net", "C$", "x"), "win32"), unc("0--2.ipv6-literal.net", "C$", "x"), "이 PC 가 아닌 주소는 접지 않는다");
+  assert.equal(foldWindowsAlias(unc("0--1.ipv6-literal.net", "C$", "x"), "linux"), unc("0--1.ipv6-literal.net", "C$", "x"));
+  if (process.platform !== "win32") return;
+  const drive = root.slice(0, 1), rest = root.slice(2);
+  const alias = unc("0--1.ipv6-literal.net", `${drive}$${rest}`);
+  assert.match(write([alias, ".code-agent", "active.json"].join(B)) ?? "", /도구로 고칠 수 없습니다/);
+  const patch = codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "c", tool_name: "apply_patch",
+    tool_input: { command: ["*** Begin Patch", `*** Add File: ${[alias, ".code-agent", "x.json"].join(B)}`, "+{}", "*** End Patch"].join("\n") } }) as { hookSpecificOutput?: unknown };
+  assert.ok(patch.hookSpecificOutput, "Codex apply_patch 도 같은 판정");
+});
+
+test("검토 #9 이름으로 접지 못한 UNC 는 공유 쪽 조상의 (dev, ino)로 저장소 안인지 본다", { skip: process.platform !== "win32" }, (context) => {
+  const B = "\\";
+  const drive = root.slice(0, 1), rest = root.slice(2);
+  const share = `${B}${B}localhost${B}${drive}$${rest}`;
+  try { statSync(share); } catch { context.skip("이 PC 의 관리 공유에 닿을 수 없다"); return; }
+  assert.equal(shareInside(root, [share, ".code-agent", "active.json"].join(B)), join(root, ".code-agent", "active.json"));
+  assert.equal(shareInside(root, [share, "없는 폴더", "x.json"].join(B)), join(root, "없는 폴더", "x.json"));
+  assert.equal(shareInside(root, [`${B}${B}localhost${B}${drive}$${dirname(rest)}`, "다른-저장소", "x.json"].join(B)), undefined, "저장소 밖");
+  assert.equal(shareInside(root, [share, ".code-agent", "active.json"].join(B), "linux"), undefined);
+});
+
+test("검토 #10 세션 밖 셸의 Windows 이름 별칭(끝 점·공백·8.3·./)도 상태·hook 설정 언급으로 본다", () => {
+  for (const command of [
+    "Set-Content '.code-agent./ps.json' 'x'", "Set-Content '.code-agent /ps.json' 'x'", "Set-Content 'CODE-A~1/ps.json' 'x'",
+    "python -c \"open('.code-agent./active.json','w')\"", `type .CODE-AGENT${"\\"}active.json`,
+  ]) assert.match(bash(command) ?? "", /`\.code-agent\/` 는 code-agent 명령으로만 바뀝니다/, command);
+  for (const command of [
+    "Set-Content '.claude./settings.json' '{}'", "cp x.json .claude/./settings.json", `copy x.json CLAUDE~1${"\\"}SETTIN~2.JSO`,
+    "Set-Content '.codex. /hooks.json' '{}'", `type CODEX~1${"\\"}CONFIG~1.TOM`,
+  ]) assert.match(bash(command) ?? "", /호스트 hook 설정/, command);
+  for (const command of ["git log HEAD~1", "code-agent status", "cat .code-agent.json", "cat claude~notes.md"]) assert.equal(bash(command), undefined, command);
+});
+
+test("검토 #14 소스 update 는 어떻게 불러도 세션 밖 hook 이 막는다 — 템플릿 적용은 연다", () => {
+  for (const command of ["code-agent  update", "npx code-agent update", "node C:/x/dist/agent/cli.js update", `& 'C:${"\\"}npm${"\\"}code-agent.cmd' update --host both`]) {
+    assert.match(bash(command) ?? "", /사람의 확인이 필요합니다/, command);
+  }
+  for (const command of ["npx code-agent update --templates-only", "code-agent status"]) assert.equal(bash(command), undefined, command);
 });
