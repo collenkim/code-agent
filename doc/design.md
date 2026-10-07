@@ -785,7 +785,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent request begin [ID] --kind <feature \| fix \| refactor> [--base <기준 브랜치>] [--target <대상>]` | 접수 세션·초안 형식·대상 후보를 제공한다. ID 생략 시 WORK 번호를 발급한다. 매니페스트가 없어도 원문 보관부터 시작하며, `--base`·`--target`은 세션에 남아 `start`가 이어받는다 | ✅ |
-| `code-agent consent prepare <action.json>` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다. `prepare`·`apply`·`finish`는 hook 이 그 명령을 본 세션의 티켓(적용은 호스트 표지 없는 TTY 도)이 있어야 돈다 | 구현됨 |
+| `code-agent consent prepare <action.json> \| --action <동작> [--for claude\|codex]` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다. `prepare`·`apply`·`finish`는 hook 이 그 명령을 본 세션의 티켓(적용은 호스트 표지 없는 TTY 도)이 있어야 돈다 | 구현됨 |
 | `code-agent consent-event` | AskUserQuestion의 PreToolUse·PostToolUse hook에서 질문·세션·호출 ID·실제 응답을 관찰한다. 동의 질문은 동의 기록에, 업무 질문은 `answers.jsonl`에 남긴다(업무 질문 관찰 실패는 질문을 막지 않는다). 모델이 직접 관찰 기록을 작성하지 않는다 | 구현됨 |
 | `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 | ✅ |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 | ✅ |

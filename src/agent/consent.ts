@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "util";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
-import { abort, decide, requireReproable, requireValidatable, status } from "./commands";
+import { abort, decide, nextStep, requireReproable, requireValidatable, status } from "./commands";
 import { baselineFiles, setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
@@ -73,6 +73,8 @@ export interface ConsentRecord {
   /** 준비 명령을 관찰한 hook 의 세션(CON-1) — 응답·적용은 이 세션에서만 받는다. 없으면 첫 응답 관찰이 세션을 정한다(이전 규칙) */
   preparedSession?: { id: string; host: "claude" | "codex"; at: string };
   failure?: ConsentFailure;
+  /** `consent prepare --for <호스트>` — CLI 출력(prepare·status·finish)을 그 호스트가 쓰는 필드로 줄인다. 없으면 전체 출력(이전 형식) */
+  form?: "claude" | "codex";
 }
 const DIR = CONSENT_DIR;
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -479,7 +481,8 @@ export function consentStatus(root: string, id: string, extra: { warning?: strin
 /**
  * 동의 준비. `options.binding` 은 CLI 가 준비 티켓(이 준비 명령을 관찰한 hook 의 세션)에서 넘긴다 — 응답은 그 세션에서만 받는다.
  * 프로세스 안에서 binding 없이 부르면(테스트 fixture) 준비 세션이 없는 기록이 되고, 첫 응답 관찰이 세션을 정한다(이전 규칙).
- * `form` 은 출력 형식(호스트별 축소)용 자리다 — 지금은 쓰지 않는다.
+ * `form` 은 CLI 출력 형식이다(`--for`) — 기록에 남겨 같은 동의의 status·finish 출력도 같은 필드만 낸다(`renderConsentOutput`).
+ * 함수 반환은 언제나 전체 JSON 이다(hook·Codex 응답 관찰·테스트가 쓴다).
  */
 export function prepareConsent(root: string, raw: unknown, options: { binding?: { id: string; host: "claude" | "codex" }; form?: "claude" | "codex" } = {}): string {
   root = canonicalRoot(root);
@@ -498,7 +501,7 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
     const at = new Date().toISOString();
     const workId = currentWorkId(root);
     const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,snapshotEntries:inspected.entries,createdAt:at,status:"pending",
-      format: 2, ...(workId ? { workId } : {}),
+      format: 2, ...(workId ? { workId } : {}), ...(options.form ? { form: options.form } : {}),
       ...(options.binding ? { preparedSession: { id: options.binding.id, host: options.binding.host, at } } : {}),
       ...(action.action === "update" ? {sourceSnapshot:sourceUpdateSnapshot(root)} : {})};
     save(root,record);
@@ -625,12 +628,48 @@ function unqualifiedAnnotations(value: unknown, bound: Question[]): boolean {
 /** CLI 적용 경로의 호출자 — 사람의 TTY(호스트 표지 없음)이거나, hook 이 이 적용 명령을 본 세션 */
 export interface ConsentCaller { sessionId?: string; tty?: true }
 
-/** 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용을 돌려준다. */
+/**
+ * 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용을 돌려준다. 적용하면 지금 할 일(`next`)과
+ * 스테이지(`phase`)를 함께 돌려준다 — 메인이 적용 뒤 `code-agent status` 를 다시 부르지 않는다.
+ */
 export function finishConsent(root: string, id: string, caller?: ConsentCaller): string {
-  const status = loadConsent(root, id).status;
-  if (status !== "approved" && status !== "applied") return consentStatus(root, id);
+  const record = loadConsent(root, id);
+  if (record.status !== "approved" && record.status !== "applied") return consentStatus(root, id);
   const result = applyConsent(root, id, caller);
-  return JSON.stringify({ id, status: "applied", result }, null, 2);
+  return JSON.stringify({ id, status: "applied", result, ...afterApply(root, record.action.action) }, null, 2);
+}
+
+/** 적용 뒤 흐름이 멈추거나 원래 흐름으로 돌아가는 동작 — 나머지는 status 의 `다음:` 과 같은 값(`nextStep`) */
+const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
+  deliver: "반영을 마쳤습니다 — 커밋과 변경 파일을 보고하고 끝낸다",
+  abort: "진행을 종료했습니다 — 결과를 보고하고 멈춘다",
+  update: "결과를 보고하고 멈춘다 — 호스트를 다시 열어 갱신된 hook·스킬을 로드한 뒤 ca-next 로 재개한다",
+  model: "결과를 보고한다 — 새 모델은 호스트를 다시 시작한 뒤 적용된다",
+  "plugin-add": "결과를 보고하고 원래 흐름으로 돌아간다",
+  "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
+  "knowledge-prune": "결과를 보고하고 원래 흐름으로 돌아간다",
+};
+function afterApply(root: string, action: Action["action"]): { phase?: string; next: string } {
+  const fixed = AFTER_APPLY[action];
+  if (fixed) return { next: fixed };
+  try {
+    const step = nextStep(root);
+    return { ...(step.phase ? { phase: step.phase } : {}), next: step.next };
+  } catch {
+    return { next: "code-agent status 로 현재 위치를 확인한다" };
+  }
+}
+
+/** `--for` 로 준비한 동의의 CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(제외 목록이라 실패·경고·결과 필드는 남는다) */
+const OMIT: Record<"claude" | "codex", string[]> = { claude: ["questions", "codexReply"], codex: ["questions", "toolInput"] };
+/** CLI 출력 — 준비할 때 고른 호스트가 쓰는 필드만. form 이 없는 기록(--for 없이 준비)은 그대로 */
+export function renderConsentOutput(root: string, json: string): string {
+  const value = JSON.parse(json) as Record<string, unknown> & { id: string };
+  let form: ConsentRecord["form"];
+  try { form = loadConsent(root, value.id).form; } catch { return json; }
+  if (!form) return json;
+  for (const key of OMIT[form]) delete value[key];
+  return JSON.stringify(value, null, 2);
 }
 
 export function applyConsent(root: string, id: string, caller?: ConsentCaller): string {

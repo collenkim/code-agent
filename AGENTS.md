@@ -15,6 +15,7 @@
 - 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 한 줄을 남긴다.
 - 함께 맞출 중복 정의가 있다:
   - 동의 동작(`consent.ts` `ActionSchema`)을 바꾸면 `template/claude/skills/ca-answer/SKILL.md`·`reference.md`와 `template/codex/ca-answer.md`의 목록도 고친다(`consentBinding.test.ts`가 `CONSENT_ACTIONS`와 대조한다). 동의 제목은 `consentState.ts` `CONSENT_TITLES` 하나다.
+  - 동의 준비 인자 형식(`consentTicket.ts` `parsePrepareArgs`·`INLINE_ACTIONS`)을 바꾸면 hook(`consentCommandOf` — 문법이 틀린 명령에는 티켓을 내지 않는다)과 CLI 가 같은 함수를 쓰는지, `PREPARE_UNOBSERVED`·`PREPARE_USAGE` 문구, `ca-answer/SKILL.md` 동작 준비 절·1항과 `template/codex/ca-answer.md` 1항의 명령 꼴을 함께 고친다(`consentOutput.test.ts`). `--for` 출력에서 빼는 필드(`consent.ts` `renderConsentOutput`)를 바꾸면 ca-answer 1·3항이 읽는 필드와 맞춘다.
   - 업무 답 관찰 규칙(`answers.ts`, `questions.ts`의 `[Source]`)을 바꾸면 `ca-answer/SKILL.md` 1·3절과 `template/codex/ca-answer.md` 업무 질문 문단도 고친다.
   - 사람 허용 카운터(`retryGrant.ts` `grantTarget`)는 `GRANT_STEP`의 키와 같아야 한다 — 키를 더하면 기록 파일·범위·잠금 안 재확인을 표에 함께 정한다.
   - hook 등록(`init.ts`)을 바꾸면 `doctor.ts` 목록, `update.ts`의 hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 hook 수도 고친다.

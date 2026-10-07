@@ -26,7 +26,7 @@
 | `init.ts` hook 등록(`initClaude`·`initCodex` — Codex PreToolUse 의 `|| exit 2`·`commandWindows`)·`HOOK_MATCHER`(`mcp__.*` 포함)·`CLAUDE_HOOKS`·`CODEX_EVENTS`·`hookInstallProblems`·`requireStartHooks` | §5, §7 | `doctor.ts` hook 목록(같은 `CLAUDE_HOOKS`·`CODEX_EVENTS`를 읽는다), `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`, `doc/usage.md` hook 수 |
 | `codexHook.ts` | §4.2, §5.2, §7 | `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 | `consent.ts` `ActionSchema`(`CONSENT_ACTIONS`, `judgment` 포함)·`preview`·`applyLocked`·`observeConsent`(검사 순서)·실패 기록(`failure`·`consentGuide`)·`consentStatus`(`failure`·`warning`·Codex 확인 코드)·`SNAPSHOT_EXCLUDED` | §4 | `ca-answer/SKILL.md` 작업 JSON 문단·준비 절차 6항, `ca-answer/reference.md` 필드 표·예시, `template/codex/ca-answer.md` 동작 목록(`consentBinding.test.ts` T-J-3 이 세 곳을 `CONSENT_ACTIONS`와 대조한다) |
-| `consentTicket.ts`(준비·적용 티켓)·`consentState.ts`(색인·열린 동의·적용 잠금 확인)·`answers.ts`(업무 답 관찰)·`snapshotCache.ts`·`consentReceipts.ts`·`retryGrant.ts`(사람 허용) | §4, §5.3, §6.4, §8 | 티켓 명령 꼴(`consentCommandOf`)과 `hook.ts` `isModelCommand`의 `consent` 허용 꼴, `cliMain.ts` consent 분기. 업무 답 규칙은 `ca-answer/SKILL.md` 1·3절과 `template/codex/ca-answer.md` 업무 질문 문단. 허용 키 표(`grantTarget`)는 `GRANT_STEP`과 같아야 한다 |
+| `consentTicket.ts`(준비·적용 티켓, 준비 인자 문법 `splitCommandArgs`·`parsePrepareArgs`·`INLINE_ACTIONS`)·`consentState.ts`(색인·열린 동의·적용 잠금 확인)·`answers.ts`(업무 답 관찰)·`snapshotCache.ts`·`consentReceipts.ts`·`retryGrant.ts`(사람 허용) | §4, §5.3, §6.4, §8 | 티켓 명령 꼴(`consentCommandOf`)과 `hook.ts` `isModelCommand`의 `consent` 허용 꼴, `cliMain.ts` consent 분기. 업무 답 규칙은 `ca-answer/SKILL.md` 1·3절과 `template/codex/ca-answer.md` 업무 질문 문단. 허용 키 표(`grantTarget`)는 `GRANT_STEP`과 같아야 한다 |
 | `cli.ts`(hook 하위 명령 지연 로드·`hookFailureExit`)·`cliMain.ts`(명령), `hook.ts`·`codexHook.ts`·`request.ts`의 지연 로드(`consent.ts`·이벤트별 모듈·`init.ts`) | §5, §6.4 hook 종료 코드, §9 | 새 hook 하위 명령은 `HOOKS`와 `retryPolicy.ts` `hookFailureExit` 표에 함께 더한다. hook 경로 모듈(`hook`·`codexHook`·`stopHook`·`sessionHook`과 그 import)에서 명령 모듈을 정적으로 import 하지 않는다 — `hookLoad.test.ts`의 금지 목록(`HEAVY`)·실행 경로·로드 실패 표가 대조한다 |
 | `hook.ts` `decide`(티켓 발급)·`decideTool`·`decideMcp`·`readDenied`·`aliasGuard`·`decideOutside`(열린 동의 창·소스 업데이트·hook 설정)·`decideDocWrite`·`MODEL_SUBCOMMANDS` | §5.3, §5.4 | `template/CLAUDE.block.md`, `decideBash` 거부 문구 |
 | `planning.ts`·`planningState.ts`·`planningHook.ts` | §6.1 | `doc/planning.md` 역할·action 표, 단계 스킬 1~6항(advance `action`을 바꾸면 4항), `ca-plan/contract.md:10,16`(질문 출처·수정 피드백), `ca-plan/SKILL.md` 4-1항·반려 절차와 `crossCriticProblems` 문구(고칠 작업은 지적 내용으로 정한다), `ca-next/SKILL.md:31`(재개 때 실행 중 배정 확인 — Codex는 SessionStart가 없다)·`:71`(되감기 예외 셋)·`:49` 재개표의 `stale`·`rewind-required` 행, `sessionHook.ts`(실행 중 배정 요약), `handoff.ts` `handoffPlanning`(배정 요약의 `previous`) |
@@ -156,8 +156,8 @@ sequenceDiagram
   participant C as code-agent CLI
   participant H as hook
   M->>H: Bash consent prepare (PreToolUse 허용 → 준비 티켓)
-  M->>C: consent prepare action.json (티켓 소비 → preparedSession, snapshot, pending)
-  C-->>M: id, summary, questions, toolInput, codexReply(확인 코드), warning?
+  M->>C: consent prepare <파일 | --action 동작> --for <호스트> (티켓 소비 → preparedSession, snapshot, pending)
+  C-->>M: id, summary, toolInput(claude) | codexReply(codex, 확인 코드), warning? — --for 없으면 전체
   alt Claude (channel claude-question)
     M->>H: AskUserQuestion(toolInput) PreToolUse → consent-event
     H->>C: observeConsent Pre: 세션·toolId·질문 결속
@@ -172,10 +172,12 @@ sequenceDiagram
   M->>H: Bash consent finish ID (같은 session_id 확인 → 적용 티켓)
   M->>C: consent finish ID (적용 티켓 또는 사람의 TTY)
   C->>C: 적용 세션 대조 → 스냅샷 재대조 → applying → 도메인 함수 → applied | failed(failure.kind)
+  C-->>M: applied, result, phase, next (적용 뒤 status 를 다시 부르지 않는다)
 ```
 
 **결속 규칙** (`consent.ts` `observeConsent`·`applyLocked`·`consentCommandGuard`, `consentTicket.ts`, `hook.ts` `decide`)
-- **준비 티켓** — hook 이 `code-agent consent prepare …`(셸 연결자·리디렉션·치환 없는 정확한 꼴, 인자 글자와 무관)를 허용하면 그 세션을 `.code-agent/consents/tickets/prepare.json`(저장소당 하나, 가장 최근 것만)에 적는다(`issueTicket`, 루트는 `findRepoRoot` — 하위 폴더 세션도 저장소 루트). CLI `consent prepare`는 15분(`TIMING.consentTicketTtlMs`) 안의 티켓을 rename 으로 가로채 소비해야 준비하고, 기록에 `preparedSession`(세션·호스트)과 `format: 2`·`workId`를 남긴다(`PREPARE_UNOBSERVED`). 두 세션이 동시에 준비하면 결속이 어긋나 거부된다(fail-closed). 프로세스 안에서 `binding` 없이 부른 준비(테스트 fixture)와 이전 기록은 `preparedSession`이 없어 이전 규칙(첫 Pre 가 세션을 정함)을 따른다.
+- **준비 인자** — `consent prepare <파일> | --action <동작> [--id] [--kind] [--spec] [--for claude|codex]`(깃발 순서·따옴표 무관). 자유 문구가 없는 동작(`INLINE_ACTIONS` — setup·docs·baseline·request·plan·deliver·knowledge-prune·abort·update·repro-log)만 인라인으로 받고, 반려·model·plugin-add·plugin-remove·judgment 는 JSON 파일이다. 문법은 hook(`consentCommandOf`)과 CLI 가 같은 함수(`splitCommandArgs`·`parsePrepareArgs`)로 본다 — 문법이 틀린 명령에는 hook 이 티켓을 내지 않고 CLI 는 티켓을 꺼내기 전에 사용법으로 멈춘다. `--for`는 티켓의 호스트와 같아야 하고(다르면 거부) 기록의 `form`이 되어 그 동의의 prepare·status·finish CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(`renderConsentOutput` — Claude 는 `questions`·`codexReply`, Codex 는 `questions`·`toolInput`. 함수 반환은 전체 그대로라 Codex 응답 관찰·hook 은 바뀌지 않는다). `consent finish`가 적용하면 결과에 `phase`·`next`(status 의 `다음:`과 같은 값 `nextStep`, 흐름을 멈추는 deliver·abort·update·model·플러그인·knowledge-prune 은 고정 문구 `AFTER_APPLY`)를 더한다.
+- **준비 티켓** — hook 이 `code-agent consent prepare …`(셸 연결자·리디렉션·치환 없는 정확한 꼴, 인자 글자와 무관 — 문법만 본다)를 허용하면 그 세션을 `.code-agent/consents/tickets/prepare.json`(저장소당 하나, 가장 최근 것만)에 적는다(`issueTicket`, 루트는 `findRepoRoot` — 하위 폴더 세션도 저장소 루트). CLI `consent prepare`는 15분(`TIMING.consentTicketTtlMs`) 안의 티켓을 rename 으로 가로채 소비해야 준비하고, 기록에 `preparedSession`(세션·호스트)과 `format: 2`·`workId`를 남긴다(`PREPARE_UNOBSERVED`). 두 세션이 동시에 준비하면 결속이 어긋나 거부된다(fail-closed). 프로세스 안에서 `binding` 없이 부른 준비(테스트 fixture)와 이전 기록은 `preparedSession`이 없어 이전 규칙(첫 Pre 가 세션을 정함)을 따른다.
 - **적용 티켓** — hook 이 `code-agent consent apply|finish <UUID>`를 허용하면 `apply-<UUID>.json` 티켓을 낸다. CLI 적용은 그 티켓이나 호스트 표지(`CLAUDECODE`·`CODEX_MARKERS`)가 없는 TTY(`terminalCaller`)가 있어야 하고(`APPLY_UNOBSERVED`), 준비 세션이 있는 동의는 응답을 관찰한 세션의 티켓이나 TTY만 받는다(스냅샷 대조보다 먼저 — 남의 시도가 동의를 폐기하지 못한다). `consentCommandGuard`는 `sessionId ?? preparedSession.id`와 셸 세션을 대조한다 — 기록은 티켓·CLI 와 같은 저장소 루트(`findRepoRoot`)에서 읽어 하위 폴더에서 연 세션도 적용 티켓을 받는다.
 - `observeConsent` 잠금 안의 검사 순서: 채널 → 상태(`pending`) → 준비 세션(세션·채널) → 세션 → 작업 경로 → 스냅샷. 앞의 다섯 거부는 기록을 폐기하지 않는다. 서브에이전트(`agent_id`)의 질문은 거부한다.
 - 첫 Pre가 `sessionId`·`channel`·`cwd`를 정한다. Pre의 질문은 준비된 질문과 deep-equal이어야 한다.
@@ -255,7 +257,7 @@ hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드
 - 허용(`hook.ts:89-129`, 접두어 일치)
   - `start`·`next`·`back`·`context`·`read`·`status`·`plan submit`·`planning prepare·advance·status·result·dispatch·repair·cancel·cross`·`docs *`·`survey`·`manifest check`·`request *`
   - `plugin list`·`repro`·`check`·`test`·`verify`·`review *`·`integrate`
-  - `consent prepare <파일>`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help`, 인자 없는 `code-agent`
+  - `consent prepare <파일> | --action <동작> …`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help`, 인자 없는 `code-agent`
 - 그 밖은 모두 거부한다. 그중 `abort`·`approve`·`reject`·`confirm`·`model` 변경·`deliver`·`plugin add·remove`·`update`·`knowledge prune`·`setup baseline`은 §4.1 동의로 실행한다. `init`·`usage`·`knowledge`(목록)·`plugin example`은 동의 동작이 없고 사람이 직접 실행한다. 거부 문구의 셸·파일 도구 이름은 호스트 표기다(`viaShell`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`).
 
 ## 6. 오케스트레이션
@@ -554,6 +556,7 @@ stateDiagram-v2
 | MCP 도구 판정 | matcher `mcp__.*` → `decideMcp` | `mcp__*` → `decideMcp`, 그 밖의 미지 도구는 기록만 | `hook.ts`, `codexHook.ts` |
 | 세션 시작 상태 주입 | SessionStart `session-event` — 실행 중으로 기록된 계획 배정과(시작·재개·비우기면) 취소 명령을 붙인다 | 미등록 — 시작이 관찰되지 않은 배정은 advance의 `stale` 판정(10분)에 기댄다. 시작이 관찰된 담당은 60분 동안 `wait`이므로, 재개 절차(`ca-next` 1항)가 `planning status`의 실행 중 배정을 확인해 이 대화에서 부른 담당이 아니면 cancel한다 | `init.ts:233`, `init.ts:187`, `sessionHook.ts:28-49`, `template/claude/skills/ca-next/SKILL.md:31` |
 | 서브에이전트 hook 실패 코드 | 계획 담당·리뷰어 모두 `subagentExit` — 기록 전의 되돌릴 수 있는 실패를 한 번 2로 되돌리고, 기록된 실패·`stop_hook_active`면 0 | 담당 이벤트의 예외는 언제나 `{}`·exit 0(기록 후, 되돌리지 않는다) | `planningHook.ts` `runPlanningHook`, `reviewHook.ts` `runReviewHook`, `codexHook.ts` `runCodexHook` |
+| 동의 출력(`consent prepare … --for`) | `--for claude` — `toolInput`만(질문은 `toolInput.questions`) | `--for codex` — `codexReply`만(확인 코드 줄 포함) | `consent.ts` `renderConsentOutput`, ca-answer 1항(Claude)·`template/codex/ca-answer.md` 1항 |
 | 토큰 사용량 집계 | `usage` — Claude 기록(토큰·비용 추정·요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기) | `usage` — Codex 세션 기록(`$CODEX_HOME/sessions` 의 `rollout-*.jsonl`, 토큰·요청·도구 호출, 비용 미산정, **형식 미확인** — 공개 형식 기준 가정) | `usage.ts`·`codexUsage.ts`, `doc/codex.md` 사용량 문단 |
 | 교차 검증 대상일 때 실행 형태 | `claude -p … --agent <역할> --model <m> [--effort <e>]` | `codex exec -s read-only … -m <m> -c model_reasoning_effort=…` | `crossCheck.ts` `crossInvocationArgs` |
 | 교차 명령을 부를 때 | `Bash:` 그대로 | 스킬 사본이 샌드박스 밖(권한 상승)으로 실행하라고 안내한다. 셸에 Codex 샌드박스 표지가 있으면 CLI 가 `claude`를 띄우기 전에 멈춘다(`crossPreflight`, `CODE_AGENT_CROSS_PREFLIGHT=off`로 사람만 끈다). 표지가 없어도 지점 첫 네트워크 오류는 샌드박스 거부로 막는다(`crossSandboxSuspect`) | `hosts.ts` `codexText`, `retryPolicy.ts` `crossPreflight` |
@@ -574,7 +577,7 @@ stateDiagram-v2
 | `approvals/<slug>.jsonl` | `recordDecision`(계획 승인·반려 해시 사슬) | `checkApproval`(`core/approval.ts:342-387`) | 반영 커밋 |
 | `approvals/<slug>/request.jsonl` · `<target>-<seq>.plan.json` | `recordRequestDecision` · 승인 스냅샷(`core/approval.ts:438`) | `requestState` · `stale-plan` diff | 반영 커밋 |
 | `approvals/docs.jsonl` | `confirmDoc` | 문서 게이트 | 반영 커밋 |
-| `consents/<uuid>.json`(`failure`·`preparedSession`·`format`·`workId` 는 새 기록만) · `apply.lock` · `index.json`(열린 동의·동작별 최근 종료 3개) · `tickets/`(준비·적용 티켓) · `snapshot-cache.json` | consent prepare·hook·apply(`save`가 색인을 같은 잠금 안에서 고친다) · hook(`issueTicket`) | consent, hook(`openConsent`·`consentLockHeld`), CLI(`takeTicket`) | 무시. 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`을 뺀다(`SNAPSHOT_EXCLUDED`) |
+| `consents/<uuid>.json`(`failure`·`preparedSession`·`format`·`workId` 는 새 기록만, `form` 은 `--for` 로 준비했을 때만) · `apply.lock` · `index.json`(열린 동의·동작별 최근 종료 3개) · `tickets/`(준비·적용 티켓) · `snapshot-cache.json` | consent prepare·hook·apply(`save`가 색인을 같은 잠금 안에서 고친다) · hook(`issueTicket`) | consent, hook(`openConsent`·`consentLockHeld`), CLI(`takeTicket`) | 무시. 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`을 뺀다(`SNAPSHOT_EXCLUDED`) |
 | `work/<ID>/answers.jsonl` | `start`(시작 행)·consent-event hook(업무 질문 Pre/Post) | 답 출처 판정(`answerSources` — 게이트·확인 화면) | 반영 커밋. 동의 스냅샷 안 |
 | `approvals/<slug>/consents.jsonl` · `approvals/<slug>/<target>-<seq>.manifest.json` | deliver(`writeConsentReceipts` — 선택 label·시각·세션·실패 원인) · `recordDecision`(경계·검증 선언 스냅샷) | 사람 · 재승인 화면(`diffBoundary`) | 반영 커밋 |
 | `log/codex-tools.json` | Codex PreToolUse(판정하지 않은 도구, 작업·세션 중에만) | doctor | 무시 |
@@ -591,7 +594,7 @@ stateDiagram-v2
 
 | `doc/work/<ID>/` 파일 | 작성 주체 | 비고 |
 |---|---|---|
-| `request.json`, `consent-action.json` | 메인 | 접수 초안, 동의 동작 |
+| `request.json`, `consent-action.json` | 메인 | 접수 초안, 동의 동작(자유 문구·여러 필드가 필요한 동작만 — 나머지는 `consent prepare --action`) |
 | `requirement.md` | `request submit` 렌더 | 모델 쓰기 거부 |
 | `questions.md` | start 생성. 메인·planning hook·`planning cross`가 추가한다. 코드가 쓰는 질문에는 `[Origin]: <작업 ID>`가 `[Answer]:` 앞에 붙는다 | 미응답이 있으면 `next`·Stop이 막는다. 코드가 출처를 기록한(`planning.json` `questionOrigins`) 질문은 그 작업과 후손만 낡게 한다 — 메인이 적은 `[Origin]`은 무시된다(§6.1) |
 | `01`·`02`·`03`·`04`·`07`, `plan.json` | 관찰된 계획 담당(hook이 기록) | 메인 쓰기 거부(`hook.ts:474`). 승인 묶음(`stale-docs`) |
@@ -654,3 +657,4 @@ stateDiagram-v2
 | 2026-10-08 | 단계 전이·CLI 안내 독립 검토 반영: 매니페스트 없이 열린 문서 세션(`ca-adopt` 도중)의 `다음:`·`preparationHint`가 막히는 접수 대신 `/ca-adopt`, hook 의 상태 읽기 실패·세션 밖 hook 설정 거부 문구의 읽기·쓰기 도구를 호스트 표기로(`readVia`·`readToolVia`·`editVia`)와 연결자 없는 `code-agent read <파일>` 허용(Codex 의 읽기 길), Claude SessionStart 는 압축(`compact`)에서 임대를 넘겨받지 않음, `next`가 implement 이후 모든 스테이지에서 승인 무효를 스테이지 게이트보다 먼저 재진입 문장으로 멈춤, deliver 에서 증거 묶임이 깨지면 `다음:`이 `verify --json`의 check 되감기, 진행 중인 다중 대상 작업의 재제출 안내(진행 중인 대상 하나만 남김), `update`가 진행 중 작업의 계획 밖 변경이 된 설치 파일을 알림, `ca-next` 4항 뒤 빈 줄과 재개표 행(문서 세션의 `/ca-adopt`·압축 뒤 임대 줄·deliver 증거 무효), 옮기거나 다시 쓴 코드의 `file:line` 인용을 함수 이름으로 | 이 커밋(부모 `9d3e285`) | §1.1, §2, §3.1, §3.2, §5.1, §5.3, §5.4, §6.1, §7, §10 |
 | 2026-10-08 | 최적화(C7) — hook 기동: `hook.ts`가 `consent.ts`를 `consent apply\|finish` 꼴의 셸 명령에서만, `codexHook.ts`가 이벤트별 모듈(`planningHook`·`reviewHook`·`stopHook`, 동의 응답 메시지의 `consent.ts`)을 그 분기에서만, `request.ts`가 `init.ts`를 접수 시작에서만 읽는다. hook 경로 그래프·실행 경로·모듈 로드 실패 표 시험(`hookLoad.test.ts`) | 이 커밋(부모 `4b1333b`) | §1.1, §5.1, §5.2, §5.3, §9 |
 | 2026-10-08 | 최적화(C7) — 측정: `code-agent usage`에 호출 통계(요청·도구 호출·도구 결과 글자, 스테이지·에이전트별 표), 도구 이름별·`code-agent` 명령별 호출·스킬 읽기 줄, 작업 기록의 재시도·재배정·실패 원인·교차 실행 합(`retryReport.ts` — 읽기만), Codex 세션 기록 집계(`codexUsage.ts` — 형식 미확인·비용 없음), `--json`(`usageReport`). 기존 표·줄은 그대로. 평가 스크립트 보고서에 `usageData`·`retry`·`numTurns`·`codexAgents`, 반복 실행 요약 `scripts/summarize-evaluations.cjs` | 이 커밋(부모 `669aa66`) | §1.1, §6.3, §7, §8, §9 |
+| 2026-10-08 | 최적화(C7) — 동의 왕복: `consent prepare --action <동작> [--id] [--kind] [--spec]` 인라인 준비(자유 문구 없는 동작만, 문법은 hook·CLI 같은 함수 — 틀리면 티켓 없음·사용법), `--for claude\|codex` 호스트별 출력(기록 `form`, `renderConsentOutput` — 없으면 전체 그대로), `--for`가 티켓 호스트와 다르면 거부, `consent finish` 적용 결과에 `phase`·`next`(`nextStep` — status `다음:`과 같은 값, 멈추는 동작은 고정 문구). ca-answer(Claude·Codex)·ca-request·ca-integrate 문장(요약은 처음 한 번, 적용 뒤 status 재호출 없음) | 이 커밋(부모 `f3b34ff`) | §4.2, §5.4, §7, §8, §9 |

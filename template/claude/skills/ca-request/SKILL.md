@@ -72,7 +72,7 @@ Bash: `code-agent request submit doc/work/<ID>/request.json`
 
 ## 끝
 
-`{"action":"request","id":"<ID>"}`으로 공통 동의 절차를 수행한다. `summary` 전문과 원문·정리본 링크를 보여 주고 CLI가 반환한 `toolInput` 전체를 그대로 호출해 실제 응답을 받는다. `approved`인 동의를 적용한 뒤 현재 상태를 확인하고, 시작 전이면 `code-agent start doc/work/<ID>/requirement.md`로 분석부터 개발 흐름을 자동으로 이어간다. 진행 중인 작업의 재확정이면 현재 상태가 요구하는 재계획·재승인으로 이어간다.
+`request`(작업 ID) 동작으로 공통 동의 절차를 수행한다 — 원문·정리본 링크가 summary에 들어 있다. `approved`인 동의를 적용한 뒤 결과의 `next`로 현재 위치를 잡고, 시작 전이면 `code-agent start doc/work/<ID>/requirement.md`로 분석부터 개발 흐름을 자동으로 이어간다. 진행 중인 작업의 재확정이면 현재 상태가 요구하는 재계획·재승인으로 이어간다.
 수정 요청이면 이전 동의를 적용하지 않고 초안을 고쳐 재제출·새 동의를 준비한다. 사용자가 명시적으로 반려 기록을 요청하면 `decision: "reject"`와 실제 사유인 `comment`를 넣은 `request` 동작을 별도 공통 동의 절차로 처리한다. 같은 내용을 그대로 다시 내면 `request submit`이 거부한다.
 
 ## 반려됐다면

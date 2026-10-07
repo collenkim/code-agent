@@ -42,3 +42,24 @@
 | `scripts/evaluate-full-flow.cjs` 보고서에 `usageData`·`retry`·턴별 `numTurns`·`codexAgents`, scope 에 "동의 왕복은 fixture 라 usageData 에 없다". 새 `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>`(n·평균·최소·최대, 파일을 쓰지 않는다) | 실제 모델을 부르는 평가 실행은 하지 않았다(사용자 결정 — 측정 도구만 준비) |
 
 확인: 이 PC 의 실제 Claude 기록으로 `node dist/agent/cli.js usage --json` 이 JSON 을 낸다(이 저장소 기록 세션 1 — 요청 96·도구 호출 125·도구 결과 443,665자, 도구 Bash 61·Edit 28·Read 12). `summarize-evaluations.cjs new 2026` 은 기존 보고서 6개의 비용·소요만 내고 새 지표는 n=0 이다(옛 보고서에 `usageData` 가 없다).
+
+## OPT-1·OPT-2 — 동의 왕복과 호스트별 출력
+
+| 바꾼 것 | 비고 |
+|---|---|
+| `consent prepare --action <동작> [--id] [--kind] [--spec]` — 자유 문구가 없는 동작(`INLINE_ACTIONS` 10개)은 JSON 파일 없이 준비한다(동의마다 메인의 Write 1회가 준다) | 반려·model·plugin·judgment 는 파일 그대로 |
+| 준비 인자 문법을 hook(`consentCommandOf`)과 CLI 가 같은 함수(`splitCommandArgs`·`parsePrepareArgs`)로 본다 — 문법이 틀린 명령에는 티켓이 나지 않고, CLI 는 티켓을 꺼내기 전에 사용법으로 멈춘다 | **명세와 다름**: 명세의 `prepareTicketKey`(인자 전체 키)는 만들지 않았다. C5 최종본의 준비 티켓이 인자와 무관한 저장소당 하나라(C5 인계) 키가 어긋날 수 없다 — 명세 §3.3.4 끝 문단의 처리(문법 검사만 hook·CLI 공용) |
+| `--for claude\|codex` — 기록 `form` 에 남기고 prepare·status·finish CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(`renderConsentOutput`). `--for` 가 티켓의 호스트와 다르면 거부. `--for` 가 없으면 전체 그대로(옛 템플릿 호환) | 함수 반환은 전체 — Codex 응답 관찰(`observeCodexConsent`)·hook 은 그대로. `failure`·`warning`·확인 코드 줄은 남는다(C5 인계) |
+| `consent finish` 적용 결과에 `phase`·`next` — `commands.ts` `nextStep`(status `다음:` 과 같은 값, status 출력 바이트는 그대로 — 기존 status 시험 전부 통과), 흐름을 멈추는 동작은 고정 문구(`AFTER_APPLY`). `finishConsent(root, id, caller)` 는 caller 를 그대로 넘긴다 | 적용 뒤 `code-agent status` 재호출 1회가 준다 |
+| 템플릿: ca-answer 1·2·3·5·6·7항(인라인·`--for claude`·summary 처음 한 번·`toolInput.questions`·`next`), reference.md 한 줄, Codex ca-answer 동작 목록 뒤 인라인 문장·1·2·4항, ca-request 끝·ca-integrate 동의 문장(`toolInput` 지시 재수록 제거) | — |
+| `consentOutput.test.ts`(새, 8개) — hook 판정 → CLI 자식 프로세스 왕복(Claude 인라인·Codex 파일), 깃발 순서·따옴표, 호스트 불일치·연결자·관찰 안 된 준비 거부, 인라인=파일, 문법 오류 5종과 티켓 없음, CLI finish 의 적용 티켓·caller 없는 거부, 멈추는 동작의 고정 `next` | — |
+
+동의 준비 출력 글자 수(`scratchpad/sandbox-stage6/consent-size.cjs`, 새 Node 프로젝트):
+
+| 동작 | 전체(`--for` 없음) | `--for claude` | `--for codex` |
+|---|---|---|---|
+| `setup` | 11,743 | 5,644(−52%) | 5,739(−51%) |
+| `docs` | 6,379 | 2,962(−54%) | 3,057(−52%) |
+| `docs --kind architecture` | 3,203 | 1,374(−57%) | 1,469(−54%) |
+
+pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은 비율로 준다. 적용 뒤에는 `code-agent status`(작업이 없는 저장소 623자, 작업 중 1~2K자) 한 번이 준다. 실제 흐름에서의 호출 수 감소는 유료 평가를 돌리지 않아 미측정이다(평가 드라이버는 동의를 TTY fixture 로 대신해 원래 이 왕복을 재지 못한다 — OPT-6 의 `consent prepare`·`consent finish`·`status` 명령별 호출로 실제 세션에서 잰다).

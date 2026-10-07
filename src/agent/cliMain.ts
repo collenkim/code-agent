@@ -37,8 +37,8 @@ import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
-import { applyConsent, consentStatus, finishConsent, prepareConsent } from "./consent";
-import { APPLY_UNOBSERVED, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
+import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
+import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
 import { contextHandoff, handoffPlanning } from "./handoff";
 import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSourceConfirmed } from "./sourceUpdate";
@@ -80,10 +80,11 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
 
 스킬이 부른다 (호스트 세션 안):
-  code-agent consent prepare <작업.json>   확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음)
+  code-agent consent prepare <작업.json> | --action <동작> [--id <ID>] [--kind <종류>] [--spec <지시서>] [--for claude|codex]
+                                      확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음 — --for 를 주면 그 호스트가 쓰는 필드만 출력)
   code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
   code-agent consent apply <ID>            현재 세션에서 확인된 내용만 실행하고 계속 진행
-  code-agent consent finish <ID>           응답 뒤 한 번에 — 승인이면 적용하고, 아니면 status와 같은 내용
+  code-agent consent finish <ID>           응답 뒤 한 번에 — 승인이면 적용하고 지금 할 일(next)·스테이지(phase)까지, 아니면 status와 같은 내용
                                       prepare·apply·finish 는 hook 이 있는 그 세션의 셸에서 이 꼴 그대로만 실행된다
                                       (hook 이 본 명령의 티켓이 필요하다 — apply·finish 는 호스트 밖 사람의 TTY 에서도 된다)
   code-agent docs begin | end         문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지, 열 때 KNOWLEDGE 빈 뼈대 생성)
@@ -183,20 +184,27 @@ export async function runCommand(command: string | undefined, args: string[]): P
       else throw new Stop("planning advance | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID> | cross --by <claude|codex>");
       return 0;
     case "consent":
-      if (args[0] === "prepare" && args[1]) {
+      if (args[0] === "prepare") {
+        // 문법 오류는 티켓을 꺼내기 전에 사용법으로 알린다(hook 도 같은 함수로 보고 그런 명령에는 티켓을 내지 않는다)
+        const parsed = parsePrepareArgs(args.slice(1));
         // hook 이 이 준비 명령을 본 세션(티켓)에 동의를 묶는다 — 티켓이 없으면 세션을 확인할 수 없어 준비하지 않는다
         const ticket = takeTicket(repoRoot, "prepare");
         if (!ticket) throw new Stop(PREPARE_UNOBSERVED);
-        print(prepareConsent(repoRoot, JSON.parse(readFileSync(args[1], "utf8")), { binding: { id: ticket.sessionId, host: ticket.host } }));
+        if (parsed.form && parsed.form !== ticket.host) {
+          throw new Stop(`--for ${parsed.form} 는 이 명령을 실행한 세션(${ticket.host})과 다릅니다 — --for ${ticket.host} 로 다시 준비하세요.`);
+        }
+        const raw = parsed.file !== undefined ? JSON.parse(readFileSync(parsed.file, "utf8"))
+          : { action: parsed.action, ...(parsed.id ? { id: parsed.id } : {}), ...(parsed.kind ? { kind: parsed.kind } : {}), ...(parsed.spec ? { spec: parsed.spec } : {}) };
+        print(renderConsentOutput(repoRoot, prepareConsent(repoRoot, raw, { binding: { id: ticket.sessionId, host: ticket.host }, form: parsed.form })));
       } else if ((args[0] === "apply" || args[0] === "finish") && args[1]) {
         // 사람의 터미널(TTY, 호스트 표지 없음)이거나 hook 이 이 적용 명령을 본 세션만 — 적용 함수가 응답을 관찰한 세션과 대조한다
         const tty = terminalCaller(process.stdin.isTTY, process.env);
         const ticket = tty ? undefined : takeTicket(repoRoot, "apply", args[1]);
         if (!tty && !ticket) throw new Stop(APPLY_UNOBSERVED);
         const caller = tty ?? { sessionId: ticket!.sessionId };
-        print(args[0] === "apply" ? applyConsent(repoRoot, args[1], caller) : finishConsent(repoRoot, args[1], caller));
-      } else if (args[0] === "status" && args[1]) print(consentStatus(repoRoot, args[1]));
-      else throw new Stop("사용법: code-agent consent prepare <작업.json> | status <ID> | apply <ID> | finish <ID>");
+        print(args[0] === "apply" ? applyConsent(repoRoot, args[1], caller) : renderConsentOutput(repoRoot, finishConsent(repoRoot, args[1], caller)));
+      } else if (args[0] === "status" && args[1]) print(renderConsentOutput(repoRoot, consentStatus(repoRoot, args[1])));
+      else throw new Stop("사용법: code-agent consent prepare <작업.json> | --action <동작> … [--for claude|codex] | status <ID> | apply <ID> | finish <ID>");
       return 0;
     case "setup":
       if (args[0] && args[0] !== "baseline") throw new Stop("사용법: code-agent setup [baseline]");

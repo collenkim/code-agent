@@ -143,7 +143,7 @@ claude
 | 6. 개발·검증 | Claude Code | 승인된 순서의 구현 → 빌드·테스트 → 독립 리뷰 → 통합 검증을 진행합니다. 계획 안의 실패·지적은 수정 후 다시 검증합니다. |
 | 7. 결과 반영 | Claude Code | KNOWLEDGE 갱신 항목을 고르고, 요구사항별 결과와 실제 커밋할 경로 목록을 확인하면 작업 브랜치에 로컬 커밋합니다. |
 
-확인 절차는 에이전트가 `code-agent consent prepare <action.json>`을 호출하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달하는 순서입니다. PreToolUse·PostToolUse hook이 같은 세션의 질문과 응답을 관찰하면 `code-agent consent finish <ID>`가 상태를 확인하고 승인된 요청만 그 자리에서 실행합니다(`consent status <ID>` 확인 뒤 `consent apply <ID>`로 나눠도 같습니다). 남은 질문이 있으면 반환된 질문을 이어서 표시합니다. 확인 이후 파일·Git 상태나 플러그인 설명이 바뀌면 새 확인이 필요합니다.
+확인 절차는 에이전트가 `code-agent consent prepare --action <동작> --for claude`(반려처럼 자유 문구가 필요하면 `<action.json>`)를 호출하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달하는 순서입니다. PreToolUse·PostToolUse hook이 같은 세션의 질문과 응답을 관찰하면 `code-agent consent finish <ID>`가 상태를 확인하고 승인된 요청만 그 자리에서 실행합니다(`consent status <ID>` 확인 뒤 `consent apply <ID>`로 나눠도 같습니다). 남은 질문이 있으면 반환된 질문을 이어서 표시합니다. 확인 이후 파일·Git 상태나 플러그인 설명이 바뀌면 새 확인이 필요합니다.
 
 기존 `confirm`·`approve`·`deliver`를 일반 터미널에서 직접 실행하는 방식도 사용할 수 있습니다. 이 경로는 화면에 표시된 단어를 입력하는 TTY 확인을 유지합니다.
 

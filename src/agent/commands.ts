@@ -552,14 +552,7 @@ export function status(repoRoot: string): string {
       lines.push(`다음: ${intake.hint}`);
       return lines.join("\n");
     }
-    // 처리 주체가 없는 상태(FLOW-13) — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
-    // 준비 동의(preparationHint 가 고른다) 순으로 본다. 문서 세션 중에는 request begin 이 거부되므로 접수 안내를 내지 않는다
-    const hint = aidlcBlock(repoRoot) ? AIDLC_HINT
-      : !manifest && !existsSync(join(repoRoot, DOCS_SESSION_FILE))
-        ? `${skill("ca-request")} <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (${skill("ca-adopt")})`
-        : preparationHint(repoRoot, false) ??
-          `${skill("ca-request")} [ID] <요구사항> 으로 접수 — 신규·기능 변경은 ${skill("ca-feature")}, 결함 수정은 ${skill("ca-fix")}, 동작 보존은 ${skill("ca-refactor")} 로도 시작`;
-    lines.push("", "작업: 없음", `다음: ${hint}`);
+    lines.push("", "작업: 없음", `다음: ${idleHint(repoRoot, manifest)}`);
     return lines.join("\n");
   }
 
@@ -621,6 +614,33 @@ export function status(repoRoot: string): string {
   }
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
+}
+
+/**
+ * 처리 주체가 없는 상태(FLOW-13)의 `다음:` — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
+ * 준비 동의(preparationHint 가 고른다) 순으로 본다. 문서 세션 중에는 request begin 이 거부되므로 접수 안내를 내지 않는다
+ */
+function idleHint(repoRoot: string, manifest: Manifest | undefined): string {
+  return aidlcBlock(repoRoot) ? AIDLC_HINT
+    : !manifest && !existsSync(join(repoRoot, DOCS_SESSION_FILE))
+      ? `${skill("ca-request")} <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (${skill("ca-adopt")})`
+      : preparationHint(repoRoot, false) ??
+        `${skill("ca-request")} [ID] <요구사항> 으로 접수 — 신규·기능 변경은 ${skill("ca-feature")}, 결함 수정은 ${skill("ca-fix")}, 동작 보존은 ${skill("ca-refactor")} 로도 시작`;
+}
+
+/**
+ * `status` 의 `다음:` 줄 값과 스테이지 — 동의 적용 결과(`consent finish`)가 같은 값을 돌려줘 메인이 status 를 다시 부르지 않는다.
+ * 작업이 있으면 `requirePhase` 를 지나야 하므로 예외가 날 수 있다(부르는 쪽이 잡는다).
+ */
+export function nextStep(repoRoot: string): { phase?: Phase; next: string } {
+  const work = loadWork(repoRoot);
+  if (!work) {
+    const session = loadRequestSession(repoRoot);
+    if (session) return { next: requestStatusLines(repoRoot, session).hint };
+    return { next: idleHint(repoRoot, loadManifestIfAny(repoRoot)) };
+  }
+  requirePhase(work.active);
+  return { phase: work.active.phase, next: nextHint(work) };
 }
 
 // ---- next ----

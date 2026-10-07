@@ -13,6 +13,8 @@
 
 ## 작업 JSON 필드
 
+자유 문구가 없는 동작은 파일 대신 `code-agent consent prepare --action <동작> [--id] [--kind] [--spec] --for claude`로 준비한다. 표의 필드 형식은 파일로 준비할 때 쓴다.
+
 | 필드 | 형식과 용도 |
 |---|---|
 | `action` | 필수 문자열: `setup`, `docs`, `baseline`, `request`, `plan`, `deliver`, `knowledge-prune`, `model`, `abort`, `plugin-add`, `plugin-remove`, `update`, `repro-log`, `judgment` 중 하나 |
