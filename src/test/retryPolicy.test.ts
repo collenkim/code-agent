@@ -534,11 +534,31 @@ const CROSS_FIXTURES: [string, string, CrossProbe][] = [
     stderr: [banner, "user", prompt, toolOut, "ERROR: You've hit your usage limit.", "tokens used", "1,234", CROSS_NO_ANSWER].join("\n") }],
   ["cross-unavailable/auth", "codex 세션 전 Not logged in + 마지막 응답 없음 줄", { host: "codex", sentPrompt: prompt, status: 1, stderr: ["Not logged in", CROSS_NO_ANSWER].join("\n") }],
   ["cross-config-error/unclassified", "codex 출력 없이 마지막 응답 없음 줄만", { host: "codex", sentPrompt: prompt, status: 0, stderr: CROSS_NO_ANSWER }],
+  // 교차 검증 독립 검토 — 세션 출력은 stderr 마지막 한 줄이 Codex 의 ERROR: 줄일 때만 본다(이어진 묶음·전사 끝 줄·stdout·신호 종료는 보지 않는다)
+  ["cross-config-error/unclassified", "codex 읽은 로그 끝 줄 ERROR: 한도 + 바로 뒤 Codex ERROR(모르는 원인)", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, "exec", "cat logs/app.log in C:/w/repo", " succeeded in 12ms:", "ERROR: You've hit your usage limit. Upgrade to Pro", "ERROR: unexpected status 400 Bad Request: invalid_request_error"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 읽은 Python 로그 끝 줄 ERROR:root: + Codex ERROR 400", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, "exec", "cat worker.log", " succeeded in 3ms:", "ERROR:root:quota exceeded for tenant 7", "[2026-10-08T00:00:00Z] ERROR: unexpected status 400 Bad Request"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 신호로 종료 — 마지막 줄이 읽은 파일 본문(인증 문구)", { host: "codex", sentPrompt: prompt, status: null,
+    stderr: [banner, "user", prompt, "exec", "cat src/http.js in C:/w/repo", " succeeded in 12ms:", "// HTTP 401 Unauthorized 면 다시 로그인"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 강제 종료(Windows 종료 코드 1) — 마지막 줄이 파일 본문(quota exceeded)", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, "exec", "cat README.md in C:/w/repo", " succeeded in 3ms:", "If the quota is exceeded the job retries."].join("\n") }],
+  ["cross-config-error/unclassified", "codex stdout 끝 ERROR: 한도(모델 문장) + stderr panic", { host: "codex", sentPrompt: prompt, status: 1,
+    stdout: "결과\nERROR: usage limit reached", stderr: [banner, "user", prompt, "thread main panicked"].join("\n") }],
+  ["cross-config-error/unclassified", "codex 신호로 종료 — 끝 줄이 Codex 의 ERROR: 한도여도 보지 않는다", { host: "codex", sentPrompt: prompt, status: null,
+    stderr: [banner, "user", prompt, toolOut, "ERROR: You've hit your usage limit."].join("\n") }],
+  ["cross-config-error/unclassified", "codex 전사 라벨이 바뀌어도 남은 줄이 둘 이상이면 끝 줄만 오류 줄로 본다", { host: "codex", sentPrompt: prompt, status: 1,
+    stderr: [banner, "user", prompt, "assistant>", "rate limit 처리를 살펴봤습니다"].join("\n") }],
+  ["cross-config-error/unclassified", "spawn ENOBUFS — 잘린 출력의 한도 문구를 보지 않는다", { host: "codex", sentPrompt: "", spawnCode: "ENOBUFS", spawnMessage: "spawnSync codex ENOBUFS",
+    stderr: "If the quota is exceeded the job retries.\n".repeat(3), stdout: "" }],
+  // Claude 네트워크 문구(claude 2.1.292 문자열)
+  ["cross-unavailable/network", "claude Unable to connect to API", { host: "claude", status: 1, stderr: "Unable to connect to API (ConnectionRefused)", stdout: "" }],
+  ["cross-unavailable/network", "claude is_error API Error: Connection error.", { host: "claude", status: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "API Error: Connection error." }) }],
 ];
 
 describe("교차 실행 실패 분류", () => {
-  test("분류 fixture 51건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
-    assert.equal(CROSS_FIXTURES.length, 51);
+  test("분류 fixture 61건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
+    assert.equal(CROSS_FIXTURES.length, 61);
     for (const [expected, name, probe] of CROSS_FIXTURES) {
       const got = classifyCrossFailure(probe);
       assert.equal(`${got.class}/${got.kind}`, expected, `${name} — text=${JSON.stringify(crossFailureText(probe))}`);
@@ -557,13 +577,19 @@ describe("교차 실행 실패 분류", () => {
     const claude = crossFailureText({ host: "claude", stderr: "warn\nboom", stdout: JSON.stringify({ is_error: true, result: "r", subtype: "s", usage: { input_tokens: 401 }, total_cost_usd: 1, permission_denials: [{ x: "quota exceeded" }] }) });
     assert.equal(claude, "boom\nr\ns", "Claude stderr 도 오류 줄(없으면 마지막 한 줄)만");
     assert.equal(crossFailureText({ host: "claude", stderr: "hook: rate limit note\nError: x\n    at f (a.js:1:1)" }), "Error: x");
-    // Codex 세션 출력은 끝에서 이어진 ERROR: 줄만 — 전사 중간의 ERROR: 인용은 보지 않는다
+    // Codex 세션 출력은 stderr 마지막 한 줄이 Codex 의 ERROR: 줄일 때만 — 전사 중간·끝의 인용은 보지 않는다(분류되지 않은 종료)
     const quoted = crossFailureText({ host: "codex", sentPrompt: "", stderr: [banner, "exec", "cat ops.log", " succeeded in 2ms:", "ERROR: You've hit your usage limit", "codex", "검토를 마쳤습니다", "thread 'main' panicked"].join("\n") });
-    assert.equal(quoted, "thread 'main' panicked");
+    assert.equal(quoted, "");
+    assert.match(classifyCrossFailure({ host: "codex", sentPrompt: "", status: 101, stderr: [banner, "exec", "cat ops.log", " succeeded in 2ms:", "thread 'main' panicked"].join("\n") }).reason,
+      /^분류되지 않은 종료\(unclassified\): 종료 코드 101$/, "전사 끝 줄을 사유로 보이지 않고 종료 코드만 남긴다");
+    // 이어진 ERROR: 묶음은 합치지 않는다 — 마지막 줄이 이번 실패다
     assert.equal(crossFailureText({ host: "codex", sentPrompt: "", stderr: `${banner}\nERROR: stream disconnected - retrying turn (1/5)\nERROR: unexpected status 503 Service Unavailable` }),
-      "ERROR: stream disconnected - retrying turn (1/5)\nERROR: unexpected status 503 Service Unavailable");
-    // stdout 은 Codex 의 마지막 응답이다 — 끝에서 이어진 ERROR: 줄만 본다
-    assert.equal(crossFailureText({ host: "codex", sentPrompt: "", stdout: "검토 결과\nERROR: You've hit your usage limit", stderr: "" }), "ERROR: You've hit your usage limit");
+      "ERROR: unexpected status 503 Service Unavailable");
+    // 모델 차례가 시작되기 전(전사 없음)에 남은 줄이 하나면 그 줄이 Codex 자신의 출력이다
+    assert.equal(crossFailureText({ host: "codex", sentPrompt: prompt, status: 1, stderr: `${banner}\nuser\n${prompt}\nNot logged in` }), "Not logged in");
+    assert.equal(crossFailureText({ host: "codex", sentPrompt: prompt, status: 1, stderr: `${banner}\nuser\n${prompt}\ncodex\nNot logged in` }), "", "codex 라벨 뒤 줄은 모델 문장일 수 있다");
+    // stdout 은 Codex 의 마지막 응답(모델 문장)이라 보지 않는다
+    assert.equal(crossFailureText({ host: "codex", sentPrompt: "", stdout: "검토 결과\nERROR: You've hit your usage limit", stderr: "" }), "");
     assert.equal(crossFailureText({ host: "claude", stderr: "only stderr", stdout: JSON.stringify({ is_error: false, result: "fine" }) }), "only stderr", "성공 JSON 은 넣지 않는다");
     const many = crossFailureText({ host: "codex", sentPrompt: "", stderr: ["error: 1", "error: 2", "error: 3", "error: 4", "error: 5", "error: 6", "[2026-10-07] ERROR: 7"].join("\r\n") });
     assert.equal(many, "error: 3\nerror: 4\nerror: 5\nerror: 6\n[2026-10-07] ERROR: 7", "오류 줄은 마지막 5줄");

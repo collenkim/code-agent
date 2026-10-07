@@ -15,7 +15,7 @@ import { loadEvidence } from "../agent/evidence";
 import { loadActive } from "../agent/layout";
 import { runPlanningHook } from "../agent/planningHook";
 import { RetryRefused } from "../agent/retryPolicy";
-import { loadReview, mutateReview, openRound, reviewDocFile, reviewProblems, saveReview, type ReviewLog } from "../agent/review";
+import { loadReview, mutateReview, openRound, reviewBudgets, reviewDocFile, reviewProblems, saveReview, type ReviewLog } from "../agent/review";
 import { observeReviewer, RecordedFailure, runReviewHook } from "../agent/reviewHook";
 import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "../agent/reviewJudgment";
 import { runSessionHook } from "../agent/sessionHook";
@@ -208,16 +208,38 @@ test("끊긴 실행 — 다음 실행이 기록 없이 끝난 시도를 끊긴 �
   assert.deepEqual(attempts().map((attempt) => [attempt.class, attempt.kind]), [["cross-timeout", "interrupted"], ["completed", undefined]]);
 });
 
-test("끊긴 실행 세 번은 중지가 아니라 지점 한도 — 다른 호스트를 띄우지 않고 게이트가 막힌다", async () => {
+test("끊긴 실행 세 번은 중지가 아니라 지점 한도 — 다른 호스트를 띄우지 않고 게이트가 막힌다. 닫은 시도는 거부 문구 앞에 알린다", async () => {
   await crossRepo(); fakeCodex();
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
   mutateReview(root, ID, TARGET, (log) => {
-    log!.rounds.at(-1)!.crossAttempts = [1, 2, 3].map((n) => ({ n, host: "codex" as const, mode: "review" as const, startedAt: "2026-10-07T00:00:00.000Z",
-      endedAt: "2026-10-07T00:10:00.000Z", class: "cross-timeout" as const, kind: "interrupted", detail: "기록 없이 끊긴 실행" }));
+    log!.rounds.at(-1)!.crossAttempts = [
+      ...[1, 2].map((n) => ({ n, host: "codex" as const, mode: "review" as const, startedAt: "2026-10-07T00:00:00.000Z",
+        endedAt: "2026-10-07T00:10:00.000Z", class: "cross-timeout" as const, kind: "interrupted", detail: "기록 없이 끊긴 실행" })),
+      { n: 3, host: "codex", mode: "review", startedAt: new Date().toISOString(), pid: dead, machine: hostname() },
+    ];
     return { log: log!, value: 0 };
   });
-  assert.throws(() => cross("- 없음"), refusal(/교차 실행 한도 3회를 모두 썼습니다\(끊긴 실행 3\)[\s\S]*judgment cross-stop 또는 retry-grant crossPoint/));
+  assert.throws(() => cross("- 없음"), refusal(new RegExp(`^이전 교차 실행\\(시작 \\d\\d:\\d\\d, pid ${dead}\\)이 기록 없이 끊겨 중단으로 기록했습니다\\.\\n` +
+    "이 지점의 교차 실행 한도 3회를 모두 썼습니다\\(끊긴 실행 3\\)[\\s\\S]*judgment cross-stop 또는 retry-grant crossPoint")));
   assert.equal(calls(), 0);
+  assert.deepEqual([attempts()[2].class, attempts()[2].kind, typeof attempts()[2].endedAt], ["cross-timeout", "interrupted", "string"], "닫은 시도는 거부해도 저장한다");
   assert.throws(() => next(root), /교차 리뷰가 필요합니다/);
+});
+
+test("게이트 쪽 고아 보기 — 사람이 아닌 중지 지점에 끝 기록 없는 시도(죽은 pid)가 남아도 실행 중으로 막지 않고 중지대로 진행한다", async () => {
+  await crossRepo();
+  fakeCodex("process.stderr.write('ERROR: You hit your spend cap set by the owner of your workspace.'); process.exit(1);");
+  assert.match(cross(), /교차 검증 중지/);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  mutateReview(root, ID, TARGET, (log) => {
+    const last = log!.rounds.at(-1)!;
+    last.crossAttempts = [...last.crossAttempts!, { n: 2, host: "codex", mode: "review", startedAt: new Date().toISOString(), pid: dead, machine: hostname() }];
+    return { log: log!, value: 0 };
+  });
+  assert.equal(reviewProblems(loadWork(root)!).filter((problem) => /교차/.test(problem)).length, 0);
+  assert.equal(attempts()[1].endedAt, undefined, "게이트는 고아 보기를 저장하지 않는다");
+  next(root);
+  assert.equal(loadActive(root)!.phase, "integrate");
 });
 
 test("다른 교차 실행이 진행 중이면 기다리게 하고 시도를 더하지 않는다", async () => {
@@ -335,6 +357,36 @@ test("동시 호출 — 먼저 시작한 실행만 결과가 되고, 먼저 끝�
   assert.throws(() => next(root), /열린 지적: F1/);
 });
 
+test("동시 호출(순서를 바꿔) — 먼저 시작한 실행이 먼저 끝나도 결과는 그 실행이고, 나중 실행의 결과는 무시된다", async () => {
+  await crossRepo({ reviewer: false });
+  const event = (agent: string) => ({ cwd: root, session_id: "s", agent_id: agent, agent_type: "ca-reviewer" });
+  observeReviewer({ ...event("r1"), hook_event_name: "SubagentStart" });
+  observeReviewer({ ...event("r2"), hook_event_name: "SubagentStart" });
+  observeReviewer({ ...event("r1"), hook_event_name: "SubagentStop", last_assistant_message: `| F1 | ${CODE} | 계획 안 | 열림 | x |` });
+  assert.throws(() => observeReviewer({ ...event("r2"), hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }), RecordedFailure);
+  assert.deepEqual([lastRound().reviewers![1].ignored!.reason, lastRound().reviewers![1].ignored!.result], ["concurrent", "- 없음"]);
+  assert.equal(lastRound().reviewer!.agentId, "r1");
+  assert.match(readFileSync(doc(), "utf8"), /## 지적\n\n\| F1 \|/);
+  assert.throws(() => next(root), /열린 지적: F1/);
+});
+
+test("리뷰어 내용 오류를 고치지 않고 stop_hook_active 로 끝내면 형식 오류로 기록하고, 새 리뷰어를 부를 수 있다(남은 1회)", async () => {
+  await crossRepo({ reviewer: false });
+  const event = (agent: string) => ({ cwd: root, session_id: "s", agent_id: agent, agent_type: "ca-reviewer" });
+  process.env.CLAUDE_PROJECT_DIR = root;
+  const bad = `| F1 | ${CODE}:12 | 계획 안 | 열림(경미) | x |`;
+  const stop = (agent: string, extra = {}) => quiet(() => runReviewHook(JSON.stringify({ ...event(agent), hook_event_name: "SubagentStop", last_assistant_message: bad, ...extra })));
+  observeReviewer({ ...event("r1"), hook_event_name: "SubagentStart" });
+  assert.equal(stop("r1"), 2);
+  assert.equal(stop("r1", { stop_hook_active: true }), 0);
+  assert.equal(lastRound().reviewers![0].failure!.class, "agent-format-error");
+  assert.throws(() => next(root), /형식 오류 1회 기록\) — ca-reviewer 를 새로 호출하세요\(이 회차 남은 호출 1회\)/);
+  observeReviewer({ ...event("r2"), hook_event_name: "SubagentStart" });
+  assert.equal(lastRound().reviewers![1].ignored, undefined, "새 호출을 받아들인다");
+  observeReviewer({ ...event("r2"), hook_event_name: "SubagentStop", last_assistant_message: "- 없음" });
+  assert.equal(lastRound().reviewer!.agentId, "r2");
+});
+
 test("멈춘 리뷰어 — 15분이 지나면 고아로 보고 새 호출을 받으며, 형식 오류로 끝난 같은 agent 의 재개는 새 실행이다", async () => {
   await crossRepo({ reviewer: false });
   const event = (agent: string) => ({ cwd: root, session_id: "s", agent_id: agent, agent_type: "ca-reviewer" });
@@ -382,29 +434,33 @@ test("Codex 리뷰어의 형식 오류는 되돌리지 않고 바로 기록한�
   assert.deepEqual([lastRound().reviewers![0].host, lastRound().reviewers![0].failure!.class], ["codex", "agent-format-error"]);
 });
 
-test("옛 기록 출구 — 표 규칙에 어긋난 옛 리뷰어 완료 결과는 유효하지 않아 새로 부를 수 있고, 옛 교차 결과는 한 번 다시 실행한다", async () => {
+test("옛 기록 출구 — 표 규칙에 어긋난 옛 리뷰어 완료 결과는 유효하지 않아 새로 부를 수 있고, 옛 교차 결과는 원문을 옮겨 형식만 교정한다", async () => {
   await crossRepo({ reviewer: false });
   const bad = `| F1 | ${CODE} | 계획 안 | 미해결 | x |`;
+  const oldCross = "| X1 | `src/value.js` | 계획 안 | 열림 | 음수 경계 누락(실제 결함) |";
   mutateReview(root, ID, TARGET, (log) => {
     const last = log!.rounds.at(-1)!;
     delete last.reviewers;
     last.reviewer = { sessionId: "old", agentId: "old", startedAt: "2026-10-01T00:00:00.000Z", completedAt: "2026-10-01T00:01:00.000Z", result: bad };
-    last.cross = { host: "codex", model: "m", startedAt: "2026-10-01T00:00:00.000Z", completedAt: "2026-10-01T00:01:00.000Z", result: `| X1 | src/other.js | 계획 안 | 열림 | x |` };
+    last.cross = { host: "codex", model: "m", startedAt: "2026-10-01T00:00:00.000Z", completedAt: "2026-10-01T00:01:00.000Z", result: oldCross };
     delete last.crossAttempts;
     return { log: log!, value: 0 };
   }, { document: (text) => text.replace("## 지적\n\n- 없음", `## 지적\n\n${bad}`) });
   const problems = reviewProblems(loadWork(root)!).join("\n");
   assert.match(problems, /기록된 리뷰어 결과가 표 규칙\(상태·범위·경로\)에 맞지 않습니다[\s\S]*새로 호출하세요\(남은 1회\)/);
-  assert.match(problems, /직전 실행: 막힘\(형식 오류\)/);
+  assert.match(problems, /직전 실행: 막힘\(형식 오류\)[\s\S]*옛 기록의 교차 결과\(같은 명령이 handoff 로 옮긴다\)[\s\S]*형식만 교정합니다\(남은 1회\)/);
   const event = { cwd: root, session_id: "s", agent_id: "new", agent_type: "ca-reviewer" };
   observeReviewer({ ...event, hook_event_name: "SubagentStart" });
   observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" });
   assert.equal(lastRound().reviewer!.agentId, "new");
   fakeCodex();
-  assert.match(cross("- 없음"), /지적 없음/);
-  assert.equal(attempts().length, 2, "옛 추정 1 + 다시 실행 1");
-  next(root);
-  assert.equal(loadActive(root)!.phase, "integrate");
+  // 처음부터 다시 실행하지 않는다 — 옛 결과 원문을 handoff 로 옮기고, 판단은 그대로 둔 채 형식만 교정한다
+  assert.match(cross(`| X1 | ${CODE} | 계획 안 | 열림 | 음수 경계 누락(실제 결함) |`), /열린 지적 1개 \(형식 교정\)/);
+  const [legacy, corrected] = attempts();
+  assert.deepEqual([legacy.class, legacy.result, corrected.mode, corrected.class], ["cross-result-invalid", oldCross, "correct", "completed"], "옛 추정 1 + 형식 교정 1");
+  assert.equal(readFileSync(join(root, legacy.rawPath!), "utf8"), oldCross, "옛 결과 원문을 handoff 에 보존한다");
+  assert.match(prompt(), new RegExp(`형식 교정[\\s\\S]*${legacy.rawPath!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} 는 직전 교차 리뷰의 원문 응답이다`));
+  assert.throws(() => next(root), /열린 지적: X1/);
 });
 
 // ---- 잠금·마지막 회차 ----
@@ -506,8 +562,22 @@ test("HP-12: 교차 자식(CODE_AGENT_CROSS) 안에서는 Stop·SessionStart·�
   assert.deepEqual(codexHook({ cwd: root, hook_event_name: "UserPromptSubmit", session_id: "s", turn_id: "t", prompt: `code-agent consent respond ${"0".repeat(8)}-0000-0000-0000-000000000000 1` }), {});
   const denied = codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "s", tool_name: "Bash", tool_input: { command: "cat ~/.code-agent/credentials.json" } }) as { hookSpecificOutput?: { permissionDecision: string } };
   assert.equal(denied.hookSpecificOutput?.permissionDecision, "deny", "PreToolUse 판정은 교차 자식에서도 그대로다");
+  // 교차 자식은 진행 명령·쓰기를 하지 않는다 — 읽기 전용 명령만 연다(Claude·Codex 같은 판정)
+  const child = /교차 실행\(CODE_AGENT_CROSS\) 안에서는 작업을 진행하거나 파일을 고치지 않습니다/;
+  for (const command of ["code-agent next", "code-agent check", "code-agent review", "code-agent planning advance", "code-agent read src/value.js && code-agent next"]) {
+    assert.match(guardTool({ cwd: root, tool_name: "Bash", tool_input: { command } }) ?? "", child, command);
+  }
+  assert.match(guardTool({ cwd: root, tool_name: "Write", tool_input: { file_path: join(root, CODE) } }) ?? "", child);
+  assert.equal(guardTool({ cwd: root, tool_name: "Bash", tool_input: { command: "code-agent read src/value.js" } }), undefined, "읽기는 연다");
+  assert.equal(guardTool({ cwd: root, tool_name: "Bash", tool_input: { command: "code-agent status" } }), undefined);
+  assert.equal(guardTool({ cwd: root, tool_name: "Read", tool_input: { file_path: join(root, CODE) } }), undefined);
+  const codexDeny = (input: Record<string, unknown>) => (codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "s", ...input }) as { hookSpecificOutput?: { permissionDecisionReason: string } }).hookSpecificOutput?.permissionDecisionReason ?? "";
+  assert.match(codexDeny({ tool_name: "Bash", tool_input: { command: "code-agent check" } }), child);
+  assert.match(codexDeny({ tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Update File: ${CODE}\n@@\n-a\n+b\n*** End Patch` } }), child);
+  assert.equal(codexDeny({ tool_name: "Bash", tool_input: { command: "code-agent read src/value.js" } }), "");
   delete process.env.CODE_AGENT_CROSS;
   assert.ok(guardTool({ cwd: root, tool_name: "Bash", tool_input: { command: "cat ~/.code-agent/credentials.json" } }));
+  assert.equal(guardTool({ cwd: root, tool_name: "Bash", tool_input: { command: "code-agent next" } }), undefined, "교차 자식이 아니면 그대로다");
 });
 
 test("HP-8·VER-M2: Codex 샌드박스 표지가 있으면 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 중지가 아니라 막힘", async () => {
@@ -521,6 +591,28 @@ test("HP-8·VER-M2: Codex 샌드박스 표지가 있으면 claude 를 띄우기 
   assert.deepEqual([attempts()[0].mode, attempts()[0].class, attempts()[0].kind], ["preflight", "host-sandbox-denied", "preflight"]);
   assert.throws(() => next(root), /교차 리뷰가 필요합니다[\s\S]*막힘\(샌드박스\)/);
   assert.match(previewCrossStop(root, "review"), /시도 1회\(host-sandbox-denied/, "사용자가 권한 상승을 거절하면 사람 중지를 고를 수 있다");
+  // 사전 판정은 다른 호스트를 띄우지 않았으므로 지점 호스트를 고정하지 않는다 — Claude Code 로 옮겨 --by codex 로 이어 간다
+  delete process.env.CODEX_SANDBOX_NETWORK_DISABLED;
+  assert.ok(withCaller("claude", () => reviewProblems(loadWork(root)!)).some((problem) => /review cross --by codex/.test(problem)), "게이트 안내도 고정되지 않은 호스트를 권한다");
+  fakeCodex();
+  assert.match(cross("- 없음"), /codex\([^)]*\) 교차 리뷰를 1회차에 기록했습니다 — 지적 없음/);
+  assert.deepEqual(attempts().map((attempt) => [attempt.host, attempt.mode, attempt.class]), [["claude", "preflight", "host-sandbox-denied"], ["codex", "review", "completed"]]);
+  assert.throws(() => withCaller("codex", () => crossReview(root, "claude")), refusal(/이 회차의 교차 검증은 codex 로 시작했습니다/), "실제로 띄운 첫 시도가 호스트를 고정한다");
+  assert.match(readFileSync(doc(), "utf8"), /- 1회차 [^\n]*교차\(codex\): 샌드박스, completed/);
+});
+
+test("Codex 에서 부른 --by claude 의 지점 첫 네트워크 오류는 샌드박스 거부로 막고(표지 없음), 권한 상승 뒤 같은 오류면 실행 불가로 기록하고 진행한다", async () => {
+  await crossRepo();
+  const claude = join(fakeDir, "claude.cjs");
+  writeFileSync(claude, "require('fs').appendFileSync(process.env.FAKE_CALLS, 'x'); process.stderr.write('Error: getaddrinfo ENOTFOUND api.anthropic.com\\n'); process.exit(1);\n");
+  process.env.CODE_AGENT_CLAUDE_BIN = claude; process.env.FAKE_CALLS = join(fakeDir, "calls.txt");
+  const byClaude = () => withCaller("codex", () => crossReview(root, "claude"));
+  assert.throws(byClaude, refusal(/Codex 샌드박스가 claude 실행을 막았습니다[\s\S]*샌드박스 표지는 없지만[\s\S]*권한 상승/));
+  assert.deepEqual([attempts()[0].class, attempts()[0].kind], ["host-sandbox-denied", "sandbox-network"]);
+  assert.throws(() => withCaller("codex", () => next(root)), /교차 리뷰가 필요합니다[\s\S]*막힘\(샌드박스\)/, "중지가 아니라 막힘 — 필수 교차 검증이 조용히 빠지지 않는다");
+  assert.match(byClaude(), /교차 검증 중지[\s\S]*네트워크/);
+  assert.deepEqual([attempts()[1].class, attempts()[1].kind, calls()], ["cross-unavailable", "network", 2]);
+  assert.equal(reviewProblems(loadWork(root)!).filter((problem) => /교차/.test(problem)).length, 0, "중지 지점 — 게이트는 막히지 않는다");
 });
 
 // ---- 중지 지점의 재실행·연속 중지·doctor ----
@@ -566,6 +658,52 @@ test("doctor --cross — 다른 호스트의 --help 에 교차 실행 옵션이 
   const text = doctor(root, undefined, { cross: true }).text;
   assert.match(text, /✗ 교차 실행 옵션\(claude\): 없는 옵션: --permission-prompts/);
   assert.match(text, /✓ 교차 실행 옵션\(codex\): 사용하는 옵션이 모두 있습니다/);
+});
+
+// ---- 사람 허용의 대상(C5 judgment retry-grant 가 읽는다) ----
+
+test("reviewBudgets — 리뷰 회차(reviewRoundUsage)·리뷰어 호출(고아 포함)·교차 지점·원인별 예산을 사람 허용과 함께 읽기만 하고, 묶임이 바뀌면 리뷰 회차 행만 낸다", async () => {
+  await crossRepo({ reviewer: false });
+  const rows = () => Object.fromEntries(reviewBudgets(loadWork(root)!).map((row) => [row.key, row]));
+  let now = rows();
+  assert.deepEqual(Object.keys(now), ["reviewRounds", "reviewerRuns", "crossPoint", "crossError", "crossFormat"]);
+  assert.deepEqual([now.reviewRounds.used, now.reviewRounds.limit, now.reviewRounds.exhausted, now.reviewRounds.scope, now.reviewRounds.point], [1, 3, false, "", "리뷰 회차"]);
+  assert.deepEqual([now.reviewerRuns.used, now.reviewerRuns.limit, now.reviewerRuns.scope, now.reviewerRuns.point], [0, 2, "round:1", "리뷰 1회차"]);
+  assert.deepEqual([now.crossPoint.used, now.crossPoint.limit, now.crossPoint.scope, now.crossPoint.point], [0, 3, "round:1", "리뷰 1회차 교차"]);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const ended = { startedAt: "2026-10-07T00:00:00.000Z", endedAt: "2026-10-07T00:01:00.000Z" };
+  mutateReview(root, ID, TARGET, (log) => {
+    const last = log!.rounds.at(-1)!;
+    // 고아로 처리한 리뷰어 실행도 호출로 센다
+    last.reviewers = [{ sessionId: "s", agentId: "r1", startedAt: "2026-10-07T00:00:00.000Z", ignored: { at: "2026-10-07T00:20:00.000Z", reason: "orphaned" } },
+      { sessionId: "s", agentId: "r2", startedAt: new Date().toISOString() }];
+    last.crossAttempts = [
+      { n: 1, host: "codex", mode: "review", ...ended, class: "cross-config-error", kind: "config", detail: "x" },
+      { n: 2, host: "codex", mode: "review", ...ended, class: "cross-config-error", kind: "config", detail: "x" },
+      // 끝 기록 없는 시도(죽은 pid) — 게이트 쪽 고아 보기로 센다
+      { n: 3, host: "codex", mode: "review", startedAt: new Date().toISOString(), pid: dead, machine: hostname() },
+    ];
+    log!.grants = [{ key: "crossError", scope: "round:1", step: 1, consent: "c1", at: "t", reason: "r" }, { key: "reviewRounds", scope: "", step: 1, consent: "c2", at: "t", reason: "r" },
+      { key: "crossError", scope: "round:2", step: 1, consent: "c3", at: "t", reason: "다른 회차 — 세지 않는다" }];
+    return { log: log!, value: 0 };
+  });
+  now = rows();
+  assert.deepEqual([now.reviewRounds.used, now.reviewRounds.limit, now.reviewRounds.left], [1, 4, 3]);
+  assert.deepEqual([now.reviewerRuns.used, now.reviewerRuns.left, now.reviewerRuns.exhausted], [2, 0, true]);
+  assert.deepEqual([now.crossPoint.used, now.crossPoint.limit, now.crossPoint.exhausted], [3, 3, true]);
+  assert.deepEqual([now.crossError.used, now.crossError.limit, now.crossError.left, now.crossError.exhausted], [1, 2, 1, false], "설정 오류 두 번 + 허용 1 — 첫 오류 뒤 1회 재실행을 썼다");
+  assert.deepEqual([now.crossFormat.used, now.crossFormat.limit], [0, 1]);
+  assert.equal(lastRound().crossAttempts![2].endedAt, undefined, "읽기만 한다 — 고아 보기를 저장하지 않는다");
+  // 묶임이 바뀌면(stale) 리뷰 회차 행만 — 다음 openRound 가 회차·허용을 버린다
+  const log = loadReview(root, ID, TARGET)!;
+  saveReview(root, { ...log, rounds: log.rounds.map((round) => ({ ...round, planHash: "sha256:old-plan" })) });
+  assert.deepEqual(reviewBudgets(loadWork(root)!).map((row) => [row.key, row.used, row.limit, row.scope]), [["reviewRounds", 0, 3, ""]]);
+});
+
+test("reviewBudgets — 한 호스트 설치는 교차 행이 없다", async () => {
+  writeFileSync(doc(), readFileSync(doc(), "utf8").replace("## 지적\n", "## 지적\n\n- 없음\n"));
+  recordReviewFixture(root);
+  assert.deepEqual(reviewBudgets(loadWork(root)!).map((row) => [row.key, row.used]), [["reviewRounds", 1], ["reviewerRuns", 1]]);
 });
 
 // ---- 반영(PVR-16) ----

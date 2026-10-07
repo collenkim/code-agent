@@ -353,7 +353,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "host-sandbox-denied": {
     id: "host-sandbox-denied", label: "Codex 샌드박스 제한", group: "cross", auxiliary: false,
-    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류",
+    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 지점 첫 네트워크 오류 포함)",
     retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령",
     counters: [], limitText: "—",
     consumesFixRound: false, fixRoundText: "안 씀",
@@ -909,7 +909,10 @@ export const CROSS_PATTERNS: Readonly<Record<"sandbox" | "config" | "auth" | "qu
     /\bunauthori[sz]ed\b(?!\s*\()/i, ...statusCode("401"), /oauth token (?:has )?expired/i],
   quota: [/usage limit/i, /spend cap/i, /rate[_ ]limit/i, ...statusCode("429"), /too many requests/i,
     /\bquota\b.{0,30}\b(?:exceeded|reached|exhausted)\b|\b(?:exceeded|insufficient)\b.{0,30}\bquota\b/i, /credit balance/i, /limit reached/i],
-  network: [/\bENOTFOUND\b/, /\bECONNREFUSED\b/, /\bECONNRESET\b/, /\bEAI_AGAIN\b/, /getaddrinfo/i, /fetch failed/i, /socket hang up/i, /network (?:error|is unreachable)/i, /could not resolve host/i],
+  network: [/\bENOTFOUND\b/, /\bECONNREFUSED\b/, /\bECONNRESET\b/, /\bEAI_AGAIN\b/, /\bENETUNREACH\b/, /\bEHOSTUNREACH\b/, /\bConnectionRefused\b/, /getaddrinfo/i, /fetch failed/i,
+    /socket hang up/i, /network (?:error|is unreachable)/i, /could not resolve host/i,
+    // claude 2.1.292 문자열 — "Unable to connect to API (…)"·"Unable to connect to API. Check your internet connection", SDK 의 "Connection error." 에 붙는 "API Error" 머리
+    /unable to connect to api\b/i, /\bapi error:\s*connection error\b/i],
   outage: [/overloaded/i, /service unavailable/i, /internal server error/i, /bad gateway/i, ...statusCode("500|502|503|529")],
 };
 
@@ -918,7 +921,10 @@ interface CrossProbeOutput {
   unresolved?: string;
   spawnCode?: string; spawnMessage?: string;
   status?: number | null; stderr?: string; stdout?: string;
-  /** 지금 프로세스 환경에 Codex 샌드박스 표지가 있는가(crossEnv.sandboxMarkers) */
+  /**
+   * 네트워크 오류를 샌드박스 거부로 볼 것인가 — 지금 프로세스 환경에 Codex 샌드박스 표지가 있거나(crossEnv.sandboxMarkers),
+   * Codex 가 부른 `--by claude` 의 그 지점 첫 네트워크 오류다(호출자 crossCheck 가 정한다 — 표지 없는 Codex 샌드박스일 수 있다)
+   */
   sandboxed?: boolean;
 }
 export type CrossProbe = CrossProbeOutput & (
@@ -941,6 +947,8 @@ const STAMP = String.raw`(?:\[[^\]\n]*\]\s*)?`;
 const CODEX_SESSION = new RegExp(String.raw`^${STAMP}(?:OpenAI Codex v|(?:workdir|session id):|(?:user|codex|exec|thinking)$|tokens used\b|.*\b(?:succeeded|exited -?\d+) in \d[\d.]*\s*m?s:$)`, "i");
 /** 세션 안에서 Codex 가 직접 내는 오류 줄의 라벨(대문자 `ERROR:`). 전사의 `Error:`·`error:` 줄(로그·코드·문서)은 여기에 맞지 않는다 */
 const CODEX_ERROR = new RegExp(String.raw`^${STAMP}ERROR:`);
+/** 모델 차례가 시작됐다는 표지 — 전사 라벨(codex·exec·thinking)·명령 끝 줄·토큰 줄. 이 뒤의 줄에는 읽은 파일·도구 출력·모델 문장이 섞인다 */
+const CODEX_TURN = new RegExp(String.raw`^${STAMP}(?:(?:codex|exec|thinking)$|tokens used\b|.*\b(?:succeeded|exited -?\d+) in \d[\d.]*\s*m?s:$)`, "i");
 /** 세션 밖(실행 전 실패 — 인자·설정·인증) 출력의 오류 줄 */
 const ERROR_LINE = /^(?:\[[^\]\n]*\]\s*)?(?:error|fatal)\b/i;
 const lines = (text?: string): string[] => (text ?? "").replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter(Boolean);
@@ -956,19 +964,16 @@ const withoutEpilogue = (all: readonly string[]): string[] => {
   while (end > 0 && epilogue(all[end - 1])) end--;
   return all.slice(0, end);
 };
-/** 끝에서부터 이어진 pattern 줄들 */
-const trailing = (all: readonly string[], pattern: RegExp): string[] => {
-  let start = all.length;
-  while (start > 0 && pattern.test(all[start - 1])) start--;
-  return all.slice(start);
-};
 /**
  * 분류에 쓰는 글 — 호스트의 오류 채널만. 전사·사용량·배너·되풀이된 프롬프트·모델 문장은 넣지 않는다. 이 함수 하나가 분류 범위의 정의다.
  * claude: stderr 마지막 10줄의 오류 줄(없으면 마지막 1줄) + stdout JSON 이 실패(is_error·result 없음)면 result·subtype,
  *   JSON 이 아니면 stdout 의 오류 줄(없으면 마지막 1줄).
- * codex: 보낸 프롬프트의 줄과 배너를 뺀다. 세션이 시작된 출력(CODEX_SESSION)은 전사가 섞이므로 stderr 끝에서 이어진 `ERROR:` 줄만
- *   (맺음 줄 앞, 최대 5줄), 없으면 stderr 마지막 1줄이다 — 전사 중간의 오류처럼 보이는 줄은 보지 않는다. 세션 전 출력은 오류 줄
- *   (없으면 맺음 줄 앞 마지막 1줄)이다. stdout 은 Codex 의 마지막 응답(모델 문장)이라 끝에서 이어진 `ERROR:` 줄만 본다.
+ * codex: 보낸 프롬프트의 줄과 배너를 뺀다. stdout 은 Codex 의 마지막 응답(모델 문장)이라 보지 않는다.
+ *   세션이 시작된 출력(CODEX_SESSION)은 stderr 의 맺음 줄 앞 **마지막 한 줄**만 본다 — 그 줄이 Codex 자신의 `ERROR:` 줄일 때만이다.
+ *   이어진 `ERROR:` 묶음을 합치지 않는다(읽은 로그의 끝 줄이 Codex 의 오류 줄과 붙을 수 있다). 예외는 모델 차례가 시작되지 않았고
+ *   (CODEX_TURN 없음) 남은 줄이 하나뿐일 때다 — 전사가 섞일 수 없으니 그 줄이 Codex 자신의 출력이다. 신호로 끝난 세션(status null)은
+ *   Codex 가 스스로 낸 오류가 아니라 보지 않는다. 그 밖(마지막 줄이 전사)은 빈 글 → 분류되지 않은 종료다.
+ *   세션 전 출력은 오류 줄(없으면 맺음 줄 앞 마지막 1줄)이다.
  */
 export function crossFailureText(probe: CrossProbe): string {
   if (probe.host === "claude") {
@@ -988,16 +993,14 @@ export function crossFailureText(probe: CrossProbe): string {
   const session = [...rawErr, ...rawOut].some((line) => CODEX_SESSION.test(line));
   const keep = (line: string) => !sent.has(line) && !CODEX_BANNER.test(line);
   const err = rawErr.filter(keep), body = withoutEpilogue(err);
-  let picked: string[];
   if (session) {
-    const run = trailing(body, CODEX_ERROR);
-    picked = run.length ? run.slice(-5) : err.slice(-1);
-  } else {
-    const errors = body.filter((line) => ERROR_LINE.test(line));
-    picked = errors.length ? errors.slice(-5) : (body.length ? body : err).slice(-1);
+    const last = body.at(-1);
+    if (probe.status === null || last === undefined) return "";
+    const ownOutput = body.length === 1 && !rawErr.some((line) => CODEX_TURN.test(line));
+    return CODEX_ERROR.test(last) || ownOutput ? last.slice(-4000) : "";
   }
-  const answerErrors = trailing(withoutEpilogue(rawOut.filter(keep)), CODEX_ERROR).slice(-5);
-  return [...picked, ...answerErrors].join("\n").slice(-4000);
+  const errors = body.filter((line) => ERROR_LINE.test(line));
+  return (errors.length ? errors.slice(-5) : (body.length ? body : err).slice(-1)).join("\n").slice(-4000);
 }
 const KIND_LABEL: Readonly<Record<CrossKind, string>> = {
   missing: "실행 파일 없음", auth: "인증", quota: "사용 한도", network: "네트워크", outage: "서비스 장애",
@@ -1016,13 +1019,17 @@ export function classifyCrossFailure(probe: CrossProbe): { class: "cross-unavail
   if (probe.spawnCode === "ENOENT") return result("cross-unavailable", "missing", probe.spawnMessage ?? "");
   if (probe.spawnCode === "ETIMEDOUT") return result("cross-timeout", "timeout", probe.spawnMessage ?? "");
   if (probe.spawnCode === "EPERM" || probe.spawnCode === "EACCES") return result("host-sandbox-denied", "sandbox", probe.spawnMessage ?? "");
+  // 그 밖의 spawn 오류(출력이 maxBuffer 를 넘은 ENOBUFS 등)는 실행이 비정상으로 끊긴 것이다 — 잘린 출력을 화이트리스트에 대지 않는다
+  if (probe.spawnCode) return result("cross-config-error", "unclassified", probe.spawnMessage ?? probe.spawnCode);
   const text = crossFailureText(probe);
   for (const kind of ["sandbox", "config", "auth", "quota", "network", "outage"] as const) {
     if (!CROSS_PATTERNS[kind].some((pattern) => pattern.test(text))) continue;
     if (kind === "network" && probe.sandboxed) return result("host-sandbox-denied", "sandbox-network", text);
     return result(kind === "sandbox" ? "host-sandbox-denied" : kind === "config" ? "cross-config-error" : "cross-unavailable", kind, text);
   }
-  return result("cross-config-error", "unclassified", text);
+  // 분류할 오류 줄이 없으면(전사 끝·신호 종료) 종료 코드만 사유에 남긴다 — 전사 줄을 사유로 보이지 않는다(출력 원문은 logPath)
+  const exit = probe.status === undefined ? "" : `종료 코드 ${probe.status === null ? "없음(신호로 종료)" : probe.status}`;
+  return result("cross-config-error", "unclassified", text || exit);
 }
 /**
  * 실행 전 판정 — Codex 샌드박스 안에서는 claude 를 띄울 수 없다(네트워크·홈 쓰기 제한). 사람이 셸 설정의

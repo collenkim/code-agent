@@ -13,9 +13,10 @@ import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, plann
   type Budget, type CounterKey, type FailureClass } from "./retryPolicy";
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
-import { businessRuleFiles, dropPlanningCache, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
+import { businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
   ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
   type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
+import type { PlanningCrossView } from "./crossRecord";
 
 /** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
 export { ROLE_PHASE as PHASE } from "./planningState";
@@ -391,11 +392,13 @@ function feedbackOf(work: Work, state: PlanningState) {
   for (const record of state.tasks.filter(item => order.indexOf(ROLE_PHASE[item.task.role]) <= current)) {
     for (const finding of record.attempts.at(-1)?.result?.findings ?? []) if (finding.severity === "blocking") add(record.task.id, finding);
   }
-  const critic = state.tasks.find(record => record.task.role === "critic")?.attempts.at(-1);
-  // 교차 검토의 차단 지적은 지금 critic 지점의 완료 결과(파생 사본 cross)에서 — 사람 판단으로 기각한 것은 뺀다
-  if (state.cross && critic && state.cross.criticDispatchId === critic.dispatchId && state.cross.status !== "unavailable") {
-    const waived = (id: string) => (state.crossWaivers ?? []).some(waiver => waiver.criticDispatchId === critic.dispatchId && waiver.id === id);
-    for (const finding of state.cross.findings) if (finding.severity === "blocking" && !waived(finding.id)) add("cross", finding);
+  // 교차 검토의 차단 지적은 게이트(crossCriticProblems)와 같은 보기 — 지금 critic 지점의 완료 결과(시도 배열에서, 질문을 모두 답한
+  // needs-input 은 완료가 아니다)에서 고른다. 파생 사본 cross 는 읽지 않는다. 사람 판단으로 기각한 것은 뺀다
+  const crossPoint = criticCrossPoint(work, state);
+  const outcome = (crossPoint?.point.completed as PlanningCrossView | undefined)?.outcome;
+  if (crossPoint && outcome) {
+    const waived = (id: string) => (state.crossWaivers ?? []).some(waiver => waiver.criticDispatchId === crossPoint.dispatchId && waiver.id === id);
+    for (const finding of outcome.findings) if (finding.severity === "blocking" && !waived(finding.id)) add("cross", finding);
   }
   return items;
 }

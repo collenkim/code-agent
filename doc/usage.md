@@ -725,8 +725,8 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
 | `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단 |
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
-| `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분(`CODE_AGENT_CROSS_TIMEOUT_MIN`)에 끊는다 |
-| `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번 |
+| `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분에 끊는다 — 사람이 셸에서 `CODE_AGENT_CROSS_TIMEOUT_MIN`(분, 기본 9, 소수 허용)으로 바꾼다. Codex 셸에서 `--by claude` 면 샌드박스 표지를 보고 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 이 사전 점검은 사람이 셸에서 `CODE_AGENT_CROSS_PREFLIGHT=off` 로만 끈다 |
+| `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번. 제한 시간(`CODE_AGENT_CROSS_TIMEOUT_MIN`)·사전 점검(`CODE_AGENT_CROSS_PREFLIGHT`)은 `review cross` 와 같다 |
 | `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 작업 중에는 사람이 별도 터미널에서 실행한다 |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
 | `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`integrate` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |

@@ -15,9 +15,9 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 | 설계·기능 정의 | ca-analyst | 요구·영향도·실제 근거 | 03-design.md·04-functional.md | 설계 판단·구체적 AC·근거 있는 BR |
 | 구현 계획 | ca-analyst | 설계·기능·정책 | plan.json·07-test-spec.md | Task·파일·AC·TC 연결 |
 | 독립 반박 검토 | ca-critic | 현재 계획과 선행 문서 | 근거와 지적 | 관찰된 완료·blocking 지적 없음 |
+| 승인 | 사용자 | 검토를 마친 문서·계획 | 승인 원장 | 기존 같은 세션 동의 또는 직접 TTY |
 
 두 호스트를 설치한 프로젝트는 critic 결과마다 `planning cross --by <다른 호스트>` 를 한 번 받는다(그 critic 배정이 교차 지점이다 — 완료된 지점은 다시 실행하지 않는다). 교차 질문에는 `[Origin]: <critic 작업 ID>` 가 붙어 답하면 critic 이 다시 배정되고 교차 검토도 새로 받는다. 옛 질문처럼 답이 critic 입력을 바꾸지 않으면 같은 critic 결과로 교차 검토를 한 번 더 실행한다(지점 한도 안). 교차 검토의 차단 지적을 사용자가 기각하면 동의 judgment `waive-finding` 으로 그 critic 결과에만 기록한다. 실행 실패의 원인별 처리는 [프로세스 흐름도](process-flow.md) §6.3이 정본이다.
-| 승인 | 사용자 | 검토를 마친 문서·계획 | 승인 원장 | 기존 같은 세션 동의 또는 직접 TTY |
 
 배정·입력 해시·의존성·파일과 줄·문서 형식 검사는 코드가 실행한다. 해석·설계·반박은 에이전트가 수행하고 업무 질문과 승인은 사용자가 결정한다. CLI가 모델 API를 직접 호출하지 않는다. 메인이 배정 결과에 지정된 Claude 또는 Codex 서브 에이전트를 호출한다.
 

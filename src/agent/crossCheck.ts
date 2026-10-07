@@ -12,7 +12,7 @@ import { requireValidatable } from "./commands";
 import { crossChild, crossChildEnv, otherHost, runtimeHost, sandboxMarkers } from "./crossEnv";
 import {
   attemptCounts, CROSS_ID, crossAttemptsOf, crossTimeoutMin, crossTimeoutMs, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
-  planningCrossView, RESULT_SHAPE_PROBLEM, reviewResultProblems, stopBody, syncLegacyPlanning,
+  planningCrossView, pointHost, RESULT_SHAPE_PROBLEM, reviewResultProblems, stopBody, syncLegacyPlanning,
   type CrossAttempt, type CrossUsage, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
 } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
@@ -120,16 +120,36 @@ export type CrossRun =
 /**
  * 다른 호스트를 읽기 전용으로 한 번 실행한다 — 실패는 분류하지 않고 그대로 돌려준다(분류 범위는 crossFailureText 가 고른다).
  * 시작 기록 뒤에 부르므로 던지지 않는다 — 실행 준비 중의 예외도 오류 줄 하나인 실패로 돌려준다(시도가 끝 기록 없이 남지 않게).
+ * sandboxSuspect: 샌드박스 표지가 없어도 네트워크 오류를 샌드박스 거부로 본다(Codex 가 부른 claude 의 지점 첫 실행 — crossSandboxSuspect).
  */
-export function runCross(root: string, host: Host, agent: Agent, prompt: string): CrossRun {
-  try { return runCrossOnce(root, host, agent, prompt); }
+export function runCross(root: string, host: Host, agent: Agent, prompt: string, options: { sandboxSuspect?: boolean } = {}): CrossRun {
+  try { return runCrossOnce(root, host, agent, prompt, !!options.sandboxSuspect); }
   catch (error) {
     const message = `error: ${error instanceof Error ? error.message : String(error)}`.replace(/\s+/g, " ");
     const probe: CrossProbe = host === "codex" ? { host, status: null, stderr: message, sentPrompt: "" } : { host, status: null, stderr: message };
     return { ok: false, model: "", probe, usage: { durationMs: 0 }, output: message };
   }
 }
-function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string): CrossRun {
+/**
+ * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 에서 이 지점에 아직 샌드박스 네트워크 거부가 없으면,
+ * 첫 네트워크 오류는 실행 불가(중지)가 아니라 샌드박스 거부(권한 상승 요청)로 본다. 같은 지점에서 다시 나면 실행 불가로 기록한다.
+ * Codex 기본 샌드박스는 네트워크를 막는데 표지(CODEX_SANDBOX*)가 셸에 있는지는 미확인이다.
+ */
+export function crossSandboxSuspect(host: Host, caller: Host | undefined, attempts: readonly { kind?: string }[]): boolean {
+  return host === "claude" && caller === "codex" && !attempts.some((attempt) => attempt.kind === "sandbox-network");
+}
+const SUSPECT_NOTE = " — 셸에 샌드박스 표지는 없지만 Codex 가 부른 claude 의 이 지점 첫 네트워크 오류라 샌드박스 차단으로 봅니다(권한 상승 뒤에도 같으면 실행 불가로 기록)";
+/** 실패 분류와 기록할 사유 — 샌드박스 의심으로 분류가 바뀌었으면 그 사실을 사유에 붙인다 */
+function classifyRun(probe: CrossProbe, suspect: boolean): ReturnType<typeof classifyCrossFailure> & { detail: string } {
+  const classified = classifyCrossFailure(probe);
+  const note = suspect && classified.kind === "sandbox-network" && !sandboxMarkers() ? SUSPECT_NOTE : "";
+  return { ...classified, detail: `${classified.reason.slice(0, 600 - note.length)}${note}` };
+}
+/** 시작 기록이 끊긴 시도를 닫았다는 알림을 결과(거부 포함) 앞에 붙인다 */
+function withNotes(notes: readonly string[], refusal: RetryRefused): RetryRefused {
+  return notes.length ? new RetryRefused(refusal.failure, `${notes.join("\n")}\n${refusal.message}`) : refusal;
+}
+function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sandboxSuspect: boolean): CrossRun {
   const invocation = crossInvocation(root, host, agent, prompt);
   if ("unresolved" in invocation) {
     const probe: CrossProbe = host === "codex" ? { host, unresolved: invocation.unresolved, sentPrompt: "" } : { host, unresolved: invocation.unresolved };
@@ -141,7 +161,8 @@ function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string): C
     const result = spawnSync(invocation.file, [...invocation.prefix, ...invocation.args], { cwd: root, env: invocation.env, encoding: "utf8",
       windowsHide: true, timeout: crossTimeoutMs(), maxBuffer: 16 * 1024 * 1024 });
     const usage: CrossUsage = { durationMs: Date.now() - started };
-    const probe: CrossProbe = host === "codex" ? { host, sentPrompt: invocation.sentPrompt, sandboxed: sandboxMarkers() } : { host, sentPrompt: invocation.sentPrompt, sandboxed: sandboxMarkers() };
+    const sandboxed = sandboxMarkers() || sandboxSuspect;
+    const probe: CrossProbe = host === "codex" ? { host, sentPrompt: invocation.sentPrompt, sandboxed } : { host, sentPrompt: invocation.sentPrompt, sandboxed };
     const stderr = result.stderr ?? "", stdout = result.stdout ?? "";
     const fail = (): CrossRun => ({ ok: false, model, probe, usage, output: `${probe.stderr ?? ""}\n${probe.stdout ?? ""}${probe.spawnMessage ? `\n${probe.spawnMessage}` : ""}` });
     if (result.error) {
@@ -278,7 +299,7 @@ const TABLE_RULES = [
 type ReviewStart =
   | { refusal: RetryRefused }
   | { round: number; at: string; n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean;
-      previous?: string; waivers: string[] };
+      previous?: string; waivers: string[]; suspect: boolean };
 
 export function crossReview(root: string, by: string | undefined): string {
   const host = parseHostArg(by);
@@ -307,8 +328,17 @@ export function crossReview(root: string, by: string | undefined): string {
   const start = mutateReview<ReviewStart>(root, id, target, (current) => {
     const { log, last } = opened(current);
     const stored = crossAttemptsOf(last, planned).map((attempt) => ({ ...attempt }));
-    if (stored.length && stored[0].host !== host) {
-      refuse("precondition", `이 회차의 교차 검증은 ${stored[0].host} 로 시작했습니다 — 같은 지점은 같은 호스트로만 실행합니다.`);
+    const pinned = pointHost(stored);
+    if (pinned && pinned !== host) {
+      refuse("precondition", `이 회차의 교차 검증은 ${pinned} 로 시작했습니다 — 같은 지점은 같은 호스트로만 실행합니다.`);
+    }
+    if (!last.crossAttempts) {
+      // 옛 기록의 완료 결과가 지금 표 규칙에 걸리면 그 원문을 handoff 로 옮긴다 — 처음부터 다시 실행하지 않고 판단을 둔 채 형식만 교정한다
+      for (const attempt of stored) {
+        if (attempt.class === "cross-result-invalid" && attempt.result !== undefined && !attempt.rawPath) {
+          attempt.rawPath = writeHandoff(root, id, `cross-review-r${last.round}-${attempt.n}-raw.md`, attempt.result);
+        }
+      }
     }
     const now = Date.now(), at = new Date(now).toISOString();
     const attempts = orphanView(stored, now);
@@ -342,10 +372,11 @@ export function crossReview(root: string, by: string | undefined): string {
     const previous = previousRound ? (crossPointState(crossAttemptsOf(previousRound, planned)).completed as CrossAttempt | undefined)?.result : undefined;
     const waivers = (log.waivers ?? []).filter((waiver) => waiver.source === "cross" && waiver.round < last.round)
       .map((waiver) => `${waiver.id}(${waiver.path}) ${waiver.verdict} — ${oneLine(waiver.reason, 120)}`);
-    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers,
+    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller, attempts),
       ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}), ...(previous ? { previous } : {}) } };
   });
-  if ("refusal" in start) throw start.refusal;
+  // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
+  if ("refusal" in start) throw withNotes(notes, start.refusal);
   const prefix = notes.length ? `${notes.join("\n")}\n` : "";
 
   const docs = [work.active.spec, ...REVIEW_DOCS.map((file) => `${workDocsDir(id)}/${file}`)];
@@ -368,7 +399,7 @@ export function crossReview(root: string, by: string | undefined): string {
     "질문·설명문은 확정 지시서와 같은 언어로 쓴다.",
   ].join("\n");
 
-  const outcome = runCross(root, host, "ca-reviewer", prompt);
+  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: start.suspect });
   let body: string | undefined, renamed = 0, raw: string | undefined;
   let failed: Partial<CrossAttempt> | undefined;
   if (outcome.ok) {
@@ -382,8 +413,8 @@ export function crossReview(root: string, by: string | undefined): string {
       failed = { class: "cross-result-invalid", kind: problems[0] === RESULT_SHAPE_PROBLEM ? "format" : "content", detail: problems.join(" · ").slice(0, 600), rawPath };
     } else body = normalized.body;
   } else {
-    const classified = classifyCrossFailure(outcome.probe);
-    failed = { class: classified.class, kind: classified.kind, detail: classified.reason.slice(0, 600) };
+    const classified = classifyRun(outcome.probe, start.suspect);
+    failed = { class: classified.class, kind: classified.kind, detail: classified.detail };
     if (classified.kind === "config" || classified.kind === "unclassified") {
       failed.logPath = writeHandoff(root, id, `cross-review-r${start.round}-${start.n}-log.txt`, outcome.output.slice(-65_536));
     }
@@ -425,7 +456,7 @@ export function crossReview(root: string, by: string | undefined): string {
   }, { document: (text) => section === undefined ? text : crossSectionText(text, host, section) });
 
   if ("lost" in end) {
-    throw new Stop(`교차 실행 중 리뷰 회차가 바뀌었습니다(계획·경계 변경 등) — 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
+    throw new Stop(`${prefix}교차 실행 중 리뷰 회차가 바뀌었습니다(계획·경계 변경 등) — 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
   }
   if ("unavailable" in end) return prefix + unavailableText(host, end.unavailable, end.left);
   if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, raw));
@@ -455,7 +486,7 @@ function attemptQuestions(attempt: PlanningCrossView, questions: readonly Questi
 
 type CriticStart =
   | { refusal: RetryRefused }
-  | { n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean; answered: string[] };
+  | { n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean; answered: string[]; suspect: boolean };
 
 export function crossCritic(root: string, by: string | undefined): string {
   const host = parseHostArg(by);
@@ -484,8 +515,9 @@ export function crossCritic(root: string, by: string | undefined): string {
       const current = state.tasks.find((record) => record.task.role === "critic")?.attempts.at(-1);
       if (current?.dispatchId !== dispatchId) throw new Stop("critic 이 다시 배정됐습니다 — 새 critic 결과로 다시 실행하세요.");
       const stored = planningCrossAttemptsOf(state, dispatchId).map((attempt) => ({ ...attempt }));
-      if (stored.length && stored[0].host !== host) {
-        refuse("precondition", `이 critic 결과의 교차 검증은 ${stored[0].host} 로 시작했습니다 — 같은 지점은 같은 호스트로만 실행합니다.`);
+      const pinned = pointHost(stored);
+      if (pinned && pinned !== host) {
+        refuse("precondition", `이 critic 결과의 교차 검증은 ${pinned} 로 시작했습니다 — 같은 지점은 같은 호스트로만 실행합니다.`);
       }
       const now = Date.now(), at = new Date(now).toISOString();
       const attempts = orphanView(stored, now);
@@ -516,10 +548,11 @@ export function crossCritic(root: string, by: string | undefined): string {
       attempts.push(attempt);
       keep(state, attempts);
       const answered = [...new Set(view.filter((item) => item.class === "answered-input").flatMap((item) => attemptQuestions(item, questions)))];
-      return { n: attempt.n, startedAt: at, mode, wasStopped, answered,
+      return { n: attempt.n, startedAt: at, mode, wasStopped, answered, suspect: crossSandboxSuspect(host, caller, attempts),
         ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}) };
     });
-    if ("refusal" in start) throw start.refusal;
+    // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
+    if ("refusal" in start) throw withNotes(notes, start.refusal);
     const prefix = notes.length ? `${notes.join("\n")}\n` : "";
 
     const format = [
@@ -555,7 +588,7 @@ export function crossCritic(root: string, by: string | undefined): string {
       prompt = `${file} 를 읽고 그 지시대로 교차 계획 검토 결과 JSON 하나만 반환하라.`;
     }
 
-    const outcome = runCross(root, host, "ca-critic", prompt);
+    const outcome = runCross(root, host, "ca-critic", prompt, { sandboxSuspect: start.suspect });
     let parsed: CrossCriticResult | undefined, raw: string | undefined;
     let failed: Partial<PlanningCrossAttempt> | undefined;
     if (outcome.ok) {
@@ -578,8 +611,8 @@ export function crossCritic(root: string, by: string | undefined): string {
         failed = { class: "cross-result-invalid", kind: problem.kind, detail: problem.detail.slice(0, 600), rawPath };
       }
     } else {
-      const classified = classifyCrossFailure(outcome.probe);
-      failed = { class: classified.class, kind: classified.kind, detail: classified.reason.slice(0, 600) };
+      const classified = classifyRun(outcome.probe, start.suspect);
+      failed = { class: classified.class, kind: classified.kind, detail: classified.detail };
       if (classified.kind === "config" || classified.kind === "unclassified") {
         failed.logPath = writeHandoff(root, work.active.id, `cross-critic-${dispatchId.slice(0, 8)}-${start.n}-log.txt`, outcome.output.slice(-65_536));
       }
@@ -621,7 +654,8 @@ export function crossCritic(root: string, by: string | undefined): string {
         Object.assign(done, { class: "completed", outcome: { status: parsed.status, summary: parsed.summary, findings: parsed.findings,
           questions: questionIds.length, questionIds } });
         all[index] = done;
-        syncLegacyPlanning(state, dispatchId);
+        // 파생 사본은 질문을 쓴 뒤의 questions.md 로 고른다 — 방금 낸 질문이 아직 답이 없으면 그 needs-input 이 그대로 completed 다
+        syncLegacyPlanning(state, dispatchId, crossQuestionViews(work));
         return { completed: true, winner, questionIds };
       }
       Object.assign(done, failed);
@@ -631,15 +665,15 @@ export function crossCritic(root: string, by: string | undefined): string {
       const budgets = crossBudgets(view, state.retry?.grants, scope);
       if (decision.action === "record-unavailable") {
         if (done.class === "cross-timeout") done.detail = decision.reason;
-        syncLegacyPlanning(state, dispatchId);
+        syncLegacyPlanning(state, dispatchId, questions);
         return { unavailable: decision.reason, left: budgets.crossPoint.left };
       }
       if (decision.action !== "refuse") throw new Error("교차 판정(after)이 실행을 돌려줬습니다");
-      syncLegacyPlanning(state, dispatchId);
+      syncLegacyPlanning(state, dispatchId, questions);
       return { refused: decision.failure, attempt: done, budgets };
     });
 
-    if ("lost" in end) throw new Stop(`교차 실행 중 계획 기록이 바뀌어 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
+    if ("lost" in end) throw new Stop(`${prefix}교차 실행 중 계획 기록이 바뀌어 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
     if ("unavailable" in end) return prefix + unavailableText(host, end.unavailable, end.left);
     if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, raw));
     const result = parsed!;

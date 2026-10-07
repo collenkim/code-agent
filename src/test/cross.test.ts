@@ -5,10 +5,10 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { crossFlags, crossInvocation, crossInvocationArgs, crossSectionText, normalizeCrossBody } from "../agent/crossCheck";
+import { crossFlags, crossInvocation, crossInvocationArgs, crossSandboxSuspect, crossSectionText, normalizeCrossBody } from "../agent/crossCheck";
 import {
   attemptLabel, crossAttemptsOf, crossStopStreak, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
-  planningCrossView, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyRound, waiveVerdict,
+  planningCrossView, pointHost, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyPlanning, syncLegacyRound, waiveVerdict,
   type CrossAttempt, type PlanningCrossAttempt, type ReviewerRun,
 } from "../agent/crossRecord";
 import type { PlanningState } from "../agent/planningState";
@@ -88,7 +88,9 @@ test("옛 reviewer·cross 필드는 읽을 때 배열로 추정한다 — 판정
   const config = crossAttemptsOf(round({ cross: { host: "codex", model: "m", startedAt: "2026-10-07T00:00:00.000Z", error: "종료 코드 2 — unexpected argument" } }), PLANNED);
   assert.deepEqual([config[0].class, config[0].kind], ["cross-config-error", "unclassified"]);
   const mislabeled = crossAttemptsOf(round({ cross: { host: "codex", model: "m", startedAt: "2026-10-07T00:00:00.000Z", completedAt: "2026-10-07T00:01:00.000Z", result: "| X1 | src/zz.ts | 계획 안 | 열림 | x |" } }), PLANNED);
-  assert.deepEqual([mislabeled[0].class, mislabeled[0].kind], ["cross-result-invalid", "content"]);
+  assert.deepEqual([mislabeled[0].class, mislabeled[0].kind, mislabeled[0].result], ["cross-result-invalid", "content", "| X1 | src/zz.ts | 계획 안 | 열림 | x |"],
+    "표 규칙에 걸린 옛 완료 결과는 원문을 남긴다 — 교차 명령이 handoff 로 옮겨 형식만 교정한다");
+  assert.equal(crossPointState(mislabeled).completed, undefined, "원문이 남아도 완료가 아니다");
 
   const planning = { version: 1, id: "W", target: "t", maxParallel: 3, tasks: [], agents: [],
     cross: { host: "claude", model: "", at: "2026-10-07T00:00:00.000Z", criticDispatchId: "d-1", status: "unavailable", summary: "Not logged in", findings: [], questions: 0 } } as PlanningState;
@@ -157,6 +159,34 @@ test("planningCrossView — 질문을 모두 답한(또는 질문 없는) needs-
   assert.equal(planningCrossView([needs()], [q("Q5", true), q("Q6", false)]).view[0].class, "completed");
   assert.equal(planningCrossView([needs([])], []).view[0].class, "answered-input", "질문이 없는 needs-input 은 막다른 길이 되지 않는다");
   assert.equal(crossPointDecision({ attempts: answered.view, scope: "critic:d" }).action, "run");
+});
+
+test("syncLegacyPlanning — 파생 사본 cross 는 게이트와 같은 보기의 첫 completed 다(질문을 답한 옛 needs-input 뒤의 재실행, 동시에 늦게 끝난 완료는 고르지 않는다)", () => {
+  const finding = { id: "C1", severity: "blocking" as const, detail: "TC 없음", source: { path: "doc/a.md", line: 1 } };
+  const attempt = (n: number, status: "needs-input" | "completed", summary: string, findings = [finding]): PlanningCrossAttempt =>
+    ({ ...ended(n, "completed"), host: "claude", criticDispatchId: "d", outcome: { status, summary, findings: status === "needs-input" ? [] : findings, questions: status === "needs-input" ? 1 : 0 } });
+  const state = (crossAttempts: PlanningCrossAttempt[]) => ({ version: 1, id: "W", target: "t", maxParallel: 3, tasks: [], agents: [], crossAttempts }) as unknown as PlanningState;
+  const answered = [{ id: "Q5", title: "Q5 · 교차 계획 검토(claude)", answered: true }];
+  const resumed = state([attempt(1, "needs-input", "옛 질문"), attempt(2, "completed", "다시 실행")]);
+  syncLegacyPlanning(resumed, "d", answered);
+  assert.deepEqual([resumed.cross!.status, resumed.cross!.summary, resumed.cross!.findings.map((item) => item.id)], ["completed", "다시 실행", ["C1"]]);
+  const waiting = state([attempt(1, "needs-input", "옛 질문")]);
+  syncLegacyPlanning(waiting, "d", [{ ...answered[0], answered: false }]);
+  assert.equal(waiting.cross!.status, "needs-input", "답이 없는 동안은 그 needs-input 이 완료다");
+  const raced = state([attempt(1, "completed", "먼저 완료"), attempt(2, "completed", "늦게 완료", [])]);
+  syncLegacyPlanning(raced, "d", []);
+  assert.equal(raced.cross!.summary, "먼저 완료");
+});
+
+test("pointHost·crossSandboxSuspect — 지점 호스트는 실제로 띄운 첫 시도가 정하고, Codex 가 부른 claude 의 첫 네트워크 오류만 샌드박스로 의심한다", () => {
+  const preflight = { ...ended(1, "host-sandbox-denied"), host: "claude" as const, mode: "preflight" as const, kind: "preflight" };
+  assert.equal(pointHost([preflight]), undefined);
+  assert.equal(pointHost([preflight, ended(2, "completed")]), "codex");
+  assert.equal(pointHost([{ ...ended(1, "cross-stop"), mode: "human" }]), undefined);
+  assert.equal(crossSandboxSuspect("claude", "codex", []), true);
+  assert.equal(crossSandboxSuspect("claude", "codex", [{ kind: "sandbox-network" }]), false, "같은 지점에서 두 번째면 실행 불가로 기록한다");
+  assert.equal(crossSandboxSuspect("claude", undefined, []), false, "사람의 터미널(표지 없음)");
+  assert.equal(crossSandboxSuspect("codex", "claude", []), false);
 });
 
 test("orphanView — 같은 PC 의 죽은 pid 와 제한 + 5분이 지난 시도만 끊긴 실행으로 본다(원 배열은 그대로)", () => {

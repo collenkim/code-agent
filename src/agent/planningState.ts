@@ -14,7 +14,7 @@ import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
-  orphanView, planningCrossAttemptsOf, planningCrossView, pointLabel,
+  crossHintText, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
   type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
 } from "./crossRecord";
 
@@ -479,7 +479,8 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
   if (!current) return [];
   const { dispatchId, view, awaiting, point } = current;
   const caller = runtimeHost();
-  const by = `--by ${view[0]?.host ?? (caller ? otherHost(caller) : "<다른 호스트>")}`;
+  const host = pointHost(view) ?? (caller ? otherHost(caller) : undefined);
+  const by = `--by ${host ?? "<다른 호스트>"}`;
   switch (point.state) {
     // 다른 호스트를 실행할 수 없었던(또는 사람이 중지를 결정한) critic 결과는 교차 검토 없이 진행한다
     case "stopped": return [];
@@ -506,7 +507,10 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
         : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
       const hint = crossPointHint({ attempts: view, grants: state.retry?.grants, scope: grantScope({ file: "planning", key: "crossPoint", criticDispatchId: dispatchId }),
         rawExists: path => existsSync(join(work.repoRoot, path)) });
-      if (hint) line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}`;
+      if (hint) {
+        line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}. ` +
+          crossHintText(hint, { host: host ?? "다른 호스트", point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, attempts: view });
+      }
       return [line];
     }
   }

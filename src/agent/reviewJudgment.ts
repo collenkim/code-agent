@@ -9,12 +9,12 @@ import { hashManifest, hashPlan } from "../core/approval";
 import { runtimeHost } from "./crossEnv";
 import { crossSectionText } from "./crossCheck";
 import {
-  crossAttemptsOf, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf, pointLabel, stopBody, syncLegacyPlanning, waiveVerdict,
+  crossAttemptsOf, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf, pointHost, pointLabel, stopBody, syncLegacyPlanning, waiveVerdict,
   type CrossAttempt, type PlanningCrossAttempt, type PlanningCrossView, type Waiver,
 } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
 import { mutatePlanning } from "./planning";
-import { criticCrossPoint, loadPlanning, taskCurrent, withPlanningCache, type PlanningState } from "./planningState";
+import { criticCrossPoint, crossQuestionViews, loadPlanning, taskCurrent, withPlanningCache, type PlanningState } from "./planningState";
 import { crossPointState } from "./retryPolicy";
 import { CROSS_ID, crossRequired, loadReview, mutateReview, parseFindings, waived, type ReviewLog } from "./review";
 import { Stop } from "./stop";
@@ -174,7 +174,7 @@ function reviewStopTarget(work: Work, current: ReviewLog | undefined) {
   const view = orphanView(stored);
   if (!stoppable(view, false, false)) throw new Stop(NOT_STOPPABLE(pointLabel(view)));
   const name = `리뷰 ${last.round}회차`;
-  return { log, last, view, name, summary: stopSummary(name, view[0].host, view) };
+  return { log, last, view, name, summary: stopSummary(name, pointHost(view) ?? view[0].host, view) };
 }
 function planningStopTarget(work: Work, state: PlanningState) {
   const current = criticCrossPoint(work, state);
@@ -184,7 +184,7 @@ function planningStopTarget(work: Work, state: PlanningState) {
     && !(state.crossWaivers ?? []).some((waiver) => waiver.criticDispatchId === current.dispatchId && waiver.id === finding.id));
   if (!stoppable(current.view, true, failedClean)) throw new Stop(NOT_STOPPABLE(pointLabel(current.view, current.awaiting)));
   const name = `계획 검토 critic ${current.dispatchId.slice(0, 8)}`;
-  return { ...current, name, summary: stopSummary(name, current.view[0].host, current.view) };
+  return { ...current, name, summary: stopSummary(name, pointHost(current.view) ?? current.view[0].host, current.view) };
 }
 
 export function previewCrossStop(root: string, point: StopPoint): string {
@@ -205,7 +205,7 @@ export function recordCrossStop(root: string, point: StopPoint, consentId: strin
     let section: string | undefined, host = "";
     return mutateReview(root, work.active.id, work.active.target, (current) => {
       const target = reviewStopTarget(work, current);
-      const attempt = human(target.view.length + 1, target.view[0].host);
+      const attempt = human(target.view.length + 1, pointHost(target.view) ?? target.view[0].host);
       target.last.crossAttempts = [...target.view, attempt];
       section = stopBody(attempt); host = attempt.host;
       return { log: target.log, value: done(target.name) };
@@ -214,9 +214,9 @@ export function recordCrossStop(root: string, point: StopPoint, consentId: strin
   return withPlanningCache(() => mutatePlanning(work, (state) => {
     const target = planningStopTarget(work, state);
     const stored = orphanView(planningCrossAttemptsOf(state, target.dispatchId).map((attempt) => ({ ...attempt })));
-    const attempt: PlanningCrossAttempt = { ...human(stored.length + 1, stored[0].host), criticDispatchId: target.dispatchId };
+    const attempt: PlanningCrossAttempt = { ...human(stored.length + 1, pointHost(stored) ?? stored[0].host), criticDispatchId: target.dispatchId };
     state.crossAttempts = [...(state.crossAttempts ?? legacyPlanningAttempts(state.cross)).filter((item) => item.criticDispatchId !== target.dispatchId), ...stored, attempt];
-    syncLegacyPlanning(state, target.dispatchId);
+    syncLegacyPlanning(state, target.dispatchId, crossQuestionViews(work));
     return done(target.name);
   }));
 }

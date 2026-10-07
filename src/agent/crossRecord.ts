@@ -15,7 +15,9 @@ import { join } from "path";
 
 import type { HostName } from "./crossEnv";
 import { pidAlive } from "./lock";
-import { consecutiveCrossStops, crossPointState, TIMING, type CrossAttemptView, type CrossClass } from "./retryPolicy";
+import {
+  consecutiveCrossStops, COUNTER_LABEL, crossPointState, guidance, recordedVariant, TIMING, type CrossAttemptView, type CrossClass, type FailureRecord,
+} from "./retryPolicy";
 import type { PlanningState } from "./planningState";
 import type { ReviewLog, ReviewRound } from "./review";
 
@@ -61,7 +63,10 @@ export interface CrossAttempt {
   kind?: string;
   /** 사유 + 분류에 쓴 오류 채널 꼬리(≤ 600자) */
   detail?: string;
-  /** completed 의 결과 본문(리뷰: 정규화한 표 또는 "- 없음") */
+  /**
+   * completed 의 결과 본문(리뷰: 정규화한 표 또는 "- 없음"). 옛 기록에서 추정한 형식 오류 시도에는 옛 완료 결과 원문이 남는다
+   * (배열을 만들 때 rawPath 로 옮겨 형식만 교정한다) — 판정·렌더는 completed 의 result 만 읽는다
+   */
   result?: string;
   /** F→X 로 다시 매겼다 */
   normalized?: boolean;
@@ -226,7 +231,8 @@ const LEGACY_SHAPE_ERROR = "결과가 지적 표 또는 '- 없음' 이 아닙니
 type LegacyReviewCross = NonNullable<ReviewRound["cross"]>;
 const hostOf = (host: string): HostName => host === "codex" ? "codex" : "claude";
 /**
- * 옛 `cross` 필드에서 만든 시도 하나. planned 를 주면 완료 결과를 표 규칙으로 다시 보고, 걸리면 형식 오류(원문 없음 → 1회 재실행)로 본다.
+ * 옛 `cross` 필드에서 만든 시도 하나. planned 를 주면 완료 결과를 표 규칙으로 다시 보고, 걸리면 형식 오류로 본다 — 옛 결과 원문을
+ * `result` 에 남겨, 배열을 처음 저장하는 교차 명령이 handoff 로 옮기고(rawPath) 판단은 그대로 둔 채 형식만 교정한다.
  * planned 가 없으면(연속 중지 집계처럼 계획을 모르는 곳) 내용은 보지 않는다.
  */
 export function legacyReviewAttempts(cross: LegacyReviewCross | undefined, planned?: readonly string[]): CrossAttempt[] {
@@ -235,7 +241,7 @@ export function legacyReviewAttempts(cross: LegacyReviewCross | undefined, plann
     ...(cross.model ? { model: cross.model } : {}) };
   if (cross.completedAt && cross.result !== undefined) {
     const problems = planned ? reviewResultProblems(cross.result, planned, CROSS_ID) : [];
-    return [problems.length ? { ...base, class: "cross-result-invalid", kind: "content", detail: problems.join(" · ").slice(0, 600) }
+    return [problems.length ? { ...base, class: "cross-result-invalid", kind: "content", detail: problems.join(" · ").slice(0, 600), result: cross.result }
       : { ...base, class: "completed", result: cross.result }];
   }
   if (cross.unavailable) return [{ ...base, class: "cross-unavailable", detail: cross.unavailable }];
@@ -247,6 +253,14 @@ export function legacyReviewAttempts(cross: LegacyReviewCross | undefined, plann
 }
 export function crossAttemptsOf(round: ReviewRound, planned?: readonly string[]): CrossAttempt[] {
   return round.crossAttempts ?? legacyReviewAttempts(round.cross, planned);
+}
+/**
+ * 지점에 고정된 호스트 — 다른 호스트를 실제로 띄운 첫 시도(review·correct)의 호스트. 띄우기 전에 멈춘 사전 판정(preflight)과
+ * 사람 중지(human)는 고정하지 않는다(Codex 샌드박스에서 멈춘 `--by claude` 뒤 Claude Code 로 옮겨 `--by codex` 를 쓸 수 있게).
+ */
+export function pointHost(attempts: readonly { mode: string; host: string }[]): HostName | undefined {
+  const first = attempts.find((attempt) => attempt.mode === "review" || attempt.mode === "correct");
+  return first ? hostOf(first.host) : undefined;
 }
 
 type LegacyPlanningCross = NonNullable<PlanningState["cross"]>;
@@ -324,10 +338,14 @@ export function syncLegacyRound(round: ReviewRound): void {
     } else delete round.cross;
   }
 }
-/** 계획 교차 지점의 옛 필드(cross) — 지점이 completed·stopped 일 때만 다시 쓴다 */
-export function syncLegacyPlanning(state: PlanningState, criticDispatchId: string): void {
-  const attempts = planningCrossAttemptsOf(state, criticDispatchId).filter((attempt) => attempt.endedAt !== undefined);
-  const point = crossPointState(attempts);
+/**
+ * 계획 교차 지점의 옛 필드(cross) — 지점이 completed·stopped 일 때만 다시 쓴다. 게이트와 같은 보기(planningCrossView — 질문을 모두 답한
+ * needs-input 은 answered-input)에서 첫 completed 를 고른다 — 옛 needs-input 을 이어 실행한 지점은 다시 실행한 결과가 사본이 된다
+ * (동시에 늦게 끝난 completed 는 고르지 않는다).
+ */
+export function syncLegacyPlanning(state: PlanningState, criticDispatchId: string, questions: readonly QuestionView[]): void {
+  const ended = planningCrossAttemptsOf(state, criticDispatchId).filter((attempt) => attempt.endedAt !== undefined);
+  const point = crossPointState(planningCrossView(ended, questions).view);
   if (point.state === "completed") {
     const done = point.completed as PlanningCrossAttempt;
     const outcome = done.outcome ?? { status: "completed" as const, summary: "", findings: [], questions: 0 };
@@ -397,6 +415,25 @@ export function attemptCounts(attempts: readonly { class?: string; kind?: string
   }
   return [...counts].map(([label, count]) => `${label} ${count}`).join(" · ") || "없음";
 }
+/**
+ * 교차 지점이 막혀 있을 때의 안내 — 지점 안내(crossPointHint)를 원인별 문구로(기록된 실패는 recordedVariant). 리뷰 게이트(reviewProblems)와
+ * 계획 게이트(crossCriticProblems)가 같이 쓴다 — 남은 횟수와 다음 행동(설정 오류 1회·형식만 교정·지점 한도·끊긴 실행)을 같은 문구로 낸다.
+ */
+export function crossHintText(hint: FailureRecord, values: { host: string; point: string;
+  attempts: readonly { class?: string; kind?: string; mode?: string; endedAt?: string; rawPath?: string; result?: string }[] }): string {
+  const left = hint.counter ? Math.max(0, hint.counter.limit - hint.counter.used) : 0;
+  if (hint.class === "limit-exceeded") {
+    const key = hint.counter?.key;
+    return key === "crossPoint"
+      ? guidance("limit-exceeded", { limit: hint.counter!.limit, counts: attemptCounts(values.attempts) }, "cross-point")
+      : guidance("limit-exceeded", { counterLabel: key ? COUNTER_LABEL[key] : "재시도", limit: hint.counter?.limit ?? 0, key: key ?? "" }, "cross-cause");
+  }
+  const invalid = [...values.attempts].reverse().find((attempt) => attempt.class === "cross-result-invalid");
+  const raw = [...values.attempts].reverse().find((attempt) => attempt.rawPath)?.rawPath
+    ?? (invalid?.result !== undefined ? "옛 기록의 교차 결과(같은 명령이 handoff 로 옮긴다)" : "(원문 없음 — 같은 명령은 처음부터 다시 실행합니다)");
+  return guidance(hint.class, { host: values.host, detail: hint.detail, left, min: crossTimeoutMin(), point: values.point, raw },
+    recordedVariant(hint)).replace(/\n/g, " ");
+}
 
 // ---- 연속 중지 ----
 
@@ -425,7 +462,7 @@ export function crossStopStreak(root: string): { count: number; last?: { host: s
     const point = crossPointState(attempts);
     const ended = attempts.filter((attempt) => attempt.endedAt !== undefined);
     const at = ended.at(-1)?.endedAt ?? attempts.at(-1)!.startedAt;
-    points.push({ state: point.state, ...(point.stoppedBy?.class ? { by: point.stoppedBy.class } : {}), at, host: attempts[0].host, detail: point.stoppedBy?.detail ?? "" });
+    points.push({ state: point.state, ...(point.stoppedBy?.class ? { by: point.stoppedBy.class } : {}), at, host: pointHost(attempts) ?? attempts[0].host, detail: point.stoppedBy?.detail ?? "" });
   };
   for (const file of files) {
     try {

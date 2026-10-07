@@ -9,7 +9,7 @@ import { start } from "./confirmedStart";
 import { back, next, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff, handoffPlanning } from "../agent/handoff";
-import { crossCritic, CrossCriticSchema } from "../agent/crossCheck";
+import { crossCritic, CrossCriticSchema, planningCrossBudgets } from "../agent/crossCheck";
 import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "../agent/reviewJudgment";
 import { withCaller } from "./reviewFixture";
 import { sessionAnchor } from "../agent/sessionHook";
@@ -734,15 +734,17 @@ function crossPlanningSetup() {
   write(`${DIR}/questions.md`, "# 질문\n\n## Q4 · 기존\n앞선 질문\n[Answer]: 예\n");
   throughDesign(); preparePlanning(root);
   finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }); finish(dispatch("critic"));
-  const fake = mkdtempSync(join(tmpdir(), "ca-fake-claude-")), script = join(fake, "claude.cjs"), calls = join(fake, "calls.txt"), prompt = join(fake, "prompt.txt");
-  writeFileSync(script, "const fs = require('fs'), a = process.argv; fs.appendFileSync(process.env.FAKE_CALLS, 'x'); fs.writeFileSync(process.env.FAKE_PROMPT, a[a.indexOf('-p') + 1]); process.stdout.write(JSON.stringify({ result: process.env.FAKE_CROSS }));\n");
-  process.env.CODE_AGENT_CLAUDE_BIN = script; process.env.FAKE_CALLS = calls; process.env.FAKE_PROMPT = prompt;
+  const fake = mkdtempSync(join(tmpdir(), "ca-fake-claude-")), script = join(fake, "claude.cjs"), calls = join(fake, "calls.txt"), prompt = join(fake, "prompt.txt"), argv = join(fake, "argv.json");
+  writeFileSync(script, "const fs = require('fs'), a = process.argv; fs.appendFileSync(process.env.FAKE_CALLS, 'x'); fs.writeFileSync(process.env.FAKE_PROMPT, a[a.indexOf('-p') + 1]); fs.writeFileSync(process.env.FAKE_ARGV, JSON.stringify(a.slice(2))); process.stdout.write(JSON.stringify({ result: process.env.FAKE_CROSS }));\n");
+  process.env.CODE_AGENT_CLAUDE_BIN = script; process.env.FAKE_CALLS = calls; process.env.FAKE_PROMPT = prompt; process.env.FAKE_ARGV = argv;
   return {
     answer: (cross: unknown) => { process.env.FAKE_CROSS = JSON.stringify(cross); return withCaller("codex", () => crossCritic(root, "claude")); },
     calls: () => existsSync(calls) ? readFileSync(calls, "utf8").length : 0,
     prompt: () => readFileSync(prompt, "utf8"),
+    /** 가짜 claude 가 받은 인자(-p 프롬프트 포함) */
+    argv: () => JSON.parse(readFileSync(argv, "utf8")) as string[],
     cleanup: () => {
-      for (const key of ["CODE_AGENT_CLAUDE_BIN", "FAKE_CROSS", "FAKE_CALLS", "FAKE_PROMPT"]) delete process.env[key];
+      for (const key of ["CODE_AGENT_CLAUDE_BIN", "FAKE_CROSS", "FAKE_CALLS", "FAKE_PROMPT", "FAKE_ARGV"]) delete process.env[key];
       rmSync(fake, { recursive: true, force: true });
     },
   };
@@ -753,7 +755,10 @@ test("두 호스트가 설치되면 critic 뒤 교차 검토가 계획 제출 �
   const cross = crossPlanningSetup();
   try {
     assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토/);
-    assert.match(cross.answer({ status: "completed", summary: "AC 하나가 TC에 걸리지 않는다", findings: [{ id: "C1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: SPEC, line: 1 } }] }), /차단 지적 1개/);
+    // 역할 정책(critic 은 판단 역할 opus/high)이 교차 Claude 인자와 결과 줄까지 이어진다
+    assert.match(cross.answer({ status: "completed", summary: "AC 하나가 TC에 걸리지 않는다", findings: [{ id: "C1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: SPEC, line: 1 } }] }),
+      /^claude\(opus\/high\) 교차 계획 검토: completed · 차단 지적 1개/);
+    assert.match(cross.argv().join(" "), /--agent ca-critic --model opus --effort high --output-format json --setting-sources project --permission-prompts none --allowedTools Read,Grep,Glob/);
     assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토: 차단 지적이 남아 있습니다\(C1\)/);
     // 같은 critic 결과로 다시 실행해 지적을 지우는 길은 없다
     assert.throws(() => cross.answer({ status: "completed", summary: "문제 없음", findings: [] }), /이미 기록했습니다/);
@@ -776,7 +781,8 @@ test("교차 검토 결과의 근거가 입력 밖이면 원문을 보존하고,
     const first = loadPlanning(loadWork(root)!).crossAttempts![0];
     assert.deepEqual([first.class, first.kind], ["cross-result-invalid", "reference"]);
     assert.ok(existsSync(join(root, first.rawPath!)), "원문을 handoff 에 보존한다");
-    assert.match(crossProblems().join("\n"), /직전 실행: 막힘\(형식 오류\)/);
+    // 계획 게이트도 리뷰 게이트와 같은 안내(남은 횟수·다음 행동)를 붙인다
+    assert.match(crossProblems().join("\n"), /직전 실행: 막힘\(형식 오류\)[\s\S]*원문을 [^ ]*cross-critic-[\w-]{8}-1-raw\.md 에 보존했습니다\. 같은 명령을 한 번 더 실행하면 원문의 형식만 교정합니다\(남은 1회\)/);
     assert.match(cross.answer({ status: "completed", summary: "문제 없음", findings: [] }), /completed[\s\S]*형식 교정/);
     assert.match(cross.prompt(), new RegExp(`${first.rawPath!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} 는 직전 교차 계획 검토의 원문 응답이다[\\s\\S]*형식 오류: 근거가 입력 밖`));
     const attempts = loadPlanning(loadWork(root)!).crossAttempts!;
@@ -817,13 +823,48 @@ test("옛 needs-input 교차 기록은 질문에 답한 뒤 같은 critic 결과
     write(`${DIR}/questions.md`, readFileSync(join(root, DIR, "questions.md"), "utf8").replace(/(## Q5[\s\S]*?\[Answer\]:)/, "$1 포함한다"));
     assert.match(crossProblems().join("\n"), /질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더/);
     assert.match(previewCrossStop(root, "planning"), /지점: 계획 검토 critic/);
-    assert.match(cross.answer({ status: "completed", summary: "답을 반영했다", findings: [] }), /completed/);
+    const blocking = { id: "C1", severity: "blocking", detail: "R9 경계값 TC 없음", source: { path: SPEC, line: 1 } };
+    assert.match(cross.answer({ status: "completed", summary: "답을 반영했다", findings: [blocking] }), /completed · 차단 지적 1개/);
     assert.equal(cross.calls(), 1);
     const brief = readFileSync(join(root, ".code-agent/work", ID, "handoff/cross-critic.md"), "utf8");
     assert.match(brief, /## 이전 교차 검토의 질문과 답[\s\S]*Q5 · 교차 계획 검토[\s\S]*\[Answer\]: 포함한다/);
-    assert.equal(loadPlanning(loadWork(root)!).crossAttempts!.length, 2, "옛 기록에서 추정한 시도 1 + 새 시도 1");
+    const state = loadPlanning(loadWork(root)!);
+    assert.equal(state.crossAttempts!.length, 2, "옛 기록에서 추정한 시도 1 + 새 시도 1");
+    // 파생 사본은 게이트와 같은 보기 — 답한 옛 needs-input 이 아니라 다시 실행한 결과다(이전 판 CLI 도 같은 결과를 읽는다)
+    assert.deepEqual([state.cross!.status, state.cross!.summary, state.cross!.findings.map((finding) => finding.id)], ["completed", "답을 반영했다", ["C1"]]);
+    assert.match(crossProblems().join("\n"), /교차 검토: 차단 지적이 남아 있습니다\(C1\)/);
+    // 수정 피드백 목록도 게이트가 막는 지적을 싣는다 — 파생 사본이 아니라 시도 배열을 본다(사본이 낡아도 같다)
+    assert.ok((advance().feedback ?? []).some((item: { from: string; finding: string }) => item.from === "cross" && item.finding === "C1"), "advance feedback 에 교차 차단 지적 C1");
+    editPlanning((stale) => { stale.cross = { ...stale.cross!, summary: "낡은 사본", findings: [] }; });
+    assert.ok((advance().feedback ?? []).some((item: { from: string; finding: string }) => item.from === "cross" && item.finding === "C1"), "파생 사본이 낡아도 배열의 C1");
+    waiveFinding(root, "C1", "consent-legacy-1", "경계값은 범위 밖");
     assert.deepEqual(crossProblems(), []);
+    assert.equal((advance().feedback ?? []).filter((item: { from: string }) => item.from === "cross").length, 0, "기각한 지적은 피드백에서 뺀다");
   } finally { cross.cleanup(); }
+});
+
+test("planningCrossBudgets — 현재 critic 지점(scope critic:<배정>)의 교차 예산: 질문을 답한 needs-input 도 지점 시도로 세고 사람 허용을 더한다. critic 완료가 없으면 빈 목록", () => {
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  throughDesign(); preparePlanning(root);
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS });
+  assert.deepEqual(planningCrossBudgets(loadWork(root)!), [], "critic 완료 결과가 없으면 지점이 없다");
+  finish(dispatch("critic"));
+  const critic = loadPlanning(loadWork(root)!).tasks.find((record) => record.task.role === "critic")!.attempts.at(-1)!;
+  const scope = `critic:${critic.dispatchId}`, point = `critic ${critic.dispatchId.slice(0, 8)}`;
+  const rows = () => planningCrossBudgets(loadWork(root)!).map((row) => [row.key, row.used, row.limit, row.exhausted, row.scope, row.point]);
+  assert.deepEqual(rows(), [["crossPoint", 0, 3, false, scope, point], ["crossError", 0, 1, false, scope, point], ["crossFormat", 0, 1, false, scope, point]]);
+  // 옛 needs-input(질문 답함 → answered-input)도 끝난 실행 한 번이고, 설정 오류 두 번은 첫 오류 뒤 재실행 1회다
+  editPlanning((state) => {
+    state.cross = { host: "claude", model: "", at: new Date().toISOString(), criticDispatchId: critic.dispatchId, status: "needs-input", summary: "범위 확인", findings: [], questions: 1 };
+    state.retry = { ...state.retry!, grants: [{ key: "crossPoint", scope, step: 1, consent: "c1", at: "t", reason: "r" }, { key: "crossPoint", scope: "critic:other", step: 1, consent: "c2", at: "t", reason: "다른 지점" }] };
+  });
+  write(`${DIR}/questions.md`, "# 질문\n\n## Q5 · 교차 계획 검토(claude)\n경계값도 포함할까요?\n[Requirements]: R9\n[Answer]: 포함한다\n");
+  assert.deepEqual(rows()[0], ["crossPoint", 1, 4, false, scope, point]);
+  editPlanning((state) => {
+    const base = { host: "claude" as const, mode: "review" as const, startedAt: "2026-10-07T00:00:00.000Z", endedAt: "2026-10-07T00:01:00.000Z", criticDispatchId: critic.dispatchId };
+    state.crossAttempts = [{ ...base, n: 1, class: "cross-config-error", kind: "config", detail: "x" }, { ...base, n: 2, class: "cross-config-error", kind: "config", detail: "x" }];
+  });
+  assert.deepEqual(rows().map((row) => row.slice(0, 4)), [["crossPoint", 2, 4, false], ["crossError", 1, 1, true], ["crossFormat", 0, 1, false]]);
 });
 
 test("needs-input 인데 질문이 없는 교차 결과는 형식 오류로 보존하고 형식 교정으로 다시 돈다", () => {

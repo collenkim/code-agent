@@ -6,8 +6,8 @@ import { writeAtomic } from "../core/atomic";
 import { readBlock, stripBlock, upsertBlock } from "./blocks";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
-  attemptCounts, attemptLabel, CROSS_ID, crossAttemptsOf, crossTimeoutMin, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
-  orphanView, pointLabel, reviewerRunLabel, reviewerState, syncLegacyRound,
+  attemptLabel, CROSS_ID, crossAttemptsOf, crossHintText, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
+  orphanView, pointHost, pointLabel, reviewerRunLabel, reviewerState, syncLegacyRound,
   type CrossAttempt, type ReviewerRun, type Waiver,
 } from "./crossRecord";
 import { planPaths, reviewRoundUsage, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
@@ -18,14 +18,14 @@ import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
 import { callSlot, clamp } from "./plugins/run";
 import {
   budgetOf, COUNTER_LABEL, crossBudgets, crossPointHint, crossPointState, failure, grantScope, guidance, LIMITS, limitOf, POLICIES,
-  recordedVariant, RetryRefused, TIMING,
+  RetryRefused, TIMING,
 } from "./retryPolicy";
-import type { Budget, FailureRecord, RetryGrant } from "./retryPolicy";
+import type { Budget, RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
 
-export { CROSS_ID, FINDING_CLOSED, FINDING_OPEN, reviewResultProblems } from "./crossRecord";
+export { CROSS_ID, crossHintText, FINDING_CLOSED, FINDING_OPEN, reviewResultProblems } from "./crossRecord";
 
 /**
  * ⑨ 09-review.md — 9 코드 리뷰.
@@ -298,7 +298,7 @@ export function renderRoundsBlock(log: ReviewLog): string {
     for (const round of log.rounds.filter((item) => item.reviewers !== undefined || item.crossAttempts !== undefined)) {
       const parts: string[] = [];
       if (round.reviewers) parts.push(`리뷰어: ${round.reviewers.length}회 호출 — ${round.reviewers.map(reviewerRunLabel).join(", ") || "없음"}`);
-      if (round.crossAttempts?.length) parts.push(`교차(${round.crossAttempts[0].host}): ${round.crossAttempts.map(attemptLabel).join(", ")}`);
+      if (round.crossAttempts?.length) parts.push(`교차(${pointHost(round.crossAttempts) ?? round.crossAttempts[0].host}): ${round.crossAttempts.map(attemptLabel).join(", ")}`);
       lines.push(`- ${round.round}회차 ${parts.join(" · ")}`);
     }
   }
@@ -505,20 +505,6 @@ const clock = (at: string): string => new Date(at).toTimeString().slice(0, 5);
 const REVIEWER_ORPHAN_MIN = Math.round(TIMING.reviewerOrphanMs / 60_000);
 const JUDGMENT_TAIL = " — 기록된 결과라 고칠 수 없습니다. 새 회차에서 리뷰어가 바로잡게 하거나 사용자 판단을 ca-answer 동의 judgment waive-finding 으로 기록하세요";
 
-/** 교차 지점이 막혀 있을 때의 안내 — 지점 안내(crossPointHint)를 원인별 문구로(기록된 실패는 recordedVariant) */
-export function crossHintText(hint: FailureRecord, values: { host: string; point: string; attempts: readonly { class?: string; kind?: string; mode?: string; endedAt?: string; rawPath?: string }[] }): string {
-  const left = hint.counter ? Math.max(0, hint.counter.limit - hint.counter.used) : 0;
-  if (hint.class === "limit-exceeded") {
-    const key = hint.counter?.key;
-    return key === "crossPoint"
-      ? guidance("limit-exceeded", { limit: hint.counter!.limit, counts: attemptCounts(values.attempts) }, "cross-point")
-      : guidance("limit-exceeded", { counterLabel: key ? COUNTER_LABEL[key] : "재시도", limit: hint.counter?.limit ?? 0, key: key ?? "" }, "cross-cause");
-  }
-  const raw = [...values.attempts].reverse().find((attempt) => attempt.rawPath)?.rawPath ?? "(원문 없음 — 같은 명령은 처음부터 다시 실행합니다)";
-  return guidance(hint.class, { host: values.host, detail: hint.detail, left, min: crossTimeoutMin(), point: values.point, raw },
-    recordedVariant(hint)).replace(/\n/g, " ");
-}
-
 /**
  * 리뷰를 마쳤다고 할 수 있는가.
  *
@@ -585,7 +571,7 @@ export function reviewProblems(work: Work): string[] {
   if (cross) {
     const attempts = orphanView(crossAttemptsOf(last, planned), now);
     const point = crossPointState(attempts);
-    const host = attempts[0]?.host ?? (runtimeHost() ? otherHost(runtimeHost()!) : undefined);
+    const host = pointHost(attempts) ?? (runtimeHost() ? otherHost(runtimeHost()!) : undefined);
     if (point.state === "completed") {
       if (!observedCross(last, text, planned, now)) {
         problems.push(`리뷰 문서의 ## ${CROSS_HEADING} 이 기록된 교차 리뷰 결과와 다릅니다 — 임의로 바꾸지 말고 기록(review.json 의 ${last.round}회차 교차 결과)대로 되돌리세요. 같은 회차는 다시 교차 리뷰하지 않습니다.`);

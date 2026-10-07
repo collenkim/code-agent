@@ -30,6 +30,7 @@ import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
 import { consentCommandGuard } from "./consent";
 import { mentionsAidlc } from "./aidlc";
+import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -177,7 +178,31 @@ const STORE_DENIED =
   "등록된 플러그인 키가 있는 자리는 읽을 수 없습니다. " +
   "무엇이 등록돼 있는지는 code-agent plugin list 가 값을 빼고 보여 줍니다 — 키가 필요하면 사람에게 물으세요.";
 
+/**
+ * 교차 실행이 띄운 다른 호스트 안(CODE_AGENT_CROSS)에서 여는 code-agent 명령 — 읽기 전용 검토에 필요한 것만(파일 읽기·상태·조사).
+ * 셸 연결·리다이렉트·치환 문자가 섞이면 열지 않는다.
+ */
+const CROSS_CHILD_READONLY = /^code-agent(?: (?:help|--help|status|survey|planning status|read(?: [^;&|<>`$()\r\n]+)?))?$/;
+
+/**
+ * 교차 실행 자식의 진행 명령·쓰기 거부 — 다른 호스트의 읽기 전용 실행(Claude `--allowedTools Read,Grep,Glob`, Codex `-s read-only`)과
+ * 별개로 hook 이 한 번 더 막는다(샌드박스가 쓰기를 막는 정도는 플랫폼마다 다르다). 작업 임대보다 먼저 보며 임대를 읽거나 쓰지 않는다.
+ * 그 밖(읽기·키 자리·셸 허용 목록)은 decide 가 그대로 판정한다.
+ */
+export function crossChildGuard(input: HookInput): string | undefined {
+  if (!crossChild()) return undefined;
+  const reason = `${CROSS_CHILD_DENY} 교차 실행이 아닌데 이 문구가 보이면 셸 설정에서 CODE_AGENT_CROSS 를 지우세요(code-agent doctor 가 알린다).`;
+  if (WRITE_TOOLS.includes(input.tool_name)) return reason;
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
+    const command = (input.tool_input.command ?? "").trim();
+    if (/\bcode-agent\b/.test(command) && !CROSS_CHILD_READONLY.test(command)) return reason;
+  }
+  return undefined;
+}
+
 export function decide(input: HookInput, projectDir?: string): string | undefined {
+  const child = crossChildGuard(input);
+  if (child) return child;
   const repoRoot = canonical(projectDir ?? input.cwd);
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
