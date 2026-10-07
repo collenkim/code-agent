@@ -123,3 +123,28 @@ pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은
 | 시험 수 / 통과 / 실패 / 생략 / suites | 1253 / 1249 / 0 / 4 / 172 | 1253 / 1249 / 0 / 4 / 172 |
 | `npm test` `duration_ms` | 207,972 | 112,205(−46%) |
 | 가장 긴 describe | p5 파일 전체(단독 168초) | "P6 · fix — 재현 먼저" 73초(fix-flow 한 파일) |
+
+## 명세와 다르게 한 것(모아서)
+
+- **C1~C6 이 먼저 한 것** — `cli.ts` 지연 로드 진입·`hookFailureExit(hookFailureInput(...))`(기반 인계 #2 — `eventOf` 없음)·`cliMain.ts`·`prepareConsent(root, raw, {binding, form})` 옵션은 C5 가 이미 만들었다. 명세 §3.1.1·3.1.2 는 확인만 했다.
+- **준비 티켓 키** — C5 최종본의 준비 티켓은 인자와 무관한 저장소당 하나라 `prepareTicketKey` 를 만들지 않았다. 대신 hook 과 CLI 가 같은 문법 함수를 써서 문법이 틀린 준비 명령에는 티켓이 나지 않는다(명세 §3.3.4 끝 문단의 처리). 시험 ④(키 불일치)·⑧(키 함수 공유)은 해당이 없어 "인자 순서·따옴표는 상관없다"·"문법 오류에는 티켓이 없다" 로 바꿨다.
+- **계획 스킬 4항** — 지시(C2 4항 문장 보존)대로 action별 행동 요지를 한 곳(4항)에 남기고 `next` 줄을 원천으로 적었다. 명세는 4~6항을 모두 지우라고 했다.
+- **막힘 행** — 원인과 행동을 함께 적은 항목(reasons 둘)은 그 두 줄. 실패로 끝난 형식 오류 시도에 기록 변형 문구("planning repair 로 교정")를 내면 교정할 수 없는 시도에 교정을 시키게 된다.
+- **SessionStart 의 `init`** — `sessionHook.ts` 는 hook 누락 경고(`hookInstallProblems`)를 위해 `init.ts` 를 읽는다. 명세의 금지 목록에 `init.js` 가 있지만 SessionStart 는 대화마다 한 번이라 그 진입만 허용했다(`hookLoad.test.ts` `ALLOWED`). PreToolUse 경로의 `init` 은 `request.ts` 지연 로드로 뺐다.
+- **시험 위치** — 연쇄·next 줄 통합 시험은 새 `planningChain.test.ts` 대신 픽스처가 있는 `planning.test.ts`(C7 8개)에 두고, 새 파일에는 합성 출력의 표 시험(8개)만 두었다. PVR-19 시험도 `planning.test.ts`(Task 계획이 있는 픽스처)에 두었다. 명세의 연쇄 거부 시나리오(01 덮어쓰기)는 담당 결과가 낡아 재배정으로 바뀌므로, AI-DLC 진행 표시로 `next` 만 막아 재현했다.
+- **기준 커밋 없는 이전 작업** — implement `next` 가 이미 기준 커밋을 요구해 그 분기(Task 완료 판정 생략)는 방어용이다(시험하지 않았다).
+
+## 미측정·미확인
+
+- **유료 평가 미실행** — 실제 Claude·Codex 모델 호출은 하지 않았다(지시). 흐름당 메인 요청·도구 호출·비용의 실측은 `scripts/evaluate-full-flow.cjs`(보고서에 `usageData`·`retry`·`numTurns`) 3회와 `scripts/summarize-evaluations.cjs` 로 잰다 — 명세 추정(메인 도구 호출 약 −11회: 연쇄 −3, 동의 JSON Write −4, 적용 뒤 status −4)은 이 기록에서 확인되지 않았다.
+- **Codex 세션 기록 형식** — 이 PC 에 기록이 없어 공개 형식 가정이다(출력에 표시). 실제 `codex exec` 한 번의 rollout 키를 확인하면 `codexUsage.ts` 경로를 맞춘다.
+- **SessionStart `source`(compact·clear)** — Claude Code 문서 기준이며 이 저장소에서 실제 호스트로 확인하지 않았다. 값이 없으면 줄을 붙이지 않아 안전하다.
+- **AskUserQuestion 의 긴 본문** — summary 첫 표시는 남겼다(질문 UI 가 긴 본문을 자르는지 미확인).
+- **단일 실행 파일** — SEA 빌드(`npm run build:bin`)는 돌리지 않았다. 대신 esbuild 로 `dist/agent/cli.js` 를 묶어(`--bundle --platform=node`) 지연 `require` 가 번들에 들어가고, 번들로 `hook` Read·`consent finish` 가드·`stop` 이 exit 0 인 것을 확인했다(경고는 기존 `sourceUpdate.ts` `require.resolve("./assets")` 하나).
+
+## 근거
+
+- 커밋: `669aa66`(OPT-15) · `f3b34ff`(OPT-6) · `df22bdf`(OPT-1·2) · `f230734`(OPT-14·연쇄·OPT-3·PVR-19) · `64d1c50`(OPT-16 a) · `69fbe28`(OPT-16 b·OPT-4) · 시험 분할(OPT-11)과 이 마무리.
+- `npm test`: 기준 1197개(통과 1193·생략 4) → **1253개 중 1249개 통과·실패 0·생략 4**(새 시험 56: hookLoad 21, usage 5, consentOutput 8, planningChain 8, planning C7 8·PVR-19 1, templateText 3, templateBudget 2). 분할 뒤 `duration_ms` 112,205(분할 전 207,972).
+- 마지막 빌드의 hook 시간(21회 중앙값, 기준 dist 와 번갈아): PreToolUse Read 105→96ms·Bash status 105→95ms, Codex PreToolUse 113→96ms·UserPromptSubmit 104→93ms·Stop 111→96ms, Stop·SessionStart·SubagentStart 그대로(85·93·87ms).
+- 측정 자료: `scratchpad/sandbox-stage6/`(`hooktime.cjs`·`graph.cjs`·`mkrepo.cjs`, `consent-size.cjs`, `request-size.cjs`, `context-golden.cjs`·`golden-a`·`golden-split`·`golden-b6`, `codex-flow.cjs`·`pkg-s0`, `flow-overrun.cjs`, `split-tests.cjs`·`prune-imports.cjs`, 전체 시험 로그 `s0~s8-test.txt`). `code-agent update` 는 실행하지 않았다.

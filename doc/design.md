@@ -26,7 +26,7 @@
 
 ### 같은 세션의 사람 확인
 
-에이전트가 `code-agent consent prepare <action.json>`으로 확인 대상을 준비하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달한다. PreToolUse·PostToolUse `consent-event`가 같은 세션·호출 ID의 질문과 실제 응답을 관찰한다. 이어서 `code-agent consent status <ID>`로 상태와 남은 질문을 확인하고, 승인된 요청만 `code-agent consent apply <ID>`로 실행한다. 남은 질문은 반환된 내용 그대로 이어서 표시한다.
+에이전트가 `code-agent consent prepare --action <동작> --for claude`(반려·model·플러그인·judgment 처럼 자유 문구가 필요하면 `<action.json>`)로 확인 대상을 준비하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달한다. `--for`는 그 호스트가 쓰는 필드만 출력하게 한다(Claude `toolInput`, Codex `codexReply`). PreToolUse·PostToolUse `consent-event`가 같은 세션·호출 ID의 질문과 실제 응답을 관찰한다. 이어서 `code-agent consent finish <ID>`(또는 `status` 뒤 `apply`)로 승인된 요청만 실행하고, 결과의 `next`·`phase`로 이어간다 — 적용 뒤 status 를 다시 부르지 않는다. 남은 질문은 반환된 내용 그대로 이어서 표시한다(요약은 처음 한 번만).
 
 준비·적용은 세션에 묶인다 — hook 이 `consent prepare`(정확한 꼴)를 허용하면 그 세션의 준비 티켓을 남기고, CLI 는 그 티켓을 소비해야 준비하며 동의에 준비 세션을 적는다. 응답은 그 세션(Codex 는 그 대화의 사용자 메시지)에서만 받고, 적용은 응답을 관찰한 세션의 hook 이 본 `consent apply|finish`(적용 티켓)나 호스트 표지가 없는 사람의 터미널에서만 한다. Codex 응답은 `codexReply` 마지막 질문 끝의 6자 확인 코드를 붙여야 한다(이전 형식 기록은 코드 없이 받는다) — 모델도 보는 값이라 요약이 잘려 코드 줄이 빠지는 실수를 막을 뿐, 사람이 입력했다는 증명은 아니다(`codex exec resume` 한계와 같다). 질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 대상 변경·응답 거부·적용 실패는 동의 기록에 `failure`(`class`·`kind`)로 남고 그 동의는 다시 쓰지 않는다 — 다음 행동(새로 준비·멈춤·상태 확인)은 갈래마다 안내가 다르다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
 
@@ -40,7 +40,9 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 |---|---|
 | 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 `code-agent context --file`이 전문을 `handoff/context.md`에 쓴다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 2026-10-06 기준선에서 메인이 쓴 프롬프트는 13회 38.5K자였고 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주던 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
 | 서브에이전트 → 메인 | 계획 담당(Claude)은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 Write로 쓰고 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 기존과 같은 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. Codex는 `agent_id`가 hook에 오지 않아 기존처럼 `{path, content}`로 싣는다 |
-| 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문 페이지·동작 JSON 표(`ca-answer/reference.md`). ca-answer는 질문·승인 직전에만 읽는다 |
+| 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문 페이지·동작 JSON 표(`ca-answer/reference.md`). ca-answer는 그 대화에서 아직 읽지 않았거나 압축·비우기 뒤일 때만 질문·승인 직전에 읽는다(SessionStart 가 압축·비우기 뒤 한 줄로 알린다). 템플릿 크기는 시험(`templateBudget.test.ts`)이 예산으로 묶는다 |
+| 동의 출력 | `consent prepare --for <호스트>`는 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply` — 준비 출력 약 절반). 자유 문구가 없는 동작은 JSON 파일 없이 `--action`으로 준비하고, `finish`가 적용 뒤 `next`·`phase`를 돌려준다 |
+| 계획 진행 | `planning advance`가 action별 다음 행동 한 줄(`next`)을 싣고 — 행동 규칙의 원천은 CLI 한 곳이다 — analysis·impact·design 은 `--chain`으로 결과가 모두 준비되면 같은 호출에서 program 게이트까지 지난다(게이트용 `next` 호출과 그 status 전문이 메인에 들어가지 않는다). 다음 단계 배정·계획 승인은 잇지 않는다 |
 | 압축·비우기 | 상태는 파일에 있으므로 `/clear` 뒤 `/ca-next`로 손실 없이 잇는다. 자동 압축 요약이 단계·동의를 잃어도 SessionStart hook이 현재 위치를 다시 붙인다 |
 
 전달 파일과 staging에는 `.gitignore`(`*`)를 두어 반영 커밋에 들어가지 않는다. Agent 도구의 PostToolUse `updatedToolOutput`으로 결과를 줄이는 방법은 실험에서 쓸 수 없었다 — 서브에이전트가 비동기로 시작돼 PostToolUse가 시작 응답에 붙고, 결과는 별도 알림으로 온다.
@@ -269,10 +271,10 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
   └─ code-agent request submit doc/work/<ID>/request.json
        스키마 → 렌더 → **손으로 쓴 지시서와 같은 지시서 검사** + 머리말 왕복 대조. 통과해야 requirement.md 가 쓰인다.
        반려된 내용을 그대로 다시 내면 거부한다 — 사유를 읽지 않은 제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다
-  └─ code-agent consent prepare <action.json>     action: "request", id: "<ID>", 필요한 경우 spec: "<지시서>"
+  └─ code-agent consent prepare --action request --id <ID> [--spec <지시서>] --for claude
        반환된 toolInput 전체로 AskUserQuestion → hook이 실제 응답 관찰 → consent finish <확인 요청 ID>
        (승인된 요청만 그 자리에서 적용 — status·apply 로 나눠도 같다) → approvals/<slug(ID)>/request.jsonl에 해시로 남긴다
-       반려를 기록할 때는 decision: "reject"와 comment에 사유를 담아 다시 확인한다
+       반려를 기록할 때는 decision: "reject"와 comment에 사유를 담은 action.json 으로 다시 확인한다
   └─ 자동으로 code-agent start doc/work/<ID>/requirement.md → 2 요구사항 분석 (중단 후 재개는 /ca-next)
 ```
 
