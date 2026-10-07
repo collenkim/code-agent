@@ -1,6 +1,6 @@
 /**
  * 스테이지 흐름 픽스처 — 임시 git 저장소(주문 도메인 ORD-1, 단계 entity·repository·test)와 스테이지마다 세우는 헬퍼.
- * p5.test 와 stageFlow.test 가 함께 쓴다(p5 에서 꺼냈다). `repo` 는 createStageRepo 가 정하는 지금 테스트의 저장소다.
+ * 검증·리뷰·통합·반영·스테이지 명령 시험(verification-flow·verification-stages·review-gate·integrate-deliver·stage-commands, 옛 p5)과 stageFlow.test 가 함께 쓴다. `repo` 는 createStageRepo 가 정하는 지금 테스트의 저장소다.
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";

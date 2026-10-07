@@ -29,7 +29,7 @@ import { loadManifestIfAny } from "../agent/work";
 
 let repo: string;
 
-/** dist/test/p8.test.js 기준 — hook 명령이 **실제로 있는 파일**을 가리키게 한다 (검사 5가 그것을 본다) */
+/** dist/test 기준 — hook 명령이 **실제로 있는 파일**을 가리키게 한다 (검사 5가 그것을 본다) */
 const CLI = join(__dirname, "..", "agent", "cli.js");
 
 function write(path: string, content: string): void {

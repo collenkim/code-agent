@@ -29,7 +29,7 @@ import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
 /**
  * P7 — 플러그인(명령 어댑터)과 자리(slot).
  *
- * p5·p6 와 같은 방식이다: 임시 git 저장소에 실제 함수를 그대로 부르고, 어댑터는 임시 디렉토리에
+ * 스테이지 흐름 시험(stageFixture·kindFlowFixture)과 같은 방식이다: 임시 git 저장소에 실제 함수를 그대로 부르고, 어댑터는 임시 디렉토리에
  * 쓴 node 스크립트다(= 테스트 더블). `CODE_AGENT_HOME` 을 임시 디렉토리로 돌려 실제 사용자 홈을
  * 건드리지 않는다.
  */

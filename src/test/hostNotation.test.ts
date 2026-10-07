@@ -127,7 +127,7 @@ describe("CLI 표기 — 설치·실행 환경", () => {
   });
 
   test("Claude 바이트 — 배선 전 문자열과 같고 예외 세 줄만 바뀐다", () => {
-    // next 의 미응답 질문·context 의 계획 밖 질문은 아래 'hook·검증' 의 실제 함수 시험이, fix 재현 줄은 p6 이 본다
+    // next 의 미응답 질문·context 의 계획 밖 질문은 아래 'hook·검증' 의 실제 함수 시험이, fix 재현 절은 fix-flow 가 본다
     withNotation("claude", () => {
       // 접수 출력은 질문 규칙을 다시 싣지 않는다(C7 OPT-14 — 원천은 ca-request 스킬) — 질문 도구 이름도 없다
       assert.doesNotMatch(requestContext(root, { id: "W-1", kind: "feature", startedAt: "" }), /AskUserQuestion|최대 4개 질문/);

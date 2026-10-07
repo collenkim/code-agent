@@ -44,7 +44,7 @@ npm run build
 npm test
 ```
 
-Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2~3분 걸리며, 플랫폼 조건으로 4개가 생략된다.
+Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2분 걸리며(파일 단위 병렬 — 가장 긴 파일이 벽시계를 정한다, 한 파일이 1분을 넘으면 주제별로 나눈다), 플랫폼 조건으로 4개가 생략된다. `npm test`는 `tsc` 뒤 `scripts/prune-dist-tests.cjs`로 지운·옮긴 시험의 옛 `dist/test` 산출물을 지운다.
 
 ## 실험할 때
 

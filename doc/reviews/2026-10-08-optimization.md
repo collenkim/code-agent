@@ -100,3 +100,26 @@ pending 이 이어지는 동의(문서·지식 선택)는 `finish` 마다 같은
 - `src/test/templateBudget.test.ts`(새, 2) — `template/` 의 모든 `.md` 39개에 파일별 예산(LF 글자 수, 지금 크기×1.03 을 100 단위로 올림), 흐름 합계 예산(Claude: CLAUDE.block + 흐름 스킬 12 = 50,638자 → 51,700, Codex: CODEX.block + 변환된 흐름 스킬 12 = 48,442자 → 49,500). 예산이 없는 템플릿·없어진 템플릿의 예산도 실패. 넘기면 보조 문서로 옮기거나 근거를 doc/reviews 에 남기고 예산을 올린다(실패 문구가 안내). `AGENTS.md` 에 같은 줄.
 - `scripts/template-sizes.cjs`(새) — 파일별 크기·두 흐름 합계, `--suggest` 는 예산 리터럴, `--ref <커밋>` 은 그 커밋의 템플릿(파일을 쓰지 않는다).
 - 확인: ca-answer/SKILL.md 에 `예산 − 현재 + 1`자(8401자 > 8400자)를 덧붙이면 파일 예산으로, 흐름 파일 여럿에 파일별 여유 안에서 합계 여유 + 1자(1,063자)를 나눠 덧붙이면 Claude 흐름 합계(51,701자 > 51,700자)로 실패하고, 되돌리면 통과한다(`scratchpad/sandbox-stage6/flow-overrun.cjs`).
+
+## OPT-11 — 시험 파일 분할(마지막, 별도 커밋)
+
+`npm test` 는 파일 단위로 병렬이라 가장 긴 파일이 벽시계를 정한다. 분할 전 p5 한 파일이 홀로 168초(시험 155개)였다(같은 PC, 단독 실행 — consent 64초·planning 64초).
+
+| 새 파일 | 옮긴 것 |
+|---|---|
+| `verification-flow.test.ts` | p5 "검증 workflow 노드" |
+| `verification-stages.test.ts` | p5 기준 커밋·changedPaths·check·증거 묶임·test·수정 루프·테스트 동결·매니페스트 kind:test·hook 검증 명령·check 되감기·동결을 푸는 지적(11) |
+| `review-gate.test.ts` | p5 review 회차·코드 리뷰 게이트·⑨ 지적 절·교차 리뷰(4) |
+| `integrate-deliver.test.ts` | p5 integrate·deliver·KNOWLEDGE 제안·⑩ 추적표·커밋 자리·코드 구역(6) |
+| `stage-commands.test.ts` | p5 반려된 계획·Stop hook·init Stop hook·새 스테이지 context·검증기·브랜치 재시작·설치 템플릿·스테이지 명령·back(9) |
+| `fix-flow.test.ts` · `refactor-flow.test.ts` · `deliver-scope.test.ts` | p6 fix · refactor·종류별 단계·빈 저장소 · deliver 범위·prepare. 공용 상수·헬퍼·저장소는 `kindFlowFixture.ts`(p6 머리를 export — `repo` 는 실시간 바인딩) |
+| `plugins.test.ts` · `assets-doctor-usage.test.ts` | p7 · p8 이름만 |
+
+- describe 이름·본문은 글자 그대로 옮겼다(스크립트 `scratchpad/sandbox-stage6/split-tests.cjs` — 배정되지 않거나 두 번 배정된 describe 가 있으면 멈춘다). p5 의 공용 준비는 C4 가 꺼낸 `stageFixture.ts` 를 그대로 쓴다. 각 파일의 import 는 `tsc --noUnusedLocals` 진단으로 쓰는 것만 남겼다(`prune-imports.cjs`).
+- `scripts/prune-dist-tests.cjs`(새) — 소스가 없는 `dist/test/*.test.js` 를 지운다. `package.json` `test` 가 `tsc` 뒤에 부른다(옛 p5~p8 산출물이 남으면 같은 시험이 두 번 돈다).
+
+| 측정(같은 PC) | 분할 전 | 분할 뒤 |
+|---|---|---|
+| 시험 수 / 통과 / 실패 / 생략 / suites | 1253 / 1249 / 0 / 4 / 172 | 1253 / 1249 / 0 / 4 / 172 |
+| `npm test` `duration_ms` | 207,972 | 112,205(−46%) |
+| 가장 긴 describe | p5 파일 전체(단독 168초) | "P6 · fix — 재현 먼저" 73초(fix-flow 한 파일) |
