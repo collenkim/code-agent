@@ -1,17 +1,24 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
-import { basename, dirname, join, posix } from "path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { basename, dirname, join, posix, relative } from "path";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { planFormatFor } from "../core/plan";
+import { sha } from "./docs";
 import { workDocsDir } from "./layout";
+import { acquireLock } from "./lock";
 import { Stop } from "./stop";
 import { codexAgentName } from "./hosts";
+import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, planningDispatchDecision, RetryRefused, TIMING,
+  type Budget, type CounterKey, type FailureClass } from "./retryPolicy";
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
-import { inputFiles, loadPlanning, mergeProblems, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs, scopedFiles, TASK_AGENTS, taskCurrent, taskHash, TaskSchema, type PlanningState, type PlanningTask, type TaskRecord } from "./planningState";
+import { businessRuleFiles, dropPlanningCache, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
+  ROLE_PHASE, runView, scopedFiles, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
+  type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 
-const PHASE: Record<PlanningTask["role"], string> = { analysis: "analysis", explore: "impact", impact: "impact", synthesis: "impact", design: "design", plan: "plan", critic: "plan" };
+/** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
+export { ROLE_PHASE as PHASE } from "./planningState";
 const BatchSchema = z.object({ maxParallel: z.number().int().min(1).max(4).default(3), tasks: z.array(TaskSchema).min(1).max(100) }).strict();
 
 /** 계획 담당이 출력 문서를 쓰는 임시 자리. 완료 hook이 읽어 정식 문서로 옮기고 지운다 — 결과 보고에 본문을 싣지 않기 위해서다. */
@@ -34,29 +41,29 @@ export function planningWork(root: string): Work {
   if (!work.active.planningVersion) throw new Stop("기존 작업은 종전 흐름으로 재개합니다. 새 작업부터 관찰된 계획 작업을 사용합니다.");
   return work;
 }
-/** 병렬 완료 이벤트는 짧은 파일 잠금 안에서 읽고 갱신한다. 에이전트 실행 동안 잠그지 않는다. */
-export function mutatePlanning<T>(work: Work, fn: (state: PlanningState) => T): T {
+/**
+ * 병렬 완료 이벤트는 짧은 파일 잠금 안에서 읽고 갱신한다. 에이전트 실행 동안 잠그지 않는다.
+ * 잠금은 공통 acquireLock 이다 — 주인 {pid, host, at} 을 적고, 같은 PC 의 죽은 주인과 주인 기록 없는 10분 잠금은 회수한다.
+ */
+export function mutatePlanning<T>(work: Work, fn: (state: PlanningState) => T, options: { waitMs?: number } = {}): T {
   const path = planningFile(work);
   mkdirSync(dirname(path), { recursive: true });
-  let lock: number;
-  const deadline = Date.now() + 2000;
-  for (;;) {
-    try { lock = openSync(`${path}.lock`, "wx"); break; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (Date.now() >= deadline) throw new Stop("계획 기록을 다른 프로세스가 갱신 중입니다. 같은 명령을 다시 실행하세요. 중단된 프로세스의 잠금은 실행 종료를 확인한 뒤 제거합니다.");
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-    }
-  }
+  const release = acquireLock(`${path}.lock`, { waitMs: options.waitMs ?? TIMING.lockWaitMs, ageReclaim: true, label: "계획 기록",
+    display: relative(work.repoRoot, `${path}.lock`).replace(/\\/g, "/") });
   try {
+    // 잠금 밖에서 조립한 taskHash 메모는 버린다 — 잠금 안 판정은 stat 으로 검증한 부품으로 다시 조립한다
+    invalidatePlanningCache();
     const state = loadPlanning(work);
+    // 재시도 카운터 이행 — 이 시각 이후의 배정만 작업별 총 배정 한도에 센다
+    state.retry ??= { version: 1, since: new Date().toISOString(), grants: [] };
     const value = fn(state);
     writeAtomic(path, `${JSON.stringify(state, null, 2)}\n`);
+    invalidatePlanningCache();   // 상태(선행 결과)가 바뀌었다
     return value;
-  } finally { closeSync(lock); unlinkSync(`${path}.lock`); }
+  } finally { release(); }
 }
 export function requireRolePhase(work: Work, role: PlanningTask["role"]): void {
-  if (work.active.phase !== PHASE[role]) throw new Stop(`${role} 작업은 ${PHASE[role]} 단계에서 실행합니다. 필요하면 code-agent back ${PHASE[role]} 으로 돌아가세요.`);
+  if (work.active.phase !== ROLE_PHASE[role]) throw new Stop(`${role} 작업은 ${ROLE_PHASE[role]} 단계에서 실행합니다. 필요하면 code-agent back ${ROLE_PHASE[role]} 으로 돌아가세요.`);
 }
 function predecessor(state: PlanningState, role: PlanningTask["role"]): string[] {
   const previous = role === "explore" || role === "impact" ? "analysis" : role === "synthesis" ? "explore" : role === "design" ? state.tasks.some(item => item.task.role === "impact") ? "impact" : "synthesis" : role === "plan" ? "design" : role === "critic" ? "plan" : undefined;
@@ -68,7 +75,7 @@ function defaults(work: Work, state: PlanningState, optimize = false): unknown {
   const keys = work.active.phase === "analysis" ? readSourceTrace(work.repoRoot, work.active.id, work.active.spec).rows.map(row => row.id) : existsSync(planningPath(work.repoRoot, requirementsPath)) ? [...readFileSync(planningPath(work.repoRoot, requirementsPath), "utf8").matchAll(/^## (R\d+)\b/gm)].map(match => match[1]) : [];
   const existingImpact = state.tasks.some(item => item.task.role === "impact");
   let compact = existingImpact;
-  if (optimize && work.active.phase === "impact" && !state.tasks.some(item => PHASE[item.task.role] === "impact") && keys.length > 0 && keys.length <= 3) {
+  if (optimize && work.active.phase === "impact" && !state.tasks.some(item => ROLE_PHASE[item.task.role] === "impact") && keys.length > 0 && keys.length <= 3) {
     const files = scopedFiles(work, ["."], true);
     // 범위가 작은 기본 조사만 합친다. 명시적으로 분할한 조사와 독립 critic은 유지한다.
     compact = files.length <= 12 && files.reduce((bytes, file) => {
@@ -81,7 +88,8 @@ function defaults(work: Work, state: PlanningState, optimize = false): unknown {
   const tasks = roles.map(role => {
     const existing = pending.tasks.find(item => item.task.role === role);
     if (existing) return existing.task;
-    const task: PlanningTask = { id: role, role, contextVersion: 2, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
+    // 업무 규칙 KNOWLEDGE 는 묻기 전에 먼저 찾는 자료다 — 새로 만드는 analysis·design 작업에만 넣는다(기존 작업의 해시는 그대로)
+    const task: PlanningTask = { id: role, role, contextVersion: 2, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
     pending.tasks.push({ task, attempts: [] });
     return task;
   });
@@ -89,7 +97,7 @@ function defaults(work: Work, state: PlanningState, optimize = false): unknown {
 }
 export function preparePlanning(root: string, batch?: unknown): string {
   const work = planningWork(root);
-  return JSON.stringify(mutatePlanning(work, state => prepareState(root, work, state, batch)), null, 2);
+  return withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => prepareState(root, work, state, batch)), null, 2));
 }
 function prepareState(root: string, work: Work, state: PlanningState, batch?: unknown) {
     const parsed = BatchSchema.parse(batch ?? defaults(work, state));
@@ -138,25 +146,109 @@ function compactResult(record: TaskRecord) {
   const { artifacts, ...judgment } = result;
   return { ...judgment, artifacts: artifacts.map(item => ({ path: item.path, hash: last?.outputs?.[item.path], chars: item.content.length })), detailCommand: `code-agent planning result ${record.task.id}` };
 }
-export function planningStatus(root: string): string {
-  const work = planningWork(root), state = loadPlanning(work);
-  return JSON.stringify({ phase: work.active.phase, maxParallel: state.maxParallel, tasks: state.tasks.map(record => {
+
+// ---- 실행 중 배정의 고아 정리 ----
+
+function markOrphaned(attempt: TaskAttempt, detail: string): void {
+  attempt.status = "orphaned";
+  attempt.error = detail;
+  attempt.failure = failure("dispatch-orphan", detail);
+}
+interface Sweep { orphaned: { id: string; dispatchId: string; reason: string }[]; views: Map<string, RunView> }
+/**
+ * 고아 정리 — 동시 한도보다 먼저 한다. 마지막 시도가 running 인 모든 작업을 판정하고, 확실한 고아(연결 담당이 끝났는데 결과가
+ * 없다)는 orphaned 로 표시한다. 고아가 동시 실행 수에 남아 명시 배정이 영영 "동시 실행 한도"로 끝나는 일을 막는다.
+ * 예외로 저장되지 않아도 다음 호출이 같은 판정으로 다시 표시한다(결정적이다).
+ */
+function sweepOrphans(state: PlanningState, now: number): Sweep {
+  const sweep: Sweep = { orphaned: [], views: new Map() };
+  for (const record of state.tasks) {
     const last = record.attempts.at(-1);
-    return { id: record.task.id, role: record.task.role, title: record.task.title, state: taskCurrent(work, state, record) ? "completed" : last?.status === "completed" ? "stale" : last?.status ?? "pending", attempts: record.attempts.length, problems: readyProblems(work, state, record), last: last && { dispatchId: last.dispatchId, at: last.at, status: last.status, error: last.error, summary: last.result?.summary, findings: last.result?.findings, questions: last.result?.questions }, detailCommand: `code-agent planning result ${record.task.id}` };
-  }), conflicts: mergeProblems(state) }, null, 2);
+    if (last?.status !== "running") continue;
+    const view = runView(state, record, last, now);
+    if (view.state === "orphaned") {
+      markOrphaned(last, ORPHANED_REASON);
+      sweep.orphaned.push({ id: record.task.id, dispatchId: last.dispatchId, reason: ORPHANED_REASON });
+    } else sweep.views.set(record.task.id, view);
+  }
+  return sweep;
+}
+const runningCount = (state: PlanningState): number => state.tasks.filter(item => item.attempts.at(-1)?.status === "running").length;
+
+// ---- 재시도 예산 ----
+
+/** 작업별 같은 입력 실패·총 배정 사용량(현재 입력 기준) */
+function taskBudgets(work: Work, state: PlanningState, record: TaskRecord): { taskTotal: Budget; sameInput: Budget & { inputHash: string } } {
+  const inputHash = hashInput(work, state, record.task).hash, grants = state.retry?.grants ?? [], taskId = record.task.id;
+  const same = record.attempts.filter(attempt => attempt.inputHash === inputHash && attempt.status === "failed").length;
+  const since = state.retry ? Date.parse(state.retry.since) : undefined;
+  const total = since === undefined ? 0 : record.attempts.filter(attempt => Date.parse(attempt.at) >= since).length;
+  return {
+    taskTotal: budgetOf("taskTotal", total, undefined, grants, grantScope({ file: "planning", key: "taskTotal", taskId })),
+    sameInput: { ...budgetOf("sameInput", same, undefined, grants, grantScope({ file: "planning", key: "sameInput", taskId, inputHash })), inputHash },
+  };
+}
+/** 동의 미리보기용 — 작업별 같은 입력 실패·총 배정 사용량 */
+export function planningBudget(root: string, taskId: string): { taskTotal: Budget; sameInput: Budget & { inputHash: string } } {
+  const work = planningWork(root);
+  return withPlanningCache(() => {
+    const state = loadPlanning(work), record = state.tasks.find(item => item.task.id === taskId);
+    if (!record) throw new Stop(`계획 작업이 없습니다: ${taskId}`);
+    return taskBudgets(work, state, record);
+  });
+}
+/**
+ * 관찰된 사람 판단(judgment retry-grant)을 적용한다. 잠금 안에서 다시 읽고 소진됐을 때만 append 한다 —
+ * 같은 입력 실패의 허용은 **현재 입력**의 inputHash 범위다.
+ */
+export function grantPlanningRetry(root: string, key: "taskTotal" | "sameInput", taskId: string, consent: string, reason: string): string {
+  const work = planningWork(root);
+  return withPlanningCache(() => mutatePlanning(work, state => {
+    const record = state.tasks.find(item => item.task.id === taskId);
+    if (!record) throw new Stop(`계획 작업이 없습니다: ${taskId}`);
+    const budgets = taskBudgets(work, state, record);
+    const budget = key === "taskTotal" ? budgets.taskTotal : budgets.sameInput;
+    const scope = key === "taskTotal" ? grantScope({ file: "planning", key, taskId }) : grantScope({ file: "planning", key, taskId, inputHash: budgets.sameInput.inputHash });
+    const grant = grantFor({ key, scope, budget, consent, reason });
+    state.retry!.grants.push(grant);
+    return `작업 ${taskId}의 ${COUNTER_LABEL[key as CounterKey]} 한도를 ${budget.limit}→${budget.limit + grant.step}회로 늘렸습니다(사람 판단, 동의 ${consent})`;
+  }));
+}
+
+export function planningStatus(root: string): string {
+  const work = planningWork(root);
+  return withPlanningCache(() => {
+    const state = loadPlanning(work), now = Date.now();
+    return JSON.stringify({ phase: work.active.phase, maxParallel: state.maxParallel, tasks: state.tasks.map(record => {
+      const last = record.attempts.at(-1);
+      const current = taskCurrent(work, state, record);
+      const name = current ? "completed" : last?.status === "completed" ? "stale" : last?.status ?? "pending";
+      // 읽기 전용이다 — 고아 판정은 표시만 하고 상태를 바꾸지 않는다
+      const run = last?.status === "running" ? runView(state, record, last, now) : undefined;
+      const budgets = taskBudgets(work, state, record);
+      return { id: record.task.id, role: record.task.role, title: record.task.title, state: name, attempts: record.attempts.length, problems: readyProblems(work, state, record),
+        ...(run ? { run: { observedStart: run.observedStart, ...(run.agentSession ? { agentSession: run.agentSession } : {}), elapsedMin: run.elapsedMin, orphan: run.state, reason: run.reason } } : {}),
+        ...(name === "stale" ? { staleBecause: staleReasons(work, state, record) } : {}),
+        budget: { sameInput: { used: budgets.sameInput.used, limit: budgets.sameInput.limit }, taskTotal: { used: budgets.taskTotal.used, limit: budgets.taskTotal.limit } },
+        last: last && { dispatchId: last.dispatchId, at: last.at, status: last.status, error: last.error, ...(last.failure ? { failure: last.failure } : {}), summary: last.result?.summary, findings: last.result?.findings, questions: last.result?.questions }, detailCommand: `code-agent planning result ${record.task.id}` };
+    }), conflicts: mergeProblems(state) }, null, 2);
+  });
 }
 export function planningResult(root: string, id: string): string {
-  const work = planningWork(root), state = loadPlanning(work);
-  const record = state.tasks.find(item => item.task.id === id);
-  if (!record) throw new Stop(`계획 작업이 없습니다: ${id}`);
-  const last = record.attempts.at(-1);
-  return JSON.stringify({ task: record.task, current: taskCurrent(work, state, record), last: last && { ...last, correction: last.correction && { error: last.correction.error, used: last.correction.used } } }, null, 2);
+  const work = planningWork(root);
+  return withPlanningCache(() => {
+    const state = loadPlanning(work);
+    const record = state.tasks.find(item => item.task.id === id);
+    if (!record) throw new Stop(`계획 작업이 없습니다: ${id}`);
+    const last = record.attempts.at(-1);
+    return JSON.stringify({ task: record.task, current: taskCurrent(work, state, record), last: last && { ...last, correction: last.correction && { error: last.correction.error, used: last.correction.used } } }, null, 2);
+  });
 }
 export function dispatchPlanning(root: string, id: string): string {
   const work = planningWork(root);
-  return JSON.stringify(mutatePlanning(work, state => dispatchState(work, state, id)), null, 2);
+  return withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => dispatchState(work, state, id)), null, 2));
 }
-function dispatchState(work: Work, state: PlanningState, id: string) {
+function dispatchState(work: Work, state: PlanningState, id: string, swept?: Sweep) {
     const record = state.tasks.find(record => record.task.id === id);
     if (!record) throw new Stop(`계획 작업이 없습니다: ${id} — planning prepare를 먼저 실행하세요.`);
     requireRolePhase(work, record.task.role);
@@ -164,12 +256,19 @@ function dispatchState(work: Work, state: PlanningState, id: string) {
     if (record.task.role === "synthesis") problems.push(...mergeProblems(state));
     if (problems.length) throw new Stop(problems.join("\n"));
     if (taskCurrent(work, state, record)) return { cached: true, result: compactResult(record) };
-    if (state.tasks.filter(item => item.attempts.at(-1)?.status === "running").length >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다. 실행 결과를 기다리세요.");
-    if (record.attempts.at(-1)?.status === "running") throw new Stop("이미 실행 중입니다. 중단된 작업은 planning cancel로 취소 후 다시 배정하세요.");
+    // 고아 정리는 동시 한도보다 먼저다 — 실행 중인 자기 작업은 동시 한도 대신 실행 중·stale 문구로 답한다
+    const sweep = swept ?? sweepOrphans(state, Date.now());
+    if (record.attempts.at(-1)?.status === "running") {
+      const view = sweep.views.get(id);
+      if (view?.state === "suspect") throw new Stop(guidance("dispatch-orphan", { id, detail: view.reason }));
+      throw new Stop("이미 실행 중입니다. 중단된 작업은 planning cancel로 취소 후 다시 배정하세요.");
+    }
+    if (runningCount(state) >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다. 실행 결과를 기다리세요.");
     if (record.attempts.at(-1)?.status === "needs-correction") throw new Stop(`출력 형식 교정이 필요합니다. planning repair ${id}를 실행하세요.`);
-    const inputHash = taskHash(work, state, record.task);
-    if (record.attempts.filter(attempt => attempt.inputHash === inputHash).length >= 3) throw new Stop("같은 입력으로 세 번 실행했습니다. 원인·질문을 확인하고 입력이나 작업 정의를 보완하세요.");
-    const attempt = { dispatchId: randomUUID(), inputHash, at: new Date().toISOString(), status: "running" as const };
+    const { hash: inputHash, parts } = hashInput(work, state, record.task);
+    const decision = planningDispatchDecision({ attempts: record.attempts, inputHash, since: state.retry?.since, grants: state.retry?.grants, taskId: record.task.id });
+    if (!decision.allow) throw new RetryRefused(decision.failure);
+    const attempt: TaskAttempt = { dispatchId: randomUUID(), inputHash, inputParts: parts, at: new Date().toISOString(), status: "running" };
     record.attempts.push(attempt);
     try { return assignment(work, state, record); }
     catch (error) { record.attempts.pop(); throw error; }
@@ -190,22 +289,26 @@ function assignment(work: Work, state: PlanningState, record: TaskRecord) {
 }
 export function cancelPlanning(root: string, id: string): string {
   const work = planningWork(root);
-  return mutatePlanning(work, state => {
+  return withPlanningCache(() => mutatePlanning(work, state => {
     const last = state.tasks.find(record => record.task.id === id)?.attempts.at(-1);
     if (!last || !["running", "needs-correction"].includes(last.status)) throw new Stop("실행 중인 작업이 아닙니다.");
     last.status = "cancelled";
     return `${id} 배정을 취소했습니다. 이전 실행의 늦은 결과는 받지 않습니다.`;
-  });
+  }));
 }
 
-function repairState(work: Work, state: PlanningState, id: string) {
+function repairState(work: Work, state: PlanningState, id: string, swept?: Sweep) {
   const record = state.tasks.find(item => item.task.id === id), last = record?.attempts.at(-1);
   if (!record || !last || last.status !== "needs-correction" || !last.correction || last.correction.used) throw new Stop("교정할 관찰 결과가 없거나 한 번의 교정을 이미 사용했습니다.");
   requireRolePhase(work, record.task.role);
-  if (taskHash(work, state, record.task) !== last.inputHash) throw new Stop("입력이 바뀌었습니다. 배정을 취소하고 새 입력으로 다시 실행하세요.");
+  if (hashInput(work, state, record.task).hash !== last.inputHash) throw new Stop("입력이 바뀌었습니다. 배정을 취소하고 새 입력으로 다시 실행하세요.");
   const problems = readyProblems(work, state, record);
   if (problems.length) throw new Stop(problems.join("\n"));
-  if (state.tasks.filter(item => item.attempts.at(-1)?.status === "running").length >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다.");
+  // 교정은 같은 시도다 — 같은 입력 실패 한도만 본다(작업 총 배정을 쓰지 않는다)
+  const decision = planningDispatchDecision({ attempts: record.attempts, inputHash: last.inputHash, since: state.retry?.since, grants: state.retry?.grants, taskId: record.task.id, repair: true });
+  if (!decision.allow) throw new RetryRefused(decision.failure);
+  if (!swept) sweepOrphans(state, Date.now());
+  if (runningCount(state) >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다.");
   const previous = structuredClone(last);
   last.correction.used = true;
   last.dispatchId = randomUUID(); // 원래 담당의 늦은 결과는 교정 결과가 아니다.
@@ -219,33 +322,140 @@ function repairState(work: Work, state: PlanningState, id: string) {
 }
 export function repairPlanning(root: string, id: string): string {
   const work = planningWork(root);
-  return JSON.stringify(mutatePlanning(work, state => repairState(work, state, id)), null, 2);
+  return withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => repairState(work, state, id)), null, 2));
 }
+
+// ---- 앞 단계가 낡았을 때 — 되감기 ----
+
+interface Rewind {
+  phase: string; command: string; auto: boolean; reason: string; notice?: string;
+  tasks: { id: string; role: string; phase: string; staleBecause: string[] }[];
+}
+/**
+ * 앞 단계 계획 작업이 current 가 아니면 이 단계를 진행할 수 없다. 같은 사유(단계 + 작업별 낡은 원인)의 첫 되감기만 auto 다 —
+ * 스킬은 이때만 사용자 지시 없이 되감는다. 두 번째부터는 사람에게 보고한다. 넓은 되감기(analysis 까지 또는
+ * 기준 커밋·code-agent.json·호스트 지침 변경)는 notice 한 줄을 먼저 알린다. 거짓 되감기를 막으려 메모 없이 다시 계산해 확정한다.
+ */
+function rewindOf(work: Work, state: PlanningState): Rewind | undefined {
+  const order: readonly string[] = PLANNING_PHASES, current = order.indexOf(work.active.phase);
+  const earlierStale = () => state.tasks.filter(record => order.indexOf(ROLE_PHASE[record.task.role]) < current && !taskCurrent(work, state, record));
+  let stale = earlierStale();
+  if (stale.length) { dropPlanningCache(); stale = earlierStale(); }
+  if (!stale.length) return undefined;
+  const phase = order[Math.min(...stale.map(record => order.indexOf(ROLE_PHASE[record.task.role])))];
+  const tasks = stale.map(record => ({ id: record.task.id, role: record.task.role, phase: ROLE_PHASE[record.task.role], causes: staleCauses(work, state, record) }));
+  // 같은 사유 판정 키 — 단계와 작업별 낡은 원인(kind·문구)
+  const key = sha(JSON.stringify([phase, tasks.map(task => [task.id, task.causes.map(cause => `${cause.kind}:${cause.text}`)])]));
+  const since = Date.parse(state.retry!.since);
+  const repeated = (state.retry!.rewinds ?? []).some(rewind => rewind.key === key && Date.parse(rewind.at) >= since);
+  const all: StaleCause[] = tasks.flatMap(task => task.causes);
+  const global = all.some(cause => cause.kind === "base" || cause.kind === "manifest" || cause.kind === "host");
+  const rerun = state.tasks.filter(record => order.indexOf(ROLE_PHASE[record.task.role]) >= order.indexOf(phase)).map(record => record.task.id);
+  const summary = [...all].sort((a, b) => STALE_PRIORITY.indexOf(a.kind) - STALE_PRIORITY.indexOf(b.kind))[0]?.text ?? "입력이 바뀌었습니다";
+  if (!repeated) state.retry!.rewinds = [...(state.retry!.rewinds ?? []), { at: new Date().toISOString(), phase, key }].slice(-20);
+  return {
+    phase, command: `code-agent back ${phase}`, auto: !repeated,
+    reason: repeated
+      ? "같은 사유로 앞 단계를 이미 한 번 되감았습니다 — 자동으로 되감지 않습니다. 계속 바뀌는 입력이 있는지 확인하고 사용자에게 보고해 지시를 받으세요"
+      : "앞 단계 계획 작업이 지금 입력과 맞지 않아 이 단계를 진행할 수 없습니다",
+    ...(!repeated && (phase === "analysis" || global) ? { notice: `앞 단계(${phase})부터 다시 진행합니다 — ${summary}. 계획 작업 ${rerun.length}개(${rerun.join(", ")})가 다시 실행될 수 있습니다.` } : {}),
+    tasks: tasks.map(task => ({ id: task.id, role: task.role, phase: task.phase, staleBecause: task.causes.map(cause => cause.text) })),
+  };
+}
+
+/**
+ * 차단 지적 목록 — 원인을 정하지 않는다. 인용 문서를 낸 작업(citedTask)만 후보로 보인다. 근거 위치는 원인이 아니다
+ * (AC→TC 공백은 04 를 인용해도 고칠 곳은 07·plan 이다). 앞 단계 되감기는 사용자 지시를 받는다.
+ */
+function feedbackOf(work: Work, state: PlanningState) {
+  const order: readonly string[] = PLANNING_PHASES, current = order.indexOf(work.active.phase);
+  type Finding = { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } };
+  const items: { from: string; finding: string; severity: string; detail: string; source: Finding["source"]; citedTask?: string; citedPhase?: string; note?: string }[] = [];
+  const add = (from: string, finding: Finding) => {
+    const cited = state.tasks.find(record => record.task.outputs.includes(finding.source.path));
+    const citedPhase = cited ? ROLE_PHASE[cited.task.role] : undefined;
+    items.push({ from, finding: finding.id, severity: finding.severity, detail: finding.detail, source: finding.source,
+      ...(cited ? { citedTask: cited.task.id, citedPhase } : {}),
+      ...(citedPhase && order.indexOf(citedPhase) < current ? { note: `근거 문서가 앞 단계(${citedPhase}) 출력입니다. 고칠 곳은 지적 내용으로 정합니다 — 이 단계 작업(예: plan·07)을 고쳐 해결되면 되감지 않고, 앞 단계를 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고해 지시를 받습니다` } : {}) });
+  };
+  for (const record of state.tasks.filter(item => order.indexOf(ROLE_PHASE[item.task.role]) <= current)) {
+    for (const finding of record.attempts.at(-1)?.result?.findings ?? []) if (finding.severity === "blocking") add(record.task.id, finding);
+  }
+  const critic = state.tasks.find(record => record.task.role === "critic")?.attempts.at(-1);
+  if (state.cross && critic && state.cross.criticDispatchId === critic.dispatchId) {
+    for (const finding of state.cross.findings) if (finding.severity === "blocking") add("cross", finding);
+  }
+  return items;
+}
+
+type Blocked = { id: string; reasons: string[]; class?: FailureClass; counter?: { key: CounterKey; used: number; limit: number } };
+type RunItem = { id: string; dispatchId: string; observedStart: boolean; elapsedMin: number };
 
 /** 준비·캐시·선행 조건·동시 한도 판정은 코드에서 하고, 실제 호스트 호출만 넘긴다. 단계 전환·승인은 하지 않는다. */
 export function advancePlanning(root: string): string {
   const work = planningWork(root);
-  if (!["analysis", "impact", "design", "plan"].includes(work.active.phase)) throw new Stop("계획 단계에서만 진행할 수 있습니다.");
-  const output = mutatePlanning(work, state => {
-    const batch = BatchSchema.parse(defaults(work, state, true));
-    const missing = batch.tasks.filter(task => !state.tasks.some(record => record.task.id === task.id));
-    if (missing.length) prepareState(root, work, state, { maxParallel: state.maxParallel, tasks: missing });
-    const assignments: unknown[] = [], blocked: { id: string; reasons: string[] }[] = [], reused: string[] = [], waiting: string[] = [];
-    for (const record of state.tasks.filter(item => PHASE[item.task.role] === work.active.phase)) {
-      if (taskCurrent(work, state, record)) { reused.push(record.task.id); continue; }
-      if (record.attempts.at(-1)?.status === "running") { waiting.push(record.task.id); continue; }
-      const last = record.attempts.at(-1);
-      if (last?.status === "failed" && last.inputHash === taskHash(work, state, record.task)) {
-        blocked.push({ id: record.task.id, reasons: [last.error ?? last.result?.summary ?? "실행이 실패했습니다.", "원인을 해결한 뒤 planning dispatch로 명시적으로 재배정하세요."] }); continue;
+  if (!(PLANNING_PHASES as readonly string[]).includes(work.active.phase)) throw new Stop("계획 단계에서만 진행할 수 있습니다.");
+  const phase = work.active.phase as typeof PLANNING_PHASES[number];
+  return withPlanningCache(() => {
+    // 잠금 밖 선계산 — 파일·질문·목록 메모를 채운다. 잠금 안의 같은 계산은 stat 만 다시 보고 sha 를 재사용한다
+    try { const snapshot = loadPlanning(work); for (const record of snapshot.tasks) taskCurrent(work, snapshot, record); } catch { /* 잠금 안에서 다시 판정한다 */ }
+    const now = Date.now();
+    const output = mutatePlanning(work, state => {
+      const batch = BatchSchema.parse(defaults(work, state, true));
+      const missing = batch.tasks.filter(task => !state.tasks.some(record => record.task.id === task.id));
+      if (missing.length) prepareState(root, work, state, { maxParallel: state.maxParallel, tasks: missing });
+      const sweep = sweepOrphans(state, now);
+      const mine = state.tasks.filter(item => ROLE_PHASE[item.task.role] === phase);
+      const orphaned = sweep.orphaned.filter(item => mine.some(record => record.task.id === item.id));
+      const running: RunItem[] = [];
+      for (const record of mine) {
+        const view = sweep.views.get(record.task.id);
+        if (view?.state === "running") running.push({ id: record.task.id, dispatchId: view.dispatchId, observedStart: view.observedStart, elapsedMin: view.elapsedMin });
       }
-      if (state.tasks.filter(item => item.attempts.at(-1)?.status === "running").length >= state.maxParallel) {
-        blocked.push({ id: record.task.id, reasons: ["동시 실행 한도에 도달했습니다."] }); continue;
+      const rewind = rewindOf(work, state);
+      if (rewind) return { phase, assignments: [] as unknown[], reused: [] as string[], waiting: [] as string[], blocked: [] as Blocked[], rewind, running, orphaned, stale: [] as unknown[], feedback: [] as unknown[] };
+      const assignments: unknown[] = [], blocked: Blocked[] = [], reused: string[] = [], waiting: string[] = [];
+      const stale: (RunItem & { reason: string })[] = [];
+      for (const record of mine) {
+        if (taskCurrent(work, state, record)) { reused.push(record.task.id); continue; }
+        const last = record.attempts.at(-1);
+        if (last?.status === "running") {
+          const view = sweep.views.get(record.task.id)!;
+          if (view.state === "suspect") stale.push({ id: record.task.id, dispatchId: view.dispatchId, observedStart: view.observedStart, elapsedMin: view.elapsedMin, reason: view.reason });
+          else waiting.push(record.task.id);
+          continue;
+        }
+        if (last?.status === "failed") {
+          const inputHash = hashInput(work, state, record.task).hash;
+          if (last.inputHash === inputHash) {
+            // 같은 입력의 실패 한도를 다 썼으면 원인은 한도(same-input-repeat)다 — 명시 배정도 거부되므로 재배정 안내 대신 한도 안내를 준다
+            const budget = taskBudgets(work, state, record).sameInput;
+            blocked.push({ id: record.task.id,
+              reasons: [last.error ?? last.result?.summary ?? "실행이 실패했습니다.", budget.exhausted ? guidance("same-input-repeat", { limit: budget.limit }) : "원인을 해결한 뒤 planning dispatch로 명시적으로 재배정하세요."],
+              class: budget.exhausted ? "same-input-repeat" : last.failure?.class ?? (last.error?.startsWith("결과 형식 오류") ? "agent-format-error" : "agent-content-error"),
+              counter: { key: "sameInput", used: budget.used, limit: budget.limit } });
+            continue;
+          }
+        }
+        if (runningCount(state) >= state.maxParallel) {
+          blocked.push({ id: record.task.id, reasons: ["동시 실행 한도에 도달했습니다."], class: "precondition" }); continue;
+        }
+        try { assignments.push(last?.status === "needs-correction" ? repairState(work, state, record.task.id, sweep) : dispatchState(work, state, record.task.id, sweep)); }
+        catch (error) {
+          if (error instanceof RetryRefused) { blocked.push({ id: record.task.id, reasons: [error.message], class: error.failure.class, ...(error.failure.counter ? { counter: error.failure.counter } : {}) }); continue; }
+          if (!(error instanceof Stop)) throw error;
+          blocked.push({ id: record.task.id, reasons: [error.message], class: "precondition" });
+        }
       }
-      try { assignments.push(record.attempts.at(-1)?.status === "needs-correction" ? repairState(work, state, record.task.id) : dispatchState(work, state, record.task.id)); }
-      catch (error) { if (!(error instanceof Stop)) throw error; blocked.push({ id: record.task.id, reasons: [error.message] }); }
-    }
-    return { phase: work.active.phase, assignments, reused, waiting, blocked };
+      return { phase, assignments, reused, waiting, blocked, running, orphaned, stale, feedback: feedbackOf(work, state) as unknown[] };
+    });
+    const problems = planningProblems(work, phase);
+    const { rewind, running, orphaned, stale, feedback, ...rest } = output as typeof output & { rewind?: Rewind };
+    const action = rewind ? "rewind-required" : rest.assignments.length ? "dispatch" : stale.length ? "stale" : rest.waiting.length ? "wait" : problems.length ? "blocked" : "ready-for-gate";
+    return JSON.stringify({ ...rest, action,
+      ...(running.length ? { running } : {}), ...(orphaned.length ? { orphaned } : {}),
+      ...(stale.length ? { stale, cancel: stale.map(item => (item as { id: string }).id) } : {}),
+      ...(rewind ? { rewind } : {}), ...(feedback.length ? { feedback } : {}),
+      problems }, null, 2);
   });
-  const problems = planningProblems(work, work.active.phase as "analysis" | "impact" | "design" | "plan");
-  return JSON.stringify({ ...output, action: output.assignments.length ? "dispatch" : output.waiting.length ? "wait" : problems.length ? "blocked" : "ready-for-gate", problems }, null, 2);
 }

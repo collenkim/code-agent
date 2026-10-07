@@ -32,8 +32,18 @@ export function planDocFile(id: string): string {
   return posix.join(workDocsDir(id), PLAN_DOC_FILE);
 }
 
-/** 없거나 비었으면 undefined — 둘 다 "아직 쓰지 않았다" 이다 */
-export function readWorkDoc(repoRoot: string, id: string, kind: WorkDocKind): string | undefined {
+/**
+ * 문서 덮어보기 — 저장소 상대 posix 경로 → 내용. 계획 담당 완료 hook 이 staging 본문을 정식 문서로 옮기기 전에
+ * `next`·`plan submit` 과 같은 검사를 그 본문에 먼저 돌릴 때 쓴다.
+ */
+export type DocOverlay = ReadonlyMap<string, string>;
+
+/** 없거나 비었으면 undefined — 둘 다 "아직 쓰지 않았다" 이다. overlay 에 있으면 그 내용을 쓴다 */
+export function readWorkDoc(repoRoot: string, id: string, kind: WorkDocKind, overlay?: DocOverlay): string | undefined {
+  const staged = overlay?.get(workDocPath(id, kind));
+  if (staged !== undefined) {
+    return staged.trim() === "" ? undefined : staged;
+  }
   const full = join(repoRoot, workDocPath(id, kind));
   if (!existsSync(full)) {
     return undefined;
@@ -189,8 +199,8 @@ function logMappingProblems(repoRoot: string, id: string, text: string, log: str
   ];
 }
 
-export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind, spec?: string): string[] {
-  const text = readWorkDoc(repoRoot, id, "02-analysis");
+export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind, spec?: string, overlay?: DocOverlay): string[] {
+  const text = readWorkDoc(repoRoot, id, "02-analysis", overlay);
   if (!text) {
     return [absent(id, "02-analysis")];
   }
@@ -220,8 +230,8 @@ export function analysisProblems(repoRoot: string, id: string, keys: string[], k
 const NOT_APPLICABLE = /^해당\s*없음/;
 const NOT_APPLICABLE_WITH_REASON = /^해당\s*없음\s*[—–-]\s*\S/;
 
-export function designProblems(repoRoot: string, id: string): string[] {
-  const text = readWorkDoc(repoRoot, id, "03-design");
+export function designProblems(repoRoot: string, id: string, overlay?: DocOverlay): string[] {
+  const text = readWorkDoc(repoRoot, id, "03-design", overlay);
   if (!text) {
     return [absent(id, "03-design")];
   }
@@ -256,8 +266,8 @@ export function acceptanceCriteria(text: string): string[] {
   return [...new Set(acceptanceIds(sectionBody(WORK_SCHEMAS["04-functional"], text, "acceptance")))];
 }
 
-export function functionalProblems(repoRoot: string, id: string, keys: string[]): { problems: string[]; acceptance: string[] } {
-  const text = readWorkDoc(repoRoot, id, "04-functional");
+export function functionalProblems(repoRoot: string, id: string, keys: string[], overlay?: DocOverlay): { problems: string[]; acceptance: string[] } {
+  const text = readWorkDoc(repoRoot, id, "04-functional", overlay);
   if (!text) {
     return { problems: [absent(id, "04-functional")], acceptance: [] };
   }
@@ -384,8 +394,9 @@ export function testSpecProblems(
   manifest: Manifest | undefined,
   kind: WorkKind,
   spec?: string,
+  overlay?: DocOverlay,
 ): { problems: string[]; notes: string[] } {
-  const text = readWorkDoc(repoRoot, id, "07-test-spec");
+  const text = readWorkDoc(repoRoot, id, "07-test-spec", overlay);
   if (!text) {
     return { problems: [absent(id, "07-test-spec")], notes: [] };
   }
@@ -456,6 +467,28 @@ export function testSpecProblems(
     }
   }
   return { problems, notes };
+}
+
+// ---- ⑤ plan.json 의 요구 커버리지 ----
+
+/** 계획이 요구 항목을 전부 덮는가 — 파일마다 어느 항목을 위한 것인지 적게 해 코드가 대조한다 */
+export function coverageProblems(keys: string[], files: { path: string; requirements?: string[] }[]): string[] {
+  const problems: string[] = [];
+  for (const file of files) {
+    const listed = file.requirements ?? [];
+    if (listed.length === 0) {
+      problems.push(`${file.path}: 어느 요구 항목을 위한 파일인지 requirements 에 적으세요 (${keys.join(", ")})`);
+    }
+    for (const key of listed.filter((key) => !keys.includes(key))) {
+      problems.push(`${file.path}: 01-requirements.md 에 없는 요구 항목 ${key}`);
+    }
+  }
+  const covered = new Set(files.flatMap((file) => file.requirements ?? []));
+  const uncovered = keys.filter((key) => !covered.has(key));
+  if (uncovered.length > 0) {
+    problems.push(`어떤 파일에도 닿지 않는 요구 항목: ${uncovered.join(", ")} — 파일을 더하거나, 이번 범위가 아니면 질문으로 확인하세요`);
+  }
+  return problems;
 }
 
 // ---- 승인 묶음 ----

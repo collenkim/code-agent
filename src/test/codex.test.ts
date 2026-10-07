@@ -215,7 +215,8 @@ test("Codex 계획 결과는 실제 배정에 묶이고 입력 변경 결과는 
     artifacts:[{path:`doc/work/${CONSENT_WORK_ID}/01-requirements.md`,content:"오래된 결과"}]};
   writeFixture(root,"code-agent.json",read("code-agent.json")+"\n");
   assert.throws(()=>codexHook({...event,hook_event_name:"SubagentStop",last_assistant_message:JSON.stringify(result)}),/입력/);
-  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)?.status,"failed");
+  // 실행 중 입력이 바뀐 배정은 실패가 아니라 취소다 — 같은 입력 실패 한도에 세지 않고 새 입력으로 다시 배정한다
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)?.status,"cancelled");
 });
 
 test("Codex 접수·계획·승인·Task·검증·리뷰·통합 흐름이 같은 게이트를 통과한다", async () => {
@@ -241,5 +242,9 @@ test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결�
   assert.equal(stopped.status,0,stopped.stderr);
   assert.deepEqual(JSON.parse(stopped.stdout),{});
   assert.match(stopped.stderr,/턴은 막지 않았습니다/);
-  assert.equal(run({cwd:root,hook_event_name:"SubagentStop",agent_type:"ca_analyst"}).status,2);
+  // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 담당 이벤트의 판정 실패는 사유만 남기고 통과한다
+  const subagent = run({cwd:root,hook_event_name:"SubagentStop",agent_type:"ca_analyst"});
+  assert.equal(subagent.status,0,subagent.stderr);
+  assert.deepEqual(JSON.parse(subagent.stdout),{});
+  assert.match(subagent.stderr,/code-agent codex-event: /);
 });

@@ -4,7 +4,6 @@ import { join, posix } from "path";
 import type { Manifest } from "../../core/manifest";
 import { docPaths, sectionsOf } from "../docs";
 import type { DocKind } from "../schemas";
-import { MAX_ITEMS } from "./protocol";
 import type { DocRef, DocSection, FileRef, RankedFile, RequirementRef } from "./protocol";
 
 /**
@@ -86,23 +85,48 @@ function readCapped(path: string): string {
   }
 }
 
+/** 테스트 파일 경로인가 — survey 와 후보 순위가 같은 규칙을 쓴다 */
+export function isTestPath(path: string): boolean {
+  return /(^|\/)(src\/test|tests?|__tests__|spec)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path);
+}
+
+/** 후보 순위가 본문을 읽는 바이트 예산 — 넘으면 남은 파일은 경로 점수만 쓴다 */
+export const RANK_READ_BUDGET = 32 * 1024 * 1024;
+export interface RankScan { ranked: RankedFile[]; total: number; read: number; skipped: number }
+
 /**
  * 내장 키워드 스캔 — 경로·파일명 히트는 3, 내용 히트는 1.
  * 동점은 경로 사전순이라 **같은 트리에서 항상 같은 결과**가 나온다 (`localeCompare` 를 쓰지 않는
  * 이유가 그것이다 — 로캘마다 순서가 갈린다).
+ * 경로 점수는 모든 파일에 매기고, 본문은 바이트 예산 안에서 "경로가 걸린 파일 → 테스트가 아닌 파일 → 테스트" 순서로 읽는다.
  */
-export function rankCandidates(repoRoot: string, files: FileRef[], keywords: string[], limit: number): RankedFile[] {
+export function rankCandidatesScan(repoRoot: string, files: FileRef[], keywords: string[], limit: number, budget = RANK_READ_BUDGET): RankScan {
   if (keywords.length === 0) {
-    return [];
+    return { ranked: [], total: files.length, read: 0, skipped: 0 };
   }
-  const scored: RankedFile[] = [];
-  for (const file of files.slice(0, MAX_ITEMS)) {
+  const byPath = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const entries = files.map((file) => {
     const path = file.path.toLowerCase();
-    const content = readCapped(join(repoRoot, file.path)).toLowerCase();
+    const inPath = keywords.filter((keyword) => path.includes(keyword));
+    return { file, inPath, test: isTestPath(file.path) };
+  });
+  const group = (entry: (typeof entries)[number]): number => (entry.inPath.length > 0 ? 0 : !entry.test ? 1 : 2);
+  const order = [...entries].sort((a, b) => group(a) - group(b) || byPath(a.file.path, b.file.path));
+  let spent = 0, read = 0, skipped = 0;
+  const scored: RankedFile[] = [];
+  for (const entry of order) {
+    let content = "";
+    if (spent < budget) {
+      content = readCapped(join(repoRoot, entry.file.path)).toLowerCase();
+      spent += Buffer.byteLength(content, "utf-8");
+      read += 1;
+    } else {
+      skipped += 1;
+    }
     let hits = 0;
     const why: string[] = [];
     for (const keyword of keywords) {
-      const inPath = path.includes(keyword);
+      const inPath = entry.inPath.includes(keyword);
       const inContent = content.includes(keyword);
       if (inPath) hits += 3;
       if (inContent) hits += 1;
@@ -110,12 +134,21 @@ export function rankCandidates(repoRoot: string, files: FileRef[], keywords: str
     }
     if (hits === 0) continue;
     scored.push({
-      path: file.path,
+      path: entry.file.path,
       score: Math.min(1, hits / (keywords.length * 3)),
       why: why.slice(0, 6).join(" · "),
     });
   }
-  return scored.sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, limit);
+  return {
+    ranked: scored.sort((a, b) => b.score - a.score || byPath(a.path, b.path)).slice(0, limit),
+    total: files.length,
+    read,
+    skipped,
+  };
+}
+
+export function rankCandidates(repoRoot: string, files: FileRef[], keywords: string[], limit: number): RankedFile[] {
+  return rankCandidatesScan(repoRoot, files, keywords, limit).ranked;
 }
 
 // ---- context.docs ----

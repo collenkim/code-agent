@@ -10,8 +10,8 @@ import { stagesFor } from "../core/manifest";
 import { errorLogProblems } from "../core/workOrder";
 import type { Manifest, StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
-import { planningProblems, requiredOutputs } from "./planningState";
-import { planningDocumentProblems, reviewedPlanProblems } from "./planningValidation";
+import { businessRuleFiles, planningProblems, requiredOutputs } from "./planningState";
+import { formatPlanIssues, planningDocumentProblems, planShapeProblems, reviewedPlanProblems } from "./planningValidation";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docPaths, docsReady, formatDocChecks } from "./docs";
 import {
@@ -48,7 +48,8 @@ import {
   validationDocFile,
 } from "./evidence";
 import type { VerifyPhase } from "./evidence";
-import { docRefs, keywordsOf, rankCandidates, relevantDocSections, requirementItems } from "./plugins/defaults";
+import { docRefs, isTestPath, keywordsOf, rankCandidatesScan, relevantDocSections, requirementItems, type RankScan } from "./plugins/defaults";
+import { MAX_ITEMS } from "./plugins/protocol";
 import type { RequirementRef } from "./plugins/protocol";
 import { callSlot, clamp, sourceLines } from "./plugins/run";
 import {
@@ -63,7 +64,7 @@ import {
 } from "./request";
 import { loadReview, reviewDocFile, reviewProblems } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
-import { sourceFiles } from "./survey";
+import { sourceFileScan, SURVEY_MAX_FILES } from "./survey";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
@@ -219,26 +220,6 @@ function requireWorkDocs(problems: string[]): void {
         problems.map((problem) => `  - ${problem}`).join("\n"),
     );
   }
-}
-
-/** 계획이 요구 항목을 전부 덮는가 — 파일마다 어느 항목을 위한 것인지 적게 해 코드가 대조한다 */
-function coverageProblems(keys: string[], files: { path: string; requirements?: string[] }[]): string[] {
-  const problems: string[] = [];
-  for (const file of files) {
-    const listed = file.requirements ?? [];
-    if (listed.length === 0) {
-      problems.push(`${file.path}: 어느 요구 항목을 위한 파일인지 requirements 에 적으세요 (${keys.join(", ")})`);
-    }
-    for (const key of listed.filter((key) => !keys.includes(key))) {
-      problems.push(`${file.path}: 01-requirements.md 에 없는 요구 항목 ${key}`);
-    }
-  }
-  const covered = new Set(files.flatMap((file) => file.requirements ?? []));
-  const uncovered = keys.filter((key) => !covered.has(key));
-  if (uncovered.length > 0) {
-    problems.push(`어떤 파일에도 닿지 않는 요구 항목: ${uncovered.join(", ")} — 파일을 더하거나, 이번 범위가 아니면 질문으로 확인하세요`);
-  }
-  return problems;
 }
 
 /**
@@ -800,21 +781,40 @@ const DOC_SECTION_LIMIT = 10;
 
 /** `candidates.rank` — 요구 항목과 관련된 파일 순위 */
 function candidateLines(repoRoot: string, manifest: Manifest, items: RequirementRef[], keywords: string[]): string[] {
-  const files = sourceFiles(repoRoot);
+  const { files, truncated } = sourceFileScan(repoRoot);
+  // 플러그인에는 상한(MAX_ITEMS)까지만 간다 — 잘려도 소스가 남도록 테스트가 아닌 파일을 먼저 둔다
+  const ordered = [...files.filter((file) => !isTestPath(file.path)), ...files.filter((file) => isTestPath(file.path))];
+  let scan = undefined as RankScan | undefined;   // 기본 구현이 돌았을 때만 채워진다
   const result = callSlot(
     repoRoot,
     manifest,
     "candidates.rank",
-    () => ({ requirements: items, keywords, files, limit: CANDIDATE_LIMIT }),
-    () => ({ ranked: rankCandidates(repoRoot, files, keywords, CANDIDATE_LIMIT) }),
+    () => ({ requirements: items, keywords, files: ordered, limit: CANDIDATE_LIMIT }),
+    () => {
+      scan = rankCandidatesScan(repoRoot, files, keywords, CANDIDATE_LIMIT);
+      return { ranked: scan.ranked };
+    },
   );
   const ranked = result.output.ranked.slice(0, CANDIDATE_LIMIT);
+  const scope: string[] = [];
+  if (scan && scan.skipped > 0) {
+    scope.push(`- 범위: 소스 ${scan.total}개 중 경로는 전부, 본문은 ${scan.read}개만 봤습니다(경로가 걸린 파일·테스트가 아닌 파일 먼저) — 순위에 없으면 직접 찾아야 합니다.`);
+  }
+  if (truncated) {
+    scope.push(`- 범위: 저장소 파일이 ${SURVEY_MAX_FILES}개를 넘어 앞부분(경로 사전순)만 셌습니다 — 순위에 없으면 직접 찾아야 합니다.`);
+  }
+  if (result.source === "plugin" && files.length > MAX_ITEMS) {
+    scope.push(`- 플러그인에는 소스 앞 ${MAX_ITEMS}개(테스트가 아닌 파일 먼저)만 보냈습니다 — 순위에 없으면 직접 찾아야 합니다.`);
+  }
   return [
     "## 관련 후보 파일 (순위 — 다시 찾지 말고 이것부터)",
     ...sourceLines(result, "내장 키워드 스캔, 결정론"),
+    ...scope,
     ...(ranked.length > 0
       ? ranked.map((entry, index) => `${index + 1}. ${clamp(entry.path)} (${entry.score.toFixed(2)} — ${clamp(entry.why)})`)
-      : ["- 없음 — 요구 항목의 낱말에 걸리는 파일이 없습니다. 후보를 직접 찾아야 합니다."]),
+      : [scope.length > 0
+        ? "- 없음 — 본 범위에서 요구 항목의 낱말에 걸리는 파일이 없습니다. 후보를 직접 찾아야 합니다."
+        : "- 없음 — 요구 항목의 낱말에 걸리는 파일이 없습니다. 후보를 직접 찾아야 합니다."]),
   ];
 }
 
@@ -882,6 +882,11 @@ export function context(repoRoot: string): string {
       ...sourceItems(readFileSync(join(repoRoot, active.spec), "utf8")).map((item) => `- ${item.id}: ${item.text}`),
       "근거는 이 목록의 문장을 그대로 인용합니다. 나누어 분석하면 근거 줄을 여러 개 써서 원문 전체를 덮으세요. 제외하려면 지시서를 고쳐 다시 확정합니다.",
     );
+    // 업무 규칙을 묻기 전에 먼저 찾게 한다 — analysis 시점에는 01 이 없으므로 낱말은 지시서의 접수 요구 항목에서 뽑는다
+    const specItems = sourceItems(readFileSync(join(repoRoot, active.spec), "utf8")).map((item) => ({ key: item.id, text: item.text }));
+    const rules = businessRuleFiles(work);
+    out.push("", `- 업무 규칙 KNOWLEDGE (묻기 전에 먼저 찾는다 — 배정 inputs 에 있다): ${rules.join(", ") || "없음"}`);
+    out.push("", ...docSectionLines(repoRoot, manifest, specItems, keywordsOf(specItems)));
   }
 
   if (active.phase === "analysis" || active.phase === "impact" || active.phase === "design") {
@@ -1178,19 +1183,11 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   const parsed = format.schema.safeParse(raw);
   if (!parsed.success) {
-    throw new Stop(
-      "계획 형식이 맞지 않습니다:\n" +
-        parsed.error.issues.map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`).join("\n"),
-    );
+    throw new Stop(formatPlanIssues(parsed.error.issues));
   }
   const plan = format.toPlan(parsed.data);
-  if (active.planningVersion && !plan.tasks) throw new Stop("신규 계획에는 파일 소유·의존성·AC를 갖춘 tasks가 필요합니다.");
-  for (const task of plan.tasks ?? []) if (task.acceptance.some(ac => !functional.acceptance.includes(ac))) throw new Stop(`${task.id}: 기능 명세에 없는 완료 기준입니다.`);
-
-  const problems: string[] = [...coverageProblems(requirements.keys, plan.files), ...sequenceProblems(plan, work.stages, order.kind)];
-  if (plan.openQuestions.length > 0) {
-    problems.push(`남은 질문이 있습니다 — questions.md 로 옮겨 답을 받으세요: ${plan.openQuestions.join(" / ")}`);
-  }
+  // 계획 초안의 자기 완결 검사(tasks·AC·요구 커버리지·남은 질문)는 완료 hook 과 같은 함수다. 순서·경로·preserve·종류별 규칙은 여기에만 있다
+  const problems: string[] = [...planShapeProblems(work, plan, functional.acceptance, requirements.keys), ...sequenceProblems(plan, work.stages, order.kind)];
   if (format.requiresPreserve) {
     problems.push(...missingPreserve(order, plan).map((item) => `preserve 가 계획에 없습니다: ${item}`));
   }

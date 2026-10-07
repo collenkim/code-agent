@@ -1,7 +1,7 @@
 # code-agent 프로세스 흐름도
 
 이 문서는 현재 동작을 정리한 지도다. 기준은 커밋 `c4f3fbf`(2026-10-07)이다. 코드가 정본이므로 문서와 코드가 다르면 코드가 맞고, 이 문서를 고친다.
-표의 `file:line`은 위 커밋 기준이다. 줄 번호가 어긋나면 함께 적은 함수 이름으로 찾는다. 경로의 기준은 `src/agent/`이고, `core/`는 `src/core/`, `template/`·`doc/`는 저장소 루트의 같은 폴더다.
+표의 `file:line`은 위 커밋 기준이다. 다만 계획 오케스트레이션을 다시 쓴 커밋(§10)이 고친 모듈 — `planning.ts`·`planningState.ts`·`planningHook.ts`·`planningValidation.ts`·`stagedChecks.ts`·`codexHook.ts`·`sessionHook.ts`·`crossCheck.ts` — 의 `file:line`은 그 커밋 기준이다(`commands.ts` 등 다른 모듈은 위 커밋 기준 그대로다). 줄 번호가 어긋나면 함께 적은 함수 이름으로 찾는다. 경로의 기준은 `src/agent/`이고, `core/`는 `src/core/`, `template/`·`doc/`는 저장소 루트의 같은 폴더다.
 이 문서는 현재 동작만 적는다. 결함으로 판정된 동작과 개선안은 [2026-10-07 감사 기록](reviews/2026-10-07-dual-host-process-audit.md)에 있다.
 
 **읽는 순서(에이전트용)** — §2에서 바뀌는 칸을 찾고, §3에서 그 행을 읽은 뒤, §9로 파일을 연다. 이어서 사람 확인(§4)·hook(§5)·호스트 차이(§7)에 걸리는지 본다. 이 문서에 없는 동작은 추측하지 말고 코드를 연다.
@@ -23,7 +23,9 @@
 | `codexHook.ts` | §4.2, §5.2, §7 | `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 | `consent.ts` `ActionSchema`(28-36)·`preview`(258-305)·`applyLocked`(466-509) | §4 | `ca-answer/SKILL.md:44`, `ca-answer/reference.md`, `template/codex/ca-answer.md:16` 동작 목록 |
 | `hook.ts` `decide`·`MODEL_SUBCOMMANDS`(89-114) | §5.3, §5.4 | `template/CLAUDE.block.md`, `hook.ts:412-419` 거부 문구 |
-| `planning.ts`·`planningState.ts`·`planningHook.ts` | §6.1 | `doc/planning.md` 역할 표, 단계 스킬 1~6항 |
+| `planning.ts`·`planningState.ts`·`planningHook.ts` | §6.1 | `doc/planning.md` 역할·action 표, 단계 스킬 1~6항(advance `action`을 바꾸면 4항), `ca-plan/contract.md:10,16`(질문 출처·수정 피드백), `ca-next/SKILL.md:50`(자동 되감기 예외), `sessionHook.ts`(실행 중 배정 요약) |
+| `lock.ts` | §6.1, §8 | 리뷰 기록·동의 적용·작업 임대가 같은 잠금을 쓴다 — 호출자별 `ageReclaim`·`display`·문구 |
+| `stagedChecks.ts`, `planningValidation.ts`·`workDocs.ts`의 게이트 함수 | §6.1 관찰 6단계 | 게이트 함수를 바꾸면 계획 담당 완료 hook의 문서 검사도 함께 바뀐다(같은 함수) |
 | `verificationFlow.ts`·`validate.ts`·`evidence.ts` | §3.2 check~integrate, §6.2 | `ca-check/SKILL.md` 노드 처리 목록 |
 | `review.ts`·`reviewHook.ts`·`crossCheck.ts` | §3.2 review, §6.3, §7 | `ca-review/SKILL.md`, `ca-plan/SKILL.md:27` |
 | `deliver.ts`·`knowledge.ts` | §3.2 deliver, §8 | `ca-integrate/SKILL.md` |
@@ -86,7 +88,7 @@ flowchart TD
 | 단계 | 담당 (메인 / 서브) | CLI | 산출 | 게이트 (`next`) | 실패 시 |
 |---|---|---|---|---|---|
 | analysis | `/ca-analyze` / `ca-analyst`(role analysis) | `planning advance` 외, `next` | `01-requirements.md`, `questions.md` | `requireRequirements`: 01 형식과 원문 대조(`commands.ts:531-533`, 196-212) | advance가 `blocked`이면 질문에 답하거나 입력을 고친다. 형식 오류는 `repair`(1회) |
-| impact | `/ca-impact` / 기본은 `ca-explorer`(explore)와 `ca-writer`(synthesis). `planning advance`가 impact 작업을 처음 등록할 때 요구 R이 1~3개, 조사 파일이 12개 이하, 합계 96,000바이트 이하면 `ca-explorer` 단독(impact)(`planning.ts:71-79`) | 같음 | `02-analysis.md` | 조사 결과가 current이고 사실 충돌이 없다(`planningState.ts:205-210`). `analysisProblems`(534-538) | 같음. 사실 충돌은 조사를 다시 돌린다 |
+| impact | `/ca-impact` / 기본은 `ca-explorer`(explore)와 `ca-writer`(synthesis). `planning advance`가 impact 작업을 처음 등록할 때 요구 R이 1~3개, 조사 파일이 12개 이하, 합계 96,000바이트 이하면 `ca-explorer` 단독(impact)(`planning.ts:78-85`) | 같음 | `02-analysis.md` | 조사 결과가 current이고 사실 충돌이 없다(`planningState.ts:451-456`). `analysisProblems`(534-538) | 같음. 사실 충돌은 조사를 다시 돌린다 |
 | design | `/ca-design` / `ca-analyst`(design) | 같음 | `03-design.md`, `04-functional.md` | `designProblems`와 `functionalProblems`(539-546) | 같음 |
 | plan | `/ca-plan` / `ca-analyst`(plan)와 `ca-critic`(critic). 두 호스트 설치 시 `planning cross` | `planning advance·cross`, `plan submit`, 동의 `plan` | `plan.json`, `07-test-spec.md`, `<target>.plan.json`, `05-plan.md`(렌더 1286-1289), 승인 원장 | `reviewedPlanProblems`(critic이 본 plan.json과 제출본이 같다), 계획 존재, 승인 `approved`(547-558) | 반려되면 `ca-plan`의 반려 절차로 원인 작업을 다시 배정하고 재제출한다 |
 | implement | `/ca-implement` / `ca-implementer`, 테스트 단계는 `ca-tester`(`handoff.ts:43-44`) | `context --file`, `repro`(fix), `next` | 계획 파일 | 승인 유지, 현재 Task 파일 존재, 같은 단계의 다음 Task로 이동. 단계가 끝나면 `missingPlannedFiles`, fix의 test 단계는 `reproMissing`을 본 뒤 다음 단계나 check로 간다(559-598) | `Stop`이면 빠진 파일을 다시 맡긴다. 승인이 stale이면 재제출·재승인한다 |
@@ -103,7 +105,7 @@ flowchart TD
 | 명령 | 방향 | 조건 | `stages.jsonl`의 `by` |
 |---|---|---|---|
 | `next` | 한 칸 앞. implement 안에서는 Task·단계 단위로 움직인다 | §3.2 게이트 | `next` |
-| `back <단계>` | 뒤로만. `deliver`는 대상이 아니고, deliver에서는 실행 자체를 거부한다 | `commands.ts:758-789`. hook은 모델의 `back`을 허용한다(`hook.ts:94`). "사용자 지시 시에만"은 스킬 규칙이다 | `back` |
+| `back <단계>` | 뒤로만. `deliver`는 대상이 아니고, deliver에서는 실행 자체를 거부한다 | `commands.ts:758-789`. hook은 모델의 `back`을 허용한다(`hook.ts:94`). "사용자 지시 시에만"은 스킬 규칙이다 — 예외는 계획 `planning advance`의 `rewind-required`·`rewind.auto: true`(같은 사유에 한 번, §6.1)다 | `back` |
 | `check`·`verify`(check 진입) | test·review·integrate에서 check로 되감는다 | `REWINDABLE`(633), `requireValidatable`(655-658) | `next`(656) |
 | 동의 `deliver` | 커서 삭제 | 커밋 성공(`deliver.ts:424-425`) | `deliver` |
 | 동의 `abort` | 커서 삭제, 작업이 없으면 접수 세션 삭제 | `commands.ts:708-722`. 문서·원장·계획은 남는다 | `abort` |
@@ -163,7 +165,7 @@ sequenceDiagram
 - Post는 결속된 toolId 하나만 한 번 소비한다(397-402). 시간 초과·추가 질문·메모가 붙은 응답은 승인으로 보지 않는다(405-409).
 - `finish`·`apply`는 hook이 같은 `session_id`를 요구한다(510-515). 적용 직전에 스냅샷을 두 번 재대조한다(476, 480).
 - 중단된 `applying`은 `failed`로 처리하고 다시 실행하지 않는다(470-473).
-- Codex 응답 형식은 `^code-agent consent respond <36자 id> [1-3](,[1-3]){0,3}$`다(`codexHook.ts:35`). 이벤트에 `turn_id`가 있어야 하고(36), 질문 수와 선택 수가 같아야 한다(39).
+- Codex 응답 형식은 `^code-agent consent respond <36자 id> [1-3](,[1-3]){0,3}$`다(`codexHook.ts:36`). 이벤트에 `turn_id`가 있어야 하고(37), 질문 수와 선택 수가 같아야 한다(40).
 
 ## 5. hook 등록표
 
@@ -176,19 +178,19 @@ sequenceDiagram
 | PostToolUse | `AskUserQuestion` | `consent-event` | `observeConsent` Post | 응답 기록 | exit 2 |
 | Stop | 없음 | `stop` | `decideStop`(`stopHook.ts:22-54`) | implement~integrate에서 계획 밖 변경이나 미응답 질문이 있으면 `{decision:block}`을 1회 낸다 | 언제나 exit 0(57-69) |
 | SubagentStart·Stop | `ca-reviewer` | `review-event` | `observeReviewer`(`reviewHook.ts:36-92`) | review 단계가 아니면 아무것도 하지 않는다(41). Start: 회차 리뷰어 등록. Stop: 형식 검사 후 `## 지적` 재작성 | `subagentExitCode`(31-33): SubagentStop이면서 기록된 실패이거나 `stop_hook_active`면 0, 그 밖(Start 실패 포함)은 2 |
-| SubagentStart·Stop | `ca-analyst\|ca-explorer\|ca-writer\|ca-critic` | `planning-event` | `observePlanner`(`planningHook.ts:46-154`) | §6.1 | 같음 |
-| SessionStart | 없음 | `session-event` | `sessionAnchor`(`sessionHook.ts:16-48`) | 작업 4줄·접수 3줄·문서 세션 2줄의 상태를 stdout에 낸다. AI-DLC 경고가 있으면 1줄을 더한다(19). 진행 중인 것이 없으면 출력 없음 | 언제나 exit 0 |
+| SubagentStart·Stop | `ca-analyst\|ca-explorer\|ca-writer\|ca-critic` | `planning-event` | `observePlanner`(`planningHook.ts:301-323`) | §6.1 | `subagentExit`(§6.4, `runPlanningHook` 324-332): SubagentStop에서 기록 전의 되돌릴 수 있는 실패(형식·식별·내용)와 기록하지 못한 판정 실패는 `stop_hook_active`가 아니면 2, 기록된 실패·`stop_hook_active`면 0. Start 실패는 2 |
+| SessionStart | 없음 | `session-event` | `sessionAnchor`(`sessionHook.ts:18-22`, `progress` 51-78) | 작업 4줄·접수 3줄·문서 세션 2줄의 상태를 stdout에 낸다. 계획 배정이 running으로 기록돼 있으면 그 목록과 안내 한 줄을 더한다(`runningPlanning` 28-49 — 입력 `source`가 startup·resume·clear면 `planning cancel <ID>` 뒤 advance, 그 밖은 advance의 stale·cancel 안내). AI-DLC 경고가 있으면 1줄을 더한다(20). 진행 중인 것이 없으면 출력 없음 | 언제나 exit 0 |
 
 ### 5.2 Codex — `.codex/hooks.json` (`init.ts:186-189`, sandbox 확인)
 
-다섯 이벤트가 matcher 없이 모두 `code-agent codex-event` → `runCodexHook`(`codexHook.ts:102-123`) → `codexHook`(61-96)로 들어간다.
+다섯 이벤트가 matcher 없이 모두 `code-agent codex-event` → `runCodexHook`(`codexHook.ts:104-131`) → `codexHook`(62-98)로 들어간다.
 
 | 이벤트 | 처리 | 실패 시 |
 |---|---|---|
-| PreToolUse | `Bash`·`PowerShell`·`apply_patch`(55)만 판정하고 그 밖은 `{}`를 낸다(63). `apply_patch`는 `patchPaths`의 모든 경로를 `Edit`로 `decide`에 넘긴다(70-77). 셸은 Windows면 `shell: powershell` 규칙으로 판정한다(69). `agent_id`는 넘기지 않는다 | deny JSON(111-114) |
-| UserPromptSubmit | `observeCodexConsent`(33-52). `code-agent consent respond`로 시작하지 않는 메시지는 무시한다 | 예외면 stderr와 exit 2(120-121, 형식 오류 메시지로 sandbox 확인). 이때 Codex의 동작은 미확인 |
-| SubagentStart·Stop | `commonAgentName`(`ca_x`→`ca-x`)으로 바꾼 뒤 transcript 없이 `observePlanner`와 `observeReviewer`에 넘긴다(84-88). 결과는 `last_assistant_message`만 본다. 관찰 대상이 아니면 `{}`·exit 0(진행 중 작업 없는 SubagentStop으로 sandbox 확인) | 예외면 기록된 실패·`stop_hook_active`를 가리지 않고 언제나 exit 2(120-121). 이때 Codex가 담당을 이어 실행하는지는 미확인 |
-| Stop | `decideStop` → `{decision:"block"}`(91-93) | `{}`, exit 0(115-119) |
+| PreToolUse | `Bash`·`PowerShell`·`apply_patch`(56)만 판정하고 그 밖은 `{}`를 낸다(64). `apply_patch`는 `patchPaths`의 모든 경로를 `Edit`로 `decide`에 넘긴다(71-78). 셸은 Windows면 `shell: powershell` 규칙으로 판정한다(70). `agent_id`는 넘기지 않는다 | deny JSON(113-116) |
+| UserPromptSubmit | `observeCodexConsent`(34-53). `code-agent consent respond`로 시작하지 않는 메시지는 무시한다 | 예외면 stderr와 exit 2(128-129, 형식 오류 메시지로 sandbox 확인). 이때 Codex의 동작은 미확인 |
+| SubagentStart·Stop | `commonAgentName`(`ca_x`→`ca-x`)으로 바꾼 뒤 transcript 없이 `observePlanner`(`host: "codex"` — 되돌리지 않고 바로 기록)와 `observeReviewer`에 넘긴다(85-91). 결과는 `last_assistant_message`만 본다. 관찰 대상이 아니면 `{}`·exit 0(진행 중 작업 없는 SubagentStop으로 sandbox 확인) | 예외면 기록 여부와 관계없이 stderr에 사유를 남기고 `{}`·exit 0(`subagentExit` codex, 117-122) — Codex는 exit 2로 담당을 잇지 않는다 |
+| Stop | `decideStop` → `{decision:"block"}`(93-95) | `{}`, exit 0(123-127) |
 
 ### 5.3 PreToolUse 판정 순서 (`decide`, `hook.ts:178-223`)
 
@@ -221,38 +223,45 @@ sequenceDiagram
 | plan | plan | `ca-analyst` | `plan.json`·`07-test-spec.md` | design |
 | critic | plan | `ca-critic` | 없음 | plan |
 
-근거: 단계 매핑 `planning.ts:14`, 담당 `planningState.ts:15`(Codex 이름은 `hosts.ts:11`), 출력 `planningState.ts:175-178`, 선행 `planning.ts:61-64`.
+근거: 단계 매핑 `ROLE_PHASE` `planningState.ts:31`(`planning.ts:21`이 `PHASE`로 재수출), 담당 `planningState.ts:16`(Codex 이름은 `hosts.ts:11`), 출력 `planningState.ts:416-419`, 선행 `planning.ts:68-71`.
 
-**배정 — `planning advance`** (`planning.ts:226-251`)
-1. 계획 단계가 아니면 거부한다. 전체 처리는 `<target>.planning.json.lock` 잠금 안에서 한다(`wx`, 2초 기한, 38-57).
-2. 이 단계의 기본 작업 중 빠진 것만 등록한다(`defaults` 66-89, `prepareState` 94-133).
-3. 작업마다 다음 순서로 판정한다.
-   - 현재 결과가 유효하면(`taskCurrent`, `planningState.ts:154-161`) `reused`.
-   - 실행 중이면 `waiting`.
-   - 같은 입력으로 실패했으면 `blocked`.
-   - 동시 실행 한도(기본 3, 최대 4)에 닿았으면 `blocked`.
-   - 교정 대기면 `repairState`(201-219), 그 밖은 `dispatchState`(159-176)로 배정한다. 둘이 던진 `Stop`은 그 작업의 `blocked` 사유가 된다(245).
-4. `dispatchState`는 선행 결과가 current이고 차단 지적·관련 미결 질문이 없으며 입력 파일이 있어야 배정한다(`readyProblems` `planningState.ts:162-173`). synthesis는 조사 사실 충돌도 없어야 한다(164). 같은 `inputHash`의 시도는 3회까지다(171). `repairState`는 교정 1회만 허용하고 입력 해시가 그대로여야 한다(203-205).
-5. `action`을 정한다(250): 배정이 있으면 `dispatch`, 대기가 있으면 `wait`, 남은 문제가 있으면 `blocked`, 없으면 `ready-for-gate`.
-6. CLI는 배정 전문을 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다(`handoff.ts:89-110`).
+**배정 — `planning advance`** (`advancePlanning` `planning.ts:395-461`)
+1. 계획 단계가 아니면 거부한다. 잠금 밖에서 모든 작업의 current 판정을 한 번 돌려 메모를 채운 뒤(401), 전체 처리를 `<target>.planning.json.lock` 잠금 안에서 한다(`mutatePlanning` 48-64). 잠금은 공통 `acquireLock`(`lock.ts`, `ageReclaim`)이다 — 주인 `{pid, host, at, nonce}`를 적고, 같은 PC의 죽은 주인과 주인 기록 없는 오래된 잠금은 같은 호출에서 회수한다(stderr 한 줄). 살아 있는 주인은 CLI 2초·hook 10초(`TIMING`) 기다린 뒤 "같은 명령을 한 번만 다시 실행" Stop, 다른 PC·주인 불명은 곧바로 사람에게 넘기는 Stop이다(문구에 잠금의 저장소 상대 경로). 잠금 안에서 처음 쓸 때 `retry.since`를 기록한다(58).
+2. 이 단계의 기본 작업 중 빠진 것만 등록한다(`defaults` 73-97, `prepareState` 102-141). 새로 만드는 analysis·design 작업은 존재하는 업무 규칙 KNOWLEDGE(`businessRuleFiles` `planningState.ts:477-488`)를 inputs에 넣는다. 이미 있는 작업은 그대로다.
+3. 고아 정리(`sweepOrphans` 163-175) — 마지막 시도가 running인 모든 작업을 `orphanState`(§6.4, 관찰 정보는 `runView` `planningState.ts:343-365`)로 판정한다. 연결된 담당이 모두 끝났는데 running이면 확실한 고아라 `orphaned`(`failure.class: dispatch-orphan`)로 표시하고 같은 호출에서 다시 배정한다. 시작이 관찰되지 않은 채(배정 시각과 그 뒤 관찰된 마지막 담당 시작·종료 중 늦은 시각부터) 또는 시작이 관찰된 채 기한이 지나면 의심 고아(`stale`)다. 이 정리는 동시 한도보다 먼저다.
+4. 되감기 판정(`rewindOf` 339-364) — 앞 단계 작업 중 current가 아닌 것이 있으면 메모를 모두 버리고 다시 계산해 확정한 뒤, 배정 없이 `rewind`를 낸다. `phase`는 가장 앞 단계, `command`는 `code-agent back <단계>`, `tasks[].staleBecause`는 `staleCauses`(`planningState.ts:375-411`)의 항목별 이유(입력 파일·질문과 출처·선행 결과·기준 커밋·code-agent.json·호스트 지침·출력 문서)다. 같은 사유 키(단계 + 작업별 낡은 원인)의 첫 회만 `auto:true`이고 `retry.rewinds`(최근 20개)에 남긴다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `notice`를 붙인다.
+5. 이 단계 작업마다 다음 순서로 판정한다(419-449).
+   - 현재 결과가 유효하면(`taskCurrent`, `planningState.ts:309-316`) `reused`.
+   - 실행 중이면 3의 판정대로 `stale`(의심 고아) 또는 `waiting`.
+   - 같은 입력으로 failed면 `blocked` — `class`는 시도의 `failure.class`(같은 입력 실패 한도를 다 썼으면 `same-input-repeat`), `counter`는 `sameInput`.
+   - 동시 실행 한도(기본 3, 최대 4)에 닿았으면 `blocked`(`class: precondition`).
+   - 교정 대기면 `repairState`(300-322), 그 밖은 `dispatchState`(251-275)로 배정한다. 한도 거부(`RetryRefused`)는 그 `class`·`counter`로, 그 밖의 `Stop`은 `precondition`으로 `blocked`에 싣는다.
+6. `dispatchState`는 선행 결과가 current이고 차단 지적·관련 미결 질문이 없으며 입력 파일이 있어야 배정한다(`readyProblems` `planningState.ts:317-330`). synthesis는 조사 사실 충돌도 없어야 한다(256). 실행 중인 자기 작업은 동시 한도 대신 실행 중·stale 문구로 거부한다(261-265). 한도는 `planningDispatchDecision`(§6.4)이 판정한다 — 같은 `inputHash`의 failed(`sameInput`, 취소·고아는 세지 않는다)와 `retry.since` 이후의 작업별 배정(`taskTotal`, 취소·고아 포함). 사람 허용은 `grantPlanningRetry`(204-216)가 소진된 카운터에만 `retry.grants`로 기록한다(범위는 `grantScope`). `repairState`는 교정 1회만 허용하고 입력 해시가 그대로여야 하며 같은 입력 실패 한도만 본다(교정은 같은 시도다).
+7. `action`을 정한다(454): `rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`. `running`·`orphaned`·`stale`·`cancel`·`rewind`·`feedback`은 해당할 때만 싣는다. `feedback[]`(`feedbackOf` 370-389)은 이 단계 이하 작업과 현재 critic의 교차 검토가 낸 차단 지적이고, `citedTask`·`citedPhase`는 근거 문서를 낸 작업일 뿐 원인이 아니다 — 차단 지적으로는 되감지 않는다.
+8. CLI는 배정 전문을 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다(`handoff.ts:89-110`). `planning status`(218-236)는 작업마다 실행 관찰(`run`)·낡은 이유(`staleBecause`)·사용량(`budget`)을 더한다(읽기 전용 — 고아 표시를 저장하지 않는다).
 
-입력 해시(`taskHash` 137-146)에 들어가는 것은 작업 정의, `baseCommit`, 매니페스트 해시, 입력 파일 해시, `CLAUDE.md`·`AGENTS.md` 해시(기본 작업의 `contextVersion` 2), 선행 결과 해시, 관련 질문이다. 관련 질문(147-153)은 범위(`[Requirements]`)가 없거나, 작업의 `questionIds`에 있거나, 요구 번호가 겹치는 질문이다. 답이 달린 질문도 내용째 들어가므로 답을 적으면 해시가 바뀐다.
+입력 해시(`hashInput` `planningState.ts:287-305`, `taskHash`는 그 값)에 들어가는 것은 작업 정의, `baseCommit`, 매니페스트 해시, 입력 파일 해시, `CLAUDE.md`·`AGENTS.md` 해시(기본 작업의 `contextVersion` 2), 선행 결과 해시, 관련 질문이다. 직렬화 객체는 이전 `taskHash`와 키 순서까지 같고 질문은 고정 투영(`hashedQuestion` 262-266)으로 넣으므로 갱신만으로 진행 중 작업의 결과가 낡지 않는다(골든 값은 `planning.test.ts`가 고정한다). 관련 질문(`questionApplies` 256-260)은 작업의 `questionIds`에 있거나, 출처(`[Origin]`)가 기록돼 있으면 출처 작업과 그 후손(dependsOn을 거쳐 출처에 닿는 작업)이고, 출처가 없으면 범위(`[Requirements]`)가 없거나 요구 번호가 겹치는 질문이다. 출처 작업이 상태에 없으면 출처 없는 규칙으로 떨어진다. 답이 달린 질문도 내용째 들어가므로 답을 적으면 해시가 바뀐다. 새 시도는 해시의 부품(`inputParts` — 입력 파일이 50개 이하면 파일별 해시 포함)을 함께 기록해 낡은 이유를 항목별로 보인다.
 
-**관찰 — SubagentStart·Stop** (`planningHook.ts:46-154`)
-- 공통 전제: `session_id`·`agent_id`가 없으면 오류다(50).
-- Start: 실행 중인 같은 담당 종류의 배정이 있으면 담당을 등록하고, 후보가 하나일 때만 `dispatchId`를 연결한다(52-58).
-- Stop은 다음 순서로 처리한다.
-  1. 결과 수신: Claude는 `SubagentHandback`(transcript), 없으면 `last_assistant_message`를 쓴다(12-29).
-  2. 스키마 실패: 원본을 보존하고 `needs-correction`으로 둔다. 교정을 이미 썼으면 `failed`다(64-88).
-  3. 식별 검사: `taskId`·`dispatchId`·`inputHash`·담당 종류가 맞지 않으면 기록 없이 오류다(91).
-  4. 내용 검사(96-112): 입력 해시와 선행 조건을 다시 확인한다. 근거는 inputs와 선행 근거 안이어야 한다. completed는 근거가 있고 질문이 없어야 하며, 출력 집합이 배정과 정확히 같아야 한다.
-  5. 기록: completed면 staging 본문 또는 `content`를 정식 문서로 원자 쓰기하고 staging을 지운다(125-128). 질문은 코드가 번호를 매겨 `questions.md`에 붙인다(129-139).
-  - 4·5에서 걸리면 그 시도를 `failed`로 기록한다(147-151). 2에서 `needs-correction`·`failed`를 기록한 경우와 4·5의 실패는 `RecordedFailure`라(153) Claude hook은 SubagentStop에서 exit 0을 낸다. 2에서 배정을 특정하지 못하거나 입력이 바뀐 경우(75, 77), 3의 식별 실패(91), 출처(transcript) 검증 실패(15-20)는 기록 없는 일반 오류라 `stop_hook_active`가 아니면 exit 2다(`reviewHook.ts:31-33`).
+**명령 1회 범위 메모** (`withPlanningCache` `planningState.ts:124-128`) — 계획 명령·완료 hook 한 번 안에서 파일 sha와 questions.md 본문은 `(mtimeNs, size, ino)` stat 검증 메모로, `git ls-files`는 root별 메모로, 입력 해시는 판정 메모로 재사용한다. 판정 메모는 `mutatePlanning` 진입과 쓰기 뒤에 버리고, 되감기는 메모를 모두 버린 값으로만 확정한다. 범위 밖(`next`·`plan submit` 게이트 포함)에서는 매번 새로 계산한다.
+
+**관찰 — SubagentStart·Stop** (`observePlanner` `planningHook.ts:301-323`)
+- 공통 전제: `session_id`·`agent_id`가 없으면 오류다(305). 갱신은 hook 잠금 대기(`TIMING.hookLockWaitMs`)로 `mutatePlanning` 안에서 한다.
+- Start: 실행 중인 같은 담당 종류의 배정이 있으면 담당을 등록하고, 후보가 하나일 때만 `dispatchId`를 연결한다(307-315).
+- Stop은 잠금 밖 준비(`prepareStop` 89-111 — 결과 수신 24-43, 파싱, staging 읽기와 그 역할의 문서 검사, 해시 메모) 뒤 잠금 안에서 판정한다(`decideStop` 136-295). 판정은 값으로 돌려준다(예외면 저장하지 않으므로 되돌림 횟수·고아 기록을 남기려고). `return`(기록 없이 같은 담당에게 되돌림)은 Claude(`host: "claude"`)에서 `stop_hook_active`가 아니고 그 담당의 되돌림(`agents[].returns`)이 한도 전일 때만이다. 순서:
+  1. 같은 id·세션의 담당이 없으면 무시하고, 이미 끝난 담당이면 기록된 실패("이미 처리한 완료 이벤트입니다")다(139-140).
+  2. 출처(transcript) 검증 실패는 되돌리지 않는다 — 담당 기록(`agents[].failure`)에 남기고 연결된 running 시도를 `orphaned`로 둔다(146-152).
+  3. 형식 오류(JSON·스키마·크기, 154-189): 배정을 특정할 수 없으면 연결 시도가 있을 때 한 번 되돌리고(식별 필드 안내), 아니면 연결 시도를 `orphaned`로 기록한다. 실행 중 단계·입력이 바뀌었으면 시도를 `cancelled`로 둔다. 되돌릴 수 있으면 되돌리고, 아니면 `needs-correction`(교정을 이미 썼으면 `failed`)과 `failure.class: agent-format-error`를 기록한다.
+  4. 식별(191-209): `taskId`·`dispatchId`·`inputHash`·담당 종류·시작 시각이 배정과 맞지 않을 때 — 취소·교체된 배정의 늦은 결과는 담당 기록만 남기고 시도는 건드리지 않는다. 복사 오류는 한 번 되돌린 뒤, 그다음은 연결 시도를 `orphaned`로 둔다(같은 입력 실패에 세지 않는다).
+  5. 실행 중 단계·입력 변경과 선행 조건 문제(211-220)는 시도를 `cancelled`(`failure.class: dispatch-orphan`)로 둔다.
+  6. 내용 검사(222-263)는 문제를 모두 모은다 — staging 읽기, 근거가 inputs·선행 근거 안이고 실재하는지, completed의 근거·질문, 질문 요구 범위, 출력 집합, 미완료의 문서, 교정 보존, 그리고 그 역할의 결정적 문서 검사(`stagedDocumentProblems`, 아래 게이트). 문제가 있으면 한 번 되돌리고(교정 시도의 문서 검사 실패는 되돌리지 않는다), 아니면 `failed`와 `failure.class: agent-content-error`를 기록한다.
+  7. 기록(265-294): completed면 staging 본문 또는 `content`를 정식 문서로 원자 쓰기하고 staging을 지운다. 질문은 코드가 번호를 매기고 `[Origin]: <작업 ID>`를 붙여 `questions.md`에 붙인다. 담당이 `failed`로 반환했으면 `failure`를 남긴다. 담당에 `finished`·`endedAt`을 적는다.
+  - 기록한 실패는 `PlanningFailure`(`RecordedFailure`), 되돌림은 `ReturnToAgent`로 던진다(320-321). 종료 코드는 §5.1·§5.2와 같다 — Claude는 `subagentExit`, Codex(`host: "codex"`)는 되돌리지 않고 언제나 0이다.
 
 **게이트**
-- `planningProblems`(`planningState.ts:193-213`): 단계별 필수 역할마다 결과가 하나이고 current이며 차단 지적이 없어야 한다. impact 이후에는 조사가 current이고 사실 충돌이 없어야 한다. plan에서는 교차 검토 조건(181-191)도 본다.
-- `planningDocumentProblems`(`planningValidation.ts:22-46`): 확인 필요·TODO·TBD 표시가 없어야 하고, `파일:줄` 근거가 실재해야 한다. AC에는 내용이, BR에는 `파일:줄` 또는 답이 달린 Q 번호 근거가 있어야 한다.
-- `reviewedPlanProblems`(`planningValidation.ts:11-19`): 제출된 계획이 작업 폴더의 `plan.json`(관찰된 plan 담당이 쓴 초안)과 같은 해시여야 한다. plan 게이트와 승인(`commands.ts:549,1317`)이 본다.
+- `planningProblems`(`planningState.ts:434-460`): 단계별 필수 역할마다 결과가 하나이고 current이며 차단 지적이 없어야 한다. 앞 단계 역할이 낡았으면 `planning advance`가 되감을 단계를 알려 준다고 덧붙인다. impact 이후에는 조사가 current이고 사실 충돌이 없어야 한다. plan에서는 교차 검토 조건(422-432)도 본다.
+- `planningDocumentProblems`(`planningValidation.ts:27-53`): 확인 필요·TODO·TBD 표시가 없어야 하고, `파일:줄` 근거가 실재해야 한다. AC에는 내용이, BR에는 `파일:줄` 또는 답이 달린 Q 번호 근거가 있어야 한다.
+- 완료 hook이 같은 게이트 함수를 staging 본문에 먼저 돈다(`stagedDocumentProblems` `stagedChecks.ts:17-49`, 문서 덮어보기 `DocOverlay`): analysis는 01 형식·원문 추적, impact·synthesis는 `analysisProblems`, design은 `designProblems`·`functionalProblems`, plan은 07 `testSpecProblems`와 plan.json의 스키마·tasks·AC·요구 커버리지·남은 질문(`planDraftProblems`·`planShapeProblems` `planningValidation.ts:61-81`, `plan submit`과 같은 함수), 그리고 각 출력의 `planningDocumentProblems`다. 순서·경로·preserve·종류별 규칙은 `plan submit`에만 있다. `next`·`plan submit`의 최종 게이트는 그대로다.
+- `reviewedPlanProblems`(`planningValidation.ts:13-21`): 제출된 계획이 작업 폴더의 `plan.json`(관찰된 plan 담당이 쓴 초안)과 같은 해시여야 한다. plan 게이트와 승인(`commands.ts:549,1317`)이 본다.
 
 ### 6.2 검증 노드 — `verify` (`verificationFlow.ts:79-179`)
 
@@ -322,7 +331,7 @@ stateDiagram-v2
 
 | 지점 | 명령 | 전제 | 실행 | 기록 | 게이트 |
 |---|---|---|---|---|---|
-| 계획 | `planning cross --by <호스트>` (`crossCheck.ts:177-231`) | `crossRequired`, plan 단계, critic 결과가 completed이고 current | `handoff/cross-critic.md`를 쓰고 다른 호스트의 `ca-critic`을 실행 | `planning.json`의 `cross`(잠금 안), 질문은 `questions.md` | `crossCriticProblems`: 현재 critic `dispatchId`와 일치하고 completed이며 차단 지적 0, 또는 unavailable |
+| 계획 | `planning cross --by <호스트>` (`crossCheck.ts:178-235`) | `crossRequired`, plan 단계, critic 결과가 completed이고 current | `handoff/cross-critic.md`를 쓰고 다른 호스트의 `ca-critic`을 실행 | `planning.json`의 `cross`(잠금 안), 질문은 `questions.md` — `[Requirements]`에는 결과 원소에서 뽑은 요구 키만(없으면 critic 요구), `[Origin]: <critic 작업>`(답은 critic만 낡게 한다). 질문 본문은 담당 결과와 같은 구조 필드 검사를 받는다 | `crossCriticProblems`: 현재 critic `dispatchId`와 일치하고 completed이며 차단 지적 0, 또는 unavailable |
 | 리뷰 | `review cross --by <호스트>` (116-165) | `crossRequired`, `requireValidatable('review')`, 열린 회차가 있고 그 회차의 트리·계획·매니페스트가 지금과 일치 | 다른 호스트의 `ca-reviewer` | `review.json`의 `last.cross`, ⑨ `## 교차 지적`(X 번호) | `reviewProblems` 413-421: completed이면서 문서가 기록과 같거나, unavailable |
 
 **다른 호스트 실행** (`runOtherHost` 60-95)
@@ -333,13 +342,13 @@ stateDiagram-v2
 
 **실패 처리**
 - 실행 불가(파일 없음·오류·0 아닌 종료·`is_error`·결과 없음)는 `HostUnavailable`로 중지를 기록하고 게이트를 통과시킨다.
-- 결과 형식 오류는 `Stop`이고 다시 실행해야 한다(155-159, 211-215).
+- 결과 형식 오류는 `Stop`이고 다시 실행해야 한다(155-159, 212-216).
 
 ### 6.4 실패 원인과 재시도 규약 (`retryPolicy.ts`)
 
 실패 원인별 재시도 규약의 원천은 `retryPolicy.ts`(순수 모듈 — `fs`·`zod`·`child_process`·`path`를 import하지 않는다)다. 실패가 나면 원인을 하나로 분류하고, 재시도를 할지·몇 번 할지·고쳐 쓰기 회차를 쓸지·누구에게 넘길지를 그 원인이 정한다. 원인 판정은 코드가 하고, 모델은 결과의 `failure.class`·안내 문구·`budget`을 읽고 따른다. CLI는 스스로 다시 실행하지 않는다. 예외는 같은 호출 안의 죽은 잠금 회수(`lock.ts`)와, Claude 담당에게 hook이 한 번 되돌리는 것(`stop_hook_active`)뿐이다.
 
-**연결 상태** — 지금은 규약 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)만 있고, 판정 지점(§4 동의, §5 hook, §6.1 계획, §6.2 검증, §6.3 리뷰·교차)에는 아직 연결되지 않았다. 각 지점의 현재 동작은 그 절이 정본이다. 지점을 연결하는 커밋이 그 절을 이 표에 맞춰 고친다.
+**연결 상태** — 계획 쪽(§6.1 배정·관찰, §5.1 planning-event, §5.2 Codex 담당 이벤트)은 이 표에 연결됐다: `planningDispatchDecision`·`orphanState`·`subagentExit`·`lockDecision`(`lock.ts` `acquireLock`)·`guidance`를 쓴다. 나머지 판정 지점(§4 동의, §5 그 밖의 hook, §6.2 검증, §6.3 리뷰·교차)은 아직 연결되지 않았다. 각 지점의 현재 동작은 그 절이 정본이다. 지점을 연결하는 커밋이 그 절을 이 표에 맞춰 고친다.
 
 아래 표는 `renderRetryPolicyTable()`이 `POLICIES`에서 렌더한 생성 블록이다. 손으로 고치지 말고 `POLICIES`를 고친 뒤 다시 렌더해 붙인다 — `src/test/docSync.test.ts`가 바이트를 대조한다(줄바꿈 CRLF·LF 차이만 무시). 표의 숫자는 `LIMITS`·`GRANT_STEP`·`TIMING`에서 렌더된다(`code-defect`의 fixRounds 기본값은 매니페스트 스키마의 값이고 `retryPolicy.test.ts`가 대조한다). 대조는 렌더되는 값에만 걸린다 — 표에 나오지 않는 값(`TIMING.crossTimeoutMin`, 표에 없는 `GRANT_STEP`)은 docSync가 잡지 못하므로 이 절의 산문에는 숫자를 쓰지 않는다. 렌더되지 않는 정책 필드 `onExhausted`·`consumesFixRound`는 `retryPolicy.test.ts`가 넘으면·고쳐 쓰기 회차 칸과 맞는지 본다. 보조 원인 둘(`precondition`·`hook-failure`)은 분류 밖으로 새는 Stop과 hook 예외를 담는다.
 
@@ -401,15 +410,15 @@ stateDiagram-v2
 |---|---|---|---|
 | 설치 위치 | `.claude/skills`·`.claude/agents/*.md`·`.claude/settings.json`·`CLAUDE.md` | `.agents/skills`·`.codex/agents/*.toml`·`.codex/hooks.json`·`AGENTS.md` | `hosts.ts:83-105`, `init.ts:180-203` |
 | 스킬 본문 | 번들 원본 | `codexText` 정규식 변환. `ca-answer`만 `template/codex/ca-answer.md`로 바꾼다 | `hosts.ts:64-90` |
-| 서브에이전트 이름 | `ca-analyst` | `ca_analyst`(배정의 `hostAgents.codex`) | `hosts.ts:11`, `planning.ts:182` |
+| 서브에이전트 이름 | `ca-analyst` | `ca_analyst`(배정의 `hostAgents.codex`) | `hosts.ts:11`, `planning.ts:281` |
 | 모델 기본값 | 모두 opus, 변경값은 `.code-agent/models.json` | `gpt-6.1-sol`. analyst·critic·reviewer는 high, 나머지는 medium. 변경값은 `.code-agent/codex-models.json` | `models.ts:25`, `modelPolicy.ts:16-25` |
 | 파일 읽기 | Read·Grep·Glob(키 자리만 막음) | 셸의 `code-agent read <파일> [시작] [줄 수]` | `hook.ts:205-208`, `hosts.ts:81` |
-| 파일 쓰기 판정 | Write·Edit·MultiEdit·NotebookEdit | `apply_patch`의 각 경로를 `Edit`로 판정 | `codexHook.ts:70-77` |
+| 파일 쓰기 판정 | Write·Edit·MultiEdit·NotebookEdit | `apply_patch`의 각 경로를 `Edit`로 판정 | `codexHook.ts:71-78` |
 | 계획 담당 출력 | staging 파일 + `{path, staged}`. `agent_id`로 담당에게만 연다 | artifacts `{path, content}`. staging은 열리지 않는다 | `hook.ts:428-442`, `hosts.ts:78-80` |
-| 담당 결과 수신 | `SubagentHandback` 또는 `last_assistant_message` | `last_assistant_message`만 | `planningHook.ts:12-29`, `codexHook.ts:86` |
+| 담당 결과 수신 | `SubagentHandback` 또는 `last_assistant_message` | `last_assistant_message`만 | `planningHook.ts:24-43`, `codexHook.ts:87` |
 | 동의 응답 | AskUserQuestion Pre·PostToolUse (`claude-question`) | 사용자 메시지 + UserPromptSubmit (`codex-prompt`) | §4.2 |
-| 세션 시작 상태 주입 | SessionStart `session-event` | 미등록 | `init.ts:233`, `init.ts:187` |
-| 서브에이전트 hook 실패 코드 | SubagentStop의 기록된 실패·`stop_hook_active`면 0, 그 밖 2 | 예외면 언제나 2 | `reviewHook.ts:31-33`, `codexHook.ts:120-121` |
+| 세션 시작 상태 주입 | SessionStart `session-event` — 실행 중으로 기록된 계획 배정과(시작·재개·비우기면) 취소 명령을 붙인다 | 미등록 — 결과가 오지 않은 배정은 advance의 `stale` 판정에 기댄다 | `init.ts:233`, `init.ts:187`, `sessionHook.ts:28-49` |
+| 서브에이전트 hook 실패 코드 | 계획 담당: `subagentExit` — 기록 전의 되돌릴 수 있는 실패를 한 번 2로 되돌리고, 기록된 실패·`stop_hook_active`면 0. 리뷰어: `subagentExitCode`(기록된 실패·`stop_hook_active`면 0, 그 밖 2) | 담당 이벤트의 예외는 언제나 `{}`·exit 0(기록 후, 되돌리지 않는다) | `planningHook.ts:324-332`, `reviewHook.ts:31-33`, `codexHook.ts:117-122` |
 | 토큰 사용량 집계 | `usage` 지원 | 미지원 | `doc/codex.md:78` |
 | 교차 검증 대상일 때 실행 형태 | `claude -p … --agent` | `codex exec -s read-only …` | `crossCheck.ts:68-79` |
 
@@ -428,7 +437,7 @@ stateDiagram-v2
 | `approvals/docs.jsonl` | `confirmDoc` | 문서 게이트 | 반영 커밋 |
 | `consents/<uuid>.json` · `apply.lock` | consent prepare·hook·apply | consent | 무시 |
 | `work/<ID>/<target>.plan.json` | `plan submit` | `loadWork` | 반영 커밋 |
-| `work/<ID>/<target>.planning.json` (+`.lock`) | planning 명령·planning hook·`planning cross` | 계획 게이트, `approvalDocsHash`(`work.ts:49-56`) | 반영 커밋 |
+| `work/<ID>/<target>.planning.json` (+`.lock`) | planning 명령·planning hook·`planning cross`. `.lock`에는 주인 `{pid, host, at, nonce}`가 있고 같은 PC의 죽은 주인·오래된 빈 잠금은 다음 실행이 회수한다(§6.1). `retry`(이행 시각 `since`·사람 허용 `grants`·자동 되감기 `rewinds`), 시도의 `failure`·`inputParts`·`orphaned` 상태, 담당의 `returns`·`failure`·`endedAt`은 새로 기록할 때만 붙는다 | 계획 게이트, `approvalDocsHash`(`work.ts:49-56` — 작업별 마지막 시도만 묶고 `agents`·`retry`는 밖이다) | 반영 커밋 |
 | `work/<ID>/<target>.verify.json` | repro·check·test·integrate | `stageProblems` | 반영 커밋 |
 | `work/<ID>/<target>.verification-flow.json` | verify | verify 재개 | 반영 커밋 |
 | `work/<ID>/<target>.review.json` | review·review-event·review cross | `reviewProblems`, 동결 해제 | 반영 커밋 |
@@ -439,13 +448,13 @@ stateDiagram-v2
 |---|---|---|
 | `request.json`, `consent-action.json` | 메인 | 접수 초안, 동의 동작 |
 | `requirement.md` | `request submit` 렌더 | 모델 쓰기 거부 |
-| `questions.md` | start 생성. 메인·planning hook·`planning cross`가 추가한다 | 미응답이 있으면 `next`·Stop이 막는다 |
+| `questions.md` | start 생성. 메인·planning hook·`planning cross`가 추가한다. 코드가 쓰는 질문에는 `[Origin]: <작업 ID>`가 `[Answer]:` 앞에 붙는다 | 미응답이 있으면 `next`·Stop이 막는다. 출처 있는 질문은 그 작업과 후손만 낡게 한다(§6.1) |
 | `01`·`02`·`03`·`04`·`07`, `plan.json` | 관찰된 계획 담당(hook이 기록) | 메인 쓰기 거부(`hook.ts:474`). 승인 묶음(`stale-docs`) |
 | `05-plan.md` · `08-validation.md` | plan submit · check/test/integrate 렌더 | 모델 쓰기 거부 |
 | `09-review.md` | 회차 구역은 review, `## 지적`은 review-event, `## 교차 지적`은 review cross | 게이트가 기록과 대조한다. 회차 구역은 문자열 일치, 지적 절은 `normalizeFindings` 정규화 뒤 비교(`review.ts:152-161,409`) |
 | `10-pr.md` | `요약`·`확인 방법`·`위험·되돌리기` 3절은 메인(`deliver.ts:47`), trace 블록은 deliver | 위조는 deliver가 다시 렌더 |
 | `knowledge.proposal.md` | 메인(선택) | deliver 동의에서 항목별로 고른다 |
-| `.staging/<dispatchId>/` | Claude 계획 담당 | 완료하면 hook이 지운다(`planningHook.ts:127`). 실패·교정 대기 배정의 것은 남는다(`planning.ts:22-23`). 폴더 안 `.gitignore *`(`planning.ts:25-29`)가 있지만 반영의 `git add -f`가 `doc/work/<ID>`를 폴더째 추가하므로(`deliver.ts:326,348`) 남은 staging도 커밋된다(handoff와 같은 git 동작) |
+| `.staging/<dispatchId>/` | Claude 계획 담당 | 완료하면 hook이 지운다(`planningHook.ts:268`). 실패·교정 대기·되돌림 중인 배정의 것은 남는다(`planning.ts:29-30`). 폴더 안 `.gitignore *`(`planning.ts:32-36`)가 있지만 반영의 `git add -f`가 `doc/work/<ID>`를 폴더째 추가하므로(`deliver.ts:326,348`) 남은 staging도 커밋된다(handoff와 같은 git 동작) |
 
 공통 문서의 기본 경로는 POLICY가 `doc/architecture.md`·`conventions.md`·`test-strategy.md`·`quality.md`, KNOWLEDGE가 `doc/knowledge/data-dictionary.md`·`api-catalog.md`·`business-rules.md`다(`schemas.ts` defaultPath 44·126·179·236·292·317·342). 매니페스트로 다른 경로를 연결할 수 있다(`docs link`). KNOWLEDGE는 deliver 동의에서 고른 항목만 코드가 키 단위로 바꾸거나 추가한다(`deliver.ts:262-275`, `knowledge.ts:120-127`). 작업 커서가 있는 동안 모델은 작업 폴더와 승인된 계획 파일 밖을 쓸 수 없으므로(§3.2 hook의 쓰기 범위), 계획 파일로 잡히지 않은 공통 문서에 작업 결과가 넘어가는 길은 이 선택 반영뿐이다. 삭제는 `knowledge prune` 동의로만 한다.
 
@@ -458,8 +467,8 @@ stateDiagram-v2
 | 준비·공통 문서 | `docsCommands.ts`, `docs.ts`, `schemas.ts`, `setup.ts`, `bootstrap.ts`, `survey.ts` |
 | 접수 | `request.ts`, `intakeTrace.ts` |
 | 커서·게이트·context | `commands.ts`, `work.ts`, `layout.ts`, `git.ts`, `tree.ts` |
-| 작업 문서 검사 | `workDocs.ts`, `sourceTrace.ts`, `questions.ts`, `planningValidation.ts` |
-| 계획 오케스트레이션 | `planning.ts`, `planningState.ts`, `planningHook.ts`, `handoff.ts` |
+| 작업 문서 검사 | `workDocs.ts`, `sourceTrace.ts`, `questions.ts`, `planningValidation.ts`, `stagedChecks.ts`(완료 hook의 게이트 검사) |
+| 계획 오케스트레이션 | `planning.ts`, `planningState.ts`, `planningHook.ts`, `handoff.ts`, `lock.ts`(공통), `retryPolicy.ts`(공통) |
 | 계획 형식·승인 원장·경계 | `core/plan.ts`, `core/approval.ts`, `core/gate.ts`, `core/manifest.ts`, `core/workOrder.ts` |
 | 검증 | `validate.ts`, `evidence.ts`, `testResults.ts`, `testReports.ts`, `core/build.ts` |
 | 검증 노드 | `verificationFlow.ts`, `core/workflow.ts` |
@@ -467,7 +476,7 @@ stateDiagram-v2
 | 반영·지식 | `deliver.ts`, `knowledge.ts`, `knowledgeCommands.ts` |
 | 동의 | `consent.ts`, `tty.ts` |
 | hook | `hook.ts`, `stopHook.ts`, `sessionHook.ts`, `codexHook.ts` |
-| 재시도 규약·공통 기반 (§6.4, 아직 판정 지점에 연결 전) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia` 등) |
+| 재시도 규약·공통 기반 (§6.4, 계획 쪽만 연결) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia` 등) |
 | 기타 | `aidlc.ts`(AI-DLC 공존), `usage.ts`·`prices.ts`(사용량), `plugins/`, `read.ts`(`code-agent read`), `stop.ts`(`Stop` 예외), `core/exemplar.ts`(참조 코드), `core/atomic.ts`(`writeAtomic`), `core/types.ts`(공통 타입) |
 | 절차 템플릿 | `template/claude/skills/ca-*/SKILL.md`(+`criteria.md`·`legacy.md`·`contract.md`·`reference.md`), `template/claude/agents/ca-*.md`, `template/CLAUDE.block.md`, `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 
@@ -486,3 +495,4 @@ stateDiagram-v2
 | 2026-10-07 | 최초 작성. 코드 판독과 sandbox(`init --host both` 설치, `hook`·`codex-event`·`stop`·`session-event` 이벤트 주입, git 실험)로 확인했고, 별도 검증자가 진술 24곳을 코드에 맞춰 고쳤다 | `c4f3fbf` | 전체 |
 | 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록(`docSync.test.ts`가 대조). 판정 지점에는 아직 연결하지 않아 §4·§5·§6.1~§6.3의 현재 동작은 그대로다 | `2327975` | §1.1, §6.4, §9 |
 | 2026-10-07 | 공통 모듈 검토 반영: 잠금 회수 직렬화(`.reclaim` 가드)·자기 기록 해제·읽기 실패와 Windows EPERM 처리, 교차 실패 분류 범위(Codex 세션은 끝의 `ERROR:` 줄만·stdout 은 마지막 응답·Claude stderr 도 오류 줄만), 교차 예산 `crossBudgets`(설정 오류·시간 초과는 첫 실패 뒤부터), 담당 형식·내용 오류의 기본 문구를 되돌림으로(기록은 `record` 변형), 끊긴 교차 실행 안내 변형, 결과 미확인 노드의 재실행 조건. 판정 지점 연결 전이라 §4·§5·§6.1~§6.3은 그대로다 | 이 커밋(부모 `2327975`) | §6.4, §9 |
+| 2026-10-07 | 계획 오케스트레이션을 재시도 규약에 연결: 공통 잠금(`acquireLock` — 주인 기록·죽은 주인·오래된 빈 잠금 회수), 같은 입력 실패·작업별 총 배정 한도(`planningDispatchDecision`, `retry.since`·사람 허용 `grantPlanningRetry`), 고아 판정(`orphanState` — 확실한 고아 자동 재배정, 의심 고아 `stale`·`cancel`, 동시 한도보다 먼저), 완료 hook 재구성(잠금 밖 준비·Claude 한 번 되돌림 `subagentExit`·식별 불일치와 출처 실패의 고아 기록·실행 중 입력 변경은 `cancelled`·Codex 담당 이벤트 언제나 0), 완료 hook의 결정적 문서 검사(`stagedChecks.ts`), 질문 출처(`[Origin]` — 출처 작업과 후손만 낡게, 교차 질문은 요구 키만), 질문 본문 구조 필드 검사(파서와 같은 줄 경계·공백), 입력 해시 부품(`inputParts`)·낡은 이유·명령 1회 범위 메모(해시 계약 유지), 앞 단계가 낡았을 때 `rewind-required`(같은 사유에 한 번 자동), 차단 지적 `feedback`(근거 문서 작업만), SessionStart 실행 중 배정 요약, 업무 규칙 KNOWLEDGE 입력 연결, 후보 순위 절단 제거·순회 순서 | 이 커밋(부모 `3b5e867`) | 머리말, §1.1, §3.2, §3.3, §4.2, §5.1, §5.2, §6.1, §6.3, §6.4 연결 상태, §7, §8, §9 |

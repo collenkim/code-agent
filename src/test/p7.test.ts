@@ -14,7 +14,7 @@ import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { loadEvidence, runsOf, stageProblems, validationDocFile } from "../agent/evidence";
 import { decide } from "../agent/hook";
 import { loadActive } from "../agent/layout";
-import { keywordsOf, rankCandidates, relevantDocSections, requirementItems } from "../agent/plugins/defaults";
+import { keywordsOf, rankCandidates, rankCandidatesScan, relevantDocSections, requirementItems } from "../agent/plugins/defaults";
 import { pluginAdd, pluginList, pluginRemove, registerPlugin } from "../agent/plugins/commands";
 import type { Prompts } from "../agent/plugins/commands";
 import { callSlot, PLUGIN_LOG_DIR } from "../agent/plugins/run";
@@ -22,7 +22,7 @@ import { readStore, storePath, writeStore } from "../agent/plugins/store";
 import type { StoredPlugin } from "../agent/plugins/store";
 import { openRound, reviewDocFile, reviewProblems } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
-import { survey } from "../agent/survey";
+import { sourceFileScan, survey } from "../agent/survey";
 import { check, runTests } from "../agent/validate";
 import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
 
@@ -1249,6 +1249,23 @@ describe("P7 · 기본 구현", () => {
     assert.equal(ranked[0].path, SRC);
     assert.ok(ranked[0].score > ranked[1].score);
     assert.deepEqual(rankCandidates(repo, files, ["order", "주문"], 20), ranked);
+  });
+
+  test("순위는 3,000개에서 자르지 않고, 본문은 예산 안에서 경로가 걸린 파일·테스트가 아닌 파일부터 읽는다", () => {
+    write("src/main/java/app/RefundPolicy.java", "class RefundPolicy { /* 환불 규칙 */ }\n");
+    const generated = Array.from({ length: 5000 }, (_, index) => ({ path: `src/main/java/gen/File${String(index).padStart(4, "0")}.java`, ext: ".java" }));
+    const files = [...generated, { path: "src/main/java/app/RefundPolicy.java", ext: ".java" }];
+    const scan = rankCandidatesScan(repo, files, ["refund"], 20);
+    assert.equal(scan.ranked[0].path, "src/main/java/app/RefundPolicy.java", "목록 뒤쪽의 파일도 순위에 든다");
+    assert.equal(scan.total, 5001);
+    assert.ok(rankCandidatesScan(repo, files, ["refund"], 20, 10).skipped > 0, "예산을 넘으면 남은 파일은 경로 점수만 쓴다");
+    write("src/test/java/app/ReturnTest.java", "// 환불 테스트\n");
+    write("src/main/java/app/Return.java", "// 환불 처리\n");
+    const tested = rankCandidatesScan(repo, [{ path: "src/test/java/app/ReturnTest.java", ext: ".java" }, { path: "src/main/java/app/Return.java", ext: ".java" }], ["환불"], 20, 1);
+    assert.deepEqual(tested.ranked.map((entry) => entry.path), ["src/main/java/app/Return.java"], "테스트가 아닌 파일의 본문을 먼저 읽는다");
+    assert.equal(tested.skipped, 1);
+    const order = sourceFileScan(repo).files.map((file) => file.path);
+    assert.ok(order.indexOf("src/main/java/app/Return.java") < order.indexOf("src/test/java/app/ReturnTest.java"), "순회는 오름차순 깊이 우선이다");
   });
 
   test("문서 절은 제목에 걸린 것을 위로 올린다", () => {

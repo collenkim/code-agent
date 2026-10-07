@@ -1,13 +1,14 @@
 import { existsSync, readFileSync, statSync, readdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
-import { isAbsolute, join, relative, resolve, sep } from "path";
+import { isAbsolute, join, posix, relative, resolve, sep } from "path";
 import { z } from "zod";
 import { hashManifest } from "../core/approval";
 import { sha, docPaths } from "./docs";
 import { canonical, STATE_DIR, workDocsDir } from "./layout";
 import { POLICY_KINDS } from "./schemas";
-import { parseQuestions, unansweredQuestions } from "./questions";
+import { parseQuestions, structuralLine, type Question } from "./questions";
+import { orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
@@ -26,14 +27,19 @@ export const TaskSchema = z.object({
   questionIds: z.array(z.string().regex(/^Q\d+$/)).default([]),
 }).strict();
 export type PlanningTask = z.infer<typeof TaskSchema>;
+/** 역할이 도는 계획 단계. planning.ts 가 import 한다(planning.ts 를 import 하면 순환이다) — planning.ts 는 PHASE 로 재수출한다 */
+export const ROLE_PHASE: Record<PlanningTask["role"], "analysis" | "impact" | "design" | "plan"> = { analysis: "analysis", explore: "impact", impact: "impact", synthesis: "impact", design: "design", plan: "plan", critic: "plan" };
+export const PLANNING_PHASES = ["analysis", "impact", "design", "plan"] as const;
 const Reference = z.object({ path: z.string(), line: z.number().int().positive() }).strict();
+/** 질문 본문 검사 — 파서가 구조 필드로 읽는 줄(제목·답변·상태·범위·출처)을 담당·교차 결과가 끼워 넣지 못하게 한다 */
+export const questionText = z.string().min(1).refine(text => !structuralLine(text), "질문 본문에 질문 제목·답변·상태·범위·출처 필드를 넣을 수 없습니다");
 export const ResultSchema = z.object({
   taskId: z.string(), dispatchId: z.string(), inputHash: z.string(),
   status: z.enum(["completed", "needs-input", "failed"]),
   summary: z.string().trim().min(1).max(4000),
   evidence: z.array(Reference).max(100),
   facts: z.array(z.object({ key: z.string().min(1), value: z.string().min(1), source: Reference }).strict()).max(100),
-  questions: z.array(z.object({ id: z.string().regex(/^Q\d+$/), question: z.string().min(1).refine(text => !/^[ \t]*(?:##|\[(?:Answer|Status|Requirements)\]:)/m.test(text), "질문 본문에 질문 제목·답변·상태 필드를 넣을 수 없습니다"), requirements: z.array(z.string()).min(1) }).strict()).max(30),
+  questions: z.array(z.object({ id: z.string().regex(/^Q\d+$/), question: questionText, requirements: z.array(z.string()).min(1) }).strict()).max(30),
   // 본문은 staging 파일로 넘기는 것이 기본이다. Write 도구가 없는 호스트는 content로 직접 싣는다.
   artifacts: z.array(z.union([z.object({ path: z.string(), content: z.string().max(131072) }).strict(), z.object({ path: z.string(), staged: z.string() }).strict()])).max(3),
   findings: z.array(z.object({ id: z.string().min(1), severity: z.enum(["blocking", "advisory"]), detail: z.string().min(1), source: Reference }).strict()).max(100),
@@ -41,21 +47,51 @@ export const ResultSchema = z.object({
 export type PlanningResult = z.infer<typeof ResultSchema>;
 /** staging 본문을 읽어 들인 결과. 상태에는 이 형태로 보존한다 */
 export type ResolvedResult = Omit<PlanningResult, "artifacts"> & { artifacts: { path: string; content: string }[] };
+/** 입력 해시의 부품 — 낡은 이유(staleCauses)를 항목별로 보이기 위해 새 시도에만 기록한다 */
+export interface InputParts {
+  task: string; base?: string; manifest: string; inputs: string;
+  /** 입력 파일이 50개 이하일 때만 경로별 해시 */
+  files?: Record<string, string>; host?: string;
+  dependencies: [string, string | undefined][];
+  /** [id, sha(질문 투영), origin] */
+  questions: [string, string, string?][];
+}
+export interface HashedInput { hash: string; parts: InputParts }
 export interface TaskAttempt {
   dispatchId: string; inputHash: string; at: string;
-  status: "running" | "completed" | "needs-input" | "needs-correction" | "failed" | "cancelled";
+  status: "running" | "completed" | "needs-input" | "needs-correction" | "failed" | "cancelled" | "orphaned";
   result?: ResolvedResult; resultHash?: string; outputs?: Record<string, string>;
   agentId?: string; sessionId?: string; error?: string;
   correction?: { raw: string; error: string; agentId: string; sessionId: string; used: boolean };
+  /** 실패 원인(retryPolicy) — 새로 기록하는 시도에만 붙인다 */
+  failure?: FailureRecord;
+  inputParts?: InputParts;
 }
 export interface TaskRecord { task: PlanningTask; attempts: TaskAttempt[] }
+export interface PlanningAgent {
+  id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string;
+  /** 같은 담당에게 되돌린 횟수(Claude SubagentStop exit 2) */
+  returns?: number;
+  failure?: FailureRecord;
+  endedAt?: string;
+}
+export interface PlanningRetry {
+  version: 1;
+  /** 이 시각 이후의 배정만 작업별 총 배정 한도에 센다 — 처음 쓸 때 기록한다 */
+  since: string;
+  grants: RetryGrant[];
+  /** 자동 되감기 기록(최근 20개) — 같은 사유의 두 번째부터는 자동으로 되감지 않는다 */
+  rewinds?: { at: string; phase: string; key: string }[];
+}
 export interface PlanningState {
   version: 1; id: string; target: string; maxParallel: number;
   tasks: TaskRecord[];
-  agents: { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string }[];
+  agents: PlanningAgent[];
   /** 두 호스트가 설치된 프로젝트의 교차 계획 검토 — 다른 호스트를 CLI 가 실행해 같은 critic 입력을 독립 검토한 결과 */
   cross?: { host: string; model: string; at: string; criticDispatchId: string; status: "completed" | "needs-input" | "failed" | "unavailable"; summary: string;
     findings: { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } }[]; questions: number };
+  /** 재시도 카운터의 이행 시각·사람 허용·자동 되감기 기록. 승인 해시(작업별 마지막 시도) 밖이다 */
+  retry?: PlanningRetry;
 }
 
 export function planningFile(work: Work): string {
@@ -69,26 +105,74 @@ export function loadPlanning(work: Work): PlanningState {
   return state;
 }
 
+// ---- 명령 1회 범위의 계산 메모 ----
+
+/** statSync(path, { bigint: true }) 값을 문자열로 둔다 — Windows 파일 ID(ino)는 2^53 근처라 number 로는 낮은 자리를 잃을 수 있다 */
+interface StatKey { mtimeNs: string; size: string; ino: string }
+interface PlanningCache {
+  /** 절대 경로 → stat 키와 sha */
+  files: Map<string, StatKey & { hash: string }>;
+  /** questions.md 절대 경로 → stat 키와 본문 */
+  questions: Map<string, StatKey & { text: string }>;
+  /** root → git ls-files 결과 */
+  inventory: Map<string, string[]>;
+  /** taskHash 메모 */
+  hashes: Map<string, HashedInput>;
+}
+let cache: PlanningCache | undefined;
+/** 한 명령(또는 hook 1회) 안에서만 재사용한다. 범위 밖에서는 매번 계산한다. 안쪽에서 다시 불리면 바깥 범위를 그대로 쓴다 */
+export function withPlanningCache<T>(fn: () => T): T {
+  if (cache) return fn();
+  cache = { files: new Map(), questions: new Map(), inventory: new Map(), hashes: new Map() };
+  try { return fn(); } finally { cache = undefined; }
+}
+/** 판정 결과 메모(taskHash)만 버린다 — 파일·질문 메모는 stat 으로 스스로 검증하므로 남긴다 */
+export function invalidatePlanningCache(): void { cache?.hashes.clear(); }
+/** 메모를 모두 버린다 — rewind-required 확정처럼 메모 없는 값이 필요할 때 */
+export function dropPlanningCache(): void {
+  if (cache) { cache.files.clear(); cache.questions.clear(); cache.inventory.clear(); cache.hashes.clear(); }
+}
+/** 파일이 아니면 undefined */
+function statKey(path: string): StatKey | undefined {
+  const stat = statSync(path, { bigint: true, throwIfNoEntry: false });
+  return stat?.isFile() ? { mtimeNs: String(stat.mtimeNs), size: String(stat.size), ino: String(stat.ino) } : undefined;
+}
+const sameStat = (a: StatKey, b: StatKey): boolean => a.mtimeNs === b.mtimeNs && a.size === b.size && a.ino === b.ino;
+
 /** 파일 내용 검증에 사용하는 경로. 저장소 밖·링크를 통한 이탈을 허용하지 않는다. */
 export function planningPath(root: string, file: string): string {
   const full = resolve(root, file), rel = relative(canonical(root), canonical(full));
   if (isAbsolute(file) || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || file.includes(":")) throw new Stop(`저장소 밖 계획 자료: ${file}`);
   return full;
 }
+/**
+ * 파일 sha. 메모 범위 안에서는 부를 때마다 stat 을 다시 하고 (mtimeNs, size, ino)가 같을 때만 sha 를 재사용한다 —
+ * 원자 쓰기(임시 파일 rename)는 ino 를 바꾸므로 정식 문서 교체도 잡힌다. 아끼는 것은 파일 전체 읽기이고 stat 은 아끼지 않는다.
+ */
 export function fileHash(root: string, file: string): string {
   const path = planningPath(root, file);
-  return existsSync(path) && statSync(path).isFile() ? createHash("sha256").update(readFileSync(path)).digest("hex") : "missing";
+  if (!cache) return existsSync(path) && statSync(path).isFile() ? createHash("sha256").update(readFileSync(path)).digest("hex") : "missing";
+  const key = statKey(path);
+  if (!key) { cache.files.delete(path); return "missing"; }
+  const memo = cache.files.get(path);
+  if (memo && sameStat(memo, key)) return memo.hash;
+  const hash = createHash("sha256").update(readFileSync(path)).digest("hex");
+  cache.files.set(path, { ...key, hash });
+  return hash;
 }
-export function referenceProblem(root: string, ref: { path: string; line: number }): string | undefined {
+/** 근거 위치 검사. overlay 에 있는 경로(같은 결과의 출력 문서)는 그 내용으로 줄 범위를 본다 */
+export function referenceProblem(root: string, ref: { path: string; line: number }, overlay?: ReadonlyMap<string, string>): string | undefined {
   try {
     const path = planningPath(root, ref.path);
-    if (!existsSync(path) || !statSync(path).isFile()) return `근거 파일이 없습니다: ${ref.path}`;
-    if (!Number.isInteger(ref.line) || ref.line < 1 || ref.line > readFileSync(path, "utf8").split(/\r?\n/).length) return `근거 줄이 파일 범위를 넘었습니다: ${ref.path}:${ref.line}`;
+    const staged = overlay?.get(ref.path);
+    if (staged === undefined && (!existsSync(path) || !statSync(path).isFile())) return `근거 파일이 없습니다: ${ref.path}`;
+    const lines = (staged ?? readFileSync(path, "utf8")).split(/\r?\n/).length;
+    if (!Number.isInteger(ref.line) || ref.line < 1 || ref.line > lines) return `근거 줄이 파일 범위를 넘었습니다: ${ref.path}:${ref.line}`;
   } catch (error) { return error instanceof Error ? error.message : String(error); }
   return undefined;
 }
 
-function inventory(root: string): string[] {
+function listFiles(root: string): string[] {
   try { return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).split("\0").filter(Boolean); }
   catch {
     const files: string[] = [];
@@ -102,6 +186,18 @@ function inventory(root: string): string[] {
     };
     visit(""); return files;
   }
+}
+/**
+ * 저장소 파일 목록. 메모 범위 안에서는 root 마다 한 번만 실행한다(잠금 안에서도 그 메모를 쓴다) — code-agent 가 쓰는 파일은
+ * scopedFiles 가 빼는 자리(doc/work·.code-agent)에 있고, 사람이 그 사이 만든·지운 파일 이름만 다음 명령이 다시 본다.
+ */
+function inventory(root: string): string[] {
+  if (!cache) return listFiles(root);
+  const memo = cache.inventory.get(root);
+  if (memo) return memo;
+  const files = listFiles(root);
+  cache.inventory.set(root, files);
+  return files;
 }
 export function scopedFiles(work: Work, scopes: string[], focused = false): string[] {
   return scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(file)
@@ -134,22 +230,81 @@ export function dependencyHash(record: TaskRecord | undefined): string | undefin
   const { taskId, dispatchId, inputHash, ...content } = result;
   return sha(JSON.stringify(content));
 }
-export function taskHash(work: Work, state: PlanningState, task: PlanningTask): string {
-  return sha(JSON.stringify({
-    task, base: work.active.baseCommit, manifest: hashManifest(work.manifest),
-    inputs: inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)]),
-    // 호스트가 직접 주입하는 지침은 중복 전달하지 않지만 변경 시 기존 판단을 재사용하지 않는다.
-    ...(task.contextVersion === 2 ? { hostInstructions: ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)]) } : {}),
-    dependencies: task.dependsOn.map(id => { const dep = state.tasks.find(item => item.task.id === id); return [id, task.contextVersion === 2 ? dependencyHash(dep) : dep?.attempts.at(-1)?.resultHash]; }),
-    questions: relevantQuestions(work, task),
-  }));
+/** 선행 결과 값 — 새 계약은 판단 내용, 옛 계약은 결과 전체의 해시 */
+function dependencyValue(state: PlanningState, task: PlanningTask, id: string): string | undefined {
+  const dep = state.tasks.find(item => item.task.id === id);
+  return task.contextVersion === 2 ? dependencyHash(dep) : dep?.attempts.at(-1)?.resultHash;
 }
-function relevantQuestions(work: Work, task: PlanningTask) {
-  const file = join(work.repoRoot, workDocsDir(work.active.id), "questions.md");
-  if (!existsSync(file)) return [];
-  const text = readFileSync(file, "utf8"), blocks = text.split(/^## /m).slice(1);
-  return parseQuestions(text).filter(question => !question.requirements?.length || task.questionIds.includes(question.id) || question.requirements.some(key => task.requirements.includes(key)))
-    .map(question => ({ ...question, content: blocks.filter(block => block.split(/\s/)[0] === question.id).map(block => block.trim()).join("\n") }));
+
+/** dependsOn 의 전이 폐포(자기 제외, 순환 안전) */
+export function ancestorsOf(state: PlanningState, id: string, seen = new Set<string>()): Set<string> {
+  const visit = (current: string): void => {
+    for (const dep of state.tasks.find(record => record.task.id === current)?.task.dependsOn ?? []) {
+      if (seen.has(dep)) continue;
+      seen.add(dep);
+      visit(dep);
+    }
+  };
+  visit(id);
+  seen.delete(id);
+  return seen;
+}
+/**
+ * 질문이 이 작업의 입력인가 — 출처가 기록된 질문은 출처 작업과 그 후손만, 없는 질문은 기존 규칙(요구 겹침·범위 없음).
+ * 출처 작업이 상태에 없으면(작업 삭제·이름 변경) 기존 규칙으로 떨어진다.
+ */
+export function questionApplies(question: Question, task: PlanningTask, state: PlanningState): boolean {
+  if (task.questionIds.includes(question.id)) return true;
+  if (question.origin && state.tasks.some(record => record.task.id === question.origin)) return task.id === question.origin || ancestorsOf(state, task.id).has(question.origin);
+  return !question.requirements?.length || question.requirements.some(key => task.requirements.includes(key));
+}
+/** 해시에 들어가는 질문 모양 — parseQuestions 에 키(options·source 등)가 늘어도 해시가 바뀌지 않는다. 키 순서는 옛 `{...question, content}` 와 같다 */
+export function hashedQuestion(question: Question, content: string) {
+  return { id: question.id, title: question.title, answer: question.answer,
+    ...(question.status ? { status: question.status } : {}), ...(question.requirements ? { requirements: question.requirements } : {}),
+    ...(question.origin ? { origin: question.origin } : {}), content };
+}
+/** questions.md 본문 — 메모 범위 안에서는 stat 으로 검증한 메모를 쓴다. 없으면 undefined */
+function questionsText(work: Work): string | undefined {
+  const path = join(work.repoRoot, workDocsDir(work.active.id), "questions.md");
+  if (!cache) return existsSync(path) && statSync(path).isFile() ? readFileSync(path, "utf8") : undefined;
+  const key = statKey(path);
+  if (!key) { cache.questions.delete(path); return undefined; }
+  const memo = cache.questions.get(path);
+  if (memo && sameStat(memo, key)) return memo.text;
+  const text = readFileSync(path, "utf8");
+  cache.questions.set(path, { ...key, text });
+  return text;
+}
+function relevantQuestions(work: Work, task: PlanningTask, state: PlanningState) {
+  const text = questionsText(work);
+  if (text === undefined) return [];
+  const blocks = text.split(/^## /m).slice(1);
+  return parseQuestions(text).filter(question => questionApplies(question, task, state))
+    .map(question => hashedQuestion(question, blocks.filter(block => block.split(/\s/)[0] === question.id).map(block => block.trim()).join("\n")));
+}
+/** 입력 해시와 그 부품. 직렬화 객체는 기존 taskHash 와 키 순서까지 같다 — 진행 중 작업의 결과를 낡게 만들지 않는다 */
+export function hashInput(work: Work, state: PlanningState, task: PlanningTask): HashedInput {
+  const memoKey = cache ? JSON.stringify([task, task.dependsOn.map(id => [id, dependencyValue(state, task, id)]), [...ancestorsOf(state, task.id)].sort(), state.tasks.map(record => record.task.id)]) : undefined;
+  const memo = memoKey === undefined ? undefined : cache!.hashes.get(memoKey);
+  if (memo) return memo;
+  const inputs = inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)] as [string, string]);
+  // 호스트가 직접 주입하는 지침은 중복 전달하지 않지만 변경 시 기존 판단을 재사용하지 않는다.
+  const host = task.contextVersion === 2 ? ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)] as [string, string]) : undefined;
+  const dependencies = task.dependsOn.map(id => [id, dependencyValue(state, task, id)] as [string, string | undefined]);
+  const questions = relevantQuestions(work, task, state);
+  const manifest = hashManifest(work.manifest);
+  const hash = sha(JSON.stringify({ task, base: work.active.baseCommit, manifest, inputs, ...(host ? { hostInstructions: host } : {}), dependencies, questions }));
+  const value: HashedInput = { hash, parts: {
+    task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)),
+    ...(inputs.length <= 50 ? { files: Object.fromEntries(inputs) } : {}), ...(host ? { host: sha(JSON.stringify(host)) } : {}), dependencies,
+    questions: questions.map(question => [question.id, sha(JSON.stringify(question)), ...(question.origin ? [question.origin] : [])] as [string, string, string?]),
+  } };
+  if (memoKey !== undefined) cache!.hashes.set(memoKey, value);
+  return value;
+}
+export function taskHash(work: Work, state: PlanningState, task: PlanningTask): string {
+  return hashInput(work, state, task).hash;
 }
 export function taskCurrent(work: Work, state: PlanningState, record: TaskRecord, seen = new Set<string>()): boolean {
   if (seen.has(record.task.id)) return false;
@@ -166,10 +321,96 @@ export function readyProblems(work: Work, state: PlanningState, record: TaskReco
     if (!dep || !taskCurrent(work, state, dep)) problems.push(`선행 작업 ${id}의 현재 입력에 대한 완료 결과가 없습니다`);
     if (dep?.attempts.at(-1)?.result?.findings.some(item => item.severity === "blocking")) problems.push(`선행 작업 ${id}에 차단 지적이 있습니다`);
   }
-  const open = unansweredQuestions(work.repoRoot, `${workDocsDir(work.active.id)}/questions.md`);
-  for (const question of open) if (!question.requirements?.length || record.task.questionIds.includes(question.id) || question.requirements.some(key => record.task.requirements.includes(key))) problems.push(`미결 질문 ${question.id}`);
+  // 출처가 기록된 질문은 출처 작업과 그 후손 배정만 막는다 — 앞 단계 재배정(되감은 뒤)은 막지 않는다
+  const text = questionsText(work);
+  const open = text === undefined ? [] : parseQuestions(text).filter(question => question.answer === "");
+  for (const question of open) if (questionApplies(question, record.task, state)) problems.push(`미결 질문 ${question.id}`);
   for (const file of record.task.inputs) if (fileHash(work.repoRoot, file) === "missing") problems.push(`입력 파일이 없습니다: ${file}`);
   return problems;
+}
+
+// ---- 실행 중 배정의 관찰 상태 ----
+
+/** running 시도의 관찰 정보 — advance·dispatch·status·SessionStart 가 같은 판정(retryPolicy.orphanState)과 같은 문구를 쓴다 */
+export interface RunView {
+  state: "running" | "orphaned" | "suspect";
+  dispatchId: string; observedStart: boolean;
+  /** 배정 시각부터 */
+  elapsedMin: number; reason: string; agentSession?: string;
+}
+const minutesSince = (now: number, at: string): number => Math.max(0, Math.floor((now - Date.parse(at)) / 60_000));
+export const ORPHANED_REASON = "연결된 담당이 끝났는데 결과가 기록되지 않았습니다";
+export function runView(state: PlanningState, record: TaskRecord, attempt: TaskAttempt, now: number): RunView {
+  const agentType = TASK_AGENTS[record.task.role];
+  const verdict = orphanState({ attempt, agentType, agents: state.agents, now });
+  const dispatched = Date.parse(attempt.at), elapsedMin = minutesSince(now, attempt.at);
+  const base = { state: verdict, dispatchId: attempt.dispatchId, elapsedMin };
+  const linked = state.agents.filter(agent => agent.dispatchId === attempt.dispatchId);
+  const open = linked.filter(agent => !agent.finished);
+  if (open.length) {
+    const latest = open.reduce((a, b) => Date.parse(a.startedAt) >= Date.parse(b.startedAt) ? a : b);
+    return { ...base, observedStart: true, agentSession: latest.session, reason: `담당이 ${minutesSince(now, latest.startedAt)}분째 끝나지 않았습니다` };
+  }
+  if (linked.length) return { ...base, observedStart: true, agentSession: linked.at(-1)!.session, reason: ORPHANED_REASON };
+  // 시작 때 후보가 여럿이라 연결하지 못한 담당(병렬 시작)은 이 배정의 담당일 수 있다
+  const ambiguous = state.agents.filter(agent => !agent.dispatchId && agent.type === agentType && Date.parse(agent.startedAt) >= dispatched && !agent.finished);
+  if (ambiguous.length) {
+    const earliest = ambiguous.reduce((a, b) => Date.parse(a.startedAt) <= Date.parse(b.startedAt) ? a : b);
+    return { ...base, observedStart: true, agentSession: earliest.session, reason: `담당이 ${minutesSince(now, earliest.startedAt)}분째 끝나지 않았습니다` };
+  }
+  // 시작 미관찰 — 배정 뒤 관찰된 마지막 담당 활동(시작·종료)이 있으면 함께 보인다
+  const activity = state.agents.flatMap(agent => [agent.startedAt, agent.endedAt]).filter((at): at is string => !!at).filter(at => Date.parse(at) >= dispatched);
+  const last = activity.length ? activity.reduce((a, b) => Date.parse(a) >= Date.parse(b) ? a : b) : undefined;
+  return { ...base, observedStart: false, reason: `담당 시작이 관찰되지 않았습니다(배정 ${elapsedMin}분 전${last ? `, 마지막 담당 활동 ${minutesSince(now, last)}분 전` : ""})` };
+}
+
+// ---- 낡은 이유 ----
+
+export type StaleKind = "no-run" | "status" | "unknown" | "task" | "base" | "manifest" | "host" | "inputs" | "dependencies" | "questions" | "outputs" | "upstream";
+export interface StaleCause { kind: StaleKind; text: string }
+/** 되감기 알림의 원인 요약을 고르는 순서 */
+export const STALE_PRIORITY: readonly StaleKind[] = ["base", "manifest", "host", "task", "inputs", "questions", "dependencies", "outputs", "upstream", "unknown", "status", "no-run"];
+const listed = (paths: string[]): string => paths.length <= 6 ? paths.join(", ") : `${paths.slice(0, 6).join(", ")} … 외 ${paths.length - 6}개`;
+/** 작업이 current 가 아닌 이유 — 기록된 입력 부품과 지금 값을 항목별로 비교한다 */
+export function staleCauses(work: Work, state: PlanningState, record: TaskRecord): StaleCause[] {
+  const last = record.attempts.at(-1);
+  if (!last) return [{ kind: "no-run", text: "실행 기록이 없습니다" }];
+  if (last.status !== "completed") return [{ kind: "status", text: `마지막 실행 상태: ${last.status}` }];
+  const causes: StaleCause[] = [];
+  const now = hashInput(work, state, record.task);
+  if (now.hash !== last.inputHash) {
+    const before = last.inputParts;
+    if (!before) causes.push({ kind: "unknown", text: "입력이 바뀌었습니다 — 이전 기록이라 바뀐 항목을 알 수 없습니다" });
+    else {
+      const after = now.parts;
+      if (before.task !== after.task) causes.push({ kind: "task", text: "작업 정의(inputs·requirements 등)가 바뀌었습니다" });
+      if (before.base !== after.base) causes.push({ kind: "base", text: "기준 커밋이 바뀌었습니다" });
+      if (before.manifest !== after.manifest) causes.push({ kind: "manifest", text: "code-agent.json 이 바뀌었습니다" });
+      if (before.host !== after.host) causes.push({ kind: "host", text: "CLAUDE.md·AGENTS.md 가 바뀌었습니다" });
+      if (before.inputs !== after.inputs) {
+        if (before.files && after.files) {
+          const paths = [...new Set([...Object.keys(before.files), ...Object.keys(after.files)])].sort().filter(path => before.files![path] !== after.files![path]);
+          causes.push({ kind: "inputs", text: paths.length ? `입력 파일: ${listed(paths)}` : "입력 파일 내용·목록이 바뀌었습니다" });
+        } else causes.push({ kind: "inputs", text: "입력 파일 내용·목록이 바뀌었습니다" });
+      }
+      const depBefore = new Map(before.dependencies), changedDeps = after.dependencies.filter(([id, hash]) => depBefore.get(id) !== hash).map(([id]) => id);
+      if (changedDeps.length || before.dependencies.length !== after.dependencies.length) causes.push({ kind: "dependencies", text: `선행 결과가 바뀌었습니다: ${changedDeps.join(", ") || before.dependencies.map(([id]) => id).join(", ")}` });
+      const qBefore = new Map(before.questions.map(item => [item[0], item])), qAfter = new Map(after.questions.map(item => [item[0], item]));
+      const scope = (origin?: string) => origin ? `출처 ${origin}` : "출처 없음 — [Requirements] 범위로 적용";
+      for (const [id, item] of qAfter) if (qBefore.get(id)?.[1] !== item[1]) causes.push({ kind: "questions", text: `질문 ${id} 추가·변경(${scope(item[2])})` });
+      for (const [id, item] of qBefore) if (!qAfter.has(id)) causes.push({ kind: "questions", text: `질문 ${id} 빠짐(${scope(item[2])})` });
+      if (!causes.length) causes.push({ kind: "unknown", text: "입력이 바뀌었습니다 — 바뀐 항목을 알 수 없습니다" });
+    }
+  }
+  for (const [file, hash] of Object.entries(last.outputs ?? {})) if (fileHash(work.repoRoot, file) !== hash) causes.push({ kind: "outputs", text: `출력 문서가 기록 뒤 바뀌었습니다: ${file}` });
+  for (const id of record.task.dependsOn) {
+    const dep = state.tasks.find(item => item.task.id === id);
+    if (!dep || !taskCurrent(work, state, dep)) causes.push({ kind: "upstream", text: `선행 작업 ${id} 가 낡았습니다` });
+  }
+  return causes;
+}
+export function staleReasons(work: Work, state: PlanningState, record: TaskRecord): string[] {
+  return staleCauses(work, state, record).map(cause => cause.text);
 }
 
 const OUTPUTS: Record<PlanningTask["role"], string[]> = {
@@ -192,24 +433,30 @@ export function crossCriticProblems(root: string, state: PlanningState): string[
 
 export function planningProblems(work: Work, phase: "analysis" | "impact" | "design" | "plan"): string[] {
   if (!work.active.planningVersion) return [];
-  const state = loadPlanning(work);
-  const impactRole = state.tasks.some(record => record.task.role === "impact") ? "impact" : "synthesis";
-  const roles: PlanningTask["role"][] = phase === "analysis" ? ["analysis"] : phase === "impact" ? ["analysis", impactRole] : phase === "design" ? ["analysis", impactRole, "design"] : ["analysis", impactRole, "design", "plan", "critic"];
-  const problems: string[] = [];
-  for (const role of roles) {
-    const records = state.tasks.filter(record => record.task.role === role);
-    if (records.length !== 1 || !taskCurrent(work, state, records[0])) problems.push(`${role}: 현재 입력에 대한 관찰된 완료 결과가 필요합니다 — code-agent planning status`);
-    const result = records[0]?.attempts.at(-1)?.result;
-    if (result?.findings.some(item => item.severity === "blocking")) problems.push(`${role}: 차단 지적이 남아 있습니다`);
-  }
-  if (phase !== "analysis") {
-    const explorers = state.tasks.filter(record => record.task.role === "explore" || record.task.role === "impact");
-    if (!explorers.length) problems.push("영역 조사 작업이 필요합니다. 빈 저장소도 조사 결과로 기록하세요");
-    for (const record of explorers) if (!taskCurrent(work, state, record)) problems.push(`영역 조사 ${record.task.id}가 완료되지 않았거나 오래됐습니다`);
-    problems.push(...mergeProblems(state));
-  }
-  if (phase === "plan") problems.push(...crossCriticProblems(work.repoRoot, state));
-  return problems;
+  return withPlanningCache(() => {
+    const state = loadPlanning(work);
+    const impactRole = state.tasks.some(record => record.task.role === "impact") ? "impact" : "synthesis";
+    const roles: PlanningTask["role"][] = phase === "analysis" ? ["analysis"] : phase === "impact" ? ["analysis", impactRole] : phase === "design" ? ["analysis", impactRole, "design"] : ["analysis", impactRole, "design", "plan", "critic"];
+    const problems: string[] = [];
+    for (const role of roles) {
+      const records = state.tasks.filter(record => record.task.role === role);
+      if (records.length !== 1 || !taskCurrent(work, state, records[0])) {
+        problems.push(PLANNING_PHASES.indexOf(ROLE_PHASE[role]) < PLANNING_PHASES.indexOf(phase)
+          ? `${role}: 현재 입력에 대한 관찰된 완료 결과가 필요합니다 — 앞 단계(${ROLE_PHASE[role]}) 결과가 낡았습니다. code-agent planning advance 가 되감을 단계를 알려 줍니다`
+          : `${role}: 현재 입력에 대한 관찰된 완료 결과가 필요합니다 — code-agent planning status`);
+      }
+      const result = records[0]?.attempts.at(-1)?.result;
+      if (result?.findings.some(item => item.severity === "blocking")) problems.push(`${role}: 차단 지적이 남아 있습니다`);
+    }
+    if (phase !== "analysis") {
+      const explorers = state.tasks.filter(record => record.task.role === "explore" || record.task.role === "impact");
+      if (!explorers.length) problems.push("영역 조사 작업이 필요합니다. 빈 저장소도 조사 결과로 기록하세요");
+      for (const record of explorers) if (!taskCurrent(work, state, record)) problems.push(`영역 조사 ${record.task.id}가 완료되지 않았거나 오래됐습니다`);
+      problems.push(...mergeProblems(state));
+    }
+    if (phase === "plan") problems.push(...crossCriticProblems(work.repoRoot, state));
+    return problems;
+  });
 }
 export function mergeProblems(state: PlanningState): string[] {
   const facts = new Map<string, string>();
@@ -221,4 +468,21 @@ export function mergeProblems(state: PlanningState): string[] {
     }
   }
   return [...new Set(problems)];
+}
+
+/**
+ * 업무 규칙 KNOWLEDGE 파일 — 새 analysis·design 기본 작업의 inputs 에 넣는다. 매니페스트의 경로가 파일이면 그 경로,
+ * 폴더면 바로 아래 `.md` 를 정렬해 넣는다. 계획 자료 경로 규칙을 지키지 않는 경로와 작업 폴더 아래 경로는 뺀다.
+ */
+export function businessRuleFiles(work: Work): string[] {
+  const files: string[] = [];
+  for (const entry of docPaths(work.manifest, "business-rules")) {
+    if (entry.includes("\\") || entry.startsWith("./") || entry.split("/").includes("..") || /^\.(?:git|code-agent|claude|codex|agents)(?:\/|$)/i.test(entry) || /^doc\/work(?:\/|$)/.test(entry)) continue;
+    let full: string;
+    try { full = planningPath(work.repoRoot, entry); } catch { continue; }
+    const stat = statSync(full, { throwIfNoEntry: false });
+    if (stat?.isFile()) files.push(entry);
+    else if (stat?.isDirectory()) files.push(...readdirSync(full).filter(name => name.endsWith(".md")).sort().map(name => posix.join(entry, name)));
+  }
+  return [...new Set(files)].sort();
 }

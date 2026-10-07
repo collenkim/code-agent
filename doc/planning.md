@@ -27,10 +27,18 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 | 값 | 메인의 동작 |
 |---|---|
+| `rewind-required` | 앞 단계 계획 작업이 지금 입력과 맞지 않는다(배정하지 않는다). `rewind.auto`가 true면 사용자 지시 없이 `rewind.command`(`code-agent back <단계>`)를 실행하고 그 단계 스킬로 잇는다. `rewind.notice`가 있으면 그 한 줄을 먼저 사용자에게 알린다. false면 되감지 않고 `rewind.reason`과 `rewind.tasks[].staleBecause`를 사용자에게 보고해 지시를 받는다. |
 | `dispatch` | 배정마다 지정된 담당을 호출한다. 반환한 작업은 이미 배정 상태이므로 dispatch를 다시 호출하지 않는다. |
-| `wait` | 실제 완료 이벤트를 기다린다. 상태를 반복 조회하지 않는다. |
-| `blocked` | 질문·충돌·입력 변경·한도 등 사유를 해결한다. |
+| `stale` | 담당 시작이 관찰되지 않았거나 너무 오래 끝나지 않은 배정이 있다(`stale`·`cancel`). 기다리지 않는다 — 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 `planning cancel <ID>` 뒤 advance 한다. |
+| `wait` | 실제 완료 이벤트를 기다린다. 상태를 반복 조회하지 않는다. 담당 호출이 이미 끝났는데도 `wait`이면 `planning cancel <ID>` 뒤 advance 한다. |
+| `blocked` | 질문·충돌·입력 변경·한도 등 사유를 해결한다. 항목의 `class`가 `same-input-repeat`·`reassign-total`이면 다시 배정하지 말고 사유와 한도(`counter`)를 사용자에게 보고한다. |
 | `ready-for-gate` | 기존 문서 검사·계획 제출·승인 절차로 이어간다. 단계 전환이나 승인 완료를 뜻하지 않는다. |
+
+우선순위는 표의 위에서 아래다(`rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`). `running`(실행 중 배정의 담당 시작 관찰 여부·배정 뒤 경과 분), `orphaned`(이번 호출이 고아로 표시한 배정), `stale`·`cancel`, `rewind`, `feedback`은 해당할 때만 실린다.
+
+**되감기** — 앞 단계 작업이 낡은 이유는 `rewind.tasks[].staleBecause`(입력 파일·질문·선행 결과·기준 커밋·code-agent.json·호스트 지침 등 항목별)로 보인다. 자동 되감기는 같은 사유(단계와 작업별 낡은 원인)에 한 번이다. 기록은 `planning.json`의 `retry.rewinds`(최근 20개)에 남고 승인 묶음 밖이다. 두 번째부터는 `auto:false`로 사람에게 넘긴다 — 계속 바뀌는 입력이 앞 단계를 반복해 돌리는 일을 막는다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `rewind.notice`가 다시 도는 작업 수를 한 줄로 알린다. 되감기는 커서만 옮기고 지우는 것이 없으며, 다시 `next`로 모든 게이트를 지난다.
+
+**차단 지적** — `feedback[]`은 이 단계 이하 작업과 현재 critic의 교차 검토가 낸 차단 지적이다. `citedTask`·`citedPhase`는 지적의 근거 문서를 낸 작업일 뿐 원인이 아니다(예: AC→TC 공백은 04를 인용해도 고칠 곳은 07·plan이다). 고칠 작업은 지적 내용으로 정하고, 앞 단계 작업을 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고해 지시를 받는다. 차단 지적으로는 자동으로 되감지 않는다.
 
 완료 이벤트 뒤 advance를 다시 호출하면 새로 실행 가능한 작업만 배정한다. 여러 메인이 동시에 호출해도 배정은 같은 잠금 안에서 결정한다. 명시적인 작업 정의에는 기존 `planning prepare <작업.json>`을 사용하며 prepare·dispatch도 계속 지원한다.
 
@@ -40,7 +48,7 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 그 밖에는 explore → synthesis를 유지한다. 작은 저장소여도 영역을 따로 조사해야 하면 **첫 advance 전에** `planning prepare <작업.json>`으로 분할한다. 인자 없는 prepare도 기존 두 역할 흐름을 선택한다. 한번 준비한 방식은 유지하며 impact와 분할 조사를 섞을 수 없다. 통합 조사는 조사 생략이 아니다. 근거·모든 R의 영향·호출자·회귀 위험을 기록하고 미결 질문·차단 지적·사실 충돌을 동일하게 검사한다. 분석·설계·계획·critic·승인은 유지하므로 작은 기본 흐름의 역할 호출은 6개에서 5개가 된다.
 
-새 기본 작업은 `contextVersion: 2`를 기록한다. 입력은 직접 의존 작업의 출력과 역할별 필수 문서를 연결한다. 모든 판단 역할에 01을 제공하고 계획에는 회귀 위험 확인용 02, critic에는 01~04와 계획·테스트 명세를 유지한다. explore·synthesis는 아키텍처·컨벤션을 기본 정책으로 받으며 다른 역할은 정책 4종을 받는다. 추가 정책·KNOWLEDGE·영역 밖 호출자는 `inputs` 또는 명시한 파일 범위로 연결한다. 범위를 벗어난 사실을 추측하지 않는다. 명시 작업도 `contextVersion: 2`로 선택할 수 있다.
+새 기본 작업은 `contextVersion: 2`를 기록한다. 새로 만드는 analysis·design 기본 작업은 존재하는 업무 규칙 KNOWLEDGE(매니페스트의 business-rules 경로 — 파일이면 그 파일, 폴더면 바로 아래 `.md`)를 `inputs`에 넣고, analysis 단계 context는 지시서의 접수 요구 낱말로 고른 참고 문서 절을 싣는다. 이미 준비된 작업의 `inputs`는 바꾸지 않는다(진행 중 작업의 입력 해시를 지킨다). 입력은 직접 의존 작업의 출력과 역할별 필수 문서를 연결한다. 모든 판단 역할에 01을 제공하고 계획에는 회귀 위험 확인용 02, critic에는 01~04와 계획·테스트 명세를 유지한다. explore·synthesis는 아키텍처·컨벤션을 기본 정책으로 받으며 다른 역할은 정책 4종을 받는다. 추가 정책·KNOWLEDGE·영역 밖 호출자는 `inputs` 또는 명시한 파일 범위로 연결한다. 범위를 벗어난 사실을 추측하지 않는다. 명시 작업도 `contextVersion: 2`로 선택할 수 있다.
 
 같은 계약은 선행 결과의 실행 ID만 바뀐 경우 후속 결과를 재사용한다. 선행 작업이 현재 입력에 대해 완료됐는지 먼저 검사하며 결과의 판단·근거·질문·문서·지적이 바뀌면 무효화한다. 현재 실행의 관찰 식별자 검증은 유지한다. 기존 작업의 contextVersion 없는 입력·해시 계약은 바꾸지 않는다. 상태 파일 버전은 1을 유지하지만 새 impact 역할을 이해하지 못하는 구버전으로 실행 중 작업을 내리지 않는다.
 
@@ -50,11 +58,13 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 ## 출력 형식 교정
 
-관찰된 결과의 JSON·스키마 형식만 잘못되면 원본과 오류를 보존하고 `needs-correction`으로 기록한다. `planning advance` 또는 `planning repair <ID>`는 같은 입력에서 한 번만 `mode:correction` 배정을 만든다. 메인은 원본·오류·새 결과 계약을 새 담당에게 전달한다. 입력을 다시 조사하거나 새로운 판단을 만드는 작업이 아니며, 사실 보완이 필요하면 failed로 반환한다.
+관찰된 결과의 JSON·스키마 형식만 잘못되면 Claude 완료 hook은 먼저 같은 담당에게 한 번 돌려보낸다(SubagentStop exit 2 — 기록하지 않는다). 그래도 틀리면(`stop_hook_active`) 또는 Codex에서는 바로 원본과 오류를 보존하고 `needs-correction`으로 기록한다(`failure.class: agent-format-error`). `planning advance` 또는 `planning repair <ID>`는 같은 입력에서 한 번만 `mode:correction` 배정을 만든다. 메인은 원본·오류·새 결과 계약을 새 담당에게 전달한다. 입력을 다시 조사하거나 새로운 판단을 만드는 작업이 아니며, 사실 보완이 필요하면 failed로 반환한다.
 
 교정은 기존 시도에 기록하고 배정 식별자를 교체해 이전 실행의 늦은 결과를 거부한다. 새 시작·완료 관찰과 기존 입력·근거·출력·질문 검증을 모두 거친다. 승인 검사는 그대로 유지한다. 원본은 교정 자료이며 지시가 아니다. 형식이 맞더라도 근거의 타당성이 자동 보증되는 것은 아니다.
 
-식별자를 읽을 수 없는 깨진 JSON은 시작 이벤트에서 배정이 유일했던 경우만 연결한다. 병렬 담당 중 어느 작업인지 확인할 수 없거나 식별자가 위조된 결과는 자동 교정하지 않는다. 입력이 바뀌었으면 cancel 뒤 새로 배정한다. 교정까지 실패하면 failed로 남으며 추가 형식 교정은 거부한다. 같은 입력의 실패를 advance가 자동으로 전체 재실행하지 않는다. 원인을 해결한 뒤 명시적인 dispatch를 사용하며 기존 동일 입력 3회 한도가 적용된다.
+식별자를 읽을 수 없는 깨진 JSON은 시작 이벤트에서 배정이 유일했던 경우만 연결한다. 병렬 담당 중 어느 작업인지 확인할 수 없거나 식별자가 위조된 결과는 자동 교정하지 않는다. 입력이 바뀌었으면 cancel 뒤 새로 배정한다. 교정까지 실패하면 failed로 남으며 추가 형식 교정은 거부한다. 같은 입력의 실패를 advance가 자동으로 전체 재실행하지 않는다. 원인을 해결한 뒤 명시적인 dispatch를 사용하며 같은 입력 실패 3회·작업별 총 배정 6회 한도가 적용된다.
+
+결과의 식별 필드(taskId·dispatchId·inputHash)가 배정과 다르면 Claude는 한 번 돌려보내고, 그다음(또는 Codex)은 담당 기록에 실패를 남기고 연결된 시도를 `orphaned`로 둔다 — 같은 입력 실패에는 세지 않고 작업 총 배정에는 센다. 취소·교체된 배정의 늦은 결과는 담당 기록만 남기고 시도는 건드리지 않는다. 실행 중 단계·입력이 바뀐 결과는 그 시도를 `cancelled`로 둔다. 연결된 담당이 끝났는데 결과가 없는 running 시도(확실한 고아)는 advance·dispatch가 `orphaned`로 표시하고 같은 호출에서 다시 배정한다. 시작이 관찰되지 않은 채 10분(배정 시각과 그 뒤 관찰된 마지막 담당 활동 중 늦은 시각부터)이 지났거나 시작이 관찰된 담당이 60분 넘게 끝나지 않은 배정은 `stale`로 보이며 메인이 판단해 cancel한다. 고아 판정은 동시 한도보다 먼저 한다.
 
 ## 수동 배정과 호환 명령
 
@@ -66,7 +76,7 @@ code-agent planning dispatch analysis
 
 `prepare`를 인자 없이 실행하면 **현재 단계**의 기본 작업을 등록한다. analysis는 `analysis`, impact는 `explore`와 `synthesis`, design은 `design`, plan은 `plan`과 `critic`이다. 의존 순서대로 배정한다. 현재 입력의 완료 결과가 있으면 `dispatch`는 `cached: true`로 결과를 반환한다.
 
-새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 갖는다. CLI(`advance`·`dispatch`·`repair`)는 배정 전문에 역할별 문서 기준(`ca-*/criteria.md`)과 출력 문서 뼈대를 붙여 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고, 출력에는 요약과 `assignmentFile`만 남긴다. 배정 파일에는 단계 context(`code-agent context` 출력 — 접수 요구 원문 목록·문서 형식·후보 파일·계획 형식)도 함께 넣는다. 메인은 그 경로를 담당에게 넘기고, 재배정이면 직전 실패·게이트 거부 사유처럼 파일에 없는 작업별 메모만 2~3줄 덧붙인다 — 배정 본문을 Agent 프롬프트에 옮겨 쓰지 않는다. 담당은 출력 문서를 배정의 `staging` 경로(`doc/work/<ID>/.staging/<dispatchId>/`)에 쓰고 계약에 맞는 JSON 하나를 반환하며, 그 JSON의 `artifacts`에는 `{path, staged}`만 넣는다. staging은 PreToolUse가 실행 중인 그 배정의 담당(`agent_id`)에게만 열고, 계획 담당은 그 밖을 쓰지 못한다. Write 도구가 없거나 hook에 `agent_id`가 오지 않는 호스트(Codex)는 `{path, content}`로 전체 내용을 싣는다. 함수(`advancePlanning` 등)의 반환은 전체 배정 그대로다. SubagentStart·SubagentStop의 관찰 훅(Claude는 planning-event, Codex는 codex-event)이 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 완료 이벤트는 담당이 고쳐 다시 보고할 수 있는 실패(배정 식별 오류)만 한 번 돌려보내고, 실패·형식 교정 대기로 기록이 끝났거나 이미 한 번 막힌 재시도(`stop_hook_active`)는 막지 않는다 — 실패 사유는 `planning advance`의 `blocked`로 메인에게 간다. 메인이 임의로 완료를 신고하는 명령은 없다.
+새 배정은 담당 이름, 입력 파일 목록, 선행 결과, 출력 계약, `taskId`·`dispatchId`·`inputHash`를 갖는다. CLI(`advance`·`dispatch`·`repair`)는 배정 전문에 역할별 문서 기준(`ca-*/criteria.md`)과 출력 문서 뼈대를 붙여 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고, 출력에는 요약과 `assignmentFile`만 남긴다. 배정 파일에는 단계 context(`code-agent context` 출력 — 접수 요구 원문 목록·문서 형식·후보 파일·계획 형식)도 함께 넣는다. 메인은 그 경로를 담당에게 넘기고, 재배정이면 직전 실패·게이트 거부 사유처럼 파일에 없는 작업별 메모만 2~3줄 덧붙인다 — 배정 본문을 Agent 프롬프트에 옮겨 쓰지 않는다. 담당은 출력 문서를 배정의 `staging` 경로(`doc/work/<ID>/.staging/<dispatchId>/`)에 쓰고 계약에 맞는 JSON 하나를 반환하며, 그 JSON의 `artifacts`에는 `{path, staged}`만 넣는다. staging은 PreToolUse가 실행 중인 그 배정의 담당(`agent_id`)에게만 열고, 계획 담당은 그 밖을 쓰지 못한다. Write 도구가 없거나 hook에 `agent_id`가 오지 않는 호스트(Codex)는 `{path, content}`로 전체 내용을 싣는다. 함수(`advancePlanning` 등)의 반환은 전체 배정 그대로다. SubagentStart·SubagentStop의 관찰 훅(Claude는 planning-event, Codex는 codex-event)이 세션·에이전트·배정을 대조하고 결과를 기록한 뒤 지정 문서만 생성한다. 완료 hook은 기록 전에 그 역할의 게이트 검사(01 형식·원문 추적, 02 영향 표, 03·04 섹션·AC, 07·plan.json 의 TC·tasks·AC·요구 커버리지·남은 질문, 미결 표시·근거 줄)를 staging 본문에 먼저 돈다 — `next`·`plan submit`과 같은 함수라 더 엄격해지지 않고, 최종 게이트도 그대로 남는다. Claude는 담당이 고쳐 다시 보고할 수 있는 실패(형식·식별·내용 검사)를 같은 담당에게 한 번 돌려보내고(교정 시도의 문서 검사 실패는 제외), 이미 한 번 막힌 재시도(`stop_hook_active`)와 기록이 끝난 실패는 막지 않는다. Codex는 돌려보내지 않고 바로 기록하며 hook은 언제나 0으로 끝난다 — 실패 사유는 `planning advance`의 `blocked`로 메인에게 간다. 메인이 임의로 완료를 신고하는 명령은 없다.
 
 문서와 결과가 준비되면 기존 `code-agent next`를 사용한다. plan은 `code-agent plan submit doc/work/<ID>/plan.json`으로 제출한 뒤 사용자 승인을 받는다. 신규 작업에서는 메인·서브 에이전트의 일반 Write/Edit로 번호 문서와 plan.json을 덮어쓸 수 없다.
 
@@ -115,11 +125,11 @@ code-agent planning dispatch common
 
 - 같은 작업에서 입력 내용·영역 파일 목록·기준 커밋·매니페스트·공통 정책·선행 결과·관련 질문이 같을 때만 결과를 재사용한다. 파일의 추가·삭제·내용 변경도 반영한다.
 - KNOWLEDGE의 키 존재만으로 조사를 생략하지 않는다. 참조한 KNOWLEDGE는 `inputs`에 넣고 현재 코드 근거를 확인한다. 다른 작업의 지식을 자동으로 최신 사실로 인정하지 않는다. `knowledge prune`은 삭제 후보를 찾는 경로 존재 검사이며 내용의 최신성 검사가 아니다.
-- 질문 결과는 `needs-input`으로 반환한다. 코드가 questions.md에 다음 Q 번호(담당이 낸 번호는 쓰지 않는다 — 병렬 담당끼리 겹치지 않게)와 빈 답변·영향 요구를 기록한다. 실제 답을 받은 뒤 관련 작업을 다시 배정한다. `[Requirements]: R1`처럼 범위를 적으며 범위 없는 질문은 전체 작업에 영향을 준다.
+- 질문 결과는 `needs-input`으로 반환한다. 코드가 questions.md에 다음 Q 번호(담당이 낸 번호는 쓰지 않는다 — 병렬 담당끼리 겹치지 않게)와 빈 답변·영향 요구·출처(`[Origin]: <작업 ID>`)를 기록한다. 실제 답을 받은 뒤 관련 작업을 다시 배정한다. 출처가 있는 질문은 그 작업과 후속 작업(dependsOn을 거쳐 그 작업에 닿는 작업)에만 적용된다 — 앞 단계 결과는 낡지 않는다. 교차 검토 질문은 출처가 critic이고, 결과의 요구 원소에서 요구 키만 뽑아 `[Requirements]`에 쓴다(없으면 critic의 요구). 출처 없는 질문(메인이 직접 적은 질문)은 `[Requirements]` 범위가 겹치는 작업에, 범위도 없으면 전체 작업에 적용된다. 질문 본문에는 제목·답변·상태·범위·출처 필드 줄을 넣을 수 없다.
 - `[Answer]: 보류`, 상태 설명만 있는 답변, 중복 Q 번호는 미응답이다. `[Status]`를 명시한 문서는 실제 답을 기록할 때 `answered`로 갱신해야 한다.
-- 중단된 배정은 `code-agent planning cancel <ID>`로 취소한다. 늦게 온 이전 배정 결과는 적용하지 않는다. 같은 입력에 대한 배정은 최대 3회다. 이후에는 원인을 조사하고 입력·작업 정의를 보완한다.
-- 피드백은 작업 폴더의 별도 파일에 기록해 해당 작업의 `inputs`에 추가한다. 단계가 지났으면 기존 back 정책에 따라 돌아가 원인 작업부터 재실행한다. 후속 결과와 critic 검토도 다시 필요하다.
-- 상태는 `.code-agent/work/<ID>/<target>.planning.json`에 보관한다. 짧은 파일 잠금으로 병렬 완료 기록의 덮어쓰기를 방지한다. 비정상 종료로 `.lock`이 남으면 관련 프로세스가 종료됐음을 확인한 뒤 그 잠금 파일만 제거한다.
+- 중단된 배정은 `code-agent planning cancel <ID>`로 취소한다. 늦게 온 이전 배정 결과는 적용하지 않는다. 같은 입력의 실패는 3회까지다(취소·고아는 세지 않는다). 이후에는 원인을 조사하고 입력·작업 정의를 보완한다. 작업마다 배정은 총 6회까지다(취소·고아 포함, `retry.since` 이후). 한도에 닿으면 자동 재배정을 멈추고 사람 판단(같은 입력 +1·총 배정 +3)·재계획·중단 중에서 고른다. `planning status`는 작업마다 실행 관찰(`run`)·낡은 이유(`staleBecause`)·사용량(`budget`)을 보인다.
+- 피드백은 작업 폴더의 별도 파일에 기록해 고칠 작업의 `inputs`에 추가한다. 고칠 작업은 지적 내용으로 정한다. 앞 단계 작업을 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고하고 지시를 받은 뒤 되감는다. 후속 결과와 critic 검토도 다시 필요하다.
+- 상태는 `.code-agent/work/<ID>/<target>.planning.json`에 보관한다. 짧은 파일 잠금(`.lock`, 주인 `{pid, host, at}`)으로 병렬 완료 기록의 덮어쓰기를 방지한다. 같은 PC에서 주인 프로세스가 죽었거나 주인 기록이 없는 잠금이 10분 넘게 남았으면 다음 실행이 회수한다(stderr 한 줄). 주인이 살아 있으면 잠시 기다린 뒤 같은 명령을 한 번만 다시 실행하라고 멈춘다. 다른 PC의 잠금이나 주인을 알 수 없는 잠금은 그 프로세스가 끝났는지 확인한 뒤 사람이 그 잠금 파일만 제거한다.
 
 필수 작업 문서에 `확인 필요`·`TODO`·`TBD`가 있으면 전환·제출·승인을 막는다. 근거 파일·줄이 존재해야 하고 AC는 번호 외에 완료 조건을 가져야 한다. BR은 실제 파일:줄 또는 답변된 Q 번호를 연결한다. 내용의 타당성·충분성은 독립 검토와 사용자 승인이 판단한다.
 

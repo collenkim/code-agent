@@ -2,7 +2,8 @@ import { isAbsolute, resolve } from "path";
 import { decide, HookInput } from "./hook";
 import { findRepoRoot } from "./layout";
 import { observePlanner } from "./planningHook";
-import { observeReviewer, ReviewHookInput } from "./reviewHook";
+import { observeReviewer, RecordedFailure, ReviewHookInput } from "./reviewHook";
+import { subagentExit } from "./retryPolicy";
 import { decideStop } from "./stopHook";
 import { consentStatus, observeConsent } from "./consent";
 import { commonAgentName } from "./hosts";
@@ -84,7 +85,8 @@ export function codexHook(input: CodexHookInput): object {
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.
     const event = {...input, agent_type: commonAgentName(input.agent_type), transcript_path: undefined, agent_transcript_path: undefined};
-    observePlanner(event, root);
+    // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 계획 담당의 실패는 되돌림 없이 바로 기록한다
+    observePlanner(event, root, {host: "codex"});
     observeReviewer(event, root);
   } else if (input.hook_event_name === "UserPromptSubmit") {
     observeCodexConsent(input, root);
@@ -111,6 +113,12 @@ export function runCodexHook(stdin: string): number {
     if (event === "PreToolUse") {
       process.stdout.write(JSON.stringify(deny(`code-agent codex-event 가 판정에 실패해 막았습니다: ${message}`)));
       return 0;
+    }
+    if (event === "SubagentStart" || event === "SubagentStop") {
+      // 기록한 실패든 기록하지 못한 판정 실패든 Codex 는 exit 2 로 턴을 잇지 않는다 — 사유만 남기고 통과한다
+      process.stderr.write(`code-agent codex-event: ${message}\n`);
+      process.stdout.write("{}");
+      return subagentExit({host: "codex", event, recorded: error instanceof RecordedFailure});
     }
     if (event === "Stop") {
       process.stderr.write(`code-agent codex-event 가 Stop 판정에 실패했습니다 (턴은 막지 않았습니다): ${message}\n`);

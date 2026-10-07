@@ -2,8 +2,9 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { canonical, DOCS_SESSION_FILE, findRepoRoot, workDocsDir } from "./layout";
+import { loadPlanning, runView, TASK_AGENTS } from "./planningState";
 import { loadRequestSession } from "./request";
-import { approvalOf, loadWork } from "./work";
+import { approvalOf, loadWork, type Work } from "./work";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 
 /**
@@ -12,20 +13,49 @@ import { aidlcBlock, aidlcWarning } from "./aidlc";
  *
  * 상태와 문서는 `.code-agent/`·작업 폴더에 있으므로 이전 대화 없이도 정확히 이어갈 수 있다.
  * 압축 요약이 동의 ID·단계를 잃어도 여기서 다시 잡는다. 진행 중인 것이 없으면 아무것도 붙이지 않는다.
+ * `source` 는 Claude SessionStart 입력의 값(startup·resume·clear·compact)이다.
  */
-export function sessionAnchor(repoRoot: string): string {
-  const anchor = progress(repoRoot);
+export function sessionAnchor(repoRoot: string, source?: string): string {
+  const anchor = progress(repoRoot, source);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   return aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
 }
 
-function progress(repoRoot: string): string {
+/**
+ * 실행 중으로 기록된 계획 배정 — 대화가 새로 열리면 이전 대화가 부른 담당의 결과는 이 대화로 돌아오지 않는다.
+ * 읽기 실패는 무시한다(이 hook 은 막지 않는다).
+ */
+function runningPlanning(work: Work, source?: string): string[] {
+  if (!work.active.planningVersion) return [];
+  try {
+    const state = loadPlanning(work), now = Date.now();
+    const running = state.tasks.flatMap((record) => {
+      const last = record.attempts.at(-1);
+      if (last?.status !== "running") return [];
+      const view = runView(state, record, last, now);
+      return [{ id: record.task.id, text: `${record.task.id}(${TASK_AGENTS[record.task.role]}, 담당 시작 ${view.observedStart ? "관찰됨" : "미관찰"}, ${view.elapsedMin}분 전)` }];
+    });
+    if (!running.length) return [];
+    const cancel = running.map((item) => `\`code-agent planning cancel ${item.id}\``).join("·");
+    return [
+      `- 실행 중으로 기록된 계획 배정: ${running.map((item) => item.text).join(", ")}`,
+      source === "startup" || source === "resume" || source === "clear"
+        ? `- 이 대화는 방금 시작·재개·비워졌으므로 그 담당의 결과는 이 대화로 돌아오지 않는다. 다른 터미널에서 실행 중이 아니면 ${cancel} 뒤 \`code-agent planning advance\`로 다시 배정한다.`
+        : "- 담당 완료를 기다리는 중이 아니면 `code-agent planning advance`의 stale·cancel 안내를 따른다.",
+    ];
+  } catch {
+    return [];
+  }
+}
+
+function progress(repoRoot: string, source?: string): string {
   const work = loadWork(repoRoot);
   if (work) {
     const { active, order } = work;
     return [
       "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
       `- 작업 ${order.id} (${order.kind}) · 스테이지 ${active.phase}${active.task ? ` · Task ${active.task}` : ""} · 계획 ${work.plan ? approvalOf(work).status : "미제출"} · 작업 폴더 ${workDocsDir(active.id)}/`,
+      ...runningPlanning(work, source),
       "- 이전 대화 내용이 아니라 `code-agent status`와 그 스테이지의 스킬로 이어간다. 사용자가 이어가자고 하면 `/ca-next` 절차를 따른다.",
       "- 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.",
     ].join("\n");
@@ -50,9 +80,9 @@ function progress(repoRoot: string): string {
 /** 막지 않는다 — 실패해도 대화 시작을 방해하지 않고 사유만 stderr로 남긴다 */
 export function runSessionHook(stdin: string): number {
   try {
-    const input = JSON.parse(stdin || "{}") as { cwd?: string };
+    const input = JSON.parse(stdin || "{}") as { cwd?: string; source?: string };
     const projectDir = process.env.CLAUDE_PROJECT_DIR;
-    const text = sessionAnchor(canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd())));
+    const text = sessionAnchor(canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd())), typeof input.source === "string" ? input.source : undefined);
     if (text) process.stdout.write(`${text}\n`);
   } catch (error) {
     process.stderr.write(`code-agent session-event: ${error instanceof Error ? error.message : error}\n`);
