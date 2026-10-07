@@ -7,11 +7,12 @@ import { isDeepStrictEqual } from "util";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
-import { abort, decide, requireValidatable, status } from "./commands";
+import { abort, decide, requireReproable, requireValidatable, status } from "./commands";
 import { baselineFiles, setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
 import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
+import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel, validateModelChange } from "./models";
@@ -25,7 +26,7 @@ import { loadManifestIfAny } from "./work";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
 
 const ActionSchema = z.object({
-  action: z.enum(["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update"]),
+  action: z.enum(["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log"]),
   kind: z.string().optional(), id: z.string().optional(), spec: z.string().optional(),
   decision: z.enum(["accept", "reject"]).default("accept"), comment: z.string().optional(),
   agent: z.string().optional(), model: z.string().optional(), name: z.string().optional(),
@@ -62,7 +63,7 @@ const TITLES: Record<Action["action"], string> = {
   setup: "초기 설정 확정", docs: "공통 문서 확정", baseline: "기준 커밋 생성", request: "요구사항 확인",
   plan: "작업 계획 확인", deliver: "결과와 로컬 커밋 확인", "knowledge-prune": "지식 문서 정리",
   model: "에이전트 모델 변경", abort: "작업 진행 종료", "plugin-add": "플러그인 등록", "plugin-remove": "플러그인 제거",
-  update: "code-agent 업데이트",
+  update: "code-agent 업데이트", "repro-log": "오류 로그 근거로 수정 진행",
 };
 
 function canonicalRoot(root: string): string {
@@ -289,6 +290,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${action.model}${action.reasoning ? ` / ${action.reasoning}` : ""}\n${reasoningHint}적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.`;
       break;
     }
+    case "repro-log": confirmations = capture(() => approveLogBasis(requireReproable(root))); break;
     case "abort": summary = `${status(root)}\n\n접수 또는 작업 진행 상태를 종료합니다. 소스·작업 문서·Git 이력은 삭제하지 않습니다.`; break;
     case "plugin-add": summary = previewPluginAdd(root, action); break;
     case "plugin-remove": summary = previewPluginRemove(action.name); break;
@@ -496,6 +498,7 @@ function applyLocked(root: string, id: string): string {
         case "knowledge-prune": return knowledgePrune(root);
         case "model": return setModel(root,action.agent,action.model,action);
         case "abort": return abort(root);
+        case "repro-log": return approveLogBasis(requireReproable(root));
         case "plugin-add": return pluginAdd(root,action);
         case "plugin-remove": return pluginRemove(action.name);
         case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot}) + "\n사용 중인 호스트를 다시 열어 새 훅·스킬을 적용한 뒤 ca-next로 이어가세요.";

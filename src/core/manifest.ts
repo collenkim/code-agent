@@ -201,6 +201,17 @@ const ManifestSchema = z.object({
         "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
         "덮어쓸 수 없다 — 그 둘은 최상위 선언이 이미 쓰고 있는 이름이다",
     ),
+  environmentErrors: z
+    .array(z.string().min(6, "환경 오류 패턴은 6자 이상의 구체적인 문구로 적습니다 — 'Error' 같은 말은 모든 실패를 환경 탓으로 돌립니다"))
+    .max(50)
+    .optional()
+    .describe(
+      "코드가 아니라 실행 환경 탓인 실패의 출력 문구(대소문자까지 그대로 포함 여부로 대조). 예: " +
+        "\"Could not find a valid Docker environment\", \"Connection refused: localhost:5432\". 실패한 명령의 출력·" +
+        "새 테스트 보고서에 하나라도 들어 있으면 그 실행은 코드 결함(failed)이 아닌 환경 오류(error)다 — 수정이 아니라 " +
+        "진단으로 가고, 코드를 그대로 둔 재실행은 고쳐 쓰기 회차를 쓰지 않으며, fix 의 재현으로도 인정하지 않는다. " +
+        "무엇을 실패로 볼지를 바꾸므로 선언하면 hashManifest 에 들어간다",
+    ),
   commandTimeoutMinutes: z
     .number()
     .int()

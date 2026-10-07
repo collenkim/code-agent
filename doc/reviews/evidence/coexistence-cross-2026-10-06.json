@@ -60,10 +60,40 @@
     "Two case-sensitive filename tests on Windows.",
     "Two POSIX permission tests on Windows."
   ],
-  "pendingDecisions": [
-    "M11/M12: classify environment failures (e.g. Docker down, ApplicationContext load failure) separately from code failures for repair routing, --retry round accounting and reproduction acceptance.",
-    "Cross verification when the other host cannot run (quota, login, outage): currently blocks with no bypass."
-  ],
+  "followUp": {
+    "date": "2026-10-07",
+    "scope": "M11/M12 via declared code-agent.json environmentErrors (user decision: option A)",
+    "full": {
+      "command": "npm test",
+      "log": "dist/environment-errors-regression.log",
+      "sha256": "3e9a32fd5b17a1cbfc04d017e81287d98860dc2425349769d681296bdcc93c3c",
+      "tests": 790,
+      "passed": 786,
+      "failed": 0,
+      "skipped": 4,
+      "cancelled": 0,
+      "durationMs": 564169.1365
+    },
+    "limits": ["Environment readiness simulated with an environment variable; real Docker/Spring not run."]
+  },
+  "followUp2": {
+    "date": "2026-10-07",
+    "scope": "Log-based fix (error log required at intake, analysis log mapping, plan or human-approved log basis, regression TC) and cross verification suspended when the other host cannot run",
+    "fullAfterLogBasedFix": {
+      "command": "npm test",
+      "log": "dist/fix-log-regression.log",
+      "sha256": "b78abd40afdbbeaf4836a0574547611522d238bc91cb1e1580f6dfc16aef18be",
+      "tests": 799, "passed": 795, "failed": 0, "skipped": 4, "cancelled": 0, "durationMs": 738061.6479
+    },
+    "fullFinal": {
+      "command": "npm test",
+      "log": "dist/cross-suspend-regression.log",
+      "sha256": "e633b9489fa3cbee096d07cba9169706444541259916c4e876bb9eeb3b8199c1",
+      "tests": 802, "passed": 798, "failed": 0, "skipped": 4, "cancelled": 0, "durationMs": 643446.8013
+    },
+    "limits": ["Other hosts and human confirmations are fake executables and automated fixtures; no live model run for these follow-ups."]
+  },
+  "pendingDecisions": [],
   "limits": [
     "Other-host execution in automated tests uses fake executables via CODE_AGENT_CLAUDE_BIN / CODE_AGENT_CODEX_BIN.",
     "Real code review cross was not executed because the Codex workspace spend cap was reached.",

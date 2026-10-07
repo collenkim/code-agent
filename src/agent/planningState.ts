@@ -54,7 +54,7 @@ export interface PlanningState {
   tasks: TaskRecord[];
   agents: { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string }[];
   /** 두 호스트가 설치된 프로젝트의 교차 계획 검토 — 다른 호스트를 CLI 가 실행해 같은 critic 입력을 독립 검토한 결과 */
-  cross?: { host: string; model: string; at: string; criticDispatchId: string; status: "completed" | "needs-input" | "failed"; summary: string;
+  cross?: { host: string; model: string; at: string; criticDispatchId: string; status: "completed" | "needs-input" | "failed" | "unavailable"; summary: string;
     findings: { id: string; severity: "blocking" | "advisory"; detail: string; source: { path: string; line: number } }[]; questions: number };
 }
 
@@ -182,7 +182,9 @@ export function crossCriticProblems(root: string, state: PlanningState): string[
   const critic = state.tasks.find((record) => record.task.role === "critic")?.attempts.at(-1);
   if (selectedHosts(root).length < 2 || critic?.status !== "completed") return [];
   const cross = state.cross;
-  if (!cross || cross.criticDispatchId !== critic.dispatchId) return ["교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by <다른 호스트>"];
+  if (!cross || cross.criticDispatchId !== critic.dispatchId) return ["교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by <다른 호스트> (실행할 수 없으면 중지로 기록되고 진행합니다)"];
+  // 다른 호스트를 실행할 수 없었던 critic 결과는 교차 검토 없이 진행한다 — 두 호스트를 모두 쓸 수 있을 때만 교차 검증이다
+  if (cross.status === "unavailable") return [];
   if (cross.status === "needs-input") return ["교차 검토: 질문에 답한 뒤 code-agent planning cross 를 다시 실행하세요"];
   if (cross.status !== "completed") return [`교차 검토가 끝나지 않았습니다: ${cross.summary}`];
   return cross.findings.some((finding) => finding.severity === "blocking") ? ["교차 검토: 차단 지적이 남아 있습니다 — 계약의 수정 피드백으로 원인 작업을 다시 배정하세요"] : [];

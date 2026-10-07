@@ -20,7 +20,7 @@
 | 2026-10-01 | [프로세스 개선](2026-10-01-process-improvements.md) | 접수·계획·실행 흐름 보완 |
 | 2026-10-01 | [프로세스 검토](2026-10-01-process-review.md) | 문제 조사와 초기 검증 |
 
-검증 원자료는 `evidence/`에 보관한다. 최신 결과는 [coexistence-cross-2026-10-06.json](evidence/coexistence-cross-2026-10-06.json)이다. `npm test` 단일 전체 실행은 **786개 중 782개 통과·실패 0개·생략 4개**다. 두 호스트 실측([full-flow-new-2026-10-06-opus-both.json](evidence/full-flow-new-2026-10-06-opus-both.json))은 실제 Codex 교차 계획 검토 두 번과 Claude 교차 계획 검토 한 번을 확인했고, Codex 워크스페이스 사용 한도로 계획 단계에서 멈춰 코드 리뷰 교차는 실제 호스트로 확인하지 못했다.
+검증 원자료는 `evidence/`에 보관한다. 최신 결과는 [coexistence-cross-2026-10-06.json](evidence/coexistence-cross-2026-10-06.json)이다. `npm test` 단일 전체 실행은 **786개 중 782개 통과·실패 0개·생략 4개**였고, 후속(환경 오류 분류·로그 기반 fix·교차 검증 중지) 뒤 최종 전체는 **802개 중 798개 통과·실패 0개·생략 4개**다. 두 호스트 실측([full-flow-new-2026-10-06-opus-both.json](evidence/full-flow-new-2026-10-06-opus-both.json))은 실제 Codex 교차 계획 검토 두 번과 Claude 교차 계획 검토 한 번을 확인했고, Codex 워크스페이스 사용 한도로 계획 단계에서 멈춰 코드 리뷰 교차는 실제 호스트로 확인하지 못했다.
 
 앞선 [consent-snapshot-2026-10-06.json](evidence/consent-snapshot-2026-10-06.json)의 동의 스냅샷 수정 후 `npm test` 단일 전체 실행은 **759개 중 755개 통과·실패 0개·생략 4개**다. 집중 검사 19개는 중복 합산하지 않는다. 외부 hook 파일 쓰기와 질문 이벤트는 자동 fixture이며, Git·파일 시스템·준비 커밋은 실제 실행이다. 실제 AI-DLC 엔진/사람 질문 화면과 대형 저장소 성능은 별도 검증 범위다.
 

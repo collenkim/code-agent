@@ -1,11 +1,12 @@
 import { execFileSync } from "child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
 import { hashManifest, hashPlan } from "../core/approval";
 import { writeAtomic } from "../core/atomic";
 import { runCommand } from "../core/build";
+import { errorLogOf } from "../core/workOrder";
 import type { CommandResult } from "../core/build";
 import {
   checkCommands,
@@ -14,6 +15,7 @@ import {
   loadEvidence,
   missingPlanFiles,
   outsideChanges,
+  environmentBlocked,
   overFixLimit,
   planPaths,
   prepareCommand,
@@ -22,6 +24,7 @@ import {
   runsOf,
   saveEvidence,
   testCaseEvidence,
+  reproBasisOf,
   reproResultProblem,
   testCommands,
   testStageFiles,
@@ -29,11 +32,12 @@ import {
   treeHashNow,
   validationDocFile,
 } from "./evidence";
-import type { CommandSpec, Evidence, Outcome, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
+import type { CommandSpec, Evidence, LogBasis, Outcome, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
 import { logDir, workDocsDir } from "./layout";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
+import { confirmOnTerminal } from "./tty";
 import { freshTestReports, reportSnapshot } from "./testReports";
 import { changedPaths } from "./tree";
 import type { Work } from "./work";
@@ -167,7 +171,11 @@ async function runSpecs(
     const reports = phase === "repro" || phase === "test" || (phase === "integrate" && spec.kind === "test") ? reportSnapshot(cwd) : undefined;
     const result = await runCommand(cwd, spec.argv, commandEnv, work.manifest.commandTimeoutMinutes * 60_000);
     const log = [result.stdout, result.stderr, reports ? freshTestReports(cwd, reports) : ""].filter(Boolean).join("\n").trim();
-    const outcome = outcomeOf(result);
+    // 선언된 환경 오류 문구가 실패 출력에 있으면 코드 결함이 아니라 환경 오류다 — 돌지 못한 것(error)과 같이 다룬다
+    const environment = !result.error && result.status !== 0
+      ? work.manifest.environmentErrors?.find((pattern) => log.includes(pattern))
+      : undefined;
+    const outcome = environment ? "error" : outcomeOf(result);
     const logFile = `.code-agent/log/${phase}-${round}-${spec.kind}.log`;
     writeFileSync(
       join(work.repoRoot, logFile),
@@ -182,10 +190,15 @@ async function runSpecs(
       outcome,
       status: result.status,
       logFile,
-      tail: [result.error ? `실행 실패: ${result.error.message}` : "", tailOf(log, outcome === "passed" ? 5 : 40)]
+      tail: [
+        result.error ? `실행 실패: ${result.error.message}` : "",
+        environment ? `환경 오류: 출력에 선언된 문구 "${environment}" 가 있습니다 (code-agent.json environmentErrors) — 코드 결함으로 보지 않습니다` : "",
+        tailOf(log, outcome === "passed" ? 5 : 40),
+      ]
         .filter(Boolean)
         .join("\n"),
       at,
+      ...(environment ? { environment } : {}),
     });
   }
   return { runs, outputs };
@@ -268,6 +281,12 @@ function persist(work: Work, evidence: Evidence): void {
  */
 function reproProblem(runs: VerifyRun[], found: TestCaseEvidence[]): string | undefined {
   const broken = runs.find((run) => run.outcome === "error" || run.outcome === "not-run");
+  if (broken?.environment) {
+    return (
+      `재현 실행이 환경 오류로 실패했습니다 (${broken.kind}: 출력에 "${broken.environment}") — 결함을 찌른 실패가 아니라 ` +
+      "재현으로 인정하지 않습니다. 환경을 고친 뒤 code-agent repro 를 다시 실행하세요."
+    );
+  }
   if (broken) {
     return (
       `재현 명령이 돌지 못했습니다 (${broken.kind}: ${broken.outcome}) — ` +
@@ -307,7 +326,10 @@ function reproSummary(work: Work, evidence: Evidence): string {
     "",
     `재현 TC: ${(evidence.repro?.cases ?? []).join(", ")} · 테스트 트리 ${evidence.repro?.testTreeHash ?? "없음"}`,
     `⑧ ${validationDocFile(work.active.id)} 를 렌더했습니다.`,
-    "재현을 봤습니다 — 이제 고칠 파일을 쓸 수 있습니다. kind:\"test\" 단계의 파일은 여기서 얼었습니다.",
+    evidence.repro?.mode === "log"
+      ? `로그 근거로 진행합니다(${evidence.repro.basis?.detail ?? ""}) — 수정 전 결과: ${evidence.repro.found.map((entry) => `${entry.id} ${entry.status ?? "unknown"}`).join(", ")}. ` +
+        "이제 고칠 파일을 쓸 수 있고, 이 TC 는 회귀 TC 로 수정 후 통과해야 합니다. kind:\"test\" 단계의 파일은 여기서 얼었습니다."
+      : "재현을 봤습니다 — 이제 고칠 파일을 쓸 수 있습니다. kind:\"test\" 단계의 파일은 여기서 얼었습니다.",
   ];
   for (const run of runs.filter((entry) => entry.outcome === "failed")) {
     lines.push("", `## ${run.kind} 실패 — 재현입니다 (마지막 40줄${wholeLog(run)})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
@@ -388,20 +410,68 @@ export async function repro(work: Work): Promise<string> {
   // 인데, 파일 안에 id 가 있다는 것은 무엇이 실패했는지 말해 주지 않는다 — 다른 TC 의 실패도, 깨진
   // import 도 같은 `failed` 로 보인다. **실패한 실행의 출력**만 본다.
   // 같은 실행에서 다른 TC가 실패했더라도 재현 대상 TC 자체가 failed여야 한다.
-  const failedOutput = outputs.filter((_, index) => runs[index].outcome === "failed").join("\n");
+  // 로그 근거는 수정 전 결과를 기록만 한다 — 통과도 남겨야 하므로 실패한 실행만이 아니라 전체 출력에서 읽는다
+  const reproBasis = reproBasisOf(work, evidence);
+  const failedOutput = outputs.filter((_, index) => reproBasis.mode === "log" || runs[index].outcome === "failed").join("\n");
   const found = testCaseEvidence(work, failedOutput).filter((entry) => cases.includes(entry.id));
   for (const id of cases) if (!found.some((entry) => entry.id === id)) found.push({ id, source: "없음", status: "unknown" });
-  const problem = reproProblem(runs, found);
+  const at = new Date().toISOString();
+  const problem = reproBasis.mode === "log" ? undefined : reproProblem(runs, found);
   if (problem) {
-    // 판정에 실패해도 무엇을 돌렸는지는 남긴다 — 그러고 나서 세운다
+    // 판정에 실패해도 무엇을 돌렸는지는 남긴다 — 로그 근거 전환을 사람이 판단할 시도 기록이다
+    evidence.reproAttempt = { at, testTreeHash: testHash, cases, found, problem };
     persist(work, evidence);
-    throw new Stop(`${problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.`);
+    const logged = errorLogOf(readFileSync(join(repoRoot, active.spec), "utf-8"));
+    throw new Stop(
+      `${problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.\n` +
+        (logged && "log" in logged
+          ? "로컬에서 재현되지 않는 결함이면 오류 로그를 근거로 고칠 수 있습니다 — 시도 기록을 보여 주고 사람에게 확인받으세요 (ca-answer 의 repro-log 동의). 확인 없이 고칠 파일을 쓰지 않습니다."
+          : "지시서에 오류 로그가 없어 로그 근거로 넘어갈 수 없습니다 — 재현 테스트를 다시 보거나 고치지 말고 보고하세요."),
+    );
   }
 
   if (testHash !== testTreeHashNow(work)) throw new Stop("재현 중 테스트 파일이 바뀌었습니다 — 다시 재현하세요.");
-  evidence.repro = { at: new Date().toISOString(), testTreeHash: testHash, cases, found };
+  evidence.repro = {
+    at, testTreeHash: testHash, cases, found,
+    ...(reproBasis.mode === "log" ? { mode: "log" as const, basis: reproBasis.basis } : {}),
+  };
+  delete evidence.reproAttempt;
   persist(work, evidence);
   return reproSummary(work, evidence) + (refreshing ? "\n기준 코드와 수정된 테스트로 격리 재현을 갱신했습니다. 작업 코드는 그대로 보존했습니다." : "");
+}
+
+/**
+ * 로컬에서 재현되지 않은 결함을 오류 로그 근거로 고치기로 사람이 확인한다 — ca-answer 의 repro-log 동의로만 온다.
+ * 확인 전에는 아무것도 바꾸지 않는다(동의 준비가 확인 지점에서 끊는다).
+ */
+export function approveLogBasis(work: Work): string {
+  if (work.order.kind !== "fix" || work.active.phase !== "implement") throw new Stop("로그 근거 전환은 fix 의 구현 단계에서만 합니다.");
+  const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  const attempt = evidence?.reproAttempt;
+  if (evidence?.repro) throw new Stop("이미 재현(또는 로그 근거) 기록이 있습니다 — 고칠 파일을 쓰면 됩니다.");
+  if (!evidence || !attempt) throw new Stop("로컬 재현 시도 기록이 없습니다 — code-agent repro 를 먼저 돌리세요.");
+  if (attempt.testTreeHash !== testTreeHashNow(work)) throw new Stop("재현을 시도한 뒤 테스트 파일이 바뀌었습니다 — code-agent repro 로 다시 시도하세요.");
+  const logged = errorLogOf(readFileSync(join(work.repoRoot, work.active.spec), "utf-8"));
+  if (!logged || !("log" in logged)) throw new Stop("지시서에 오류 로그가 없어 로그 근거로 고칠 수 없습니다 — 재현되지 않은 결함은 보고합니다.");
+  const excerpt = logged.log.replace(/\r\n/g, "\n").split("\n");
+  const shown = [
+    `${work.active.id} — 로컬에서 재현되지 않았습니다 (${attempt.at})`,
+    `- 판정: ${attempt.problem.split("\n")[0]}`,
+    `- 재현 TC 수정 전 결과: ${attempt.found.map((entry) => `${entry.id} ${entry.status ?? "unknown"}`).join(", ")}`,
+    "- 오류 로그(앞부분):",
+    ...excerpt.slice(0, 12).map((line) => `    ${line}`),
+    ...(excerpt.length > 12 ? [`    … ${excerpt.length - 12}줄 더 (${work.active.spec})`] : []),
+    "",
+    "로컬 재현 없이 오류 로그를 근거로 고칠 파일을 엽니다. 위 TC 는 회귀 TC 로 남아 수정 후 통과해야 하고 테스트 파일은 지금 얼립니다.",
+    "반영 기록에 '로그 근거 · 운영 확인 필요' 가 남습니다.",
+  ].join("\n");
+  const presence = confirmOnTerminal(shown, "로그 근거");
+  const basis: LogBasis = { by: "approved", at: new Date().toISOString(), detail: presence.detail };
+  evidence.logBasis = basis;
+  evidence.repro = { at: attempt.at, testTreeHash: attempt.testTreeHash, cases: attempt.cases, found: attempt.found, mode: "log", basis };
+  delete evidence.reproAttempt;
+  persist(work, evidence);
+  return `로그 근거로 진행합니다 — 고칠 파일을 쓸 수 있습니다. ${attempt.cases.join(", ")} 는 회귀 TC 로 수정 후 통과해야 합니다.`;
 }
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
@@ -415,7 +485,13 @@ export async function check(work: Work): Promise<string> {
   }
 
   const evidence = carry(work, baseCommit);
-  if (overFixLimit(work, evidence)) {
+  // 계획 파일이 그대로인 재실행 중 둘은 같은 회차를 다시 쓴다 — 코드를 고치지 않아 카운터를 피할 이득이 없다.
+  //  · 직전 회차가 실행 기록 하나 없이 끊겼다(도구 타임아웃·강제 종료)
+  //  · 직전 회차가 선언된 환경 오류(environmentErrors)로만 막혔다 — 그 회차 기록을 비우고 다시 돈다
+  const unchanged = !!previous && evidence.rounds > 0 && previous.treeHash === evidence.treeHash;
+  const interrupted = unchanged && !evidence.runs.some((run) => run.round === evidence.rounds);
+  const environmentRetry = unchanged && environmentBlocked(evidence);
+  if (!interrupted && !environmentRetry && overFixLimit(work, evidence)) {
     throw new Stop(
       `고쳐 쓰기 ${fixLimit(work, evidence)}회를 이미 넘겨 다시 돌리지 않았습니다 — 덮지 않고 보고하는 자리입니다.\n` +
         `${workDocsDir(work.active.id)}/questions.md 에 무엇이 막혔는지 적고 사람에게 알리세요. ` +
@@ -423,11 +499,8 @@ export async function check(work: Work): Promise<string> {
     );
   }
   // 회차는 실행 **전에** 올리고 저장한다 — 뒤에 올리면 프로세스를 죽여 카운터를 피하는 길이 생긴다.
-  // 다만 직전 회차가 실행 기록 하나 없이 끊겼고(도구 타임아웃·강제 종료) 계획 파일이 그대로면 같은 회차를 다시 쓴다 —
-  // 코드를 고치지 않은 재실행이라 카운터를 피할 이득이 없고, 기록 없이 한도만 줄어드는 일을 막는다.
-  const interrupted = !!previous && evidence.rounds > 0 && previous.treeHash === evidence.treeHash &&
-    !evidence.runs.some((run) => run.round === evidence.rounds);
-  if (!interrupted) evidence.rounds += 1;
+  if (environmentRetry) evidence.runs = evidence.runs.filter((run) => run.round !== evidence.rounds);
+  else if (!interrupted) evidence.rounds += 1;
   saveEvidence(work.repoRoot, evidence);
 
   const specs = checkCommands(work.repoRoot, work.manifest);

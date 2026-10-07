@@ -372,4 +372,10 @@ describe("검증 명령 제한 시간", () => {
     assert.equal(hashManifest(load({ commandTimeoutMinutes: 45 })), hashManifest(load({})));
     assert.throws(() => load({ commandTimeoutMinutes: 0 }));
   });
+
+  test("환경 오류 패턴은 선언했을 때만 승인 해시에 들어가고, 너무 짧은 문구는 받지 않는다", () => {
+    assert.equal(hashManifest(load({ environmentErrors: [] })), hashManifest(load({})), "선언하지 않은 기존 프로젝트의 승인은 그대로다");
+    assert.notEqual(hashManifest(load({ environmentErrors: ["Could not find a valid Docker environment"] })), hashManifest(load({})));
+    assert.throws(() => load({ environmentErrors: ["Error"] }), /6자 이상/);
+  });
 });

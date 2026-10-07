@@ -203,6 +203,9 @@ export function hashManifest(manifest: Manifest): string {
       // 매니페스트에서는 canonical 이 undefined 키를 떨구므로 기존 해시가 한 글자도 달라지지 않는다.
       prepare: manifest.prepare,
       commands: manifest.commands,
+      // 환경 오류 패턴은 무엇을 코드 결함으로 볼지와 재현 인정을 바꾼다 — 승인 뒤 몰래 넓히지 못하게 묶는다.
+      // 선언하지 않았으면 undefined 라 canonical 이 떨구고 기존 해시는 그대로다.
+      environmentErrors: manifest.environmentErrors?.length ? manifest.environmentErrors : undefined,
     }),
   );
 }

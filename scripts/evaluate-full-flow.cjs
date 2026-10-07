@@ -61,7 +61,7 @@ const claude = process.env.CLAUDE_EVALUATION_BIN || path.join(os.homedir(), '.lo
 const requests = {
   new: '신규: Node.js와 기존 추천의 node:test로 src/value.js를 만들어 주세요. CommonJS로 value(n) 함수 하나를 export합니다. 숫자 n이 0 이상이면 1을 반환하고, 음수면 Error("negative")를 던져야 합니다. 외부 패키지·웹서버·DB는 필요 없습니다. tests/value.test.js와 실행 안내도 작성해 주세요.',
   enhance: '기능 개선: src/value.js의 value(n)에 음수 입력 시 Error("negative")를 던지는 기능을 추가해 주세요. 0 이상이면 1 반환, CommonJS 함수 export와 함수 시그니처는 유지합니다. tests/value.test.js에서 0, 2, -1을 검증해 주세요. 기존 Node.js·node:test를 유지합니다.',
-  fix: '버그 수정: src/value.js의 value(n)이 0 이상에서 0을 반환하는 결함을 고쳐 주세요. 기대는 1 반환입니다. 음수에서 Error("negative"), CommonJS 함수 export와 함수 시그니처는 유지합니다. 변경 범위는 src/value.js와 tests/value.test.js입니다. 0, 2, -1을 검증하고 수정 전에 0 입력의 실패를 재현해 주세요. 기존 Node.js·node:test를 유지합니다.',
+  fix: '버그 수정: src/value.js의 value(n)이 0 이상에서 0을 반환하는 결함을 고쳐 주세요. 기대는 1 반환입니다. 음수에서 Error("negative"), CommonJS 함수 export와 함수 시그니처는 유지합니다. 변경 범위는 src/value.js와 tests/value.test.js입니다. 0, 2, -1을 검증하고 수정 전에 0 입력의 실패를 재현해 주세요. 기존 Node.js·node:test를 유지합니다.\n운영 오류 로그:\n2026-10-06T09:12:44Z ERROR checkout - unexpected value\nAssertionError [ERR_ASSERTION]: value(0) expected 1 but was 0\n    at value (src/value.js:1:63)',
   refactor: '리팩토링: src/value.js에서 value(n)의 중복 반환 분기만 제거해 주세요. 동작은 0 이상이면 1, 음수면 Error("negative")입니다. CommonJS export와 함수 시그니처, tests/value.test.js의 기존 테스트를 그대로 보존합니다. 변경 범위는 src/value.js뿐입니다. 기존 Node.js·node:test를 유지합니다.',
 };
 let finished = false, lastWork, blocked, cost = previous?.reportedCostUSD || 0;

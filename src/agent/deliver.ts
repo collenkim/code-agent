@@ -8,7 +8,7 @@ import { slug } from "../core/workOrder";
 import { planTasks } from "../core/plan";
 import { formatSourceTrace, readSourceTrace } from "./sourceTrace";
 import { blockCount, stripBlock, upsertBlock } from "./blocks";
-import { loadEvidence, planPaths, runsOf, stageProblems, validationDocFile } from "./evidence";
+import { loadEvidence, planPaths, reproLine, runsOf, stageProblems, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
 import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
@@ -126,7 +126,7 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined): st
       `- planHash: ${evidence.planHash} · manifestHash: ${evidence.manifestHash}`,
       `- 고쳐 쓰기 회차: ${evidence.rounds}`,
       ...(evidence.repro
-        ? [`- repro: ${evidence.repro.cases.join(", ")} · 테스트 트리 ${evidence.repro.testTreeHash} (${evidence.repro.at})`]
+        ? [`- 재현: ${reproLine(evidence.repro)}`]
         : []),
       ...(["check", "test", "integrate"] as VerifyPhase[]).map(
         (phase) =>
@@ -294,6 +294,7 @@ function commitMessage(work: Work, evidence: Evidence): string {
     `검증: ${(["check", "test", "integrate"] as VerifyPhase[])
       .map((phase) => `${phase}=${runsOf(evidence, phase).every((run) => run.outcome === "passed") ? "passed" : "?"}`)
       .join(" · ")} · 기준 커밋 ${evidence.baseCommit.slice(0, 12)} · 트리 ${evidence.treeHash.slice(-12)}`,
+    ...(evidence.repro?.mode === "log" ? [`재현: ${reproLine(evidence.repro)}`] : []),
     `근거: ${prDocFile(active.id)} · ${validationDocFile(active.id)} · ${reviewDocFile(active.id)}`,
   ].join("\n");
 }

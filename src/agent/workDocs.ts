@@ -4,7 +4,7 @@ import { join, posix } from "path";
 import type { Manifest } from "../core/manifest";
 import { formatPlan } from "../core/plan";
 import type { BuildPlan } from "../core/types";
-import type { WorkKind } from "../core/workOrder";
+import { errorLogOf, type WorkKind } from "../core/workOrder";
 import { checkSections, docPaths, normalizeHeading, sectionBody, sha } from "./docs";
 import { workDocsDir } from "./layout";
 import { SCHEMAS, WORK_SCHEMAS } from "./schemas";
@@ -168,13 +168,36 @@ function currentSectionProblems(id: string, text: string, kind: WorkKind): strin
   return problems;
 }
 
-export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind): string[] {
+/**
+ * fix 의 오류 로그 대응 — 로그의 어느 줄이 어느 코드에서 나는지. 로그 문구를 백틱으로 **그대로** 인용하고, 백틱 밖에
+ * 실재하는 원인 코드 `path:line` 을 같은 줄에 둔다. 백틱 안의 `Foo.java:42` 는 로그일 뿐 코드 대응이 아니다.
+ */
+function logMappingProblems(repoRoot: string, id: string, text: string, log: string): string[] {
+  const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+  const haystack = flat(log);
+  const current = sectionBody(WORK_SCHEMAS["02-analysis"], text, "current");
+  const mapped = lines(current).some((line) => {
+    const quotes = [...line.matchAll(/`([^`]{8,})`/g)].map((match) => flat(match[1]));
+    const outside = line.replace(/`[^`]*`/g, " ");
+    return quotes.some((quote) => haystack.includes(quote)) &&
+      [...outside.matchAll(/([\w./-]+\.[A-Za-z]\w*):\d+/g)].some((match) => existsSync(join(repoRoot, match[1])));
+  });
+  return mapped ? [] : [
+    `${workDocPath(id, "02-analysis")} — fix 는 기존 시스템 분석에 **오류 로그의 어느 줄이 어느 코드에서 나는지** 적습니다: ` +
+      "로그 문구를 `백틱` 으로 그대로 인용하고 같은 줄 백틱 밖에 저장소에 있는 원인 코드 path:line 을 함께 " +
+      "(예: - `NullPointerException: items is null` → src/main/java/app/OrderService.java:42 — items 를 확인하지 않는다)",
+  ];
+}
+
+export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind, spec?: string): string[] {
   const text = readWorkDoc(repoRoot, id, "02-analysis");
   if (!text) {
     return [absent(id, "02-analysis")];
   }
   const path = workDocPath(id, "02-analysis");
   const problems = [...lackingSections(id, "02-analysis", text), ...currentSectionProblems(id, text, kind)];
+  const logged = kind === "fix" && spec && existsSync(join(repoRoot, spec)) ? errorLogOf(readFileSync(join(repoRoot, spec), "utf-8")) : undefined;
+  if (logged && "log" in logged) problems.push(...logMappingProblems(repoRoot, id, text, logged.log));
   const rows = tableRows(sectionBody(WORK_SCHEMAS["02-analysis"], text, "impact"));
   const uncovered = keys.filter((key) => !rows.some((row) => row.key === key));
   if (uncovered.length > 0) {
@@ -295,8 +318,22 @@ export function parseTestCases(text: string): TestCase[] {
  * (`sectionsOf` 가 문서의 실제 `##` 로 경계를 잡아 `cases` 파싱에 닿지 않는다).
  */
 export function reproCases(text: string): string[] {
-  const body = sectionBody(WORK_SCHEMAS["07-test-spec"], text, "repro");
+  const body = sectionBody(WORK_SCHEMAS["07-test-spec"], text, "repro")
+    .split("\n").filter((line) => !REPRO_MODE.test(line)).join("\n");
   return [...new Set([...body.matchAll(/\bTC-\d+\b/g)].map((match) => match[0]))];
+}
+
+const REPRO_MODE = /방식\s*[:：]\s*로그\s*근거/;
+
+/**
+ * ⑦ `## 재현` 의 방식. `- 방식: 로그 근거 — <사유>` 줄이 있으면 로그 근거다 — 로컬에서 재현되지 않는 결함을 오류 로그로
+ * 고치고, 그 절의 TC 는 수정 전 실패를 요구하지 않는 회귀 TC 다(수정 후 통과해야 한다). 없으면 로컬 재현이다.
+ */
+export function reproMode(text: string): { mode: "local" | "log"; reason?: string } {
+  const line = sectionBody(WORK_SCHEMAS["07-test-spec"], text, "repro").split("\n").find((entry) => REPRO_MODE.test(entry));
+  if (!line) return { mode: "local" };
+  const reason = line.replace(/^.*?로그\s*근거/, "").replace(/^[\s—–:-]+/, "").trim();
+  return { mode: "log", reason: reason === "" ? undefined : reason };
 }
 
 const LEVEL_NAMES: Record<TestLevel, RegExp> = {
@@ -346,6 +383,7 @@ export function testSpecProblems(
   acceptance: string[],
   manifest: Manifest | undefined,
   kind: WorkKind,
+  spec?: string,
 ): { problems: string[]; notes: string[] } {
   const text = readWorkDoc(repoRoot, id, "07-test-spec");
   if (!text) {
@@ -394,6 +432,12 @@ export function testSpecProblems(
     const stray = repro.filter((tc) => !ids.includes(tc));
     if (stray.length > 0) {
       problems.push(`${path} — \`## 재현\` 이 표에 없는 TC 를 가리킵니다: ${stray.join(", ")}`);
+    }
+    const declared = reproMode(text);
+    if (declared.mode === "log") {
+      if (!declared.reason) problems.push(`${path} — \`## 재현\` 의 \`방식: 로그 근거\` 뒤에 로컬에서 재현하지 않는 사유를 적습니다 (예: \`- 방식: 로그 근거 — 운영 데이터에서만 발생\`)`);
+      const logged = spec && existsSync(join(repoRoot, spec)) ? errorLogOf(readFileSync(join(repoRoot, spec), "utf-8")) : undefined;
+      if (spec && !(logged && "log" in logged)) problems.push(`${path} — 로그 근거는 지시서의 \`## 오류 로그\` 가 있을 때만 씁니다 — 로그가 없는 결함은 로컬 재현으로 계획합니다`);
     }
   }
 

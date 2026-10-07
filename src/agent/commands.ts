@@ -7,6 +7,7 @@ import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
+import { errorLogProblems } from "../core/workOrder";
 import type { Manifest, StageDef } from "../core/manifest";
 import { formatPlan, missingPreserve, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
 import { planningProblems, requiredOutputs } from "./planningState";
@@ -84,6 +85,7 @@ import {
 import type { Requirements } from "./workDocs";
 import { formatSourceTrace, readSourceTrace, sourceItems } from "./sourceTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
+import { crossNotice } from "./hosts";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -302,6 +304,9 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (current) {
     return `이미 진행 중입니다: ${current.id} · ${PHASE_LABEL[current.phase]}\n\n${status(repoRoot)}`;
   }
+  // fix 는 오류 로그로 고친다 — 새로 시작할 때만 건다(이미 진행 중인 예전 작업은 그대로 잇는다)
+  const missingLog = errorLogProblems(order.kind, readFileSync(join(repoRoot, specPath), "utf-8"));
+  if (missingLog.length > 0) throw new Stop(`${specPath}: ${missingLog.map((problem) => problem.detail).join("\n")}`);
 
   // 작업 브랜치 — 기준은 사용자 입력(--base) > code-agent.json 의 git.base > master
   let branch: string | undefined;
@@ -424,6 +429,8 @@ export function status(repoRoot: string): string {
   const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checks)];
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   if (aidlc) lines.push("", aidlc);
+  const cross = crossNotice(repoRoot);
+  if (cross) lines.push("", cross);
 
   const work = loadWork(repoRoot);
   if (!work) {
@@ -526,7 +533,7 @@ export function next(repoRoot: string): string {
       return advance("impact");
     case "impact": {
       const { keys } = requireRequirements(repoRoot, active);
-      requireWorkDocs(analysisProblems(repoRoot, active.id, keys, work.order.kind));
+      requireWorkDocs(analysisProblems(repoRoot, active.id, keys, work.order.kind, active.spec));
       return advance("design");
     }
     case "design": {
@@ -1007,6 +1014,7 @@ export function context(repoRoot: string): string {
         `- \`sequence[0].step\` 이 kind:"test" 단계의 key 여야 합니다 (받는 값: ${testKeys.join(", ") || "없음 — code-agent.json 에 kind:\"test\" 단계가 필요합니다"}).`,
         `- \`files[]\` 에 그 단계의 파일(재현 테스트)이 있어야 하고, 그 파일은 테스트 자리 안이어야 합니다: ${testRoots(work).join(", ") || "선언 없음"}.`,
         "- 구현에서는 그 테스트를 쓰고 `code-agent repro` 로 **실패**를 본 뒤에야 고칠 파일이 열립니다.",
+        "- 지시서의 오류 로그가 1차 근거입니다. 로그의 발생 조건을 로컬에서 만들 수 없으면 `## 재현` 에 `- 방식: 로그 근거 — <사유>` 를 더합니다 — 그 TC 는 로그의 입력·상태를 담은 회귀 TC 로 수정 후 통과해야 합니다(지시서에 오류 로그가 있을 때만).",
       );
     }
     if (order.kind === "refactor") {
@@ -1025,8 +1033,8 @@ export function context(repoRoot: string): string {
       "",
       "## fix — 재현 먼저",
       `1. kind:"test" 단계의 계획 파일에 ⑦ ${workDocPath(active.id, "07-test-spec")} 의 \`## 재현\` 이 가리키는 TC 를 씁니다.`,
-      "2. Bash: `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다. 실패를 보지 못하면 고치지 말고 보고하세요.",
-      "3. 재현을 본 뒤에야 고칠 파일을 쓸 수 있습니다 (hook 이 그 전에는 거부합니다). 재현 테스트는 그때 얼어붙습니다.",
+      "2. Bash: `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 `{\"action\":\"repro-log\"}` 동의로 로그 근거 전환을 확인받습니다.",
+      "3. repro 를 지난 뒤에야 고칠 파일을 쓸 수 있습니다 (hook 이 그 전에는 거부합니다). 재현 테스트는 그때 얼어붙습니다.",
     );
   }
 
@@ -1153,9 +1161,9 @@ export function submitPlan(repoRoot: string, draft: string): string {
   // 계획 검사 전에 ①~④·⑦ 을 다시 본다 — 스테이지를 지난 뒤에 문서를 고쳤을 수 있고, 승인은 이 묶음에 대한 것이다.
   const requirements = requireRequirements(repoRoot, active);
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);
-  const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind);
+  const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind, active.spec);
   requireWorkDocs([
-    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind),
+    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind, active.spec),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
     ...testSpec.problems,
@@ -1311,10 +1319,10 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   const requirements = requireRequirements(repoRoot, active);
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);
   requireWorkDocs([
-    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind),
+    ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind, active.spec),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
-    ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind).problems,
+    ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind, active.spec).problems,
   ]);
   const docsHash = approvalDocsHash(work);
 

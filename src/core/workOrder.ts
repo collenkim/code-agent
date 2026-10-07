@@ -379,3 +379,74 @@ export function loadWorkOrder(
 
   return validateWorkOrder(repoRoot, values, specPath, policy);
 }
+
+// ---- fix 의 오류 로그 ----
+
+/**
+ * fix 는 오류 로그로 고친다 — 로컬에서 재현될 수도 안 될 수도 있어서, 사람이 준 로그가 1차 근거다.
+ * 로그가 없는 신고(화면 증상만 있는 경우)는 그 사유와 재현 절차를 대신 남긴다.
+ */
+export type ErrorLog = { log: string } | { none: { reason: string; steps: string } };
+
+/** `## <제목>` 절의 본문. 코드 블록 안의 `## ` 줄은 절 경계로 보지 않는다 */
+function sectionOf(text: string, heading: string): string | undefined {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let fence: string | undefined;
+  let start = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = /^(`{3,}|~{3,})/.exec(lines[index])?.[1];
+    if (marker && (fence === undefined || (marker[0] === fence[0] && marker.length >= fence.length && lines[index].trim() === marker))) {
+      fence = fence === undefined ? marker : undefined;
+      continue;
+    }
+    if (fence !== undefined || !/^## /.test(lines[index])) continue;
+    if (start >= 0) return lines.slice(start + 1, index).join("\n");
+    if (lines[index].trim() === `## ${heading}`) start = index;
+  }
+  return start >= 0 ? lines.slice(start + 1).join("\n") : undefined;
+}
+
+export function errorLogOf(text: string): ErrorLog | undefined {
+  const logged = sectionOf(text, "오류 로그");
+  if (logged !== undefined) {
+    const block = /^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1[ \t]*$/m.exec(logged);
+    return block && block[2].trim() !== "" ? { log: block[2] } : undefined;
+  }
+  const none = sectionOf(text, "오류 로그 없음");
+  if (none === undefined) return undefined;
+  const reason = /사유\s*[:：]\s*(.+)/.exec(none)?.[1]?.trim() ?? "";
+  const steps = /재현 절차\s*[:：]\s*([\s\S]*)/.exec(none)?.[1]?.trim() ?? "";
+  return reason !== "" && steps !== "" ? { none: { reason, steps } } : undefined;
+}
+
+/** fix 지시서에 오류 로그(또는 없는 사유와 재현 절차)가 있는가 — 접수 제출·확정과 start 가 건다 */
+export function errorLogProblems(kind: WorkKind, text: string): WorkOrderProblem[] {
+  if (kind !== "fix" || errorLogOf(text)) return [];
+  return [{
+    attribute: "오류 로그",
+    detail: "fix 는 오류 로그로 고칩니다 — 지시서에 `## 오류 로그` 절을 두고 로그 원문을 코드 블록(```)으로 넣으세요. " +
+      "로그가 없으면 `## 오류 로그 없음` 절에 `- 사유:` 와 `- 재현 절차:` 를 적습니다",
+  }];
+}
+
+/**
+ * 오류 로그 절을 뺀 본문 — 로그 줄·재현 절차는 요구가 아니다. 사람이 쓴 지시서는 내용 줄을 그대로 요구 항목으로
+ * 읽으므로, 빼지 않으면 스택 트레이스 한 줄 한 줄이 분석에서 연결해야 할 요구가 된다.
+ */
+export function withoutErrorLog(text: string): string {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+  let fence: string | undefined;
+  let skipping = false;
+  for (const line of lines) {
+    const marker = /^(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && (fence === undefined || (marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker))) {
+      fence = fence === undefined ? marker : undefined;
+      if (!skipping) kept.push(line);
+      continue;
+    }
+    if (fence === undefined && /^## /.test(line)) skipping = line.trim() === "## 오류 로그" || line.trim() === "## 오류 로그 없음";
+    if (!skipping) kept.push(line);
+  }
+  return kept.join("\n");
+}

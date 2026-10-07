@@ -11,7 +11,7 @@ import { stripBlock, upsertBlock } from "./blocks";
 import { requireValidatable } from "./commands";
 import { treeHashNow } from "./evidence";
 import { contextHandoff, handoffDir } from "./handoff";
-import { hostAssets, type Host } from "./hosts";
+import { hostAssets, hostCommand, type Host } from "./hosts";
 import { questionsFile, workDocsDir } from "./layout";
 import { codexModelOf } from "./modelPolicy";
 import { modelOf } from "./models";
@@ -32,16 +32,16 @@ export function parseHostArg(value: string | undefined): Host {
   throw new Stop("교차 검증을 맡을 호스트를 --by claude 또는 --by codex 로 지정하세요 — 지금 작업 중인 호스트가 아닌 쪽입니다.");
 }
 
-/** 설치된 실행 파일. 테스트·사내 배포는 CODE_AGENT_CLAUDE_BIN / CODE_AGENT_CODEX_BIN 으로 바꾼다(.js 면 node 로 실행) */
-function command(host: Host): { file: string; prefix: string[] } {
-  const configured = process.env[host === "claude" ? "CODE_AGENT_CLAUDE_BIN" : "CODE_AGENT_CODEX_BIN"];
-  if (configured) return /\.c?js$/i.test(configured) ? { file: process.execPath, prefix: [configured] } : { file: configured, prefix: [] };
-  if (host === "codex" && process.platform === "win32" && process.env.APPDATA) {
-    // npm 의 codex.cmd 는 셸 없이 실행되지 않는다 — 설치된 Node 진입점을 직접 부른다
-    const script = join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js");
-    if (existsSync(script)) return { file: process.execPath, prefix: [script] };
-  }
-  return { file: host, prefix: [] };
+/**
+ * 다른 호스트를 실행할 수 없다 — 실행 파일 없음·로그인 만료·사용 한도·장애·시간 초과. 교차 검증은 두 호스트를 모두 쓸 수
+ * 있을 때만 돌므로, 이때는 그 지점의 교차 검증을 중지로 기록하고 작업은 진행한다. 호스트가 돌았는데 결과 형식이 틀린 것은
+ * 여기에 들지 않는다(다시 실행한다).
+ */
+class HostUnavailable extends Stop {}
+
+function unavailable(host: Host, reason: string): string {
+  return `${host} 교차 검증 중지 — 다른 호스트를 실행할 수 없습니다: ${reason}. 이 지점은 교차 검증 없이 진행합니다. ` +
+    "두 호스트를 모두 쓸 수 있게 되면(설치·로그인·사용 한도) 다음 지점부터 다시 돕니다.";
 }
 
 /** Codex 역할 정의(developer_instructions) — `.codex/agents/<역할>.toml` 과 같은 번들에서 읽는다 */
@@ -59,7 +59,9 @@ function timeoutMs(): number {
 /** 다른 호스트를 읽기 전용으로 한 번 실행하고 마지막 응답을 돌려준다 */
 export function runOtherHost(root: string, host: Host, agent: Agent, prompt: string): { text: string; model: string } {
   const role = agent === "ca-reviewer" ? "reviewer" : "critic";
-  const { file, prefix } = command(host);
+  const resolved = hostCommand(host);
+  if (typeof resolved === "string") throw new HostUnavailable(resolved);
+  const { file, prefix } = resolved;
   const env = { ...process.env };
   delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; delete env.NODE_TEST_CONTEXT;
   let args: string[], model: string, outFile: string | undefined, scratch: string | undefined;
@@ -77,15 +79,15 @@ export function runOtherHost(root: string, host: Host, agent: Agent, prompt: str
   }
   try {
     const result = spawnSync(file, [...prefix, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true, timeout: timeoutMs(), maxBuffer: 16 * 1024 * 1024 });
-    if (result.error) throw new Stop(`${host} 교차 실행이 실패했습니다: ${result.error.message} — 설치·로그인 상태를 확인하거나 CODE_AGENT_${host.toUpperCase()}_BIN 을 지정하세요.`);
-    if (result.status !== 0) throw new Stop(`${host} 교차 실행이 종료 코드 ${result.status} 로 끝났습니다: ${(result.stderr || result.stdout || "").trim().slice(-600)}`);
+    if (result.error) throw new HostUnavailable(`${result.error.message}${/ETIMEDOUT/.test(result.error.message) ? ` (제한 ${timeoutMs() / 60_000}분 — CODE_AGENT_CROSS_TIMEOUT_MIN)` : ""}`);
+    if (result.status !== 0) throw new HostUnavailable(`종료 코드 ${result.status} — ${(result.stderr || result.stdout || "").trim().slice(-400)}`);
     if (host === "claude") {
       let parsed: { result?: unknown; is_error?: boolean };
-      try { parsed = JSON.parse(result.stdout); } catch { throw new Stop("claude 교차 실행의 출력이 JSON 이 아닙니다."); }
-      if (parsed.is_error || typeof parsed.result !== "string") throw new Stop(`claude 교차 실행이 결과 없이 끝났습니다: ${String(parsed.result ?? "").slice(0, 300)}`);
+      try { parsed = JSON.parse(result.stdout); } catch { throw new HostUnavailable("claude 출력이 JSON 이 아닙니다"); }
+      if (parsed.is_error || typeof parsed.result !== "string") throw new HostUnavailable(`결과 없이 끝났습니다 — ${String(parsed.result ?? "").slice(0, 300)}`);
       return { text: parsed.result, model };
     }
-    if (!outFile || !existsSync(outFile)) throw new Stop("codex 교차 실행이 마지막 응답을 남기지 않았습니다.");
+    if (!outFile || !existsSync(outFile)) throw new HostUnavailable("마지막 응답을 남기지 않았습니다");
     return { text: readFileSync(outFile, "utf8"), model };
   } finally {
     if (scratch) rmSync(scratch, { recursive: true, force: true });
@@ -97,6 +99,17 @@ function unfence(text: string): string {
 }
 
 // ---- 코드 리뷰 ----
+
+/** ⑨ 의 `## 교차 지적` 절을 기록으로 다시 쓴다 — 결과 표·`- 없음`·중지 사유 */
+function writeCrossSection(root: string, id: string, log: NonNullable<ReturnType<typeof loadReview>>, host: Host, body: string): void {
+  const path = join(root, reviewDocFile(id));
+  const text = stripBlock(readFileSync(path, "utf-8"), REVIEW_BLOCK);
+  const section = `## ${CROSS_HEADING}\n\n<!-- ${host} 교차 리뷰 결과를 code-agent review cross 가 기록한다. 손으로 고치면 게이트가 거부한다. -->\n\n${body}\n\n`;
+  const rendered = new RegExp(`^## ${CROSS_HEADING}\\s*$`, "m").test(text)
+    ? text.replace(new RegExp(`^## ${CROSS_HEADING}[^\\S\\n]*\\n[\\s\\S]*?(?=^## |$(?![\\s\\S]))`, "m"), section)
+    : `${text.replace(/\s*$/, "")}\n\n${section}`;
+  writeAtomic(path, upsertBlock(rendered, REVIEW_BLOCK, renderRoundsBlock(log)));
+}
 
 const REVIEW_DOCS = ["01-requirements.md", "02-analysis.md", "03-design.md", "04-functional.md", "07-test-spec.md", "08-validation.md"];
 
@@ -126,6 +139,13 @@ export function crossReview(root: string, by: string | undefined): string {
   try {
     outcome = runOtherHost(root, host, "ca-reviewer", prompt);
   } catch (error) {
+    if (error instanceof HostUnavailable) {
+      // 이 회차는 교차 리뷰 없이 진행한다 — 중지 사유를 회차 기록과 ⑨ 에 남긴다
+      last.cross = { host, model: "", startedAt, unavailable: error.message.slice(0, 500) };
+      saveReview(root, log);
+      writeCrossSection(root, work.active.id, log, host, `- 교차 검증 중지 — ${host} 를 실행할 수 없습니다: ${error.message.replace(/\s+/g, " ").slice(0, 300)}`);
+      return unavailable(host, error.message);
+    }
     last.cross = { host, model: "", startedAt, error: error instanceof Error ? error.message.slice(0, 300) : String(error) };
     saveReview(root, log);
     throw error;
@@ -139,13 +159,7 @@ export function crossReview(root: string, by: string | undefined): string {
   }
   last.cross = { host, model: outcome.model, startedAt, completedAt: new Date().toISOString(), result: body };
   saveReview(root, log);
-  const path = join(root, reviewDocFile(work.active.id));
-  const text = stripBlock(readFileSync(path, "utf-8"), REVIEW_BLOCK);
-  const section = `## ${CROSS_HEADING}\n\n<!-- ${host} 교차 리뷰 결과를 code-agent review cross 가 기록한다. 손으로 고치면 게이트가 거부한다. -->\n\n${body}\n\n`;
-  const rendered = new RegExp(`^## ${CROSS_HEADING}\\s*$`, "m").test(text)
-    ? text.replace(new RegExp(`^## ${CROSS_HEADING}[^\\S\\n]*\\n[\\s\\S]*?(?=^## |$(?![\\s\\S]))`, "m"), section)
-    : `${text.replace(/\s*$/, "")}\n\n${section}`;
-  writeAtomic(path, upsertBlock(rendered, REVIEW_BLOCK, renderRoundsBlock(log)));
+  writeCrossSection(root, work.active.id, log, host, body);
   const open = rows.filter((line) => /^\|\s*X\d+\s*\|/.test(line) && /\|\s*열림\s*\|/.test(line)).length;
   return `${host}(${outcome.model}) 교차 리뷰를 ${last.round}회차에 기록했습니다 — ${body === "- 없음" ? "지적 없음" : `열린 지적 ${open}개`}. ${reviewDocFile(work.active.id)} 의 ## ${CROSS_HEADING}`;
 }
@@ -181,7 +195,18 @@ export function crossCritic(root: string, by: string | undefined): string {
   ].join("\n");
   const file = posix.join(handoffDir(work.active.id), "cross-critic.md");
   writeAtomic(join(root, file), `${brief}\n`);
-  const outcome = runOtherHost(root, host, "ca-critic", `${file} 를 읽고 그 지시대로 교차 계획 검토 결과 JSON 하나만 반환하라.`);
+  let outcome: { text: string; model: string };
+  try {
+    outcome = runOtherHost(root, host, "ca-critic", `${file} 를 읽고 그 지시대로 교차 계획 검토 결과 JSON 하나만 반환하라.`);
+  } catch (error) {
+    if (!(error instanceof HostUnavailable)) throw error;
+    // 이 critic 결과는 교차 검토 없이 진행한다 — 중지 사유를 계획 기록에 남긴다
+    mutatePlanning(work, (current) => {
+      current.cross = { host, model: "", at: new Date().toISOString(), criticDispatchId: last.dispatchId,
+        status: "unavailable", summary: error.message.slice(0, 500), findings: [], questions: 0 };
+    });
+    return unavailable(host, error.message);
+  }
   let parsed: z.infer<typeof CrossCriticSchema>;
   try { parsed = CrossCriticSchema.parse(JSON.parse(unfence(outcome.text))); }
   catch (error) { throw new Stop(`${host} 교차 검토 결과 형식이 맞지 않습니다 — 다시 실행하세요: ${error instanceof Error ? error.message.slice(0, 400) : error}`); }

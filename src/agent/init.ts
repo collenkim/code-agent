@@ -5,7 +5,7 @@ import { assetBytes, assetCount, assetKeys, assetText, CLAUDE_ASSETS, installedP
 import { STATE_DIR } from "./layout";
 import { applyModels } from "./models";
 import { Stop } from "./stop";
-import { hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
+import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -165,7 +165,9 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   const results = hosts.map(host => host === "claude" ? initClaude(repoRoot, options) : initCodex(repoRoot, options));
   mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
   writeFileSync(join(repoRoot, STATE_DIR, "hosts.json"), JSON.stringify([...new Set([...previous, ...hosts])]) + "\n");
-  return results.join("\n\n");
+  // 두 호스트를 함께 깔면 교차 검증이 붙는다 — 둘 다 실행할 수 있을 때만 쓰도록 지금 상태를 알린다
+  const cross = crossNotice(repoRoot);
+  return [...results, ...(cross ? [cross] : [])].join("\n\n");
 }
 
 export function codexMatcherProblem(repoRoot: string, event: string): string | undefined {

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { withoutErrorLog } from "../core/workOrder";
 
 export interface SourceItem { id: string; text: string; }
 export interface SourceRow extends SourceItem { requirements: string[]; missing: string; }
@@ -8,7 +9,8 @@ const clean = (text: string) => text.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "").repl
 
 /** 확정 지시서에서만 읽는다. 변경 가능한 request.json 을 추적의 원장으로 쓰지 않는다. */
 export function sourceItems(text: string): SourceItem[] {
-  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").replace(/<!--[\s\S]*?-->/g, "");
+  // 오류 로그 절(로그 원문·재현 절차)은 요구가 아니다
+  const body = withoutErrorLog(text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").replace(/<!--[\s\S]*?-->/g, ""));
   const sections = body.split(/^##\s+/m).slice(1);
   const structured = sections.some((section) => section.split(/\r?\n/)[0].trim() === "요구 내용");
   if (structured) {

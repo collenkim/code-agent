@@ -30,7 +30,8 @@ import { openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
 import { manifestCheck, survey } from "../agent/survey";
 import { partialTreeHash } from "../agent/tree";
-import { check, integrate, repro, runTests } from "../agent/validate";
+import { approveLogBasis, check, integrate, repro, runTests } from "../agent/validate";
+import { prepareConsent } from "../agent/consent";
 import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
 import { analysisProblems } from "../agent/workDocs";
 
@@ -192,11 +193,18 @@ function manifest(overrides: Record<string, unknown> = {}): string {
 
 // ==== 1. fix — 재현 먼저 ====
 
-const FIX_ORDER = [
+const FIX_HEAD = [
   "---", "kind: fix", "id: FIX-1", "title: 총액이 0 으로 나온다",
   `target: ${SRC}`, "scope: [src/main, src/test]", "preserve: [주문 조회 API 시그니처]",
   "---", "", "총액이 0 으로 나온다.", "",
 ].join("\n");
+/** 오류 로그 없는 신고 — 사유와 재현 절차를 대신 적는다 (로컬 재현만 가능하다) */
+const FIX_ORDER = `${FIX_HEAD}\n## 오류 로그 없음\n\n- 사유: 화면 증상만 신고됨\n- 재현 절차:\n  1. 항목 두 개를 담고 총액을 본다\n`;
+const LOG_LINE = "java.lang.IllegalStateException: total mismatch: expected 5 but was 0";
+/** 운영 오류 로그가 붙은 신고 */
+const FIX_ORDER_LOG = `${FIX_HEAD}\n## 오류 로그\n\n\`\`\`text\n2026-10-06 10:11:12 ERROR OrderController - 주문 총액 계산 오류\n${LOG_LINE}\n    at app.order.total(order.js:3)\n\`\`\`\n`;
+/** 로그 문구를 백틱으로 인용하고 원인 코드 path:line 을 백틱 밖에 둔 ② 기존 시스템 분석 */
+const CURRENT_LOG = `- \`${LOG_LINE}\` → ${SRC}:3 — total 이 항목을 더하지 않고 0 을 돌려준다`;
 
 const FIX_REQ = [
   "# FIX-1 요구사항 정의",
@@ -516,6 +524,18 @@ describe("P6 · fix — 재현 먼저", () => {
     assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro, undefined);
   });
 
+  test("10e. 선언된 환경 오류로 실패한 재현 TC 는 재현이 아니다 — 컨텍스트 로드 실패 등", async () => {
+    useManifest({
+      test: ["node", "-e", "console.log('not ok 1 - TC-1'); console.error('java.lang.IllegalStateException: Failed to load ApplicationContext'); process.exit(1)"],
+      environmentErrors: ["Failed to load ApplicationContext"],
+    });
+    toImplement();
+    writeReproTest();
+    await assert.rejects(() => repro(requireReproable(repo)), /환경 오류로 실패했습니다.*Failed to load ApplicationContext/);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro, undefined);
+    assert.ok(writeFileHook(SRC), "재현을 보지 못했으니 고칠 파일은 아직 닫혀 있다");
+  });
+
   test("11. 재현을 보면 증거가 테스트 트리 해시에 묶여 0회차로 남는다", async () => {
     toImplement();
     writeReproTest();
@@ -533,7 +553,7 @@ describe("P6 · fix — 재현 먼저", () => {
     assert.deepEqual(testStageFiles(work), [REPRO_TEST]);
 
     const validation = readFileSync(join(repo, validationDocFile("FIX-1")), "utf-8");
-    assert.match(validation, /- 재현: TC-1 · 테스트 트리 sha256:/);
+    assert.match(validation, /- 재현: 로컬 재현 TC-1 · 테스트 트리 sha256:/);
     // 0회차는 고쳐 쓰기가 아니다 — 수정 루프 절에 실리지 않는다
     assert.equal(/## 수정 루프/.test(validation), false);
 
@@ -549,6 +569,100 @@ describe("P6 · fix — 재현 먼저", () => {
     next(repo);
     assert.equal(loadActive(repo)!.stage, "code");
     assert.equal(writeFileHook(SRC), undefined);
+  });
+
+  // ---- 오류 로그 기반 fix — 로컬 재현은 될 수도 안 될 수도 있다 ----
+
+  /** 지시서를 바꿔 끼운다 — 시작 **전에** 부른다 */
+  function useOrder(order: string): void {
+    write("doc/work/FIX-1.md", order);
+    git("add", "-A");
+    git("commit", "-qm", "order");
+  }
+
+  function toImplementWith(current: string, reproSection: string): void {
+    start(repo, join(repo, "doc/work/FIX-1.md"));
+    writeDocs(current, reproSection);
+    next(repo);
+    next(repo);
+    next(repo);
+    submit();
+    approve();
+    next(repo);
+  }
+
+  const PASSES_LOCALLY = ["node", "-e", "console.log('ok 1 - TC-1')"];
+  const HUMAN = { confirm: () => ({ channel: "tty" as const, verified: true, detail: "테스트" }), ask: () => "n" };
+
+  test("13a. fix 지시서에 오류 로그(없으면 사유·재현 절차)가 없으면 시작하지 않는다", () => {
+    useOrder(FIX_HEAD);
+    assert.throws(() => start(repo, join(repo, "doc/work/FIX-1.md")), /오류 로그/);
+  });
+
+  test("13b. 오류 로그가 있으면 ② 에 로그 문구와 실재하는 원인 코드의 대응이 있어야 넘어간다", () => {
+    useOrder(FIX_ORDER_LOG);
+    start(repo, join(repo, "doc/work/FIX-1.md"));
+    writeDocs(CURRENT_OK);
+    next(repo);
+    assert.throws(() => next(repo), /오류 로그의 어느 줄이 어느 코드에서/);
+    writeDocs(`- \`${LOG_LINE}\` 에서 난다 (order.js:3)`);
+    assert.throws(() => next(repo), /오류 로그의 어느 줄이 어느 코드에서/, "로그 안의 위치나 실재하지 않는 경로는 코드 대응이 아니다");
+    writeDocs(CURRENT_LOG);
+    next(repo);
+  });
+
+  test("13c. 계획에서 로그 근거로 정하면 수정 전 결과만 남기고 고칠 파일을 연다 — 반영 기록에 운영 확인 필요", async () => {
+    useManifest({ test: PASSES_LOCALLY });
+    useOrder(FIX_ORDER_LOG);
+    toImplementWith(CURRENT_LOG, "- 방식: 로그 근거 — 운영 데이터에서만 발생\n- TC-1");
+    writeReproTest();
+    assert.match(await repro(requireReproable(repo)), /로그 근거로 진행합니다\(계획 승인/);
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(evidence.repro!.mode, "log");
+    assert.equal(evidence.repro!.found[0].status, "passed");
+    next(repo);
+    assert.equal(writeFileHook(SRC), undefined);
+    assert.ok(writeFileHook(REPRO_TEST), "회귀 TC 도 얼었다");
+    assert.match(readFileSync(join(repo, validationDocFile("FIX-1")), "utf-8"), /- 재현: 로그 근거\(계획 승인\) TC-1 .*로컬 재현 없음 — 운영 로그로 확인 필요/);
+  });
+
+  test("13d. 로그 근거는 지시서에 오류 로그가 있을 때만, 사유와 함께 계획한다", () => {
+    start(repo, join(repo, "doc/work/FIX-1.md"));
+    writeDocs(CURRENT_OK, "- 방식: 로그 근거 — 운영에서만 발생\n- TC-1");
+    next(repo);
+    next(repo);
+    next(repo);
+    assert.throws(() => submit(), /로그 근거는 지시서의 `## 오류 로그` 가 있을 때만/);
+    writeDocs(CURRENT_OK, "- 방식: 로그 근거\n- TC-1");
+    assert.throws(() => submit(), /사유를 적습니다/);
+  });
+
+  test("13e. 로컬 재현이 안 되면 시도를 남기고, 사람이 확인해야 로그 근거로 고칠 파일이 열린다", async () => {
+    useManifest({ test: PASSES_LOCALLY });
+    useOrder(FIX_ORDER_LOG);
+    toImplementWith(CURRENT_LOG, "- TC-1");
+    writeReproTest();
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다[\s\S]*repro-log 동의/);
+    assert.ok(loadEvidence(repo, "FIX-1", SRC)!.reproAttempt);
+    assert.ok(writeFileHook(SRC), "확인 전에는 고칠 파일이 닫혀 있다");
+    const prepared = JSON.parse(prepareConsent(repo, { action: "repro-log" }));
+    assert.match(prepared.summary, /로컬에서 재현되지 않았습니다[\s\S]*total mismatch/);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro, undefined, "확인 준비는 아무것도 바꾸지 않는다");
+    assert.match(withInteraction(HUMAN, () => approveLogBasis(requireReproable(repo))), /로그 근거로 진행합니다/);
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(evidence.repro!.basis!.by, "approved");
+    assert.equal(evidence.reproAttempt, undefined);
+    next(repo);
+    assert.equal(writeFileHook(SRC), undefined);
+  });
+
+  test("13f. 오류 로그 없는 결함은 재현되지 않으면 로그 근거로 넘어가지 않는다", async () => {
+    useManifest({ test: PASSES_LOCALLY });
+    toImplement();
+    writeReproTest();
+    await assert.rejects(() => repro(requireReproable(repo)), /로그 근거로 넘어갈 수 없습니다/);
+    assert.throws(() => withInteraction(HUMAN, () => approveLogBasis(requireReproable(repo))), /오류 로그가 없어/);
+    assert.ok(writeFileHook(SRC));
   });
 
   test("12b. 실제 실패 상태 없는 구버전 재현 기록은 쓰기·검증·캐시 재사용을 열지 않는다", async () => {

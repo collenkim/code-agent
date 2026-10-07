@@ -17,6 +17,7 @@ import { init } from "../agent/init";
 import { applyEntry, parseProposal, proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile } from "../agent/review";
+import { doctor } from "../agent/doctor";
 import { recordReviewFixture } from "./reviewFixture";
 import { observeReviewer, runReviewHook } from "../agent/reviewHook";
 import { decideStop } from "../agent/stopHook";
@@ -331,6 +332,41 @@ describe("검증 workflow 노드", () => {
     assert.equal(evidence.rounds, 2);
     assert.equal(runsOf(evidence, "check")[0].round, 2);
     assert.equal(runsOf(evidence, "test")[0].round, 2);
+  });
+
+  test("선언된 환경 오류는 수정이 아니라 진단으로 가고, 코드 그대로의 재실행은 회차를 쓰지 않는다", async () => {
+    const DOCKER = "Could not find a valid Docker environment";
+    // 환경(여기서는 환경 변수)이 준비될 때까지 같은 문구로 실패하는 테스트
+    useManifest({
+      test: ["node", "-e", `if(!process.env.CA_FAKE_DOCKER){console.error('${DOCKER}');process.exit(1)}console.log('ok 1 - TC-1\\nok 2 - TC-2')`],
+      environmentErrors: [DOCKER],
+    });
+    toCheck();
+    try {
+      assert.equal((await verify(repo)).node, "diagnose");
+      const failed = runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0];
+      assert.equal(failed.outcome, "error");
+      assert.equal(failed.environment, DOCKER);
+      assert.match(failed.tail, /환경 오류: 출력에 선언된 문구/);
+      for (let tries = 0; tries < 4; tries++) {
+        assert.equal((await verify(repo, { retry: true })).node, "diagnose", "고쳐 쓰기 한도(2)를 넘겨 재시도해도 결정으로 막히지 않는다");
+      }
+      assert.equal(loadEvidence(repo, "ORD-1", "order")!.rounds, 1, "코드 그대로의 재실행은 회차를 쓰지 않는다");
+      process.env.CA_FAKE_DOCKER = "1";
+      assert.equal((await verify(repo, { retry: true })).node, "review");
+      const evidence = loadEvidence(repo, "ORD-1", "order")!;
+      assert.equal(evidence.rounds, 1);
+      assert.deepEqual(runsOf(evidence, "test").map((run) => run.outcome), ["passed"], "환경 오류 회차의 옛 기록은 남지 않는다");
+    } finally {
+      delete process.env.CA_FAKE_DOCKER;
+    }
+  });
+
+  test("선언되지 않은 실패나 패턴과 다른 출력은 지금처럼 수정 요청이다", async () => {
+    useManifest({ test: FAIL_UNTIL_FIXED, environmentErrors: ["Could not find a valid Docker environment"] });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    assert.equal(runsOf(loadEvidence(repo, "ORD-1", "order")!, "test")[0].environment, undefined);
   });
 
   test("check 실패 시 테스트를 실행하지 않는다", async () => {
@@ -1898,6 +1934,48 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
     } finally {
       delete process.env.CODE_AGENT_CODEX_BIN; delete process.env.FAKE_CROSS;
       rmSync(fake, { recursive: true, force: true });
+    }
+  });
+
+  test("다른 호스트를 실행할 수 없으면 그 회차의 교차 리뷰는 중지로 기록되고 리뷰 게이트를 지난다", async () => {
+    await toReview();
+    write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
+    openRound(requireValidatable(repo, "review"));
+    const doc = join(repo, reviewDocFile("ORD-1"));
+    writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
+    recordReviewFixture(repo, "claude", { cross: false });
+    // 사용 한도에 걸린 호스트 — 실행은 되지만 비정상 종료한다
+    const fake = mkdtempSync(join(tmpdir(), "ca-fake-codex-")), script = join(fake, "codex.cjs");
+    writeFileSync(script, "process.stderr.write('ERROR: You hit your spend cap set by the owner of your workspace.'); process.exit(1);\n");
+    process.env.CODE_AGENT_CODEX_BIN = script;
+    try {
+      assert.match(crossReview(repo, "codex"), /교차 검증 중지[\s\S]*spend cap[\s\S]*교차 검증 없이 진행/);
+      assert.match(readFileSync(doc, "utf-8"), /## 교차 지적[\s\S]*- 교차 검증 중지 — codex 를 실행할 수 없습니다/);
+      assert.match(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.cross!.unavailable!, /spend cap/);
+      next(repo);
+      assert.equal(loadActive(repo)!.phase, "integrate");
+    } finally {
+      delete process.env.CODE_AGENT_CODEX_BIN;
+      rmSync(fake, { recursive: true, force: true });
+    }
+  });
+
+  test("실행 파일이 없으면 띄우지 않고 중지로 기록하며, status·doctor 가 두 호스트를 모두 쓸 수 있을 때만 쓰라고 안내한다", async () => {
+    await toReview();
+    write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
+    process.env.CODE_AGENT_CODEX_BIN = join(repo, "no-such-codex.cjs");
+    try {
+      assert.match(status(repo), /교차 검증: 다른 호스트를 실행할 수 없으면[\s\S]*CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다[\s\S]*init --host/);
+      assert.match(doctor(repo).text, /교차 검증/);
+      openRound(requireValidatable(repo, "review"));
+      const doc = join(repo, reviewDocFile("ORD-1"));
+      writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
+      recordReviewFixture(repo, "claude", { cross: false });
+      assert.match(crossReview(repo, "codex"), /교차 검증 중지[\s\S]*가리키는 파일이 없습니다/);
+      next(repo);
+      assert.equal(loadActive(repo)!.phase, "integrate");
+    } finally {
+      delete process.env.CODE_AGENT_CODEX_BIN;
     }
   });
 });

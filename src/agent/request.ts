@@ -7,7 +7,7 @@ import { writeAtomic } from "../core/atomic";
 import { APPROVALS_DIR } from "../core/approval";
 import type { Presence } from "../core/approval";
 import type { Manifest } from "../core/manifest";
-import { KINDS, parseFrontMatter, slug, validateWorkOrder, WorkOrderError } from "../core/workOrder";
+import { errorLogProblems, KINDS, parseFrontMatter, slug, validateWorkOrder, WorkOrderError } from "../core/workOrder";
 import type { WorkKind, WorkOrder } from "../core/workOrder";
 import { sha } from "./docs";
 import { canonical, DOCS_SESSION_FILE, loadActive, logStage, REQUEST_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
@@ -94,8 +94,26 @@ const RequestSchema = z
     constraints: z.array(z.string().trim().min(1)).default([]),
     sourceMap: z.array(z.object({ quote: z.string().trim().min(1), targets: z.array(z.string().trim().min(1)).min(1), note: z.string().optional() })).optional(),
     clarifications: z.array(z.object({ question: z.string().trim().min(1), answer: z.string().trim().min(1) })).default([]),
+    // fix 의 오류 로그 — 사람이 준 로그 그대로(errorLog) 또는 그 파일(errorLogFile). 없으면 사유와 재현 절차(noErrorLog)
+    errorLog: z.string().optional(),
+    errorLogFile: z.string().optional(),
+    noErrorLog: z.object({ reason: ONE_LINE("noErrorLog.reason"), steps: z.array(z.string().trim().min(1)).min(1) }).optional(),
   })
   .superRefine((request, ctx) => {
+    const logs = [request.errorLog !== undefined, request.errorLogFile !== undefined, request.noErrorLog !== undefined].filter(Boolean).length;
+    if (request.kind === "fix" && logs !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["errorLog"],
+        message: "fix 는 오류 로그로 고칩니다 — errorLog(사람이 준 로그 그대로) · errorLogFile(로그 파일 경로) · noErrorLog({reason, steps}: 로그가 없는 사유와 재현 절차) 중 정확히 하나를 줍니다",
+      });
+    }
+    if (request.kind !== "fix" && logs > 0) {
+      ctx.addIssue({ code: "custom", path: ["errorLog"], message: "오류 로그는 fix 에서만 받습니다" });
+    }
+    if (request.errorLog !== undefined && request.errorLog.trim() === "") {
+      ctx.addIssue({ code: "custom", path: ["errorLog"], message: "오류 로그가 비었습니다 — 사람이 준 로그를 그대로 옮깁니다" });
+    }
     const given = [request.original !== undefined, request.originalFile !== undefined].filter(Boolean).length;
     if (given !== 1) {
       ctx.addIssue({
@@ -148,7 +166,24 @@ function quoted(text: string): string {
 /** 렌더한 지시서의 표시 — 사람이 쓴 지시서와 가른다 (`request submit` 은 표시가 없는 파일을 덮지 않는다) */
 const RENDER_MARK = "<!-- 이 파일은 code-agent request submit 이 ";
 
-export function renderRequirement(request: RequestDraft, original: string, source: string): string {
+/** 로그는 한 글자도 바꾸지 않고 코드 블록으로 감싼다 — 로그 안의 백틱보다 긴 울타리를 쓴다 */
+function fenced(text: string): string {
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
+  const fence = "`".repeat(longest + 1);
+  return `${fence}text\n${text.replace(/\r\n/g, "\n").replace(/\s+$/, "")}\n${fence}`;
+}
+
+/** fix 의 오류 로그 절 — 원문 다음, 사람이 확정하는 지시서 안에 둔다 */
+function errorLogSection(request: RequestDraft, log: { text: string; source: string } | undefined): string[] {
+  if (log) return ["## 오류 로그", "", `<!-- ${log.source} -->`, fenced(log.text), ""];
+  if (request.noErrorLog) {
+    return ["## 오류 로그 없음", "", `- 사유: ${request.noErrorLog.reason}`, "- 재현 절차:",
+      ...request.noErrorLog.steps.map((step, index) => `  ${index + 1}. ${step.replace(/\r?\n/g, " ")}`), ""];
+  }
+  return [];
+}
+
+export function renderRequirement(request: RequestDraft, original: string, source: string, log?: { text: string; source: string }): string {
   return [
     frontMatter(request),
     "",
@@ -162,6 +197,7 @@ export function renderRequirement(request: RequestDraft, original: string, sourc
     `<!-- ${source} -->`,
     quoted(original),
     "",
+    ...errorLogSection(request, log),
     intakeTrace(original, request).text,
     "## 배경",
     "",
@@ -508,6 +544,9 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     constraints: ["<기한 · 호환 · 성능 등 원문의 제약>"],
     clarifications: [{ question: "<접수 때 물은 것>", answer: "<사람의 답 그대로>" }],
     sourceMap: [{ quote: "<원문 일부 그대로>", targets: ["REQ-1"], note: "<반영·제외 이유가 필요하면 작성>" }],
+    ...(kind === "fix"
+      ? { errorLog: "<사람이 준 오류 로그 그대로 — 스택 트레이스·메시지·발생 시각. 파일이면 대신 errorLogFile, 로그가 없으면 대신 noErrorLog: {reason, steps}>" }
+      : {}),
   };
   const out = [
     `# code-agent request — ${id} 접수 (${kind})`,
@@ -680,9 +719,25 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     source = `원문: ${file} 그대로`;
   }
 
+  // 오류 로그도 원문처럼 코드가 옮긴다 — 파일을 줬으면 그 파일 그대로
+  let log: { text: string; source: string } | undefined;
+  if (request.errorLog !== undefined) log = { text: request.errorLog, source: "오류 로그: 사람이 준 로그 그대로 (접수 초안의 errorLog)" };
+  if (request.errorLogFile !== undefined) {
+    const file = toRepoPath(repoRoot, request.errorLogFile, "repo");
+    if (file.startsWith("..") || !existsSync(join(repoRoot, file)) || !statSync(join(repoRoot, file)).isFile()) {
+      throw new Stop(`errorLogFile 이 저장소 안의 파일이 아닙니다: ${request.errorLogFile}`);
+    }
+    const text = readFileSync(join(repoRoot, file), "utf-8").replace(/^﻿/, "");
+    if (text.trim() === "") throw new Stop(`errorLogFile 이 비었습니다: ${file}`);
+    log = { text, source: `오류 로그: ${file} 그대로` };
+  }
+  if (log && log.text.length > 200_000) {
+    throw new Stop("오류 로그가 20만 자를 넘습니다 — 발생 시각 앞뒤의 스택 트레이스·오류 메시지 구간만 남긴 파일을 사람에게 받아 다시 제출하세요.");
+  }
+
   const traced = intakeTrace(original, request);
   if (traced.problems.length) throw new Stop(`원문 연결이 올바르지 않습니다:\n${traced.problems.join("\n")}`);
-  const text = renderRequirement(request, original, source);
+  const text = renderRequirement(request, original, source, log);
   // 지시서 규칙은 하나다 — 손으로 쓴 지시서와 같은 검사를 렌더한 결과에 그대로 건다
   let order: WorkOrder;
   try {
@@ -803,6 +858,8 @@ export function decideRequest(
   if (order.id !== id) {
     throw new Stop(`지시서의 id(${order.id}) 가 ${id} 와 다릅니다: ${spec}`);
   }
+  const missingLog = decision === "confirmed" ? errorLogProblems(order.kind, text) : [];
+  if (missingLog.length > 0) throw new Stop(`${spec}: ${missingLog.map((problem) => problem.detail).join("\n")}`);
   const state = requestState(repoRoot, id, spec);
   if (decision === "confirmed" && state.status === "confirmed") {
     return `${id} 요구사항은 지금 내용으로 이미 확정돼 있습니다 (${state.record.hash}).`;

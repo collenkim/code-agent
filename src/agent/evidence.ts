@@ -12,7 +12,7 @@ import { changedPaths, partialTreeHash, trackedPaths } from "./tree";
 import type { Change } from "./tree";
 import { approvalOf } from "./work";
 import type { Work } from "./work";
-import { parseTestCases, readWorkDoc, reproCases } from "./workDocs";
+import { parseTestCases, readWorkDoc, reproCases, reproMode } from "./workDocs";
 import { parseTestResults, resultFor } from "./testResults";
 import type { CaseStatus } from "./testResults";
 
@@ -51,6 +51,8 @@ export interface VerifyRun {
   /** 실패·error 는 마지막 40줄, 통과는 마지막 5줄 */
   tail: string;
   at: string;
+  /** 출력이 code-agent.json 의 environmentErrors 와 맞아 환경 오류(error)로 분류됐을 때 맞은 패턴 */
+  environment?: string;
 }
 
 /** ⑦ 의 TC 하나가 이번 실행에서 어떻게 확인됐는가 */
@@ -81,6 +83,19 @@ export interface ReproEvidence {
   cases: string[];
   /** 재현 대상 TC의 실제 실패 결과. 파일에 ID가 있다는 사실은 재현 증거가 아니다. */
   found: TestCaseEvidence[];
+  /**
+   * 로그 근거 — 로컬에서 재현되지 않는 결함을 오류 로그로 고친다. 이때 `found` 는 수정 전 결과의 기록일 뿐 실패를
+   * 요구하지 않고, 같은 TC 는 회귀 TC 로 수정 후 통과해야 한다. 없으면 로컬 재현(실패를 봤다)이다.
+   */
+  mode?: "log";
+  /** 로그 근거를 정한 자리 — 계획 승인(⑦ `방식: 로그 근거`) 또는 재현 실패 뒤 사람 확인 */
+  basis?: LogBasis;
+}
+
+export interface LogBasis {
+  by: "plan" | "approved";
+  at: string;
+  detail: string;
 }
 
 export interface Evidence {
@@ -108,6 +123,10 @@ export interface Evidence {
    * 옛 증거에는 없어 optional 이다. 묶임이 깨지면 증거와 함께 버려진다 — 재승인하면 다시 봐야 한다.
    */
   repro?: ReproEvidence;
+  /** 로컬 재현이 안 된 마지막 시도 — 사람이 로그 근거 전환을 확인할 때 보여 준다 */
+  reproAttempt?: ReproEvidence & { problem: string };
+  /** 재현 실패 뒤 사람이 확인한 로그 근거 전환. 테스트를 다시 쓴 뒤의 재실행에도 이어진다 */
+  logBasis?: LogBasis;
   at: string;
 }
 
@@ -150,10 +169,40 @@ export function testTreeHashNow(work: Work): string {
   return partialTreeHash(work.repoRoot, testStageFiles(work));
 }
 
+/** ⑧ · 반영 보고 · 커밋에 쓰는 재현 한 줄 — 로그 근거면 수정 전 결과와 운영 확인 필요를 함께 남긴다 */
+export function reproLine(repro: ReproEvidence): string {
+  const where = `${repro.cases.join(", ")} · 테스트 트리 ${repro.testTreeHash} (${repro.at})`;
+  if (repro.mode !== "log") return `로컬 재현 ${where}`;
+  const before = repro.found.map((entry) => `${entry.id} ${entry.status ?? "unknown"}`).join(", ");
+  const reproduced = repro.found.some((entry) => entry.status === "failed");
+  return `로그 근거(${repro.basis?.by === "approved" ? "로컬 재현 실패 뒤 사람 확인" : "계획 승인"}) ${where} · 수정 전 ${before} · ` +
+    (reproduced ? "수정 전 실패 확인됨" : "로컬 재현 없음 — 운영 로그로 확인 필요");
+}
+
+/**
+ * 이 작업의 재현 방식 — ⑦ 이 `방식: 로그 근거` 로 계획했거나(계획 승인), 로컬 재현이 안 된 뒤 사람이 확인했으면
+ * 로그 근거다. 그 밖에는 로컬 재현이다.
+ */
+export function reproBasisOf(work: Work, evidence: Evidence | undefined): { mode: "local" } | { mode: "log"; basis: LogBasis } {
+  const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
+  const declared = spec ? reproMode(spec) : { mode: "local" as const };
+  if (declared.mode === "log") return { mode: "log", basis: { by: "plan", at: evidence?.repro?.basis?.at ?? new Date().toISOString(), detail: `계획 승인 — ${declared.reason ?? "사유 없음"}` } };
+  if (evidence?.logBasis) return { mode: "log", basis: evidence.logBasis };
+  return { mode: "local" };
+}
+
 /** 현재 재현 TC마다 실제 실패 결과가 있는지 확인한다. 구버전의 ID만 있는 기록은 인정하지 않는다. */
 export function reproResultProblem(work: Work, evidence: Evidence): string | undefined {
   const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
   const cases = spec ? reproCases(spec) : [];
+  // 로그 근거는 수정 전 실패를 요구하지 않는다 — 같은 TC 들의 수정 전 실행 기록만 있으면 된다
+  if (reproBasisOf(work, evidence).mode === "log") {
+    const unseen = cases.filter((id) => !evidence.repro?.cases.includes(id));
+    if (!cases.length || unseen.length || evidence.repro?.mode !== "log") {
+      return `로그 근거의 수정 전 실행 기록이 없습니다: ${unseen.join(", ") || "재현 TC 미정의"} — code-agent repro 로 다시 돌리세요`;
+    }
+    return undefined;
+  }
   const missing = cases.filter((id) => !evidence.repro?.cases.includes(id) ||
     !evidence.repro?.found.some((entry) => entry.id === id && entry.status === "failed"));
   if (!cases.length || missing.length) return `재현 TC의 실제 실패 결과가 없습니다: ${missing.join(", ") || "재현 TC 미정의"} — 구버전 기록을 재사용하지 말고 code-agent repro로 다시 확인하세요`;
@@ -348,6 +397,17 @@ export function failedRuns(runs: VerifyRun[]): VerifyRun[] {
 }
 
 /**
+ * 이번 회차가 **선언된 환경 오류로만** 막혔는가 — 통과하지 못한 실행이 전부 environmentErrors 에 맞았다.
+ * 코드를 그대로 둔 재실행은 이 회차를 다시 쓴다(고쳐 쓰기 한도를 쓰지 않는다). 시간 초과·실행 파일 없음은
+ * 선언된 패턴이 아니라 여기 들지 않는다.
+ */
+export function environmentBlocked(evidence: Evidence): boolean {
+  const current = evidence.runs.filter((run) => run.round > 0 && run.round === evidence.rounds);
+  return current.some((run) => run.environment !== undefined) &&
+    current.every((run) => run.outcome === "passed" || run.environment !== undefined);
+}
+
+/**
  * 고쳐 쓰기 한도를 넘겼는가. **실패한 채로** 넘긴 경우만이다 —
  * 통과한 뒤 회차가 남아 있는 것은 막을 이유가 없다.
  *
@@ -487,7 +547,7 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
     `- 대상: ${evidence.target} · 계획 파일 ${planPaths(work).length}개`,
     `- 고쳐 쓰기 회차: ${evidence.rounds}`,
     ...(evidence.repro
-      ? [`- 재현: ${evidence.repro.cases.join(", ")} · 테스트 트리 ${evidence.repro.testTreeHash} (${evidence.repro.at})`]
+      ? [`- 재현: ${reproLine(evidence.repro)}`]
       : []),
     "",
     "## 실행 결과",

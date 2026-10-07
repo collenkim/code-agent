@@ -22,6 +22,8 @@ import {
 } from "../agent/request";
 import { loadManifestIfAny, readOrder } from "../agent/work";
 import { loadManifest } from "../core/manifest";
+import { errorLogOf } from "../core/workOrder";
+import { sourceItems } from "../agent/sourceTrace";
 
 /**
  * 요구사항 접수 — `/ca-request` 의 코드 쪽.
@@ -258,7 +260,7 @@ describe("접수 — submit", () => {
     assert.throws(() => requestSubmit(repo, DRAFT), /머리말로 옮기면 값이 달라집니다: title/);
     draft({ id: "ORD-8" });
     assert.throws(() => requestSubmit(repo, DRAFT), /초안의 id\(ORD-8\) 가 접수 중인 작업\(ORD-7\) 과 다릅니다/);
-    draft({ kind: "fix" });
+    draft({ kind: "fix", noErrorLog: { reason: "화면 증상만 신고됨", steps: ["주문을 연다"] } });
     assert.throws(() => requestSubmit(repo, DRAFT), /초안의 kind\(fix\) 가 접수한 종류\(feature\) 와 다릅니다/);
     draft({ extra: { team: "a" } });
     assert.throws(() => requestSubmit(repo, DRAFT), /지시서 규격에 맞지 않아[\s\S]*\[team\] 예약 속성도 아니고/);
@@ -268,14 +270,36 @@ describe("접수 — submit", () => {
   test("fix 는 저장소 경로 · scope · preserve 가 있어야 한다 — 손으로 쓴 지시서와 같은 규칙", () => {
     abort(repo);
     requestBegin(repo, ID, "fix");
-    draft({ kind: "fix", target: ["src/main/app/nowhere"] });
+    const LOG = "2026-10-06 ERROR ```boom``` OrderService\njava.lang.NullPointerException: items is null\n    at app.order.Order.total(Order.java:12)";
+    draft({ kind: "fix", target: ["src/main/app/nowhere"], errorLog: LOG });
     assert.throws(
       () => requestSubmit(repo, DRAFT),
       /\[scope\] fix 에는 필수입니다[\s\S]*\[preserve\] fix 에는 필수입니다[\s\S]*\[target\] 대상 저장소에 없는 경로입니다/,
     );
-    draft({ kind: "fix", target: ["src/main/app/order"], scope: ["src/main/app/order"], preserve: ["주문 API 응답 형식"] });
+    draft({ kind: "fix", target: ["src/main/app/order"], scope: ["src/main/app/order"], preserve: ["주문 API 응답 형식"], errorLog: LOG });
     requestSubmit(repo, DRAFT);
     assert.match(read(SPEC), /scope:\n {2}- src\/main\/app\/order\npreserve:\n {2}- 주문 API 응답 형식/);
+    assert.deepEqual(errorLogOf(read(SPEC)), { log: LOG }, "로그는 백틱이 섞여 있어도 한 글자도 바뀌지 않는다");
+    assert.ok(!sourceItems(read(SPEC)).some((item) => item.text.includes("NullPointerException")), "로그 줄은 요구 항목이 아니다");
+  });
+
+  test("fix 는 오류 로그 · 로그 파일 · 없는 사유와 재현 절차 중 하나가 있어야 접수된다", () => {
+    abort(repo);
+    requestBegin(repo, ID, "fix");
+    const fix = { kind: "fix", target: ["src/main/app/order"], scope: ["src/main/app/order"], preserve: ["주문 API 응답 형식"] };
+    draft(fix);
+    assert.throws(() => requestSubmit(repo, DRAFT), /fix 는 오류 로그로 고칩니다/);
+    draft({ ...fix, errorLog: "boom", noErrorLog: { reason: "화면 증상", steps: ["연다"] } });
+    assert.throws(() => requestSubmit(repo, DRAFT), /정확히 하나/);
+    write("logs/prod.log", "ERROR total mismatch\n");
+    draft({ ...fix, errorLogFile: "logs/prod.log" });
+    requestSubmit(repo, DRAFT);
+    assert.match(read(SPEC), /## 오류 로그\n\n<!-- 오류 로그: logs\/prod\.log 그대로 -->\n```text\nERROR total mismatch\n```/);
+    draft({ ...fix, noErrorLog: { reason: "화면 증상만 신고됨", steps: ["주문을 연다", "총액을 본다"] } });
+    requestSubmit(repo, DRAFT);
+    assert.deepEqual(errorLogOf(read(SPEC)), { none: { reason: "화면 증상만 신고됨", steps: "1. 주문을 연다\n  2. 총액을 본다" } });
+    draft({ errorLog: "boom" });
+    assert.throws(() => requestSubmit(repo, DRAFT), /오류 로그는 fix 에서만/);
   });
 });
 

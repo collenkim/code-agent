@@ -12,7 +12,7 @@ codex
 
 Codex 대화에서 `$ca-request <요구사항>`으로 시작한다. 중단한 작업은 `$ca-status`, `$ca-next`로 이어간다. 다른 단계도 같은 이름의 `$ca-*` 스킬을 사용한다. 스킬 호출을 입력하는 곳은 대화창이며 셸이 아니다.
 
-Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설치한다. 두 호스트를 함께 쓰는 목적은 **교차 검증**이다 — 같은 작업을 동시에 진행하지 않고, 계획 반박 검토와 코드 리뷰를 다른 호스트의 모델이 한 번 더 본다(`planning cross`·`review cross`, 두 호스트 설치 시 필수). 상세는 [설계 — Claude·Codex 교차 검증](design.md#claudecodex-교차-검증). 기존 Claude 프로젝트에 `--host codex`만 추가해도 Claude 설정은 보존된다. 설치 이력이 없는 프로젝트에서 `--host`를 생략하면 기존처럼 Claude를 설치한다. 이후 `init`·`update`·`doctor`는 `.code-agent/hosts.json`에 기록된 호스트를 대상으로 한다. `--host claude|codex|both`로 명시할 수도 있다.
+Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설치한다. 두 호스트를 함께 쓰는 목적은 **교차 검증**이다 — 같은 작업을 동시에 진행하지 않고, 계획 반박 검토와 코드 리뷰를 다른 호스트의 모델이 한 번 더 본다(`planning cross`·`review cross`). 두 호스트를 모두 실행할 수 있을 때만 쓴다 — 다른 호스트를 실행할 수 없으면 그 지점의 교차 검증은 중지로 기록하고 작업은 진행하며, `init`·`status`·`doctor` 가 지금 쓸 수 있는지 알린다. 상세는 [설계 — Claude·Codex 교차 검증](design.md#claudecodex-교차-검증). 기존 Claude 프로젝트에 `--host codex`만 추가해도 Claude 설정은 보존된다. 설치 이력이 없는 프로젝트에서 `--host`를 생략하면 기존처럼 Claude를 설치한다. 이후 `init`·`update`·`doctor`는 `.code-agent/hosts.json`에 기록된 호스트를 대상으로 한다. `--host claude|codex|both`로 명시할 수도 있다.
 
 | 설치 대상 | Codex 경로 |
 |---|---|
