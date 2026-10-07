@@ -7,6 +7,8 @@
  * policy = 설치 정책 그대로(판단 opus/high · 실행 sonnet/medium, --model opus 의 기본), exec-opus = 실행 역할만 model: opus(강도 줄 유지),
  * opus·sonnet = 모든 역할을 그 모델로 바꾸고 effort 줄을 지운다(--model sonnet 의 기본 = 이전 동작, opus 는 2026-10-06 기준선 재현용).
  * 정책 효과 비교는 policy 대 exec-opus 로 한다 — 실행 역할의 모델 하나만 다르다. 보고서의 agents 에 역할별 model/effort 를 싣는다.
+ * 판단 역할 목록은 modelPolicy ROLE_POLICY 의 등급에서 가져온다. resume 은 기록된 agentsMode 를 잇고 다른 --agents 는 거부한다
+ * (agentsMode 가 없는 이전 기록은 그 기록의 --model 값 opus·sonnet 을 모드로 본다).
  * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다(2026-10-01 기록은 누적값을 더해 과대 집계됐다).
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.
  */
@@ -28,7 +30,7 @@ const { loadReview } = use('agent/review');
 const { parseQuestions } = use('agent/questions');
 const tty = use('agent/tty');
 const { usage } = use('agent/usage');
-const { claudeFrontmatter, frontmatterModel } = use('agent/modelPolicy');
+const { AGENTS, ROLE_POLICY, claudeFrontmatter, frontmatterModel } = use('agent/modelPolicy');
 const scenario = process.argv[3], resume = process.argv[2] === 'resume';
 if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'refactor'].includes(scenario)) throw Error('Use run|resume <new|enhance|fix|refactor>');
 const option = name => { const at = process.argv.indexOf(`--${name}`); return at > 0 ? process.argv[at + 1] : undefined; };
@@ -36,7 +38,12 @@ const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ??
 if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
 const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
-const agentsMode = option('agents') ?? previous?.agentsMode ?? (hostModel === 'opus' ? 'policy' : 'sonnet');
+// resume 은 기록된 담당 모델 모드를 잇는다 — 도중에 바꾸면 A/B 기록이 틀어진다. agentsMode 가 없는 이전 기록(C6 전)은
+// 설치본이 전부 그 기록의 --model 값(강도 줄 없음)이었으므로 opus·sonnet 모드로 본다
+const recordedAgents = previous && (previous.agentsMode ?? (['opus', 'sonnet'].includes(previous.model) ? previous.model : undefined));
+if (resume && !recordedAgents) throw Error('Resume needs agentsMode or model (opus|sonnet) in the previous report.');
+if (resume && option('agents') && option('agents') !== recordedAgents) throw Error(`Resume keeps the recorded --agents ${recordedAgents}; start a new --label to run another mode.`);
+const agentsMode = resume ? recordedAgents : option('agents') ?? (hostModel === 'opus' ? 'policy' : 'sonnet');
 if (!['policy', 'exec-opus', 'opus', 'sonnet'].includes(agentsMode)) throw Error('Use --agents policy|exec-opus|opus|sonnet');
 if (previous?.finished) throw Error('Scenario already completed; preserve the recorded result.');
 const repo = resume ? fs.realpathSync.native(previous.repo) : fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `ca-full-${scenario}-`)));
@@ -48,7 +55,7 @@ git('init', '-q', '-b', 'master'); git('config', 'user.name', 'evaluation-fixtur
 init(repo, { cli: path.join(root, 'dist/agent/cli.js'), host: installHosts });
 }
 // 담당 모델 — 비교하려는 변수 하나만 다르게 둔다(policy 대 exec-opus 는 실행 역할의 모델만 다르다)
-const JUDGMENT_AGENTS = ['ca-analyst.md', 'ca-critic.md', 'ca-reviewer.md'];
+const JUDGMENT_AGENTS = AGENTS.filter(agent => ROLE_POLICY[agent].tier === 'judgment').map(agent => `ca-${agent}.md`);
 for (const file of agentsMode === 'policy' ? [] : fs.readdirSync(path.join(repo, '.claude/agents')).filter(name => /^ca-.+\.md$/.test(name))) {
   if (agentsMode === 'exec-opus' && JUDGMENT_AGENTS.includes(file)) continue;
   const full = path.join(repo, '.claude/agents', file), text = fs.readFileSync(full, 'utf8');

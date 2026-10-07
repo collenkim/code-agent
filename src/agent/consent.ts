@@ -247,7 +247,12 @@ function requireConsentSnapshot(root: string, record: Pick<ConsentRecord, "snaps
     }
   }
   const limit = 6;
-  throw new Stop(`${message}\n변경 대상: ${changes.slice(0, limit).join(" · ") || "스냅샷 수집 범위"}${changes.length > limit ? ` 외 ${changes.length - limit}건` : ""}`);
+  // 모델 정책은 파일이 아니라 지금 도는 code-agent 빌드가 계산한다 — 준비(셸 CLI)와 hook 관찰·적용(hook 명령의 CLI)이
+  // 서로 다른 설치본이면 바뀐 것이 없어도 매번 어긋나므로, "정책이 바뀌었다"만 보이지 않게 원인 후보를 함께 적는다
+  const policy = changes.includes("모델 정책")
+    ? "\n이 동의를 준비한 code-agent와 지금 code-agent의 모델 정책이 다릅니다. 업데이트 직후라면 동의를 다시 준비하세요. 다시 준비해도 반복되면 code-agent doctor로 PATH의 code-agent와 hook 명령이 같은 설치본인지 확인하세요."
+    : "";
+  throw new Stop(`${message}\n변경 대상: ${changes.slice(0, limit).join(" · ") || "스냅샷 수집 범위"}${changes.length > limit ? ` 외 ${changes.length - limit}건` : ""}${policy}`);
 }
 
 const CAPTURE = Symbol("capture confirmation");

@@ -80,10 +80,19 @@ describe("models.json 읽기", () => {
     assert.equal(isClaudeOverride(root, "reviewer"), true);
     models({ reviewer: "haiku", effort: { reviewer: "max" } });
     assert.deepEqual(claudeModelOf(root, "reviewer"), { model: "haiku" });
-    for (const model of ["haiku", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929"]) {
+    for (const model of [
+      "haiku", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
+      // 4 세대의 effort 이전 모델과 이전 명명 체계(haiku 포함) — 전체 ID 를 사람이 직접 고른 경우
+      "claude-sonnet-4", "claude-sonnet-4-0", "claude-sonnet-4-20250514", "claude-opus-4", "claude-opus-4-0", "claude-opus-4-1",
+      "claude-opus-4-1-20250805", "claude-opus-4-20250514", "claude-3-5-haiku-20241022", "claude-3-haiku-20240307",
+      "claude-3-5-haiku-latest", "claude-3-7-sonnet-20250219", "claude-3-opus-20240229", "claude-2.1",
+    ]) {
       assert.equal(claudeSupportsEffort(model), false, model);
     }
-    for (const model of ["opus", "sonnet", "fable", "claude-sonnet-5-5", "claude-opus-4-6", "claude-sonnet-4-6"]) {
+    for (const model of [
+      "opus", "sonnet", "fable", "claude-sonnet-5-5", "claude-sonnet-5", "claude-opus-5-5", "claude-fable-5-1",
+      "claude-opus-4-5", "claude-opus-4-5-20251101", "claude-opus-4-6", "claude-opus-4-8", "claude-sonnet-4-6",
+    ]) {
       assert.equal(claudeSupportsEffort(model), true, model);
     }
     assert.ok(CLAUDE_NO_EFFORT.length > 0);

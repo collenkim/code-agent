@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { assetCount, assetKeys, CLAUDE_ASSETS, installedPath, packageVersion, strayInstalled, templateHash } from "./assets";
-import { init, installedHook } from "./init";
+import { init, installedHook, requireInstallSettings } from "./init";
 import type { InitOptions } from "./init";
 import { loadActive, PHASES, STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel } from "./models";
@@ -18,7 +18,8 @@ export type { SourceUpdateOptions } from "./sourceUpdate";
  *
  * 보존은 **새로 짜지 않는다** — `init` 이 이미 하고 있다(settings.json 은 우리 항목만 교체, CLAUDE.md·
  * .gitignore 는 표시 블록만, `models.json` 오버라이드는 `applyModels` 가 다시 바른다). 여기서 하는 일은
- * 셋뿐이다: `--cli` 를 승계하고, init 을 부르고, **무엇이 바뀌었는지** 앞뒤를 견줘 말한다.
+ * 넷뿐이다: 설치된 모든 호스트의 설정을 쓰기 전에 읽어 보고, `--cli` 를 승계하고, init 을 부르고,
+ * **무엇이 바뀌었는지** 앞뒤를 견줘 말한다.
  * 정의 파일의 model·effort 는 전후를 견줘 따로 보고한다 — 원인(손 수정·기본값 변경·받은 설정)은 가리지 않는다.
  *
  * TTY 는 필요 없다 — 사람의 판정이 아니라 파일 복사다.
@@ -52,7 +53,10 @@ function list(paths: string[]): string {
 }
 
 export function update(repoRoot: string, options: InitOptions = {}): string {
-  return selectedHosts(repoRoot, options.host).map(host => {
+  const hosts = selectedHosts(repoRoot, options.host);
+  // 호스트마다 init 을 따로 부르므로 시작 전에 모든 호스트의 설정을 한 번 읽는다 — 뒤 호스트에서 멈추면 앞 호스트만 갱신된다
+  requireInstallSettings(repoRoot, hosts);
+  return hosts.map(host => {
     if (host === "claude") return updateClaude(repoRoot, {...options, host});
     const assets = hostAssets("codex", repoRoot);
     const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);

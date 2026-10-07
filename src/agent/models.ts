@@ -89,7 +89,7 @@ export function modelsTable(repoRoot: string, host?: Host): string {
     }),
     "",
     "변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요. 수동 TTY: code-agent model <역할|all> <모델|default> --host claude [--effort <강도>]",
-    `모델: ${CLAUDE_MODEL_ALIASES.join("·")} 또는 claude-로 시작하는 전체 ID. 추론 강도: ${CLAUDE_EFFORTS.join("·")}(haiku·claude-sonnet-4-5는 강도를 받지 않습니다). ` +
+    `모델: ${CLAUDE_MODEL_ALIASES.join("·")} 또는 claude-로 시작하는 전체 ID. 추론 강도: ${CLAUDE_EFFORTS.join("·")}(haiku, Sonnet 4.5·Opus 4.1 이하, claude-3 이전 전체 ID는 강도를 받지 않습니다). ` +
       "모델만 바꾸면 그 역할의 추론 강도는 유지합니다. 적용 후 Claude Code를 다시 시작하세요.",
   ].join("\n");
   }).join("\n\n");

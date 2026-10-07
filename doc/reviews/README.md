@@ -4,7 +4,7 @@
 
 | 순서 | 기록 | 범위 |
 |---|---|---|
-| 최신 · 2026-10-07 | [역할별 모델·추론 강도](2026-10-07-role-models.md) | Claude 판단 opus/high·실행 sonnet/medium 정책(`ROLE_POLICY`), 머리말 `effort`, `models.json` 예약 키 `effort`와 이전 버전 호환, `model --effort`, 동의 스냅샷의 모델 정책, doctor·update 보고, 단가표 sonnet-5-5·fable-5와 모델별 usage. A/B 실측은 미실행(측정 도구만) |
+| 최신 · 2026-10-07 | [역할별 모델·추론 강도](2026-10-07-role-models.md) | Claude 판단 opus/high·실행 sonnet/medium 정책(`ROLE_POLICY`), 머리말 `effort`, `models.json` 예약 키 `effort`와 이전 버전 호환, `model --effort`, 동의 스냅샷의 모델 정책, doctor·update 보고, 단가표 sonnet-5-5·fable-5와 모델별 usage. 구현 검토 반영(설정 파일을 쓰기 전에 검사, 강도 미지원 이전 모델 ID, doctor·동의 안내, 평가 스크립트 resume). A/B 실측은 미실행(측정 도구만) |
 | 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | 코드 수정 없는 감사. 두 호스트 동등성·절차·동의·검증·자기학습(헤르메스 대비)·최적화·하네스 원칙 대조, 지적 160건(high 7), 프로세스 흐름도와 개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`) 작성 |
 | 2026-10-06 | [AI-DLC 공존·교차 검증·결함 2단계](2026-10-06-coexistence-cross-defects.md) | 같은 브랜치 AI-DLC 차단·경고, Claude·Codex 교차 계획 검토·코드 리뷰, SubagentStop 반복·worktree 정리·손자 프로세스·절대 경로·잠금·CRLF 원장·키 경로 등 결함 수정, 두 호스트 실측 |
 | 2026-10-06 | [동의 스냅샷의 외부 hook 간섭 수정](2026-10-06-consent-snapshot.md) | 무시된 외부 세션·캐시 제외, 필수 설정·문서와 준비 커밋 대상 보호, 변경 경로 진단, 접수 중 도움말 |

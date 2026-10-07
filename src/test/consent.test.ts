@@ -457,8 +457,16 @@ test("model: 동의 스냅샷은 모델 정책을 묶는다 — 정책 상태가
   delete record.snapshotEntries!.state["모델 정책"];
   record.snapshot = "0".repeat(64);
   writeFixture(root, `.code-agent/consents/${fixture.id}.json`, JSON.stringify(record));
-  assert.throws(() => applyConsent(root, fixture.id), /변경 대상: .*모델 정책/);
+  assert.throws(() => applyConsent(root, fixture.id), /변경 대상: .*모델 정책\n이 동의를 준비한 code-agent와 지금 code-agent의 모델 정책이 다릅니다\. .*PATH의 code-agent와 hook 명령이 같은 설치본인지/);
   assert.equal(existsSync(join(root, ".code-agent/models.json")), false);
+});
+
+test("동의 스냅샷: 모델 정책이 아닌 변경에는 설치본 안내를 붙이지 않는다", () => {
+  const fixture = prepareConsentFixture(root, { action: "model", host: "claude", agent: "writer", model: "opus" });
+  observeConsentFixture(fixture);
+  writeFixture(root, "doc/extra.md", "바뀐 문서\n");
+  assert.throws(() => applyConsent(root, fixture.id), (error: unknown) =>
+    error instanceof Error && /변경 대상: 파일 "doc\/extra\.md"/.test(error.message) && !error.message.includes("설치본"));
 });
 
 test("model: 강도를 받지 않는 모델에 강도를 함께 준비하면 미리보기에서 거부한다", () => {

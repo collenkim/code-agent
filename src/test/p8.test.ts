@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { Module } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -219,6 +219,22 @@ describe("P8 · doctor", () => {
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
 
+  test("정의 파일이 하나도 없으면 에이전트 모델은 ✓ 가 아니라 · 다 — 설치 여부는 스킬·에이전트 줄이 말한다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    rmSync(join(repo, ".claude/agents"), { recursive: true, force: true });
+    const report = doctor(repo);
+    assert.match(line(report.text, "에이전트 모델"), /^· 에이전트 모델: 대조할 정의 파일이 없습니다/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✗ 스킬·에이전트: 없는 것 8개/);
+  });
+
+  test("정의 파일이 일부만 있으면 ✓ 에 일치한 파일 수를 붙인다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    rmSync(join(repo, ".claude/agents/ca-critic.md"));
+    assert.match(line(doctor(repo).text, "에이전트 모델"), /^✓ 에이전트 모델: .* — 설치된 정의 파일 7개 일치$/);
+  });
+
   test("Stop hook 을 지우면 ✗ 이고 고치는 법은 init 이다", () => {
     gitInit();
     init(repo, { cli: CLI });
@@ -423,6 +439,51 @@ describe("P8 · update", () => {
     assert.match(report, /\.claude\/settings\.json: 그대로/);
     assert.match(report, /CLAUDE\.md: 그대로/);
     assert.equal(report.includes("!!"), false);
+  });
+
+  /** 설치가 쓰는 파일 전부(.git 제외)의 내용 — 멈춘 뒤 하나도 바뀌지 않았는지 대조한다 */
+  function installedFiles(): Record<string, string> {
+    const files: Record<string, string> = {};
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(join(repo, dir), { withFileTypes: true })) {
+        const path = dir ? `${dir}/${entry.name}` : entry.name;
+        if (path === ".git") continue;
+        if (entry.isDirectory()) walk(path);
+        else files[path] = read(path);
+      }
+    };
+    walk("");
+    return files;
+  }
+
+  test("models.json 형식이 잘못되었으면 파일을 하나도 바꾸지 않고 멈춘다 — 이전 버전이 받던 손 입력 값도 쓰기 전에 거부한다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    // 이전 설치본 흉내: 버전 · 손으로 고친 스킬 · 지운 Stop hook · 손으로 고친 강도 · 이전 버전이 검사하지 않던 대문자 별칭
+    write(`${STATE_DIR}/version`, "0.9.0\n");
+    write(".claude/skills/ca-check/SKILL.md", `${read(".claude/skills/ca-check/SKILL.md")}\n손으로 고친 줄\n`);
+    const settings = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, unknown[]> };
+    delete settings.hooks.Stop;
+    write(".claude/settings.json", JSON.stringify(settings, null, 2));
+    write(".claude/agents/ca-writer.md", read(".claude/agents/ca-writer.md").replace(/^effort: medium/m, "effort: max"));
+    write(MODELS_FILE, JSON.stringify({ reviewer: "Opus" }));
+    const before = installedFiles();
+
+    for (const run of [() => update(repo), () => init(repo, { cli: CLI })]) {
+      assert.throws(run, (error: unknown) => error instanceof Stop && /models\.json` 형식이 잘못되었습니다 — reviewer/.test(error.message));
+      assert.deepEqual(installedFiles(), before);
+    }
+  });
+
+  test("두 호스트 설치에서 codex-models.json 이 깨졌으면 Claude 쪽도 갱신하지 않고 멈춘다", () => {
+    gitInit();
+    init(repo, { cli: CLI, host: "both" });
+    write(".claude/skills/ca-check/SKILL.md", `${read(".claude/skills/ca-check/SKILL.md")}\n손으로 고친 줄\n`);
+    write(`${STATE_DIR}/codex-models.json`, JSON.stringify({ writer: { model: "opus", reasoning: "high" } }));
+    const before = installedFiles();
+
+    assert.throws(() => update(repo), (error: unknown) => error instanceof Stop && /codex-models\.json` 형식이 잘못되었습니다/.test(error.message));
+    assert.deepEqual(installedFiles(), before);
   });
 });
 

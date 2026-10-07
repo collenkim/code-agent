@@ -245,15 +245,22 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
   // 정의 파일 머리말의 model·effort 가 설정(models.json, 없으면 역할 기본값)과 같은가. 스킬·에이전트 해시는 이 두 줄을
   // 빼고 보므로 여기서 따로 본다 — 손으로 고친 머리말이면 하위 에이전트(머리말)와 교차 실행(설정)이 갈라진다
   try {
+    let installed = 0;
     const mismatches = AGENTS.flatMap((agent) => {
       const file = installedClaudeModel(repoRoot, agent), setting = claudeModelOf(repoRoot, agent);
+      if (file) installed++;
       return file && (file.model !== setting.model || file.effort !== setting.effort)
         ? [`${agent} 파일 ${file.model ?? "(없음)"}${file.effort ? `/${file.effort}` : ""} ≠ 설정 ${modelDisplay(setting)}`] : [];
     });
     if (mismatches.length > 0) {
       add("✗", "에이전트 모델", `정의 파일이 설정과 다릅니다 — ${mismatches.slice(0, 5).join(" · ")}${mismatches.length > 5 ? ` (+${mismatches.length - 5})` : ""}`,
         "code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. 바꾸려면 모델 변경을 요청하세요");
-    } else add("✓", "에이전트 모델", policySummary(repoRoot, "claude"));
+    } else if (installed === 0) {
+      // 대조할 정의 파일이 없으면 ✓ 로 찍지 않는다 — 설치 여부는 "스킬·에이전트" 줄이 알린다
+      add("·", "에이전트 모델", `대조할 정의 파일이 없습니다 (.claude/agents/ca-*.md) — 설정: ${policySummary(repoRoot, "claude")}`);
+    } else {
+      add("✓", "에이전트 모델", `${policySummary(repoRoot, "claude")}${installed < AGENTS.length ? ` — 설치된 정의 파일 ${installed}개 일치` : ""}`);
+    }
   } catch (error) {
     add("✗", "에이전트 모델", error instanceof Error ? error.message : String(error), ".code-agent/models.json 을 고치거나 지운 뒤 code-agent update --templates-only");
   }

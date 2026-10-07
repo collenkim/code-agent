@@ -53,10 +53,19 @@ export const ClaudeModelIdSchema = z.string().max(64).refine(
   { message: "Claude 모델 식별자가 아닙니다" },
 );
 /**
- * 추론 강도(effort)를 받지 않는 모델 — 번들 claude-api 스킬 "Thinking & Effort" 표에서 Haiku 4.5·Sonnet 4.5 는 오류다.
+ * 추론 강도(effort)를 받지 않는 모델 — 번들 claude-api 스킬 "Thinking & Effort" 표에서 Haiku 4.5·Sonnet 4.5 는 오류이고,
+ * 4 세대에서 effort 는 Opus 4.5·Opus 4.6·Sonnet 4.6 부터다(같은 스킬의 model-migration). 그보다 앞선 전체 ID 를 사람이 고른 경우도 막는다:
+ * Sonnet 4.5 이하 4 세대(`claude-sonnet-4`·`-4-0`·`-4-20250514`), Opus 4·4.1, 이전 명명 체계 `claude-<버전>-…`(3·3.5·3.7·2.x — haiku 포함).
+ * 허용 목록이 아니라 막는 목록인 이유: 앞으로 나올 모델 ID 를 미리 알 수 없고, 새 모델은 강도를 받아 왔다.
  * Claude Code 가 걸러 주는지에 기대지 않고, 정의 파일에 effort 줄을 쓰지 않고 교차 실행에 --effort 를 넘기지 않는다.
+ * 목록을 바꾸면 `modelPolicyFingerprint` 가 달라져 준비해 둔 model 동의는 다시 준비 대상이 된다.
  */
-export const CLAUDE_NO_EFFORT: readonly RegExp[] = [/^haiku$/, /^claude-haiku-/, /^claude-sonnet-4-5(?:-\d{8})?$/];
+export const CLAUDE_NO_EFFORT: readonly RegExp[] = [
+  /^haiku$/, /^claude-haiku-/,
+  /^claude-sonnet-4(?:-[0-5])?(?:-\d{8})?$/,
+  /^claude-opus-4(?:-[01])?(?:-\d{8})?$/,
+  /^claude-\d/,
+];
 export function claudeSupportsEffort(model: string): boolean {
   return !CLAUDE_NO_EFFORT.some((pattern) => pattern.test(model));
 }
