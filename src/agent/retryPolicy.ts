@@ -207,7 +207,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   environment: {
     id: "environment", label: "환경", group: "verify", auxiliary: false,
-    detect: "선언 문구가 있고 그 실행에 실패 TC 없음, 실행 파일 없음·실행 실패, prepare 실패",
+    detect: "선언 문구가 있고 그 실행에 실패 TC 없음(재현은 실패 결과가 있어도 문구만으로), 실행 파일 없음·실행 실패, prepare 실패",
     retry: "env-then-retry", retryText: "환경을 확인받은 뒤 `verify --retry`(같은 회차). 통합 검증은 `integrate`, 재현은 `repro`",
     counters: ["rerun", "integrateRerun", "reproRerun"],
     limitText: `같은 코드 재실행 ≤ ${LIMITS.rerun}/회차, 통합 재실행 ≤ ${LIMITS.integrateRerun}/회차, 재현 재실행 ≤ ${LIMITS.reproRerun}/테스트 트리`,
@@ -434,13 +434,23 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     /** sameRoundDecision 의 거부 사유 — 같은 코드로 다시 돌리지 않는다 */
     "same-tree": "코드 결함으로 실패한 트리입니다 — 같은 코드로 다시 돌리지 않습니다. 계획 안에서 고친 뒤 code-agent verify, 같은 코드를 다시 확인하려면 code-agent verify --retry(고쳐 쓰기 회차를 씁니다).",
   },
+  environment: {
+    /** 통합 검증 — 같은 회차는 code-agent integrate 로 다시 돈다(verify --retry 는 check 로 되감아 같은 코드 재실행을 쓴다) */
+    integrate: "환경 문제로 통합 검증을 마치지 못했습니다({kind}: {reason}). 계획 파일을 고치지 말고 사용자에게 환경·매니페스트를 확인받은 뒤 code-agent integrate 로 같은 회차를 다시 돌리세요 — 고쳐 쓰기 회차를 쓰지 않습니다(남은 통합 검증 재실행 {rerunLeft}회). 같은 실패가 반복되는데 선언이 없으면 code-agent.json 의 environmentErrors 선언을 사용자에게 제안합니다.",
+  },
   interrupted: {
     /** 기록 없이 끊긴 회차·시작 표지만 남은 test·통합 검증 */
     empty: "{round}회차 {phase} 가 끝 기록 없이 끊겼습니다(도구 시간 제한·강제 종료). 셸 명령의 제한 시간을 가장 길게 주거나 백그라운드로 같은 명령을 다시 실행하세요. 코드가 그대로면 같은 회차를 다시 씁니다(남은 같은 코드 재실행 {rerunLeft}회). 끊긴 뒤 코드를 고치면 고쳐 쓰기 회차를 씁니다.",
+    /** 통합 검증의 명령 시간 초과 */
+    integrate: "{kind} 이(가) 제한 시간 {minutes}분을 넘겨 중단됐습니다. 끝나지 않는 테스트(대기·무한 루프)인지 로그({logFile})로 확인하고, 정상인데 오래 걸리면 사용자가 code-agent.json 의 commandTimeoutMinutes 를 늘립니다. 그 뒤 code-agent integrate — 같은 회차를 다시 돌리고 고쳐 쓰기 회차를 쓰지 않습니다(남은 통합 검증 재실행 {rerunLeft}회).",
+  },
+  "result-unconfirmed": {
+    /** 통합 검증 — 같은 코드 재실행은 code-agent integrate, 고치면 verify 로 check 부터 */
+    integrate: "명령은 끝났지만 통합 검증에서 ⑦ 의 TC 결과가 확인되지 않았습니다: {cases}. 코드·테스트를 그대로 두고 보고서 위치·환경만 고쳤으면 code-agent integrate 로 같은 회차를 다시 돌리세요(남은 통합 검증 재실행 {rerunLeft}회). 계획 파일을 고쳐야 하면 고친 뒤 code-agent verify 로 check 부터 다시 검증합니다(얼어 있는 kind:test 파일은 ⑨ 지적이나 재승인이 있어야 고칠 수 있습니다).",
   },
   precondition: {
-    /** 실행은 모두 통과했고 다시 돌리면 맞춰지는 대조만 남았다(diagnose) */
-    rerun: "실행은 모두 통과했지만 증거가 지금과 맞지 않습니다: {problems}. 코드 결함이 아닙니다 — 검증 명령이 계획 파일을 고쳤거나(포맷터 등) ⑧ 이 손으로 바뀌었거나 회차·묶임이 어긋난 경우라 code-agent verify 로 다시 돌리면 맞춰집니다. 다시 돈 회차는 통과 뒤 변경으로 세며 고쳐 쓰기 회차를 쓰지 않습니다({budget}). 돌 때마다 같은 문제가 되풀이되면(검증 명령이 매번 계획 파일을 바꿈) 고치지 말고 사용자에게 보고하세요.",
+    /** 실행은 모두 통과했고 다시 돌리면 맞춰지는 대조만 남았다(diagnose). ⑧ 만 어긋났으면 plain verify 는 판정부터 들어가 다시 렌더하지 않는다 */
+    rerun: "실행은 모두 통과했지만 증거가 지금과 맞지 않습니다: {problems}. 코드 결함이 아닙니다 — 검증 명령이 계획 파일을 고쳤거나(포맷터 등) ⑧ 이 손으로 바뀌었거나 회차·묶임이 어긋난 경우라 code-agent verify --retry 로 check 부터 다시 돌리면 맞춰집니다. 다시 돈 회차는 통과 뒤 변경으로 세며 고쳐 쓰기 회차를 쓰지 않습니다({budget}). 돌 때마다 같은 문제가 되풀이되면(검증 명령이 매번 계획 파일을 바꿈) 고치지 말고 사용자에게 보고하세요.",
   },
   "agent-format-error": {
     /** 기록된 형식 오류(needs-correction·failed) — planning advance 의 blocked 줄 등. 기본 문구는 기록 전 되돌림이다 */
@@ -495,7 +505,9 @@ export const GUIDE_KEYS: Readonly<Record<FailureClass, readonly string[]>> = {
 /** 변형 문구의 자리표시 */
 export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<Record<string, readonly string[]>>>>> = {
   "code-defect": { "same-tree": [] },
-  interrupted: { empty: ["phase", "rerunLeft", "round"] },
+  environment: { integrate: ["kind", "reason", "rerunLeft"] },
+  interrupted: { empty: ["phase", "rerunLeft", "round"], integrate: ["kind", "logFile", "minutes", "rerunLeft"] },
+  "result-unconfirmed": { integrate: ["cases", "rerunLeft"] },
   precondition: { rerun: ["budget", "problems"] },
   "agent-format-error": { record: ["detail", "id"] },
   "agent-content-error": { record: ["detail", "id"] },
@@ -596,7 +608,13 @@ export function verifyState(input: { phase: string; round: number; runs: readonl
 }
 
 export type RoundCause = "first" | "fix" | "collect" | "review";
-export interface ReproRetry { trees: string[]; reruns: Record<string, number> }
+export interface ReproRetry {
+  trees: string[]; reruns: Record<string, number>;
+  /** 테스트 트리 → 그 트리의 마지막 시도가 끝난 원인. 뒤 트리의 시도 기록(reproAttempt)이 덮어도 트리별 원인이 남는다 */
+  classes?: Record<string, Exclude<VerifyState, "passed" | "code-defect">>;
+}
+/** 같은 회차 재사용(check)이 지운 test·통합 검증의 상태 — 다시 돌기 전까지 회차 상태 판정에 남긴다 */
+export interface WipedRuns { test?: { round: number; state: VerifyState }; integrate?: { round: number; state: VerifyState } }
 export interface VerifyRetryState {
   version: 1;
   /** 회차 번호(문자열) → 그 회차를 연 원인 */
@@ -607,6 +625,8 @@ export interface VerifyRetryState {
   integrateReruns: Record<string, number>;
   /** test·통합 검증의 시작 표지 — 실행 전 저장에 넣고 끝 저장에서 지운다. 남아 있으면 그 실행은 끊겼다 */
   started?: { phase: "test" | "integrate"; round: number; pid: number; host: string; at: string };
+  /** check 의 같은 회차 재사용이 지운 test·통합 검증 상태 — test 는 다음 test 가, 통합 검증은 다음 통합 검증이 끝 저장에서 지운다 */
+  wiped?: WipedRuns;
   repro?: ReproRetry;
   grants: RetryGrant[];
   /** 옛 증거를 처음 이행할 때의 rounds(총 회차 유예) */
@@ -618,9 +638,11 @@ export type VerifyRetryView = VerifyRetryState & { repro: ReproRetry };
 /**
  * 회차 전체 상태(evidence.ts roundState 가 증거로 부른다). 회차 r 의 실행·표지가 하나도 없으면 기록 없이 끊긴 회차다.
  * test 기록이 없는 회차는 앞 회차의 마지막 test 상태를 이어받는다 — 실패한 test 뒤 test 를 건너뛰고 고쳐도 고쳐 쓰기를 쓴다.
+ * 같은 회차 재사용이 지운 test(wiped.test)는 그 뒤 test 가 돌기 전까지 마지막 test 상태다. 지운 통합 검증(wiped.integrate)은
+ * 그 회차에만 든다 — test 를 끊거나 환경으로 실패시킨 뒤 check 로 지우고 고쳐 카운터를 피하는 길을 닫는다.
  */
 export function roundStateOf(input: {
-  rounds: number; runs: readonly RunView[]; started?: VerifyRetryState["started"];
+  rounds: number; runs: readonly RunView[]; started?: VerifyRetryState["started"]; wiped?: WipedRuns;
   testCases?: readonly { status?: string }[]; integrationTestCases?: readonly { status?: string }[];
 }): { state: VerifyState | "none"; emptyRound: boolean } {
   const r = input.rounds;
@@ -632,12 +654,14 @@ export function roundStateOf(input: {
   const has = (phase: string, round: number) => input.runs.some((run) => run.phase === phase && run.round === round);
   if (started?.phase === "test") states.push("interrupted");
   else if (has("test", r)) states.push(verifyState({ phase: "test", round: r, runs: input.runs, cases: input.testCases }));
+  else if (input.wiped?.test && input.wiped.test.round <= r) states.push(input.wiped.test.state);
   else {
     const previous = input.runs.filter((run) => run.phase === "test" && run.round < r).map((run) => run.round);
     if (previous.length) states.push(verifyState({ phase: "test", round: Math.max(...previous), runs: input.runs }));
   }
   if (started?.phase === "integrate") states.push("interrupted");
   else if (has("integrate", r)) states.push(verifyState({ phase: "integrate", round: r, runs: input.runs, cases: input.integrationTestCases ?? [] }));
+  else if (input.wiped?.integrate?.round === r) states.push(input.wiped.integrate.state);
   return { state: states.reduce((worst, state) => STATE_RANK[state] > STATE_RANK[worst] ? state : worst, "passed"), emptyRound: false };
 }
 
@@ -664,7 +688,8 @@ export function verifyRetryOf(evidence: { rounds: number; runs: readonly RunView
       ...retry,
       version: 1,
       causes: { ...(retry.causes ?? {}) }, reruns: { ...(retry.reruns ?? {}) }, integrateReruns: { ...(retry.integrateReruns ?? {}) },
-      repro: { trees: [...(retry.repro?.trees ?? [])], reruns: { ...(retry.repro?.reruns ?? {}) } },
+      repro: { trees: [...(retry.repro?.trees ?? [])], reruns: { ...(retry.repro?.reruns ?? {}) },
+        ...(retry.repro?.classes ? { classes: { ...retry.repro.classes } } : {}) },
       grants: [...(retry.grants ?? [])],
     };
   }

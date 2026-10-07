@@ -4,10 +4,13 @@ import { dirname, join, posix } from "path";
 import { hashManifest, hashPlan } from "../core/approval";
 import { writeAtomic } from "../core/atomic";
 import { readBlock, stripBlock, upsertBlock } from "./blocks";
-import { planPaths, stageProblems, treeHashNow } from "./evidence";
+import { planPaths, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
+import type { ReviewRoundUsage } from "./evidence";
 import { reviewFile, workDocsDir } from "./layout";
 import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
 import { callSlot, clamp } from "./plugins/run";
+import { COUNTER_LABEL, failure, grantScope, guidance, LIMITS, limitOf, POLICIES, RetryRefused } from "./retryPolicy";
+import type { RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
@@ -56,6 +59,22 @@ export interface ReviewLog {
   rounds: ReviewRound[];
   /** 이 계획·회차 묶음에서 테스트 동결을 푼 지적들. 회차가 stale 로 버려지면 함께 비워진다 */
   used?: UsedFinding[];
+  /** 이 묶임의 리뷰 회차 기본 한도 — 첫 회차에 고정한다. 없는 옛 기록은 reviewRoundUsageOf 가 유예 1회를 준다 */
+  limit?: number;
+  /** 사람 허용(judgment retry-grant) — 묶임이 바뀌어 회차를 버리면 함께 버린다 */
+  grants?: RetryGrant[];
+}
+
+/**
+ * 리뷰 회차 한도 거부 — 판정은 reviewRoundUsageOf 하나이고, 문구는 check() 의 리뷰 회차 거부와 같은 limit-exceeded 안내다.
+ * stale(묶임이 바뀌어 회차를 버린다)이면 거부하지 않는다.
+ */
+export function reviewLimitRefusal(usage: ReviewRoundUsage, reviewDoc: string): RetryRefused | undefined {
+  if (usage.stale || usage.used < usage.limit) return undefined;
+  return new RetryRefused(
+    failure("limit-exceeded", "리뷰 회차 소진", { origin: "blocking-finding", counter: { key: "reviewRounds", used: usage.used, limit: usage.limit } }),
+    guidance("limit-exceeded", { counterLabel: COUNTER_LABEL.reviewRounds, limit: usage.limit, originLabel: POLICIES["blocking-finding"].label, evidence: reviewDoc }),
+  );
 }
 
 export function loadReview(repoRoot: string, id: string, target: string): ReviewLog | undefined {
@@ -256,6 +275,10 @@ export function openRound(work: Work): string {
         `ca-reviewer를 호출해 결과를 기록하세요. 고친 뒤에는 code-agent check부터 다시 돌리세요.`,
     );
   }
+  // 리뷰 회차 한도는 같은 트리 거부 **뒤에** 본다 — 마지막 회차 트리에서 다시 부르면 맞는 안내는 "리뷰어를 호출하세요" 다
+  const usage = reviewRoundUsageOf(previous, { baseCommit: active.baseCommit!, planHash, manifestHash });
+  const refusal = reviewLimitRefusal(usage, reviewDocFile(active.id));
+  if (refusal) throw refusal;
 
   const round: ReviewRound = {
     round: rounds.length + 1,
@@ -265,12 +288,17 @@ export function openRound(work: Work): string {
     planHash,
     manifestHash,
   };
-  // 동결을 푼 기록도 회차와 한 묶음이다 — 회차를 버리면(다른 계획·경계) 그 기록도 함께 버린다
+  // 동결을 푼 기록도 회차와 한 묶음이다 — 회차를 버리면(다른 계획·경계) 그 기록도 함께 버린다.
+  // 이전 기록의 다른 필드(교차 기록 등)는 버리지 않는다. 한도는 이 묶임의 첫 회차에 고정한다(옛 기록은 여기서 고정되며 유예가 끝난다)
+  const limit = stale ? LIMITS.reviewRounds : (previous!.limit ?? usage.base);
   const log: ReviewLog = {
+    ...(stale ? {} : previous!),
     id: active.id,
     target: active.target,
     rounds: [...rounds, round],
     used: stale ? [] : (previous!.used ?? []),
+    limit,
+    ...(stale ? { grants: [] } : {}),
   };
   saveReview(repoRoot, log);
   renderReviewDoc(work, log);
@@ -312,7 +340,7 @@ export function openRound(work: Work): string {
     "",
     `ca-reviewer를 호출하세요. hook이 실행·완료와 결과를 기록하고 ${reviewDocFile(active.id)} 의 지적 표를 자동으로 채웁니다.`,
     "| id | 계획 파일 | 범위 | 상태 | 지적 | — 지적이 없으면 `- 없음`.",
-    "계획 안 지적은 고친 뒤 code-agent check 부터 다시 돌고, 이 명령으로 다음 회차를 엽니다.",
+    `계획 안 지적은 고친 뒤 code-agent verify 로 check 부터 다시 돌고, 이 명령으로 다음 회차를 엽니다 (리뷰 회차 ${round.round}/${limitOf("reviewRounds", limit, log.grants ?? [], grantScope({ file: "review", key: "reviewRounds" }))}).`,
     "계획 밖 경로를 가리키는 지적은 모델이 닫을 수 없습니다 — questions.md 로 묻거나 계획을 고쳐 재승인받습니다.",
   ].join("\n");
 }

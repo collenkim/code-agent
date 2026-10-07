@@ -11,6 +11,8 @@ import { requestBegin, requestSubmit, decideRequest } from "../agent/request";
 import { intakeTrace } from "../agent/intakeTrace";
 import { parseQuestions } from "../agent/questions";
 import { freshTestReports, reportSnapshot } from "../agent/testReports";
+import type { ReportScan } from "../agent/testReports";
+import { environmentMatch } from "../agent/retryPolicy";
 import { parseTestResults, resultFor } from "../agent/testResults";
 import { decide } from "../agent/hook";
 import * as tty from "../agent/tty";
@@ -95,6 +97,33 @@ test("기존 JUnit 결과의 성공·실패·생략과 오래된 보고서를 �
   write("module/target/surefire-reports/TEST-new.xml", report);
   const results = parseTestResults(freshTestReports(root, old));
   assert.deepEqual(["TC-1", "TC-2", "TC-3"].map(id => resultFor(id, results).status), ["passed", "failed", "skipped"]);
-  assert.equal(resultFor("TC-1", parseTestResults('<!DOCTYPE x SYSTEM "file:///secret"><testsuite><testcase name="TC-1"/></testsuite>')).status, "unknown");
-  assert.equal(resultFor("TC-1", parseTestResults('<testsuite><system-out><![CDATA[<testcase name="TC-1"/>]]></system-out></testsuite>')).status, "unknown");
+  // 콘솔 JUnit 은 <?xml 선언이 있을 때만 읽는다 — 선언을 붙여야 아래 두 방어(DOCTYPE·ENTITY 거부, CDATA 제거)가 실제로 결과를 막는지 본다
+  const declared = (xml: string) => `<?xml version="1.0"?>
+${xml}`;
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<testsuite><testcase name="TC-1"/></testsuite>'))).status, "passed", "대조군 — 선언이 있으면 읽는다");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<!DOCTYPE x SYSTEM "file:///secret"><testsuite><testcase name="TC-1"/></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<!ENTITY x "y"><testsuite><testcase name="TC-1"/></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<testsuite><system-out><![CDATA[<testcase name="TC-1"/>]]></system-out></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults('<testsuite><testcase name="TC-1"/></testsuite>')).status, "unknown", "선언 없는 콘솔 조각은 읽지 않는다");
+});
+
+test("보고서 탐색이 깊이 12 를 넘겨 끊기면 기록에 남긴다", () => {
+  const deep = Array.from({ length: 14 }, (_, index) => `d${index}`).join("/");
+  write(`${deep}/build/test-results/TEST-deep.xml`, '<testsuite><testcase name="TC-1"/></testsuite>');
+  const scan: ReportScan = { truncated: false, cases: [] };
+  assert.equal(reportSnapshot(root, scan).size, 0, "깊이 14 아래 보고서는 찾지 못한다");
+  assert.equal(scan.truncated, true);
+  const shallow: ReportScan = { truncated: false, cases: [] };
+  reportSnapshot(join(root, "d0"), shallow);
+  assert.equal(shallow.truncated, true, "깊이 13 디렉터리도 들어가지 못했다");
+});
+
+test("새 보고서의 TC 아닌 실패도 탐색 기록에 담겨 환경 분류를 막는다 — 반환 JSONL 은 TC 만이다", () => {
+  const old = reportSnapshot(root);
+  write("build/test-results/test/TEST-x.xml", '<testsuite><testcase name="TC-1 ok"/><testcase name="other broken"><failure>x</failure></testcase></testsuite>');
+  const scan: ReportScan = { truncated: false, cases: [] };
+  const jsonl = freshTestReports(root, old, scan);
+  assert.deepEqual(jsonl.split("\n").map((line) => JSON.parse(line).id), ["TC-1"]);
+  assert.ok(scan.cases.some((entry) => entry.name === "other broken" && entry.status === "failed"));
+  assert.equal(environmentMatch("Connection refused", ["Connection refused"], scan.cases), undefined);
 });

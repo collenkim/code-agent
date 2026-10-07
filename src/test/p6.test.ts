@@ -31,6 +31,8 @@ import { recordReviewFixture } from "./reviewFixture";
 import { manifestCheck, survey } from "../agent/survey";
 import { partialTreeHash } from "../agent/tree";
 import { approveLogBasis, check, integrate, repro, runTests } from "../agent/validate";
+import { RetryRefused } from "../agent/retryPolicy";
+import { verify } from "../agent/verificationFlow";
 import { prepareConsent } from "../agent/consent";
 import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
 import { analysisProblems } from "../agent/workDocs";
@@ -477,6 +479,48 @@ describe("P6 · fix — 재현 먼저", () => {
     await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
   });
 
+  test("8b. 같은 테스트 트리로 재현하지 못했으면 다시 돌리지 않는다 — 다시 돌려도 같다", async () => {
+    useManifest({ test: PASS });
+    toImplement();
+    writeReproTest();
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다[\s\S]*남은 재현 시도 2회/);
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.reproAttempt!.class, "result-unconfirmed");
+    const at = runsOf(loadEvidence(repo, "FIX-1", SRC)!, "repro")[0].at;
+    await assert.rejects(() => repro(requireReproable(repo)),
+      (error: Error) => error instanceof RetryRefused && /같은 테스트 트리로 이미 재현하지 못했습니다/.test(error.message));
+    assert.equal(runsOf(loadEvidence(repo, "FIX-1", SRC)!, "repro")[0].at, at, "거부는 실행하지 않는다");
+  });
+
+  test("8c. fix 의 결과 미확인 회차에는 수집 수정 창이 없다 — 재현부터 언 테스트는 ⑨ 지적으로만 열린다", async () => {
+    // ⑦ 에 TC 가 둘이고 테스트는 재현 TC 만 찍는다
+    start(repo, join(repo, "doc/work/FIX-1.md"));
+    writeDocs();
+    write("doc/work/FIX-1/07-test-spec.md", [
+      "# 테스트 명세", "## 테스트 케이스",
+      "| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |", "|---|---|---|---|---|",
+      "| TC-1 | Unit | AC-R1-1 | 항목 두 개를 담고 총액을 읽는다 | 합계가 나온다 |",
+      "| TC-2 | Unit | AC-R1-1 | 빈 목록의 총액을 읽는다 | 0 이 나온다 |",
+      "## 재현", "- TC-1",
+    ].join("\n"));
+    next(repo);
+    next(repo);
+    next(repo);
+    submit();
+    approve();
+    next(repo);
+    writeReproTest("// TC-1 · TC-2 재현\n");
+    await repro(requireReproable(repo));
+    fixSource();
+    next(repo);
+    next(repo);
+    const result = await verify(repo);
+    assert.equal(result.node, "diagnose");
+    assert.equal(result.failure?.class, "result-unconfirmed");
+    assert.equal(result.budget?.collect.limit, 0);
+    assert.equal(result.budget?.totalRounds.limit, 6);
+    assert.match(writeFileHook(REPRO_TEST) ?? "", /얼어 있는/);
+  });
+
   test("9. 테스트 명령이 없으면 not-run, 실행 파일이 없으면 error — 둘 다 재현이 아니다", async () => {
     useManifest({ test: undefined }, STRATEGY_NO_TEST);
     toImplement();
@@ -656,6 +700,74 @@ describe("P6 · fix — 재현 먼저", () => {
     assert.equal(writeFileHook(SRC), undefined);
   });
 
+  test("13e-2. 재현 시도는 서로 다른 테스트 트리로 3회까지다 — 넘으면 멈추고 repro-log 동의를 안내한다", async () => {
+    useManifest({ test: PASSES_LOCALLY });
+    useOrder(FIX_ORDER_LOG);
+    toImplementWith(CURRENT_LOG, "- TC-1");
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      writeReproTest(`// TC-1 재현 시도 ${attempt}\n`);
+      await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    }
+    writeReproTest("// TC-1 재현 시도 4\n");
+    await assert.rejects(() => repro(requireReproable(repo)),
+      (error: Error) => error instanceof RetryRefused && /재현 시도 3회/.test(error.message) && /repro-log/.test(error.message));
+    // 거부는 시도 기록(사람이 로그 근거 전환을 판단할 자료)을 지우지 않는다
+    assert.ok(loadEvidence(repo, "FIX-1", SRC)!.reproAttempt);
+  });
+
+  test("13e-3. 로그 근거 확인은 재현 시도 카운터를 비운다 — 리뷰 지적으로 재현 테스트를 보완한 뒤의 격리 재현 갱신이 막히지 않는다", async () => {
+    useManifest({ test: ["node", "--test", "--test-reporter=tap"] });
+    useOrder(FIX_ORDER_LOG);
+    toImplementWith(CURRENT_LOG, "- TC-1");
+    // 기준 코드에서도 통과하는(재현하지 못하는) 테스트로 서로 다른 트리 3회 — 재현 시도 한도를 다 쓴다
+    const base = "const test=require('node:test'),assert=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1 one',()=>assert.equal(total([]),total([])));\n";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      writeReproTest(`${base}// 시도 ${attempt}\n`);
+      await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    }
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.retry!.repro!.trees.length, 3);
+    withInteraction(HUMAN, () => approveLogBasis(requireReproable(repo)));
+    assert.deepEqual(loadEvidence(repo, "FIX-1", SRC)!.retry!.repro, { trees: [], reruns: {} }, "로그 근거 확인은 재현을 본 것과 같다");
+    next(repo);
+    fixSource();
+    next(repo);
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    next(repo);
+    openRound(requireValidatable(repo, "review"));
+    const review = join(repo, reviewDocFile("FIX-1"));
+    writeFileSync(review, `${readFileSync(review, "utf-8")}\n| F1 | ${REPRO_TEST} | 계획 안 | 열림 | 단언 보완 |\n`);
+    recordReviewFixture(repo);
+    assert.equal(writeFileHook(REPRO_TEST), undefined);
+    writeReproTest(`${base}test('TC-1 two',()=>assert.equal(total([1]),1));\n`);
+    writeFileSync(review, readFileSync(review, "utf-8").replace("| 열림 |", "| 해결 |"));
+    // 확인 전의 시도 3회가 남아 있으면 여기서 재현 시도 한도로 거부되고, 이미 받은 repro-log 동의를 다시 요구한다
+    await check(requireValidatable(repo, "check"));
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(evidence.repro!.mode, "log");
+    assert.equal(evidence.repro!.testTreeHash, partialTreeHash(repo, testStageFiles(loadWork(repo)!)));
+    assert.equal(evidence.testFreeze!.rebased!.at(-1)!.by, "finding");
+  });
+
+  test("13e-4. 뒤 트리의 시도가 시도 기록을 덮어도 이미 재현하지 못한 트리는 다시 돌리지 않는다 — 트리별 원인이 남는다", async () => {
+    useManifest({ test: PASS });
+    toImplement();
+    writeReproTest("// TC-1 재현 A\n");
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    writeReproTest("// TC-1 재현 B\n");
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    // A 로 되돌린다 — reproAttempt 는 B 의 것이라, 트리별 원인이 없으면 A 를 끝 기록 없이 끊긴 시도로 보고 다시 돌린다
+    writeReproTest("// TC-1 재현 A\n");
+    const at = runsOf(loadEvidence(repo, "FIX-1", SRC)!, "repro")[0].at;
+    await assert.rejects(() => repro(requireReproable(repo)),
+      (error: Error) => error instanceof RetryRefused && /같은 테스트 트리로 이미 재현하지 못했습니다 — 다시 돌려도 같습니다/.test(error.message));
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(runsOf(evidence, "repro")[0].at, at, "거부는 실행하지 않는다");
+    assert.deepEqual(evidence.retry!.repro!.reruns, {}, "재실행으로 세지 않는다");
+    assert.deepEqual(Object.values(evidence.retry!.repro!.classes!), ["result-unconfirmed", "result-unconfirmed"]);
+  });
+
   test("13f. 오류 로그 없는 결함은 재현되지 않으면 로그 근거로 넘어가지 않는다", async () => {
     useManifest({ test: PASSES_LOCALLY });
     toImplement();
@@ -776,8 +888,23 @@ describe("P6 · fix — 재현 먼저", () => {
     next(repo);
 
     const fixed = readFileSync(join(repo, SRC), "utf8");
+    // 리뷰 지적이 재현 테스트를 연다 — 동결 뒤 바뀐 테스트 파일은 ⑨ 지적으로 연 것만 다음 check 가 기준을 갱신한다
+    openRound(requireValidatable(repo, "review"));
+    const review = join(repo, reviewDocFile("FIX-1"));
+    writeFileSync(review, `${readFileSync(review, "utf-8")}\n| F1 | ${REPRO_TEST} | 계획 안 | 열림 | 빈 목록의 총액 단언이 없다 |\n`);
+    recordReviewFixture(repo);
+    assert.equal(writeFileHook(REPRO_TEST), undefined);
     writeReproTest(testBody + "test('TC-1 empty',()=>assert.equal(total([]),0));\n");
-    await toIntegrateAgain();
+    writeFileSync(review, readFileSync(review, "utf-8").replace("| 열림 |", "| 해결 |"));
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    next(repo);
+    openRound(requireValidatable(repo, "review"));
+    recordReviewFixture(repo);
+    next(repo);
+    assert.equal(loadActive(repo)!.phase, "integrate");
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.testFreeze!.rebased![0].by, "finding");
     assert.equal(readFileSync(join(repo, SRC), "utf8"), fixed);
     assert.equal(loadEvidence(repo, "FIX-1", SRC)!.repro!.found[0].status, "failed");
     await integrate(requireValidatable(repo, "integrate"));
@@ -795,6 +922,8 @@ describe("P6 · fix — 재현 먼저", () => {
     await assert.rejects(() => check(requireValidatable(repo, "check")), /재현하지 못했습니다/);
     assert.equal(readFileSync(join(repo, SRC), "utf8"), fixed);
     assert.ok(stageProblems(loadWork(repo)!, "integrate").some(p => /재현을 본 테스트 트리/.test(p)));
+    // 실패한 재현 갱신은 증거의 treeHash 를 바꾸지 않는다 — 옛 회차의 check 가 바뀐 트리에 묶인 것처럼 보이지 않는다
+    assert.ok(stageProblems(loadWork(repo)!, "check").some((problem) => /계획 파일이 바뀌었습니다/.test(problem)));
   });
 
   test("17c. 재현 뒤 테스트를 고치지 않았으면 통합 검증 앞에서 재현 묶임이 걸리지 않는다", async () => {
@@ -1455,7 +1584,27 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     assert.match(out, /준비 명령이 실패해 build·test 를 돌리지 않았습니다/);
     const runs = runsOf(loadEvidence(repo, "ORD-9", "greeting")!, "integrate");
     assert.deepEqual(runs.map((run) => run.kind), ["prepare"]);
+    assert.equal(runs[0].cause, "environment", "준비 실패는 환경으로 분류한다 — 결과는 failed 그대로다");
     assert.ok(stageProblems(loadWork(repo)!, "integrate").some((problem) => /prepare: failed/.test(problem)));
+  });
+
+  test("40b. prepare 실패의 통합 검증 재실행은 같은 회차로 2회까지다", async () => {
+    useManifest({ prepare: FAIL });
+    await runToIntegrate();
+    for (let tries = 0; tries < 3; tries++) {
+      const out = await integrate(requireValidatable(repo, "integrate"));
+      assert.match(out, /환경 문제로 분류했습니다/);
+      // 재개 안내는 한 가지다 — 같은 회차는 code-agent integrate 로 다시 돈다. verify --retry 는 check 로 되감아 같은 코드 재실행을 쓴다
+      assert.match(out, new RegExp(`code-agent integrate 로 같은 회차를 다시 돌리세요 — 고쳐 쓰기 회차를 쓰지 않습니다\\(남은 통합 검증 재실행 ${2 - tries}회\\)`));
+      assert.doesNotMatch(out, /verify --retry|같은 코드 재실행/);
+      assert.equal(out.match(/남은 통합 검증 재실행/g)!.length, 1);
+      const evidence = loadEvidence(repo, "ORD-9", "greeting")!;
+      assert.equal(runsOf(evidence, "integrate")[0].cause, "environment");
+      assert.equal(evidence.retry!.integrateReruns[String(evidence.rounds)] ?? 0, tries);
+      assert.equal(evidence.retry!.started, undefined, "끝 저장이 시작 표지를 지운다");
+    }
+    await assert.rejects(() => integrate(requireValidatable(repo, "integrate")),
+      (error: Error) => error instanceof RetryRefused && /통합 검증 재실행 한도 2회/.test(error.message));
   });
 
   test("41. prepare 실행 파일이 없으면 error 로 막힌다", async () => {

@@ -8,7 +8,7 @@ import { slug } from "../core/workOrder";
 import { planTasks } from "../core/plan";
 import { formatSourceTrace, readSourceTrace } from "./sourceTrace";
 import { blockCount, stripBlock, upsertBlock } from "./blocks";
-import { loadEvidence, planPaths, reproLine, runsOf, stageProblems, validationDocFile } from "./evidence";
+import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
 import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
@@ -124,7 +124,8 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined): st
       `- 기준 커밋: ${evidence.baseCommit}`,
       `- 계획 파일 부분 트리 해시: ${evidence.treeHash}`,
       `- planHash: ${evidence.planHash} · manifestHash: ${evidence.manifestHash}`,
-      `- 고쳐 쓰기 회차: ${evidence.rounds}`,
+      // 검증 회차 총수와 고쳐 쓰기 사용 수를 가른다 — rounds 는 통과 뒤 변경·수집 수정 회차도 센다
+      `- ${roundsText(work, evidence)}`,
       ...(evidence.repro
         ? [`- 재현: ${reproLine(evidence.repro)}`]
         : []),

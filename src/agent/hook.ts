@@ -9,18 +9,20 @@ import { checkPaths, unplannedFiles } from "../core/gate";
 import { MANIFEST_FILE, type Manifest, type StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
 import {
-  fixLimit,
+  collectWindowOpen,
   loadEvidence,
-  overFixLimit,
   reproMissing,
+  testFrozen,
   testRoots,
   trackedTestFiles,
   validationDocFile,
+  verifyView,
 } from "./evidence";
+import { writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
@@ -574,35 +576,35 @@ function reproReason(work: Work, path: string): string | undefined {
  * `code-agent back implement` 로 커서를 구현으로 빼면 두 규칙이 다 풀리기 때문이다. 첫 구현 패스에는
  * 증거 자체가 없어 여기서 걸릴 것이 없고, 계획을 재승인하면 `planHash` 가 달라져 둘이 함께 풀린다.
  *
- * **① 테스트 동결** — 테스트가 한 번 돈 뒤(통과든 실패든)에는 `kind: "test"` 단계의 계획 파일을
- * 고칠 수 없다. 옛 흐름이 "verify 단계의 outputDirs 에 테스트 디렉토리를 넣지 않는다"로 구조적으로
- * 막던 것의 최소 번역이다 — 실패한 단언을 지워 통과시키는 길이 여기서 닫힌다. `kind` 는
- * `hashManifest` 가 이미 해시하므로 승인 묶임이 따라온다: 승인 뒤에 선언을 끌 수 없다.
- * 푸는 길은 둘 — ⑨ 에 그 파일을 가리키는 열린 계획 안 지적, 또는 계획 재승인(planHash 가 달라지면
- * 증거가 통째로 무효라 동결도 함께 풀린다).
- *
- * **② 고쳐 쓰기 한도** — 한도를 넘겨 실패한 채면 계획 안 파일을 **전부** 거부한다. 작업 폴더는
+ * **① 쓰기 한도(원인별)** — 고쳐도 다음 회차가 거부될 때만(`writeBlockReason` — check() 의 회차 판정과 같은 함수)
+ * 계획 안 파일을 **전부** 거부한다. 고쳐 쓰기·리뷰 회차·총 회차 중 막은 카운터의 문구를 낸다. 작업 폴더는
  * 이 함수에 오기 전에 이미 통과했으므로 보고와 질문의 길은 남는다.
+ *
+ * **② 테스트 동결** — 결과가 인식된(또는 코드 결함으로 실패한) test 실행 뒤, 또는 재현을 본 뒤에는
+ * `kind: "test"` 단계의 계획 파일을 고칠 수 없다. 실패한 단언을 지워 통과시키는 길이 여기서 닫힌다.
+ * `kind` 는 `hashManifest` 가 이미 해시하므로 승인 묶임이 따라온다: 승인 뒤에 선언을 끌 수 없다.
+ * 푸는 길은 셋 — ⑨ 에 그 파일을 가리키는 열린 계획 안 지적, 결과 미확인 회차의 수집 수정 1회(fix 는 없다),
+ * 또는 계획 재승인(planHash 가 달라지면 증거가 통째로 무효라 동결도 함께 풀린다).
  */
 function freezeReason(work: Work, stage: StageDef, path: string): string | undefined {
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
   if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) {
     return undefined;
   }
-  if (overFixLimit(work, evidence)) {
-    return (
-      `고쳐 쓰기 ${fixLimit(work, evidence)}회를 넘겨 계획 파일을 더 고칠 수 없습니다: ${path}. ` +
-      `${workDocsDir(work.active.id)}/questions.md 에 무엇이 막혔는지 적고 사람에게 보고하세요 — ` +
-      "덮지 않고 보고하는 자리입니다. 계획 자체를 고쳐야 하면 사람이 재승인해야 합니다."
-    );
-  }
+  const view = verifyView(work, evidence);
+  const blocked = writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path, questionsPath: questionsFile(work.active.id) });
+  if (blocked) return blocked;
   // 재현을 본 순간에도 언다 — 그때부터 단언을 약하게 하면 재현이 증거가 아니게 된다.
   // (`phase: "repro"` 로 기록하는 이유가 여기다. `test` 로 기록하면 재현에 실패했을 때
   //  재현 테스트를 고칠 길이 막혀 교착이 된다.)
-  if (stage.kind === "test" && (evidence.runs.some((run) => run.phase === "test") || evidence.repro !== undefined)) {
-    // 탈출구 둘 — ⑨ 에 이 파일을 가리키는 열린 계획 안 지적이 있거나, 계획이 재승인되거나.
+  if (stage.kind === "test" && testFrozen(evidence)) {
+    // 탈출구 — ⑨ 에 이 파일을 가리키는 열린 계획 안 지적이 있거나, 계획이 재승인되거나.
     // 앞의 것은 문서에 남는 지적이 열쇠라 몰래 풀 수 없다 (그 줄이 닫히기 전에는 리뷰 게이트가 막는다).
     if (findingOpensFile(work, path)) {
+      return undefined;
+    }
+    // 결과 미확인 — 수집 수정 1회 동안 TC 이름을 고치는 자리다(그 회차는 고쳐 쓰기를 쓰지 않는다)
+    if (collectWindowOpen(view)) {
       return undefined;
     }
     return (
@@ -610,7 +612,10 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
       "테스트가 틀렸다고 판단되면 고치지 말고 근거와 함께 보고하세요 — 단언을 지워 통과시키는 길을 막는 자리입니다. " +
       "(재현을 본 뒤에는 재현 테스트가 얼립니다 — 그 단언을 약하게 하면 재현이 증거가 아니게 됩니다.) " +
       `정말 고쳐야 하면 ${workDocsDir(work.active.id)}/09-review.md 에 그 파일을 가리키는 지적으로 남기거나, ` +
-      "계획을 고쳐 사람의 재승인을 받으세요."
+      "계획을 고쳐 사람의 재승인을 받으세요." +
+      (view.testState === "result-unconfirmed" && view.budget.collect.limit > 0 && view.budget.collect.left === 0
+        ? " 결과가 일부 인식되지 않은 회차라면 수집 수정 1회 동안만 열리고, 그 회차는 이미 썼습니다."
+        : "")
     );
   }
   return undefined;

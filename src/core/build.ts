@@ -40,6 +40,10 @@ export interface CommandResult {
   signal: NodeJS.Signals | null;
   /** 명령이 **돌지 못한** 이유. 실패(status≠0)와 구분된다 */
   error?: Error;
+  /** 제한 시간을 넘겨 코드가 끝냈다 — error 메시지가 아니라 이 필드로 판정한다 */
+  timedOut?: true;
+  /** 실행 파일을 찾지 못해 spawn 하지 않았다 */
+  notFound?: true;
 }
 
 /**
@@ -104,6 +108,7 @@ function spawnAsync(
         error: timedOut
           ? new Error(`제한 시간 ${timeoutMs / 1000}초를 넘겨 중단했습니다 — 더 걸리는 명령이면 code-agent.json 의 commandTimeoutMinutes 를 늘리세요`)
           : undefined,
+        ...(timedOut ? { timedOut: true as const } : {}),
       });
     };
     child.on("close", finish);
@@ -336,6 +341,7 @@ export async function runCommand(
         `실행 파일을 찾을 수 없습니다: ${name} — 저장소 안(${cwd})과 PATH 를 확인했습니다. ` +
           "code-agent.json 의 build·test 명령이 이 머신에 설치되어 있는지 보세요.",
       ),
+      notFound: true,
     };
   }
 

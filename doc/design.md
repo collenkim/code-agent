@@ -224,7 +224,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 | 6 | 코드 생성 `implement` | 코드 생성 | ⑥ 계획의 단계마다 새 컨텍스트에서. **`fix` 는 `kind:"test"` 단계를 맨 앞으로 세우고** 그 뒤 `code-agent repro` 로 재현을 본다 | implementer (테스트 단계는 tester) | hook — 계획 밖 쓰기 거부 · `fix` 는 재현 전 비-test 계획 파일 쓰기 거부 | P3 ✅ · 재현 P6 ✅ |
 | 7 | 정적 분석·컴파일 `check` | 정적 분석·컴파일 | 품질·보안 기준이 적은 명령 + `build` 를 돌려 증거로 기록 → ⑧ `08-validation.md` (코드만 씀) | CLI | 코드 — `not-run` 은 통과가 아니다 | P5 ✅ |
 | 8 | 테스트 `test` | 테스트 생성·실행 · 결과 분석 | tester가 ⑦의 케이스 작성 → CLI 실행 → ⑧에 TC별 상태 기록 | tester + CLI | 모든 필수 TC의 실제 passed 결과, 이후 테스트 동결 | 구현됨 |
-| ↺ | 수정 | 실패 → 수정 | 7·8·9 에서 나온 것 중 계획 안은 implementer 가 고치고 **7 부터 다시** (`code-agent check` 는 `test`·`review`·`integrate` 에서 불려도 커서를 7 로 되감는다. 기본 N=2, `code-agent.json` 의 `fixRounds`. 한도는 증거가 시작될 때 굳고, 넘으면 덮지 않고 보고). 계획 밖이면 질문 또는 재계획(재승인) | implementer | hook | P5 ✅ |
+| ↺ | 수정 | 실패 → 수정 | 7·8·9 에서 나온 것 중 계획 안은 implementer 가 고치고 **7 부터 다시** (`code-agent check` 는 `test`·`review`·`integrate` 에서 불려도 커서를 7 로 되감는다. 실패를 고치는 회차 N=2(`code-agent.json` 의 `fixRounds`), 수집 수정 1, 리뷰 회차 3, 같은 코드 재실행 회차당 2. 한도는 증거가 시작될 때 굳고, 넘으면 덮지 않고 보고). 계획 밖이면 질문 또는 재계획(재승인) | implementer | hook | P5 ✅ |
 | 9 | 코드 리뷰 `review` | 성공 → 독립 코드 리뷰 | ⑨에 hook이 관찰된 reviewer 결과를 기록하고 수정 후 새 회차로 재검토 | reviewer + CLI | 관찰된 실행·결과 일치 · 열린 지적 0 · 계획 밖 0 · 현재 트리 일치 | 구현됨 |
 | 10 | 통합 검증 `integrate` | 통합 검증 | 깨끗한 worktree(기준 커밋 + 변경 파일)에서 전체 build · 전체 test → ⑧ | CLI | 코드 | P5 ✅ |
 | 11 | 반영 `deliver` | 반영·PR | ⑩ `10-pr.md` — 요약 · 추적표(R → AC → 파일 → TC → 검증) · 확인 방법 · 위험. KNOWLEDGE 갱신 제안을 하나씩 고른다 → **사람 최종 확인(같은 세션)** → 작업 브랜치에 로컬 커밋. **push · MR/PR 생성은 하지 않는다 — git 호스트가 붙을 때까지 보류** | 메인 + CLI | **사람 확인 (같은 세션)** | P5 ✅ |
@@ -240,8 +240,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 `code-agent back <스테이지>` 는 커서를 **이전 스테이지로만** 옮긴다. 앞으로 가는 길은 `next` 하나뿐이라 게이트를 건너뛸 수 없고,
 되감아도 지우는 것이 없다 — 증거·승인 원장·작업 문서·리뷰 회차는 그대로 있고 커서만 움직인다. 그래서 되감기는 **우회가 아니다**:
 `design` 이하로 가서 `01`~`04`·`07` 을 고치면 승인 묶음의 해시가 달라져 승인이 `stale-docs` 가 되고 hook 이 코드 쓰기를 막는다(다시 제출·재승인해야 한다).
-수정 회차도 `planHash` 에 묶여 있어 초기화되지 않는다. 같은 계획을 그대로 다시 제출하면 승인은 살아 있다.
-테스트 동결과 고쳐 쓰기 한도는 커서가 아니라 **증거**로 재기 때문에 `back implement` 로도 풀리지 않는다.
+검증 회차와 재시도 카운터도 `planHash` 에 묶여 있어 초기화되지 않는다. 같은 계획을 그대로 다시 제출하면 승인은 살아 있다.
+테스트 동결과 재시도 카운터는 커서가 아니라 **증거**로 재기 때문에 `back implement` 로도 풀리지 않는다.
 `deliver` 에서는 되감지 않는다 — 사람이 확인 화면 앞에 서 있는 자리라, 모델이 커서를 빼면 그 화면이 조용히 무효가 된다
 (`REWINDABLE` 이 `code-agent check` 에 대해 닫아 둔 것과 같은 자리다).
 (검증 실패로 `check` 로 돌아가는 것은 되감기가 아니다 — `code-agent check` 가 커서를 그 자리로 데려간다.)
@@ -382,9 +382,9 @@ check.execute → check.assess → test.select → test.execute → test.assess 
                        repair(agent) / diagnose(agent) / decision(human)
 ```
 
-test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략하고 test.assess로 간다. check.assess·test.assess는 기존 `stageProblems`와 `next`를 사용한다. check에서 막히면 테스트를 실행하지 않는다. 명령 오류·미선언·TC 미확인은 diagnose, 실제 실패는 repair, 재시도 한도 소진은 decision으로 넘긴다. human은 기존 질문·재계획 절차로의 인계이며 승인 기록을 생성하지 않는다.
+test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략하고 test.assess로 간다. check.assess·test.assess는 게이트 문제마다 종류(다시 돌려도 남는 stop·다시 돌리면 맞춰지는 rerun·실행 결과 result)를 붙이는 `stageProblemEntries`와 `next`를 사용한다. check에서 막히면 테스트를 실행하지 않는다. 명령 미선언(not-run)과 다시 돌려도 남는 게이트 문제는 노드 없이 Stop, 환경·중단·TC 미확인과 대조 불일치(실행은 통과)는 diagnose, 코드 결함은 repair, 재시도 한도 소진은 decision으로 넘긴다. human은 기존 질문·재계획 절차로의 인계이며 승인 기록을 생성하지 않는다.
 
-`verify`를 다시 호출하면 현재 단계·승인·기준 커밋·계획·매니페스트·계획 파일 해시·검증 회차를 다시 대조한다. check 완료 후 중단됐으면 같은 회차의 test부터 이어간다. 코드가 바뀌면 check부터 새 회차를 실행한다. 같은 입력의 실패는 다시 인계하며 자동 반복하지 않는다. 환경 변경 뒤 `--retry`는 check부터 다시 실행하고 수정 횟수를 소비한다. 이전 회차의 test 통과로 새 회차를 건너뛰지 않는다.
+`verify`를 다시 호출하면 현재 단계·승인·기준 커밋·계획·매니페스트·계획 파일 해시·검증 회차를 다시 대조한다. check 완료 후 중단됐으면 같은 회차의 test부터 이어간다. 코드가 바뀌면 check부터 새 회차를 실행한다. 같은 입력의 실패는 다시 인계하며 자동 반복하지 않는다. 환경 변경·시간 초과 뒤 `--retry`는 같은 회차를 다시 쓴다(회차당 2회). 코드 결함의 `--retry`는 고쳐 쓰기 회차를 쓴다. 이전 회차의 test 통과로 새 회차를 건너뛰지 않는다.
 
 노드 이력은 `.code-agent/work/<ID>/<대상>.verification-flow.json`에 입력 해시, 호출별 이벤트, 시각, 결과와 증거 경로를 기록한다. 실행 시작을 먼저 저장하며 이력 자체로 게이트를 열지 않는다. 중단된 check도 실행 전에 증가한 회차를 유지한다. 노드 이력이 없는 기존 작업은 기존 검증 증거로 시작한다. 손상된 이력은 알리고 중단한다. 기존 `check`, `test`, `next` 명령은 단일 단계 작업에 계속 사용할 수 있다.
 
@@ -394,11 +394,11 @@ test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략�
 
 ```
 implement → check (build · commands 의 정적 분석 명령) → test (작성 · 실행 · 결과 분석)
-   실패 → 계획 안이면 implementer 가 고치고 check 부터 다시 (최대 N회)
+   실패 → 계획 안이면 implementer 가 고치고 check 부터 다시 (원인별 한도 — 고쳐 쓰기 fixRounds·리뷰 회차 3·총 회차)
         → 계획 밖이면 질문 또는 재계획 (재승인)
    성공 → review (컨벤션 · 요구 충족 · 참조 코드와의 차이 · 설계 문서와의 불일치)
         → 지적도 같은 수정 루프로 들어간다
-   N회 뒤에도 실패면 덮지 않고 보고한다 — 테스트 단언을 지워 통과시키는 길은 hook 이 막는다
+   한도를 다 쓰고도 실패면 덮지 않고 보고한다 — 테스트 단언을 지워 통과시키는 길은 hook 이 막는다
 → integrate (깨끗한 worktree 에서 전체 build · test) → deliver (사람 확인 → 로컬 커밋 + 10-pr.md)
 결과는 모두 ⑧ 08-validation.md 에 코드가 남기고, 리뷰는 ⑨ 09-review.md 에 회차로 쌓인다
 ```
@@ -515,10 +515,10 @@ Claude 서브에이전트는 **기본이 전부 상위 모델(opus)** 이다 —
 | `refactor` 의 계획에는 **기준 커밋에 이미 있던 `kind:"test"` 단계 파일**을 넣을 수 없다 — 동작이 보존되는지 보는 것이 그 테스트다 | `code-agent plan submit` | 계획 전 | P6 ✅ |
 | 선언된 종류로 돌 단계가 0개면 `start` 가 거부하고 **무엇을 고칠지** 찍는다(단계별 `kinds` 목록 · `manifest check` 안내). `manifest check` 는 종류별 0단계 · `kind:"test"` 단계 없음 · **자리를 밝히지 않은 `kind:"test"` 단계** · 참조 파일 0 을 **경고**로 미리 낸다 (종료 코드 0) | `code-agent start` (`stagesFor`) · `manifest check` | 작업 시작 전 | P6 ✅ |
 | `05-plan.md` · `08-validation.md` 는 코드만 쓴다 (모델 쓰기 거부 + 재렌더 바이트 대조) | PreToolUse hook · `next` | 쓰기 전 | P4 ✅ · P5 ✅ |
-| 정적 분석을 통과해야 테스트로, 수정은 N회까지 (`fixRounds`, 기본 2 — 넘으면 hook 이 계획 파일 쓰기를 전부 거부). 한도는 **증거가 시작될 때 굳는다**(`Evidence.fixRounds`) — `fixRounds` 는 `hashManifest` 밖이라, 매번 매니페스트에서 읽으면 `code-agent.json` 이 계획 파일인 작업에서 루프 도중에 올릴 수 있다. 회차를 쓰지 않는 재실행은 계획 파일이 그대로일 때 둘뿐이다 — 실행 기록 없이 끊긴 회차, 그리고 실패가 전부 선언된 환경 오류(`environmentErrors`, 선언 시 `hashManifest` 안)인 회차. 후자는 수정이 아니라 진단으로 가고 fix 재현으로도 인정하지 않는다 | `check` · `test` · hook | 스테이지 전환 · 쓰기 전 | P5 ✅ |
+| 정적 분석을 통과해야 테스트로. 재시도는 원인별 카운터로 센다 — 실패를 고쳐 연 회차(고쳐 쓰기, `fixRounds` 기본 2, 같은 코드의 `--retry` 도 포함), 결과 미확인 뒤 첫 수정(수집 수정 1, fix 는 0), 통과 뒤 변경(리뷰 회차 3), 같은 코드 재실행(환경·중단·결과 미확인, 회차당 2), 총 회차(1+고쳐 쓰기+리뷰+수집). 다음 회차가 거부될 때 hook 이 계획 파일 쓰기를 전부 거부하고 `verify` 는 decision 이다. 한도는 **증거가 시작될 때 굳는다**(`Evidence.fixRounds`) — `fixRounds` 는 `hashManifest` 밖이라, 매번 매니페스트에서 읽으면 `code-agent.json` 이 계획 파일인 작업에서 루프 도중에 올릴 수 있다. 끊긴 실행(기록 없는 회차·시작 표지만 남은 test·통합 검증) 뒤 코드를 고치면 고쳐 쓰기를 쓴다 — 끊어서 카운터를 피하는 길이 없다. 선언된 환경 오류(`environmentErrors`, 선언 시 `hashManifest` 안)는 같은 실행에 실패한 테스트 결과가 없을 때만 환경이고, 수정이 아니라 진단으로 가며 fix 재현으로도 인정하지 않는다 | `check` · `test` · hook | 스테이지 전환 · 쓰기 전 | P5 ✅ |
 | 검증 명령(`build` · `test` · `prepare` · `commands`)이 이 계획이 쓰는 파일을 가리키면 제출 거부 — 제 검증기를 쓰는 계획은 모든 묶임이 들어맞아도 증거가 아니다 | `code-agent plan submit` | 계획 전 | P5 ✅ · `prepare` P6 ✅ |
 | 검증 증거는 기준 커밋 · 계획 파일 부분 트리 해시 · `manifestHash` · `planHash` 에 묶인다 — 하나라도 달라지면 통과가 무효 | `code-agent next` (`stageProblems`) | 스테이지 전환 | P5 ✅ |
-| 테스트가 한 번 돈 뒤 — **또는 `fix` 에서 `code-agent repro` 가 재현을 본 뒤** — `kind: "test"` 단계의 계획 파일 동결. 푸는 길은 ⑨ 의 **그 파일을 가리키는 열린 계획 안 지적** 또는 계획 재승인. 지적이 열쇠가 되려면 셋이 함께다: **`review` 스테이지**일 것 · `code-agent review` 가 연 **회차가 있을 것** · 푼 사실이 `review.json` 에 남을 것(남기지 못하면 풀지 않는다). ⑨ 는 작업 폴더 안이라 아무 때나 쓸 수 있어, 이 셋이 없으면 `test` 에서 미리 적어 두고 풀 수 있다 | PreToolUse hook (`findingOpensFile`) | 쓰기 전 | P5 ✅ · 재현 P6 ✅ |
+| 결과가 인식된(또는 코드 결함으로 실패한) test 실행 뒤 — **또는 `fix` 에서 `code-agent repro` 가 재현을 본 뒤** — `kind: "test"` 단계의 계획 파일 동결. 결과 미확인 회차는 수집 수정 1회 동안 열린다(fix 는 없다). 동결 때의 파일 해시를 증거(`testFreeze`)에 남겨 test·integrate 게이트가 다시 대조한다. 푸는 길은 ⑨ 의 **그 파일을 가리키는 열린 계획 안 지적** 또는 계획 재승인. 지적이 열쇠가 되려면 셋이 함께다: **`review` 스테이지**일 것 · `code-agent review` 가 연 **회차가 있을 것** · 푼 사실이 `review.json` 에 남을 것(남기지 못하면 풀지 않는다). ⑨ 는 작업 폴더 안이라 아무 때나 쓸 수 있어, 이 셋이 없으면 `test` 에서 미리 적어 두고 풀 수 있다 | PreToolUse hook (`findingOpensFile`) | 쓰기 전 | P5 ✅ · 재현 P6 ✅ |
 | `fix` 는 재현을 보기 전에 **비-`kind:"test"` 계획 파일을 쓸 수 없다** — 증거(`Evidence.repro`)로 재기 때문에 `back implement` 로 풀리지 않고, 계획 재승인(`planHash` 변경)이면 증거와 함께 버려져 다시 봐야 한다. 재현 증거는 그때의 **테스트 파일 부분 트리 해시**에 묶여, 첫 `check` 전에 테스트를 고치면 다시 잠긴다 (첫 `check` 뒤에는 이 대조를 내린다 — ⑨ 지적으로 동결을 푼 수정 루프가 교착되지 않게) | PreToolUse hook (`reproReason`) | 쓰기 전 | P6 ✅ |
 | 최초 `code-agent repro`는 비-test 계획 파일이 기준 커밋과 다르면 거부하고, 이번 실행에서 대상 재현 TC 자체가 failed인지 확인한다. 이름·주석·다른 TC의 실패·미실행은 재현이 아니다. 회차는 올리지 않는다(`round: 0`) | `code-agent repro` | 구현 중 | P6 ✅ |
 | `fix` 의 계획은 `kind:"test"` 단계에 **그 단계가 밝힌 자리 밖의 파일**을 넣을 수 없다 — '재현 먼저' 는 단계 이름표로 재므로, 고칠 파일을 테스트 단계에 적어 넣으면 재현 전에 열린다 | `code-agent plan submit` | 계획 전 | P6 ✅ |
