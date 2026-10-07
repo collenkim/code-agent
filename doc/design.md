@@ -382,7 +382,7 @@ check.execute → check.assess → test.select → test.execute → test.assess 
                        repair(agent) / diagnose(agent) / decision(human)
 ```
 
-test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략하고 test.assess로 간다. check.assess·test.assess는 기존 `stageProblems`와 `next`를 사용한다. check에서 막히면 테스트를 실행하지 않는다. 명령 오류·미선언·TC 미확인은 diagnose, 실제 실패는 repair, 재시도 한도 소진은 decision으로 넘긴다. human은 기존 질문·재계획 절차로의 인계이며 승인 기록을 생성하지 않는다.
+test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략하고 test.assess로 간다. check.assess·test.assess는 게이트 문제마다 종류(다시 돌려도 남는 stop·다시 돌리면 맞춰지는 rerun·실행 결과 result)를 붙이는 `stageProblemEntries`와 `next`를 사용한다. check에서 막히면 테스트를 실행하지 않는다. 명령 미선언(not-run)과 다시 돌려도 남는 게이트 문제는 노드 없이 Stop, 환경·중단·TC 미확인과 대조 불일치(실행은 통과)는 diagnose, 코드 결함은 repair, 재시도 한도 소진은 decision으로 넘긴다. human은 기존 질문·재계획 절차로의 인계이며 승인 기록을 생성하지 않는다.
 
 `verify`를 다시 호출하면 현재 단계·승인·기준 커밋·계획·매니페스트·계획 파일 해시·검증 회차를 다시 대조한다. check 완료 후 중단됐으면 같은 회차의 test부터 이어간다. 코드가 바뀌면 check부터 새 회차를 실행한다. 같은 입력의 실패는 다시 인계하며 자동 반복하지 않는다. 환경 변경·시간 초과 뒤 `--retry`는 같은 회차를 다시 쓴다(회차당 2회). 코드 결함의 `--retry`는 고쳐 쓰기 회차를 쓴다. 이전 회차의 test 통과로 새 회차를 건너뛰지 않는다.
 
@@ -394,11 +394,11 @@ test.select는 현재 회차의 유효한 증거가 있으면 실행을 생략�
 
 ```
 implement → check (build · commands 의 정적 분석 명령) → test (작성 · 실행 · 결과 분석)
-   실패 → 계획 안이면 implementer 가 고치고 check 부터 다시 (최대 N회)
+   실패 → 계획 안이면 implementer 가 고치고 check 부터 다시 (원인별 한도 — 고쳐 쓰기 fixRounds·리뷰 회차 3·총 회차)
         → 계획 밖이면 질문 또는 재계획 (재승인)
    성공 → review (컨벤션 · 요구 충족 · 참조 코드와의 차이 · 설계 문서와의 불일치)
         → 지적도 같은 수정 루프로 들어간다
-   N회 뒤에도 실패면 덮지 않고 보고한다 — 테스트 단언을 지워 통과시키는 길은 hook 이 막는다
+   한도를 다 쓰고도 실패면 덮지 않고 보고한다 — 테스트 단언을 지워 통과시키는 길은 hook 이 막는다
 → integrate (깨끗한 worktree 에서 전체 build · test) → deliver (사람 확인 → 로컬 커밋 + 10-pr.md)
 결과는 모두 ⑧ 08-validation.md 에 코드가 남기고, 리뷰는 ⑨ 09-review.md 에 회차로 쌓인다
 ```

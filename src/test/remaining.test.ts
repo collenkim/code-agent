@@ -97,8 +97,14 @@ test("기존 JUnit 결과의 성공·실패·생략과 오래된 보고서를 �
   write("module/target/surefire-reports/TEST-new.xml", report);
   const results = parseTestResults(freshTestReports(root, old));
   assert.deepEqual(["TC-1", "TC-2", "TC-3"].map(id => resultFor(id, results).status), ["passed", "failed", "skipped"]);
-  assert.equal(resultFor("TC-1", parseTestResults('<!DOCTYPE x SYSTEM "file:///secret"><testsuite><testcase name="TC-1"/></testsuite>')).status, "unknown");
-  assert.equal(resultFor("TC-1", parseTestResults('<testsuite><system-out><![CDATA[<testcase name="TC-1"/>]]></system-out></testsuite>')).status, "unknown");
+  // 콘솔 JUnit 은 <?xml 선언이 있을 때만 읽는다 — 선언을 붙여야 아래 두 방어(DOCTYPE·ENTITY 거부, CDATA 제거)가 실제로 결과를 막는지 본다
+  const declared = (xml: string) => `<?xml version="1.0"?>
+${xml}`;
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<testsuite><testcase name="TC-1"/></testsuite>'))).status, "passed", "대조군 — 선언이 있으면 읽는다");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<!DOCTYPE x SYSTEM "file:///secret"><testsuite><testcase name="TC-1"/></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<!ENTITY x "y"><testsuite><testcase name="TC-1"/></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults(declared('<testsuite><system-out><![CDATA[<testcase name="TC-1"/>]]></system-out></testsuite>'))).status, "unknown");
+  assert.equal(resultFor("TC-1", parseTestResults('<testsuite><testcase name="TC-1"/></testsuite>')).status, "unknown", "선언 없는 콘솔 조각은 읽지 않는다");
 });
 
 test("보고서 탐색이 깊이 12 를 넘겨 끊기면 기록에 남긴다", () => {

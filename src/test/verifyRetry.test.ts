@@ -48,6 +48,9 @@ describe("⑧ 렌더의 하위 호환", () => {
       testFreeze: { round: 1, at: "t", files: { "t.java": "sha256:x" }, rebased: [{ round: 2, at: "t", by: "finding", files: ["t.java"] }] },
     };
     const doc = renderValidationDoc(work, evidence);
+    // rounds 는 검증 회차 총수다 — 고쳐 쓰기 수는 회차 원인에서 따로 센다(옛 증거는 위 골든 그대로)
+    assert.match(doc, /^- 검증 회차: 2 · 고쳐 쓰기 1\/2회$/m);
+    assert.doesNotMatch(doc, /고쳐 쓰기 회차:/);
     assert.match(doc, /\| 2 \| check \| build \| node -e 0 \| error \(돌지 못함\) · 시간 초과 \| - \|/);
     assert.match(doc, /- 테스트 동결: 1회차부터 · kind:test 파일 1개/);
     assert.match(doc, /- 1회차 \(첫 실행\): 실패 test\(failed\)/);

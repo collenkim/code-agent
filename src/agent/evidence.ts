@@ -160,8 +160,11 @@ export interface TestFreeze {
   round: number;
   at: string;
   files: Record<string, string>;
-  /** 새 회차를 열며 기준을 다시 굳힌 파일 — 수집 수정 회차의 파일과 ⑨ 지적으로 연 파일만이다 */
-  rebased?: { round: number; at: string; by?: "collect" | "finding"; files: string[] }[];
+  /**
+   * 새 회차를 열며 기준을 다시 굳힌 파일 — 수집 수정 회차의 파일과 ⑨ 지적으로 연 파일만이다. reviewRound 는 ⑨ 지적으로
+   * 받아들일 때의 리뷰 회차 수다 — 같은 리뷰 회차 안에서 한 파일을 두 번 받아들이지 않는다
+   */
+  rebased?: { round: number; at: string; by?: "collect" | "finding"; files: string[]; reviewRound?: number }[];
 }
 
 export function loadEvidence(repoRoot: string, id: string, target: string): Evidence | undefined {
@@ -479,8 +482,9 @@ export function reviewRoundUsage(work: Work): ReviewRoundUsage {
 
 /** 회차 전체 상태 — check() 의 다음 회차 판정과 hook 이 쓴다(앞 회차 test 상태를 이어받는다) */
 export function roundState(evidence: Evidence): { state: VerifyState | "none"; emptyRound: boolean } {
+  const retry = verifyRetryOf(evidence);
   return roundStateOf({
-    rounds: evidence.rounds, runs: evidence.runs, started: verifyRetryOf(evidence).started,
+    rounds: evidence.rounds, runs: evidence.runs, started: retry.started, wiped: retry.wiped,
     testCases: evidence.testCases, integrationTestCases: evidence.integrationTestCases,
   });
 }
@@ -489,7 +493,7 @@ export interface VerifyView {
   round: number;
   state: VerifyState | "none";
   emptyRound: boolean;
-  /** 이 회차 test 의 상태 — 끊긴 test 표지가 있거나 이 회차 test 실행이 있을 때만(앞 회차를 이어받지 않는다) */
+  /** 이 회차 test 의 상태 — 끊긴 test 표지·이 회차 test 실행·이 회차 재사용이 지운 test 가 있을 때만(앞 회차를 이어받지 않는다) */
   testState?: VerifyState;
   retry: VerifyRetryView;
   budget: VerifyBudget;
@@ -509,7 +513,7 @@ export function verifyView(work: Work, evidence: Evidence): VerifyView {
   const testState: VerifyState | undefined = retry.started?.phase === "test" && retry.started.round === r ? "interrupted"
     : evidence.runs.some((run) => run.phase === "test" && run.round === r)
       ? verifyState({ phase: "test", round: r, runs: evidence.runs, cases: evidence.testCases })
-      : undefined;
+      : retry.wiped?.test?.round === r ? retry.wiped.test.state : undefined;
   return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget };
 }
 
@@ -702,6 +706,19 @@ function outcomeText(run: VerifyRun): string {
 }
 
 /**
+ * 회차 줄 — ⑧ 검증 기준과 ⑩ 검증 절이 같이 쓴다. rounds 는 고쳐 쓰기 수가 아니라 검증 회차 총수(첫 실행·통과 뒤 변경·
+ * 수집 수정 포함)라, 회차 원인 기록(retry)이 있으면 검증 회차와 고쳐 쓰기 사용/한도를 따로 적는다. 입력은 증거뿐이다
+ * (review.json 을 읽으면 리뷰 회차가 열릴 때 ⑧ 이 증거와 어긋난다). retry 가 없는 옛 증거는 옛 문구 그대로다(⑧ 바이트 유지).
+ */
+export function roundsText(work: Work, evidence: Evidence): string {
+  if (!evidence.retry) return `고쳐 쓰기 회차: ${evidence.rounds}`;
+  const retry = verifyRetryOf(evidence);
+  const used = Object.values(retry.causes).filter((cause) => cause === "fix").length;
+  const limit = limitOf("fix", fixLimit(work, evidence), retry.grants, grantScope({ file: "verify", key: "fix" }));
+  return `검증 회차: ${evidence.rounds} · 고쳐 쓰기 ${used}/${limit}회`;
+}
+
+/**
  * 증거를 사람이 읽는 문서로. **입력은 증거뿐이다** — 로그 파일이나 지금 시각을 읽으면 다시 렌더할 때
  * 바이트가 달라져, 손으로 고친 것을 잡아내는 대조가 무너진다.
  */
@@ -719,7 +736,7 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
     `- planHash: ${evidence.planHash}`,
     `- manifestHash: ${evidence.manifestHash}`,
     `- 대상: ${evidence.target} · 계획 파일 ${planPaths(work).length}개`,
-    `- 고쳐 쓰기 회차: ${evidence.rounds}`,
+    `- ${roundsText(work, evidence)}`,
     ...(evidence.repro
       ? [`- 재현: ${reproLine(evidence.repro)}`]
       : []),

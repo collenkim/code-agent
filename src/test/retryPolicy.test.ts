@@ -232,6 +232,21 @@ describe("검증 실행 분류와 상태", () => {
     assert.deepEqual(roundStateOf({ rounds: 2, runs: [run(2, "check", "passed")], started }), { state: "passed", emptyRound: false }, "다른 회차의 표지는 보지 않는다");
   });
 
+  test("같은 회차 재사용이 지운 test·통합 검증 상태는 다시 돌기 전까지 회차 상태에 남는다", () => {
+    const wiped = { test: { round: 1, state: "environment" as const } };
+    // 재사용으로 test 기록이 지워졌다 — 앞 회차 이어받기(없음)가 아니라 지운 상태다
+    assert.deepEqual(roundStateOf({ rounds: 1, runs: [run(1, "check", "passed")], wiped }), { state: "environment", emptyRound: false });
+    assert.deepEqual(roundStateOf({ rounds: 1, runs: [run(1, "check", "passed")] }), { state: "passed", emptyRound: false }, "지운 상태가 없으면 통과로 보인다");
+    // 지운 test 는 그 뒤 test 가 돌기 전까지 마지막 test 상태다 — 다음 회차도 이어받는다
+    assert.deepEqual(roundStateOf({ rounds: 2, runs: [run(1, "test", "passed"), run(1, "check", "passed"), run(2, "check", "passed")], wiped: { test: { round: 1, state: "interrupted" } } }),
+      { state: "interrupted", emptyRound: false });
+    assert.deepEqual(roundStateOf({ rounds: 2, runs: [run(2, "check", "passed"), run(2, "test", "passed")], wiped }), { state: "passed", emptyRound: false }, "이 회차 test 기록이 우선이다");
+    // 지운 통합 검증은 그 회차에만 든다
+    const integrate = { integrate: { round: 1, state: "environment" as const } };
+    assert.deepEqual(roundStateOf({ rounds: 1, runs: [run(1, "check", "passed"), run(1, "test", "passed")], wiped: integrate }), { state: "environment", emptyRound: false });
+    assert.deepEqual(roundStateOf({ rounds: 2, runs: [run(2, "check", "passed"), run(2, "test", "passed")], wiped: integrate }), { state: "passed", emptyRound: false });
+  });
+
   test("환경 분류는 같은 실행에 실패 결과가 없을 때만 한다(T-P5)", () => {
     const patterns = ["Connection refused"];
     assert.equal(environmentMatch("not ok 1 - TC-1\nConnection refused", patterns, [{ status: "failed" }]), undefined);
@@ -258,6 +273,12 @@ describe("검증 카운터·회차 판정", () => {
     assert.equal("legacyRounds" in verifyRetryOf({ rounds: 0, runs: [] }), false, "새로 만든 빈 증거에는 유예가 없다");
     const partial = verifyRetryOf({ rounds: 2, runs: [], retry: { causes: { 1: "first", 2: "collect" } } as never });
     assert.deepEqual(partial, { version: 1, causes: { 1: "first", 2: "collect" }, reruns: {}, integrateReruns: {}, repro: { trees: [], reruns: {} }, grants: [] });
+    // 재현 트리별 원인과 지운 상태는 그대로 옮긴다(복사본이라 고쳐도 원본이 바뀌지 않는다)
+    const classes = { a: "result-unconfirmed" as const };
+    const copied = verifyRetryOf({ rounds: 1, runs: [], retry: { causes: { 1: "first" }, repro: { trees: ["a"], reruns: {}, classes }, wiped: { test: { round: 1, state: "environment" } } } as never });
+    assert.deepEqual(copied.repro, { trees: ["a"], reruns: {}, classes });
+    assert.notEqual(copied.repro.classes, classes);
+    assert.deepEqual(copied.wiped, { test: { round: 1, state: "environment" } });
   });
 
   test("총 회차는 1+고쳐 쓰기+리뷰+수집이고 옛 증거는 한 회차 유예를 받는다(T-P7·T-P10)", () => {

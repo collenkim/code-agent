@@ -35,6 +35,42 @@
 - C3-X1 재현 절차: fix 작업에서 재현 → 고침 → `check` 뒤 재현 테스트의 단언을 지우고 `check` 를 부른다. 격리 재현 갱신이 `재현하지 못했습니다` 로 멈춘 뒤 `stageProblems(check)` 에 `계획 파일이 바뀌었습니다` 가 있어야 한다(`p6` 17d).
 - `npm test`: 913개 중 909개 통과·실패 0·생략 4(Windows, 약 165초). 새 시나리오는 `p5`(리뷰 회차·통과 뒤 변경·환경 분류·시간 초과 mock·이행·포맷터·계획 밖·수집 수정·동결 대조·worktree 표지 넷·끊긴 test·선반영 회차), `p6`(재현 시도·같은 트리·fix 수집 창·prepare 재실행), `verifyRetry.test.ts`, `build`·`testResults`·`remaining` 에 있다.
 
+## 독립 검토 반영
+
+구현(`e3e082d`) 뒤 독립 검토 지적 16건(major 2·minor 14)을 하나씩 코드와 sandbox(`sandbox-stage2-review-c3` 의 probe, 검토자가 남긴 것)로 확인했다. 12건은 코드(테스트 포함)로, 3건은 문서로 고쳤고, 1건은 다른 묶음과의 병합 순서로 인계한다. 새·바뀐 회귀 테스트 11개는 고치기 전 소스로 빌드하면 모두 실패하는 것을 확인했다(의도한 단언에서 실패).
+
+| # | 지적 | 판정 | 바꾼 것 |
+|---|---|---|---|
+| 1 | 통합 검증 결과가 `verify --retry`(같은 코드 재실행)와 `code-agent integrate`(통합 검증 재실행)를 함께 안내한다 | 반영 | `GUIDE_VARIANTS` 에 `integrate` 변형(환경·시간 초과·결과 미확인)을 두고 `verifyGuidance` 가 통합 검증이면 고른다. prepare 실패 줄은 분류만 남기고 재개 안내를 뺐다(`p6` 40b 가 안내 한 번·`verify --retry` 없음을 본다) |
+| 2 | design·usage 에 옛 의미가 남았다 | 반영 | design(검증 노드 판정 문단·수정 루프 그림), usage(단계표·사이클 그림·`/ca-next`·수정 루프), README 검증 노드 문단, 오류 표에 `재현 시도 N회(…)를 모두 썼습니다` 행 |
+| 3 | usage 가 아직 없는 judgment 동의를 지금 고를 수 있는 것으로 적는다 | 반영(문서) | usage 오류 표 세 행을 재계획·재승인·abort 로 쓰고 judgment 동의는 아직 없다고 적었다. CLI·스킬 문구는 #16 인계 |
+| 4 | 재현의 환경 예외가 §6.4 정본 표에 없다 | 반영(공통 모듈) | `POLICIES.environment.detect` 에 `(재현은 실패 결과가 있어도 문구만으로)` 를 더하고 §6.4 를 다시 렌더했다 |
+| 5 | DOCTYPE·CDATA 방어 단언이 `<?xml` 선언 요구 때문에 아무것도 검증하지 않는다 | 반영 | 선언을 붙이고 대조군(선언 있으면 passed)·ENTITY·선언 없는 조각 단언을 더했다 |
+| 6 | 표지만 남고 worktree 가 없어도 `정리했습니다` 라고 보고한다 | 반영 | 낡은 표지의 worktree 는 실제로 남아 있을 때만 지우고 보고한다. 등록만 남은 것은 목록 정리가 맡는다 |
+| 7 | ⑧ `고쳐 쓰기 회차` 값이 검증 회차 총수다 | 반영 | `roundsText` — `retry` 가 있으면 `검증 회차: N · 고쳐 쓰기 사용/한도회`, 없는 옛 증거는 옛 줄 그대로(T-L3 골든 유지) |
+| 8 | ⑨ 지적 재기준이 묶임 안의 모든 `used` 를 받아 한 번 열린 파일이 이후 조용히 기준이 된다 | 반영 | 리뷰 회차마다 한 번만 받는다(`testFreeze.rebased[].reviewRound`) |
+| 9 | requirement.md 의 `명시적 재실행도 기존 수정 한도를 소비한다` | 반영 | 원인별 카운터 문장으로 고치고 흐름도 §6.2 를 가리켰다 |
+| 10 (major) | `approveLogBasis` 가 재현 시도 카운터를 비우지 않아 로그 근거로 넘어간 뒤 리뷰 보완의 격리 재현 갱신이 막힌다 | 반영 | 재현을 본 것과 같이 비운다(`p6` 13e-3: 시도 3회 → 확인 → 고침 → ⑨ 지적으로 보완 → check 통과, 재기준 `finding`) |
+| 11 (major) | test 실행 전 저장이 ⑧ 을 렌더하지 않아 끊기면 ⑧ 불일치가 원인을 가리고, ⑧ 불일치 진단은 plain verify 로 풀리지 않는다 | 반영 | check·test 실행 전 저장을 `persist` 로(⑧ 렌더). 대조 불일치 진단의 안내(`precondition.rerun`)·ca-check·usage 를 `verify --retry` 로. 진입 노드는 바꾸지 않았다 — 코드 결함 회차에서 ⑧ 만 어긋났을 때 plain verify 가 check 실행으로 가면 같은 코드로 고쳐 쓰기를 쓴다 |
+| 12 | 같은 회차 재사용이 그 회차의 test 기록을 지워 앞 회차를 이어받으므로 `test 를 끊고 → check → 고치기` 가 통과 뒤 변경으로 세어진다 | 반영(공통 모듈) | 재사용이 지운 test·통합 검증 상태를 `retry.wiped` 에 남기고 `roundStateOf` 가 본다(test 는 다음 test 가 돌 때까지, 통합 검증은 그 회차만) |
+| 13 | worktree 생성 실패 뒤 시작 표지가 남아 재실행 카운터를 쓴다. 덮인 재현 시도는 끊긴 시도로 보인다 | 반영(공통 모듈 타입) | 통합 검증·격리 재현의 카운터·표지 저장을 worktree 를 만든 뒤로 옮겼다. 트리별 끝난 원인을 `retry.repro.classes` 에 남긴다 |
+| 14 | 낡은 표지 회수가 읽기 → 지우기 → 만들기라 둘 다 표지를 쥘 수 있다 | 반영 | `acquireLock(<표지>.reclaim)` 가드 안에서 다시 읽어 본 표지 그대로일 때만 회수한다 |
+| 15 | ⑩ `고쳐 쓰기 회차` | 반영 | ⑧ 과 같은 `roundsText` |
+| 16 | 안내·hook·스킬 문구가 아직 없는 judgment 동의(C5)를 가리키고, Codex 사본에 장시간 실행 정본 문장이 남는다(C4) | 인계 | C3 만으로는 풀 수 없다. 병합 때 C5 의 동의 목록·C4 의 문장 치환과 함께 검증한다 |
+
+공통 모듈(`retryPolicy.ts`)은 다섯 곳만 고쳤다 — 다른 묶음이 같은 파일을 쓰므로 더하기만 했고 기존 값·시그니처는 바꾸지 않았다.
+- `POLICIES.environment.detect` 한 구절(#4): 정본 표와 동작을 맞춘다.
+- `GUIDE_VARIANTS`·`GUIDE_VARIANT_KEYS` 의 `integrate` 변형 셋(#1): 통합 검증의 재개 명령·카운터가 검증 노드 문구와 다르다. 안내 문구의 단일 원천을 지키려고 `validate.ts` 에 따로 쓰지 않았다.
+- `GUIDE_VARIANTS.precondition.rerun` 의 재개 명령(#11).
+- `VerifyRetryState.wiped`·`WipedRuns`·`roundStateOf` 의 선택 입력 `wiped`(#12): 회차 상태 판정이 이 함수 하나라 여기에 둬야 hook·`check()`·`status` 가 갈라지지 않는다.
+- `ReproRetry.classes` 와 `verifyRetryOf` 의 복사(#13): `verifyRetryOf` 가 `repro` 를 필드별로 다시 만들어 새 필드를 버리기 때문이다.
+
+⑧ 의 회차 줄 형식이 바뀌었으므로 이 브랜치의 이전 구현(`e3e082d`)으로 만든 `retry` 있는 증거는 ⑧ 이 한 번 어긋난다(`verify --retry` 가 다시 렌더한다). `retry` 없는 옛 증거의 ⑧ 은 그대로다.
+
+지운 test 상태(#12)로 엄격해지는 판정이 하나 있다 — 환경·중단으로 끝난 test 를 같은 코드 `check` 로 다시 쓴 뒤 test 를 돌리기 전에 `check` 를 또 부르면, 그 회차는 여전히 환경·중단 상태라 같은 코드 재실행을 한 번 더 쓴다(전에는 지운 뒤 통과로 보여 세지 않았다). `verify --retry` 는 check 뒤 바로 test 를 돌리므로 이 길을 밟지 않는다.
+
+- `npm test`(검토 반영 뒤): 924개 중 920개 통과·실패 0·생략 4(Windows, 약 150초).
+
 ## 남은 위험
 
 - 리뷰 회차 판정은 `review.json` 을 잠금 없이 저장한다. 동시 `openRound` 경합은 교차·리뷰 묶음이 잠금 저장(`mutateReview`)을 넣을 때 같은 판정을 잠금 안에서 다시 한다.

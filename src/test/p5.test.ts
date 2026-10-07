@@ -31,6 +31,9 @@ import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 import { grantScope, RetryRefused } from "../agent/retryPolicy";
 
+/** git 호출을 가로채는 자리 — validate.ts 는 호출 때마다 모듈의 execFileSync 를 찾는다 */
+const childProcessModule = require("node:child_process") as typeof import("node:child_process");
+
 /**
  * P5 — 증거 코어(단계 1)와 리뷰·통합 검증·반영(단계 2).
  *
@@ -710,6 +713,98 @@ describe("검증 workflow 노드", () => {
     await assert.rejects(verify(repo), (error: Error) => error instanceof Stop && /검증 전제가 맞지 않습니다[\s\S]*not-run/.test(error.message));
     assert.equal(loadActive(repo)!.phase, "test");
   });
+
+  test("test 실행 전 저장도 ⑧ 을 렌더한다 — 끊긴 test 뒤 verify 는 ⑧ 불일치가 아니라 끊긴 test 로 간다", async () => {
+    const ENV_FAIL = ["node", "-e", "console.error('Connection refused: db');process.exit(1)"];
+    useManifest({
+      build: ["node", "-e", `process.exit(require('fs').readFileSync('${ORDER}/domain/Order.java','utf-8').includes('fixed') ? 0 : 3)`],
+      test: ENV_FAIL, environmentErrors: ["Connection refused"],
+    });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    write(`${ORDER}/domain/Order.java`, "class Order { /* fixed */ }\n");
+    assert.equal((await verify(repo)).node, "diagnose", "2회차 test 가 환경으로 실패했다");
+    // 같은 코드 재실행이 명령 도중 끊긴다(셸 시간 제한 모사) — 실행 전 저장(재실행 수·시작 표지)만 남는다
+    const original = build.runCommand;
+    mock.method(build, "runCommand", async (cwd: string, argv: string[], env?: NodeJS.ProcessEnv, timeout?: number): Promise<build.CommandResult> => {
+      if (argv.join(" ") === ENV_FAIL.join(" ")) throw new Error("끊김 모사");
+      return original(cwd, argv, env, timeout);
+    });
+    try {
+      await assert.rejects(() => runTests(requireValidatable(repo, "test")), /끊김 모사/);
+    } finally {
+      mock.restoreAll();
+    }
+    const cut = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(cut.retry!.reruns["2"], 1);
+    assert.equal(cut.retry!.started?.phase, "test");
+    assert.deepEqual(stageProblems(loadWork(repo)!, "check"), [], "⑧ 이 증거와 같다 — 재실행 수가 렌더돼 있다");
+    // 끊긴 test 를 같은 회차로 다시 돈다 — 원인이 ⑧ 불일치(precondition)로 가려지지 않는다
+    const result = await verify(repo);
+    assert.equal(result.node, "decision");
+    assert.equal(result.failure?.counter?.key, "rerun");
+    assert.equal(result.failure?.origin, "environment");
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.reruns["2"], 2);
+    const history = JSON.parse(readFileSync(verificationFlowFile(loadWork(repo)!), "utf8")) as VerificationHistory;
+    assert.ok(history.attempts.at(-1)!.events.some((event) => event.node === "test.execute" && event.status === "completed"));
+  });
+
+  test("⑧ 만 증거와 다르면 진단이고 verify --retry 가 다시 렌더한다 — 고쳐 쓰기·재실행을 쓰지 않는다", async () => {
+    toCheck();
+    assert.equal((await verify(repo)).node, "review");
+    const doc = join(repo, validationDocFile("ORD-1"));
+    writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n손으로 덧붙인 줄\n`);
+    // 판정부터 들어가는 plain verify 는 ⑧ 을 다시 렌더하지 않는다 — 안내는 check 부터 다시 도는 --retry 다
+    const first = await verify(repo);
+    assert.equal(first.node, "diagnose");
+    assert.equal(first.failure?.class, "precondition");
+    assert.equal(first.resume, "code-agent verify --retry");
+    assert.match(first.task, /code-agent verify --retry 로 check 부터 다시 돌리면 맞춰집니다/);
+    const second = await verify(repo, { retry: true });
+    assert.equal(second.node, "review");
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.rounds, 1, "같은 트리라 그 회차를 다시 쓴다");
+    assert.equal(evidence.retry!.reruns["1"] ?? 0, 0, "통과한 회차의 재사용은 재실행을 쓰지 않는다");
+    assert.deepEqual(stageProblems(loadWork(repo)!, "check"), []);
+  });
+
+  test("환경으로 실패한 test 를 같은 코드 check 로 지운 뒤 고치면 고쳐 쓰기다 — 지운 test 상태가 판정에 남는다", async () => {
+    useManifest({ test: ["node", "-e", "console.error('Connection refused: db');process.exit(1)"], environmentErrors: ["Connection refused"] });
+    toCheck();
+    assert.equal((await verify(repo)).node, "diagnose");
+    await check(requireValidatable(repo, "check"));
+    const reused = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(reused.rounds, 1);
+    assert.equal(reused.retry!.reruns["1"], 1);
+    assert.equal(runsOf(reused, "test").length, 0, "같은 회차 재사용은 그 회차 test 기록을 비운다");
+    assert.deepEqual(reused.retry!.wiped, { test: { round: 1, state: "environment" } });
+    // 지운 뒤 앞 회차를 이어받으면 통과 뒤 변경(review)으로 세어 고쳐 쓰기를 피한다
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 1; }\n");
+    await check(requireValidatable(repo, "check"));
+    const after = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(after.retry!.causes["2"], "fix");
+    assert.equal(verifyView(loadWork(repo)!, after).budget.fix.used, 1);
+    // test 가 다시 돌면 지운 상태는 그 실행의 기록으로 바뀐다
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.wiped, undefined);
+  });
+
+  test("끊긴 test 를 같은 코드 check 로 다시 쓴 뒤 고쳐도 고쳐 쓰기다 — 끊고 check 로 지워 카운터를 피하는 길이 없다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    saveEvidence(repo, { ...evidence, retry: { ...evidence.retry!, started: { phase: "test", round: 1, pid: dead, host: hostname(), at: new Date().toISOString() } } });
+    await check(requireValidatable(repo, "check"));
+    const reused = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(reused.retry!.started, undefined);
+    assert.deepEqual(reused.retry!.wiped, { test: { round: 1, state: "interrupted" } });
+    write(`${ORDER}/domain/Order.java`, "class Order { int v = 1; }\n");
+    await check(requireValidatable(repo, "check"));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.causes["2"], "fix");
+  });
 });
 
 // ---- 기준 커밋 ----
@@ -1184,6 +1279,28 @@ describe("테스트 동결", () => {
     const evidence = loadEvidence(repo, "ORD-1", "order")!;
     assert.equal(evidence.testFreeze!.rebased![0].by, "finding");
     assert.equal(stageProblems(loadWork(repo)!, "test").some((problem) => /테스트 동결 뒤 바뀐/.test(problem)), false);
+  });
+
+  test("⑨ 지적으로 연 테스트 파일은 그 리뷰 회차에 한 번만 기준이 된다 — 그 뒤 hook 을 거치지 않은 변경은 게이트가 잡는다 (PVR-15)", async () => {
+    useManifest({ build: ["node", "-e", `process.exit(require('fs').readFileSync('${ORDER}/domain/Order.java','utf-8').includes('broken') ? 3 : 0)`] });
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings(`| F1 | ${TEST_FILE} | 계획 안 | 열림 | 단언이 기대 결과를 확인하지 않는다 |`);
+    assert.equal(writeFileHook(TEST_FILE), undefined);
+    write(TEST_FILE, "// TC-1 · TC-2 (지적 반영)\nclass OrderTest {}\n");
+    write(`${ORDER}/domain/Order.java`, "class Order { broken }\n");
+    await check(requireValidatable(repo, "check"));
+    const opened = loadEvidence(repo, "ORD-1", "order")!.testFreeze!.rebased!;
+    assert.deepEqual(opened.map((entry) => [entry.by, entry.reviewRound, entry.files]), [["finding", 1, [TEST_FILE]]]);
+    // check 로 되감긴 뒤에는 hook 이 그 파일을 다시 닫는다 — 그래도 바뀌었다면 지적이 연 변경이 아니다
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
+    write(TEST_FILE, "// TC-1 · TC-2 (몰래 한 번 더)\nclass OrderTest {}\n");
+    write(`${ORDER}/domain/Order.java`, "class Order { fixed }\n");
+    await check(requireValidatable(repo, "check"));
+    const evidence = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(evidence.retry!.causes[String(evidence.rounds)], "fix");
+    assert.equal(evidence.testFreeze!.rebased!.length, 1, "같은 리뷰 회차에 두 번 받아들이지 않는다");
+    assert.ok(stageProblems(loadWork(repo)!, "test").some((problem) => problem.includes(`테스트 동결 뒤 바뀐 kind:test 파일: ${TEST_FILE}`)));
   });
 
   test("implement 스테이지에서는 같은 파일을 쓴다", () => {
@@ -1667,6 +1784,62 @@ describe("code-agent integrate", () => {
     }
   });
 
+  test("임시 worktree 를 만들지 못한 통합 검증은 재실행 카운터·시작 표지를 남기지 않는다 — 인프라 실패를 끊긴 실행으로 세지 않는다", async () => {
+    await toIntegrate();
+    const before = readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8");
+    const original = childProcessModule.execFileSync;
+    childProcessModule.execFileSync = ((file: string, args?: readonly string[], options?: object) => {
+      if (file === "git" && args?.[0] === "worktree" && args[1] === "add") throw new Error("worktree add 실패 모사");
+      return (original as (...rest: unknown[]) => unknown)(file, args, options);
+    }) as typeof original;
+    try {
+      await assert.rejects(() => integrate(requireValidatable(repo, "integrate")),
+        (error: Error) => error instanceof Stop && /임시 worktree 를 만들지 못했습니다/.test(error.message));
+    } finally {
+      childProcessModule.execFileSync = original;
+    }
+    assert.equal(readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8"), before, "카운터·시작 표지를 쓰지 않았다");
+    assert.equal(existsSync(worktreeMarkerFile(repo)), false, "표지는 풀었다");
+    const out = await integrate(requireValidatable(repo, "integrate"));
+    assert.doesNotMatch(out, /끝 기록 없이 끊겼습니다/);
+    const after = loadEvidence(repo, "ORD-1", "order")!;
+    assert.equal(after.retry!.integrateReruns[String(after.rounds)] ?? 0, 0);
+  });
+
+  test("낡은 표지의 worktree 가 이미 없으면 정리했다고 보고하지 않는다 (PVR-8)", async () => {
+    await toIntegrate();
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    // worktree add 전에 끊긴 실행 — 표지만 남고 worktree 는 만들어지지 않았다
+    const never = join(tmpdir(), `code-agent-integrate-${checkoutKey(repo)}-never1`);
+    rmSync(never, { recursive: true, force: true });
+    mkdirSync(dirname(worktreeMarkerFile(repo)), { recursive: true });
+    writeFileSync(worktreeMarkerFile(repo), JSON.stringify({ pid: dead, host: hostname(), at: new Date().toISOString(), id: "ORD-1", target: "order", phase: "integrate", round: 1, worktree: never }));
+    const out = await integrate(requireValidatable(repo, "integrate"));
+    assert.doesNotMatch(out, /정리했습니다/);
+    assert.equal(existsSync(worktreeMarkerFile(repo)), false, "낡은 표지는 회수하고 끝나면 지운다");
+  });
+
+  test("낡은 표지는 회수 가드를 쥔 한 실행만 회수한다 — 다른 실행이 회수 중이면 아무것도 쓰지 않고 멈춘다 (PVR-8)", async () => {
+    await toIntegrate();
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const other = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { stdio: "ignore" });
+    const marker = worktreeMarkerFile(repo);
+    try {
+      mkdirSync(dirname(marker), { recursive: true });
+      const stale = JSON.stringify({ pid: dead, host: hostname(), at: new Date().toISOString(), id: "ORD-1", target: "order", phase: "integrate", round: 1, worktree: join(tmpdir(), "x") });
+      writeFileSync(marker, stale);
+      writeFileSync(`${marker}.reclaim`, JSON.stringify({ pid: other.pid, host: hostname(), at: new Date().toISOString(), nonce: "other" }));
+      const before = readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8");
+      await assert.rejects(() => integrate(requireValidatable(repo, "integrate")),
+        (error: Error) => error instanceof Stop && /표지 회수 잠금을 다른 code-agent 프로세스가 쥐고 있습니다/.test(error.message));
+      assert.equal(readFileSync(marker, "utf-8"), stale, "가드 없이 표지를 지우지 않는다");
+      assert.equal(readFileSync(verifyFile(repo, "ORD-1", "order"), "utf-8"), before);
+    } finally {
+      other.kill();
+      rmSync(`${marker}.reclaim`, { force: true });
+    }
+  });
+
   test("리뷰가 지금 트리 위에서 닫혀 있지 않으면 돌리지 않는다", async () => {
     await toIntegrate();
     write(`${ORDER}/domain/Order.java`, "class Order { }\n");
@@ -1699,6 +1872,8 @@ describe("code-agent deliver", () => {
     assert.match(doc, /<!-- code-agent:trace:start -->/);
     assert.match(doc, /\| R1 \| AC-R1-1 \|/);
     assert.match(doc, /## 변경 요약/);
+    // rounds 는 검증 회차 총수다 — 고쳐 쓰기 수와 가른다
+    assert.match(doc, /^- 검증 회차: 1 · 고쳐 쓰기 0\/2회$/m);
     assert.equal(git("log", "-1", "--format=%s"), "init");
   });
 

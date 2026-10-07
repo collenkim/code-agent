@@ -51,7 +51,7 @@ import {
 } from "./evidence";
 import type { CommandSpec, Evidence, LogBasis, Outcome, ReproAttemptClass, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
 import { logDir, questionsFile, workDocsDir } from "./layout";
-import { pidAlive } from "./lock";
+import { acquireLock, pidAlive } from "./lock";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import {
   budgetText,
@@ -68,13 +68,14 @@ import {
   runCauseOf,
   runClass,
   sameRoundDecision,
+  TIMING,
   verifyBudget,
   verifyRetryOf,
   verifyState,
   VERIFY_NOTES,
   RetryRefused,
 } from "./retryPolicy";
-import type { FailureRecord, RunCause, VerifyBudget, VerifyRetryState, VerifyState } from "./retryPolicy";
+import type { FailureRecord, RunCause, VerifyBudget, VerifyRetryState, VerifyState, WipedRuns } from "./retryPolicy";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
@@ -315,10 +316,15 @@ function unconfirmedCases(cases: TestCaseEvidence[]): string {
   }).join(", ");
 }
 
-/** 원인별 안내 문구의 값 — 결과 줄(remainingNote)과 verify 의 task 가 같은 값을 쓴다 */
+/**
+ * 원인별 안내 문구의 값 — 결과 줄(remainingNote)과 verify 의 task 가 같은 값을 쓴다. 통합 검증은 같은 회차를
+ * code-agent integrate 로 다시 돌고 통합 검증 재실행을 쓰므로 integrate 변형을 고른다 — verify --retry 를 안내하면
+ * check 로 되감아 같은 코드 재실행을 쓰고 그 회차의 check·test·통합 검증 기록을 지운다.
+ */
 export function verifyGuidance(work: Work, evidence: Evidence, phase: "check" | "test" | "integrate", state: VerifyState, budget: VerifyBudget): string {
   const runs = runsOf(evidence, phase).filter((run) => run.round === evidence.rounds);
   const rerunLeft = phase === "integrate" ? budget.integrateRerun.left : budget.rerun.left;
+  const variant = phase === "integrate" ? "integrate" : undefined;
   const failed = runs.filter((run) => run.outcome !== "passed");
   switch (state) {
     case "code-defect":
@@ -330,18 +336,20 @@ export function verifyGuidance(work: Work, evidence: Evidence, phase: "check" | 
         : run?.environment ? `출력에 선언된 문구 "${run.environment}"`
           : cause === "missing-tool" ? ENVIRONMENT_REASON["missing-tool"]
             : cause === "spawn" ? ENVIRONMENT_REASON.spawn : run?.outcome ?? "error";
-      return guidance("environment", { kind: run?.kind ?? phase, reason, rerunLeft });
+      return guidance("environment", { kind: run?.kind ?? phase, reason, rerunLeft }, variant);
     }
     case "interrupted": {
       const run = runs.find((entry) => runClass(entry) === "timeout");
       return run
-        ? guidance("interrupted", { kind: run.kind, minutes: work.manifest.commandTimeoutMinutes, logFile: run.logFile ?? validationDocFile(work.active.id), rerunLeft })
+        ? guidance("interrupted", { kind: run.kind, minutes: work.manifest.commandTimeoutMinutes, logFile: run.logFile ?? validationDocFile(work.active.id), rerunLeft }, variant)
         : guidance("interrupted", { round: evidence.rounds, phase, rerunLeft }, "empty");
     }
     case "result-unconfirmed": {
       const cases = phase === "test" ? evidence.testCases : phase === "integrate" ? evidence.integrationTestCases ?? [] : [];
-      const text = guidance("result-unconfirmed", {
-        cases: unconfirmedCases(cases) || "(⑦ 결과 없음)",
+      const listed = unconfirmedCases(cases) || "(⑦ 결과 없음)";
+      // 통합 검증에는 수집 수정 창이 없다(창은 이 회차 test 의 결과 미확인에만 열린다)
+      const text = variant ? guidance("result-unconfirmed", { cases: listed, rerunLeft }, variant) : guidance("result-unconfirmed", {
+        cases: listed,
         collectNote: budget.collect.left > 0 ? VERIFY_NOTES.collectOpen : VERIFY_NOTES.collectUsed,
         rerunLeft,
       });
@@ -444,10 +452,22 @@ function replaceRuns(evidence: Evidence, phase: VerifyPhase, round: number, runs
   evidence.runs = [...evidence.runs.filter((run) => !(run.phase === phase && run.round === round)), ...runs];
 }
 
-/** 증거를 쓰고 ⑧ 을 다시 렌더한다 — 둘은 한 벌이라 따로 두지 않는다 */
+/**
+ * 증거를 쓰고 ⑧ 을 다시 렌더한다 — 둘은 한 벌이라 따로 두지 않는다. 실행 **전** 저장도 이것으로 한다: ⑧ 은 회차 원인·재실행
+ * 수를 렌더하므로, 실행 전 저장 뒤 끊기면 ⑧ 이 증거와 어긋나 다음 verify 가 끊긴 원인 대신 ⑧ 불일치를 보게 된다.
+ */
 function persist(work: Work, evidence: Evidence): void {
   saveEvidence(work.repoRoot, evidence);
   writeAtomic(join(work.repoRoot, validationDocFile(work.active.id)), renderValidationDoc(work, evidence));
+}
+
+/** 같은 회차 재사용이 지운 상태를 그 단계가 다시 돈 끝 저장에서 지운다 — 이제 그 단계의 실제 기록이 있다 */
+function clearWiped(retry: VerifyRetryState | undefined, phase: "test" | "integrate"): void {
+  if (!retry?.wiped?.[phase]) return;
+  const rest: WipedRuns = { ...retry.wiped };
+  delete rest[phase];
+  if (rest.test || rest.integrate) retry.wiped = rest;
+  else delete retry.wiped;
 }
 
 // ---- fix 의 재현 ----
@@ -603,8 +623,9 @@ export async function repro(work: Work): Promise<string> {
     const rerunLimit = limitOf("reproRerun", LIMITS.reproRerun, retry.grants, grantScope({ file: "verify", key: "reproRerun", tree: testHash }));
     if (state.trees.includes(testHash)) {
       const prior = evidence.reproAttempt?.testTreeHash === testHash ? evidence.reproAttempt : undefined;
-      // 시도를 기록했는데 끝 기록이 없다 = 끊겼다
-      const cls: ReproAttemptClass = prior ? prior.class ?? legacyReproClass(prior.problem) : "interrupted";
+      // 트리별 원인(classes)이 정본이다 — 뒤 트리의 시도 기록이 reproAttempt 를 덮어도 남는다. 없는 옛 기록은 같은 트리의
+      // 시도 기록으로 추정하고, 그것도 없으면 시도를 기록했는데 끝 기록이 없다 = 끊겼다
+      const cls: ReproAttemptClass = state.classes?.[testHash] ?? (prior ? prior.class ?? legacyReproClass(prior.problem) : "interrupted");
       if (cls === "environment" || cls === "interrupted") {
         const used = state.reruns[testHash] ?? 0;
         if (used + 1 > rerunLimit) {
@@ -615,7 +636,7 @@ export async function repro(work: Work): Promise<string> {
       } else {
         const left = Math.max(0, attemptLimit - state.trees.length);
         const message =
-          `같은 테스트 트리로 이미 재현하지 못했습니다(${prior!.at}: ${prior!.problem.split("\n")[0]}) — 다시 돌려도 같습니다. ` +
+          `같은 테스트 트리로 이미 재현하지 못했습니다${prior ? `(${prior.at}: ${prior.problem.split("\n")[0]})` : ""} — 다시 돌려도 같습니다. ` +
           `재현 테스트를 고쳐 새로 시도하세요(남은 재현 시도 ${left}회). ${logNote}`;
         throw new RetryRefused(failure(cls, message), message);
       }
@@ -631,26 +652,35 @@ export async function repro(work: Work): Promise<string> {
     }
     retry.repro = state;
     evidence.retry = retry;
-    persist(work, evidence);
+    /** 이 트리의 시도가 끝난 원인 — 다음 시도가 같은 트리면 이것으로 다시 돌릴지 가른다 */
+    const classify = (cls: ReproAttemptClass) => { state.classes = { ...(state.classes ?? {}), [testHash]: cls }; };
     const attemptNote = () =>
       `(남은 재현 시도 ${Math.max(0, attemptLimit - state.trees.length)}회 · 이 트리의 재실행 ${Math.max(0, rerunLimit - (state.reruns[testHash] ?? 0))}회)`;
 
     const at = new Date().toISOString();
-    const { runs, outputs } = claim
-      ? await inCleanWorktree(work, baseCommit, async (cwd) => {
+    let result: { runs: VerifyRun[]; outputs: string[] };
+    if (claim) {
+      result = await inCleanWorktree(work, baseCommit, async (cwd) => {
+        // 시도는 명령을 돌리기 전에 기록한다 — worktree 를 만든 **뒤**라, 만들지 못해 멈추면 시도로 세지 않는다
+        persist(work, evidence);
         const prep = prepareCommand(work.manifest);
         if (prep) {
           const prepared = await runSpecs(work, "repro", 0, [prep], cwd);
           if (prepared.runs.some((run) => run.outcome !== "passed")) {
             // 실패한 준비도 시도 기록에 남긴다 — 같은 트리의 다음 시도는 환경 재실행으로 센다
             evidence.reproAttempt = { at, testTreeHash: testHash, cases, found: [], problem: "격리 재현의 의존성 준비에 실패했습니다", class: "environment" };
+            classify("environment");
             persist(work, evidence);
             throw new Stop("격리 재현의 의존성 준비에 실패했습니다 — 작업 코드는 보존했습니다. 준비 로그를 확인하고 code-agent repro로 다시 실행하세요.");
           }
         }
         return runSpecs(work, "repro", 0, specs, cwd);
-      }, (path) => tests.has(path), claim.worktree)
-      : await runSpecs(work, "repro", 0, specs);
+      }, (path) => tests.has(path), claim.worktree);
+    } else {
+      persist(work, evidence);
+      result = await runSpecs(work, "repro", 0, specs);
+    }
+    const { runs, outputs } = result;
     replaceRuns(evidence, "repro", 0, runs);
 
     // ⑧ 의 두 갈래(출력 · 테스트 파일)를 여기서는 쓰지 않는다. 재현이 주장하는 것은 "그 TC 가 실패했다"
@@ -666,6 +696,7 @@ export async function repro(work: Work): Promise<string> {
     if (judged) {
       // 판정에 실패해도 무엇을 돌렸는지는 남긴다 — 로그 근거 전환을 사람이 판단할 시도 기록이다
       evidence.reproAttempt = { at, testTreeHash: testHash, cases, found, problem: judged.problem, class: judged.class };
+      classify(judged.class);
       persist(work, evidence);
       throw new Stop(`${judged.problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.\n${logNote} ${attemptNote()}`);
     }
@@ -718,6 +749,9 @@ export function approveLogBasis(work: Work): string {
   evidence.logBasis = basis;
   evidence.repro = { at: attempt.at, testTreeHash: attempt.testTreeHash, cases: attempt.cases, found: attempt.found, mode: "log", basis };
   delete evidence.reproAttempt;
+  // 재현을 본 것과 같다 — 시도 카운터를 비운다. 남기면 리뷰 지적으로 재현 테스트를 보완한 뒤의 격리 재현 갱신이
+  // 확인 전의 시도로 재현 시도 한도에 걸려, 이미 받은 repro-log 동의를 다시 요구한다
+  evidence.retry = { ...verifyRetryOf(evidence), repro: { trees: [], reruns: {} } };
   persist(work, evidence);
   return `로그 근거로 진행합니다 — 고칠 파일을 쓸 수 있습니다. ${attempt.cases.join(", ")} 는 회귀 TC 로 수정 후 통과해야 합니다.`;
 }
@@ -744,19 +778,26 @@ function refusalText(work: Work, refused: FailureRecord): string {
  * 새 회차를 열 때 테스트 동결 기준을 다시 굳힌다. 받아들이는 변경은 수집 수정 회차의 kind:test 파일 전부, 또는 ⑨ 지적으로
  * 연 파일(review.json used)뿐이다. 받아들이지 않은 변경은 기준에 남아 test·integrate 게이트가 testFreezeProblems 로 잡는다.
  * review.json 은 여기서만 읽는다 — 게이트(evidence.ts)는 증거만 대조한다.
+ *
+ * ⑨ 지적으로 연 파일은 **리뷰 회차마다 한 번** 받아들인다. hook 은 review 단계의 열린 지적에만 그 파일을 열고, 그 뒤 첫
+ * check 가 기준을 갱신한다. 같은 리뷰 회차 안에서 다시 바뀐 것(check 로 되감긴 뒤 hook 을 거치지 않은 변경)은 받아들이지
+ * 않는다 — used 는 묶임 안의 모든 회차에 누적되므로 경로만 보면 한 번 열린 파일이 이후 조용히 기준이 된다.
  */
 function rebaseTestFreeze(work: Work, evidence: Evidence, by: "collect" | "finding"): void {
   const freeze = evidence.testFreeze;
   if (!freeze) return;
   const now = fileHashes(work.repoRoot, testStageFiles(work));
   const changed = [...new Set([...Object.keys(freeze.files), ...Object.keys(now)])].sort().filter((path) => freeze.files[path] !== now[path]);
-  const opened = by === "collect" ? changed : changed.filter((path) => reviewRoundUsage(work).usedPaths.includes(path));
+  const usage = by === "finding" ? reviewRoundUsage(work) : undefined;
+  const opened = !usage ? changed : changed.filter((path) => usage.usedPaths.includes(path) &&
+    !(freeze.rebased ?? []).some((entry) => entry.by === "finding" && entry.reviewRound === usage.used && entry.files.includes(path)));
   if (opened.length === 0) return;
   for (const path of opened) {
     if (now[path] === undefined) delete freeze.files[path];
     else freeze.files[path] = now[path];
   }
-  freeze.rebased = [...(freeze.rebased ?? []), { round: evidence.rounds, at: new Date().toISOString(), by, files: opened }];
+  freeze.rebased = [...(freeze.rebased ?? []),
+    { round: evidence.rounds, at: new Date().toISOString(), by, files: opened, ...(usage ? { reviewRound: usage.used } : {}) }];
 }
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
@@ -787,22 +828,41 @@ export async function check(work: Work, options: { retry?: boolean } = {}): Prom
   // 3) 회차를 실행 **전에** 기록한다 — 뒤에 올리면 프로세스를 죽여 카운터를 피하는 길이 생긴다
   const evidence = carry(work, baseCommit);
   const retry = verifyRetryOf(evidence);
-  delete retry.started; // 끊긴 test·integrate 표지는 위 판정에 이미 반영됐다
+  const started = retry.started;
+  delete retry.started; // 끊긴 test·integrate 표지는 위 판정에 이미 반영됐다(아래 재사용은 그 상태를 wiped 로 남긴다)
   if (!evidence.testFreeze && testFrozen(evidence)) {
     // 옛 증거의 추정 동결(실행 기록·TC 기록)을 아래 재사용이 실행 기록과 함께 지우기 전에 굳힌다
     evidence.testFreeze = { round: evidence.rounds, at: new Date().toISOString(), files: fileHashes(work.repoRoot, testStageFiles(work)) };
   }
   if (decision.action === "reuse") {
-    // 같은 회차를 다시 쓴다 — 그 회차의 check·test·integrate 기록을 비워 test 도 다시 돌게 한다
-    evidence.runs = evidence.runs.filter((run) => !(run.round === evidence.rounds && run.phase !== "repro"));
-    if (decision.counter === "rerun") retry.reruns[String(evidence.rounds)] = (retry.reruns[String(evidence.rounds)] ?? 0) + 1;
+    // 같은 회차를 다시 쓴다 — 그 회차의 check·test·integrate 기록을 비워 test 도 다시 돌게 한다. 지우는 test·통합 검증의
+    // 상태는 남긴다 — 다시 돌기 전에 코드를 고치면 그 상태(환경·중단·결과 미확인)로 센다. 지운 뒤 앞 회차를 이어받으면
+    // "test 를 끊고 → check → 고치기" 가 고쳐 쓰기 대신 통과 뒤 변경으로 세어진다
+    const round = evidence.rounds;
+    const wipedState = (phase: "test" | "integrate"): VerifyState | undefined =>
+      started?.phase === phase && started.round === round ? "interrupted"
+        : evidence.runs.some((run) => run.phase === phase && run.round === round)
+          ? verifyState({ phase, round, runs: evidence.runs, cases: phase === "test" ? evidence.testCases : evidence.integrationTestCases ?? [] })
+          : undefined;
+    const test = wipedState("test"), integrated = wipedState("integrate");
+    const keep = retry.wiped;
+    const wiped = {
+      ...(test ? { test: { round, state: test } } : keep?.test ? { test: keep.test } : {}),
+      ...(integrated ? { integrate: { round, state: integrated } } : keep?.integrate?.round === round ? { integrate: keep.integrate } : {}),
+    };
+    if (wiped.test || wiped.integrate) retry.wiped = wiped;
+    else delete retry.wiped;
+    evidence.runs = evidence.runs.filter((run) => !(run.round === round && run.phase !== "repro"));
+    if (decision.counter === "rerun") retry.reruns[String(round)] = (retry.reruns[String(round)] ?? 0) + 1;
   } else {
     evidence.rounds += 1;
     retry.causes[String(evidence.rounds)] = decision.cause;
+    // 지운 통합 검증 상태는 그 회차에만 든다. 지운 test 상태는 다음 test 가 돌 때까지 남는다(앞 회차 이어받기)
+    if (retry.wiped?.integrate) clearWiped(retry, "integrate");
     if (evidence.testFreeze) rebaseTestFreeze(work, evidence, decision.cause === "collect" ? "collect" : "finding");
   }
   evidence.retry = retry;
-  saveEvidence(work.repoRoot, evidence);
+  persist(work, evidence);
 
   const specs = checkCommands(work.repoRoot, work.manifest);
   const { runs } = await runSpecs(work, "check", evidence.rounds, specs);
@@ -844,16 +904,18 @@ export async function runTests(work: Work): Promise<string> {
     if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure));
     if (decision.counter) retry.reruns[String(round)] = (retry.reruns[String(round)] ?? 0) + 1;
   }
-  // 시작 표지 — 명령을 돌리기 **전에** 저장한다. 앞 명령의 로그를 보고 끊어도 표지가 남아 끊긴 test 로 센다
+  // 시작 표지 — 명령을 돌리기 **전에** 저장한다. 앞 명령의 로그를 보고 끊어도 표지가 남아 끊긴 test 로 센다.
+  // ⑧ 도 함께 렌더한다 — 재실행 수가 ⑧ 수정 루프 줄에 들어가므로, 저장만 하고 끊기면 ⑧ 이 증거와 어긋난다
   retry.started = { phase: "test", round, pid: process.pid, host: hostname(), at: new Date().toISOString() };
   evidence.retry = retry;
-  saveEvidence(work.repoRoot, evidence);
+  persist(work, evidence);
 
   const specs = testCommands(work.repoRoot, work.manifest);
   const { runs, outputs } = await runSpecs(work, "test", round, specs);
   replaceRuns(evidence, "test", round, runs);
   evidence.testCases = testCaseEvidence(work, outputs.join("\n"));
   delete evidence.retry.started;
+  clearWiped(evidence.retry, "test");
   // 동결은 결과가 인식된(또는 코드 결함으로 실패한) test 실행부터 — 그때의 kind:test 파일 해시를 기준으로 굳힌다
   const frozenBefore = testFrozen(before ?? evidence);
   if (!evidence.testFreeze && (frozenBefore || runs.some((run) => runClass(run) === "defect") || evidence.testCases.some((entry) => entry.source === "출력"))) {
@@ -972,14 +1034,14 @@ export function worktreeMarkerFile(repoRoot: string): string {
 /** 주인 기록 없는 표지(깨진 JSON)를 쓰는 중으로 보는 시간 */
 const MARKER_WRITE_GRACE_MS = 10_000;
 
-function readMarker(file: string): { owner?: WorktreeMarker; ageMs: number } | undefined {
+function readMarker(file: string): { text: string; owner?: WorktreeMarker; ageMs: number } | undefined {
   try {
     const text = readFileSync(file, "utf-8");
     try {
       const owner = JSON.parse(text) as WorktreeMarker;
-      if (owner && typeof owner.pid === "number" && typeof owner.at === "string") return { owner, ageMs: Date.now() - Date.parse(owner.at) };
+      if (owner && typeof owner.pid === "number" && typeof owner.at === "string") return { text, owner, ageMs: Date.now() - Date.parse(owner.at) };
     } catch { /* 주인 없는 표지 */ }
-    return { ageMs: Date.now() - statSync(file).mtimeMs };
+    return { text, ageMs: Date.now() - statSync(file).mtimeMs };
   } catch {
     return undefined; // 그사이 지워졌다
   }
@@ -1029,14 +1091,30 @@ function claimWorktree(work: Work, mark: { phase: "integrate" | "repro"; round: 
     if (found && !owner && found.ageMs < MARKER_WRITE_GRACE_MS) {
       throw new Stop("통합 검증·격리 재현 표지를 쓰는 중입니다 — 잠시 뒤 다시 실행하세요.");
     }
-    // 낡은 표지 — 끊긴 실행이다. 그 worktree 가 이 체크아웃의 것이면 지우고 표지를 회수한다
+    // 낡은 표지 — 끊긴 실행이다. 회수는 가드(lock.ts acquireLock) 안에서 다시 읽어 **본 표지 그대로일 때만** 지운다.
+    // 가드 없이 읽기 → 지우기 → 만들기를 하면, 같은 낡은 표지를 둘이 회수할 때 한쪽이 새로 쥔 표지를 다른 쪽이 지워
+    // 둘 다 표지를 쥐고, 뒤쪽의 자기 키 정리가 앞쪽의 실행 중 worktree 를 지운다
+    const raced = "다른 통합 검증·격리 재현이 같은 표지를 방금 쥐었습니다 — 끝난 뒤 다시 실행하세요.";
+    const releaseGuard = acquireLock(`${file}.reclaim`, {
+      waitMs: TIMING.lockWaitMs, ageReclaim: true, label: "통합 검증·격리 재현 표지 회수", display: `${file}.reclaim`,
+    });
+    try {
+      const again = readMarker(file);
+      if (again && again.text !== found?.text) throw new Stop(raced);
+      if (again) {
+        try { unlinkSync(file); } catch { /* 이미 지워졌다 */ }
+      }
+      if (!create()) throw new Stop(raced);
+    } finally {
+      releaseGuard();
+    }
     previous = owner;
-    if (owner?.worktree && basename(owner.worktree).startsWith(prefix)) {
+    // 그 worktree 가 이 체크아웃의 것이고 **실제로 남아 있으면** 지운다. 만들기 전에 끊겼거나 이미 지운 뒤 끊긴 것은
+    // 정리한 것이 아니다(등록만 남았으면 아래 목록 정리가 맡는다)
+    if (owner?.worktree && basename(owner.worktree).startsWith(prefix) && existsSync(owner.worktree)) {
       removeWorktree(repoRoot, owner.worktree);
       if (!existsSync(owner.worktree)) cleaned.push(owner.worktree);
     }
-    try { unlinkSync(file); } catch { /* 이미 지워졌다 */ }
-    if (!create()) throw new Stop("다른 통합 검증·격리 재현이 같은 표지를 방금 쥐었습니다 — 끝난 뒤 다시 실행하세요.");
   }
   // 정리 — 표지를 쥐고 있으므로 자기 키의 임시 worktree 는 실행 중인 것이 아니다. 다른 키·이전 버전 이름은 보고만 한다
   const foreign: string[] = [];
@@ -1120,14 +1198,15 @@ export async function integrate(work: Work): Promise<string> {
     }
     retry.started = { phase: "integrate", round, pid: process.pid, host: hostname(), at: new Date().toISOString() };
     evidence.retry = retry;
-    // 실행 전에 카운터·시작 표지를 기록한다 — integrate 는 트리가 같아야 돌므로 이어받은 treeHash 는 디스크와 같다
-    persist(work, evidence);
 
     const specs = integrateCommands(work.manifest);
     // 준비 명령은 선언됐을 때만, build·test 앞에 한 번. 기준 커밋을 뜬 트리에는 의존성처럼
     // 커밋되지 않는 것이 없어서 두는 자리다.
     const prep = prepareCommand(work.manifest);
     const { runs, outputs } = await inCleanWorktree(work, baseCommit, async (cwd) => {
+      // 명령을 돌리기 전에 카운터·시작 표지를 기록한다 — worktree 를 만든 **뒤**라, 만들지 못해 멈추면 아무것도 기록하지 않는다
+      // (인프라 실패가 끊긴 실행으로 세어 재실행 카운터를 쓰지 않게). 트리가 같아야 돌므로 이어받은 treeHash 는 디스크와 같다
+      persist(work, evidence);
       const first = prep
         ? await runSpecs(work, "integrate", round, [prep], cwd)
         : { runs: [] as VerifyRun[], outputs: [] as string[] };
@@ -1143,6 +1222,7 @@ export async function integrate(work: Work): Promise<string> {
     replaceRuns(evidence, "integrate", round, runs);
     evidence.integrationTestCases = testCaseEvidence(work, outputs.filter((_, index) => runs[index].kind === "test").join("\n"));
     delete evidence.retry.started;
+    clearWiped(evidence.retry, "integrate");
     persist(work, evidence);
     const stopped = runs.some((run) => run.kind === "prepare" && run.outcome !== "passed");
     const left = verifyView(work, evidence).budget.integrateRerun.left;
@@ -1150,9 +1230,9 @@ export async function integrate(work: Work): Promise<string> {
       summary(work, evidence, "integrate", specs),
       "",
       `기준 커밋 ${baseCommit.slice(0, 12)} 위의 깨끗한 worktree 에서 돌렸습니다 — 작업 트리에 남아 있던 산출물은 끼지 않았습니다.`,
+      // 다시 돌리는 안내(code-agent integrate·남은 통합 검증 재실행)는 위 결과 줄(remainingNote)이 한 번만 낸다
       ...(stopped
-        ? ["준비 명령이 실패해 build·test 를 돌리지 않았습니다 — 준비되지 않은 트리 위의 통과는 증거가 아닙니다." +
-            ` 환경 문제로 분류했습니다 — 계획 파일을 고치지 말고 환경·매니페스트를 확인받은 뒤 code-agent integrate (남은 통합 검증 재실행 ${left}회).`]
+        ? ["준비 명령이 실패해 build·test 를 돌리지 않았습니다 — 준비되지 않은 트리 위의 통과는 증거가 아닙니다. 계획 파일이 아니라 환경 문제로 분류했습니다."]
         : []),
       ...(interrupted
         ? [`직전 통합 검증(${interruptedAt})이 끝 기록 없이 끊겼습니다 — 같은 회차로 다시 돌렸습니다(남은 통합 검증 재실행 ${left}회). ` +

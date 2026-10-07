@@ -715,6 +715,59 @@ describe("P6 · fix — 재현 먼저", () => {
     assert.ok(loadEvidence(repo, "FIX-1", SRC)!.reproAttempt);
   });
 
+  test("13e-3. 로그 근거 확인은 재현 시도 카운터를 비운다 — 리뷰 지적으로 재현 테스트를 보완한 뒤의 격리 재현 갱신이 막히지 않는다", async () => {
+    useManifest({ test: ["node", "--test", "--test-reporter=tap"] });
+    useOrder(FIX_ORDER_LOG);
+    toImplementWith(CURRENT_LOG, "- TC-1");
+    // 기준 코드에서도 통과하는(재현하지 못하는) 테스트로 서로 다른 트리 3회 — 재현 시도 한도를 다 쓴다
+    const base = "const test=require('node:test'),assert=require('node:assert/strict'),{total}=require('../main/app/order');test('TC-1 one',()=>assert.equal(total([]),total([])));\n";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      writeReproTest(`${base}// 시도 ${attempt}\n`);
+      await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    }
+    assert.equal(loadEvidence(repo, "FIX-1", SRC)!.retry!.repro!.trees.length, 3);
+    withInteraction(HUMAN, () => approveLogBasis(requireReproable(repo)));
+    assert.deepEqual(loadEvidence(repo, "FIX-1", SRC)!.retry!.repro, { trees: [], reruns: {} }, "로그 근거 확인은 재현을 본 것과 같다");
+    next(repo);
+    fixSource();
+    next(repo);
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    next(repo);
+    openRound(requireValidatable(repo, "review"));
+    const review = join(repo, reviewDocFile("FIX-1"));
+    writeFileSync(review, `${readFileSync(review, "utf-8")}\n| F1 | ${REPRO_TEST} | 계획 안 | 열림 | 단언 보완 |\n`);
+    recordReviewFixture(repo);
+    assert.equal(writeFileHook(REPRO_TEST), undefined);
+    writeReproTest(`${base}test('TC-1 two',()=>assert.equal(total([1]),1));\n`);
+    writeFileSync(review, readFileSync(review, "utf-8").replace("| 열림 |", "| 해결 |"));
+    // 확인 전의 시도 3회가 남아 있으면 여기서 재현 시도 한도로 거부되고, 이미 받은 repro-log 동의를 다시 요구한다
+    await check(requireValidatable(repo, "check"));
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(evidence.repro!.mode, "log");
+    assert.equal(evidence.repro!.testTreeHash, partialTreeHash(repo, testStageFiles(loadWork(repo)!)));
+    assert.equal(evidence.testFreeze!.rebased!.at(-1)!.by, "finding");
+  });
+
+  test("13e-4. 뒤 트리의 시도가 시도 기록을 덮어도 이미 재현하지 못한 트리는 다시 돌리지 않는다 — 트리별 원인이 남는다", async () => {
+    useManifest({ test: PASS });
+    toImplement();
+    writeReproTest("// TC-1 재현 A\n");
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    writeReproTest("// TC-1 재현 B\n");
+    await assert.rejects(() => repro(requireReproable(repo)), /재현하지 못했습니다/);
+    // A 로 되돌린다 — reproAttempt 는 B 의 것이라, 트리별 원인이 없으면 A 를 끝 기록 없이 끊긴 시도로 보고 다시 돌린다
+    writeReproTest("// TC-1 재현 A\n");
+    const at = runsOf(loadEvidence(repo, "FIX-1", SRC)!, "repro")[0].at;
+    await assert.rejects(() => repro(requireReproable(repo)),
+      (error: Error) => error instanceof RetryRefused && /같은 테스트 트리로 이미 재현하지 못했습니다 — 다시 돌려도 같습니다/.test(error.message));
+    const evidence = loadEvidence(repo, "FIX-1", SRC)!;
+    assert.equal(runsOf(evidence, "repro")[0].at, at, "거부는 실행하지 않는다");
+    assert.deepEqual(evidence.retry!.repro!.reruns, {}, "재실행으로 세지 않는다");
+    assert.deepEqual(Object.values(evidence.retry!.repro!.classes!), ["result-unconfirmed", "result-unconfirmed"]);
+  });
+
   test("13f. 오류 로그 없는 결함은 재현되지 않으면 로그 근거로 넘어가지 않는다", async () => {
     useManifest({ test: PASSES_LOCALLY });
     toImplement();
@@ -1541,6 +1594,10 @@ describe("P6 · deliver 커밋 범위 · integrate 의 prepare", () => {
     for (let tries = 0; tries < 3; tries++) {
       const out = await integrate(requireValidatable(repo, "integrate"));
       assert.match(out, /환경 문제로 분류했습니다/);
+      // 재개 안내는 한 가지다 — 같은 회차는 code-agent integrate 로 다시 돈다. verify --retry 는 check 로 되감아 같은 코드 재실행을 쓴다
+      assert.match(out, new RegExp(`code-agent integrate 로 같은 회차를 다시 돌리세요 — 고쳐 쓰기 회차를 쓰지 않습니다\\(남은 통합 검증 재실행 ${2 - tries}회\\)`));
+      assert.doesNotMatch(out, /verify --retry|같은 코드 재실행/);
+      assert.equal(out.match(/남은 통합 검증 재실행/g)!.length, 1);
       const evidence = loadEvidence(repo, "ORD-9", "greeting")!;
       assert.equal(runsOf(evidence, "integrate")[0].cause, "environment");
       assert.equal(evidence.retry!.integrateReruns[String(evidence.rounds)] ?? 0, tries);
