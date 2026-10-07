@@ -745,6 +745,10 @@ describe("증거는 트리·매니페스트·계획에 묶인다", () => {
     toCheck();
     await check(requireValidatable(repo, "check"));
     write("code-agent.json", manifest({ test: ["node", "-e", "0"] }));
+    // 승인도 stale-manifest 가 된다 — next 는 스테이지 게이트보다 먼저 재진입 문장으로 멈춘다(status 의 다음: 과 같다)
+    assert.throws(() => next(repo), /계획이 승인되지 않았습니다 \(stale-manifest\)\. 승인 무효\(stale-manifest/);
+    // 그 자리에서 다시 승인해도 통과는 옛 선언에 묶여 있어 넘어가지 않는다
+    approve();
     assert.throws(() => next(repo), /경계·검증 선언이 바뀌었습니다/);
   });
 

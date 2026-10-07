@@ -621,10 +621,15 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
  */
 export function preparationHint(repoRoot: string, intake = true): string | undefined {
   const manifest = loadManifestIfAny(repoRoot);
-  if (!manifest) return `${skill("ca-adopt")} 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend`;
+  const session = existsSync(join(repoRoot, DOCS_SESSION_FILE));
+  if (!manifest) {
+    // ca-adopt 도중(docs begin 뒤 code-agent.json 작성 전) — 세션을 이어 쓴다. 문서 세션 중에는 접수(request begin)가 거부된다
+    return session
+      ? `${skill("ca-adopt")} 로 설정(code-agent.json)·공통 문서를 마저 준비합니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end`
+      : `${skill("ca-adopt")} 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend`;
+  }
   const checks = checkProjectDocs(repoRoot, manifest);
   const missing = checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections");
-  const session = existsSync(join(repoRoot, DOCS_SESSION_FILE));
   if (session) {
     if (missing) return `${skill("ca-docs")} 로 공통 문서를 마저 씁니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end`;
     return `code-agent docs end 로 문서 세션을 닫은 뒤 ${preparationConsent(repoRoot, checks) ?? (intake ? "접수를 이어갑니다" : "준비를 마칩니다")}`;
@@ -734,9 +739,16 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
   }
   const parsed = RequestSchema.safeParse(raw);
   if (!parsed.success) {
+    // 대상 여럿인 지시서로 이미 시작한 작업(진행 중 작업은 잇는다)의 재제출 — 그 작업을 잇는 길은 진행 중인 대상 하나만 남기는 것이다.
+    // '대상마다 별도 ID' 만 보이면 진행 중인 작업을 두고 새로 접수하는 쪽으로 읽힌다
+    const draftId = raw && typeof raw === "object" ? (raw as { id?: unknown }).id : undefined;
+    const keep = active && draftId === active.id && parsed.error.issues.some((issue) => issue.path[0] === "target" && issue.code === "too_big")
+      ? `\n진행 중인 작업(${active.id})의 요구사항을 고치는 중이면 target 에 진행 중인 대상(${active.target}) 하나만 남겨 다시 제출합니다 — 나머지 대상은 이 작업을 끝낸 뒤 대상마다 별도 ID 로 접수합니다.`
+      : "";
     throw new Stop(
       "접수 초안의 형식이 맞지 않습니다:\n" +
         parsed.error.issues.map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`).join("\n") +
+        keep +
         "\n형식은 code-agent request 가 보여 줍니다.",
     );
   }

@@ -496,7 +496,7 @@ code-agent start doc/spec/<어디든>.md
 
 | 해시 | 무엇의 | 바뀌면 |
 |---|---|---|
-| `orderHash` | 작업 지시서 | **`stale-order`** — 그 지시서로 받은 승인이 대상마다 전부 무효 |
+| `orderHash` | 작업 지시서 | **`stale-order`** — 그 지시서로 받은 승인이 무효 |
 | `planHash` | 제출된 계획 | `stale-plan` — 달라진 항목만 보여 주고 재승인 |
 | `manifestHash` | 단계 경계·검증 명령 | `stale-manifest` |
 | `docsHash` | 확정된 필수 문서 + 분석·작업 문서 | `stale-docs` |
@@ -505,7 +505,7 @@ code-agent start doc/spec/<어디든>.md
 담는다. **파일 경로는 담지 않는다** — 문서를 옮겼다고 승인이 무효가 될 이유는 없다.
 
 지시서를 고치는 쪽이 계획을 고치는 쪽보다 위험하다. `preserve` 한 줄을 지우면 경계 검사가 그냥
-통과하기 때문이다. 그래서 지시서가 바뀌면 그 지시서로 받은 승인은 대상마다 전부 자동으로 무효가 되고,
+통과하기 때문이다. 그래서 지시서가 바뀌면 그 지시서로 받은 승인은 자동으로 무효(`stale-order`)가 되고,
 승인이 무효인 동안 hook 은 모든 코드 쓰기를 거부한다.
 
 `target` 도 `orderHash` 에 담긴다 — 대상을 바꾸면 승인이 `stale-order` 가 된다(작업 하나는 대상 하나다).

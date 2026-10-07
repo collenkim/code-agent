@@ -8,6 +8,8 @@ import { loadActive, PHASES, STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel } from "./models";
 import { claudeModelOf, isClaudeOverride, modelLabel, TIER_DEFAULTS } from "./modelPolicy";
 import { skill } from "./hostText";
+import { outsideChanges } from "./evidence";
+import { loadWork } from "./work";
 import { hostAssets, selectedHosts } from "./hosts";
 
 // The CLI opts into source updates; update() remains the local template-copy API.
@@ -53,11 +55,43 @@ function list(paths: string[]): string {
   return paths.slice(0, 5).join(" · ") + (paths.length > 5 ? ` (+${paths.length - 5})` : "");
 }
 
+/**
+ * 진행 중인 작업의 계획 밖 변경(경로) — 작업이 없거나 기준 커밋이 없거나 읽지 못하면 undefined.
+ * 갱신 전후를 견줘 이번 갱신이 만든 것만 알린다(그 전부터 있던 변경은 이 갱신 탓이 아니다).
+ */
+function workOutside(repoRoot: string): { id: string; phase: string; paths: Set<string> } | undefined {
+  try {
+    const work = loadWork(repoRoot);
+    if (!work?.active.baseCommit) return undefined;
+    return { id: work.active.id, phase: work.active.phase, paths: new Set(outsideChanges(work).map((change) => change.path)) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 갱신이 바꾼 설치 파일(.gitignore 블록·스킬·에이전트 사본·hook 설정)은 진행 중인 작업의 계획 밖 변경이 된다 — 검증·반영 게이트가
+ * 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않는다. 막지는 않고(MIDWAY 주석의 근거) 바뀐 파일과 길을 알린다.
+ * 근본 처리(code-agent 소유 설치 파일을 계획 밖 변경에서 따로 다룰지)는 정하지 않았다.
+ */
+function outsideNotice(before: ReturnType<typeof workOutside>, after: ReturnType<typeof workOutside>): string[] {
+  if (!before || !after || after.id !== before.id) return [];
+  const fresh = [...after.paths].filter((path) => !before.paths.has(path));
+  if (!fresh.length) return [];
+  return [
+    "",
+    `  !! 이번 갱신이 바꾼 설치 파일이 진행 중인 작업(${after.id} · ${after.phase})의 계획 밖 변경이 됐습니다: ${list(fresh)}`,
+    "     검증·반영 게이트가 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않습니다 — 작업을 이어가려면 사람이 이 파일들을 갱신 전으로",
+    "     되돌리고, 작업을 반영하거나 끝낸 뒤 다시 갱신합니다(진행 중인 작업이 있으면 update --templates-only 는 반영 뒤에 실행합니다).",
+  ];
+}
+
 export function update(repoRoot: string, options: InitOptions = {}): string {
   const hosts = selectedHosts(repoRoot, options.host);
   // 호스트마다 init 을 따로 부르므로 시작 전에 모든 호스트의 설정을 한 번 읽는다 — 뒤 호스트에서 멈추면 앞 호스트만 갱신된다
   requireInstallSettings(repoRoot, hosts);
-  return hosts.map(host => {
+  const outsideBefore = workOutside(repoRoot);
+  const report = hosts.map(host => {
     if (host === "claude") return updateClaude(repoRoot, {...options, host});
     const assets = hostAssets("codex", repoRoot);
     const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
@@ -65,6 +99,7 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
     const result = init(repoRoot, {host, cli});
     return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
   }).join("\n\n");
+  return [report, ...outsideNotice(outsideBefore, workOutside(repoRoot))].join("\n");
 }
 
 function updateClaude(repoRoot: string, options: InitOptions): string {

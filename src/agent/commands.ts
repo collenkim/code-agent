@@ -515,6 +515,12 @@ function nextHint(work: Work): string {
         : `${stageCommand("integrate")} — code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)`;
     }
     case "deliver":
+      // 사람이 반영 단계에서 계획 파일·경계 선언을 고쳐 증거 묶임이 깨졌으면 반영 게이트가 막는다 — 돌아갈 길을 먼저 보인다
+      // (verify·check 는 이때만 deliver 에서도 check 로 되감는다 — requireValidatable)
+      if (evidenceBroken(work)) {
+        return `${stageCommand("check")} — 반영할 트리가 검증 뒤 바뀌었습니다(증거가 지금 계획 파일·code-agent.json·기준 커밋과 맞지 않습니다). ` +
+          "code-agent verify --json 이 check 로 되감아 다시 검증합니다 — 바꾼 것을 되돌리려면 사람이 되돌립니다";
+      }
       return `현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다 — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
   }
 }
@@ -546,9 +552,10 @@ export function status(repoRoot: string): string {
       lines.push(`다음: ${intake.hint}`);
       return lines.join("\n");
     }
-    // 처리 주체가 없는 상태(FLOW-13) — AI-DLC 차단, 매니페스트 없음, 문서 세션·준비 동의(preparationHint 가 고른다) 순으로 본다
+    // 처리 주체가 없는 상태(FLOW-13) — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
+    // 준비 동의(preparationHint 가 고른다) 순으로 본다. 문서 세션 중에는 request begin 이 거부되므로 접수 안내를 내지 않는다
     const hint = aidlcBlock(repoRoot) ? AIDLC_HINT
-      : !manifest
+      : !manifest && !existsSync(join(repoRoot, DOCS_SESSION_FILE))
         ? `${skill("ca-request")} <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (${skill("ca-adopt")})`
         : preparationHint(repoRoot, false) ??
           `${skill("ca-request")} [ID] <요구사항> 으로 접수 — 신규·기능 변경은 ${skill("ca-feature")}, 결함 수정은 ${skill("ca-fix")}, 동작 보존은 ${skill("ca-refactor")} 로도 시작`;
@@ -633,6 +640,12 @@ export function next(repoRoot: string): string {
   requireAnswers(repoRoot, active);
 
   if (["analysis", "impact", "design", "plan"].includes(active.phase)) requireWorkDocs([...planningProblems(work, active.phase as "analysis" | "impact" | "design" | "plan"), ...planningDocumentProblems(work, active.phase)]);
+  // implement 이후의 승인 무효는 스테이지 게이트보다 먼저 재진입 순서로 멈춘다 — status 의 다음:(nextHint)·requireValidatable·
+  // hook 쓰기 거부와 같은 문장이다. 게이트 문제 목록의 승인 줄(… check 로 다시 돌리세요)을 따르면 한 번 돌아가는 길이 생긴다
+  if (PHASES.indexOf(active.phase) > PHASES.indexOf("plan")) {
+    const approval = approvalOf(work);
+    if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`);
+  }
   const advance = (phase: Phase, stage?: string, task?: string): string => {
     saveActive(repoRoot, { ...active, phase, stage, task }, "next");
     return status(repoRoot);
@@ -669,8 +682,6 @@ export function next(repoRoot: string): string {
     }
     case "implement": {
       requireRequirements(repoRoot, active);
-      const approval = approvalOf(work);
-      if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`);
       const stages = plannedStages(work);
       const index = stages.findIndex((stage) => stage.key === active.stage);
       if (index < 0) throw new Stop("현재 구현 단계가 승인된 순서에 없습니다. code-agent back plan 으로 돌아가 계획을 확인하세요.");

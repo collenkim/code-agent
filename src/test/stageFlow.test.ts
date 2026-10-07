@@ -23,6 +23,7 @@ import { reentryHint } from "../agent/reentry";
 import { decideStop } from "../agent/stopHook";
 import { withInteraction } from "../agent/tty";
 import { check } from "../agent/validate";
+import { update } from "../agent/update";
 import { verify, verificationFlowFile, type VerificationHistory } from "../agent/verificationFlow";
 import { approvalOf, loadWork, type Work } from "../agent/work";
 import { confirmForTest, start } from "./confirmedStart";
@@ -70,6 +71,16 @@ describe("FLOW-02 — deliver 의 쓰기와 되감기", () => {
     assert.equal(loadActive(repo)!.phase, "check");
   });
 
+  test("증거가 깨진 deliver 의 다음: 은 반영 동의가 아니라 verify 로 되감는 길이다", async () => {
+    await toDeliver();
+    assert.match(nextLine(status(repo)), /ca-answer의 deliver 동의 절차로 확인하고 반영합니다/);
+    write(`${ORDER}/domain/Order.java`, "class Order { int changed; }\n");
+    const line = nextLine(status(repo));
+    assert.match(line, /^다음: \/ca-check \(또는 \/ca-next 로 사이클\) — 반영할 트리가 검증 뒤 바뀌었습니다[\s\S]*code-agent verify --json 이 check 로 되감아 다시 검증합니다/);
+    assert.doesNotMatch(line, /deliver 동의/);
+    assert.equal(loadActive(repo)!.phase, "deliver", "status 는 커서를 옮기지 않는다");
+  });
+
   test("back 은 deliver 에서도 되감고 반영 동의 무효를 알린다", async () => {
     await toDeliver();
     assert.match(back(repo, "check"), /반영 확인\(deliver 동의\)을 준비해 두었다면/);
@@ -105,6 +116,18 @@ describe("FLOW-03 — 승인 무효의 재진입", () => {
     assert.equal(approvalOf(work).status, "approved");
     assert.equal(work.active.phase, "check");
     assert.deepEqual(bindingProblems(work, loadEvidence(repo, "ORD-1", "order")!), [], "증거 묶임은 문서 해시를 보지 않는다");
+  });
+
+  test("next 도 check·test·review 에서 승인 무효면 게이트 목록보다 먼저 같은 재진입 문장으로 멈춘다", async () => {
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    write("doc/work/ORD-1/03-design.md", `${DESIGN}\n- 추가 결정\n`);
+    const expected = `계획이 승인되지 않았습니다 (stale-docs). ${reentryHint(loadWork(repo)!)}`;
+    for (const phase of ["check", "test", "review"] as const) {
+      saveActive(repo, { ...loadActive(repo)!, phase });
+      assert.throws(() => next(repo), (error: Error) => error.message === expected && !/로 다시 돌리세요|리뷰 회차가 없습니다/.test(error.message), phase);
+      assert.equal(loadActive(repo)!.phase, phase);
+    }
   });
 
   test("옛 흐름 stale-manifest·unverified 는 그 자리 재승인만 안내한다", () => {
@@ -207,6 +230,17 @@ describe("FLOW-08 — 작업 하나에 대상 하나", () => {
     assert.match(start(repo, join(repo, "doc/work/MULTI-3.md")), /이미 진행 중입니다: MULTI-3/);
   });
 
+  test("진행 중인 다중 대상 작업의 재제출은 진행 중인 대상 하나만 남기라고 안내한다", () => {
+    write("doc/work/MULTI-4/request.json", JSON.stringify({ kind: "feature", id: "MULTI-4", title: "둘", target: ["a", "b"], original: "x", requirements: ["x"] }));
+    saveActive(repo, { id: "MULTI-4", spec: "doc/work/MULTI-4/requirement.md", target: "a", phase: "implement" });
+    assert.throws(() => requestSubmit(repo, join(repo, "doc/work/MULTI-4/request.json")), (error: Error) =>
+      /target: target 은 하나만/.test(error.message) &&
+      /진행 중인 작업\(MULTI-4\)의 요구사항을 고치는 중이면 target 에 진행 중인 대상\(a\) 하나만 남겨 다시 제출합니다/.test(error.message));
+    // 다른 작업의 초안·다른 형식 오류에는 붙이지 않는다
+    write("doc/work/MULTI-4/request.json", JSON.stringify({ kind: "feature", id: "MULTI-4", title: "", target: ["a"], original: "x", requirements: ["x"] }));
+    assert.throws(() => requestSubmit(repo, join(repo, "doc/work/MULTI-4/request.json")), (error: Error) => !/진행 중인 대상/.test(error.message));
+  });
+
   test("--target 은 지시서의 대상과 같아야 한다", () => {
     assert.throws(() => start(repo, join(repo, SPEC), { target: "payment" }), /지시서의 대상이 아닙니다: payment/);
   });
@@ -299,6 +333,20 @@ describe("FLOW-13 — 처리 주체가 없는 상태", () => {
     write("aidlc-docs/aidlc-state.md", "**Status**: Running\n");
     assert.match(nextLine(status(repo)), /^다음: AI-DLC 작업이 진행 중이라/);
   });
+
+  test("매니페스트 없이 문서 세션만 열렸으면(ca-adopt 도중) 막히는 접수가 아니라 ca-adopt 로 잇는다", () => {
+    const bare = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-stage-adopt-")));
+    try {
+      assert.match(nextLine(status(bare)), /^다음: \/ca-request <요구사항> 으로 접수/);
+      docsBegin(bare);
+      const line = nextLine(status(bare));
+      assert.equal(line, "다음: /ca-adopt 로 설정(code-agent.json)·공통 문서를 마저 준비합니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end");
+      assert.throws(() => requestBegin(bare, undefined, "feature"), /문서 작성 세션이 열려 있습니다/, "그 안내가 가리키면 막히는 명령이었다");
+      assert.equal(preparationHint(bare), line.slice("다음: ".length), "접수 안내(preparationHint)도 같은 자리를 가리킨다");
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("FLOW-17 — approve·reject·confirm 의 남는 인자", () => {
@@ -318,6 +366,20 @@ describe("FLOW-17 — approve·reject·confirm 의 남는 인자", () => {
     assert.match(run("confirm").stderr, /code-agent confirm request <ID> \[<지시서>\]/);
     assert.match(run("confirm", "request", "X", "a.md", "b").stderr, /받지 않는 인자: b/);
     assert.match(run("takeover", "x").stderr, /사용법: code-agent takeover/);
+  });
+});
+
+describe("update --templates-only — 진행 중인 작업의 설치 파일 변경", () => {
+  test("갱신이 만든 계획 밖 변경만 알리고 길을 보인다(막지는 않는다)", () => {
+    toCheck();
+    write("notes.txt", "갱신 전부터 있던 변경\n");
+    const report = update(repo);
+    const notice = report.split("!! 이번 갱신이 바꾼 설치 파일이")[1] ?? "";
+    assert.match(notice, /^ 진행 중인 작업\(ORD-1 · check\)의 계획 밖 변경이 됐습니다: /);
+    assert.match(notice, /커밋해도 풀리지 않습니다[\s\S]*작업을 반영하거나 끝낸 뒤 다시 갱신합니다/);
+    assert.doesNotMatch(notice, /notes\.txt/, "갱신 전부터 있던 변경은 이 갱신 탓이 아니다");
+    assert.match(status(repo), /계획 밖 변경: [^\n]*\.gitignore/);
+    assert.doesNotMatch(update(repo), /이번 갱신이 바꾼 설치 파일/, "새로 생긴 것이 없으면 알리지 않는다");
   });
 });
 

@@ -118,7 +118,26 @@ describe("작업 임대 — hook·SessionStart·takeover", () => {
     assert.match(releaseLease(repo), /진행 세션 기록이 없습니다/);
   });
 
-  test("Claude SessionStart 는 source 와 무관하게 같은 호스트 임대를 넘겨받는다", () => {
+  test("compact 는 다른 세션의 임대를 넘겨받지 않는다 — 새로 연 세션의 임대를 이전 세션이 압축만으로 되찾지 못한다", () => {
+    assert.equal(bash("code-agent next", A), undefined);
+    assert.match(sessionAnchor(repo, "startup", B), /넘겨받았습니다\(이전: Claude Code 세션 AAAAAAAA/);
+    assert.match(bash("code-agent next", A) ?? "", /다른 세션이 이 작업을 진행 중입니다/);
+    const before = leaseText();
+    const anchor = sessionAnchor(repo, "compact", A);
+    assert.doesNotMatch(anchor, /넘겨받았습니다/);
+    assert.match(anchor, /- 이 작업의 진행 기록은 다른 세션\(Claude Code 세션 BBBBBBBB\)이 0분 전까지 쥐고 있습니다 — 대화 압축은 진행 기록을 넘겨받지 않으므로 이 세션의 진행 명령은 거부됩니다\./);
+    assert.equal(leaseText(), before, "임대는 그대로 B 다");
+    assert.match(bash("code-agent next", A) ?? "", /다른 세션이 이 작업을 진행 중입니다/, "압축된 이전 세션은 여전히 거부된다");
+    assert.equal(bash("code-agent next", B), undefined, "사용자가 지금 쓰는 세션은 계속 진행한다");
+    // 같은 세션의 압축은 넘겨받기 줄 없이 그대로 잇는다. 저쪽이 30분 넘게 쉬었으면 무활동 규칙대로 잡고 알린다
+    assert.equal(sessionStartLease(loadWork(repo)!, B, "compact"), undefined);
+    setLease({ session: B, seenAt: ago(31 * MIN) });
+    assert.match(sessionStartLease(loadWork(repo)!, A, "compact") ?? "", /넘겨받았습니다\(이전: Claude Code 세션 BBBBBBBB, 마지막 활동 31분 전\)/);
+    assert.equal(readLease(repo)!.session, A);
+    assert.equal(readLease(repo)!.previous?.why, "idle");
+  });
+
+  test("Claude SessionStart 는 압축 말고는 source 와 무관하게 같은 호스트 임대를 넘겨받는다", () => {
     assert.equal(bash("code-agent next", A), undefined);
     assert.match(sessionAnchor(repo, "clear", B), /이 세션이 작업 진행 기록을 넘겨받았습니다\(이전: Claude Code 세션 AAAAAAAA/);
     assert.equal(readLease(repo)!.session, B);

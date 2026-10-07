@@ -47,7 +47,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 ### Claude·Codex 교차 검증
 
-두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다 — 작업 임대가 막는다(`lease.ts` — 다른 세션의 진행 명령·쓰기 거부, Claude 세션 시작은 같은 호스트 임대를 넘겨받음, 다른 호스트는 `takeover`·30분 무활동). 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과(또는 아래의 중지 기록)가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
+두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다 — 작업 임대가 막는다(`lease.ts` — 다른 세션의 진행 명령·쓰기 거부, Claude 세션 시작(압축 제외)은 같은 호스트 임대를 넘겨받음, 다른 호스트는 `takeover`·30분 무활동). 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과(또는 아래의 중지 기록)가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
 
 | 지점 | 명령 | 기록 | 게이트 |
 |---|---|---|---|
@@ -352,7 +352,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 
 애매하거나 모호하면 지어내지 않고 묻는다. 질문은 작업 폴더의 `questions.md` 에 쌓이고, **답이 없는 질문이
 있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 과 `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가 확인한다.
-턴 끝에 보는 Stop hook 은 `implement`~`integrate` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다).
+턴 끝에 보는 Stop hook 은 `implement`~`deliver` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다).
 
 ```
 ## Q3 · 요구사항 분석

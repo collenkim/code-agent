@@ -11,6 +11,7 @@ import { back, context, next, requireReproable, requireValidatable, Stop, submit
 import { start } from "./confirmedStart";
 import { commitDelivery, deliver, prDocFile } from "../agent/deliver";
 import { withInteraction } from "../agent/tty";
+import { withNotation } from "../agent/hostText";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import {
   checkCommands,
@@ -316,6 +317,14 @@ describe("P6 · fix — 재현 먼저", () => {
   function fixSource(): void {
     write(SRC, "function total(items) {\n  // fixed\n  return items.reduce((a, b) => a + b, 0);\n}\nmodule.exports = { total };\n");
   }
+
+  test("context 의 재현 절차 줄 — Claude 표기는 호스트 표기 배선 전 문자열과 바이트가 같다(Codex 는 셸:)", () => {
+    toImplement();
+    const reproLine = (text: string) => text.split("\n").find((line) => line.startsWith("2. ") && line.includes("code-agent repro"));
+    const tail = " `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 `{\"action\":\"repro-log\"}` 동의로 로그 근거 전환을 확인받습니다.";
+    assert.equal(withNotation("claude", () => reproLine(context(repo))), `2. Bash:${tail}`);
+    assert.equal(withNotation("codex", () => reproLine(context(repo))), `2. 셸:${tail}`);
+  });
 
   test("H3: 도메인 단계의 fix를 제출하고 실제 실패 재현→수정→검증→통합→반영까지 완료한다", async () => {
     useManifest({ domainRoots: [], test: ["node", "--test", "--test-reporter=tap"], stages: [

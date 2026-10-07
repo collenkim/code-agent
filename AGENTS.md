@@ -23,7 +23,7 @@
   - 역할 모델 정책(`modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`)을 바꾸면 `template/claude/agents/ca-*.md` 머리말의 `model`·`effort`와 `doc/codex.md` 역할별 모델 표를 같이 고친다(`modelPolicy.test.ts`가 대조한다). 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다.
   - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `commands.ts`의 `PHASE_LABEL`·`reentry.ts`의 `PHASE_SKILL`과 `ca-next` 표도 고친다.
   - `ca-next`의 '멈춘 자리별 재개' 표는 `commands.ts` `nextHint`의 판정 순서(AI-DLC → 요구 → 질문 → 승인 무효 → 검증 한도 → 원인별 실패 `failureHint`)와 함께 고친다.
-  - 장시간 실행 정본 문장(`ca-check`·`ca-test`·`ca-integrate`·`ca-implement`)과 교차 4-1 문장(`ca-review`·`ca-plan`)을 고치면 `hosts.ts` `codexText`의 같은 리터럴 치환도 고친다(`hostNotation.test.ts`가 Codex 사본의 `Bash`·`600000ms`를 잡는다). CLI·hook 의 사용자 문구에는 스킬·도구 이름을 리터럴로 쓰지 않고 `hostText.ts` 표기 함수(`skill`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`)를 부른다 — 파일·확인 화면에 기록되는 문자열만 예외다.
+  - 장시간 실행 정본 문장(`ca-check`·`ca-test`·`ca-integrate`·`ca-implement`)과 교차 4-1 문장(`ca-review`·`ca-plan`)을 고치면 `hosts.ts` `codexText`의 같은 리터럴 치환도 고친다(`hostNotation.test.ts`가 Codex 사본의 `Bash`·`600000ms`를 잡는다). CLI·hook 의 사용자 문구에는 스킬·도구 이름을 리터럴로 쓰지 않고 `hostText.ts` 표기 함수(`skill`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`)를 부른다 — 파일·확인 화면에 기록되는 문자열만 예외다.
   - 모델이 부를 수 있는 `code-agent` 명령(`hook.ts` `MODEL_SUBCOMMANDS`·`isModelCommand`)을 더하면, 상태를 바꾸지 않는 명령인지 보고 `LEASE_FREE`(작업 임대를 보지 않는 읽기 전용 명령)에도 넣을지 정한다.
   - 계획 advance의 action(`dispatch`·`stale`·`wait`·`rewind-required`·`blocked`·`ready-for-gate`)을 바꾸면 `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` 4항(또는 통합된 루프 문단)과 `doc/planning.md` action 표도 고친다.
   - `ca-review`·`ca-plan` 4-1의 `` Bash: `code-agent … cross --by codex` `` 문장을 바꾸면 `hosts.ts` `codexText`의 권한 상승 치환 정규식과 맞춘다.

@@ -35,7 +35,7 @@ import { consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
-import { fileToolsHint, skill, viaShell, withNotation } from "./hostText";
+import { editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
 
@@ -337,7 +337,15 @@ function consentWriteGuard(repoRoot: string): string | undefined {
  * 글자 그대로 쓴 이 별칭들도 본다. 와일드카드·변수로 조립한 이름은 잡지 못한다(가리키는 것만 막는다).
  */
 const HOST_CONFIG = /(?:(?:^|[^A-Za-z0-9_.-])\.claude[. ]*|(?:^|[^A-Za-z0-9_.~-])claude~\d)[\\/]+(?:\.[\\/]+)*(?:settings(?:\.local)?\.json|settin~\d\.jso)|(?:(?:^|[^A-Za-z0-9_.-])\.codex[. ]*|(?:^|[^A-Za-z0-9_.~-])codex~\d)[\\/]+(?:\.[\\/]+)*(?:hooks\.json|config\.toml|hooks~\d\.jso|config~\d\.tom)/i;
-const HOST_CONFIG_BASH_DENIED = "호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 Read 도구로 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.";
+/** 읽기 도구 이름은 호스트 표기다(Claude 는 `Read 도구로`, Codex 는 전용 읽기 도구가 없어 `code-agent read 로` — 그 명령은 decideOutside 가 연다) */
+const hostConfigBashDenied = (): string => `호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 ${readToolVia()} 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.`;
+/**
+ * 파일 읽기 명령 `code-agent read <파일> [시작 줄] [줄 수]` 하나 — 연결·리다이렉트·치환 없이(PowerShell 은 작은따옴표 밖의 ( ) { } @ $ 도 없이).
+ * Codex 에는 전용 읽기 도구가 없어 이 명령이 유일한 읽기 길이다. 읽기 자체는 그 명령이 Read 판정(readDenied — 키 자리)을 다시 거친다.
+ */
+function readCommand(command: string, powershell: boolean): boolean {
+  return /^code-agent read \S/.test(command) && !SHELL_META.test(command) && !(powershell && powershellMeta(command));
+}
 /**
  * 소스 update 명령 — `code-agent update` 를 어떻게 부르든(공백 여러 칸, `npx`, 경로·`.cmd`, `node <dist>/cli.js update`) 본다.
  * 진짜 관문은 CLI 쪽(updateFromSourceConfirmed — 호스트 셸 거부·TTY 확인)이고, 이 판정은 그 앞의 안내다.
@@ -459,12 +467,15 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
  */
 function decideUnreadable(input: HookInput, repoRoot: string, error: unknown): string | undefined {
   const reason = `code-agent 상태·설정을 읽지 못했습니다: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}` +
-    ` — Read 로 원인을 확인하고 Write/Edit 로 ${MANIFEST_FILE} 을 고친 뒤 code-agent manifest check 로 확인하세요.`;
+    ` — ${readVia()} 원인을 확인하고 ${editVia()} ${MANIFEST_FILE} 을 고친 뒤 code-agent manifest check 로 확인하세요.`;
   if (READ_TOOLS.includes(input.tool_name)) {
     return readDenied(input);
   }
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
-    return /^code-agent (?:manifest check|status|help)$/.test((input.tool_input.command ?? "").trim()) ? undefined : reason;
+    // Codex 는 읽기 도구가 없다 — code-agent read 로 원인을 읽는다(읽기는 그 명령이 Read 판정을 다시 거친다)
+    const command = (input.tool_input.command ?? "").trim();
+    const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
+    return /^code-agent (?:manifest check|status|help)$/.test(command) || readCommand(command, powershell) ? undefined : reason;
   }
   if (!WRITE_TOOLS.includes(input.tool_name)) {
     return undefined;
@@ -492,7 +503,8 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
       return `확인 요청 ${open.id.slice(0, 8)}(${open.title})이 응답·적용을 기다리는 동안에는 셸에서 code-agent 명령과 읽기용 git 만 실행합니다 — 준비부터 적용까지 확인 대상을 바꾸지 않습니다. 진행하지 않을 거면 그 확인 질문에서 '보류'를 고르게 하세요(${Math.round(TIMING.consentOpenWindowMs / 60_000)}분이 지나면 풀립니다).`;
     }
     if (mentionsState(command)) return stateBashDenied();
-    if (HOST_CONFIG.test(command)) return HOST_CONFIG_BASH_DENIED;
+    // 읽기 명령(code-agent read)은 연다 — Codex 의 유일한 읽기 길이고, 설정을 바꾸지 않는다
+    if (HOST_CONFIG.test(command) && !readCommand(command, input.tool_name === "PowerShell" || input.shell === "powershell")) return hostConfigBashDenied();
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
     if (SOURCE_UPDATE.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
     return undefined;

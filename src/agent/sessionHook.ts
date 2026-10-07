@@ -18,7 +18,7 @@ import { sessionStartLease } from "./lease";
  * 상태와 문서는 `.code-agent/`·작업 폴더에 있으므로 이전 대화 없이도 정확히 이어갈 수 있다.
  * 압축 요약이 동의 ID·단계를 잃어도 여기서 다시 잡는다. 진행 중인 것이 없으면 아무것도 붙이지 않는다.
  * `source` 는 Claude SessionStart 입력의 값(startup·resume·clear·compact)이다. `session` 이 있으면 작업 임대를 이 세션으로
- * 넘겨받는다(`source` 와 무관 — lease.ts sessionStartLease). 이전 세션이 있었으면 작업 줄 뒤에 한 줄로 알린다.
+ * 넘겨받는다(압축 `compact` 은 빼고 — lease.ts sessionStartLease). 이전 세션이 있었으면 작업 줄 뒤에 한 줄로 알린다.
  */
 export function sessionAnchor(repoRoot: string, source?: string, session?: string): string {
   const anchor = progress(repoRoot, source, session);
@@ -58,10 +58,10 @@ function runningPlanning(work: Work, source?: string): string[] {
 }
 
 /** 작업 임대 넘겨받기 줄 — 이 hook 은 막지 않으므로 실패는 삼킨다 */
-function leaseNote(work: Work, session?: string): string[] {
+function leaseNote(work: Work, session?: string, source?: string): string[] {
   if (!session) return [];
   try {
-    const line = sessionStartLease(work, session);
+    const line = sessionStartLease(work, session, source);
     return line ? [line] : [];
   } catch {
     return [];
@@ -75,7 +75,7 @@ function progress(repoRoot: string, source?: string, sessionId?: string): string
     return [
       "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
       `- 작업 ${order.id} (${order.kind}) · 스테이지 ${active.phase}${active.task ? ` · Task ${active.task}` : ""} · 계획 ${work.plan ? approvalOf(work).status : "미제출"} · 작업 폴더 ${workDocsDir(active.id)}/`,
-      ...leaseNote(work, sessionId),
+      ...leaseNote(work, sessionId, source),
       ...runningPlanning(work, source),
       `- 이전 대화 내용이 아니라 \`code-agent status\`와 그 스테이지의 스킬로 이어간다. 사용자가 이어가자고 하면 \`${skill("ca-next")}\` 절차를 따른다.`,
       "- 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.",

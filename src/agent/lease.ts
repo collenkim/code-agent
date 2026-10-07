@@ -4,7 +4,7 @@
  * `.code-agent/lease.json` 에 이 작업을 진행 중인 호스트·세션과 마지막 활동 시각을 둔다. PreToolUse hook(hook.ts decideTool —
  * 작업 모드에서 기존 판정이 허용일 때만, 동의 티켓 발급 전)이 상태를 바꾸는 호출(진행 명령·쓰기)마다 대조한다:
  * - 다른 세션이 쥔 신선한 임대면 거부한다(분류 precondition — 재시도 금지, 사용자 확인 뒤 `code-agent takeover`).
- * - Claude SessionStart 는 `source` 와 무관하게 같은 호스트(Claude) 임대를 이 세션으로 넘겨받는다 — 재시작·`/clear`·update 뒤 다시
+ * - Claude SessionStart 는 압축(`source` compact — 세션 ID 가 그대로인 같은 대화)을 빼고 같은 호스트(Claude) 임대를 이 세션으로 넘겨받는다 — 재시작·`/clear`·update 뒤 다시
  *   열기가 막히지 않고, 아직 살아 있는 이전 세션은 다음 진행 명령이 거부되어 드러난다.
  * - 다른 호스트가 쥔 신선한 임대는 `takeover`(사용자 확인 뒤 — 스킬 규칙)나 30분 무활동으로만 넘어간다.
  * - Codex 는 호스트만 비교한다(서브 에이전트의 session_id 가 메인과 같은지 미확인).
@@ -72,7 +72,7 @@ export function leaseDecision(input: { lease?: Lease; id: string; target: string
   if (lease.host === input.host && (input.host === "codex" || lease.session === input.session)) {
     return idleMs >= LEASE_TOUCH_MS ? { action: "touch" } : { action: "keep" };
   }
-  // 같은 호스트의 새 세션 시작(재시작·재개·비우기·압축 모두) — 새로 연 세션이 이긴다
+  // 같은 호스트의 새 세션 시작(재시작·재개·비우기 — 압축은 sessionStartLease 가 sessionStart 없이 판정한다) — 새로 연 세션이 이긴다
   if (input.sessionStart && lease.host === input.host) return { action: "claim", why: "session-start" };
   if (idleMs >= LEASE_IDLE_MS) return { action: "claim", why: "idle" };
   return { action: "deny", holder: lease, idleMs };
@@ -148,16 +148,22 @@ export function leaseGuard(work: Work, hostName: HostName, session: string | und
 /**
  * Claude SessionStart — 같은 호스트 임대를 이 세션으로 넘겨받고, 이전 세션이 있었으면 요약에 붙일 줄을 돌려준다.
  * 다른 호스트가 쥔 신선한 임대면 넘겨받지 않고 경고 줄. Codex 에는 SessionStart hook 이 없다.
+ * `source` 가 `compact`(자동·수동 압축)면 넘겨받지 않는다 — 압축은 세션 ID 를 바꾸지 않는 같은 대화의 이어짐이고 사용자의 행동이
+ * 아니다. 넘겨받으면 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾는다. 같은 세션이면 갱신만 하고, 다른 세션이
+ * 쥔 신선한 임대면 쓰지 않고 이 세션의 진행 명령이 거부된다는 줄을 낸다.
  */
-export function sessionStartLease(work: Work, session: string, now: number = Date.now(), waitMs: number = TIMING.hookLockWaitMs): string | undefined {
+export function sessionStartLease(work: Work, session: string, source?: string, now: number = Date.now(), waitMs: number = TIMING.hookLockWaitMs): string | undefined {
   if (crossChild()) return undefined;
-  const verdict = leaseDecision({ lease: readLease(work.repoRoot), id: work.active.id, target: work.active.target, host: "claude", session, now, sessionStart: true });
+  const sessionStart = source !== "compact";
+  const verdict = leaseDecision({ lease: readLease(work.repoRoot), id: work.active.id, target: work.active.target, host: "claude", session, now, sessionStart });
   if (verdict.action === "skip" || verdict.action === "keep") return undefined;
-  const otherHost = (holder: Lease, idleMs: number) =>
-    `- 다른 호스트 세션(${hostLabel(holder.host)} ${holder.session.slice(0, 8)})이 ${minutes(idleMs)}분 전까지 이 작업을 진행했습니다. 동시에 진행하지 않습니다 — 이어서 하려면 저쪽을 멈췄는지 사용자에게 확인한 뒤 code-agent takeover`;
-  if (verdict.action === "deny") return otherHost(verdict.holder, verdict.idleMs);
-  const result = record(work, { host: "claude", session, sessionStart: true }, now, waitMs);
-  if (result?.denied) return otherHost(result.denied.holder, result.denied.idleMs);
+  const held = (holder: Lease, idleMs: number) => holder.host === "claude"
+    ? `- 이 작업의 진행 기록은 다른 세션(${who(holder)})이 ${minutes(idleMs)}분 전까지 쥐고 있습니다 — 대화 압축은 진행 기록을 넘겨받지 않으므로 이 세션의 진행 명령은 거부됩니다. ` +
+      "이어서 하려면 저쪽 세션을 끝냈거나 멈췄는지 사용자에게 확인한 뒤 code-agent takeover"
+    : `- 다른 호스트 세션(${hostLabel(holder.host)} ${holder.session.slice(0, 8)})이 ${minutes(idleMs)}분 전까지 이 작업을 진행했습니다. 동시에 진행하지 않습니다 — 이어서 하려면 저쪽을 멈췄는지 사용자에게 확인한 뒤 code-agent takeover`;
+  if (verdict.action === "deny") return held(verdict.holder, verdict.idleMs);
+  const result = record(work, { host: "claude", session, sessionStart }, now, waitMs);
+  if (result?.denied) return held(result.denied.holder, result.denied.idleMs);
   const previous = result?.written?.previous;
   if (!previous || previous.session === session) return undefined;
   return `- 이 세션이 작업 진행 기록을 넘겨받았습니다(이전: ${hostLabel(previous.host)} 세션 ${previous.session.slice(0, 8)}, 마지막 활동 ${minutes(now - Date.parse(previous.seenAt))}분 전). ` +

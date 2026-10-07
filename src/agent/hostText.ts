@@ -79,6 +79,18 @@ export function askVia(n: Notation = current): string {
 export function viaShell(n: Notation = current): string { return n === "claude" ? "Bash 로" : "셸로"; }
 /** 목록 머리의 셸 표기(템플릿의 `Bash:` 와 같은 꼴) */
 export function shellLabel(n: Notation = current): string { return n === "claude" ? "Bash:" : "셸:"; }
+/** 파일 읽기 — 조사까지 돌려주는 문장 조각(`${readVia()} 원인을 확인하고`). Codex 에는 전용 읽기 도구가 없다 */
+export function readVia(n: Notation = current): string {
+  return n === "claude" ? "Read 로" : n === "codex" ? "code-agent read 로" : "Read(Codex: code-agent read)로";
+}
+/** 파일 읽기 — 도구라고 밝히는 꼴(`읽기는 ${readToolVia()} 하고`) */
+export function readToolVia(n: Notation = current): string {
+  return n === "claude" ? "Read 도구로" : n === "codex" ? "code-agent read 로" : "Read 도구(Codex: code-agent read)로";
+}
+/** 파일 고치기 — 조사까지 돌려주는 문장 조각 */
+export function editVia(n: Notation = current): string {
+  return n === "claude" ? "Write/Edit 로" : n === "codex" ? "apply_patch 로" : "Write/Edit(Codex: apply_patch)로";
+}
 const CLAUDE_FILE_TOOLS = "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요.";
 export function fileToolsHint(n: Notation = current): string {
   return n === "claude" ? CLAUDE_FILE_TOOLS

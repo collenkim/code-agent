@@ -45,12 +45,13 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
    - 커서가 `deliver`다 → `/ca-integrate`의 반영 준비와 `deliver` 동의 절차를 따른다. 지식 선택을 마친 뒤 최종 승인된 동의만 적용한다. 사용자가 반영 전에 수정을 요청하면 아래 표의 deliver 행
    - 동의 대상이 바뀌었다 · 수정 요청이다 → 이전 UUID를 적용하지 않고 수정 후 새 동의를 준비한다
    - `update` 동의를 적용했다 → 결과를 보고하고 멈춘다. 갱신된 hook을 로드하도록 Claude Code 재시작을 안내하며 재시작 후에만 재개한다
+
 **멈춘 자리별 재개** — status 의 `다음:` 이나 명령 출력이 아래에 해당하면 이 표가 먼저다. `다음:` 의 원인별 안내를 그대로 따르고, 같은 명령을 스스로 반복하지 않는다.
 
 | 상태 | 처리 |
 |---|---|
 | 작업·접수 없음 | `/ca-request` — 공통 문서가 없거나 미확정이면 `다음:` 이 가리키는 준비(`setup`·`docs`·`baseline` 동의)부터 |
-| 접수 없이 문서 세션만 열림 | `/ca-docs` 로 마저 쓰고 Bash: `code-agent docs end` — 그 뒤 `다음:` 의 `setup`·`docs`·`baseline` 동의 |
+| 접수 없이 문서 세션만 열림 | `/ca-docs`(설정 `code-agent.json` 이 아직 없으면 `/ca-adopt`)로 마저 쓰고 Bash: `code-agent docs end` — 그 뒤 `다음:` 의 `setup`·`docs`·`baseline` 동의. 문서 세션 중에는 접수(`request begin`)가 거부된다 |
 | AI-DLC 차단 줄이 있음 | 진행하지 않는다. 그 줄의 안내를 사용자에게 전하고 멈춘다 |
 | 승인 무효(`승인 stale-*`·`unverified`·`none`) | `다음:` 의 재진입 순서대로 — 낡은 계획 작업이 있으면 `code-agent back <단계>` → 그 단계 스킬로 계획 작업 재실행 → `plan submit` → `plan` 동의, 없으면 지금 자리에서 `plan` 동의. `다음:` 이 두 갈래(계획을 바꿔야 하면 / 그대로면)를 보이면 바뀐 문서·지시서가 계획에 닿는지 사용자에게 한 줄로 알리고 고른다. 이 되감기는 사용자 지시 없이 한다 |
 | 계획 배정 `stale`·`다음:` 의 `[배정 식별 불일치·고아 실행]`(실행 중으로 기록된 배정) | 기다리지 않는다. 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 Bash: `code-agent planning cancel <ID>` 뒤 `code-agent planning advance` |
@@ -59,8 +60,9 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
 | 원인 `limit-exceeded`(한도 초과)·`verify` 의 `decision` | 자동 재시도를 멈춘다. 막힌 이유·기록 경로를 보고하고, 사용자에게 `judgment` 동의(`retry-grant`)·재계획·abort 중 고르게 한다 |
 | 지적 기각·막힌 교차 지점 중지를 사람이 정할 자리(출력이 `judgment` `waive-finding`·`cross-stop` 을 안내) | 그 안내대로 사용자에게 `judgment` 동의를 묻는다. 모델이 스스로 기각하거나 중지로 기록하지 않는다 |
 | 동의가 `failed`(대상 변경·적용 중단 — `consent status` 의 `failure.guide`, `다음:` 의 `[동의 …]`) | 같은 ID 를 다시 묻거나 적용하지 않는다. `failure.guide` 대로 — 적용 중단이면 `code-agent status` 와 `git status` 로 반영 상태를 확인하고 새로 `prepare` 한다 |
-| 다른 세션이 진행 중이라는 거부 | 같은 명령을 다시 실행하지 않는다. 사용자에게 저쪽 세션(호스트)을 끝냈거나 멈췄는지 묻고, 그렇다고 하면 Bash: `code-agent takeover` 뒤 `code-agent status` 부터. 저쪽에서 계속한다면 이 세션은 멈춘다 |
+| 다른 세션이 진행 중이라는 거부 · 세션 시작 요약의 `진행 기록은 다른 세션(…)이 … 쥐고 있습니다`(압축 뒤) | 같은 명령을 다시 실행하지 않는다. 사용자에게 저쪽 세션(호스트)을 끝냈거나 멈췄는지 묻고, 그렇다고 하면 Bash: `code-agent takeover` 뒤 `code-agent status` 부터. 저쪽에서 계속한다면 이 세션은 멈춘다 |
 | 세션 시작 요약의 `이 세션이 작업 진행 기록을 넘겨받았습니다` | 그대로 이어간다. 이전 세션이 아직 열려 있을 수 있으면 사용자에게 한 줄로 알린다(그쪽 진행 명령은 거부된다) |
+| 커서가 `deliver` 인데 `다음:` 이 `반영할 트리가 검증 뒤 바뀌었습니다` | 사람이 반영 단계에서 계획 파일·`code-agent.json` 을 고쳤다. 반영 동의를 준비하지 않는다 — 바뀐 것을 사용자에게 한 줄로 알리고 Bash: `code-agent verify --json`(check 로 되감아 다시 검증 — 증거가 무효라 코드가 데려가므로 되감기 예외가 아니다). 바꾼 것을 되돌리려면 사람이 되돌린다 |
 | 커서가 `deliver` 인데 사용자가 수정을 요청 | 반영 단계에서는 고치지 않는다. 되감기를 확인받고 `code-agent back check`(계획을 바꿔야 하면 `back plan`) → 수정 루프 → 리뷰 새 회차 → 통합 → 반영 |
 
 5. 끝나면 무엇을 만들었는지(파일 목록)와 다음 할 일을 짧게 보고한다.

@@ -32,7 +32,7 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
    `추적표` · `검증` 은 `<!-- code-agent:trace:start -->` ~ `end` 블록 안이고 `code-agent deliver` 가 렌더한다 — 손대면 바이트 대조에서 걸린다.
 2. KNOWLEDGE에 올릴 것이 있으면 `doc/work/<ID>/knowledge.proposal.md`에 항목으로 적는다. `deliver` 동의에서 사용자가 고른 항목만 최종 승인 범위에 포함된다.
 
-반영 단계에서는 작업 폴더(⑩·지식 제안·질문) 밖을 쓸 수 없다(hook 거부). 사용자가 반영 전에 코드 수정을 요청하면 되감기를 확인받고 `code-agent back check`(계획을 바꿔야 하면 `back plan`)로 수정 루프를 다시 돈다.
+반영 단계에서는 작업 폴더(⑩·지식 제안·질문) 밖을 쓸 수 없다(hook 거부). 사용자가 반영 전에 코드 수정을 요청하면 되감기를 확인받고 `code-agent back check`(계획을 바꿔야 하면 `back plan`)로 수정 루프를 다시 돈다. `다음:` 이 `반영할 트리가 검증 뒤 바뀌었습니다` 면(사람이 반영 단계에서 계획 파일·`code-agent.json` 을 고쳤다) 동의를 준비하지 말고 사용자에게 한 줄로 알린 뒤 Bash: `code-agent verify --json` — check 로 되감아 다시 검증한다.
 
 ## 끝
 

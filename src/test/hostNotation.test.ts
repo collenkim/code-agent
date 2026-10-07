@@ -18,7 +18,7 @@ import { docsBegin, docsEnd } from "../agent/docsCommands";
 import { contextHandoff } from "../agent/handoff";
 import { decide } from "../agent/hook";
 import { hostAssets } from "../agent/hosts";
-import { askVia, shellLabel, skill, useNotation, withNotation } from "../agent/hostText";
+import { useNotation, withNotation } from "../agent/hostText";
 import { loadActive } from "../agent/layout";
 import { decideRequest, requestContext } from "../agent/request";
 import { withInteraction } from "../agent/tty";
@@ -28,7 +28,7 @@ import { recommendSetup, setupProject } from "../agent/setup";
 import { decideStop } from "../agent/stopHook";
 import { verify } from "../agent/verificationFlow";
 import { loadManifestIfAny } from "../agent/work";
-import { next, submitPlan } from "../agent/commands";
+import { context, next, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
 import {
   approve, createStageRepo, DESIGN, FUNCTIONAL, IMPACT, ORDER, PLAN, removeStageRepo, repo, REQUIREMENTS, TEST_SPEC, toCheck, write,
@@ -127,10 +127,8 @@ describe("CLI 표기 — 설치·실행 환경", () => {
   });
 
   test("Claude 바이트 — 배선 전 문자열과 같고 예외 세 줄만 바뀐다", () => {
+    // next 의 미응답 질문·context 의 계획 밖 질문은 아래 'hook·검증' 의 실제 함수 시험이, fix 재현 줄은 p6 이 본다
     withNotation("claude", () => {
-      assert.equal(`${shellLabel()} \`code-agent repro\``, "Bash: `code-agent repro`");
-      assert.equal(`메인은 ${skill("ca-answer")} 공통 절차의 ${askVia()} 답을 받아 기록하세요.`, "메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.");
-      assert.equal(`질문을 기록하고 ${askVia()} 처리 방향을 받으세요.`, "질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요.");
       assert.match(requestContext(root, { id: "W-1", kind: "feature", startedAt: "" }), /- ca-answer 공통 절차의 AskUserQuestion으로 최대 4개 질문씩 받는다\./);
       assert.match(interview(SCHEMAS.architecture), /추천·이유·선택지를 구성해 AskUserQuestion으로 받습니다\./);
       assert.match(decide({ cwd: root, tool_name: "Bash", tool_input: { command: "cat .code-agent/active.json" } }) ?? "", /작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다/);
@@ -182,6 +180,52 @@ describe("hook·검증의 Codex 표기", () => {
       { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "";
     assert.match(codex, /^작업 중에는 셸로 code-agent 명령\(/);
     assert.match(codex, /파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> \[시작 줄\] \[줄 수\]를 쓰세요\.$/);
+  });
+
+  const codexReason = (command: string): string | undefined => (codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }) as
+    { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason;
+
+  test("세션 밖 hook 설정 거부 — Claude 는 Read 도구, Codex 는 code-agent read 로 읽고 그 명령은 열린다", () => {
+    const claude = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "cat .codex/hooks.json" } });
+    assert.equal(claude, "호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 Read 도구로 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.");
+    const codex = codexReason("cat .codex/hooks.json") ?? "";
+    assert.match(codex, /— 읽기는 code-agent read 로 하고, 설치·갱신은 사람이/);
+    assert.doesNotMatch(codex, /Read 도구/);
+    assert.equal(codexReason("code-agent read .codex/hooks.json"), undefined, "안내한 읽기 명령은 열린다");
+    assert.equal(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent read .claude/settings.json" } }), undefined);
+    assert.match(codexReason("code-agent read .codex/hooks.json; rm x") ?? "", /호스트 hook 설정/, "연결자가 붙으면 그대로 막는다");
+    assert.match(decide({ cwd: repo, tool_name: "PowerShell", tool_input: { command: "code-agent read .codex/hooks.json $(rm x)" } }) ?? "", /호스트 hook 설정/);
+  });
+
+  test("상태·설정을 읽지 못했을 때 — Codex 는 code-agent read·apply_patch 로 안내하고 그 읽기를 연다", () => {
+    toCheck();
+    write("code-agent.json", "{broken");
+    const claude = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git status" } }) ?? "";
+    assert.match(claude, / — Read 로 원인을 확인하고 Write\/Edit 로 code-agent\.json 을 고친 뒤 code-agent manifest check 로 확인하세요\.$/);
+    const codex = codexReason("git status") ?? "";
+    assert.match(codex, /^code-agent 상태·설정을 읽지 못했습니다: /);
+    assert.match(codex, / — code-agent read 로 원인을 확인하고 apply_patch 로 code-agent\.json 을 고친 뒤 code-agent manifest check 로 확인하세요\.$/);
+    assert.doesNotMatch(codex, /Read 로|Write\/Edit/);
+    assert.equal(codexReason("code-agent read code-agent.json"), undefined, "Codex 의 유일한 읽기 길");
+    assert.equal(codexReason("code-agent manifest check"), undefined);
+    assert.match(codexReason("code-agent read code-agent.json && git add .") ?? "", /읽지 못했습니다/);
+    const patched = codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "apply_patch",
+      tool_input: { command: "*** Begin Patch\n*** Update File: src/a.ts\n+x\n*** End Patch" } }) as { hookSpecificOutput?: { permissionDecisionReason?: string } };
+    assert.match(patched.hookSpecificOutput?.permissionDecisionReason ?? "", /code-agent read 로 원인을 확인하고 apply_patch 로/);
+  });
+
+  test("Claude 바이트 — next 의 미응답 질문·context 의 계획 밖 질문 문장이 배선 전 문자열과 같다", () => {
+    toCheck();
+    // 배선 전(6584910) 리터럴 — 둘레 문장까지 줄 전체를 견준다
+    const outside = "계획 밖을 고쳐야 하면 doc/work/ORD-1/questions.md 에 질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.";
+    assert.ok(withNotation("claude", () => context(repo)).split("\n").includes(outside));
+    assert.ok(withNotation("codex", () => context(repo)).split("\n").includes(outside.replace("AskUserQuestion으로", "Codex 질문 도구(없으면 대화)로")));
+    write("doc/work/ORD-1/questions.md", "## Q1 · 검증\n무엇을 더 볼까?\n[Answer]:\n");
+    const stopOf = (run: () => unknown): string => { try { run(); } catch (error) { return (error as Error).message; } return ""; };
+    const claude = stopOf(() => withNotation("claude", () => next(repo))).split("\n");
+    assert.equal(claude[0], "답이 없는 질문이 1개 있어 넘어갈 수 없습니다 (doc/work/ORD-1/questions.md):");
+    assert.equal(claude.at(-1), "메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.");
+    assert.equal(stopOf(() => withNotation("codex", () => next(repo))).split("\n").at(-1), "메인은 $ca-answer 공통 절차의 Codex 질문 도구(없으면 대화)로 답을 받아 기록하세요.");
   });
 
   test("요구 반려 결과에서 'Claude Code 에서' 가 빠졌다(예외)", () => {
