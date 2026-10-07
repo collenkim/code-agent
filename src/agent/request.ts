@@ -10,6 +10,7 @@ import type { Manifest } from "../core/manifest";
 import { errorLogProblems, KINDS, parseFrontMatter, slug, validateWorkOrder, WorkOrderError } from "../core/workOrder";
 import type { WorkKind, WorkOrder } from "../core/workOrder";
 import { sha } from "./docs";
+import { requireStartHooks } from "./init";
 import { canonical, DOCS_SESSION_FILE, loadActive, logStage, REQUEST_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
@@ -459,6 +460,8 @@ export function requestBegin(
     );
   }
   const current = loadRequestSession(repoRoot);
+  // 새 접수는 실행 중인 호스트의 hook 이 설치돼 있어야 연다(이어서 정리하는 접수는 붙잡지 않는다)
+  const hooks = current ? undefined : requireStartHooks(repoRoot);
   if (current && current.id !== id) {
     throw new Stop(
       `접수 중인 요구사항이 있습니다: ${current.id} (${current.kind}). 그것을 끝내거나 현재 호스트 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 접수하세요.`,
@@ -485,6 +488,7 @@ export function requestBegin(
     ...[aidlcWarning(repoRoot)].filter((line): line is string => !!line),
     "",
     requestContext(repoRoot, session),
+    ...(hooks ? ["", hooks] : []),
   ].join("\n");
 }
 

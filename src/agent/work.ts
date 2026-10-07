@@ -10,7 +10,7 @@ import type { BuildPlan } from "../core/types";
 import { loadWorkOrder } from "../core/workOrder";
 import type { WorkKind, WorkOrder } from "../core/workOrder";
 import { checkProjectDocs, projectDocsHash, sha } from "./docs";
-import { workDocsHash } from "./workDocs";
+import { workDocsEntries } from "./workDocs";
 import { loadActive, planFile, workDocsDir } from "./layout";
 import type { ActiveWork } from "./layout";
 import { Stop } from "./stop";
@@ -47,12 +47,26 @@ export function readOrder(repoRoot: string, spec: string, manifest: Manifest): W
  * 필수 문서가 확정되지 않았으면 undefined — 묶을 근거가 없다 (대조하는 쪽은 그것을 어긋난 것으로 받는다).
  */
 export function approvalDocsHash(work: Work): string | undefined {
-  const project = projectDocsHash(checkProjectDocs(work.repoRoot, work.manifest));
+  return approvalDocsState(work).hash;
+}
+/**
+ * 승인이 묶는 문서의 해시와 문서별 해시 — hash 는 approvalDocsHash 식과 바이트 단위로 같다. parts 는 재승인 화면이
+ * 바뀐 문서를 고르는 데만 쓴다(POLICY 종류별 확정 해시 · 작업 문서 경로별 해시 · 계획 작업 기록).
+ */
+export function approvalDocsState(work: Work): { hash?: string; parts?: Record<string, string> } {
+  const checks = checkProjectDocs(work.repoRoot, work.manifest);
+  const project = projectDocsHash(checks);
   if (!project) {
-    return undefined;
+    return {};
   }
   const proof = work.active.planningVersion ? JSON.stringify(loadPlanning(work).tasks.map(record => ({ task: record.task, last: record.attempts.at(-1) }))) : "";
-  return sha(`${project}\n${workDocsHash(work.repoRoot, work.active.id, work.active.spec)}${proof ? `\n${proof}` : ""}`);
+  const entries = workDocsEntries(work.repoRoot, work.active.id, work.active.spec);
+  const parts: Record<string, string> = {};
+  for (const entry of checks) parts[`POLICY ${entry.kind}`] = String(entry.hash);
+  // 항목은 `<경로>:sha256:<해시>` 꼴이다
+  for (const entry of entries) { const at = entry.lastIndexOf(":sha256:"); parts[entry.slice(0, at)] = entry.slice(at + 1); }
+  if (proof) parts["계획 작업 기록"] = sha(proof);
+  return { hash: sha(`${project}\n${sha(entries.join("\n"))}${proof ? `\n${proof}` : ""}`), parts };
 }
 
 /**
@@ -89,12 +103,14 @@ export function approvalOf(work: Work): ApprovalState {
   }
   const problems = sequenceProblems(work.plan, work.stages, work.order.kind);
   if (problems.length) throw new Stop(`제출된 계획의 실행 순서가 유효하지 않습니다:\n${problems.join("\n")}\nplan.json 의 sequence 를 고쳐 다시 제출하고 승인받으세요.`);
+  const docs = approvalDocsState(work);
   return checkApproval(work.repoRoot, work.order, work.plan, work.active.target, {
     manifest: work.manifest,
     requireVerifiedApproval: work.manifest.workOrder.requireVerifiedApproval,
     // 확정이 깨졌으면 대조를 끄는 것이 아니라 어긋난 것으로 본다 — 여기서 undefined 를 주면
     // 확정된 POLICY 문서 한 글자만 고쳐도 문서 묶음 대조가 통째로 꺼진다 (fail-open).
-    docsHash: approvalDocsHash(work) ?? "unconfirmed",
+    docsHash: docs.hash ?? "unconfirmed",
+    docsParts: docs.parts,
   });
 }
 

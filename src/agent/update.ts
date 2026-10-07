@@ -157,6 +157,7 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
           `  !! 진행 중인 작업이 있습니다 (${active.id} · ${active.phase}${active.stage ? `/${active.stage}` : ""}).`,
           "     절차 문구가 바뀌었을 수 있으니 지금 스테이지 스킬을 /ca-status 로 다시 확인하세요.",
           "     승인·증거는 해시에 묶여 있어 갱신으로 무효가 되지 않습니다.",
+          "     업그레이드 전에 준비한 확인 요청은 새로 준비해야 할 수 있습니다(확인 화면·스냅샷 범위가 바뀌면 대상 변경으로 폐기됩니다).",
         ]
       : []),
     "",

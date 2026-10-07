@@ -60,6 +60,36 @@ export function docPaths(manifest: Manifest | undefined, kind: DocKind): string[
   return [registered ?? SCHEMAS[kind].defaultPath];
 }
 
+/**
+ * 문서 경로의 문제 — KNOWLEDGE 경로가 .md 가 아니거나 코드 자리(도메인 base·단계 base·project 단계 출력 위치) 안이면 error,
+ * POLICY·컨벤션 경로의 같은 문제는 warn. 계획 밖 변경 검사가 KNOWLEDGE 를 예외로 두는 것은 .md 경로뿐이고 반영도 .md 만 고친다.
+ * 스키마는 바꾸지 않는다(바꾸면 기존 매니페스트가 로드되지 않아 hook 전체가 상태 읽기 실패로 떨어진다).
+ */
+export function docPathProblems(manifest: Manifest): { error: string[]; warn: string[] } {
+  const clean = (path: string) => path.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/\/+$/, "");
+  const codeRoots = [...new Set([manifest.domainBase, ...manifest.stages.map((stage) => stage.base),
+    ...manifest.stages.filter((stage) => stage.scope === "project").flatMap((stage) => stage.outputDirs)]
+    .filter((root): root is string => typeof root === "string").map(clean).filter((root) => root !== "" && root !== "."))];
+  const inside = (path: string) => codeRoots.find((root) => path === root || path.startsWith(`${root}/`));
+  const error: string[] = [], warn: string[] = [];
+  for (const kind of KNOWLEDGE_KINDS) {
+    for (const raw of docPaths(manifest, kind)) {
+      const path = clean(raw), root = inside(path);
+      if (!path.toLowerCase().endsWith(".md")) error.push(`- ✗ 공통 KNOWLEDGE ${kind}: ${path} — .md 파일이어야 합니다. 계획 밖 변경 검사가 이 경로를 예외로 두지 않고, 반영도 이 파일을 고치지 않습니다`);
+      else if (root) error.push(`- ✗ 공통 KNOWLEDGE ${kind}: ${path} — 코드 자리(${root}) 안입니다. 문서 자리(doc/ 등)로 옮기세요`);
+    }
+  }
+  for (const kind of POLICY_KINDS) {
+    for (const raw of docPaths(manifest, kind)) {
+      const path = clean(raw), root = inside(path);
+      const file = /\.[A-Za-z0-9]+$/.test(path);
+      if (file && !path.toLowerCase().endsWith(".md")) warn.push(`- 확인: ${SCHEMAS[kind].label} ${path} — .md 가 아닙니다(code-agent 는 마크다운 제목으로 문서를 읽습니다)`);
+      if (root) warn.push(`- 확인: ${SCHEMAS[kind].label} ${path} — 코드 자리(${root})와 겹칩니다. 문서 세션은 그 아래 .md 만 쓸 수 있습니다`);
+    }
+  }
+  return { error, warn };
+}
+
 /** 경로가 디렉토리면 그 아래 마크다운 전부 — 컨벤션은 여러 파일로 나뉘어 있기 흔하다 */
 function markdownFiles(repoRoot: string, path: string): string[] {
   const absolute = join(repoRoot, path);

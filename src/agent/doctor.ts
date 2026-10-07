@@ -16,7 +16,8 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel, policySummary } from "./models";
 import { claudeModelOf, modelDisplay } from "./modelPolicy";
@@ -219,7 +220,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   if (settings) {
     add("✗", "hook 설정 파일", settings, "이 파일을 고친 뒤 code-agent init — 고치기 전에는 init·update 도 멈춥니다");
   } else {
-    for (const [event, subcommand] of [["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"], ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"], ["SessionStart", "session-event"]] as const) {
+    for (const [event, subcommand] of CLAUDE_HOOKS) {
       const command = installedHook(repoRoot, event, subcommand);
       if (!command) {
         add("✗", `${event} hook`, "없습니다", "code-agent init");
@@ -315,7 +316,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   if (hosts.includes("codex")) {
     const problem = settingsProblem(repoRoot, "codex");
     if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
-    else for (const event of ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"]) {
+    else for (const event of CODEX_EVENTS) {
       const command = installedHook(repoRoot, event, "codex-event", "codex");
       const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) : "설치되지 않았습니다";
       add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, "code-agent init --host codex");
@@ -331,6 +332,11 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");
     } catch (error) { add("✗", "Codex 번들", String(error)); }
     add("·", "Codex 훅 실행", "파일 설치만 검사했습니다. Codex에서 프로젝트 훅 신뢰가 필요하며 실제 실행·클라이언트 기능은 별도로 확인하세요.");
+    // PreToolUse 가 판정하지 않은 Codex 도구 이름(작업·세션 중에만 기록) — 파일을 쓰는 도구라면 hook 판정 밖이다
+    const unknown = unknownCodexTools(repoRoot);
+    if (unknown.length) {
+      add("·", "Codex 미판정 도구", `${unknown.slice(0, 8).map((tool) => `${tool.name}(${tool.count}회)`).join(" · ")}${unknown.length > 8 ? ` 외 ${unknown.length - 8}개` : ""} — 파일을 쓰는 도구라면 hook 판정 밖입니다. code-agent 를 갱신하거나 사람에게 알리세요`);
+    }
   }
 
   // 8. 매니페스트 — 있을 때만 본다 (도입 전에는 없는 것이 정상)

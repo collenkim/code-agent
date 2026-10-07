@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "fs";
+import { hostname } from "os";
 import { basename, dirname, join, posix } from "path";
 
 import { writeAtomic } from "../core/atomic";
@@ -116,6 +117,41 @@ export function canonical(path: string): string {
     head = parent;
   }
   return join(realpathSync.native(head), ...rest);
+}
+
+/** 로컬 관리 공유로 보는 호스트 이름 */
+function localHosts(): string[] {
+  return ["localhost", "127.0.0.1", "::1", "[::1]", hostname().toLowerCase()];
+}
+/**
+ * win32 전용 — 로컬 관리 공유·장치 경로를 드라이브 경로로 접는다(그 밖은 그대로). 같은 파일을 다른 이름으로 가리켜 경로 대조를
+ * 비켜 가는 길을 닫는다: `\\?\C:\x`·`\\.\C:\x` → `C:\x`, `\\?\UNC\host\share\x` → `\\host\share\x`, `\\<로컬>\C$\x` → `C:\x`.
+ */
+export function foldWindowsAlias(path: string, platform: string = process.platform): string {
+  if (platform !== "win32") return path;
+  const device = /^[\\/]{2}[?.][\\/]([A-Za-z]:(?:[\\/][\s\S]*)?)$/.exec(path);
+  if (device) return device[1];
+  let folded = path;
+  const unc = /^[\\/]{2}\?[\\/]UNC[\\/]([\s\S]*)$/i.exec(folded);
+  if (unc) folded = `\\\\${unc[1]}`;
+  const share = /^[\\/]{2}([^\\/]+)[\\/]([A-Za-z])\$([\\/][\s\S]*)?$/.exec(folded);
+  if (share && localHosts().includes(share[1].toLowerCase())) return `${share[2].toUpperCase()}:${share[3] ?? "\\"}`;
+  return folded;
+}
+
+/**
+ * 문서 작성 세션 — 없으면 undefined, 깨졌거나 version 이 없으면 {}(이전 형식: hook 이 지금 매니페스트로 문서 자리를 계산한다).
+ * writable 은 `docs begin` 때의 매니페스트로 고정한 쓰기 범위(저장소 상대 경로)이고, `docs link` 로 연결한 문서만 더해진다.
+ */
+export function loadDocsSession(root: string): { version?: 2; startedAt?: string; writable?: string[] } | undefined {
+  const path = join(root, DOCS_SESSION_FILE);
+  if (!existsSync(path)) return undefined;
+  try {
+    const value = JSON.parse(readFileSync(path, "utf-8")) as { version?: unknown; startedAt?: unknown; writable?: unknown };
+    if (value?.version !== 2 || !Array.isArray(value.writable)) return {};
+    return { version: 2, ...(typeof value.startedAt === "string" ? { startedAt: value.startedAt } : {}),
+      writable: value.writable.filter((item): item is string => typeof item === "string") };
+  } catch { return {}; }
 }
 
 /** 위로 올라가며 `.git` 이 있는 곳. 없으면 시작한 곳 — 저장소가 아닌 곳에서도 상태 조회는 된다 */

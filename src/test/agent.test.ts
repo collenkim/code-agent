@@ -19,6 +19,7 @@ import { docsSkeleton } from "../agent/docsCommands";
 import { WORK_SCHEMAS } from "../agent/schemas";
 import { checkProjectDocs, checkSections, recordDocConfirmation } from "../agent/docs";
 import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
+import { observeAnswerFixture } from "./consentFixture";
 
 const APP = "src/main/java/com/acme/app/application";
 const ORDER = `${APP}/order`;
@@ -504,6 +505,9 @@ describe("next — 질문과 승인", () => {
     writeFileSync(questions, `${readFileSync(questions, "utf-8")}\n## Q1 · 요구사항 분석\n금액 타입은?\nA. Long\nB. BigDecimal\n[Answer]:\n`);
     assert.throws(() => next(repo), /답이 없는 질문이 1개/);
     writeFileSync(questions, readFileSync(questions, "utf-8").replace(/\[Answer\]:\n$/, "[Answer]: B\n"));
+    // 답은 질문 도구로 받은 것이어야 한다 — 관찰 없이 적은 답은 출처 미확인으로 막힌다
+    assert.throws(() => next(repo), /답의 출처를 확인할 수 없는 질문이 1개/);
+    observeAnswerFixture(repo, "ORD-1", "Q1", "BigDecimal");
     next(repo);
     assert.equal(loadActive(repo)!.phase, "impact");
   });

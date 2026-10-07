@@ -8,6 +8,7 @@ import { sha, docPaths } from "./docs";
 import { canonical, STATE_DIR, workDocsDir } from "./layout";
 import { POLICY_KINDS } from "./schemas";
 import { parseQuestions, structuralLine, type Question } from "./questions";
+import { answerSources } from "./answers";
 import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
@@ -356,7 +357,10 @@ export function readyProblems(work: Work, state: PlanningState, record: TaskReco
   }
   // 출처가 기록된 질문은 출처 작업과 그 후손 배정만 막는다 — 앞 단계 재배정(되감은 뒤)은 막지 않는다
   const text = questionsText(work);
-  const open = text === undefined ? [] : parseQuestions(text).filter(question => question.answer === "");
+  // 답의 출처를 확인할 수 없는 질문도 미응답으로 본다(게이트와 같은 판정)
+  const parsed = text === undefined ? [] : parseQuestions(text);
+  const sources = parsed.some(question => question.answer) ? answerSources(work.repoRoot, work.active.id, parsed) : new Map<string, string>();
+  const open = parsed.filter(question => question.answer === "" || sources.get(question.id) === "unverified");
   for (const question of open) if (questionApplies(question, record.task, state)) problems.push(`미결 질문 ${question.id}`);
   for (const file of record.task.inputs) if (fileHash(work.repoRoot, file) === "missing") problems.push(`입력 파일이 없습니다: ${file}`);
   return problems;

@@ -6,6 +6,7 @@ import { loadManifest, MANIFEST_FILE } from "../core/manifest";
 import type { Manifest } from "../core/manifest";
 import { KINDS } from "../core/workOrder";
 import { stageTestRoots } from "./evidence";
+import { docPathProblems } from "./docs";
 import { MAX_OUTPUT_ITEMS } from "./plugins/protocol";
 import { isTestPath } from "./plugins/defaults";
 import { callSlot, clamp } from "./plugins/run";
@@ -331,6 +332,10 @@ export function manifestCheck(repoRoot: string): { text: string; ok: boolean } {
       out.push(`- 확인: ${name} 명령의 실행 파일이 저장소에 없습니다: ${argv[0]}`);
     }
   }
-  out.push("", failed ? "✗ 참조 파일을 못 찾는 단계가 있습니다 — 경로·{Ref}·referenceDomain 을 고치세요." : "✓ 모든 단계가 참조 파일을 찾습니다.");
-  return { text: out.join("\n"), ok: !failed };
+  // 문서 경로 — KNOWLEDGE 가 .md 가 아니거나 코드 자리 안이면 실패(계획 밖 변경 예외·반영이 .md 만 다룬다)
+  const docs = docPathProblems(manifest);
+  out.push(...docs.error, ...docs.warn);
+  out.push("", failed ? "✗ 참조 파일을 못 찾는 단계가 있습니다 — 경로·{Ref}·referenceDomain 을 고치세요."
+    : docs.error.length ? "✗ 공통 KNOWLEDGE 경로를 고치세요 — .md 파일이고 코드 자리 밖이어야 합니다." : "✓ 모든 단계가 참조 파일을 찾습니다.");
+  return { text: out.join("\n"), ok: !failed && docs.error.length === 0 };
 }

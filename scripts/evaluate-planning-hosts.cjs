@@ -119,10 +119,10 @@ if (host === 'claude') {
       "process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');process.exitCode=result.status??1;",
     ].join('\n');
     const resumedCommand = `node "${capture.replace(/\\/g, '/')}"`;
-    if (hooks.length !== 5 || hooks.some(hook => hook.type !== 'command' || hook.command !== (resumeImpact ? resumedCommand : expected))) throw Error('생성한 검사 훅 이외의 명령이 있습니다.');
+    if (hooks.length !== 5 || hooks.some(hook => hook.type !== 'command' || (resumeImpact ? hook.command !== resumedCommand : hook.command !== expected && hook.command !== `${expected} || exit 2`))) throw Error('생성한 검사 훅 이외의 명령이 있습니다.');
     if (resumeImpact && fs.readFileSync(capture, 'utf8') !== captureSource(path.join(root, 'dist', `planning-live-codex-${resumeImpact}.hooks.jsonl`))) throw Error('이전 검사 기록 훅이 변경됐습니다.');
     fs.writeFileSync(capture, captureSource(captureLog));
-    for (const hook of hooks) hook.command = `node "${capture.replace(/\\/g, '/')}"`;
+    for (const hook of hooks) { hook.command = `node "${capture.replace(/\\/g, '/')}"`; delete hook.commandWindows; }
     fs.writeFileSync(path.join(repo, '.codex/hooks.json'), JSON.stringify(installed, null, 2));
   }
   // Windows의 cmd 래퍼를 셸 문자열로 조립하지 않고 설치된 Node 진입점을 직접 실행한다.

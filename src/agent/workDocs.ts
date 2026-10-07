@@ -514,14 +514,17 @@ export function orderBody(text: string): string {
  * 줄바꿈(CRLF/LF)만 바뀐 것은 바뀐 것으로 보지 않는다 (프로젝트 문서 확정과 같은 이유 — autocrlf).
  */
 export function workDocsHash(repoRoot: string, id: string, spec: string): string {
-  const entries = [
+  return sha(workDocsEntries(repoRoot, id, spec).join("\n"));
+}
+/** workDocsHash 의 항목(`<경로>:<해시>`) — 재승인 화면이 바뀐 문서를 고른다 */
+export function workDocsEntries(repoRoot: string, id: string, spec: string): string[] {
+  return [
     `${spec}#본문:${sha(orderBody(normalized(repoRoot, spec)))}`,
     ...HASHED_KINDS.map((kind) => {
       const path = workDocPath(id, kind);
       return `${path}:${sha(normalized(repoRoot, path))}`;
     }),
   ];
-  return sha(entries.join("\n"));
 }
 
 // ---- ⑤ 05-plan.md (코드가 렌더한다) ----

@@ -93,7 +93,7 @@ function answerQuestions(id) {
   const text = fs.readFileSync(file, 'utf8');
   const open = parseQuestions(text).filter(q => !q.answer).map(q => q.id);
   if (!open.length) return;
-  const filled = text.replace(/^\[Answer\]:[ \t]*(\r?)$/gm, (_, cr) => `[Answer]: 평가 fixture 답 — 실제 사람의 답이 아님. 질문에 적힌 추천안으로 진행한다.${cr}`);
+  const filled = text.replace(/^\[Answer\]:[ \t]*(\r?)$/gm, (_, cr) => `[Answer]: 평가 fixture 답 — 실제 사람의 답이 아님. 질문에 적힌 추천안으로 진행한다.${cr}\n[Source]: 대화 (평가 fixture — 사람 아님)${cr}`);
   fs.writeFileSync(file, filled);
   for (const q of parseQuestions(filled)) if (open.includes(q.id) && q.answer) questionFixtures.push({ id: q.id, kind: 'automated question fixture; not human', at: new Date().toISOString() });
 }

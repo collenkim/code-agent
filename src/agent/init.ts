@@ -7,6 +7,7 @@ import { applyModels, policySummary } from "./models";
 import { readClaudeOverrides, readCodexOverrides } from "./modelPolicy";
 import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
+import { runtimeHost } from "./crossEnv";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -15,9 +16,18 @@ const GITIGNORE_END = "# code-agent:end";
 
 /**
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
- * hook 의 읽기 분기는 여기에 없으면 불리지 않는다.
+ * hook 의 읽기 분기는 여기에 없으면 불리지 않는다. `mcp__.*` 는 경로 인자가 있는 MCP 도구를 같은 규칙으로 판정한다.
  */
-export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob";
+export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob|mcp__.*";
+
+/** Claude 에 설치하는 hook — (이벤트, 하위 명령). doctor·설치 감지가 같은 목록을 쓴다 */
+export const CLAUDE_HOOKS = [
+  ["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"],
+  ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"],
+  ["SessionStart", "session-event"],
+] as const;
+/** Codex 에 설치하는 이벤트(모두 codex-event) */
+export const CODEX_EVENTS = ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"] as const;
 
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
@@ -45,7 +55,7 @@ function upsertBlock(path: string, start: string, end: string, body: string): "c
 
 interface HookEntry {
   matcher?: string;
-  hooks: { type: string; command: string }[];
+  hooks: { type: string; command: string; commandWindows?: string }[];
 }
 
 /**
@@ -54,7 +64,8 @@ interface HookEntry {
  */
 function ourEntry(entry: HookEntry, subcommand: string): boolean {
   return entry.hooks.some(
-    (hook) => hook.type === "command" && typeof hook.command === "string" && /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}$`).test(hook.command),
+    // Codex PreToolUse 는 비Windows 명령에 ` || exit 2` 를 붙여 설치한다 — 그 꼴도 우리 항목이다
+    (hook) => hook.type === "command" && typeof hook.command === "string" && /code-agent|agent[\\/]cli\.js/.test(hook.command) && new RegExp(` ${subcommand}(?: \\|\\| exit 2)?$`).test(hook.command),
   );
 }
 
@@ -140,7 +151,7 @@ export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected 
  *
  * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다.
  */
-function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string): void {
+function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string, extra: { commandWindows?: string } = {}): void {
   const settings = readSettings(path);
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
   const ours = (entry: HookEntry) => ourEntry(entry, subcommand);
@@ -150,7 +161,7 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
       const remaining = entry.hooks.filter(hook => !ourEntry({hooks:[hook]}, subcommand));
       return remaining.length ? [{...entry, hooks:remaining}] : [];
     }),
-    { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] },
+    { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command, ...(extra.commandWindows ? { commandWindows: extra.commandWindows } : {}) }] },
   ];
   settings.hooks = hooks;
   mkdirSync(dirname(path), { recursive: true });
@@ -199,8 +210,11 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     writeFileSync(target, text);
   }
   const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" codex-event` : "code-agent codex-event";
-  for (const event of ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"]) {
-    upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", command);
+  for (const event of CODEX_EVENTS) {
+    // PreToolUse 만 프로세스 실패(모듈 로드 전 종료·PATH 누락)를 막는 쪽으로 닫는다 — 비Windows 셸은 `|| exit 2`, Windows 는 commandWindows 로
+    // 래핑 없이(실행 셸 미확인). UserPromptSubmit 은 래핑하지 않는다 — 설치가 깨지면 사용자가 아무 말도 못 하게 된다
+    if (event === "PreToolUse") upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", `${command} || exit 2`, undefined, { commandWindows: command });
+    else upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", command);
   }
   upsertBlock(join(repoRoot, "AGENTS.md"), BLOCK_START, BLOCK_END, assetText("template/CODEX.block.md"));
   upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END,
@@ -215,6 +229,46 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     "  승인 응답은 ca-answer가 안내하는 사용자 대화 메시지로 관찰합니다.",
     "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",
   ].join("\n");
+}
+
+/**
+ * 설치된 호스트(hosts.json)마다 빠진 hook — 문제가 있는 호스트만. hosts.json 이 없거나 읽지 못하면 빈 목록(doctor 가 따로 알린다).
+ * 설정 파일이 깨졌으면 그 사유 한 줄이다.
+ */
+export function hookInstallProblems(repoRoot: string): { host: Host; problems: string[] }[] {
+  if (!existsSync(join(repoRoot, STATE_DIR, "hosts.json"))) return [];
+  let hosts: Host[];
+  try { hosts = selectedHosts(repoRoot); } catch { return []; }
+  const result: { host: Host; problems: string[] }[] = [];
+  for (const host of hosts) {
+    const broken = settingsProblem(repoRoot, host);
+    const problems = broken ? [broken]
+      : host === "claude" ? CLAUDE_HOOKS.filter(([event, subcommand]) => !installedHook(repoRoot, event, subcommand)).map(([event, subcommand]) => `Claude ${event}(${subcommand})`)
+      : CODEX_EVENTS.filter((event) => !installedHook(repoRoot, event, "codex-event", "codex")).map((event) => `Codex ${event}`);
+    if (problems.length) result.push({ host, problems });
+  }
+  return result;
+}
+/** SessionStart·status·시작 명령이 붙이는 경고 문장 — 빠진 hook 이 없으면 undefined */
+export function hookInstallWarning(repoRoot: string, problems = hookInstallProblems(repoRoot)): string | undefined {
+  if (!problems.length) return undefined;
+  return `code-agent hook 설정이 빠져 있습니다: ${problems.flatMap((entry) => entry.problems).join(" · ")} — 이 상태에서는 쓰기 판정·동의 관찰이 꺼집니다. ` +
+    "사람에게 code-agent init(또는 doctor)으로 복구하도록 알리세요. 더 쓰지 않는 호스트라면 사람이 .code-agent/hosts.json 에서 그 이름을 빼면 됩니다.";
+}
+const HOST_LABEL: Record<Host, string> = { claude: "Claude Code", codex: "Codex" };
+/**
+ * start·request begin·docs begin 의 시작 게이트 — **실행 중인 호스트**(셸 환경 표지, runtimeHost)의 hook 이 빠졌으면 시작하지 않는다.
+ * 다른 설치 호스트의 누락과 판별 불가(사람의 터미널 등)는 막지 않고 경고 문장을 돌려준다(출력 끝에 붙인다). 진행 중인 작업은 막지 않는다.
+ */
+export function requireStartHooks(repoRoot: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const problems = hookInstallProblems(repoRoot);
+  if (!problems.length) return undefined;
+  const running = runtimeHost(env);
+  const own = running ? problems.find((entry) => entry.host === running) : undefined;
+  if (own) {
+    throw new Stop(`이 호스트(${HOST_LABEL[own.host]})의 hook 설정이 빠져 있어 시작하지 않습니다 — ${own.problems.join(" · ")}. hook 이 없으면 쓰기 판정·동의 관찰이 꺼집니다. 사람이 code-agent init --host ${own.host}(또는 doctor)로 복구한 뒤 다시 시작하세요.`);
+  }
+  return `경고: ${hookInstallWarning(repoRoot, problems)}`;
 }
 
 function initClaude(repoRoot: string, options: InitOptions = {}): string {

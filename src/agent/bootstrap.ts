@@ -28,6 +28,10 @@ export function setupStatus(root: string): string {
     `- 빌드: ${manifest?.build?.join(" ") ?? "미정 — 기존 빌드 설정에서 연결"}`,
     `- 테스트: ${manifest?.test?.join(" ") ?? "미정 — 기존 테스트 도구·명령에서 연결"}`,
     `- 의존성 준비: ${manifest?.prepare?.join(" ") ?? "선언 없음 — 외부 의존성이 없으면 추가 불필요"}`,
+    // 승인 화면과 같은 경계·검증 선언을 준비 때 확인받는다(추가 명령·환경 오류 문구·단계 경계)
+    `- 추가 명령: ${Object.entries(manifest?.commands ?? {}).map(([name, argv]) => `${name}=${argv.join(" ")}`).join(" · ") || "선언 없음"}`,
+    `- 환경 오류 문구: ${manifest?.environmentErrors?.length ? manifest.environmentErrors.map((pattern) => JSON.stringify(pattern)).join(" · ") : "선언 없음"}`,
+    `- 단계 경계: ${manifest?.stages.map((stage) => `${stage.key}(${stage.kind}, ${stage.scope}: ${stage.outputDirs.join(", ") || "."})`).join(" · ") || "선언 없음"}`,
     `- 기준 커밋: ${hasBaseline(root) ? (pendingBaselineFiles(root).length ? "도입 파일 반영 필요 — 현재 세션의 setup/baseline 동의로 준비 커밋 생성" : "있음 — 도입 파일 반영됨") : "없음 — 현재 세션의 초기 준비 확인에서 생성 (직접 CLI: code-agent setup baseline)"}`,
     "", "지금 테스트를 실행하거나 러너를 다시 선택하지 않습니다. 실제 소스·실행 설정·테스트 생성은 승인된 Task에서 함께 수행합니다."].join("\n");
 }
@@ -57,7 +61,13 @@ export function baselineFiles(root: string): string[] {
     else found.add(rel);
   }
   for (const file of roots) if (file) walk(file);
-  return [...found].sort();
+  // doc/ 밖의 문서 경로는 .md 만 담는다 — 문서 자리로 등록한 코드 파일·폴더가 준비 커밋에 섞이지 않게
+  const docRoots = new Set([...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap(kind => docPaths(manifest, kind))
+    .map(path => relative(root, resolve(root, path)).replace(/\\/g, "/")).filter(path => path !== "doc" && !path.startsWith("doc/")));
+  const fixed = new Set([...roots].filter(file => file && !docRoots.has(file)).map(file => relative(root, resolve(root, file!)).replace(/\\/g, "/")));
+  const fromDocsOnly = (file: string) => [...docRoots].some(dir => file === dir || file.startsWith(`${dir}/`)) &&
+    ![...fixed].some(dir => file === dir || file.startsWith(`${dir}/`));
+  return [...found].filter(file => !fromDocsOnly(file) || file.toLowerCase().endsWith(".md")).sort();
 }
 
 /** 무시된 도입 문서도 포함한다. Git diff가 줄바꿈/clean filter를 적용해 실제 커밋과 비교한다. */

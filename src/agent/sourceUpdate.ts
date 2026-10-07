@@ -7,6 +7,7 @@ import { isPackaged } from "./assets";
 import { loadActive } from "./layout";
 import { Stop } from "./stop";
 import { HostSelection } from "./hosts";
+import { confirmOnTerminal } from "./tty";
 
 export interface SourceUpdateOptions {
   /** Hook CLI override, as in update(). Execution always uses the newly built CLI. */
@@ -255,4 +256,16 @@ export function updateFromSource(repoRoot: string, options: SourceUpdateOptions 
   } catch (error) {
     throw new Stop([...output.filter(Boolean), `${stage} 단계에서 중단했습니다. 이미 완료된 단계는 유지됩니다.`, error instanceof Error ? error.message : String(error)].join("\n\n"));
   }
+}
+
+/**
+ * 직접 CLI 소스 업데이트 — 미리보기를 보여 주고 터미널에서 `update` 를 입력받은 뒤에만 실행한다(비TTY 면 동의 절차를 안내하고 거부한다).
+ * 확인한 미리보기와 실행 직전 상태가 다르면 fetch 전에 멈춘다(expectedSourceSnapshot). 동의 적용은 이미 확인을 받았으므로 updateFromSource 를 그대로 부른다.
+ */
+export function updateFromSourceConfirmed(repoRoot: string, options: SourceUpdateOptions = {}): string {
+  const shown = previewSourceUpdate(repoRoot, options);
+  if (shown.includes("업데이트 중단:")) throw new Stop(shown);
+  const expectedSourceSnapshot = sourceUpdateSnapshot(repoRoot, options);
+  confirmOnTerminal(`${shown}\n\n위 순서로 code-agent 소스를 갱신합니다(네트워크 접근·npm 스크립트 실행 포함).`, "update");
+  return updateFromSource(repoRoot, { ...options, expectedSourceSnapshot });
 }

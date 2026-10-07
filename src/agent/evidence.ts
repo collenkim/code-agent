@@ -180,6 +180,17 @@ export function loadEvidence(repoRoot: string, id: string, target: string): Evid
   }
 }
 
+/**
+ * 지금 기준 커밋·계획·매니페스트에 묶인 증거 — check() 의 회차 판정과 사람 허용(retryGrant)이 같은 조건을 쓴다.
+ * 묶임이 하나라도 다르면 그 증거의 카운터·허용은 지금 작업의 것이 아니다(다음 check 가 새로 시작한다).
+ */
+export function boundEvidence(work: Work): Evidence | undefined {
+  const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  if (!evidence || !work.plan || !work.active.baseCommit) return undefined;
+  return evidence.baseCommit === work.active.baseCommit && evidence.manifestHash === hashManifest(work.manifest) &&
+    evidence.planHash === hashPlan(work.plan) ? evidence : undefined;
+}
+
 export function saveEvidence(repoRoot: string, evidence: Evidence): void {
   const path = verifyFile(repoRoot, evidence.id, evidence.target);
   mkdirSync(dirname(path), { recursive: true });
@@ -339,7 +350,8 @@ export function outsideChanges(work: Work): Change[] {
   }
   const allowed = new Set([
     ...planPaths(work),
-    ...KNOWLEDGE_KINDS.map((kind) => knowledgePath(work.manifest, kind)),
+    // KNOWLEDGE 예외는 .md 경로만 — .md 가 아닌(코드 파일을 가리키는) KNOWLEDGE 경로는 반영도 고치지 않으므로 예외가 아니다
+    ...KNOWLEDGE_KINDS.map((kind) => knowledgePath(work.manifest, kind)).filter((path) => path.toLowerCase().endsWith(".md")),
   ]);
   const prefixes = [`${workDocsDir(active.id)}/`, ".code-agent/"];
   return changedPaths(repoRoot, active.baseCommit).filter(

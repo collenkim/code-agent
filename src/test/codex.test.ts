@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { codexHook, patchPaths } from "../agent/codexHook";
-import { applyConsent, consentCommandGuard, loadConsent, prepareConsent } from "../agent/consent";
+import { applyConsent, codexReplyCode, consentCommandGuard, loadConsent, prepareConsent } from "../agent/consent";
 import { readDocLedger } from "../agent/docs";
 import { doctor } from "../agent/doctor";
 import { hostAssets, parseHost, selectedHosts } from "../agent/hosts";
@@ -32,7 +32,7 @@ afterEach(() => {
 const read = (file: string) => readFileSync(join(root, file), "utf8");
 function reply(id: string, choices = "1", extra: object = {}) {
   return {cwd:root, hook_event_name:"UserPromptSubmit", session_id:"codex-test-session", turn_id:`turn-${id}`,
-    prompt:`code-agent consent respond ${id} ${choices}`, ...extra};
+    prompt:`code-agent consent respond ${id} ${choices} ${codexReplyCode(root, id).code}`, ...extra};
 }
 function pre(tool_name: string, command: string) { return codexHook({cwd:root,hook_event_name:"PreToolUse",tool_name,tool_input:{command}}) as {hookSpecificOutput?: {permissionDecisionReason:string}}; }
 
@@ -224,7 +224,7 @@ for (const change of ["subagent","missing-session","missing-turn","extra-text","
     if (change === "changed-input") writeFixture(root,"doc/quality.md",read("doc/quality.md")+"\n변경\n");
     const extra = change === "subagent" ? {agent_id:"child"} : change === "missing-session" ? {session_id:undefined} :
       change === "missing-turn" ? {turn_id:undefined} : change === "extra-text" ? {prompt:event.prompt+" 승인"} :
-      change === "defer" ? {prompt:`code-agent consent respond ${prepared.id} 3`} : {};
+      change === "defer" ? {prompt:`code-agent consent respond ${prepared.id} 3 ${codexReplyCode(root, prepared.id).code}`} : {};
     if (change === "defer") codexHook({...event,...extra});
     else assert.throws(()=>codexHook({...event,...extra}));
     assert.notEqual(loadConsent(root,prepared.id).status,"approved");

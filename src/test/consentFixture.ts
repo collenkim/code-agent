@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { applyConsent, consentStatus, observeConsent, prepareConsent } from "../agent/consent";
+import { applyConsent, codexReplyCode, consentStatus, observeConsent, prepareConsent } from "../agent/consent";
 import type { ConsentAction, ConsentHookInput } from "../agent/consent";
 import { next, requireValidatable, start, submitPlan } from "../agent/commands";
 import { docsBegin, docsEnd } from "../agent/docsCommands";
@@ -18,6 +18,8 @@ import { dispatchPlanning, preparePlanning } from "../agent/planning";
 import { observePlanner } from "../agent/planningHook";
 import { codexHook } from "../agent/codexHook";
 import type { Host } from "../agent/hosts";
+import { observeAnswerEvent } from "../agent/answers";
+import { parseQuestions } from "../agent/questions";
 
 export const ACCEPT_CONSENT = "확인하고 진행";
 export const DEFER_CONSENT = "보류";
@@ -99,7 +101,7 @@ export function observeConsentFixture(fixture: PreparedConsentFixture, label = A
 export function approveAndApplyFixture(root: string, action: ConsentAction, host: Host = "claude"): PreparedConsentFixture & { result: string } {
   const fixture = prepareConsentFixture(root, action);
   if (host === "codex") codexHook({cwd:root, hook_event_name:"UserPromptSubmit", session_id:fixture.sessionId,
-    turn_id:fixture.toolUseId, prompt:`code-agent consent respond ${fixture.id} 1`});
+    turn_id:fixture.toolUseId, prompt:`code-agent consent respond ${fixture.id} 1 ${codexReplyCode(root, fixture.id).code}`});
   else observeConsentFixture(fixture);
   assert.equal(JSON.parse(consentStatus(root, fixture.id)).status, "approved");
   const result = applyConsent(root, fixture.id);
@@ -201,3 +203,30 @@ export async function prepareDeliveryFixture(root: string, host: Host = "claude"
 }
 
 function prefixPr(): string { return `doc/work/${CONSENT_WORK_ID}/10-pr.md`; }
+
+/**
+ * 업무 질문 답의 관찰 — production observeAnswerEvent 에 Claude AskUserQuestion Pre/Post 를 합성해 넣는다(실제 사람의 응답이 아니다).
+ * 질문 도구의 question 은 `Q<n>. …` 로 시작하고, 선택지 label 이 답이다.
+ */
+export function observeAnswerFixture(root: string, id: string, qid: string, answer: string, session = "answer-fixture"): void {
+  const active = loadActive(root);
+  assert.equal(active?.id, id, "진행 중인 작업의 질문만 관찰한다");
+  const question = `${qid}. 질문(테스트 fixture)`;
+  const questions = [{ question, header: qid, options: [{ label: answer, description: "fixture" }, { label: "다른 답", description: "fixture" }], multiSelect: false }];
+  const event = { cwd: root, session_id: session, tool_use_id: `answer-${randomUUID()}`, tool_name: "AskUserQuestion", tool_input: { questions } };
+  observeAnswerEvent({ ...event, hook_event_name: "PreToolUse" });
+  observeAnswerEvent({ ...event, hook_event_name: "PostToolUse", tool_response: { questions, answers: { [question]: answer } } });
+}
+
+/** 진행 중인 작업의 questions.md 에서 답이 있는 질문마다 지금 답(첫 줄)을 관찰한 것으로 둔다 — 답을 파일에 직접 쓰는 기존 테스트용 */
+export function observeQuestionAnswers(root: string): void {
+  const active = loadActive(root);
+  if (!active) return;
+  const path = join(root, `doc/work/${active.id}/questions.md`);
+  let text: string;
+  try { text = readFileSync(path, "utf8"); } catch { return; }
+  for (const question of parseQuestions(text)) {
+    const first = question.answer.split("\n").map((line) => line.trim()).find(Boolean);
+    if (first) observeAnswerFixture(root, active.id, question.id, first);
+  }
+}

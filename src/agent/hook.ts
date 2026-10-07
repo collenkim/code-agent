@@ -2,6 +2,7 @@ import { basename, isAbsolute, relative, resolve } from "path";
 
 import { existsSync, realpathSync } from "fs";
 import { join } from "path";
+import { fileURLToPath } from "url";
 
 import { hashPlan } from "../core/approval";
 import { loadPlanning, requiredOutputs, TASK_AGENTS } from "./planningState";
@@ -18,17 +19,19 @@ import {
   validationDocFile,
   verifyView,
 } from "./evidence";
-import { writeBlockReason } from "./retryPolicy";
+import { TIMING, writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, questionsFile, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
 import { consentCommandGuard } from "./consent";
+import { consentLockHeld, openConsent } from "./consentState";
+import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 
@@ -46,8 +49,11 @@ export interface HookInput {
   agent_id?: string;
   /** 명령을 실제로 해석하는 셸. Windows 의 Codex 셸 명령은 PowerShell 로 돈다 */
   shell?: "powershell";
+  /** 이벤트를 보낸 호스트 — 없으면 claude(runHook 이 claude, codexHook 이 codex 를 넣는다) */
+  host?: "claude" | "codex";
   tool_name: string;
-  tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string };
+  /** Grep 은 pattern·path·glob, Glob 은 pattern·path. MCP 도구는 인자 객체 전체가 온다 */
+  tool_input: { file_path?: string; notebook_path?: string; path?: string; command?: string; glob?: string; pattern?: string; [key: string]: unknown };
 }
 
 const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
@@ -145,8 +151,10 @@ const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--v
  * 온다. 경로 비교는 구분자와 대소문자를 접어 본다 (Windows 는 둘 다 흔들린다).
  */
 function normalized(path: string): string {
+  // 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\C:\…`)는 드라이브 경로로 접는다(win32)
+  const folded = foldWindowsAlias(path);
   // `\\?\C:\…`·`\\?\UNC\…` 는 같은 파일의 긴 경로 표기다 — 접두를 걷고 견준다
-  const plain = path.replace(/^[\\/]{2}\?[\\/](UNC[\\/])?/i, (_, unc?: string) => (unc ? "//" : ""));
+  const plain = folded.replace(/^[\\/]{2}\?[\\/](UNC[\\/])?/i, (_, unc?: string) => (unc ? "//" : ""));
   return resolve(plain).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
@@ -178,6 +186,125 @@ const STORE_DENIED =
   "등록된 플러그인 키가 있는 자리는 읽을 수 없습니다. " +
   "무엇이 등록돼 있는지는 code-agent plugin list 가 값을 빼고 보여 줍니다 — 키가 필요하면 사람에게 물으세요.";
 
+/** 키 저장소의 상위 폴더인가 — 그 폴더를 통째로 검색하면 키 파일까지 읽힌다 */
+function ancestorOfStore(path: string): boolean {
+  if (path.trim() === "") return false;
+  const roots = [storeDir(), realOrSelf(storeDir())].map(normalized);
+  const bases = [path, realOrSelf(path)].map(normalized);
+  return bases.some((base) => roots.some((root) => root.startsWith(`${base}/`)));
+}
+const storeAncestorDenied = (path: string): string =>
+  `등록된 플러그인 키가 들어 있는 상위 폴더(${path})는 검색하지 않습니다 — 저장소 안에서 검색하세요. 키 저장소를 프로젝트 안에 두었다면(CODE_AGENT_HOME) 프로젝트 밖으로 옮기세요.`;
+
+/** glob 의 정적 접두 — 첫 와일드카드(`*?[{`)가 든 구성요소 앞까지 */
+function staticPrefix(glob: string): string {
+  const parts = glob.split(/[\\/]/);
+  const cut = parts.findIndex((part) => /[*?[{]/.test(part));
+  return (cut < 0 ? parts : parts.slice(0, cut)).join("/");
+}
+
+/**
+ * 읽기 도구(Read·Grep·Glob)의 판정 — 키 자리만 닫는다. 경로뿐 아니라 Grep 의 glob·Glob 의 pattern 정적 접두와 검색 루트도 본다.
+ * 검색(Grep·Glob)은 키 저장소의 상위 폴더 자체도 거부한다(그 아래를 통째로 훑는다). 모든 모드(작업·세션 밖·상태 읽기 실패)에 같다.
+ */
+function readDenied(input: HookInput): string | undefined {
+  const raw = input.tool_input.path ?? input.tool_input.file_path ?? input.cwd ?? "";
+  const base = raw && !isAbsolute(foldWindowsAlias(raw)) && input.cwd ? resolve(input.cwd, raw) : raw;
+  const roots = [base];
+  const pattern = typeof input.tool_input.pattern === "string" ? input.tool_input.pattern : undefined;
+  const glob = typeof input.tool_input.glob === "string" ? input.tool_input.glob : undefined;
+  if (input.tool_name === "Glob" && pattern) roots.push(resolve(base || ".", staticPrefix(pattern)));
+  if (input.tool_name === "Grep" && glob) roots.push(resolve(base || ".", staticPrefix(glob)));
+  const texts = [glob, input.tool_name === "Glob" ? pattern : undefined].filter((text): text is string => !!text);
+  if (roots.some(insideStore) || texts.some((text) => STORE_FILE_NAME.test(text))) return STORE_DENIED;
+  if (input.tool_name !== "Read") {
+    const ancestor = roots.find((root) => ancestorOfStore(root));
+    if (ancestor) return storeAncestorDenied(ancestor);
+  }
+  return undefined;
+}
+
+/**
+ * Windows 에서 이름 끝의 점·공백은 다른 이름의 같은 파일이 된다(`.code-agent.`·`requirement.md `) — 경로 대조를 비켜 가므로 거부한다.
+ * 모든 모드의 쓰기 판정 맨 앞에서 부른다(win32 전용).
+ */
+function aliasGuard(target: string): string | undefined {
+  if (process.platform !== "win32" || !target) return undefined;
+  const parts = target.split(/[\\/]/).filter((part) => part !== "" && part !== "." && part !== ".." && !/^[A-Za-z]:$/.test(part) && part !== "?");
+  return parts.some((part) => /[. ]$/.test(part))
+    ? `Windows 에서 이름 끝의 점·공백은 다른 이름의 같은 파일이 됩니다: ${target} — 이름 끝의 점·공백을 빼고 쓰세요.`
+    : undefined;
+}
+
+// ---- 다른 이름의 도구(MCP) ----
+
+const MCP_PATH_KEYS = /^(?:file_?path|filePath|path|paths|file|files|filename|target(?:_?path)?|destination|dest|source|src|new_?path|old_?path|directory|dir|root|uri)$/i;
+const MCP_WRITE = /(?:write|edit|create|delete|remove|move|rename|copy|patch|replace|insert|append|upload|mkdir|save|put|apply|update)/i;
+/** 로컬 파일 시스템 서버로 보는 이름 — 이 서버만 상대 경로를 저장소 기준으로 판정한다 */
+const LOCAL_FS_SERVERS = /^(?:fs|filesystem|files|file-system|local-?files?)$/i;
+
+/** 저장소 안이거나 키 저장소 안인가 */
+function localTarget(repoRoot: string, path: string): boolean {
+  if (insideStore(path)) return true;
+  const rel = relative(repoRoot, canonical(foldWindowsAlias(path)));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+/**
+ * MCP 도구 인자에서 판정할 로컬 경로 — 경로 키(최상위와 한 단계 아래 객체)의 문자열·문자열 배열. `file://` 은 경로로 바꾸고 그 밖의 URI 는 버린다.
+ * 로컬 파일 서버는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안을 가리키는 절대 경로만 남긴다 — 원격 서비스의 경로 인자
+ * (예: GitHub 의 `path`, 드라이브 서비스의 `/My Drive/x`)를 잘못 막지 않는다.
+ */
+function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: string): string[] {
+  const values: string[] = [];
+  const collect = (object: Record<string, unknown>, depth: number) => {
+    for (const [key, value] of Object.entries(object)) {
+      if (MCP_PATH_KEYS.test(key)) {
+        if (typeof value === "string") values.push(value);
+        else if (Array.isArray(value)) values.push(...value.filter((item): item is string => typeof item === "string"));
+      }
+      if (depth === 0 && value && typeof value === "object" && !Array.isArray(value)) collect(value as Record<string, unknown>, 1);
+    }
+  };
+  collect(toolInput, 0);
+  const paths: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim();
+    if (!value) continue;
+    let path = value;
+    if (/^file:\/\//i.test(value)) {
+      try { path = fileURLToPath(value); } catch { continue; }
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:([\\/]|$)/i.test(value)) continue;
+    if (isAbsolute(foldWindowsAlias(path))) { if (local || localTarget(repoRoot, path)) paths.push(path); }
+    else if (local) paths.push(resolve(repoRoot, path));
+  }
+  return paths;
+}
+/** MCP 도구 — 경로마다 Write·Read 로 같은 판정을 다시 탄다(작업·세션·세션 밖·상태 읽기 실패 모두). 경로 인자가 없는 도구는 판정하지 않는다 */
+function decideMcp(input: HookInput, projectDir?: string): string | undefined {
+  const [, server = "", ...rest] = input.tool_name.split("__");
+  const tool = rest.join("__");
+  const repoRoot = canonical(projectDir ?? input.cwd);
+  const paths = mcpPaths(input.tool_input as Record<string, unknown>, LOCAL_FS_SERVERS.test(server), repoRoot);
+  if (!paths.length) return undefined;
+  const write = MCP_WRITE.test(tool);
+  for (const path of paths) {
+    const reason = decideTool({ ...input, tool_name: write ? "Write" : "Read", tool_input: { file_path: path } }, projectDir);
+    if (reason) return `MCP 도구 ${input.tool_name}: ${reason}`;
+  }
+  return undefined;
+}
+
+/** 동의 적용 중의 쓰기 — 확인한 대상과 실제 반영이 갈라진다. 잠금 주인이 죽었거나 없으면 통과한다 */
+function consentWriteGuard(repoRoot: string): string | undefined {
+  const held = consentLockHeld(repoRoot);
+  return held ? `확인·적용이 진행 중입니다(pid ${held.pid}) — 끝난 뒤 다시 쓰세요. 그 사이의 쓰기는 확인한 대상과 실제 반영을 갈라 놓습니다.` : undefined;
+}
+
+/** 세션 밖 셸이 호스트 hook 설정을 가리키는가 — settings.local.json 에는 disableAllHooks 를 둘 수 있다 */
+const HOST_CONFIG = /(^|[^A-Za-z0-9_.-])\.(?:claude[\\/]+settings(?:\.local)?\.json|codex[\\/]+(?:hooks\.json|config\.toml))/i;
+const HOST_CONFIG_BASH_DENIED = "호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 Read 도구로 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.";
+const SOURCE_UPDATE_DENIED = "code-agent 소스 업데이트(fetch · pull · npm ci · build)는 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 터미널에서 직접 실행합니다. 번들 템플릿만 다시 적용하려면 code-agent update --templates-only 를 씁니다.";
+
 /**
  * 교차 실행이 띄운 다른 호스트 안(CODE_AGENT_CROSS)에서 여는 code-agent 명령 — 읽기 전용 검토에 필요한 것만(파일 읽기·상태·조사).
  * 셸 연결·리다이렉트·치환 문자가 섞이면 열지 않는다.
@@ -200,10 +327,39 @@ export function crossChildGuard(input: HookInput): string | undefined {
   return undefined;
 }
 
+/**
+ * PreToolUse 판정. 허용한 셸 명령이 동의 준비·적용(정확한 꼴)이면 이 세션의 티켓을 낸다 — CLI 는 그 티켓이 있어야 준비·적용한다(CON-1·2).
+ * 연결자·리디렉션·치환이 든 명령은 티켓을 내지 않는다. 티켓을 쓰지 못해도 판정은 바꾸지 않는다(CLI 가 거부한다).
+ */
 export function decide(input: HookInput, projectDir?: string): string | undefined {
+  const reason = decideTool(input, projectDir);
+  if (reason === undefined && ["Bash", "PowerShell"].includes(input.tool_name) && input.session_id) {
+    const text = (input.tool_input.command ?? "").trim();
+    const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
+    const command = SHELL_META.test(text) || (powershell && powershellMeta(text)) ? undefined : consentCommandOf(text);
+    if (command) {
+      try {
+        // CLI 의 findRepoRoot(process.cwd()) 와 같은 루트 — 하위 폴더에서 연 세션도 저장소 루트에 낸다
+        const root = findRepoRoot(projectDir ?? input.cwd);
+        issueTicket(root, { kind: command.kind, ...(command.kind === "apply" ? { id: command.id } : {}),
+          sessionId: input.session_id, host: input.host ?? "claude", cwd: input.cwd, command: text.slice(0, 200) });
+      } catch { /* 티켓을 쓰지 못하면 CLI 가 준비·적용을 거부한다 */ }
+    }
+  }
+  return reason;
+}
+
+function decideTool(input: HookInput, projectDir?: string): string | undefined {
   const child = crossChildGuard(input);
   if (child) return child;
+  // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
+  if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);
   const repoRoot = canonical(projectDir ?? input.cwd);
+  if (WRITE_TOOLS.includes(input.tool_name)) {
+    const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
+    const early = consentWriteGuard(repoRoot) ?? aliasGuard(target);
+    if (early) return early;
+  }
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
     if (/\b(?:consent-event|planning-event|review-event|codex-event)\b/.test(command)) return "실행 관찰 명령은 호스트 hook만 호출합니다.";
@@ -211,9 +367,11 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     if (denied) return denied;
   }
   let work: Work | undefined, documenting: boolean, requesting: RequestSession | undefined, manifest: Manifest | undefined;
+  let docsSession: { writable?: string[] } = {};
   try {
     work = loadWork(repoRoot);
     documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
+    if (documenting) docsSession = loadDocsSession(repoRoot) ?? {};
     // 접수 세션 — 작업 커서가 생기기 전이다. 작업 · 문서 세션이 있으면 그쪽 규칙이 이긴다
     requesting = !work && !documenting ? loadRequestSession(repoRoot) : undefined;
     manifest = work ? work.manifest : documenting || requesting ? loadManifestIfAny(repoRoot) : undefined;
@@ -230,8 +388,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   }
   // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
   if (READ_TOOLS.includes(input.tool_name)) {
-    const target = input.tool_input.file_path ?? input.tool_input.path ?? "";
-    return insideStore(target) ? STORE_DENIED : undefined;
+    return readDenied(input);
   }
   if (!WRITE_TOOLS.includes(input.tool_name)) {
     return undefined;
@@ -246,7 +403,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     const planner = decidePlanner(work, path, input);
     return planner === undefined ? decideWrite(work, path) : planner || undefined;
   }
-  return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(manifest, path);
+  return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(docsSession, manifest, path);
 }
 
 /**
@@ -258,7 +415,7 @@ function decideUnreadable(input: HookInput, repoRoot: string, error: unknown): s
   const reason = `code-agent 상태·설정을 읽지 못했습니다: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}` +
     ` — Read 로 원인을 확인하고 Write/Edit 로 ${MANIFEST_FILE} 을 고친 뒤 code-agent manifest check 로 확인하세요.`;
   if (READ_TOOLS.includes(input.tool_name)) {
-    return insideStore(input.tool_input.file_path ?? input.tool_input.path ?? "") ? STORE_DENIED : undefined;
+    return readDenied(input);
   }
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     return /^code-agent (?:manifest check|status|help)$/.test((input.tool_input.command ?? "").trim()) ? undefined : reason;
@@ -283,10 +440,19 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = (input.tool_input.command ?? "").trim();
     if (mentionsStore(command)) return STORE_DENIED;
-    return mentionsState(command) ? STATE_BASH_DENIED : undefined;
+    // 응답·적용을 기다리는 동의가 있으면 그동안 셸을 code-agent 명령과 읽기용 git 으로 좁힌다 — 준비부터 적용까지 대상을 바꾸지 않는다
+    const open = openConsent(repoRoot);
+    if (open && decideBash(undefined, command, true, input.tool_name === "PowerShell" || input.shell === "powershell")) {
+      return `확인 요청 ${open.id.slice(0, 8)}(${open.title})이 응답·적용을 기다리는 동안에는 셸에서 code-agent 명령과 읽기용 git 만 실행합니다 — 준비부터 적용까지 확인 대상을 바꾸지 않습니다. 진행하지 않을 거면 그 확인 질문에서 '보류'를 고르게 하세요(${Math.round(TIMING.consentOpenWindowMs / 60_000)}분이 지나면 풀립니다).`;
+    }
+    if (mentionsState(command)) return STATE_BASH_DENIED;
+    if (HOST_CONFIG.test(command)) return HOST_CONFIG_BASH_DENIED;
+    // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
+    if (/^code-agent update(?:\s|$)/.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
+    return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {
-    return insideStore(input.tool_input.file_path ?? input.tool_input.path ?? "") ? STORE_DENIED : undefined;
+    return readDenied(input);
   }
   if (!WRITE_TOOLS.includes(input.tool_name)) {
     return undefined;
@@ -349,7 +515,9 @@ function decideRequestWrite(session: RequestSession, path: string): string | und
 }
 
 function repoPath(repoRoot: string, target: string): string {
-  const absolute = isAbsolute(target) ? target : resolve(repoRoot, target);
+  // 로컬 관리 공유·장치 경로는 드라이브 경로로 접어 판정한다(win32) — 같은 파일을 다른 이름으로 가리켜 저장소 밖으로 보이지 않게
+  const folded = foldWindowsAlias(target);
+  const absolute = isAbsolute(folded) ? folded : resolve(repoRoot, folded);
   return relative(repoRoot, canonical(absolute)).replace(/\\/g, "/");
 }
 
@@ -372,20 +540,26 @@ function stateGuard(path: string): string | undefined {
   return undefined;
 }
 
+/** 매니페스트 문서 경로의 저장소 상대 꼴 — `./`·끝 `/` 를 뗀다 */
+function docRoot(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/\/+$/, "");
+}
 /**
  * 문서 작성 세션 — 문서를 쓰다가 코드를 "고쳐 두는" 일을 막는다.
- * 쓸 수 있는 곳은 `doc/` 아래, 등록된 문서 경로, `code-agent.json`(도입할 때 만든다)뿐이다.
+ * 쓸 수 있는 곳은 `doc/` 아래, 세션을 열 때(`docs begin`) 등록돼 있던 문서 경로의 `.md`, `code-agent.json`(도입할 때 만든다)뿐이다.
+ * 범위는 세션 파일에 고정돼 있어 세션 중에 매니페스트의 문서 경로를 바꿔도 넓어지지 않는다(`docs link` 로 연결한 문서만 더해진다).
+ * 범위가 없는 이전 형식 세션은 지금 매니페스트로 계산하되 `doc/` 밖은 `.md` 만 연다.
  */
-function decideDocWrite(manifest: Manifest | undefined, path: string): string | undefined {
+function decideDocWrite(session: { writable?: string[] }, manifest: Manifest | undefined, path: string): string | undefined {
   // doc/ 아래라도 지시서는 접수가 렌더한다
   const order = requirementGuard(path);
   if (order) return order;
-  const allowed = ["doc", ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))];
-  if (path === "code-agent.json" || allowed.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
-    return undefined;
-  }
+  if (path === MANIFEST_FILE || path === "doc" || path.startsWith("doc/")) return undefined;
+  const roots = (session.writable ?? [...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))).map(docRoot);
+  if (path.toLowerCase().endsWith(".md") && roots.some((root) => root && root !== "doc" && (path === root || path.startsWith(`${root}/`)))) return undefined;
   return (
-    `문서 작성 중에는 문서 자리(doc/, 등록된 문서, code-agent.json) 밖은 쓸 수 없습니다: ${path}. ` +
+    `문서 작성 중에는 문서 자리(doc/, 세션을 열 때 등록돼 있던 .md 문서, code-agent.json) 밖은 쓸 수 없습니다: ${path}. ` +
+    "세션 중에 code-agent.json 의 문서 경로를 바꿔도 이 범위는 넓어지지 않습니다 — 기존 문서는 code-agent docs link 로 연결하세요. " +
     "코드를 바꿔야 한다고 보이면 문서에 적고 사람에게 알리세요. 세션은 code-agent docs end 로 끝납니다."
   );
 }
@@ -649,7 +823,7 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
 /** stdin 으로 받아 stdout 으로 낸다. 판정 자체가 실패하면 exit 2 — 막는 쪽으로 닫는다 */
 export function runHook(stdin: string): number {
   try {
-    const reason = decide(JSON.parse(stdin) as HookInput, process.env.CLAUDE_PROJECT_DIR);
+    const reason = decide({ ...(JSON.parse(stdin) as HookInput), host: "claude" }, process.env.CLAUDE_PROJECT_DIR);
     if (reason) {
       process.stdout.write(
         JSON.stringify({

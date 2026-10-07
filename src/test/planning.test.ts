@@ -6,6 +6,7 @@ import { hostname, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
+import { observeQuestionAnswers } from "./consentFixture";
 import { back, next, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff, handoffPlanning } from "../agent/handoff";
@@ -49,7 +50,11 @@ const PLAN = { domainName: "Value", domainLabel: "값", domainRoot: "", domainDi
 ] };
 let root: string, serial = 0;
 const advance = () => JSON.parse(advancePlanning(root));
-function write(path: string, content: string): void { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
+function write(path: string, content: string): void {
+  mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content);
+  // 질문 답은 사람이 질문 도구로 고른 것으로 둔다(답 출처 게이트) — 출처 판정 자체는 answers.test 가 본다
+  if (path.endsWith("questions.md")) observeQuestionAnswers(root);
+}
 function phase(phase: "analysis" | "impact" | "design" | "plan"): void { saveActive(root, { ...loadActive(root)!, phase }, "next"); }
 function dispatch(id: string) { return JSON.parse(dispatchPlanning(root, id)); }
 function finish(dispatch: ReturnType<typeof JSON.parse>, artifacts: Record<string, string> = {}, extra: Partial<PlanningResult> = {}, host: "claude" | "codex" = "claude") {

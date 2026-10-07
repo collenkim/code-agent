@@ -15,16 +15,16 @@
 
 | 필드 | 형식과 용도 |
 |---|---|
-| `action` | 필수 문자열: `setup`, `docs`, `baseline`, `request`, `plan`, `deliver`, `knowledge-prune`, `model`, `abort`, `plugin-add`, `plugin-remove`, `update` 중 하나 |
-| `kind` | 선택 문자열: 문서 종류 또는 `all` |
-| `id` | 선택 문자열: 요구사항의 작업 ID. `prepare`가 반환하는 동의 UUID와 구분한다 |
+| `action` | 필수 문자열: `setup`, `docs`, `baseline`, `request`, `plan`, `deliver`, `knowledge-prune`, `model`, `abort`, `plugin-add`, `plugin-remove`, `update`, `repro-log`, `judgment` 중 하나 |
+| `kind` | 선택 문자열: 문서 종류 또는 `all`. `judgment`에서는 `retry-grant`·`waive-finding`·`cross-stop` |
+| `id` | 선택 문자열: 요구사항의 작업 ID. `prepare`가 반환하는 동의 UUID와 구분한다. `judgment`에서는 지적 번호(F1·X1·C1)(waive-finding), 또는 계획 배정 한도(`taskTotal`·`sameInput`)의 계획 작업 ID(retry-grant). 그 밖의 카운터에는 넣지 않는다 — 회차·트리·critic 지점은 코드가 현재 단계에서 정한다 |
 | `spec` | 선택 문자열: 사람이 작성한 지시서 경로 |
 | `decision` | 선택 문자열: `accept` 또는 `reject`. 실행할 확정·반려 동작이며 실제 동의 응답을 대신하지 않는다 |
-| `comment` | 선택 문자열: 사용자가 제시한 반려 사유 등 |
+| `comment` | 선택 문자열: 사용자가 제시한 반려·판단 사유 (`judgment`는 필수) |
 | `"agent"`, `"model"` | 선택 문자열: 바꿀 역할(`all`은 모든 역할)과 모델. `model:"default"`는 그 역할의 모델·추론 강도를 제품 기본값으로 되돌린다 |
 | `host` | 선택 문자열: `claude` 또는 `codex`. 두 호스트를 함께 설치했으면 반드시 넣는다 |
 | `reasoning` | 선택 문자열: 추론 강도. Claude는 `low`·`medium`·`high`·`xhigh`·`max`(haiku는 강도를 받지 않으니 넣지 않는다), Codex는 여기에 `ultra`까지. 생략하면 그 역할의 지금 강도를 유지한다. `default` 복원에는 넣지 않는다 |
-| `name`, `command`, `slots` | 선택 문자열: 플러그인 이름·실행 명령·슬롯 |
+| `name`, `command`, `slots` | 선택 문자열: 플러그인 이름·실행 명령·슬롯. `judgment`의 `name`은 카운터 이름(retry-grant) 또는 교차 지점 `review`·`planning`(cross-stop) |
 | `sendsCode` | 선택 불리언: 플러그인의 코드 전송 여부 |
 | `secretEnv` | 선택 문자열: **이미 설정된 환경변수 이름만** 참조한다. 키 값은 넣지 않는다 |
 
@@ -46,10 +46,16 @@
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |
 | 사용자가 code-agent 업데이트를 요청함 | `{"action":"update"}` — 소스 갱신의 Git pull·빌드·설치 적용 범위를 확인받는다 |
 | fix 의 로컬 재현 실패 뒤 오류 로그 근거로 진행 | `{"action":"repro-log"}` — `code-agent repro` 가 전환을 안내했을 때만. 확인 화면은 CLI 가 재현 시도 결과와 오류 로그 앞부분으로 만든다 |
+| CLI 결과가 `limit-exceeded`이고 사용자가 같은 계획으로 한 번 더를 골랐음 | `{"action":"judgment","kind":"retry-grant","name":"fix","comment":"<사용자 사유>"}` — `name`은 결과의 `failure.counter.key` |
+| 계획 작업 배정 한도가 소진됐고 사용자가 한 번 더를 골랐음 | `{"action":"judgment","kind":"retry-grant","name":"taskTotal","id":"<계획 작업 ID>","comment":"<사용자 사유>"}` |
+| 리뷰 지적을 사용자가 기각함 | `{"action":"judgment","kind":"waive-finding","id":"F1","comment":"<사용자 사유>"}` — review 단계는 F·X 번호, plan 단계는 교차 계획 검토의 차단 지적 id. 표의 줄은 남고 게이트만 그 회차에서 그 지적을 세지 않는다(다음 회차는 지적 내용이 같을 때만 이어진다) |
+| 교차 검증이 설정 오류·형식 실패로 막혔고 사용자가 중지를 결정함 | `{"action":"judgment","kind":"cross-stop","name":"review","comment":"<사용자 사유>"}` — 샌드박스 권한 상승을 사용자가 거절한 경우도 같다. 계획 검토는 "name":"planning" |
+
+judgment 는 사용자가 업무 질문에서 그 선택을 고른 뒤에만 준비한다. 모델이 스스로 한도를 늘리거나 지적을 기각하지 않는다.
 
 ## 대상 변경 안내
 
-대상 변경 오류에는 `변경 대상:`으로 경로와 Git 상태가 표시된다. 표시된 변경을 검토한 뒤 새 동의를 준비한다. 경로별 해시가 없는 이전 기록은 재준비 안내만 나올 수 있다. Git에서 무시된 외부 세션·캐시는 기본 스냅샷에서 제외되지만 명시된 제어·문서 경로와 추적 파일은 계속 검사한다. 동의 통과를 위해 hook을 지우거나 감사 파일을 임의로 무시하지 않는다. 접수 중에도 `code-agent help`·`code-agent --help`로 명령을 조회할 수 있다.
+대상 변경 오류에는 `변경 대상:`으로 경로와 Git 상태가 표시된다. 표시된 변경을 검토한 뒤 새 동의를 준비한다. 경로별 해시가 없는 이전 기록은 재준비 안내만 나올 수 있다. Git에서 무시된 외부 세션·캐시는 기본 스냅샷에서 제외되지만 명시된 제어·문서 경로와 추적 파일은 계속 검사한다. 동의 통과를 위해 hook을 지우거나 감사 파일을 임의로 무시하지 않는다. 접수 중에도 `code-agent help`·`code-agent --help`로 명령을 조회할 수 있다. 대상 변경·응답 거부·보류·수정 요청·적용 실패는 동의 기록에 `failure`(`class`·`kind`·`guide`)로 남고 그 동의는 다시 쓸 수 없다. 다음 행동은 `guide`를 따른다 — 보류·명시적 선택 없음은 다시 묻지 않는다. 같은 동작이 연속 두 번 대상 변경으로 폐기되면 준비 결과에 `warning`이 붙는다 — 외부 hook·편집기·빌드가 대상을 바꾸는지 사용자에게 확인받는다.
 
 ## 수동 대체 경로
 

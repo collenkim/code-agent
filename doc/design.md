@@ -28,7 +28,7 @@
 
 에이전트가 `code-agent consent prepare <action.json>`으로 확인 대상을 준비하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달한다. PreToolUse·PostToolUse `consent-event`가 같은 세션·호출 ID의 질문과 실제 응답을 관찰한다. 이어서 `code-agent consent status <ID>`로 상태와 남은 질문을 확인하고, 승인된 요청만 `code-agent consent apply <ID>`로 실행한다. 남은 질문은 반환된 내용 그대로 이어서 표시한다.
 
-질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
+준비·적용은 세션에 묶인다 — hook 이 `consent prepare`(정확한 꼴)를 허용하면 그 세션의 준비 티켓을 남기고, CLI 는 그 티켓을 소비해야 준비하며 동의에 준비 세션을 적는다. 응답은 그 세션(Codex 는 그 대화의 사용자 메시지)에서만 받고, 적용은 응답을 관찰한 세션의 hook 이 본 `consent apply|finish`(적용 티켓)나 호스트 표지가 없는 사람의 터미널에서만 한다. Codex 응답은 `codexReply` 마지막 질문 끝의 6자 확인 코드를 붙여야 한다(이전 형식 기록은 코드 없이 받는다). 질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 대상 변경·응답 거부·적용 실패는 동의 기록에 `failure`(`class`·`kind`)로 남고 그 동의는 다시 쓰지 않는다 — 다음 행동(새로 준비·멈춤·상태 확인)은 갈래마다 안내가 다르다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
 
 AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름을 수행한다는 실행 방식에 한정한다. 상대 제품이 사후 검증만 한다는 과거 설명은 현재 근거가 없어 삭제했다. 참고: [AI-DLC Claude Code 구성](https://github.com/awslabs/aidlc-workflows/blob/main/docs/reference/14-claude-features.md), [Claude Code 프로젝트 스킬](https://code.claude.com/docs/en/skills).
 
@@ -367,7 +367,7 @@ B. 불가
 
 **질문 하나에 결정 하나.** "필드와 제약", "조회 범위와 페이징" 처럼 묶으면 답이 한쪽만 다뤄 되묻게 된다.
 
-질문의 실제 답은 메인 에이전트가 파일에 기록한다. 업무 답변과 승인 기록은 구분한다. 승인은 consent가 준비한 질문에 대한 관찰된 선택을 사용하며, 모델이 쓴 답이나 일반 채팅 문장을 승인으로 대신하지 않는다. 별도 터미널로 이동할 필요는 없다.
+질문의 실제 답은 메인 에이전트가 파일에 기록한다. Claude 의 업무 질문은 hook 이 질문·응답을 `.code-agent/work/<ID>/answers.jsonl`에 남기고, 게이트가 `[Answer]`를 관찰된 응답과 대조한다 — 맞지 않고 출처 표시도 없는 답은 답이 없는 것과 같이 막는다. 관찰할 수 없는 답(대화로 직접 받은 답, Codex 에서 받은 모든 답)은 `[Source]: 대화`를 붙여 통과시키되 계획 승인·반영 화면에 "관찰 안 됨"으로 이름과 답을 싣는다(모델이 선언하면 지나가는 길이라 사람의 화면에 드러내는 것으로 닫는다). Codex 사용자 메시지 원문은 기록하지 않는다. 업무 답변과 승인 기록은 구분한다. 승인은 consent가 준비한 질문에 대한 관찰된 선택을 사용하며, 모델이 쓴 답이나 일반 채팅 문장을 승인으로 대신하지 않는다. 별도 터미널로 이동할 필요는 없다.
 
 ### 검증 노드 실행기 (2026-10-02)
 
@@ -476,7 +476,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 
 설계·기능 명세와 계획 판단은 ca-analyst, 분할 조사 뒤 영향도 문서 정리는 ca-writer가 맡는다. 작은 기본 조사에서는 impact 역할의 ca-explorer가 조사와 문서 정리를 함께 수행해 호출을 하나 줄인다. 명시한 조사 분할과 독립 critic은 유지한다. 새 작업의 contextVersion 2는 직접 선행 출력·역할별 필수 문서·관련 정책만 연결하고, 선행 실행 식별자만 바뀐 동일 결과는 재사용한다. 선행 완료·현재 입력·근거·차단 조건은 계속 검사하며 기존 작업의 해시 계약은 유지한다. 구현 tasks는 파일별 단일 소유·선행 Task·AC를 가지며 단계 안에서 별도 커서로 실행한다. 상세 기준과 호환성은 [계획 작업 안내](planning.md)를 따른다.
 
-계획의 `advance`는 준비·캐시·선행 조건·동시 한도를 하나의 상태 잠금에서 판정하고 실제 호스트 호출에 필요한 배정만 반환한다. 단계 전환과 승인은 기존 게이트가 수행한다. 선행 결과와 캐시 응답은 문서 본문을 경로·해시·길이로 바꾸고 판단·질문·차단 지적을 유지한다. 상태 조회와 상세 결과 조회를 분리한다. 형식 오류는 관찰 원본을 보존해 동일 입력에서 1회 교정하며, 새 배정 식별자와 시작·완료 이벤트를 요구한다. 병렬 실행의 출처를 확정할 수 없는 깨진 결과는 교정하지 않는다. Claude와 Codex가 이 공통 처리 코드를 사용한다. 재시도 한도는 원인별로 다르다 — 같은 입력의 실패 3회(취소·고아 제외), 작업별 총 배정 6회(같은 작업을 다시 준비해도 시도 기록이 남는다)이고, 한도는 `retryPolicy.ts`가 판정한다. running 시도는 `orphanState`로 셋으로 나눈다: 연결된 담당이 끝났는데 결과가 없으면 확실한 고아라 advance가 표시하고 다시 배정하며, 시작 미관찰 10분·시작 관찰 60분이면 의심 고아(`stale`)로 메인에게 넘긴다. 고아 판정은 동시 한도보다 먼저다. 앞 단계 계획 작업이 낡으면 배정 대신 `rewind-required`를 내고, 같은 사유의 첫 회만 사용자 지시 없는 자동 되감기(`rewind.auto`)를 허용한다 — 담당·교차 검토 질문은 출처(`[Origin]`)를 질문과 계획 기록에 함께 남겨 출처 작업과 후속 작업만 낡게 하므로(기록 없는 `[Origin]` 줄은 믿지 않는다) 질문 답 때문에 앞 단계가 다시 도는 일은 줄어든다.
+계획의 `advance`는 준비·캐시·선행 조건·동시 한도를 하나의 상태 잠금에서 판정하고 실제 호스트 호출에 필요한 배정만 반환한다. 단계 전환과 승인은 기존 게이트가 수행한다. 선행 결과와 캐시 응답은 문서 본문을 경로·해시·길이로 바꾸고 판단·질문·차단 지적을 유지한다. 상태 조회와 상세 결과 조회를 분리한다. 형식 오류는 관찰 원본을 보존해 동일 입력에서 1회 교정하며, 새 배정 식별자와 시작·완료 이벤트를 요구한다. 병렬 실행의 출처를 확정할 수 없는 깨진 결과는 교정하지 않는다. Claude와 Codex가 이 공통 처리 코드를 사용한다. 재시도 한도는 원인별로 다르다 — 같은 입력의 실패 3회(취소·고아 제외), 작업별 총 배정 6회(같은 작업을 다시 준비해도 시도 기록이 남는다)이고, 한도는 `retryPolicy.ts`가 판정한다. 한도에 닿으면 사람이 동의 `judgment retry-grant`로 한 번 더 허용(같은 입력 +1·총 배정 +3)하거나 작업을 끝낸다 — 사람의 관찰된 선택 없이는 한도가 늘지 않는다. running 시도는 `orphanState`로 셋으로 나눈다: 연결된 담당이 끝났는데 결과가 없으면 확실한 고아라 advance가 표시하고 다시 배정하며, 시작 미관찰 10분·시작 관찰 60분이면 의심 고아(`stale`)로 메인에게 넘긴다. 고아 판정은 동시 한도보다 먼저다. 앞 단계 계획 작업이 낡으면 배정 대신 `rewind-required`를 내고, 같은 사유의 첫 회만 사용자 지시 없는 자동 되감기(`rewind.auto`)를 허용한다 — 담당·교차 검토 질문은 출처(`[Origin]`)를 질문과 계획 기록에 함께 남겨 출처 작업과 후속 작업만 낡게 하므로(기록 없는 `[Origin]` 줄은 믿지 않는다) 질문 답 때문에 앞 단계가 다시 도는 일은 줄어든다.
 
 ## 5. 강제 — 모델이 어겨도 막히는 것
 
@@ -496,14 +496,14 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | **확정은 사람에게 보여 준 바이트에 걸린다** — 프롬프트 앞에서 읽은 내용으로 해시하고, 사람이 읽는 사이 지시서가 바뀌었으면 **판정을 남기지 않는다**. 보여 준 것과 남는 것이 같아야 확정이 그 내용에 대한 것이 된다 | `confirm request` · `reject request` | 확정 | ✅ |
 | 확정 원장은 해시 사슬 — 나중에 고치면 **읽지 않고 세운다**. `approvals/<slug(ID)>/request.jsonl` 은 반영 커밋에 함께 올라간다 | `readRequestLedger` · `deliver` | 확정 · 반영 | ✅ |
 | 접수 도중 준비 문서 세션을 열 수 있다. 그동안 문서 쓰기 제한이 우선하고 접수는 유지된다. 문서 세션 중 새 접수와 작업 시작, 작업 중 문서 세션은 거부한다 | `docs begin` · `docs link` · `request begin` · `start` | 세션 열 때 · 문서 등록 | ✅ |
-| 문서 작성 세션 중에는 문서 자리(`doc/`, 등록된 문서, `code-agent.json`) 밖 쓰기 금지 — `doc/` 아래라도 `doc/work/<ID>/requirement.md` 는 거부한다(접수가 렌더하는 파일이다) | PreToolUse hook | 쓰기 전 | P2 ✅ · 접수 ✅ |
+| 문서 작성 세션 중에는 문서 자리(`doc/`, 세션을 열 때 등록돼 있던 `.md` 문서, `code-agent.json`) 밖 쓰기 금지 — 범위는 `docs begin` 때의 매니페스트로 세션 파일에 고정되어 세션 중에 문서 경로를 코드 자리로 바꿔도 넓어지지 않는다(`docs link` 로 연결한 문서만 더해진다). `doc/` 아래라도 `doc/work/<ID>/requirement.md` 는 거부한다(접수가 렌더하는 파일이다) | PreToolUse hook | 쓰기 전 | P2 ✅ · 접수 ✅ |
 | 계획 승인 전(분석·조사·계획 스테이지) 작업 폴더 밖 쓰기 금지 | PreToolUse hook → `code-agent hook` | 쓰기 전 | P1 ✅ |
 | 계획에 없는 파일, scope 밖(테스트 단계 파일은 제외 — fix 재현 테스트), preserve, 계층 경계 | 같음 (코어 `checkPaths` · `unplannedFiles`) | 쓰기 전 | P1 ✅ |
 | `.code-agent/` 상태·제출된 계획·원장 변조 | 같음 | 쓰기 전 | P1 ✅ |
 | **작업도 세션도 없을 때 언제나 지키는 넷** (`decideOutside`) — `.code-agent/` 쓰기(대소문자 무시) · `doc/work/<아무 ID>/requirement.md` 쓰기 · `~/.code-agent/`(키 자리) 읽기·쓰기 · `.code-agent` 나 `~/.code-agent` 를 **가리키는** Bash(명령 이름 `code-agent` 는 걸리지 않는다). 그 밖의 세션 밖 도구 호출은 판정하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다. 이 틈을 열어 두면 세션이 열리기 **직전**에 모델이 지시서와 확정 원장을 손으로 써 넣고 사람의 확정 없이 `start` 를 지난다 | PreToolUse hook (`decideOutside`) | 쓰기 · 실행 · 읽기 전 | ✅ |
 | 쓰기 경로에 `:` 가 들어 있으면 거부 — **모든 모드에서**. Windows 의 대체 데이터 스트림 표기(`requirement.md::$DATA`)는 같은 파일을 가리키는데, 아직 없는 파일이면 실제 경로로 풀리지 않아 이름 대조를 비껴간다 | PreToolUse hook (`streamGuard`) | 쓰기 전 | ✅ |
 | **진행 중인 작업이나 문서·접수 세션이 있을 때만** — Bash 는 허용 목록만 (스킬이 부르는 `code-agent` 서브명령 — `init`·`abort`·`approve`·`reject`·`confirm`·`model`·`deliver`·`plugin add`·`plugin remove` 는 사람 몫이라 뺀다, 매니페스트에 선언한 명령, 읽기용 git status·diff·log·show·branch — `-o`·`--output` 은 파일을 쓰고 `--no-index` 는 저장소 밖 파일을 읽으므로 거부). 연결·리다이렉트와 줄바꿈(CR·LF)은 거부하고, PowerShell(Windows 의 Codex 셸 포함)은 인자 자리를 먼저 평가하므로 작은따옴표 밖의 `( ) { } @ $` 도 거부한다. **단 문서 세션·접수 세션에서는 선언한 명령을 열지 않는다** (`decideBash` 의 `documenting`) — 문서 세션은 모델이 `code-agent.json` 을 쓸 수 있는 유일한 자리라 허용 목록을 제 손으로 넓히는 길이 되고, 접수는 돌릴 코드가 아직 없는 자리다. 연결·리다이렉트(`;` `&&` `\|` `>`)는 거부. **세션 밖에서는 허용 목록을 걸지 않지만**, `.code-agent`·`~/.code-agent` 를 가리키는 명령만은 거기서도 거부한다(위 `decideOutside`) | 같음 | 실행 전 | P1 ✅ · P4 ✅ · 접수 ✅ |
-| 답 없는 질문이 있으면 진행 금지 | `code-agent next` · `plan submit` · `repro` · `check` · `test` · `review` · `integrate` (`requireAnswers`) · `deliver` (`deliverProblems`) | 스테이지 전환 · 검증 · 반영 | P3 ✅ |
+| 답 없는 질문과 답의 출처를 확인할 수 없는 질문(관찰된 응답과 다르고 `[Source]: 대화` 도 없음)이 있으면 진행 금지 | `code-agent next` · `plan submit` · `repro` · `check` · `test` · `review` · `integrate` (`requireAnswers`) · `deliver` (`deliverProblems`) · Stop hook · 계획 배정 | 스테이지 전환 · 검증 · 반영 | P3 ✅ · 답 출처 ✅ |
 | 단계의 계획 파일이 실제로 생겼는지 확인해야 다음 단계 | `code-agent next` (`missingPlannedFiles`) | 스테이지 전환 | P3 ✅ |
 | 승인·확정은 사람만 | 같은 세션의 consent 질문·응답 관찰과 스냅샷 검사. 직접 `approve`·`reject`·`confirm` 실행은 TTY 검사 | 승인 시 | 구현됨 |
 | 승인은 무엇에 대한 것인가 | 원장 해시 사슬 — 요구사항·지시서·계획·매니페스트·문서 | 매 쓰기 | P1 ✅ |
@@ -531,14 +531,17 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 열린 지적 0 · **계획 밖을 가리키는 지적 0** — 범위는 모델이 적은 것이 아니라 코드가 계획 파일 목록과 대조해 정한다 | `code-agent next` (`reviewProblems`) | 스테이지 전환 | P5 ✅ |
 | 통합 검증은 기준 커밋 위의 **깨끗한 worktree** 에서 전체 `build`·`test` — 작업 트리의 산출물이 결과를 떠받치지 못한다 | `code-agent integrate` | 스테이지 전환 | P5 ✅ |
 | 매니페스트에 `prepare` 가 선언돼 있으면 그 worktree 에서 `build`·`test` **앞에** 한 번 돌고, 실패하면 build·test 를 **돌리지 않는다** — 준비되지 않은 트리 위의 통과는 증거가 아니다. 결과는 `integrate/prepare` 로 증거에 남아 `failedRuns` 가 막는다. `hashManifest` 에 들어가 승인 뒤 갈아 끼울 수 없다 (선언하지 않은 매니페스트의 해시는 그대로 — `canonical` 이 undefined 키를 떨군다). 빈 배열은 **형식 오류**다(선언은 해시를 바꾸고 `manifest check` 에도 실려 "돈다" 로 읽히는데 `integrate` 는 건너뛴다), 그리고 `check`·`test`·`repro` 는 문서가 `prepare` 를 명령 이름으로 적어도 그것을 풀지 않는다 — 준비 명령은 깨끗한 worktree 의 것이다 | `code-agent integrate` · `next`(`stageProblems`) | 스테이지 전환 | P6 ✅ |
-| 반영은 사람만 — 같은 세션 또는 직접 TTY 확인 + 게이트 재검사(⑧ 셋 · ⑨ · 추적표 빈 칸 0 · 모델 3섹션) 뒤에야 커밋, **검증된 변경 집합만** (`git add -A` 아님). 확인·적용 시 `HEAD`와 작업 브랜치가 일치하는지도 검사한다 | `code-agent deliver` · consent | 반영 시 | 구현됨 |
+| 반영은 사람만 — 같은 세션 또는 직접 TTY 확인 + 게이트 재검사(⑧ 셋 · ⑨ · 추적표 빈 칸 0 · 모델 3섹션 · 적용된 계획 승인·요구 확정 동의마다 원장 판정 줄 — 사슬로 드러나지 않는 끝줄 삭제) 뒤에야 커밋, **검증된 변경 집합만** (`git add -A` 아님). 확인·적용 시 `HEAD`와 작업 브랜치가 일치하는지도 검사한다. 커밋에는 동의 영수증(`approvals/<slug(ID)>/consents.jsonl` — 선택 label·시각·세션·실패 원인)이 함께 들어간다 | `code-agent deliver` · consent | 반영 시 | 구현됨 |
+| 계획 승인 화면에 승인이 묶는 경계·검증 선언(단계 경계·build·test·prepare·추가 명령·환경 오류 문구)과 질문 답 출처를 싣는다. 승인 때 경계 스냅샷(`<target>-<seq>.manifest.json`)과 문서별 해시를 남겨, 선언·근거 문서가 바뀐 재승인 화면이 무엇이 바뀌었는지 보인다. `setup` 확인 화면도 추가 명령·환경 오류 문구·단계 경계를 보인다 | `decide` · `setupStatus` · `checkApproval` | 승인 시 | 구현됨 |
 | 반영 경로는 `deliveryPaths()`로 정한다. 이 작업의 `.code-agent/work/<ID>/` · `approvals/<slug(ID)>.jsonl` · `approvals/<slug(ID)>/`와 존재하는 `.code-agent/version` · `.code-agent/models.json`·`.code-agent/codex-models.json` · `.code-agent/approvals/docs.jsonl`을 포함한다. 같은 세션의 최종 확인은 실제 커밋 경로와 선택한 KNOWLEDGE를 보여 준다. `git add`와 `git commit`은 **같은 경로 목록**을 사용하며 `.code-agent/` 전체나 다른 설정·소스를 일괄 추가하지 않는다. 없는 경로는 제외한다 | `code-agent deliver` (`deliveryPaths` · `commitDelivery`) · consent | 반영 시 | 구현됨 |
 | ⑩ 의 추적표·검증·변경 요약은 코드 구역이다 — 손으로 고치면 `deliver` 가 다시 렌더해 덮고 확인 화면에 알린다. 표시 짝이 둘 이상이면 전부 걷어 내 하나로 만들고, 표시 **밖**에 같은 제목의 절을 따로 써 두면 커밋을 세운다 (재렌더가 덮지 못하고 아래에 덧붙어, 화면에는 진짜가 보이는데 커밋에는 지어낸 표가 함께 실린다) | `code-agent deliver` (`blocks.ts` · `deliverProblems`) | 반영 시 | P5 ✅ |
 | 답 없는 질문·계획과 실제 변경(기준 커밋 대비)을 턴 끝에 대조 — **한 번만** 막는다 (`stop_hook_active` 면 통과, 판정 실패도 통과). 절대적인 차단은 `check`·`test`·`next` 가 한다 | Stop hook (`code-agent stop`) | 턴 끝 | P5 ✅ |
 
-경로는 실제 경로로 풀어 비교한다 (`canonical` — Windows 8.3 이름·junction·심볼릭 링크).
+경로는 실제 경로로 풀어 비교한다 (`canonical` — Windows 8.3 이름·junction·심볼릭 링크). Windows 의 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\UNC\…`·`\\.\C:`)는 드라이브 경로로 접어 판정하고, 이름 끝의 점·공백(다른 이름의 같은 파일)은 모든 모드에서 거부한다.
+Grep·Glob 은 경로뿐 아니라 `glob`·`pattern` 의 정적 접두와 검색 루트도 보고, 키 저장소의 상위 폴더를 통째로 검색하는 것도 막는다. 경로 인자가 있는 MCP 도구(Claude matcher `mcp__.*`, Codex `mcp__*`)는 같은 규칙으로 판정한다 — 로컬 파일 서버(`fs`·`filesystem` 등)는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안을 가리키는 절대 경로·`file://`만(원격 서비스의 경로 인자를 잘못 막지 않으려고 쓰기 여부를 도구 이름 동사로 추정하는 한계가 있다). Codex 의 판정하지 않는 도구는 이름만 기록해 doctor 가 알린다.
+세션 밖에서도 hook 설정 파일을 셸로 다루는 명령, 소스 `code-agent update`(사람 확인이 필요하다), 응답·적용을 기다리는 동의가 있을 때 code-agent 명령·읽기용 git 밖의 셸(30분)은 거부하고, 동의 적용이 도는 동안 쓰기 도구를 거부한다. hook 프로세스 실패: Claude 설정에는 셸 `|| exit 2` 래핑을 하지 않는다(Windows PowerShell 5.1 에서 `||` 가 구문 오류라 hook 이 매번 비차단으로 실패한다) — 모듈 로드 실패는 진입점의 JS catch 가 `hookFailureExit` 표로 닫고, 설정 누락은 SessionStart·`status`·시작 게이트(실행 중인 호스트의 hook 이 빠지면 `start`·`request begin`·`docs begin` 거부)·doctor 가 드러낸다. Codex 는 PreToolUse 의 비Windows 명령만 `|| exit 2` 로 감싼다. PATH 누락·timeout 은 여전히 비차단이다.
 hook 은 사고 방지 장치이지 보안 경계가 아니다 — 개발자는 로컬 설정으로 끌 수 있고, Bash 는 그 자리를 **가리키는 것**만 막으므로
-글자를 쪼개 돌려 쓰는 셸 명령까지는 막지 못한다. 세션 밖에서 언제나 지키는 넷도 같은 성질이다.
+글자를 쪼개 돌려 쓰는 셸 명령까지는 막지 못한다. 세션 밖에서 언제나 지키는 넷도 같은 성질이다. 같은 Codex 세션을 다시 여는 `codex exec resume` 의 프롬프트는 그 세션의 사용자 메시지로 보이고, 프로세스 안에서 동의 기록을 직접 조작하는 것도 막지 못한다(열린 동의 창이 그동안 `node -e` 실행을 거부할 뿐이다).
 
 ## 6. 플러그인과 도구 (P7)
 
@@ -703,7 +706,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) | P1 ✅ · 접수 ✅ |
 | `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델·추론 강도 (바꾼 것만) | O | ✅ |
-| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`, `.code-agent/log/` | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
+| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
+| `.code-agent/work/<ID>/answers.jsonl`(업무 답 관찰) · `.code-agent/approvals/<slug(ID)>/consents.jsonl`(동의 영수증) · `<target>-<seq>.manifest.json`(승인 때 경계 스냅샷) | O | 구현됨 |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
 
@@ -778,8 +782,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
 | `code-agent request begin [ID] --kind <feature \| fix \| refactor> [--base <기준 브랜치>] [--target <대상>]` | 접수 세션·초안 형식·대상 후보를 제공한다. ID 생략 시 WORK 번호를 발급한다. 매니페스트가 없어도 원문 보관부터 시작하며, `--base`·`--target`은 세션에 남아 `start`가 이어받는다 | ✅ |
-| `code-agent consent prepare <action.json>` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다 | 구현됨 |
-| `code-agent consent-event` | AskUserQuestion의 PreToolUse·PostToolUse hook에서 질문·세션·호출 ID·실제 응답을 관찰한다. 모델이 직접 관찰 기록을 작성하지 않는다 | 구현됨 |
+| `code-agent consent prepare <action.json>` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다. `prepare`·`apply`·`finish`는 hook 이 그 명령을 본 세션의 티켓(적용은 호스트 표지 없는 TTY 도)이 있어야 돈다 | 구현됨 |
+| `code-agent consent-event` | AskUserQuestion의 PreToolUse·PostToolUse hook에서 질문·세션·호출 ID·실제 응답을 관찰한다. 동의 질문은 동의 기록에, 업무 질문은 `answers.jsonl`에 남긴다(업무 질문 관찰 실패는 질문을 막지 않는다). 모델이 직접 관찰 기록을 작성하지 않는다 | 구현됨 |
 | `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 | ✅ |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 | ✅ |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, **요구사항이 지금 내용 그대로 확정됐는지** 확인, 작업 브랜치, 작업 폴더. 접수 때 말한 `--base`·`--target` 을 이어받는다(여기서 직접 준 값이 이긴다). 시작하면 접수 세션을 지운다 | P1 ✅ · 확정 게이트 ✅ |
@@ -802,9 +806,9 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent hook` | PreToolUse 판정 (stdin JSON → deny 사유) | P1 ✅ |
 | `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 | P5 ✅ |
 
-동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(consents 제외)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다.
+동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(code-agent 자체 기록인 `consents/`·`log/`·`lease.json*` 제외 — 응답을 기다리는 동안 hook·CLI 가 쓰는 기록이 열린 동의를 깨지 않게 한다. 업무 답 기록 `work/<ID>/answers.jsonl`은 포함한다)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다. 제어 경로 **아래**의 링크는 따라가지 않고 대상 경로(`link:<대상>`)로 해시한다(Git 이 접합점 아래 파일을 나열해도 링크 하나로 본다). 제어 루트·제어 파일·문서 경로 자체나 그 조상이 링크이면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`consents/snapshot-cache.json`)로 재사용한다 — ctime 은 사용자 도구로 되돌릴 수 없어 mtime 을 되돌린 같은 크기 변경도 잡고, 2초 안에 바뀐 파일과 ctime 을 주지 않는 파일 시스템은 캐시하지 않는다. 값은 캐시 없이 구한 것과 같다.
 
-준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시, model 동의의 모델 정책(`modelPolicyFingerprint` — 역할 등급·등급별 기본값·강도 미지원 규칙의 지문, 이유 문장 제외) 해시를 보관한다. 적용은 준비 때의 확인 문구를 다시 만들지 않으므로, 준비 뒤 code-agent의 모델 정책이 바뀌면 model 동의를 `변경 대상: 모델 정책`으로 거부한다. 이 항목이 없는 갱신 전의 model 동의도 같은 사유로 거부되며 다시 준비한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다.
+준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시, model 동의의 모델 정책(`modelPolicyFingerprint` — 역할 등급·등급별 기본값·강도 미지원 규칙의 지문, 이유 문장 제외) 해시를 보관한다. 적용은 준비 때의 확인 문구를 다시 만들지 않으므로, 준비 뒤 code-agent의 모델 정책이 바뀌면 model 동의를 `변경 대상: 모델 정책`으로 거부한다. 이 항목이 없는 갱신 전의 model 동의도 같은 사유로 거부되며 다시 준비한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다. 대상이 바뀐 동의는 폐기한다(`failure.kind: target`) — 되돌려도 같은 동의로 다시 적용하지 않는다. 적용 때 확인 화면 불일치는 첫 확인 전이면 대상 변경(업그레이드로 화면이 바뀐 경우), 앞선 확인을 통과한 뒤면 적용 실패다. 적용 직전 재대조는 한 번이다(플러그인 동작만 설명 대조 뒤 한 번 더).
 
 ## 10. core 재사용
 

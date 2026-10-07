@@ -81,6 +81,13 @@ export interface ApprovalRecord {
    * 없으면 검사하지 않는다. 승인은 "이 문서들을 근거로 한 이 계획"에 대한 것이다.
    */
   docsHash?: string;
+  /**
+   * 승인 시점의 경계·검증 선언 스냅샷 경로(저장소 기준, `manifestBoundary` JSON). **예전 원장에는 없다** —
+   * 없으면 stale-manifest 재승인 화면이 차이를 보이지 못하고 현재 선언 전체를 보인다.
+   */
+  manifestSnapshot?: string;
+  /** 승인 시점의 근거 문서별 해시 — stale-docs 재승인 화면이 바뀐 문서를 보인다. 예전 원장에는 없다 */
+  docsParts?: Record<string, string>;
   decision: Decision;
   approver: string;
   at: string;
@@ -106,10 +113,10 @@ export interface ApprovalRecord {
    */
   presence?: Presence;
   /**
-   * 직전 줄의 해시. 원장을 사슬로 묶어 **나중에 고친 것이 드러나게** 한다.
+   * 직전 줄의 해시. 중간 줄을 고치거나 끼워 넣거나 지우면 사슬이 끊겨 읽기를 거부한다.
    *
-   * 이것이 막는 것은 위조가 아니라 *은폐* 다. 손으로 한 줄 끼워 넣거나 지운 과거를
-   * 조용히 통과시킬 수 없게 된다 — 사슬이 끊기면 읽는 쪽이 거부한다.
+   * 끝줄 삭제는 사슬만으로는 드러나지 않는다 — 반영 때 이 작업의 동의 기록과 원장을 대조하고
+   * (consentReceipts.consentLedgerProblems), 동의 영수증을 같은 커밋에 남긴다.
    */
   prev?: string;
 }
@@ -184,30 +191,73 @@ export function hashPlan(plan: BuildPlan): string {
  * 여기 담는 것은 **사람이 승인할 때 본 경계**뿐이다.
  */
 export function hashManifest(manifest: Manifest): string {
-  return sha(
-    canonical({
-      stages: manifest.stages.map((stage) => ({
-        key: stage.key,
-        kind: stage.kind,
-        kinds: stage.kinds,
-        scope: stage.scope,
-        base: stage.base,
-        outputDirs: stage.outputDirs,
-        expect: stage.expect,
-        confirm: stage.confirm,
-      })),
-      build: manifest.build,
-      test: manifest.test,
-      // prepare 는 통합 검증이 실제로 무엇을 돌리는지를 바꾼다 — build·test 와 같은 부류다.
-      // 빼 두면 승인 뒤에 준비 명령을 갈아 끼워 검증 내용을 바꿀 수 있다. 선언하지 않은
-      // 매니페스트에서는 canonical 이 undefined 키를 떨구므로 기존 해시가 한 글자도 달라지지 않는다.
-      prepare: manifest.prepare,
-      commands: manifest.commands,
-      // 환경 오류 패턴은 무엇을 코드 결함으로 볼지와 재현 인정을 바꾼다 — 승인 뒤 몰래 넓히지 못하게 묶는다.
-      // 선언하지 않았으면 undefined 라 canonical 이 떨구고 기존 해시는 그대로다.
-      environmentErrors: manifest.environmentErrors?.length ? manifest.environmentErrors : undefined,
-    }),
-  );
+  return sha(canonical(manifestBoundary(manifest)));
+}
+
+/** 승인이 묶는 경계·검증 선언 — hashManifest 의 입력이자 승인 화면의 "경계·검증 선언" 절과 재승인 diff 의 원천 */
+export interface ManifestBoundary {
+  stages: { key: string; kind: string; kinds: string[]; scope: string; base?: string; outputDirs: string[]; expect?: string; confirm: boolean }[];
+  build?: string[]; test?: string[]; prepare?: string[]; commands: Record<string, string[]>; environmentErrors?: string[];
+}
+export function manifestBoundary(manifest: Manifest): ManifestBoundary {
+  return {
+    stages: manifest.stages.map((stage) => ({
+      key: stage.key,
+      kind: stage.kind,
+      kinds: stage.kinds,
+      scope: stage.scope,
+      base: stage.base,
+      outputDirs: stage.outputDirs,
+      expect: stage.expect,
+      confirm: stage.confirm,
+    })),
+    build: manifest.build,
+    test: manifest.test,
+    // prepare 는 통합 검증이 실제로 무엇을 돌리는지를 바꾼다 — build·test 와 같은 부류다.
+    // 빼 두면 승인 뒤에 준비 명령을 갈아 끼워 검증 내용을 바꿀 수 있다. 선언하지 않은
+    // 매니페스트에서는 canonical 이 undefined 키를 떨구므로 기존 해시가 한 글자도 달라지지 않는다.
+    prepare: manifest.prepare,
+    commands: manifest.commands,
+    // 환경 오류 패턴은 무엇을 코드 결함으로 볼지와 재현 인정을 바꾼다 — 승인 뒤 몰래 넓히지 못하게 묶는다.
+    // 선언하지 않았으면 undefined 라 canonical 이 떨구고 기존 해시는 그대로다.
+    environmentErrors: manifest.environmentErrors?.length ? manifest.environmentErrors : undefined,
+  } as ManifestBoundary;
+}
+
+/** 경계 선언의 항목별 한 줄 — 키는 diff 가 비교하는 항목 이름이다 */
+function boundaryLines(boundary: ManifestBoundary): [key: string, line: string][] {
+  const argv = (value?: string[]) => (value && value.length ? value.join(" ") : "선언 없음");
+  const lines: [string, string][] = boundary.stages.map((stage) => [`단계 ${stage.key}`,
+    `단계 ${stage.key}: kind ${stage.kind} · 작업 종류 ${stage.kinds?.length ? stage.kinds.join("·") : "전체"} · scope ${stage.scope}` +
+    `${stage.base !== undefined ? ` · base ${stage.base || "(domainBase)"}` : stage.scope === "domain" ? " · base (domainBase)" : ""}` +
+    ` · 출력 위치 ${stage.outputDirs?.length ? stage.outputDirs.join(", ") : "없음"}${stage.expect ? ` · expect ${stage.expect}` : ""}${stage.confirm === false ? " · confirm false" : ""}`]);
+  lines.push(["build", `build: ${argv(boundary.build)}`], ["test", `test: ${argv(boundary.test)}`], ["prepare", `prepare: ${argv(boundary.prepare)}`]);
+  const commands = Object.entries(boundary.commands ?? {}).sort(([a], [b]) => (a < b ? -1 : 1));
+  if (commands.length === 0) lines.push(["commands", "commands: 없음"]);
+  for (const [name, value] of commands) lines.push([`commands.${name}`, `commands.${name}: ${argv(value)}`]);
+  if (!boundary.environmentErrors?.length) lines.push(["환경 오류 문구", "환경 오류 문구: 선언 없음"]);
+  for (const pattern of boundary.environmentErrors ?? []) lines.push([`환경 오류 문구 ${pattern}`, `환경 오류 문구: ${JSON.stringify(pattern)}`]);
+  return lines;
+}
+/** 승인 화면의 "경계·검증 선언" 절 */
+export function formatBoundary(boundary: ManifestBoundary): string {
+  return [
+    "경계·검증 선언 (승인이 묶는 code-agent.json 항목 — 바뀌면 이 승인은 무효가 됩니다):",
+    ...boundaryLines(boundary).map(([, line]) => `- ${line}`),
+  ].join("\n");
+}
+export interface BoundaryDiffEntry { change: "+" | "-" | "~"; text: string }
+/** 항목(단계·build·test·prepare·commands.<이름>·환경 오류 문구 각각)마다 비교한다 */
+export function diffBoundary(before: ManifestBoundary, after: ManifestBoundary): BoundaryDiffEntry[] {
+  const olds = new Map(boundaryLines(before)), news = new Map(boundaryLines(after));
+  const entries: BoundaryDiffEntry[] = [];
+  for (const [key, line] of olds) {
+    const now = news.get(key);
+    if (now === undefined) entries.push({ change: "-", text: line });
+    else if (now !== line) entries.push({ change: "~", text: `${line} → ${now}` });
+  }
+  for (const [key, line] of news) if (!olds.has(key)) entries.push({ change: "+", text: line });
+  return entries;
 }
 
 // ---- 원장 ----
@@ -302,10 +352,10 @@ export type ApprovalState =
   | { status: "stale-plan"; record: ApprovalRecord; diff: PlanDiffEntry[] }
   /** 지시서가 바뀌었다 — 그 지시서의 모든 승인이 무효. 지시서 검사부터 다시 */
   | { status: "stale-order"; record: ApprovalRecord }
-  /** 경계·검증 선언이 바뀌었다 — 승인한 계획을 승인한 적 없는 규칙으로 만들게 된다 */
-  | { status: "stale-manifest"; record: ApprovalRecord }
-  /** 근거 문서가 바뀌었다 — 승인한 계획의 전제가 달라졌다 */
-  | { status: "stale-docs"; record: ApprovalRecord }
+  /** 경계·검증 선언이 바뀌었다 — 승인한 계획을 승인한 적 없는 규칙으로 만들게 된다. diff 는 경계 스냅샷이 없는 예전 기록이면 [] */
+  | { status: "stale-manifest"; record: ApprovalRecord; diff: BoundaryDiffEntry[] }
+  /** 근거 문서가 바뀌었다 — 승인한 계획의 전제가 달라졌다. changed 는 문서별 해시가 없는 예전 기록이면 [] */
+  | { status: "stale-docs"; record: ApprovalRecord; changed: string[] }
   /**
    * 승인 줄은 있으나 **사람 존재가 관측되지 않았다.**
    *
@@ -337,6 +387,14 @@ export interface ApprovalPolicy {
   requireVerifiedApproval?: boolean;
   /** 지금 확정된 필수 문서의 해시. 주면 승인 시점의 것과 대조한다 */
   docsHash?: string;
+  /** 지금 근거 문서별 해시 — stale-docs 일 때 승인 시점과 비교해 바뀐 문서를 낸다 */
+  docsParts?: Record<string, string>;
+}
+
+function loadBoundary(repoRoot: string, record: ApprovalRecord): ManifestBoundary | undefined {
+  if (!record.manifestSnapshot) return undefined;
+  try { return JSON.parse(readFileSync(join(repoRoot, record.manifestSnapshot), "utf-8")) as ManifestBoundary; }
+  catch { return undefined; }
 }
 
 export function checkApproval(
@@ -367,10 +425,15 @@ export function checkApproval(
     record.manifestHash !== undefined &&
     record.manifestHash !== hashManifest(policy.manifest)
   ) {
-    return { status: "stale-manifest", record };
+    const before = loadBoundary(repoRoot, record);
+    return { status: "stale-manifest", record, diff: before ? diffBoundary(before, manifestBoundary(policy.manifest)) : [] };
   }
   if (policy.docsHash !== undefined && record.docsHash !== undefined && record.docsHash !== policy.docsHash) {
-    return { status: "stale-docs", record };
+    const before = record.docsParts, now = policy.docsParts;
+    const changed = before && now
+      ? [...new Set([...Object.keys(before), ...Object.keys(now)])].filter((key) => before[key] !== now[key]).sort()
+      : [];
+    return { status: "stale-docs", record, changed };
   }
   if (record.planHash !== hashPlan(plan)) {
     const before = loadSnapshot(repoRoot, record);
@@ -402,6 +465,8 @@ export interface DecisionInput {
   presence: Presence;
   /** 이 판정이 근거로 삼은 필수 문서의 해시 */
   docsHash?: string;
+  /** 근거 문서별 해시 — 다음 재승인 화면이 바뀐 문서를 보인다 */
+  docsParts?: Record<string, string>;
 }
 
 /**
@@ -440,6 +505,9 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
   const snapshotPath = join(repoRoot, snapshot);
   mkdirSync(dirname(snapshotPath), { recursive: true });
   writeFileSync(snapshotPath, JSON.stringify(plan, null, 2), "utf-8");
+  // 경계·검증 선언 스냅샷 — 선언이 바뀌어 재승인할 때 무엇이 바뀌었는지 보인다
+  const manifestSnapshot = `${APPROVALS_DIR}/${slug(order.id)}/${slug(target)}-${seq}.manifest.json`;
+  writeFileSync(join(repoRoot, manifestSnapshot), JSON.stringify(manifestBoundary(input.manifest), null, 2), "utf-8");
 
   const record: ApprovalRecord = {
     id: order.id,
@@ -449,6 +517,8 @@ export function recordDecision(repoRoot: string, input: DecisionInput): Approval
     planHash: hashPlan(plan),
     manifestHash: hashManifest(input.manifest),
     ...(input.docsHash ? { docsHash: input.docsHash } : {}),
+    manifestSnapshot,
+    ...(input.docsParts ? { docsParts: input.docsParts } : {}),
     decision: input.decision,
     approver: input.approver,
     at: new Date().toISOString(),

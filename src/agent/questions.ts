@@ -23,6 +23,10 @@ export interface Question {
   requirements?: string[];
   /** 이 질문을 낸 계획 작업 — 담당·교차 검토 질문에 코드가 `[Origin]:` 줄로 기록한다 */
   origin?: string;
+  /** `[Answer]:` 앞 본문의 선택지 줄(`A. 문장`) — 답이 선택지 글자일 때 관찰된 응답과 대조한다 */
+  options?: Record<string, string>;
+  /** 답의 출처 — `[Answer]:` 뒤의 마지막 `[Source]:` 줄(관찰 안 된 대화 답은 `대화`). 답이 비면 두지 않는다 */
+  source?: string;
 }
 
 /**
@@ -65,10 +69,20 @@ export function parseQuestions(text: string): Question[] {
     const raw = head.map((line) => line.trim()).filter((line) => line.startsWith("[Origin]:")).at(-1)?.slice("[Origin]:".length).trim();
     const origin = raw && ORIGIN_ID.test(raw) ? raw : undefined;
     if (!usableAnswer(answer) || (state && state !== "answered")) answer = "";
+    // 선택지는 표시자 앞, 출처는 표시자 뒤에서만 읽는다 — 질문 본문에 둔 `[Source]: 대화` 가 출처를 바꾸지 못한다(origin 과 대칭)
+    const options: Record<string, string> = {};
+    for (const line of head) {
+      const option = /^\s*([A-Z])[.)]\s+(.+?)\s*$/.exec(line);
+      if (option && !(option[1] in options)) options[option[1]] = option[2];
+    }
+    const source = marker < 0 || !answer ? undefined
+      : body.slice(marker + 1).map((line) => line.trim()).filter((line) => line.startsWith("[Source]:")).at(-1)?.slice("[Source]:".length).trim();
     questions.push({ id, title: heading.trim(), answer,
       ...(state ? { status: state === "answered" && answer ? "answered" as const : state === "deferred" ? "deferred" as const : "pending" as const } : {}),
       ...(requirements ? { requirements: [...new Set(requirements)] } : {}),
       ...(origin ? { origin } : {}),
+      ...(Object.keys(options).length ? { options } : {}),
+      ...(source ? { source } : {}),
     });
   }
   // 서로 다른 질문이 같은 ID를 쓰면 어느 답인지 확정할 수 없다.

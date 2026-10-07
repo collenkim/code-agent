@@ -24,6 +24,7 @@ import { runCommand } from "../core/build";
 import { errorLogOf } from "../core/workOrder";
 import type { CommandResult } from "../core/build";
 import {
+  boundEvidence,
   checkCommands,
   integrateCommands,
   loadEvidence,
@@ -805,9 +806,7 @@ export async function check(work: Work, options: { retry?: boolean } = {}): Prom
   const baseCommit = requireEvidenceBase(work);
   requireCleanPlan(work);
 
-  const previous = loadEvidence(work.repoRoot, work.active.id, work.active.target);
-  const bound = previous && previous.baseCommit === baseCommit &&
-    previous.manifestHash === hashManifest(work.manifest) && previous.planHash === hashPlan(work.plan!) ? previous : undefined;
+  const bound = boundEvidence(work);
   // 실행 중인 test·통합 검증 위에 돌지 않는다 — 서로의 증거를 덮는다
   if (bound) requireNotRunning(work, verifyRetryOf(bound));
 

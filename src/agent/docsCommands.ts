@@ -1,18 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { dirname, isAbsolute, join } from "path";
 import { userInfo } from "os";
 
 import { MANIFEST_FILE } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
 import { Stop } from "./commands";
-import { checkDoc, checkKnowledge, checkProjectDocs, docsReady, formatDocChecks, formatKnowledgeChecks, recordDocConfirmation } from "./docs";
-import { DOCS_SESSION_FILE, loadActive } from "./layout";
+import { checkDoc, checkKnowledge, checkProjectDocs, docPaths, docsReady, formatDocChecks, formatKnowledgeChecks, recordDocConfirmation } from "./docs";
+import { DOCS_SESSION_FILE, loadActive, loadDocsSession } from "./layout";
 import { loadRequestSession, requestStatusLines } from "./request";
 import { interview, isDocKind, isPolicyKind, isWorkDocKind, KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS, skeleton, WORK_SCHEMAS } from "./schemas";
 import type { DocKind, KnowledgeKind, PolicyKind } from "./schemas";
 import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny } from "./work";
 import { aidlcBlock } from "./aidlc";
+import { requireStartHooks } from "./init";
 
 const KINDS = `${POLICY_KINDS.join(" · ")} · ${KNOWLEDGE_KINDS.join(" · ")}`;
 
@@ -63,7 +64,7 @@ export function docsStatus(repoRoot: string): string {
     "공통 KNOWLEDGE (파일만 있으면 됩니다 — 반영마다 자랍니다):",
     formatKnowledgeChecks(knowledge),
     "",
-    `문서 작성 세션: ${session ? "진행 중 (doc/ · 등록된 문서 · code-agent.json 만 쓸 수 있음)" : "없음"}`,
+    `문서 작성 세션: ${session ? "진행 중 (doc/ · 세션을 열 때 등록된 .md 문서 · code-agent.json 만 쓸 수 있음)" : "없음"}`,
     `다음: ${next}`,
   ].join("\n");
 }
@@ -109,6 +110,12 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
   if (missing.length > 0) {
     throw new Stop(`없는 경로입니다: ${missing.join(", ")}`);
   }
+  // code-agent 는 마크다운 제목으로 문서를 읽는다 — 파일은 .md 만, KNOWLEDGE 는 파일 하나만(디렉토리는 컨벤션 등에만)
+  for (const path of paths) {
+    const directory = statSync(join(repoRoot, path)).isDirectory();
+    if (directory && (KNOWLEDGE_KINDS as readonly string[]).includes(kind)) throw new Stop(`공통 KNOWLEDGE 는 .md 파일 하나를 연결합니다(디렉토리 불가): ${path}`);
+    if (!directory && !path.toLowerCase().endsWith(".md")) throw new Stop(`문서 경로는 .md 파일이어야 합니다: ${path} — code-agent 는 마크다운 제목으로 문서를 읽습니다.`);
+  }
 
   const raw = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
   const docs = (raw.docs as Record<string, unknown>) ?? {};
@@ -120,6 +127,11 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
     raw.docs = { ...docs, knowledge: { ...((docs.knowledge as Record<string, unknown>) ?? {}), [KNOWLEDGE_KEY[kind]]: paths[0] } };
   }
   writeAtomic(manifestPath, `${JSON.stringify(raw, null, 2)}\n`);
+  // 열린 문서 세션의 쓰기 범위는 CLI 로 연결한 문서만큼만 넓어진다(세션을 열 때 고정한 범위)
+  const session = loadDocsSession(repoRoot);
+  if (session?.version === 2) {
+    writeAtomic(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ ...session, writable: uniqueRoots([...(session.writable ?? []), ...paths]) })}\n`);
+  }
   const manifest = loadManifestIfAny(repoRoot);
   const state = isPolicyKind(kind)
     ? formatDocChecks([checkDoc(repoRoot, manifest, kind)], true)
@@ -137,9 +149,17 @@ function requireNoIntake(repoRoot: string, what: string): void {
   }
 }
 
+/** 저장소 상대 문서 경로(`./`·끝 `/` 제거, 저장소 밖·절대 경로 제외)의 중복 없는 목록 */
+function uniqueRoots(paths: string[]): string[] {
+  const roots = paths.map((path) => path.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/\/+$/, ""))
+    .filter((path) => path && path !== "." && !path.startsWith("..") && !isAbsolute(path) && !/^[A-Za-z]:/.test(path));
+  return [...new Set(roots)];
+}
+
 export function docsBegin(repoRoot: string): string {
   const aidlc = aidlcBlock(repoRoot);
   if (aidlc) throw new Stop(aidlc);
+  const hooks = requireStartHooks(repoRoot);
   const active = loadActive(repoRoot);
   if (active) {
     throw new Stop(
@@ -147,14 +167,18 @@ export function docsBegin(repoRoot: string): string {
     );
   }
   mkdirSync(dirname(join(repoRoot, DOCS_SESSION_FILE)), { recursive: true });
-  writeFileSync(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ startedAt: new Date().toISOString() })}\n`);
+  // 쓰기 범위는 지금 매니페스트로 계산해 고정한다 — 세션 중에 문서 경로를 코드 자리로 바꿔 범위를 넓히는 길을 닫는다
+  const manifest = loadManifestIfAny(repoRoot);
+  const writable = uniqueRoots(["doc", ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))]);
+  writeFileSync(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ startedAt: new Date().toISOString(), version: 2, writable })}\n`);
   const created = createKnowledgeSkeletons(repoRoot);
   return [
-    "문서 작성 세션을 열었습니다. 끝날 때까지 doc/ · 등록된 문서 · code-agent.json 밖은 쓸 수 없습니다.",
+    "문서 작성 세션을 열었습니다. 끝날 때까지 doc/ · 세션을 열 때 등록된 .md 문서 · code-agent.json 밖은 쓸 수 없습니다.",
     ...(loadRequestSession(repoRoot) ? ["접수한 ID·원문 초안은 유지됩니다. 준비 뒤 같은 요구사항으로 이어갑니다."] : []),
     ...(created.length > 0 ? [`공통 KNOWLEDGE 빈 뼈대를 만들었습니다: ${created.join(", ")}`] : []),
     "",
     docsStatus(repoRoot),
+    ...(hooks ? ["", hooks] : []),
   ].join("\n");
 }
 

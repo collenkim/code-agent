@@ -50,7 +50,7 @@ test("setup: ignored external hook writes between prepare, question, response an
   assert.equal(gitFixture(root, "rev-list", "--count", "HEAD"), "2");
 });
 
-for (const file of ["code-agent.json", "doc/architecture.md", ".claude/settings.json", "CLAUDE.md", "AGENTS.md", ".code-agent/log/stages.jsonl", "src/new.ts", "existing.txt"]) {
+for (const file of ["code-agent.json", "doc/architecture.md", ".claude/settings.json", "CLAUDE.md", "AGENTS.md", "src/new.ts", "existing.txt"]) {
   test(`snapshot: changed ${file} remains protected and is named in the error`, () => {
     if (!["code-agent.json", "doc/architecture.md", "existing.txt"].includes(file)) writeFixture(root, file, "original\n");
     const fixture = prepareConsentFixture(root, { action: "docs" });
@@ -82,7 +82,9 @@ test("setup: ignored preparation document is included in consent before the ques
   const fixture = prepareConsentFixture(root, { action: "setup" });
   appendFileSync(join(root, "doc/architecture.md"), "changed\n");
   assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /doc\/architecture\.md/);
-  assert.equal(loadConsent(root, fixture.id).status, "pending");
+  // 대상이 바뀐 동의는 폐기된다 — 되돌려도 같은 동의로 다시 묻지 않는다(C5 재시도 규약)
+  assert.equal(loadConsent(root, fixture.id).status, "failed");
+  assert.equal(loadConsent(root, fixture.id).failure?.kind, "target");
 });
 
 test("setup: an existing repository's README is not a preparation file and does not invalidate consent", () => {

@@ -291,7 +291,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `같은 입력 실패 ${LIMITS.sameInput}(+${GRANT_STEP.sameInput}/사람)`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "blocked", onExhausted: "consent:judgment", exceededText: "질문·사람 판단",
-    guide: "같은 입력으로 {limit}번 실패했습니다(취소·고아는 세지 않습니다). 원인·질문을 확인하고 입력이나 작업 정의를 보완하세요. 보완할 수 없으면 사용자에게 보고하고 사람 판단을 받습니다.",
+    guide: "같은 입력으로 {limit}번 실패했습니다(취소·고아는 세지 않습니다). 원인·질문을 확인하고 입력이나 작업 정의를 보완하세요. 보완할 수 없으면 사용자에게 보고하고 사람 판단을 받습니다 — 같은 입력으로 한 번 더 허용하면 ca-answer 동의 judgment retry-grant(name sameInput, id 계획 작업 ID)로 기록합니다.",
     enforcedAt: ["planning.ts dispatchState·repairState·advancePlanning"],
   },
   "reassign-total": {
@@ -302,9 +302,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `작업 총 배정 ${LIMITS.taskTotal}(+${GRANT_STEP.taskTotal}/사람)`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "blocked", onExhausted: "consent:judgment", exceededText: "사람 판단(judgment)",
-    // 실행할 수 있는 선택지만 적는다 — 사람 허용(judgment retry-grant)을 부르는 동의가 연결되기 전에도 거짓이 되지 않는 문구.
-    // 같은 작업을 다시 준비해도 시도 기록이 남으므로 "재계획"으로 한도가 풀린다고 안내하지 않는다
-    guide: "작업 {id}의 배정이 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 같은 작업을 다시 준비(planning prepare)해도 배정 기록은 그대로라 한도가 풀리지 않습니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 지시를 받으세요.",
+    // 같은 작업을 다시 준비해도 시도 기록이 남으므로 "재계획"으로 한도가 풀린다고 안내하지 않는다 — 사람 허용(judgment retry-grant)이 길이다
+    guide: "작업 {id}의 배정이 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 같은 작업을 다시 준비(planning prepare)해도 배정 기록은 그대로라 한도가 풀리지 않습니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 지시를 받으세요 — 사용자가 한 번 더 허용을 고르면 ca-answer 동의 judgment retry-grant(name taskTotal, id {id})로 기록하고, 아니면 작업 종료(abort)입니다.",
     enforcedAt: ["planning.ts dispatchState·repairState"],
   },
   "cross-unavailable": {

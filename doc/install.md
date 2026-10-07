@@ -34,7 +34,7 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | 로컬 Git 소스 연결은 `code-agent update`. 비Git 패키지는 재설치 후 `update --templates-only` | 새 파일로 교체한 뒤 `update --templates-only` |
 
-어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 10개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
+어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 10개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 5개를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다(Windows 용 `commandWindows`는 감싸지 않는다). PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -171,7 +171,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
 | git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 최초 커밋 또는 기존 저장소의 도입 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
+| hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>`. 옛 matcher(MCP·읽기 도구 없음)는 ✗ 로 짚는다 |
+| Codex 미판정 도구(`·`) | 작업·세션 중 Codex PreToolUse 가 판정하지 않은 도구 이름과 횟수(`.code-agent/log/codex-tools.json`) | 파일을 쓰는 도구라면 hook 판정 밖이다 — code-agent 를 갱신하거나 사람에게 알린다 |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 머리말의 `model:`·`effort:` 줄은 빼고 본다 — 모델·강도는 '에이전트 모델' 줄이 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 에이전트 모델 | 설치된 정의 파일 머리말의 `model`·`effort`가 설정(`.code-agent/models.json`, 없으면 역할 기본값)과 같다. 판단·실행 기본값과 바꾼 역할을 함께 찍고, 일부만 설치되어 있으면 일치한 파일 수를 붙인다. 정의 파일이 하나도 없으면 대조하지 않고 `·`로 알린다(설치 여부는 `스킬·에이전트` 줄이 본다). 두 호스트 설치면 `Codex 에이전트 모델` 줄도 찍는다(TOML 어긋남은 `Codex 스킬·에이전트`가 본다) | 다르면 역할별로 최대 5개 → `code-agent update --templates-only`. `models.json`이 깨졌으면 그 사유 → 고치거나 지운 뒤 `update --templates-only`. **고치기 전에는 `init`·`update`가 파일을 하나도 쓰지 않고 멈춘다** |
@@ -212,7 +213,7 @@ code-agent 소스에 미커밋 변경이 있거나 upstream과 이력이 분기�
 
 **`--templates-only`는 현재 번들만 적용한다.** fetch·pull·의존성 설치·빌드를 수행하지 않는다. Git 소스가 없는 npm 패키지와 단일 실행 파일은 기본 Git 자동 갱신을 지원하지 않는다고 안내하며, 새 패키지 설치·실행 파일 교체 후 이 옵션으로 프로젝트마다 적용한다. 직접 수정 중인 개발본에도 필요한 빌드를 마친 뒤 이 옵션을 사용할 수 있다.
 
-같은 Claude Code에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 반환된 질문을 그대로 표시해 사용자 선택을 받은 뒤 적용한다. **갱신 후에는 Claude Code를 종료하고 같은 프로젝트에서 다시 실행해야 새 hook이 활성화된다.** 재시작 후 `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 작업을 재개한다. 일반 터미널에서 `code-agent update`를 직접 실행하는 경로도 사용할 수 있다.
+같은 Claude Code에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 반환된 질문을 그대로 표시해 사용자 선택을 받은 뒤 적용한다. **갱신 후에는 Claude Code를 종료하고 같은 프로젝트에서 다시 실행해야 새 hook이 활성화된다.** 재시작 후 `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 작업을 재개한다. 일반 터미널에서 `code-agent update`를 직접 실행하는 경로도 사용할 수 있다 — 이때는 미리보기(소스·브랜치·upstream·실행 순서)를 보인 뒤 `update` 를 그대로 입력해야 진행한다(TTY 가 아니면 동의 절차를 안내하고 멈춘다). 모델이 셸에서 소스 `update` 를 부르는 것은 작업·세션 밖에서도 hook 이 막는다(`--templates-only` 는 연다). 업그레이드 전에 준비한 확인 요청은 새로 준비해야 할 수 있다(확인 화면·스냅샷 범위가 바뀌면 대상 변경으로 폐기된다).
 
 **옛 설치본은 `update` 를 돌려야 PreToolUse matcher 가 넓어진다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).

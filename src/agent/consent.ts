@@ -1,7 +1,6 @@
 import { execFileSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
-import { closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, unlinkSync, writeSync } from "fs";
-import { hostname } from "os";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, type Stats } from "fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { isDeepStrictEqual } from "util";
 import { z } from "zod";
@@ -14,20 +13,30 @@ import { confirmDoc } from "./docsCommands";
 import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
 import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
-import { findRepoRoot } from "./layout";
+import { findRepoRoot, loadActive, STATE_DIR } from "./layout";
+import { acquireLock, type LockMessages } from "./lock";
 import { modelsTable, setModel, validateModelChange } from "./models";
 import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
-import { decideRequest } from "./request";
+import { decideRequest, loadRequestSession } from "./request";
+import { failure, TIMING, type FailureRecord } from "./retryPolicy";
+import { budgetReport, grantRetry } from "./retryGrant";
+import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "./reviewJudgment";
 import { KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS } from "./schemas";
+import { SnapshotCache } from "./snapshotCache";
 import { Stop } from "./stop";
 import { withInteraction } from "./tty";
 import { loadManifestIfAny } from "./work";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
+import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, repeatedTargetChange, updateConsentIndex } from "./consentState";
+import { observeAnswerEvent } from "./answers";
 
+export { openConsent } from "./consentState";
+
+const ACTIONS = ["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log", "judgment"] as const;
 const ActionSchema = z.object({
-  action: z.enum(["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log"]),
+  action: z.enum(ACTIONS),
   kind: z.string().optional(), id: z.string().optional(), spec: z.string().optional(),
   decision: z.enum(["accept", "reject"]).default("accept"), comment: z.string().optional(),
   agent: z.string().optional(), model: z.string().optional(), name: z.string().optional(),
@@ -35,12 +44,18 @@ const ActionSchema = z.object({
   command: z.string().optional(), slots: z.string().optional(), sendsCode: z.boolean().default(false),
   secretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
 }).strict();
+/** 동의 동작 이름 — ca-answer 세 곳(Claude SKILL·reference, Codex ca-answer)의 목록과 테스트가 대조한다 */
+export const CONSENT_ACTIONS: readonly string[] = ActionSchema.shape.action.options;
 export type ConsentAction = z.input<typeof ActionSchema>;
 type Action = z.output<typeof ActionSchema>;
 interface Prompt { shown: string; word: string }
 interface Question { question: string; header: string; options: { label: string; description: string }[]; multiSelect: false }
 interface Choice { shown: string; prompt: string; target?: string; key?: string; answer?: string }
 interface SnapshotEntries { files: Record<string, string>; state: Record<string, string> }
+/** 동의 실패의 세부 갈래 — 안내(다시 묻는가·고치는가·멈추는가)가 갈래마다 다르다 */
+export type ConsentFailureKind = "target" | "response-change" | "response-defer" | "response-none" | "response-invalid" | "apply";
+/** class 는 consent-target-changed(apply 를 뺀 갈래) | consent-apply-failed(apply) */
+export interface ConsentFailure extends FailureRecord { kind: ConsentFailureKind }
 export interface ConsentRecord {
   id: string; root: string; action: Action; snapshot: string; createdAt: string;
   status: "pending" | "approved" | "changes-requested" | "deferred" | "applying" | "applied" | "failed";
@@ -52,20 +67,28 @@ export interface ConsentRecord {
   sourceSnapshot?: string;
   snapshotEntries?: SnapshotEntries;
   channel?: "claude-question" | "codex-prompt";
+  /** 새 prepare 가 쓴다 — 없으면 이전 형식(확인 코드 없이 Codex 응답을 받는다) */
+  format?: 2;
+  /** 준비 때의 작업·접수 ID — 반영 영수증이 이 작업의 동의를 고른다 */
+  workId?: string;
+  /** 준비 명령을 관찰한 hook 의 세션(CON-1) — 응답·적용은 이 세션에서만 받는다. 없으면 첫 응답 관찰이 세션을 정한다(이전 규칙) */
+  preparedSession?: { id: string; host: "claude" | "codex"; at: string };
+  failure?: ConsentFailure;
 }
-const DIR = ".code-agent/consents";
+const DIR = CONSENT_DIR;
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const ACCEPT = "확인하고 진행";
 const CHANGE = "수정 요청";
 const DEFER = "보류";
 const APPLY = "적용";
 const KEEP = "유지";
-const TITLES: Record<Action["action"], string> = {
-  setup: "초기 설정 확정", docs: "공통 문서 확정", baseline: "기준 커밋 생성", request: "요구사항 확인",
-  plan: "작업 계획 확인", deliver: "결과와 로컬 커밋 확인", "knowledge-prune": "지식 문서 정리",
-  model: "에이전트 모델 변경", abort: "작업 진행 종료", "plugin-add": "플러그인 등록", "plugin-remove": "플러그인 제거",
-  update: "code-agent 업데이트", "repro-log": "오류 로그 근거로 수정 진행",
-};
+export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
+/**
+ * 동의 스냅샷에서 빼는 code-agent 자체 기록 — hook·CLI 가 응답을 기다리는 동안에도 쓴다(모두 gitignore 대상).
+ * 동의 기록·티켓·색인·캐시(consents), 단계 이동·검증·플러그인 로그와 Codex 미판정 도구 기록(log), 작업 임대(lease.json*).
+ * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
+ */
+const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`];
 
 function canonicalRoot(root: string): string {
   return realpathSync.native(resolve(root));
@@ -77,15 +100,18 @@ function pathKey(path: string): string {
 function samePath(a: string, b: string): boolean {
   return pathKey(canonicalRoot(a)) === pathKey(canonicalRoot(b));
 }
-function statIfPresent(path: string): ReturnType<typeof lstatSync> | undefined {
+function statIfPresent(path: string): Stats | undefined {
   try { return lstatSync(path); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
 }
-/** 루트 아래 경로의 모든 조상을 검사한다. 링크·junction을 타고 읽거나 쓰지 않는다. */
-function localPath(root: string, file: string, allowLeafLink = false): string {
+/**
+ * 루트 아래 경로의 모든 조상을 검사한다. 링크·junction을 타고 읽거나 쓰지 않는다.
+ * verified 는 한 번의 스냅샷 안에서 이미 링크가 아님을 본 조상 폴더 — 같은 폴더의 파일마다 조상을 다시 lstat 하지 않는다.
+ */
+function localPath(root: string, file: string, allowLeafLink = false, verified?: Set<string>, leafStat?: { stat?: Stats }): string {
   const full = resolve(root, file), rel = relative(root, full);
   if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) throw new Stop("확인 대상 경로가 저장소 밖입니다.");
   let cursor = root;
@@ -93,9 +119,13 @@ function localPath(root: string, file: string, allowLeafLink = false): string {
   for (const [index, part] of parts.entries()) {
     if (process.platform === "win32" && part.includes(":")) throw new Stop("대체 데이터 스트림은 확인 대상으로 사용할 수 없습니다.");
     cursor = join(cursor, part);
+    const leaf = index === parts.length - 1;
+    if (!leaf && verified?.has(cursor)) continue;
     const stat = statIfPresent(cursor);
     if (!stat) break;
-    if (stat.isSymbolicLink() && !(allowLeafLink && index === parts.length - 1)) throw new Stop(`확인 대상에 심볼릭 링크가 있습니다: ${file}`);
+    if (stat.isSymbolicLink() && !(allowLeafLink && leaf)) throw new Stop(`확인 대상에 심볼릭 링크가 있습니다: ${file}`);
+    if (!leaf && verified) verified.add(cursor);
+    if (leaf && leafStat) leafStat.stat = stat;
   }
   return full;
 }
@@ -103,9 +133,11 @@ function recordPath(root: string, id: string): string {
   if (!UUID.test(id)) throw new Stop("확인 요청 ID가 올바르지 않습니다.");
   return localPath(root, `${DIR}/${id}.json`);
 }
+/** 기록을 쓴 뒤 같은 잠금 안에서 색인(열린 동의·최근 종료)을 고친다 */
 function save(root: string, record: ConsentRecord): void {
   const file = recordPath(root, record.id); mkdirSync(dirname(file), { recursive: true });
   writeAtomic(file, JSON.stringify(record, null, 2) + "\n");
+  try { updateConsentIndex(root, record); } catch { /* 색인은 보조 기록이다 — 다음 저장이 다시 만든다 */ }
 }
 export function loadConsent(root: string, id: string): ConsentRecord {
   root = canonicalRoot(root);
@@ -113,41 +145,22 @@ export function loadConsent(root: string, id: string): ConsentRecord {
   if (record.id !== id || !samePath(record.root, root)) throw new Stop("다른 프로젝트의 확인 요청입니다.");
   return record;
 }
-/** 잠금을 쥔 프로세스가 아직 있는가. 권한이 없어 못 보는 프로세스는 있는 것으로 본다 */
-function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
-}
+
+/** 동의 잠금의 문구 — 기존 안내(지울 경로·pid)를 그대로 잇는다 */
+const CONSENT_LOCK_MESSAGES: LockMessages = {
+  busy: (lock) => `다른 확인·적용이 진행 중입니다 (pid ${lock.pid}, ${lock.at ?? "시각 모름"} 시작). 잠시 뒤 같은 명령을 한 번 다시 실행하세요.`,
+  foreign: (lock) => `다른 확인·적용이 진행 중이거나 이전 프로세스가 비정상 종료했습니다. 실행 중인 code-agent 가 없으면 ${lock.display} 을 지운 뒤 다시 실행하세요.`,
+  unknown: (lock) => `다른 확인·적용이 진행 중이거나 이전 프로세스가 비정상 종료했습니다. 실행 중인 code-agent 가 없으면 ${lock.display} 을 지운 뒤 다시 실행하세요.`,
+};
 /**
- * 같은 저장소의 확인·적용을 직렬화한다. 잠금에는 주인(pid·호스트·시작 시각)을 적고, 같은 PC 에서 그 프로세스가
- * 끝났을 때만 되찾는다 — Bash 시간 제한에 죽은 apply 의 잠금이 이후의 모든 확인을 막지 않게. 주인을 모르는 잠금은
- * 훔치지 않고 경로를 알린다.
+ * 같은 저장소의 확인·적용을 직렬화한다(공통 acquireLock). 주인(pid·호스트·시각)을 적고, 같은 PC 에서 그 프로세스가 끝났을 때만
+ * 같은 호출 안에서 되찾는다 — Bash 시간 제한에 죽은 apply 의 잠금이 이후의 모든 확인을 막지 않게. 나이로는 회수하지 않는다(적용이
+ * 길 수 있다). 살아 있는 주인은 CLI 2초·hook 10초 기다린 뒤 멈추고, 주인을 모르는 잠금은 훔치지 않고 경로를 알린다.
  */
-function withConsentLock<T>(root: string, run: () => T): T {
-  const dir = localPath(root, DIR);
-  mkdirSync(dir, { recursive: true });
-  const lock = localPath(root, `${DIR}/apply.lock`);
-  let fd: number | undefined;
-  for (let attempt = 0; fd === undefined; attempt++) {
-    try { fd = openSync(lock, "wx", 0o600); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      let text = "", owner: { pid?: unknown; host?: unknown; at?: unknown } | undefined;
-      try { text = readFileSync(lock, "utf8"); owner = JSON.parse(text); } catch { owner = undefined; }
-      const pid = typeof owner?.pid === "number" ? owner.pid : undefined;
-      if (attempt === 0 && pid !== undefined && owner?.host === hostname() && !alive(pid)) {
-        // 그 사이 다른 프로세스가 되찾아 새로 잡았으면 건드리지 않는다
-        try { if (readFileSync(lock, "utf8") === text) unlinkSync(lock); } catch { /* 이미 치워졌다 */ }
-        continue;
-      }
-      throw new Stop(pid !== undefined
-        ? `다른 확인·적용이 진행 중입니다 (pid ${pid}, ${String(owner?.at ?? "")} 시작). 그 프로세스가 끝난 뒤 다시 실행하세요.`
-        : `다른 확인·적용이 진행 중이거나 이전 프로세스가 비정상 종료했습니다. 실행 중인 code-agent 가 없으면 ${lock} 을 지운 뒤 다시 실행하세요.`);
-    }
-  }
-  writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), at: new Date().toISOString() }));
-  try { return run(); }
-  finally { closeSync(fd); unlinkSync(lock); }
+function withConsentLock<T>(root: string, run: () => T, waitMs: number = TIMING.lockWaitMs): T {
+  mkdirSync(localPath(root, DIR), { recursive: true });
+  const release = acquireLock(localPath(root, CONSENT_LOCK), { waitMs, ageReclaim: false, label: "확인·적용", display: CONSENT_LOCK, messages: CONSENT_LOCK_MESSAGES });
+  try { return run(); } finally { release(); }
 }
 function git(root: string, args: string[], optional = false): string {
   try { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }); }
@@ -157,29 +170,70 @@ function git(root: string, args: string[], optional = false): string {
   }
 }
 
-/** 승인 대상은 작업 트리·index·기준·진행 상태다. 확인 기록 자체는 비교에서 제외한다. */
+// ---- 실패 기록 ----
+
+function fail(record: ConsentRecord, kind: ConsentFailureKind, detail: string): void {
+  record.failure = { ...failure(kind === "apply" ? "consent-apply-failed" : "consent-target-changed", detail), kind };
+}
+/** 쓸 수 없게 된 동의를 폐기한다 — 같은 동의로 다시 묻거나 적용하지 않는다 */
+function discard(root: string, record: ConsentRecord, kind: "target" | "apply", detail: string): void {
+  record.status = "failed"; record.binding = undefined; fail(record, kind, detail); save(root, record);
+}
+const GUIDES: Record<ConsentFailureKind, string> = {
+  target: "확인 대상이 바뀌어 이 동의는 쓸 수 없습니다: {detail}. 같은 ID로 다시 묻거나 적용하지 말고, 바뀐 것을 사용자에게 알린 뒤 현재 내용으로 새로 준비해 다시 확인받으세요.",
+  "response-change": "사용자가 수정을 요청했습니다. 같은 ID로 다시 묻지 않습니다 — 무엇을 고칠지 업무 질문으로 받아 문서·제안을 고친 뒤 새로 준비하세요.",
+  "response-defer": "사용자가 보류했습니다. 이 흐름을 멈추고 다시 묻지 않습니다 — 사용자가 이어가자고 할 때 새로 준비합니다.",
+  "response-none": "명시적 선택이 없어 응답을 기록하지 않았습니다({detail}). 미응답으로 두고 자동으로 다시 묻지 않습니다 — 사용자가 원할 때만 새로 준비해 묻습니다.",
+  "response-invalid": "응답이 준비한 질문·선택지와 맞지 않아 기록하지 않았습니다({detail}). 사용자가 직접 입력한 내용이 있으면 그 뜻을 업무 질문으로 확인하고, CLI 가 준비한 질문을 고치지 않은 채 새로 준비해 묻습니다.",
+  apply: "적용이 중단(실패)됐습니다 — 일부만 반영됐을 수 있습니다: {detail}. code-agent status 와 git status 로 상태를 확인한 뒤 새로 준비하세요. 같은 ID로 다시 적용하지 않습니다.",
+};
+/** 실패 갈래 — kind 가 없는 기록(C5 이전에는 생길 수 없다)은 class 로 고른다 */
+function kindOf(record: Pick<ConsentFailure, "class"> & { kind?: string }): ConsentFailureKind {
+  return record.kind && record.kind in GUIDES ? record.kind as ConsentFailureKind : record.class === "consent-apply-failed" ? "apply" : "target";
+}
+/** 갈래별 다음 행동 안내 — 출력의 failure.guide */
+export function consentGuide(record: Pick<ConsentFailure, "class" | "detail"> & { kind?: string }): string {
+  return GUIDES[kindOf(record)].replace(/\{detail\}/g, record.detail);
+}
+function failureView(record: ConsentRecord): object | undefined {
+  if (!record.failure || !["failed", "changes-requested", "deferred"].includes(record.status)) return undefined;
+  const { class: cls, detail } = record.failure;
+  return { class: cls, kind: kindOf(record.failure), detail, guide: consentGuide(record.failure) };
+}
+
+// ---- 스냅샷 ----
+
+/** 승인 대상은 작업 트리·index·기준·진행 상태다. 확인 기록·로그 같은 자체 기록은 비교에서 제외한다. */
 export function consentSnapshot(root: string, action: Action): string {
   return inspectConsentSnapshot(root, action).hash;
 }
 function inspectConsentSnapshot(root: string, action: Action): { hash: string; entries: SnapshotEntries } {
   root = canonicalRoot(root);
   const files = new Set<string>();
+  /** 따라가지 않는 링크 — Git 이 그 아래 파일을 나열해도(Windows 접합점) 링크 하나로만 해시한다 */
+  const links = new Set<string>();
   const skipped = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", ".idea", "__pycache__", ".pytest_cache"]);
   const excluded = (file: string) => {
     const key = process.platform === "win32" ? file.toLowerCase() : file;
-    return key === DIR || key.startsWith(`${DIR}/`);
+    return SNAPSHOT_EXCLUDED.some((path) => key === path || key.startsWith(`${path}/`));
   };
-  function walk(dir: string, control = false) {
+  /**
+   * control: 제어 루트(상태·호스트 설정·문서) — 조상 링크는 언제나 거부한다. 마지막 구성요소 링크는 재귀로 들어간 하위 항목(nested)만
+   * 허용하고 따라가지 않는다(아래 해시가 link:<대상>). 최상위 제어 루트·제어 파일·문서 경로 자체가 링크이면 거부한다 — 그렇지 않으면
+   * `.code-agent` 가 링크일 때 상태 전체가 해시에서 빠진다.
+   */
+  function walk(dir: string, control = false, nested = false) {
     if (excluded(dir)) return;
-    const full = localPath(root, dir, !control);
+    const full = localPath(root, dir, !control || nested);
     const stat = statIfPresent(full);
     if (!stat) return;
+    if (stat.isSymbolicLink()) { files.add(dir); links.add(dir); return; }
     if (!stat.isDirectory()) { files.add(dir); return; }
     for (const entry of readdirSync(full, { withFileTypes: true })) {
       const file = dir ? `${dir}/${entry.name}` : entry.name;
       const name = process.platform === "win32" ? entry.name.toLowerCase() : entry.name;
       if (excluded(file) || name === ".git" || (!control && skipped.has(name))) continue;
-      walk(file, control);
+      walk(file, control, true);
     }
   }
   const hasGit = !!statIfPresent(localPath(root, ".git"));
@@ -200,13 +254,20 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
   const hash = createHash("sha256");
   const entries: SnapshotEntries = { files: Object.create(null), state: Object.create(null) };
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
-  for (const file of [...files].filter(f => !excluded(f)).sort()) {
-    const full = localPath(root, file, true), stat = statIfPresent(full);
-    const content = !stat ? "missing" : stat.isSymbolicLink() ? `link:${readlinkSync(full)}` : stat.isFile() ? createHash("sha256").update(readFileSync(full)).digest("hex") : stat.isDirectory() ? "directory" : "special";
+  // 내용 해시는 (size·mtime·ctime·ino) 캐시로 재사용한다 — 값과 형식은 캐시가 없을 때와 같다
+  const cache = SnapshotCache.open(root);
+  const verified = new Set<string>();
+  const underLink = (file: string) => [...links].some((link) => file.startsWith(`${link}/`));
+  for (const file of [...files].filter(f => !excluded(f) && !underLink(f)).sort()) {
+    // 마지막 구성요소의 lstat 은 조상 검사가 이미 했다 — 다시 하지 않는다
+    const leaf: { stat?: Stats } = {};
+    const full = localPath(root, file, true, verified, leaf), stat = leaf.stat;
+    const content = !stat ? "missing" : stat.isSymbolicLink() ? `link:${readlinkSync(full)}` : stat.isFile() ? cache.contentHash(file, full, stat) : stat.isDirectory() ? "directory" : "special";
     const value = JSON.stringify([file, stat?.mode, content]);
     hash.update(value);
     entries.files[file] = digest(value);
   }
+  cache.save();
   const state = (name: string, value: string) => { hash.update(value); entries.state[name] = digest(value); };
   if (hasGit) {
     state("Git HEAD", JSON.stringify(git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], true)));
@@ -235,11 +296,12 @@ function gitConfigState(root: string): string {
   return kept;
 }
 
-function requireConsentSnapshot(root: string, record: Pick<ConsentRecord, "snapshot" | "snapshotEntries" | "action">, message: string,
-  current = inspectConsentSnapshot(root, record.action)): void {
-  if (record.snapshot === current.hash) return;
+type Snapshotted = Pick<ConsentRecord, "snapshot" | "snapshotEntries" | "action">;
+/** 준비 때와 다른 대상 목록 — 같으면 undefined. 판정은 해시 한 줄, 목록은 경로·상태별 해시로 만든다 */
+function snapshotChanges(record: Snapshotted, current: { hash: string; entries: SnapshotEntries }): { text: string; policy: boolean } | undefined {
+  if (record.snapshot === current.hash) return undefined;
   const previous = record.snapshotEntries;
-  if (!previous) throw new Stop(`${message}\n이전 동의 기록에는 경로별 해시가 없습니다. 동의를 다시 준비하세요.`);
+  if (!previous) return { text: "이전 동의 기록에 경로별 해시 없음", policy: false };
   const changes: string[] = [];
   for (const group of ["files", "state"] as const) {
     for (const key of [...new Set([...Object.keys(previous[group]), ...Object.keys(current.entries[group])])].sort()) {
@@ -247,13 +309,33 @@ function requireConsentSnapshot(root: string, record: Pick<ConsentRecord, "snaps
     }
   }
   const limit = 6;
+  return {
+    text: `${changes.slice(0, limit).join(" · ") || "스냅샷 수집 범위"}${changes.length > limit ? ` 외 ${changes.length - limit}건` : ""}`,
+    policy: changes.includes("모델 정책"),
+  };
+}
+function snapshotStop(record: Snapshotted, message: string, changes: { text: string; policy: boolean }): Stop {
+  if (!record.snapshotEntries) return new Stop(`${message}\n이전 동의 기록에는 경로별 해시가 없습니다. 동의를 다시 준비하세요.`);
   // 모델 정책은 파일이 아니라 지금 도는 code-agent 빌드가 계산한다 — 준비(셸 CLI)와 hook 관찰·적용(hook 명령의 CLI)이
   // 서로 다른 설치본이면 바뀐 것이 없어도 매번 어긋나므로, "정책이 바뀌었다"만 보이지 않게 원인 후보를 함께 적는다
-  const policy = changes.includes("모델 정책")
+  const policy = changes.policy
     ? "\n이 동의를 준비한 code-agent와 지금 code-agent의 모델 정책이 다릅니다. 업데이트 직후라면 동의를 다시 준비하세요. 다시 준비해도 반복되면 code-agent doctor로 PATH의 code-agent와 hook 명령이 같은 설치본인지 확인하세요."
     : "";
-  throw new Stop(`${message}\n변경 대상: ${changes.slice(0, limit).join(" · ") || "스냅샷 수집 범위"}${changes.length > limit ? ` 외 ${changes.length - limit}건` : ""}${policy}`);
+  return new Stop(`${message}\n변경 대상: ${changes.text}${policy}`);
 }
+function requireConsentSnapshot(root: string, record: Snapshotted, message: string, current = inspectConsentSnapshot(root, record.action)): void {
+  const changes = snapshotChanges(record, current);
+  if (changes) throw snapshotStop(record, message, changes);
+}
+/** 대상이 바뀌었으면 동의를 폐기(kind target)하고 멈춘다 — 되돌려도 같은 동의로 다시 묻거나 적용하지 않는다 */
+function discardIfChanged(root: string, record: ConsentRecord, message: string): void {
+  const changes = snapshotChanges(record, inspectConsentSnapshot(root, record.action));
+  if (!changes) return;
+  discard(root, record, "target", `확인 대상 변경: ${changes.text}`);
+  throw snapshotStop(record, message, changes);
+}
+
+// ---- 미리보기 ----
 
 const CAPTURE = Symbol("capture confirmation");
 function capture(run: () => string): Prompt[] {
@@ -262,6 +344,19 @@ function capture(run: () => string): Prompt[] {
     withInteraction({ confirm: (shown, word) => { prompts.push({ shown, word }); throw CAPTURE; }, ask: () => { throw new Stop("확인 준비에서 입력을 요청할 수 없습니다."); } }, run);
   } catch (error) { if (error !== CAPTURE) throw error; }
   return prompts;
+}
+const JUDGMENT_KINDS = { "retry-grant": "재시도 한도 추가", "waive-finding": "지적 기각", "cross-stop": "교차 검증 중지 결정" } as const;
+type JudgmentKind = keyof typeof JUDGMENT_KINDS;
+/** judgment 의 공통 검증 — kind·comment(500자)·id·name. 소유 함수(retryGrant·reviewJudgment)는 자기 도메인 전제만 본다 */
+function judgmentOf(action: Action): { kind: JudgmentKind; reason: string } {
+  if (!action.kind || !Object.hasOwn(JUDGMENT_KINDS, action.kind)) throw new Stop("judgment 의 kind 는 retry-grant · waive-finding · cross-stop 중 하나입니다.");
+  const reason = action.comment?.trim();
+  if (!reason) throw new Stop("사람 판단에는 사용자가 말한 사유(comment)가 필요합니다.");
+  if (reason.length > 500) throw new Stop("사람 판단의 사유(comment)는 500자 이하로 사용자가 말한 근거를 그대로 넣으세요.");
+  const kind = action.kind as JudgmentKind;
+  if (kind === "waive-finding" && !action.id) throw new Stop("waive-finding 에는 지적 번호(id: F1 · X1 · C1)가 필요합니다.");
+  if (kind === "cross-stop" && action.name !== "review" && action.name !== "planning") throw new Stop("cross-stop 의 name 은 review 또는 planning 입니다.");
+  return { kind, reason };
 }
 function preview(root: string, action: Action): { confirmations: Prompt[]; choices: Choice[]; summary: string } {
   let confirmations: Prompt[] = [], choices: Choice[] = [], summary = "";
@@ -310,6 +405,14 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       summary = previewSourceUpdate(root);
       if (summary.includes("업데이트 중단:")) throw new Stop(summary);
       break;
+    case "judgment": {
+      const { kind, reason } = judgmentOf(action);
+      const report = kind === "retry-grant" ? budgetReport(root, action.name ?? "", action.id)
+        : kind === "waive-finding" ? previewWaiveFinding(root, action.id!)
+        : previewCrossStop(root, action.name as "review" | "planning");
+      summary = [`종류: ${JUDGMENT_KINDS[kind]}`, `사유: ${reason}`, report].join("\n");
+      break;
+    }
   }
   summary = [TITLES[action.action], ...(reject ? [`반려 사유: ${action.comment ?? ""}`] : []), summary, ...confirmations.map(c => c.shown)].filter(Boolean).join("\n\n");
   if (!confirmations.length && ["docs", "setup", "baseline", "request"].includes(action.action)) summary += "\n현재 내용은 이미 처리되어 추가 변경이 없습니다.";
@@ -336,16 +439,39 @@ function questions(record: ConsentRecord): Question[] {
   return [{ question: `${record.summary}${selected}\n이 내용으로 진행할까요?`, header: "진행 확인", multiSelect: false,
     options: [{label: ACCEPT,description: "표시한 내용과 선택한 범위에 한해 실행합니다."}, {label: CHANGE,description: "수정할 내용을 정리한 뒤 다시 확인합니다."}, {label: DEFER,description: "현재 상태를 유지하고 나중에 이어갑니다."}]}];
 }
-export function consentStatus(root: string, id: string): string {
+/** Codex 응답의 확인 코드(CON-5) — 지금 묻는 질문 묶음의 해시 앞 6자. 사용자가 요약과 질문 끝까지 본 것을 묶는다 */
+function replyCode(items: Question[]): string {
+  return createHash("sha256").update(JSON.stringify(items)).digest("hex").slice(0, 6);
+}
+/** 확인 코드와 그 요구 여부 — 이전 형식 기록(format 없음)은 코드 없이도 받는다 */
+export function codexReplyCode(root: string, id: string): { required: boolean; code: string } {
+  const record = loadConsent(root, id);
+  return { required: record.format === 2, code: replyCode(record.status === "pending" ? questions(record) : []) };
+}
+export function consentStatus(root: string, id: string, extra: { warning?: string } = {}): string {
   const record = loadConsent(root, id);
   const items = record.status === "pending" ? questions(record) : [];
+  const coded = record.format === 2 && items.length > 0;
+  const code = coded ? replyCode(items) : "";
+  const codexQuestions = items.map((q, index) => ({
+    question: coded && index === items.length - 1
+      ? `${q.question}\n\n확인 코드: ${code} — 위 요약과 질문을 끝까지 확인했다면 응답 끝에 이 코드를 붙입니다.` : q.question,
+    choices: q.options.map((o, number) => ({ number: number + 1, ...o })),
+  }));
   return JSON.stringify({id, status:record.status, summary:record.summary, questions:items,
     toolInput:{questions:items,metadata:{source:`code-agent:${id}`}},
-    codexReply: items.length ? {format:`code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결>`,
-      questions: items.map(q => ({question:q.question, choices:q.options.map((o,index) => ({number:index+1,...o}))}))} : undefined,
-    result:record.result}, null, 2);
+    codexReply: items.length ? {
+      format: coded ? `code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결> <확인 코드>` : `code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결>`,
+      questions: codexQuestions } : undefined,
+    result:record.result, failure: failureView(record), warning: extra.warning}, null, 2);
 }
-export function prepareConsent(root: string, raw: unknown): string {
+
+/**
+ * 동의 준비. `options.binding` 은 CLI 가 준비 티켓(이 준비 명령을 관찰한 hook 의 세션)에서 넘긴다 — 응답은 그 세션에서만 받는다.
+ * 프로세스 안에서 binding 없이 부르면(테스트 fixture) 준비 세션이 없는 기록이 되고, 첫 응답 관찰이 세션을 정한다(이전 규칙).
+ * `form` 은 출력 형식(호스트별 축소)용 자리다 — 지금은 쓰지 않는다.
+ */
+export function prepareConsent(root: string, raw: unknown, options: { binding?: { id: string; host: "claude" | "codex" }; form?: "claude" | "codex" } = {}): string {
   root = canonicalRoot(root);
   const action = ActionSchema.parse(raw);
   return withConsentLock(root, () => {
@@ -357,11 +483,23 @@ export function prepareConsent(root: string, raw: unknown): string {
     const snapshot = inspected.hash;
     if (action.action !== "deliver") requireConsentSnapshot(root, { action, snapshot: before.hash, snapshotEntries: before.entries },
       "확인 준비 중 대상이 바뀌었습니다. 현재 내용을 다시 준비하세요.", inspected);
-    const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,snapshotEntries:inspected.entries,createdAt:new Date().toISOString(),status:"pending",
+    // 같은 동작이 연속 두 번 대상 변경으로 폐기됐으면 경고만 붙인다 — 사람의 응답 경로는 막지 않는다
+    const repeated = repeatedTargetChange(root, action.action);
+    const at = new Date().toISOString();
+    const workId = currentWorkId(root);
+    const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,snapshotEntries:inspected.entries,createdAt:at,status:"pending",
+      format: 2, ...(workId ? { workId } : {}),
+      ...(options.binding ? { preparedSession: { id: options.binding.id, host: options.binding.host, at } } : {}),
       ...(action.action === "update" ? {sourceSnapshot:sourceUpdateSnapshot(root)} : {})};
     save(root,record);
-    return consentStatus(root,record.id);
+    const warning = repeated
+      ? `같은 동작(${TITLES[action.action]})의 확인이 연속 2회 대상 변경으로 폐기됐습니다 — 외부 hook·편집기·백그라운드 빌드가 확인 대상(${(repeated.detail ?? "").replace(/^확인 대상 변경:\s*/, "") || "기록 없음"})을 바꾸고 있는지 사용자에게 확인받으세요. 원인을 두고 같은 동의를 반복해서 준비하지 않습니다.`
+      : undefined;
+    return consentStatus(root,record.id,{ warning });
   });
+}
+function currentWorkId(root: string): string | undefined {
+  try { return loadActive(root)?.id ?? loadRequestSession(root)?.id; } catch { return undefined; }
 }
 
 export interface ConsentHookInput {
@@ -391,11 +529,19 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
   const sessionId = input.session_id, toolId = input.tool_use_id;
   withConsentLock(root, () => {
   const record = loadConsent(root,id);
+  // 1~5 의 거부는 기록을 폐기하지 않는다 — 다른 세션·다른 codex exec 의 이벤트가 남의 동의를 깨뜨리지 못하게,
+  // 세션·채널 검사를 스냅샷 대조보다 먼저 한다(스냅샷 해시도 계산하지 않는다)
   if (record.channel && record.channel !== channel) throw new Stop("동의를 시작한 호스트와 다릅니다. 새로 준비하세요.");
   if (record.status !== "pending") throw new Stop("이미 응답했거나 종료한 확인 요청입니다.");
-  requireConsentSnapshot(root, record, "확인 대상이 바뀌었습니다. 변경 내용을 다시 준비해 확인하세요.");
+  if (record.preparedSession) {
+    const expected = record.preparedSession.host === "codex" ? "codex-prompt" : "claude-question";
+    if (record.preparedSession.id !== sessionId || expected !== channel) {
+      throw new Stop(`확인을 준비한 세션의 응답이 아닙니다 — 이 요청은 ${record.preparedSession.host} 세션에서 준비됐습니다. 응답은 준비한 대화에서만 받습니다. 지금 세션에서 진행하려면 새로 준비하세요.`);
+    }
+  }
   if (record.sessionId && record.sessionId !== sessionId) throw new Stop("다른 세션의 확인 요청입니다. 현재 세션에서 새로 준비하세요.");
   if (record.sessionCwd && !samePath(record.sessionCwd, cwd)) throw new Stop("확인을 시작한 작업 경로와 다릅니다. 새로 준비하세요.");
+  discardIfChanged(root, record, "확인 대상이 바뀌었습니다. 변경 내용을 다시 준비해 확인하세요.");
   if (input.hook_event_name === "PreToolUse") {
     if (!isDeepStrictEqual(Object.keys(input.tool_input ?? {}).sort(), ["metadata", "questions"])) throw new Stop("답변을 미리 채운 승인 질문은 허용하지 않습니다.");
     if (!isDeepStrictEqual(items, questions(record))) throw new Stop("CLI가 준비한 질문과 선택지를 그대로 사용하세요.");
@@ -412,22 +558,29 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
     record.binding = undefined;
     record.status = "failed";
     save(root, record);
-    if (!isDeepStrictEqual(items, bound) || !isDeepStrictEqual(bound, questions(record))) throw new Stop("시작이 관찰된 질문의 응답이 아닙니다.");
+    /** 응답 거부 — 소비한 기록에 갈래를 남기고 멈춘다(같은 동의를 자동으로 다시 묻지 않는다) */
+    const refuse = (kind: "response-none" | "response-invalid", detail: string, message: string): never => {
+      fail(record, kind, `응답: ${detail}`); save(root, record);
+      throw new Stop(message);
+    };
+    if (!isDeepStrictEqual(items, bound) || !isDeepStrictEqual(bound, questions(record))) refuse("response-invalid", "질문 불일치", "시작이 관찰된 질문의 응답이 아닙니다.");
     const response = input.tool_response;
     if (!plainObject(response) || Object.keys(response).some(key => !["questions", "answers", "annotations", "afkTimeoutMs", "followUp", "response"].includes(key)) ||
         !plainObject(response.answers) || !isDeepStrictEqual(response.questions, bound) ||
         Object.hasOwn(response, "afkTimeoutMs") || (Object.hasOwn(response, "followUp") && response.followUp !== false) ||
         Object.hasOwn(response, "response") || !unqualifiedAnnotations(response.annotations, bound)) {
-      throw new Stop("명시적 선택 응답이 없습니다. 시간 초과·추가 질문·응답 메모는 승인하지 않았습니다.");
+      refuse("response-none", "명시적 선택 없음(시간 초과·추가 질문·메모)", "명시적 선택 응답이 없습니다. 시간 초과·추가 질문·응답 메모는 승인하지 않았습니다.");
     }
-    if (!isDeepStrictEqual(Object.keys(response.answers).sort(), bound.map(q => q.question).sort())) throw new Stop("모든 확인 질문에 명시적으로 답해야 합니다.");
+    const answered = response as { answers: Record<string, unknown> };
+    if (!isDeepStrictEqual(Object.keys(answered.answers).sort(), bound.map(q => q.question).sort())) refuse("response-none", "일부 질문 미응답", "모든 확인 질문에 명시적으로 답해야 합니다.");
     const answers:Record<string,string> = Object.create(null);
     for (const q of items) {
-      const answer = response.answers[q.question];
-      if (typeof answer !== "string" || !q.options.some(o => o.label === answer)) throw new Stop("선택지와 일치하는 응답만 확인 기록으로 사용할 수 있습니다.");
-      answers[q.question]=answer;
+      const answer = answered.answers[q.question];
+      if (typeof answer !== "string" || !q.options.some(o => o.label === answer)) refuse("response-invalid", "선택지 밖 응답", "선택지와 일치하는 응답만 확인 기록으로 사용할 수 있습니다.");
+      answers[q.question]=answer as string;
     }
     record.status = "pending";
+    record.failure = undefined;
     record.observed ??= [];
     record.observed.push({toolId,at:new Date().toISOString(),answers});
     const pending = record.choices.map((choice, index) => ({choice,index})).filter(c => c.choice.answer === undefined).slice(0, 4);
@@ -437,12 +590,14 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
       if(answer===DEFER) record.status="deferred";
       else if(answer===CHANGE) record.status="changes-requested";
       else if(final && answer===ACCEPT) record.status="approved";
-      else { const item = pending[questionIndex]; if(!item)throw new Stop("확인 항목이 없습니다."); record.choices[item.index].answer=answer; }
+      else { const item = pending[questionIndex]; if(!item) refuse("response-invalid", "확인 항목 없음", "확인 항목이 없습니다."); record.choices[item!.index].answer=answer; }
     }
+    if (record.status === "deferred") fail(record, "response-defer", "응답: 보류");
+    else if (record.status === "changes-requested") fail(record, "response-change", "응답: 수정 요청");
     record.binding=undefined;
   } else return;
   save(root,record);
-  });
+  }, TIMING.hookLockWaitMs);
 }
 
 function plainObject(value: unknown): value is Record<string, unknown> {
@@ -457,48 +612,70 @@ function unqualifiedAnnotations(value: unknown, bound: Question[]): boolean {
       key === "notes" && typeof note === "string" && note.trim() === ""));
 }
 
+/** CLI 적용 경로의 호출자 — 사람의 TTY(호스트 표지 없음)이거나, hook 이 이 적용 명령을 본 세션 */
+export interface ConsentCaller { sessionId?: string; tty?: true }
+
 /** 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용을 돌려준다. */
-export function finishConsent(root: string, id: string): string {
+export function finishConsent(root: string, id: string, caller?: ConsentCaller): string {
   const status = loadConsent(root, id).status;
   if (status !== "approved" && status !== "applied") return consentStatus(root, id);
-  const result = applyConsent(root, id);
+  const result = applyConsent(root, id, caller);
   return JSON.stringify({ id, status: "applied", result }, null, 2);
 }
 
-export function applyConsent(root: string, id: string): string {
+export function applyConsent(root: string, id: string, caller?: ConsentCaller): string {
   root = canonicalRoot(root);
   const cached = loadConsent(root, id);
   if (cached.status === "applied") return cachedResult(cached);
-  return withConsentLock(root, () => applyLocked(root, id));
+  return withConsentLock(root, () => applyLocked(root, id, caller));
 }
 function cachedResult(record: ConsentRecord): string {
   if (typeof record.result !== "string") throw new Stop("적용 완료 기록의 결과가 없습니다. 자동으로 다시 실행하지 않습니다.");
   return record.result;
 }
-function applyLocked(root: string, id: string): string {
+/** 적용 때 확인 화면·문서 선택이 준비 때와 다르다 — 앞선 확인을 지났는지로 대상 변경과 적용 실패를 가른다 */
+class ScreenMismatch extends Stop {}
+function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
   // 잠금을 얻기 전에 읽은 승인 상태를 재사용하지 않는다.
   const record = loadConsent(root, id);
   if (record.status === "applied") return cachedResult(record);
   if (record.status === "applying") {
     // 잠금을 쥔 지금 applying 이면 이전 적용 프로세스가 끝맺지 못하고 죽은 것이다 — 같은 동의로 다시 돌리지 않는다
-    record.status = "failed"; save(root, record);
+    discard(root, record, "apply", "이전 적용이 끝나지 않은 채 중단");
     throw new Stop("이전 적용이 끝나지 않은 채 중단됐습니다 — 일부만 반영됐을 수 있습니다. code-agent status 와 git status 로 상태를 확인하고, 필요하면 code-agent consent prepare 로 새로 확인하세요.");
   }
   if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
-  requireConsentSnapshot(root, record, "확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
+  // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
+  if (record.preparedSession && !caller?.tty && caller?.sessionId !== record.sessionId) {
+    throw new Stop("응답을 관찰한 세션의 셸에서 hook 이 확인한 적용 명령만 실행할 수 있습니다. 다른 경로로 적용하지 않습니다.");
+  }
+  discardIfChanged(root, record, "확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
   const action=record.action;
   const pluginPreview = action.action === "plugin-add" ? previewPluginAdd(root, action) : action.action === "plugin-remove" ? previewPluginRemove(action.name) : undefined;
-  if (pluginPreview !== undefined && record.summary !== `${TITLES[action.action]}\n\n${pluginPreview}`) throw new Stop("플러그인 설명이 바뀌었습니다. 다시 확인하세요.");
-  requireConsentSnapshot(root, record, "실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
+  if (pluginPreview !== undefined) {
+    if (record.summary !== `${TITLES[action.action]}\n\n${pluginPreview}`) {
+      discard(root, record, "target", "확인 대상 변경: 플러그인 설명");
+      throw new Stop("플러그인 설명이 바뀌었습니다. 다시 확인하세요.");
+    }
+    // 플러그인 미리보기는 저장소 밖(키 저장소)을 읽는다 — 그 사이 바뀌지 않았는지 한 번 더 본다
+    discardIfChanged(root, record, "실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
+  }
   record.status="applying";save(root,record);
-  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · 명시적 선택`};
+  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
+  let passed = 0;
   try {
     record.result=withInteraction({
       confirm(shown,word){
-        if(!record.confirmations.some(p=>p.shown===shown&&p.word===word) && !(action.action==="plugin-add"&&word===action.name&&shown===pluginPreview))throw new Stop("확인한 내용과 실행할 내용이 다릅니다.");
+        if(!record.confirmations.some(p=>p.shown===shown&&p.word===word) && !(action.action==="plugin-add"&&word===action.name&&shown===pluginPreview))throw new ScreenMismatch("확인한 내용과 실행할 내용이 다릅니다.");
+        passed++;
         return presence;
       },
-      ask(shown,prompt){const c=record.choices.find(c=>c.shown===shown&&c.prompt===prompt);if(!c?.answer)throw new Stop("응답하지 않은 문서 변경입니다.");return c.answer===APPLY?"y":"n";}
+      ask(shown,prompt){
+        const c=record.choices.find(c=>c.shown===shown&&c.prompt===prompt);
+        if(!c?.answer)throw new ScreenMismatch("응답하지 않은 문서 변경입니다.");
+        passed++;
+        return c.answer===APPLY?"y":"n";
+      }
     },()=>{
       switch(action.action){
         case "setup": return [confirmDoc(root,"all"),setupBaseline(root)].join("\n");
@@ -514,18 +691,52 @@ function applyLocked(root: string, id: string): string {
         case "plugin-add": return pluginAdd(root,action);
         case "plugin-remove": return pluginRemove(action.name);
         case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot}) + "\n사용 중인 호스트를 다시 열어 새 훅·스킬을 적용한 뒤 ca-next로 이어가세요.";
+        case "judgment": {
+          // 각 함수가 소유 기록의 잠금 안에서 전제(카운터 소진·지적 존재·교차 지점 막힘)를 다시 확인한다
+          const { kind, reason } = judgmentOf(action);
+          if (kind === "retry-grant") return grantRetry(root, action.name ?? "", id, reason, action.id);
+          if (kind === "waive-finding") return waiveFinding(root, action.id!, id, reason);
+          return recordCrossStop(root, action.name as "review" | "planning", id, reason);
+        }
       }
     });
     record.status="applied";save(root,record);return record.result;
-  }catch(error){record.status="failed";save(root,record);throw error;}
+  }catch(error){
+    if (error instanceof ScreenMismatch) {
+      // 도메인 함수는 첫 확인 전에 효과를 내지 않는다 — 그 전 불일치는 대상 변경(업그레이드로 화면이 바뀐 경우 등)이다
+      if (passed === 0) discard(root, record, "target", "확인 대상 변경: 확인 화면");
+      else discard(root, record, "apply", `확인 화면 불일치(앞선 확인 ${passed}건 통과 뒤 — 일부 반영됐을 수 있음)`);
+    } else {
+      discard(root, record, "apply", (error instanceof Error ? error.message : String(error)).split("\n").find((line) => line.trim()) ?? "알 수 없는 오류");
+    }
+    throw error;
+  }
 }
 export function consentCommandGuard(root:string,command:string,sessionId?:string):string|undefined {
   const match=/^code-agent consent (?:apply|finish) ([a-f0-9-]+)$/.exec(command.trim());
   if(!match)return;
-  try {const record=loadConsent(root,match[1]);if(!sessionId||record.sessionId!==sessionId)return "현재 세션에서 확인한 요청만 실행할 수 있습니다.";}
+  try {
+    const record=loadConsent(root,match[1]);
+    // 응답 전에는 준비 세션이 기준이다 — Codex 가 응답 전에 finish 로 상태를 볼 수 있다
+    const owner = record.sessionId ?? record.preparedSession?.id;
+    if(!sessionId||owner!==sessionId)return "현재 세션에서 확인한 요청만 실행할 수 있습니다.";
+  }
   catch{return "확인 요청을 읽을 수 없습니다.";}
 }
+/**
+ * Claude AskUserQuestion 관찰. 동의 질문(metadata.source 가 code-agent:)의 관찰 실패는 질문을 막는다(exit 2).
+ * 업무 질문은 답 관찰(answers.jsonl)만 하고, 실패해도 질문을 막지 않는다 — 게이트가 나중에 '답 출처 미확인'으로 잡는다.
+ */
 export function runConsentHook(stdin:string):number {
-  try{observeConsent(JSON.parse(stdin),process.env.CLAUDE_PROJECT_DIR);return 0;}
-  catch(error){process.stderr.write(`code-agent consent-event: ${error instanceof Error?error.message:error}\n`);return 2;}
+  let input: ConsentHookInput;
+  try { input = JSON.parse(stdin) as ConsentHookInput; }
+  catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+  const source = input?.tool_input?.metadata?.source;
+  if (typeof source === "string" && source.startsWith("code-agent:")) {
+    try { observeConsent(input, process.env.CLAUDE_PROJECT_DIR); return 0; }
+    catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+  }
+  try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
+  catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
+  return 0;
 }

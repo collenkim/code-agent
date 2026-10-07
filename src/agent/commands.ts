@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { userInfo } from "os";
 
-import { formatDiff, hashPlan, recordDecision } from "../core/approval";
+import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { Decision } from "../core/approval";
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import { checkPaths, missingPlannedFiles } from "../core/gate";
@@ -28,7 +28,8 @@ import {
   workDocsDir,
 } from "./layout";
 import type { ActiveWork, Phase } from "./layout";
-import { unansweredQuestions } from "./questions";
+import { formatAnswerSources, openQuestions, writeAnswerBaseline } from "./answers";
+import { hookInstallWarning, requireStartHooks } from "./init";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { requirePreparedBranch } from "./bootstrap";
 import { commitOf, mergeBase } from "./tree";
@@ -71,7 +72,7 @@ import { KNOWLEDGE_KINDS } from "./schemas";
 import { sourceFileScan, SURVEY_MAX_FILES } from "./survey";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
-import { approvalDocsHash, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
+import { approvalDocsState, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
 import {
   acceptanceCriteria,
@@ -187,12 +188,22 @@ function requireDocs(repoRoot: string, work?: Work): void {
 }
 
 function requireAnswers(repoRoot: string, active: ActiveWork): void {
-  const open = unansweredQuestions(repoRoot, questionsFile(active.id));
+  const { unanswered: open, unverified } = openQuestions(repoRoot, questionsFile(active.id));
   if (open.length > 0) {
     throw new Stop(
       `답이 없는 질문이 ${open.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
         open.map((question) => `  - ${question.title}`).join("\n") +
         "\n메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.",
+    );
+  }
+  if (unverified.length > 0) {
+    // 답 출처 — 관찰된 질문 도구 응답과 맞거나, 접수 때 확정 화면에 실린 답이거나, 대화로 받았다고 밝힌 답만 받는다
+    throw new Stop(
+      `답의 출처를 확인할 수 없는 질문이 ${unverified.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
+        unverified.map((question) => `  - ${question.title}`).join("\n") +
+        "\nhook 이 관찰한 질문 도구의 답이면 선택한 label(또는 직접 입력 원문)을 그대로 [Answer]: 에 적습니다. " +
+        "hook 이 관찰하지 못하는 답(사용자가 대화로 직접 준 답, Codex 에서 받은 모든 답)은 그 원문을 적고 다음 줄에 [Source]: 대화 를 붙입니다. " +
+        "모델이 정한 값은 답이 아닙니다 — 질문으로 받으세요.",
     );
   }
 }
@@ -252,6 +263,9 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop("문서 준비 세션이 열려 있습니다. code-agent docs end 뒤에 같은 요구사항으로 시작하세요.");
   }
+  // 이미 시작한 같은 작업이면 상태만 보인다 — 진행 중인 작업을 hook 게이트로 붙잡지 않는다
+  const started = loadActive(repoRoot);
+  const hooks = started ? undefined : requireStartHooks(repoRoot);
   const aidlc = aidlcBlock(repoRoot);
   if (aidlc) throw new Stop(aidlc);
   const manifest = loadManifestIfAny(repoRoot);
@@ -333,13 +347,15 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     writeFileSync(
       questions,
       `# ${order.id} 질문\n\n` +
-        "<!-- 질문은 `## Q<번호> · <스테이지>` 로 시작하고, 답은 `[Answer]:` 뒤에 적는다. 답이 없으면 다음으로 넘어가지 않는다. -->\n",
+        "<!-- 질문은 `## Q<번호> · <스테이지>` 로 시작하고, 답은 `[Answer]:` 뒤에 적는다. hook 이 관찰하지 못한 답(대화로 받은 답, Codex 에서 받은 답)은 `[Answer]:` 다음 줄에 `[Source]: 대화` 를 둔다. 답이 없으면 다음으로 넘어가지 않는다. -->\n",
     );
   }
+  // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
+  writeAnswerBaseline(repoRoot, order.id, specPath);
   saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1 }, "start");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
-  return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}`;
+  return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
 }
 
 // ---- status ----
@@ -387,9 +403,10 @@ function nextHint(work: Work): string {
   if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
     return requestHint(repoRoot, active.id, active.spec);
   }
-  const open = unansweredQuestions(repoRoot, questionsFile(active.id)).length;
+  const questions = openQuestions(repoRoot, questionsFile(active.id));
+  const open = questions.unanswered.length + questions.unverified.length;
   if (open > 0) {
-    return `답이 없는 질문 ${open}개 — /ca-answer`;
+    return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — /ca-answer`;
   }
   switch (active.phase) {
     case "analysis":
@@ -459,6 +476,8 @@ export function status(repoRoot: string): string {
   if (aidlc) lines.push("", aidlc);
   const cross = crossNotice(repoRoot);
   if (cross) lines.push("", cross);
+  const hookWarning = hookInstallWarning(repoRoot);
+  if (hookWarning) lines.push("", `hook: ${hookWarning}`);
   if (cross) {
     // 실행 불가 중지가 이어지면 다른 호스트의 설치·로그인·한도 문제일 수 있다 — 설정 오류는 중지가 아니라 게이트를 막는다
     const streak = crossStopStreak(repoRoot);
@@ -488,7 +507,7 @@ export function status(repoRoot: string): string {
   const { active, order } = work;
   requirePhase(active);
   const flow = PHASES.map((phase) => (phase === active.phase ? `[${phase}]` : phase)).join(" → ");
-  const open = unansweredQuestions(repoRoot, questionsFile(active.id));
+  const { unanswered: open, unverified } = openQuestions(repoRoot, questionsFile(active.id));
   lines.push(
     "",
     `작업: ${order.id} · ${order.title} (${order.kind}, 대상 ${active.target})`,
@@ -503,7 +522,7 @@ export function status(repoRoot: string): string {
     const keys = plannedStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key));
     lines.push(`단계: ${keys.join(" → ")}`);
   }
-  lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}`);
+  lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}${unverified.length ? ` · ${unverified.map((q) => q.id).join(", ")} 답 출처 미확인` : ""}`);
   if (work.plan) {
     const approval = approvalOf(work).status;
     lines.push(`계획: 제출됨 · 승인 ${approval}`);
@@ -1385,15 +1404,26 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     ...functional.problems,
     ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind, active.spec).problems,
   ]);
-  const docsHash = approvalDocsHash(work);
+  const docs = approvalDocsState(work);
 
   const state = approvalOf(work);
   requireWorkDocs(sequenceProblems(plan, work.stages, order.kind));
-  const shown = [formatSourceTrace(readSourceTrace(repoRoot, active.id, active.spec).rows), formatPlan(plan)];
+  // 승인이 묶는 것을 화면에 모두 싣는다 — 계획·경계·검증 선언(code-agent.json)·가정·답 출처
+  const shown = [formatSourceTrace(readSourceTrace(repoRoot, active.id, active.spec).rows), formatPlan(plan), "", formatBoundary(manifestBoundary(manifest))];
   const assumptions = formatAssumptions(requirements.assumptions);
   if (assumptions) shown.push("", assumptions);
+  const sources = formatAnswerSources(repoRoot, active.id);
+  if (sources) shown.push("", sources);
   if (state.status === "stale-plan" && state.diff.length > 0) {
     shown.push("", "이전 판정 이후 바뀐 곳:", formatDiff(state.diff));
+  }
+  if (state.status === "stale-manifest") {
+    shown.push("", "이전 판정 이후 바뀐 경계·검증 선언:", state.diff.length
+      ? state.diff.map((entry) => `  ${entry.change} ${entry.text}`).join("\n")
+      : "  이전 승인 기록에 경계 스냅샷이 없어 차이를 보일 수 없습니다 — 위 현재 선언 전체를 확인하세요.");
+  }
+  if (state.status === "stale-docs") {
+    shown.push("", `이전 판정 이후 바뀐 근거 문서: ${state.changed.join(" · ") || "이전 승인 기록에 문서별 해시가 없어 무엇이 바뀌었는지 보일 수 없습니다"}`);
   }
   const presence = confirmOnTerminal(shown.join("\n"), decision === "approved" ? "approve" : "reject");
   recordDecision(repoRoot, {
@@ -1405,7 +1435,8 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     approver: order.approver ?? userInfo().username,
     comment,
     presence,
-    docsHash,
+    docsHash: docs.hash,
+    docsParts: docs.parts,
   });
   return decision === "approved"
     ? "승인을 원장에 남겼습니다. 현재 호스트 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: /ca-next)."

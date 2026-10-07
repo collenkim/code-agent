@@ -82,7 +82,7 @@ claude                                   # 이 안에서 /ca-request 입력
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|Read\|Grep\|Glob`, command `code-agent hook` | O |
+| PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell\|Read\|Grep\|Glob\|mcp__.*`, command `code-agent hook` | O |
 | Stop hook | `.claude/settings.json` — `code-agent stop` | O |
 | ca-reviewer SubagentStart/Stop | `.claude/settings.json` — 독립 리뷰 실행·결과를 기록하는 `code-agent review-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
@@ -441,7 +441,7 @@ preserve:
 
 ### `/ca-answer`
 
-`/ca-answer`는 모든 명령이 공유하는 선택형 질의응답 절차이며, 직접 호출하면 미응답 질문을 재개한다. 메인이 `AskUserQuestion`을 호출하고 선택한 이름 또는 직접 입력을 `[Answer]:`에 그대로 기록한다. 다른 명령에서 이 절차를 사용할 때는 답을 받은 뒤 그 명령으로 복귀한다. 질문이 생겼다는 이유만으로 `/ca-answer`를 다시 입력하게 하지 않는다.
+`/ca-answer`는 모든 명령이 공유하는 선택형 질의응답 절차이며, 직접 호출하면 미응답 질문을 재개한다. 메인이 `AskUserQuestion`을 호출하고(질문 문장은 `Q3. `처럼 그 Q 번호로 시작한다) 선택한 이름 또는 직접 입력을 `[Answer]:`에 그대로 기록한다. hook 이 질문 도구의 응답을 작업 기록(`.code-agent/work/<ID>/answers.jsonl`)에 남기고, 기록한 답이 관찰된 응답과 다르면 `next`·Stop 이 "답 출처 미확인"으로 막는다. 사용자가 대화로 직접 준 답(Codex 에서는 모든 업무 답)은 원문을 적고 다음 줄에 `[Source]: 대화`를 둔다 — 계획 승인·반영 화면에 "관찰 안 됨"으로 이름과 답이 실린다. 다른 명령에서 이 절차를 사용할 때는 답을 받은 뒤 그 명령으로 복귀한다. 질문이 생겼다는 이유만으로 `/ca-answer`를 다시 입력하게 하지 않는다.
 
 추천할 근거가 있으면 첫 후보에 `(추천)`과 이유를 붙인다. 초기 언어·구성은 7개 후보이며 Node/Python은 `docs setup`, 나머지는 `/ca-adopt`의 문서·설정 작성으로 연결한다. 대안이 많은 질문은 최소 5개 실제 후보를 제공하고, 후보가 적은 업무 결정은 억지로 늘리지 않는다. 5개 이상 후보는 전체 목록을 먼저 보여 주고 최대 4개 옵션 안에서 `다른 선택지`·`앞 선택지`로 이동한다. 페이지 이동은 답이 아니다.
 
@@ -568,7 +568,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | — |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. `--templates-only`는 현재 번들만 적용. 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
+| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(TTY — 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
@@ -853,6 +853,15 @@ B. 불가
 
 `[Answer]:` 뒤가 비어 있으면 답이 없는 것이다. 하나라도 비면 다음 스테이지로 넘어가지 않는다.
 
+hook 이 관찰하지 못한 답(사용자가 대화로 직접 준 답, Codex 에서 받은 답)은 `[Answer]:` 다음 줄에 `[Source]: 대화` 를 둔다. 질문 도구로 받은 답은 선택한 label(또는 직접 입력 원문)을 그대로 적는다 — 관찰된 응답과 다르고 `[Source]` 도 없는 답은 "답의 출처를 확인할 수 없는 질문" 으로 답이 없는 것과 같이 막힌다(`next`·Stop·반영·계획 배정). `[Source]` 는 `[Answer]:` 뒤의 줄에서만 읽는다. 이 버전 전에 시작한 작업의 답과, 확정 지시서의 "접수 때 정한 것" 과 같은 접수 중 답은 그대로 인정된다.
+
+```markdown
+## Q4 · 범위
+결제 수단은?
+[Answer]: 카드만 받기로 했어요
+[Source]: 대화
+```
+
 ### `plan.json` — 제출 형식
 
 `feature` 는 만들 파일 목록, `fix` · `refactor` 는 고칠 파일 + 보존 조건이다.
@@ -926,19 +935,19 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 ### 내부 처리
 
 1. 메인은 실행할 action JSON을 허용된 작업 문서 경로에 작성한다.
-2. `code-agent consent prepare <action.json>`이 표시할 요약과 질문을 생성한다.
+2. `code-agent consent prepare <action.json>`이 표시할 요약과 질문을 생성한다. 메인 세션의 셸에서 이 꼴 그대로 실행해야 한다 — hook 이 그 실행을 본 세션에 동의를 묶고(준비 티켓), 다른 경로로 준비한 동의는 받지 않는다.
 3. 메인은 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다.
 4. 질문의 PreToolUse·PostToolUse hook이 같은 세션·호출·작업 경로의 실제 응답을 관찰한다.
-5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다.
+5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다. 적용은 응답을 받은 세션의 셸에서 hook 이 본 명령(적용 티켓)이나 사람의 터미널에서만 된다.
 6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 새 hook을 읽도록 Claude Code를 재시작한 뒤 재개한다.
 
-취소·보류·응답 누락·시간 초과·추가 질문·다른 세션은 승인으로 처리하지 않는다. 확인 이후 파일·설정·Git 상태가 바뀌면 새로 준비하여 확인한다. 같은 요청을 중복 적용해도 커밋을 반복하지 않는다. 이 기록은 신뢰하는 로컬 hook의 관찰이며 사용자 신원 증명이나 OS 보안 경계는 아니다.
+취소·보류·응답 누락·시간 초과·추가 질문·다른 세션은 승인으로 처리하지 않는다. 확인 이후 파일·설정·Git 상태가 바뀌면 그 동의는 폐기되고(같은 ID로 다시 묻거나 적용하지 않는다) 새로 준비하여 확인한다. 상태 출력의 `failure`(`class`·`kind`·`guide`)가 다음 행동을 알려 준다 — 보류·명시적 선택 없음은 다시 묻지 않고, 수정 요청은 고친 뒤 새로 준비하며, 적용 실패는 상태를 확인한 뒤 새로 준비한다. 같은 동작이 연속 두 번 대상 변경으로 폐기되면 준비 결과에 `warning` 이 붙는다(외부 hook·편집기·빌드가 대상을 바꾸는지 확인). 작업·세션이 없을 때 응답·적용을 기다리는 동의가 있으면 30분 동안 셸은 code-agent 명령과 읽기용 git 만 돈다 — 진행하지 않을 거면 그 질문에서 `보류` 를 고른다. 적용이 도는 동안에는 쓰기 도구가 막힌다. 같은 요청을 중복 적용해도 커밋을 반복하지 않는다. 이 기록은 신뢰하는 로컬 hook의 관찰이며 사용자 신원 증명이나 OS 보안 경계는 아니다.
 
-Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사한다. 외부 도구의 무시된 세션·캐시·로그(예: `aidlc/.aidlc-sessions/`, `.gradle/`, `logs/`)만 바뀌어도 동의를 다시 받을 필요는 없다. 단, `code-agent.json`, `CLAUDE.md`, `AGENTS.md`, `.code-agent/`(consents 제외), `.claude/`, `.agents/`, `.codex/`, `doc/`, `docs/`, 등록된 POLICY·KNOWLEDGE·단계 템플릿·spec, setup/baseline의 준비 커밋 대상은 무시돼도 검사한다. 이 명시 범위 안의 로그와 Git 추적 중인 감사 파일은 변경 시 재확인이 필요하다. 명시 범위 밖의 무시된 `.env` 같은 실행 설정은 동의 스냅샷에 포함되지 않는다. Git이 없는 디렉토리는 기존 전체 순회와 캐시 제외 규칙을 유지한다.
+Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사한다. 외부 도구의 무시된 세션·캐시·로그(예: `aidlc/.aidlc-sessions/`, `.gradle/`, `logs/`)만 바뀌어도 동의를 다시 받을 필요는 없다. 단, `code-agent.json`, `CLAUDE.md`, `AGENTS.md`, `.code-agent/`(code-agent 자체 기록인 `consents/`·`log/`·`lease.json*` 제외 — 업무 답 기록 `work/<ID>/answers.jsonl` 은 포함), `.claude/`, `.agents/`, `.codex/`, `doc/`, `docs/`, 등록된 POLICY·KNOWLEDGE·단계 템플릿·spec, setup/baseline의 준비 커밋 대상은 무시돼도 검사한다. 이 명시 범위 안의 로그와 Git 추적 중인 감사 파일은 변경 시 재확인이 필요하다. 제어 경로 아래의 링크는 따라가지 않고 가리키는 대상으로 검사하며, 제어 경로 자체가 링크이면 준비를 거부한다. 명시 범위 밖의 무시된 `.env` 같은 실행 설정은 동의 스냅샷에 포함되지 않는다. Git이 없는 디렉토리는 기존 전체 순회와 캐시 제외 규칙을 유지한다.
 
 대상이 바뀌면 오류의 `변경 대상:`에서 파일 경로나 Git HEAD·브랜치·index·설정 등 최대 6개 항목을 확인하고, 실제 변경을 검토한 뒤 새 동의를 준비한다. 동의 기록에는 경로와 해시만 추가하며 파일 본문이나 Git 설정값은 저장하지 않는다. 이전 기록에는 경로별 해시가 없어 새 준비가 필요하다는 안내만 나올 수 있다. `code-agent help`와 `code-agent --help`는 접수·문서 작성·작업 중에도 사용할 수 있다.
 
-계획 승인은 지시서·계획·매니페스트·POLICY와 지정된 분석·설계·테스트 문서의 해시에 묶인다. 해당 내용이 바뀌면 기존 승인을 재사용할 수 없다. 요구사항 자체가 바뀌면 요구사항과 계획을 모두 다시 확인한다.
+계획 승인은 지시서·계획·매니페스트·POLICY와 지정된 분석·설계·테스트 문서의 해시에 묶인다. 승인 화면에는 계획과 함께 그 승인이 묶는 **경계·검증 선언**(단계 경계·build·test·prepare·추가 명령·환경 오류 문구)과 **질문 답 출처**(관찰 안 된 대화 답은 이름과 답)가 실린다. 해당 내용이 바뀌면 기존 승인을 재사용할 수 없고, 재승인 화면이 바뀐 경계 선언 항목이나 바뀐 근거 문서를 보인다. 반영 커밋에는 이 작업의 동의 영수증(`approvals/<ID>/consents.jsonl` — 선택·시각·세션·실패 원인)이 함께 들어가고, 적용된 계획 승인·요구 확정의 원장 줄이 지워졌으면 반영이 막힌다. 요구사항 자체가 바뀌면 요구사항과 계획을 모두 다시 확인한다.
 
 ### 최종 반영 범위
 
@@ -1010,7 +1019,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 `plugin list` 는 `키 등록됨` 만 찍고 값을 되출력하지 않는다.
 작업 중에는 **모델이 그 파일을 읽지 못한다** — `Read`·`Grep`·`Glob` 도, Bash 로 그 경로를 가리키는 명령도 hook 이 막는다.
 읽기 셋이 hook 까지 오는 것은 PreToolUse matcher 에 `Read`·`Grep`·`Glob` 이 들어 있기 때문이다 — 그 전에 깔린 저장소는
-`code-agent update` 로 matcher 를 갱신해야 이 문이 선다 (`code-agent doctor` 가 `matcher 가 Read · Grep · Glob 를 넘기지 않습니다` 로 ✗ 를 낸다).
+`code-agent update` 로 matcher 를 갱신해야 이 문이 선다 (`code-agent doctor` 가 `matcher 가 … Read · Grep · Glob · mcp__.* 를 넘기지 않습니다` 로 ✗ 를 낸다). Grep 의 `glob`·Glob 의 `pattern` 이 키 자리를 가리키거나 키 저장소의 상위 폴더를 통째로 검색해도 막고, 로컬 파일 MCP 도구(`mcp__fs__…` 등)의 경로 인자도 같은 규칙으로 본다.
 
 ### 저장소가 쓸지 말지는 `code-agent.json` 이 정한다
 
@@ -1073,8 +1082,8 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `fix 는 오류 로그로 고칩니다` | fix 지시서·접수 초안에 오류 로그(또는 없는 사유·재현 절차)가 없다 | 사람에게 로그를 받아 `errorLog`·`errorLogFile` 로, 없으면 `noErrorLog` 로 다시 제출한다 |
 | `fix 는 기존 시스템 분석에 **오류 로그의 어느 줄이 어느 코드에서 나는지**` | ② 에 로그 대응 줄이 없다 | 로그 문구를 백틱으로 그대로 인용하고 같은 줄 백틱 밖에 원인 코드 `path:line` 을 적는다 |
 | `리팩토링은 기존 테스트를 고치지 않습니다` | 기준 커밋에 이미 있던 `kind: test` 단계 파일을 건드렸다 | 되돌린다. **동작이 보존되는지 보는 것이 그 테스트**다 — 고쳐야 할 이유가 보이면 `questions.md` 로 묻는다 |
-| `고쳐 쓰기 2회를 넘겨…` | 고쳐 쓰기 회차(`fixRounds`)를 다 쓴 실패 상태다 — 고쳐도 다음 회차가 거부된다 | 덮지 않고 보고한다. 지금 사람이 고를 수 있는 것은 계획을 고쳐 재승인하거나 작업을 종료(abort)하는 것이다 — 문구가 가리키는 judgment 동의(한 회차 더 허용)는 아직 동의 동작에 없다 |
-| `리뷰 회차 한도 3회를 모두 써서…` | 리뷰 회차 3회를 다 썼는데 통과 뒤 변경(리뷰 지적 수정)을 하려 했다 | 고치지 말고 남은 지적을 `questions.md` 에 적고 사람에게 보고한다. 사람이 재계획·재승인하거나 종료(abort)한다 — 회차 추가·지적 기각을 위한 judgment 동의는 아직 동의 동작에 없다 |
+| `고쳐 쓰기 2회를 넘겨…` | 고쳐 쓰기 회차(`fixRounds`)를 다 쓴 실패 상태다 — 고쳐도 다음 회차가 거부된다 | 덮지 않고 보고한다. 사람이 고른다: 한 회차 더 허용(`/ca-answer` 의 judgment 동의 — `{"action":"judgment","kind":"retry-grant","name":"fix","comment":"<사유>"}`) · 계획을 고쳐 재승인 · 작업 종료(abort) |
+| `리뷰 회차 한도 3회를 모두 써서…` | 리뷰 회차 3회를 다 썼는데 통과 뒤 변경(리뷰 지적 수정)을 하려 했다 | 고치지 말고 남은 지적을 `questions.md` 에 적고 사람에게 보고한다. 사람이 고른다: 리뷰 회차 한 번 더(judgment retry-grant `reviewRounds`) · 남은 지적 기각(judgment waive-finding) · 재계획·재승인 · 종료(abort) |
 | `검증 회차가 총 N회에 닿아…` | 고쳐 쓰기·리뷰·수집 회차를 합친 총 회차를 다 썼다 | 위와 같이 보고한다 |
 | `작업 상태·제출된 계획·승인과 확정 기록은 도구로 고칠 수 없습니다` | `.code-agent/` 쓰기 (작업·세션이 없을 때도 막힌다) | `next` · `plan submit` · `confirm` 으로만 바뀐다 |
 | `` `.code-agent/` 는 code-agent 명령으로만 바뀝니다 `` | Bash 가 `.code-agent` 경로를 가리켰다 (세션 밖에서도) | 상태는 `code-agent status` 로 본다. CLI 이름 `code-agent` 를 부르는 것은 막지 않는다 |
@@ -1133,7 +1142,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 
 | 문구 | 뜻·할 일 |
 |---|---|
-| `<카운터> 한도 N회를 모두 썼습니다` (예: `같은 코드 재실행 한도 2회를 모두 썼습니다`, `리뷰 회차 한도 3회를 모두 썼습니다`) | 그 카운터의 재시도를 다 썼다 — `verify` 는 `decision`, 직접 명령은 거부(exit 1)다. 자동으로 다시 시도하지 않고 막힌 이유와 증거를 보고한다. 사람이 재계획·재승인 또는 종료(abort)를 고른다 — 안내 문구의 judgment 동의(한 번 더 허용)는 아직 동의 동작에 없다 |
+| `<카운터> 한도 N회를 모두 썼습니다` (예: `같은 코드 재실행 한도 2회를 모두 썼습니다`, `리뷰 회차 한도 3회를 모두 썼습니다`) | 그 카운터의 재시도를 다 썼다 — `verify` 는 `decision`, 직접 명령은 거부(exit 1)다. 자동으로 다시 시도하지 않고 막힌 이유와 증거를 보고한다. 사람이 한 번 더 허용(`/ca-answer` 의 judgment retry-grant — `name` 은 결과의 `failure.counter.key`) · 재계획·재승인 · 종료(abort) 중에서 고른다. 사람의 관찰된 선택 없이는 한도가 늘지 않는다 |
 | `코드 결함으로 실패한 트리입니다 — 같은 코드로 다시 돌리지 않습니다` | test·통합 검증이 코드 결함으로 실패한 같은 코드를 다시 돌리려 했다. 계획 안에서 고친 뒤 `code-agent verify`, 같은 코드를 다시 확인하려면 `verify --retry`(고쳐 쓰기 회차를 쓴다) |
 | `검증 전제가 맞지 않습니다` | 다시 돌려도 남는 문제(계획 밖 변경·바뀐 동결/보존 테스트·승인·재현 기록·명령 미선언)다(Stop). 되돌리거나 치운 뒤, 재현 기록이 없으면 `code-agent repro` 뒤 `verify` 로 다시 돈다. 선언·승인·계획 변경은 사람이 정한다 |
 | `실행은 모두 통과했지만 증거가 지금과 맞지 않습니다` | 검증 명령이 계획 파일을 고쳤거나(포맷터 등) ⑧ 이 손으로 바뀌었다(`diagnose`). 고치지 말고 `code-agent verify --retry` 로 check 부터 다시 돌면 맞춰진다 — 고쳐 쓰기를 쓰지 않는다. ⑧ 만 어긋났으면 `--retry` 없는 `verify` 는 판정부터 들어가 ⑧ 을 다시 렌더하지 않는다. 돌 때마다 되풀이되면 보고한다 |
@@ -1235,6 +1244,6 @@ git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정�
 
 신규 작업은 `status`의 계획 처리 줄에 관찰 흐름으로 표시된다. 각 단계에서 `planning advance`가 준비·재사용·선행 조건·동시 한도를 확인하고 반환한 배정별로 서브 에이전트를 호출한다. 실제 시작·완료 hook이 결과를 기록한다. 영역을 직접 나눌 때는 `planning prepare <작업.json>`을 먼저 사용한다. 전체 단계별 내용 기준은 동일하며 번호 문서와 plan.json은 관찰된 결과로 생성한다. 이전 버전 작업은 기존 작성 절차로 재개한다.
 
-`planning status`는 요약, `planning result <ID>`는 원문 산출물과 현재 입력에 대한 유효성을 조회한다. 선행 결과는 문서 본문 대신 경로·해시를 전달한다. 관찰된 출력 형식 오류는 `planning advance` 또는 `planning repair <ID>`로 같은 입력에서 1회 교정한다. 새 담당의 시작·완료 관찰이 필요하며 입력 변경·근거 오류·미결 질문·승인을 우회하지 않는다. `ready-for-gate`는 기존 게이트로 넘어갈 준비 상태이며 승인 완료가 아니다. 같은 입력의 실패는 3회, 작업마다 배정은 총 6회까지이고(한도에 닿으면 `blocked`의 `class`가 `same-input-repeat`·`reassign-total` — 자동 재배정을 멈추고 사용자에게 보고한다. 같은 작업을 다시 준비해도 배정 기록은 그대로다), 연결된 담당이 끝났는데 결과가 없는 배정은 advance가 고아로 표시하고 다시 배정한다. 시작이 관찰되지 않았거나 너무 오래 끝나지 않은 배정은 `stale`·`cancel`로 보이고, 앞 단계 계획 작업이 낡으면 `rewind-required`를 낸다(같은 사유의 첫 회만 `rewind.auto: true`).
+`planning status`는 요약, `planning result <ID>`는 원문 산출물과 현재 입력에 대한 유효성을 조회한다. 선행 결과는 문서 본문 대신 경로·해시를 전달한다. 관찰된 출력 형식 오류는 `planning advance` 또는 `planning repair <ID>`로 같은 입력에서 1회 교정한다. 새 담당의 시작·완료 관찰이 필요하며 입력 변경·근거 오류·미결 질문·승인을 우회하지 않는다. `ready-for-gate`는 기존 게이트로 넘어갈 준비 상태이며 승인 완료가 아니다. 같은 입력의 실패는 3회, 작업마다 배정은 총 6회까지이고(한도에 닿으면 `blocked`의 `class`가 `same-input-repeat`·`reassign-total` — 자동 재배정을 멈추고 사용자에게 보고한다. 같은 작업을 다시 준비해도 배정 기록은 그대로다 — 사용자가 한 번 더 허용을 고르면 `/ca-answer`의 judgment retry-grant(`taskTotal`·`sameInput`, `id`는 계획 작업 ID)로 기록한다), 연결된 담당이 끝났는데 결과가 없는 배정은 advance가 고아로 표시하고 다시 배정한다. 시작이 관찰되지 않았거나 너무 오래 끝나지 않은 배정은 `stale`·`cancel`로 보이고, 앞 단계 계획 작업이 낡으면 `rewind-required`를 낸다(같은 사유의 첫 회만 `rewind.auto: true`).
 
 기본 역할 순서는 analysis → 영향도 → design → plan → critic이다. 작은 기본 영향도는 impact 한 담당이 조사·문서 정리를 함께 하고 나머지는 explore → synthesis로 진행한다. 분할 조사가 필요하면 첫 advance 전에 prepare로 준비한다. 설계·계획 판단은 ca-analyst, 분할 조사 정리는 ca-writer다. 새 작업은 역할별 필요한 입력만 연결하고 선행 실행 ID만 바뀐 동일 결과를 재사용한다. 선행 작업의 현재 입력·완료·충돌은 계속 검사한다. 계획 제출·승인은 관찰된 critic 완료가 필수다. 구현은 tasks의 현재 파일 범위만 허용한다. 선택 기준·예시·질문 상태·취소·재시도·피드백 반영은 [계획 작업 안내](planning.md)에 정리했다.

@@ -7,6 +7,7 @@ import { loadRequestSession } from "./request";
 import { approvalOf, loadWork, type Work } from "./work";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 import { crossChild } from "./crossEnv";
+import { hookInstallWarning } from "./init";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume) 비워지거나(clear) 압축된(compact) 뒤
@@ -19,7 +20,11 @@ import { crossChild } from "./crossEnv";
 export function sessionAnchor(repoRoot: string, source?: string): string {
   const anchor = progress(repoRoot, source);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
-  return aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
+  const text = aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
+  // 빠진 hook 은 진행 상태와 무관하게 알린다 — hook 이 없으면 쓰기 판정·동의 관찰이 꺼진다
+  let hooks: string | undefined;
+  try { hooks = hookInstallWarning(repoRoot); } catch { hooks = undefined; }
+  return hooks ? [text, `- ${hooks}`].filter(Boolean).join("\n") : text;
 }
 
 /**

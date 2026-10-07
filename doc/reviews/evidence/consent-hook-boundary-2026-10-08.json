@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-08",
+  "base": "77407a9",
+  "scope": "C5 동의·업무 답 관찰·hook 경계",
+  "npmTest": {
+    "tests": 1123,
+    "pass": 1119,
+    "fail": 0,
+    "skipped": 4,
+    "durationMs": 163207,
+    "platform": "win32",
+    "note": "기준 커밋 전체 1071개 — 기존 시험 하나(로그 보호 반복 항목)를 빼고 새 파일 다섯에 53개를 더했다"
+  },
+  "newTestFiles": {
+    "consentBinding.test.ts": 25,
+    "answers.test.ts": 8,
+    "hookPaths.test.ts": 10,
+    "consentScreens.test.ts": 9,
+    "sourceUpdateConfirm.test.ts": 1
+  },
+  "sandbox": {
+    "snapshotCache10kFiles": [
+      "1회차(캐시 없음): 642ms hash=645b9d425d99",
+      "2회차(캐시): 313ms hash=645b9d425d99",
+      "3회차(캐시): 307ms hash=645b9d425d99",
+      "같은 해시: true",
+      "2회차/1회차 = 48.8%",
+      "캐시 삭제 뒤: 601ms",
+      "prepare: pending · index.json 있음=true",
+      "index.open=[\"cd142f59-5b97-4e1e-bbfc-ca27ea96a2cd\"]"
+    ],
+    "windowsGitListsJunctionChildren": [
+      ".claude/skills/shared/x.md",
+      "custom/x.md"
+    ],
+    "note": "scratchpad/sandbox-stage4 — dist 모듈을 직접 불렀다. 원본 저장소를 소스로 쓰는 code-agent update 는 실행하지 않았다"
+  },
+  "unverified": [
+    "Codex PreToolUse·UserPromptSubmit session_id 동일성",
+    "CODEX_MARKERS 실제 셸 표지·PTY 여부",
+    "Codex commandWindows 실행 셸",
+    "Claude Code PowerShell 대체 버전"
+  ]
+}

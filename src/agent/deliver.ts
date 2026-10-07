@@ -13,7 +13,8 @@ import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, 
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
 import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
-import { unansweredQuestions } from "./questions";
+import { formatAnswerSources, openQuestions } from "./answers";
+import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
 import { crossQuestionViews, loadPlanning } from "./planningState";
 import { crossPointState } from "./retryPolicy";
 import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./review";
@@ -282,10 +283,15 @@ export function deliverProblems(work: Work, prText: string): string[] {
       ...reviewProblems(work),
     ]),
   ];
-  const open = unansweredQuestions(repoRoot, questionsFile(active.id));
+  const { unanswered: open, unverified } = openQuestions(repoRoot, questionsFile(active.id));
   if (open.length > 0) {
     problems.push(`답이 없는 질문이 ${open.length}개 있습니다 (${questionsFile(active.id)})`);
   }
+  if (unverified.length > 0) {
+    problems.push(`답의 출처를 확인할 수 없는 질문이 ${unverified.length}개 있습니다 (${questionsFile(active.id)})`);
+  }
+  // 적용된 계획 승인·요구 확정 동의마다 원장 판정 줄이 있어야 한다 — 사슬로는 드러나지 않는 끝줄 삭제를 잡는다
+  problems.push(...consentLedgerProblems(work));
   for (const row of traceRows(work, loadEvidence(repoRoot, active.id, active.target))) {
     const blank = [
       row.acceptance.length === 0 ? "AC" : "",
@@ -330,8 +336,13 @@ export function knowledgeChoices(work: Work) {
     process.stderr.write(`건너뜀: ${reason}\n`);
   }
 
-  return entries.map(entry => {
+  return entries.flatMap(entry => {
     const target = knowledgePath(manifest, entry.kind);
+    // 계획 밖 변경 검사가 KNOWLEDGE 예외를 .md 로만 두므로 반영도 .md 가 아닌 경로를 고치지 않는다
+    if (!target.toLowerCase().endsWith(".md")) {
+      process.stderr.write(`건너뜀: ${entry.kind} 경로가 .md 가 아니라 반영하지 않습니다: ${target}\n`);
+      return [];
+    }
     const current = readKnowledge(repoRoot, manifest, entry.kind);
     const before = existingEntry(current, entry.key);
     // 같은 키에 다른 내용이 오면 조용히 덮지 않는다 — 양쪽을 나란히 보여 주고 사람이 고른다
@@ -340,7 +351,7 @@ export function knowledgeChoices(work: Work) {
       before ? `[지금]\n${before}\n` : "[지금] 없음 — 새 항목입니다\n",
       `[제안]\n${entry.text}`,
     ].join("\n");
-    return { target, entry, shown };
+    return [{ target, entry, shown }];
   });
 }
 
@@ -469,6 +480,12 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
 
 // ---- code-agent deliver ----
 
+/** 반영 화면의 답 출처 절(관찰 안 된 대화 답은 이름과 답을 싣는다) */
+function answerSourceLines(work: Work): string[] {
+  const sources = formatAnswerSources(work.repoRoot, work.active.id);
+  return sources ? ["", sources] : [];
+}
+
 /**
  * 11 반영. 관찰된 같은 세션의 선택 또는 직접 TTY로 확인한다.
  * 화면을 그리기 직전에 게이트를 다시 돌려 확인 대상과 실제 커밋 범위를 대조한다.
@@ -518,12 +535,15 @@ export function deliver(work: Work): string {
     "",
     `브랜치 ${active.branch ?? "(없음)"} 에 **로컬 커밋**합니다. push · MR/PR 생성은 하지 않습니다.`,
     ...(tampered ? ["", `!! ${prDocFile(active.id)} 의 코드 구역이 손으로 고쳐져 있어 다시 렌더했습니다.`] : []),
+    ...answerSourceLines(work),
     "",
     block,
   ].join("\n");
   const presence = confirmOnTerminal(shown, "deliver");
 
   const { targets: knowledge, originals } = selectKnowledge(work);
+  // 동의 영수증(선택 label·시각·세션·실패 원인) — 동의 기록 자체는 커밋하지 않으므로 이 작업의 확인 이력을 커밋에 남긴다
+  writeConsentReceipts(work);
   const { commit, outside } = commitDelivery(work, evidence!, knowledge, originals);
   // 커밋 중 계획 파일이 바뀌었는가(pre-commit hook 등) — 검증한 부분 트리와 지금, 커밋본과 작업 트리를 대조한다. 되돌리지 않는다
   const planned = planPaths(work);

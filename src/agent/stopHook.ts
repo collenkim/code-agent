@@ -1,6 +1,6 @@
 import { outsideChanges } from "./evidence";
 import { canonical, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
-import { unansweredQuestions } from "./questions";
+import { openQuestions } from "./answers";
 import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
 
@@ -32,7 +32,8 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
   }
 
   const outside = outsideChanges(work);
-  const open = unansweredQuestions(repoRoot, questionsFile(work.active.id));
+  const { unanswered, unverified } = openQuestions(repoRoot, questionsFile(work.active.id));
+  const open = [...unanswered, ...unverified];
   if (outside.length === 0 && open.length === 0) {
     return undefined;
   }
@@ -47,7 +48,8 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
     ...(open.length > 0
       ? [
           `답이 없는 질문이 ${open.length}개 있습니다 (${questionsFile(work.active.id)}):`,
-          ...open.map((question) => `  - ${question.title}`),
+          ...unanswered.map((question) => `  - ${question.title}`),
+          ...unverified.map((question) => `  - ${question.title} (답 출처 미확인)`),
           `답을 받기 전에는 진행하지 마세요 — 메인이 ca-answer 공통 절차의 AskUserQuestion으로 답을 받고 기록합니다. 미응답이면 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
         ]
       : []),
