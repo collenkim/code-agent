@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 
 import { assetBytes, assetCount, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
 import { STATE_DIR } from "./layout";
-import { applyModels } from "./models";
+import { applyModels, policySummary } from "./models";
 import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 
@@ -216,8 +216,9 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     writeFileSync(target, assetBytes(key));
   }
   lines.push(`스킬·에이전트 ${assetCount(keys)}: .claude/skills/ca-*, .claude/agents/ca-*`);
-  // 템플릿은 전부 opus 다. 사람이 바꿔 둔 모델이 있으면 다시 설치해도 그대로 둔다.
+  // 템플릿 머리말은 제품 기본값(ROLE_POLICY)이다. 사람이 바꿔 둔 모델·강도가 있으면 다시 설치해도 그대로 바른다.
   applyModels(repoRoot);
+  lines.push(`모델·추론 강도: ${policySummary(repoRoot, "claude")} — code-agent model 로 확인·변경`);
 
   const settings = settingsFile(repoRoot);
   upsertHook(settings, "PreToolUse", "hook", command, HOOK_MATCHER);

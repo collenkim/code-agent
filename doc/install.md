@@ -173,7 +173,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
 | hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>` |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
-| 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 `model:` 줄은 빼고 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
+| 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 머리말의 `model:`·`effort:` 줄은 빼고 본다 — 모델·강도는 '에이전트 모델' 줄이 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
+| 에이전트 모델 | 정의 파일 머리말의 `model`·`effort`가 설정(`.code-agent/models.json`, 없으면 역할 기본값)과 같다. 판단·실행 기본값과 바꾼 역할을 함께 찍는다. 두 호스트 설치면 `Codex 에이전트 모델` 줄도 찍는다(TOML 어긋남은 `Codex 스킬·에이전트`가 본다) | 다르면 역할별로 최대 5개 → `code-agent update --templates-only`. `models.json`이 깨졌으면 그 사유 → 고치거나 지운 뒤 `update --templates-only` |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
 | 번들 자원 | 번들을 읽지 못할 때만 나온다 (24.8 미만으로 만든 바이너리) | `npm run build:bin` 을 Node 24.8 이상에서 다시 돌린다. **이 검사가 서도 doctor 는 끝까지 찍는다** — 깨진 설치를 설명할 유일한 명령이 doctor 다 |
 | 매니페스트 | `code-agent.json` 이 참조 파일을 실제로 찾는다. 파일이 없으면 `·` (도입 전) | 형식 오류면 어느 키가 왜 틀렸는지까지 그대로 (머리말만 남기지 않는다) → `code-agent manifest check` |
@@ -223,7 +224,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 |---|---|
 | `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 9개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
-| 에이전트별 모델(`.code-agent/models.json`·`.code-agent/codex-models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다 |
+| 에이전트별 모델·추론 강도(`.code-agent/models.json`·`.code-agent/codex-models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다. 정의 파일의 model·effort가 설정과 달랐던 역할은 전후 값을 출력에 적는다(원인은 가리지 않는다) |
 | 개발용 `--cli` | 기본 소스 갱신과 `--templates-only` 모두 설치된 hook 명령의 꼴을 승계한다 — `code-agent …` 은 그대로 두고, 개발 CLI 경로(`node "<경로>" …`)는 그 경로를 잇는다. 새로 빌드한 이 PC 의 절대 경로를 공유 설정에 새로 박지 않는다. `--cli`를 명시하면 지정한 경로를 적용한다 |
 
 ```
@@ -232,11 +233,21 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
   - .claude/settings.json: 그대로 (PreToolUse hook · PreToolUse/PostToolUse consent-event · Stop stop · SubagentStart/SubagentStop review-event)
   - CLAUDE.md: 갱신
   - .gitignore: 그대로
-  - 에이전트 모델 오버라이드 1개 유지: implementer=sonnet
+  - 에이전트 모델 오버라이드 1개 유지: implementer=opus/medium
   - .code-agent/version = 1.1.0
 
   갱신된 파일을 커밋해 팀과 공유하세요.
 ```
+
+이전 code-agent로 설치한 정의 파일(모두 `model: opus`, 강도 줄 없음)을 갱신하면 역할별 기본값을 적용하고 전후 값을 따로 적는다. 예를 들어 `{"implementer":"haiku"}`를 저장해 둔 저장소는 다음과 같다(implementer 는 haiku 가 강도를 받지 않아 전후가 같으므로 다시 쓴 목록에 들지 않는다).
+
+```
+  - 에이전트 모델·추론 강도 7개를 설정대로 다시 썼습니다: surveyor opus → sonnet/medium · analyst opus → opus/high · explorer opus → sonnet/medium · writer opus → sonnet/medium · critic opus → opus/high (+2) — 기준: .code-agent/models.json(없는 역할은 역할 기본값)
+  - 그중 7개는 이전 번들 기본값(opus·강도 없음)이던 정의 파일입니다 — 이번 버전의 역할별 기본값(판단 opus/high · 실행 sonnet/medium)을 적용했습니다. 이전 값이 필요하면 모델 변경을 요청하세요(수동 TTY: code-agent model <역할> <모델> --host claude --effort <강도>)
+  - 에이전트 모델 오버라이드 1개 유지: implementer=haiku
+```
+
+같은 버전에서 정의 파일의 `effort:`만 손으로 바꿨다가 갱신하면 `writer sonnet/max → sonnet/medium` 한 줄만 나오고 "이전 번들 기본값" 줄은 없다.
 
 **이 버전에 없는 `ca-*` 가 남아 있으면 `!!` 로 알린다.** 이름이 바뀌었거나 빠진 스킬은 `update` 가 쓰는 키에 없어서
 영영 남고 Claude Code 는 계속 읽는다. 지우지는 않는다 — 사람이 만든 `ca-` 스킬과 가릴 수 없다. `doctor` 도 같은 줄을 `·` 로 찍는다.

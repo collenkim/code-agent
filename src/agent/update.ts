@@ -5,7 +5,8 @@ import { assetCount, assetKeys, CLAUDE_ASSETS, installedPath, packageVersion, st
 import { init, installedHook } from "./init";
 import type { InitOptions } from "./init";
 import { loadActive, PHASES, STATE_DIR } from "./layout";
-import { AGENTS, DEFAULT_MODEL, modelOf } from "./models";
+import { AGENTS, installedClaudeModel } from "./models";
+import { claudeModelOf, isClaudeOverride, modelLabel, TIER_DEFAULTS } from "./modelPolicy";
 import { hostAssets, selectedHosts } from "./hosts";
 
 // The CLI opts into source updates; update() remains the local template-copy API.
@@ -18,6 +19,7 @@ export type { SourceUpdateOptions } from "./sourceUpdate";
  * 보존은 **새로 짜지 않는다** — `init` 이 이미 하고 있다(settings.json 은 우리 항목만 교체, CLAUDE.md·
  * .gitignore 는 표시 블록만, `models.json` 오버라이드는 `applyModels` 가 다시 바른다). 여기서 하는 일은
  * 셋뿐이다: `--cli` 를 승계하고, init 을 부르고, **무엇이 바뀌었는지** 앞뒤를 견줘 말한다.
+ * 정의 파일의 model·effort 는 전후를 견줘 따로 보고한다 — 원인(손 수정·기본값 변경·받은 설정)은 가리지 않는다.
  *
  * TTY 는 필요 없다 — 사람의 판정이 아니라 파일 복사다.
  */
@@ -67,6 +69,7 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
   const beforeVersion = installedVersion(repoRoot);
   const beforeFiles = new Map(BLOCK_FILES.map((file) => [file, readIfAny(join(repoRoot, file))]));
   const active = loadActive(repoRoot);
+  const beforeModels = new Map(AGENTS.map((agent) => [agent, installedClaudeModel(repoRoot, agent)]));
 
   // `--cli` 승계. 주지 않았는데 지금 hook 이 `node "<경로>"` 꼴이면 그 경로를 그대로 쓴다 —
   // `upsertHook` 은 우리 항목을 걷어내고 새로 넣으므로, 승계하지 않으면 개발용 설치가
@@ -83,7 +86,16 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
   // 손으로 고쳐 둔 것의 근사: **같은 버전인데** 내용이 달랐던 파일. 이전 버전의 번들 해시가 남아 있지
   // 않아 이보다 정확히는 가릴 수 없다 — 버전이 올랐으면 템플릿이 바뀐 것과 구분되지 않는다.
   const handmade = beforeVersion === version ? changed : [];
-  const overrides = AGENTS.filter((agent) => modelOf(repoRoot, agent) !== DEFAULT_MODEL);
+  // templateHash 는 머리말의 model·effort 줄을 빼고 보므로 그 줄의 변화는 여기서 따로 센다. 손으로 고친 값을 되돌렸는지,
+  // 기본값이 바뀌었는지, 다른 사람이 커밋한 models.json 을 받았는지는 가릴 수 없어 전후 값만 말한다.
+  const label = (config: { model?: string; effort?: string }) => `${config.model ?? "(없음)"}${config.effort ? `/${config.effort}` : ""}`;
+  const rewritten = AGENTS.flatMap((agent) => {
+    const was = beforeModels.get(agent), now = installedClaudeModel(repoRoot, agent);
+    return was && now && (was.model !== now.model || was.effort !== now.effort) ? [{ agent, was, now }] : [];
+  });
+  // 이전 번들 기본값 꼴(opus·강도 없음)이던 역할 중 사용자 변경값이 없는 것 — 이번 버전의 역할별 기본값을 받았다
+  const legacy = rewritten.filter(({ agent, was }) => was.model === "opus" && was.effort === undefined && !isClaudeOverride(repoRoot, agent));
+  const overrides = AGENTS.filter((agent) => isClaudeOverride(repoRoot, agent));
   // 이 버전이 더는 담지 않는 `ca-*`. 쓰지 않는 키는 건드리지 않으니 영영 남고 Claude Code 는 계속 읽는다.
   // 지우지는 않는다 — 사람이 만든 `ca-` 스킬과 가릴 수 없다.
   const stray = strayInstalled(repoRoot, keys);
@@ -100,8 +112,16 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
           : "";
       return `${file}: ${same ? "그대로" : "갱신"}${detail}`;
     }),
+    rewritten.length > 0
+      ? `에이전트 모델·추론 강도 ${rewritten.length}개를 설정대로 다시 썼습니다: ${list(rewritten.map(({ agent, was, now }) => `${agent} ${label(was)} → ${label(now)}`))} — 기준: .code-agent/models.json(없는 역할은 역할 기본값)`
+      : undefined,
+    legacy.length > 0
+      ? `그중 ${legacy.length}개는 이전 번들 기본값(opus·강도 없음)이던 정의 파일입니다 — 이번 버전의 역할별 기본값` +
+        `(판단 ${modelLabel(TIER_DEFAULTS.judgment.claude)} · 실행 ${modelLabel(TIER_DEFAULTS.execution.claude)})을 적용했습니다. ` +
+        "이전 값이 필요하면 모델 변경을 요청하세요(수동 TTY: code-agent model <역할> <모델> --host claude --effort <강도>)"
+      : undefined,
     overrides.length > 0
-      ? `에이전트 모델 오버라이드 ${overrides.length}개 유지: ${overrides.map((agent) => `${agent}=${modelOf(repoRoot, agent)}`).join(" · ")}`
+      ? `에이전트 모델 오버라이드 ${overrides.length}개 유지: ${overrides.map((agent) => `${agent}=${modelLabel(claudeModelOf(repoRoot, agent))}`).join(" · ")}`
       : undefined,
     `${STATE_DIR}/version = ${version}`,
   ].filter((line): line is string => line !== undefined);

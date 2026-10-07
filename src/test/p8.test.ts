@@ -193,6 +193,29 @@ describe("P8 · doctor", () => {
     assert.match(line(report.text, "Stop hook"), /^✓ Stop hook:/);
     assert.equal(line(report.text, "설치 버전"), `✓ 설치 버전: ${packageVersion()}`);
     assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 10개 모두 번들과 같습니다$/);
+    assert.equal(line(report.text, "에이전트 모델"), "✓ 에이전트 모델: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium");
+    assert.match(line(report.text, "git 저장소"), /^✓/);
+  });
+
+  test("정의 파일의 effort 를 손으로 바꾸면 에이전트 모델이 ✗ 다 — 스킬·에이전트 해시는 그 줄을 보지 않는다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    write(".claude/agents/ca-writer.md", read(".claude/agents/ca-writer.md").replace(/^effort: medium/m, "effort: max"));
+    const report = doctor(repo);
+    assert.equal(report.ok, false);
+    assert.equal(line(report.text, "에이전트 모델"), "✗ 에이전트 모델: 정의 파일이 설정과 다릅니다 — writer 파일 sonnet/max ≠ 설정 sonnet/medium");
+    assert.match(hint(report.text, "에이전트 모델"), /update --templates-only/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✓/);
+  });
+
+  test("models.json 이 깨졌으면 에이전트 모델 ✗ 에 사유를 적고 doctor 는 끝까지 찍는다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    write(MODELS_FILE, JSON.stringify({ writer: "inherit" }));
+    const report = doctor(repo);
+    assert.equal(report.ok, false);
+    assert.match(line(report.text, "에이전트 모델"), /^✗ 에이전트 모델: `\.code-agent\/models\.json` 형식이 잘못되었습니다/);
+    assert.match(hint(report.text, "에이전트 모델"), /models\.json 을 고치거나 지운 뒤/);
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
 
@@ -233,12 +256,14 @@ describe("P8 · doctor", () => {
     assert.match(hint(report.text, "스킬·에이전트"), /code-agent update/);
   });
 
-  test("모델을 바꿔 둔 에이전트는 번들과 달라도 ✗ 가 아니다 — `model:` 줄은 설정이다", () => {
+  test("모델을 바꿔 둔 에이전트는 번들과 달라도 ✗ 가 아니다 — `model:`·`effort:` 줄은 설정이다", () => {
     gitInit();
-    write(MODELS_FILE, JSON.stringify({ implementer: "sonnet" }));
+    write(MODELS_FILE, JSON.stringify({ implementer: "opus" }));
     init(repo, { cli: CLI });
-    assert.match(read(".claude/agents/ca-implementer.md"), /^model: sonnet$/m);
-    assert.match(line(doctor(repo).text, "스킬·에이전트"), /^✓/);
+    assert.match(read(".claude/agents/ca-implementer.md"), /^model: opus$/m);
+    const report = doctor(repo).text;
+    assert.match(line(report, "스킬·에이전트"), /^✓/);
+    assert.match(line(report, "에이전트 모델"), /^✓ 에이전트 모델: .* · 바꿈 1개: implementer opus\/medium$/);
   });
 
   test("버전 스큐는 알리기만 한다 — 종료 코드에 들어가지 않는다", () => {
@@ -318,7 +343,7 @@ describe("P8 · update", () => {
     gitInit();
     init(repo, { cli: CLI });
     // 사람의 것 넷: 모델 오버라이드 · 남의 hook · CLAUDE.md 블록 밖 문장 · 손으로 고친 스킬
-    write(MODELS_FILE, JSON.stringify({ implementer: "sonnet" }));
+    write(MODELS_FILE, JSON.stringify({ implementer: "opus" }));
     const settings = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, unknown[]> };
     settings.hooks.PreToolUse = [{ matcher: "Bash", hooks: [{ type: "command", command: "other-check" }] }, ...settings.hooks.PreToolUse];
     write(".claude/settings.json", JSON.stringify(settings, null, 2));
@@ -333,16 +358,43 @@ describe("P8 · update", () => {
     assert.match(report, /스킬·에이전트 1개 갱신: \.claude\/skills\/ca-check\/SKILL\.md/);
     assert.match(report, /!! 손으로 고쳐 두었던 파일을 덮어썼습니다: \.claude\/skills\/ca-check\/SKILL\.md/);
     assert.match(report, new RegExp(`${STATE_DIR}/version = ${packageVersion()}`));
-    assert.match(report, /에이전트 모델 오버라이드 1개 유지: implementer=sonnet/);
+    assert.match(report, /에이전트 모델 오버라이드 1개 유지: implementer=opus\/medium/);
 
     assert.equal(read(".claude/skills/ca-check/SKILL.md"), bundled);
     assert.ok(existsSync(join(repo, ".claude/agents/ca-critic.md")));
-    assert.match(read(".claude/agents/ca-implementer.md"), /^model: sonnet$/m);
+    assert.match(read(".claude/agents/ca-implementer.md"), /^model: opus$/m);
     assert.match(read("CLAUDE.md"), /^# 우리 프로젝트\n\n원래 내용\n/);
     assert.equal(read("CLAUDE.md").split("<!-- code-agent:start -->").length, 2);
     const after = JSON.parse(read(".claude/settings.json")) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     assert.deepEqual(after.hooks.PreToolUse.map((entry) => entry.hooks[0].command), ["other-check", `node "${CLI.replace(/\\/g, "/")}" hook`, `node "${CLI.replace(/\\/g, "/")}" consent-event`]);
     assert.equal(doctor(repo).text.includes("✗ 스킬·에이전트"), false);
+  });
+
+  test("이전 번들 기본값(opus·강도 없음)이던 정의 파일은 역할별 기본값으로 다시 쓰고 전후 값을 말한다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    for (const key of assetKeys(CLAUDE_ASSETS).filter((item) => item.includes("/agents/"))) {
+      const path = installedPath(repo, key);
+      writeFileSync(path, readFileSync(path, "utf-8").replace(/^model: .*\r?\n(?:effort: .*\r?\n)?/m, (matched) => `model: opus${matched.endsWith("\r\n") ? "\r\n" : "\n"}`));
+    }
+    assert.equal(doctor(repo).text.includes("✗ 에이전트 모델"), true);
+    const report = update(repo);
+    assert.match(report, /에이전트 모델·추론 강도 8개를 설정대로 다시 썼습니다: surveyor opus → sonnet\/medium · analyst opus → opus\/high/);
+    assert.match(report, /그중 8개는 이전 번들 기본값\(opus·강도 없음\)/);
+    assert.doesNotMatch(report, /손으로 고쳐 두었던 파일을 덮어썼습니다: .*ca-/);
+    assert.doesNotMatch(report, /오버라이드/);
+    assert.match(line(doctor(repo).text, "에이전트 모델"), /^✓ 에이전트 모델:/);
+  });
+
+  test("같은 버전에서 손으로 바꾼 effort 를 되돌리면 원인을 단정하지 않고 전후 값만 말한다", () => {
+    gitInit();
+    init(repo, { cli: CLI });
+    write(".claude/agents/ca-writer.md", read(".claude/agents/ca-writer.md").replace(/^effort: medium/m, "effort: max"));
+    const report = update(repo);
+    assert.match(report, /에이전트 모델·추론 강도 1개를 설정대로 다시 썼습니다: writer sonnet\/max → sonnet\/medium — 기준: \.code-agent\/models\.json/);
+    assert.doesNotMatch(report, /이전 번들 기본값/);
+    assert.doesNotMatch(report, /제품 기본값이 바뀐/);
+    assert.match(read(".claude/agents/ca-writer.md"), /^effort: medium$/m);
   });
 
   test("`--cli` 를 승계한다 — 인자 없이 갱신해도 개발용 설치가 갈아 끼워지지 않는다", () => {
@@ -561,7 +613,29 @@ describe("P8 · usage 집계", () => {
   test("모르는 모델은 0 으로 세고 이름만 꼬리에 남긴다 — 지어낸 단가로 합계를 물들이지 않는다", () => {
     const text = usage(repo, { transcripts: dir });
     assert.match(text, /비용 미산정 모델: claude-mystery-9/);
-    assert.match(text, /비용은 추정치입니다 — 2026-06-24 기준/);
+    assert.match(text, /비용은 추정치입니다 — 2026-09-25 기준/);
+  });
+
+  test("모델별 표는 날짜 접미사를 뗀 단가표 키로 묶고, 사용량이 0 인 모델은 미산정 목록에 적지 않는다", () => {
+    writeFileSync(
+      join(dir, "s2.jsonl"),
+      [
+        assistant("2026-09-30T05:00:00.000Z", "claude-sonnet-5-5", { input_tokens: 1_000_000, output_tokens: 0 }, "msg-sonnet55"),
+        assistant("2026-09-30T05:00:01.000Z", "claude-haiku-4-5-20251001", { input_tokens: 1_000_000, output_tokens: 0 }, "msg-haiku-dated"),
+        assistant("2026-09-30T05:00:02.000Z", "<synthetic>", { input_tokens: 0, output_tokens: 0 }, "msg-synthetic"),
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const text = usage(repo, { transcripts: dir });
+    const models = table(text, "모델별");
+    assert.deepEqual(models.get("claude-sonnet-5-5"), ["1,000,000", "0", "0", "0", "$2.00"]);
+    // 서브에이전트의 claude-haiku-4-5 1M 과 날짜가 붙은 1M 이 한 행이다
+    assert.deepEqual(models.get("claude-haiku-4-5"), ["2,000,000", "0", "0", "0", "$2.00"]);
+    assert.equal(models.has("claude-haiku-4-5-20251001"), false);
+    assert.match(text, /비용 미산정 모델: claude-mystery-9 — /);
+    assert.deepEqual(models.get("합계"), table(text, "스테이지별").get("합계"));
+    assert.deepEqual(models.get("합계"), table(text, "에이전트별").get("합계"));
   });
 
   test("--work 는 그 작업의 구간만, --since 는 그 뒤만 남긴다", () => {

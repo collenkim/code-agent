@@ -4,12 +4,13 @@ import { join } from "path";
 
 import { canonical, readStages } from "./layout";
 import type { StageTransition } from "./layout";
-import { PRICES_AS_OF, priceOf } from "./prices";
+import { PRICES_AS_OF, priceKey, priceOf } from "./prices";
 import { Stop } from "./stop";
 import { selectedHosts } from "./hosts";
 
 /**
- * `code-agent usage` — 이 저장소에 쓴 토큰을 **스테이지별·에이전트별**로 센다.
+ * `code-agent usage` — 이 저장소에 쓴 토큰을 **스테이지별·에이전트별·모델별**로 센다.
+ * 모델별 표는 기록의 `message.model` 을 단가표 키(날짜 접미사 제거, `priceKey`)로 묶는다.
  *
  * 세는 것은 Claude Code 가 남긴 기록(`~/.claude/projects/<인코딩한 저장소 경로>/*.jsonl`)이다.
  * 우리가 쓰는 자리가 아니라 **읽는 자리**라, 형식이 흔들려도 명령이 서지 않게 짠다 —
@@ -349,7 +350,9 @@ export function usage(repoRoot: string, options: UsageOptions = {}): string {
     ].join("\n");
   }
 
-  const unpriced = [...new Set(messages.filter((message) => !priceOf(message.model)).map((message) => message.model))].sort();
+  // 사용량이 0 인 모델(`<synthetic>` 같은 합성 줄)은 비용에 닿지 않으므로 미산정 목록에 적지 않는다
+  const used = (message: Message) => Object.values(message.tokens).some((count) => count > 0);
+  const unpriced = [...new Set(messages.filter((message) => !priceOf(message.model) && used(message)).map((message) => message.model))].sort();
   const subagents = files.filter((file) => file.agent !== MAIN_AGENT).length;
   const head = [
     ...(options.work ? [options.work] : []),
@@ -367,6 +370,8 @@ export function usage(repoRoot: string, options: UsageOptions = {}): string {
       : []),
     "",
     ...table("에이전트별", "에이전트", group(messages, (message) => message.agent)),
+    "",
+    ...table("모델별", "모델", group(messages, (message) => priceKey(message.model))),
     "",
     ...(unpriced.length > 0 ? [`비용 미산정 모델: ${unpriced.join(" · ")} — 단가표에 없어 0 으로 셌습니다.`] : []),
     `비용은 추정치입니다 — ${PRICES_AS_OF} 기준 공개 단가표로 계산했고 실제 청구와 다를 수 있습니다.`,

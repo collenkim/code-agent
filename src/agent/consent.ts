@@ -16,6 +16,7 @@ import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel, validateModelChange } from "./models";
+import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
 import { decideRequest } from "./request";
@@ -216,6 +217,8 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
   }
   if (action.action.startsWith("plugin-")) state("플러그인 저장소", JSON.stringify(readStore()));
   if (action.action === "update") state("업데이트 소스", sourceUpdateSnapshot(root));
+  // 적용은 저장된 summary 를 다시 만들지 않는다 — 준비 뒤 CLI 의 모델 정책만 바뀌어도 그 동의가 새 의미로 적용되지 않게 묶는다
+  if (action.action === "model") state("모델 정책", modelPolicyFingerprint());
   return { hash: hash.digest("hex"), entries };
 }
 
@@ -286,8 +289,12 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       break;
     case "model": {
       const change = validateModelChange(root, action.agent, action.model, action);
-      const reasoningHint = change.host === "codex" ? "기본값 복원은 모델·추론 강도를 함께 복원합니다. 모델만 변경하면 기존 추론 강도를 유지합니다. " : "";
-      summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${action.model}${action.reasoning ? ` / ${action.reasoning}` : ""}\n${reasoningHint}적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.`;
+      const target = action.model === "default" ? "제품 기본값(모델·추론 강도)"
+        : change.host === "claude" && !claudeSupportsEffort(change.model) ? `${change.model} (추론 강도 지원 안 함)`
+        : `${change.model} / ${action.reasoning ?? "지금 추론 강도 유지"}`;
+      summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${target}\n` +
+        "기본값 복원은 모델·추론 강도를 함께 복원합니다. 모델만 변경하면 그 역할의 지금 추론 강도를 유지합니다. " +
+        "적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.";
       break;
     }
     case "repro-log": confirmations = capture(() => approveLogBasis(requireReproable(root))); break;

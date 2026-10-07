@@ -87,24 +87,40 @@ Windows 자동화에서 프로젝트 신뢰 키는 호스트 네이티브 경로
 
 ## 역할별 모델 기본값과 변경
 
-초보 사용자가 호스트의 전역 설정을 따로 맞추지 않아도 각 역할의 TOML에 `model`과 `model_reasoning_effort`를 명시한다. 기본값은 다음과 같으며 모델을 자동으로 바꾸는 라우팅은 하지 않는다.
+초보 사용자가 호스트의 전역 설정을 따로 맞추지 않아도 두 호스트 모두 역할 정의에 모델과 추론 강도를 명시한다 — Claude는 `.claude/agents/ca-*.md` 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`다. 역할은 업무 성격에 따라 판단과 실행 두 등급으로 나눈다. 기본값은 다음과 같으며 모델을 자동으로 바꾸는 라우팅은 하지 않는다.
 
-| 역할 | 기본 모델 | 추론 강도 |
-|---|---|---|
-| analyst · critic · reviewer | gpt-6.1-sol | high |
-| surveyor · explorer · writer · implementer · tester | gpt-6.1-sol | medium |
+| 역할 | 등급 | Claude 모델 / 강도 | Codex 모델 / 강도 |
+|---|---|---|---|
+| analyst · critic · reviewer | 판단 | opus / high | gpt-6.1-sol / high |
+| surveyor · explorer · writer · implementer · tester | 실행 | sonnet / medium | gpt-6.1-sol / medium |
 
-이는 품질과 실행량을 함께 고려한 제품의 시작값이다. 실제 최적 비용·성능 조합을 입증한 벤치마크 결과는 아니다. 계정에서 제공하지 않는 모델이면 사용 가능한 모델을 선택해야 하며 조용히 다른 모델로 대체하지 않는다. 기본 모델과 추론 강도의 근거는 [공식 커스텀 에이전트 문서](https://learn.chatgpt.com/docs/agent-configuration/subagents)다.
+역할별 선택 이유(원천은 `src/agent/modelPolicy.ts` `ROLE_POLICY`):
+
+- analyst — 요구 구체화·설계 대안·계획을 판단한다 — 오판이 뒤 단계 전체로 번진다
+- critic — 계획을 독립적으로 반박한다 — 여기서 놓친 결함은 그대로 승인된다
+- reviewer — 구현을 독립 반박 검토한다 — 반영 전 마지막 판단이다
+- surveyor — survey 표본을 읽고 근거 경로를 단 사실을 정리한다 — 확정은 사람이 한다
+- explorer — 영역 코드에서 근거와 사실을 찾는다 — 해석은 판단 역할과 게이트가 검사한다
+- writer — 받은 재료를 뼈대 형식으로 옮긴다 — 새 판단을 만들지 않는다
+- implementer — 승인된 계획·context대로 쓴다 — check·test·review 게이트가 결과를 검증한다
+- tester — 07의 TC를 그대로 구현한다 — check·test·review 게이트가 검증한다
+
+이는 품질과 실행량을 함께 고려한 제품의 시작값이다. 실제 최적 비용·성능 조합을 입증한 벤치마크 결과는 아니다(완주 작업당 비교 방법은 [설계](design.md)의 모델 문단). 계정에서 제공하지 않는 모델이면 사용 가능한 모델을 선택해야 하며 조용히 다른 모델로 대체하지 않는다. Codex 기본 모델과 추론 강도의 근거는 [공식 커스텀 에이전트 문서](https://learn.chatgpt.com/docs/agent-configuration/subagents)다.
+
+Claude 모델은 `opus`·`sonnet`·`haiku`·`fable` 또는 `claude-`로 시작하는 전체 ID, 추론 강도는 `low`·`medium`·`high`·`xhigh`·`max`다. haiku(`claude-haiku-*`)·`claude-sonnet-4-5`는 추론 강도를 받지 않는다 — 정의 파일에 `effort:` 줄을 쓰지 않고 강도 지정을 거부한다(번들 claude-api 스킬 표). 그 밖에 모델이 지원하지 않는 높은 단계(`xhigh`·`max`)는 Claude Code가 `high`로 낮춘다(바이너리 확인, 실제 호출 미확인).
 
 ```sh
 code-agent model --host codex
 code-agent model writer gpt-6-luna --host codex --reasoning high
 code-agent model writer default --host codex
 code-agent model all default --host codex
+code-agent model --host claude
+code-agent model implementer opus --host claude --effort high
+code-agent model reviewer default --host claude
 ```
 
-조회는 메인도 실행할 수 있다. 위 변경 명령은 사람이 직접 TTY에서 실행한다. 대화에서 변경할 때는 `ca-answer`가 `{"action":"model","host":"codex","agent":"writer","model":"gpt-6-luna","reasoning":"high"}`로 기존 같은 세션 동의 절차를 사용한다. `model:"default"`는 모델·추론 강도를 함께 기본값으로 복원한다. 모델만 지정하면 해당 역할의 기존 추론 강도를 유지한다.
+조회는 메인도 실행할 수 있다. 위 변경 명령은 사람이 직접 TTY에서 실행한다. `--effort`는 `--reasoning`과 같은 뜻이며 둘 중 하나만 쓴다. 대화에서 변경할 때는 `ca-answer`가 `{"action":"model","host":"codex","agent":"writer","model":"gpt-6-luna","reasoning":"high"}` 또는 `{"action":"model","host":"claude","agent":"implementer","model":"opus","reasoning":"high"}`로 기존 같은 세션 동의 절차를 사용한다. `model:"default"`는 모델·추론 강도를 함께 기본값으로 복원한다. 모델만 지정하면 해당 역할의 기존 추론 강도를 유지한다. 준비해 둔 `model` 동의는 그 사이 code-agent의 모델 정책이 바뀌면 `변경 대상: 모델 정책`으로 거부되므로 다시 준비한다.
 
-Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 기존 `.code-agent/models.json`에 분리한다. 설정 우선순위는 **역할별 사용자 변경값 → 제품의 역할별 기본값**이다. 양쪽 호스트를 설치했다면 변경 대상 `--host`를 반드시 지정한다. 단독 설치에서는 생략할 수 있다. 재설치·업데이트·doctor도 이 값을 사용하며, 존재하는 Codex 변경값 파일은 기준 커밋과 최종 반영의 명시적 경로에 포함한다.
+Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 기존 `.code-agent/models.json`에 분리한다. `models.json`의 역할 값은 모델 문자열이고, 강도 변경은 예약 키 `effort`(`{"effort":{"reviewer":"max"}}`)에 둔다 — 이전 code-agent도 역할 값을 그대로 읽고 `effort` 키는 무시한다(버전이 섞인 팀에서 이전 버전은 강도를 적용하지 않고 바꾸지 않은 역할을 opus로 설치하므로, 팀은 같은 code-agent를 쓴다). 형식이 잘못된 파일은 고치는 법과 함께 멈춘다. 설정 우선순위는 **역할별 사용자 변경값 → 제품의 역할별 기본값**이다. 양쪽 호스트를 설치했다면 변경 대상 `--host`를 반드시 지정한다. 단독 설치에서는 생략할 수 있다. 재설치·업데이트·doctor도 이 값을 사용하며, 존재하는 Codex 변경값 파일은 기준 커밋과 최종 반영의 명시적 경로에 포함한다.
 
-적용 후 호스트를 재시작해 역할 설정을 다시 읽는다. 실행 중인 담당이나 메인 세션의 모델을 변경하지 않는다. 부모 설정을 상속하던 이전 Codex 설치는 업데이트 후 위 기본값을 사용하며, 원하는 모델은 변경 명령으로 명시한다. 전역 `.codex/config.toml`은 수정하지 않는다.
+적용 후 호스트를 재시작해 역할 설정을 다시 읽는다. 실행 중인 담당이나 메인 세션의 모델을 변경하지 않는다. 부모 설정을 상속하던 이전 Codex 설치는 업데이트 후 위 기본값을 사용하며, 원하는 모델은 변경 명령으로 명시한다. 이전 code-agent로 설치한 Claude 정의 파일(opus·강도 없음)도 업데이트가 위 기본값(바꾼 역할은 변경값)으로 다시 쓰고 역할별 전후 값을 출력한다. 정의 파일 머리말이 설정과 다르면 `code-agent doctor`의 "에이전트 모델"이 알린다. 전역 `.codex/config.toml`은 수정하지 않는다.

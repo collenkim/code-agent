@@ -317,6 +317,7 @@ describe("hook — Bash 허용 목록", () => {
       "code-agent confirm doc architecture",
       "code-agent model all sonnet",
       "code-agent model writer gpt-6-luna --host codex --reasoning high",
+      "code-agent model writer sonnet --host claude --effort high",
       "echo hello next", // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다
     ]) {
       assert.match(bash(human) ?? "", /현재 세션의 ca-answer 동의 절차/, human);
@@ -992,10 +993,13 @@ describe("questions", () => {
 });
 
 describe("init", () => {
-  test("에이전트 8개 모두 model: opus 가 박혀 설치된다 — 각자 PC 의 기본 모델에 맡기지 않는다", () => {
+  test("역할별 model·effort가 박혀 설치된다 — 각자 PC의 기본값에 맡기지 않는다", () => {
     init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
     for (const agent of AGENTS) {
-      assert.match(readFileSync(join(repo, `.claude/agents/ca-${agent}.md`), "utf-8"), /^model: opus$/m, agent);
+      const text = readFileSync(join(repo, `.claude/agents/ca-${agent}.md`), "utf-8");
+      const judgment = ["analyst", "critic", "reviewer"].includes(agent);
+      assert.match(text, judgment ? /^model: opus\r?$/m : /^model: sonnet\r?$/m, agent);
+      assert.match(text, judgment ? /^effort: high\r?$/m : /^effort: medium\r?$/m, agent);
     }
   });
 
@@ -1005,11 +1009,48 @@ describe("init", () => {
     assert.throws(() => setModel(repo, "nobody", "sonnet"), /에이전트는/);
     assert.throws(() => setModel(repo, "implementer", "gpt"), /모델은/);
     // 사람이 터미널에서 바꾼 결과를 흉내 낸다 — 파일은 도구로 못 쓰는 .code-agent/ 에 있다
-    write(".code-agent/models.json", JSON.stringify({ implementer: "sonnet" }));
+    write(".code-agent/models.json", JSON.stringify({ implementer: "opus" }));
     init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
-    assert.match(readFileSync(join(repo, ".claude/agents/ca-implementer.md"), "utf-8"), /^model: sonnet$/m);
-    assert.match(readFileSync(join(repo, ".claude/agents/ca-reviewer.md"), "utf-8"), /^model: opus$/m);
-    assert.match(modelsTable(repo), /implementer\s+sonnet\s+\(바꿈\)/);
+    const implementer = readFileSync(join(repo, ".claude/agents/ca-implementer.md"), "utf-8");
+    assert.match(implementer, /^model: opus\r?$/m);
+    assert.match(implementer, /^effort: medium\r?$/m);
+    assert.match(readFileSync(join(repo, ".claude/agents/ca-reviewer.md"), "utf-8"), /^model: opus\r?$/m);
+    assert.match(modelsTable(repo), /implementer\s+opus \/ medium\s+실행\s+\(바꿈\)/);
+  });
+
+  test("Claude 모델 변경의 잘못된 값은 터미널 검사 전에 거부한다", () => {
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    assert.throws(() => setModel(repo, "writer", "inherit"), /inherit/);
+    assert.throws(() => setModel(repo, "writer", "sonnet", { reasoning: "ultra" }), /Claude 추론 강도/);
+    assert.throws(() => setModel(repo, "writer", "default", { reasoning: "high" }), /기본값 복원/);
+    assert.throws(() => setModel(repo, "writer", "haiku", { reasoning: "low" }), /추론 강도\(effort\)를 받지 않습니다/);
+    assert.throws(() => setModel(repo, "writer", "sonnet", { reasoning: "high" }), /터미널에서만 바꿉니다/, "검증을 통과하면 터미널 검사에 닿는다");
+  });
+
+  test("조회 표는 역할별 모델·추론 강도와 등급을 보여 준다", () => {
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    const table = modelsTable(repo);
+    assert.match(table, /analyst\s+opus \/ high\s+판단\s+\(기본\)/);
+    assert.match(table, /writer\s+sonnet \/ medium\s+실행\s+\(기본\)/);
+    assert.match(table, /--effort <강도>/);
+  });
+
+  test("models.json 의 강도 변경은 그 역할의 effort 줄에만 바른다", () => {
+    write(".code-agent/models.json", JSON.stringify({ effort: { reviewer: "max" } }));
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    const reviewer = readFileSync(join(repo, ".claude/agents/ca-reviewer.md"), "utf-8");
+    assert.match(reviewer, /^model: opus\r?$/m);
+    assert.match(reviewer, /^effort: max\r?$/m);
+    assert.match(readFileSync(join(repo, ".claude/agents/ca-analyst.md"), "utf-8"), /^effort: high\r?$/m);
+  });
+
+  test("강도를 받지 않는 모델로 바꾼 역할은 effort 줄 없이 설치되고 표에 (지원 안 함)으로 보인다", () => {
+    write(".code-agent/models.json", JSON.stringify({ reviewer: "haiku" }));
+    init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
+    const reviewer = readFileSync(join(repo, ".claude/agents/ca-reviewer.md"), "utf-8");
+    assert.match(reviewer, /^model: haiku\r?$/m);
+    assert.doesNotMatch(/^---\r?\n([\s\S]*?)\r?\n---/.exec(reviewer)![1], /^effort:/m);
+    assert.match(modelsTable(repo), /reviewer\s+haiku \/ \(지원 안 함\)\s+판단\s+\(바꿈\)/);
   });
 
   test("다른 hook 과 CLAUDE.md 의 기존 내용을 보존하고, 두 번 돌려도 하나만 남는다", () => {

@@ -171,10 +171,12 @@ export function strayInstalled(repoRoot: string, keys: string[]): string[] {
 /**
  * 설치본과 번들을 견주는 해시.
  *
- * 줄바꿈(Windows 의 autocrlf)과 `model:` 줄은 내용이 아니라 설정이라 빼고 본다 —
+ * 줄바꿈(Windows 의 autocrlf)과 머리말의 `model:`·`effort:` 줄은 내용이 아니라 설정이라 빼고 본다 —
  * `applyModels` 가 그 줄을 사람의 선택대로 다시 쓰므로, 넣으면 모델을 바꾼 저장소가 영영 "다름" 이 된다.
+ * 모델·강도는 doctor 의 '에이전트 모델' 줄과 update 의 '설정대로 다시 썼습니다' 줄이 따로 본다.
  */
 export function templateHash(text: string): string {
-  const normalized = text.replace(/\r\n/g, "\n").replace(/^model:.*$/m, "model:");
+  const normalized = text.replace(/\r\n/g, "\n").replace(/^---\n([\s\S]*?)\n---/, (_, head: string) =>
+    `---\n${head.split("\n").filter((line) => !/^(?:model|effort):/.test(line)).join("\n")}\n---`);
   return createHash("sha256").update(normalized, "utf-8").digest("hex").slice(0, 16);
 }

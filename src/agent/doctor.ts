@@ -18,6 +18,8 @@ import {
 import { checkProjectDocs } from "./docs";
 import { codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
 import { STATE_DIR } from "./layout";
+import { AGENTS, installedClaudeModel, policySummary } from "./models";
+import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
@@ -240,6 +242,22 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
     );
   }
 
+  // 정의 파일 머리말의 model·effort 가 설정(models.json, 없으면 역할 기본값)과 같은가. 스킬·에이전트 해시는 이 두 줄을
+  // 빼고 보므로 여기서 따로 본다 — 손으로 고친 머리말이면 하위 에이전트(머리말)와 교차 실행(설정)이 갈라진다
+  try {
+    const mismatches = AGENTS.flatMap((agent) => {
+      const file = installedClaudeModel(repoRoot, agent), setting = claudeModelOf(repoRoot, agent);
+      return file && (file.model !== setting.model || file.effort !== setting.effort)
+        ? [`${agent} 파일 ${file.model ?? "(없음)"}${file.effort ? `/${file.effort}` : ""} ≠ 설정 ${modelDisplay(setting)}`] : [];
+    });
+    if (mismatches.length > 0) {
+      add("✗", "에이전트 모델", `정의 파일이 설정과 다릅니다 — ${mismatches.slice(0, 5).join(" · ")}${mismatches.length > 5 ? ` (+${mismatches.length - 5})` : ""}`,
+        "code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. 바꾸려면 모델 변경을 요청하세요");
+    } else add("✓", "에이전트 모델", policySummary(repoRoot, "claude"));
+  } catch (error) {
+    add("✗", "에이전트 모델", error instanceof Error ? error.message : String(error), ".code-agent/models.json 을 고치거나 지운 뒤 code-agent update --templates-only");
+  }
+
   }
   if (hosts.includes("codex")) {
     const problem = settingsProblem(repoRoot, "codex");
@@ -253,6 +271,8 @@ export function doctor(repoRoot: string, host?: HostSelection): { text: string; 
       const codexAssets = [...hostAssets("codex", repoRoot)];
       const changed = codexAssets.filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
       add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : `${assetCount(codexAssets.map(([path]) => path))} 모두 번들과 같습니다`, "code-agent update --templates-only --host codex");
+      // TOML 의 model·model_reasoning_effort 어긋남은 위 "Codex 스킬·에이전트" 가 잡는다(번들에 설정값이 들어 있다)
+      add("✓", "Codex 에이전트 모델", policySummary(repoRoot, "codex"));
       const instructions = join(repoRoot, "AGENTS.md");
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
       add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");

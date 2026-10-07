@@ -1,6 +1,6 @@
 # 요구 분석·설계·계획 작업
 
-Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`, Codex는 `codex-event`가 시작·최종 결과를 관찰한다. Codex 역할은 `.codex/agents/ca-*.toml`에 설치되며 역할별 기본 모델·추론 강도와 사용자 변경값을 명시한다. `.claude/`·`.codex/`·`.agents/`는 조사 범위에서 제외한다. 설치·모델 설정·승인 차이는 [Codex 연동](codex.md)을 따른다.
+Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`, Codex는 `codex-event`가 시작·최종 결과를 관찰한다. Claude 역할은 `.claude/agents/ca-*.md` 머리말, Codex 역할은 `.codex/agents/ca-*.toml`에 역할별 기본 모델·추론 강도와 사용자 변경값을 명시한다. `.claude/`·`.codex/`·`.agents/`는 조사 범위에서 제외한다. 설치·모델 설정·승인 차이는 [Codex 연동](codex.md)을 따른다.
 
 2026-10-02부터 새로 시작한 작업은 실제 서브 에이전트 실행 결과를 연결해 다음 단계로 진행한다. 이전 버전에서 시작한 작업은 기존 절차로 재개한다. `code-agent status`의 **계획 처리** 줄로 구분한다.
 
