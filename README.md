@@ -10,7 +10,7 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 | Codex | `code-agent init --host codex` | `$ca-request <요구사항>` |
 | 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
 
-Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 스킬을 사용합니다.
+Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 스킬을 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다.
 
 두 호스트 모두 역할을 판단(analyst·critic·reviewer)과 실행(그 밖)으로 나눠 모델·추론 강도 기본값을 둡니다(Claude opus/high·sonnet/medium, Codex gpt-6.1-sol high·medium). `code-agent model`로 현재값을 확인하고 필요하면 역할별로 변경하거나 `default`로 복원합니다. 사용자 변경값은 업데이트 후에도 유지합니다. [역할별 모델 설정](doc/codex.md#역할별-모델-기본값과-변경)을 참고하세요.
 
@@ -185,14 +185,15 @@ claude
 | `code-agent init` | 현재 프로젝트에 스킬·서브에이전트·hook 설치 |
 | `code-agent update` | 갱신 순서 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스 설치본을 upstream에서 fast-forward로 갱신하고 의존성·빌드·프로젝트 적용·doctor 실행 |
 | `code-agent update --templates-only` | 다운로드 없이 현재 번들의 프로젝트 설정만 적용 |
-| `code-agent doctor` | 설치 경로·스킬·hook·문서 상태 점검과 조치 안내 |
+| `code-agent doctor` | 설치 경로·스킬·hook·문서 상태 점검과 조치 안내 (읽기 전용 — 작업 중에도 조회할 수 있다) |
 | `code-agent setup` | 기존 명령·실행 환경·Git 준비 확인. 테스트 실행 없음 |
 | `code-agent setup baseline` | 준비 파일 확인 후 최초 커밋 또는 기존 저장소의 도입 커밋 생성 |
 | `code-agent confirm doc all` | 공통 POLICY 4종 일괄 확정 |
 | `code-agent confirm request <ID>` | 요구사항 확정 |
-| `code-agent approve` | 제출된 계획 승인 |
+| `code-agent approve [--comment <메모>]` | 제출된 계획 승인 |
 | `code-agent reject --comment "사유"` | 계획 반려. 요구사항 반려는 `reject request <ID> --comment "사유"` |
 | `code-agent deliver` | 결과 확인 후 로컬 커밋 |
+| `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록을 풀어 이 세션이 이어받게 한다 — 저쪽 세션을 멈춘 것을 확인한 뒤 |
 | `code-agent status` · `code-agent usage` | 진행 상태 · 토큰과 추정 비용 확인 |
 
 ## 문서와 결과물

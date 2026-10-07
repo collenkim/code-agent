@@ -36,12 +36,12 @@ export type Phase = (typeof PHASES)[number];
 export const AFTER_IMPLEMENT: readonly Phase[] = ["check", "test", "review", "integrate", "deliver"];
 
 /**
- * Stop hook 이 턴 끝에 들여다보는 스테이지 — 코드를 쓰는 자리부터 통합 검증까지.
+ * Stop hook 이 턴 끝에 들여다보는 스테이지 — 코드를 쓰는 자리부터 반영까지.
  *
- * `deliver` 는 뺀다. 거기서는 `code-agent deliver` 가 같은 대조를 절대적으로 하고 사람이 TTY 앞에
- * 있으므로, 한 번 더 막아 봐야 사람이 보는 화면에 잡음만 는다.
+ * `deliver` 도 본다 — 동의 흐름에서는 사람이 TTY 앞에 있지 않으므로, 반영 동의를 묻기 전에 계획 밖 변경·남은 질문을
+ * 턴 끝에 한 번 알린다(커밋 자체는 `code-agent deliver` 가 같은 대조로 절대적으로 막는다).
  */
-export const STOP_PHASES: readonly Phase[] = ["implement", "check", "test", "review", "integrate"];
+export const STOP_PHASES: readonly Phase[] = ["implement", "check", "test", "review", "integrate", "deliver"];
 
 export interface ActiveWork {
   /** 신규 작업은 관찰된 분석·조사·설계·계획 검토를 필수로 한다. 없는 기록은 기존 작업이다. */
@@ -68,6 +68,14 @@ export interface ActiveWork {
   baseCommit?: string;
   /** implement 에서 지금 도는 매니페스트 단계 key */
   stage?: string;
+}
+
+/**
+ * 서브에이전트에게 넘길 긴 자료(전달 사본)를 두는 폴더 — 저장소 기준, `/` 구분. 반영 커밋은 이 폴더를 뺀다(deliver.ts deliveryExcludes).
+ * handoff.ts 가 다시 내보낸다(deliver.ts 가 handoff.ts 를 읽으면 deliver → handoff → commands → deliver 순환이 생긴다).
+ */
+export function handoffDir(id: string): string {
+  return posix.join(STATE_DIR, "work", id, "handoff");
 }
 
 /** 모델이 쓰는 작업 폴더 — 저장소 기준, `/` 구분 */

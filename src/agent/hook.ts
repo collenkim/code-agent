@@ -35,6 +35,9 @@ import { consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
+import { fileToolsHint, skill, viaShell, withNotation } from "./hostText";
+import { reentryHint } from "./reentry";
+import { leaseGuard } from "./lease";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -121,7 +124,19 @@ const MODEL_SUBCOMMANDS = [
   "verify",
   "review",
   "integrate",
+  // 다른 세션이 쥔 작업 임대를 푼다 — 사용자 확인 뒤(스킬 규칙). 임대는 사고 방지 장치이지 권한 경계가 아니다(lease.ts)
+  "takeover",
 ];
+
+/**
+ * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
+ * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
+ */
+const LEASE_FREE = /^code-agent(?:$| (?:help|--help|status|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
+/** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
+function leaseGated(command: string): boolean {
+  return isModelCommand(command) && !LEASE_FREE.test(command);
+}
 
 function isModelCommand(command: string): boolean {
   if (command === "code-agent") {
@@ -135,6 +150,8 @@ function isModelCommand(command: string): boolean {
   if (/^model(?: --host (?:claude|codex))?$/.test(rest)) return true; // 조회만 허용한다. 변경은 관찰된 동의로 적용한다.
   if (/^consent (prepare\s+\S.*|(?:status|apply|finish) [a-f0-9-]+)$/.test(rest)) return true;
   if (rest === "setup") return true; // baseline은 사람의 TTY 확인 전용
+  // doctor 는 읽기 전용이다(상태 파일을 쓰지 않는다). --cross 는 다른 호스트 CLI 의 --help 만 실행한다 — 두 옵션은 순서와 무관하게 받는다
+  if (/^doctor(?: --host (?:claude|codex|both)| --cross){0,2}$/.test(rest)) return true;
   return MODEL_SUBCOMMANDS.some((sub) => rest === sub || rest.startsWith(`${sub} `));
 }
 
@@ -406,8 +423,13 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   }
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     // 세션 동안에는 선언된 빌드·테스트 명령을 열지 않는다 — 돌릴 코드가 아직 없는 자리다
-    return decideBash(manifest, (input.tool_input.command ?? "").trim(), documenting || requesting !== undefined,
+    const command = (input.tool_input.command ?? "").trim();
+    const reason = decideBash(manifest, command, documenting || requesting !== undefined,
       input.tool_name === "PowerShell" || input.shell === "powershell");
+    // 작업 임대 — 기존 거부가 먼저이고, 상태를 바꾸는 code-agent 명령만 본다(읽기 명령·선언된 명령·읽기용 git 은 보지 않는다).
+    // 거부되면 바깥 decide 가 동의 티켓을 내지 않는다
+    if (reason || !work) return reason;
+    return leaseGated(command) ? leaseGuard(work, input.host ?? "claude", input.session_id) : undefined;
   }
   // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
   if (READ_TOOLS.includes(input.tool_name)) {
@@ -424,7 +446,8 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   }
   if (work) {
     const planner = decidePlanner(work, path, input);
-    return planner === undefined ? decideWrite(work, path) : planner || undefined;
+    const reason = planner === undefined ? decideWrite(work, path) : planner || undefined;
+    return reason ?? leaseGuard(work, input.host ?? "claude", input.session_id);
   }
   return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(docsSession, manifest, path);
 }
@@ -468,7 +491,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     if (open && decideBash(undefined, command, true, input.tool_name === "PowerShell" || input.shell === "powershell")) {
       return `확인 요청 ${open.id.slice(0, 8)}(${open.title})이 응답·적용을 기다리는 동안에는 셸에서 code-agent 명령과 읽기용 git 만 실행합니다 — 준비부터 적용까지 확인 대상을 바꾸지 않습니다. 진행하지 않을 거면 그 확인 질문에서 '보류'를 고르게 하세요(${Math.round(TIMING.consentOpenWindowMs / 60_000)}분이 지나면 풀립니다).`;
     }
-    if (mentionsState(command)) return STATE_BASH_DENIED;
+    if (mentionsState(command)) return stateBashDenied();
     if (HOST_CONFIG.test(command)) return HOST_CONFIG_BASH_DENIED;
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
     if (SOURCE_UPDATE.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
@@ -489,8 +512,9 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
   return streamGuard(path) ?? stateGuard(path) ?? requirementGuard(path);
 }
 
-const STATE_BASH_DENIED =
-  "`.code-agent/` 는 code-agent 명령으로만 바뀝니다 — 작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다. " +
+/** 셸 이름은 호스트 표기다(Claude 는 `Bash 로`) */
+const stateBashDenied = (): string =>
+  `\`.code-agent/\` 는 code-agent 명령으로만 바뀝니다 — 작업 상태 · 승인과 확정 원장을 ${viaShell()} 건드리지 않습니다. ` +
   "상태는 code-agent status 로 봅니다.";
 
 /**
@@ -514,7 +538,7 @@ function streamGuard(path: string): string | undefined {
 /** 작업 지시서는 `code-agent request submit` 이 렌더한다 — 세션이 있든 없든 모델이 직접 쓰지 않는다 */
 function requirementGuard(path: string): string | undefined {
   return /^doc\/work\/[^/]+\/requirement\.md$/i.test(path)
-    ? `작업 지시서(${path})는 code-agent request submit 이 렌더합니다 — 요구사항은 /ca-request 로 접수하고, 고칠 것은 request.json 에 씁니다. ` +
+    ? `작업 지시서(${path})는 code-agent request submit 이 렌더합니다 — 요구사항은 ${skill("ca-request")} 로 접수하고, 고칠 것은 request.json 에 씁니다. ` +
         "사람이 직접 쓰는 지시서는 사람이 편집기로 씁니다."
     : undefined;
 }
@@ -639,13 +663,13 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
     return undefined;
   }
   return (
-    `작업 중에는 Bash 로 code-agent 명령(${MODEL_SUBCOMMANDS.join(" · ")}), 선언된 명령` +
+    `작업 중에는 ${viaShell()} code-agent 명령(${[...MODEL_SUBCOMMANDS, "doctor(조회)"].join(" · ")}), 선언된 명령` +
     (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
     ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
     "연결·리다이렉트(; && | >)와 줄바꿈(CR·LF)은 안 됩니다" + (powershell ? ", PowerShell 에서는 작은따옴표 밖의 ( ) { } @ $ 도 안 됩니다(경로는 작은따옴표로 감싸세요)" : "") + ". " +
     "init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
     "직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다. " +
-    "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."
+    fileToolsHint()
   );
 }
 
@@ -724,16 +748,23 @@ function decideWrite(work: Work, path: string): string | undefined {
       "코드는 계획이 승인된 뒤 implement 스테이지에서 씁니다."
     );
   }
+  // 반영 단계 — 검증·리뷰·통합을 마친 트리를 사람이 확인하는 자리다. 작업 폴더(⑩·지식 제안·질문)는 위에서 이미 열렸다
+  if (active.phase === "deliver") {
+    return (
+      `반영(deliver) 단계라 작업 폴더(${workDir}/) 밖은 쓸 수 없습니다: ${path}. ` +
+      "검증·리뷰·통합을 마친 트리를 사람이 확인하는 자리입니다 — 여기서 고치면 증거가 무효가 됩니다. " +
+      "고칠 것이 있으면 무엇을 왜 고쳐야 하는지 사용자에게 보고하고, 사용자가 되돌리라고 하면 " +
+      "code-agent back check(계획을 바꿔야 하면 back plan) 뒤 수정 루프로 고칩니다."
+    );
+  }
   const { plan, order, manifest } = work;
   if (!plan) {
     return "제출된 계획이 없습니다. code-agent plan submit 으로 계획을 제출하고 승인을 받아야 합니다.";
   }
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
-    return (
-      `계획이 승인되지 않았습니다 (${approval.status}). ` +
-      "현재 호스트 세션에서 ca-answer의 plan 동의 절차로 계획을 승인해야 쓸 수 있습니다."
-    );
+    // 재진입 순서(되감기는 낡은 계획 작업·계획 변경이 필요할 때만, 아니면 그 자리에서 plan 동의)는 status 의 `다음:` 과 같은 문장이다
+    return `계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`;
   }
   if (active.phase === "implement" && plan.tasks && !plan.tasks.find(task => task.id === active.task)?.files.includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;
 
@@ -851,7 +882,8 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
 /** stdin 으로 받아 stdout 으로 낸다. 판정 자체가 실패하면 exit 2 — 막는 쪽으로 닫는다 */
 export function runHook(stdin: string): number {
   try {
-    const reason = decide({ ...(JSON.parse(stdin) as HookInput), host: "claude" }, process.env.CLAUDE_PROJECT_DIR);
+    // Claude PreToolUse — 거부 문구는 Claude 표기다(같은 판정을 Codex 진입은 Codex 표기로 부른다)
+    const reason = withNotation("claude", () => decide({ ...(JSON.parse(stdin) as HookInput), host: "claude" }, process.env.CLAUDE_PROJECT_DIR));
     if (reason) {
       process.stdout.write(
         JSON.stringify({

@@ -84,9 +84,11 @@ test("스킬·역할 목록이 템플릿과 같고, 역할 이름 변환이 host
   assert.equal(commonAgentName(undefined), undefined);
 });
 
-test("Claude·Codex 표기는 지금 hook 문자열과 바이트가 같다", () => {
+test("hook 은 표기 함수로 문구를 만든다 — 사후 치환이 남지 않는다", () => {
   const hook = readFileSync(join(repo, "src", "agent", "hook.ts"), "utf8");
   const codexHook = readFileSync(join(repo, "src", "agent", "codexHook.ts"), "utf8");
-  assert.ok(hook.includes(`"${fileToolsHint("claude")}"`), "hook.ts 의 Claude 파일 도구 안내");
-  assert.ok(codexHook.includes(`"${fileToolsHint("codex")}"`), "codexHook.ts 의 Codex 치환 문구");
+  // 배선 뒤에는 hook.ts 가 fileToolsHint() 를 부르고, codexHook.ts 는 문구를 치환하지 않는다(withNotation("codex") 로 판정)
+  assert.ok(hook.includes("fileToolsHint()"), "hook.ts 의 파일 도구 안내는 표기 함수");
+  assert.ok(!codexHook.includes(`"${fileToolsHint("claude")}"`) && !codexHook.includes("Codex 질문 절차"), "codexHook.ts 의 사후 치환 제거");
+  assert.ok(codexHook.includes('withNotation("codex"'), "codexHook 은 Codex 표기로 판정한다");
 });

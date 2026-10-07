@@ -303,6 +303,8 @@ describe("hook — Bash 허용 목록", () => {
     assert.equal(bash("code-agent next"), undefined);
     assert.equal(bash("git status"), undefined);
     assert.equal(bash("git diff --stat"), undefined);
+    // 읽기 전용 조회(doctor)와 작업 임대 해제(takeover — 사용자 확인 뒤, 스킬 규칙)도 연다
+    for (const command of ["code-agent doctor", "code-agent doctor --host codex", "code-agent doctor --cross", "code-agent takeover"]) assert.equal(bash(command), undefined, command);
   });
 
   /**
@@ -592,6 +594,8 @@ describe("plan submit — 제출 전 검사", () => {
       }],
     }));
     git("add", "code-agent.json"); git("commit", "-qm", "prepare refactor manifest");
+    // abort 한 ORD-1 의 작업 폴더가 미추적으로 남으면 새 작업 브랜치로 따라가 start 가 거부한다(FLOW-07)
+    git("add", "-A", "doc/work/ORD-1"); git("commit", "-qm", "ORD-1 작업 문서");
     write("doc/work/REF-1.md", [
       "---", "kind: refactor", "id: REF-1", "title: 거래 경계 정리",
       `target: ${DEAL}`, `scope: [${DEAL}]`,

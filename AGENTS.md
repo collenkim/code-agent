@@ -18,10 +18,13 @@
   - 업무 답 관찰 규칙(`answers.ts`, `questions.ts`의 `[Source]`)을 바꾸면 `ca-answer/SKILL.md` 1·3절과 `template/codex/ca-answer.md` 업무 질문 문단도 고친다.
   - 사람 허용 카운터(`retryGrant.ts` `grantTarget`)는 `GRANT_STEP`의 키와 같아야 한다 — 키를 더하면 기록 파일·범위·잠금 안 재확인을 표에 함께 정한다.
   - hook 등록(`init.ts`)을 바꾸면 `doctor.ts` 목록, `update.ts`의 hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 hook 수도 고친다.
-  - 서브에이전트를 추가·삭제하면 `hosts.ts`·`hostText.ts`의 `ROLE_NAMES`와 `codexText` 역할 정규식, `modelPolicy.ts`의 `AGENTS`도 고친다. 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher도 고친다. 스킬을 추가·삭제하면 `hostText.ts`의 `SKILL_NAMES`도 고친다(`hostText.test.ts`가 템플릿 폴더와 대조한다).
+  - 서브에이전트를 추가·삭제하면 `hostText.ts`의 `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이 목록으로 만든다), `modelPolicy.ts`의 `AGENTS`도 고친다. 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher도 고친다. 스킬을 추가·삭제하면 `hostText.ts`의 `SKILL_NAMES`도 고친다(`hostText.test.ts`가 템플릿 폴더와 대조한다).
   - 재시도 규약(`retryPolicy.ts`의 `POLICIES`·`LIMITS`·`GRANT_STEP`·`TIMING`)을 바꾸면 `doc/process-flow.md` §6.4 생성 블록을 `renderRetryPolicyTable()` 출력으로 다시 붙인다. `docSync.test.ts`는 표에 렌더되는 값만 대조한다 — 표에 나오지 않는 값은 잡지 못하므로 §6.4 산문에 숫자를 쓰지 않는다. 안내 문구의 자리표시를 바꾸면 `GUIDE_KEYS`·`GUIDE_VARIANT_KEYS`와 그 원인을 렌더하는 호출의 값도 고친다. 카운터 이름표는 `COUNTER_LABEL` 하나다 — 다른 모듈에 따로 정의하지 않고 import한다.
   - 역할 모델 정책(`modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`)을 바꾸면 `template/claude/agents/ca-*.md` 머리말의 `model`·`effort`와 `doc/codex.md` 역할별 모델 표를 같이 고친다(`modelPolicy.test.ts`가 대조한다). 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다.
-  - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `commands.ts`의 `PHASE_LABEL`·`PHASE_COMMAND`와 `ca-next` 표도 고친다.
+  - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `commands.ts`의 `PHASE_LABEL`·`reentry.ts`의 `PHASE_SKILL`과 `ca-next` 표도 고친다.
+  - `ca-next`의 '멈춘 자리별 재개' 표는 `commands.ts` `nextHint`의 판정 순서(AI-DLC → 요구 → 질문 → 승인 무효 → 검증 한도 → 원인별 실패 `failureHint`)와 함께 고친다.
+  - 장시간 실행 정본 문장(`ca-check`·`ca-test`·`ca-integrate`·`ca-implement`)과 교차 4-1 문장(`ca-review`·`ca-plan`)을 고치면 `hosts.ts` `codexText`의 같은 리터럴 치환도 고친다(`hostNotation.test.ts`가 Codex 사본의 `Bash`·`600000ms`를 잡는다). CLI·hook 의 사용자 문구에는 스킬·도구 이름을 리터럴로 쓰지 않고 `hostText.ts` 표기 함수(`skill`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`)를 부른다 — 파일·확인 화면에 기록되는 문자열만 예외다.
+  - 모델이 부를 수 있는 `code-agent` 명령(`hook.ts` `MODEL_SUBCOMMANDS`·`isModelCommand`)을 더하면, 상태를 바꾸지 않는 명령인지 보고 `LEASE_FREE`(작업 임대를 보지 않는 읽기 전용 명령)에도 넣을지 정한다.
   - 계획 advance의 action(`dispatch`·`stale`·`wait`·`rewind-required`·`blocked`·`ready-for-gate`)을 바꾸면 `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` 4항(또는 통합된 루프 문단)과 `doc/planning.md` action 표도 고친다.
   - `ca-review`·`ca-plan` 4-1의 `` Bash: `code-agent … cross --by codex` `` 문장을 바꾸면 `hosts.ts` `codexText`의 권한 상승 치환 정규식과 맞춘다.
   - `ca-reviewer.md`의 출력 표(열·상태 값·경로 규칙)를 바꾸면 `crossRecord.ts` `reviewResultProblems`·`review.ts` `parseFindings`와 맞춘다(hook·교차·게이트가 같은 표 규칙을 쓴다).

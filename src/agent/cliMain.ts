@@ -43,21 +43,22 @@ import { contextHandoff, handoffPlanning } from "./handoff";
 import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSourceConfirmed } from "./sourceUpdate";
 import { renderVerification, verify } from "./verificationFlow";
+import { notationFor, useNotation } from "./hostText";
+import { releaseLease } from "./lease";
 
-const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이전트
+const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 CLI
 
-실행: code-agent init --host claude → claude → /ca-request <요구사항>
-      code-agent init --host codex → codex → $ca-request <요구사항>
+실행: code-agent init --host claude|codex|both → 호스트를 다시 열고 → ca-request 스킬로 접수 (Claude Code: /ca-request, Codex: $ca-request)
   init은 스킬·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
-  /ca-request는 모든 요구사항 접수, /ca-feature는 신규·기능 변경, /ca-fix는 결함 수정, /ca-refactor는 동작 보존 구조 개선입니다.
-  질문·확정·승인은 현재 Claude Code의 선택 도구에서 처리하고 자동으로 이어갑니다. 중단한 작업은 /ca-next 로 재개합니다.
+  ca-request는 모든 요구사항 접수, ca-feature는 신규·기능 변경, ca-fix는 결함 수정, ca-refactor는 동작 보존 구조 개선 스킬입니다.
+  질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 사용자가 보내는 code-agent consent respond 대화 메시지). 중단한 작업은 ca-next 스킬로 재개합니다.
 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
   code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 스킬·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
-  code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음)
+  code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음) — 작업 중에도 조회할 수 있다
   code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 갱신·의존성·빌드·프로젝트 적용·점검 (호스트 밖 TTY 에서만)
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>]   이 저장소에 쓴 토큰·비용을 스테이지별·에이전트별로 (추정)
@@ -67,17 +68,18 @@ const USAGE = `code-agent — Claude Code 위에서 도는 코드 작성 에이�
   code-agent confirm doc <all|종류>   공통 문서 한 번에 확정 또는 개별 확정 (TTY)
   code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
                                       지시서를 생략하면 doc/work/<ID>/requirement.md (손으로 쓴 지시서가 다른 자리면 경로를 준다)
-  code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — /ca-request 가 사유를 읽고 다시 정리한다
-  code-agent approve                  제출된 계획 승인 (TTY 에서만)
+  code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — ca-request 스킬이 사유를 읽고 다시 정리한다
+  code-agent approve [--comment <메모>]   제출된 계획 승인 (TTY 에서만) — 요구사항 확정은 confirm request
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
+  code-agent takeover                 다른 세션이 쥔 작업 진행 기록을 풀어 다음 명령을 실행하는 세션이 이어받게 한다 (저쪽 세션 종료를 사용자가 확인한 뒤)
   code-agent deliver                  13 반영 (TTY 에서만) — 게이트를 다시 돌리고 추적표·검증을 보여 준 뒤 작업 브랜치에 로컬 커밋. push · MR/PR 없음
   code-agent model [<역할|all> <모델|default>] [--host claude|codex] [--reasoning|--effort 강도]   역할별 모델·추론 강도 조회·변경·기본값 복원
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
 
-스킬이 부른다 (Claude Code 안):
+스킬이 부른다 (호스트 세션 안):
   code-agent consent prepare <작업.json>   확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음)
   code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
   code-agent consent apply <ID>            현재 세션에서 확인된 내용만 실행하고 계속 진행
@@ -125,7 +127,7 @@ hook 이 부른다:
   code-agent hook                     PreToolUse 판정 (stdin JSON)
   code-agent review-event             ca-reviewer 시작·완료 관찰 및 결과 기록 (stdin JSON)
   code-agent planning-event           분석·조사·설계·계획 담당의 시작·완료 관찰 (stdin JSON)
-  code-agent consent-event            AskUserQuestion 시작·응답 관찰 및 확인 기록 (stdin JSON)
+  code-agent consent-event            Claude Code 질문 도구(AskUserQuestion) 시작·응답 관찰 및 확인 기록 (stdin JSON)
   code-agent session-event            SessionStart — 대화 시작·재개·압축·비우기 뒤 진행 상태 요약을 붙인다 (stdin JSON)
   code-agent stop                     Stop 판정 — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 (stdin JSON)`;
 
@@ -165,6 +167,8 @@ function positional(args: string[], valued: string[]): string[] {
 /** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
   const repoRoot = findRepoRoot(process.cwd());
+  // 출력 문구의 스킬·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
+  useNotation(notationFor(repoRoot));
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
     case "planning":
@@ -268,16 +272,27 @@ export async function runCommand(command: string | undefined, args: string[]): P
       }
       print(submitPlan(repoRoot, args[1]));
       return 0;
-    case "approve":
+    case "approve": {
+      // 남는 인자는 사용법 오류다 — `approve request X` 를 요구사항 확정으로 오해해 계획 승인 화면으로 가지 않게
+      const extra = positional(args, ["comment"]);
+      if (extra[0] === "request") throw new Stop("요구사항 확정은 code-agent confirm request <ID> [<지시서>] 입니다 — approve 는 제출된 계획을 승인합니다.");
+      if (extra.length) throw new Stop(`사용법: code-agent approve [--comment <메모>] — 받지 않는 인자: ${extra.join(" ")}`);
       print(decide(repoRoot, "approved", option(args, "comment")));
       return 0;
+    }
     case "reject":
       if (args[0] === "request") {
-        const [id, spec] = positional(args.slice(1), ["comment"]);
+        const [id, spec, ...rest] = positional(args.slice(1), ["comment"]);
+        if (rest.length) throw new Stop(`사용법: code-agent reject request <ID> [<지시서>] --comment <사유> — 받지 않는 인자: ${rest.join(" ")}`);
         print(decideRequest(repoRoot, id, "rejected", option(args, "comment"), spec));
         return 0;
       }
+      if (positional(args, ["comment"]).length) throw new Stop("사용법: code-agent reject --comment <사유> | code-agent reject request <ID> [<지시서>] --comment <사유>");
       print(decide(repoRoot, "rejected", option(args, "comment")));
+      return 0;
+    case "takeover":
+      if (args.length) throw new Stop("사용법: code-agent takeover");
+      print(releaseLease(repoRoot));
       return 0;
     case "request":
       switch (args[0]) {
@@ -332,13 +347,14 @@ export async function runCommand(command: string | undefined, args: string[]): P
       }
     case "confirm":
       if (args[0] === "request") {
-        const [id, spec] = positional(args.slice(1), []);
+        const [id, spec, ...rest] = positional(args.slice(1), []);
+        if (rest.length) throw new Stop(`사용법: code-agent confirm request <ID> [<지시서>] — 받지 않는 인자: ${rest.join(" ")}`);
         print(decideRequest(repoRoot, id, "confirmed", undefined, spec));
         return 0;
       }
       if (args[0] !== "doc") {
         throw new Stop(
-          "사용법: code-agent confirm doc <all | architecture | conventions | test-strategy | quality> | code-agent confirm request <ID>",
+          "사용법: code-agent confirm doc <all | architecture | conventions | test-strategy | quality> | code-agent confirm request <ID> [<지시서>]",
         );
       }
       print(confirmDoc(repoRoot, args[1]));

@@ -10,7 +10,7 @@ description: 구현 계획 단계(plan)를 진행한다 — ⑤ plan.json 과 �
 
 **자리 확인** — Bash: `code-agent status`. 스테이지가 `plan` 이 아니면 **멈춘다.**
 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고, 이미 지났으면 `code-agent back plan` 으로
-되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다 — `planning advance` 가 자동 되감기(`rewind-required`, `rewind.auto: true`)를 낼 때는 예외다.
+되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다 — 승인 무효로 status 의 `다음:` 이 되감기를 안내할 때와 `planning advance` 가 자동 되감기(`rewind-required`, `rewind.auto: true`)를 낼 때는 예외다.
 승인이 `rejected` 로 나오면 아래 **반려됐다면** 으로 간다.
 승인이 `approved`면 계획은 이미 통과했다 — **계획을 다시 쓰지 않는다.** 커서가 `plan`에 남아 있으면 Bash: `code-agent next`로 옮긴다. 같은 작업 흐름에서는 `/ca-implement` 절차로 자동으로 이어간다. 사용자가 계획 단계만 요청했다면 게이트를 통과한 결과를 보고한다.
 

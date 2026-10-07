@@ -9,6 +9,7 @@ import { Stop } from "./stop";
 import { commitOf, mergeBase } from "./tree";
 import { docPaths } from "./docs";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
+import { skill } from "./hostText";
 
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -107,7 +108,7 @@ export function requirePreparedBranch(root: string, branch: string, base: string
 export function setupBaseline(root: string): string {
   if (loadActive(root)) throw new Stop("작업 중에는 초기 기준을 만들지 않습니다.");
   const head = commitOf(root, "HEAD");
-  if (!loadManifestIfAny(root)) throw new Stop("/ca-adopt로 프로젝트 설정·공통 문서를 먼저 준비하세요.");
+  if (!loadManifestIfAny(root)) throw new Stop(`${skill("ca-adopt")}로 프로젝트 설정·공통 문서를 먼저 준비하세요.`);
   const files = pendingBaselineFiles(root);
   if (head && !files.length) return "기준 커밋이 이미 있습니다 — 도입 파일이 반영된 기존 기준을 유지합니다.";
   if (!files.length) throw new Stop("기준으로 저장할 준비 파일이 없습니다.");
@@ -133,5 +134,5 @@ export function setupBaseline(root: string): string {
   } catch (error) {
     throw new Stop(`준비 커밋이 실패했습니다. 스테이지 상태를 확인하세요: ${error instanceof Error ? error.message : error}`);
   }
-  return `준비 파일의 ${head ? "도입" : "최초 기준"} 커밋을 만들었습니다. 같은 세션에서 접수를 계속합니다. 중단했다면 /ca-next로 재개하세요. 실제 소스와 테스트는 승인된 Task에서 생성합니다.`;
+  return `준비 파일의 ${head ? "도입" : "최초 기준"} 커밋을 만들었습니다. 같은 세션에서 접수를 계속합니다. 중단했다면 ${skill("ca-next")}로 재개하세요. 실제 소스와 테스트는 승인된 Task에서 생성합니다.`;
 }

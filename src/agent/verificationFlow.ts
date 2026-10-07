@@ -9,6 +9,7 @@ import { next, requireValidatable } from "./commands";
 import { bindingProblems, loadEvidence, runsOf, stageProblemEntries, stageProblems, treeHashNow, validationDocFile, verifyView } from "./evidence";
 import type { Evidence } from "./evidence";
 import { STATE_DIR, verifyFile } from "./layout";
+import { skill } from "./hostText";
 import {
   budgetText,
   failure,
@@ -192,8 +193,8 @@ function taskOf(node: string, fallback: string, context: FlowContext, work: Work
 /** 저장된 커서는 증거가 아니다. 매 호출마다 실제 상태·승인·증거로 진입 노드를 다시 계산한다. */
 export async function verify(repoRoot: string, options: { retry?: boolean } = {}): Promise<VerificationResult> {
   const initial = loadWork(repoRoot);
-  if (!initial || !["check", "test", "review", "integrate"].includes(initial.active.phase)) {
-    throw new Stop("code-agent verify는 check·test 또는 review·integrate의 수정 후 재검증에서 실행합니다.");
+  if (!initial || !["check", "test", "review", "integrate", "deliver"].includes(initial.active.phase)) {
+    throw new Stop("code-agent verify는 check·test 또는 review·integrate·deliver의 수정 후 재검증에서 실행합니다.");
   }
   let entry: string;
   if (!options.retry && initial.active.phase === "review" &&
@@ -238,7 +239,7 @@ export async function verify(repoRoot: string, options: { retry?: boolean } = {}
     problems: context.problems, summaries: context.summaries,
     evidence: verifyFile(repoRoot, work.active.id, work.active.target),
     plannedFiles: work.plan!.files.map((file) => file.path),
-    resume: handoff.node === "diagnose" ? "code-agent verify --retry" : handoff.node === "review" ? "/ca-review" : handoff.node === "decision" ? "/ca-answer" : "code-agent verify",
+    resume: handoff.node === "diagnose" ? "code-agent verify --retry" : handoff.node === "review" ? skill("ca-review") : handoff.node === "decision" ? skill("ca-answer") : "code-agent verify",
     ...(context.failure ? { failure: context.failure } : {}),
     ...(context.budget ? { budget: context.budget } : {}),
   };

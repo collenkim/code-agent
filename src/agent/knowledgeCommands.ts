@@ -10,6 +10,7 @@ import type { KnowledgeKind } from "./schemas";
 import { Stop } from "./stop";
 import { askOnTerminal, requireTerminal } from "./tty";
 import { loadManifestIfAny } from "./work";
+import { skill } from "./hostText";
 
 /**
  * `code-agent knowledge` · `code-agent knowledge prune` — 쌓인 공통 KNOWLEDGE 를 사람이 들여다보는 자리.
@@ -141,7 +142,7 @@ export function knowledgeList(repoRoot: string): string {
     return [
       "공통 KNOWLEDGE 문서가 없습니다.",
       ...paths.map((path) => `  - ${path}`),
-      "  /ca-docs 로 뼈대를 만들거나, code-agent docs link <종류> <경로> 로 이미 있는 문서를 등록하세요.",
+      `  ${skill("ca-docs")} 로 뼈대를 만들거나, code-agent docs link <종류> <경로> 로 이미 있는 문서를 등록하세요.`,
     ].join("\n");
   }
   const lines: string[] = [];

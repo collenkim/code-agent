@@ -10,7 +10,7 @@ import { abort, decide, requireReproable, requireValidatable, status } from "./c
 import { baselineFiles, setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
-import { deliver, deliveryPaths, knowledgeChoices } from "./deliver";
+import { deliver, deliveryPaths, isDeliveryExcluded, knowledgeChoices } from "./deliver";
 import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot, loadActive, STATE_DIR } from "./layout";
@@ -29,6 +29,7 @@ import { loadManifestIfAny } from "./work";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
 import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, repeatedTargetChange, updateConsentIndex } from "./consentState";
 import { observeAnswerEvent } from "./answers";
+import { withNotation } from "./hostText";
 
 export { openConsent } from "./consentState";
 
@@ -383,7 +384,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       confirmations = capture(() => deliver(work));
       choices = knowledgeChoices(work).map(c => ({ shown: c.shown, prompt: "적용하려면 y", target: c.target, key: c.entry.key }));
       summary = ["검증된 작업 파일·작업 문서·증거·선택한 지식 문서를 로컬 커밋합니다. 원격 push·배포는 하지 않습니다.",
-        "커밋 대상(작업·문서·증거·도입 설정):", ...[...new Set(deliveryPaths(work).flatMap(path => listLocalFiles(root, path)))].map(file => `- ${file}`),
+        "커밋 대상(작업·문서·증거·도입 설정):", ...[...new Set(deliveryPaths(work).flatMap(path => listLocalFiles(root, path)))].filter(file => !isDeliveryExcluded(work, file)).map(file => `- ${file}`),
         ...(!isDeepStrictEqual(first, confirmations) ? ["준비 중 반영 보고서의 코드 구역을 다시 렌더했습니다."] : []),
       ].join("\n");
       break;
@@ -739,6 +740,9 @@ export function consentCommandGuard(root:string,command:string,sessionId?:string
  * 업무 질문은 답 관찰(answers.jsonl)만 하고, 실패해도 질문을 막지 않는다 — 게이트가 나중에 '답 출처 미확인'으로 잡는다.
  */
 export function runConsentHook(stdin:string):number {
+  return withNotation("claude", () => consentEvent(stdin));
+}
+function consentEvent(stdin:string):number {
   let input: ConsentHookInput;
   try { input = JSON.parse(stdin) as ConsentHookInput; }
   catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }

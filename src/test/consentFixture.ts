@@ -55,7 +55,7 @@ export function setupConsentProject(root: string): void {
   docsEnd(root);
   writeFixture(root, ".gitignore", [
     ".code-agent/active.json", ".code-agent/request-session.json", ".code-agent/docs-session.json",
-    ".code-agent/log/", ".code-agent/consents/", "node_modules/", "",
+    ".code-agent/log/", ".code-agent/consents/", ".code-agent/lease.json*", "node_modules/", "",
   ].join("\n"));
 }
 

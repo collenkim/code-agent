@@ -3,6 +3,7 @@ import { canonical, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from
 import { openQuestions } from "./answers";
 import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
+import { askVia, withNotation } from "./hostText";
 
 /**
  * Claude Code Stop hook 의 판정 — **턴이 끝날 때 한 번만** 본다.
@@ -50,7 +51,7 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
           `답이 없는 질문이 ${open.length}개 있습니다 (${questionsFile(work.active.id)}):`,
           ...unanswered.map((question) => `  - ${question.title}`),
           ...unverified.map((question) => `  - ${question.title} (답 출처 미확인)`),
-          `답을 받기 전에는 진행하지 마세요 — 메인이 ca-answer 공통 절차의 AskUserQuestion으로 답을 받고 기록합니다. 미응답이면 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
+          `답을 받기 전에는 진행하지 마세요 — 메인이 ca-answer 공통 절차의 ${askVia()} 답을 받고 기록합니다. 미응답이면 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
         ]
       : []),
   ].join("\n");
@@ -61,7 +62,7 @@ export function runStopHook(stdin: string): number {
   // 교차 실행이 띄운 다른 호스트 안에서는 진행 판정을 하지 않는다
   if (crossChild()) return 0;
   try {
-    const reason = decideStop(JSON.parse(stdin) as StopHookInput, process.env.CLAUDE_PROJECT_DIR);
+    const reason = withNotation("claude", () => decideStop(JSON.parse(stdin) as StopHookInput, process.env.CLAUDE_PROJECT_DIR));
     if (reason) {
       process.stdout.write(JSON.stringify({ decision: "block", reason }));
     }

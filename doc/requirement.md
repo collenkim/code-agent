@@ -121,7 +121,7 @@ doc/work/<Jira 키>/requirement.md    작업 지시서 — 코드가 렌더한�
 | `kind` | `feature` \| `fix` \| `refactor` | 접수한 종류와 같아야 한다 — 종류는 사람이 명령으로 골랐다 |
 | `id` | 티켓 키 | 접수한 ID 와 같아야 한다. **지어내지 않는다** |
 | `title` | 한 줄 | 사람이 목록에서 알아본다 |
-| `target` | 1개 이상 | `fix`·`refactor` 는 저장소에 **실제로 있는 경로**, `feature` 는 만들 도메인·기능 이름 |
+| `target` | 정확히 1개 — 대상이 여럿이면 대상마다 별도 ID 로 접수 | `fix`·`refactor` 는 저장소에 **실제로 있는 경로**, `feature` 는 만들 도메인·기능 이름 |
 | `scope` · `preserve` | 목록 | `fix`·`refactor` 는 필수. `scope` 는 실재하는 경로여야 한다 |
 | `approver` | 한 줄 | 프로젝트가 `requireApprover` 를 켰으면 필수 |
 | `extra` | `{이름: 값 \| [값]}` | 프로젝트가 `code-agent.json` 의 `workOrder.attributes` 에 선언한 것만 |
@@ -254,7 +254,7 @@ approver: team-lead
 | `kind` | `feature` \| `fix` \| `refactor` | 어느 단계를 도는지(`stages[].kinds`), 계획의 모양(`planFormatFor`), 작업 브랜치 이름 |
 | `id` | 티켓 키 | 작업 폴더 `doc/work/<id>/` · 제출된 계획 · 확정 원장 `.code-agent/approvals/<id>/request.jsonl` · 승인 원장 `.code-agent/approvals/<id>.jsonl` 이 이것에 묶인다 |
 | `title` | 한 줄 | 사람이 목록에서 알아본다 |
-| `target` | 대상 하나 또는 여럿 | 진행이 대상마다 갈린다. `start --target` 으로 고른다 |
+| `target` | 대상 하나 — 여럿이면 대상마다 별도 ID | 작업(ID) 하나는 대상 하나만 진행한다. 대상이 여럿인 지시서는 진행 중이 아니면 `start` 가 거부한다(이미 시작한 작업은 그대로 잇는다) |
 | `scope` | 이번에 건드려도 되는 경로 | 계획 제출과 매 쓰기의 **상한선** |
 | `preserve` | 바뀌면 안 되는 것 | 쓰기 거부(경로형) · 계획 필수 항목(문장형) |
 | `approver` | 승인자 | 확정·승인 원장에 남는 이름 |
@@ -508,9 +508,7 @@ code-agent start doc/spec/<어디든>.md
 통과하기 때문이다. 그래서 지시서가 바뀌면 그 지시서로 받은 승인은 대상마다 전부 자동으로 무효가 되고,
 승인이 무효인 동안 hook 은 모든 코드 쓰기를 거부한다.
 
-`target` 도 `orderHash` 에 담긴다. 그래서 대상 목록을 고치면 **이미 있던 모든 대상의 승인이
-`stale-order` 가 된다** — 원장은 대상별로 읽히지만, 어느 줄이든 판정 당시의 지시서 해시와 대조하기
-때문이다. 새로 더한 대상만 판정이 아예 없는 `none` 이고, 그 대상은 계획부터 다시 돈다.
+`target` 도 `orderHash` 에 담긴다 — 대상을 바꾸면 승인이 `stale-order` 가 된다(작업 하나는 대상 하나다).
 
 ## 예시 — 접수 초안
 
@@ -622,8 +620,8 @@ P7(플러그인) · P8(배포·점검)이 지시서에 더하는 것은 없다 �
 ```
 
 스킬이 `code-agent request begin <ID> --kind <종류> [--base <기준 브랜치>] [--target <대상>]` 로 접수를
-열고, 초안을 제출해 지시서를 렌더한다. 같은 화면에서 사용자가 요구사항을 확인하면 consent 적용 뒤 자동으로 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`를 호출해 분석을 시작한다. 중단된 작업은 `/ca-next`로 재개한다. 대상이 여럿이면 `--target`으로 하나를 고른다. 고르지 않으면 접수 때 말한 대상,
-그것도 없으면 첫 대상이다 — `--base` 도 같다(접수 때 적어 둔 값을 `start` 가 쓰고, 지금 준 값이 이긴다).
+열고, 초안을 제출해 지시서를 렌더한다. 같은 화면에서 사용자가 요구사항을 확인하면 consent 적용 뒤 자동으로 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`를 호출해 분석을 시작한다. 중단된 작업은 `/ca-next`로 재개한다. `--target`을 주면 지시서의 대상과 같아야 하고, 생략하면 접수 때 말한 대상,
+그것도 없으면 지시서의 대상이다 — `--base` 도 같다(접수 때 적어 둔 값을 `start` 가 쓰고, 지금 준 값이 이긴다).
 
 접수 초안이 규격에 맞지 않으면 `request submit` 에서 멈추고, 확정되지 않은 요구사항 위에서는
 `start` 가 멈춘다 — **모델에게 한 글자도 가지 않는다.**

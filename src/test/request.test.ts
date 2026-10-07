@@ -366,6 +366,8 @@ describe("접수 — 확정 · 시작", () => {
   test("손으로 쓴 지시서도 확정을 거쳐야 시작한다", () => {
     write("doc/work/ORD-9/requirement.md", "---\nkind: feature\nid: ORD-9\ntitle: 손으로\ntarget: order\n---\n\n본문\n");
     abort(repo);
+    // 닫은 접수(ORD-7)의 작업 폴더는 새 작업 브랜치로 따라가면 start 가 거부한다(FLOW-07) — 사람이 커밋해 둔 상태로 시작한다
+    git("add", "-A", "doc/work/ORD-7"); git("commit", "-qm", "ORD-7 접수 기록");
     assert.throws(() => start(repo, join(repo, "doc/work/ORD-9/requirement.md")), /요구사항이 확정되지 않았습니다/);
     confirm("ORD-9", "doc/work/ORD-9/requirement.md");
     assert.match(start(repo, join(repo, "doc/work/ORD-9/requirement.md")), /시작했습니다: ORD-9/);

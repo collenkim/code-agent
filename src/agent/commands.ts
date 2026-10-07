@@ -36,6 +36,7 @@ import { commitOf, mergeBase } from "./tree";
 import { prDocFile } from "./deliver";
 import { proposalFile } from "./knowledge";
 import {
+  bindingProblems,
   collectWindowOpen,
   loadEvidence,
   outsideChanges,
@@ -59,12 +60,15 @@ import { callSlot, clamp, sourceLines } from "./plugins/run";
 import {
   clearRequestSession,
   loadRequestSession,
+  preparationHint,
   requestContext,
+  requestDraftFile,
   requestHint,
   requestState,
   requestStateLine,
   requestStatusLines,
   requireRequestConfirmed,
+  startBlockers,
 } from "./request";
 import { loadReview, reviewDocFile, reviewProblems, reviewStatusTail } from "./review";
 import { crossStopStreak } from "./crossRecord";
@@ -92,6 +96,10 @@ import type { Requirements } from "./workDocs";
 import { formatSourceTrace, readSourceTrace, sourceItems } from "./sourceTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 import { crossNotice } from "./hosts";
+import { agentName, askVia, shellLabel, skill } from "./hostText";
+import { PHASE_SKILL, reentryHint, staleEarliest } from "./reentry";
+import { failureHint } from "./failureHint";
+import { leaseLine } from "./lease";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -111,26 +119,16 @@ const PHASE_LABEL: Record<Phase, string> = {
 };
 
 /**
- * 스테이지마다 그 스테이지 하나만 도는 스킬. 단계별로 나눠 두면 어디서 어긋났는지 보고 그 칸만 다시 돌 수 있다.
- * `/ca-next` 는 같은 절차를 이어서 도는 사이클이라 결과가 같고, `deliver` 는 현재 세션에서 ca-answer의 동의 절차로 확인한 뒤 적용한다.
+ * `다음:` 줄의 머리 — 지금 이 칸 하나만 도는 스킬(reentry.ts PHASE_SKILL)과, 이어서 돌리는 사이클. 단계별로 나눠 두면 어디서
+ * 어긋났는지 보고 그 칸만 다시 돌 수 있다. `ca-next` 는 같은 절차를 이어서 도는 사이클이라 결과가 같고, `deliver` 는 현재 세션에서
+ * ca-answer의 동의 절차로 확인한 뒤 적용한다(스킬이 없다). 표기는 호스트별이다(hostText.skill).
  */
-const PHASE_COMMAND: Record<Phase, string> = {
-  analysis: "/ca-analyze",
-  impact: "/ca-impact",
-  design: "/ca-design",
-  plan: "/ca-plan",
-  implement: "/ca-implement",
-  check: "/ca-check",
-  test: "/ca-test",
-  review: "/ca-review",
-  integrate: "/ca-integrate",
-  deliver: "code-agent deliver",
-};
-
-/** `다음:` 줄의 머리 — 지금 이 칸을 도는 명령과, 이어서 돌리는 사이클 */
-function stageCommand(phase: Phase): string {
-  return `${PHASE_COMMAND[phase]} (또는 /ca-next 로 사이클)`;
+function stageCommand(phase: Exclude<Phase, "deliver">): string {
+  return `${skill(PHASE_SKILL[phase])} (또는 ${skill("ca-next")} 로 사이클)`;
 }
+
+/** AI-DLC 가 진행 중이면 `다음:` 은 이 줄 하나다 — next·검증이 어차피 거부한다(requireNoAidlc) */
+const AIDLC_HINT = "AI-DLC 작업이 진행 중이라 code-agent 를 진행하지 않습니다 — 위 AI-DLC 줄의 안내대로 정리한 뒤 이어갑니다";
 
 /**
  * 모르는 스테이지는 옛 버전이 남긴 커서다 (P3 의 `research`). 조용히 다른 칸으로 옮겨 이어 가면
@@ -168,7 +166,7 @@ function requireWork(repoRoot: string): Work {
     throw new Stop(
       session
         ? `아직 작업이 시작되지 않았습니다 — ${session.id} 요구사항을 접수 중입니다.\n다음: ${requestStatusLines(repoRoot, session).hint}`
-        : "진행 중인 작업이 없습니다. /ca-request [ID] <요구사항> 으로 접수부터 시작하세요. 신규·기능 변경은 /ca-feature, 결함 수정은 /ca-fix, 동작 보존은 /ca-refactor 로도 시작할 수 있습니다.",
+        : `진행 중인 작업이 없습니다. ${skill("ca-request")} [ID] <요구사항> 으로 접수부터 시작하세요. 신규·기능 변경은 ${skill("ca-feature")}, 결함 수정은 ${skill("ca-fix")}, 동작 보존은 ${skill("ca-refactor")} 로도 시작할 수 있습니다.`,
     );
   }
   requirePhase(work.active);
@@ -179,10 +177,14 @@ function requireWork(repoRoot: string): Work {
 function requireDocs(repoRoot: string, work?: Work): void {
   const checks = checkProjectDocs(repoRoot, work?.manifest ?? loadManifestIfAny(repoRoot));
   if (!docsReady(checks)) {
+    // 상태별로 나눈다 — 빠진 파일·절은 작성(ca-docs), 확정만 남았으면 사람의 동의(최초 준비면 setup)
+    const missing = checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections");
     throw new Stop(
       "프로젝트 필수 문서가 갖춰지지 않아 진행할 수 없습니다.\n" +
         `${formatDocChecks(checks)}\n` +
-        "/ca-docs 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결).",
+        (missing
+          ? `${skill("ca-docs")} 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결).`
+          : "공통 문서의 사람 확정이 필요합니다 — 현재 호스트 세션에서 ca-answer의 docs 동의 절차로 확정합니다 (최초 준비면 setup, 직접 CLI는 TTY의 code-agent confirm doc all)."),
     );
   }
 }
@@ -193,7 +195,7 @@ function requireAnswers(repoRoot: string, active: ActiveWork): void {
     throw new Stop(
       `답이 없는 질문이 ${open.length}개 있어 넘어갈 수 없습니다 (${questionsFile(active.id)}):\n` +
         open.map((question) => `  - ${question.title}`).join("\n") +
-        "\n메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.",
+        `\n메인은 ${skill("ca-answer")} 공통 절차의 ${askVia()} 답을 받아 기록하세요.`,
     );
   }
   if (unverified.length > 0) {
@@ -270,7 +272,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (aidlc) throw new Stop(aidlc);
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
-    throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
+    throw new Stop(`code-agent.json 이 없습니다. ${skill("ca-adopt")} 로 프로젝트를 먼저 도입하세요.`);
   }
   requireDocs(repoRoot);
 
@@ -303,6 +305,15 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (current) {
     return `이미 진행 중입니다: ${current.id} · ${PHASE_LABEL[current.phase]}\n\n${status(repoRoot)}`;
   }
+  // 작업 하나는 대상 하나만 진행한다(FLOW-08) — 진행 중 확인 뒤라 대상 여럿인 지시서로 이미 시작한 작업은 위에서 그대로 잇고,
+  // 브랜치 전환 앞이라 거부 때 아무것도 바뀌지 않는다. 확정 뒤 고쳐 다시 제출하면 지시서 해시가 바뀌어 사람이 다시 확정한다
+  if (order.target.length > 1) {
+    const draft = requestDraftFile(order.id);
+    const fix = existsSync(join(repoRoot, draft))
+      ? `${draft} 의 target 을 하나로 고쳐 code-agent request submit 으로 다시 제출하고 사람이 다시 확정하거나`
+      : `지시서 ${specPath} 의 target 을 하나로 고치고 사람이 다시 확정하거나`;
+    throw new Stop(`대상이 ${order.target.length}개입니다(${order.target.join(", ")}) — 작업 하나는 대상 하나만 진행합니다. ${fix}, 대상마다 별도 ID 로 접수하세요 (브랜치는 바꾸지 않았습니다).`);
+  }
   // fix 는 오류 로그로 고친다 — 새로 시작할 때만 건다(이미 진행 중인 예전 작업은 그대로 잇는다)
   const missingLog = errorLogProblems(order.kind, readFileSync(join(repoRoot, specPath), "utf-8"));
   if (missingLog.length > 0) throw new Stop(`${specPath}: ${missingLog.map((problem) => problem.detail).join("\n")}`);
@@ -316,6 +327,20 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     base = options.base ?? manifest.git.base;
     branch = `${order.kind}/${order.id}`;
     requirePreparedBranch(repoRoot, branch, base);
+    // 새 작업 브랜치를 딸 때만 미커밋 변경을 본다(FLOW-07) — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
+    // 반영 커밋에 섞인다. 이미 있는 브랜치는 중단 뒤 재시작이라 그 작업의 변경이 남아 있을 수 있다
+    if (!commitOf(repoRoot, branch)) {
+      const blockers = startBlockers(repoRoot, order.id, specPath);
+      if (blockers.length > 0) {
+        throw new Stop([
+          "작업 트리에 커밋하지 않은 변경이 있어 시작하지 않았습니다 (브랜치는 바꾸지 않았습니다):",
+          ...blockers.slice(0, 10).map((change) => `  - [${change.status}] ${change.path}`),
+          ...(blockers.length > 10 ? [`  - 외 ${blockers.length - 10}개`] : []),
+          "이대로 시작하면 이 변경이 새 작업 브랜치로 따라가, 계획 승인 뒤 첫 검증에서 '계획 밖 변경'으로 막히거나 계획 파일과 겹치면 무관한 수정이 반영 커밋에 섞입니다.",
+          "사람이 커밋·stash 하거나 되돌린 뒤 같은 명령으로 다시 시작합니다 (모델은 파일을 되돌리지 않습니다).",
+        ].join("\n"));
+      }
+    }
     let how: "created" | "switched" | "already";
     try {
       how = switchToWorkBranch(repoRoot, branch, base);
@@ -398,24 +423,49 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
   }
 }
 
+/**
+ * `다음:` 한 줄. 판정 순서(위가 먼저): AI-DLC 차단 → 요구 미확정 → 미응답 질문 → 승인 무효(implement 이후, 재진입 순서) →
+ * 검증 한도(check·test, 증거 기반) → 원천이 `다음:` 에 닿지 않는 실패(failureHint — 관찰 흐름의 배정 실패·고아, deliver 동의 실패) →
+ * 스테이지별 문구. 원인별 안내는 원인을 판정한 모듈이 렌더한 문구다 — 검증은 아래 check·test 갈래, 리뷰·교차는 reviewProblems 첫 줄,
+ * 계획 배정은 planning advance. 같은 상태에서 직전 명령과 무관하게 같은 줄이다(증거·기록만 본다).
+ * 이 순서를 바꾸면 ca-next 의 '멈춘 자리별 재개' 표도 함께 고친다.
+ */
 function nextHint(work: Work): string {
   const { repoRoot, active } = work;
+  if (aidlcBlock(repoRoot)) return AIDLC_HINT;
   if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
     return requestHint(repoRoot, active.id, active.spec);
   }
   const questions = openQuestions(repoRoot, questionsFile(active.id));
   const open = questions.unanswered.length + questions.unverified.length;
   if (open > 0) {
-    return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — /ca-answer`;
+    return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — ${skill("ca-answer")}`;
   }
+  if (work.plan && PHASES.indexOf(active.phase) > PHASES.indexOf("plan")) {
+    const reentry = reentryHint(work);
+    if (reentry) return reentry;
+  }
+  // 한도 줄은 verifyLimitHint 한 곳에서만 낸다 — 증거가 정본이다(check 직접 호출에는 verify 기록이 없다)
+  if (active.phase === "check" || active.phase === "test") {
+    const limited = verifyLimitHint(work);
+    if (limited) return limited;
+  }
+  const failed = failureHint(work);
+  if (failed) return failed;
+  const dir = workDocsDir(active.id);
   switch (active.phase) {
     case "analysis":
     case "impact":
     case "design":
-      return `${stageCommand(active.phase)} — ${PHASE_LABEL[active.phase]}(${workDocsDir(active.id)}/ 의 번호 문서)을 마치면 code-agent next`;
+      // 관찰 흐름은 담당 배정이 먼저다 — 문서를 메인이 쓰지 않는다
+      return active.planningVersion
+        ? `${stageCommand(active.phase)} — code-agent planning advance 로 담당을 배정하고, 결과가 기록돼 action 이 ready-for-gate 면 code-agent next`
+        : `${stageCommand(active.phase)} — ${PHASE_LABEL[active.phase]}(${dir}/ 의 번호 문서)을 마치면 code-agent next`;
     case "plan": {
       if (!work.plan) {
-        return `${stageCommand("plan")} — 계획 초안을 ${workDocsDir(active.id)}/plan.json 에 쓰고 code-agent plan submit ${workDocsDir(active.id)}/plan.json`;
+        return active.planningVersion
+          ? `${stageCommand("plan")} — code-agent planning advance 로 계획·검토 담당을 배정하고, 관찰된 결과로 ${dir}/plan.json 이 생기면 code-agent plan submit ${dir}/plan.json`
+          : `${stageCommand("plan")} — 계획 초안을 ${dir}/plan.json 에 쓰고 code-agent plan submit ${dir}/plan.json`;
       }
       const approval = approvalOf(work);
       if (approval.status === "approved") {
@@ -428,18 +478,19 @@ function nextHint(work: Work): string {
           `사유가 가리키는 문서(01~04 · 07 · plan.json)를 다시 보고, 정할 수 없는 것은 ${questionsFile(active.id)} 에 질문으로 남긴 뒤 다시 제출하세요`
         );
       }
+      // 승인 뒤 무효가 됐고 낡은 계획 작업이 있으면(관찰 흐름) 재진입 순서 — 그대로 다시 승인해도 next 의 계획 게이트가 막는다
+      if (approval.status !== "none" && staleEarliest(work)) return reentryHint(work, approval) ?? "";
       return `현재 호스트 세션에서 ca-answer의 plan 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (현재: ${approval.status})`;
     }
     case "implement":
       return `${stageCommand("implement")} — 단계 ${active.stage} 를 구현한 뒤 code-agent next`;
     case "check":
     case "test": {
-      // 한도 줄은 verifyLimitHint 한 곳에서만 낸다 — 증거가 정본이다(check 직접 호출에는 verify 기록이 없다)
-      const limited = verifyLimitHint(work);
-      if (limited) return limited;
+      // 판정·원인·한도 문구의 원천은 증거 기반 갈래 하나다(한도 줄은 위 verifyLimitHint). 진입 명령은 verify(전체 흐름)다 —
+      // 원인별 재개(--retry 여부)는 verify 결과의 failure.guide 가 알려 준다
       const evidence = loadEvidence(repoRoot, active.id, active.target);
       if (!evidence) {
-        return `${stageCommand(active.phase)} — code-agent ${active.phase}`;
+        return `${stageCommand(active.phase)} — code-agent verify --json (전체 흐름 · 단계만 돌릴 때는 code-agent ${active.phase})`;
       }
       const view = verifyView(work, evidence);
       const failed = runsOf(evidence, active.phase).filter((run) => run.outcome !== "passed");
@@ -449,7 +500,7 @@ function nextHint(work: Work): string {
       const state = verifyState({ phase: active.phase, round: evidence.rounds, runs: evidence.runs, cases: active.phase === "test" ? evidence.testCases : undefined });
       const node = state === "precondition" || state === "passed" ? "diagnose" : verifyNode(state, view.budget);
       return `${stageCommand(active.phase)} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — ` +
-        `${node === "repair" ? "계획 안에서 고치고" : "원인을 확인하고"} code-agent ${active.phase} (${budgetText(view.budget)})`;
+        `${node === "repair" ? "계획 안에서 고치고" : "원인을 확인하고"} code-agent verify --json (${budgetText(view.budget)})`;
     }
     case "review": {
       const problems = reviewProblems(work);
@@ -495,11 +546,12 @@ export function status(repoRoot: string): string {
       lines.push(`다음: ${intake.hint}`);
       return lines.join("\n");
     }
-    const hint = !manifest
-      ? "/ca-request <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (/ca-adopt)"
-      : !docsReady(checks)
-        ? "/ca-docs 로 필수 문서를 갖추세요 — 확정은 현재 호스트 세션에서 ca-answer의 docs 동의 절차로 받고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다"
-        : "/ca-request [ID] <요구사항> 으로 접수 — 신규·기능 변경은 /ca-feature, 결함 수정은 /ca-fix, 동작 보존은 /ca-refactor 로도 시작";
+    // 처리 주체가 없는 상태(FLOW-13) — AI-DLC 차단, 매니페스트 없음, 문서 세션·준비 동의(preparationHint 가 고른다) 순으로 본다
+    const hint = aidlcBlock(repoRoot) ? AIDLC_HINT
+      : !manifest
+        ? `${skill("ca-request")} <요구사항> 으로 접수 — ID는 자동 발급하고 공통 문서 준비부터 이어갑니다 (${skill("ca-adopt")})`
+        : preparationHint(repoRoot, false) ??
+          `${skill("ca-request")} [ID] <요구사항> 으로 접수 — 신규·기능 변경은 ${skill("ca-feature")}, 결함 수정은 ${skill("ca-fix")}, 동작 보존은 ${skill("ca-refactor")} 로도 시작`;
     lines.push("", "작업: 없음", `다음: ${hint}`);
     return lines.join("\n");
   }
@@ -516,8 +568,11 @@ export function status(repoRoot: string): string {
     `작업 폴더: ${workDocsDir(active.id)}/`,
     `계획 처리: ${active.planningVersion ? "관찰 흐름 — code-agent planning status" : "기존 작업 호환 흐름"}`,
     `브랜치: ${active.branch ? `${active.branch} (기준 ${active.base})` : "없음"}`,
-    `스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`,
   );
+  // 작업 임대(동시 진행 방지) — 이 작업을 진행 중인 세션
+  const lease = leaseLine(work);
+  if (lease) lines.push(lease);
+  lines.push(`스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`);
   if (active.phase === "implement") {
     const keys = plannedStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key));
     lines.push(`단계: ${keys.join(" → ")}`);
@@ -550,10 +605,12 @@ export function status(repoRoot: string): string {
         `리뷰: ${last ? `${last.round}회차 · 기준 트리 ${last.treeHash.slice(-12)} (${reviewDocFile(active.id)})${reviewStatusTail(work, review!, last)}` : "회차 없음 — code-agent review"}`,
       );
     }
-    const outside = outsideChanges(work);
-    if (outside.length > 0) {
-      lines.push(`계획 밖 변경: ${outside.map((change) => `[${change.status}] ${change.path}`).join(", ")}`);
-    }
+  }
+  // 계획 밖 변경은 모든 스테이지에 낸다(FLOW-07) — analysis~plan 은 계획 파일이 없어 작업 폴더 밖 변경이 전부 나온다
+  // (그 단계에서 모델은 작업 폴더 밖을 쓸 수 없으므로 사람·외부 도구의 변경이다)
+  const outside = outsideChanges(work);
+  if (outside.length > 0) {
+    lines.push(`계획 밖 변경: ${outside.map((change) => `[${change.status}] ${change.path}`).join(", ")}`);
   }
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
@@ -613,7 +670,7 @@ export function next(repoRoot: string): string {
     case "implement": {
       requireRequirements(repoRoot, active);
       const approval = approvalOf(work);
-      if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 계획 변경 후 다시 승인받아야 진행합니다.`);
+      if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`);
       const stages = plannedStages(work);
       const index = stages.findIndex((stage) => stage.key === active.stage);
       if (index < 0) throw new Stop("현재 구현 단계가 승인된 순서에 없습니다. code-agent back plan 으로 돌아가 계획을 확인하세요.");
@@ -681,10 +738,18 @@ export function next(repoRoot: string): string {
 /**
  * 수정 루프가 `check` 로 되감을 수 있는 자리 — 검증 실패·지적이 나는 스테이지들.
  *
- * `deliver` 는 넣지 않는다. 거기는 사용자가 반영할 내용을 확인하는 자리라, 모델이 부른 `check` 한 번에
- * 커서가 뒤로 가면 사람이 보던 화면이 조용히 무효가 된다.
+ * `deliver` 는 넣지 않는다. 거기는 사용자가 반영할 내용을 확인하는 자리라, 증거가 지금 트리와 맞는데 모델이 부른 `check`
+ * 한 번에 커서가 뒤로 가면 사람이 보던 화면이 조용히 무효가 된다. 증거 묶임이 이미 깨졌을 때(`evidenceBroken` — 사람이
+ * 계획 파일·경계·계획을 바꿨다)만 deliver 에서도 check 로 되감는다 — 그때는 반영 게이트가 어차피 막아 막다른 자리가 된다.
+ * 사용자가 반영 전에 수정을 요청하면 `back` 으로 되감는다(사용자 지시 — 스킬 규칙).
  */
 const REWINDABLE: readonly Phase[] = ["test", "review", "integrate"];
+
+/** 증거가 있고 그 묶임(기준 커밋·계획 파일 트리·매니페스트·계획 해시)이 지금과 맞지 않는가 — 계획 밖 변경만이면 되감아도 풀리지 않아 넣지 않는다 */
+function evidenceBroken(work: Work): boolean {
+  const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  return !!evidence && bindingProblems(work, evidence).length > 0;
+}
 
 /**
  * `code-agent check` · `test` 의 전제. 승인이 stale 로 돌아섰는데 검증을 통과시키면
@@ -706,19 +771,23 @@ export function requireValidatable(
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
   requireRequirements(repoRoot, work.active);
   requireAnswers(repoRoot, work.active);
-  if (phase === "check" && REWINDABLE.includes(work.active.phase)) {
+  if (phase === "check" && (REWINDABLE.includes(work.active.phase) || (work.active.phase === "deliver" && evidenceBroken(work)))) {
     saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined }, "next");
     work = requireWork(repoRoot);
   }
   if (work.active.phase !== phase) {
     throw new Stop(
-      `${PHASE_LABEL[phase]}(${phase}) 스테이지에서 돌립니다 (지금: ${work.active.phase}).\n${nextHint(work)}`,
+      `${PHASE_LABEL[phase]}(${phase}) 스테이지에서 돌립니다 (지금: ${work.active.phase}).\n` +
+        (phase === "check" && work.active.phase === "deliver"
+          ? "반영 단계에서는 검증을 다시 돌리지 않습니다 — 증거가 지금 트리와 맞습니다. 고칠 것이 있으면 사용자 확인 뒤 code-agent back check.\n"
+          : "") +
+        nextHint(work),
     );
   }
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
     throw new Stop(
-      `계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 검증 결과는 증거가 아닙니다.`,
+      `계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 검증 결과는 증거가 아닙니다.\n${reentryHint(work, approval) ?? ""}`,
     );
   }
   return work;
@@ -741,7 +810,7 @@ export function requireReproable(repoRoot: string): Work {
   }
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
-    throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 재현은 증거가 아닙니다.`);
+    throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 재현은 증거가 아닙니다.\n${reentryHint(work, approval) ?? ""}`);
   }
   return work;
 }
@@ -783,7 +852,7 @@ export function abort(repoRoot: string): string {
 export const BACK_PHASES: readonly Phase[] = PHASES.filter((phase) => phase !== "deliver");
 
 /** 되감으면 무엇이 무효가 되는가 — 무엇을 다시 해야 하는지까지 적는다 */
-function backNotes(to: Phase): string[] {
+function backNotes(to: Phase, from: Phase): string[] {
   const notes = [
     "증거(⑧) · 리뷰 회차(⑨) · 승인 원장 · 작업 문서는 그대로 둡니다 — 커서만 옮겼습니다.",
     "검증 회차와 재시도 카운터는 planHash 에 묶여 있어 되감아도 줄지 않습니다. 계획을 재승인해야 처음부터 셉니다.",
@@ -796,6 +865,11 @@ function backNotes(to: Phase): string[] {
   if (to === "plan") {
     notes.push(
       "계획을 바꿔 제출하면 재승인이 필요합니다. 같은 문서 위에서 같은 계획을 다시 제출하면 승인은 그대로입니다.",
+    );
+  }
+  if (from === "deliver") {
+    notes.push(
+      "반영 확인(deliver 동의)을 준비해 두었다면 그 동의는 대상이 바뀌어 적용되지 않습니다 — 되감은 칸부터 검증·리뷰·통합을 다시 지나 반영 단계에 오면 새로 준비합니다.",
     );
   }
   notes.push("앞으로 가는 길은 code-agent next 뿐입니다 — 게이트를 다시 전부 지나야 합니다.");
@@ -812,14 +886,8 @@ function backNotes(to: Phase): string[] {
 export function back(repoRoot: string, to: string): string {
   const work = requireWork(repoRoot);
   const { active } = work;
-  // REWINDABLE 이 `code-agent check` 에 대해 닫아 둔 것과 같은 자리다 — 사람이 deliver 확인 화면 앞에 서 있는데
-  // 모델이 커서를 빼면 그 화면이 조용히 무효가 되고, 되감은 칸에서 계획 파일을 고치면 증거의 트리 해시가 깨져 반영이 실패한다.
-  if (active.phase === "deliver") {
-    throw new Stop(
-      "반영은 사용자가 내용을 확인하는 단계라 이 명령으로 커서를 되돌릴 수 없습니다. " +
-        "무엇이 문제인지 보고하고 현재 호스트 세션에서 ca-answer로 처리 방향을 확인하세요. 종료가 필요하면 abort 동의 절차를 따릅니다.",
-    );
-  }
+  // deliver 에서도 사용자 지시가 있으면 되감는다 — 반영 전에 고칠 것이 생기면 수정 루프로 돌아가는 유일한 길이다.
+  // 준비해 둔 deliver 동의는 스냅샷 대조(consent.ts requireConsentSnapshot)가 무효로 만든다. "사용자 지시 시에만"은 스킬 규칙이다
   if (!(BACK_PHASES as readonly string[]).includes(to)) {
     throw new Stop(`되감을 수 없는 스테이지입니다: ${to || "(없음)"} — 받는 값: ${BACK_PHASES.join(" | ")}`);
   }
@@ -835,7 +903,7 @@ export function back(repoRoot: string, to: string): string {
   saveActive(repoRoot, { ...active, phase: target, stage, task: target === "implement" ? work.plan?.tasks?.[0]?.id : undefined }, "back");
   return (
     `커서를 ${PHASE_LABEL[active.phase]}(${active.phase}) 에서 ${PHASE_LABEL[target]}(${target}) 로 되감았습니다.\n` +
-    backNotes(target)
+    backNotes(target, active.phase)
       .map((note) => `  - ${note}`)
       .join("\n") +
     `\n\n${status(repoRoot)}`
@@ -1111,7 +1179,7 @@ export function context(repoRoot: string): string {
       "",
       "## fix — 재현 먼저",
       `1. kind:"test" 단계의 계획 파일에 ⑦ ${workDocPath(active.id, "07-test-spec")} 의 \`## 재현\` 이 가리키는 TC 를 씁니다.`,
-      "2. Bash: `code-agent repro` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 `{\"action\":\"repro-log\"}` 동의로 로그 근거 전환을 확인받습니다.",
+      `2. ${shellLabel()} \`code-agent repro\` — 지금 코드에서 그것이 **실패**하는 것을 봅니다(⑦ 이 로그 근거면 수정 전 결과만 남깁니다). 재현되지 않으면 고치지 말고, 출력이 안내하면 사람에게 \`{"action":"repro-log"}\` 동의로 로그 근거 전환을 확인받습니다.`,
       "3. repro 를 지난 뒤에야 고칠 파일을 쓸 수 있습니다 (hook 이 그 전에는 거부합니다). 재현 테스트는 그때 얼어붙습니다.",
     );
   }
@@ -1178,7 +1246,7 @@ export function context(repoRoot: string): string {
       "",
       "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요." +
         " 결과가 하나도 인식되지 않고 실패도 없던 test 실행은 얼리지 않습니다. 일부만 인식됐으면 수집 수정 1회 동안 TC 이름을 고칠 수 있습니다.",
-      `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문을 기록하고 AskUserQuestion으로 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.`,
+      `계획 밖을 고쳐야 하면 ${questionsFile(active.id)} 에 질문을 기록하고 ${askVia()} 처리 방향을 받으세요. 답이 있어도 재계획·재승인 전에는 구현하지 않습니다.`,
     );
   }
 
@@ -1191,10 +1259,10 @@ export function context(repoRoot: string): string {
       `## ⑨ ${reviewDocFile(active.id)} — 코드 리뷰`,
       `- 회차: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "없음 — code-agent review 로 먼저 여세요"} · 남은 리뷰 회차 ${Math.max(0, usage.limit - usage.used)}회`,
       "- 회차 구역(`<!-- code-agent:review:... -->`)은 코드가 렌더합니다. 손대면 게이트가 거부합니다.",
-      "- ca-reviewer 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.",
+      `- ${agentName("ca-reviewer")} 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.`,
       ...(review?.waivers ?? []).map((waiver) => `- 사람 판단으로 기각한 지적: ${waiver.id}(${waiver.path}) — ${waiver.reason.replace(/\s+/g, " ").slice(0, 120)} · ${waiver.round}회차 — 리뷰어에게 넘겨 같은 지적을 새 번호로 다시 내지 않게 한다`),
       "",
-      "ca-reviewer를 호출하면 hook이 실행·완료를 관찰하고 `## 지적` 표를 자동 기록합니다. 메인은 결과·상태를 대신 쓰지 않습니다:",
+      `${agentName("ca-reviewer")}를 호출하면 hook이 실행·완료를 관찰하고 \`## 지적\` 표를 자동 기록합니다. 메인은 결과·상태를 대신 쓰지 않습니다:`,
       "```markdown",
       "| id | 계획 파일 | 범위 | 상태 | 지적 |",
       "|---|---|---|---|---|",
@@ -1446,6 +1514,6 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     docsParts: docs.parts,
   });
   return decision === "approved"
-    ? "승인을 원장에 남겼습니다. 현재 호스트 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: /ca-next)."
+    ? `승인을 원장에 남겼습니다. 현재 호스트 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: ${skill("ca-next")}).`
     : "반려를 원장에 남겼습니다. 계획을 고쳐 다시 제출해야 합니다.";
 }

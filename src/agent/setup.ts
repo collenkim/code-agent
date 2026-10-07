@@ -6,6 +6,7 @@ import { Stop } from "./stop";
 import { docsStatus } from "./docsCommands";
 import { loadManifestIfAny } from "./work";
 import { SCHEMAS, POLICY_KINDS } from "./schemas";
+import { askVia, skill } from "./hostText";
 
 /** 신규의 보편적인 시작점. 기존 프로젝트에는 적용하지 않는다. 버전·프레임워크를 임의로 올리지 않는다. */
 const PRESETS = {
@@ -15,7 +16,7 @@ const PRESETS = {
 
 export function recommendSetup(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
-  if (manifest) return "추천: 기존 프로젝트 설정 유지. /ca-docs 로 빠진 절만 채우세요. 언어·빌드·테스트 명령을 다시 고르지 않습니다.";
+  if (manifest) return `추천: 기존 프로젝트 설정 유지. ${skill("ca-docs")} 로 빠진 절만 채우세요. 언어·빌드·테스트 명령을 다시 고르지 않습니다.`;
   return ["프로젝트 시작 구성 — 7개 후보에서 목적에 맞는 하나를 선택", "",
     "- node: 웹·API의 작은 시작 — JavaScript와 Node 내장 도구. 설치할 외부 패키지가 없고 기능별 폴더로 시작합니다.",
     "- python: 자동화·파일 처리 — Python 표준 도구. 스크립트에서 시작해 기능별 모듈로 나눕니다.",
@@ -26,9 +27,9 @@ export function recommendSetup(repoRoot: string): string {
     "- go: 단일 실행 파일 API — Go 표준 HTTP 도구 + testing. 기능별 패키지로 시작합니다.",
     "그 밖의 언어·프레임워크·회사 규칙은 선택 도구의 직접 입력으로 받습니다.",
     "먼저 survey로 기존 구성을 확인하세요. 기존 코드가 있으면 재사용이 우선이며 다시 선택시키지 않습니다.",
-    "메인은 요청 목적과 실제 설정을 근거로 추천 하나와 이유를 붙이고, 전체 후보를 보여 준 뒤 AskUserQuestion을 호출합니다. 폴더 이름으로 언어를 추측하지 않습니다.",
+    `메인은 요청 목적과 실제 설정을 근거로 추천 하나와 이유를 붙이고, 전체 후보를 보여 준 뒤 ${askVia()} 묻습니다. 폴더 이름으로 언어를 추측하지 않습니다.`,
     "화면당 최대 4개 옵션: 처음은 후보 3개 + 다른 선택지, 이후는 앞 선택지 + 후보 + 필요 시 다른 선택지. ca-answer의 공통 절차를 따릅니다.",
-    "node·python 선택은 code-agent docs setup node 또는 python으로 준비합니다. 나머지 후보는 /ca-adopt의 문서·설정 작성 절차로 연결합니다. docs setup의 인자로 넘기지 않습니다.",
+    `node·python 선택은 code-agent docs setup node 또는 python으로 준비합니다. 나머지 후보는 ${skill("ca-adopt")}의 문서·설정 작성 절차로 연결합니다. docs setup의 인자로 넘기지 않습니다.`,
     "프레임워크 구성은 선택 뒤 기존 버전·회사 규칙을 우선하고, 없으면 공식 지원 자료를 확인해 일관된 버전·빌드·테스트 기본안을 제시합니다. 애플리케이션 파일은 승인된 Task에서 만듭니다.",
     "소스 경로·단계·테스트 명령은 추천 구성에 포함됩니다. 제품 동작·권한·데이터 규칙은 임의로 정하지 않습니다."].join("\n");
 }
@@ -51,7 +52,7 @@ export function setupProject(repoRoot: string, chosen: string | undefined): stri
   if (loadActive(repoRoot)) throw new Stop("작업 중에는 프로젝트 구성을 바꾸지 않습니다.");
   if (!existsSync(join(repoRoot, DOCS_SESSION_FILE))) throw new Stop("code-agent docs begin 으로 준비 세션을 먼저 여세요.");
   if (existsSync(join(repoRoot, "code-agent.json")) || hasProjectFiles(repoRoot)) {
-    throw new Stop("기존 설정이나 프로젝트 파일이 있습니다 — 추천 구성으로 덮지 않습니다. /ca-adopt 로 기존 구성을 읽고 빠진 문서만 채우세요.");
+    throw new Stop(`기존 설정이나 프로젝트 파일이 있습니다 — 추천 구성으로 덮지 않습니다. ${skill("ca-adopt")} 로 기존 구성을 읽고 빠진 문서만 채우세요.`);
   }
   const preset = PRESETS[chosen];
   let base = "master";
@@ -94,10 +95,10 @@ export function setupProject(repoRoot: string, chosen: string | undefined): stri
   }
   for (const stage of manifest.stages) files[stage.template] = `# ${stage.title}\n\n승인된 Task의 파일과 요구사항만 구현한다. 공통 컨벤션을 따르고 완료 후 다음 Task로 진행한다.\n`;
   const conflicts = Object.keys(files).filter((file) => existsSync(join(repoRoot, file)));
-  if (conflicts.length) throw new Stop(`기존 파일을 덮지 않았습니다: ${conflicts.join(", ")} — /ca-docs 로 기존 문서를 사용하세요.`);
+  if (conflicts.length) throw new Stop(`기존 파일을 덮지 않았습니다: ${conflicts.join(", ")} — ${skill("ca-docs")} 로 기존 문서를 사용하세요.`);
   for (const [file, content] of Object.entries(files)) {
     mkdirSync(dirname(join(repoRoot, file)), { recursive: true });
     writeFileSync(join(repoRoot, file), content, { flag: "wx" });
   }
-  return `추천 구성 ${chosen} 의 설정·공통 문서·단계 규칙을 만들었습니다. 소스·실행 설정·테스트 생성은 승인된 구현 Task에서 합니다.\n\n${docsStatus(repoRoot)}\n\n문서를 읽고 code-agent docs end로 준비를 마친 뒤 code-agent setup으로 환경을 확인하세요. 현재 Claude 세션에서 ca-answer의 setup 동의 절차로 공통 문서 확정과 필요한 기준 커밋 생성을 함께 확인합니다 (기준 커밋만 필요하면 baseline). 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. CLI를 직접 쓰려는 사용자는 TTY에서 code-agent confirm doc all과 code-agent setup baseline을 수동 대체 경로로 사용할 수 있습니다.`;
+  return `추천 구성 ${chosen} 의 설정·공통 문서·단계 규칙을 만들었습니다. 소스·실행 설정·테스트 생성은 승인된 구현 Task에서 합니다.\n\n${docsStatus(repoRoot)}\n\n문서를 읽고 code-agent docs end로 준비를 마친 뒤 code-agent setup으로 환경을 확인하세요. 현재 호스트 세션에서 ca-answer의 setup 동의 절차로 공통 문서 확정과 필요한 기준 커밋 생성을 함께 확인합니다 (기준 커밋만 필요하면 baseline). 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. CLI를 직접 쓰려는 사용자는 TTY에서 code-agent confirm doc all과 code-agent setup baseline을 수동 대체 경로로 사용할 수 있습니다.`;
 }

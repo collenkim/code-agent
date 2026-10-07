@@ -9,7 +9,7 @@ import { hookFailureExit, hookFailureInput, subagentExit } from "./retryPolicy";
 import { decideStop } from "./stopHook";
 import { codexReplyCode, consentStatus, observeConsent } from "./consent";
 import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
-import { commonAgentName } from "./hosts";
+import { commonAgentName, withNotation } from "./hostText";
 import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
 
 interface CodexHookInput extends ReviewHookInput {
@@ -97,7 +97,12 @@ const deny = (reason?: string): object => reason ? {hookSpecificOutput: {
   hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason,
 }} : {};
 
+/** Codex 이벤트 하나의 판정 — 문구는 Codex 표기로 만든다(hostText.withNotation) */
 export function codexHook(input: CodexHookInput): object {
+  return withNotation("codex", () => codexEvent(input));
+}
+
+function codexEvent(input: CodexHookInput): object {
   // 교차 실행이 띄운 Codex 안에서는 진행 기록(Stop·담당 관찰·동의 응답·세션 시작)을 하지 않는다 — PreToolUse 판정은 그대로 한다
   if (crossChild() && (CROSS_CHILD_PASS_EVENTS as readonly string[]).includes(input.hook_event_name ?? "")) return {};
   // Codex 훅에는 matcher가 없다. 판정 대상이 아닌 도구가 상태 오류로 막히지 않게 먼저 통과시킨다(이름만 남긴다)
@@ -122,8 +127,8 @@ export function codexHook(input: CodexHookInput): object {
     // Codex의 exec_command도 공식 hook 계약에서는 Bash/command로 정규화된다. MCP 도구는 decide 가 경로 인자를 판정한다
     const event: HookInput = {...common, tool_name: input.tool_name, tool_input: input.tool_input as HookInput["tool_input"]};
     if (["Bash", "PowerShell"].includes(event.tool_name) && typeof event.tool_input.command !== "string") throw new Error("셸 명령이 없습니다.");
-    const reason = decide(event, root);
-    return deny(reason?.replace("파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요.", "파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요."));
+    // 거부 문구의 스킬·도구 표기는 판정이 Codex 표기(withNotation)로 만든다 — 사후 치환은 조사가 깨진다
+    return deny(decide(event, root));
   }
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.
@@ -135,7 +140,7 @@ export function codexHook(input: CodexHookInput): object {
     observeCodexConsent(input, root);
   } else if (input.hook_event_name === "Stop") {
     const reason = decideStop(input, root);
-    return reason ? {decision: "block", reason: reason.replace(/AskUserQuestion/g, "Codex 질문 절차")} : {};
+    return reason ? {decision: "block", reason} : {};
   }
   return {};
 }
@@ -146,6 +151,11 @@ export function codexHook(input: CodexHookInput): object {
  * 그 밖의 사용자 메시지는 막지 않는다. Subagent 이벤트는 subagentExit(Codex 는 언제나 0)이다.
  */
 export function runCodexHook(stdin: string): number {
+  // 거부·안내 문구는 Codex 표기(스킬 `$ca-x`, 역할 `ca_x`, 질문 도구·셸·파일 도구)로 만든다 — 예외 문구도 같은 범위에서 만든다
+  return withNotation("codex", () => runCodexEvent(stdin));
+}
+
+function runCodexEvent(stdin: string): number {
   let event: string | undefined;
   try {
     const input = JSON.parse(stdin) as CodexHookInput;

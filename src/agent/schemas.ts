@@ -4,6 +4,8 @@
  * 섹션 검사는 코드가 한다(제목 대조). 섹션을 채우는 것은 역공학이나 사용자 입력이고,
  * 그때 무엇을 물을지도 여기서 온다 — 질문이 실행마다 달라지지 않게.
  */
+import { askVia } from "./hostText";
+
 /** 막는 문서 — 넷 다 확정돼야 작업이 시작된다 */
 export type PolicyKind = "architecture" | "conventions" | "test-strategy" | "quality";
 /** 막지 않는 문서 — 파일만 있으면 되고, 반영마다 자란다 */
@@ -562,7 +564,7 @@ export function skeleton(schema: DocSchema): string {
 /** 사용자 입력으로 채울 때 묻는 것 — 섹션별로 */
 export function interview(schema: DocSchema, sectionIds?: string[]): string {
   const lines = [`# ${schema.label} — 사용자 입력 질문`, "",
-    "아래는 질문 후보입니다. 메인은 이미 확인한 것을 제외하고 ca-answer 공통 절차에 따라 추천·이유·선택지를 구성해 AskUserQuestion으로 받습니다. 자유 입력도 도구를 사용하며, 5개 이상 후보는 페이지를 나눕니다.", ""];
+    `아래는 질문 후보입니다. 메인은 이미 확인한 것을 제외하고 ca-answer 공통 절차에 따라 추천·이유·선택지를 구성해 ${askVia()} 받습니다. 자유 입력도 도구를 사용하며, 5개 이상 후보는 페이지를 나눕니다.`, ""];
   for (const section of schema.sections) {
     if (sectionIds && !sectionIds.includes(section.id)) continue;
     lines.push(`## ${section.heading} (${section.required ? "필수" : "선택"})`, `쓸 것: ${section.guide}`);

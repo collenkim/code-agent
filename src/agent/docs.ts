@@ -332,10 +332,10 @@ export function checkDoc(repoRoot: string, manifest: Manifest | undefined, kind:
   const confirmations = readDocLedger(repoRoot).filter((record) => record.kind === kind);
   const last = confirmations[confirmations.length - 1];
   if (!last) {
-    return { ...base, state: "unconfirmed", ok: false, sections, hash, problem: `사람의 확정이 없습니다 — code-agent confirm doc ${kind}` };
+    return { ...base, state: "unconfirmed", ok: false, sections, hash, problem: `사람의 확정이 없습니다 — 같은 세션의 ca-answer docs·setup 동의로 확정 (직접 CLI: TTY 의 code-agent confirm doc ${kind})` };
   }
   if (last.hash !== hash || last.paths.join("\n") !== paths.join("\n")) {
-    return { ...base, state: "stale", ok: false, sections, hash, problem: `확정 뒤 내용이 바뀌었습니다 — code-agent confirm doc ${kind} 로 다시 확정` };
+    return { ...base, state: "stale", ok: false, sections, hash, problem: `확정 뒤 내용이 바뀌었습니다 — 같은 세션의 ca-answer docs 동의로 다시 확정 (직접 CLI: TTY 의 code-agent confirm doc ${kind})` };
   }
   return { ...base, state: "confirmed", ok: true, sections, hash };
 }

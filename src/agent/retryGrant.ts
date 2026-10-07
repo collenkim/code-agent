@@ -16,6 +16,7 @@ import { crossAttemptsOf, orphanView } from "./crossRecord";
 import { planningCrossBudgets } from "./crossCheck";
 import { boundEvidence, planPaths, reviewRoundUsage, testTreeHashNow, verifyView, type Evidence } from "./evidence";
 import { reviewFile, verifyFile } from "./layout";
+import { skill } from "./hostText";
 import { mutatePlanning, planningBudget, grantPlanningRetry } from "./planning";
 import { criticCrossPoint, loadPlanning, planningFile, withPlanningCache } from "./planningState";
 import {
@@ -148,7 +149,7 @@ function reviewTarget(work: Work, key: (typeof REVIEW_KEYS)[number] | (typeof CR
     key, label: COUNTER_LABEL[key], file: `${rel(work, file)} (grants)`, point: row.point, scope: row.scope, ...pick(row),
     lastFailure: lastCross ? firstLine(`${lastCross.class ?? "기록 없음"}: ${lastCross.detail ?? ""}`) : undefined,
     resume: key === "reviewRounds" ? "계획 안 지적을 고친 뒤 code-agent verify — 통과하면 code-agent review 로 새 회차를 엽니다"
-      : key === "reviewerRuns" ? "/ca-review 절차대로 리뷰어를 다시 부릅니다"
+      : key === "reviewerRuns" ? `${skill("ca-review")} 절차대로 리뷰어를 다시 부릅니다`
       : "code-agent review cross --by <지점 호스트> 로 같은 지점을 다시 실행합니다",
     granted: (consentId) => loadReview(work.repoRoot, work.active.id, work.active.target)?.grants?.find((grant) => grant.consent === consentId),
     record(consentId, reason) {

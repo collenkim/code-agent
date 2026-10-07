@@ -47,7 +47,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 ### Claude·Codex 교차 검증
 
-두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다. 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과(또는 아래의 중지 기록)가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
+두 호스트를 함께 설치한 프로젝트(`init --host both`, `.code-agent/hosts.json` 에 둘)는 같은 작업을 두 호스트가 동시에 진행하지 않는다 — 작업 임대가 막는다(`lease.ts` — 다른 세션의 진행 명령·쓰기 거부, Claude 세션 시작은 같은 호스트 임대를 넘겨받음, 다른 호스트는 `takeover`·30분 무활동). 대신 **판단 지점 두 곳을 다른 호스트의 모델이 한 번 더 독립적으로 본다** — 계획 반박 검토(critic)와 독립 코드 리뷰. 이 결과(또는 아래의 중지 기록)가 없으면 계획 제출(`planningProblems` → `crossCriticProblems`)과 리뷰 게이트(`reviewProblems`)가 막는다. 한 호스트만 설치한 프로젝트는 지금처럼 단독으로 돈다.
 
 | 지점 | 명령 | 기록 | 게이트 |
 |---|---|---|---|
@@ -242,8 +242,10 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 `design` 이하로 가서 `01`~`04`·`07` 을 고치면 승인 묶음의 해시가 달라져 승인이 `stale-docs` 가 되고 hook 이 코드 쓰기를 막는다(다시 제출·재승인해야 한다).
 검증 회차와 재시도 카운터도 `planHash` 에 묶여 있어 초기화되지 않는다. 같은 계획을 그대로 다시 제출하면 승인은 살아 있다.
 테스트 동결과 재시도 카운터는 커서가 아니라 **증거**로 재기 때문에 `back implement` 로도 풀리지 않는다.
-`deliver` 에서는 되감지 않는다 — 사람이 확인 화면 앞에 서 있는 자리라, 모델이 커서를 빼면 그 화면이 조용히 무효가 된다
-(`REWINDABLE` 이 `code-agent check` 에 대해 닫아 둔 것과 같은 자리다).
+`deliver` 에서는 작업 폴더 밖을 쓸 수 없다(hook) — 검증·리뷰·통합을 마친 트리를 사람이 확인하는 자리다. 반영 전에 고칠 것이 생기면
+사용자 지시로 `back` 이 되감는다(준비해 둔 반영 동의는 스냅샷 대조가 무효로 만든다). 모델이 부른 `check` 는 증거 묶임이 이미 깨졌을 때만
+되감는다(`REWINDABLE` — 증거가 맞으면 사람이 보던 화면을 조용히 무효로 만들지 않는다). 승인이 무효가 되면 `다음:` 의 재진입 순서가
+되감기를 안내하는데, 계획이 그대로면 되감지 않고 그 자리에서 다시 승인한다(승인은 스테이지를 요구하지 않고 증거 묶임은 문서 해시를 보지 않는다).
 (검증 실패로 `check` 로 돌아가는 것은 되감기가 아니다 — `code-agent check` 가 커서를 그 자리로 데려간다.)
 
 ### 요구사항 접수 — 명령으로 받는다 (2026-10-01 결정)
@@ -706,7 +708,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O | P1 ✅ · P5 ✅ |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) | P1 ✅ · 접수 ✅ |
 | `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델·추론 강도 (바꾼 것만) | O | ✅ |
-| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
+| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함), `.code-agent/lease.json`(작업 임대 — 진행 세션·마지막 활동) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 | 구현됨 |
 | `.code-agent/work/<ID>/answers.jsonl`(업무 답 관찰) · `.code-agent/approvals/<slug(ID)>/consents.jsonl`(동의 영수증) · `<target>-<seq>.manifest.json`(승인 때 경계 스냅샷) | O | 구현됨 |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
@@ -766,7 +768,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 | P2 ✅ |
 | `code-agent confirm doc <all \| architecture \| conventions \| test-strategy \| quality>` | POLICY 일괄 또는 개별 확정 (해시를 원장에, TTY 에서만) | ✅ |
 | `code-agent confirm request <ID> [<지시서>]` · `reject request <ID> [<지시서>] --comment <사유>` | **요구사항 확정·반려** (TTY 에서만) — 지시서를 통째로 띄워 원문과 정리를 나란히 읽히고, **보여 준 바이트**의 해시로 판정을 `approvals/<slug(ID)>/request.jsonl` 에 남긴다(읽는 사이에 바뀌었으면 아무것도 남기지 않는다). 지시서를 생략하면 그 ID 가 진행 중인 작업이면 그 작업의 지시서, 아니면 `doc/work/<ID>/requirement.md` — 다른 자리에 손으로 쓴 지시서는 경로를 함께 준다. 확정해야 `start` 가 받는다. 확정 뒤 내용이 바뀌면 다시 확정한다 | ✅ |
-| `code-agent approve` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만) | P1 ✅ |
+| `code-agent approve [--comment <메모>]` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만 — 남는 인자는 사용법 오류) | P1 ✅ |
+| `code-agent takeover` | 다른 세션이 쥔 작업 임대를 풀어 다음 진행 명령의 세션이 이어받게 한다(저쪽 세션 종료를 사용자가 확인한 뒤 — 스킬 규칙) | C4 ✅ |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
 | `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델·추론 강도 조회·변경·복원 (--host, --reasoning·--effort; 변경은 같은 세션 동의 또는 TTY) | ✅ |
@@ -788,7 +791,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 | ✅ |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, **요구사항이 지금 내용 그대로 확정됐는지** 확인, 작업 브랜치, 작업 폴더. 접수 때 말한 `--base`·`--target` 을 이어받는다(여기서 직접 준 값이 이긴다). 시작하면 접수 세션을 지운다 | P1 ✅ · 확정 게이트 ✅ |
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 | P1 ✅ |
-| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로만 되감는다 (`analysis`…`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 증거·승인 원장·작업 문서는 그대로 두고 커서만 움직이며(`implement` 로 가면 계획의 첫 단계로), **무엇이 무효가 되는지 함께 찍는다** | P5 ✅ |
+| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로만 되감는다 (`analysis`…`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 무효가 된다), 진행 중인 작업이 없으면 거부한다. 증거·승인 원장·작업 문서는 그대로 두고 커서만 움직이며(`implement` 로 가면 계획의 첫 단계로), **무엇이 무효가 되는지 함께 찍는다** | P5 ✅ |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙. 아직 커서가 없고 접수 중이면 접수 컨텍스트를 준다(그것만 다시 보려면 `code-agent request`) | P1 ✅ |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 | P1 ✅ |
 | `code-agent repro` | 재현 (**`fix` 전용** — 스테이지가 아니라 `implement` 안에서 돈다) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 | P6 ✅ |

@@ -27,7 +27,7 @@ export function stagingPath(id: string, dispatchId: string, output: string): str
   return posix.join(workDocsDir(id), ".staging", dispatchId, basename(output));
 }
 /**
- * 작업 폴더째 커밋되지 않도록 `.gitignore`(`*`)를 둔다. 완료된 배정의 staging은 완료 hook이 지운다.
+ * 일반 `git add` 로 커밋되지 않도록 `.gitignore`(`*`)를 둔다 — 반영 커밋은 deliveryExcludes 로 이 폴더를 뺀다. 완료된 배정의 staging은 완료 hook이 지운다.
  * 실패·교정 대기 배정의 것은 남긴다 — 형식 교정 담당이 원본 본문을 다시 읽어야 한다.
  */
 function openStaging(work: Work): void {

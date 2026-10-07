@@ -24,6 +24,7 @@ import type { Budget, RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
 import { selectedHosts } from "./hosts";
+import { agentName } from "./hostText";
 
 export { CROSS_ID, crossHintText, FINDING_CLOSED, FINDING_OPEN, reviewResultProblems } from "./crossRecord";
 
@@ -264,7 +265,7 @@ export function crossRequired(repoRoot: string): boolean {
 function findingsSectionProblems(path: string, text: string, findings: Finding[]): string[] {
   const body = findingsBody(text);
   if (body === undefined) {
-    return [`${path} 에 \`## ${FINDINGS_HEADING}\` 절이 없습니다 — ca-reviewer 의 지적을 그 절에 옮기세요`];
+    return [`${path} 에 \`## ${FINDINGS_HEADING}\` 절이 없습니다 — ${agentName("ca-reviewer")} 의 지적을 그 절에 옮기세요`];
   }
   if (findings.length === 0 && !/^\s*[-*]?\s*없음\s*$/m.test(body)) {
     return [`${path} 에 지적이 없습니다 — 표에 적거나, 하나도 없으면 \`- 없음\` 이라고 쓰세요`];
@@ -363,7 +364,7 @@ export function openRound(work: Work): string {
     if (last && last.treeHash === treeHash) {
       throw new Stop(
         `${last.round}회차가 이미 지금 트리를 보고 있습니다 — 고친 것이 없으면 새 회차를 열지 않습니다.\n` +
-          `ca-reviewer를 호출해 결과를 기록하세요. 고친 뒤에는 code-agent check부터 다시 돌리세요.`,
+          `${agentName("ca-reviewer")}를 호출해 결과를 기록하세요. 고친 뒤에는 code-agent check부터 다시 돌리세요.`,
       );
     }
     // 리뷰 회차 한도는 같은 트리 거부 **뒤에** 본다 — 마지막 회차 트리에서 다시 부르면 맞는 안내는 "리뷰어를 호출하세요" 다
@@ -417,7 +418,7 @@ export function openRound(work: Work): string {
     prefilter.source === "plugin" && prefilter.output.suspects.length > 0
       ? [
           "",
-          `## 의심 항목 (플러그인 ${prefilter.name} — 판정이 아니라 단서다. 지적은 ca-reviewer 가 낸 것만 ⑨ 에 적는다)`,
+          `## 의심 항목 (플러그인 ${prefilter.name} — 판정이 아니라 단서다. 지적은 ${agentName("ca-reviewer")} 가 낸 것만 ⑨ 에 적는다)`,
           // 개수와 길이를 여기서 묶는다 — 이 블록은 모델이 지시로 읽는 화면이다
           ...prefilter.output.suspects.slice(0, MAX_OUTPUT_ITEMS).map(
             (entry) =>
@@ -434,7 +435,7 @@ export function openRound(work: Work): string {
     ...(prefilter.notice ? [`- ${prefilter.notice}`] : []),
     ...suspects,
     "",
-    `ca-reviewer를 호출하세요. hook이 실행·완료와 결과를 기록하고 ${reviewDocFile(active.id)} 의 지적 표를 자동으로 채웁니다.`,
+    `${agentName("ca-reviewer")}를 호출하세요. hook이 실행·완료와 결과를 기록하고 ${reviewDocFile(active.id)} 의 지적 표를 자동으로 채웁니다.`,
     "| id | 계획 파일 | 범위 | 상태 | 지적 | — 지적이 없으면 `- 없음`.",
     `계획 안 지적은 고친 뒤 code-agent verify 로 check 부터 다시 돌고, 이 명령으로 다음 회차를 엽니다 (리뷰 회차 ${round.round}/${limitOf("reviewRounds", log.limit, log.grants ?? [], grantScope({ file: "review", key: "reviewRounds" }))}).`,
     "계획 밖 경로를 가리키는 지적은 모델이 닫을 수 없습니다 — 질문으로 묻고, 사용자가 범위 밖으로 확인하면 ca-answer 동의 judgment waive-finding 으로 기록하거나 계획을 고쳐 재승인받습니다.",
@@ -546,22 +547,22 @@ export function reviewProblems(work: Work): string[] {
     const exhausted = `리뷰어 호출 한도 ${limit}회를 모두 썼습니다(형식 오류 ${reviewer.failures}회) — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment retry-grant reviewerRuns)을 받으세요.`;
     if (reviewer.running && !reviewer.orphanable) {
       problems.push(`독립 리뷰어가 실행 중입니다(${clock(reviewer.running.startedAt)} 시작) — 완료를 기다리세요.` +
-        (left > 0 ? ` 사용자가 중단해 멈춘 실행이면 시작 ${REVIEWER_ORPHAN_MIN}분 뒤부터 ca-reviewer 를 새로 호출할 수 있습니다(이 회차 남은 호출 ${left}회).` : ""));
+        (left > 0 ? ` 사용자가 중단해 멈춘 실행이면 시작 ${REVIEWER_ORPHAN_MIN}분 뒤부터 ${agentName("ca-reviewer")} 를 새로 호출할 수 있습니다(이 회차 남은 호출 ${left}회).` : ""));
     } else if (reviewer.running) {
       problems.push(left > 0
-        ? `독립 리뷰어 실행(${clock(reviewer.running.startedAt)} 시작)이 ${REVIEWER_ORPHAN_MIN}분 넘게 끝나지 않았습니다 — 멈춘 실행으로 보고 ca-reviewer 를 새로 호출하세요(남은 ${left}회). 그 실행의 뒤늦은 결과는 쓰지 않습니다.`
+        ? `독립 리뷰어 실행(${clock(reviewer.running.startedAt)} 시작)이 ${REVIEWER_ORPHAN_MIN}분 넘게 끝나지 않았습니다 — 멈춘 실행으로 보고 ${agentName("ca-reviewer")} 를 새로 호출하세요(남은 ${left}회). 그 실행의 뒤늦은 결과는 쓰지 않습니다.`
         : exhausted);
     } else if (reviewer.runs >= limit) {
       problems.push(exhausted);
     } else if (reviewer.invalid) {
-      problems.push(`기록된 리뷰어 결과가 표 규칙(상태·범위·경로)에 맞지 않습니다: ${oneLine(reviewer.invalid.join(" · "), 120)} — ca-reviewer 를 새로 호출하세요(남은 ${left}회).`);
+      problems.push(`기록된 리뷰어 결과가 표 규칙(상태·범위·경로)에 맞지 않습니다: ${oneLine(reviewer.invalid.join(" · "), 120)} — ${agentName("ca-reviewer")} 를 새로 호출하세요(남은 ${left}회).`);
     } else if (reviewer.failures > 0) {
-      problems.push(`독립 리뷰어의 완료 결과가 없습니다(형식 오류 ${reviewer.failures}회 기록) — ca-reviewer 를 새로 호출하세요(이 회차 남은 호출 ${left}회).`);
+      problems.push(`독립 리뷰어의 완료 결과가 없습니다(형식 오류 ${reviewer.failures}회 기록) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).`);
     } else {
-      problems.push("독립 리뷰어 실행·완료 기록이 없습니다 — ca-reviewer를 호출하세요. hook 설치는 code-agent doctor로 확인합니다.");
+      problems.push(`독립 리뷰어 실행·완료 기록이 없습니다 — ${agentName("ca-reviewer")}를 호출하세요. hook 설치는 code-agent doctor로 확인합니다.`);
     }
   } else if (!observedFindings(last, text, planned)) {
-    problems.push(`리뷰 문서의 ## 지적 이 관찰된 ca-reviewer 결과와 다릅니다 — 지적·상태를 임의로 바꾸지 말고 기록(review.json 의 ${last.round}회차 리뷰어 결과)대로 되돌리세요. 같은 회차는 다시 리뷰하지 않습니다.`);
+    problems.push(`리뷰 문서의 ## 지적 이 관찰된 ${agentName("ca-reviewer")} 결과와 다릅니다 — 지적·상태를 임의로 바꾸지 말고 기록(review.json 의 ${last.round}회차 리뷰어 결과)대로 되돌리세요. 같은 회차는 다시 리뷰하지 않습니다.`);
   }
   if (readBlock(text, REVIEW_BLOCK) !== renderRoundsBlock(log!).trim()) {
     problems.push(`${path} 의 회차 구역이 기록과 다릅니다 — code-agent review 가 렌더하는 자리입니다`);

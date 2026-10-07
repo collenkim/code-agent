@@ -29,6 +29,7 @@ import { crossStopStreak } from "./crossRecord";
 import { CROSS_CHILD_ENV } from "./crossEnv";
 import { crossFlags } from "./crossCheck";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
+import { skill } from "./hostText";
 
 /**
  * `code-agent doctor` — 설치와 환경을 한 화면에서 본다.
@@ -362,7 +363,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       manifestProblem(error);
     }
   } else if (!existsSync(join(repoRoot, MANIFEST_FILE))) {
-    add("·", "매니페스트", `${MANIFEST_FILE} 이 없습니다 — 아직 도입 전입니다 (/ca-adopt)`);
+    add("·", "매니페스트", `${MANIFEST_FILE} 이 없습니다 — 아직 도입 전입니다 (${skill("ca-adopt")})`);
   }
 
   // 9. 공통 POLICY 4종 — 확정 원장이 깨져 있어도 진단은 끝까지 낸다

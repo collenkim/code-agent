@@ -8,6 +8,8 @@ import { approvalOf, loadWork, type Work } from "./work";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 import { crossChild } from "./crossEnv";
 import { hookInstallWarning } from "./init";
+import { skill, withNotation } from "./hostText";
+import { sessionStartLease } from "./lease";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume) 비워지거나(clear) 압축된(compact) 뒤
@@ -15,10 +17,11 @@ import { hookInstallWarning } from "./init";
  *
  * 상태와 문서는 `.code-agent/`·작업 폴더에 있으므로 이전 대화 없이도 정확히 이어갈 수 있다.
  * 압축 요약이 동의 ID·단계를 잃어도 여기서 다시 잡는다. 진행 중인 것이 없으면 아무것도 붙이지 않는다.
- * `source` 는 Claude SessionStart 입력의 값(startup·resume·clear·compact)이다.
+ * `source` 는 Claude SessionStart 입력의 값(startup·resume·clear·compact)이다. `session` 이 있으면 작업 임대를 이 세션으로
+ * 넘겨받는다(`source` 와 무관 — lease.ts sessionStartLease). 이전 세션이 있었으면 작업 줄 뒤에 한 줄로 알린다.
  */
-export function sessionAnchor(repoRoot: string, source?: string): string {
-  const anchor = progress(repoRoot, source);
+export function sessionAnchor(repoRoot: string, source?: string, session?: string): string {
+  const anchor = progress(repoRoot, source, session);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   const text = aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;
   // 빠진 hook 은 진행 상태와 무관하게 알린다 — hook 이 없으면 쓰기 판정·동의 관찰이 꺼진다
@@ -54,15 +57,27 @@ function runningPlanning(work: Work, source?: string): string[] {
   }
 }
 
-function progress(repoRoot: string, source?: string): string {
+/** 작업 임대 넘겨받기 줄 — 이 hook 은 막지 않으므로 실패는 삼킨다 */
+function leaseNote(work: Work, session?: string): string[] {
+  if (!session) return [];
+  try {
+    const line = sessionStartLease(work, session);
+    return line ? [line] : [];
+  } catch {
+    return [];
+  }
+}
+
+function progress(repoRoot: string, source?: string, sessionId?: string): string {
   const work = loadWork(repoRoot);
   if (work) {
     const { active, order } = work;
     return [
       "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
       `- 작업 ${order.id} (${order.kind}) · 스테이지 ${active.phase}${active.task ? ` · Task ${active.task}` : ""} · 계획 ${work.plan ? approvalOf(work).status : "미제출"} · 작업 폴더 ${workDocsDir(active.id)}/`,
+      ...leaseNote(work, sessionId),
       ...runningPlanning(work, source),
-      "- 이전 대화 내용이 아니라 `code-agent status`와 그 스테이지의 스킬로 이어간다. 사용자가 이어가자고 하면 `/ca-next` 절차를 따른다.",
+      `- 이전 대화 내용이 아니라 \`code-agent status\`와 그 스테이지의 스킬로 이어간다. 사용자가 이어가자고 하면 \`${skill("ca-next")}\` 절차를 따른다.`,
       "- 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.",
     ].join("\n");
   }
@@ -71,13 +86,13 @@ function progress(repoRoot: string, source?: string): string {
     return [
       "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
       `- 요구사항 접수 중: ${session.id} (${session.kind}) · 작업 폴더 ${workDocsDir(session.id)}/`,
-      "- 사용자가 이어가자고 하면 `code-agent status`로 확인하고 `/ca-request`(또는 `/ca-next`) 절차로 이어간다.",
+      `- 사용자가 이어가자고 하면 \`code-agent status\`로 확인하고 \`${skill("ca-request")}\`(또는 \`${skill("ca-next")}\`) 절차로 이어간다.`,
     ].join("\n");
   }
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     return [
       "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
-      "- 공통 문서 준비 세션이 열려 있다. 사용자가 이어가자고 하면 `/ca-docs` 또는 `/ca-adopt` 절차로 이어간다.",
+      `- 공통 문서 준비 세션이 열려 있다. 사용자가 이어가자고 하면 \`${skill("ca-docs")}\` 또는 \`${skill("ca-adopt")}\` 절차로 이어간다.`,
     ].join("\n");
   }
   return "";
@@ -88,9 +103,10 @@ export function runSessionHook(stdin: string): number {
   // 교차 실행이 띄운 다른 호스트 안에서는 진행 상태를 넣지 않는다
   if (crossChild()) return 0;
   try {
-    const input = JSON.parse(stdin || "{}") as { cwd?: string; source?: string };
+    const input = JSON.parse(stdin || "{}") as { cwd?: string; source?: string; session_id?: string };
     const projectDir = process.env.CLAUDE_PROJECT_DIR;
-    const text = sessionAnchor(canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd())), typeof input.source === "string" ? input.source : undefined);
+    const text = withNotation("claude", () => sessionAnchor(canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd())), typeof input.source === "string" ? input.source : undefined,
+      typeof input.session_id === "string" && input.session_id ? input.session_id : undefined));
     if (text) process.stdout.write(`${text}\n`);
   } catch (error) {
     process.stderr.write(`code-agent session-event: ${error instanceof Error ? error.message : error}\n`);

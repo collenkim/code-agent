@@ -1155,10 +1155,13 @@ describe("P7 · hook — plugin list 만 열린다", () => {
    * 열리는데, 그것은 `plugin` → `plugin list` 와 똑같은 함정이다 (`prune` 은 TTY 가 한 번 더 막지만
    * 두 겹으로 닫는다). `doctor`·`update`·`usage` 는 작업 중에 모델이 부를 이유가 없다.
    */
-  test("44b. P8 의 doctor · update · usage · knowledge 도 모델의 자리가 아니다", () => {
-    for (const command of ["code-agent doctor", "code-agent update", "code-agent usage", "code-agent knowledge", "code-agent knowledge prune"]) {
+  test("44b. P8 의 update · usage · knowledge 는 모델의 자리가 아니다 — doctor 는 읽기 전용 조회라 연다", () => {
+    for (const command of ["code-agent update", "code-agent usage", "code-agent knowledge", "code-agent knowledge prune"]) {
       assert.match(bash(command) ?? "", /Bash 로 code-agent 명령/, command);
     }
+    // doctor 는 상태 파일을 쓰지 않는다 — 교차 설정 오류 안내(doctor --cross)를 모델이 그대로 따를 수 있게 작업 중에도 연다(FLOW-10)
+    assert.equal(bash("code-agent doctor"), undefined);
+    assert.match(bash("code-agent doctor --fix") ?? "", /Bash 로 code-agent 명령/);
   });
 
   test("48. 모델이 키 파일을 Read·Grep·Glob 으로 읽지 못한다", () => {

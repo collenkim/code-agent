@@ -14,6 +14,7 @@ import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny } from "./work";
 import { aidlcBlock } from "./aidlc";
 import { requireStartHooks } from "./init";
+import { skill } from "./hostText";
 
 const KINDS = `${POLICY_KINDS.join(" · ")} · ${KNOWLEDGE_KINDS.join(" · ")}`;
 
@@ -55,8 +56,8 @@ export function docsStatus(repoRoot: string): string {
       ? "필수 문서가 모두 확정됐습니다."
       : "필수 문서는 모두 확정됐습니다. KNOWLEDGE 빈 뼈대는 code-agent docs begin 이 만듭니다 (없어도 작업은 시작됩니다)"
     : checks.every((entry) => entry.state === "unconfirmed" || entry.state === "stale" || entry.ok)
-      ? "현재 호스트 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 묶어서 또는 개별 확정하세요. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. 직접 CLI를 원하면 TTY에서 code-agent confirm doc all 또는 code-agent confirm doc <종류>로 확정할 수도 있습니다."
-      : "/ca-docs 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결)";
+      ? "현재 호스트 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 묶어서 또는 개별 확정하세요(최초 준비면 setup). 적용 뒤 ca-next 흐름을 자동으로 이어갑니다. 직접 CLI를 원하면 TTY에서 code-agent confirm doc all 또는 code-agent confirm doc <종류>로 확정할 수도 있습니다."
+      : `${skill("ca-docs")} 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결)`;
   return [
     "공통 POLICY (넷 다 확정돼야 작업이 시작됩니다):",
     formatDocChecks(checks, true),
@@ -99,7 +100,7 @@ export function docsLink(repoRoot: string, kindArg: string | undefined, paths: s
   const manifestPath = join(repoRoot, MANIFEST_FILE);
   if (!existsSync(manifestPath)) {
     throw new Stop(
-      `${MANIFEST_FILE} 이 아직 없습니다. 기본 경로(${SCHEMAS[kind].defaultPath})에 두거나, /ca-adopt 로 매니페스트를 만든 뒤 연결하세요.`,
+      `${MANIFEST_FILE} 이 아직 없습니다. 기본 경로(${SCHEMAS[kind].defaultPath})에 두거나, ${skill("ca-adopt")} 로 매니페스트를 만든 뒤 연결하세요.`,
     );
   }
   // 여러 경로를 받는 것은 컨벤션뿐이다 — 나머지는 문서 하나가 정본이다

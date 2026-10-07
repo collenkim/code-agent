@@ -221,7 +221,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 
 각 단계 스킬은 먼저 `code-agent status` 로 **자리를 확인한다.** 커서가 그 스테이지가 아니면 일하지 않는다 —
 아직 이르면 먼저 할 명령을 알려 주고, 이미 지났으면 `code-agent back <스테이지>` 로 되감아야 한다고 알린다.
-**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때다(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다).
+**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 승인 무효로 `status` 의 `다음:` 이 재진입 순서로 되감기를 안내할 때(낡은 계획 작업이 있거나 계획을 바꿔야 할 때만 — 계획이 그대로면 그 자리에서 plan 동의로 다시 승인한다)와 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때다(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다).
 
 `code-agent back <스테이지>` 는 **뒤로만** 간다. 커서만 움직이고 증거·승인 원장·작업 문서는 그대로 둔다 — 그래서:
 
@@ -229,7 +229,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 - 되감아도 **검증 회차와 재시도 카운터는 초기화되지 않는다.** 증거가 `planHash` 에 묶여 있어 같은 계획이면 같은 카운터다.
 - `plan` 으로 되감아 **같은 계획을 그대로** 다시 제출하면 승인은 살아 있다.
 - `implement` 로 되감아도 **테스트 동결과 재시도 카운터는 그대로다.** 둘 다 커서가 아니라 증거를 보고 막는다.
-- `deliver` 에서는 되감지 않는다 — 사람이 확인 화면 앞에 서 있는 자리다. 되돌릴 일이 있으면 사람이 직접 돌린다.
+- `deliver` 에서는 작업 폴더 밖을 쓸 수 없다. 반영 전에 고칠 것이 생기면 사용자 확인 뒤 `back check`(계획을 바꿔야 하면 `back plan`)로 되감는다 — 준비해 둔 반영 동의는 무효가 되고, 되감은 칸부터 검증·리뷰·통합을 다시 지난다.
 
 ### `/ca-adopt`
 
@@ -433,10 +433,15 @@ preserve:
 
 중간에 한 단계를 다시 보고 싶으면 그 명령을 직접 부르면 된다 (`code-agent back <스테이지>` 로 되감은 뒤 `/ca-design` 처럼).
 
+`status` 의 `다음:` 은 원인별 안내를 먼저 보인다 — AI-DLC 차단 → 요구 미확정 → 미응답 질문 → 승인 무효(재진입 순서: 낡은 계획 작업이 있으면 그 단계로 되감아 다시 돌리고, 계획이 그대로면 지금 자리에서 plan 동의) → 검증 한도 → 계획 배정의 실패·고아(`planning advance` 로 이끈다)·반영 동의 실패 → 스테이지 안내. 원인 문구는 그 원인을 판정한 명령(검증·리뷰·교차·계획 배정)이 렌더한 것이라 같은 상태에서는 직전 명령과 무관하게 같다. 반영(deliver) 단계에서는 작업 폴더 밖을 쓸 수 없다 — 반영 전에 고칠 것이 생기면 사용자 확인 뒤 `code-agent back check`(계획을 바꿔야 하면 `back plan`)로 수정 루프를 다시 돈다(준비해 둔 반영 동의는 무효가 된다). 사람이 반영 단계에서 계획 파일을 고쳐 증거가 깨졌으면 `check`·`verify` 가 check 로 되감는다.
+
+같은 작업을 두 세션(호스트)이 동시에 진행하지 않는다 — 작업 임대가 다른 세션의 진행 명령·쓰기를 거부한다. Claude 는 세션을 새로 열면(재시작·`/clear` 포함) 이 세션이 넘겨받고, 다른 호스트로 옮길 때는 저쪽을 멈춘 뒤 `code-agent takeover`(또는 30분 무활동)로 넘어간다.
+
 문서마다 Bash: `code-agent docs skeleton <종류>` 로 뼈대를 받아 쓴다. **`05-plan.md` 는 모델이 쓸 수 없다** — 고칠 것이 있으면 `plan.json` 을 고쳐 다시 제출한다.
 
 기준 브랜치는 `code-agent start --base` > **접수 때 준 `--base`** > `code-agent.json` 의 `git.base` > `master` 순이다.
-지시서에 `target` 이 여럿이면 `--target` 으로 고른다 — 이것도 접수 때 준 값이 세션에 남아 있다가 `start` 가 쓰고, `start` 에 직접 준 값이 이긴다.
+대상은 하나다 — 대상이 여럿이면 대상마다 별도 ID 로 접수한다. `--target` 은 지시서의 대상과 같아야 하며 생략할 수 있다 — 이것도 접수 때 준 값이 세션에 남아 있다가 `start` 가 쓰고, `start` 에 직접 준 값이 이긴다.
+새 작업 브랜치를 딸 때 작업 트리에 커밋하지 않은 변경(작업 폴더·`.code-agent`·지시서·준비 커밋에 담을 도입 파일 제외)이 있으면 `start` 가 거부한다 — 그 변경이 새 브랜치로 따라가 첫 검증의 '계획 밖 변경'이 되거나 반영 커밋에 섞이기 때문이다. `request begin` 과 접수 중 `status` 는 `시작 전 정리 필요:` 줄로 미리 알린다. 사람이 커밋·stash 하거나 되돌린 뒤 시작한다.
 접수와 시작 사이에는 사람의 확정이 끼어 명령이 끊기므로, 여기 남겨 두지 않으면 `/ca-feature … --base develop` 의 기준 브랜치가 확정 뒤에 사라진다.
 
 ### `/ca-answer`
@@ -567,17 +572,18 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | 명령 | 하는 일 | TTY 필요 |
 |---|---|---|
 | `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
-| `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | — |
+| `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다(`--host`·`--cross` 포함) | — |
 | `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
 | `code-agent confirm request <ID> [<지시서>]` | 요구사항 확정 — 지시서(원문 + 정리)를 통째로 보여 주고 확정한다. **확정된 요구사항만** `start` 가 받고 그 뒤 모든 단계가 지금 내용의 확정을 다시 본다. 지시서를 생략하면 진행 중인 작업의 지시서, 없으면 `doc/work/<ID>/requirement.md` | **O** |
 | `code-agent reject request <ID> [<지시서>] --comment "<사유>"` | 요구사항 반려 (사유 필수) — `/ca-request` 가 사유를 읽고 다시 정리한다 | **O** |
-| `code-agent approve` | 제출된 계획 승인 | **O** |
+| `code-agent approve [--comment <메모>]` | 제출된 계획 승인 — 남는 인자는 사용법 오류(`approve request …` 는 `confirm request` 를 안내한다) | **O** |
 | `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
+| `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 스킬 규칙이다 | — |
 | `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
 | `code-agent usage [--work <ID>] [--since <날짜>]` | 이 저장소의 Claude Code 기록에서 스테이지·에이전트·모델별 토큰과 비용 **추정**을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
@@ -714,9 +720,9 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent request begin [ID] --kind <feature\|fix\|refactor> [--base <기준 브랜치>] [--target <대상>]` | 1 요구사항 접수를 연다. 도는 동안 hook 이 `doc/work/<ID>/` 밖 쓰기와 지시서 쓰기를 막는다. `--base`·`--target` 은 세션에 남아 확정 뒤 `start` 가 쓴다 |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 (확정은 사람이). 어긋나면 파일을 쓰지 않는다. 반려된 내용 그대로의 재제출도 거부한다 |
 | `code-agent request` | 접수 중이거나 작업이 진행 중이면 접수 형식을 준다 — 초안 형식·규칙·대상 후보·지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때 쓴다). 둘 다 없으면 접수를 열라고 세우고, 문서 세션이 열려 있어도 거부한다 |
-| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — **사람이 지금 내용으로 확정한 요구사항만** 받는다. 통과하면 접수 세션을 닫는다 |
+| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — **사람이 지금 내용으로 확정한 요구사항만** 받는다. 대상이 여럿인 지시서와, 새 작업 브랜치를 딸 때의 미커밋 변경은 거부한다(브랜치는 바꾸지 않는다). 통과하면 접수 세션을 닫는다 |
 | `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
-| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서는(사람의 자리) 되감지 않으며, 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
+| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 대상이 바뀌어 적용되지 않는다), 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙. 작업 전 접수 중에는 `code-agent request` 와 같은 접수 형식을 준다 (작업 중에는 스테이지 컨텍스트다) |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
 | `code-agent repro` | 재현 — **`fix` 에서만** 돈다 (번호가 없다 — `implement` 안에서 돈다). `kind: "test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 ⑦ 의 `## 재현` TC 가 **실패**하는 것을 확인하고 증거에 적는다. 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다. 로그 근거면 수정 전 결과만 기록한다 |
@@ -727,9 +733,9 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
 | `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분에 끊는다 — 사람이 셸에서 `CODE_AGENT_CROSS_TIMEOUT_MIN`(분, 기본 9, 소수 허용)으로 바꾼다. Codex 셸에서 `--by claude` 면 샌드박스 표지를 보고 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 이 사전 점검은 사람이 셸에서 `CODE_AGENT_CROSS_PREFLIGHT=off` 로만 끈다 |
 | `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번. 제한 시간(`CODE_AGENT_CROSS_TIMEOUT_MIN`)·사전 점검(`CODE_AGENT_CROSS_PREFLIGHT`)은 `review cross` 와 같다 |
-| `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 작업 중에는 사람이 별도 터미널에서 실행한다 |
+| `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 읽기 전용이라 작업 중에도 모델이 부를 수 있다(교차 설정 오류 안내가 가리킨다) |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
-| `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`integrate` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
+| `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`deliver` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
 
 `code-agent hook` · `code-agent stop` · `code-agent review-event`는 hook 전용이며 모델 Bash에 허용되지 않는다. 모델은 허용된 절차·상태 명령을 사용하고 사람 전용 승인 명령을 대신 실행하지 않는다.
 `init` · `abort` · `approve` · `reject` · `confirm doc` · `confirm request` · `reject request` · `deliver` · `model` · `plugin add` · `plugin remove` 도 hook 이 거부한다 (사람의 터미널 명령이다).

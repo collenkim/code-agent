@@ -18,6 +18,10 @@ import { loadManifestIfAny, loadWork } from "./work";
 import { checkProjectDocs, docsReady } from "./docs";
 import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
+import { askVia, skill } from "./hostText";
+import { isGitRepo } from "./git";
+import { changedPaths, commitOf, type Change } from "./tree";
+import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
 
 /**
  * 요구사항 접수 — 13단계의 1.
@@ -81,7 +85,8 @@ const RequestSchema = z
     kind: z.enum(KINDS),
     id: z.string().trim().min(1),
     title: ONE_LINE("title"),
-    target: z.array(ONE_LINE("target")).min(1),
+    // 작업(ID) 하나는 대상 하나만 진행한다 — 대상마다 별도 ID 로 접수한다(start 도 진행 중이 아닌 다중 대상 지시서를 거부한다)
+    target: z.array(ONE_LINE("target")).min(1).max(1, "target 은 하나만 — 대상마다 별도 ID 로 접수합니다"),
     scope: z.array(ONE_LINE("scope")).default([]),
     preserve: z.array(ONE_LINE("preserve")).default([]),
     approver: ONE_LINE("approver").optional(),
@@ -356,7 +361,7 @@ export function requireRequestConfirmed(repoRoot: string, id: string, spec: stri
     case "rejected":
       throw new Stop(
         `요구사항이 반려됐습니다 (${spec}): ${state.record.comment ?? "(사유 없음)"}\n` +
-          "/ca-request 로 사유대로 고쳐 다시 제출하세요 — 확정은 현재 호스트 세션에서 ca-answer의 request 동의 절차로 받습니다.",
+          `${skill("ca-request")} 로 사유대로 고쳐 다시 제출하세요 — 확정은 현재 호스트 세션에서 ca-answer의 request 동의 절차로 받습니다.`,
       );
     case "unconfirmed":
       throw new Stop(
@@ -373,7 +378,7 @@ export function requireRequestConfirmed(repoRoot: string, id: string, spec: stri
     case "none":
       throw new Stop(
         `요구사항이 확정되지 않았습니다 (${spec}).\n` +
-          `현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정하면 ca-next 흐름을 자동으로 이어갑니다 — 요구사항 접수는 /ca-request (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
+          `현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정하면 ca-next 흐름을 자동으로 이어갑니다 — 요구사항 접수는 ${skill("ca-request")} (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
       );
   }
 }
@@ -399,16 +404,16 @@ export function requestStateLine(repoRoot: string, id: string, spec: string): st
 /** 그 상태에서 사람 또는 모델이 할 일 한 줄 — status · context · 거부문이 같은 말을 하게 */
 export function requestHint(repoRoot: string, id: string, spec: string): string {
   if (!existsSync(join(repoRoot, spec))) {
-    return `/ca-request — 초안을 ${requestDraftFile(id)} 에 쓰고 code-agent request submit ${requestDraftFile(id)}`;
+    return `${skill("ca-request")} — 초안을 ${requestDraftFile(id)} 에 쓰고 code-agent request submit ${requestDraftFile(id)}`;
   }
   const state = requestState(repoRoot, id, spec);
   switch (state.status) {
     case "confirmed":
-      return `확정됨 — /ca-next 또는 /ca-analyze 가 code-agent start ${spec} 로 분석을 시작합니다`;
+      return `확정됨 — ${skill("ca-next")} 또는 ${skill("ca-analyze")} 가 code-agent start ${spec} 로 분석을 시작합니다`;
     case "rejected":
-      return `/ca-request — 반려됐습니다: ${state.record.comment ?? "(사유 없음)"} — 사유대로 초안을 고쳐 다시 제출하세요`;
+      return `${skill("ca-request")} — 반려됐습니다: ${state.record.comment ?? "(사유 없음)"} — 사유대로 초안을 고쳐 다시 제출하세요`;
     default:
-      if (hasUnmappedOriginal(readFileSync(join(repoRoot, spec), "utf8"))) return "/ca-request — 원문 대조의 미연결 내용을 sourceMap으로 정리한 뒤 다시 제출합니다";
+      if (hasUnmappedOriginal(readFileSync(join(repoRoot, spec), "utf8"))) return `${skill("ca-request")} — 원문 대조의 미연결 내용을 sourceMap으로 정리한 뒤 다시 제출합니다`;
       return `현재 호스트 세션에서 ca-answer의 request 동의 절차로 확인한 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}, 반려는 code-agent reject request ${id} --comment "사유").`;
   }
 }
@@ -418,7 +423,7 @@ export function requestHint(repoRoot: string, id: string, spec: string): string 
 function requireIntakeAllowed(repoRoot: string): Manifest {
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
-    throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
+    throw new Stop(`code-agent.json 이 없습니다. ${skill("ca-adopt")} 로 프로젝트를 먼저 도입하세요.`);
   }
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop("문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤 요구사항을 접수하세요.");
@@ -481,11 +486,16 @@ export function requestBegin(
     logStage(repoRoot, { id, target: "", phase: "request" }, "request");
   }
   mkdirSync(join(repoRoot, workDocsDir(id)), { recursive: true });
+  // 시작 전 정리 — 새 접수이고 작업 브랜치가 아직 없을 때만 미리 알린다(거부하지 않는다. 확정 뒤 start 가 거부한다)
+  const blockers = !current && !commitOf(repoRoot, `${kind}/${id}`) ? startBlockers(repoRoot, id) : [];
   return [
     current
       ? `이미 접수 중입니다: ${id} (${kind}) — 이어서 정리합니다.`
       : `요구사항 접수를 열었습니다: ${id} (${kind}). 끝날 때까지 ${workDocsDir(id)}/ 밖은 쓸 수 없고, 지시서(requirement.md)는 코드만 씁니다.`,
     ...[aidlcWarning(repoRoot)].filter((line): line is string => !!line),
+    ...(blockers.length > 0
+      ? [`시작 전 정리 필요: 커밋하지 않은 변경 ${blockers.length}개(${blockerList(blockers)}) — 요구사항 확정 뒤 시작할 때 이 변경이 남아 있으면 start 가 거부합니다. 사람이 커밋·stash 하거나 되돌려 둡니다(모델은 되돌리지 않습니다).`]
+      : []),
     "",
     requestContext(repoRoot, session),
     ...(hooks ? ["", hooks] : []),
@@ -523,7 +533,7 @@ export function requestFormat(repoRoot: string): string {
     return requestContext(repoRoot, { id: active.id, kind, startedAt: "" }, active.spec);
   }
   if (session) return requestContext(repoRoot, session);
-  throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <feature|fix|refactor> 로 접수를 여세요 (/ca-request).");
+  throw new Stop(`접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <feature|fix|refactor> 로 접수를 여세요 (${skill("ca-request")}).`);
 }
 
 export function requestContext(repoRoot: string, session: RequestSession, specPath?: string): string {
@@ -571,6 +581,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     pathKind
       ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다. scope 는 바꿀 제품 코드의 경계라 테스트 경로는 적지 않아도 된다(테스트 단계 위치 안에서 계획한다).`
       : "- feature: target 은 이제부터 만들 도메인·기능 이름이라 경로가 아니어도 된다. scope 를 적으면 실재하는 경로여야 한다.",
+    "- target 은 **하나**다. 대상이 여럿이면 사용자에게 나눌 ID 를 물어 대상마다 따로 접수한다 — 작업 하나는 대상 하나만 진행한다.",
   ];
   if (manifest?.workOrder.requireApprover) {
     out.push("- 이 프로젝트는 approver(승인자)가 필수다.");
@@ -595,7 +606,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     "",
     "## 질문 — 접수에서 물을 것",
     "- 기술값은 기존 구성·명명 규칙을 근거로 제안한다. 원문으로 정할 수 없는 의미·범위·보존 조건과 두 가지로 읽히는 곳만 묻는다.",
-    "- ca-answer 공통 절차의 AskUserQuestion으로 최대 4개 질문씩 받는다. 추천·이유를 붙이고 5개 이상 후보는 페이지를 나눈다. 질문과 선택지는 questions.md, 실제 답은 해당 질문과 clarifications 에 그대로 남긴다.",
+    `- ca-answer 공통 절차의 ${askVia()} 최대 4개 질문씩 받는다. 추천·이유를 붙이고 5개 이상 후보는 페이지를 나눈다. 질문과 선택지는 questions.md, 실제 답은 해당 질문과 clarifications 에 그대로 남긴다.`,
     "- 업무 규칙의 세부 · 설계 · 테스트는 여기서 묻지 않는다 — 분석 단계가 맡는다.",
     "",
     `다음: ${preparationHint(repoRoot) ?? requestHint(repoRoot, id, spec)}`,
@@ -603,16 +614,60 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
   return out.join("\n");
 }
 
-/** 접수는 보존하고 준비를 먼저 한다. 분석은 start 의 문서 확정 게이트 뒤에서만 열린다. */
-export function preparationHint(repoRoot: string): string | undefined {
+/**
+ * 준비 단계의 다음 할 일 — 접수(`intake`)는 보존하고 준비를 먼저 한다. 분석은 start 의 문서 확정 게이트 뒤에서만 열린다.
+ * 확정이 필요하면 기준 커밋 상태를 보고 동의 하나를 고른다: 문서 확정과 준비 커밋이 둘 다 필요하면 setup, 문서만이면 docs,
+ * 준비 커밋만이면 baseline(그 커밋이 없으면 start 가 거부한다). git 저장소가 아니면 준비 커밋은 보지 않는다(start 도 git 없이 시작한다).
+ */
+export function preparationHint(repoRoot: string, intake = true): string | undefined {
   const manifest = loadManifestIfAny(repoRoot);
-  if (!manifest) return "/ca-adopt 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend";
+  if (!manifest) return `${skill("ca-adopt")} 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend`;
   const checks = checkProjectDocs(repoRoot, manifest);
-  if (!docsReady(checks)) return checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections")
-    ? "/ca-docs 로 빠진 공통 문서 준비 — 접수를 취소하지 않고 code-agent docs begin 으로 이어갑니다"
-    : "현재 호스트 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 확정하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다";
-  if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) return "code-agent docs end 로 준비를 마치고 접수를 이어갑니다";
+  const missing = checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections");
+  const session = existsSync(join(repoRoot, DOCS_SESSION_FILE));
+  if (session) {
+    if (missing) return `${skill("ca-docs")} 로 공통 문서를 마저 씁니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end`;
+    return `code-agent docs end 로 문서 세션을 닫은 뒤 ${preparationConsent(repoRoot, checks) ?? (intake ? "접수를 이어갑니다" : "준비를 마칩니다")}`;
+  }
+  if (missing) return `${skill("ca-docs")} 로 빠진 공통 문서 준비 — ${intake ? "접수를 취소하지 않고 " : ""}code-agent docs begin 으로 이어갑니다`;
+  return preparationConsent(repoRoot, checks);
+}
+
+/** 문서 확정·준비 커밋에 맞는 동의(setup·docs·baseline) 안내 — 둘 다 필요 없으면 undefined */
+function preparationConsent(repoRoot: string, checks: ReturnType<typeof checkProjectDocs>): string | undefined {
+  const needDocs = !docsReady(checks);
+  // 작업 중에는 준비 커밋을 만들지 않는다(setupBaseline 이 거부한다) — 진행 중인 작업의 안내에 섞지 않는다
+  const pending = isGitRepo(repoRoot) && !loadActive(repoRoot) ? safePending(repoRoot) : [];
+  const needBase = isGitRepo(repoRoot) && !loadActive(repoRoot) && (!hasBaseline(repoRoot) || pending.length > 0);
+  if (needDocs && needBase) return "현재 호스트 세션에서 ca-answer의 setup 동의 절차로 공통 문서 확정과 준비 커밋을 한 번에 확인받고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다";
+  if (needDocs) return "현재 호스트 세션에서 ca-answer의 docs 동의 절차로 공통 문서를 확정하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다";
+  if (needBase) return `현재 호스트 세션에서 ca-answer의 baseline 동의 절차로 준비 커밋(도입 파일 ${pending.length}개)을 확인받고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 — 이 커밋이 없으면 start 가 거부합니다`;
   return undefined;
+}
+/** 준비 커밋에 아직 반영되지 않은 도입 파일 — git 실패는 빈 목록(안내 하나로 접수를 세우지 않는다) */
+function safePending(repoRoot: string): string[] {
+  try { return pendingBaselineFiles(repoRoot); } catch { return []; }
+}
+
+/**
+ * 새 작업 브랜치를 딸 때 따라갈 미커밋·미추적 변경(FLOW-07) — start 는 거부하고, 접수 begin·접수 중 status 는 미리 알린다.
+ * 작업 폴더(`doc/work/<ID>/`)·`.code-agent/`·지시서와, 준비 커밋에 담을 도입 파일(start 가 requirePreparedBranch 로 먼저 따로 본다)은 뺀다.
+ * git 저장소가 아니거나 HEAD 가 없으면, 또는 git 이 실패하면 빈 목록이다.
+ */
+export function startBlockers(repoRoot: string, id: string, spec?: string): Change[] {
+  try {
+    if (!isGitRepo(repoRoot) || !commitOf(repoRoot, "HEAD")) return [];
+    const folder = `${workDocsDir(id)}/`;
+    const baseline = new Set(baselineFiles(repoRoot));
+    return changedPaths(repoRoot, "HEAD").filter((change) =>
+      !change.path.startsWith(folder) && !change.path.startsWith(`${STATE_DIR}/`) && change.path !== spec && !baseline.has(change.path));
+  } catch {
+    return [];
+  }
+}
+/** 경고 줄의 변경 목록 — 앞 5개와 나머지 수 */
+function blockerList(changes: Change[]): string {
+  return changes.slice(0, 5).map((change) => `[${change.status}] ${change.path}`).join(", ") + (changes.length > 5 ? ` 외 ${changes.length - 5}개` : "");
 }
 
 // ---- submit ----
@@ -664,7 +719,7 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     owner = { id: active.id, kind };
   }
   if (!owner) {
-    throw new Stop("접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <종류> 로 접수를 여세요 (/ca-request).");
+    throw new Stop(`접수 중인 요구사항이 없습니다 — code-agent request begin [ID] --kind <종류> 로 접수를 여세요 (${skill("ca-request")}).`);
   }
 
   const draftPath = toRepoPath(repoRoot, draftArg);
@@ -828,7 +883,7 @@ export function decideRequest(
   }
   const manifest = loadManifestIfAny(repoRoot);
   if (!manifest) {
-    throw new Stop("code-agent.json 이 없습니다. /ca-adopt 로 프로젝트를 먼저 도입하세요.");
+    throw new Stop(`code-agent.json 이 없습니다. ${skill("ca-adopt")} 로 프로젝트를 먼저 도입하세요.`);
   }
   // 지시서 자리 — 사람이 경로를 주면 그것, 진행 중인 작업이면 그 지시서, 아니면 접수가 렌더하는 자리
   const active = loadActive(repoRoot);
@@ -839,7 +894,7 @@ export function decideRequest(
       : requirementFile(id);
   if (spec.startsWith("..") || !existsSync(join(repoRoot, spec))) {
     throw new Stop(
-      `지시서가 없습니다: ${spec} — /ca-request 로 접수하면 code-agent request submit 이 ${requirementFile(id)} 에 렌더합니다.\n` +
+      `지시서가 없습니다: ${spec} — ${skill("ca-request")} 로 접수하면 code-agent request submit 이 ${requirementFile(id)} 에 렌더합니다.\n` +
         `다른 자리에 손으로 쓴 지시서면 경로를 함께 주세요: code-agent ${word} request ${id} <지시서>`,
     );
   }
@@ -892,8 +947,8 @@ export function decideRequest(
     hash,
   });
   return decision === "confirmed"
-    ? `${id} 요구사항을 확정했습니다 (${record.hash}). 현재 호스트 세션에서는 ca-next 흐름으로 분석을 자동으로 이어갑니다 (수동 재개: /ca-next 또는 /ca-analyze).`
-    : `${id} 요구사항 반려를 남겼습니다. Claude Code 에서 /ca-request 가 사유를 읽고 다시 정리합니다.`;
+    ? `${id} 요구사항을 확정했습니다 (${record.hash}). 현재 호스트 세션에서는 ca-next 흐름으로 분석을 자동으로 이어갑니다 (수동 재개: ${skill("ca-next")} 또는 ${skill("ca-analyze")}).`
+    : `${id} 요구사항 반려를 남겼습니다. ${skill("ca-request")} 가 사유를 읽고 다시 정리합니다.`;
 }
 
 // ---- status (작업이 없을 때) ----
@@ -907,5 +962,8 @@ export function requestStatusLines(repoRoot: string, session: RequestSession): {
     `초안: ${draft ? requestDraftFile(session.id) : "없음"}`,
     requestStateLine(repoRoot, session.id, spec),
   ];
+  // 작업 브랜치가 아직 없으면 시작 때 따라갈 미커밋 변경을 미리 알린다 — 다음: 은 바꾸지 않는다(접수·확정은 그대로 진행한다)
+  const blockers = commitOf(repoRoot, `${session.kind}/${session.id}`) ? [] : startBlockers(repoRoot, session.id, spec);
+  if (blockers.length > 0) lines.push(`시작 전 정리 필요: ${blockerList(blockers)} — 사람이 커밋·stash 한 뒤 시작합니다`);
   return { lines, hint: preparationHint(repoRoot) ?? requestHint(repoRoot, session.id, spec) };
 }

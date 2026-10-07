@@ -13,6 +13,8 @@ const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
 const GITIGNORE_START = "# code-agent:start";
 const GITIGNORE_END = "# code-agent:end";
+/** .gitignore 블록 — 개인 진행 상태·세션·동의 기록·작업 임대(lease.json·잠금). 두 호스트 설치가 같은 블록을 쓴다 */
+const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*"].map((line) => `${STATE_DIR}/${line}`).join("\n");
 
 /**
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
@@ -217,8 +219,7 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     else upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", command);
   }
   upsertBlock(join(repoRoot, "AGENTS.md"), BLOCK_START, BLOCK_END, assetText("template/CODEX.block.md"));
-  upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END,
-    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/\n${STATE_DIR}/consents/`);
+  upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END, GITIGNORE_LINES);
   mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
   writeFileSync(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
   return ["Codex용 code-agent를 설치했습니다.",
@@ -310,9 +311,9 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     join(repoRoot, ".gitignore"),
     GITIGNORE_START,
     GITIGNORE_END,
-    `${STATE_DIR}/active.json\n${STATE_DIR}/docs-session.json\n${STATE_DIR}/request-session.json\n${STATE_DIR}/log/\n${STATE_DIR}/consents/`,
+    GITIGNORE_LINES,
   );
-  lines.push(".gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/)");
+  lines.push(".gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/, lease.json)");
 
   mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   const version = packageVersion();

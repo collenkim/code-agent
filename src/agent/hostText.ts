@@ -18,8 +18,8 @@ export const SKILL_NAMES = ["ca-adopt", "ca-analyze", "ca-answer", "ca-check", "
   "ca-impact", "ca-implement", "ca-integrate", "ca-next", "ca-plan", "ca-refactor", "ca-request", "ca-review", "ca-status", "ca-test"] as const;
 export type SkillName = (typeof SKILL_NAMES)[number];
 /**
- * 서브에이전트 역할 — template/claude/agents 와 같아야 한다(테스트가 대조한다). hosts.ts 의 ROLE_NAMES 와 같은 목록이고,
- * hosts.ts 가 이 목록을 다시 내보내도록 바뀌기 전까지는 둘 다 고친다.
+ * 서브에이전트 역할 — template/claude/agents 와 같아야 한다(테스트가 대조한다). 정본은 이 목록 하나다 — hosts.ts 는 이것을
+ * 다시 내보내고 codexText 의 역할 정규식도 여기서 만든다.
  */
 export const ROLE_NAMES = ["ca-analyst", "ca-explorer", "ca-writer", "ca-critic", "ca-reviewer", "ca-implementer", "ca-surveyor", "ca-tester"] as const;
 const roles: readonly string[] = ROLE_NAMES;

@@ -48,8 +48,13 @@ test("H1: 기존 저장소의 미커밋 도입은 시작 전에 안내하고 준
     assert.ok(git("ls-tree", "--name-only", "HEAD", file).includes(file));
   }
   assert.deepEqual(pendingBaselineFiles(root), []);
+  // 준비 커밋에 섞지 않은 무관한 변경은 새 작업 브랜치로 따라가지 않게 start 가 거부한다(FLOW-07) — 사람이 정리한 뒤 시작한다
+  assert.throws(() => start(root, join(root, spec)), /커밋하지 않은 변경이 있어 시작하지 않았습니다[\s\S]*\[A\] src\/unrelated\.js/);
+  assert.equal(git("branch", "--show-current"), "master");
+  assert.equal(loadActive(root), undefined);
+  git("add", "src/unrelated.js"); git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "unrelated");
   start(root, join(root, spec));
-  assert.deepEqual(outsideChanges(loadWork(root)!).map(change => change.path), ["src/unrelated.js"]);
+  assert.deepEqual(outsideChanges(loadWork(root)!).map(change => change.path), []);
   // 도입 파일을 영구 예외로 두지 않는다. 시작 뒤 변경은 계속 계획 밖으로 검출한다.
   write(".claude/settings.json", readFileSync(join(root, ".claude/settings.json"), "utf8") + "\n");
   assert.ok(outsideChanges(loadWork(root)!).some(change => change.path === ".claude/settings.json"));

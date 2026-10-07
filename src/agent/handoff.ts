@@ -4,23 +4,22 @@ import { join, posix } from "path";
 import { writeAtomic } from "../core/atomic";
 import { assetText } from "./assets";
 import { context } from "./commands";
-import { STATE_DIR } from "./layout";
+import { handoffDir } from "./layout";
 import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
 import { loadWork } from "./work";
+import { agentName } from "./hostText";
 
 /**
- * 서브에이전트에게 넘길 긴 자료를 파일로 둔다.
+ * 서브에이전트에게 넘길 긴 자료를 파일로 둔다(폴더는 layout.ts handoffDir — 여기서 다시 내보낸다).
  *
  * 메인이 CLI 출력을 받아 Agent 프롬프트에 다시 쓰면 같은 내용이 메인의 입력과 **출력 토큰**으로 두 번 든다.
  * 파일로 두면 메인은 경로 한 줄만 넘기고, 담당은 그 파일을 직접 읽는다.
  */
-export function handoffDir(id: string): string {
-  return posix.join(STATE_DIR, "work", id, "handoff");
-}
+export { handoffDir };
 
 /**
- * 작업의 handoff 폴더에 전달용 파일을 쓴다(폴더 `.gitignore *`를 둔다). 반영은 `.code-agent/work/<ID>`를 `git add -f` 로 폴더째 담으므로
- * 이 파일도 커밋에 들어간다(흐름도 §8).
+ * 작업의 handoff 폴더에 전달용 파일을 쓴다(폴더 `.gitignore *`를 둔다). 반영 커밋은 deliveryExcludes 로 이 폴더를 뺀다 —
+ * `.gitignore` 는 일반 `git add` 용이다(반영의 `git add -f` 는 안쪽 `.gitignore` 를 무시한다).
  */
 export function writeHandoff(root: string, id: string, name: string, text: string): string {
   const dir = join(root, handoffDir(id));
@@ -47,7 +46,7 @@ export function contextHandoff(root: string): string {
     : phase === "test" ? "ca-tester" : phase === "review" ? "ca-reviewer" : undefined;
   return [
     text.split("\n")[0],
-    ...(agent ? [`- 담당: ${agent}`] : []),
+    ...(agent ? [`- 담당: ${agentName(agent)}`] : []),
     `- 전문: ${file} — 서브에이전트에게 이 경로를 넘긴다. 메인이 본문을 옮겨 쓰지 않는다.`,
   ].join("\n");
 }

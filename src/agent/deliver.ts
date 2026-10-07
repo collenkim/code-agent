@@ -12,7 +12,7 @@ import { crossAttemptsOf, planningCrossAttemptsOf, planningCrossView, pointLabel
 import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, treeHashNow, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
-import { clearActive, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
+import { clearActive, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
 import { crossQuestionViews, loadPlanning } from "./planningState";
@@ -21,7 +21,7 @@ import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./revi
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
 import { askOnTerminal, confirmOnTerminal } from "./tty";
-import type { Work } from "./work";
+import { loadWork, type Work } from "./work";
 import {
   acceptanceCriteria,
   loadRequirements,
@@ -441,32 +441,78 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
 }
 
 /**
- * 방금 커밋에 반영 목록 밖으로 들어간 파일. 경로 목록 커밋도 저장소의 pre-commit hook 은 돌고, hook 이 임시 index 에
- * `git add` 한 것(예: 다른 도구의 감사 기록)은 그대로 실린다. 사람이 확인한 커밋을 되돌리지는 않고 드러낸다.
+ * 반영하지 않는 하위 자리 — 전달 사본(handoff)과 담당 staging(폴더째), 작업 상태 폴더 바로 아래의 잠금 파일(`*.lock` — 비정상
+ * 종료로 남은 계획·리뷰 기록 잠금). 안쪽 `.gitignore` 는 `git add -f` 가 무시하므로 pathspec 으로 뺀다. 잠금 규칙은 작업 상태 폴더
+ * **바로 아래**만 본다(glob 의 `*` 는 `/` 를 넘지 않는다) — 하위 폴더나 다른 자리의 `.lock` 이름 파일(계획 파일 포함)은 그대로 반영한다.
  */
-function committedOutside(repoRoot: string, paths: string[]): string[] {
+export function deliveryExcludes(work: Work): { dirs: string[]; lockDir: string } {
+  return { dirs: [handoffDir(work.active.id), `${workDocsDir(work.active.id)}/.staging`], lockDir: `${STATE_DIR}/work/${work.active.id}` };
+}
+/** 커밋 대상에서 빼는가 — 반영 커밋(commitDelivery)·커밋 뒤 대조(committedOutside)·동의 미리보기의 커밋 대상 목록이 같은 규칙을 쓴다 */
+export function isDeliveryExcluded(work: Work, file: string): boolean {
+  const { dirs, lockDir } = deliveryExcludes(work);
+  const path = file.replace(/\\/g, "/");
+  return dirs.some((dir) => path === dir || path.startsWith(`${dir}/`)) || (posix.dirname(path) === lockDir && path.endsWith(".lock"));
+}
+/** glob magic 안에서 글자 그대로 — `*`·`?`·`[` 를 문자 클래스로 감싼다(`[[]`). 손으로 쓴 지시서의 ID 는 모양을 검사하지 않는다 */
+function globLiteral(path: string): string {
+  return path.replace(/[*?[]/g, (char) => `[${char}]`);
+}
+/**
+ * add·ls-files·commit 이 같이 쓰는 pathspec — 포함 경로는 글자 그대로(`:(literal)`), 하위 자리는 `:(exclude,literal)`, 잠금 파일은
+ * `:(exclude,glob)`. `--literal-pathspecs` 전역 옵션은 모든 magic 을 끄므로 쓰지 않는다.
+ */
+function pathspecs(include: string[], excludes: { dirs: string[]; lockDir: string }): string[] {
+  return [...include.map((path) => `:(literal)${path}`), ...excludes.dirs.map((path) => `:(exclude,literal)${path}`),
+    `:(exclude,glob)${globLiteral(excludes.lockDir)}/*.lock`];
+}
+/** 반영 커밋이 쓰는 pathspec 그대로(포함 경로 + 이 작업의 제외 규칙) — 글롭 문자가 든 작업 ID 의 대조에 쓴다 */
+export function deliveryPathspecs(work: Pick<Work, "active">, include: string[]): string[] {
+  return pathspecs(include, deliveryExcludes(work as Work));
+}
+
+/**
+ * 방금 커밋에 반영 목록 밖으로 들어간 파일 — 포함 경로 밖이거나 반영하지 않는 하위 자리(isDeliveryExcluded)의 파일. 경로 목록
+ * 커밋도 저장소의 pre-commit hook 은 돌고, hook 이 임시 index 에 `git add` 한 것(예: 다른 도구의 감사 기록, staging·잠금)은
+ * 그대로 실린다. 사람이 확인한 커밋을 되돌리지는 않고 드러낸다.
+ */
+function committedOutside(work: Work, paths: string[]): string[] {
   const roots = paths.map((path) => path.replace(/\\/g, "/").replace(/\/+$/, ""));
-  return git(repoRoot, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", "HEAD"])
+  return git(work.repoRoot, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", "HEAD"])
     .split("\0")
-    .filter((file) => file !== "" && !roots.some((root) => file === root || file.startsWith(`${root}/`)));
+    .filter((file) => file !== "" && (!roots.some((root) => file === root || file.startsWith(`${root}/`)) || isDeliveryExcluded(work, file)));
 }
 
 export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[], originals?: ReadonlyMap<string, string | undefined>): { commit: string; outside: string[] } {
   const { repoRoot } = work;
   const paths = deliveryPaths(work, knowledge);
+  const excludes = deliveryExcludes(work);
   try {
     // 저장소가 doc/를 무시해도 사람이 확인한 이 작업의 문서·증거는 함께 남긴다.
-    // 강제 추가 범위도 deliveryPaths로 제한한다. 저장소 전체를 추가하지 않는다.
-    git(repoRoot, ["--literal-pathspecs", "add", "-f", "--", ...paths]);
+    // 강제 추가 범위도 deliveryPaths로 제한한다. 저장소 전체를 추가하지 않는다. handoff·staging·잠금 파일은 뺀다
+    git(repoRoot, ["add", "-f", "--", ...pathspecs(paths, excludes)]);
   } catch (error) {
     const restored = restoreKnowledge(repoRoot, originals);
     throw new Stop(`git add 가 실패했습니다. 반영하지 않았습니다${restored ? " — 선택한 KNOWLEDGE 갱신은 되돌렸습니다(다시 반영할 때 다시 고릅니다)" : ""} — 스테이지 상태를 확인하고 code-agent deliver 를 다시 실행하세요: ${error instanceof Error ? error.message : error}`);
+  }
+  // 포함 경로 아래의 파일이 전부 빠지면 그 경로는 commit 이 'did not match any file(s) known to git' 으로 실패한다 — index 기준으로 거른다
+  let kept: string[];
+  try {
+    const indexed = git(repoRoot, ["ls-files", "-z", "--cached", "--", ...pathspecs(paths, excludes)]).split("\0").filter(Boolean);
+    kept = paths.filter((path) => indexed.some((file) => file === path || file.startsWith(`${path.replace(/\/+$/, "")}/`)));
+  } catch (error) {
+    const restored = restoreKnowledge(repoRoot, originals);
+    throw new Stop(`git ls-files 가 실패했습니다. 반영하지 않았습니다${restored ? " — 선택한 KNOWLEDGE 갱신은 되돌렸습니다" : ""}: ${error instanceof Error ? error.message : error}`);
+  }
+  if (kept.length === 0) {
+    const restored = restoreKnowledge(repoRoot, originals);
+    throw new Stop(`반영할 파일이 없습니다 — 스테이지 상태를 확인하세요${restored ? " (선택한 KNOWLEDGE 갱신은 되돌렸습니다)" : ""}.`);
   }
   try {
     // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
     // 올라가 있던 것(사람이 터미널에서 친 git add · 앞서 실패한 deliver 가 남긴 스테이지)이
     // 이 커밋에 그대로 실려 간다 — 검증된 변경 집합만 커밋한다는 말이 그때 거짓이 된다.
-    git(repoRoot, ["--literal-pathspecs", "commit", "-m", commitMessage(work, evidence), "--", ...paths]);
+    git(repoRoot, ["commit", "-m", commitMessage(work, evidence), "--", ...pathspecs(kept, excludes)]);
   } catch (error) {
     // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다. 고른 KNOWLEDGE 갱신은 되돌린다(확인한 반영이 없었으므로)
     const message = error instanceof Error ? error.message : String(error);
@@ -475,7 +521,7 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
     }
     throw new Stop(`git commit 이 실패했습니다 (변경은 스테이지에 올라가 있습니다): ${message}`);
   }
-  return { commit: git(repoRoot, ["rev-parse", "HEAD"]), outside: committedOutside(repoRoot, paths) };
+  return { commit: git(repoRoot, ["rev-parse", "HEAD"]), outside: committedOutside(work, paths) };
 }
 
 // ---- code-agent deliver ----
@@ -540,6 +586,16 @@ export function deliver(work: Work): string {
     block,
   ].join("\n");
   const presence = confirmOnTerminal(shown, "deliver");
+  // 사람이 화면을 보는 사이(TTY 직접 경로) 모델이 커서를 되감거나 파일을 바꿨을 수 있다 — 확인 뒤 다시 대조한다.
+  // 동의 적용 경로는 스냅샷 재대조 뒤 같은 프로세스에서 바로 돌아 결과가 달라지지 않는다
+  const after = loadWork(repoRoot);
+  if (!after || after.active.phase !== "deliver" || after.active.id !== active.id || after.active.target !== active.target) {
+    throw new Stop("확인하는 동안 작업 커서가 바뀌었습니다 — 커밋하지 않았습니다. code-agent status 로 지금 위치를 확인하세요.");
+  }
+  const late = deliverProblems(after, readFileSync(path, "utf-8"));
+  if (late.length > 0) {
+    throw new Stop(`확인하는 동안 반영 대상이 바뀌었습니다 — 커밋하지 않았습니다:\n${late.map((problem) => `  - ${problem}`).join("\n")}`);
+  }
 
   const { targets: knowledge, originals } = selectKnowledge(work);
   // 동의 영수증(선택 label·시각·세션·실패 원인) — 동의 기록 자체는 커밋하지 않으므로 이 작업의 확인 이력을 커밋에 남긴다

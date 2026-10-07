@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from "path";
 import { hashManifest, hashPlan } from "../core/approval";
 import { stripBlock } from "./blocks";
 import { crossChild } from "./crossEnv";
+import { agentName, withNotation } from "./hostText";
 import { effectiveReviewer, materializeReviewers, REVIEWER_ID, reviewersOf, reviewerState, reviewResultProblems, type ReviewerRun } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
 import { findRepoRoot } from "./layout";
@@ -87,7 +88,7 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   /** 잠금 안에서 다시 읽은 기록의 같은 회차 — 그 사이 새 회차가 열렸으면 이 실행은 그 회차의 것이 아니다 */
   const sameRound = (log: ReviewLog | undefined): { log: ReviewLog; last: ReviewRound; runs: ReviewerRun[] } => {
     const last = log?.rounds.at(-1);
-    if (!log || !last || last.round !== opened.round || last.at !== opened.at) throw new Error("리뷰 도중 회차가 바뀌었습니다 — 새 회차에서 ca-reviewer 를 다시 호출하세요.");
+    if (!log || !last || last.round !== opened.round || last.at !== opened.at) throw new Error(`리뷰 도중 회차가 바뀌었습니다 — 새 회차에서 ${agentName("ca-reviewer")} 를 다시 호출하세요.`);
     return { log, last, runs: materializeReviewers(last, planned) };
   };
   const runLimit = (log: ReviewLog, round: number) => limitOf("reviewerRuns", LIMITS.reviewerRuns, log.grants ?? [], grantScope({ file: "review", key: "reviewerRuns", round }));
@@ -144,7 +145,7 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
       return { log, value: { recorded: IGNORED[run.ignored.reason] } };
     }
     if (run.completedAt) return { value: { recorded: "이 리뷰어의 결과는 이미 기록했습니다." } };
-    if (run.failure) return { value: { recorded: "이 리뷰어의 실행은 형식 오류로 기록했습니다 — ca-reviewer 를 새로 호출하세요." } };
+    if (run.failure) return { value: { recorded: `이 리뷰어의 실행은 형식 오류로 기록했습니다 — ${agentName("ca-reviewer")} 를 새로 호출하세요.` } };
     if (problems.length) {
       // 같은 회차 재리뷰가 막혀 있으므로 표 규칙은 기록 전에 본다 — Claude 는 같은 담당이 형식만 고치게 한 번 돌려보낸다
       if (host === "claude" && input.stop_hook_active !== true && (run.returns ?? 0) < LIMITS.agentReturn) {
@@ -153,7 +154,7 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
       }
       run.failure = { class: "agent-format-error", at, detail: problems.join(" · ").slice(0, 300), raw: report.slice(0, 2000) };
       const left = Math.max(0, runLimit(log, last.round) - reviewerState(last, planned).runs);
-      return { log, value: { recorded: `리뷰 결과 형식 오류를 기록했습니다(${problems[0]}) — ca-reviewer 를 새로 호출하세요(이 회차 남은 호출 ${left}회).` } };
+      return { log, value: { recorded: `리뷰 결과 형식 오류를 기록했습니다(${problems[0]}) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).` } };
     }
     run.result = body;
     run.completedAt = at;
@@ -177,7 +178,7 @@ export function runReviewHook(stdin: string): number {
   let input: ReviewHookInput | undefined;
   try {
     input = JSON.parse(stdin) as ReviewHookInput;
-    observeReviewer(input, process.env.CLAUDE_PROJECT_DIR, "claude");
+    withNotation("claude", () => observeReviewer(input!, process.env.CLAUDE_PROJECT_DIR, "claude"));
     return 0;
   } catch (error) {
     process.stderr.write(`code-agent review-event: ${error instanceof Error ? error.message : error}\n`);
