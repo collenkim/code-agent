@@ -1,17 +1,18 @@
 {
   "date": "2026-10-08",
-  "scope": "감사(ff13950) 뒤 구현·검토·후속 수정 전체(ff13950..HEAD) — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의·hook, C4 단계·CLI·임대, C7 최적화, 전체 검토(d12bd46), 후속 수정(R·F·D·G), 문서 정리 — 의 결과 요약 근거",
+  "scope": "감사(ff13950) 뒤 구현·검토·후속 수정 전체(c4f3fbf..HEAD — 감사 기준 c4f3fbf 의 다음 커밋부터, 감사 ff13950 포함) — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의·hook, C4 단계·CLI·임대, C7 최적화, 전체 검토(d12bd46), 후속 수정(R·F·D·G), 문서 정리 — 의 결과 요약 근거",
   "record": "doc/reviews/2026-10-08-procedure-fix-summary.md",
   "range": {
     "audit": "ff13950",
-    "implementation": "2327975..934e5fe",
+    "implementation": "ff13950..934e5fe(2327975 부터 934e5fe 까지)",
     "fullReview": "d12bd46",
     "summaryRecord": "16ae5ec(부모 d12bd46, 문서만)",
     "finalReverify": "5205112(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영",
     "rebuttal": "014cd85(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영",
     "userDecisions20261008": "5e6cdcc(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)",
     "userDecisionsRebuttal": "68d7a00(부모 5e6cdcc) — 사용자 결정 반영의 반박 검증 지적 G1~G8 반영",
-    "cleanup": "문서 정리 커밋(부모 68d7a00) — 단계 기록 통합·옛 기록 삭제·현행 문서의 경위 문장 제거·흐름도 §10 압축"
+    "cleanup": "4c5ca83(부모 68d7a00) — 단계 기록 통합·옛 기록 삭제·현행 문서의 경위 문장 제거·흐름도 §10 압축",
+    "cleanupReview": "4c5ca83 의 다음 커밋(부모 4c5ca83) — 문서 정리의 검증 지적 7건 반영(문서·evidence 만)"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -21,6 +22,7 @@
     "자가 학습 보류 — 측정은 읽기만 하고 환류하지 않는다",
     "사람 확인 지점(요구 확정·계획 승인·결과 반영) 유지",
     "교차 실행 불가 시 중지 기록 후 진행",
+    "게이트 약화 금지 — 수정·후속 수정이 게이트를 약하게 하지 않는다. C1~C7 의 의도한 완화는 세션 중 셸의 takeover(작업 임대)·doctor --cross(C4 FLOW-10) 허용 둘이다(tests.hookMatrix.oldToHead.weakened 72 가 모두 이 둘)",
     "두 호스트 설치 시 교차 검증 필수(끄는 설정 없음)",
     "(2026-10-08 D1) 작업 중에는 역할 모델을 바꿀 수 없다 — 작업이 끝난 뒤(반영 deliver 또는 종료 abort) 바꾼다",
     "(2026-10-08 D2) Codex 메인이 부른 claude 의 같은 지점 네트워크 오류는 몇 번째든 host-sandbox-denied 로 게이트를 막고, 두 번째부터 사람이 정한다(네트워크 확인 뒤 재실행 또는 judgment cross-stop)",
@@ -337,9 +339,10 @@
     },
     {
       "stage": "정리",
-      "bundle": "문서 최신화·이력 정리(단계 기록 10개를 결과 요약으로 통합, 2026-10-01~06 기록 15개 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)",
+      "bundle": "문서 최신화·이력 정리(단계 기록 10개를 결과 요약으로 통합, 2026-10-01~06 기록 15개 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축) 와 그 검증 지적 7건 반영(단계 기록의 남은 위험 옮김, hook 판정 행렬의 의도한 완화, 처리 현황 수치, 실제 호스트 확인 범위 문장, A/B 기준선 위치, 커밋 범위 표기, 경위 낱말)",
       "commits": [
-        "문서 정리 커밋(부모 68d7a00)"
+        "4c5ca83",
+        "검증 지적 반영(부모 4c5ca83)"
       ],
       "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
     }
@@ -578,6 +581,20 @@
         "014cd85"
       ],
       "subject": "[코드 에이전트] 사용자 결정 D1~D3 반영 — 작업 중 역할 모델 변경 거부·Codex 메인이 부른 claude 의 네트워크 오류는 몇 번째든 막힘·실행 파일 설정 오류 현행 유지"
+    },
+    {
+      "hash": "68d7a00a89015d483f1a63b630820603af7b2071",
+      "parents": [
+        "5e6cdcc"
+      ],
+      "subject": "[코드 에이전트] 사용자 결정 반영의 반박 검증 지적 G1~G8 반영 — 샌드박스 의심의 지점 이력·사전 거부 뒤 첫 네트워크 오류·중지 지점 재실행 안내·게이트 줄 명령 자리·doctor Codex 줄과 모델 표의 작업 중 안내·비파일 MCP 서버의 호스트 설정 판정"
+    },
+    {
+      "hash": "4c5ca8365d3d30c0a478645d629df854eb141c6b",
+      "parents": [
+        "68d7a00"
+      ],
+      "subject": "[코드 에이전트] 문서 최신화와 이력 정리 — 현행 문서의 경위 문장 제거·단계 기록 10개를 결과 요약으로 통합·2026-10-01~06 기록 삭제·흐름도 §10 압축"
     }
   ],
   "retryPolicy": {
@@ -860,7 +877,7 @@
     ]
   },
   "disposition": {
-    "source": "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json 을 합쳤다(행을 그대로 옮기고 문서 정리 커밋의 처리를 더함)",
+    "source": "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json 을 합쳤다(행을 그대로 옮기고 문서 정리 4c5ca83 의 처리를 더함)",
     "counts": {
       "partial": 28,
       "fixed": 86,
@@ -1619,9 +1636,9 @@
         "severity": "low",
         "title": "현행 동작 문서에 변경 이력이 섞이고, 새 절이 목차 밖에 덧붙여지고 있다",
         "status": "partial",
-        "by": "문서 정리 커밋(부모 68d7a00)",
+        "by": "문서 정리 4c5ca83(부모 68d7a00)",
         "note": "현행 문서(README·doc/*.md)의 변경 이력·경위 문장을 지우고 AGENTS.md 에 규칙을 적었다. README·usage 의 목차 밖 절(요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업)은 그대로",
-        "next": "다음 묶음(문서 구조) — README 변경 이력 문단·목차 밖 절 정리"
+        "next": "문서 구조 — 목차 밖 절 정리(README·usage 의 요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업)"
       },
       {
         "id": "DOC-13",
@@ -2251,13 +2268,14 @@
     ],
     "date": "2026-10-08",
     "audit": "doc/reviews/2026-10-07-dual-host-process-audit.md (evidence/process-audit-2026-10-07.json)",
-    "range": "ff13950..d12bd46 + 문서 정리 커밋",
+    "range": "c4f3fbf..d12bd46(감사 ff13950 포함) + 문서 정리 4c5ca83",
     "method": "문서 관점 독립 검토가 감사 160건마다 코드·단계 기록을 대조해 판정(sandbox-stage7-docs/status.cjs)하고, 전체 검토 반영 커밋의 처리를 더했다",
     "changedByCleanup": [
       {
         "id": "DOC-12",
         "from": "deferred",
-        "to": "partial"
+        "to": "partial",
+        "commit": "4c5ca83"
       }
     ],
     "deferredNext": {
@@ -2481,7 +2499,22 @@
       "log": "scratchpad/reverify/build.log, test.log"
     },
     "final": {
-      "at": "문서 정리 커밋의 트리(부모 68d7a00)",
+      "at": "4c5ca83 의 다음 커밋(검증 지적 반영, 부모 4c5ca83)의 트리",
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1337,
+      "suites": 189,
+      "pass": 1333,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 148063.866,
+      "note": "문서·evidence 만 바꿨다 — 시험 수는 4c5ca83 과 같다. 벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다"
+    },
+    "cleanup": {
+      "at": "4c5ca83 의 트리(부모 68d7a00)",
       "command": "npm run build && npm test",
       "buildExit": 0,
       "testExit": 0,
@@ -2497,7 +2530,8 @@
     }
   },
   "needsUser": [
-    "GAP-5 CI 도입과 실행 플랫폼(지금 Windows 단일)"
+    "GAP-5 CI 도입과 실행 플랫폼(지금 Windows 단일)",
+    "진행 중인 작업 위에서 update --templates-only 가 바꾼 설치 파일(.gitignore 블록·스킬·에이전트 사본·hook 설정)을 계획 밖 변경에서 따로 다룰지(C4 — 지금은 알리기만 한다, update.ts outsideNotice)"
   ],
   "unverifiedOnRealHost": [
     "실제 Claude·Codex 오류 문구(인증·한도·모델 없음·네트워크) — 교차 실패 분류 화이트리스트",
@@ -2514,7 +2548,9 @@
   ],
   "paidMeasurementsPending": [
     "C6 A/B — node scripts/evaluate-full-flow.cjs run new --model opus --agents exec-opus --label c6-execopus-<n> 와 --agents policy --label c6-policy-<n> 각 3회",
-    "C7 효과 — scripts/evaluate-full-flow.cjs 3회(usageData·retry·numTurns)와 scripts/summarize-evaluations.cjs, 동의 왕복은 실제 세션의 usage 명령별 호출"
+    "C7 효과 — scripts/evaluate-full-flow.cjs 3회(usageData·retry·numTurns)와 scripts/summarize-evaluations.cjs, 동의 왕복은 실제 세션의 usage 명령별 호출",
+    "기준선 — 2026-10-06 opus 기준선 보고서(full-flow-new-2026-10-06-opus-baseline·-both·-optimized·-optimized-v2·-optimized-v3.json)와 token-efficiency-2026-10-06.json 은 c4f3fbf 의 doc/reviews/evidence/ 에 있다. --agents opus 는 이 기준선과 잇는 용도로만 쓴다. summarize-evaluations.cjs 는 작업 트리의 evidence/ 만 읽으므로 비교 전에 git show c4f3fbf:<경로> 로 꺼내 둔다",
+    "evaluate-full-flow.cjs 의 기본 --label 2026-10-01 은 지운 옛 보고서 이름(full-flow-<유형>-2026-10-01.json)과 겹친다 — 실행마다 --label 을 주고, 기본값 수정은 GAP-4 와 함께 한다"
   ],
   "outOfScope": [
     "자가 학습(지적 17건 + GAP-3)",
@@ -2523,13 +2559,24 @@
     "HP-21 실제 모델 호출 금지"
   ],
   "remaining": [
-    "보류 13건의 다음 배정(배포·버전, 측정, 문서 구조, 검증 효율, KNOWLEDGE 반영, 최적화 2차, GAP-5 사용자 결정)",
-    "일부 27건의 남은 부분(rows 의 note)",
+    "보류 12건의 다음 배정(배포·버전, 측정, 문서 구조, 검증 효율, KNOWLEDGE 반영, 최적화 2차, GAP-5 사용자 결정)",
+    "일부 28건의 남은 부분(rows 의 note)",
     "전체 검토 일부 반영 — E13 (b)안, E19 기록하지 못한 판정 실패, E26 잠금 나이 상한, E27 다른 세션 경고, E30 미판정 MCP 이름 기록",
     "문서화된 한계 — Codex 두 세션 동시 진행(임대는 호스트 단위), codex exec resume 프롬프트(CON-1), Codex 확인 코드는 사람 입력 증명 아님(CON-5)",
     "최종 재검증(9단계) 남긴 것 — finalReverify.remaining",
     "사용자 결정 반영(11단계) 남긴 것 — userDecisions20261008.remaining",
-    "사용자 결정 반영의 반박 검증(12단계) 남긴 것 — userDecisionsRebuttal.remaining"
+    "사용자 결정 반영의 반박 검증(12단계) 남긴 것 — userDecisionsRebuttal.remaining",
+    "단계 기록 위험(지운 단계 기록 68d7a00 의 남은 위험·남는 한계 중 지금 코드에서 다시 확인해 아직 맞는 것) — 교차: Codex 세션에서 읽은 파일·도구 출력의 마지막 줄이 화이트리스트 문구의 ERROR: 줄이고 Codex 가 자기 오류 줄 없이 신호가 아닌 종료 코드로 끝나면 그 줄을 Codex 의 오류 줄로 읽어 실행 불가(중지 기록 후 진행)로 분류한다(retryPolicy.ts crossFailureText Codex 세션 갈래 — 두 호스트면 교차 필수·게이트 약화 금지에 걸리는 남은 틈, Codex 자신의 도구 실행 뒤 ERROR: 줄과 글로 가를 수 없음)",
+    "단계 기록 위험 — 교차: 앞줄에 원인이 있는 실행 불가는 unclassified(설정 오류)로 막히고, Codex 가 오류 줄 뒤에 안내 줄을 더 찍으면 실행 불가도 막힌다(안전 쪽, 원문은 logPath)",
+    "단계 기록 위험 — 리뷰어: 사용자가 중단한 리뷰어 실행은 고아 기한(TIMING.reviewerOrphanMs 15분)까지 실행 중이라 새 호출이 결과를 쓰지 않는다",
+    "단계 기록 위험 — 계획: 시작이 관찰된 담당의 고아 기한(TIMING.orphanRunMs 60분)은 근거 없는 보수적 값 — 큰 조사가 넘기면 stale 로 보여 살아 있는 담당이 취소될 수 있다",
+    "단계 기록 위험 — 계획: 작업 총 배정 한도(taskTotal 6회)는 질문 답에 따른 정상 재배정과 취소·고아도 센다(plan·critic 은 critic 지적·교차 지적·critic 질문만으로도 닿을 수 있다)",
+    "단계 기록 위험 — 계획: 자동 되감기의 같은 사유 키는 낡은 원인 문구로 만들어(planning.ts rewindOf) 같은 파일을 정당하게 두 번 고쳐도 두 번째는 사람에게 묻는다",
+    "단계 기록 위험 — 검증: worktree.lock·retry.started 의 pid 재사용은 표지 나이 한도(명령 한도×3+10분)까지 실행 중으로 본다. 이전 버전 이름의 임시 worktree 는 사람이 지울 때까지 매번 보고된다",
+    "단계 기록 위험 — 검증: 결과 미확인 회차의 수집 수정 창에서 hook 은 쓰기 내용을 보지 않는다(창은 한 번, 바뀐 파일은 ⑧ 수정 루프 줄과 독립 리뷰에 남는다)",
+    "단계 기록 위험 — 반영: ⑩ 변경 요약은 기준 커밋과의 차이 전부(handoff·staging·잠금 포함)를 보인다(커밋 대상·커밋은 deliveryExcludes 로 뺀다). 잠금 파일 제외의 문자 클래스 이스케이프([[])는 Windows git 2.55 에서만 확인했다",
+    "단계 기록 위험 — 임대: 보기만 하려고 연 두 번째 Claude 세션도 임대를 가져간다(원래 세션은 takeover 로 되찾는다). 임대 30분(LEASE_IDLE_MS)이 지나면 다른 세션이 넘겨받을 수 있다. takeover 전 사용자 확인은 스킬 규칙이고 코드가 강제하지 않는다",
+    "단계 기록 위험 — 동의: 프로세스 안의 기록 직접 조작과 [Source]: 대화 의 자기 선언은 막지 못한다. MCP 쓰기 여부는 도구 이름 동사로 추정한다(hook.ts MCP_WRITE_VERBS)"
   ],
   "finalReverify": {
     "source": "68d7a00:doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
@@ -3088,7 +3135,7 @@
     ]
   },
   "history": {
-    "note": "단계 기록 10개와 이번 작업의 다른 evidence 는 문서 정리 커밋에서 doc/reviews/2026-10-08-procedure-fix-summary.md 와 이 파일로 합치고 지웠다. 원문은 git show 68d7a00:<경로> 로 본다. 2026-10-01~06 기록 15개와 그 evidence 는 같은 커밋에서 지웠다 — git show c4f3fbf:doc/reviews/README.md 로 색인을 본다",
+    "note": "단계 기록 10개와 이번 작업의 다른 evidence 는 문서 정리 4c5ca83 에서 doc/reviews/2026-10-08-procedure-fix-summary.md 와 이 파일로 합치고 지웠다. 원문은 git show 68d7a00:<경로> 로 본다. 2026-10-01~06 기록 15개와 그 evidence 는 같은 커밋에서 지웠다 — git show c4f3fbf:doc/reviews/README.md 로 색인을 본다",
     "mergedRecords": [
       "68d7a00:doc/reviews/2026-10-07-retry-policy-module.md",
       "68d7a00:doc/reviews/2026-10-07-planning-retry-orchestration.md",
@@ -3104,6 +3151,7 @@
     "mergedEvidence": [
       "68d7a00:doc/reviews/evidence/consent-hook-boundary-2026-10-08.json",
       "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json"
-    ]
+    ],
+    "cleanupReview": "4c5ca83 의 검증 지적 7건을 다음 커밋에서 반영했다 — 지운 단계 기록의 남은 위험 중 지금 코드에서 맞는 것을 remaining 에 옮겼고, 설계 문서에서 지운 상태 표·실측은 git show 68d7a00:doc/design.md 로 본다"
   }
 }
