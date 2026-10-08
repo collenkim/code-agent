@@ -2,6 +2,8 @@
 
 기준일: 2026-10-07. 기준 커밋: `c4f3fbf`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다.
 
+처리 현황은 [2026-10-08 요약 기록](2026-10-08-procedure-fix-summary.md) 참고(지적별 상태는 [감사 160건 처리 현황](2026-10-08-audit-disposition.md)).
+
 ## 범위와 방법
 
 다음 여섯 가지 질문에 답한다.
