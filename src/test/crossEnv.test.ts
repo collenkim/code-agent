@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CODEX_MARKERS, CROSS_CHILD_ENV, crossChild, crossChildEnv, hostMarked, otherHost, runtimeHost, sandboxMarkers,
+  CLAUDE_SESSION_ENV, CODEX_MARKERS, CROSS_CHILD_ENV, crossChild, crossChildEnv, hostMarked, otherHost, runtimeHost, sandboxMarkers,
 } from "../agent/crossEnv";
 
 test("runtimeHost — Claude·Codex 표지 하나만 보일 때만 판별한다", () => {
@@ -45,14 +45,20 @@ test("교차 자식 환경은 부른 쪽 호스트 표지를 지우고 자식 �
   assert.equal(runtimeHost(env), undefined);
 });
 
-test("H10 교차 자식 환경 — 부른 Claude 세션의 메시지 통로(CLAUDE_CODE_MESSAGING_SOCKET·TOKEN)를 지운다", () => {
-  const base = { CLAUDECODE: "1", CLAUDE_CODE_MESSAGING_SOCKET: "pipe-x", CLAUDE_CODE_MESSAGING_TOKEN: "t", PATH: "p" };
+test("H10 교차 자식 환경 — 부른 Claude 세션에 묶인 값(메시지 통로·세션 id·자식 세션·pid·추론 강도·사람 응대 표지)을 지운다", () => {
+  const base = { CLAUDECODE: "1", CLAUDE_CODE_MESSAGING_SOCKET: "pipe-x", CLAUDE_CODE_MESSAGING_TOKEN: "t", CLAUDE_CODE_SESSION_ID: "s",
+    CLAUDE_CODE_CHILD_SESSION: "1", CLAUDE_PID: "42", CLAUDE_EFFORT: "max", CLAUDE_CODE_SESSION_ATTENDED: "1",
+    CLAUDE_CODE_EXECPATH: "c:/claude.exe", AI_AGENT: "claude-code", PATH: "p" };
+  assert.deepEqual([...CLAUDE_SESSION_ENV].sort(), ["CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_SESSION_ID", "CLAUDE_EFFORT", "CLAUDE_PID"]);
   for (const host of ["claude", "codex"] as const) {
     const env = crossChildEnv(base, host);
-    assert.equal(env.CLAUDE_CODE_MESSAGING_SOCKET, undefined, host);
-    assert.equal(env.CLAUDE_CODE_MESSAGING_TOKEN, undefined, host);
+    for (const key of CLAUDE_SESSION_ENV) assert.equal(env[key], undefined, `${host} ${key}`);
+    assert.equal(env.CLAUDE_CODE_EXECPATH, "c:/claude.exe", "세션에 묶이지 않은 값은 남긴다");
+    assert.equal(env.AI_AGENT, "claude-code");
     assert.equal(env.PATH, "p");
     assert.equal(env[CROSS_CHILD_ENV], host);
   }
   assert.equal(base.CLAUDE_CODE_MESSAGING_TOKEN, "t", "원본은 바꾸지 않는다");
+  assert.equal(base.CLAUDE_EFFORT, "max");
 });

@@ -281,7 +281,7 @@ test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결�
   assert.match(subagent.stderr,/code-agent codex-event: /);
 });
 
-test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을 읽기만 하고 저장소·상위 폴더의 trust_level 과 hook 신뢰 기록을 알린다", () => {
+test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을 읽기만 하고 저장소의 trust_level(상위 폴더 항목만이면 확인 필요)과 hook 신뢰 기록을 알린다", () => {
   init(root,{host:"codex",cli});
   const home = join(root, "codex-home"), config = join(home, "config.toml");
   const saved = process.env.CODEX_HOME;
@@ -302,8 +302,12 @@ test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을
     writeFixture(home,"config.toml",`[projects."${key(root).replace(/\\/g,"\\\\")}"]\ntrust_level = "trusted"\n`);
     assert.equal(codexTrust(root).project,"trusted");
     assert.match(line("Codex 프로젝트 신뢰"),/✓ Codex 프로젝트 신뢰: .*trust_level = "trusted"/);
-    // 상위 폴더의 신뢰도 적용된다
+    // 상위 폴더 항목만 있으면 확인 필요(·) — Codex 가 상위 폴더 신뢰를 그 안의 저장소에 적용하는지 확인하지 못했다
     writeFixture(home,"config.toml",`[projects.'${key(resolve(root,".."))}']\ntrust_level = "trusted"\n`);
+    assert.equal(codexTrust(root).project,"parent");
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 확인 필요 — 상위 폴더 항목 .*trust_level = "trusted" 만 있습니다/);
+    // 저장소 자체 항목이 있으면 상위 폴더 항목보다 먼저 본다
+    writeFixture(home,"config.toml",`[projects.'${key(resolve(root,".."))}']\ntrust_level = "untrusted"\n\n[projects.'${key(root)}']\ntrust_level = "trusted"\n`);
     assert.equal(codexTrust(root).project,"trusted");
     // hook 신뢰 기록은 키 꼴을 확인하지 못했다 — 찾으면 알리고, 못 찾으면 '확인 필요'(없다고 단정하지 않는다)
     assert.equal(codexTrust(root).hooks,"unknown");

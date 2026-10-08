@@ -6,7 +6,7 @@ import { writeAtomic } from "../core/atomic";
 import { readBlock, stripBlock, upsertBlock } from "./blocks";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
-  attemptLabel, CROSS_ID, crossAttemptsOf, crossGateHandoff, crossHintText, crossRerunAfterUser, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
+  attemptLabel, CROSS_ID, crossAttemptsOf, crossGateHandoff, crossHintText, crossLastRun, crossRerunAfterUser, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
   orphanView, pointHost, pointLabel, reviewerRunLabel, reviewerState, syncLegacyRound,
   type CrossAttempt, type ReviewerRun, type Waiver,
 } from "./crossRecord";
@@ -593,7 +593,8 @@ export function reviewProblems(work: Work): string[] {
         ? "두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다"
         : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"}${crossRunNote(host, hint)}`;
       if (hint) {
-        line += ` — 직전 실행: ${pointLabel(attempts)}: ${oneLine(point.lastFailure?.detail ?? hint.detail, 120)}. ${crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts })}`;
+        line += crossLastRun(pointLabel(attempts), point.lastFailure?.detail ?? hint.detail,
+          crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts }));
       }
       if (handoff === "network") line += crossRerunAfterUser(`code-agent review cross --by ${host ?? "<다른 호스트>"}`);
       problems.push(line);

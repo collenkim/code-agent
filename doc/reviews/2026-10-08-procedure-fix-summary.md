@@ -1,6 +1,6 @@
 # 절차 보완·재시도 규약·최적화 결과 요약 (2026-10-07~08)
 
-[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `c4f3fbf..HEAD`(감사 기준 `c4f3fbf`의 다음 커밋부터)다 — 감사 `ff13950`, 구현·검토 `ff13950..68d7a00`(`2327975`부터 `68d7a00`까지), 문서 정리 `4c5ca83`과 그 검증 지적 반영 커밋(`bd096f8`), 실제 호스트 확인의 불일치 반영 `b8ebf85`·`0c0265d`·`b7d0a28`·그다음 커밋(부모 `b7d0a28`). 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
+[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `c4f3fbf..HEAD`(감사 기준 `c4f3fbf`의 다음 커밋부터)다 — 감사 `ff13950`, 구현·검토 `ff13950..68d7a00`(`2327975`부터 `68d7a00`까지), 문서 정리 `4c5ca83`과 그 검증 지적 반영 커밋(`bd096f8`), 실제 호스트 확인의 불일치 반영 `b8ebf85`·`0c0265d`·`b7d0a28`·`c11c3ab`과 그 검증 지적 반영 커밋(부모 `c11c3ab`). 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
 
 단계마다 남겼던 기록 10개와 그 evidence 는 문서 정리 `4c5ca83`에서 이 기록으로 합치고 지웠다. 원문은 `git show 68d7a00:doc/reviews/<파일>`로 본다([지운 기록](#지운-기록)).
 
@@ -42,7 +42,8 @@
 | 11 | 사용자 결정 D1~D3 반영 | `5e6cdcc` |
 | 12 | 11단계 반영의 반박 검증 지적 G1~G8 반영 | `68d7a00` |
 | 정리 | 문서 최신화·이력 정리(단계 기록 통합, 옛 기록 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)와 그 검증 지적 7건 반영 | `4c5ca83` · `bd096f8` |
-| 실제 호스트 | 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정 · Codex hook·신뢰·담당 식별·임대 · Codex 사용량 · 담당 호출·기록([실제 호스트 확인](#실제-호스트-확인-2026-10-08)) | `b8ebf85` · `0c0265d` · `b7d0a28` · 기록(부모 `b7d0a28`) |
+| 실제 호스트 | 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정 · Codex hook·신뢰·담당 식별·임대 · Codex 사용량 · 담당 호출·기록([실제 호스트 확인](#실제-호스트-확인-2026-10-08)) | `b8ebf85` · `0c0265d` · `b7d0a28` · `c11c3ab` |
+| 실제 호스트 검증 | 반영 뒤 실제 Codex 재확인과 검증 지적 반영 — doctor 의 옛 Windows 명령 오탐, 상위 폴더 신뢰, 단일 실행 파일의 연결 확인·`.js` 진입점, 이전 버전 절차의 담당 호출, 교차 자식 환경, 게이트 줄의 같은 사유 반복, 문서([반영 뒤 재확인](#반영-뒤-실제-호스트-재확인)·[검증 지적](#검증-지적-처리)) | 검증 지적 반영(부모 `c11c3ab`) |
 
 묶음마다 구현 커밋 뒤에 독립 검토를 거쳤고, 지적을 코드로 확인한 반영 커밋을 따로 두었다. 7단계는 `ff13950..934e5fe` 전체를 네 관점(e2e·재시도 규약·hook·문서)으로 다시 검토한 결과이고, 9~12단계는 그 뒤를 다시 검증하거나 반박 검증해 남은 문제를 고친 결과다.
 
@@ -160,7 +161,7 @@ summary 가 크면 비율이 작아진다(plan 7,868→3,707·abort 4,840→2,19
 
 ## 템플릿 크기 예산
 
-`src/test/templateBudget.test.ts` `BUDGET`(C7, `69fbe28`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 실제 호스트 반영(H7)에서 담당 호출 문장(63자)을 더해 `ca-impact/SKILL.md`(3,007자)·`ca-design/SKILL.md`(2,812자)가 예산을 넘었다 — 문장은 담당을 부르는 그 항목에 있어야 모델이 호출할 때 보므로 보조 문서로 옮기지 않고 `--suggest` 값(3,100·2,900)으로 올렸다. 그 밖의 파일·합계 예산은 그대로이고, 합계는 Claude 51,409자·Codex 49,262자로 예산 안이다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
+`src/test/templateBudget.test.ts` `BUDGET`(C7, `69fbe28`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 실제 호스트 반영(H7)에서 담당 호출 문장(63자)을 더해 `ca-impact/SKILL.md`(3,007자)·`ca-design/SKILL.md`(2,812자)가 예산을 넘었다 — 문장은 담당을 부르는 그 항목에 있어야 모델이 호출할 때 보므로 보조 문서로 옮기지 않고 `--suggest` 값(3,100·2,900)으로 올렸다. 그 밖의 파일·합계 예산은 그대로이고, 합계는 Claude 51,409자·Codex 49,262자로 예산 안이다. 검증 지적 반영에서 같은 문장을 이전 버전 절차(`legacy.md`)의 담당 호출 다섯 곳에도 넣어 `ca-design/legacy.md`(723자)·`ca-impact/legacy.md`(1,067자)·`ca-plan/legacy.md`(914자)가 예산을 넘었다 — 이 문서들은 필요할 때만 읽는 보조 문서이고 문장은 그 호출 항목에 있어야 하므로 `--suggest` 값(800·1,100·1,000)으로 올렸다. `ca-analyze/legacy.md`(693자)는 예산(700) 안이고, 흐름 합계는 보조 문서를 세지 않아 그대로다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
 
 ## 감사 160건 처리 현황
 
@@ -364,7 +365,8 @@ DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`
 
 - **기준** — 감사 기준 커밋 `c4f3fbf`: `npm test` 802개 중 798개 통과·실패 0·생략 4(133초).
 - **최종** — 문서 정리의 검증 지적 반영 커밋(부모 `4c5ca83`)의 트리: `npm run build && npm test` 1337개 중 1333개 통과·실패 0·생략 4(suites 189, `duration_ms` 148,064). 문서·evidence 만 바꿔 시험 수는 `4c5ca83`과 같다(그 트리는 `duration_ms` 257,931 — 벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다).
-- **실제 호스트 반영** — 기록 커밋(부모 `b7d0a28`)의 트리: `npm run build && npm test` 1,353개 중 1,349개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,516). 커밋 `b8ebf85`·`0c0265d`·`b7d0a28`의 트리도 각각 전체 시험을 통과했다(원자료 `realHost20261008.tests`).
+- **실제 호스트 반영** — 기록 커밋 `c11c3ab`(부모 `b7d0a28`)의 트리: `npm run build && npm test` 1,353개 중 1,349개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,516). 커밋 `b8ebf85`·`0c0265d`·`b7d0a28`의 트리도 각각 전체 시험을 통과했다(원자료 `realHost20261008.tests`).
+- **실제 호스트 검증 지적 반영** — 검증 지적 반영 커밋(부모 `c11c3ab`)의 트리: `npm run build && npm test` 1,355개 중 1,351개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,425). 실제 모델은 부르지 않았다(실제 호스트 재확인은 반영 커밋 `c11c3ab`에서 따로 했다).
 
 생략 4개는 플랫폼 조건(대소문자 구분 없는 파일 시스템 2개, POSIX chmod 2개)이다. 단계마다의 시험 수는 원자료의 `stages[].npmTest`에 있다.
 
@@ -399,21 +401,60 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 **실제 호출 수·비용**(증거 폴더에서 집계, 원자료 `realHost20261008.calls`) — Claude: 스트림 세션 7개(결과 줄 8개) $0.615, 교차 `claude -p` 3회 중 정상 1회 $0.074(한도·연결 실패 2회는 비용 기록 없음), 합 약 $0.69. Codex: `exec` 10회(모델 차례가 끝난 6회 — 잘못된 모델 이름 4회는 차례 전에 끝났다) 입력 536,711(캐시 입력 403,584)·출력 3,590 토큰, Codex 메인 e2e 2회(세션 기록 입력 164,854 토큰) — 단가표가 없어 비용은 산정하지 않았다. 교차 e2e 시도 15회(codex 7·claude 8, 사전 거부·사람 중지 제외) 소요 합 약 644초.
 
+### 반영 뒤 실제 호스트 재확인
+
+반영 커밋 `c11c3ab`의 `src/`를 같은 PC 에서 실제 Codex 로 다시 확인했다 — codex-cli 0.161.0, 임시 저장소(하네스로 리뷰·분석 배정 직전까지 만든 두 호스트 설치 저장소 포함). 신뢰는 `-c projects=…`·`--dangerously-bypass-hook-trust`로 그 실행에만 주었고, `~/.codex/config.toml`은 시작과 끝의 sha256 이 같고 바이트 단위로 같다. claude 는 띄우지 않았다.
+
+| 항목 | 확인한 것 |
+|---|---|
+| H3 UserPromptSubmit | Codex 가 `powershell.exe -NoProfile -Command "cmd /c code-agent codex-event; exit $LASTEXITCODE"`로 돌렸고(부모 명령줄 실측), 동의 응답 실패(exit 2)로 프롬프트가 막혔다 — 모델에 가지 않아 `turn.completed` 사용량이 0 이다. 옛 꼴에서는 같은 프롬프트가 모델까지 갔다 |
+| H3 PreToolUse | `… ; if ($LASTEXITCODE -ne 0) { exit 2 }`로 돌았다. 거부 JSON(exit 0)은 막혔고, 판정 전에 죽는 경우(stdout 없이 exit 1 을 흉내 낸 래퍼)는 exit 2 로 닫혀 막혔다. 허용 명령은 실행됐다. 모델 없이 같은 꼴을 돌린 사전 확인 — 거부 0·허용 0·판정 전 종료 2·읽기 전용 역할 거부 0(거부 JSON)·동의 실패 2·일반 메시지 0, PATH 에 code-agent 가 없으면 UserPromptSubmit 1(막지 않음)·PreToolUse 2(막음) |
+| H2 샌드박스 쪽 | `-s workspace-write`에서 `review cross --by claude`가 사전 거부됐다(`연결 확인 api.anthropic.com:443 EACCES`). `preflight`·`host-sandbox-denied` 시도 한 건이 남고 지점 시도에는 세지 않았으며, `status`는 '교차 막힘(샌드박스)'·권한 상승 안내·'중지로 기록하지 않았습니다'를 냈다. claude 는 뜨지 않았다 |
+| H2 권한 상승 쪽 | 실제 실행은 하지 못했다([미확인](#실제-호스트에서-확인하지-않은-것)). 샌드박스 밖 셸에 실측 표지(`CODEX_SANDBOX_NETWORK_DISABLED=1`·`CODEX_CI`·`CODEX_THREAD_ID`·`CODEX_VERSION`)를 넣고 함수만 확인했다 — 연결 확인 `ok`(87ms), 사전 판정 통과. `CODE_AGENT_CROSS_PREFLIGHT=off`면 둘 다 하지 않는다 |
+| H4 읽기 전용 담당 | Codex 하위 에이전트 `ca_surveyor`의 hook 입력에 `agent_id`·`agent_type`이 있었다(`session_id`는 부모와 같고 `turn_id`는 자기 것). `apply_patch`와 `code-agent next`는 '읽기 전용 담당입니다'로 거부돼 파일이 생기지 않았고, 읽기 명령은 허용됐다 |
+| H4 계획 담당 | 실제 `ca_analyst`의 SubagentStart 가 첫 도구 호출보다 먼저 와 실행 중 배정에 연결됐고, 그 담당의 `apply_patch`가 'Codex 계획 담당은 파일을 쓰지 않습니다'로 거부됐다. SubagentStop 은 결과 형식 오류로 기록됐다(exit 0 — 되돌리지 않는다) |
+| H4 SessionStart 임대 | 실제 `codex exec`의 SessionStart(`startup`)가 하네스 세션이 쥔 임대를 넘겨받았고(`session-start`) 이어진 진행 명령이 임대로 거부되지 않았다 |
+| H9 | 조율 도구 이름은 `collaborationspawn_agent`·`collaborationwait_agent`이고 미판정 도구로 세지 않았다. 셸 도구는 Windows 에서도 `Bash`·`tool_input.command`다 |
+| H6 | `usage --json`이 실제 세션 기록에서 하위 에이전트 행(`ca-surveyor`·`ca-analyst`)·`CommandExecution` 명령(하위 에이전트 것 포함)·스킬 읽기를 셌고, 메인 행이 `turn.completed` 사용량과 같다 |
+| H5 | `doctor --host codex`가 `-c` 덮어쓰기만 쓴 저장소를 '신뢰 항목이 없습니다'(·)·'훅 신뢰 확인 필요'로 알렸다 |
+
+**호출 수·비용** — `codex exec` 4회(메인 `model_reasoning_effort=low`): 잘못된 모델 1회(토큰 0), 메인 입력 221,605(캐시 입력 152,320)·출력 2,285 토큰, 하위 에이전트 `ca_surveyor` 입력 104,227(캐시 입력 77,568)·출력 253, `ca_analyst` 입력 80,919·출력 779. claude 0회. 비용은 Claude 0달러이고 Codex 는 단가표가 없어 산정하지 않았다.
+
+### 검증 지적 처리
+
+반영 커밋(`b8ebf85..c11c3ab`)을 코드와 실제 호스트로 다시 본 검증 지적이다. 지적마다 코드로 확인했고, 고친 것에는 되돌리면 실패하는 시험을 더했다(검증 지적 반영 커밋, 부모 `c11c3ab`).
+
+| 지적 | 판정 | 처리 |
+|---|---|---|
+| doctor 가 `--cli` 설치의 Stop·Subagent 이벤트를 `commandWindows`가 없다는 이유만으로 `✗`로 셌다 | 맞음 | `commandWindows`가 없으면 Codex 가 돌리는 `command`로 비교한다. 사유는 이벤트별이다 — PreToolUse·UserPromptSubmit 은 종료 코드, `--cli` 없는 설치는 `code-agent.ps1`과 실행 정책 |
+| Codex exit 2 서술이 서로 어긋났다('종료 코드 2로 막지 않는다'고 적고 바로 뒤에서 PreToolUse 프로세스 실패를 exit 2 로 막는다고 적었다) | 맞음 | 'Codex 는 exit 2 와 stderr 사유를 막음으로 받는다(PreToolUse·UserPromptSubmit 은 실제 호출로 확인), code-agent 는 PreToolUse 판정 실패를 거부 JSON 으로 막고 exit 2 는 판정 전 프로세스 실패의 닫힘으로만 쓴다'로 문서·주석을 맞췄다. Stop·SubagentStop 의 exit 2 이어가기는 바이너리 문구로만 보아 미확인에 둔다 |
+| doctor 가 상위 폴더 신뢰를 `✓`로 봤다 | 맞음 | 저장소 자체 항목만 `✓`, 상위 폴더 항목만 있으면 '확인 필요'(`·`)다 |
+| 단일 실행 파일에서 연결 확인(`process.execPath -e`)이 돌지 않는다 | 맞음 | 연결 확인을 같은 프로세스의 worker(`Atomics.wait`로 동기 대기)로 바꿨다. 같은 가정의 `hostCommand`도 `.js` 진입점을 PATH 의 node 로 돌리고(`scriptRunner`), 실행 파일 변수가 가리킨 `.js`를 돌릴 node 가 없으면 설정 오류(게이트 막힘)다 |
+| 이전 버전 절차(`legacy.md`)의 담당 호출에 전경 실행 문장이 없었다 | 맞음 | 다섯 곳에 정본 문장을 넣고 시험이 보조 문서까지 훑는다(담당 호출 16곳) |
+| Windows 시험에 깨진 설치의 UserPromptSubmit 1 단언이 없었다 | 맞음 | 단언을 더했다 |
+| 교차 자식 환경에 Claude 세션 값이 남는다 | 맞음(방어) | 세션 id·자식 세션 표지·pid·추론 강도·사람 응대 표지도 지운다(`CLAUDE_SESSION_ENV`). 세션에 묶이지 않은 `CLAUDE_CODE_EXECPATH`·`AI_AGENT`는 남긴다 |
+| SessionStart 가 없는 옛 Codex 설치의 임대 이행 영향이 문서에 없다 | 맞음(문서) | Codex 문서 갱신 문단에 새 세션이 `takeover`를 요구받는다는 것과 `update --templates-only --host codex`를 적었다 |
+| 게이트 줄이 같은 사유를 두 번 싣는다(기존 동작) | 맞음 | 안내 문구가 사유를 싣으면 '직전 실행:' 뒤에는 라벨만 둔다(`crossLastRun`) |
+| `codex exec`에서 hook 거부가 출력에 드러나지 않는다 | 맞음(문서) | Codex 문서에 적고 `consent status`로 확인하라고 했다 |
+| 권한 상승 셸의 실제 claude 교차(R-H2) | 미확인 | 자동 모드 분류기가 실행 전에 막았다 — [미확인](#실제-호스트에서-확인하지-않은-것)에 사람이 돌릴 절차를 적었다 |
+
 ## 실제 호스트에서 확인하지 않은 것
 
-위 확인 뒤에도 실제 호스트로 확인하지 않은 것이다 — 판독·바이너리 문자열·fixture 로만 확인했다.
+위 확인과 반영 뒤 재확인을 거친 뒤에도 실제 호스트로 확인하지 않은 것이다 — 판독·바이너리 문자열·fixture 로만 확인했다.
 
 - **대화형 AskUserQuestion**(CH3 일부·CH4) — 대화형 세션의 질문 도구 입력 꼴과 긴 본문이 잘리는지. 사람이 대화형 세션에서 확인한다.
-- **Codex 메인 → 실제 claude 교차의 completed 기록**(XE3) — 확인 세션의 자동 모드 분류기가 claude 자식 실행을 막았고 claude 사용 한도에 걸렸다. 연결 확인(H2)을 지난 뒤의 실제 완료 기록은 아직 없다.
+- **Codex 메인 → 실제 claude 교차의 권한 상승 쪽**(XE3·R-H2) — 샌드박스 쪽 사전 거부는 재확인했지만, 권한 상승한 셸에서 연결 확인을 지나 실제 claude 교차가 completed(비용·토큰·캐시 토큰)로 기록되는지와 claude 사용 한도(429)가 실행 불가(`cross-unavailable`·`quota` — 중지 기록 후 진행)로 분류되는지는 실제로 보지 못했다. 확인 세션은 Claude Code 자동 모드 분류기가 그 `codex exec`(`approval_policy=on-request`·`--approve-for-me`)를 실행 전에 막았고(거부 사유 `Create Unsafe Agents`), 그 전에는 claude 사용 한도에 걸렸다. 사람이 Claude Code 밖의 터미널에서 확인한다 — 두 호스트를 설치하고 리뷰 직전까지 진행한 임시 저장소에서 Codex(승인 `on-request`)에 `code-agent review cross --by claude`를 샌드박스 안에서 한 번, 권한 상승으로 한 번 실행하게 한다. 기대: 첫 번째는 같은 사전 거부(같은 사유면 시도가 늘지 않는다), 두 번째는 `.code-agent/work/<작업>/value.review.json` 마지막 회차 `crossAttempts`에 `mode: review`·`completed`(`usage`의 `costUsd`·`inputTokens`·`cacheCreationInputTokens`·`cacheReadInputTokens`), 한도면 `cross-unavailable`·`quota`. 끝나면 `~/.codex/config.toml`이 시작과 같은지 본다. 이 확인 세션의 하네스로는 scratchpad `realhost2`에서 `node tools/run-codex3.cjs x3-cross-sandbox-then-escalated cross/repo-e2e-both-codex-rh2 tools/prompt-x3.txt -- -c 'approval_policy="on-request"' --approve-for-me -c model_reasoning_effort=low`이다(하네스가 신뢰를 그 실행에만 준다).
 - **code-agent 의 Codex 교차 자식**(`codex exec -s read-only --ephemeral`)에서 프로젝트 hook 이 도는지 — 추론만 했다. 교차 자식의 hook 은 진행 기록을 하지 않고 PreToolUse 는 진행 명령·쓰기를 거부하므로 돌든 안 돌든 작업 기록은 바뀌지 않는다.
 - **Codex hook 신뢰 기록의 키 꼴**(`config.toml`의 `hooks.state`) — 바이너리 문자열로만 보았다. doctor 는 찾지 못하면 '확인 필요'로 둔다.
+- **Codex 의 상위 폴더 신뢰** — 상위 폴더의 `trust_level`을 그 안의 저장소에 적용하는지. 실측한 신뢰 항목은 모두 저장소 경로 자체였다. doctor 는 상위 폴더 항목만 있으면 '확인 필요'로 둔다.
+- **Codex 대화형 TUI 의 hook 거부 표시** — `codex exec`에서는 동의 응답 거부의 사유가 출력에 없고 PreToolUse 거부는 모델 답으로만 보였다(재확인). 대화형 화면은 보지 않았다.
 - 실제 오류 문구 중 인증·서비스 장애(두 호스트)와 Codex 의 사용 한도·네트워크 문구 — 교차 실패 분류 화이트리스트(C1). 처음 보는 문구는 설정 오류(막힘)로 간다.
 - Codex 셸의 PTY 실행 여부 — 직접 CLI 확인(`confirmOnTerminal`)이 호스트 표지를 보지 않는 한계가 여기에 걸린다.
-- Codex SubagentStop 의 되돌림 지원(HP-15).
+- Codex SubagentStop·Stop 의 exit 2 이어가기(HP-15) — 0.161.0 바이너리에는 'SubagentStop hook exited with code 2 but did not write a continuation prompt' 같은 문구가 있어 exit 2 와 stderr 를 이어가기로 받는 것으로 보이지만 실제로 확인하지 않았다. code-agent 는 Codex 담당을 되돌리지 않는다(언제나 기록 후 0).
 - Claude Code 가 `xhigh`·`max`를 `high`로 낮추는지(바이너리 문자열로만 확인), 이전 설치의 하위 에이전트가 세션 강도를 물려받았는지(C6).
 - `/clear` 뒤 SessionStart 의 `source` 값, Claude Code 의 PowerShell 도구 대체 버전(C5).
 - Codex 를 메인으로 한 접수부터 반영까지의 전체 흐름(HP-21).
-- 단일 실행 파일(SEA) 빌드 — 돌리지 않았다. esbuild 번들로 지연 `require`만 확인했다(C7).
+- 단일 실행 파일(SEA) 빌드 — 돌리지 않았다. esbuild 번들로 지연 `require`만 확인했다(C7). 같은 프로세스 worker 의 연결 확인과 `.js` 진입점의 PATH node 해석도 단일 실행 파일로는 돌려 보지 않았다(npm 설치에서 `process.execPath`를 없는 경로로 바꾼 시험만 했다).
 
 ## 유료 A/B 측정 — 미실행
 

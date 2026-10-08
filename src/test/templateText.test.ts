@@ -63,11 +63,12 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
   const FOREGROUND = "Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).";
   const CODEX = "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다.";
   assert.ok(CODEX_SENTENCES.some(([from, to]) => from === FOREGROUND && to === CODEX), "codexText 치환이 없습니다");
-  const call = /`ca-(?:analyst|explorer|writer|critic|reviewer|implementer|surveyor|tester)`[^\n]*?(?:부른다|맡긴다|쓰게 한다|옮기게 한다)|`agent` 서브에이전트를 호출/;
+  const call = /`ca-(?:analyst|explorer|writer|critic|reviewer|implementer|surveyor|tester)`[^\n]*?(?:부른다|맡긴다|쓰게 한다|옮기게 한다|요청한다|검토를 받는다)|`agent` 서브에이전트를 호출/;
   const codex = hostAssets("codex");
   let calls = 0;
   for (const [path, text] of claudeTexts()) {
-    if (!path.startsWith("skills/") || !path.endsWith("/SKILL.md")) continue;
+    // SKILL.md 와 필요할 때 읽는 보조 문서(legacy.md 등 — 이전 버전 작업 절차도 담당을 부른다)
+    if (!path.startsWith("skills/") || !path.endsWith(".md")) continue;
     const lines = text.split("\n");
     lines.forEach((line, index) => {
       if (!call.test(line)) return;
@@ -75,10 +76,10 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
       assert.ok(`${line}\n${lines[index + 1] ?? ""}`.includes(FOREGROUND), `${path}:${index + 1} 담당 호출에 전경 실행 문장이 없습니다: ${line.slice(0, 60)}`);
     });
     const copy = codex.get(`.agents/${path}`);
-    if (copy === undefined || path === "skills/ca-answer/SKILL.md") continue;
+    if (copy === undefined || path.startsWith("skills/ca-answer/")) continue;
     assert.equal(copy.split(CODEX).length, text.split(FOREGROUND).length, `${path} 의 Codex 사본에 기다림 문장 수가 다릅니다`);
     assert.doesNotMatch(copy, /run_in_background|Agent 도구/, path);
   }
-  // 계획 스킬 4개·ca-review·ca-implement·ca-test·ca-check·ca-docs 둘·ca-adopt
-  assert.equal(calls, 11);
+  // 계획 스킬 4개·ca-review·ca-implement·ca-test·ca-check·ca-docs 둘·ca-adopt, 이전 버전 절차(legacy.md) — 분석·설계·계획 하나씩·영향도 둘
+  assert.equal(calls, 16);
 });

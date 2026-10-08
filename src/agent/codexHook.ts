@@ -148,7 +148,8 @@ function codexEvent(input: CodexHookInput): object {
   if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "SubagentStop") {
     // Codex transcript는 안정된 API가 아니다. 호스트가 전달한 최종 응답만 관찰한다.
     const event = {...input, agent_type: commonAgentName(input.agent_type), transcript_path: undefined, agent_transcript_path: undefined};
-    // Codex 는 exit 2 로 담당을 되돌리지 않는다 — 계획 담당의 실패는 되돌림 없이 바로 기록한다.
+    // Codex 담당은 exit 2 로 되돌리지 않는다(subagentExit — 0.161.0 바이너리에는 SubagentStop exit 2 를 이어가기로 받는 문구가 있으나
+    // 실제로 확인하지 않아 쓰지 않는다, HP-15) — 계획 담당의 실패는 되돌림 없이 바로 기록한다.
     // 이벤트별 모듈은 그 분기에서만 읽는다 — 모든 이벤트가 담당 관찰·Stop 판정 그래프를 함께 읽지 않게(hookLoad.test)
     (require("./planningHook") as typeof import("./planningHook")).observePlanner(event, root, {host: "codex"});
     (require("./reviewHook") as typeof import("./reviewHook")).observeReviewer(event, root, "codex");
@@ -171,9 +172,11 @@ function codexEvent(input: CodexHookInput): object {
 }
 
 /**
- * 판정 실패의 결과를 Claude 훅과 맞춘다(retryPolicy.hookFailureExit 표). Codex는 exit 2로 도구를 막거나 턴을 이어가지 않는다.
- * PreToolUse(와 읽지 못한 입력)는 deny JSON 으로 막고, Stop은 턴을 막지 않는다. UserPromptSubmit 은 동의 응답만 막고(exit 2 — 사유를 보인다)
- * 그 밖의 사용자 메시지는 막지 않는다. Subagent 이벤트는 subagentExit(Codex 는 언제나 0)이다.
+ * 판정 실패의 결과를 Claude 훅과 맞춘다(retryPolicy.hookFailureExit 표). Codex(0.161.0)는 exit 2 와 stderr 사유를 막음으로 받는다 —
+ * PreToolUse·UserPromptSubmit 은 실제 호출로 확인했다(Stop·SubagentStop 의 exit 2 이어가기는 바이너리 문구로만 보았다).
+ * PreToolUse 판정 실패(와 읽지 못한 입력)는 deny JSON 으로 막고, exit 2 는 판정 전 프로세스 실패의 닫힘(설치 명령의 `|| exit 2`·
+ * `$LASTEXITCODE`)으로만 쓴다. Stop은 턴을 막지 않는다. UserPromptSubmit 은 동의 응답만 막고(exit 2 — 사유를 stderr 로 보인다)
+ * 그 밖의 사용자 메시지는 막지 않는다. Subagent 이벤트는 subagentExit(Codex 는 언제나 0 — 되돌리지 않는다)이다.
  */
 export function runCodexHook(stdin: string): number {
   // 거부·안내 문구는 Codex 표기(스킬 `$ca-x`, 역할 `ca_x`, 질문 도구·셸·파일 도구)로 만든다 — 예외 문구도 같은 범위에서 만든다
@@ -195,7 +198,7 @@ function runCodexEvent(stdin: string): number {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (event === "SubagentStart" || event === "SubagentStop") {
-      // 기록한 실패든 기록하지 못한 판정 실패든 Codex 는 exit 2 로 턴을 잇지 않는다 — 사유만 남기고 통과한다
+      // 기록한 실패든 기록하지 못한 판정 실패든 Codex 담당은 되돌리지 않는다(subagentExit) — 사유만 남기고 통과한다
       process.stderr.write(`code-agent codex-event: ${message}\n`);
       process.stdout.write("{}");
       return subagentExit({host: "codex", event, recorded: recordedFailure(error)});

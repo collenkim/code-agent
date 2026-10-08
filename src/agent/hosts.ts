@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { assetKeys, assetText, CLAUDE_ASSETS } from "./assets";
+import { assetKeys, assetText, CLAUDE_ASSETS, isPackaged } from "./assets";
 import { isBatchScript, resolveExecutable } from "../core/build";
 import { Stop } from "./stop";
 import { codexModelOf, codexModelText, type AgentName } from "./modelPolicy";
@@ -27,31 +27,46 @@ export function selectedHosts(root: string, selected?: HostSelection): Host[] {
 }
 /**
  * 교차 검증이 다른 호스트를 실행할 명령. 테스트·사내 배포는 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꾼다
- * (.js 면 node 로). 못 쓰면 그 이유(문자열)를 돌려준다 — 교차 검증은 두 호스트를 모두 실행할 수 있을 때만 돈다.
+ * (.js 면 node 로 — scriptRunner). 못 쓰면 그 이유(문자열)를 돌려준다 — 교차 검증은 두 호스트를 모두 실행할 수 있을 때만 돈다.
  */
 const CONFIG_MISSING = "가 가리키는 파일이 없습니다";
 const CONFIG_SCRIPT = "는 셸 스크립트라 직접 실행할 수 없습니다";
+const CONFIG_NODE = "는 .js 라 node 가 필요한데 PATH 에서 node 실행 파일을 찾지 못했습니다(단일 실행 파일)";
+/**
+ * .js 진입점을 돌릴 node — npm 설치면 지금 node(process.execPath). 단일 실행 파일이면 process.execPath 가 code-agent 자신이라 다른 스크립트를
+ * 돌리지 못하므로 PATH 의 node 실행 파일을 쓴다(셸 스크립트만 있거나 없으면 undefined)
+ */
+export function scriptRunner(packaged: boolean = isPackaged(), env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (!packaged) return process.execPath;
+  const found = resolveExecutable(process.cwd(), "node", env, { skipLocal: true });
+  return found && !isBatchScript(found) ? found : undefined;
+}
 /**
  * hostCommand 의 실패 이유가 사람이 설정으로 고치는 것인가 — 실행 파일 변수(CODE_AGENT_*_BIN)가 없는 파일을 가리키거나 PATH 에
- * 셸 스크립트(.cmd·.bat)만 있다. 교차 실패 분류에서 실행 불가(중지 기록 후 진행)가 아니라 설정 오류(게이트 막힘)다 — 경로 오타 하나로
- * 필수 교차 검증이 조용히 빠지지 않게. PATH·npm 어디에도 없는 미설치만 실행 불가다.
+ * 셸 스크립트(.cmd·.bat)만 있거나, 단일 실행 파일에서 변수가 가리킨 .js 를 돌릴 node 가 PATH 에 없다. 교차 실패 분류에서 실행 불가(중지
+ * 기록 후 진행)가 아니라 설정 오류(게이트 막힘)다 — 경로 오타 하나로 필수 교차 검증이 조용히 빠지지 않게. PATH·npm 어디에도 없는 미설치만
+ * 실행 불가다.
  */
 export function hostCommandConfigError(reason: string): boolean {
-  return reason.includes(CONFIG_MISSING) || reason.includes(CONFIG_SCRIPT);
+  return reason.includes(CONFIG_MISSING) || reason.includes(CONFIG_SCRIPT) || reason.includes(CONFIG_NODE);
 }
 export function hostCommand(host: Host): { file: string; prefix: string[] } | string {
   const key = host === "claude" ? "CODE_AGENT_CLAUDE_BIN" : "CODE_AGENT_CODEX_BIN";
   const configured = process.env[key];
   if (configured) {
     if (!existsSync(configured)) return `${key} ${CONFIG_MISSING}: ${configured}`;
-    return /\.c?js$/i.test(configured) ? { file: process.execPath, prefix: [configured] } : { file: configured, prefix: [] };
+    if (!/\.c?js$/i.test(configured)) return { file: configured, prefix: [] };
+    const node = scriptRunner();
+    return node ? { file: node, prefix: [configured] } : `${key} ${CONFIG_NODE}: ${configured}`;
   }
   // npm 의 .cmd 는 셸 없이 실행되지 않고 여러 줄 프롬프트를 cmd.exe 로 넘길 수 없다 — 설치된 Node 진입점을 직접 부른다
   if (process.platform === "win32" && process.env.APPDATA) {
     const script = host === "codex"
       ? join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
       : join(process.env.APPDATA, "npm", "node_modules", "@anthropic-ai", "claude-code", "cli.js");
-    if (existsSync(script)) return { file: process.execPath, prefix: [script] };
+    // 단일 실행 파일에서 PATH 에 node 가 없으면 이 진입점을 돌리지 못한다 — 아래 PATH 해석으로 넘어간다
+    const node = scriptRunner();
+    if (node && existsSync(script)) return { file: node, prefix: [script] };
   }
   const found = resolveExecutable(process.cwd(), host, process.env, { skipLocal: true });
   if (!found) return `${host} 실행 파일을 PATH 에서 찾지 못했습니다`;

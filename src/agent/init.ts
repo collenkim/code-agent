@@ -138,15 +138,21 @@ function installedCodexWindows(repoRoot: string, event: string): string | undefi
 }
 /**
  * Codex 우리 항목의 Windows 명령이 이 버전이 설치하는 꼴(codexWindowsCommand)과 다르면 그 사유 — 같으면 undefined.
- * --cli 는 설치된 command(`node "<경로>" codex-event`)에서 되찾는다(update 의 승계와 같다)
+ * --cli 는 설치된 command(`node "<경로>" codex-event`)에서 되찾는다(update 의 승계와 같다). commandWindows 가 없으면 Codex 는 command 를
+ * 그대로 PowerShell 로 돌리므로 그 command 가 기대하는 꼴과 같으면 문제가 아니다(--cli 설치의 Stop·Subagent·SessionStart). 사유는 이벤트별이다 —
+ * 종료 코드를 넘겨야 하는 이벤트(PreToolUse·UserPromptSubmit)는 종료 코드, --cli 없는 설치는 npm 의 code-agent.ps1 과 실행 정책이다
  */
 export function codexWindowsProblem(repoRoot: string, event: (typeof CODEX_EVENTS)[number]): string | undefined {
   const command = installedHook(repoRoot, event, "codex-event", "codex");
   if (command === undefined) return undefined;
   const cli = /^node\s+"([^"]+)"/.exec(command)?.[1];
   const expected = codexWindowsCommand(event, cli), installed = installedCodexWindows(repoRoot, event);
-  if (installed === expected) return undefined;
-  return `Windows 명령(commandWindows)이 이 버전의 꼴과 다릅니다(${installed === undefined ? "없음" : installed}) — Windows PowerShell 이 종료 코드를 바꿔 막아야 할 실패가 통과할 수 있습니다`;
+  if ((installed ?? command) === expected) return undefined;
+  const reasons = [
+    ...(event === "PreToolUse" || event === "UserPromptSubmit" ? ["Windows PowerShell 이 종료 코드를 바꿔 막아야 할 실패가 통과할 수 있습니다"] : []),
+    ...(cli ? [] : ["PowerShell 이 npm 의 code-agent.ps1 을 골라 실행 정책(Restricted 등)에 따라 hook 이 돌지 않을 수 있습니다"]),
+  ];
+  return `Windows 명령(commandWindows)이 이 버전의 꼴과 다릅니다(${installed === undefined ? "없음" : installed}) — ${reasons.length ? reasons.join(" · ") : "이 버전이 설치하는 명령과 다르게 돕니다"}`;
 }
 
 /**

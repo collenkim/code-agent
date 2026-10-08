@@ -441,6 +441,15 @@ export function crossHintText(hint: FailureRecord, values: { host: string; point
     recordedVariant(hint, { attempts: values.attempts, left })).replace(/\n/g, " ");
 }
 /**
+ * 교차 게이트 줄(리뷰·계획)의 '직전 실행' 꼬리 — 라벨, 사유, 원인별 안내(crossHintText). 안내 문구가 같은 사유를 이미 싣으면(대부분의 원인이
+ * `{detail}`을 싣는다) 사유는 안내에만 두어 한 줄에 같은 사유가 두 번 나오지 않게 한다. 안내가 싣지 않으면 라벨 뒤에 120자까지 붙인다
+ */
+export function crossLastRun(label: string, detail: string | undefined, hint: string): string {
+  const shown = oneLine(detail, 600);
+  const repeated = !shown || hint.replace(/\s+/g, " ").includes(shown);
+  return ` — 직전 실행: ${label}${repeated ? "" : `: ${shown.slice(0, 120)}`}. ${hint}`;
+}
+/**
  * 교차 게이트 줄(리뷰 reviewProblems·계획 crossCriticProblems)이 실행 명령을 앞세우지 않는 지점 — 한도로 거부될 지점(limit-exceeded)과
  * 네트워크 오류가 권한 상승 안내 뒤에 되풀이돼 사람에게 넘긴 지점(recordedVariant 의 network-exhausted)은 "limit" 이다: 명령을 싣지 않는다
  * (그 명령은 거부되고 남은 길은 사람 판단이다). 지점 시도가 남은 network-repeat 은 "network" 다: 사용자가 네트워크를 확인한 뒤에만 다시

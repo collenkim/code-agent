@@ -3,15 +3,18 @@
  *
  * Codex 의 프로젝트 hook(`.codex/hooks.json`)은 프로젝트 신뢰(`[projects.'<경로>'] trust_level = "trusted"`)와 hook 검토·신뢰가
  * 둘 다 있어야 돈다. 신뢰되지 않은 hook 을 `codex exec` 는 알리지 않고 건너뛴다(codex-cli 0.161.0, 2026-10-08 실측). 프로젝트 신뢰의
- * 꼴은 실측이다 — Windows 는 경로를 소문자·역슬래시로 적는다. hook 신뢰는 바이너리 문자열(`hooks.state."…".trusted_hash`)로만 확인했고
- * 키의 꼴은 확인하지 못했다 — 그래서 기록을 찾으면 알리고, 못 찾으면 '확인 필요' 로 둔다(없다고 단정하지 않는다).
+ * 꼴은 실측이다 — Windows 는 경로를 소문자·역슬래시로 적는다. 실측한 항목은 모두 저장소 경로 자체였고, 상위 폴더의 신뢰를 Codex 가
+ * 그 안의 저장소에 적용하는지는 확인하지 못했다 — 그래서 저장소 자체의 항목만 신뢰로 보고 상위 폴더 항목만 있으면 '확인 필요'(parent)로 둔다.
+ * hook 신뢰는 바이너리 문자열(`hooks.state."…".trusted_hash`)로만 확인했고 키의 꼴은 확인하지 못했다 —
+ * 그래서 기록을 찾으면 알리고, 못 찾으면 '확인 필요' 로 둔다(없다고 단정하지 않는다).
  */
 import { existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 
 export interface CodexTrust {
-  project: "trusted" | "untrusted" | "missing" | "no-config" | "unreadable";
+  /** parent — 상위 폴더 항목만 있다(Codex 가 적용하는지 확인하지 못했다 — doctor 는 ✓ 로 보지 않는다) */
+  project: "trusted" | "parent" | "untrusted" | "missing" | "no-config" | "unreadable";
   projectText: string;
   hooks: "recorded" | "unknown";
   hooksText: string;
@@ -28,7 +31,7 @@ export function codexConfigPath(env: Readonly<Record<string, string | undefined>
   return join(env.CODEX_HOME?.trim() || join(homedir(), ".codex"), "config.toml");
 }
 
-/** 저장소 루트와 그 상위 폴더(실제 경로) — 가까운 것부터 */
+/** 저장소 루트와 그 상위 폴더(실제 경로) — 가까운 것부터. 첫 원소가 저장소 자체다 */
 function candidates(repoRoot: string): string[] {
   let current: string;
   try { current = realpathSync.native(repoRoot); } catch { current = resolve(repoRoot); }
@@ -74,12 +77,15 @@ export function codexTrust(repoRoot: string, env: Readonly<Record<string, string
     }
   }
   const roots = candidates(repoRoot);
-  const found = roots.map((root) => projects.get(root)).find((entry) => entry !== undefined);
+  const own = projects.get(roots[0]);
+  const found = own ?? roots.slice(1).map((root) => projects.get(root)).find((entry) => entry !== undefined);
   const where = `${config} 의 [projects.'${found?.key ?? ""}']`;
-  const project: CodexTrust["project"] = !found ? "missing" : found.trust === "trusted" ? "trusted" : "untrusted";
+  const project: CodexTrust["project"] = !found ? "missing" : !own ? "parent" : found.trust === "trusted" ? "trusted" : "untrusted";
   const projectText = project === "trusted" ? `${where} trust_level = "trusted"`
     : project === "untrusted" ? `${where} trust_level = "${found?.trust ?? "(없음)"}" — 신뢰하지 않은 프로젝트에서는 프로젝트 hook·설정이 꺼집니다`
-    : `${config} 에 이 저장소(또는 상위 폴더)의 신뢰 항목이 없습니다 — 신뢰 전에는 프로젝트 hook·설정이 꺼집니다`;
+    : project === "parent" ? `확인 필요 — 상위 폴더 항목 ${where} trust_level = "${found?.trust ?? "(없음)"}" 만 있습니다. Codex 가 상위 폴더 신뢰를 이 저장소에 ` +
+      "적용하는지 확인하지 못했습니다 — 이 저장소를 직접 신뢰하세요(신뢰되지 않으면 codex exec 는 프로젝트 hook 을 알리지 않고 건너뜁니다)"
+    : `${config} 에 이 저장소의 신뢰 항목이 없습니다 — 신뢰 전에는 프로젝트 hook·설정이 꺼집니다`;
   const recorded = hookKeys.some((key) => key.includes(roots[0]));
   return { project, projectText, hooks: recorded ? "recorded" : "unknown",
     hooksText: recorded ? `${config} 에 이 저장소의 hook 신뢰 기록(hooks.state)이 있습니다 — .codex/hooks.json 이 바뀌면 Codex 가 다시 검토를 요구합니다` : unknownHooks };

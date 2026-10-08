@@ -663,6 +663,10 @@ test("H2 Windows Codex 의 권한 상승한 셸(표지가 남는다) — 연결 
   netProbeRunner.connect = (host, port) => { seen.push(`${host}:${port}`); return "EACCES"; };
   assert.throws(marked, refusal(/샌드박스가 claude 실행을 막았습니다[\s\S]*연결 확인 api\.anthropic\.com:443 EACCES\)[\s\S]*권한 상승/));
   assert.equal(calls(), 0);
+  // 게이트 줄 — 안내 문구가 사유를 싣으므로 '직전 실행:' 뒤에는 라벨만 둔다(같은 사유가 한 줄에 두 번 나오지 않는다)
+  const gate = crossGate();
+  assert.match(gate, /직전 실행: 막힘\(샌드박스\)\. Codex 샌드박스가 claude 실행을 막았습니다\(/);
+  assert.equal(gate.split("연결 확인 api.anthropic.com:443 EACCES").length, 2, gate);
   netProbeRunner.connect = (host, port) => { seen.push(`${host}:${port}`); return "ok"; };
   assert.match(marked(), /claude\([^)]*\) 교차 리뷰를 1회차에 기록했습니다 — 지적 없음/);
   assert.equal(calls(), 1);

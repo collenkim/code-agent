@@ -6,13 +6,14 @@ import { test } from "node:test";
 
 import { crossFlags, crossInvocation, crossInvocationArgs, crossNetProbe, crossSandboxSuspect, crossSectionText, netProbeRunner, netProbeTarget, normalizeCrossBody, runCross } from "../agent/crossCheck";
 import {
-  attemptLabel, crossAttemptsOf, crossStopStreak, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
+  attemptLabel, crossAttemptsOf, crossLastRun, crossStopStreak, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
   planningCrossView, pointHost, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyPlanning, syncLegacyRound, waiveVerdict,
   type CrossAttempt, type PlanningCrossAttempt, type ReviewerRun,
 } from "../agent/crossRecord";
 import type { PlanningState } from "../agent/planningState";
 import { classifyCrossFailure, crossPointDecision, crossPointState, guidance, recordedVariant, TIMING } from "../agent/retryPolicy";
 import { renderRoundsBlock, staleWaiver, waived, type Finding, type ReviewLog, type ReviewRound } from "../agent/review";
+import { hostCommandConfigError, scriptRunner } from "../agent/hosts";
 import { deadPid } from "./deadPid";
 
 const F = /^F\d+$/, X = /^X\d+$/;
@@ -347,9 +348,43 @@ test("H2 연결 확인 — 표지가 있는 셸의 --by claude 에서만, 대상
   });
   const open = await listen();
   try { assert.equal(netProbeRunner.connect("127.0.0.1", open.port, 3_000), "ok"); } finally { await open.close(); }
+  // 같은 프로세스 안에서 확인한다 — 단일 실행 파일처럼 process.execPath 로 node 를 띄울 수 없어도 결과가 같다
+  const again = await listen();
+  const execPath = process.execPath;
+  try {
+    process.execPath = join(tmpdir(), "code-agent-sea-없는-node.exe");
+    assert.equal(netProbeRunner.connect("127.0.0.1", again.port, 3_000), "ok");
+  } finally { process.execPath = execPath; await again.close(); }
   const closed = await listen();
   await closed.close();
   assert.equal(netProbeRunner.connect("127.0.0.1", closed.port, 3_000), "ECONNREFUSED");
+});
+
+test("게이트 줄의 직전 실행 — 안내가 사유를 싣으면 라벨만, 싣지 않으면 라벨 뒤에 사유(120자까지)", () => {
+  assert.equal(crossLastRun("막힘(샌드박스)", "연결 확인 EACCES", "Codex 샌드박스가 claude 실행을 막았습니다(연결 확인 EACCES) — 권한 상승"),
+    " — 직전 실행: 막힘(샌드박스). Codex 샌드박스가 claude 실행을 막았습니다(연결 확인 EACCES) — 권한 상승");
+  assert.equal(crossLastRun("막힘(설정 오류)", "줄\n  바꿈 사유", "설정 오류 — 줄 바꿈 사유 — 고친 뒤"), " — 직전 실행: 막힘(설정 오류). 설정 오류 — 줄 바꿈 사유 — 고친 뒤", "공백을 접어 비교한다");
+  assert.equal(crossLastRun("중지", "x".repeat(200), "한도를 다 썼습니다"), ` — 직전 실행: 중지: ${"x".repeat(120)}. 한도를 다 썼습니다`);
+  assert.equal(crossLastRun("중지", undefined, "안내"), " — 직전 실행: 중지. 안내");
+});
+
+test("단일 실행 파일의 .js 진입점 — process.execPath(code-agent 자신)가 아니라 PATH 의 node 로 돌리고, 없으면 설정 오류다", () => {
+  assert.equal(scriptRunner(false), process.execPath, "npm 설치는 지금 node");
+  const bin = mkdtempSync(join(tmpdir(), "ca-sea-node-"));
+  try {
+    const exe = join(bin, process.platform === "win32" ? "node.exe" : "node");
+    writeFileSync(exe, "");
+    const env = { PATH: bin, PATHEXT: ".EXE;.CMD" };
+    assert.equal(scriptRunner(true, env)?.toLowerCase(), exe.toLowerCase());
+    assert.equal(scriptRunner(true, { PATH: join(bin, "없음"), PATHEXT: ".EXE;.CMD" }), undefined);
+    if (process.platform === "win32") {
+      rmSync(exe);
+      writeFileSync(join(bin, "node.cmd"), "@echo off\r\n");
+      assert.equal(scriptRunner(true, env), undefined, "셸 스크립트 node 는 직접 실행할 수 없다");
+    }
+  } finally { rmSync(bin, { recursive: true, force: true }); }
+  assert.equal(hostCommandConfigError("CODE_AGENT_CLAUDE_BIN 는 .js 라 node 가 필요한데 PATH 에서 node 실행 파일을 찾지 못했습니다(단일 실행 파일): x.js"), true,
+    "실행 파일 변수가 가리킨 .js 를 돌릴 수 없으면 설정 오류(게이트 막힘)다");
 });
 
 test("H1 claude 교차 성공 — 캐시 생성·읽기 토큰을 usage 에 따로 남긴다(inputTokens 는 캐시 밖 입력)", () => {

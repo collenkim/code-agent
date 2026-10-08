@@ -9,6 +9,9 @@
 export type HostName = "claude" | "codex";
 type Env = Readonly<Record<string, string | undefined>>;
 
+/** 교차 자식 환경에서 지우는 부른 Claude 세션의 값 — 메시지 통로·세션 id·자식 세션 표지·pid·추론 강도·사람 응대 표지 */
+export const CLAUDE_SESSION_ENV = ["CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_SESSION_ATTENDED"] as const;
 /** 교차 실행이 자식 환경에 넣는 표지 — 값은 실행한 호스트 이름이다 */
 export const CROSS_CHILD_ENV = "CODE_AGENT_CROSS";
 /**
@@ -56,8 +59,9 @@ export function otherHost(host: HostName): HostName { return host === "claude" ?
 export function crossChildEnv(base: Env, host: HostName): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...base };
   delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; delete env.NODE_TEST_CONTEXT;
-  // 부른 Claude 세션의 메시지 통로(claude 2.1.293 의 Bash 셸 환경에 있다) — 교차 자식이 부모 세션에 붙지 않게 한다
-  delete env.CLAUDE_CODE_MESSAGING_SOCKET; delete env.CLAUDE_CODE_MESSAGING_TOKEN;
+  // 부른 Claude 세션에 묶인 값(claude 2.1.293 의 Bash 셸·hook 환경에 있다) — 교차 자식이 부모 세션에 붙거나 그 세션의 추론 강도를 물려받지 않게
+  // 한다(강도는 역할 모델 설정이 주는 --effort 를 따른다). 세션에 묶이지 않은 CLAUDE_CODE_EXECPATH(실행 파일 경로)·AI_AGENT(일반 표지)는 남긴다
+  for (const key of CLAUDE_SESSION_ENV) delete env[key];
   env[CROSS_CHILD_ENV] = host;
   return env;
 }

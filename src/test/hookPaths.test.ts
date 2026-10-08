@@ -128,7 +128,7 @@ test("T-13-3·T-13-4·H3 설치 — Claude matcher 에 mcp__.*, Codex PreToolUse
   init(root, { host: "both", cli });
   const claude = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
   assert.match("mcp__fs__write_file", new RegExp(`^(${claude.hooks.PreToolUse[0].matcher})$`));
-  const codexHooks = () => JSON.parse(readFileSync(join(root, ".codex/hooks.json"), "utf8")).hooks as Record<string, { hooks: { command: string; commandWindows?: string }[] }[]>;
+  const codexHooks = () => JSON.parse(readFileSync(join(root, ".codex/hooks.json"), "utf8")).hooks as Record<string, { hooks: { type?: string; command: string; commandWindows?: string }[] }[]>;
   const codex = codexHooks();
   const [pretool] = codex.PreToolUse[0].hooks;
   const node = `node "${cli.replace(/\\/g, "/")}" codex-event`;
@@ -156,6 +156,22 @@ test("T-13-3·T-13-4·H3 설치 — Claude matcher 에 mcp__.*, Codex PreToolUse
   const text = doctor(root).text;
   assert.match(text, /✗ Codex PreToolUse: Windows 명령\(commandWindows\)이 이 버전의 꼴과 다릅니다[\s\S]*update --templates-only --host codex/);
   assert.match(text, /✗ Codex UserPromptSubmit: Windows 명령/);
+  // --cli 설치의 Stop·Subagent·SessionStart 는 commandWindows 가 없어도 Codex 가 같은 node 명령을 PowerShell 로 돌린다 — 문제가 아니다
+  for (const event of ["Stop", "SubagentStart", "SubagentStop", "SessionStart"] as const) {
+    delete old[event][0].hooks[0].commandWindows;
+  }
+  writeFileSync(join(root, ".codex/hooks.json"), JSON.stringify({ hooks: old }, null, 2));
+  for (const event of ["Stop", "SubagentStart", "SubagentStop", "SessionStart"] as const) assert.equal(codexWindowsProblem(root, event), undefined, event);
+  assert.doesNotMatch(doctor(root).text, /✗ Codex (Stop|SubagentStart|SubagentStop|SessionStart):/);
+  assert.match(codexWindowsProblem(root, "UserPromptSubmit") ?? "", /종료 코드/);
+  assert.doesNotMatch(codexWindowsProblem(root, "UserPromptSubmit") ?? "", /code-agent\.ps1/, "--cli 설치는 .ps1 을 고르지 않는다");
+  // --cli 없는 옛 설치(command 만 `code-agent codex-event`)의 Stop 은 실행 정책 사유다
+  const plainOld = codexHooks();
+  plainOld.Stop[0].hooks[0] = { type: "command", command: "code-agent codex-event" };
+  writeFileSync(join(root, ".codex/hooks.json"), JSON.stringify({ hooks: plainOld }, null, 2));
+  assert.match(codexWindowsProblem(root, "Stop") ?? "", /\(없음\) — PowerShell 이 npm 의 code-agent\.ps1/);
+  assert.doesNotMatch(codexWindowsProblem(root, "Stop") ?? "", /종료 코드/);
+  writeFileSync(join(root, ".codex/hooks.json"), JSON.stringify({ hooks: old }, null, 2));
   const updated = update(root, { host: "codex" });
   assert.match(updated, /\.codex\/hooks\.json: 갱신/);
   for (const event of CODEX_EVENTS) assert.equal(codexWindowsProblem(root, event), undefined, event);
@@ -202,7 +218,7 @@ function powershellHook(command: string, stdin: string, env: NodeJS.ProcessEnv, 
   return { status: run.status, stdout: run.stdout ?? "" };
 }
 
-test("H3 Windows — 설치된 commandWindows 를 PowerShell 로 돌리면 PreToolUse 실패는 2, 동의 응답 실패 2 는 그대로, node 가 없으면 PreToolUse 2·UserPromptSubmit 0", { skip: process.platform !== "win32" }, () => {
+test("H3 Windows — 설치된 commandWindows 를 PowerShell 로 돌리면 PreToolUse 실패는 2, 동의 응답 실패 2 는 그대로, cli 가 없으면 PreToolUse 2·UserPromptSubmit 1, node 가 없으면 PreToolUse 2·UserPromptSubmit 0", { skip: process.platform !== "win32" }, () => {
   init(root, { host: "codex", cli });
   const hooks = JSON.parse(readFileSync(join(root, ".codex/hooks.json"), "utf8")).hooks as Record<string, { hooks: { commandWindows: string }[] }[]>;
   const windows = (event: string) => hooks[event][0].hooks[0].commandWindows;
@@ -215,8 +231,11 @@ test("H3 Windows — 설치된 commandWindows 를 PowerShell 로 돌리면 PreTo
   const allowed = powershellHook(windows("PreToolUse"), shell, process.env);
   assert.deepEqual([allowed.status, allowed.stdout], [0, "{}"]);
   // cli 가 없는 설치(모듈 로드 전 종료 1) — PreToolUse 는 2 로 닫는다
-  const broken = windows("PreToolUse").replace(cli.replace(/\\/g, "/"), join(root, "없는-cli.js").replace(/\\/g, "/"));
+  const missing = join(root, "없는-cli.js").replace(/\\/g, "/");
+  const broken = windows("PreToolUse").replace(cli.replace(/\\/g, "/"), missing);
   assert.equal(powershellHook(broken, shell, process.env).status, 2);
+  // 같은 깨진 설치의 UserPromptSubmit 은 1(모듈 로드 전 종료) — Codex 는 2 만 막음으로 받으므로 사용자 메시지를 막지 않는다
+  assert.equal(powershellHook(windows("UserPromptSubmit").replace(cli.replace(/\\/g, "/"), missing), plain, process.env).status, 1);
   // node 가 PATH 에 없다 — PreToolUse 는 막고(2), 사용자 메시지는 막지 않는다(0)
   const noNode = { ...process.env, PATH: (process.env.PATH ?? "").split(";").filter((dir) => dir && !existsSync(join(dir, "node.exe"))).join(";") };
   assert.equal(powershellHook(windows("PreToolUse"), shell, noNode).status, 2);

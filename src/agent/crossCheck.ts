@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { hostname, tmpdir } from "os";
 import { join, posix } from "path";
+import { Worker } from "worker_threads";
 import { z } from "zod";
 
 import { writeAtomic } from "../core/atomic";
@@ -142,27 +143,36 @@ export function netProbeTarget(env: Readonly<Record<string, string | undefined>>
   }
   return { host: "api.anthropic.com", port: 443 };
 }
-const NET_PROBE_SCRIPT = [
-  "const net = require('net'); const [host, port, ms] = process.argv.slice(1);",
-  "const socket = net.connect({ host, port: Number(port) });",
-  "const done = (result) => { process.stdout.write(result); socket.destroy(); process.exit(0); };",
-  "socket.setTimeout(Number(ms), () => done('timeout'));",
+/** 연결 확인 worker — 결과(최대 40바이트)를 공유 버퍼에 쓰고 알린다. 상태 칸 0: 끝남 표시, 1: 결과 길이 */
+const NET_PROBE_WORKER = [
+  "const { workerData } = require('worker_threads'); const net = require('net');",
+  "const { host, port, ms, shared } = workerData; const state = new Int32Array(shared, 0, 2); const bytes = new Uint8Array(shared, 8);",
+  "let finished = false; const socket = net.connect({ host, port });",
+  "const done = (result) => { if (finished) return; finished = true; const text = Buffer.from(String(result).slice(0, 40));",
+  "  bytes.set(text); state[1] = text.length; Atomics.store(state, 0, 1); Atomics.notify(state, 0); socket.destroy(); };",
+  "socket.setTimeout(ms, () => done('timeout'));",
   "socket.on('connect', () => done('ok')); socket.on('error', (error) => done(error.code || 'error'));",
 ].join("\n");
 /**
- * 연결 확인 실행 — CLI 는 동기라 node 자식(net.connect)으로 확인한다. 결과는 `ok`·`timeout`·연결 오류 코드이고, 자식을 띄우지 못한
- * EPERM·EACCES 는 그대로 결과다(claude 도 띄울 수 없다). 시험만 이 자리를 바꿔 끼운다(환경 변수로 열지 않는다 — 사람이 끄는 길은
+ * 연결 확인 실행 — CLI 는 동기라 같은 프로세스의 worker 가 net.connect 하는 동안 Atomics.wait 로 기다린다. 자식 프로세스를 띄우지 않으므로
+ * 단일 실행 파일(process.execPath 가 code-agent 자신이라 `-e` 를 돌리지 못한다)에서도 같고, 샌드박스는 프로세스 단위라 이 프로세스의 연결이
+ * 곧 그 셸의 연결이다(샌드박스 셸 안 node 의 fetch 가 `connect EACCES` — 실측). 결과는 `ok`·`timeout`·연결 오류 코드이고, worker 를
+ * 띄우지 못했거나 답이 없으면 `worker-…`(거부하지 않는 결과)다. 시험만 이 자리를 바꿔 끼운다(환경 변수로 열지 않는다 — 사람이 끄는 길은
  * CODE_AGENT_CROSS_PREFLIGHT=off 하나다).
  */
 export const netProbeRunner = {
   connect(host: string, port: number, ms: number): string {
-    const run = spawnSync(process.execPath, ["-e", NET_PROBE_SCRIPT, host, String(port), String(ms)], { encoding: "utf8", windowsHide: true, timeout: ms + 5_000 });
-    if (run.error) {
-      const code = (run.error as NodeJS.ErrnoException).code ?? "error";
-      return code === "EPERM" || code === "EACCES" ? code : `spawn-${code}`;
-    }
-    const out = run.stdout ?? "";
-    return /^[\w-]{1,40}$/.test(out) ? out : `exit-${run.status ?? "signal"}`;
+    const shared = new SharedArrayBuffer(8 + 64);
+    const state = new Int32Array(shared, 0, 2);
+    let worker: Worker;
+    try { worker = new Worker(NET_PROBE_WORKER, { eval: true, workerData: { host, port, ms, shared } }); }
+    catch (error) { return `worker-${(error as NodeJS.ErrnoException).code ?? "error"}`; }
+    worker.unref();
+    worker.on("error", () => { /* 답이 없으면 worker-timeout 으로 본다 — 뒤늦은 오류 이벤트가 CLI 를 죽이지 않게 */ });
+    Atomics.wait(state, 0, 0, ms + 3_000);
+    const out = Atomics.load(state, 0) === 1 ? Buffer.from(new Uint8Array(shared, 8, state[1])).toString("utf8") : "worker-timeout";
+    worker.terminate().catch(() => undefined);
+    return /^[\w-]{1,40}$/.test(out) ? out : "worker-invalid";
   },
 };
 /**

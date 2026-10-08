@@ -994,7 +994,8 @@ export function orphanState(input: { attempt: AttemptView; agentType?: string; a
 }
 
 /**
- * 계획·리뷰 담당 hook 의 종료 코드. Codex 는 exit 2 로 턴을 잇지 않으므로 언제나 기록 후 0 이다.
+ * 계획·리뷰 담당 hook 의 종료 코드. Codex 는 언제나 기록 후 0 이다 — Codex 의 SubagentStop exit 2 이어가기는 바이너리 문구(0.161.0)로만
+ * 보았고 실제로 확인하지 않아 쓰지 않는다(HP-15).
  * Claude SubagentStop 은 기록된 실패나 이미 한 번 막힌 재시도(stop_hook_active)면 0, 그 밖은 같은 담당에게 한 번 돌려보낸다(2).
  */
 export function subagentExit(input: { host: "claude" | "codex"; event?: string; stopHookActive?: boolean; failure?: FailureClass; recorded: boolean }): 0 | 2 {
