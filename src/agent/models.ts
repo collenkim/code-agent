@@ -4,6 +4,10 @@ import { join } from "path";
 import { writeAtomic } from "../core/atomic";
 import { requireTerminal } from "./tty";
 import { selectedHosts, type Host } from "./hosts";
+import { loadActive } from "./layout";
+import { loadRequestSession } from "./request";
+import { guidance } from "./retryPolicy";
+import { Stop } from "./stop";
 import {
   AGENTS, type AgentName, CLAUDE_EFFORTS, CLAUDE_MODEL_ALIASES, CLAUDE_MODELS_FILE, type ClaudeEffort, ClaudeModelIdSchema, CODEX_MODELS_FILE,
   CodexModelSchema, REASONING_LEVELS, ROLE_POLICY, TIER_DEFAULTS, TIER_LABEL, claudeFrontmatter, claudeModelOf, claudeSupportsEffort, codexModelOf,
@@ -95,9 +99,32 @@ export function modelsTable(repoRoot: string, host?: Host): string {
   }).join("\n\n");
 }
 
+/**
+ * 진행 중인 작업 — 작업 커서(start 뒤)나 접수 세션(접수 뒤 start 전). 반영(deliver)·종료(abort)가 둘 다 지운다.
+ * 역할 모델 변경을 막는 범위는 사용자 결정(2026-10-08 D1 '작업 중에는 바꿀 수 없다 — 반영·종료 뒤')대로 접수부터다 — 접수 중에 바꾼
+ * 정의 파일은 커밋되지 않은 변경이라 그 접수의 start 가 거부한다(startBlockers, FLOW-07). 상태 파일을 읽지 못하면 던진다(변경을 막는 쪽).
+ */
+export function workInProgress(repoRoot: string): { id: string; phase: string } | undefined {
+  const active = loadActive(repoRoot);
+  if (active) return { id: active.id, phase: active.phase };
+  const intake = loadRequestSession(repoRoot);
+  return intake ? { id: intake.id, phase: "접수" } : undefined;
+}
+/**
+ * 작업 중에는 역할 모델·추론 강도를 바꾸지 않는다(D1) — 정의 파일(.claude/agents/ca-*.md·.codex/agents/ca-*.toml)과 변경값 파일은
+ * 커밋되는 설치 파일이라 바꾸면 그 작업의 계획 밖 변경이 되어 검증·반영이 막힌다. 동의 준비(validateModelChange — 질문을 내기 전)·
+ * 동의 적용(consent.ts applyLocked 의 재확인과 setModel)·사람의 `code-agent model <역할> <모델>`(setModel)이 이 한 검사를 쓴다.
+ * 조회(`code-agent model`, modelsTable)는 막지 않는다.
+ */
+export function requireNoWorkInProgress(repoRoot: string): void {
+  const work = workInProgress(repoRoot);
+  if (work) throw new Stop(guidance("precondition", { id: work.id, phase: work.phase }, "model-in-work"));
+}
+
 /** 강도는 두 호스트 모두 reasoning 하나로 받는다 — CLI 의 --reasoning·--effort 를 합친 값이다 */
 export interface ModelOptions { host?: Host; reasoning?: string }
 export function validateModelChange(repoRoot: string, who: string | undefined, model: string | undefined, options: ModelOptions = {}) {
+  requireNoWorkInProgress(repoRoot);
   const hosts = selectedHosts(repoRoot), host = options.host ?? (hosts.length === 1 ? hosts[0] : undefined);
   if (!host) throw new Error("두 호스트가 설치되어 있습니다. --host claude 또는 --host codex를 지정하세요.");
   if (!hosts.includes(host)) throw new Error(`${host}를 먼저 설치하세요.`);
@@ -124,6 +151,7 @@ export function validateModelChange(repoRoot: string, who: string | undefined, m
   }
   return {host, name: name as AgentName | "all", model: model!, reasoning};
 }
+/** 역할 모델 변경 — 작업 중이면 TTY 를 묻기 전에 거부한다(validateModelChange 의 requireNoWorkInProgress) */
 export function setModel(repoRoot: string, who: string | undefined, model: string | undefined, options: ModelOptions = {}): string {
   const change = validateModelChange(repoRoot, who, model, options), name = change.name;
   requireTerminal("에이전트 모델");

@@ -995,6 +995,33 @@ test("needs-input 인데 질문이 없는 교차 결과는 형식 오류로 보�
   } finally { cross.cleanup(); }
 });
 
+test("D2(E16): Codex 에서 부른 계획 교차 검토(--by claude)의 네트워크 오류도 몇 번째든 막힘이고 두 번째부터 사람에게 넘긴다 — 사람이 중지를 기록하면 계획을 제출할 수 있다", () => {
+  const cross = crossPlanningSetup();
+  const fake = mkdtempSync(join(tmpdir(), "ca-fake-claude-net-")), script = join(fake, "claude.cjs"), calls = join(fake, "calls.txt");
+  writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(calls)}, 'x'); process.stderr.write('Error: getaddrinfo ENOTFOUND api.anthropic.com'); process.exit(1);\n`);
+  process.env.CODE_AGENT_CLAUDE_BIN = script;
+  try {
+    const run = () => withCaller("codex", () => crossCritic(root, "claude"));
+    const rejects = (pattern: RegExp, absent: RegExp) => (error: Error) => error instanceof RetryRefused && pattern.test(error.message) && !absent.test(error.message);
+    assert.throws(run, rejects(/샌드박스 표지는 없지만[\s\S]*권한 상승/, /교차 검증 중지/));
+    assert.throws(run, rejects(/다시 네트워크 오류로 끝났습니다[\s\S]*남은 지점 시도 1회[\s\S]*judgment cross-stop/, /교차 검증 중지/));
+    assert.match(crossProblems().join("\n"), /막힘\(샌드박스\)[\s\S]*다시 네트워크 오류로 끝났습니다[\s\S]*남은 지점 시도 1회/);
+    assert.throws(run, rejects(/교차 실행 한도를 다 써서[\s\S]*retry-grant crossPoint/, /남은 지점 시도|교차 검증 중지/));
+    assert.throws(run, /한도 3회/);
+    assert.equal(readFileSync(calls, "utf8").length, 3);
+    assert.deepEqual(loadPlanning(loadWork(root)!).crossAttempts!.map((attempt) => [attempt.class, attempt.kind]),
+      Array.from({ length: 3 }, () => ["host-sandbox-denied", "sandbox-network"]));
+    assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토/, "모델이 혼자 중지를 기록하지 않는다 — 게이트가 막혀 있다");
+    assert.match(previewCrossStop(root, "planning"), /이 지점의 교차 검증을 사람이 중지로 기록합니다/);
+    assert.match(recordCrossStop(root, "planning", "consent-net-1", "사용자가 네트워크를 확인했지만 claude 에 닿지 않음"), /사람 판단으로 중지했습니다/);
+    assert.deepEqual(crossProblems(), []);
+    submitPlan(root, join(root, DIR, "plan.json"));
+  } finally {
+    cross.cleanup();
+    rmSync(fake, { recursive: true, force: true });
+  }
+});
+
 // ---- 재시도 규약·질문 출처·고아·되감기·결정적 문서 검사 ----
 
 const planningJson = () => join(root, ".code-agent/work", ID, "value.planning.json");

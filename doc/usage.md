@@ -587,7 +587,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 스킬 규칙이다 | — |
-| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY |
+| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY. 진행 중인 작업이 있으면 거부한다 — 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾼다. 조회는 작업 중에도 된다 |
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |

@@ -11,7 +11,7 @@ import {
   type CrossAttempt, type PlanningCrossAttempt, type ReviewerRun,
 } from "../agent/crossRecord";
 import type { PlanningState } from "../agent/planningState";
-import { crossPointDecision, crossPointState, TIMING } from "../agent/retryPolicy";
+import { classifyCrossFailure, crossPointDecision, crossPointState, guidance, recordedVariant, TIMING } from "../agent/retryPolicy";
 import { renderRoundsBlock, staleWaiver, waived, type Finding, type ReviewLog, type ReviewRound } from "../agent/review";
 import { deadPid } from "./deadPid";
 
@@ -178,15 +178,36 @@ test("syncLegacyPlanning — 파생 사본 cross 는 게이트와 같은 보기�
   assert.equal(raced.cross!.summary, "먼저 완료");
 });
 
-test("pointHost·crossSandboxSuspect — 지점 호스트는 실제로 띄운 첫 시도가 정하고, Codex 가 부른 claude 의 첫 네트워크 오류만 샌드박스로 의심한다", () => {
+test("pointHost·crossSandboxSuspect(D2) — 지점 호스트는 실제로 띄운 첫 시도가 정하고, Codex 가 부른 claude 의 네트워크 오류는 몇 번째든 샌드박스로 의심한다", () => {
   const preflight = { ...ended(1, "host-sandbox-denied"), host: "claude" as const, mode: "preflight" as const, kind: "preflight" };
   assert.equal(pointHost([preflight]), undefined);
   assert.equal(pointHost([preflight, ended(2, "completed")]), "codex");
   assert.equal(pointHost([{ ...ended(1, "cross-stop"), mode: "human" }]), undefined);
-  assert.equal(crossSandboxSuspect("claude", "codex", []), true);
-  assert.equal(crossSandboxSuspect("claude", "codex", [{ kind: "sandbox-network" }]), false, "같은 지점에서 두 번째면 실행 불가로 기록한다");
-  assert.equal(crossSandboxSuspect("claude", undefined, []), false, "사람의 터미널(표지 없음)");
-  assert.equal(crossSandboxSuspect("codex", "claude", []), false);
+  assert.equal(crossSandboxSuspect("claude", "codex"), true, "같은 지점의 두 번째 이후도 실행 불가로 넘기지 않는다(D2)");
+  assert.equal(crossSandboxSuspect("claude", undefined), false, "사람의 터미널(표지 없음)");
+  assert.equal(crossSandboxSuspect("codex", "claude"), false, "Claude 메인이 부른 codex 의 네트워크 오류는 실행 불가 — 중지 기록 후 진행");
+});
+
+test("D2 classifyCrossFailure·recordedVariant — 샌드박스 의심은 네트워크 오류만 막힘으로 바꾸고(미설치·인증·사용 한도·서비스 장애는 실행 불가 그대로), 같은 지점의 두 번째 이후 네트워크 차단은 사람에게 넘기는 변형을 고른다", () => {
+  const run = (stderr: string, sandboxed: boolean) => classifyCrossFailure({ host: "claude", status: 1, stderr, stdout: "", sandboxed });
+  const NETWORK = "Error: getaddrinfo ENOTFOUND api.anthropic.com";
+  assert.deepEqual([run(NETWORK, true).class, run(NETWORK, true).kind], ["host-sandbox-denied", "sandbox-network"]);
+  assert.deepEqual([run(NETWORK, false).class, run(NETWORK, false).kind], ["cross-unavailable", "network"], "Claude 메인이 부른 codex(의심 없음) — 실행 불가");
+  for (const [stderr, kind] of [["Not logged in · Please run /login", "auth"], ["Claude AI usage limit reached", "quota"], ["API Error: 529 Overloaded", "outage"]] as const) {
+    assert.deepEqual([run(stderr, true).class, run(stderr, true).kind], ["cross-unavailable", kind], stderr);
+  }
+  const missing = classifyCrossFailure({ host: "claude", unresolved: "claude 실행 파일을 PATH 에서 찾지 못했습니다", unresolvedConfig: false });
+  assert.deepEqual([missing.class, missing.kind], ["cross-unavailable", "missing"], "미설치는 Codex 가 불러도 실행 불가 — 중지 기록 후 진행");
+  const net = (n: number) => ({ n, kind: "sandbox-network", endedAt: "2026-10-08T00:00:00.000Z" });
+  const record = { class: "host-sandbox-denied", kind: "sandbox-network" };
+  assert.equal(recordedVariant(record, { attempts: [net(1)], left: 2 }), undefined, "첫 번째 — 권한 상승해 같은 명령(기본 문구)");
+  assert.equal(recordedVariant(record, { attempts: [net(1), net(2)], left: 1 }), "network-repeat");
+  assert.equal(recordedVariant(record, { attempts: [net(1), net(2), net(3)], left: 0 }), "network-exhausted");
+  assert.equal(recordedVariant(record, { attempts: [{ n: 1, kind: "preflight", endedAt: "x" }, net(2)], left: 2 }), undefined, "사전 판정 거부는 네트워크 오류 시도로 세지 않는다");
+  assert.equal(recordedVariant({ class: "host-sandbox-denied", kind: "sandbox" }, { attempts: [net(1), net(2)], left: 1 }), undefined, "EPERM 등 샌드박스 거부는 기본 문구");
+  assert.equal(recordedVariant(record), undefined, "지점 시도를 모르면 기본 문구");
+  assert.match(guidance("host-sandbox-denied", { host: "claude", detail: "d", left: 1 }, "network-repeat"), /실제 네트워크 문제일 수 있습니다[\s\S]*남은 지점 시도 1회[\s\S]*judgment cross-stop[\s\S]*사용자 확인 없이 중지를 기록하지 않습니다/);
+  assert.doesNotMatch(guidance("host-sandbox-denied", { host: "claude", detail: "d" }, "network-exhausted"), /남은 지점 시도/);
 });
 
 test("orphanView — 같은 PC 의 죽은 pid 와 제한 + 5분이 지난 시도만 끊긴 실행으로 본다(원 배열은 그대로)", () => {

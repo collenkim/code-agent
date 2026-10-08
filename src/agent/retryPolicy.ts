@@ -340,7 +340,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `설정 오류 재실행 ${LIMITS.crossError}, 지점 시도 ${LIMITS.crossPoint}`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "stop", onExhausted: "decision", exceededText: "decision(게이트 막힘)",
-    guide: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 원인을 사용자에게 전하세요 — 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 code-agent doctor --cross 로 점검하며(작업 중에도 조회할 수 있다), CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 과 CLI 설치는 사람이 셸에서 고칩니다. 고친 뒤 같은 명령을 한 번 더 실행할 수 있습니다(남은 {left}회). 고칠 수 없으면 사람이 중지를 결정해 ca-answer 동의 judgment cross-stop 으로 기록합니다.",
+    guide: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 원인을 사용자에게 전하세요 — CLI 옵션은 code-agent doctor --cross 로 점검하며(작업 중에도 조회할 수 있다), CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 과 CLI 설치는 사람이 셸에서 고칩니다. 고친 뒤 같은 명령을 한 번 더 실행할 수 있습니다(남은 {left}회). 역할 모델 설정(지금 값은 code-agent model --host {host})은 작업 중에는 바꾸지 않습니다 — 모델이 원인이거나 고칠 수 없으면 사람이 중지를 결정해 ca-answer 동의 judgment cross-stop 으로 기록하고, 모델은 작업을 반영하거나 종료한 뒤 ca-answer 동의 model 로 바꿉니다.",
     enforcedAt: ["crossCheck.ts", "retryPolicy.CROSS_PATTERNS·classifyCrossFailure"],
   },
   "cross-timeout": {
@@ -367,9 +367,9 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "host-sandbox-denied": {
     id: "host-sandbox-denied", label: "Codex 샌드박스 제한", group: "cross", auxiliary: false,
-    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 지점 첫 네트워크 오류 포함 — 같은 지점의 두 번째 네트워크 오류는 실행 불가로 기록 후 진행)",
-    retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령",
-    counters: [], limitText: "— (같은 사유의 사전 거부는 한 번만 기록, 지점 시도에 세지 않음)",
+    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 포함 — 실행 불가로 기록하지 않는다)",
+    retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령. 같은 지점에서 다시 네트워크 오류면 사람이 네트워크를 확인해 다시 실행하거나 중지를 정한다",
+    counters: ["crossPoint"], limitText: `사전 거부는 지점 시도에 세지 않고 같은 사유면 한 번만 기록, 실행한 시도는 지점 시도 ${LIMITS.crossPoint}에 셈`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "stop", onExhausted: "consent:judgment", exceededText: "사람(judgment cross-stop)",
     guide: "Codex 샌드박스가 {host} 실행을 막았습니다({detail}) — 셸 도구의 권한 상승(샌드박스 밖 실행)을 요청해 같은 명령을 다시 실행하세요. 중지로 기록하지 않았습니다. 사용자가 권한 상승을 거절하면 ca-answer 동의 judgment cross-stop 으로 이 지점의 중지를 기록합니다.",
@@ -470,6 +470,11 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     integrate: "명령은 끝났지만 통합 검증에서 ⑦ 의 TC 결과가 확인되지 않았습니다: {cases}. 코드·테스트를 그대로 두고 보고서 위치·환경만 고쳤으면 code-agent integrate 로 같은 회차를 다시 돌리세요(남은 통합 검증 재실행 {rerunLeft}회). 계획 파일을 고쳐야 하면 고친 뒤 code-agent verify 로 check 부터 다시 검증합니다(얼어 있는 kind:test 파일은 ⑨ 지적이나 재승인이 있어야 고칠 수 있습니다).",
   },
   precondition: {
+    /**
+     * 진행 중인 작업(접수부터 반영·종료 전까지)이 있을 때의 역할 모델·추론 강도 변경 거부(2026-10-08 사용자 결정 D1) — 동의 준비·적용과
+     * 사람의 `code-agent model <역할> <모델>` 이 같은 문장을 쓴다(models.ts requireNoWorkInProgress)
+     */
+    "model-in-work": "진행 중인 작업 {id}({phase})이 있어 역할 모델·추론 강도를 바꾸지 않습니다 — 에이전트 정의 파일(.claude/agents·.codex/agents 아래)과 변경값 파일(.code-agent/models.json·codex-models.json)은 커밋되는 설치 파일이라 작업 중에 바꾸면 그 작업의 계획 밖 변경이 됩니다. 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾸세요. 지금 값은 작업 중에도 code-agent model 로 조회할 수 있습니다.",
     /** 실행은 모두 통과했고 다시 돌리면 맞춰지는 대조만 남았다(diagnose). ⑧ 만 어긋났으면 plain verify 는 판정부터 들어가 다시 렌더하지 않는다 */
     rerun: "실행은 모두 통과했지만 증거가 지금과 맞지 않습니다: {problems}. 코드 결함이 아닙니다 — 검증 명령이 계획 파일을 고쳤거나(포맷터 등) ⑧ 이 손으로 바뀌었거나 회차·묶임이 어긋난 경우라 code-agent verify --retry 로 check 부터 다시 돌리면 맞춰집니다. 다시 돈 회차는 통과 뒤 변경으로 세며 고쳐 쓰기 회차를 쓰지 않습니다({budget}). 돌 때마다 같은 문제가 되풀이되면(검증 명령이 매번 계획 파일을 바꿈) 고치지 말고 사용자에게 보고하세요.",
   },
@@ -485,7 +490,7 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 설정 오류 갈래: 실행 파일 변수가 없는 파일·PATH 의 셸 스크립트(hostCommandConfigError) */
     notice: "{detail}. 중지로 기록하지 않고 그 지점의 게이트가 막힌다 — 사람이 셸에서 실행 파일 변수(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)나 CLI 설치를 고친 뒤 같은 명령을 다시 실행하고, 고칠 수 없으면 사람이 중지를 정한다(ca-answer 동의 judgment cross-stop)",
     /** 설정 오류 재실행 한도를 다 쓴 실패 — 같은 명령은 한도로 거부되므로 재실행을 안내하지 않는다 */
-    exhausted: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 교차 설정 오류 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다 — 원인을 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossError)을 받으세요. 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 code-agent doctor --cross 로 점검합니다.",
+    exhausted: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 교차 설정 오류 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다 — 원인을 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossError)을 받으세요. CLI 옵션은 code-agent doctor --cross 로 점검합니다. 역할 모델 설정(지금 값은 code-agent model --host {host})은 작업을 반영하거나 종료한 뒤에만 ca-answer 동의 model 로 바꿉니다.",
   },
   "cross-result-invalid": {
     /** 형식 교정 재실행 한도를 다 쓴 실패 */
@@ -494,6 +499,15 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
   "cross-timeout": {
     /** 끝 기록 없이 끊긴 실행(kind interrupted) — 중지가 되지 않고 지점 시도 한도에만 든다 */
     interrupted: "{host} 교차 실행이 끝 기록 없이 끊겼습니다 — 끊긴 실행은 중지로 기록하지 않고 게이트는 막혀 있습니다. 같은 명령을 백그라운드로 다시 실행할 수 있습니다(남은 지점 시도 {left}회).",
+  },
+  "host-sandbox-denied": {
+    /**
+     * Codex 가 부른 claude 의 네트워크 오류가 같은 지점에서 다시 났다(앞선 sandbox-network 시도가 있다 — 2026-10-08 사용자 결정 D2). 실행 불가로
+     * 넘기지 않고 사람이 정한다: 네트워크를 확인해 다시 실행하거나 judgment cross-stop. 지점 시도가 남았을 때다(recordedVariant)
+     */
+    "network-repeat": "{host} 교차 실행이 이 지점에서 다시 네트워크 오류로 끝났습니다({detail}) — 실행 불가(중지)로 기록하지 않았습니다. 권한 상승(샌드박스 밖 실행)으로 실행했는데도 같다면 실제 네트워크 문제일 수 있습니다. 사용자에게 알리고 지시를 받으세요 — 사용자가 네트워크를 확인하면 권한 상승한 같은 명령을 다시 실행하고(남은 지점 시도 {left}회), 이 지점을 교차 검증 없이 진행하기로 정하면 ca-answer 동의 judgment cross-stop 으로 이 지점의 중지를 기록합니다. 사용자 확인 없이 중지를 기록하지 않습니다.",
+    /** 위와 같고 지점 시도 한도를 다 썼다 — 같은 명령은 한도로 거부되므로 재실행을 안내하지 않는다 */
+    "network-exhausted": "{host} 교차 실행이 이 지점에서 다시 네트워크 오류로 끝났습니다({detail}) — 실행 불가(중지)로 기록하지 않았습니다. 이 지점의 교차 실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다. 권한 상승 뒤에도 같다면 실제 네트워크 문제일 수 있으니 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossPoint)을 받으세요. 사용자 확인 없이 중지를 기록하지 않습니다.",
   },
   "cross-unavailable": {
     /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 실행 불가 갈래: PATH·npm 어디에도 없는 미설치 */
@@ -562,12 +576,13 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   environment: { integrate: ["kind", "reason", "rerunLeft"] },
   interrupted: { empty: ["phase", "rerunLeft", "round"], integrate: ["kind", "logFile", "minutes", "rerunLeft"] },
   "result-unconfirmed": { integrate: ["cases", "rerunLeft"] },
-  precondition: { rerun: ["budget", "problems"] },
+  precondition: { "model-in-work": ["id", "phase"], rerun: ["budget", "problems"] },
   "agent-format-error": { record: ["detail", "id"] },
   "agent-content-error": { record: ["detail", "id"] },
   "cross-config-error": { notice: ["detail"], exhausted: ["detail", "host"] },
   "cross-result-invalid": { exhausted: ["detail", "host", "point", "raw"] },
   "cross-timeout": { interrupted: ["host", "left"] },
+  "host-sandbox-denied": { "network-repeat": ["detail", "host", "left"], "network-exhausted": ["detail", "host"] },
   "cross-unavailable": { notice: ["detail"], gate: [], rerunnable: ["detail", "host", "left"] },
   "consent-target-changed": { "response-change": [], "response-defer": [], "response-none": ["detail"], "response-invalid": ["detail"] },
   "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"],
@@ -609,11 +624,17 @@ export function guidance(cls: FailureClass, values: Readonly<Record<string, stri
  * 기록된 실패를 안내할 때 고르는 변형 — 기록(시도의 failure·지점 안내의 crossPointHint·blocked[].class)을 렌더하는 호출은
  * `guidance(record.class, values, recordedVariant(record))` 로 쓴다. 담당 형식·내용 오류의 기본 문구는 기록 전 같은 담당에게
  * 돌려보내는 문구라 기록된 시도에는 record 변형을, 끊긴 교차 실행(cross-timeout·interrupted)에는 제한 시간 문구 대신
- * interrupted 변형을 쓴다. 그 밖은 기본 문구(undefined)다.
+ * interrupted 변형을 쓴다. 교차 지점의 시도(point)를 주면 샌드박스 네트워크 차단(sandbox-network)이 그 지점에서 두 번째 이후일 때
+ * 사람에게 넘기는 변형(지점 시도가 남았으면 network-repeat, 다 썼으면 network-exhausted — D2)을 고른다. 그 밖은 기본 문구(undefined)다.
  */
-export function recordedVariant(record: { class: string; kind?: string }): string | undefined {
+export function recordedVariant(record: { class: string; kind?: string },
+  point?: { attempts: readonly { kind?: string; endedAt?: string }[]; left: number }): string | undefined {
   if (record.class === "agent-format-error" || record.class === "agent-content-error") return "record";
   if (record.class === "cross-timeout" && record.kind === "interrupted") return "interrupted";
+  if (point && record.class === "host-sandbox-denied" && record.kind === "sandbox-network"
+    && point.attempts.filter((attempt) => attempt.kind === "sandbox-network" && attempt.endedAt !== undefined).length >= 2) {
+    return point.left > 0 ? "network-repeat" : "network-exhausted";
+  }
   return undefined;
 }
 /**
@@ -1014,7 +1035,7 @@ interface CrossProbeOutput {
   status?: number | null; stderr?: string; stdout?: string;
   /**
    * 네트워크 오류를 샌드박스 거부로 볼 것인가 — 지금 프로세스 환경에 Codex 샌드박스 표지가 있거나(crossEnv.sandboxMarkers),
-   * Codex 가 부른 `--by claude` 의 그 지점 첫 네트워크 오류다(호출자 crossCheck 가 정한다 — 표지 없는 Codex 샌드박스일 수 있다)
+   * Codex 가 부른 `--by claude` 다(호출자 crossCheck 가 정한다 — 표지 없는 Codex 샌드박스일 수 있다. 같은 지점에서 몇 번째든 같다 — D2)
    */
   sandboxed?: boolean;
 }

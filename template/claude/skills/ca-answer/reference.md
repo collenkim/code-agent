@@ -42,7 +42,7 @@
 | 요구사항·계획 반려 기록 | 해당 `request` 또는 `plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 포함한다. 이 동작도 별도 동의 후 적용한다 |
 | 검증 결과 반영 | `{"action":"deliver"}` |
 | 오래된 지식 항목 정리 | `{"action":"knowledge-prune"}` |
-| 모델·추론 강도 변경 | 먼저 `code-agent model --host claude`로 지금 값을 조회한다. `{"action":"model","host":"claude","agent":"<역할|all>","model":"<opus|sonnet|haiku|fable|claude-…|default>","reasoning":"<low|medium|high|xhigh|max>"}` — `reasoning`은 바꿀 때만 넣는다. 사용자가 고른 값만 넣고 임의로 다른 모델로 바꾸지 않는다 |
+| 모델·추론 강도 변경 | 먼저 `code-agent model --host claude`로 지금 값을 조회한다. `{"action":"model","host":"claude","agent":"<역할|all>","model":"<opus|sonnet|haiku|fable|claude-…|default>","reasoning":"<low|medium|high|xhigh|max>"}` — `reasoning`은 바꿀 때만 넣는다. 사용자가 고른 값만 넣고 임의로 다른 모델로 바꾸지 않는다. 진행 중인 작업이 있으면 준비가 거부된다 — 작업을 반영하거나 종료한 뒤 요청하게 한다 |
 | 접수·작업 종료 | `{"action":"abort"}` |
 | 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |
@@ -51,7 +51,7 @@
 | CLI 결과가 `limit-exceeded`이고 사용자가 같은 계획으로 한 번 더를 골랐음 | `{"action":"judgment","kind":"retry-grant","name":"fix","comment":"<사용자 사유>"}` — `name`은 결과의 `failure.counter.key` |
 | 계획 작업 배정 한도가 소진됐고 사용자가 한 번 더를 골랐음 | `{"action":"judgment","kind":"retry-grant","name":"taskTotal","id":"<계획 작업 ID>","comment":"<사용자 사유>"}` |
 | 리뷰 지적을 사용자가 기각함 | `{"action":"judgment","kind":"waive-finding","id":"F1","comment":"<사용자 사유>"}` — review 단계는 F·X 번호, plan 단계는 교차 계획 검토의 차단 지적 id. 표의 줄은 남고 게이트만 그 회차에서 그 지적을 세지 않는다(다음 회차는 지적 내용이 같을 때만 이어진다) |
-| 교차 검증이 설정 오류·형식 실패로 막혔고 사용자가 중지를 결정함 | `{"action":"judgment","kind":"cross-stop","name":"review","comment":"<사용자 사유>"}` — 샌드박스 권한 상승을 사용자가 거절한 경우도 같다. 계획 검토는 "name":"planning" |
+| 교차 검증이 설정 오류·형식 실패로 막혔고 사용자가 중지를 결정함 | `{"action":"judgment","kind":"cross-stop","name":"review","comment":"<사용자 사유>"}` — 샌드박스 권한 상승을 사용자가 거절했거나, 권한 상승 뒤에도 네트워크 오류가 되풀이돼 사용자가 진행을 정한 경우도 같다. 계획 검토는 "name":"planning" |
 
 judgment 는 사용자가 업무 질문에서 그 선택을 고른 뒤에만 준비한다. 모델이 스스로 한도를 늘리거나 지적을 기각하지 않는다.
 

@@ -435,7 +435,7 @@ export function crossHintText(hint: FailureRecord, values: { host: string; point
   const raw = [...values.attempts].reverse().find((attempt) => attempt.rawPath)?.rawPath
     ?? (invalid?.result !== undefined ? "옛 기록의 교차 결과(같은 명령이 handoff 로 옮긴다)" : "(원문 없음 — 같은 명령은 처음부터 다시 실행합니다)");
   return guidance(hint.class, { host: values.host, detail: hint.detail, left, min: crossTimeoutMin(), point: values.point, raw },
-    recordedVariant(hint)).replace(/\n/g, " ");
+    recordedVariant(hint, { attempts: values.attempts, left })).replace(/\n/g, " ");
 }
 
 // ---- 연속 중지 ----

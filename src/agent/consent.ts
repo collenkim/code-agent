@@ -15,7 +15,7 @@ import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot, loadActive, STATE_DIR } from "./layout";
 import { acquireLock, type LockMessages } from "./lock";
-import { modelsTable, setModel, validateModelChange } from "./models";
+import { modelsTable, setModel, validateModelChange, workInProgress } from "./models";
 import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
@@ -400,8 +400,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
         : `${change.model} / ${action.reasoning ?? "지금 추론 강도 유지"}`;
       summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${target}\n` +
         "기본값 복원은 모델·추론 강도를 함께 복원합니다. 모델만 변경하면 그 역할의 지금 추론 강도를 유지합니다. " +
-        "적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다." +
-        (modelWorkWarning(root) ? `\n${modelWorkWarning(root)}` : "");
+        "적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.";
       break;
     }
     case "repro-log": confirmations = capture(() => approveLogBasis(requireReproable(root))); break;
@@ -648,25 +647,8 @@ const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
   "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
   "knowledge-prune": "결과를 보고하고 원래 흐름으로 돌아간다",
 };
-/**
- * 진행 중인 작업이 있을 때 모델 변경의 경고 — 정의 파일(.claude/agents/ca-*.md·.codex/agents/ca-*.toml)은 커밋된 설치 파일이라
- * 바꾸면 그 작업의 계획 밖 변경이 되어 검증·Stop hook·반영이 막힌다(근본 처리는 사용자 결정 대기 — update --templates-only 와 같은 원인).
- */
-function modelWorkWarning(root: string): string | undefined {
-  let active: ReturnType<typeof loadActive>;
-  try { active = loadActive(root); } catch { return undefined; }
-  if (!active) return undefined;
-  return `주의: 진행 중인 작업 ${active.id}(${active.phase})이 있습니다 — 에이전트 정의 파일(.claude/agents/ca-*.md·.codex/agents/ca-*.toml)이 바뀌어 ` +
-    "그 작업의 계획 밖 변경이 되고 검증·반영이 막힙니다. 작업을 반영하거나 끝낸 뒤 바꾸세요. 이미 바꿨다면 사람이 정의 파일과 " +
-    ".code-agent/models.json(Codex 는 codex-models.json)을 함께 되돌립니다.";
-}
-
 function afterApply(root: string, action: Action["action"]): { phase?: string; next: string } {
   const fixed = AFTER_APPLY[action];
-  if (fixed && action === "model") {
-    const warning = modelWorkWarning(root);
-    return { next: warning ? `${fixed}. ${warning}` : fixed };
-  }
   if (fixed) return { next: fixed };
   try {
     const step = nextStep(root);
@@ -713,6 +695,15 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
   // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
   if (record.preparedSession && !caller?.tty && caller?.sessionId !== record.sessionId) {
     throw new Stop("응답을 관찰한 세션의 셸에서 hook 이 확인한 적용 명령만 실행할 수 있습니다. 다른 경로로 적용하지 않습니다.");
+  }
+  // 역할 모델은 작업 중에 바꾸지 않는다(D1) — 준비 뒤 접수·작업이 시작됐으면 대상 변경으로 폐기하고 그 사유로 멈춘다. 스냅샷 대조보다
+  // 먼저 본다 — 시작은 상태 파일도 바꾸므로 대조가 사유 없이 '파일이 바뀌었다'로만 멈추지 않게. 같은 검사를 setModel 이 한 번 더 한다
+  if (record.action.action === "model") {
+    const started = workInProgress(root);
+    if (started) {
+      discard(root, record, "target", `확인 대상 변경: 진행 중인 작업 ${started.id}(${started.phase}) — 작업 중에는 역할 모델을 바꾸지 않습니다. 작업을 반영(deliver)하거나 종료(abort)한 뒤 새로 준비하세요`);
+      throw new Stop(guidance("precondition", { id: started.id, phase: started.phase }, "model-in-work"));
+    }
   }
   discardIfChanged(root, record, "확인 이후 파일·Git 상태가 바뀌었습니다. 다시 확인하세요.");
   const action=record.action;

@@ -25,8 +25,8 @@ import { criticCrossPoint, crossQuestionViews, inputFiles, loadPlanning, questio
 import { CROSS_HEADING, crossRequired, loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog } from "./review";
 import {
   classifyCrossFailure, COUNTER_LABEL, CROSS_NO_ANSWER, crossBudgets, crossPointDecision, crossPointState, crossPreflight, grantScope,
-  guidance, refuse, RetryRefused,
-  type Budget, type CrossPointDecision, type CrossProbe, type FailureRecord,
+  guidance, recordedVariant, refuse, RetryRefused,
+  type Budget, type CrossCounterKey, type CrossPointDecision, type CrossProbe, type FailureRecord,
 } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
@@ -120,7 +120,7 @@ export type CrossRun =
 /**
  * 다른 호스트를 읽기 전용으로 한 번 실행한다 — 실패는 분류하지 않고 그대로 돌려준다(분류 범위는 crossFailureText 가 고른다).
  * 시작 기록 뒤에 부르므로 던지지 않는다 — 실행 준비 중의 예외도 오류 줄 하나인 실패로 돌려준다(시도가 끝 기록 없이 남지 않게).
- * sandboxSuspect: 샌드박스 표지가 없어도 네트워크 오류를 샌드박스 거부로 본다(Codex 가 부른 claude 의 지점 첫 실행 — crossSandboxSuspect).
+ * sandboxSuspect: 샌드박스 표지가 없어도 네트워크 오류를 샌드박스 거부로 본다(Codex 가 부른 claude — crossSandboxSuspect).
  */
 export function runCross(root: string, host: Host, agent: Agent, prompt: string, options: { sandboxSuspect?: boolean } = {}): CrossRun {
   try { return runCrossOnce(root, host, agent, prompt, !!options.sandboxSuspect); }
@@ -131,14 +131,16 @@ export function runCross(root: string, host: Host, agent: Agent, prompt: string,
   }
 }
 /**
- * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 에서 이 지점에 아직 샌드박스 네트워크 거부가 없으면,
- * 첫 네트워크 오류는 실행 불가(중지)가 아니라 샌드박스 거부(권한 상승 요청)로 본다. 같은 지점에서 다시 나면 실행 불가로 기록한다.
- * Codex 기본 샌드박스는 네트워크를 막는데 표지(CODEX_SANDBOX*)가 셸에 있는지는 미확인이다.
+ * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 의 네트워크 오류는 실행 불가(중지)가 아니라
+ * 샌드박스 거부(게이트 막힘)로 본다. 같은 지점에서 몇 번째든 같다 — 권한 상승 뒤에도 다시 나면 실제 네트워크 문제인지 샌드박스인지
+ * CLI 가 가를 수 없으므로 사람이 정한다(네트워크를 확인해 다시 실행하거나 judgment cross-stop — 2026-10-08 사용자 결정 D2).
+ * 지점 시도(review·correct)는 지점 시도 한도에 세므로 기록이 끝없이 늘지 않는다. Codex 기본 샌드박스는 네트워크를 막는데
+ * 표지(CODEX_SANDBOX*)가 셸에 있는지는 미확인이다.
  */
-export function crossSandboxSuspect(host: Host, caller: Host | undefined, attempts: readonly { kind?: string }[]): boolean {
-  return host === "claude" && caller === "codex" && !attempts.some((attempt) => attempt.kind === "sandbox-network");
+export function crossSandboxSuspect(host: Host, caller: Host | undefined): boolean {
+  return host === "claude" && caller === "codex";
 }
-const SUSPECT_NOTE = " — 셸에 샌드박스 표지는 없지만 Codex 가 부른 claude 의 이 지점 첫 네트워크 오류라 샌드박스 차단으로 봅니다(권한 상승 뒤에도 같으면 실행 불가로 기록)";
+const SUSPECT_NOTE = " — 셸에 샌드박스 표지는 없지만 Codex 가 부른 claude 의 네트워크 오류라 샌드박스 차단으로 봅니다(실행 불가로 기록하지 않습니다)";
 /** 실패 분류와 기록할 사유 — 샌드박스 의심으로 분류가 바뀌었으면 그 사실을 사유에 붙인다 */
 function classifyRun(probe: CrossProbe, suspect: boolean): ReturnType<typeof classifyCrossFailure> & { detail: string } {
   const classified = classifyCrossFailure(probe);
@@ -247,7 +249,8 @@ function repeatedPreflight(attempts: readonly { mode: string; class?: string; de
 }
 
 /** 실행 뒤 실패(중지가 아닌 것)의 문구 — 원인별 안내, 중지 지점의 재실행이면 이전 중지대로 진행한다는 꼬리 */
-function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointWords, budgets: Record<"crossError" | "crossFormat", Budget>, wasStopped: boolean, raw?: string): string {
+function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointWords, budgets: Record<CrossCounterKey, Budget>, wasStopped: boolean,
+  attempts: readonly { kind?: string; endedAt?: string }[], raw?: string): string {
   const tail = wasStopped ? WAS_STOPPED : "";
   switch (record.class) {
     case "cross-timeout":
@@ -260,7 +263,9 @@ function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointW
         budgets.crossFormat.left > 0 ? undefined : "exhausted") + tail +
         (raw !== undefined ? `\n${raw.slice(0, 300)}` : "");
     case "host-sandbox-denied":
-      return guidance("host-sandbox-denied", { host: words.host, detail: attempt.detail ?? "" }) + tail;
+      // 같은 지점의 두 번째 이후 네트워크 차단은 사람에게 넘기는 변형(D2) — 지점 시도가 남았는지로 재실행을 안내할지 가른다
+      return guidance("host-sandbox-denied", { host: words.host, detail: attempt.detail ?? "", left: budgets.crossPoint.left },
+        recordedVariant(record, { attempts, left: budgets.crossPoint.left })) + tail;
     default:
       return `${record.detail}`;
   }
@@ -384,7 +389,7 @@ export function crossReview(root: string, by: string | undefined): string {
     const previous = previousRound ? (crossPointState(crossAttemptsOf(previousRound, planned)).completed as CrossAttempt | undefined)?.result : undefined;
     const waivers = (log.waivers ?? []).filter((waiver) => waiver.source === "cross" && waiver.round < last.round)
       .map((waiver) => `${waiver.id}(${waiver.path}) ${waiver.verdict} — ${oneLine(waiver.reason, 120)}`);
-    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller, attempts),
+    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller),
       ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}), ...(previous ? { previous } : {}) } };
   });
   // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
@@ -436,7 +441,7 @@ export function crossReview(root: string, by: string | undefined): string {
   let section: string | undefined;
   const words: PointWords = { point: `리뷰 ${start.round}회차`, noun: "리뷰", next: "회차", host };
   type End = { lost: true } | { completed: true; isLast: boolean; winner: boolean; lastRound: number; model: string }
-    | { unavailable: string; left: number } | { refused: FailureRecord; attempt: CrossAttempt; budgets: Record<"crossError" | "crossFormat", Budget> };
+    | { unavailable: string; left: number } | { refused: FailureRecord; attempt: CrossAttempt; budgets: Record<CrossCounterKey, Budget>; attempts: CrossAttempt[] };
   const end = mutateReview<End>(root, id, target, (current) => {
     const round = current?.rounds.find((item) => item.round === start.round && item.at === start.at);
     if (!current || !round) return { value: { lost: true } };
@@ -464,14 +469,14 @@ export function crossReview(root: string, by: string | undefined): string {
       return { log: current, value: { unavailable: decision.reason, left: budgets.crossPoint.left } };
     }
     if (decision.action !== "refuse") throw new Error("교차 판정(after)이 실행을 돌려줬습니다");
-    return { log: current, value: { refused: decision.failure, attempt: done, budgets } };
+    return { log: current, value: { refused: decision.failure, attempt: done, budgets, attempts } };
   }, { document: (text) => section === undefined ? text : crossSectionText(text, host, section) });
 
   if ("lost" in end) {
     throw new Stop(`${prefix}교차 실행 중 리뷰 회차가 바뀌었습니다(계획·경계 변경 등) — 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
   }
   if ("unavailable" in end) return prefix + unavailableText(host, end.unavailable, end.left);
-  if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, raw));
+  if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, end.attempts, raw));
   const open = body!.split("\n").filter((line) => /^\|\s*X\d+\s*\|/.test(line) && /\|\s*열림\s*\|/.test(line)).length;
   return prefix + `${host}(${end.model}) 교차 리뷰를 ${start.round}회차에 기록했습니다 — ${body === "- 없음" ? "지적 없음" : `열린 지적 ${open}개`}` +
     `${start.mode === "correct" ? " (형식 교정)" : ""}${renamed ? " · F 번호를 X 로 바꿔 기록했습니다" : ""}. ${reviewDocFile(id)} 의 ## ${CROSS_HEADING}` +
@@ -567,7 +572,7 @@ export function crossCritic(root: string, by: string | undefined): string {
       attempts.push(attempt);
       keep(state, attempts);
       const answered = [...new Set(view.filter((item) => item.class === "answered-input").flatMap((item) => attemptQuestions(item, questions)))];
-      return { n: attempt.n, startedAt: at, mode, wasStopped, answered, suspect: crossSandboxSuspect(host, caller, attempts),
+      return { n: attempt.n, startedAt: at, mode, wasStopped, answered, suspect: crossSandboxSuspect(host, caller),
         ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}) };
     });
     // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
@@ -638,7 +643,7 @@ export function crossCritic(root: string, by: string | undefined): string {
     }
 
     type End = { lost: true } | { completed: true; winner: boolean; questionIds: string[] }
-      | { unavailable: string; left: number } | { refused: FailureRecord; attempt: PlanningCrossAttempt; budgets: Record<"crossError" | "crossFormat", Budget> };
+      | { unavailable: string; left: number } | { refused: FailureRecord; attempt: PlanningCrossAttempt; budgets: Record<CrossCounterKey, Budget>; attempts: readonly PlanningCrossView[] };
     const end = mutatePlanning<End>(work, (state) => {
       const all = state.crossAttempts ?? legacyPlanningAttempts(state.cross);
       state.crossAttempts = all;
@@ -689,12 +694,12 @@ export function crossCritic(root: string, by: string | undefined): string {
       }
       if (decision.action !== "refuse") throw new Error("교차 판정(after)이 실행을 돌려줬습니다");
       syncLegacyPlanning(state, dispatchId, questions);
-      return { refused: decision.failure, attempt: done, budgets };
+      return { refused: decision.failure, attempt: done, budgets, attempts: view };
     });
 
     if ("lost" in end) throw new Stop(`${prefix}교차 실행 중 계획 기록이 바뀌어 결과를 기록하지 않았습니다${failed?.rawPath ? ` — 원문: ${failed.rawPath}` : ""}.`);
     if ("unavailable" in end) return prefix + unavailableText(host, end.unavailable, end.left);
-    if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, raw));
+    if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, end.attempts, raw));
     const result = parsed!;
     const blocking = result.findings.filter((finding) => finding.severity === "blocking").length;
     return prefix + `${host}(${outcome.model}) 교차 계획 검토: ${result.status} · 차단 지적 ${blocking}개 · 질문 ${end.questionIds.length}개${start.mode === "correct" ? " (형식 교정)" : ""}\n${result.summary}` +

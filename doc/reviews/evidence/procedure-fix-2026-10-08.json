@@ -8,7 +8,8 @@
     "fullReview": "d12bd46",
     "summaryRecord": "16ae5ec(부모 d12bd46, 문서만)",
     "finalReverify": "5205112(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영",
-    "rebuttal": "이 커밋(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영"
+    "rebuttal": "014cd85(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영",
+    "userDecisions20261008": "이 커밋(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -18,7 +19,10 @@
     "자가 학습 보류 — 측정은 읽기만 하고 환류하지 않는다",
     "사람 확인 지점(요구 확정·계획 승인·결과 반영) 유지",
     "교차 실행 불가 시 중지 기록 후 진행",
-    "두 호스트 설치 시 교차 검증 필수(끄는 설정 없음)"
+    "두 호스트 설치 시 교차 검증 필수(끄는 설정 없음)",
+    "(2026-10-08 D1) 작업 중에는 역할 모델을 바꿀 수 없다 — 작업이 끝난 뒤(반영 deliver 또는 종료 abort) 바꾼다",
+    "(2026-10-08 D2) Codex 메인이 부른 claude 의 같은 지점 네트워크 오류는 몇 번째든 host-sandbox-denied 로 게이트를 막고, 두 번째부터 사람이 정한다(네트워크 확인 뒤 재실행 또는 judgment cross-stop)",
+    "(2026-10-08 D3) CODE_AGENT_*_BIN 이 없는 파일·PATH 의 셸 스크립트뿐이면 설정 오류로 막는다(현행 유지)"
   ],
   "rules": [
     "code-agent update 실행하지 않음",
@@ -270,7 +274,7 @@
       "stage": "10",
       "bundle": "9단계 수정의 반박 검증 지적 F1~F4 반영(check 커서의 기록 변경 사유, 기록 변경 회차의 ⑦ 미확인 줄, 교차 게이트 줄 괄호와 doctor 의 설정 오류 ✗, 시험의 끝난 자식 pid 탐지)",
       "commits": [
-        "이 커밋(부모 5205112)"
+        "014cd85"
       ],
       "record": "doc/reviews/2026-10-08-full-review.md#반박-검증-지적f1f4",
       "npmTest": {
@@ -283,6 +287,27 @@
         "todo": 0,
         "durationMs": 139786,
         "wallSec": 141,
+        "command": "npm run build && npm test",
+        "exit": 0
+      }
+    },
+    {
+      "stage": "11",
+      "bundle": "사용자 결정 D1~D3 반영(작업 중 역할 모델 변경 거부, Codex 메인이 부른 claude 의 네트워크 오류는 몇 번째든 막힘·두 번째부터 사람 판단, 실행 파일 설정 오류 분류 현행 유지)",
+      "commits": [
+        "이 커밋(부모 014cd85)"
+      ],
+      "record": "doc/reviews/2026-10-08-full-review.md#사용자-결정-반영d1d3",
+      "npmTest": {
+        "tests": 1328,
+        "suites": 189,
+        "pass": 1324,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 133636,
+        "wallSec": 135,
         "command": "npm run build && npm test",
         "exit": 0
       }
@@ -508,6 +533,13 @@
         "16ae5ec"
       ],
       "subject": "[코드 에이전트] 최종 재검증 지적 R1~R6 반영 — 사용자 수준 호스트 설정의 다른 이름·검증 명령의 기록 변경 판정·교차 안내의 설정 오류·리뷰 없이 쓴 리뷰 회차의 선택지·흐름도 줄 인용·시험의 죽은 pid"
+    },
+    {
+      "hash": "014cd85f68e4ce341d3acc1651b08e32f06fbc9a",
+      "parents": [
+        "5205112"
+      ],
+      "subject": "[코드 에이전트] 최종 재검증 수정의 반박 검증 지적 F1~F4 반영 — check 커서의 기록 변경 사유·기록 변경 회차의 ⑦ 미확인 줄·교차 게이트 줄 괄호와 doctor 의 설정 오류·시험의 끝난 자식 pid 탐지"
     }
   ],
   "retryPolicy": {
@@ -2356,9 +2388,6 @@
     }
   },
   "needsUser": [
-    "E2(C4 인계 #9) 작업 중 역할 모델 변경·update --templates-only 가 커밋된 설치 파일을 바꿔 계획 밖 변경이 됨 — 설치 파일을 대조에서 뺄지, 작업 중 막을지. 지금은 경고만",
-    "E16 샌드박스 의심 지점의 두 번째 네트워크 오류는 실행 불가로 중지 기록 후 진행(§6.4 문서화) — judgment cross-stop 으로만 중지할지",
-    "E20 실행 파일 변수 오류·PATH 셸 스크립트를 설정 오류로 막는 엄격화 — 명세 §2.3(실행 불가)과 다름, 확인 권장",
     "GAP-5 CI 도입과 실행 플랫폼(지금 Windows 단일)"
   ],
   "unverifiedOnRealHost": [
@@ -2389,7 +2418,8 @@
     "일부 27건의 남은 부분(rows 의 note)",
     "전체 검토 일부 반영 — E13 (b)안, E19 기록하지 못한 판정 실패, E26 잠금 나이 상한, E27 다른 세션 경고, E30 미판정 MCP 이름 기록",
     "문서화된 한계 — Codex 두 세션 동시 진행(임대는 호스트 단위), codex exec resume 프롬프트(CON-1), Codex 확인 코드는 사람 입력 증명 아님(CON-5)",
-    "최종 재검증(9단계) 남긴 것 — finalReverify.remaining"
+    "최종 재검증(9단계) 남긴 것 — finalReverify.remaining",
+    "사용자 결정 반영(11단계) 남긴 것 — userDecisions20261008.remaining"
   ],
   "finalReverify": {
     "source": "doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
@@ -2664,6 +2694,140 @@
       "check 커서에서 같은 회차 test 의 기록 변경이 있으면 단계별 게이트라 next 는 test 로 넘어간 뒤 막힘(게이트는 그대로 둠 — 다음:·verify 는 그 자리에서 사유)",
       "비동기 자식(spawn)이 끝난 뒤의 .pid 를 죽은 pid 로 쓰는 꼴은 탐지하지 않음",
       "교차 설정 오류에서 doctor exit 1 — E20 분류(hostCommandConfigError)를 따른다"
+    ]
+  },
+  "decided20261008": [
+    "E2(C4 인계 #9) → D1 반영: 작업 중 역할 모델·강도 변경 거부, 작업이 끝난 뒤 변경",
+    "E16 → D2 반영: Codex 메인이 부른 claude 의 네트워크 오류는 몇 번째든 막힘, 두 번째부터 사람 판단",
+    "E20 → D3 확정: 설정 오류로 막는 현행 유지"
+  ],
+  "userDecisions20261008": {
+    "source": "doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영(D1~D3)' 절",
+    "base": "014cd85",
+    "rules": [
+      "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)",
+      "code-agent update 실행하지 않음, 이 저장소 루트에 init 하지 않음",
+      "재현·시험은 HOME·USERPROFILE·APPDATA·CODEX_HOME 을 임시 폴더로 — 사용자의 실제 ~/.claude·~/.codex 는 쓰거나 지우지 않음",
+      "사람 확인 지점(요구 확정·계획 승인·결과 반영)을 줄이지 않고 게이트를 약하게 하지 않음"
+    ],
+    "items": [
+      {
+        "id": "D1",
+        "finding": "E2",
+        "status": "반영(사용자 결정 2026-10-08)",
+        "decision": "작업 중에는 역할 모델을 바꿀 수 없도록 막는다. 작업이 끝난 뒤(반영 deliver 또는 종료 abort 로 진행 중 작업이 없어진 뒤) 바꿀 수 있다",
+        "reproBefore": "작업 중 model 동의 준비는 경고만 붙이고 통과, 적용·직접 setModel(TTY)이 정의 파일을 바꿈, 접수 세션에는 경고도 없음(modelWorkWarning 은 active.json 만 봄)",
+        "change": "models.ts workInProgress(active.json 또는 접수 세션 — 읽기 실패면 던짐)·requireNoWorkInProgress(precondition model-in-work 문구: 작업 ID·단계, '작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾸세요'). validateModelChange 첫 줄 — 동의 준비(질문 전)·setModel·CLI(TTY 확인 전, exit 1) 공통. 동의 적용 시점 재확인(applyLocked, 스냅샷 대조 앞 — consent-target-changed kind target 으로 폐기). modelWorkWarning 삭제. doctor '에이전트 모델' ✗ 안내는 작업 중이면 작업이 끝난 뒤 update --templates-only. cross-config-error 안내의 모델 변경 문장을 작업 중 변경 불가로. 값 없는 조회는 연다. 강도 변경도 같다. update --templates-only 동작은 바꾸지 않음",
+        "files": [
+          "src/agent/models.ts",
+          "src/agent/consent.ts",
+          "src/agent/doctor.ts",
+          "src/agent/retryPolicy.ts"
+        ],
+        "tests": [
+          "D1 준비 거부 — 작업 중이면 model 동의(모델·강도·기본값 복원)를 질문을 내기 전에 거부하고 동의 기록을 남기지 않는다",
+          "D1 준비 거부 — 접수 세션(start 전)도 진행 중인 작업이다",
+          "D1 적용 시점 재확인 — 작업이 없을 때 준비·승인한 동의도 그 뒤 작업이 시작되면 적용하지 않고 대상 변경으로 폐기한다",
+          "D1 CLI 거부·표 보기 허용",
+          "D1 종료 뒤 허용 — abort",
+          "D1 반영 뒤 허용 — deliver",
+          "D1 doctor"
+        ]
+      },
+      {
+        "id": "D2",
+        "finding": "E16",
+        "status": "반영(사용자 결정 2026-10-08)",
+        "decision": "Codex 메인이 Claude 를 교차로 부를 때(셸에 샌드박스 표지 없음) 같은 지점 네트워크 오류는 몇 번째든 host-sandbox-denied 로 게이트를 막는다. 첫 번째는 권한 상승해 같은 명령, 두 번째부터는 확인해 다시 실행하거나 사용자 확인을 받아 judgment cross-stop. 판단 주체는 사람",
+        "reproBefore": "1번째 host-sandbox-denied/sandbox-network(막힘), 2·3번째 cross-unavailable/network(중지 기록 후 진행, 게이트 통과), 4번째 지점 한도 거부",
+        "change": "crossCheck.ts crossSandboxSuspect(host, caller) — 지점의 앞선 시도를 보지 않음. retryPolicy.ts host-sandbox-denied 정책(detect·retryText·counters crossPoint·limitText)과 GUIDE_VARIANTS network-repeat(남은 지점 시도)·network-exhausted, recordedVariant(record, point) — 끝난 sandbox-network 시도가 둘 이상이면 변형. failureText·crossHintText(리뷰·계획 게이트 줄)가 같은 변형. 지점 시도 한도에 세므로 기록은 3개에서 멈춤",
+        "unchanged": [
+          "표지가 있으면 crossPreflight 사전 거부",
+          "CODE_AGENT_CROSS_PREFLIGHT=off",
+          "Claude 메인→Codex 네트워크 오류는 실행 불가(중지 기록 후 진행)",
+          "Codex 메인→Claude 라도 네트워크가 아닌 실행 불가(미설치·인증·사용 한도·서비스 장애)는 중지 기록 후 진행"
+        ],
+        "files": [
+          "src/agent/crossCheck.ts",
+          "src/agent/crossRecord.ts",
+          "src/agent/retryPolicy.ts"
+        ],
+        "tests": [
+          "D2(E16): Codex 에서 부른 --by claude 의 네트워크 오류는 같은 지점에서 몇 번째든 샌드박스 거부로 막는다 — 첫 번째는 권한 상승, 두 번째부터 사람에게 넘기고, 지점 시도 한도에서 멈춘다(2026-10-08 사용자 결정)",
+          "D2(E16): 네트워크 오류가 되풀이된 지점은 사람의 judgment cross-stop 동의로 중지를 기록하고 진행한다",
+          "D2(E16): 바꾸지 않는 갈래 — Claude 메인이 부른 codex 의 네트워크 오류는 실행 불가로 중지를 기록하고 진행한다",
+          "D2(E16): 바꾸지 않는 갈래 — Codex 메인이 부른 claude 라도 네트워크가 아닌 실행 불가(인증)는 중지를 기록하고 진행한다",
+          "D2(E16): Codex 에서 부른 계획 교차 검토(--by claude)의 네트워크 오류도 몇 번째든 막힘이고 두 번째부터 사람에게 넘긴다 — 사람이 중지를 기록하면 계획을 제출할 수 있다",
+          "D2 classifyCrossFailure·recordedVariant",
+          "pointHost·crossSandboxSuspect(D2)",
+          "docSync §6.4"
+        ]
+      },
+      {
+        "id": "D3",
+        "finding": "E20",
+        "status": "반영(사용자 결정 2026-10-08)",
+        "decision": "CODE_AGENT_*_BIN 이 없는 파일을 가리키거나 PATH 에 셸 스크립트(.cmd 등)만 있는 경우는 설정 오류로 막는다(현행 유지)",
+        "change": "코드 변경 없음. doctor ✗·exit 1(F3) 유지",
+        "tests": [
+          "review-gate E20",
+          "finalReverify R3"
+        ]
+      }
+    ],
+    "docs": [
+      "doc/process-flow.md §4.1·§6.3·§6.4(생성 블록)·§7·§8·§9·§10",
+      "doc/codex.md",
+      "doc/usage.md",
+      "doc/design.md",
+      "template/claude/skills/ca-answer/reference.md",
+      "template/codex/ca-answer.md"
+    ],
+    "verification": {
+      "npmTest": {
+        "tests": 1328,
+        "suites": 189,
+        "pass": 1324,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 133636,
+        "wallSec": 135,
+        "command": "npm run build && npm test",
+        "exit": 0,
+        "buildExit": 0,
+        "testExit": 0,
+        "baseAt014cd85": {
+          "tests": 1317,
+          "pass": 1313,
+          "fail": 0,
+          "skipped": 4
+        },
+        "added": "D1 7개(옛 E2 경고 시험 1개 대체), D2 6개(crossReview 4 — 옛 '두 번째 네트워크 오류는 실행 불가' 시험 1개 대체, planning 1, cross 1)",
+        "note": "처음 두 번의 전체 실행에서 D1 준비 거부 시험이 동의 폴더의 snapshot-cache.json(스냅샷 해시 캐시)을 동의 기록으로 세어 실패 — 시험이 UUID 이름만 세게 고침(제품 동작 변화 없음)"
+      },
+      "mutation": {
+        "mutations": 4,
+        "caught": 4,
+        "sites": [
+          "D1 validateModelChange 의 requireNoWorkInProgress",
+          "D1 applyLocked 적용 시점 재확인",
+          "D2 crossSandboxSuspect",
+          "D2 recordedVariant network-repeat·network-exhausted"
+        ],
+        "script": "scratchpad/mutate.cjs"
+      },
+      "repro": {
+        "D1": "scratchpad/d1d2/d1-repro.cjs — 수정 전 작업 중 변경 성공, 수정 뒤 준비·직접 변경·접수 세션 거부(CLI exit 1), 작업 없으면 허용",
+        "D2": "scratchpad/d1d2/d2-repro.cjs — 수정 전 2번째부터 중지 기록, 수정 뒤 1번째 기본·2번째 network-repeat·3번째 network-exhausted·4번째 지점 한도, 시도 3개, previewCrossStop 가능"
+      }
+    },
+    "remaining": [
+      "doctor 의 models.json 형식 오류 안내는 바꾸지 않음(update --templates-only 안내 그대로)",
+      "같은 지점의 첫 샌드박스 네트워크 차단 안내는 지점 시도가 남았는지와 관계없이 '권한 상승해 같은 명령' — 다른 원인으로 지점 시도를 다 쓴 뒤라면 같은 명령은 지점 한도로 거부되고 그 거부가 사람 판단을 안내",
+      "작업 시작 뒤 적용한 model 동의의 폐기 안내는 대상 변경 공통 문구('새로 준비') — 폐기 사유가 '작업을 반영·종료한 뒤'를 실음",
+      "실제 Codex 셸의 샌드박스 표지와 실제 claude 네트워크 오류 문구는 실제 호스트에서 미확인"
     ]
   }
 }

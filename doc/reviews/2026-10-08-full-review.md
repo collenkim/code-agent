@@ -1,6 +1,6 @@
 # 전체 검토 반영과 흐름도·코드 대조 시험 (2026-10-08)
 
-감사([2026-10-07 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md)) 뒤 구현 전체(`ff13950..934e5fe` — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의, C4 단계·CLI·임대, C7 최적화)를 네 관점(e2e·재시도 규약·hook·문서)으로 독립 검토한 지적 43건을 처리했다. 지적마다 코드로 확인하고, 맞으면 고친 뒤 회귀 시험을 더했다. 시험은 수정을 되돌리면 실패하는 것까지 확인했다. 틀린 지적은 근거를 적고 반영하지 않았다. 사용자 결정을 바꾸는 수정은 하지 않고 아래 '사용자 결정 필요'에 남겼다.
+감사([2026-10-07 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md)) 뒤 구현 전체(`ff13950..934e5fe` — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의, C4 단계·CLI·임대, C7 최적화)를 네 관점(e2e·재시도 규약·hook·문서)으로 독립 검토한 지적 43건을 처리했다. 지적마다 코드로 확인하고, 맞으면 고친 뒤 회귀 시험을 더했다. 시험은 수정을 되돌리면 실패하는 것까지 확인했다. 틀린 지적은 근거를 적고 반영하지 않았다. 사용자 결정을 바꾸는 수정은 하지 않고 아래 '사용자 결정'에 남겼다 — 그 셋(E2·E16·E20)은 2026-10-08 사용자 결정을 받아 끝 절 '사용자 결정 반영(D1~D3)'에서 처리했다.
 
 ## 방법
 
@@ -11,14 +11,14 @@
 
 ## 지적과 처리
 
-상태: **반영**(지적대로 고침) · **일부**(핵심을 고치고 남은 부분을 적음) · **결정**(사용자 결정 필요 — 코드는 바꾸지 않거나 최소안만).
+상태: **반영**(지적대로 고침) · **일부**(핵심을 고치고 남은 부분을 적음) · **결정**(사용자 결정 필요 — 코드는 바꾸지 않거나 최소안만) · **반영(사용자 결정 2026-10-08)**(결정을 받아 처리 — 끝 절).
 
 ### e2e (E1~E12)
 
 | 번호 | 지적 | 상태 | 처리 | 시험 |
 |---|---|---|---|---|
 | E1 | 환경 오류로 진단 노드일 때 `다음:`·허용 적용 뒤 next 가 `verify --json`(재실행 없음)을 안내한다 | 반영 | `nextHint` check·test 갈래가 진단(전제 조건 제외)이면 `code-agent verify --json --retry` | fullReview E1 |
-| E2 | 작업 중 `model` 동의가 커밋된 설치 파일을 바꿔 계획 밖 변경이 되고, 빠져나갈 길이 없다 | 일부·결정 | 진행 중 작업이 있으면 동의 요약과 적용 뒤 next 에 '계획 밖 변경이 된다' 경고(`modelWorkWarning`). 근본 처리는 사용자 결정(아래) | fullReview E2 |
+| E2 | 작업 중 `model` 동의가 커밋된 설치 파일을 바꿔 계획 밖 변경이 되고, 빠져나갈 길이 없다 | 반영(사용자 결정 2026-10-08) | 결정 D1: 진행 중인 작업(접수 세션부터 반영·종료 전까지)이 있으면 역할 모델·추론 강도 변경을 거부한다. 동의 준비(질문 전)·동의 적용 시점 재확인(대상 변경으로 폐기)·터미널 `code-agent model <역할> <모델>`(TTY 확인 전)이 같은 `model-in-work` 문구(`models.ts` `requireNoWorkInProgress`)를 쓴다. 조회는 연다. 경고 `modelWorkWarning`은 지웠다. doctor '에이전트 모델' ✗ 안내는 작업 중이면 작업이 끝난 뒤 `update --templates-only` 를 말한다(검토 반영 때는 경고만 냈다) | fullReview D1(E2) 7개 |
 | E3 | 교차 설정 오류·결과 형식 오류 재실행 한도를 다 쓴 뒤에도 '한 번 더 실행할 수 있습니다(남은 0회)' | 반영 | `cross-config-error`·`cross-result-invalid` 에 `exhausted` 안내 변형, 남은 수 0이면 그 문구 | crossReview E3 |
 | E4 | 한도를 다 쓴 교차 지점의 `다음:` 이 실행 명령을 맨 앞에 둔다 | 반영 | 리뷰·계획의 교차 줄이 `limit-exceeded` 면 실행 명령 없이 사람 판단만 | crossReview E4 · planning E4 |
 | E5 | critic 뒤 계획 advance 가 `blocked: []` 와 일반 문구만 내고 교차 검토 명령이 없다 | 반영 | 교차 검토가 남았으면 blocked 사유·next 가 교차 명령 → 그다음 advance, `다음:` plan 갈래에도 교차 줄 | planningChain E5 · planning E5 |
@@ -37,11 +37,11 @@
 | E13 | 통과 뒤 변경 회차가 리뷰 회차를 쓰지 않아, 리뷰 없는 루프는 허용 길이 없는 총 회차로만 막히는데 문구는 '한 회차 더 허용'을 낸다 | 일부 | (a)안 — `reviewRoundBudget` = 리뷰 회차 기록과 지금 묶인 회차의 통과 뒤 변경 수 중 큰 값. 총 회차 문구는 허용 선택지 없이(`no-grant` 변형). 원래 원인은 열린 지적이 있으면 `blocking-finding`, 없으면 `code-defect`(표가 통과 뒤 변경을 code-defect 행에 둔다). (b)안(총 회차를 허용 대상에)은 C5 설계가 뺀 것이고 리뷰 없는 루프가 여전히 리뷰 회차를 안 쓰므로 고르지 않았다 | fullReview E13·E14·E10 · verifyRetry |
 | E14 | 리뷰 회차 소진의 허용이 review 단계만 받아, check 로 되감긴 뒤에는 허용할 수 없다 | 반영 | 허용 단계를 검증 단계 전체로. 리뷰 회차 기록이 없으면 그 사실을 알리는 Stop | fullReview E13·E14·E10 · consentBinding T-J-1 |
 | E15 | 검증 명령(모델이 쓴 테스트)이 `review.json` 을 지우면 리뷰 회차 한도가 풀린다 | 반영 | `guardedStateFiles`(review.json·planning.json)를 실행 전에 떠 두고, 바뀌면 되돌린 뒤 그 실행을 받지 않는다. 다른 기록의 한계는 design.md 에 | fullReview E15 |
-| E16 | 샌드박스 의심 지점의 두 번째 네트워크 오류가 실행 불가(중지 기록 후 진행)가 되어 사람 판단 없이 교차가 빠진다 | 결정 | 코드는 그대로 두었다. §6.4 표 host-sandbox-denied 판별 칸에 '같은 지점 두 번째 네트워크 오류는 실행 불가로 기록 후 진행'을 렌더해 문서화했다 | docSync §6.4 |
+| E16 | 샌드박스 의심 지점의 두 번째 네트워크 오류가 실행 불가(중지 기록 후 진행)가 되어 사람 판단 없이 교차가 빠진다 | 반영(사용자 결정 2026-10-08) | 결정 D2: Codex 메인이 부른 `--by claude`의 네트워크 오류는 같은 지점에서 몇 번째든 `host-sandbox-denied`(막힘)이고, 두 번째부터 사람에게 넘기는 안내(`network-repeat`·`network-exhausted`)를 낸다. 지점 시도 한도에 세므로 기록은 3개에서 멈춘다. 사람이 `judgment cross-stop`으로 중지를 기록한다(검토 반영 때는 코드를 두고 §6.4 에 문서화만 했다) | crossReview D2(E16) 4개 · planning D2(E16) · cross D2 · docSync §6.4 |
 | E17 | 끊긴 test 의 재실행 한도 거부(`RetryRefused`)를 test.execute 가 잡지 않아 verify 가 예외로 끝난다 | 반영 | test.execute 도 `limit-exceeded` 면 blocked → decision(§6.2 TE→DC) | fullReview E17 |
 | E18 | 샌드박스 표지 사전 거부가 부를 때마다 시도를 하나씩 쌓는다 | 반영 | 같은 사유 사전 거부가 마지막 시도면 다시 쌓지 않는다(리뷰·계획 양쪽) | crossReview E18 |
 | E19 | SubagentStop 판정 실패가 원인과 무관하게 exit 2 이고 기록이 없어 실행이 고아 기한까지 '실행 중' | 일부 | 리뷰어 실행에 `hook-failure` 를 기록하고 0(새 호출을 받는다), 형식 되돌림(`ReturnToReviewer`)만 2. 기록하지 못한 판정 실패는 2로 남긴다 — 계획 쪽 일시 잠금 실패 재시도에 쓰이는 §5.1 문서화 동작이다. §6.4 산문·표를 이 규칙으로 맞췄다 | crossReview E19 |
-| E20 | 실행 파일 변수가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있어도 실행 불가로 진행한다 | 반영 | `hostCommandConfigError` → `cross-config-error`(kind config)로 막는다. 미설치만 실행 불가. '두 호스트 설치 시 교차 필수'에 맞춘 엄격화다 | review-gate E20 · retryPolicy fixture |
+| E20 | 실행 파일 변수가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있어도 실행 불가로 진행한다 | 반영(사용자 결정 2026-10-08) | `hostCommandConfigError` → `cross-config-error`(kind config)로 막는다. 미설치만 실행 불가. '두 호스트 설치 시 교차 필수'에 맞춘 엄격화다. 결정 D3: 이 엄격화를 현행대로 확정했다(코드 변경 없음, doctor ✗·exit 1 도 유지) | review-gate E20 · retryPolicy fixture · finalReverify R3 |
 | E21 | lock-stale 행의 '대기 재실행 1'을 아무 코드도 세지 않는다 | 반영 | 표 문구를 `대기 재실행 1(안내만 — 기록·강제 없음)` 으로 | docSync §6.4 |
 | E22 | 실행 중인 다른 교차 시도를 lock-stale 로 분류한다 | 반영 | `precondition`(kind `cross-busy`) | retryPolicy E22 |
 | E23 | 동의 대상 변경 안내가 consent.ts 와 retryPolicy 두 곳에 있고, 렌더되지 않는 guide 가 셋 있다 | 반영 | consent GUIDES 를 retryPolicy 변형(`response-change`·`defer`·`none`·`invalid`)으로 옮겨 `guidance()` 로. 렌더 안 되는 셋(blocking-finding·lock-stale·hook-failure)은 `UNRENDERED_GUIDES` 로 선언하고 시험이 소스와 대조(지적이 고른 두 번째 방법) | retryPolicy E23 · failureHint |
@@ -87,11 +87,13 @@
 
 AGENTS.md '바꿀 때 지킨다'에 이 대조를 한 줄로 적었다. 대조가 문서 변경을 실제로 잡는지 문서를 하나씩 바꿔 보는 변이 검사 7종으로 확인했다.
 
-## 사용자 결정 필요
+## 사용자 결정
 
-1. **작업 중 역할 모델 변경(E2, C4 인계 #9)** — 설치 파일(`.claude/agents/ca-*.md`·`.codex/agents/ca-*.toml`)을 계획 밖 변경 대조에서 뺄지, 작업 중에는 `model` 동의와 `update --templates-only` 를 막을지 정해야 한다. 지금은 경고만 낸다.
-2. **샌드박스 의심 지점의 두 번째 네트워크 오류(E16)** — 지금은 실행 불가로 중지 기록 후 진행한다(§6.4 에 문서화). 사람 `judgment cross-stop` 으로만 중지하게 바꾸면 '교차 실행 불가 시 중지 기록 후 진행'과 부딪히고, 두면 모델의 재실행 한 번으로 교차가 빠질 수 있다.
-3. **실행 파일 설정 오류의 분류(E20)** — 설정 오류로 막는 엄격화로 반영했다. '두 호스트 설치 시 교차 필수'와 맞는다고 판단했지만, 명세 §2.3(실행 불가)과 다르므로 확인을 권한다.
+검토 때 사용자 결정이 필요하다고 남긴 셋은 2026-10-08 에 사용자가 정했다. 처리는 끝 절 '사용자 결정 반영(D1~D3)'에 있다.
+
+1. **작업 중 역할 모델 변경(E2, C4 인계 #9) — D1** — "작업 중에는 역할 모델을 바꿀 수 없도록 막는다. 작업이 끝난 뒤(반영 deliver 또는 종료 abort 로 진행 중 작업이 없어진 뒤) 바꿀 수 있다." 동의 준비·동의 적용·터미널 `code-agent model` 변경 모두 같은 규칙이고, 값 없는 조회는 연다. 강도 변경도 같다. `update --templates-only` 자체 동작은 바꾸지 않는다.
+2. **샌드박스 의심 지점의 두 번째 네트워크 오류(E16) — D2** — Codex 메인이 Claude 를 교차로 부를 때(셸에 샌드박스 표지 없음) 같은 지점의 네트워크 오류는 몇 번째든 `host-sandbox-denied`로 게이트를 막는다. 첫 번째는 권한 상승해 같은 명령, 두 번째부터는 실제 네트워크 문제일 수 있으니 확인해 다시 실행하거나 사용자 확인을 받아 `judgment cross-stop`. 판단 주체는 사람이다. 표지가 있으면 사전 거부, `CODE_AGENT_CROSS_PREFLIGHT=off`, Claude 메인→Codex 의 네트워크 오류(실행 불가 → 중지 기록 후 진행), Codex 메인→Claude 라도 네트워크가 아닌 실행 불가(미설치·인증·사용 한도·서비스 장애 → 중지 기록 후 진행)는 그대로다.
+3. **실행 파일 설정 오류의 분류(E20) — D3** — "`CODE_AGENT_*_BIN` 이 없는 파일을 가리키거나 PATH 에 셸 스크립트(.cmd 등)만 있는 경우는 설정 오류로 막는다(현행 유지)." 코드 변경은 없다. doctor ✗·exit 1(F3)도 유지한다.
 4. (참고) 감사 GAP-5 — CI 도입과 실행 플랫폼은 [감사 처리 현황](2026-10-08-audit-disposition.md)의 보류 표에 있다.
 
 ## 결과
@@ -144,3 +146,28 @@ AGENTS.md '바꿀 때 지킨다'에 이 대조를 한 줄로 적었다. 대조�
   - check 커서에서 같은 회차 test 의 기록 변경이 있을 때, 게이트가 단계별이라 `next`는 test 로 넘어간 뒤에 막힌다. 지적이 정한 대로 게이트는 그대로 두었다. `다음:`과 verify 는 그 자리에서 사유를 낸다.
   - 비동기 자식(`spawn`)이 끝난 뒤의 `.pid`를 죽은 pid 로 쓰는 꼴은 탐지하지 않는다.
   - 교차 설정 오류에서 doctor 가 exit 1 이 된 것은 E20(설정 오류 분류)을 따른다. 사용자가 E20 을 되돌리면 같은 `hostCommandConfigError`를 따라 함께 바뀐다.
+
+## 사용자 결정 반영(D1~D3)
+
+위 '사용자 결정' 절의 셋을 2026-10-08 사용자 결정대로 처리했다. 결정마다 수정 전 산출물에서 결정과 다른 동작을 재현 스크립트로 먼저 확인했다. 재현과 시험은 임시 git 저장소에서 했고 HOME·USERPROFILE·APPDATA·CODEX_HOME 을 임시 폴더로 바꿨다. 교차는 가짜 claude·codex 실행 파일로만 돌렸다. 실제 모델은 부르지 않았고 `code-agent update` 는 실행하지 않았다. 사람 확인 지점은 줄이지 않았고 게이트도 약하게 하지 않았다. 회귀 시험 이름에 D1·D2 를 붙였다.
+
+| 결정 | 지적 | 재현(수정 전) | 처리 | 시험 |
+|---|---|---|---|---|
+| D1 | E2 | 작업 중 model 동의 준비가 경고만 붙이고 통과했다. 적용·직접 `setModel`(TTY)이 정의 파일을 바꿨다. 접수 세션(start 전)에는 경고도 없었다 — `modelWorkWarning`이 `active.json`만 봤다 | 진행 중인 작업은 접수 세션부터 반영(deliver)·종료(abort) 전까지다(`models.ts` `workInProgress`). 그동안 `validateModelChange`가 먼저 `requireNoWorkInProgress`로 거부한다. 문구는 재시도 규약 `precondition`의 `model-in-work` 변형으로, 작업 ID·단계와 "작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾸세요"를 싣는다. 그래서 동의 준비는 질문을 내기 전에, 터미널 `code-agent model <역할> <모델>`은 TTY를 묻기 전에(exit 1) 거부된다. 강도만 바꾸거나 기본값으로 되돌려도 같다. 값 없는 조회는 연다. 작업이 없을 때 준비·승인한 동의도 적용 시점(`applyLocked`, 스냅샷 대조 앞)에 다시 본다. 그사이 작업이 시작됐으면 적용하지 않고 대상 변경(`consent-target-changed`, kind `target`)으로 폐기한다. 아무것도 적용하지 않았으므로 '일부만 반영됐을 수 있다'는 적용 실패 안내를 쓰지 않는다. 경고 `modelWorkWarning`은 지웠다. doctor '에이전트 모델' ✗ 안내는 작업 중이면 작업이 끝난 뒤 `update --templates-only` 를 실행하라고 한다. 교차 설정 오류 안내의 '모델 설정은 동의 model 로 바꾸고'는 작업 중 모델을 바꾸지 않는다는 문장으로 고쳤다. 모델이 원인이거나 고칠 수 없으면 사람 중지이고, 모델은 작업이 끝난 뒤 바꾼다. `update --templates-only` 동작은 바꾸지 않았다 | fullReview D1(E2) 7개 — 준비 거부(모델·강도·기본값·all), 접수 세션, 적용 시점 재확인, CLI 거부·표 보기, abort 뒤 허용, deliver 뒤 허용, doctor |
+| D2 | E16 | Codex 메인이 부른 `--by claude`의 같은 지점 네트워크 오류가 1번째는 막힘이었다. 2·3번째는 `cross-unavailable`/network 로 중지가 기록되고 게이트가 통과했다. 모델의 재실행 한 번으로 교차가 빠졌다 | `crossSandboxSuspect`가 지점의 앞선 시도를 보지 않는다. Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 `host-sandbox-denied`(`sandbox-network`)로 게이트를 막는다. 첫 번째는 지금처럼 권한 상승해 같은 명령을 안내한다. 두 번째부터는 안내 변형(`recordedVariant` — 끝난 `sandbox-network` 시도가 둘 이상)을 쓴다. 지점 시도가 남았으면 `network-repeat`다 — 실제 네트워크 문제일 수 있으니 사용자에게 알려 지시를 받는다. 사용자가 네트워크를 확인하면 같은 명령을 다시 실행하고(남은 횟수), 진행하기로 정하면 `judgment cross-stop`이다. 다 썼으면 `network-exhausted`다 — `judgment cross-stop` 또는 `retry-grant crossPoint`. 두 변형 모두 '사용자 확인 없이 중지를 기록하지 않습니다'로 끝난다. 실행 시도(review·correct)라 지점 시도 한도에 세고, `POLICIES` 카운터에 `crossPoint`를 적었다. 그래서 기록은 3개에서 멈추고 4번째는 실행 전 지점 한도로 거부된다. 리뷰·계획 게이트 줄(`crossHintText`)과 실행 결과 문구(`failureText`)가 같은 변형을 쓴다. 사람 중지(`judgment cross-stop`)는 이 막힌 지점을 받는다. 바꾸지 않은 것: 표지가 있으면 사전 거부(`crossPreflight`), `CODE_AGENT_CROSS_PREFLIGHT=off`, Claude 메인이 부른 codex 의 네트워크 오류(실행 불가 → 중지 기록 후 진행), Codex 메인이 불렀어도 네트워크가 아닌 실행 불가(미설치·인증·사용 한도·서비스 장애 → 중지 기록 후 진행). `ca-review`·`ca-plan` 4-1 은 '그 밖의 실패(…샌드박스)는 출력의 안내만 따른다'라 고치지 않았다 | crossReview D2(E16) 4개(몇 번째든 막힘·변형·한도 / judgment cross-stop 동의로 진행 / Claude 메인→Codex 네트워크 / Codex 메인→Claude 인증), planning D2(E16) 1개, cross D2 1개(분류·변형 선택), cross pointHost·crossSandboxSuspect(D2), docSync §6.4 |
+| D3 | E20 | — | 현행 유지 — 코드 변경 없음. doctor ✗·exit 1(F3)도 그대로다 | 기존 review-gate E20 · finalReverify R3 |
+
+문서: 흐름도 §4.1 model 행과 직접 CLI 문단, §6.3(실행 전 판정 문단, 실패 처리 표의 설정 오류·샌드박스 행), §6.4 생성 블록(`renderRetryPolicyTable()` 출력으로 다시 붙임), §7(교차 명령 행, 역할 모델 변경 행 추가), §8 `models.json` 행, §9 모듈 지도, §10. 그 밖에 `doc/codex.md`(교차 문단·모델 변경 문단), `doc/usage.md` model 행, `doc/design.md`(교차 결정 문단·모델 문단), `ca-answer/reference.md`(model 행·cross-stop 행), `template/codex/ca-answer.md`(모델 문단)를 고쳤다. 템플릿 예산 안이다(reference 5187/5300, Codex ca-answer 3942/4100).
+
+### 사용자 결정 반영 결과
+
+`npm run build && npm test` 단일 전체 실행: **1328개 중 1324개 통과·실패 0개·생략 4개**(suites 189, `duration_ms` 133,636, 벽시계 135초). 시작 시점(`014cd85`)은 1317개 중 1313개였다. 늘어난 11개의 내역: D1 7개가 옛 E2 경고 시험 1개를 대체했다. D2 는 crossReview 4개가 옛 '두 번째 네트워크 오류는 실행 불가' 시험 1개를 대체했고, planning 1개·cross 1개를 더했다.
+
+- 변이 검사 — 수정 네 곳을 빌드 산출물에서 하나씩 되돌렸다. 매번 그 결정의 시험이 깨졌다. ① 준비·CLI 거부(`validateModelChange`의 `requireNoWorkInProgress`)를 지우면 D1 5개(준비 거부 둘·CLI 거부·abort 뒤·deliver 뒤 — 작업 중 거부를 먼저 단언한다)가 깨졌다. ② 적용 시점 재확인을 지우면 D1 적용 시점 재확인이 깨졌다. ③ 샌드박스 의심(`crossSandboxSuspect`)을 끄면 D2 crossReview 2개·planning 1개·cross 의 pointHost·crossSandboxSuspect(D2)가 깨졌다. ④ 두 번째 이후 변형(`recordedVariant`)을 끄면 D2 crossReview 1개·planning 1개·cross 1개가 깨졌다.
+- 재현 스크립트(`d1-repro.cjs`·`d2-repro.cjs`, 작업 scratchpad `d1d2/`) — 고친 산출물에서 D1 의 준비·직접 변경·접수 세션이 모두 거부되고(CLI exit 1), 작업이 없으면 열린다. D2 는 1번째 기본 안내, 2번째 `network-repeat`(남은 지점 시도 1회), 3번째 `network-exhausted`, 4번째 실행 전 지점 한도 거부다. 시도 기록은 3개이고 `previewCrossStop`이 그 지점을 받는다.
+- 처음 두 번의 전체 실행에서는 D1 준비 거부 시험 하나가 실패했다(단독 실행과 부하 실행 6파일은 통과). 시험이 동의 폴더의 `snapshot-cache.json`을 동의 기록으로 셌기 때문이다. 이 파일은 스냅샷 해시 캐시로, 준비 전 스냅샷 계산이 시각에 따라 쓴다. 시험이 동의 기록(UUID 이름)만 세게 고쳤다. 제품 동작은 바뀌지 않았다.
+- 남은 점:
+  - doctor 의 `models.json` 형식 오류 안내는 바꾸지 않았다(`update --templates-only` 안내 그대로 — 결정 범위 밖).
+  - 같은 지점의 첫 샌드박스 네트워크 차단 안내는 지점 시도가 남았는지와 관계없이 '권한 상승해 같은 명령'이다. 다른 원인으로 지점 시도를 다 쓴 뒤라면 같은 명령은 지점 한도로 거부되고, 그 거부가 사람 판단을 안내한다.
+  - 작업 시작 뒤에 적용한 model 동의의 폐기 안내는 대상 변경의 공통 문구('새로 준비')다. 폐기 사유에 '작업을 반영(deliver)하거나 종료(abort)한 뒤 새로 준비하세요'를 싣는다.
+  - 실제 Codex 셸의 샌드박스 표지와 실제 claude 네트워크 오류 문구는 실제 호스트에서 확인하지 않았다.

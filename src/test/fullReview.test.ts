@@ -3,13 +3,16 @@
  * 임시 git 저장소(stageFixture — 주문 도메인 ORD-1)에 실제 함수를 그대로 부른다. 모델·호스트는 부르지 않는다.
  */
 import { strict as assert } from "node:assert";
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
-import { next, requireValidatable, status } from "../agent/commands";
-import { finishConsent, prepareConsent } from "../agent/consent";
+import { abort, next, requireValidatable, status } from "../agent/commands";
+import { finishConsent, loadConsent, prepareConsent } from "../agent/consent";
+import { doctor } from "../agent/doctor";
+import { setModel } from "../agent/models";
 import { check, integrate, patchEvidence, runTests } from "../agent/validate";
 import { loadEvidence, validationDocFile, verifyView } from "../agent/evidence";
 import { loadActive, reviewFile } from "../agent/layout";
@@ -52,19 +55,121 @@ describe("E1 — 진단 노드의 다음: 은 verify 결과의 재개 명령과 
   });
 });
 
-describe("E2 — 진행 중 작업의 모델 변경은 계획 밖 변경이 된다고 알린다(근본 처리는 사용자 결정)", () => {
-  test("작업이 있으면 동의 요약·적용 뒤 next 에 경고가 붙고, 작업이 없으면 붙지 않는다", () => {
-    write(".claude/agents/ca-writer.md", "---\nname: ca-writer\nmodel: sonnet\neffort: medium\n---\n본문\n");
-    const idle = JSON.parse(prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" })) as { summary: string };
-    assert.doesNotMatch(idle.summary, /진행 중인 작업/);
+describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접수부터 반영(deliver)·종료(abort) 전까지 거부(2026-10-08 사용자 결정)", () => {
+  const AGENT = ".claude/agents/ca-writer.md";
+  const REFUSED = /진행 중인 작업 ORD-1\(check\)이 있어 역할 모델·추론 강도를 바꾸지 않습니다 — [\s\S]*작업을 반영\(deliver\)하거나 종료\(abort\)한 뒤 바꾸세요/;
+  const TTY = { confirm: () => PRESENCE, ask: () => "y" };
+  const modelLine = () => /^model: .*$/m.exec(readFileSync(join(repo, AGENT), "utf8"))![0];
+  // 동의 기록(UUID 이름)만 센다 — 같은 폴더의 snapshot-cache.json(스냅샷 해시 캐시)은 준비 전 스냅샷 계산이 시각에 따라 쓴다
+  const consentFiles = () => existsSync(join(repo, ".code-agent/consents"))
+    ? readdirSync(join(repo, ".code-agent/consents")).filter((name) => /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.json$/.test(name)) : [];
+  const installAgent = () => {
+    write(AGENT, "---\nname: ca-writer\nmodel: sonnet\neffort: medium\n---\n본문\n");
     git("add", "-A");
     git("commit", "-qm", "agents");
+  };
+  const cli = (...args: string[]) => spawnSync(process.execPath, [join(__dirname, "..", "agent", "cli.js"), "model", ...args], { cwd: repo, encoding: "utf8" });
+
+  test("D1 준비 거부 — 작업 중이면 model 동의(모델·강도·기본값 복원)를 질문을 내기 전에 거부하고 동의 기록을 남기지 않는다", () => {
+    installAgent();
     toCheck();
+    const before = consentFiles();
+    for (const action of [{ model: "opus" }, { model: "sonnet", reasoning: "high" }, { model: "default" }, { agent: "all", model: "haiku" }]) {
+      assert.throws(() => prepareConsent(repo, { action: "model", host: "claude", agent: "writer", ...action }), REFUSED, JSON.stringify(action));
+      assert.deepEqual(consentFiles(), before, `거부한 준비는 동의 기록·질문을 만들지 않는다 — ${JSON.stringify(action)}`);
+    }
+    assert.equal(modelLine(), "model: sonnet");
+  });
+
+  test("D1 준비 거부 — 접수 세션(start 전)도 진행 중인 작업이다", () => {
+    installAgent();
+    write(".code-agent/request-session.json", JSON.stringify({ id: "ORD-9", kind: "feature", startedAt: new Date().toISOString() }));
+    assert.throws(() => prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" }), /진행 중인 작업 ORD-9\(접수\)이 있어 역할 모델·추론 강도를 바꾸지 않습니다/);
+    assert.throws(() => withInteraction(TTY, () => setModel(repo, "writer", "opus", { host: "claude" })), /ORD-9\(접수\)/);
+    assert.equal(modelLine(), "model: sonnet");
+  });
+
+  test("D1 적용 시점 재확인 — 작업이 없을 때 준비·승인한 동의도 그 뒤 작업이 시작되면 적용하지 않고 대상 변경으로 폐기한다", () => {
+    installAgent();
     const prepared = JSON.parse(prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" }));
-    assert.match(prepared.summary, /진행 중인 작업 ORD-1\(check\)이 있습니다 — 에이전트 정의 파일[\s\S]*계획 밖 변경이 되고 검증·반영이 막힙니다/);
+    assert.doesNotMatch(prepared.summary, /진행 중인 작업/);
     observeConsentFixture({ root: repo, ...prepared, sessionId: `s-${randomUUID()}`, toolUseId: `t-${randomUUID()}` });
-    const applied = JSON.parse(finishConsent(repo, prepared.id)) as { next: string };
-    assert.match(applied.next, /^결과를 보고한다 — 새 모델은 호스트를 다시 시작한 뒤 적용된다\. 주의: 진행 중인 작업 ORD-1/);
+    toCheck();
+    assert.throws(() => finishConsent(repo, prepared.id), REFUSED);
+    const record = loadConsent(repo, prepared.id);
+    assert.deepEqual([record.status, record.failure?.class, record.failure?.kind], ["failed", "consent-target-changed", "target"]);
+    assert.match(record.failure!.detail, /^확인 대상 변경: 진행 중인 작업 ORD-1\(check\) — 작업 중에는 역할 모델을 바꾸지 않습니다/);
+    assert.equal(modelLine(), "model: sonnet", "정의 파일을 바꾸지 않았다");
+    assert.equal(existsSync(join(repo, ".code-agent/models.json")), false, "변경값 파일도 만들지 않았다");
+    // 폐기한 동의는 다시 적용하지 않는다 — finish 는 실패 상태와 안내만 돌려준다
+    const again = JSON.parse(finishConsent(repo, prepared.id)) as { status: string; failure: { class: string; guide: string } };
+    assert.deepEqual([again.status, again.failure.class], ["failed", "consent-target-changed"]);
+    assert.match(again.failure.guide, /진행 중인 작업 ORD-1\(check\) — 작업 중에는 역할 모델을 바꾸지 않습니다\. 작업을 반영\(deliver\)하거나 종료\(abort\)한 뒤 새로 준비하세요/);
+    assert.equal(modelLine(), "model: sonnet");
+  });
+
+  test("D1 CLI 거부·표 보기 허용 — 작업 중 code-agent model <역할> <모델> 은 TTY 를 묻기 전에 거부하고(강도만 바꿔도), 값 없는 code-agent model 은 표를 연다", () => {
+    installAgent();
+    toCheck();
+    const shown = cli("--host", "claude");
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.match(shown.stdout, /writer\s+sonnet \/ medium/);
+    for (const args of [["writer", "opus", "--host", "claude"], ["writer", "sonnet", "--host", "claude", "--effort", "high"], ["all", "default", "--host", "claude"]]) {
+      const denied = cli(...args);
+      assert.equal(denied.status, 1, `${args.join(" ")}: ${denied.stderr}`);
+      assert.match(denied.stderr, REFUSED, "TTY 확인보다 먼저 작업 중 거부를 낸다");
+      assert.doesNotMatch(denied.stderr, /터미널에서만/);
+    }
+    // TTY 로 확인한 사람의 실행(setModel)도 같은 검사로 막힌다 — 동의 적용과 터미널 경로가 한 함수를 쓴다
+    assert.throws(() => withInteraction(TTY, () => setModel(repo, "writer", "opus", { host: "claude" })), REFUSED);
+    assert.throws(() => withInteraction(TTY, () => setModel(repo, "writer", "sonnet", { host: "claude", reasoning: "high" })), REFUSED);
+    assert.equal(modelLine(), "model: sonnet");
+    assert.equal(existsSync(join(repo, ".code-agent/models.json")), false);
+  });
+
+  test("D1 종료 뒤 허용 — abort 로 작업을 끝내면 동의 준비와 직접 변경이 다시 열린다", () => {
+    installAgent();
+    toCheck();
+    assert.throws(() => withInteraction(TTY, () => setModel(repo, "writer", "opus", { host: "claude" })), REFUSED);
+    abort(repo);
+    assert.equal(loadActive(repo), undefined);
+    assert.equal(JSON.parse(prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" })).status, "pending");
+    withInteraction(TTY, () => setModel(repo, "writer", "opus", { host: "claude" }));
+    assert.equal(modelLine(), "model: opus");
+  });
+
+  test("D1 반영 뒤 허용 — deliver 로 작업이 끝나면 동의 준비·적용과 직접 변경이 다시 열린다", async () => {
+    installAgent();
+    await toDeliver();
+    writePr();
+    assert.throws(() => prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" }), /진행 중인 작업 ORD-1\(deliver\)/);
+    withInteraction({ confirm: () => PRESENCE, ask: () => "n" }, () => deliver(loadWork(repo)!));
+    assert.equal(loadActive(repo), undefined, "반영이 작업 커서를 지웠다");
+    const prepared = JSON.parse(prepareConsent(repo, { action: "model", host: "claude", agent: "writer", model: "opus" }));
+    observeConsentFixture({ root: repo, ...prepared, sessionId: `s-${randomUUID()}`, toolUseId: `t-${randomUUID()}` });
+    const applied = JSON.parse(finishConsent(repo, prepared.id)) as { status: string; next: string };
+    assert.equal(applied.status, "applied");
+    assert.equal(applied.next, "결과를 보고한다 — 새 모델은 호스트를 다시 시작한 뒤 적용된다", "작업이 없으면 경고 꼬리가 없다");
+    assert.equal(modelLine(), "model: opus");
+    withInteraction(TTY, () => setModel(repo, "writer", "haiku", { host: "claude" }));
+    assert.equal(modelLine(), "model: haiku");
+  });
+
+  test("D1 doctor — 정의 파일이 설정과 달라 update --templates-only 를 안내할 때 작업 중이면 '작업이 끝난 뒤' 실행하라고 한다", () => {
+    write(AGENT, "---\nname: ca-writer\nmodel: sonnet\neffort: max\n---\n본문\n");
+    git("add", "-A");
+    git("commit", "-qm", "agents");
+    const hintOf = (text: string) => {
+      const rows = text.split("\n"), index = rows.findIndex((row) => row.trim().startsWith("✗ 에이전트 모델:"));
+      assert.ok(index >= 0, text);
+      return rows[index + 1].trim();
+    };
+    const idle = hintOf(doctor(repo).text);
+    assert.match(idle, /code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정/);
+    assert.doesNotMatch(idle, /끝난 뒤/);
+    toCheck();
+    const working = hintOf(doctor(repo).text);
+    assert.match(working, /진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only — [\s\S]*작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다/);
   });
 });
 

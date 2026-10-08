@@ -19,7 +19,7 @@ import { checkProjectDocs } from "./docs";
 import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
 import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
-import { AGENTS, installedClaudeModel, policySummary } from "./models";
+import { AGENTS, installedClaudeModel, policySummary, workInProgress } from "./models";
 import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
@@ -301,8 +301,14 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
         ? [`${agent} 파일 ${file.model ?? "(없음)"}${file.effort ? `/${file.effort}` : ""} ≠ 설정 ${modelDisplay(setting)}`] : [];
     });
     if (mismatches.length > 0) {
+      // 정의 파일은 커밋되는 설치 파일이다 — 진행 중인 작업이 있으면 다시 쓰는 것도 그 작업이 끝난 뒤다(역할 모델 변경과 같은 규칙, D1)
+      let work: ReturnType<typeof workInProgress>;
+      try { work = workInProgress(repoRoot); } catch { work = undefined; }
       add("✗", "에이전트 모델", `정의 파일이 설정과 다릅니다 — ${mismatches.slice(0, 5).join(" · ")}${mismatches.length > 5 ? ` (+${mismatches.length - 5})` : ""}`,
-        "code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. 바꾸려면 모델 변경을 요청하세요");
+        work
+          ? `진행 중인 작업 ${work.id}(${work.phase})이 끝난 뒤(반영 deliver 또는 종료 abort) code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. ` +
+            "작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다. 모델 변경도 작업이 끝난 뒤 요청하세요"
+          : "code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. 바꾸려면 모델 변경을 요청하세요");
     } else if (installed === 0) {
       // 대조할 정의 파일이 없으면 ✓ 로 찍지 않는다 — 설치 여부는 "스킬·에이전트" 줄이 알린다
       add("·", "에이전트 모델", `대조할 정의 파일이 없습니다 (.claude/agents/ca-*.md) — 설정: ${policySummary(repoRoot, "claude")}`);
