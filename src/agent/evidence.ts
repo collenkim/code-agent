@@ -744,7 +744,9 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
     if (guarded.length && run.cause === "guard" && run.round === evidence.rounds) continue;
     add("result", `${run.kind}: ${run.outcome} (${run.command})`);
   }
-  if (phase === "test" || phase === "integrate") {
+  // 기록 변경(guard) 실행의 출력은 TC 결과로 읽지 않았다 — 그 회차의 ⑦ 미확인 줄('TC id 를 남기세요')은 틀린 할 일이라 싣지 않는다.
+  // 게이트는 위 stop 줄로 막혀 있고, 고친 뒤 새 회차에서 TC 대조가 다시 돈다
+  if ((phase === "test" || phase === "integrate") && guarded.length === 0) {
     const records = phase === "test" ? evidence.testCases : evidence.integrationTestCases ?? [];
     const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
     const uncovered = (spec ? parseTestCases(spec) : []).filter((item) => records.find((entry) => entry.id === item.id)?.status !== "passed")

@@ -24,7 +24,7 @@ import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
-import { crossNotice, hostAssets, hostCommand, HostSelection, selectedHosts, type Host } from "./hosts";
+import { crossHostProblems, crossNotice, hostAssets, hostCommand, HostSelection, selectedHosts, type Host } from "./hosts";
 import { crossStopStreak } from "./crossRecord";
 import { CROSS_CHILD_ENV } from "./crossEnv";
 import { crossFlags } from "./crossCheck";
@@ -400,9 +400,15 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   // AI-DLC 공존 — 설치 문제는 아니라 실패로 세지 않는다. 진행 중이면 code-agent 가 멈추고, 훅이 기록할 수 있으면 경고한다
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   if (aidlc) add("·", "AWS AI-DLC", aidlc.replace(/\n\s*/g, " "));
-  // 교차 검증 — 두 호스트를 모두 실행할 수 있을 때만 돈다. 못 쓰면 그 지점을 중지로 기록하고 진행하므로 실패로 세지 않는다
+  // 교차 검증 — 두 호스트를 모두 실행할 수 있을 때만 돈다. 미설치(실행 불가)는 그 지점을 중지로 기록하고 진행하므로 실패로 세지 않는다.
+  // 설정 오류(실행 파일 변수가 없는 파일을 가리킴·PATH 에 셸 스크립트뿐 — hostCommandConfigError)는 중지가 아니라 그 지점의 게이트를
+  // 막으므로 막는 문제(✗)다 — --cross 의 없는 옵션(설정 오류로 막힘)과 같다
   const cross = crossNotice(repoRoot);
-  if (cross) add(cross.includes("켜짐") ? "✓" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""));
+  if (cross) {
+    const config = (crossHostProblems(repoRoot)?.config.length ?? 0) > 0;
+    add(cross.includes("켜짐") ? "✓" : config ? "✗" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""),
+      config ? "셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 실행 파일(.exe·.js)로 고치거나 지우세요(PATH 에 셸 스크립트뿐이면 실행 파일을 지정) — 한쪽 호스트만 쓸 거면 .code-agent/hosts.json 에서 빼세요" : undefined);
+  }
   crossChecks(repoRoot, add, options.cross === true);
 
   const failed = checks.filter((check) => check.mark === "✗");

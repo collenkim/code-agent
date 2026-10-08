@@ -498,6 +498,8 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
   "cross-unavailable": {
     /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 실행 불가 갈래: PATH·npm 어디에도 없는 미설치 */
     notice: "다른 호스트를 실행할 수 없으면 그 지점의 교차 검증은 중지로 기록하고 진행한다: {detail}",
+    /** 교차 게이트 줄의 실행 명령 뒤 괄호(hosts.ts crossRunNote) — 직전 실패도 실행 파일 설정 오류도 없을 때 */
+    gate: "실행할 수 없으면 중지로 기록되고 진행합니다",
     /** 지점 한도가 남아 같은 지점을 다시 실행할 수 있을 때 */
     rerunnable: "{host} 교차 검증 중지 — 다른 호스트를 실행할 수 없습니다: {detail}. 이 지점은 교차 검증 없이 진행합니다. 두 호스트를 모두 쓸 수 있게 되면(설치·로그인·사용 한도) 다음 지점부터 다시 돕니다. 사용자가 원하면 고친 뒤 같은 명령으로 이 지점을 다시 실행할 수 있습니다(남은 {left}회).",
   },
@@ -566,7 +568,7 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   "cross-config-error": { notice: ["detail"], exhausted: ["detail", "host"] },
   "cross-result-invalid": { exhausted: ["detail", "host", "point", "raw"] },
   "cross-timeout": { interrupted: ["host", "left"] },
-  "cross-unavailable": { notice: ["detail"], rerunnable: ["detail", "host", "left"] },
+  "cross-unavailable": { notice: ["detail"], gate: [], rerunnable: ["detail", "host", "left"] },
   "consent-target-changed": { "response-change": [], "response-defer": [], "response-none": ["detail"], "response-invalid": ["detail"] },
   "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"],
     "no-grant": ["counterLabel", "evidence", "limit", "originLabel"], "no-review": ["counterLabel", "evidence", "limit", "originLabel"] },

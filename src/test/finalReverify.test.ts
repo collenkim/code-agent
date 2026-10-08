@@ -1,6 +1,7 @@
 /**
  * 최종 재검증(16ae5ec) 지적 R1~R6 의 회귀 시험 — 지적마다 되돌리면 실패한다. 지적 번호는 doc/reviews/2026-10-08-full-review.md 의
- * '후속 수정(최종 재검증 지적)' 표다. 모델·호스트는 부르지 않는다(교차는 가짜 실행 파일 경로만 쓴다).
+ * '후속 수정(최종 재검증 지적)' 표다. 그 수정(5205112)의 반박 검증 지적 F1~F4 시험도 고친 R 의 이름으로 여기 있다(F1·F2 → R2, F3 → R3, F4 → R6 —
+ * 같은 절의 '반박 검증 지적' 표). 모델·호스트는 부르지 않는다(교차는 가짜 실행 파일 경로만 쓴다).
  * R1 은 사용자 홈을 임시 폴더로 바꾼 뒤(USERPROFILE·HOME·CODEX_HOME) 판정 함수만 부른다 — 사용자의 실제 ~/.claude·~/.codex 파일은 읽거나 쓰지 않는다.
  */
 import { strict as assert } from "node:assert";
@@ -28,7 +29,9 @@ import { verify } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
 import { setupConsentProject } from "./consentFixture";
 import { deadPid, UNASSIGNED_PID_FLOOR } from "./deadPid";
-import { createStageRepo, ORDER, PRINT_CASES, removeStageRepo, repo, toCheck, toIntegrate, toReview, useManifest, write, writeFileHook, writeFindings } from "./stageFixture";
+import { crossReview } from "../agent/crossCheck";
+import { recordReviewFixture, withCaller } from "./reviewFixture";
+import { createStageRepo, ORDER, PRINT_CASES, removeStageRepo, repo, TEST_FILE, toCheck, toIntegrate, toReview, useManifest, write, writeFileHook, writeFindings, writeFindingsDoc } from "./stageFixture";
 
 const ROOT = join(__dirname, "..", "..");
 const nextLine = (text: string): string => text.split("\n").find((line) => line.startsWith("다음: ")) ?? "";
@@ -188,9 +191,12 @@ describe("R2 — 검증 명령이 code-agent 기록을 바꿔 되돌린 실행�
   const REVIEW_JSON = ".code-agent/work/ORD-1/order.review.json";
   const GUARD = new RegExp(escape(stateGuardText([REVIEW_JSON])));
 
+  // CA_R2_TAMPER 가 있으면 테스트 코드가 리뷰 기록을 지운다(사람이 테스트를 그렇게 바꾼 것을 흉내)
+  const TAMPER_TEST = ["node", "-e", `const fs = require('fs'); if (process.env.CA_R2_TAMPER) fs.rmSync('${REVIEW_JSON}', { force: true }); console.log('ok 1 - TC-1'); console.log('ok 2 - TC-2')`];
+  const UNCONFIRMED_TC = /⑦ 의 테스트 케이스가 확인되지 않았습니다/;
+
   test("R2 리뷰 기록을 지운 test 는 되돌리고, 같은 문장으로 멈추며 리뷰 회차 사용량은 줄지 않는다 — 계획 안에서 고친 뒤 verify 가 새 회차로 통과한다", async () => {
-    // CA_R2_TAMPER 가 있으면 테스트 코드가 리뷰 기록을 지운다(사람이 테스트를 그렇게 바꾼 것을 흉내)
-    useManifest({ test: ["node", "-e", `const fs = require('fs'); if (process.env.CA_R2_TAMPER) fs.rmSync('${REVIEW_JSON}', { force: true }); console.log('ok 1 - TC-1'); console.log('ok 2 - TC-2')`] });
+    useManifest({ test: TAMPER_TEST });
     await toReview();
     openRound(requireValidatable(repo, "review"));
     writeFindings();
@@ -210,8 +216,9 @@ describe("R2 — 검증 명령이 code-agent 기록을 바꿔 되돌린 실행�
     const line = nextLine(status(repo));
     assert.match(line, GUARD, line);
     assert.doesNotMatch(line, /검증 통과/);
-    // next 의 거부 — 같은 문장이고 '다시 돌리세요' 꼬리가 없다
-    assert.throws(() => next(repo), (error: Error) => GUARD.test(error.message) && !/로 다시 돌리세요/.test(error.message) && !/검증 통과/.test(error.message));
+    // next 의 거부 — 같은 문장이고 '다시 돌리세요' 꼬리가 없다. 그 출력으로 TC 를 읽지 않았으므로 ⑦ 미확인 줄('TC id 를 남기세요')도 없다
+    assert.throws(() => next(repo), (error: Error) => GUARD.test(error.message) && !/로 다시 돌리세요/.test(error.message) && !/검증 통과/.test(error.message) &&
+      !UNCONFIRMED_TC.test(error.message));
     // 같은 코드 재실행 거부(test)와 verify --retry 도 같은 문장
     await assert.rejects(runTests(requireValidatable(repo, "test")), (error: unknown) => error instanceof RetryRefused && error.failure.class === "precondition" && GUARD.test(error.message));
     await assert.rejects(verify(repo, { retry: true }), GUARD);
@@ -222,6 +229,48 @@ describe("R2 — 검증 명령이 code-agent 기록을 바꿔 되돌린 실행�
     const result = await verify(repo);
     assert.equal(result.node, "review");
     assert.doesNotMatch(nextLine(status(repo)), GUARD);
+  });
+
+  test("R2 test 의 기록 변경 뒤 verify --retry·check 의 거부로 커서가 check 에 서도 다음: 은 '검증 통과' 가 아니라 같은 회차의 기록 변경 사유다 — 그 자리의 verify 가 멈추는 문장과 같다", async () => {
+    useManifest({ test: TAMPER_TEST });
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings();
+    process.env.CA_R2_TAMPER = "1";
+    write(`${ORDER}/domain/Order.java`, "class Order { int c1; }\n");
+    await assert.rejects(verify(repo), GUARD);
+    assert.equal(loadActive(repo)!.phase, "test");
+    // 같은 코드 재실행 거부 — --retry 는 check 로 되감은 뒤 거부된다
+    await assert.rejects(verify(repo, { retry: true }), GUARD);
+    assert.equal(loadActive(repo)!.phase, "check");
+    await assert.rejects(check(requireValidatable(repo, "check")), (error: unknown) => error instanceof RetryRefused && error.failure.class === "precondition" && GUARD.test(error.message));
+    const line = nextLine(status(repo));
+    assert.doesNotMatch(line, /검증 통과/, line);
+    assert.match(line, GUARD, line);
+    // check 커서의 verify 는 check 를 통과로 보고 test 로 넘어가 같은 사유로 멈춘다 — 다음: 이 그 Stop 과 같은 전제 안내다
+    const stopped = await verify(repo).then(() => "", (error: Error) => error.message);
+    assert.equal(stopped, guidance("precondition", { problems: stateGuardText([REVIEW_JSON]) }));
+    assert.ok(line.includes(` — ${stopped}`), `${line}\n— verify: ${stopped}`);
+    assert.equal(loadActive(repo)!.phase, "test");
+    assert.ok(nextLine(status(repo)).includes(stopped));
+  });
+
+  test("R2 얼어 있는 테스트를 바꾼 데다 기록 변경까지 겹치면 다음:·next·verify 가 같은 두 사유를 싣고, 그 회차의 ⑦ 미확인 줄은 싣지 않는다", async () => {
+    useManifest({ test: TAMPER_TEST });
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    writeFindings();
+    process.env.CA_R2_TAMPER = "1";
+    // 사람이 동결된 테스트 파일을 바꿨다(지적 없이) — 게이트의 동결 대조가 잡는다
+    write(TEST_FILE, "// TC-1 · TC-2\nclass OrderTest { int changed; }\n");
+    write(`${ORDER}/domain/Order.java`, "class Order { int c1; }\n");
+    const stopped = await verify(repo).then(() => "", (error: Error) => error.message);
+    const FROZEN = /테스트 동결 뒤 바뀐 kind:test 파일: src\/test\/java\/com\/acme\/app\/application\/order\/OrderTest\.java/;
+    assert.match(stopped, FROZEN);
+    assert.match(stopped, GUARD);
+    const line = nextLine(status(repo));
+    assert.ok(line.includes(` — ${stopped}`), `다음: 이 verify 의 Stop 과 같은 목록이다\n${line}\n— verify: ${stopped}`);
+    assert.throws(() => next(repo), (error: Error) => FROZEN.test(error.message) && GUARD.test(error.message) && !UNCONFIRMED_TC.test(error.message));
   });
 
   test("R2 첫 test 가 기록을 만들면 지우고, 그 실행으로 TC 결과를 읽거나 테스트를 얼리지 않는다", async () => {
@@ -408,6 +457,58 @@ describe("R3 — 교차 검증 안내(status·doctor·init)는 설정 오류와 
       assert.ok(init(repo, { host: "both" }).includes(notice), "init");
     } finally { removeStageRepo(); }
   });
+
+  test("R3 doctor 는 설정 오류(게이트 막힘)를 막는 문제(✗ — 고치는 길)로, 실행 불가(중지 기록 후 진행)는 실패가 아닌 줄(·)로 쓴다", () => {
+    createStageRepo("ca-r3-doctor-");
+    try {
+      write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
+      process.env.CODE_AGENT_CODEX_BIN = join(repo, "no-such-codex.cjs");
+      const config = doctor(repo);
+      const lines = config.text.split("\n");
+      const at = lines.findIndex((line) => line.trimStart().startsWith("✗ 교차 검증: "));
+      assert.ok(at >= 0, config.text);
+      assert.match(lines[at + 1], /^\s+→ 셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 실행 파일/, lines[at + 1]);
+      assert.equal(config.ok, false);
+      assert.match(config.text, /✗ \d+개: [^\n]*교차 검증/);
+      // 미설치 — PATH·npm 어디에도 없다(이 호출 동안만 빈 폴더)
+      delete process.env.CODE_AGENT_CODEX_BIN;
+      const empty = join(dir, "empty");
+      mkdirSync(empty);
+      process.env.PATH = empty;
+      process.env.APPDATA = empty;
+      const missing = doctor(repo).text;
+      assert.match(missing, new RegExp(`· 교차 검증: ${escape(UNAVAILABLE)} — `), missing);
+      assert.doesNotMatch(missing, /✗ 교차 검증|✗ \d+개: [^\n]*교차 검증/);
+    } finally { removeStageRepo(); }
+  });
+
+  test("R3 교차 리뷰 게이트 줄 — 실행 전에는 실행 불가 갈래 괄호(gate 변형), 실행 파일이 설정 오류면 설정 오류 갈래, 설정 오류로 막힌 뒤에는 '실행할 수 없으면 중지' 괄호를 달지 않는다", async () => {
+    createStageRepo("ca-r3-gate-");
+    try {
+      await toReview();
+      write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
+      process.env.CODE_AGENT_CODEX_BIN = join(dir, "claude.cjs");
+      openRound(requireValidatable(repo, "review"));
+      writeFindingsDoc();
+      recordReviewFixture(repo, "claude", { cross: false });
+      const GATE_NOTE = new RegExp(escape(guidance("cross-unavailable", {}, "gate")));
+      const runnable = withCaller("claude", () => nextLine(status(repo)));
+      assert.ok(runnable.includes(`code-agent review cross --by codex (${guidance("cross-unavailable", {}, "gate")})`), runnable);
+      const missing = join(repo, "no-such-codex.cjs");
+      process.env.CODE_AGENT_CODEX_BIN = missing;
+      const before = withCaller("claude", () => nextLine(status(repo)));
+      const configNote = `(${CONFIG} — ${guidance("cross-config-error", { detail: `CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다: ${missing}` }, "notice")})`;
+      assert.ok(before.includes(`code-agent review cross --by codex ${configNote}`), before);
+      assert.doesNotMatch(before, GATE_NOTE);
+      assert.throws(() => withCaller("claude", () => crossReview(repo, "codex")), /교차 호출 설정 오류/);
+      const after = withCaller("claude", () => nextLine(status(repo)));
+      assert.match(after, /code-agent review cross --by codex — 직전 실행: 막힘\(설정 오류\)/, after);
+      assert.doesNotMatch(after, GATE_NOTE);
+      // 실행할 수 있는 실행 파일이면 지점 안내(직전 설정 오류)가 그대로 다음 일을 싣는다 — 괄호는 다시 달지 않는다
+      process.env.CODE_AGENT_CODEX_BIN = join(dir, "claude.cjs");
+      assert.doesNotMatch(withCaller("claude", () => nextLine(status(repo))), GATE_NOTE);
+    } finally { removeStageRepo(); }
+  });
 });
 
 // ---- R5 — 흐름도의 template/·doc/ 줄 인용 ----
@@ -453,6 +554,22 @@ describe("R5 — 흐름도의 줄 인용", () => {
 
 // ---- R6 — 시험의 죽은 pid ----
 
+/** 동기 실행(끝난 프로세스) 호출 — 인자 안의 괄호는 두 겹까지 본다 */
+const ENDED_CALL = String.raw`(?:[\w$.]+\.)?(?:spawnSync|execFileSync|execSync)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
+/**
+ * 시험 소스에서 끝난 프로세스의 pid 를 쓰는 자리 — 동기 실행 결과의 `.pid`(바로·변수에 담아·구조 분해)와 고정 pid 리터럴(세 자리 이상).
+ * 살아 있는 자식(spawn — 시험이 kill 한다)·자기 pid·deadPid()·다른 PC 주인의 작은 pid 는 잡지 않는다
+ */
+function endedPidUses(text: string): string[] {
+  const uses = [...text.matchAll(new RegExp(`${ENDED_CALL}\\s*!?\\s*\\.pid\\b`, "g"))].map((match) => match[0].replace(/\s+/g, " ").slice(0, 80));
+  for (const match of text.matchAll(new RegExp(String.raw`\b(?:const|let|var)\s+(\w+)\s*(?::[^=\n]+)?=\s*${ENDED_CALL}`, "g"))) {
+    if (new RegExp(String.raw`\b${match[1]}\s*!?\s*\.pid\b`).test(text)) uses.push(`${match[1]}.pid(동기 실행 결과)`);
+  }
+  if (new RegExp(String.raw`\b(?:const|let|var)\s*\{[^}]*\bpid\b[^}]*\}\s*=\s*${ENDED_CALL}`).test(text)) uses.push("{ pid } = 동기 실행 결과");
+  for (const match of text.matchAll(/\bpid\s*:\s*(\d{3,}(?:_\d+)*)\b|\bpidAlive\(\s*(\d{3,}(?:_\d+)*)\s*\)/g)) uses.push(`고정 pid ${match[1] ?? match[2]}`);
+  return uses;
+}
+
 describe("R6 — 시험이 쓰는 죽은 pid 는 재사용될 수 없다", () => {
   test("R6 deadPid 는 OS 가 배정하지 않는 범위에서 지금 살아 있지 않은 pid 를 고른다", () => {
     const pid = deadPid();
@@ -460,16 +577,38 @@ describe("R6 — 시험이 쓰는 죽은 pid 는 재사용될 수 없다", () =>
     assert.equal(pidAlive(pid), false);
   });
 
-  test("R6 시험 파일은 방금 끝난 자식의 pid 를 죽은 pid 로 쓰지 않는다(병렬 부하에서 Windows 가 곧바로 다시 준다)", () => {
+  test("R6 시험 파일은 방금 끝난 자식의 pid 를 죽은 pid 로 쓰지 않는다(병렬 부하에서 Windows 가 곧바로 다시 준다) — 예외 없이", () => {
     const dir = join(ROOT, "src", "test");
     const offenders: string[] = [];
-    for (const name of readdirSync(dir).filter((file) => file.endsWith(".ts"))) {
-      const text = readFileSync(join(dir, name), "utf8");
-      const ended = [...text.matchAll(/spawnSync\(process\.execPath, \["-e", "0?"\]\)\.pid/g)].length;
-      // lock.test 의 pidAlive 시험 하나만 끝난 자식을 그 자리에서 바로 본다(사이에 다른 프로세스를 띄우지 않는다)
-      if (ended > (name === "lock.test.ts" ? 1 : 0)) offenders.push(`${name}: 끝난 자식 pid ${ended}`);
-      if (/pid: 999_?999\b/.test(text)) offenders.push(`${name}: 고정 pid 999999`);
+    for (const name of readdirSync(dir).filter((file) => file.endsWith(".ts") && file !== "deadPid.ts")) {
+      const uses = endedPidUses(readFileSync(join(dir, name), "utf8"));
+      if (uses.length) offenders.push(`${name}: ${uses.join(" · ")}`);
     }
     assert.deepEqual(offenders, []);
+  });
+
+  test("R6 끝난 프로세스 pid 탐지는 인자·호출 꼴·변수·구조 분해·고정 리터럴을 넓게 잡고, 살아 있는 자식·자기 pid·deadPid 는 잡지 않는다", () => {
+    // 이 파일도 위 시험이 훑으므로 표본은 조립한다(소스에 그 꼴이 그대로 있으면 이 파일이 걸린다)
+    const sync = (name: string) => `${name}${"Sync"}`;
+    const caught = [
+      `${sync("spawn")}(process.execPath, ["-e", ""]).pid`,
+      `${sync("spawn")}(process.execPath, ["-e", "0"]).pid!`,
+      `${sync("spawn")}("node", ["-e", "process.exit(1)"], { encoding: "utf8", env: { ...process.env } }).pid`,
+      `cp.${sync("spawn")}(process.execPath, []) .pid`,
+      `${sync("execFile")}(process.execPath, ["-e", "0"]).pid`,
+      `const ended = ${sync("spawn")}(process.execPath, ["-e", ""]);\nwriteFileSync(p, JSON.stringify({ pid: ended.pid! }));`,
+      `let child: ReturnType<typeof spawnSync> = ${sync("spawn")}(process.execPath, ["-e", ""]);\nassert.equal(pidAlive(child.pid!), false);`,
+      `const { pid } = ${sync("spawn")}(process.execPath, ["-e", ""]);`,
+      `JSON.stringify({ pid: ${"9".repeat(6)}, host: hostname() })`,
+      `{ pid: ${"123_456"}, host }`,
+      `pidAlive(${"31337"})`,
+    ];
+    for (const sample of caught) assert.ok(endedPidUses(sample).length > 0, sample);
+    const live = [
+      `const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},5000)"]);\nwriteFileSync(p, JSON.stringify({ pid: child.pid }));`,
+      "JSON.stringify({ pid: process.pid, host: hostname() })", "JSON.stringify({ pid: deadPid(), host: hostname() })",
+      `{ pid: 1, host: "other-pc" }`, `{ owner: { pid: 10 } }`, `const out = ${sync("spawn")}("git", ["status"]);\nconsole.log(out.stdout);`,
+    ];
+    for (const sample of live) assert.deepEqual(endedPidUses(sample), [], sample);
   });
 });

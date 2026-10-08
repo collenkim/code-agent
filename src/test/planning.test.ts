@@ -788,6 +788,29 @@ test("다른 호스트를 실행할 수 없으면 그 critic 결과의 교차 �
   }
 });
 
+test("실행 파일 변수가 없는 파일을 가리키면 계획 교차 검토 줄은 실행 전에도 설정 오류 갈래이고, 설정 오류로 막힌 뒤에는 '실행할 수 없으면 중지' 괄호를 달지 않는다(R3)", () => {
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  throughDesign(); preparePlanning(root);
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }); finish(dispatch("critic"));
+  const saved = process.env.CODE_AGENT_CODEX_BIN;
+  process.env.CODE_AGENT_CODEX_BIN = join(root, "no-such-codex.cjs");
+  try {
+    withCaller("claude", () => {
+      const line = () => planningProblems(loadWork(root)!, "plan").find((problem) => /^교차 검토/.test(problem)) ?? "";
+      const before = line();
+      assert.match(before, /code-agent planning cross --by codex \(교차 호출 설정 오류 — CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다: [^)]*no-such-codex\.cjs\. 중지로 기록하지 않고 그 지점의 게이트가 막힌다/, before);
+      assert.doesNotMatch(before, /실행할 수 없으면 중지로 기록되고 진행합니다/);
+      assert.throws(() => crossCritic(root, "codex"), /교차 호출 설정 오류/);
+      const after = line();
+      assert.match(after, /code-agent planning cross --by codex — 직전 실행: 막힘\(설정 오류\)/, after);
+      assert.doesNotMatch(after, /실행할 수 없으면 중지로 기록되고 진행합니다/);
+    });
+    assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /막힘\(설정 오류\)/);
+  } finally {
+    if (saved === undefined) delete process.env.CODE_AGENT_CODEX_BIN; else process.env.CODE_AGENT_CODEX_BIN = saved;
+  }
+});
+
 /** 두 호스트 설치 + plan·critic 완료 + 가짜 claude(FAKE_CROSS 를 결과로 내고, 호출 수와 마지막 프롬프트를 파일에 남긴다) */
 function crossPlanningSetup() {
   writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));

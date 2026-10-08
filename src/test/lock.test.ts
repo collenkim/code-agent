@@ -5,7 +5,7 @@
  * 살아 있는 주인은 기다린 뒤 멈추며, 다른 PC·주인 기록 없음은 경로를 알리고 사람에게 넘긴다.
  */
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -248,9 +248,8 @@ describe("acquireLock — 다중 프로세스 회수", () => {
   });
 });
 
-test("pidAlive — 자기 자신은 살아 있고 끝난 자식은 죽었다", () => {
+test("pidAlive — 자기 자신은 살아 있고 배정되지 않는 pid 는 죽었다", () => {
   assert.equal(pidAlive(process.pid), true);
-  // 끝난 자식은 그 자리에서 바로 본다 — 사이에 다른 프로세스를 띄우지 않는다(다른 시험은 재사용될 수 없는 deadPid 를 쓴다)
-  assert.equal(pidAlive(spawnSync(process.execPath, ["-e", ""]).pid!), false);
+  // 끝난 자식의 pid 는 보지 않는다 — 병렬 부하에서 Windows 가 그 pid 를 곧바로 다른 프로세스에 다시 줄 수 있어 결정적이지 않다(deadPid 주석)
   assert.equal(pidAlive(deadPid()), false);
 });

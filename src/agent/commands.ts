@@ -48,7 +48,7 @@ import {
   verifyView,
 } from "./evidence";
 import type { VerifyPhase, VerifyView } from "./evidence";
-import { budgetText, guidance, nextRoundDecision, NO_REVIEW_CHOICES, stateGuardText, verifyNode, verifyRetryOf, verifyState, writeBlockReason } from "./retryPolicy";
+import { budgetText, guidance, nextRoundDecision, NO_REVIEW_CHOICES, verifyNode, verifyRetryOf, verifyState, writeBlockReason } from "./retryPolicy";
 import { verifyGuidance } from "./validate";
 import {
   clearRequestSession,
@@ -494,9 +494,15 @@ function nextHint(work: Work): string {
       const view = verifyView(work, evidence);
       // 지금 회차의 실행만 본다 — 앞 회차의 통과로 지금 회차를 덮지 않는다(게이트의 회차 불일치 판정과 같다)
       const current = evidence.runs.filter((run) => run.phase === active.phase && run.round === evidence.rounds);
-      // 검증 명령이 code-agent 기록을 바꾼 실행 — 게이트(stop)·verify(전제 미충족 Stop)·같은 코드 재실행 거부와 같은 문장이다
-      const guarded = guardedFiles(evidence, active.phase);
-      if (guarded.length) return `${stageCommand(active.phase)} — ${stateGuardText(guarded)}`;
+      // 검증 명령이 code-agent 기록을 바꾼 실행 — 단계 필터 없이 지금 회차 전체를 본다. test 의 기록 변경 뒤 verify --retry·check 가
+      // 같은 코드 재실행으로 거부하면 커서는 check 에 서고, 그 자리의 verify 는 test 로 넘어가 같은 사유로 멈춘다. 문구는 그 단계 게이트의
+      // stop 문제 전부(기록 변경 문장 stateGuardText 포함)를 싣는 전제 안내 — verify 의 전제 Stop 과 같은 목록이다
+      const guardedRun = evidence.runs.find((run) => run.cause === "guard" && run.round === evidence.rounds &&
+        (run.phase === "check" || run.phase === "test" || run.phase === "integrate"));
+      if (guardedRun) {
+        const stops = stageProblemEntries(work, guardedRun.phase as Exclude<VerifyPhase, "repro">).filter((entry) => entry.kind === "stop").map((entry) => entry.text);
+        return `${stageCommand(active.phase)} — ${guidance("precondition", { problems: stops.join(" / ") })}`;
+      }
       const failed = current.filter((run) => run.outcome !== "passed");
       const state = verifyState({ phase: active.phase, round: evidence.rounds, runs: evidence.runs, cases: active.phase === "test" ? evidence.testCases : undefined });
       if (current.length > 0 && state === "passed") {

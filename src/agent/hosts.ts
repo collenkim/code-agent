@@ -60,16 +60,41 @@ export function hostCommand(host: Host): { file: string; prefix: string[] } | st
 }
 
 /**
+ * 두 호스트가 설치된 프로젝트에서 교차 실행 명령을 못 쓰는 이유 — 설정 오류(hostCommandConfigError)와 실행 불가(미설치)로 나눈다.
+ * 한 호스트 설치면 undefined. 교차 안내(crossNotice — init·status·doctor)와 doctor 의 표시(설정 오류는 ✗)가 같은 판정을 쓴다.
+ */
+export function crossHostProblems(root: string): { config: string[]; missing: string[] } | undefined {
+  if (selectedHosts(root).length < 2) return undefined;
+  const reasons = (["claude", "codex"] as Host[]).map((host) => hostCommand(host)).filter((value): value is string => typeof value === "string");
+  return { config: reasons.filter(hostCommandConfigError), missing: reasons.filter((reason) => !hostCommandConfigError(reason)) };
+}
+
+/**
+ * 교차 게이트 줄(review.ts reviewProblems·planningState.ts crossCriticProblems)의 실행 명령 뒤 괄호 — 그 명령을 실행하면 어떻게 되는지.
+ * 직전 실행의 실패가 있으면(지점 안내 hint) 그 원인별 안내(crossHintText)가 다음 일을 싣는다 — 설정 오류·샌드박스 거부는 '게이트가 막혀
+ * 있다' 이므로 '실행할 수 없으면 중지' 괄호를 달지 않는다. 아직 실행 전이어도 그 호스트의 실행 파일이 설정 오류면 설정 오류 갈래 문장이고,
+ * 그 밖(실행할 수 있거나 미설치)은 실행 불가 갈래다. 갈래와 문장은 crossNotice 와 같다(재시도 규약의 GUIDE_VARIANTS — notice·gate).
+ */
+export function crossRunNote(host: Host | undefined, hint?: { class: string }): string {
+  if (hint) return "";
+  const resolved = host ? hostCommand(host) : undefined;
+  if (typeof resolved === "string" && hostCommandConfigError(resolved)) {
+    return ` (${POLICIES["cross-config-error"].label} — ${guidance("cross-config-error", { detail: resolved }, "notice")})`;
+  }
+  return ` (${guidance("cross-unavailable", {}, "gate")})`;
+}
+
+/**
  * 교차 검증 안내 한 줄 — 두 호스트가 설치된 프로젝트에서만. 둘 다 실행할 수 있을 때만 교차 검증이 실제로 돈다.
  * 못 쓰는 이유를 교차 실패 분류(crossCheck — hostCommandConfigError)와 같이 가른다: 미설치(PATH·npm 어디에도 없음)는 실행 불가라
  * 그 지점을 중지로 기록하고 진행하고, 실행 파일 변수가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있으면 설정 오류라 게이트가 막힌다.
  * 원인 이름(POLICIES label)과 갈래 문장(guidance 의 notice 변형)은 재시도 규약이 원천이다.
  */
 export function crossNotice(root: string): string | undefined {
-  if (selectedHosts(root).length < 2) return undefined;
-  const reasons = (["claude", "codex"] as Host[]).map((host) => hostCommand(host)).filter((value): value is string => typeof value === "string");
-  if (reasons.length === 0) return "교차 검증: 켜짐 — 계획 검토·코드 리뷰를 다른 호스트가 한 번 더 본다";
-  const config = reasons.filter(hostCommandConfigError), missing = reasons.filter((reason) => !hostCommandConfigError(reason));
+  const problems = crossHostProblems(root);
+  if (!problems) return undefined;
+  const { config, missing } = problems;
+  if (config.length + missing.length === 0) return "교차 검증: 켜짐 — 계획 검토·코드 리뷰를 다른 호스트가 한 번 더 본다";
   const part = (cls: "cross-config-error" | "cross-unavailable", details: string[]) =>
     details.length ? [`${POLICIES[cls].label} — ${guidance(cls, { detail: details.join(" · ") }, "notice")}`] : [];
   const parts = [...part("cross-config-error", config), ...part("cross-unavailable", missing)];

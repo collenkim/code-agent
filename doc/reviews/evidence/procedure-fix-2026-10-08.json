@@ -7,7 +7,8 @@
     "implementation": "2327975..934e5fe",
     "fullReview": "d12bd46",
     "summaryRecord": "16ae5ec(부모 d12bd46, 문서만)",
-    "finalReverify": "이 커밋(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영"
+    "finalReverify": "5205112(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영",
+    "rebuttal": "이 커밋(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -248,7 +249,7 @@
       "stage": "9",
       "bundle": "최종 재검증 지적 R1~R6 반영(사용자 수준 호스트 설정의 다른 이름, 검증 명령의 기록 변경 판정, 교차 안내의 설정 오류, 리뷰 없이 쓴 리뷰 회차의 선택지, 흐름도 줄 인용, 시험의 죽은 pid)",
       "commits": [
-        "이 커밋(부모 16ae5ec)"
+        "5205112"
       ],
       "record": "doc/reviews/2026-10-08-full-review.md#후속-수정최종-재검증-지적",
       "npmTest": {
@@ -261,6 +262,27 @@
         "todo": 0,
         "durationMs": 137876,
         "wallSec": 140,
+        "command": "npm run build && npm test",
+        "exit": 0
+      }
+    },
+    {
+      "stage": "10",
+      "bundle": "9단계 수정의 반박 검증 지적 F1~F4 반영(check 커서의 기록 변경 사유, 기록 변경 회차의 ⑦ 미확인 줄, 교차 게이트 줄 괄호와 doctor 의 설정 오류 ✗, 시험의 끝난 자식 pid 탐지)",
+      "commits": [
+        "이 커밋(부모 5205112)"
+      ],
+      "record": "doc/reviews/2026-10-08-full-review.md#반박-검증-지적f1f4",
+      "npmTest": {
+        "tests": 1317,
+        "suites": 189,
+        "pass": 1313,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 139786,
+        "wallSec": 141,
         "command": "npm run build && npm test",
         "exit": 0
       }
@@ -479,6 +501,13 @@
         "d12bd46"
       ],
       "subject": "[코드 에이전트] 절차 보완·재시도 규약·최적화 작업 요약 기록"
+    },
+    {
+      "hash": "5205112d34607f5ea2ae8d1e27f4edc00cf4fa7d",
+      "parents": [
+        "16ae5ec"
+      ],
+      "subject": "[코드 에이전트] 최종 재검증 지적 R1~R6 반영 — 사용자 수준 호스트 설정의 다른 이름·검증 명령의 기록 변경 판정·교차 안내의 설정 오류·리뷰 없이 쓴 리뷰 회차의 선택지·흐름도 줄 인용·시험의 죽은 pid"
     }
   ],
   "retryPolicy": {
@@ -2303,6 +2332,27 @@
         "skipped": 4
       },
       "added": "finalReverify.test.ts R 시험 19개"
+    },
+    "rebuttalCommit": {
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1317,
+      "suites": 189,
+      "pass": 1313,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 139786,
+      "wallSec": 141,
+      "baseAt5205112": {
+        "tests": 1311,
+        "pass": 1307,
+        "fail": 0,
+        "skipped": 4
+      },
+      "added": "finalReverify.test.ts 5개(R2 2·R3 2·R6 1)와 planning.test.ts 1개(계획 교차 검토 줄 R3)"
     }
   },
   "needsUser": [
@@ -2506,6 +2556,114 @@
       "이름으로 모르는 UNC(FQDN 등)는 파일 시스템의 (dev, ino)에 기댐 — SMB 가 파일 번호를 다르게 주면 놓칠 수 있음",
       "검증 명령의 기록 변경에서 verify 는 결과 JSON 없음(precondition 노드 없는 Stop 설계)",
       "흐름도 src/ 줄 인용은 기준 커밋 기준이라 HEAD 와 기계 대조하지 않음"
+    ]
+  },
+  "rebuttal": {
+    "source": "doc/reviews/2026-10-08-full-review.md 의 '반박 검증 지적(F1~F4)' 절",
+    "base": "5205112",
+    "tests": "src/test/finalReverify.test.ts(R2·R3·R6 이름), src/test/planning.test.ts(이름 끝 (R3))",
+    "rules": [
+      "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일",
+      "code-agent update 실행하지 않음, 이 저장소 루트에 init 하지 않음",
+      "게이트를 약하게 하지 않음 — 고친 것은 안내(다음:·게이트 줄·doctor 표시)와 시험",
+      "사용자 결정 대기 E2·E16·E20 은 손대지 않음"
+    ],
+    "items": [
+      {
+        "id": "F1",
+        "severity": "낮음",
+        "status": "반영",
+        "finding": "test 단계 기록 변경 뒤 verify --retry·check 의 같은 코드 재실행 거부로 커서가 check 에 서면 status 다음: 이 '검증 통과 — next 로 넘긴 뒤 /ca-test' — verify·check 는 기록 변경 문장으로 거부(guard 판정이 커서 단계로만 걸러짐)",
+        "change": "commands.ts nextHint check·test 갈래: 지금 회차의 guard 실행을 단계 필터 없이 찾고, 그 실행 단계의 stageProblemEntries stop 문제 전부를 guidance(precondition) 로 — check 커서의 verify 가 test 로 넘어가 멈추는 Stop 과 같은 문장. 게이트는 그대로",
+        "tests": [
+          "R2 test 의 기록 변경 뒤 verify --retry·check 의 거부로 커서가 check 에 서도"
+        ]
+      },
+      {
+        "id": "F2",
+        "severity": "낮음",
+        "status": "반영",
+        "finding": "(1) guard 회차 next 거부에 ⑦ 미확인 줄(TC id 를 남기세요 — 틀린 할 일) (2) 동결 테스트 변경+guard 에서 verify·next 는 두 사유, status 다음: 은 guard 문장만",
+        "change": "evidence.ts stageProblemEntries: 그 회차·단계에 guard 실행이 있으면 ⑦ 미확인 줄을 싣지 않음. nextHint guard 갈래가 stop 문제 전부를 싣는다(F1)",
+        "tests": [
+          "R2 얼어 있는 테스트를 바꾼 데다 기록 변경까지 겹치면",
+          "R2 리뷰 기록을 지운 test(next 거부에 ⑦ 줄 없음)"
+        ]
+      },
+      {
+        "id": "F3",
+        "severity": "낮음",
+        "status": "반영",
+        "finding": "리뷰·계획 교차 게이트 줄의 '(실행할 수 없으면 중지로 기록되고 진행합니다)' 리터럴이 직전 설정 오류에도 붙어 crossNotice 와 어긋남, doctor 주석·표시가 설정 오류도 실패 아님",
+        "change": "hosts.ts crossRunNote(직전 실패 있으면 없음, 실행 전 실행 파일 설정 오류면 cross-config-error notice, 그 밖은 cross-unavailable 의 새 gate 변형)·crossHostProblems(crossNotice·doctor 공통 판정). review.ts·planningState.ts 게이트 줄이 crossRunNote 를 씀. doctor 는 설정 오류 갈래를 ✗ + 고치는 길(hint)로 — --cross 의 없는 옵션과 같은 기준, 실행 불가는 ·",
+        "tests": [
+          "R3 doctor 는 설정 오류",
+          "R3 교차 리뷰 게이트 줄",
+          "planning.test 계획 교차 검토 줄(R3)"
+        ]
+      },
+      {
+        "id": "F4",
+        "severity": "낮음(시험 안정성)",
+        "status": "반영",
+        "finding": "lock.test 의 pidAlive 시험이 방금 끝난 자식 pid 를 바로 봄, 재발 방지 정규식이 한 꼴·고정 999999 만 잡음",
+        "change": "lock.test 끝난 자식 단언 삭제(deadPid 단언만). finalReverify endedPidUses — spawnSync·execFileSync·execSync 결과의 .pid(바로·변수·구조 분해, 인자 꼴 무관)와 세 자리 이상 고정 pid 리터럴, 예외 파일 없음(deadPid.ts 제외), 탐지 표본 시험(잡을 꼴 11·잡지 않을 꼴 6)",
+        "tests": [
+          "R6 시험 파일은 … 예외 없이",
+          "R6 끝난 프로세스 pid 탐지"
+        ]
+      }
+    ],
+    "verification": {
+      "npmTest": {
+        "command": "npm run build && npm test",
+        "buildExit": 0,
+        "testExit": 0,
+        "tests": 1317,
+        "suites": 189,
+        "pass": 1313,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 139786,
+        "wallSec": 141,
+        "baseAt5205112": {
+          "tests": 1311,
+          "pass": 1307,
+          "fail": 0,
+          "skipped": 4
+        },
+        "added": "finalReverify.test.ts 5개(R2 2·R3 2·R6 1)와 planning.test.ts 1개(계획 교차 검토 줄 R3)",
+        "note": "최종 트리(시험 머리 주석만 바뀐 뒤) 실행. 그 앞 실행(같은 소스, 주석 전)도 1317개 중 1313개 통과·실패 0·생략 4(135,265ms)"
+      },
+      "mutation": {
+        "mutations": 10,
+        "caught": 10,
+        "sites": [
+          "F1 guard 단계 필터",
+          "F2 다음: guard 문장만",
+          "F2 ⑦ 미확인 줄",
+          "F3 직전 실패 뒤 괄호",
+          "F3 실행 전 설정 오류 갈래",
+          "F3 리뷰 게이트 리터럴",
+          "F3 계획 게이트 리터럴",
+          "F3 doctor ✗",
+          "F4 lock.test 끝난 자식",
+          "F4 다른 인자 꼴(변수에 담은 spawnSync 결과)"
+        ],
+        "script": "scratchpad/v2/f-mutate.cjs"
+      },
+      "repro": {
+        "F1": "scratchpad/v2/r2b.cjs — check 커서 다음: 이 기록 변경 사유(이전: 검증 통과)",
+        "F2": "scratchpad/v2/r2.cjs test — next 거부에 ⑦ 줄 없음; scratchpad/v2/e15-full.cjs — 다음: 이 verify Stop 과 같은 두 사유",
+        "F3": "scratchpad/v2/r3.cjs(임시 HOME·APPDATA, PATH 는 node·git·System32) — 설정 오류에서 doctor ✗, 설정 오류 뒤 게이트 줄에 실행 불가 괄호 없음"
+      }
+    },
+    "remaining": [
+      "check 커서에서 같은 회차 test 의 기록 변경이 있으면 단계별 게이트라 next 는 test 로 넘어간 뒤 막힘(게이트는 그대로 둠 — 다음:·verify 는 그 자리에서 사유)",
+      "비동기 자식(spawn)이 끝난 뒤의 .pid 를 죽은 pid 로 쓰는 꼴은 탐지하지 않음",
+      "교차 설정 오류에서 doctor exit 1 — E20 분류(hostCommandConfigError)를 따른다"
     ]
   }
 }

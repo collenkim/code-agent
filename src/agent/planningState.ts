@@ -12,7 +12,7 @@ import { answerSources, unverifiedAnswerHint } from "./answers";
 import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
-import { selectedHosts } from "./hosts";
+import { crossRunNote, selectedHosts } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
   crossHintText, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
@@ -516,7 +516,7 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
         ? "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다"
         : view.some(attempt => attempt.class === "answered-input")
           ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
-          : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
+          : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by}${crossRunNote(host, hint)}`;
       if (hint) {
         line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}. ` +
           crossHintText(hint, { host: host ?? "다른 호스트", point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, attempts: view });

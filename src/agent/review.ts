@@ -23,7 +23,7 @@ import {
 import type { Budget, RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
-import { selectedHosts } from "./hosts";
+import { crossRunNote, selectedHosts } from "./hosts";
 import { agentName } from "./hostText";
 
 export { CROSS_ID, crossHintText, FINDING_CLOSED, FINDING_OPEN, reviewResultProblems } from "./crossRecord";
@@ -585,10 +585,11 @@ export function reviewProblems(work: Work): string[] {
     } else {
       const hint = crossPointHint({ attempts, grants, scope: grantScope({ file: "review", key: "crossPoint", round: last.round }),
         rawExists: (raw) => existsSync(join(repoRoot, raw)) });
-      // 한도로 거부될 지점(limit-exceeded)에는 실행 명령을 앞세우지 않는다 — 그 명령은 거부되고, 남은 길은 사람 판단이다
+      // 한도로 거부될 지점(limit-exceeded)에는 실행 명령을 앞세우지 않는다 — 그 명령은 거부되고, 남은 길은 사람 판단이다.
+      // 명령 뒤 괄호(실행하면 어떻게 되는지)는 crossRunNote — 직전 실패가 있으면 그 원인 안내가 싣고, 실행 파일 설정 오류면 그 갈래다
       let line = hint?.class === "limit-exceeded"
         ? "두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다"
-        : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
+        : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"}${crossRunNote(host, hint)}`;
       if (hint) {
         line += ` — 직전 실행: ${pointLabel(attempts)}: ${oneLine(point.lastFailure?.detail ?? hint.detail, 120)}. ${crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts })}`;
       }
