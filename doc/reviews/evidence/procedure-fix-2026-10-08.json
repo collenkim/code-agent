@@ -12,7 +12,8 @@
     "userDecisions20261008": "5e6cdcc(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)",
     "userDecisionsRebuttal": "68d7a00(부모 5e6cdcc) — 사용자 결정 반영의 반박 검증 지적 G1~G8 반영",
     "cleanup": "4c5ca83(부모 68d7a00) — 단계 기록 통합·옛 기록 삭제·현행 문서의 경위 문장 제거·흐름도 §10 압축",
-    "cleanupReview": "4c5ca83 의 다음 커밋(부모 4c5ca83) — 문서 정리의 검증 지적 7건 반영(문서·evidence 만)"
+    "cleanupReview": "4c5ca83 의 다음 커밋(부모 4c5ca83) — 문서 정리의 검증 지적 7건 반영(문서·evidence 만)",
+    "realHostFix": "b8ebf85(부모 bd096f8)·0c0265d·b7d0a28·기록 커밋(부모 b7d0a28) — 실제 호스트 확인의 불일치 H1~H12 반영"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -343,6 +344,17 @@
       "commits": [
         "4c5ca83",
         "검증 지적 반영(부모 4c5ca83)"
+      ],
+      "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
+    },
+    {
+      "stage": "실제 호스트",
+      "bundle": "실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정·자식 환경(H1·H2·H10), Codex hook·신뢰·담당 식별·임대(H3·H4·H5·H9·H11), Codex 사용량(H6), 담당 호출·기록(H7·H12), H8 보류",
+      "commits": [
+        "b8ebf85",
+        "0c0265d",
+        "b7d0a28",
+        "기록(부모 b7d0a28)"
       ],
       "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
     }
@@ -2534,17 +2546,17 @@
     "진행 중인 작업 위에서 update --templates-only 가 바꾼 설치 파일(.gitignore 블록·스킬·에이전트 사본·hook 설정)을 계획 밖 변경에서 따로 다룰지(C4 — 지금은 알리기만 한다, update.ts outsideNotice)"
   ],
   "unverifiedOnRealHost": [
-    "실제 Claude·Codex 오류 문구(인증·한도·모델 없음·네트워크) — 교차 실패 분류 화이트리스트",
-    "Codex 셸 환경 표지(CODEX_CI·CODEX_SANDBOX*·CODEX_THREAD_ID)·PTY 실행 여부 — 직접 CLI 확인(confirmOnTerminal)의 호스트 표지 한계 포함",
-    "session_id 동일성 — Codex PreToolUse·UserPromptSubmit, SessionStart·다음 PreToolUse, Codex 서브 에이전트·메인",
-    "SubagentStop exit 2 로 담당이 고쳐 재반환하는지(Claude), Codex SubagentStop 되돌림 지원(HP-15)",
-    "교차 자식의 hook 환경 상속",
-    "교차 --effort·model_reasoning_effort 실제 호출, xhigh·max 를 high 로 낮춤, 이전 설치의 하위 에이전트 강도 상속",
-    "Codex 세션 기록 형식(rollout-*.jsonl)·셸 래퍼 꼴",
-    "SessionStart source(compact·clear), AskUserQuestion 긴 본문 잘림",
-    "Codex commandWindows 실행 셸, Claude Code PowerShell 대체 버전",
-    "Codex 메인 전체 흐름(HP-21)",
-    "SEA 단일 실행 파일 빌드(esbuild 번들로 지연 require 만 확인)"
+    "대화형 AskUserQuestion(CH3 일부·CH4) — 대화형 세션의 질문 도구 입력 꼴과 긴 본문이 잘리는지. 사람이 대화형 세션에서 확인한다.",
+    "Codex 메인 → 실제 claude 교차의 completed 기록(XE3) — 확인 세션의 자동 모드 분류기가 claude 자식 실행을 막았고 claude 사용 한도에 걸렸다. 연결 확인(H2)을 지난 뒤의 실제 완료 기록은 아직 없다.",
+    "code-agent 의 Codex 교차 자식(`codex exec -s read-only --ephemeral`)에서 프로젝트 hook 이 도는지 — 추론만 했다. 교차 자식의 hook 은 진행 기록을 하지 않고 PreToolUse 는 진행 명령·쓰기를 거부하므로 돌든 안 돌든 작업 기록은 바뀌지 않는다.",
+    "Codex hook 신뢰 기록의 키 꼴(`config.toml`의 `hooks.state`) — 바이너리 문자열로만 보았다. doctor 는 찾지 못하면 '확인 필요'로 둔다.",
+    "실제 오류 문구 중 인증·서비스 장애(두 호스트)와 Codex 의 사용 한도·네트워크 문구 — 교차 실패 분류 화이트리스트(C1). 처음 보는 문구는 설정 오류(막힘)로 간다.",
+    "Codex 셸의 PTY 실행 여부 — 직접 CLI 확인(`confirmOnTerminal`)이 호스트 표지를 보지 않는 한계가 여기에 걸린다.",
+    "Codex SubagentStop 의 되돌림 지원(HP-15).",
+    "Claude Code 가 `xhigh`·`max`를 `high`로 낮추는지(바이너리 문자열로만 확인), 이전 설치의 하위 에이전트가 세션 강도를 물려받았는지(C6).",
+    "`/clear` 뒤 SessionStart 의 `source` 값, Claude Code 의 PowerShell 도구 대체 버전(C5).",
+    "Codex 를 메인으로 한 접수부터 반영까지의 전체 흐름(HP-21).",
+    "단일 실행 파일(SEA) 빌드 — 돌리지 않았다. esbuild 번들로 지연 `require`만 확인했다(C7)."
   ],
   "paidMeasurementsPending": [
     "C6 A/B — node scripts/evaluate-full-flow.cjs run new --model opus --agents exec-opus --label c6-execopus-<n> 와 --agents policy --label c6-policy-<n> 각 3회",
@@ -3153,5 +3165,178 @@
       "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json"
     ],
     "cleanupReview": "4c5ca83 의 검증 지적 7건을 다음 커밋에서 반영했다 — 지운 단계 기록의 남은 위험 중 지금 코드에서 맞는 것을 remaining 에 옮겼고, 설계 문서에서 지운 상태 표·실측은 git show 68d7a00:doc/design.md 로 본다"
+  },
+  "realHost20261008": {
+    "source": "doc/reviews/2026-10-08-procedure-fix-summary.md#실제-호스트-확인-2026-10-08",
+    "versions": {
+      "claude": "2.1.293",
+      "codex": "codex-cli 0.161.0",
+      "platform": "Windows 11, [windows] sandbox=elevated"
+    },
+    "codeChecked": "68d7a00",
+    "rules": [
+      "~/.claude/settings*.json·~/.codex/config.toml 쓰지 않음(Codex 실행은 -c projects=…·--dangerously-bypass-hook-trust, 끝난 뒤 config.toml 바이트 대조)",
+      "반영은 실제 모델을 다시 부르지 않고 증거 원문을 키 꼴만 고정 자료로"
+    ],
+    "confirmed": [
+      {
+        "group": "Claude(CH1·CH2·CH3 일부·CH5)",
+        "body": "hook 입력 — SessionStart(`startup`·`resume`·`compact`)·PreToolUse·PostToolUse·Stop·SessionEnd 의 `session_id`가 같고 `--resume`·`--continue`도 같은 id 다. 서브에이전트 hook 은 부모 `session_id`와 `agent_id`·`agent_type`을 싣는다. SubagentStop 되돌림(1차 `stop_hook_active=false` → 같은 `agent_id` 담당이 다시 답 → 2차 `true`). `run_in_background`를 주지 않은 Agent 호출이 백그라운드로 뜬 실행. 교차 `claude -p`(`--effort` 포함)의 정상 결과와 사용 한도·연결 실패 JSON 꼴(`is_error: true`·`subtype: \"success\"`·`api_error_status`·`api_error`)"
+      },
+      {
+        "group": "Codex(CX1~CX5)",
+        "body": "프로젝트 hook 은 프로젝트 신뢰와 hook 신뢰가 둘 다 있어야 돈다(`codex exec`는 알리지 않고 건너뛴다). Windows hook 명령은 `powershell.exe -NoProfile -Command`로 돌고 Windows PowerShell 5.1 이 exit 2 를 1 로 바꾼다(로컬 `powershell.exe`로도 확인). 모든 이벤트가 같은 `session_id`를 싣고, 하위 에이전트 hook 은 부모 `session_id`와 `agent_id`·`agent_type`을 싣는다. 네 실행 모드의 셸 표지와 네트워크(권한 상승 셸에도 `CODEX_SANDBOX_NETWORK_DISABLED=1`), 샌드박스 셸의 연결 거부 꼴(`connect EACCES` — 그 안의 claude 는 `ECONNREFUSED`로 약 3분 재시도). 세션 기록(`rollout-*.jsonl`)의 꼴. 셸 hook 의 `tool_name: \"Bash\"`·`tool_input.command`(Windows 도 같다)와 하위 에이전트 조율 도구 이름"
+      },
+      {
+        "group": "교차(XE1·XE2·XE4·XE5)",
+        "body": "Claude 메인 → 실제 codex(`-c model_reasoning_effort` 포함)의 교차 리뷰·교차 계획 검토 completed 기록과 게이트(XE1·XE2), 잘못된 교차 옵션·모델의 설정 오류 갈래와 재실행 한도(XE4), `doctor --cross`의 옵션 점검(XE5)"
+      }
+    ],
+    "items": [
+      {
+        "id": "H1",
+        "status": "반영",
+        "issue": "claude 사용 한도가 설정 오류로 분류됐다 — 실패 JSON 의 `api_error_status`·`api_error`를 보지 않았다",
+        "change": "`crossFailureText`가 그 둘과 `subtype`(`success` 제외)을 보고 한도 문구(`usage_limit_reached`·`session limit`)를 더했다. 교차 claude 의 캐시 생성·읽기 토큰을 따로 기록·합산한다"
+      },
+      {
+        "id": "H2",
+        "status": "반영",
+        "issue": "권한 상승한 Codex 셸에도 샌드박스 표지가 남아 사전 판정이 매번 거부했다(막다른 길)",
+        "change": "표지가 있으면 연결을 한 번 확인하고 `EACCES`·`EPERM`일 때만 거부한다(`crossNetProbe`). 그 뒤의 네트워크 오류는 그대로 샌드박스 거부라 게이트는 약해지지 않는다"
+      },
+      {
+        "id": "H3",
+        "status": "반영",
+        "issue": "Windows Codex hook 의 종료 코드 — 동의 응답 실패가 메시지를 막지 못했고 PreToolUse 에 프로세스 실패 닫힘이 없었다. `--cli` 없는 설치는 실행 정책 Restricted 에서 `code-agent.ps1`로 막힐 수 있었다",
+        "change": "`commandWindows`를 이벤트별 꼴로 설치한다(`cmd /c`, PreToolUse 실패 2, UserPromptSubmit 종료 코드 전달). doctor 가 옛 꼴을 `✗`로 짚고 `update --templates-only`가 고친다"
+      },
+      {
+        "id": "H4",
+        "status": "반영",
+        "issue": "Codex 하위 에이전트 hook 의 `agent_id`·`agent_type`을 넘기지 않아 계획 담당이 메인으로 보였다. 임대가 Codex 를 호스트만 비교했다",
+        "change": "`agent_id`·`agent_type`을 넘기고 실행 중인 Codex 계획 담당의 파일 쓰기를 거부한다. 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령을 두 호스트에서 거부한다. 임대는 두 호스트 모두 세션까지 비교하고 Codex SessionStart 가 넘겨받는다(Codex hook 6개)"
+      },
+      {
+        "id": "H5",
+        "status": "반영",
+        "issue": "프로젝트·hook 신뢰가 없으면 hook 이 돌지 않는다는 안내와 점검이 없었다",
+        "change": "doctor 의 `Codex 프로젝트 신뢰`·`Codex 훅 신뢰`(`config.toml` 읽기만), 설치·Codex 문서의 신뢰 절차"
+      },
+      {
+        "id": "H6",
+        "status": "반영",
+        "issue": "Codex 사용량이 0.161.0 기록 꼴을 읽지 못했다(명령·스킬 읽기 0, 배열 결과 0자, 하위 에이전트가 섞임)",
+        "change": "`CommandExecution`·`FileChange`·`token_usage_record`(없으면 `token_count`, 다시 낸 줄은 버린다)·하위 에이전트 행·부모 사본 제외·캐시 쓰기"
+      },
+      {
+        "id": "H7",
+        "status": "반영",
+        "issue": "Agent 호출이 백그라운드로 떠 담당 결과 전에 메인 차례가 끝날 수 있었다",
+        "change": "담당을 부르는 스킬 문장 11곳에 `run_in_background: false`를 적고 Codex 사본은 결과를 기다리는 문장으로 바꾼다. Stop hook 은 끝남을 판정하는 경로가 없어(계획 밖 변경·미응답 질문만 막는다) `background_tasks`를 보지 않는다"
+      },
+      {
+        "id": "H8",
+        "status": "보류",
+        "issue": "Codex 교차 성공 기록에 토큰이 없다",
+        "change": "**보류** — 사람용 출력은 `tokens used` 다음 줄의 합계 하나라 입력·출력으로 나뉘지 않고 숫자의 뜻도 확인하지 못했다. `--json`으로 바꾸면 교차 실패 분류의 입력(배너·전사 규칙)이 바뀐다"
+      },
+      {
+        "id": "H9",
+        "status": "반영",
+        "issue": "셸 hook 이름 `PowerShell`은 오지 않고, 하위 에이전트 조율 도구가 미판정 도구로 잡혔다",
+        "change": "주석·문서를 실측으로 고치고 조율 도구(`collaboration…`)를 미판정 집계에서 뺐다"
+      },
+      {
+        "id": "H10",
+        "status": "반영",
+        "issue": "교차 claude 자식 환경에 Claude Code 메시징 변수가 남았다",
+        "change": "`crossChildEnv`가 `CLAUDE_CODE_MESSAGING_SOCKET`·`CLAUDE_CODE_MESSAGING_TOKEN`을 지운다"
+      },
+      {
+        "id": "H11",
+        "status": "문서",
+        "issue": "(문서) 세션 id·재개의 실측",
+        "change": "흐름도·Codex 문서의 임대 설명에 실측을 적고, 같은 세션을 두 터미널에서 이어 열면 임대 보유자가 하나로 보인다는 한계를 적었다"
+      },
+      {
+        "id": "H12",
+        "status": "문서",
+        "issue": "(기록)",
+        "change": "이 절과 원자료 `realHost20261008`"
+      }
+    ],
+    "stillUnverified": [
+      "대화형 AskUserQuestion(CH3 일부·CH4) — 대화형 세션의 질문 도구 입력 꼴과 긴 본문이 잘리는지. 사람이 대화형 세션에서 확인한다.",
+      "Codex 메인 → 실제 claude 교차의 completed 기록(XE3) — 확인 세션의 자동 모드 분류기가 claude 자식 실행을 막았고 claude 사용 한도에 걸렸다. 연결 확인(H2)을 지난 뒤의 실제 완료 기록은 아직 없다.",
+      "code-agent 의 Codex 교차 자식(`codex exec -s read-only --ephemeral`)에서 프로젝트 hook 이 도는지 — 추론만 했다. 교차 자식의 hook 은 진행 기록을 하지 않고 PreToolUse 는 진행 명령·쓰기를 거부하므로 돌든 안 돌든 작업 기록은 바뀌지 않는다.",
+      "Codex hook 신뢰 기록의 키 꼴(`config.toml`의 `hooks.state`) — 바이너리 문자열로만 보았다. doctor 는 찾지 못하면 '확인 필요'로 둔다.",
+      "실제 오류 문구 중 인증·서비스 장애(두 호스트)와 Codex 의 사용 한도·네트워크 문구 — 교차 실패 분류 화이트리스트(C1). 처음 보는 문구는 설정 오류(막힘)로 간다.",
+      "Codex 셸의 PTY 실행 여부 — 직접 CLI 확인(`confirmOnTerminal`)이 호스트 표지를 보지 않는 한계가 여기에 걸린다.",
+      "Codex SubagentStop 의 되돌림 지원(HP-15).",
+      "Claude Code 가 `xhigh`·`max`를 `high`로 낮추는지(바이너리 문자열로만 확인), 이전 설치의 하위 에이전트가 세션 강도를 물려받았는지(C6).",
+      "`/clear` 뒤 SessionStart 의 `source` 값, Claude Code 의 PowerShell 도구 대체 버전(C5).",
+      "Codex 를 메인으로 한 접수부터 반영까지의 전체 흐름(HP-21).",
+      "단일 실행 파일(SEA) 빌드 — 돌리지 않았다. esbuild 번들로 지연 `require`만 확인했다(C7)."
+    ],
+    "calls": {
+      "source": "작업 scratchpad 의 실제 호스트 증거 폴더(claude-host·codex-host·cross-e2e)에서 집계 — 본문은 옮기지 않았다",
+      "claude": {
+        "streamSessions": 7,
+        "resultRows": 8,
+        "streamCostUsd": 0.6149,
+        "crossPrint": 3,
+        "crossPrintCompleted": 1,
+        "crossPrintCostUsd": 0.0743,
+        "crossPrintFailedNoCost": 2,
+        "totalCostUsd": 0.689
+      },
+      "codex": {
+        "execRuns": 10,
+        "completedTurns": 6,
+        "beforeTurnInvalidModel": 4,
+        "inputTokens": 536711,
+        "cachedInputTokens": 403584,
+        "outputTokens": 3590,
+        "reasoningOutputTokens": 717,
+        "codexMainE2E": 2,
+        "codexMainE2EInputTokens": 164854,
+        "costUsd": null,
+        "note": "단가표가 없어 비용은 산정하지 않았다"
+      },
+      "cross": {
+        "attempts": 15,
+        "byHost": {
+          "codex": 7,
+          "claude": 8
+        },
+        "excludes": "사전 거부(preflight)·사람 중지(human)",
+        "durationMsTotal": 643917
+      }
+    },
+    "tests": {
+      "final": {
+        "at": "기록 커밋(부모 b7d0a28)의 트리",
+        "command": "npm run build && npm test",
+        "tests": 1353,
+        "pass": 1349,
+        "fail": 0,
+        "skipped": 4,
+        "suites": 189,
+        "durationMs": 144516
+      },
+      "perCommit": "b8ebf85·0c0265d·b7d0a28 의 트리를 각각 git checkout-index 로 꺼내 npm test — 1,344개 중 1,340·1,351개 중 1,347·1,352개 중 1,348 통과, 셋 다 실패 0·생략 4"
+    },
+    "budgets": {
+      "template/claude/skills/ca-impact/SKILL.md": [
+        3000,
+        3100
+      ],
+      "template/claude/skills/ca-design/SKILL.md": [
+        2800,
+        2900
+      ],
+      "reason": "담당 호출 문장(H7)은 담당을 부르는 항목에 있어야 한다 — 보조 문서로 옮기지 않음"
+    }
   }
 }

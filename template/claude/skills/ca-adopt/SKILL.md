@@ -122,7 +122,7 @@ survey 와 아키텍처 문서로 초안을 만든다. 기술 기본값은 근�
 ## 4. 단계 규칙
 
 `ca-writer` 에게 컨벤션의 계층별 규칙을 단계마다 짧게(10줄 안팎) `doc/code-agent/stages/<key>.md` 로 옮기게 한다 —
-구현 단계에서 `code-agent context` 가 이 파일을 그 단계에만 싣는다.
+구현 단계에서 `code-agent context` 가 이 파일을 그 단계에만 싣는다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).
 
 ## 5. 마무리
 

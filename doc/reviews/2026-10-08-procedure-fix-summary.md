@@ -1,6 +1,6 @@
 # 절차 보완·재시도 규약·최적화 결과 요약 (2026-10-07~08)
 
-[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `c4f3fbf..HEAD`(감사 기준 `c4f3fbf`의 다음 커밋부터)다 — 감사 `ff13950`, 구현·검토 `ff13950..68d7a00`(`2327975`부터 `68d7a00`까지), 문서 정리 `4c5ca83`과 그 검증 지적 반영 커밋. 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
+[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `c4f3fbf..HEAD`(감사 기준 `c4f3fbf`의 다음 커밋부터)다 — 감사 `ff13950`, 구현·검토 `ff13950..68d7a00`(`2327975`부터 `68d7a00`까지), 문서 정리 `4c5ca83`과 그 검증 지적 반영 커밋(`bd096f8`), 실제 호스트 확인의 불일치 반영 `b8ebf85`·`0c0265d`·`b7d0a28`·그다음 커밋(부모 `b7d0a28`). 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
 
 단계마다 남겼던 기록 10개와 그 evidence 는 문서 정리 `4c5ca83`에서 이 기록으로 합치고 지웠다. 원문은 `git show 68d7a00:doc/reviews/<파일>`로 본다([지운 기록](#지운-기록)).
 
@@ -41,7 +41,8 @@
 | 10 | 9단계 수정의 반박 검증 지적 F1~F4 반영 | `014cd85` |
 | 11 | 사용자 결정 D1~D3 반영 | `5e6cdcc` |
 | 12 | 11단계 반영의 반박 검증 지적 G1~G8 반영 | `68d7a00` |
-| 정리 | 문서 최신화·이력 정리(단계 기록 통합, 옛 기록 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)와 그 검증 지적 7건 반영 | `4c5ca83` · 검증 반영(부모 `4c5ca83`) |
+| 정리 | 문서 최신화·이력 정리(단계 기록 통합, 옛 기록 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)와 그 검증 지적 7건 반영 | `4c5ca83` · `bd096f8` |
+| 실제 호스트 | 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정 · Codex hook·신뢰·담당 식별·임대 · Codex 사용량 · 담당 호출·기록([실제 호스트 확인](#실제-호스트-확인-2026-10-08)) | `b8ebf85` · `0c0265d` · `b7d0a28` · 기록(부모 `b7d0a28`) |
 
 묶음마다 구현 커밋 뒤에 독립 검토를 거쳤고, 지적을 코드로 확인한 반영 커밋을 따로 두었다. 7단계는 `ff13950..934e5fe` 전체를 네 관점(e2e·재시도 규약·hook·문서)으로 다시 검토한 결과이고, 9~12단계는 그 뒤를 다시 검증하거나 반박 검증해 남은 문제를 고친 결과다.
 
@@ -159,7 +160,7 @@ summary 가 크면 비율이 작아진다(plan 7,868→3,707·abort 4,840→2,19
 
 ## 템플릿 크기 예산
 
-`src/test/templateBudget.test.ts` `BUDGET`(C7, `69fbe28`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 그 뒤 예산을 올린 일은 없다. 정리 커밋 시점 합계는 Claude 50,905자·Codex 48,758자로 예산 안이다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
+`src/test/templateBudget.test.ts` `BUDGET`(C7, `69fbe28`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 실제 호스트 반영(H7)에서 담당 호출 문장(63자)을 더해 `ca-impact/SKILL.md`(3,007자)·`ca-design/SKILL.md`(2,812자)가 예산을 넘었다 — 문장은 담당을 부르는 그 항목에 있어야 모델이 호출할 때 보므로 보조 문서로 옮기지 않고 `--suggest` 값(3,100·2,900)으로 올렸다. 그 밖의 파일·합계 예산은 그대로이고, 합계는 Claude 51,409자·Codex 49,262자로 예산 안이다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
 
 ## 감사 160건 처리 현황
 
@@ -363,22 +364,54 @@ DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`
 
 - **기준** — 감사 기준 커밋 `c4f3fbf`: `npm test` 802개 중 798개 통과·실패 0·생략 4(133초).
 - **최종** — 문서 정리의 검증 지적 반영 커밋(부모 `4c5ca83`)의 트리: `npm run build && npm test` 1337개 중 1333개 통과·실패 0·생략 4(suites 189, `duration_ms` 148,064). 문서·evidence 만 바꿔 시험 수는 `4c5ca83`과 같다(그 트리는 `duration_ms` 257,931 — 벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다).
+- **실제 호스트 반영** — 기록 커밋(부모 `b7d0a28`)의 트리: `npm run build && npm test` 1,353개 중 1,349개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,516). 커밋 `b8ebf85`·`0c0265d`·`b7d0a28`의 트리도 각각 전체 시험을 통과했다(원자료 `realHost20261008.tests`).
 
 생략 4개는 플랫폼 조건(대소문자 구분 없는 파일 시스템 2개, POSIX chmod 2개)이다. 단계마다의 시험 수는 원자료의 `stages[].npmTest`에 있다.
 
+## 실제 호스트 확인 (2026-10-08)
+
+Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, codex-cli 0.161.0(`[windows] sandbox=elevated`). 확인 대상 코드는 `68d7a00`(그때 `src/`와 같은 판)이고, 실험은 작업 scratchpad 의 임시 저장소에서 했다. `~/.claude/settings*.json`·`~/.codex/config.toml`은 쓰지 않았다 — Codex 실행은 `-c projects=…`·`--dangerously-bypass-hook-trust`로 신뢰를 그 실행에만 주고, 끝난 뒤 `config.toml`이 시작과 바이트 단위로 같은지 확인했다. 반영은 실제 모델을 다시 부르지 않고 증거 원문을 고정 자료로 시험에 넣었다(본문·계정 정보 없이 키 꼴만).
+
+**확인됨**
+
+| 묶음 | 확인한 것 |
+|---|---|
+| Claude(CH1·CH2·CH3 일부·CH5) | hook 입력 — SessionStart(`startup`·`resume`·`compact`)·PreToolUse·PostToolUse·Stop·SessionEnd 의 `session_id`가 같고 `--resume`·`--continue`도 같은 id 다. 서브에이전트 hook 은 부모 `session_id`와 `agent_id`·`agent_type`을 싣는다. SubagentStop 되돌림(1차 `stop_hook_active=false` → 같은 `agent_id` 담당이 다시 답 → 2차 `true`). `run_in_background`를 주지 않은 Agent 호출이 백그라운드로 뜬 실행. 교차 `claude -p`(`--effort` 포함)의 정상 결과와 사용 한도·연결 실패 JSON 꼴(`is_error: true`·`subtype: "success"`·`api_error_status`·`api_error`) |
+| Codex(CX1~CX5) | 프로젝트 hook 은 프로젝트 신뢰와 hook 신뢰가 둘 다 있어야 돈다(`codex exec`는 알리지 않고 건너뛴다). Windows hook 명령은 `powershell.exe -NoProfile -Command`로 돌고 Windows PowerShell 5.1 이 exit 2 를 1 로 바꾼다(로컬 `powershell.exe`로도 확인). 모든 이벤트가 같은 `session_id`를 싣고, 하위 에이전트 hook 은 부모 `session_id`와 `agent_id`·`agent_type`을 싣는다. 네 실행 모드의 셸 표지와 네트워크(권한 상승 셸에도 `CODEX_SANDBOX_NETWORK_DISABLED=1`), 샌드박스 셸의 연결 거부 꼴(`connect EACCES` — 그 안의 claude 는 `ECONNREFUSED`로 약 3분 재시도). 세션 기록(`rollout-*.jsonl`)의 꼴. 셸 hook 의 `tool_name: "Bash"`·`tool_input.command`(Windows 도 같다)와 하위 에이전트 조율 도구 이름 |
+| 교차(XE1·XE2·XE4·XE5) | Claude 메인 → 실제 codex(`-c model_reasoning_effort` 포함)의 교차 리뷰·교차 계획 검토 completed 기록과 게이트(XE1·XE2), 잘못된 교차 옵션·모델의 설정 오류 갈래와 재실행 한도(XE4), `doctor --cross`의 옵션 점검(XE5) |
+
+**고친 불일치** — 항목마다 증거와 코드로 다시 확인했고, 되돌리면 실패하는 시험(이름에 항목 번호)을 더했다.
+
+| 항목 | 불일치 | 처리 |
+|---|---|---|
+| H1 | claude 사용 한도가 설정 오류로 분류됐다 — 실패 JSON 의 `api_error_status`·`api_error`를 보지 않았다 | `crossFailureText`가 그 둘과 `subtype`(`success` 제외)을 보고 한도 문구(`usage_limit_reached`·`session limit`)를 더했다. 교차 claude 의 캐시 생성·읽기 토큰을 따로 기록·합산한다 |
+| H2 | 권한 상승한 Codex 셸에도 샌드박스 표지가 남아 사전 판정이 매번 거부했다(막다른 길) | 표지가 있으면 연결을 한 번 확인하고 `EACCES`·`EPERM`일 때만 거부한다(`crossNetProbe`). 그 뒤의 네트워크 오류는 그대로 샌드박스 거부라 게이트는 약해지지 않는다 |
+| H3 | Windows Codex hook 의 종료 코드 — 동의 응답 실패가 메시지를 막지 못했고 PreToolUse 에 프로세스 실패 닫힘이 없었다. `--cli` 없는 설치는 실행 정책 Restricted 에서 `code-agent.ps1`로 막힐 수 있었다 | `commandWindows`를 이벤트별 꼴로 설치한다(`cmd /c`, PreToolUse 실패 2, UserPromptSubmit 종료 코드 전달). doctor 가 옛 꼴을 `✗`로 짚고 `update --templates-only`가 고친다 |
+| H4 | Codex 하위 에이전트 hook 의 `agent_id`·`agent_type`을 넘기지 않아 계획 담당이 메인으로 보였다. 임대가 Codex 를 호스트만 비교했다 | `agent_id`·`agent_type`을 넘기고 실행 중인 Codex 계획 담당의 파일 쓰기를 거부한다. 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령을 두 호스트에서 거부한다. 임대는 두 호스트 모두 세션까지 비교하고 Codex SessionStart 가 넘겨받는다(Codex hook 6개) |
+| H5 | 프로젝트·hook 신뢰가 없으면 hook 이 돌지 않는다는 안내와 점검이 없었다 | doctor 의 `Codex 프로젝트 신뢰`·`Codex 훅 신뢰`(`config.toml` 읽기만), 설치·Codex 문서의 신뢰 절차 |
+| H6 | Codex 사용량이 0.161.0 기록 꼴을 읽지 못했다(명령·스킬 읽기 0, 배열 결과 0자, 하위 에이전트가 섞임) | `CommandExecution`·`FileChange`·`token_usage_record`(없으면 `token_count`, 다시 낸 줄은 버린다)·하위 에이전트 행·부모 사본 제외·캐시 쓰기 |
+| H7 | Agent 호출이 백그라운드로 떠 담당 결과 전에 메인 차례가 끝날 수 있었다 | 담당을 부르는 스킬 문장 11곳에 `run_in_background: false`를 적고 Codex 사본은 결과를 기다리는 문장으로 바꾼다. Stop hook 은 끝남을 판정하는 경로가 없어(계획 밖 변경·미응답 질문만 막는다) `background_tasks`를 보지 않는다 |
+| H8 | Codex 교차 성공 기록에 토큰이 없다 | **보류** — 사람용 출력은 `tokens used` 다음 줄의 합계 하나라 입력·출력으로 나뉘지 않고 숫자의 뜻도 확인하지 못했다. `--json`으로 바꾸면 교차 실패 분류의 입력(배너·전사 규칙)이 바뀐다 |
+| H9 | 셸 hook 이름 `PowerShell`은 오지 않고, 하위 에이전트 조율 도구가 미판정 도구로 잡혔다 | 주석·문서를 실측으로 고치고 조율 도구(`collaboration…`)를 미판정 집계에서 뺐다 |
+| H10 | 교차 claude 자식 환경에 Claude Code 메시징 변수가 남았다 | `crossChildEnv`가 `CLAUDE_CODE_MESSAGING_SOCKET`·`CLAUDE_CODE_MESSAGING_TOKEN`을 지운다 |
+| H11 | (문서) 세션 id·재개의 실측 | 흐름도·Codex 문서의 임대 설명에 실측을 적고, 같은 세션을 두 터미널에서 이어 열면 임대 보유자가 하나로 보인다는 한계를 적었다 |
+| H12 | (기록) | 이 절과 원자료 `realHost20261008` |
+
+**실제 호출 수·비용**(증거 폴더에서 집계, 원자료 `realHost20261008.calls`) — Claude: 스트림 세션 7개(결과 줄 8개) $0.615, 교차 `claude -p` 3회 중 정상 1회 $0.074(한도·연결 실패 2회는 비용 기록 없음), 합 약 $0.69. Codex: `exec` 10회(모델 차례가 끝난 6회 — 잘못된 모델 이름 4회는 차례 전에 끝났다) 입력 536,711(캐시 입력 403,584)·출력 3,590 토큰, Codex 메인 e2e 2회(세션 기록 입력 164,854 토큰) — 단가표가 없어 비용은 산정하지 않았다. 교차 e2e 시도 15회(codex 7·claude 8, 사전 거부·사람 중지 제외) 소요 합 약 644초.
+
 ## 실제 호스트에서 확인하지 않은 것
 
-모두 실제 모델 호출 없이 판독·바이너리·fixture로만 확인했다. 지금 상태는 모두 **미확인**이다. 정리 시점에 이 PC 에 설치된 호스트는 Claude Code 2.1.293·codex-cli 0.161.0 이다(`--version`) — 실제 호스트 확인은 별도 작업으로 하고 결과는 그 기록에 남긴다.
+위 확인 뒤에도 실제 호스트로 확인하지 않은 것이다 — 판독·바이너리 문자열·fixture 로만 확인했다.
 
-- 실제 Claude·Codex 오류 문구(인증·한도·모델 없음·네트워크) — 교차 실패 분류 화이트리스트(C1). 처음 보는 문구는 설정 오류(막힘)로 간다.
-- Codex 셸의 환경 표지(`CODEX_CI`·`CODEX_SANDBOX*`·`CODEX_THREAD_ID`)와 PTY 실행 여부 — 같은 호스트 거부·샌드박스 사전 판정·표기 판정이 기댄다(C1·C4·C5). 직접 CLI 확인(`confirmOnTerminal`)이 호스트 표지를 보지 않는 한계와 D2 의 '표지 없는 셸' 갈래도 여기에 걸린다.
-- `session_id` 동일성 — Codex PreToolUse 와 UserPromptSubmit(C5 — 바이너리 스키마로 존재만 확인), SessionStart 와 다음 PreToolUse(C4), Codex 서브 에이전트와 메인.
-- SubagentStop exit 2 로 담당이 실제로 고쳐 다시 반환하는지(Claude), Codex SubagentStop 의 되돌림 지원(HP-15).
-- 교차 자식의 hook 환경 상속(C1).
-- 교차 실행 인자 `--effort`·`model_reasoning_effort`의 실제 호출, Claude Code 가 `xhigh`·`max`를 `high`로 낮추는지(바이너리 문자열로만 확인), 이전 설치의 하위 에이전트가 세션 강도를 물려받았는지(C6).
-- Codex 세션 기록 형식(`rollout-*.jsonl`)과 셸 래퍼 꼴(C7 — 이 PC 에 Codex 기록이 없어 공개 형식 가정).
-- SessionStart `source`(compact·clear) 값, AskUserQuestion 이 긴 본문을 자르는지(C7).
-- Codex `commandWindows`의 실행 셸, Claude Code 의 PowerShell 대체 버전(C5).
+- **대화형 AskUserQuestion**(CH3 일부·CH4) — 대화형 세션의 질문 도구 입력 꼴과 긴 본문이 잘리는지. 사람이 대화형 세션에서 확인한다.
+- **Codex 메인 → 실제 claude 교차의 completed 기록**(XE3) — 확인 세션의 자동 모드 분류기가 claude 자식 실행을 막았고 claude 사용 한도에 걸렸다. 연결 확인(H2)을 지난 뒤의 실제 완료 기록은 아직 없다.
+- **code-agent 의 Codex 교차 자식**(`codex exec -s read-only --ephemeral`)에서 프로젝트 hook 이 도는지 — 추론만 했다. 교차 자식의 hook 은 진행 기록을 하지 않고 PreToolUse 는 진행 명령·쓰기를 거부하므로 돌든 안 돌든 작업 기록은 바뀌지 않는다.
+- **Codex hook 신뢰 기록의 키 꼴**(`config.toml`의 `hooks.state`) — 바이너리 문자열로만 보았다. doctor 는 찾지 못하면 '확인 필요'로 둔다.
+- 실제 오류 문구 중 인증·서비스 장애(두 호스트)와 Codex 의 사용 한도·네트워크 문구 — 교차 실패 분류 화이트리스트(C1). 처음 보는 문구는 설정 오류(막힘)로 간다.
+- Codex 셸의 PTY 실행 여부 — 직접 CLI 확인(`confirmOnTerminal`)이 호스트 표지를 보지 않는 한계가 여기에 걸린다.
+- Codex SubagentStop 의 되돌림 지원(HP-15).
+- Claude Code 가 `xhigh`·`max`를 `high`로 낮추는지(바이너리 문자열로만 확인), 이전 설치의 하위 에이전트가 세션 강도를 물려받았는지(C6).
+- `/clear` 뒤 SessionStart 의 `source` 값, Claude Code 의 PowerShell 도구 대체 버전(C5).
 - Codex 를 메인으로 한 접수부터 반영까지의 전체 흐름(HP-21).
 - 단일 실행 파일(SEA) 빌드 — 돌리지 않았다. esbuild 번들로 지연 `require`만 확인했다(C7).
 
@@ -408,12 +441,12 @@ DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`
 
 - 일부 28건의 남은 부분([전체 목록](#전체-목록)의 메모).
 - 전체 검토에서 일부만 반영한 것 — E13 의 (b)안(총 회차를 사람 허용 대상에), E19 의 기록하지 못한 판정 실패(2로 남김), E26 의 동의 적용 잠금 나이 상한, E27 의 다른 세션 경고 줄, E30 의 판정하지 못한 MCP 이름 기록.
-- 문서화된 한계 — Codex 두 세션의 동시 진행은 작업 임대가 막지 못한다(호스트 단위 비교). `codex exec resume` 프롬프트는 가르지 못한다(CON-1). Codex 확인 코드는 사람 입력의 증명이 아니다(CON-5).
+- 문서화된 한계 — 두 터미널이 같은 세션을 이어 열면(재개 — 같은 `session_id`) 작업 임대는 한 주인으로 본다. `codex exec resume` 프롬프트는 가르지 못한다(CON-1). Codex 확인 코드는 사람 입력의 증명이 아니다(CON-5).
 - hook 의 셸 언급 판정은 글자 그대로 쓴 경로만 본다 — 따옴표로 쪼갠 이름이나 변수로 조립한 이름은 잡지 못한다(hook 은 보안 경계가 아니다). 이름으로 모르는 UNC(FQDN 등)로 사용자 수준 호스트 설정을 가리키면 파일 시스템이 주는 (dev, ino)에 기댄다. 비파일 MCP 서버의 판정은 사용자 수준 호스트 설정 네 파일만 넓혔다 — 그 밖의 저장소 밖 쓰기는 원격 서비스 오탐을 피하려고 판정하지 않는다.
 - 검증 명령이 code-agent 기록을 바꾼 실행에서 verify 는 결과 JSON 을 내지 않는다(`precondition`의 노드 없는 Stop 설계). check 커서에서 같은 회차 test 의 기록 변경이 있으면 단계별 게이트라 `next`는 test 로 넘어간 뒤에 막힌다(`다음:`·verify 는 그 자리에서 사유를 낸다). 흐름도의 `src/` 줄 인용은 머리말 규칙대로 기준 커밋 기준이라 HEAD 와 기계 대조하지 않는다.
 - 비동기 자식(`spawn`)이 끝난 뒤의 `.pid`를 죽은 pid 로 쓰는 꼴은 시험이 탐지하지 않는다.
 - doctor 의 `models.json` 형식 오류 안내와 Claude '스킬·에이전트' 줄(소스 `code-agent update` 처방)은 작업 중 안내를 달지 않았다. 작업이 없을 때 승인한 model 동의를 작업 시작 뒤 적용하면 대상 변경으로 폐기되고 안내는 '새로 준비'다.
-- Codex 에서 부른 적이 없는 지점을 호스트 표지 없는 셸이나 두 표지가 섞인 셸에서 처음 `--by claude`로 실행한 네트워크 오류는 실행 불가(중지 기록 후 진행)다. 그 셸이 실제로는 권한 상승한 Codex 셸이면 D2 밖으로 빠진다(실제 Codex 셸의 표지는 미확인).
+- Codex 에서 부른 적이 없는 지점을 호스트 표지 없는 셸이나 두 표지가 섞인 셸에서 처음 `--by claude`로 실행한 네트워크 오류는 실행 불가(중지 기록 후 진행)다. 권한 상승한 Codex 셸에는 표지가 남아(실측 — 지금 호스트는 codex) 이 갈래에 들지 않는다.
 - 단계 기록이 남긴 위험과 한계 — 지운 단계 기록(`68d7a00`)의 '남은 위험'·'남는 한계' 절을 지금 코드에서 다시 확인해 아직 맞는 것만 옮겼다. 뒤 커밋이 고친 것(`review.json` 잠금 없는 저장 → C1 `mutateReview`, 사람 판단 동의 부재 → C5 `judgment`, 하위 폴더 세션의 hook 루트 → E25, 권한 상승한 Codex 메인의 첫 네트워크 오류 → D2·G6)과 위 미확인 목록·감사 메모에 이미 있는 것은 뺐다.
   - **교차 — Codex 전사의 끝 `ERROR:` 줄**(C1, `retryPolicy.ts` `crossFailureText`의 Codex 세션 갈래). 읽은 파일·도구 출력의 마지막 줄이 화이트리스트 문구의 `ERROR:` 줄이고 Codex 가 자기 오류 줄 없이 신호가 아닌 종료 코드로 끝나면(Windows 강제 종료 등) 그 줄을 Codex 의 오류 줄로 읽는다. 그 문구가 실행 불가(인증·한도·네트워크·장애)에 맞으면 중지가 기록되고 게이트가 통과한다 — '두 호스트면 교차 필수'·'게이트 약화 금지' 결정에 걸리는 남은 틈이다. 도구 실행 뒤 한도에 닿아 Codex 가 스스로 낸 `ERROR:` 줄과 글로 가를 수 없어 남겼다. 실제 Codex 오류 출력 꼴(위 미확인 목록의 첫 항목)을 확인할 때 함께 정한다.
   - 교차 — 분류 창이 좁아 앞줄에 원인이 있는 실행 불가는 `unclassified`(설정 오류)로 막히고, Codex 가 오류 줄 뒤에 안내 줄을 더 찍는 꼴이면 실행 불가도 막힌다(안전 쪽 — 원문은 `logPath`에 남는다).

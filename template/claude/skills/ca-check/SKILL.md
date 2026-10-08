@@ -40,7 +40,7 @@ description: 정적 분석·컴파일 단계(check)를 진행한다 — code-age
 `check` · `test` · `review` · `integrate` 가 함께 쓴다. 회차는 **코드가 원인별로 센다** — 실패를 고치는 고쳐 쓰기(`code-agent.json` 의 `fixRounds`, 기본 2), TC 결과 수집 수정(1), 같은 코드 재실행(회차당 2), 리뷰 회차(3). 남은 수는 `verify` 결과의 `budget` 과 `code-agent status` 가 보여 준다:
 
 1. 실패·지적마다 어느 **계획 파일**의 문제인지 가른다. `code-agent context` 가 준 계획 파일 목록이 기준이고, 네 기억이 아니다.
-2. **계획 안** — `ca-implementer` 에게 파일별로 맡긴다. 무엇이 왜 실패했는지(명령 · outcome · 로그 **경로**)와 고칠 파일만 넘긴다.
+2. **계획 안** — `ca-implementer` 에게 파일별로 맡긴다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 무엇이 왜 실패했는지(명령 · outcome · 로그 **경로**)와 고칠 파일만 넘긴다.
    끝나면 **`code-agent verify --json` 으로 다시** 검증한다 — check 부터 다시 돈다. 중간부터 잇지 않는다. `test` · `review` · `integrate` 어디서 불러도 커서를 check 로 되감으므로 스테이지를 되돌리려고 따로 할 일은 없다 (`code-agent back` 도 필요 없다). 단일 단계만 요청받았으면 `code-agent check` 를 쓴다 — 회차 판정은 같다.
 3. **계획 밖** — 고치지 않는다. `questions.md`에 기록하고 공통 선택 절차로 처리 방향을 받는다. 범위를 넓히기로 답했어도 그 일반 답변을 승인으로 적용하지 않는다. 구현은 멈추고 재계획·재승인(`plan submit` → `plan` 공통 동의 절차)으로 연결한다. 승인된 동의 적용 후 검증 흐름을 이어간다. 필요한 답이 없으면 미응답으로 남긴다.
 4. 얼어 있는 테스트 파일(`kind: test` 단계)은 기본적으로 수정할 수 없다. 범위는 동결 여부와 무관하게 계획 파일 목록으로 정한다.
