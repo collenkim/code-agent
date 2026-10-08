@@ -44,3 +44,15 @@ test("교차 자식 환경은 부른 쪽 호스트 표지를 지우고 자식 �
   assert.equal(crossChild(env), true);
   assert.equal(runtimeHost(env), undefined);
 });
+
+test("H10 교차 자식 환경 — 부른 Claude 세션의 메시지 통로(CLAUDE_CODE_MESSAGING_SOCKET·TOKEN)를 지운다", () => {
+  const base = { CLAUDECODE: "1", CLAUDE_CODE_MESSAGING_SOCKET: "pipe-x", CLAUDE_CODE_MESSAGING_TOKEN: "t", PATH: "p" };
+  for (const host of ["claude", "codex"] as const) {
+    const env = crossChildEnv(base, host);
+    assert.equal(env.CLAUDE_CODE_MESSAGING_SOCKET, undefined, host);
+    assert.equal(env.CLAUDE_CODE_MESSAGING_TOKEN, undefined, host);
+    assert.equal(env.PATH, "p");
+    assert.equal(env[CROSS_CHILD_ENV], host);
+  }
+  assert.equal(base.CLAUDE_CODE_MESSAGING_TOKEN, "t", "원본은 바꾸지 않는다");
+});

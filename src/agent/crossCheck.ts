@@ -25,8 +25,8 @@ import { criticCrossPoint, crossQuestionViews, inputFiles, loadPlanning, questio
 import { CROSS_HEADING, crossRequired, loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog } from "./review";
 import {
   classifyCrossFailure, COUNTER_LABEL, CROSS_NO_ANSWER, crossBudgets, crossPointDecision, crossPointState, crossPreflight, grantScope,
-  guidance, recordedVariant, refuse, RetryRefused,
-  type Budget, type CrossCounterKey, type CrossPointDecision, type CrossProbe, type FailureRecord,
+  guidance, recordedVariant, refuse, RetryRefused, TIMING,
+  type Budget, type CrossCounterKey, type CrossPointDecision, type CrossProbe, type FailureRecord, type NetProbe,
 } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
@@ -130,16 +130,61 @@ export function runCross(root: string, host: Host, agent: Agent, prompt: string,
     return { ok: false, model: "", probe, usage: { durationMs: 0 }, output: message };
   }
 }
+/** 연결 확인 대상 — HTTPS_PROXY(https_proxy)가 있으면 그 호스트:포트(포트가 없으면 https 443·그 밖 80), 없거나 읽을 수 없으면 api.anthropic.com:443 */
+export function netProbeTarget(env: Readonly<Record<string, string | undefined>> = process.env): { host: string; port: number } {
+  const proxy = (env.HTTPS_PROXY ?? env.https_proxy ?? "").trim();
+  if (proxy) {
+    try {
+      const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(proxy) ? proxy : `http://${proxy}`);
+      const host = url.hostname.replace(/^\[|\]$/g, "");
+      if (host) return { host, port: url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80 };
+    } catch { /* 읽을 수 없는 프록시 값은 직접 연결로 본다 */ }
+  }
+  return { host: "api.anthropic.com", port: 443 };
+}
+const NET_PROBE_SCRIPT = [
+  "const net = require('net'); const [host, port, ms] = process.argv.slice(1);",
+  "const socket = net.connect({ host, port: Number(port) });",
+  "const done = (result) => { process.stdout.write(result); socket.destroy(); process.exit(0); };",
+  "socket.setTimeout(Number(ms), () => done('timeout'));",
+  "socket.on('connect', () => done('ok')); socket.on('error', (error) => done(error.code || 'error'));",
+].join("\n");
+/**
+ * 연결 확인 실행 — CLI 는 동기라 node 자식(net.connect)으로 확인한다. 결과는 `ok`·`timeout`·연결 오류 코드이고, 자식을 띄우지 못한
+ * EPERM·EACCES 는 그대로 결과다(claude 도 띄울 수 없다). 시험만 이 자리를 바꿔 끼운다(환경 변수로 열지 않는다 — 사람이 끄는 길은
+ * CODE_AGENT_CROSS_PREFLIGHT=off 하나다).
+ */
+export const netProbeRunner = {
+  connect(host: string, port: number, ms: number): string {
+    const run = spawnSync(process.execPath, ["-e", NET_PROBE_SCRIPT, host, String(port), String(ms)], { encoding: "utf8", windowsHide: true, timeout: ms + 5_000 });
+    if (run.error) {
+      const code = (run.error as NodeJS.ErrnoException).code ?? "error";
+      return code === "EPERM" || code === "EACCES" ? code : `spawn-${code}`;
+    }
+    const out = run.stdout ?? "";
+    return /^[\w-]{1,40}$/.test(out) ? out : `exit-${run.status ?? "signal"}`;
+  },
+};
+/**
+ * claude 를 띄우기 전의 연결 확인 — Codex 샌드박스 표지가 있는 셸에서만 한다(crossPreflight 가 결과로 거부를 가른다). 표지가 없거나 대상이
+ * codex 거나 CODE_AGENT_CROSS_PREFLIGHT=off 면 하지 않는다(undefined). 잠금 밖에서 부른다.
+ */
+export function crossNetProbe(host: Host, env: Readonly<Record<string, string | undefined>> = process.env): NetProbe | undefined {
+  if (host !== "claude" || env.CODE_AGENT_CROSS_PREFLIGHT === "off" || !sandboxMarkers(env)) return undefined;
+  const target = netProbeTarget(env);
+  return { target: `${target.host}:${target.port}`, result: netProbeRunner.connect(target.host, target.port, TIMING.crossNetProbeMs) };
+}
 /** 샌드박스 의심의 근거 — 지금 부른 쪽이 Codex 다(caller), 이 지점을 Codex 에서 부른 적이 있다(point) */
 export type SandboxSuspicion = "caller" | "point";
 /**
  * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 의 네트워크 오류는 실행 불가(중지)가 아니라
  * 샌드박스 거부(게이트 막힘)로 본다. 같은 지점에서 몇 번째든 같다 — 권한 상승 뒤에도 다시 나면 실제 네트워크 문제인지 샌드박스인지
  * CLI 가 가를 수 없으므로 사람이 정한다(네트워크를 확인해 다시 실행하거나 judgment cross-stop — 2026-10-08 사용자 결정 D2).
- * 지금 부른 쪽을 판별하지 못해도(호스트 표지가 없는 셸 — 권한 상승한 셸·사람의 터미널, 두 호스트 표지가 함께 있는 셸) 그 지점의 앞선 시도를
+ * 지금 부른 쪽을 판별하지 못해도(호스트 표지가 없는 셸 — 사람의 터미널, 두 호스트 표지가 함께 있는 셸) 그 지점의 앞선 시도를
  * Codex 가 불렀거나 Codex 샌드박스가 막았으면(sandbox-network·preflight) 같다 — 재실행이 그 지점의 중지를 사람 판단 없이 기록하지 않게 한다.
- * 지점 시도(review·correct)는 지점 시도 한도에 세므로 기록이 끝없이 늘지 않는다. Codex 기본 샌드박스는 네트워크를 막는데
- * 표지(CODEX_SANDBOX*)가 셸에 있는지는 미확인이다.
+ * 지점 시도(review·correct)는 지점 시도 한도에 세므로 기록이 끝없이 늘지 않는다. Windows Codex 0.161.0 실측(2026-10-08): 모든 모드의 셸에
+ * CODEX_CI·CODEX_THREAD_ID 가 있고(권한 상승·danger-full-access 셸도 runtimeHost 는 codex), workspace-write·read-only·권한 상승 셸에
+ * CODEX_SANDBOX_NETWORK_DISABLED=1 이 있으며 CODEX_SANDBOX 는 없다.
  */
 export function crossSandboxSuspect(host: Host, caller: Host | undefined,
   attempts: readonly { caller?: string; class?: string; kind?: string }[] = []): SandboxSuspicion | undefined {
@@ -192,13 +237,15 @@ function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sa
     if (host === "claude") {
       let parsed: unknown;
       try { parsed = JSON.parse(stdout); } catch { parsed = undefined; }
-      const value = parsed && typeof parsed === "object" ? parsed as { result?: unknown; is_error?: unknown; total_cost_usd?: unknown; num_turns?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } } : undefined;
+      const value = parsed && typeof parsed === "object" ? parsed as { result?: unknown; is_error?: unknown; total_cost_usd?: unknown; num_turns?: unknown;
+        usage?: { input_tokens?: unknown; output_tokens?: unknown; cache_creation_input_tokens?: unknown; cache_read_input_tokens?: unknown } } : undefined;
       if (!value || value.is_error === true || typeof value.result !== "string") {
         probe.status = 0; probe.stderr = stderr; probe.stdout = stdout;
         return fail();
       }
       const num = (x: unknown) => typeof x === "number" && Number.isFinite(x) ? x : undefined;
-      const extra = { costUsd: num(value.total_cost_usd), inputTokens: num(value.usage?.input_tokens), outputTokens: num(value.usage?.output_tokens), turns: num(value.num_turns) };
+      const extra = { costUsd: num(value.total_cost_usd), inputTokens: num(value.usage?.input_tokens), outputTokens: num(value.usage?.output_tokens),
+        cacheCreationInputTokens: num(value.usage?.cache_creation_input_tokens), cacheReadInputTokens: num(value.usage?.cache_read_input_tokens), turns: num(value.num_turns) };
       for (const [key, item] of Object.entries(extra)) if (item !== undefined) (usage as unknown as Record<string, number>)[key] = item;
       return { ok: true, text: value.result, model, usage };
     }
@@ -346,6 +393,7 @@ export function crossReview(root: string, by: string | undefined): string {
     return { log, last };
   };
   opened(loadReview(root, id, target));
+  const netProbe = crossNetProbe(host);
   const context = /전문: (\S+)/.exec(contextHandoff(root))?.[1] ?? posix.join(handoffDir(id), "context.md");
   const notes: string[] = [];
   const rawExists = (path: string) => existsSync(join(root, path));
@@ -382,7 +430,7 @@ export function crossReview(root: string, by: string | undefined): string {
       last.crossAttempts = attempts;
       return { log, value: { refusal } };
     }
-    const preflight = crossPreflight(host, process.env);
+    const preflight = crossPreflight(host, process.env, netProbe);
     if (preflight) {
       const refusal = new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail }));
       // 같은 사전 거부가 마지막 시도면 다시 쌓지 않는다(멱등) — 지점 시도에 세지 않는 거부라 되풀이해도 기록이 끝없이 늘지 않게
@@ -535,6 +583,7 @@ export function crossCritic(root: string, by: string | undefined): string {
     const words: PointWords = { point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, noun: "검토", next: "critic 결과", host };
     const notes: string[] = [];
     const rawExists = (path: string) => existsSync(join(root, path));
+    const netProbe = crossNetProbe(host);
     /** 이 지점의 시도를 저장 배열에 되돌린다(배열을 처음 만들 때는 옛 cross 에서 추정한 시도로 시작한다) */
     const keep = (state: ReturnType<typeof loadPlanning>, attempts: PlanningCrossAttempt[]) => {
       state.crossAttempts = [...(state.crossAttempts ?? legacyPlanningAttempts(state.cross)).filter((attempt) => attempt.criticDispatchId !== dispatchId), ...attempts];
@@ -564,7 +613,7 @@ export function crossCritic(root: string, by: string | undefined): string {
         keep(state, attempts);
         return { refusal };
       }
-      const preflight = crossPreflight(host, process.env);
+      const preflight = crossPreflight(host, process.env, netProbe);
       if (preflight) {
         const refusal = new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail }));
         // 같은 사전 거부가 마지막 시도면 다시 쌓지 않는다(리뷰 쪽과 같다)

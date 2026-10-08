@@ -484,6 +484,20 @@ const banner = ["OpenAI Codex v0.160.1 (research preview)", "--------", "workdir
   "sandbox: read-only", "reasoning effort: high", "reasoning summaries: auto", "session id: 0199-…", "--------"].join("\n");
 const prompt = "code-agent 교차 리뷰 — 작업 X 2회차.\n직전 회차의 교차 지적이다 —\n| X1 | src/agent/modelPolicy.ts | 계획 안 | 열림 | 'ERROR: unknown model' 와 429 quota 를 분류하지 않는다 |\nERROR: invalid model gpt-x";
 const toolOut = "exec\nnode -e … in C:/w/repo\n succeeded in 12ms:\nconst config = [/selected model/i, /unknown (?:option|argument)/i];";
+/** H1 실제 호스트 원문 — F1 사용 한도·G 프록시 연결 거부·XE3b Codex 가 부른 claude 의 연결 거부·XE4b 없는 모델 */
+const claudeResult = (extra: object): string => JSON.stringify({ duration_api_ms: 0, stop_reason: "stop_sequence", total_cost_usd: 0,
+  usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, service_tier: "standard" },
+  modelUsage: {}, permission_denials: [], terminal_reason: "api_error", is_error: true, num_turns: 1, subtype: "success", type: "result", ...extra });
+const H1_F1 = claudeResult({ api_error_status: 429, api_error: "usage_limit_reached", result: "You've hit your session limit · resets 5:50pm (Asia/Seoul)", duration_ms: 657 });
+const H1_G = claudeResult({ api_error_status: null, result: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)", duration_ms: 168202 });
+const H1_XE4B = claudeResult({ api_error_status: 404, result: "There's an issue with the selected model (claude-nonexistent-9). It may not exist or you may not have access to it. Run --model to pick a different model.", duration_ms: 860 });
+const H1_FIXTURES: [string, string, CrossProbe][] = [
+  ["cross-unavailable/quota", "H1 F1 claude session limit(api_error_status 429·usage_limit_reached)", { host: "claude", status: 1, stderr: "", stdout: `${H1_F1}\n` }],
+  ["cross-unavailable/network", "H1 G claude 프록시 연결 거부(ECONNREFUSED)", { host: "claude", status: 1, stderr: "", stdout: `${H1_G}\n` }],
+  ["host-sandbox-denied/sandbox-network", "H1 XE3b Codex 가 부른 claude 연결 거부", { host: "claude", status: 1, stderr: "", stdout: `${H1_G}\n`, sandboxed: true }],
+  ["cross-config-error/config", "H1 XE4b claude 없는 모델(api_error_status 404)", { host: "claude", status: 1,
+    stderr: '[claude-code:unrecognized_model] {"model":"claude-nonexistent-9","query_source":"sdk"}\n', stdout: `${H1_XE4B}\n` }],
+];
 const CROSS_FIXTURES: [string, string, CrossProbe][] = [
   ["cross-unavailable/quota", "spend cap", { host: "codex", sentPrompt: "", stderr: "ERROR: You hit your spend cap set by the owner of your workspace.", status: 1 }],
   ["cross-unavailable/auth", "Not logged in", { host: "codex", sentPrompt: "", stderr: "Not logged in. Run codex login.", status: 1 }],
@@ -572,15 +586,28 @@ const CROSS_FIXTURES: [string, string, CrossProbe][] = [
   // Claude 네트워크 문구(claude 2.1.292 문자열)
   ["cross-unavailable/network", "claude Unable to connect to API", { host: "claude", status: 1, stderr: "Unable to connect to API (ConnectionRefused)", stdout: "" }],
   ["cross-unavailable/network", "claude is_error API Error: Connection error.", { host: "claude", status: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "API Error: Connection error." }) }],
+  // H1 실제 호스트 원문(claude 2.1.293, 2026-10-08 — session_id·uuid·계정 정보를 뺀 꼴). 실패도 subtype 은 success 다
+  ...H1_FIXTURES,
 ];
 
 describe("교차 실행 실패 분류", () => {
-  test("분류 fixture 62건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
-    assert.equal(CROSS_FIXTURES.length, 62);
+  test("분류 fixture 66건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
+    assert.equal(CROSS_FIXTURES.length, 66);
     for (const [expected, name, probe] of CROSS_FIXTURES) {
       const got = classifyCrossFailure(probe);
       assert.equal(`${got.class}/${got.kind}`, expected, `${name} — text=${JSON.stringify(crossFailureText(probe))}`);
     }
+  });
+
+  test("H1 claude 실패 JSON — api_error_status 는 'api error <코드>', api_error 는 그대로 넣고 subtype success 는 넣지 않는다", () => {
+    assert.equal(crossFailureText({ host: "claude", status: 1, stdout: H1_F1 }), "You've hit your session limit · resets 5:50pm (Asia/Seoul)\napi error 429\nusage_limit_reached");
+    assert.equal(crossFailureText({ host: "claude", status: 1, stdout: H1_G }), "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)");
+    assert.match(classifyCrossFailure({ host: "claude", status: 1, stdout: H1_F1 }).reason, /^사용 한도\(quota\): You've hit your session limit/);
+    // 코드만 있어도 같은 분류다 — 401 인증·429 한도·529 장애. 404 는 화이트리스트에 없다(모델 문장이 config 로 잡는다)
+    const coded = (status: number, result = "x") => classifyCrossFailure({ host: "claude", status: 1, stdout: claudeResult({ api_error_status: status, result }) });
+    assert.deepEqual([401, 429, 529, 404].map((status) => `${coded(status).class}/${coded(status).kind}`),
+      ["cross-unavailable/auth", "cross-unavailable/quota", "cross-unavailable/outage", "cross-config-error/unclassified"]);
+    assert.equal(crossFailureText({ host: "claude", status: 1, stdout: claudeResult({ subtype: "error_max_turns", result: undefined }) }), "error_max_turns", "success 가 아닌 subtype 은 넣는다");
   });
 
   test("분류 범위는 오류 채널뿐이다 — 배너·되풀이된 프롬프트·결과 밖 JSON 필드를 넣지 않는다", () => {
@@ -627,6 +654,20 @@ describe("교차 실행 실패 분류", () => {
     assert.equal(crossPreflight("codex", { CODEX_SANDBOX: "seatbelt" }), undefined);
     assert.equal(crossPreflight("claude", { CODEX_SANDBOX: "seatbelt", CODE_AGENT_CROSS_PREFLIGHT: "off" }), undefined);
     assert.equal(crossPreflight("claude", { CODEX_SANDBOX_NETWORK_DISABLED: "0" }), undefined);
+  });
+
+  test("H2 사전 판정 — 표지가 있어도 연결 확인이 샌드박스 거부 꼴(EACCES·EPERM)일 때만 거부한다(Windows 의 권한 상승 셸에도 표지가 남는다)", () => {
+    const marked = { CODEX_SANDBOX_NETWORK_DISABLED: "1", CODEX_CI: "1" };
+    const target = "api.anthropic.com:443";
+    for (const result of ["ok", "timeout", "ECONNREFUSED", "ENOTFOUND", "spawn-ENOENT"]) assert.equal(crossPreflight("claude", marked, { target, result }), undefined, result);
+    for (const result of ["EACCES", "EPERM"]) {
+      const denied = crossPreflight("claude", marked, { target, result });
+      assert.deepEqual([denied?.class, denied?.kind], ["host-sandbox-denied", "preflight"], result);
+      assert.match(denied!.detail, new RegExp(`연결 확인 api\\.anthropic\\.com:443 ${result}$`));
+    }
+    assert.equal(crossPreflight("claude", { ...marked, CODE_AGENT_CROSS_PREFLIGHT: "off" }, { target, result: "EACCES" }), undefined);
+    assert.equal(crossPreflight("claude", { CODEX_CI: "1" }, { target, result: "EACCES" }), undefined, "표지가 없으면 연결 확인 결과를 보지 않는다");
+    assert.equal(TIMING.crossNetProbeMs, 5_000);
   });
 });
 

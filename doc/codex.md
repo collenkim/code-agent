@@ -12,7 +12,7 @@ codex
 
 Codex 대화에서 `$ca-request <요구사항>`으로 시작한다. 중단한 작업은 `$ca-status`, `$ca-next`로 이어간다. 다른 단계도 같은 이름의 `$ca-*` 스킬을 사용한다. 스킬 호출을 입력하는 곳은 대화창이며 셸이 아니다.
 
-Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설치한다. 두 호스트를 함께 쓰는 목적은 **교차 검증**이다 — 같은 작업을 동시에 진행하지 않고, 계획 반박 검토와 코드 리뷰를 다른 호스트의 모델이 한 번 더 본다(`planning cross`·`review cross`). 두 호스트를 모두 실행할 수 있을 때만 쓴다 — 다른 호스트를 실행할 수 없으면(미설치·로그인·사용 한도·장애) 그 지점의 교차 검증은 중지로 기록하고 작업은 진행한다. 실행 파일 변수(`CODE_AGENT_*_BIN`)가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있으면 실행 불가가 아니라 설정 오류라 그 지점의 게이트가 막힌다 — 사람이 고친 뒤 다시 실행하고, 고칠 수 없으면 사람이 중지를 정한다. `init`·`status`·`doctor` 가 지금 쓸 수 있는지와 어느 쪽인지 알린다(`doctor` 는 설정 오류를 막는 문제 `✗` 로 센다). Codex 메인에서 교차 명령은 샌드박스 밖(권한 상승)으로 실행한다 — 다른 호스트를 띄우고 네트워크를 쓴다. 샌드박스 안이면 CLI 가 실행 전에 멈추고 안내한다(`CODE_AGENT_CROSS_PREFLIGHT=off` 로 사람이 끌 수 있다). 셸에 샌드박스 표지가 없어도 `--by claude` 의 네트워크 오류는 같은 지점에서 몇 번째든 중지가 아니라 샌드박스 거부로 보고 게이트를 막는다 — 권한 상승한 셸처럼 Codex 표지가 없는 셸에서 다시 실행해도, 그 지점을 Codex 에서 부른 적이 있으면 같다. 첫 번째는 권한 상승을 안내하고, 권한 상승 뒤에도(샌드박스 안이라 실행 전에 멈춘 뒤 권한 상승한 첫 실행 포함) 같으면 실제 네트워크 문제일 수 있으므로 사람이 네트워크를 확인해 다시 실행하거나 중지(`judgment cross-stop`)를 정한다. 그때 게이트 줄은 실행 명령을 앞세우지 않고 '사용자가 네트워크를 확인한 뒤 다시 실행할 명령'으로 뒤에 싣는다. 모델이 혼자 중지를 기록하지 않는다. Claude 메인이 부른 codex 의 네트워크 오류와, 네트워크가 아닌 실행 불가(미설치·로그인·사용 한도·장애)는 위처럼 중지로 기록하고 진행한다. 상세는 [설계 — Claude·Codex 교차 검증](design.md#claudecodex-교차-검증). 기존 Claude 프로젝트에 `--host codex`만 추가해도 Claude 설정은 보존된다. 설치 이력이 없는 프로젝트에서 `--host`를 생략하면 Claude를 설치한다. 이후 `init`·`update`·`doctor`는 `.code-agent/hosts.json`에 기록된 호스트를 대상으로 한다. `--host claude|codex|both`로 명시할 수도 있다.
+Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설치한다. 두 호스트를 함께 쓰는 목적은 **교차 검증**이다 — 같은 작업을 동시에 진행하지 않고, 계획 반박 검토와 코드 리뷰를 다른 호스트의 모델이 한 번 더 본다(`planning cross`·`review cross`). 두 호스트를 모두 실행할 수 있을 때만 쓴다 — 다른 호스트를 실행할 수 없으면(미설치·로그인·사용 한도·장애) 그 지점의 교차 검증은 중지로 기록하고 작업은 진행한다. 실행 파일 변수(`CODE_AGENT_*_BIN`)가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있으면 실행 불가가 아니라 설정 오류라 그 지점의 게이트가 막힌다 — 사람이 고친 뒤 다시 실행하고, 고칠 수 없으면 사람이 중지를 정한다. `init`·`status`·`doctor` 가 지금 쓸 수 있는지와 어느 쪽인지 알린다(`doctor` 는 설정 오류를 막는 문제 `✗` 로 센다). Codex 메인에서 교차 명령은 샌드박스 밖(권한 상승)으로 실행한다 — 다른 호스트를 띄우고 네트워크를 쓴다. 샌드박스 안이면(셸에 샌드박스 표지가 있고 연결 확인이 `EACCES`·`EPERM`으로 거부되면) CLI 가 실행 전에 멈추고 안내한다(`CODE_AGENT_CROSS_PREFLIGHT=off` 로 사람이 끌 수 있다). 셸에 샌드박스 표지가 없어도 `--by claude` 의 네트워크 오류는 같은 지점에서 몇 번째든 중지가 아니라 샌드박스 거부로 보고 게이트를 막는다 — Codex 표지가 없는 셸(사람의 터미널)에서 다시 실행해도, 그 지점을 Codex 에서 부른 적이 있으면 같다. 첫 번째는 권한 상승을 안내하고, 권한 상승 뒤에도(샌드박스 안이라 실행 전에 멈춘 뒤 권한 상승한 첫 실행 포함) 같으면 실제 네트워크 문제일 수 있으므로 사람이 네트워크를 확인해 다시 실행하거나 중지(`judgment cross-stop`)를 정한다. 그때 게이트 줄은 실행 명령을 앞세우지 않고 '사용자가 네트워크를 확인한 뒤 다시 실행할 명령'으로 뒤에 싣는다. 모델이 혼자 중지를 기록하지 않는다. Claude 메인이 부른 codex 의 네트워크 오류와, 네트워크가 아닌 실행 불가(미설치·로그인·사용 한도·장애)는 위처럼 중지로 기록하고 진행한다. 상세는 [설계 — Claude·Codex 교차 검증](design.md#claudecodex-교차-검증). 기존 Claude 프로젝트에 `--host codex`만 추가해도 Claude 설정은 보존된다. 설치 이력이 없는 프로젝트에서 `--host`를 생략하면 Claude를 설치한다. 이후 `init`·`update`·`doctor`는 `.code-agent/hosts.json`에 기록된 호스트를 대상으로 한다. `--host claude|codex|both`로 명시할 수도 있다.
 
 | 설치 대상 | Codex 경로 |
 |---|---|
@@ -47,6 +47,17 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 다섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고, 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 판정 대상은 셸·패치와 MCP 도구(`mcp__*`)의 경로 인자이며, 그 밖의 도구는 판정하지 않고 이름만 기록한다(위 표). Codex는 종료 코드 2로 도구를 막지 않으므로 판정 실패는 거부 응답으로 막는다(입력을 읽지 못해도 같다). PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 설치해 판정 전에 프로세스가 죽어도 막고, Windows 용 `commandWindows`는 래핑하지 않는다. UserPromptSubmit 판정 실패는 동의 응답(`code-agent consent respond`로 시작하는 메시지)만 막고 사유를 보이며, 그 밖의 사용자 메시지는 막지 않는다. Stop 판정 실패는 Claude와 같이 턴을 막지 않는다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
 
 전용 Read 도구가 없는 Codex에서는 `code-agent read <파일> [시작 줄] [줄 수]`로 파일을 읽는다. 줄 번호를 포함하며 기본 200줄·최대 400줄이다. 저장소 안의 1 MB 이하 텍스트만 허용하고 연결 경로를 통한 저장소 밖 접근도 거부한다. 연결자 없이 쓴 이 명령은 상태·설정을 읽지 못한 때(깨진 `code-agent.json` 의 원인 확인)와 세션 밖에서 hook 설정 파일을 읽을 때도 열린다 — hook 의 거부 문구도 Codex 에서는 `code-agent read`·`apply_patch` 로 안내한다. 일반 셸 읽기·연결 명령을 허용하도록 게이트를 풀지 않는다.
+
+Codex 셸의 환경 표지와 네트워크(Windows, codex-cli 0.161.0 실측) — 교차 명령의 사전 판정과 지금 호스트 판별이 이 값에 기댄다.
+
+| 셸 | `CODEX_SANDBOX_NETWORK_DISABLED` | `CODEX_SANDBOX` | 네트워크 |
+|---|---|---|---|
+| workspace-write | `1` | 없음 | 막힘 |
+| read-only | `1` | 없음 | 막힘 |
+| 권한 상승(승인한 `require_escalated`) | `1` | 없음 | 됨 |
+| danger-full-access · bypass | 없음 | 없음 | 됨 |
+
+모든 셸에 `CODEX_CI=1`·`CODEX_THREAD_ID`(= `CODEX_SESSION_ID`)·`CODEX_VERSION`·`CODEX_MANAGED_BY_NPM`·`CODEX_MANAGED_PACKAGE_ROOT`가 있어 지금 호스트는 언제나 codex 로 판별된다. 샌드박스 셸의 연결은 `connect EACCES`로 거부되고, 그 안에서 띄운 claude 는 `ECONNREFUSED`로 약 3분 재시도한 뒤 네트워크 오류로 끝난다. 표지만으로는 권한 상승 셸을 가르지 못하므로 CLI 는 claude 를 띄우기 전에 연결을 한 번 확인한다(`EACCES`·`EPERM`일 때만 멈춘다).
 
 Windows 자동화에서 프로젝트 신뢰 키는 호스트 네이티브 경로(`C:\...`)를 유지한다. `codex-cli 0.160.0` 검증 환경에서는 이를 `/`로 바꾸면 프로젝트 훅이 호출되지 않았다. 하위 에이전트를 사용하는 실제 검증에는 부모 기록이 필요한 만큼 `--ephemeral`을 사용하지 않는다.
 

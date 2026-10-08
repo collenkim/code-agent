@@ -799,7 +799,7 @@ describe("P8 · usage 호출·재시도 집계", () => {
     assert.equal(commandKey("git status"), undefined);
   });
 
-  test("재시도·재배정은 작업 기록을 읽기만 하고 교차 실행 합계를 낸다 — `$` 를 쓰지 않는다", () => {
+  test("재시도·재배정은 작업 기록을 읽기만 하고 교차 실행 합계를 낸다(H1 캐시 토큰 따로) — `$` 를 쓰지 않는다", () => {
     const work = join(repo, STATE_DIR, "work", "ORD-1");
     mkdirSync(work, { recursive: true });
     const attempt = (status: string, extra: object = {}) => ({ dispatchId: Math.random().toString(16).slice(2), inputHash: "h", at: "2026-09-30T02:00:00.000Z", status, ...extra });
@@ -811,13 +811,20 @@ describe("P8 · usage 호출·재시도 집계", () => {
       { n: 1, host: "codex", mode: "review", startedAt: "", class: "cross-unavailable" },
       { n: 2, host: "codex", mode: "review", startedAt: "", class: "completed", usage: { durationMs: 412_000, costUsd: 0.81 } },
     ] }] }));
+    // H1 claude 교차의 캐시 생성·읽기 토큰은 따로 합한다
+    writeFileSync(join(work, "second.review.json"), JSON.stringify({ rounds: [{ round: 1, crossAttempts: [
+      { n: 1, host: "claude", mode: "review", startedAt: "", class: "completed",
+        usage: { durationMs: 1000, costUsd: 0.1, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 11, cacheReadInputTokens: 13 } },
+    ] }] }));
     writeFileSync(join(work, "order.verify.json"), "{ 깨진");
     const before = readdirSync(work).sort();
-    const [report] = retryReports(repo, "ORD-1");
+    const [report, second] = retryReports(repo, "ORD-1");
+    assert.equal(second.target, "second");
+    assert.deepEqual(second.cross, { attempts: 1, durationMs: 1000, costUsd: 0.1, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 11, cacheReadInputTokens: 13 });
     assert.equal(report.dispatches, 4);
     assert.equal(report.reassignments, 2);
     assert.deepEqual(report.failures, { "agent-format-error": 1, "cross-unavailable": 1 });
-    assert.deepEqual(report.cross, { attempts: 1, durationMs: 412_000, costUsd: 0.81, inputTokens: 0, outputTokens: 0 });
+    assert.deepEqual(report.cross, { attempts: 1, durationMs: 412_000, costUsd: 0.81, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
     assert.deepEqual(report.unreadable, [".code-agent/work/ORD-1/order.verify.json"]);
     const text = usage(repo, { transcripts: dir });
     assert.match(text, /재시도·재배정 \(작업 기록, 읽기 전용\)\n  ORD-1\/order: 배정 4회\(재배정 2\)/);

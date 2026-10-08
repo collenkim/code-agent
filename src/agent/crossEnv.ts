@@ -11,7 +11,10 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 /** 교차 실행이 자식 환경에 넣는 표지 — 값은 실행한 호스트 이름이다 */
 export const CROSS_CHILD_ENV = "CODE_AGENT_CROSS";
-/** Codex 셸의 환경 표지(codex 바이너리 문자열에서 찾은 목록 — 실제 셸에 있는지는 미확인) */
+/**
+ * Codex 셸의 환경 표지. Windows Codex 0.161.0 실측(2026-10-08): 모든 모드에 CODEX_CI=1·CODEX_THREAD_ID 가 있고, workspace-write·read-only·
+ * 실제 권한 상승 셸에 CODEX_SANDBOX_NETWORK_DISABLED=1 이 있으며 CODEX_SANDBOX 는 어느 모드에도 없다(macOS·Linux 용 표지로 남긴다)
+ */
 export const CODEX_MARKERS = ["CODEX_CI", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID"] as const;
 /** 교차 실행 자식 안에서는 아무것도 하지 않고 통과하는 Codex hook 이벤트(PreToolUse 판정은 그대로 한다) */
 export const CROSS_CHILD_PASS_EVENTS = ["Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit", "SessionStart"] as const;
@@ -21,7 +24,10 @@ export const CROSS_CHILD_DENY = "교차 실행(CODE_AGENT_CROSS) 안에서는 �
 /** 교차 실행이 띄운 다른 호스트 안인가 */
 export function crossChild(env: Env = process.env): boolean { return !!env[CROSS_CHILD_ENV]; }
 
-/** Codex 샌드박스 안인가 — 다른 호스트를 띄우거나 네트워크를 쓰면 막힌다 */
+/**
+ * Codex 샌드박스 표지가 있는가 — 다른 호스트를 띄우거나 네트워크를 쓰면 막힐 수 있다. Windows 의 권한 상승 셸에도 남으므로 이것만으로
+ * 샌드박스 안이라고 단정하지 않는다(사전 판정은 연결 확인 결과로 가른다 — crossCheck.crossNetProbe·retryPolicy.crossPreflight)
+ */
 export function sandboxMarkers(env: Env = process.env): boolean {
   return !!env.CODEX_SANDBOX || env.CODEX_SANDBOX_NETWORK_DISABLED === "1";
 }
@@ -50,6 +56,8 @@ export function otherHost(host: HostName): HostName { return host === "claude" ?
 export function crossChildEnv(base: Env, host: HostName): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...base };
   delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; delete env.NODE_TEST_CONTEXT;
+  // 부른 Claude 세션의 메시지 통로(claude 2.1.293 의 Bash 셸 환경에 있다) — 교차 자식이 부모 세션에 붙지 않게 한다
+  delete env.CLAUDE_CODE_MESSAGING_SOCKET; delete env.CLAUDE_CODE_MESSAGING_TOKEN;
   env[CROSS_CHILD_ENV] = host;
   return env;
 }

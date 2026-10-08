@@ -75,6 +75,8 @@ export const TIMING = {
   orphanRunMs: 3_600_000,
   /** 교차 실행의 기본 제한(분) — CODE_AGENT_CROSS_TIMEOUT_MIN 으로 바꾼다 */
   crossTimeoutMin: 9,
+  /** Codex 샌드박스 표지가 있는 셸에서 claude 를 띄우기 전 연결 확인의 제한(crossCheck.crossNetProbe) */
+  crossNetProbeMs: 5_000,
   /** 받아들인 리뷰어 실행이 이 시간 넘게 끝나지 않으면 고아로 보고 새 호출을 받는다 */
   reviewerOrphanMs: 900_000,
   /** 동의 준비·적용 티켓의 유효 기간 */
@@ -367,7 +369,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "host-sandbox-denied": {
     id: "host-sandbox-denied", label: "Codex 샌드박스 제한", group: "cross", auxiliary: false,
-    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 포함 — 그 지점을 Codex 에서 부른 적이 있으면 호스트 표지 없는 셸의 재실행도 같다. 실행 불가로 기록하지 않는다)",
+    detect: "샌드박스 표지가 있고 연결 확인이 EACCES·EPERM 으로 거부됨(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 포함 — 그 지점을 Codex 에서 부른 적이 있으면 호스트 표지 없는 셸의 재실행도 같다. 실행 불가로 기록하지 않는다)",
     retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령. 권한 상승 안내(사전 거부 포함) 뒤 같은 지점에서 다시 네트워크 오류면 사람이 네트워크를 확인해 다시 실행하거나 중지를 정한다",
     counters: ["crossPoint"], limitText: `사전 거부는 지점 시도에 세지 않고 같은 사유면 한 번만 기록, 실행한 시도는 지점 시도 ${LIMITS.crossPoint}에 셈`,
     consumesFixRound: false, fixRoundText: "안 씀",
@@ -632,7 +634,8 @@ export function guidance(cls: FailureClass, values: Readonly<Record<string, stri
  * 돌려보내는 문구라 기록된 시도에는 record 변형을, 끊긴 교차 실행(cross-timeout·interrupted)에는 제한 시간 문구 대신
  * interrupted 변형을 쓴다. 교차 지점의 시도(point)를 주면 샌드박스 네트워크 차단(sandbox-network)이 그 지점의 권한 상승 안내 뒤일 때
  * 사람에게 넘기는 변형(지점 시도가 남았으면 network-repeat, 다 썼으면 network-exhausted — D2)을 고른다. 권한 상승 안내는 그 지점의 앞선
- * sandbox-network 시도나 사전 판정 거부(preflight — 같은 안내를 냈고, 그 뒤 표지 없이 실행됐다면 권한 상승한 셸이다)다. 그 밖은 기본 문구(undefined)다.
+ * sandbox-network 시도나 사전 판정 거부(preflight — 같은 안내를 냈다)다. 그 뒤의 실행은 연결 확인을 지난 셸이다 — Windows Codex 0.161.0 의 권한 상승한
+ * 셸에도 CODEX_SANDBOX_NETWORK_DISABLED=1 이 남으므로(2026-10-08 실측) 표지 유무로 권한 상승을 가르지 않는다. 그 밖은 기본 문구(undefined)다.
  */
 export function recordedVariant(record: { class: string; kind?: string },
   point?: { attempts: readonly { kind?: string; endedAt?: string }[]; left: number }): string | undefined {
@@ -1028,7 +1031,8 @@ export const CROSS_PATTERNS: Readonly<Record<"sandbox" | "config" | "auth" | "qu
     /unknown variant `[^`]*`, expected/i, /does not exist or you do not have access/i, /model_not_found/i, /not supported when using codex/i],
   auth: [/not logged in/i, /please (?:run )?\/?login/i, /\blog ?in\b.{0,40}\b(?:required|expired)/i, /invalid (?:api|x-api) key/i, /authentication[_ ]error/i,
     /\bunauthori[sz]ed\b(?!\s*\()/i, ...statusCode("401"), /oauth token (?:has )?expired/i],
-  quota: [/usage limit/i, /spend cap/i, /rate[_ ]limit/i, ...statusCode("429"), /too many requests/i,
+  // usage_limit_reached·session limit: claude 2.1.293 의 사용 한도 실패 JSON(api_error·result)
+  quota: [/usage limit/i, /usage_limit_reached/i, /\bsession limit\b/i, /spend cap/i, /rate[_ ]limit/i, ...statusCode("429"), /too many requests/i,
     /\bquota\b.{0,30}\b(?:exceeded|reached|exhausted)\b|\b(?:exceeded|insufficient)\b.{0,30}\bquota\b/i, /credit balance/i, /limit reached/i],
   network: [/\bENOTFOUND\b/, /\bECONNREFUSED\b/, /\bECONNRESET\b/, /\bEAI_AGAIN\b/, /\bENETUNREACH\b/, /\bEHOSTUNREACH\b/, /\bConnectionRefused\b/, /getaddrinfo/i, /fetch failed/i,
     /socket hang up/i, /network (?:error|is unreachable)/i, /could not resolve host/i,
@@ -1089,7 +1093,9 @@ const withoutEpilogue = (all: readonly string[]): string[] => {
 };
 /**
  * 분류에 쓰는 글 — 호스트의 오류 채널만. 전사·사용량·배너·되풀이된 프롬프트·모델 문장은 넣지 않는다. 이 함수 하나가 분류 범위의 정의다.
- * claude: stderr 마지막 10줄의 오류 줄(없으면 마지막 1줄) + stdout JSON 이 실패(is_error·result 없음)면 result·subtype,
+ * claude: stderr 마지막 10줄의 오류 줄(없으면 마지막 1줄) + stdout JSON 이 실패(is_error·result 없음)면 result·subtype·
+ *   api_error_status(숫자면 `api error <코드>` 줄 — statusCode 패턴이 401·429·5xx 를 잡는다)·api_error. subtype 이 `success` 면 넣지 않는다
+ *   (claude 2.1.293 은 사용 한도·연결 실패에도 `is_error: true, subtype: "success"` 를 낸다 — error_max_turns 같은 값은 넣는다).
  *   JSON 이 아니면 stdout 의 오류 줄(없으면 마지막 1줄).
  * codex: 보낸 프롬프트의 줄과 배너를 뺀다. stdout 은 Codex 의 마지막 응답(모델 문장)이라 보지 않는다.
  *   세션이 시작된 출력(CODEX_SESSION)은 stderr 의 맺음 줄 앞 **마지막 한 줄**만 본다 — 그 줄이 Codex 자신의 `ERROR:` 줄일 때만이다.
@@ -1104,9 +1110,11 @@ export function crossFailureText(probe: CrossProbe): string {
     let json: unknown;
     try { json = JSON.parse(probe.stdout ?? ""); } catch { json = undefined; }
     if (json && typeof json === "object") {
-      const value = json as { is_error?: unknown; result?: unknown; subtype?: unknown };
+      const value = json as { is_error?: unknown; result?: unknown; subtype?: unknown; api_error_status?: unknown; api_error?: unknown };
       if (value.is_error === true || typeof value.result !== "string") {
-        parts.push(typeof value.result === "string" ? value.result : "", typeof value.subtype === "string" ? value.subtype : "");
+        parts.push(typeof value.result === "string" ? value.result : "", typeof value.subtype === "string" && value.subtype !== "success" ? value.subtype : "",
+          typeof value.api_error_status === "number" && Number.isInteger(value.api_error_status) ? `api error ${value.api_error_status}` : "",
+          typeof value.api_error === "string" ? value.api_error : "");
       }
     } else parts.push(tailErrors(lines(probe.stdout)));
     return parts.filter(Boolean).join("\n").slice(-4000);
@@ -1154,14 +1162,22 @@ export function classifyCrossFailure(probe: CrossProbe): { class: "cross-unavail
   const exit = probe.status === undefined ? "" : `종료 코드 ${probe.status === null ? "없음(신호로 종료)" : probe.status}`;
   return result("cross-config-error", "unclassified", text || exit);
 }
+/** 샌드박스 연결 거부의 꼴 — Windows Codex 샌드박스 셸의 연결은 `connect EACCES` 로 끝난다(2026-10-08 실측). 시간 초과·ECONNREFUSED·ENOTFOUND 는 넣지 않는다 */
+export const SANDBOX_CONNECT_DENIED = ["EACCES", "EPERM"] as const;
+/** 사전 판정의 연결 확인 결과(crossCheck.crossNetProbe) — 대상 `호스트:포트` 와 결과(`ok`·`timeout`·오류 코드) */
+export interface NetProbe { target: string; result: string }
 /**
- * 실행 전 판정 — Codex 샌드박스 안에서는 claude 를 띄울 수 없다(네트워크·홈 쓰기 제한). 사람이 셸 설정의
- * CODE_AGENT_CROSS_PREFLIGHT=off 로만 끈다.
+ * 실행 전 판정 — Codex 샌드박스 안에서는 claude 를 띄울 수 없다(네트워크·홈 쓰기 제한). 표지(CODEX_SANDBOX·CODEX_SANDBOX_NETWORK_DISABLED=1)는
+ * Windows Codex 0.161.0 의 실제 권한 상승 셸(샌드박스 밖, 네트워크 됨)에도 남으므로, 연결 확인 결과(probe)를 받으면 그것이 샌드박스 거부 꼴
+ * (SANDBOX_CONNECT_DENIED)일 때만 거부한다. 연결됐거나 다른 오류면 claude 를 띄운다 — 그 뒤의 네트워크 오류는 표지가 있어 sandbox-network
+ * (게이트 막힘)다. probe 가 없으면 표지만으로 거부한다. 사람이 셸 설정의 CODE_AGENT_CROSS_PREFLIGHT=off 로만 끈다.
  */
-export function crossPreflight(target: "claude" | "codex", env: Readonly<Record<string, string | undefined>>): FailureRecord | undefined {
+export function crossPreflight(target: "claude" | "codex", env: Readonly<Record<string, string | undefined>>, probe?: NetProbe): FailureRecord | undefined {
   if (env.CODE_AGENT_CROSS_PREFLIGHT === "off") return undefined;
   if (target === "claude" && (!!env.CODEX_SANDBOX || env.CODEX_SANDBOX_NETWORK_DISABLED === "1")) {
-    return failure("host-sandbox-denied", "Codex 샌드박스 안에서는 claude 를 실행할 수 없습니다(네트워크·홈 쓰기 제한)", { kind: "preflight" });
+    if (probe && !(SANDBOX_CONNECT_DENIED as readonly string[]).includes(probe.result)) return undefined;
+    const checked = probe ? ` — 연결 확인 ${probe.target} ${probe.result}` : "";
+    return failure("host-sandbox-denied", `Codex 샌드박스 안에서는 claude 를 실행할 수 없습니다(네트워크·홈 쓰기 제한)${checked}`, { kind: "preflight" });
   }
   return undefined;
 }

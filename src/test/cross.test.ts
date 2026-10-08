@@ -4,7 +4,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { crossFlags, crossInvocation, crossInvocationArgs, crossSandboxSuspect, crossSectionText, normalizeCrossBody } from "../agent/crossCheck";
+import { crossFlags, crossInvocation, crossInvocationArgs, crossNetProbe, crossSandboxSuspect, crossSectionText, netProbeRunner, netProbeTarget, normalizeCrossBody, runCross } from "../agent/crossCheck";
 import {
   attemptLabel, crossAttemptsOf, crossStopStreak, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
   planningCrossView, pointHost, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyPlanning, syncLegacyRound, waiveVerdict,
@@ -315,6 +315,58 @@ test("crossInvocation — 자식 환경은 교차 표지를 넣고 부른 쪽 �
     } finally {
       if (saved.bin === undefined) delete process.env.CODE_AGENT_CLAUDE_BIN; else process.env.CODE_AGENT_CLAUDE_BIN = saved.bin;
       if (saved.claude === undefined) delete process.env.CLAUDECODE; else process.env.CLAUDECODE = saved.claude;
+    }
+  });
+});
+
+test("H2 연결 확인 — 표지가 있는 셸의 --by claude 에서만, 대상은 HTTPS_PROXY 또는 api.anthropic.com:443", async () => {
+  assert.deepEqual(netProbeTarget({}), { host: "api.anthropic.com", port: 443 });
+  assert.deepEqual(netProbeTarget({ HTTPS_PROXY: "http://127.0.0.1:9" }), { host: "127.0.0.1", port: 9 });
+  assert.deepEqual(netProbeTarget({ https_proxy: "proxy.corp:8080" }), { host: "proxy.corp", port: 8080 });
+  assert.deepEqual(netProbeTarget({ HTTPS_PROXY: "https://p.example" }), { host: "p.example", port: 443 });
+  assert.deepEqual(netProbeTarget({ HTTPS_PROXY: "http://user:pw@p.example" }), { host: "p.example", port: 80 });
+  assert.deepEqual(netProbeTarget({ HTTPS_PROXY: "http://[::1]:3128" }), { host: "::1", port: 3128 });
+  assert.deepEqual(netProbeTarget({ HTTPS_PROXY: "http://" }), { host: "api.anthropic.com", port: 443 }, "읽을 수 없는 값은 직접 연결");
+  const real = netProbeRunner.connect;
+  const seen: string[] = [];
+  netProbeRunner.connect = (host, port) => { seen.push(`${host}:${port}`); return "ok"; };
+  try {
+    assert.equal(crossNetProbe("claude", {}), undefined, "표지 없음");
+    assert.equal(crossNetProbe("claude", { CODEX_CI: "1", CODEX_THREAD_ID: "t" }), undefined, "danger-full-access·bypass 셸(표지 없음)");
+    assert.equal(crossNetProbe("codex", { CODEX_SANDBOX_NETWORK_DISABLED: "1" }), undefined);
+    assert.equal(crossNetProbe("claude", { CODEX_SANDBOX_NETWORK_DISABLED: "1", CODE_AGENT_CROSS_PREFLIGHT: "off" }), undefined);
+    assert.deepEqual(seen, []);
+    assert.deepEqual(crossNetProbe("claude", { CODEX_SANDBOX_NETWORK_DISABLED: "1", HTTPS_PROXY: "http://127.0.0.1:9" }), { target: "127.0.0.1:9", result: "ok" });
+  } finally { netProbeRunner.connect = real; }
+  // 실제 연결(로컬만) — 듣는 포트는 ok, 닫힌 포트는 ECONNREFUSED. 이벤트 루프가 막혀도 운영체제가 연결을 받는다
+  const { createServer } = await import("node:net");
+  const listen = () => new Promise<{ port: number; close: () => Promise<void> }>((done) => {
+    const server = createServer((socket) => socket.destroy()).listen(0, "127.0.0.1", () => {
+      done({ port: (server.address() as { port: number }).port, close: () => new Promise((closed) => server.close(() => closed())) });
+    });
+  });
+  const open = await listen();
+  try { assert.equal(netProbeRunner.connect("127.0.0.1", open.port, 3_000), "ok"); } finally { await open.close(); }
+  const closed = await listen();
+  await closed.close();
+  assert.equal(netProbeRunner.connect("127.0.0.1", closed.port, 3_000), "ECONNREFUSED");
+});
+
+test("H1 claude 교차 성공 — 캐시 생성·읽기 토큰을 usage 에 따로 남긴다(inputTokens 는 캐시 밖 입력)", () => {
+  withModels(undefined, (root) => {
+    const bin = join(root, "claude.cjs");
+    writeFileSync(bin, `process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "- 없음", total_cost_usd: 0.12, num_turns: 2,
+      usage: { input_tokens: 5, output_tokens: 7, cache_creation_input_tokens: 11, cache_read_input_tokens: 13 } }));`);
+    const saved = process.env.CODE_AGENT_CLAUDE_BIN;
+    process.env.CODE_AGENT_CLAUDE_BIN = bin;
+    try {
+      const run = runCross(root, "claude", "ca-reviewer", "x");
+      assert.ok(run.ok, JSON.stringify(run));
+      const { durationMs, ...usage } = run.usage;
+      assert.ok(durationMs >= 0);
+      assert.deepEqual(usage, { costUsd: 0.12, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 11, cacheReadInputTokens: 13, turns: 2 });
+    } finally {
+      if (saved === undefined) delete process.env.CODE_AGENT_CLAUDE_BIN; else process.env.CODE_AGENT_CLAUDE_BIN = saved;
     }
   });
 });

@@ -14,7 +14,8 @@ import { CONSENT_DIR } from "./consentState";
 import { STATE_DIR } from "./layout";
 import { COUNTER_KEYS, COUNTER_LABEL, isFailureClass, retrySummary, type CounterKey, type FailureClass } from "./retryPolicy";
 
-export interface CrossTotals { attempts: number; durationMs: number; costUsd: number; inputTokens: number; outputTokens: number }
+export interface CrossTotals { attempts: number; durationMs: number; costUsd: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number }
+const emptyCross = (): CrossTotals => ({ attempts: 0, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
 export interface RetryReport {
   id: string;
   target: string;
@@ -57,6 +58,8 @@ function addCross(totals: CrossTotals, attempts: unknown[]): void {
     totals.costUsd += num(usage.costUsd);
     totals.inputTokens += num(usage.inputTokens);
     totals.outputTokens += num(usage.outputTokens);
+    totals.cacheCreationInputTokens += num(usage.cacheCreationInputTokens);
+    totals.cacheReadInputTokens += num(usage.cacheReadInputTokens);
   }
 }
 
@@ -86,7 +89,7 @@ function reportOf(dir: string, id: string, target: string): RetryReport {
   const totals = retrySummary({ evidence, planning, review });
   const counters = Object.fromEntries(COUNTER_KEYS.filter((key) => totals[key] > 0).map((key) => [key, totals[key]])) as RetryReport["counters"];
   const failures: RetryReport["failures"] = {};
-  const cross: CrossTotals = { attempts: 0, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0 };
+  const cross = emptyCross();
   let dispatches = 0, reassignments = 0;
   const plan = record(planning);
   if (plan) {
@@ -148,7 +151,7 @@ export function retryReports(repoRoot: string, work?: string): RetryReport[] {
       }
     }
     if (Object.keys(failures).length || unreadable.length) {
-      reports.push({ id: "(동의)", target: "", counters: {}, dispatches: 0, reassignments: 0, failures, cross: { attempts: 0, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0 }, unreadable });
+      reports.push({ id: "(동의)", target: "", counters: {}, dispatches: 0, reassignments: 0, failures, cross: emptyCross(), unreadable });
     }
   }
   return reports;

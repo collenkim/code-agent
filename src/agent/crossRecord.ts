@@ -47,7 +47,10 @@ export interface ReviewerRun {
    */
   ignored?: { at: string; reason: "completed-round" | "run-limit" | "concurrent" | "orphaned"; result?: string };
 }
-export interface CrossUsage { durationMs: number; costUsd?: number; inputTokens?: number; outputTokens?: number; turns?: number }
+/** 교차 실행 사용량 — 토큰·비용은 claude 성공 JSON 에서만 온다(inputTokens 는 캐시 밖 입력이고 캐시 생성·읽기는 따로 센다) */
+export interface CrossUsage {
+  durationMs: number; costUsd?: number; inputTokens?: number; outputTokens?: number; cacheCreationInputTokens?: number; cacheReadInputTokens?: number; turns?: number;
+}
 export interface CrossAttempt {
   /** 지점 안 순번, 1부터 */
   n: number;

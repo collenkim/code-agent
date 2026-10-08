@@ -6,7 +6,7 @@ import { join, resolve, sep } from "node:path";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 
 import { next, requireValidatable, status } from "../agent/commands";
-import { crossReview } from "../agent/crossCheck";
+import { crossReview, netProbeRunner } from "../agent/crossCheck";
 import { codexHook, runCodexHook } from "../agent/codexHook";
 import { commitDelivery, deliver, PR_BLOCK, prDocFile, renderTraceBlock } from "../agent/deliver";
 import { doctor } from "../agent/doctor";
@@ -31,7 +31,9 @@ import { deadPid } from "./deadPid";
 const ID = CONSENT_WORK_ID, TARGET = "value", CODE = "src/value.js";
 let root: string, fakeDir: string;
 const saved: Record<string, string | undefined> = {};
-const ENV = ["CODE_AGENT_CODEX_BIN", "CODE_AGENT_CLAUDE_BIN", "CODE_AGENT_CROSS_TIMEOUT_MIN", "FAKE_CROSS", "FAKE_CALLS", "FAKE_PROMPT", "FAKE_DIST", "CLAUDE_PROJECT_DIR", "CODE_AGENT_CROSS", "CODEX_SANDBOX_NETWORK_DISABLED"];
+const ENV = ["CODE_AGENT_CODEX_BIN", "CODE_AGENT_CLAUDE_BIN", "CODE_AGENT_CROSS_TIMEOUT_MIN", "FAKE_CROSS", "FAKE_CALLS", "FAKE_PROMPT", "FAKE_DIST", "CLAUDE_PROJECT_DIR", "CODE_AGENT_CROSS", "CODEX_SANDBOX_NETWORK_DISABLED", "HTTPS_PROXY", "https_proxy"];
+/** 사전 판정의 연결 확인 — 시험은 네트워크에 나가지 않는다. 기본은 Windows Codex 샌드박스의 거부 꼴(EACCES)이고, 바꾼 시험은 afterEach 가 되돌린다 */
+const realConnect = netProbeRunner.connect;
 
 /**
  * 리뷰 1회차까지 세운 저장소를 파일당 한 번 만들고 테스트마다 복사해 쓴다 — 계획 승인·구현·check·test 를 매번 다시 돌지 않게.
@@ -52,9 +54,12 @@ beforeEach(() => {
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-cross-review-")));
   fakeDir = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-cross-fake-")));
   for (const key of ENV) saved[key] = process.env[key];
+  delete process.env.HTTPS_PROXY; delete process.env.https_proxy;
+  netProbeRunner.connect = () => "EACCES";
   cpSync(base, root, { recursive: true });
 });
 afterEach(() => {
+  netProbeRunner.connect = realConnect;
   for (const key of ENV) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
   const temporary = realpathSync.native(tmpdir());
   for (const [dir, prefix] of [[root, "ca-cross-review-"], [fakeDir, "ca-cross-fake-"]] as const) {
@@ -648,6 +653,39 @@ const byClaude = () => withCaller("codex", () => crossReview(root, "claude"));
 const crossGate = () => withCaller("codex", () => reviewProblems(loadWork(root)!)).find((problem) => /교차 리뷰가 필요합니다/.test(problem)) ?? "";
 const rejects = (pattern: RegExp, absent?: RegExp) => (error: Error) => error instanceof RetryRefused && pattern.test(error.message) && !(absent?.test(error.message) ?? false);
 
+test("H2 Windows Codex 의 권한 상승한 셸(표지가 남는다) — 연결 확인이 되면 사전 거부하지 않고 claude 를 띄운다. 사전 거부 뒤 권한 상승한 재실행이 같은 거부에 갇히지 않는다", async () => {
+  await crossRepo();
+  const claude = join(fakeDir, "claude.cjs");
+  writeFileSync(claude, "require('fs').appendFileSync(process.env.FAKE_CALLS, 'x'); process.stdout.write(JSON.stringify({ result: '- 없음' }));\n");
+  process.env.CODE_AGENT_CLAUDE_BIN = claude; process.env.FAKE_CALLS = join(fakeDir, "calls.txt");
+  const seen: string[] = [];
+  const marked = () => withCaller("codex", () => { process.env.CODEX_SANDBOX_NETWORK_DISABLED = "1"; return crossReview(root, "claude"); });
+  netProbeRunner.connect = (host, port) => { seen.push(`${host}:${port}`); return "EACCES"; };
+  assert.throws(marked, refusal(/샌드박스가 claude 실행을 막았습니다[\s\S]*연결 확인 api\.anthropic\.com:443 EACCES\)[\s\S]*권한 상승/));
+  assert.equal(calls(), 0);
+  netProbeRunner.connect = (host, port) => { seen.push(`${host}:${port}`); return "ok"; };
+  assert.match(marked(), /claude\([^)]*\) 교차 리뷰를 1회차에 기록했습니다 — 지적 없음/);
+  assert.equal(calls(), 1);
+  assert.deepEqual(attempts().map((attempt) => [attempt.mode, attempt.class]), [["preflight", "host-sandbox-denied"], ["review", "completed"]]);
+  assert.deepEqual(seen, ["api.anthropic.com:443", "api.anthropic.com:443"]);
+});
+
+test("H2 연결 확인을 지난 셸의 claude 네트워크 오류는 그대로 샌드박스 네트워크 차단이다 — 시간 초과·연결 거부는 사전 거부하지 않지만 중지도 기록하지 않는다(D2 유지)", async () => {
+  await crossRepo(); failingClaude(NETWORK_ERROR);
+  for (const result of ["timeout", "ECONNREFUSED"]) {
+    netProbeRunner.connect = () => result;
+    assert.throws(() => withCaller("codex", () => { process.env.CODEX_SANDBOX_NETWORK_DISABLED = "1"; return crossReview(root, "claude"); }), rejects(/./));
+  }
+  assert.equal(calls(), 2, "두 번 모두 claude 를 띄웠다");
+  assert.deepEqual(attempts().map((attempt) => [attempt.mode, attempt.class, attempt.kind]),
+    [["review", "host-sandbox-denied", "sandbox-network"], ["review", "host-sandbox-denied", "sandbox-network"]]);
+  assert.doesNotMatch(readFileSync(doc(), "utf8"), /교차 검증 중지/);
+  // 표지가 없는 셸·--by codex 는 연결 확인을 하지 않는다
+  netProbeRunner.connect = () => { throw new Error("연결 확인을 하면 안 된다"); };
+  fakeCodex();
+  assert.throws(() => withCaller("claude", () => crossReview(root, "codex")), /claude 로 시작했습니다/);
+});
+
 test("D2(E16): Codex 에서 부른 --by claude 의 네트워크 오류는 같은 지점에서 몇 번째든 샌드박스 거부로 막는다 — 첫 번째는 권한 상승, 두 번째부터 사람에게 넘기고, 지점 시도 한도에서 멈춘다(2026-10-08 사용자 결정)", async () => {
   await crossRepo(); failingClaude(NETWORK_ERROR);
   // 1번째 — 셸에 표지가 없어도 샌드박스 차단으로 보고 권한 상승해 같은 명령을 안내한다
@@ -691,7 +729,7 @@ test("D2(E16): 바꾸지 않는 갈래 — Claude 메인이 부른 codex 의 네
   assert.equal(reviewProblems(loadWork(root)!).filter((problem) => /교차/.test(problem)).length, 0, "중지 지점 — 게이트는 막히지 않는다");
 });
 
-test("D2(E16) 반박 검증: Codex 에서 부른 적이 있는 지점은 호스트 표지가 없는 셸(권한 상승한 셸·사람의 터미널)이나 두 호스트 표지가 섞인 셸에서 다시 실행해도 네트워크 오류를 막힘으로 둔다 — 그 지점의 중지는 사람 판단으로만 기록한다", async () => {
+test("D2(E16) 반박 검증: Codex 에서 부른 적이 있는 지점은 호스트 표지가 없는 셸(사람의 터미널)이나 두 호스트 표지가 섞인 셸에서 다시 실행해도 네트워크 오류를 막힘으로 둔다 — 그 지점의 중지는 사람 판단으로만 기록한다", async () => {
   await crossRepo(); failingClaude(NETWORK_ERROR);
   assert.throws(byClaude, rejects(/샌드박스 표지는 없지만 Codex 가 부른 claude 의 네트워크 오류라/));
   // 표지 없는 셸 — 부른 쪽을 판별하지 못해도 지점 이력(앞선 시도의 부른 쪽 codex)으로 샌드박스 의심을 이어 간다
