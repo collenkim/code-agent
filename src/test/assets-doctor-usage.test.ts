@@ -847,7 +847,7 @@ describe("P8 · usage 호출·재시도 집계", () => {
     assert.equal(report.cross.attempts, 0, "옛 시도에는 usage 가 없다");
   });
 
-  test("Codex 세션 기록 — 저장소의 세션만 세고 비용은 내지 않는다(형식 미확인 표시)", () => {
+  test("Codex 세션 기록 — 저장소의 세션만 세고 비용은 내지 않는다(CommandExecution 이 없는 파일은 호출 인자의 command 로 센다)", () => {
     const sessions = join(repo, "codex-sessions");
     const day = join(sessions, "2026", "10", "01");
     mkdirSync(day, { recursive: true });
@@ -876,13 +876,85 @@ describe("P8 · usage 호출·재시도 집계", () => {
     writeFileSync(join(day, "rollout-other.jsonl"), [line({ timestamp: "2026-09-30T02:00:00.000Z", type: "session_meta", payload: { cwd: join(tmpdir(), "다른-저장소") } }), tokens(1), ""].join("\n"));
     const text = usage(repo, { codexSessions: sessions });
     assert.match(text, /^Codex 사용량 · /m);
-    assert.match(text, /형식은 공개 Codex 기록 기준이며 실제 기록으로 확인하기 전입니다/);
-    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["200", "100", "14", "6", "2", "5", "7"]);
+    assert.match(text, /\(세션 2 · 하위 에이전트 0\) — codex-cli 0\.161\.0 의 기록 꼴로 읽습니다/);
+    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["200", "100", "0", "14", "6", "2", "5", "7"]);
+    assert.deepEqual(rows(text, "에이전트별").get("main"), ["200", "100", "0", "14", "6", "2", "5", "7"]);
     assert.match(text, /^도구별 호출: shell 4 · local_shell_call 1$/m);
     assert.match(text, /^code-agent 명령별 호출: next 2 · consent finish 1 · read 1$/m);
     assert.match(text, /^스킬 읽기: ca-answer\/SKILL\.md 1$/m);
     assert.match(text, /Codex 비용은 단가표가 없어 산정하지 않습니다/);
     assert.match(usage(repo, { codexSessions: join(repo, "없는-폴더") }), /Codex 기록을 찾지 못했습니다/);
+  });
+  test("H6 Codex 세션 기록(codex-cli 0.161.0 꼴) — 하위 에이전트 파일은 따로 세고 부모 사본을 버리며, token_usage_record 와 token_count 를 함께 세지 않는다", () => {
+    // 실제 기록의 키 꼴만 고정한다(값은 합성) — 첫 session_meta 가 그 파일, 하위 에이전트 파일의 두 번째 meta 와 시작 번호 전 줄은 부모 사본
+    const sessions = join(repo, "codex-real");
+    const day = join(sessions, "2026", "10", "08");
+    mkdirSync(day, { recursive: true });
+    const at = (n: number) => `2026-09-30T02:00:${String(n).padStart(2, "0")}.000Z`;
+    const row = (ordinal: number, type: string, payload: object) => line({ timestamp: at(ordinal), ordinal, type, payload });
+    const usageOf = (input: number, cached: number, write: number, output: number, reasoning: number) =>
+      ({ input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: write, output_tokens: output, reasoning_output_tokens: reasoning, total_tokens: input + output });
+    const record = (ordinal: number, thread: string, response: string, usage: object) => row(ordinal, "token_usage_record", { thread_id: thread, turn_id: "t", session_id: "T-main", root_turn_id: "t", response_id: response, usage, turn_token_usage: usage, thread_token_usage: usage });
+    const count = (ordinal: number, last: object, total: object = last) => row(ordinal, "event_msg", { type: "token_count", info: { total_token_usage: total, last_token_usage: last, model_context_window: 1 } });
+    const command = (ordinal: number, script: string) => row(ordinal, "event_msg", { type: "item_completed", thread_id: "x", turn_id: "t",
+      item: { type: "CommandExecution", id: "i", command: ["C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-Command", script], status: "completed", exit_code: 0 } });
+    const exec = (ordinal: number, id: string) => row(ordinal, "response_item", { type: "custom_tool_call", status: "completed", call_id: id, name: "exec", input: "const r = await tools.exec_command({cmd: 'code-agent status'});" });
+    const first = usageOf(1000, 600, 40, 20, 5);
+    writeFileSync(join(day, "rollout-2026-10-08T10-00-00-main.jsonl"), [
+      row(0, "session_meta", { id: "T-main", cwd: repo, originator: "codex_exec", source: "exec" }),
+      exec(1, "m1"),
+      command(2, "code-agent next"),
+      row(3, "response_item", { type: "custom_tool_call_output", call_id: "m1", output: [{ type: "input_text", text: "abc" }, { type: "input_text", text: "de" }] }),
+      record(4, "T-main", "r1", first),
+      count(5, first),
+      // 압축 요청 — token_count 가 따로 나오지 않는다
+      record(6, "T-main", "r2", usageOf(300, 0, 0, 3, 0)),
+      row(7, "response_item", { type: "function_call", name: "spawn_agent", call_id: "m2", arguments: JSON.stringify({ agent_type: "ca_explorer" }) }),
+      row(8, "response_item", { type: "function_call_output", call_id: "m2", output: "ok" }),
+      row(9, "event_msg", { type: "item_completed", thread_id: "x", turn_id: "t", item: { type: "FileChange", id: "f", changes: {}, status: "completed" } }),
+      "",
+    ].join("\n"));
+    writeFileSync(join(day, "rollout-2026-10-08T10-00-01-child.jsonl"), [
+      row(0, "session_meta", { id: "T-child", cwd: repo, originator: "codex_exec", agent_role: "ca_explorer", subagent_history_start_ordinal: 4,
+        source: { subagent: { thread_spawn: { parent_thread_id: "T-main", depth: 1, agent_path: "/root/x", agent_nickname: "N", agent_role: "ca_explorer" } } } }),
+      row(1, "session_meta", { id: "T-main", cwd: repo, originator: "codex_exec", source: "exec" }),
+      count(2, usageOf(999999, 0, 0, 0, 0)),
+      command(3, "code-agent status"),
+      exec(4, "c1"),
+      command(5, "code-agent read .agents/skills/ca-plan/SKILL.md"),
+      row(6, "response_item", { type: "custom_tool_call_output", call_id: "c1", output: [{ type: "input_text", text: "1234" }] }),
+      record(7, "T-child", "r3", usageOf(500, 0, 0, 10, 0)),
+      count(8, usageOf(500, 0, 0, 10, 0)),
+      "",
+    ].join("\n"));
+    writeFileSync(join(day, "rollout-2026-10-08T10-00-02-guardian.jsonl"), [
+      row(0, "session_meta", { id: "T-guard", cwd: repo, originator: "codex_exec", source: { subagent: { other: "guardian" } } }),
+      record(1, "T-guard", "r4", usageOf(50, 0, 0, 1, 0)),
+      "",
+    ].join("\n"));
+    // token_usage_record 가 없는 파일 — token_count 를 세되, 합계가 앞 줄과 같은 줄(같은 값을 한 번 더 낸 줄)은 버린다
+    writeFileSync(join(day, "rollout-2026-10-08T10-00-03-counts.jsonl"), [
+      row(0, "session_meta", { id: "T-old", cwd: repo, source: "exec" }),
+      count(1, usageOf(10, 0, 0, 1, 0)),
+      count(2, usageOf(10, 0, 0, 1, 0)),
+      count(3, usageOf(20, 0, 0, 2, 0), usageOf(30, 0, 0, 3, 0)),
+      "",
+    ].join("\n"));
+    const text = usage(repo, { codexSessions: sessions });
+    assert.match(text, /\(세션 2 · 하위 에이전트 2\)/);
+    const agents = rows(text, "에이전트별");
+    assert.deepEqual(agents.get("main"), ["1,330", "600", "40", "26", "5", "4", "2", "7"]);
+    assert.deepEqual(agents.get("ca-explorer"), ["500", "0", "0", "10", "0", "1", "1", "4"]);
+    assert.deepEqual(agents.get("guardian"), ["50", "0", "0", "1", "0", "1", "0", "0"]);
+    assert.deepEqual(rows(text, "스테이지별").get("analysis"), ["1,880", "600", "40", "37", "5", "6", "3", "11"]);
+    assert.match(text, /^도구별 호출: exec 2 · spawn_agent 1$/m);
+    // 셸 명령은 CommandExecution 에서 — 부모 사본의 code-agent status 는 세지 않는다
+    assert.match(text, /^code-agent 명령별 호출: next 1 · read 1$/m);
+    assert.match(text, /^스킬 읽기: ca-plan\/SKILL\.md 1$/m);
+    assert.match(text, /^파일 변경\(FileChange\): 1회$/m);
+    const [section] = usageReport(repo, { codexSessions: sessions }).sections.filter((entry) => entry.source === "codex");
+    assert.equal(section.subagents, 2);
+    assert.equal(section.fileChanges, 1);
   });
 });
 

@@ -23,7 +23,7 @@ import { retryLine, retryReports, type RetryReport } from "./retryReport";
  *
  * 토큰 표 뒤에 호출 통계를 더한다 — 요청 수, 도구 호출(`tool_use` 블록, id 로 한 번), 도구 결과 글자(대화에 들어간 `tool_result` 글자 —
  * 큰 결과가 파일로 빠지면 미리보기만 센다), 도구 이름별·`code-agent` 하위 명령별 호출, 스킬 파일 읽기, 작업 기록의 재시도·재배정
- * (`retryReport.ts` — 읽기만 한다). Codex 설치면 Codex 세션 기록을 같은 구간으로 센다(`codexUsage.ts` — 형식 미확인, 비용 없음).
+ * (`retryReport.ts` — 읽기만 한다). Codex 설치면 Codex 세션 기록을 같은 구간으로 센다(`codexUsage.ts` — codex-cli 0.161.0 기록 꼴, 하위 에이전트 행 따로, 비용 없음).
  * `usageReport` 가 같은 값을 객체로 돌려준다(`--json`).
  */
 
@@ -87,6 +87,8 @@ export interface UsageSection {
   commands: Record<string, number>;
   /** 읽기 도구(Codex 는 code-agent read)가 읽은 스킬 파일(<스킬>/<파일>)별 횟수 */
   skillReads: Record<string, number>;
+  /** Codex 만 — 파일 변경(FileChange) 기록 수 */
+  fileChanges?: number;
   unpriced: string[];
   /** 스테이지 기록(stages.jsonl)이 있는가 */
   stageLog: boolean;
@@ -508,32 +510,35 @@ function modelRows(messages: Message[]): UsageRow[] {
   return withCalls(rows, callStats(rows.map((row) => row.label), messages.map((message) => priceKey(message.model)), [], []));
 }
 
-const CODEX_AGENT = "codex";
+const zeroCodex = (): CodexTokens => ({ input: 0, cachedInput: 0, cacheWrite: 0, output: 0, reasoningOutput: 0 });
 function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
   const log = readCodexLog(repoRoot, options.codexSessions);
-  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: 0, stages: [], agents: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
+  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: log.subagents, stages: [], agents: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!log.found) return { ...empty, note: [`Codex 기록을 찾지 못했습니다: ${log.dir}`] };
   const keep = kept(filter);
   const requests = log.requests.filter((request) => keep(request.at));
   const calls = log.calls.filter((call) => keep(call.at));
   const results = log.results.filter((result) => keep(result.at));
-  if (!log.sessions || requests.length + calls.length === 0) return { ...empty, note: [`${log.dir} 에 이 저장소의 Codex 세션이 없습니다.`] };
-  const stageOf = (at: string) => bucketOf(filter.stages, at).label;
-  const rows = (labelOf: (at: string) => string): UsageRow[] => {
+  if (log.sessions + log.subagents === 0 || requests.length + calls.length === 0) return { ...empty, note: [`${log.dir} 에 이 저장소의 Codex 세션이 없습니다.`] };
+  const stageOf = (item: { at: string }) => bucketOf(filter.stages, item.at).label;
+  const rows = (labelOf: (item: { at: string; agent: string }) => string): UsageRow[] => {
     const tokens = new Map<string, CodexTokens>();
     for (const request of requests) {
-      const label = labelOf(request.at);
-      const sum = tokens.get(label) ?? { input: 0, cachedInput: 0, output: 0, reasoningOutput: 0 };
-      sum.input += request.tokens.input; sum.cachedInput += request.tokens.cachedInput;
-      sum.output += request.tokens.output; sum.reasoningOutput += request.tokens.reasoningOutput;
+      const label = labelOf(request);
+      const sum = tokens.get(label) ?? zeroCodex();
+      for (const key of Object.keys(sum) as (keyof CodexTokens)[]) sum[key] += request.tokens[key];
       tokens.set(label, sum);
     }
-    const stats = callStats([...tokens.keys()], requests.map((r) => labelOf(r.at)), calls.map((c) => labelOf(c.at)), results.map((r) => ({ label: labelOf(r.at), chars: r.chars })));
-    return [...stats.entries()].map(([label, calls]) => ({ label, tokens: tokens.get(label) ?? { input: 0, cachedInput: 0, output: 0, reasoningOutput: 0 }, cost: 0, calls }))
+    const stats = callStats([...tokens.keys()], requests.map(labelOf), calls.map(labelOf), results.map((r) => ({ label: labelOf(r), chars: r.chars })));
+    return [...stats.entries()].map(([label, calls]) => ({ label, tokens: tokens.get(label) ?? zeroCodex(), cost: 0, calls }))
       .sort((a, b) => b.calls.requests - a.calls.requests || a.label.localeCompare(b.label));
   };
   const times = [...requests, ...calls].map((item) => item.at).sort();
-  return { ...empty, range: { from: times[0], to: times[times.length - 1] }, stages: rows(stageOf), agents: rows(() => CODEX_AGENT), ...countCalls(calls) };
+  // 도구 이름은 호출에서, code-agent 명령·스킬 읽기는 셸 명령 기록에서 센다(이름 없는 항목은 도구 표에 들어가지 않는다)
+  const { tools } = countCalls(calls.map((call) => ({ name: call.name })));
+  const { commands, skillReads } = countCalls(log.commands.filter((entry) => keep(entry.at)).map((entry) => ({ name: "", command: entry.command })));
+  return { ...empty, range: { from: times[0], to: times[times.length - 1] }, stages: rows(stageOf), agents: rows((item) => item.agent),
+    tools, commands, skillReads, fileChanges: log.fileChanges.filter((change) => keep(change.at)).length };
 }
 
 /**
@@ -610,14 +615,16 @@ function renderClaude(report: UsageReport, section: UsageSection, retry: string[
 
 function renderCodex(report: UsageReport, section: UsageSection, retry: string[]): string[] {
   if (section.note) return [...section.note, ...(retry.length ? ["", ...retry] : [])];
-  const headers = ["입력", "캐시 입력", "출력", "추론 출력", ...CALL_HEADERS];
-  const values = (row: UsageRow): number[] => { const t = row.tokens as CodexTokens; return [t.input, t.cachedInput, t.output, t.reasoningOutput, ...callValues(row)]; };
-  const extra = [...countLines(section), ...retry];
+  const headers = ["입력", "캐시 입력", "캐시 쓰기", "출력", "추론 출력", ...CALL_HEADERS];
+  const values = (row: UsageRow): number[] => { const t = row.tokens as CodexTokens; return [t.input, t.cachedInput, t.cacheWrite, t.output, t.reasoningOutput, ...callValues(row)]; };
+  const extra = [...countLines(section), ...(section.fileChanges ? [`파일 변경(FileChange): ${section.fileChanges}회`] : []), ...retry];
   return [
     `Codex 사용량 · ${[report.head, rangeText(section)].join(" · ")}`,
-    `기록: ${section.dir} (세션 ${section.sessions}) — 형식은 공개 Codex 기록 기준이며 실제 기록으로 확인하기 전입니다`,
+    `기록: ${section.dir} (세션 ${section.sessions} · 하위 에이전트 ${section.subagents}) — codex-cli 0.161.0 의 기록 꼴로 읽습니다(입력은 캐시 입력을 포함합니다)`,
     "",
     ...plainTable("스테이지별", "스테이지", headers, section.stages.map((row) => ({ label: row.label, values: values(row) }))),
+    "",
+    ...plainTable("에이전트별", "에이전트", headers, section.agents.map((row) => ({ label: row.label, values: values(row) }))),
     "",
     ...(extra.length ? [...extra, ""] : []),
     "Codex 비용은 단가표가 없어 산정하지 않습니다.",

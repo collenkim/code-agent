@@ -686,7 +686,7 @@ code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning a
 | 스킬 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
 | 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용의 합. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
 
-Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자. 셸 명령이 `["bash","-lc","code-agent next"]`·`["powershell.exe","-Command",…]`·`["cmd","/c",…]` 처럼 셸 래퍼로 감싸져 있으면 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 스킬 읽기로 센다. 형식은 공개 Codex 기록 형식을 가정했고 실제 기록으로 확인하기 전이라 출력 첫머리에 그렇게 적는다. 단가표가 없어 비용은 내지 않는다.
+Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 스킬 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다.
 
 `--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, models, tools, commands, skillReads, …}], retry[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
 

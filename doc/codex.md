@@ -89,7 +89,7 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 모든 호스트를 제거했다면 `hosts.json`도 제거한다. 빈 배열로 남기지 않는다. 작업 문서와 증거 보존 여부는 별도로 결정한다.
 
-`code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별 토큰·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출을 센다(셸 명령 배열의 `bash -lc`·`powershell -Command`·`cmd /c` 래퍼는 벗긴다). 형식은 공개 Codex 기록 형식을 가정했고 **실제 기록으로 확인하기 전**이라 출력에 그렇게 적는다 — 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다).
+`code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별·에이전트별 토큰(입력·캐시 입력·캐시 쓰기·출력·추론 출력)·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출·파일 변경 수를 센다. 형식은 codex-cli 0.161.0 의 실제 기록으로 확인했다 — 토큰은 응답마다 한 줄인 `token_usage_record`(없는 기록만 `token_count`)로, 셸 명령은 `CommandExecution` 항목(`powershell.exe -Command` 같은 래퍼는 벗긴다)으로 센다. 하위 에이전트 기록(`ca_explorer` 같은 담당, 승인 검토 `guardian`)은 따로 행을 두고, 그 앞머리에 복사된 부모 대화는 세지 않는다. 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다).
 
 메인 컨텍스트 절감 중 두 가지는 Claude 전용이다. Codex 계획 담당은 staging 을 쓰지 않고 결과 JSON의 `artifacts`에 `{path, content}`로 전체 내용을 싣는다 — 실행 중인 Codex 계획 담당의 파일 쓰기는 훅이 거부한다(훅 입력의 `agent_id`·`agent_type`, 0.161.0 실측) — Codex 담당의 배정 계약(Codex 단일 설치, 또는 두 호스트 설치에서 Codex 가 부른 배정)도 staging 없이 `{path, content}`를 보인다. 대화 시작·압축 뒤 진행 상태를 붙이는 일도 Codex SessionStart 훅은 하지 않는다(작업 임대만 넘겨받는다). 배정 파일(`assignmentFile`)과 `context --file` 전달은 두 호스트가 같다.
 
