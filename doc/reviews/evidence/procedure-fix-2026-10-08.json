@@ -1,6 +1,6 @@
 {
   "date": "2026-10-08",
-  "scope": "감사(ff13950) 뒤 구현 전체 — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의·hook, C4 단계·CLI·임대, C7 최적화 — 와 전체 검토 반영(d12bd46)의 요약",
+  "scope": "감사(ff13950) 뒤 구현·검토·후속 수정 전체(ff13950..HEAD) — 공통 재시도 규약 모듈, C2 계획, C3 검증, C6 역할별 모델, C1 리뷰·교차, C5 동의·hook, C4 단계·CLI·임대, C7 최적화, 전체 검토(d12bd46), 후속 수정(R·F·D·G), 문서 정리 — 의 결과 요약 근거",
   "record": "doc/reviews/2026-10-08-procedure-fix-summary.md",
   "range": {
     "audit": "ff13950",
@@ -10,7 +10,8 @@
     "finalReverify": "5205112(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영",
     "rebuttal": "014cd85(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영",
     "userDecisions20261008": "5e6cdcc(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)",
-    "userDecisionsRebuttal": "이 커밋(부모 5e6cdcc) — 사용자 결정 반영의 반박 검증 지적 G1~G8 반영"
+    "userDecisionsRebuttal": "68d7a00(부모 5e6cdcc) — 사용자 결정 반영의 반박 검증 지적 G1~G8 반영",
+    "cleanup": "문서 정리 커밋(부모 68d7a00) — 단계 기록 통합·옛 기록 삭제·현행 문서의 경위 문장 제거·흐름도 §10 압축"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -53,14 +54,14 @@
         "2327975",
         "3b5e867"
       ],
-      "record": "doc/reviews/2026-10-07-retry-policy-module.md",
+      "record": "68d7a00:doc/reviews/2026-10-07-retry-policy-module.md",
       "npmTest": {
         "at": "3b5e867",
         "tests": 874,
         "pass": 870,
         "fail": 0,
         "skipped": 4,
-        "source": "2026-10-07-role-models.md 의 기준 커밋 값"
+        "source": "68d7a00:doc/reviews/2026-10-07-role-models.md 의 기준 커밋 값"
       }
     },
     {
@@ -71,7 +72,7 @@
         "110ec6a"
       ],
       "merge": "de8a073",
-      "record": "doc/reviews/2026-10-07-planning-retry-orchestration.md",
+      "record": "68d7a00:doc/reviews/2026-10-07-planning-retry-orchestration.md",
       "npmTest": {
         "tests": 915,
         "pass": 911,
@@ -88,7 +89,7 @@
         "53368a4"
       ],
       "merge": "7e169c2",
-      "record": "doc/reviews/2026-10-07-verify-retry.md",
+      "record": "68d7a00:doc/reviews/2026-10-07-verify-retry.md",
       "npmTest": {
         "tests": 924,
         "pass": 920,
@@ -105,13 +106,13 @@
         "ca36d3e"
       ],
       "merge": "f8d0dda",
-      "record": "doc/reviews/2026-10-07-role-models.md",
+      "record": "68d7a00:doc/reviews/2026-10-07-role-models.md",
       "npmTest": {
         "tests": 909,
         "pass": 905,
         "fail": 0,
         "skipped": 4,
-        "note": "검토 반영 뒤. 세 묶음 병합 뒤 f8d0dda 는 1009개(2026-10-07-cross-integrity.md)"
+        "note": "검토 반영 뒤. 세 묶음 병합 뒤 f8d0dda 는 1009개(68d7a00:doc/reviews/2026-10-07-cross-integrity.md)"
       }
     },
     {
@@ -122,7 +123,7 @@
         "2facbc0",
         "77407a9"
       ],
-      "record": "doc/reviews/2026-10-07-cross-integrity.md",
+      "record": "68d7a00:doc/reviews/2026-10-07-cross-integrity.md",
       "npmTest": {
         "tests": 1071,
         "pass": 1067,
@@ -138,7 +139,7 @@
         "248e704",
         "6584910"
       ],
-      "record": "doc/reviews/2026-10-08-consent-hook-boundary.md",
+      "record": "68d7a00:doc/reviews/2026-10-08-consent-hook-boundary.md",
       "npmTest": {
         "tests": 1134,
         "pass": 1130,
@@ -154,7 +155,7 @@
         "9d3e285",
         "4b1333b"
       ],
-      "record": "doc/reviews/2026-10-08-stage-flow.md",
+      "record": "68d7a00:doc/reviews/2026-10-08-stage-flow.md",
       "npmTest": {
         "tests": 1197,
         "pass": 1193,
@@ -177,7 +178,7 @@
         "1141beb",
         "934e5fe"
       ],
-      "record": "doc/reviews/2026-10-08-optimization.md",
+      "record": "68d7a00:doc/reviews/2026-10-08-optimization.md",
       "npmTest": {
         "tests": 1265,
         "pass": 1261,
@@ -193,7 +194,7 @@
       "commits": [
         "d12bd46"
       ],
-      "record": "doc/reviews/2026-10-08-full-review.md",
+      "record": "68d7a00:doc/reviews/2026-10-08-full-review.md",
       "npmTest": {
         "tests": 1292,
         "pass": 1288,
@@ -256,7 +257,7 @@
       "commits": [
         "5205112"
       ],
-      "record": "doc/reviews/2026-10-08-full-review.md#후속-수정최종-재검증-지적",
+      "record": "68d7a00:doc/reviews/2026-10-08-full-review.md#후속-수정최종-재검증-지적",
       "npmTest": {
         "tests": 1311,
         "suites": 189,
@@ -277,7 +278,7 @@
       "commits": [
         "014cd85"
       ],
-      "record": "doc/reviews/2026-10-08-full-review.md#반박-검증-지적f1f4",
+      "record": "68d7a00:doc/reviews/2026-10-08-full-review.md#반박-검증-지적f1f4",
       "npmTest": {
         "tests": 1317,
         "suites": 189,
@@ -298,7 +299,7 @@
       "commits": [
         "5e6cdcc"
       ],
-      "record": "doc/reviews/2026-10-08-full-review.md#사용자-결정-반영d1d3",
+      "record": "68d7a00:doc/reviews/2026-10-08-full-review.md#사용자-결정-반영d1d3",
       "npmTest": {
         "tests": 1328,
         "suites": 189,
@@ -317,9 +318,9 @@
       "stage": "12",
       "bundle": "11단계 반영의 반박 검증 지적 G1~G8 반영(샌드박스 의심의 지점 이력, 사전 거부 뒤의 첫 네트워크 오류, 중지 지점 재실행의 안내, 사람에게 넘긴 지점의 게이트 줄 명령 자리, doctor Codex 줄·모델 표의 작업 중 안내, 비파일 MCP 서버의 사용자 수준 호스트 설정 판정, 기록 수치)",
       "commits": [
-        "이 커밋(부모 5e6cdcc)"
+        "68d7a00"
       ],
-      "record": "doc/reviews/2026-10-08-full-review.md#사용자-결정-반영의-반박-검증-지적g1g8",
+      "record": "68d7a00:doc/reviews/2026-10-08-full-review.md#사용자-결정-반영의-반박-검증-지적g1g8",
       "npmTest": {
         "tests": 1337,
         "suites": 189,
@@ -333,6 +334,14 @@
         "command": "npm run build && npm test",
         "exit": 0
       }
+    },
+    {
+      "stage": "정리",
+      "bundle": "문서 최신화·이력 정리(단계 기록 10개를 결과 요약으로 통합, 2026-10-01~06 기록 15개 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)",
+      "commits": [
+        "문서 정리 커밋(부모 68d7a00)"
+      ],
+      "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
     }
   ],
   "commits": [
@@ -665,7 +674,7 @@
     "abMeasured": false
   },
   "measurements": {
-    "source": "doc/reviews/2026-10-08-optimization.md(C7), evidence/consent-hook-boundary-2026-10-08.json(C5) — 원자료를 옮김. Windows, Node 24.19, sandbox, 실제 모델 호출 없음",
+    "source": "68d7a00:doc/reviews/2026-10-08-optimization.md(C7), 68d7a00:doc/reviews/evidence/consent-hook-boundary-2026-10-08.json(C5) — 원자료를 옮김. Windows, Node 24.19, sandbox, 실제 모델 호출 없음",
     "hookProcessMs": {
       "method": "spawn~종료, 기준 빌드 4b1333b 와 독립 검토 반영 빌드를 같은 반복 안에서 번갈아 31회 중앙값(scratchpad/sandbox-stage6/hooktime-review.cjs)",
       "rows": [
@@ -851,18 +860,18 @@
     ]
   },
   "disposition": {
-    "source": "evidence/audit-disposition-2026-10-08.json(행을 그대로 옮김)",
+    "source": "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json 을 합쳤다(행을 그대로 옮기고 문서 정리 커밋의 처리를 더함)",
     "counts": {
-      "partial": 27,
+      "partial": 28,
       "fixed": 86,
       "not-in-scope": 34,
-      "deferred": 13
+      "deferred": 12
     },
     "countsBySeverity": {
       "partial": {
         "high": 1,
         "medium": 9,
-        "low": 14,
+        "low": 15,
         "info": 3
       },
       "fixed": {
@@ -880,7 +889,7 @@
       "deferred": {
         "high": 0,
         "medium": 1,
-        "low": 12,
+        "low": 11,
         "info": 0
       }
     },
@@ -1095,7 +1104,7 @@
         "severity": "medium",
         "title": "consent action `repro-log`가 action 목록 사본 3곳에서 빠졌다. Codex ca-answer에는 아예 언급이 없다",
         "status": "fixed",
-        "by": "C5 248e704·6584910 + 전체 검토 반영(이 기록의 커밋)",
+        "by": "C5 248e704·6584910 + 전체 검토 반영 d12bd46",
         "note": "design.md 동의 동작 목록에 repro-log·judgment, 흐름도 §4.1 표를 docSync.test 가 ActionSchema·CONSENT_TITLES 와 대조"
       },
       {
@@ -1103,7 +1112,7 @@
         "severity": "medium",
         "title": "Claude hook 수·등록표가 문서마다 다르다. usage.md는 8개(이벤트 5종)로 적고, init 표에서 5개가 빠졌으며 matcher에 PowerShell이 없다",
         "status": "fixed",
-        "by": "C5 248e704·6584910 + 전체 검토 반영(이 기록의 커밋)",
+        "by": "C5 248e704·6584910 + 전체 검토 반영 d12bd46",
         "note": "usage.md hook 수 9개(이벤트 6종)·init 표에 consent-event·planning-event·SessionStart 행, §5.1·§5.2 등록표를 docSync.test 가 init 설치 결과와 대조"
       },
       {
@@ -1111,7 +1120,7 @@
         "severity": "medium",
         "title": "영향도·설계 담당 에이전트 서술이 코드와 다르다. usage.md 안에서도 design 담당이 writer와 analyst로 엇갈리고, 소규모 통합 impact는 빠졌다",
         "status": "fixed",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "usage.md design 담당 analyst, impact 의 explorer 단독 조건"
       },
       {
@@ -1578,7 +1587,7 @@
         "severity": "low",
         "title": "스테이지 번호 체계가 세 가지로 충돌한다(CLI --help 8/9/11/12/13, design 7~11, usage 1~13). usage.md는 'CLI가 7~11을 찍는다'고 잘못 쓴다",
         "status": "fixed",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "usage.md 스테이지 번호 진술을 --help(13단계 번호)·status(이름) 로 고치고 design.md 명령 표의 번호를 뺐다"
       },
       {
@@ -1586,7 +1595,7 @@
         "severity": "low",
         "title": "명령 참조표가 CLI와 어긋난다. --host와 verify/read/planning/cross 명령이 표에서 빠지고, --help에는 실제 플래그가 일부 없다",
         "status": "partial",
-        "by": "C1 a1a70d8·77407a9 + C4 9d3e285·4b1333b + 전체 검토 반영(이 기록의 커밋)",
+        "by": "C1 a1a70d8·77407a9 + C4 9d3e285·4b1333b + 전체 검토 반영 d12bd46",
         "note": "design.md·usage.md init 에 --host. design.md §6 표의 verify·read·planning·consent 행 보강은 남음(다음 문서 묶음)"
       },
       {
@@ -1602,16 +1611,16 @@
         "severity": "low",
         "title": "install.md의 수치·예시 출력이 낡았다(자원 29개→실제 41개, gitignore에 consents/ 누락, update 예시에 hook 4종만 표시)",
         "status": "fixed",
-        "by": "C4 9d3e285 + 전체 검토 반영(이 기록의 커밋)",
+        "by": "C4 9d3e285 + 전체 검토 반영 d12bd46",
         "note": "install.md 자원 수 문장 삭제, init·update 예시를 sandbox 실제 출력으로(모델 줄·hook 9개)"
       },
       {
         "id": "DOC-12",
         "severity": "low",
         "title": "현행 동작 문서에 변경 이력이 섞이고, 새 절이 목차 밖에 덧붙여지고 있다",
-        "status": "deferred",
-        "by": "—",
-        "note": "README 17~19행 변경 이력 문단, README·usage 의 목차 밖 절(요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업) 그대로",
+        "status": "partial",
+        "by": "문서 정리 커밋(부모 68d7a00)",
+        "note": "현행 문서(README·doc/*.md)의 변경 이력·경위 문장을 지우고 AGENTS.md 에 규칙을 적었다. README·usage 의 목차 밖 절(요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업)은 그대로",
         "next": "다음 묶음(문서 구조) — README 변경 이력 문단·목차 밖 절 정리"
       },
       {
@@ -1627,7 +1636,7 @@
         "severity": "low",
         "title": "Codex init 메시지에 스킬·에이전트 수가 하드코딩돼 있고 커밋 안내가 없다",
         "status": "fixed",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "init.ts Codex 안내의 스킬·에이전트·훅 수를 쓴 자원에서 센다(시험 fullReview DOC-14)"
       },
       {
@@ -1635,7 +1644,7 @@
         "severity": "low",
         "title": "usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(c4f3fbf에서 추가)",
         "status": "fixed",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "usage.md 의 fix 로그 근거 절을 #### 제목으로 — 앵커가 산다"
       },
       {
@@ -1846,7 +1855,7 @@
         "severity": "low",
         "title": "hostCommand의 Windows 경로 해석이 npm 기본 prefix(%APPDATA%\\npm)에만 의존",
         "status": "partial",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "PATH 의 .cmd·.bat 와 실행 파일 변수의 없는 파일은 실행 불가가 아니라 설정 오류로 막는다(경로 오타로 필수 교차 검증이 빠지지 않게). .cmd 래퍼 파싱은 다음 묶음(호스트 동등성)"
       },
       {
@@ -2180,7 +2189,7 @@
         "severity": "info",
         "title": "배정 계약(instructions·resultShape)이 호스트를 구분하지 않고 staging 쓰기를 지시함",
         "status": "fixed",
-        "by": "전체 검토 반영(이 기록의 커밋)",
+        "by": "전체 검토 반영 d12bd46",
         "note": "Codex 담당 배정(Codex 단일 설치·두 호스트 설치의 Codex 호출)은 staging 없이 {path, content} 계약(codexContract)"
       },
       {
@@ -2239,27 +2248,34 @@
         "by": "—",
         "note": "자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨"
       }
-    ]
+    ],
+    "date": "2026-10-08",
+    "audit": "doc/reviews/2026-10-07-dual-host-process-audit.md (evidence/process-audit-2026-10-07.json)",
+    "range": "ff13950..d12bd46 + 문서 정리 커밋",
+    "method": "문서 관점 독립 검토가 감사 160건마다 코드·단계 기록을 대조해 판정(sandbox-stage7-docs/status.cjs)하고, 전체 검토 반영 커밋의 처리를 더했다",
+    "changedByCleanup": [
+      {
+        "id": "DOC-12",
+        "from": "deferred",
+        "to": "partial"
+      }
+    ],
+    "deferredNext": {
+      "HX-7": "배포·버전 — version 1.0.0 고정과 templateHash 의 상류 변경 오인은 릴리스 절차와 함께 정한다(C6 이 머리말 model·effort 줄만 뺐다)",
+      "GAP-4": "측정 — 평가 스크립트의 날짜 고정 파일명·모델은 유료 평가 실행(사용자 승인)과 함께 고친다",
+      "GAP-5": "사용자 결정 필요 — CI 도입과 실행 플랫폼(지금 Windows 단일)은 저장소 운영 결정이다",
+      "DOC-M3": "문서 구조 — README 흐름 표의 입력할 곳 열을 호스트 중립으로",
+      "HX-8": "검증 효율 — 기준선 build·Task별 증분 build 는 검증 회차 규약(C3)과 함께 설계한다",
+      "HX-13": "측정 — 스킬 description 호출 경계·진입률 평가는 실제 모델 호출이 필요하다",
+      "LRN-3": "KNOWLEDGE 반영 — 자가 학습 보류와 별개인 반영 결함(upsert 가 항목 전체 교체)",
+      "LRN-15": "KNOWLEDGE 반영 — 항목 출처(작업 ID) 기록",
+      "LRN-16": "KNOWLEDGE 반영 — 근거 부족 제안 사유를 확인 화면에",
+      "LRN-17": "KNOWLEDGE 반영 — knowledge prune 결과의 다음 deliver 혼입",
+      "LRN-18": "KNOWLEDGE 반영 — 같은 제안 파일의 중복 키 검사",
+      "OPT-7": "최적화 2차 — critic 과 교차 계획 검토의 병렬화는 교차 지점 정의(critic 배정)를 바꾸므로 따로 설계한다"
+    }
   },
   "tests": {
-    "final": {
-      "at": "d12bd46",
-      "command": "npm run build && npm test",
-      "buildExit": 0,
-      "testExit": 0,
-      "tests": 1292,
-      "suites": 183,
-      "pass": 1288,
-      "fail": 0,
-      "cancelled": 0,
-      "skipped": 4,
-      "todo": 0,
-      "durationMs": 130705,
-      "wallSec": 132,
-      "skippedReason": "플랫폼 조건 — 대소문자 구분 없는 파일 시스템 2, POSIX chmod 2",
-      "note": "작업 트리 깨끗함. 2026-10-08-full-review.md 의 결과(1292개 중 1288개, 130초)와 같다. 그 기록의 crossReview 고아 pid 시험 간헐 실패는 이번 실행에서 나오지 않았다",
-      "log": "scratchpad/reverify/build.log, test.log"
-    },
     "e2e": {
       "runs": 23,
       "seconds": 421,
@@ -2435,6 +2451,49 @@
         "skipped": 4
       },
       "added": "crossReview 5·planning 1·fullReview 2·finalReverify 1(9개). cross.test 두 시험은 단언을 고침(G2·G6)"
+    },
+    "baseline": {
+      "at": "c4f3fbf",
+      "command": "npm test",
+      "tests": 802,
+      "pass": 798,
+      "fail": 0,
+      "skipped": 4,
+      "durationSec": 133,
+      "source": "doc/reviews/2026-10-07-dual-host-process-audit.md"
+    },
+    "fullReviewReverify": {
+      "at": "d12bd46",
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1292,
+      "suites": 183,
+      "pass": 1288,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 130705,
+      "wallSec": 132,
+      "skippedReason": "플랫폼 조건 — 대소문자 구분 없는 파일 시스템 2, POSIX chmod 2",
+      "note": "작업 트리 깨끗함. 68d7a00:doc/reviews/2026-10-08-full-review.md 의 결과(1292개 중 1288개, 130초)와 같다. 그 기록의 crossReview 고아 pid 시험 간헐 실패는 이번 실행에서 나오지 않았다",
+      "log": "scratchpad/reverify/build.log, test.log"
+    },
+    "final": {
+      "at": "문서 정리 커밋의 트리(부모 68d7a00)",
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1337,
+      "suites": 189,
+      "pass": 1333,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 257930.5944,
+      "note": "벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다 — 단계 기록을 지우기 전 같은 문서 변경 트리의 실행은 1337개 중 1333개 통과·149,885ms 였다"
     }
   },
   "needsUser": [
@@ -2473,7 +2532,7 @@
     "사용자 결정 반영의 반박 검증(12단계) 남긴 것 — userDecisionsRebuttal.remaining"
   ],
   "finalReverify": {
-    "source": "doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
+    "source": "68d7a00:doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
     "base": "16ae5ec",
     "tests": "src/test/finalReverify.test.ts — 시험 이름에 R1~R6",
     "rules": [
@@ -2640,7 +2699,7 @@
     ]
   },
   "rebuttal": {
-    "source": "doc/reviews/2026-10-08-full-review.md 의 '반박 검증 지적(F1~F4)' 절",
+    "source": "68d7a00:doc/reviews/2026-10-08-full-review.md 의 '반박 검증 지적(F1~F4)' 절",
     "base": "5205112",
     "tests": "src/test/finalReverify.test.ts(R2·R3·R6 이름), src/test/planning.test.ts(이름 끝 (R3))",
     "rules": [
@@ -2753,7 +2812,7 @@
     "E20 → D3 확정: 설정 오류로 막는 현행 유지"
   ],
   "userDecisions20261008": {
-    "source": "doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영(D1~D3)' 절",
+    "source": "68d7a00:doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영(D1~D3)' 절",
     "base": "014cd85",
     "rules": [
       "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)",
@@ -2882,7 +2941,7 @@
     ]
   },
   "userDecisionsRebuttal": {
-    "source": "doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영의 반박 검증 지적(G1~G8)' 절",
+    "source": "68d7a00:doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영의 반박 검증 지적(G1~G8)' 절",
     "base": "5e6cdcc",
     "rules": [
       "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)",
@@ -2979,7 +3038,7 @@
       "doc/process-flow.md §4.1(model 행 — 표의 변경 줄), §5.3(MCP 문단), §6.3(실행 전 판정 문단·실패 처리 표의 샌드박스 행·중지 지점 재실행 행), §6.4(생성 블록 재렌더 — host-sandbox-denied detect·retryText), §7(교차 명령 행·역할 모델 변경 행), §9(crossRecord), §10",
       "doc/codex.md(교차 문단·모델 조회 문장)",
       "doc/design.md(교차 결정 문단)",
-      "doc/reviews/2026-10-08-full-review.md(E2·E16 행, G1~G8 절)",
+      "68d7a00:doc/reviews/2026-10-08-full-review.md(E2·E16 행, G1~G8 절)",
       "doc/reviews/2026-10-08-procedure-fix-summary.md",
       "doc/reviews/README.md"
     ],
@@ -3026,6 +3085,25 @@
       "Codex 에서 부른 적이 없는 지점을 호스트 표지 없는 셸·두 표지가 섞인 셸에서 처음 --by claude 로 실행한 네트워크 오류는 실행 불가(중지 기록 후 진행) — 그 셸이 실제로 권한 상승한 Codex 셸이면 D2 밖(실제 Codex 셸 표지 미확인)",
       "G1 은 이 PC 의 사용자 수준 호스트 설정 네 파일만 넓힘 — 비파일 MCP 서버의 그 밖의 저장소 밖 쓰기는 원격 서비스 오탐 방지로 여전히 판정하지 않음(E30 미판정 MCP 이름 기록도 남은 일)",
       "doctor 의 Claude '스킬·에이전트' 줄(소스 code-agent update 처방)은 작업 중 안내를 달지 않음"
+    ]
+  },
+  "history": {
+    "note": "단계 기록 10개와 이번 작업의 다른 evidence 는 문서 정리 커밋에서 doc/reviews/2026-10-08-procedure-fix-summary.md 와 이 파일로 합치고 지웠다. 원문은 git show 68d7a00:<경로> 로 본다. 2026-10-01~06 기록 15개와 그 evidence 는 같은 커밋에서 지웠다 — git show c4f3fbf:doc/reviews/README.md 로 색인을 본다",
+    "mergedRecords": [
+      "68d7a00:doc/reviews/2026-10-07-retry-policy-module.md",
+      "68d7a00:doc/reviews/2026-10-07-planning-retry-orchestration.md",
+      "68d7a00:doc/reviews/2026-10-07-verify-retry.md",
+      "68d7a00:doc/reviews/2026-10-07-role-models.md",
+      "68d7a00:doc/reviews/2026-10-07-cross-integrity.md",
+      "68d7a00:doc/reviews/2026-10-08-consent-hook-boundary.md",
+      "68d7a00:doc/reviews/2026-10-08-stage-flow.md",
+      "68d7a00:doc/reviews/2026-10-08-optimization.md",
+      "68d7a00:doc/reviews/2026-10-08-full-review.md",
+      "68d7a00:doc/reviews/2026-10-08-audit-disposition.md"
+    ],
+    "mergedEvidence": [
+      "68d7a00:doc/reviews/evidence/consent-hook-boundary-2026-10-08.json",
+      "68d7a00:doc/reviews/evidence/audit-disposition-2026-10-08.json"
     ]
   }
 }

@@ -2,11 +2,11 @@
 
 플러그인 등록·제거·키 보관 규칙은 Claude와 Codex에서 공유한다. 아래 Claude 선택 화면 대신 Codex에서는 [사용자 메시지 동의](codex.md#사용자-확인)를 관찰한다. 키 환경 변수는 사용 중인 호스트를 시작한 환경에 준비하며 실제 값을 대화에 보내지 않는다.
 
-> 왜 이 모양인가는 [design.md §6](design.md#6-플러그인과-도구-p7), 무엇을 치는가는 [usage.md §10](usage.md#10-플러그인-선택),
+> 왜 이 모양인가는 [design.md §6](design.md#6-플러그인과-도구), 무엇을 치는가는 [usage.md §10](usage.md#10-플러그인-선택),
 > code-agent 자체의 설치·점검·지우기는 [install.md](install.md).
 > 이 문서는 **어댑터를 쓰는 사람**을 위한 정본이다 — 요청·응답 형식, 등록, 키, 실패 규칙.
 
-검증 노드 실행기(`code-agent verify`)도 기존 `check`를 호출하므로 `verify.extra` 플러그인 결과와 기존 실패 정책을 그대로 적용한다. 노드의 `program | agent | human` 구분은 내부 실행 방식이며 새로운 플러그인 slot이나 모델 호출 API가 아니다. 계약 변경은 없다. [문서·검증 이력](reviews/README.md).
+검증 노드 실행기(`code-agent verify`)는 `check`를 호출하므로 `verify.extra` 플러그인 결과와 실패 정책을 그대로 적용한다. 노드의 `program | agent | human` 구분은 내부 실행 방식이며 플러그인 slot이나 모델 호출 API가 아니다.
 
 **원칙: 아무것도 등록하지 않아도 전 과정이 돈다.** 자리마다 기본 구현이 있고, 플러그인은 그 자리를 대신 채울 뿐이다.
 등록은 사람마다(opt-in) 하고, 저장소는 "어느 자리에 어느 플러그인을 쓰는가"만 공유한다.
@@ -177,7 +177,7 @@ argv 는 프로세스 목록에 보이고 환경변수는 손자 프로세스까
 
 **제한 시간이 묶는 것은 어댑터 프로세스 하나다.** 어댑터가 물려받은 stdout 파이프를 손자 프로세스에 남기고 끝나면
 파이프가 EOF 에 닿지 않아 호출이 타이머 뒤에도 기다린다 — 어댑터는 **그 파이프 위에 아무것도 백그라운드로 남기지 않아야 한다.**
-(진짜 상한을 걸려면 비동기 실행 + 프로세스 그룹 종료가 필요하고, 그것은 이번에 만들지 않기로 한 두 번째 러너다.)
+(진짜 상한을 걸려면 비동기 실행 + 프로세스 그룹 종료를 하는 두 번째 러너가 필요하다 — 만들지 않는다.)
 
 **2분 넘게 도는 검사는 플러그인으로 못 쓴다.** 긴 정적 분석은 매니페스트의 `commands` 로 선언한다 —
 그 길은 이미 있고 `code-agent check` 가 돌린다.
@@ -192,7 +192,7 @@ code-agent plugin remove <이름>                                               
 code-agent plugin list                                                          # 누구나 (모델도)
 ```
 
-등록·제거는 같은 Claude Code의 선택 화면에서 확인할 수 있다. 에이전트가 `plugin-add` 또는 `plugin-remove` action을 준비하고, 실제 사용자 응답을 hook이 관찰한 뒤 consent로 적용한다. 모델이 직접 `plugin add`·`plugin remove`를 실행해 사용자 확인을 건너뛰는 경로는 열리지 않는다. 일반 터미널에서 직접 실행할 때는 기존 TTY 검사를 유지한다. `plugin list`는 상태만 읽으므로 모델도 부를 수 있다.
+등록·제거는 같은 Claude Code의 선택 화면에서 확인할 수 있다. 에이전트가 `plugin-add` 또는 `plugin-remove` action을 준비하고, 실제 사용자 응답을 hook이 관찰한 뒤 consent로 적용한다. 모델이 직접 `plugin add`·`plugin remove`를 실행해 사용자 확인을 건너뛰는 경로는 열리지 않는다. 일반 터미널에서 직접 실행할 때는 TTY 검사를 쓴다. `plugin list`는 상태만 읽으므로 모델도 부를 수 있다.
 
 같은 세션의 등록 요청 예시는 다음과 같다. `MY_PLUGIN_KEY`는 **Claude Code를 시작한 환경에 이미 설정된 변수의 이름**이며 실제 키가 아니다. 에이전트는 값 조회·출력 명령을 실행하거나 사용자에게 채팅으로 실제 키를 보내 달라고 요청하지 않는다.
 
@@ -440,7 +440,7 @@ echo {"protocol":"code-agent.plugin","version":"1","op":"describe","requestId":"
 
 ## 8. A/B 토큰 비교 (Jev 가 붙으면)
 
-P7 의 완료 기준은 "Jev 켜고/끄고 같은 저장소 A/B 토큰 비교" 다. **실제 Jev 가 없어 아직 재지 못했다** —
+플러그인의 효과는 "Jev 켜고/끄고 같은 저장소 A/B 토큰 비교" 로 잰다. **실제 Jev 가 없어 아직 재지 못했다** —
 붙으면 이 절차로 잰다. Jev 어댑터는 Jev CLI 나 얇은 래퍼 스크립트를 `--command` 로 가리키면 된다
 (code-agent 안에는 Jev 네트워크 코드가 한 줄도 없다).
 
@@ -448,7 +448,7 @@ P7 의 완료 기준은 "Jev 켜고/끄고 같은 저장소 A/B 토큰 비교" �
 2. A 는 `code-agent.json` 의 `plugins` 를 **비운다**.
    B 는 `{"jev":{"slots":["candidates.rank","review.prefilter","survey.classify"]}}`.
 3. 둘 다 `/ca-request <동일한 요구사항>`으로 시작해 같은 화면에서 **계획 승인까지** 진행한다. 중단 후 재개할 때만 `/ca-next`를 사용한다.
-   스테이지마다 Claude Code 가 찍는 비용·시간을 [design.md §11 의 "P3 실측 기준치"](design.md#11-구현-순서) 표 형식으로 적는다.
+   스테이지마다 비용·시간을 구간 · 비용 · 시간 · 결과 표로 적는다(`code-agent usage --work <ID>` 가 스테이지별로 센다).
 4. B 에서 플러그인이 실제로 돌았는지 `code-agent context` 출력의 **출처 줄**로 확인하고
    (`- 출처: 플러그인 jev`), `.code-agent/log/plugins/*.jsonl` 의 `durationMs` 합을 함께 적는다.
 5. 비교 대상은 **토큰 비용과 계획의 파일 목록**이다 — 순위가 달라도 계획이 같으면 이득이 없다.

@@ -9,11 +9,11 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 
 ---
 
-관찰된 계획 작업과 검증 노드 실행기 도입 후에도 새 패키지·서버·필수 설정은 없다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 분석·영향도·설계·계획·구현·검증 스킬과 에이전트 정의·CLAUDE 블록·planning-event hook을 함께 갱신한다. Claude Code를 다시 열고 `code-agent --help`의 `planning`·`verify` 항목과 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 기존 증거로 재개한다. 변경 이력은 [문서·검증 이력](reviews/README.md)에 있다.
+code-agent는 새 패키지·서버·필수 설정 없이 동작한다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 스킬·에이전트 정의·CLAUDE 블록·hook을 함께 갱신한다. 호스트를 다시 열고 `code-agent --help`와 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
 
 작업 임대(`.code-agent/lease.json`)는 `update --templates-only` 가 `.gitignore` 블록에 `lease.json*` 줄을 더한다 — 갱신 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 다만 진행 중인 작업이 있으면 `update --templates-only` 는 그 작업을 반영하거나 끝낸 뒤 실행한다 — 갱신이 바꾼 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)이 그 작업의 계획 밖 변경이 되어 검증·반영을 막고, 게이트가 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않는다. 이미 갱신했으면 `update` 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄이 그 파일을 알려 준다 — 사람이 그 파일들을 갱신 전으로 되돌리고 작업을 마친 뒤 다시 갱신한다.
 
-작은 조사 통합과 작업별 입력 최적화도 CLI·영향도 스킬·explorer 정의를 함께 갱신해야 한다. Codex에도 같은 템플릿 변경이 생성되므로 사용 중인 호스트를 재시작한다. 기존 작업은 기존 입력 계약을 유지하고 새 기본 작업부터 contextVersion 2를 사용한다. Codex의 파일 읽기에는 최신 CLI의 `code-agent read`와 설치 지침이 함께 필요하다. 설치 점검과 실제 연동 성공은 구분하며 최신 실행 결과는 [훅 복구 이력](reviews/2026-10-02-codex-hook-recovery.md)을 확인한다.
+CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex 사본도 같은 템플릿에서 생성되므로 사용 중인 호스트를 재시작한다. 이전 입력 계약으로 시작한 작업은 그 계약을 유지하고 새 기본 작업은 contextVersion 2를 사용한다. `doctor`의 설치 점검은 실제 연동 성공을 인증하지 않는다.
 
 ## 목차
 
@@ -190,9 +190,9 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 기본 경로는 `code-agent consent prepare --action <동작> --for claude`(또는 `<action.json>`) → 반환된 `toolInput` 전체로 `AskUserQuestion` 호출 → PreToolUse·PostToolUse hook 관찰 → `code-agent consent finish <ID>`(승인된 요청만 그 자리에서 적용)다. `consent status <ID>` 확인 뒤 `consent apply <ID>`로 나눠도 같다. `questions`와 `metadata.source`를 함께 그대로 전달한다. 남은 질문이 있으면 status가 반환한 toolInput으로 이어서 표시한다. 사용자가 선택하면 같은 작업을 계속하며, 모델이 답을 미리 넣거나 채팅 문장을 승인으로 대신할 수 없다. 확인 대상이 바뀌면 새로 준비한다.
 
-외부 hook이 Git 무시 경로에 사용량·세션·캐시를 쓰는 환경의 동의 차단은 CLI의 스냅샷 수집 범위에서 수정했다. 스킬만 갱신하는 `update --templates-only`로는 설치된 구버전 CLI가 바뀌지 않는다. 아래 설치 방식에 맞춰 CLI도 갱신하고 템플릿을 반영한 뒤 호스트를 다시 열고 동의를 새로 준비한다. 외부 hook을 삭제할 필요는 없다. 계속 거부되면 `변경 대상:`의 경로/Git 상태를 확인한다. 추적된 감사 파일과 명시된 제어·문서 경로는 여전히 검사한다. 범위와 재현 근거는 [동의 스냅샷 수정 이력](reviews/2026-10-06-consent-snapshot.md)을 참고한다.
+동의 스냅샷은 외부 hook이 Git 무시 경로에 쓰는 사용량·세션·캐시 기록을 제외한다 — 외부 hook을 삭제할 필요는 없다. 추적된 감사 파일과 명시된 제어·문서 경로는 그대로 검사한다. 스냅샷 수집 범위는 CLI가 정하므로 스킬만 갱신하는 `update --templates-only`로는 바뀌지 않는다 — 아래 설치 방식에 맞춰 CLI도 갱신한다. 거부되면 `변경 대상:`의 경로/Git 상태를 확인하고 동의를 새로 준비한다.
 
-일반 터미널에서 직접 실행하는 `approve`·`confirm`·`reject`·`deliver`·`plugin add`도 지원한다. 이 선택 경로에는 기존 TTY 검사가 적용된다.
+일반 터미널에서 직접 실행하는 `approve`·`confirm`·`reject`·`deliver`·`plugin add`도 지원한다. 이 선택 경로에는 TTY 검사가 적용된다.
 
 | 어디서 | 되나 |
 |---|---|
@@ -218,9 +218,9 @@ code-agent 소스에 미커밋 변경이 있거나 upstream과 이력이 분기�
 
 같은 Claude Code에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 반환된 질문을 그대로 표시해 사용자 선택을 받은 뒤 적용한다. **갱신 후에는 Claude Code를 종료하고 같은 프로젝트에서 다시 실행해야 새 hook이 활성화된다.** 재시작 후 `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 작업을 재개한다 — 갱신이 진행 중인 작업의 계획 밖 변경을 만들었으면 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄대로 사람이 먼저 되돌린다(맨 위 안내). 일반 터미널에서 `code-agent update`를 직접 실행하는 경로도 사용할 수 있다 — 이때는 미리보기(소스·브랜치·upstream·실행 순서)를 보인 뒤 `update` 를 그대로 입력해야 진행한다(TTY 가 아니거나 Claude Code·Codex 가 띄운 셸이면 동의 절차를 안내하고 멈춘다). 모델이 셸에서 소스 `update` 를 부르는 것은 작업·세션 밖에서도, `npx`·경로·`cli.js update` 같은 꼴로 불러도 hook 이 막는다(`--templates-only` 는 연다). 업그레이드 전에 준비한 확인 요청은 새로 준비해야 할 수 있다(확인 화면·스냅샷 범위가 바뀌면 대상 변경으로 폐기된다).
 
-**옛 설치본은 `update` 를 돌려야 PreToolUse matcher 가 넓어진다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
+**PreToolUse matcher 가 좁은 설치본은 `update` 로 넓힌다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).
-이 닫힘은 **진행 중인 작업이 없을 때까지** 걸린다(`.code-agent/` 와 작업 지시서도 같다) — 그래서 matcher 가 좁은 옛 설치본은 작업 중이 아니어도 구멍이 난다.
+이 닫힘은 **진행 중인 작업이 없을 때까지** 걸린다(`.code-agent/` 와 작업 지시서도 같다) — 그래서 matcher 가 좁은 설치본은 작업 중이 아니어도 구멍이 난다.
 
 보존은 `init` 이 이미 하던 그대로다.
 

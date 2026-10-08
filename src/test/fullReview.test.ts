@@ -1,5 +1,6 @@
 /**
- * 전체 검토(ff13950..934e5fe) 반영 — 지적마다 되돌리면 실패하는 회귀 시험. 지적 번호는 doc/reviews/2026-10-08-full-review.md 의 표다.
+ * 전체 검토(ff13950..934e5fe) 반영 — 지적마다 되돌리면 실패하는 회귀 시험. 지적 번호는 doc/reviews/2026-10-08-procedure-fix-summary.md 의
+ * '전체 검토와 후속 수정' 절이다(지적별 처리 표는 git show 68d7a00:doc/reviews/2026-10-08-full-review.md).
  * 임시 git 저장소(stageFixture — 주문 도메인 ORD-1)에 실제 함수를 그대로 부른다. 모델·호스트는 부르지 않는다.
  */
 import { strict as assert } from "node:assert";

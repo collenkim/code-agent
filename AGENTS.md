@@ -12,7 +12,7 @@
 
 ## 바꿀 때 지킨다
 
-- 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 한 줄을 남긴다.
+- 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 변경당 한 줄(바뀐 것의 요지 한 문장과 커밋 — 함수·상수 이름을 늘어놓지 않는다. 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다.
 - 흐름도의 손으로 쓴 표 일부는 `src/test/docSync.test.ts`가 코드와 대조한다 — §4.1 동의 동작·제목 ↔ `consent.ts` `ActionSchema`·`CONSENT_TITLES`, §5.1·§5.2 hook 등록표 ↔ 임시 저장소에 `init --host both` 한 `settings.json`·`hooks.json`, §3.2 단계 ↔ `layout.ts` `PHASES`, §7 모델 기본값 ↔ `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`(§6.4 생성 블록과 함께). 시험이 깨지면 문서를 코드에 맞춘다.
 - 함께 맞출 중복 정의가 있다:
   - 동의 동작(`consent.ts` `ActionSchema`)을 바꾸면 `template/claude/skills/ca-answer/SKILL.md`·`reference.md`와 `template/codex/ca-answer.md`의 목록도 고친다(`consentBinding.test.ts`가 `CONSENT_ACTIONS`와 대조한다). 동의 제목은 `consentState.ts` `CONSENT_TITLES` 하나다.
@@ -34,7 +34,7 @@
   - Codex exec 배너 라벨·전사 라벨(`CODEX_TURN`)·오류 줄 꼴이 바뀌면 `retryPolicy.ts` `crossFailureText`를 고친다. 교차 자식에서 여는 `code-agent` 명령을 바꾸면 `hook.ts` `CROSS_CHILD_READONLY`와 흐름도 §5.3 0단계를 함께 고친다. 교차 실행 인자의 doctor 점검 목록은 `crossCheck.ts` `crossFlags`가 인자에서 만들므로 따로 맞출 것이 없다.
 - `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 문장째 치환(`hosts.ts` `CODEX_SENTENCES`)의 원문이 여전히 템플릿과 글자 그대로 같은지 확인한다 — 다르면 오류 없이 치환되지 않는다(`templateText.test.ts`가 원문이 Claude 템플릿에 있고 Codex 사본에 남지 않는지 본다). 17개 스킬의 질문·동의 공통 문단도 같은 글자여야 한다(같은 테스트). 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
 - 템플릿 문장을 늘려 `src/test/templateBudget.test.ts` 예산을 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`).
-- 현행 문서(`README.md`, `doc/*.md`)에는 현재 동작만 쓴다. 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
+- 현행 문서(`README.md`, `doc/*.md` — `process-flow.md` §10 제외)에는 현재 동작과 설계 근거만 쓴다. '이전에는'·'~로 바뀌었다'·결정 날짜·검토 지적 번호 같은 경위는 쓰지 않는다(실제 호스트에서 확인한 버전처럼 사실의 조건인 날짜·버전은 남긴다). 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
 - 사용자에게 보이는 문서는 한국어로, 기존 문체를 따른다.
 
 ## 빌드와 테스트
@@ -45,7 +45,7 @@ npm run build
 npm test
 ```
 
-Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2분 걸리며(파일 단위 병렬 — 벽시계는 가장 긴 파일과 동시에 도는 파일들의 CPU·프로세스 경합이 함께 정한다. 한 파일이 약 90초를 넘거나 그 파일 하나가 벽시계를 정하면 주제별로 나눈다), 플랫폼 조건으로 4개가 생략된다. `npm test`는 `tsc` 뒤 `scripts/prune-dist-tests.cjs`로 지운·옮긴 시험의 옛 `dist/test` 산출물을 지운다.
+Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2~3분 걸리며(파일 단위 병렬 — 벽시계는 가장 긴 파일과 동시에 도는 파일들의 CPU·프로세스 경합이 함께 정한다. 한 파일이 약 90초를 넘거나 그 파일 하나가 벽시계를 정하면 주제별로 나눈다), 플랫폼 조건으로 4개가 생략된다. `npm test`는 `tsc` 뒤 `scripts/prune-dist-tests.cjs`로 지운·옮긴 시험의 옛 `dist/test` 산출물을 지운다.
 
 ## 실험할 때
 

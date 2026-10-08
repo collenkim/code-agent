@@ -1,6 +1,5 @@
 /**
- * 템플릿 크기 예산(C7 OPT-4) — 스킬·에이전트 문장은 메인·담당 컨텍스트에 그대로 들어간다. 파일별 예산과 흐름 합계(감사·토큰 효율 기록의
- * 13개)를 넘기면 실패한다. 값은 `node scripts/template-sizes.cjs --suggest`(파일별 현재×1.03, 합계 ×1.02 를 100 단위로 올림)로 정했다.
+ * 템플릿 크기 예산(C7 OPT-4) — 스킬·에이전트 문장은 메인·담당 컨텍스트에 그대로 들어간다. 파일별 예산과 흐름 합계(CLAUDE.block·CODEX.block + 흐름 스킬 12)를 넘기면 실패한다. 값은 `node scripts/template-sizes.cjs --suggest`(파일별 현재×1.03, 합계 ×1.02 를 100 단위로 올림)로 정했다.
  * 넘기면 필요할 때만 읽는 보조 문서(reference·criteria·legacy·contract)로 옮기거나, 예산을 올리는 근거를 doc/reviews 에 남기고 고친다.
  */
 import { strict as assert } from "node:assert";
@@ -11,7 +10,7 @@ import { test } from "node:test";
 import { hostAssets } from "../agent/hosts";
 
 const ROOT = join(__dirname, "../..");
-/** LF 글자 수 예산 — 2026-10-08 C7 기준(doc/reviews/2026-10-08-optimization.md) */
+/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산') */
 const BUDGET: Record<string, number> = {
   "template/claude/agents/ca-analyst.md": 3100,
   "template/claude/agents/ca-critic.md": 2000,

@@ -1,8 +1,8 @@
 # Claude·Codex 이중 호스트 프로세스 감사
 
-기준일: 2026-10-07. 기준 커밋: `c4f3fbf`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다.
+기준일: 2026-10-07. 기준 커밋: `c4f3fbf`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다. 근거의 줄 인용(이 기록과 원자료)은 `c4f3fbf` 트리 기준이다 — 그 뒤 지운 기록·evidence(`doc/reviews/2026-10-01~06` 기록 등)는 `git show c4f3fbf:<경로>`로 본다.
 
-처리 현황은 [2026-10-08 요약 기록](2026-10-08-procedure-fix-summary.md) 참고(지적별 상태는 [감사 160건 처리 현황](2026-10-08-audit-disposition.md)).
+처리 현황(지적별 상태·보류 항목의 다음 배정)은 [결과 요약](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있다.
 
 ## 범위와 방법
 
@@ -438,4 +438,4 @@ learn 영역의 sandbox 실험이 `code-agent update`(소스 업데이트)를 �
 
 ## 처리 현황
 
-이 감사의 지적 160건이 뒤 묶음(C1~C7)과 전체 검토에서 어떻게 처리됐는지는 [감사 160건 처리 현황](2026-10-08-audit-disposition.md)에 있다(원자료 [audit-disposition-2026-10-08.json](evidence/audit-disposition-2026-10-08.json)).
+이 감사의 지적 160건이 뒤 묶음(C1~C7)과 전체 검토에서 어떻게 처리됐는지는 [결과 요약의 감사 160건 처리 현황](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있다(원자료 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)의 `disposition`).
