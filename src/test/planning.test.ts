@@ -738,6 +738,23 @@ test("Codex 담당은 배정 파일을 code-agent read로 읽고, staging 대신
   assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
 });
 
+test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당을 가른다 — 실행 중인 Codex 계획 담당은 staging 을 포함해 파일을 쓰지 않는다", () => {
+  const item = advance().assignments[0];
+  const staged = item.staging[`${DIR}/01-requirements.md`];
+  // Codex 는 하위 에이전트 이벤트에 부모 session_id 와 자기 agent_id·agent_type(ca_x)을 싣는다(0.161.0 실측)
+  const sub = { cwd: root, session_id: "s", agent_id: "01a11a65-sub", agent_type: item.agent.replace(/-/g, "_") };
+  codexHook({ ...sub, hook_event_name: "SubagentStart" });
+  const reason = (input: object) => ((codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", ...input }) as
+    { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "");
+  const patch = (path: string) => ({ tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${path}\n+x\n*** End Patch` } });
+  for (const path of [staged, "src/x.ts", `${DIR}/01-requirements.md`]) {
+    assert.match(reason({ ...sub, ...patch(path) }), /Codex 계획 담당은 파일을 쓰지 않습니다[\s\S]*\{path, content\}/, path);
+  }
+  // 메인(agent_id 없음)은 이전과 같다 — staging 은 메인이 대신 쓰지 않는다
+  assert.match(reason(patch(staged)), /메인은 계획 문서를 대신 쓰지 않습니다/);
+  assert.equal(reason({ tool_name: "Bash", tool_input: { command: `code-agent read ${staged}` } }), "");
+});
+
 test("형식 교정은 원본의 staging 본문을 지우지 않고 새 배정으로 옮겨 그대로 보존한다", () => {
   const item = advance().assignments[0], original = item.staging[`${DIR}/01-requirements.md`];
   const event = { cwd: root, session_id: "s", agent_id: "origin", agent_type: item.agent };

@@ -4,10 +4,12 @@
  * `.code-agent/lease.json` 에 이 작업을 진행 중인 호스트·세션과 마지막 활동 시각을 둔다. PreToolUse hook(hook.ts decideTool —
  * 작업 모드에서 기존 판정이 허용일 때만, 동의 티켓 발급 전)이 상태를 바꾸는 호출(진행 명령·쓰기)마다 대조한다:
  * - 다른 세션이 쥔 신선한 임대면 거부한다(분류 precondition — 재시도 금지, 사용자 확인 뒤 `code-agent takeover`).
- * - Claude SessionStart 는 압축(`source` compact — 세션 ID 가 그대로인 같은 대화)을 빼고 같은 호스트(Claude) 임대를 이 세션으로 넘겨받는다 — 재시작·`/clear`·update 뒤 다시
- *   열기가 막히지 않고, 아직 살아 있는 이전 세션은 다음 진행 명령이 거부되어 드러난다.
+ * - 같은 주인은 호스트와 세션이 모두 같은 호출이다. 두 호스트 모두 한 대화의 hook 이 같은 session_id 를 싣는다 — 하위 에이전트도 부모의
+ *   session_id 를 싣고, 재개(Claude `--resume`·`--continue`·압축, Codex `resume`)도 같은 id 다(claude 2.1.293·codex-cli 0.161.0 실측). 그래서 두
+ *   터미널이 같은 세션을 이어 열면 임대는 둘을 한 주인으로 본다.
+ * - SessionStart(Claude session-event·Codex codex-event)는 압축(`source` compact — 세션 ID 가 그대로인 같은 대화)을 빼고 같은 호스트 임대를 이 세션으로
+ *   넘겨받는다 — 재시작·`/clear`·update 뒤 다시 열기가 막히지 않고, 아직 살아 있는 이전 세션은 다음 진행 명령이 거부되어 드러난다.
  * - 다른 호스트가 쥔 신선한 임대는 `takeover`(사용자 확인 뒤 — 스킬 규칙)나 30분 무활동으로만 넘어간다.
- * - Codex 는 호스트만 비교한다(서브 에이전트의 session_id 가 메인과 같은지 미확인).
  * - 교차 실행 자식(CODE_AGENT_CROSS)은 임대를 읽지도 쓰지도 않고 진행 명령·쓰기를 거부한다.
  *
  * 임대는 사고 방지 장치이지 권한 경계가 아니다 — `takeover` 는 모델이 부를 수 있는 명령이고, 넘겨받기 전 사용자 확인은
@@ -68,8 +70,8 @@ export function leaseDecision(input: { lease?: Lease; id: string; target: string
   if (lease.id !== input.id || lease.target !== input.target) return { action: "claim", why: "other-work" };
   if (lease.released) return { action: "claim", why: "released" };
   const idleMs = Math.max(0, now - Date.parse(lease.seenAt));
-  // 같은 주인 — Claude 는 세션까지, Codex 는 호스트만(서브 에이전트 session_id 미확인)
-  if (lease.host === input.host && (input.host === "codex" || lease.session === input.session)) {
+  // 같은 주인 — 호스트와 세션이 모두 같다(하위 에이전트는 부모 session_id 를 싣는다)
+  if (lease.host === input.host && lease.session === input.session) {
     return idleMs >= LEASE_TOUCH_MS ? { action: "touch" } : { action: "keep" };
   }
   // 같은 호스트의 새 세션 시작(재시작·재개·비우기 — 압축은 sessionStartLease 가 sessionStart 없이 판정한다) — 새로 연 세션이 이긴다
@@ -93,7 +95,7 @@ function denyText(holder: Lease, idleMs: number): string {
 /** claim·touch 가 쓸 임대 — claim 은 같은 작업의 이전 주인을 previous 로 남긴다 */
 function nextLease(verdict: LeaseVerdict, lease: Lease | undefined, me: { id: string; target: string; host: HostName; session: string }, now: number): Lease | undefined {
   const at = new Date(now).toISOString();
-  if (verdict.action === "touch" && lease) return { ...lease, seenAt: at, ...(me.host === "codex" ? { session: me.session } : {}) };
+  if (verdict.action === "touch" && lease) return { ...lease, seenAt: at };
   if (verdict.action !== "claim") return undefined;
   const same = lease && verdict.why !== "none" && verdict.why !== "other-work";
   return {
@@ -146,23 +148,24 @@ export function leaseGuard(work: Work, hostName: HostName, session: string | und
 }
 
 /**
- * Claude SessionStart — 같은 호스트 임대를 이 세션으로 넘겨받고, 이전 세션이 있었으면 요약에 붙일 줄을 돌려준다.
- * 다른 호스트가 쥔 신선한 임대면 넘겨받지 않고 경고 줄. Codex 에는 SessionStart hook 이 없다.
+ * SessionStart(Claude session-event·Codex codex-event) — 같은 호스트 임대를 이 세션으로 넘겨받고, 이전 세션이 있었으면 요약에 붙일 줄을 돌려준다
+ * (Codex 는 줄을 붙이지 않는다). 다른 호스트가 쥔 신선한 임대면 넘겨받지 않고 경고 줄.
  * `source` 가 `compact`(자동·수동 압축)면 넘겨받지 않는다 — 압축은 세션 ID 를 바꾸지 않는 같은 대화의 이어짐이고 사용자의 행동이
  * 아니다. 넘겨받으면 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾는다. 같은 세션이면 갱신만 하고, 다른 세션이
  * 쥔 신선한 임대면 쓰지 않고 이 세션의 진행 명령이 거부된다는 줄을 낸다.
  */
-export function sessionStartLease(work: Work, session: string, source?: string, now: number = Date.now(), waitMs: number = TIMING.hookLockWaitMs): string | undefined {
+export function sessionStartLease(work: Work, session: string, source?: string, now: number = Date.now(), waitMs: number = TIMING.hookLockWaitMs,
+  hostName: HostName = "claude"): string | undefined {
   if (crossChild()) return undefined;
   const sessionStart = source !== "compact";
-  const verdict = leaseDecision({ lease: readLease(work.repoRoot), id: work.active.id, target: work.active.target, host: "claude", session, now, sessionStart });
+  const verdict = leaseDecision({ lease: readLease(work.repoRoot), id: work.active.id, target: work.active.target, host: hostName, session, now, sessionStart });
   if (verdict.action === "skip" || verdict.action === "keep") return undefined;
-  const held = (holder: Lease, idleMs: number) => holder.host === "claude"
+  const held = (holder: Lease, idleMs: number) => holder.host === hostName
     ? `- 이 작업의 진행 기록은 다른 세션(${who(holder)})이 ${minutes(idleMs)}분 전까지 쥐고 있습니다 — 대화 압축은 진행 기록을 넘겨받지 않으므로 이 세션의 진행 명령은 거부됩니다. ` +
       "이어서 하려면 저쪽 세션을 끝냈거나 멈췄는지 사용자에게 확인한 뒤 code-agent takeover"
     : `- 다른 호스트 세션(${hostLabel(holder.host)} ${holder.session.slice(0, 8)})이 ${minutes(idleMs)}분 전까지 이 작업을 진행했습니다. 동시에 진행하지 않습니다 — 이어서 하려면 저쪽을 멈췄는지 사용자에게 확인한 뒤 code-agent takeover`;
   if (verdict.action === "deny") return held(verdict.holder, verdict.idleMs);
-  const result = record(work, { host: "claude", session, sessionStart }, now, waitMs);
+  const result = record(work, { host: hostName, session, sessionStart }, now, waitMs);
   if (result?.denied) return held(result.denied.holder, result.denied.idleMs);
   const previous = result?.written?.previous;
   if (!previous || previous.session === session) return undefined;

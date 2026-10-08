@@ -34,7 +34,7 @@ import { CONSENT_LOCK, consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
-import { editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
+import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
 
@@ -48,8 +48,10 @@ import { leaseGuard } from "./lease";
 export interface HookInput {
   cwd: string;
   session_id?: string;
-  /** 서브에이전트 안의 도구 호출에만 있다 — 메인과 계획 담당을 가른다 */
+  /** 서브에이전트 안의 도구 호출에만 있다 — 메인과 계획 담당을 가른다(Claude·Codex 0.161.0 둘 다 싣는다 — 2026-10-08 실측) */
   agent_id?: string;
+  /** 서브에이전트의 종류(Claude `ca-x`, Codex `ca_x`) — 읽기 전용 담당의 쓰기를 막는다(readOnlyRoleGuard) */
+  agent_type?: string;
   /** 명령을 실제로 해석하는 셸. Windows 의 Codex 셸 명령은 PowerShell 로 돈다 */
   shell?: "powershell";
   /** 이벤트를 보낸 호스트 — 없으면 claude(runHook 이 claude, codexHook 이 codex 를 넣는다) */
@@ -430,8 +432,23 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
   return reason;
 }
 
+/**
+ * 읽기 전용 담당 — Claude 정의(template/claude/agents)의 tools 에 쓰기·셸이 없는 역할(hookPaths.test 가 정의 파일과 대조한다). Claude 는 도구가
+ * 없어 쓰지 못하지만 Codex 하위 에이전트는 셸·apply_patch 를 가지므로 hook 이 막는다(Codex 0.161.0 의 하위 에이전트 PreToolUse 에 agent_type 이 온다)
+ */
+export const READ_ONLY_ROLES = ["ca-critic", "ca-reviewer", "ca-surveyor"] as const;
+/** 읽기 전용 담당의 쓰기·상태를 바꾸는 code-agent 명령은 거부한다 — 결과는 최종 응답으로만 돌려준다 */
+export function readOnlyRoleGuard(input: HookInput): string | undefined {
+  const role = commonAgentName(input.agent_type);
+  if (!role || !(READ_ONLY_ROLES as readonly string[]).includes(role)) return undefined;
+  const reason = `${agentName(role)} 은 읽기 전용 담당입니다 — 파일을 쓰거나 작업을 진행하지 않고, 결과를 최종 응답으로 돌려줍니다.`;
+  if (WRITE_TOOLS.includes(input.tool_name)) return reason;
+  if (["Bash", "PowerShell"].includes(input.tool_name) && leaseGated((input.tool_input.command ?? "").trim())) return reason;
+  return undefined;
+}
+
 function decideTool(input: HookInput, projectDir?: string): string | undefined {
-  const child = crossChildGuard(input);
+  const child = crossChildGuard(input) ?? readOnlyRoleGuard(input);
   if (child) return child;
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
   if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);
@@ -802,8 +819,10 @@ function decidePlanner(work: Work, path: string, input: HookInput): string | und
   if (!planning) return inside ? "staging은 계획 단계의 배정 담당만 씁니다." : undefined;
   const state = inside || input.agent_id ? loadPlanning(work) : undefined;
   const agent = input.agent_id ? state?.agents.find((item) => item.id === input.agent_id && item.session === input.session_id && !item.finished) : undefined;
+  // Codex 담당의 배정 계약은 staging 이 아니라 결과의 {path, content} 다 — 실행 중인 Codex 계획 담당은 파일을 쓰지 않는다
+  if (agent && input.host === "codex") return "Codex 계획 담당은 파일을 쓰지 않습니다 — 출력 문서 전체를 결과 JSON 의 artifacts 에 {path, content} 로 넣습니다.";
   if (!inside) return agent ? `계획 담당은 배정 파일의 staging 경로에만 씁니다: ${path}` : undefined;
-  if (!agent) return "staging은 실행 중인 배정의 계획 담당만 씁니다. 메인은 계획 문서를 대신 쓰지 않습니다. 서브 에이전트 식별자를 hook에 주지 않는 호스트(Codex)의 담당은 artifacts에 {path, content}로 전체 내용을 넣습니다.";
+  if (!agent) return "staging은 실행 중인 배정의 계획 담당만 씁니다. 메인은 계획 문서를 대신 쓰지 않습니다. Codex 담당은 staging 을 쓰지 않고 artifacts에 {path, content}로 전체 내용을 넣습니다.";
   const [dispatchId, name, ...rest] = path.slice(staging.length).split("/");
   const record = state!.tasks.find((item) => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === dispatchId);
   if (!record || rest.length || TASK_AGENTS[record.task.role] !== agent.type || (agent.dispatchId && agent.dispatchId !== dispatchId) ||

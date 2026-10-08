@@ -18,13 +18,13 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 |---|---|
 | 스킬 18개 | `.agents/skills/ca-*/SKILL.md` |
 | 역할 8개 | `.codex/agents/ca-*.toml` |
-| 훅 5종 | `.codex/hooks.json` |
+| 훅 6종 | `.codex/hooks.json` |
 | 프로젝트 지침 | `AGENTS.md`의 code-agent 표시 블록 |
 | 설치 이력 | `.code-agent/hosts.json`, `.code-agent/version` |
 
 기존 `AGENTS.md`의 표시 블록 밖 내용, 다른 훅, `.codex/config.toml`은 보존한다. 스킬과 역할 파일은 번들 사본이므로 갱신하면 덮어쓴다. 프로젝트 규칙은 `AGENTS.md`의 블록 밖이나 프로젝트 문서에 둔다. 역할마다 제품 기본 모델·추론 강도를 명시하며 사용자의 역할별 변경값은 갱신 뒤에도 유지한다.
 
-설치 후 Codex를 다시 열고 프로젝트 훅을 검토·신뢰한다. 자동으로 신뢰 설정을 바꾸지 않는다. 호스트가 훅을 무시하거나 설치된 역할을 선택하는 서브 에이전트 호출을 지원하지 않으면 관찰 결과가 없어 계획·리뷰 게이트를 통과할 수 없다. `doctor`는 설치 파일과 명령을 검사하며 실제 훅 신뢰·모델 실행 성공을 인증하지 않는다. 2026-10-02 추가 검사는 `codex-cli 0.160.0`에서 수행했다. 앞선 0.159.3 기능 조회와 구분하며 지원 최소 버전으로 단정하지 않는다. 이 검사(Windows, 실제 모델 `gpt-6.1-sol`, 초기 준비·요구 확정은 합성 fixture)에서 분석·통합 영향도 담당의 시작·완료 훅 호출, 결과 수락, 내용 게이트 통과를 확인했다. 접수부터 반영까지의 전체 흐름은 실제 Codex 로 확인하지 않았다. 기록은 `git show c4f3fbf:doc/reviews/2026-10-02-codex-hook-recovery.md`로 보고, 지금 구현에서 실제 호스트로 확인하지 않은 것은 [결과 요약](reviews/2026-10-08-procedure-fix-summary.md#실제-호스트에서-확인하지-않은-것)에 있다.
+설치 후 Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고, 'Hooks need review' 화면에서 프로젝트 훅을 검토·신뢰한다. Codex 는 프로젝트 신뢰(`config.toml`의 `[projects.'<경로>'] trust_level = "trusted"` — Windows 는 경로를 소문자로 적는다)와 훅 신뢰가 둘 다 있어야 프로젝트 훅을 돌리고, `codex exec`는 신뢰되지 않은 훅을 알리지 않고 건너뛴다(0.161.0 실측). `.codex/hooks.json`이 바뀌면(갱신 뒤) 다시 검토한다. 자동으로 신뢰 설정을 바꾸지 않는다. `doctor --host codex`는 `config.toml`을 읽기만 해 `Codex 프로젝트 신뢰`(이 저장소나 상위 폴더의 `trust_level`)와 `Codex 훅 신뢰`(훅 신뢰 기록 — 기록의 키 꼴을 확인하지 못해, 찾지 못하면 '확인 필요')를 알린다. 호스트가 훅을 무시하거나 설치된 역할을 선택하는 서브 에이전트 호출을 지원하지 않으면 관찰 결과가 없어 계획·리뷰 게이트를 통과할 수 없다. `doctor`는 설치 파일과 명령을 검사하며 실제 훅 실행·모델 실행 성공을 인증하지 않는다. 2026-10-02 추가 검사는 `codex-cli 0.160.0`에서 수행했다. 앞선 0.159.3 기능 조회와 구분하며 지원 최소 버전으로 단정하지 않는다. 이 검사(Windows, 실제 모델 `gpt-6.1-sol`, 초기 준비·요구 확정은 합성 fixture)에서 분석·통합 영향도 담당의 시작·완료 훅 호출, 결과 수락, 내용 게이트 통과를 확인했다. 접수부터 반영까지의 전체 흐름은 실제 Codex 로 확인하지 않았다. 기록은 `git show c4f3fbf:doc/reviews/2026-10-02-codex-hook-recovery.md`로 보고, 지금 구현에서 실제 호스트로 확인하지 않은 것은 [결과 요약](reviews/2026-10-08-procedure-fix-summary.md#실제-호스트에서-확인하지-않은-것)에 있다.
 
 공식 설치 형식은 [로컬 스킬](https://learn.chatgpt.com/docs/build-skills), [커스텀 에이전트](https://learn.chatgpt.com/docs/agent-configuration/subagents), [훅](https://learn.chatgpt.com/docs/hooks)을 참고한다.
 
@@ -38,13 +38,14 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 | 이벤트 | code-agent 처리 |
 |---|---|
-| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다 |
+| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
 | UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 그 밖의 메시지는 기록하지 않는다(업무 답 관찰 없음) |
 | SubagentStart | 계획 담당·독립 리뷰어의 세션과 실행 ID 관찰 |
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약·문서 검사에 대조. 실패는 되돌리지 않고 기록하며 판정 실패도 `{}`·exit 0으로 통과시킨다(사유는 stderr) |
 | Stop | 계획 밖 변경·미결 질문 검사와 필요한 후속 안내 |
+| SessionStart | 작업 임대를 이 세션으로 넘겨받는다(대화 압축 제외 — Claude 와 같은 규칙). 진행 상태 요약은 붙이지 않는다 |
 
-다섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고, 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 판정 대상은 셸·패치와 MCP 도구(`mcp__*`)의 경로 인자이며, 그 밖의 도구는 판정하지 않고 이름만 기록한다(위 표). Codex는 종료 코드 2로 도구를 막지 않으므로 판정 실패는 거부 응답으로 막는다(입력을 읽지 못해도 같다). PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 설치해 판정 전에 프로세스가 죽어도 막고, Windows 용 `commandWindows`는 래핑하지 않는다. UserPromptSubmit 판정 실패는 동의 응답(`code-agent consent respond`로 시작하는 메시지)만 막고 사유를 보이며, 그 밖의 사용자 메시지는 막지 않는다. Stop 판정 실패는 Claude와 같이 턴을 막지 않는다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
+여섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고(Windows 에서도 같다 — 스크립트는 PowerShell, 0.161.0 실측. 권한 상승 여부는 PreToolUse 입력에 없고 PermissionRequest 에만 있다), 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 판정 대상은 셸·패치와 MCP 도구(`mcp__*`)의 경로 인자이며, 그 밖의 도구는 판정하지 않고 이름만 기록한다(위 표). Codex는 종료 코드 2로 도구를 막지 않으므로 판정 실패는 거부 응답으로 막는다(입력을 읽지 못해도 같다). PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 설치해 판정 전에 프로세스가 죽어도 막는다. Windows 용 `commandWindows`는 Codex 가 `powershell.exe -NoProfile -Command`로 돌리고 Windows PowerShell 5.1 이 exit 2 를 1 로 바꾸므로, PreToolUse 는 `cmd /c code-agent codex-event; if ($LASTEXITCODE -ne 0) { exit 2 }`, UserPromptSubmit 은 `cmd /c code-agent codex-event; exit $LASTEXITCODE`, 나머지는 `cmd /c code-agent codex-event`로 설치한다(`cmd /c`는 실행 정책 Restricted 에서 막히는 npm 의 `code-agent.ps1` 대신 `.cmd`를 고른다). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 이 꼴이 된다 — 옛 꼴이면 doctor 가 그 이벤트 줄을 `✗`로 알린다. UserPromptSubmit 판정 실패는 동의 응답(`code-agent consent respond`로 시작하는 메시지)만 막고 사유를 보이며, 그 밖의 사용자 메시지는 막지 않는다. Stop 판정 실패는 Claude와 같이 턴을 막지 않는다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
 
 전용 Read 도구가 없는 Codex에서는 `code-agent read <파일> [시작 줄] [줄 수]`로 파일을 읽는다. 줄 번호를 포함하며 기본 200줄·최대 400줄이다. 저장소 안의 1 MB 이하 텍스트만 허용하고 연결 경로를 통한 저장소 밖 접근도 거부한다. 연결자 없이 쓴 이 명령은 상태·설정을 읽지 못한 때(깨진 `code-agent.json` 의 원인 확인)와 세션 밖에서 hook 설정 파일을 읽을 때도 열린다 — hook 의 거부 문구도 Codex 에서는 `code-agent read`·`apply_patch` 로 안내한다. 일반 셸 읽기·연결 명령을 허용하도록 게이트를 풀지 않는다.
 
@@ -61,9 +62,9 @@ Codex 셸의 환경 표지와 네트워크(Windows, codex-cli 0.161.0 실측) �
 
 Windows 자동화에서 프로젝트 신뢰 키는 호스트 네이티브 경로(`C:\...`)를 유지한다. `codex-cli 0.160.0` 검증 환경에서는 이를 `/`로 바꾸면 프로젝트 훅이 호출되지 않았다. 하위 에이전트를 사용하는 실제 검증에는 부모 기록이 필요한 만큼 `--ephemeral`을 사용하지 않는다.
 
-계획 작업은 [계획 작업 문서](planning.md)의 의존성·동시 실행 한도·같은 입력 재사용·재시도(같은 입력 실패 3회·작업별 총 배정 6회)·미결 질문·질문 출처·자동 되감기 규칙을 그대로 따른다. 다만 Codex는 exit 2로 담당을 되돌리지 않으므로 형식·식별·내용 검사 실패를 즉시 기록한다. SessionStart 훅이 등록되지 않아 대화가 바뀌어도 실행 중 배정을 알리지 않는다. 시작이 관찰되지 않은 배정은 `planning advance`의 `stale` 판정(10분)과 `cancel` 목록에 기대지만, 시작이 관찰된 담당은 60분 동안 `wait`로 보인다. 그래서 대화를 새로 열어 재개할 때는 `$ca-next` 절차대로 `planning status`의 실행 중 배정을 확인하고, 이 대화에서 부른 담당이 아니면 `planning cancel <ID>` 뒤 advance 한다. 프로그램 노드는 CLI로 실행하고 추론 노드만 담당에게 넘긴다. 기준 커밋에는 Codex 설치 파일과 호스트 이력이 포함된다. `.agents/`·`.codex/`는 탐색 입력 범위에서 제외하고 모델의 직접 설정 변경도 거부한다.
+계획 작업은 [계획 작업 문서](planning.md)의 의존성·동시 실행 한도·같은 입력 재사용·재시도(같은 입력 실패 3회·작업별 총 배정 6회)·미결 질문·질문 출처·자동 되감기 규칙을 그대로 따른다. 다만 Codex는 exit 2로 담당을 되돌리지 않으므로 형식·식별·내용 검사 실패를 즉시 기록한다. Codex 의 SessionStart 훅은 작업 임대만 넘겨받고 진행 상태를 붙이지 않아, 대화가 바뀌어도 실행 중 배정을 알리지 않는다. 시작이 관찰되지 않은 배정은 `planning advance`의 `stale` 판정(10분)과 `cancel` 목록에 기대지만, 시작이 관찰된 담당은 60분 동안 `wait`로 보인다. 그래서 대화를 새로 열어 재개할 때는 `$ca-next` 절차대로 `planning status`의 실행 중 배정을 확인하고, 이 대화에서 부른 담당이 아니면 `planning cancel <ID>` 뒤 advance 한다. 프로그램 노드는 CLI로 실행하고 추론 노드만 담당에게 넘긴다. 기준 커밋에는 Codex 설치 파일과 호스트 이력이 포함된다. `.agents/`·`.codex/`는 탐색 입력 범위에서 제외하고 모델의 직접 설정 변경도 거부한다.
 
-훅은 작업 절차의 오류를 줄이는 장치다. 호스트가 관찰하지 않는 도구나 외부 프로세스까지 완전히 통제하는 OS 보안 경계는 아니다. 두 호스트를 같은 작업에 동시에 사용하지 않는다 — 작업 임대(`.code-agent/lease.json`)가 막는다. 진행 명령·쓰기를 처음 한 세션(호스트)이 임대를 잡고, 다른 세션의 진행 명령·쓰기는 PreToolUse 가 거부한다(조회·읽기는 연다). Codex 는 서브 에이전트의 `session_id`가 메인과 같은지 확인하지 않아 **호스트 단위**로만 비교한다 — Codex 두 세션의 동시 진행은 막지 못한다. Claude 세션 시작(SessionStart)은 같은 호스트 임대를 넘겨받아 재시작·`/clear`가 막히지 않는다(대화 압축은 같은 세션이라 넘겨받지 않는다 — 압축된 이전 세션이 새 세션의 임대를 되찾지 않는다). 다른 호스트로 옮겨 이어가려면 저쪽 작업을 멈춘 뒤 사용자 확인을 받아 `code-agent takeover`로 넘겨받는다(마지막 활동 뒤 30분이 지나면 자동으로 넘어간다). `takeover`는 모델이 부를 수 있는 명령이라 사용자 확인을 코드가 강제하지 않는다 — 임대는 모르는 사이의 동시 진행을 막는 사고 방지 장치이고, 넘겨받기 전 확인은 `ca-next` 재개표 규칙이다.
+훅은 작업 절차의 오류를 줄이는 장치다. 호스트가 관찰하지 않는 도구나 외부 프로세스까지 완전히 통제하는 OS 보안 경계는 아니다. 두 호스트를 같은 작업에 동시에 사용하지 않는다 — 작업 임대(`.code-agent/lease.json`)가 막는다. 진행 명령·쓰기를 처음 한 세션(호스트)이 임대를 잡고, 다른 세션의 진행 명령·쓰기는 PreToolUse 가 거부한다(조회·읽기는 연다). 두 호스트 모두 호스트와 세션을 비교한다 — 하위 에이전트의 훅은 부모 `session_id`를 싣고, 재개(Claude `--resume`·`--continue`, Codex `resume`)도 같은 `session_id`다(실측). 그래서 두 터미널이 같은 세션을 이어 열면 임대는 둘을 한 주인으로 본다. 세션 시작(SessionStart — 두 호스트)은 같은 호스트 임대를 넘겨받아 재시작·`/clear`가 막히지 않는다(대화 압축은 같은 세션이라 넘겨받지 않는다 — 압축된 이전 세션이 새 세션의 임대를 되찾지 않는다). 다른 호스트로 옮겨 이어가려면 저쪽 작업을 멈춘 뒤 사용자 확인을 받아 `code-agent takeover`로 넘겨받는다(마지막 활동 뒤 30분이 지나면 자동으로 넘어간다). `takeover`는 모델이 부를 수 있는 명령이라 사용자 확인을 코드가 강제하지 않는다 — 임대는 모르는 사이의 동시 진행을 막는 사고 방지 장치이고, 넘겨받기 전 확인은 `ca-next` 재개표 규칙이다.
 
 CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나온다 — 스킬은 `$ca-x`, 서브에이전트는 `ca_x`, 질문 도구·셸·파일 도구도 Codex 이름이다. 표기는 `CODE_AGENT_HOST`(사람이 셸 설정으로 고정하는 표기 전용 값 — 교차 거부·임대 판정에는 쓰지 않는다) → `.code-agent/hosts.json`(설치 호스트가 하나면 그것) → 실행 환경 표지(`CLAUDECODE`·Codex 표지, 두 호스트 표지가 함께 보이면 판별하지 않음) → 중립 `/ca-x($ca-x)` 순으로 정한다. Codex hook(`codex-event`)은 언제나 Codex 표기다. 파일·확인 화면에 기록되는 문자열(⑧·⑨·⑩, 원장, 동의 확인 화면)은 표기를 바꾸지 않는다.
 
@@ -76,13 +77,13 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 3. 사용자가 같은 대화에서 `code-agent consent respond <요청 ID> <번호> <확인 코드>`를 직접 보낸다. 질문이 여러 개면 `1,2`처럼 질문 순서대로 적는다. 이것은 셸 명령이 아니다. 업그레이드 전에 준비한 동의는 확인 코드 없이도 받는다.
 4. `UserPromptSubmit`이 실제 메시지를 관찰한다. 메인은 다음 턴에서 `consent finish`로 확인하고, 승인된 경우만 그 자리에서 적용되며 결과의 `next`대로 이어간다(`consent status` 조회 뒤 `consent apply`로 나눠도 같다).
 
-첫 번째 선택지가 항상 승인이라는 가정으로 실행하지 않는다. 화면에 표시한 번호와 뜻을 확인한다. 보류·수정 요청은 그 상태로 기록하며, ‘네’ 같은 일반 답이나 모델이 대신 만든 메시지를 승인으로 바꾸지 않는다. 변경된 대상, 서브 에이전트 응답, 준비한 대화가 아닌 세션(다른 `codex exec` 포함)의 메시지, 누락된 세션, 확인 코드가 없거나 다른 응답, 이미 소비한 응답은 승인이 되지 않는다. 같은 세션을 다시 여는 `codex exec resume <세션>`으로 보낸 프롬프트는 그 세션의 사용자 메시지로 보인다 — 확인 코드를 붙여 보내도 통과한다. 훅 입력만으로 사람과 프로그램 입력을 가를 수 없는 남는 한계다. 응답·적용을 기다리는 동의가 있는 동안(세션 밖, 준비 뒤 30분) 셸은 code-agent 명령과 읽기용 git 으로 좁혀지지만, 30분이 지나도록 답하지 않은 동의는 다시 이 보호 밖이 된다 — 오래 둔 동의는 쓰지 말고 새로 준비한다. 프로세스 안에서 동의 기록 함수를 직접 부르는 조작은 열린 동의가 없을 때 막지 못한다. Codex 0.160.1 훅 입력 스키마는 PreToolUse 와 UserPromptSubmit 모두 `session_id`를 필수로 두지만, 두 값이 실제로 같은지는 아직 실측하지 않았다 — 다르면 새로 준비한 Codex 동의가 모두 "준비한 세션의 응답이 아닙니다"로 막히고 사람의 터미널 경로만 남는다. 승인 원장의 출처는 `codex-prompt`다. Claude의 선택 도구 출처 `claude-question`과 구분한다.
+첫 번째 선택지가 항상 승인이라는 가정으로 실행하지 않는다. 화면에 표시한 번호와 뜻을 확인한다. 보류·수정 요청은 그 상태로 기록하며, ‘네’ 같은 일반 답이나 모델이 대신 만든 메시지를 승인으로 바꾸지 않는다. 변경된 대상, 서브 에이전트 응답, 준비한 대화가 아닌 세션(다른 `codex exec` 포함)의 메시지, 누락된 세션, 확인 코드가 없거나 다른 응답, 이미 소비한 응답은 승인이 되지 않는다. 같은 세션을 다시 여는 `codex exec resume <세션>`으로 보낸 프롬프트는 그 세션의 사용자 메시지로 보인다 — 확인 코드를 붙여 보내도 통과한다. 훅 입력만으로 사람과 프로그램 입력을 가를 수 없는 남는 한계다. 응답·적용을 기다리는 동의가 있는 동안(세션 밖, 준비 뒤 30분) 셸은 code-agent 명령과 읽기용 git 으로 좁혀지지만, 30분이 지나도록 답하지 않은 동의는 다시 이 보호 밖이 된다 — 오래 둔 동의는 쓰지 말고 새로 준비한다. 프로세스 안에서 동의 기록 함수를 직접 부르는 조작은 열린 동의가 없을 때 막지 못한다. Codex 0.161.0 에서 PreToolUse 와 UserPromptSubmit 의 `session_id`는 같은 값이다(실측) — 준비한 대화의 응답만 받는다. 승인 원장의 출처는 `codex-prompt`다. Claude의 선택 도구 출처 `claude-question`과 구분한다.
 
 훅을 사용할 수 없다면 사람이 직접 터미널에서 `confirm`·`approve`·`deliver`를 실행할 수 있다. 이 수동 승인만으로 계획·리뷰의 실행 관찰 요구가 없어지지는 않는다.
 
 ## 갱신·제거·지원 범위
 
-현재 번들만 적용할 때는 `code-agent update --templates-only [--host codex]`를 사용한다. Git 소스 설치는 `code-agent update [--host codex]`로 소스·빌드·적용·점검을 진행한다 — 호스트 밖의 터미널(TTY)에서 미리보기를 보고 `update`를 입력해야 실행되고, 비TTY·호스트 셸(Codex·Claude Code 표지가 있는 셸)에서는 멈춘다. 대화 안에서는 `ca-answer`의 `update` 동의를 쓴다. 세션이 없어도 모델 셸의 소스 `update`(`--templates-only` 제외)는 훅이 거부한다. 양쪽을 설치하고 `--host`를 생략하면 둘 다 갱신한다. `--cli` 개발용 경로도 호스트별로 승계한다. 갱신 뒤 Codex를 다시 열고 변경된 훅을 확인한다.
+현재 번들만 적용할 때는 `code-agent update --templates-only [--host codex]`를 사용한다. Git 소스 설치는 `code-agent update [--host codex]`로 소스·빌드·적용·점검을 진행한다 — 호스트 밖의 터미널(TTY)에서 미리보기를 보고 `update`를 입력해야 실행되고, 비TTY·호스트 셸(Codex·Claude Code 표지가 있는 셸)에서는 멈춘다. 대화 안에서는 `ca-answer`의 `update` 동의를 쓴다. 세션이 없어도 모델 셸의 소스 `update`(`--templates-only` 제외)는 훅이 거부한다. 양쪽을 설치하고 `--host`를 생략하면 둘 다 갱신한다. `--cli` 개발용 경로도 호스트별로 승계한다. 갱신으로 `.codex/hooks.json`이 바뀌면 Codex 를 다시 열어 'Hooks need review' 화면에서 다시 검토·신뢰한다.
 
 제거할 때는 본 제품이 설치한 `.agents/skills/ca-*`, `.codex/agents/ca-*.toml`, `AGENTS.md` 표시 블록 및 `hooks.json`의 `code-agent codex-event` 항목만 제거한다. 다른 사용자 설정을 포함한 디렉토리 전체를 지우지 않는다. 양쪽 중 Codex만 제거했다면 `.code-agent/hosts.json`에서 `codex`만 빼고 `claude`를 남긴다.
 
@@ -90,7 +91,7 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 `code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별 토큰·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출을 센다(셸 명령 배열의 `bash -lc`·`powershell -Command`·`cmd /c` 래퍼는 벗긴다). 형식은 공개 Codex 기록 형식을 가정했고 **실제 기록으로 확인하기 전**이라 출력에 그렇게 적는다 — 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다).
 
-메인 컨텍스트 절감 중 두 가지는 Claude 전용이다. Codex 훅 입력에는 서브 에이전트 식별자(`agent_id`)가 없어 staging 쓰기를 실행 중인 담당에게만 열 수 없으므로, Codex 계획 담당은 결과 JSON의 `artifacts`에 `{path, content}`로 전체 내용을 싣는다 — Codex 담당의 배정 계약(Codex 단일 설치, 또는 두 호스트 설치에서 Codex 가 부른 배정)도 staging 없이 `{path, content}`를 보인다. 대화 시작·압축 뒤 진행 상태를 붙이는 SessionStart 훅도 Codex에는 등록하지 않는다(지원 여부를 확인하지 않았다). 배정 파일(`assignmentFile`)과 `context --file` 전달은 두 호스트가 같다.
+메인 컨텍스트 절감 중 두 가지는 Claude 전용이다. Codex 계획 담당은 staging 을 쓰지 않고 결과 JSON의 `artifacts`에 `{path, content}`로 전체 내용을 싣는다 — 실행 중인 Codex 계획 담당의 파일 쓰기는 훅이 거부한다(훅 입력의 `agent_id`·`agent_type`, 0.161.0 실측) — Codex 담당의 배정 계약(Codex 단일 설치, 또는 두 호스트 설치에서 Codex 가 부른 배정)도 staging 없이 `{path, content}`를 보인다. 대화 시작·압축 뒤 진행 상태를 붙이는 일도 Codex SessionStart 훅은 하지 않는다(작업 임대만 넘겨받는다). 배정 파일(`assignmentFile`)과 `context --file` 전달은 두 호스트가 같다.
 
 자동 검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. Codex UI의 수동 사용성·실제 사람 승인·전체 개발 흐름 실계정 측정은 자동 검증 범위 밖이다.
 

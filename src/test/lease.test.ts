@@ -53,7 +53,10 @@ describe("leaseDecision — 진리표", () => {
     assert.deepEqual(decideAt({ lease: lease({ seenAt: at(2 * MIN) }) }), { action: "touch" });
     assert.equal(decideAt({ session: "B", lease: lease({ seenAt: at(5 * MIN) }) }).action, "deny");
     assert.deepEqual(decideAt({ session: "B", lease: lease({ seenAt: at(31 * MIN) }) }), { action: "claim", why: "idle" });
-    assert.deepEqual(decideAt({ host: "codex", session: "B", lease: lease({ host: "codex", seenAt: at(2 * MIN) }) }), { action: "touch" }, "Codex 는 호스트만 본다");
+    // H4 Codex 도 세션까지 본다 — 한 대화의 hook(하위 에이전트·resume 포함)은 같은 session_id 다(codex-cli 0.161.0 실측)
+    assert.deepEqual(decideAt({ host: "codex", session: "A", lease: lease({ host: "codex", seenAt: at(2 * MIN) }) }), { action: "touch" });
+    assert.equal(decideAt({ host: "codex", session: "B", lease: lease({ host: "codex", seenAt: at(2 * MIN) }) }).action, "deny", "H4 Codex 두 세션");
+    assert.deepEqual(decideAt({ host: "codex", session: "B", sessionStart: true, lease: lease({ host: "codex" }) }), { action: "claim", why: "session-start" });
     assert.equal(decideAt({ session: "B", lease: lease({ host: "codex" }) }).action, "deny", "다른 호스트의 신선한 임대");
     assert.deepEqual(decideAt({ session: "B", sessionStart: true, lease: lease() }), { action: "claim", why: "session-start" });
     assert.equal(decideAt({ session: "B", sessionStart: true, lease: lease({ host: "codex" }) }).action, "deny", "다른 호스트 임대는 세션 시작으로 넘어가지 않는다");
@@ -97,6 +100,29 @@ describe("작업 임대 — hook·SessionStart·takeover", () => {
     const out = codexHook({ cwd: repo, hook_event_name: "PreToolUse", session_id: C, tool_name: "Bash", tool_input: { command: "code-agent next" } }) as
       { hookSpecificOutput?: { permissionDecisionReason?: string } };
     assert.match(out.hookSpecificOutput?.permissionDecisionReason ?? "", /다른 세션이 이 작업을 진행 중입니다: Claude Code 세션 AAAAAAAA/);
+  });
+
+  test("H4 Codex 두 세션 — 다른 Codex 세션의 진행은 막고, 하위 에이전트(부모 session_id)는 막지 않으며, 새 세션의 SessionStart 가 넘겨받는다", () => {
+    const D = "DDDDDDDD-codex";
+    const codexBash = (session: string, extra: Record<string, string> = {}) => ((codexHook({ cwd: repo, hook_event_name: "PreToolUse", session_id: session,
+      tool_name: "Bash", tool_input: { command: "code-agent next" }, ...extra }) as { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "");
+    assert.equal(codexBash(C), "");
+    assert.deepEqual([readLease(repo)!.host, readLease(repo)!.session], ["codex", C]);
+    assert.match(codexBash(D), /다른 세션이 이 작업을 진행 중입니다: Codex 세션 CCCCCCCC/);
+    assert.equal(codexBash(C, { agent_id: "sub-1", agent_type: "ca_explorer" }), "", "하위 에이전트는 부모 세션과 같다");
+    // resume 은 같은 session_id 라 그대로, 새 세션의 SessionStart 는 넘겨받는다(압축 compact 은 넘겨받지 않는다)
+    assert.deepEqual(codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: C, source: "resume" }), {});
+    assert.equal(readLease(repo)!.session, C);
+    codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: D, source: "compact" });
+    assert.equal(readLease(repo)!.session, C);
+    codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: D, source: "startup" });
+    assert.deepEqual([readLease(repo)!.session, readLease(repo)!.previous?.why], [D, "session-start"]);
+    assert.match(codexBash(C), /다른 세션이 이 작업을 진행 중입니다: Codex 세션 DDDDDDDD/, "아직 열린 이전 세션은 다음 진행 명령이 거부된다");
+    // 다른 호스트(Claude)의 신선한 임대는 Codex 세션 시작으로 넘어가지 않는다
+    assert.equal(bash("code-agent next", A) !== undefined, true);
+    setLease({ host: "claude", session: A });
+    codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: C, source: "startup" });
+    assert.deepEqual([readLease(repo)!.host, readLease(repo)!.session], ["claude", A]);
   });
 
   test("takeover 는 released 만 남기고 다음 진행 세션이 이어받는다", () => {

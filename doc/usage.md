@@ -1,6 +1,6 @@
 # 사용 가이드 — 설치부터 승인까지
 
-Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init --host codex` 후 훅을 신뢰하고 시작한다. 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. 아래 선택 도구 예시는 Claude 기준이며, Codex에서 도구 이름을 그대로 실행하지 않는다.
+Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init --host codex` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. 아래 선택 도구 예시는 Claude 기준이며, Codex에서 도구 이름을 그대로 실행하지 않는다.
 
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.

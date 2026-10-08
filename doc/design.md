@@ -38,7 +38,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 | 경로 | 방식 |
 |---|---|
 | 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 `code-agent context --file`이 전문을 `handoff/context.md`에 쓴다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 실측에서 메인이 프롬프트를 직접 쓰면 13회 38.5K자, 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주는 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
-| 서브에이전트 → 메인 | 계획 담당(Claude)은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 Write로 쓰고 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 같은 문서 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. Codex는 `agent_id`가 hook에 오지 않아 `{path, content}`로 싣는다 |
+| 서브에이전트 → 메인 | 계획 담당(Claude)은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 Write로 쓰고 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 같은 문서 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. Codex 계획 담당은 staging 을 쓰지 않고 `{path, content}`로 싣는다 — hook 이 실행 중인 Codex 계획 담당의 파일 쓰기를 거부한다 |
 | 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문 페이지·동작 JSON 표(`ca-answer/reference.md`). ca-answer는 그 대화에서 아직 읽지 않았거나 압축·비우기 뒤일 때만 질문·승인 직전에 읽는다(SessionStart 가 압축·비우기 뒤 한 줄로 알린다). 템플릿 크기는 시험(`templateBudget.test.ts`)이 예산으로 묶는다 |
 | 동의 출력 | `consent prepare --for <호스트>`는 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply` — 준비 출력 약 절반). 자유 문구가 없는 동작은 JSON 파일 없이 `--action`으로 준비하고, `finish`가 적용 뒤 `next`·`phase`를 돌려준다 |
 | 계획 진행 | `planning advance`가 action별 다음 행동 한 줄(`next`)을 싣고 — 행동 규칙의 원천은 CLI 한 곳이다 — analysis·impact·design 은 `--chain`으로 결과가 모두 준비되면 같은 호출에서 program 게이트까지 지난다(게이트용 `next` 호출과 그 status 전문이 메인에 들어가지 않는다). 다음 단계 배정·계획 승인은 잇지 않는다 |
@@ -756,7 +756,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 |
 |---|---|
 | `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 |
-| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
+| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · (Codex) 이벤트별 hook·Windows 명령·프로젝트·hook 신뢰 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) |
 | `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 |

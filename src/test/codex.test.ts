@@ -7,6 +7,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { codexHook, patchPaths } from "../agent/codexHook";
 import { applyConsent, codexReplyCode, consentCommandGuard, loadConsent, prepareConsent } from "../agent/consent";
 import { readDocLedger } from "../agent/docs";
+import { codexTrust } from "../agent/codexTrust";
 import { doctor } from "../agent/doctor";
 import { hostAssets, parseHost, selectedHosts } from "../agent/hosts";
 import { init, installedHook } from "../agent/init";
@@ -278,4 +279,46 @@ test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결�
   assert.equal(subagent.status,0,subagent.stderr);
   assert.deepEqual(JSON.parse(subagent.stdout),{});
   assert.match(subagent.stderr,/code-agent codex-event: /);
+});
+
+test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을 읽기만 하고 저장소·상위 폴더의 trust_level 과 hook 신뢰 기록을 알린다", () => {
+  init(root,{host:"codex",cli});
+  const home = join(root, "codex-home"), config = join(home, "config.toml");
+  const saved = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  const line = (name: string) => doctor(root,"codex").text.split("\n").find((row) => row.includes(` ${name}:`)) ?? "";
+  // Codex 가 Windows 경로를 적는 꼴(소문자·역슬래시) — 비교는 구분자·대소문자를 접는다
+  const key = (path: string) => process.platform === "win32" ? path.toLowerCase() : path;
+  try {
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: .*config\.toml 가 없습니다/);
+    assert.equal(codexTrust(root).project,"no-config");
+    writeFixture(home,"config.toml",`model_reasoning_effort = "medium"\n\n[projects.'${key(join(tmpdir(),"다른-폴더"))}']\ntrust_level = "trusted"\n`);
+    const before = readFileSync(config);
+    assert.equal(codexTrust(root).project,"missing");
+    assert.match(line("Codex 프로젝트 신뢰"),/· .*신뢰 항목이 없습니다/);
+    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "untrusted"\n`);
+    assert.equal(codexTrust(root).project,"untrusted");
+    assert.match(line("Codex 프로젝트 신뢰"),/· .*trust_level = "untrusted"/);
+    writeFixture(home,"config.toml",`[projects."${key(root).replace(/\\/g,"\\\\")}"]\ntrust_level = "trusted"\n`);
+    assert.equal(codexTrust(root).project,"trusted");
+    assert.match(line("Codex 프로젝트 신뢰"),/✓ Codex 프로젝트 신뢰: .*trust_level = "trusted"/);
+    // 상위 폴더의 신뢰도 적용된다
+    writeFixture(home,"config.toml",`[projects.'${key(resolve(root,".."))}']\ntrust_level = "trusted"\n`);
+    assert.equal(codexTrust(root).project,"trusted");
+    // hook 신뢰 기록은 키 꼴을 확인하지 못했다 — 찾으면 알리고, 못 찾으면 '확인 필요'(없다고 단정하지 않는다)
+    assert.equal(codexTrust(root).hooks,"unknown");
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 확인 필요 — .*Hooks need review.*codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뜁니다/);
+    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "trusted"\n\n[hooks.state."${join(root,".codex","hooks.json").replace(/\\/g,"\\\\")}:pre_tool_use:0:0"]\ntrusted_hash = "abc"\n`);
+    assert.equal(codexTrust(root).hooks,"recorded");
+    assert.match(line("Codex 훅 신뢰"),/hook 신뢰 기록\(hooks\.state\)이 있습니다/);
+    // 읽기만 한다 — 점검 뒤에도 파일이 바이트 단위로 같다
+    const after = readFileSync(config);
+    doctor(root,"codex");
+    assert.deepEqual(readFileSync(config),after);
+    assert.notDeepEqual(before,after);
+    // 신뢰 줄은 ✗ 가 아니다 — doctor 의 성공 여부를 바꾸지 않는다
+    assert.doesNotMatch(doctor(root,"codex").text,/✗ Codex (프로젝트|훅) 신뢰/);
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = saved;
+  }
 });

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { assetCount, assetKeys, CLAUDE_ASSETS, installedPath, packageVersion, strayInstalled, templateHash } from "./assets";
-import { init, installedHook, requireInstallSettings } from "./init";
+import { CODEX_EVENTS, init, installedHook, requireInstallSettings } from "./init";
 import type { InitOptions } from "./init";
 import { loadActive, PHASES, STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel } from "./models";
@@ -96,8 +96,11 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
     const assets = hostAssets("codex", repoRoot);
     const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
     const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
+    const hooksBefore = readIfAny(join(repoRoot, ".codex", "hooks.json"));
     const result = init(repoRoot, {host, cli});
-    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
+    // hook 은 이벤트마다 command(비Windows)와 commandWindows(Windows PowerShell)를 다시 쓴다 — 옛 설치의 Windows 명령도 여기서 고쳐진다
+    const hooks = `  .codex/hooks.json: ${hooksBefore === readIfAny(join(repoRoot, ".codex", "hooks.json")) ? "그대로" : "갱신"} (${CODEX_EVENTS.join(" · ")} — PreToolUse ${installedHook(repoRoot, "PreToolUse", "codex-event", "codex")})`;
+    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n${hooks}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
   }).join("\n\n");
   return [report, ...outsideNotice(outsideBefore, workOutside(repoRoot))].join("\n");
 }

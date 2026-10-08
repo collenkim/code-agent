@@ -125,7 +125,8 @@ test("§5.1·§5.2 hook 등록표는 init --host both 가 실제로 설치하는
       return events.map((event) => `${event} | ${code(row[1])} | ${code(row[2])}`);
     }).sort();
     assert.deepEqual(documented, installed, "§5.1 표의 이벤트·matcher·하위 명령을 init.ts 가 설치하는 .claude/settings.json 에 맞추세요");
-    // Codex — 이벤트 집합, matcher 없음, 모두 codex-event, PreToolUse 만 `|| exit 2`(commandWindows 는 래핑 없음)
+    // Codex — 이벤트 집합, matcher 없음, 모두 codex-event, PreToolUse 만 `|| exit 2`. commandWindows 는 모든 이벤트에 있고(cmd /c),
+    // PreToolUse 는 실패를 2 로 닫고 UserPromptSubmit 은 종료 코드를 넘긴다(H3 — 문서 §5.2 첫 문단이 같은 꼴을 적는다)
     const codex = read(".codex/hooks.json");
     const codexRows = tableRows(section(doc(), "### 5.2 "), "| 이벤트 | 처리 |");
     const codexDocumented = codexRows.flatMap((row) => code(row[0]).split(/\s*·\s*/).map((event, _, all) => all.length > 1 && event === "Stop" ? "SubagentStop" : event)).sort();
@@ -138,10 +139,12 @@ test("§5.1·§5.2 hook 등록표는 init --host both 가 실제로 설치하는
         for (const hook of entry.hooks) {
           if (event === "PreToolUse") {
             assert.match(hook.command, /codex-event \|\| exit 2$/);
-            assert.match(hook.commandWindows ?? "", /codex-event$/);
+            assert.equal(hook.commandWindows, "cmd /c code-agent codex-event; if ($LASTEXITCODE -ne 0) { exit 2 }");
           } else {
             assert.match(hook.command, /codex-event$/, `${event} 는 래핑하지 않는다`);
+            assert.equal(hook.commandWindows, event === "UserPromptSubmit" ? "cmd /c code-agent codex-event; exit $LASTEXITCODE" : "cmd /c code-agent codex-event", event);
           }
+          if (hook.commandWindows) assert.ok(lead.includes(`\`${hook.commandWindows}\``), `§5.2 첫 문단에 ${event} 의 Windows 명령 \`${hook.commandWindows}\` 을 적으세요`);
         }
       }
     }

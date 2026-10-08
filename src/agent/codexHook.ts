@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { writeAtomic } from "../core/atomic";
 import { decide, HookInput } from "./hook";
+import { sessionStartLease } from "./lease";
+import { loadWork } from "./work";
 import { findRepoRoot } from "./layout";
 import type { ReviewHookInput } from "./reviewHook";
 import { hookFailureExit, hookFailureInput, subagentExit } from "./retryPolicy";
@@ -15,6 +17,8 @@ interface CodexHookInput extends ReviewHookInput {
   turn_id?: string;
   prompt?: string;
   stop_hook_active?: boolean;
+  /** SessionStart 만 — startup·resume */
+  source?: string;
 }
 
 /** 패치 전체를 실행하기 전에 추가·삭제·수정 및 이동 전후 경로 모두를 검사한다. */
@@ -64,8 +68,16 @@ export function observeCodexConsent(input: CodexHookInput, root: string): void {
   observeConsent({ ...event, hook_event_name: "PostToolUse", tool_response: {questions: status.questions, answers} }, root, "codex-prompt");
 }
 
-/** Claude PreToolUse matcher(쓰기·셸·읽기·MCP)에 대응하는 Codex 도구. MCP(mcp__서버__도구)는 hook.ts 가 경로 인자를 판정한다 */
+/**
+ * Claude PreToolUse matcher(쓰기·셸·읽기·MCP)에 대응하는 Codex 도구. MCP(mcp__서버__도구)는 hook.ts 가 경로 인자를 판정한다.
+ * Codex 0.161.0 의 셸 도구는 Windows 에서도 `Bash` 이고 `tool_input.command` 가 PowerShell 스크립트다(실측) — `PowerShell` 은 오지 않지만 같은 판정으로 둔다
+ */
 const GATED_TOOLS = ["Bash", "PowerShell", "apply_patch"];
+/**
+ * 판정하지 않아도 되는 Codex 도구 — 파일을 쓰지 않는 하위 에이전트 조율 도구(`collaboration` 이름공간: spawn_agent·wait_agent 등, 0.161.0 실측).
+ * doctor 의 "Codex 미판정 도구" 에 세지 않는다
+ */
+const KNOWN_NON_FILE_TOOL = /^collaboration[a-z_]+$/;
 const CODEX_TOOLS_LOG = `${STATE_DIR}/log/codex-tools.json`;
 
 /**
@@ -73,6 +85,7 @@ const CODEX_TOOLS_LOG = `${STATE_DIR}/log/codex-tools.json`;
  * doctor 가 알린다(파일을 쓰는 도구라면 hook 판정 밖이다). log/ 아래라 동의 스냅샷에서 빠진다. 오류는 삼킨다.
  */
 export function noteUnknownCodexTool(root: string, name: string): void {
+  if (KNOWN_NON_FILE_TOOL.test(name)) return;
   try {
     if (![ACTIVE_FILE, REQUEST_SESSION_FILE, DOCS_SESSION_FILE].some((file) => existsSync(join(root, file)))) return;
     const path = join(root, CODEX_TOOLS_LOG);
@@ -113,8 +126,11 @@ function codexEvent(input: CodexHookInput): object {
   const root = findRepoRoot(input.cwd);
   if (input.hook_event_name === "PreToolUse") {
     if (!input.tool_name || !input.tool_input) throw new Error("Codex 도구 입력이 없습니다.");
-    // Windows 의 Codex 는 셸 명령을 PowerShell 로 돌린다 — 괄호·$ 평가를 같은 규칙으로 막는다
-    const common = {cwd: input.cwd, session_id: input.session_id, host: "codex" as const, ...(process.platform === "win32" ? {shell: "powershell" as const} : {})};
+    // Windows 의 Codex 는 셸 명령을 PowerShell 로 돌린다 — 괄호·$ 평가를 같은 규칙으로 막는다.
+    // 하위 에이전트 안의 호출은 agent_id·agent_type 을 싣는다(0.161.0 실측 — session_id 는 부모와 같다) — 계획 담당·읽기 전용 담당의 쓰기를 가른다
+    const common = {cwd: input.cwd, session_id: input.session_id, host: "codex" as const,
+      ...(input.agent_id ? {agent_id: input.agent_id} : {}), ...(input.agent_type ? {agent_type: commonAgentName(input.agent_type)} : {}),
+      ...(process.platform === "win32" ? {shell: "powershell" as const} : {})};
     if (input.tool_name === "apply_patch") {
       if (typeof input.tool_input.command !== "string") throw new Error("패치 내용이 없습니다.");
       for (const path of patchPaths(input.tool_input.command)) {
@@ -141,6 +157,15 @@ function codexEvent(input: CodexHookInput): object {
   } else if (input.hook_event_name === "Stop") {
     const reason = (require("./stopHook") as typeof import("./stopHook")).decideStop(input, root);
     return reason ? {decision: "block", reason} : {};
+  } else if (input.hook_event_name === "SessionStart") {
+    // 작업 임대를 이 세션으로 넘겨받는다 — Claude SessionStart 와 같은 규칙(압축 compact 은 빼고, 다른 호스트의 신선한 임대는 넘겨받지 않는다).
+    // Codex 는 startup·resume 을 싣고 resume 은 같은 session_id 다(0.161.0 실측). 진행 요약은 붙이지 않는다. 임대 기록 실패는 삼킨다
+    if (input.session_id) {
+      try {
+        const work = loadWork(root);
+        if (work) sessionStartLease(work, input.session_id, typeof input.source === "string" ? input.source : undefined, Date.now(), undefined, "codex");
+      } catch { /* 임대 때문에 세션 시작이 막히지 않는다 */ }
+    }
   }
   return {};
 }

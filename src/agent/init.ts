@@ -28,8 +28,8 @@ export const CLAUDE_HOOKS = [
   ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"],
   ["SessionStart", "session-event"],
 ] as const;
-/** Codex 에 설치하는 이벤트(모두 codex-event) */
-export const CODEX_EVENTS = ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop"] as const;
+/** Codex 에 설치하는 이벤트(모두 codex-event). SessionStart 는 작업 임대를 새 세션으로 넘겨받는다(Claude session-event 와 같은 규칙) */
+export const CODEX_EVENTS = ["PreToolUse", "UserPromptSubmit", "SubagentStart", "SubagentStop", "Stop", "SessionStart"] as const;
 
 export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
@@ -129,6 +129,26 @@ export function installedHook(repoRoot: string, event: string, subcommand: strin
   return entry?.hooks.find((hook) => ourEntry({hooks:[hook]}, subcommand))?.command;
 }
 
+/** 설치된 Codex 우리 항목의 Windows 명령(commandWindows). 없거나 파일이 깨졌으면 undefined */
+function installedCodexWindows(repoRoot: string, event: string): string | undefined {
+  let settings: Record<string, unknown>;
+  try { settings = readSettings(settingsFile(repoRoot, "codex")); } catch { return undefined; }
+  const entries = ((settings.hooks ?? {}) as Record<string, HookEntry[] | undefined>)[event] ?? [];
+  return entries.flatMap((entry) => entry.hooks).find((hook) => ourEntry({ hooks: [hook] }, "codex-event"))?.commandWindows;
+}
+/**
+ * Codex 우리 항목의 Windows 명령이 이 버전이 설치하는 꼴(codexWindowsCommand)과 다르면 그 사유 — 같으면 undefined.
+ * --cli 는 설치된 command(`node "<경로>" codex-event`)에서 되찾는다(update 의 승계와 같다)
+ */
+export function codexWindowsProblem(repoRoot: string, event: (typeof CODEX_EVENTS)[number]): string | undefined {
+  const command = installedHook(repoRoot, event, "codex-event", "codex");
+  if (command === undefined) return undefined;
+  const cli = /^node\s+"([^"]+)"/.exec(command)?.[1];
+  const expected = codexWindowsCommand(event, cli), installed = installedCodexWindows(repoRoot, event);
+  if (installed === expected) return undefined;
+  return `Windows 명령(commandWindows)이 이 버전의 꼴과 다릅니다(${installed === undefined ? "없음" : installed}) — Windows PowerShell 이 종료 코드를 바꿔 막아야 할 실패가 통과할 수 있습니다`;
+}
+
 /**
  * 설치된 PreToolUse 항목의 matcher 가 넘기지 않는 도구 — 없으면 빈 목록.
  * matcher 가 없거나 `*` 면 전부 넘긴다. 옛 설치본(읽기 셋이 없는 matcher)을 doctor 가 짚는 자리다.
@@ -205,6 +225,21 @@ export function codexMatcherProblem(repoRoot: string, event: string): string | u
   return entry?.matcher && entry.matcher !== "*" ? "Codex 공통 훅의 matcher가 이벤트 범위를 제한하고 있습니다." : undefined;
 }
 
+/**
+ * Windows 의 Codex hook 명령(commandWindows) — Codex 는 이것을 `powershell.exe -NoProfile -Command "<명령>"` 으로 돌린다(0.161.0 실측).
+ * Windows PowerShell 5.1 은 마지막 네이티브 명령의 exit 2 를 1 로 바꿔 내므로 종료 코드를 그대로 넘겨야 할 이벤트는 직접 넘긴다:
+ * PreToolUse 는 실패(0 이 아님·node 없음)를 2 로 닫고, UserPromptSubmit 은 `$LASTEXITCODE` 를 넘긴다(동의 응답 실패 2 는 막고, node 가 없으면 0·
+ * cli 가 없으면 1 이라 깨진 설치가 사용자 메시지를 막지 않는다). Stop·Subagent 이벤트는 JSON 과 0 이 정상이고 실패도 막지 않으므로 넘기지 않는다.
+ * --cli 가 없으면 `cmd /c code-agent` 로 부른다 — PowerShell 은 PATH 의 npm 셋(.ps1·.cmd·sh) 중 code-agent.ps1 을 골라 실행 정책 Restricted 에서
+ * 막히지만 cmd 는 PATHEXT(.exe·.cmd)로 푼다(stdin·stdout·종료 코드는 그대로 지난다).
+ */
+export function codexWindowsCommand(event: (typeof CODEX_EVENTS)[number], cli?: string): string {
+  const base = cli ? `node "${cli.replace(/\\/g, "/")}" codex-event` : "cmd /c code-agent codex-event";
+  if (event === "PreToolUse") return `${base}; if ($LASTEXITCODE -ne 0) { exit 2 }`;
+  if (event === "UserPromptSubmit") return `${base}; exit $LASTEXITCODE`;
+  return base;
+}
+
 function initCodex(repoRoot: string, options: InitOptions): string {
   const assets = hostAssets("codex", repoRoot);
   for (const [file, text] of assets) {
@@ -214,10 +249,10 @@ function initCodex(repoRoot: string, options: InitOptions): string {
   }
   const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" codex-event` : "code-agent codex-event";
   for (const event of CODEX_EVENTS) {
-    // PreToolUse 만 프로세스 실패(모듈 로드 전 종료·PATH 누락)를 막는 쪽으로 닫는다 — 비Windows 셸은 `|| exit 2`, Windows 는 commandWindows 로
-    // 래핑 없이(실행 셸 미확인). UserPromptSubmit 은 래핑하지 않는다 — 설치가 깨지면 사용자가 아무 말도 못 하게 된다
-    if (event === "PreToolUse") upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", `${command} || exit 2`, undefined, { commandWindows: command });
-    else upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", command);
+    // PreToolUse 만 프로세스 실패(모듈 로드 전 종료·PATH 누락)를 막는 쪽으로 닫는다(비Windows 셸 `|| exit 2`). UserPromptSubmit 은 감싸지 않는다 —
+    // 설치가 깨지면 사용자가 아무 말도 못 하게 된다. Windows 명령은 codexWindowsCommand 다(PowerShell 의 종료 코드·실행 정책)
+    upsertHook(settingsFile(repoRoot, "codex"), event, "codex-event", event === "PreToolUse" ? `${command} || exit 2` : command, undefined,
+      { commandWindows: codexWindowsCommand(event, options.cli) });
   }
   upsertBlock(join(repoRoot, "AGENTS.md"), BLOCK_START, BLOCK_END, assetText("template/CODEX.block.md"));
   upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END, GITIGNORE_LINES);

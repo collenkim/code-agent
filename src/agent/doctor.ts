@@ -16,7 +16,8 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { codexTrust } from "./codexTrust";
 import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel, policySummary, workInProgress } from "./models";
@@ -328,8 +329,12 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
     else for (const event of CODEX_EVENTS) {
       const command = installedHook(repoRoot, event, "codex-event", "codex");
-      const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) : "설치되지 않았습니다";
-      add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, "code-agent init --host codex");
+      const windows = command ? codexWindowsProblem(repoRoot, event) : undefined;
+      const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) ?? windows : "설치되지 않았습니다";
+      // 옛 설치의 Windows 명령은 번들을 다시 적용하면 고쳐진다(.codex/hooks.json 을 다시 쓴다 — 작업 중이면 계획 밖 변경)
+      add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, error !== undefined && error === windows
+        ? (work ? `${afterWork("code-agent update --templates-only --host codex")} — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다` : "code-agent update --templates-only --host codex")
+        : "code-agent init --host codex");
     }
     try {
       const codexAssets = [...hostAssets("codex", repoRoot)];
@@ -342,7 +347,11 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
       add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");
     } catch (error) { add("✗", "Codex 번들", String(error)); }
-    add("·", "Codex 훅 실행", "파일 설치만 검사했습니다. Codex에서 프로젝트 훅 신뢰가 필요하며 실제 실행·클라이언트 기능은 별도로 확인하세요.");
+    // 프로젝트 hook 은 프로젝트 신뢰와 hook 검토·신뢰가 둘 다 있어야 돈다 — codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다(0.161.0 실측)
+    const trust = codexTrust(repoRoot);
+    add(trust.project === "trusted" ? "✓" : "·", "Codex 프로젝트 신뢰", trust.projectText,
+      trust.project === "trusted" ? undefined : "Codex 대화형 세션에서 이 저장소를 열고 프로젝트를 신뢰하세요(신뢰 전에는 프로젝트 설정·hook 이 꺼집니다)");
+    add("·", "Codex 훅 신뢰", trust.hooksText);
     // PreToolUse 가 판정하지 않은 Codex 도구 이름(작업·세션 중에만 기록) — 파일을 쓰는 도구라면 hook 판정 밖이다
     const unknown = unknownCodexTools(repoRoot);
     if (unknown.length) {
