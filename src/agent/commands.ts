@@ -27,12 +27,12 @@ import {
   workDocsDir,
 } from "./layout";
 import type { ActiveWork, Phase } from "./layout";
-import { formatAnswerSources, openQuestions, writeAnswerBaseline } from "./answers";
+import { formatAnswerSources, openQuestions, unverifiedAnswerHint, writeAnswerBaseline } from "./answers";
 import { hookInstallWarning, requireStartHooks } from "./init";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { requirePreparedBranch } from "./bootstrap";
 import { changedPaths, commitOf, mergeBase, trackedPaths } from "./tree";
-import { prDocFile } from "./deliver";
+import { planReviewLines, prDocFile } from "./deliver";
 import {
   bindingProblems,
   loadEvidence,
@@ -47,6 +47,7 @@ import {
 } from "./evidence";
 import type { VerifyPhase, VerifyView } from "./evidence";
 import { budgetText, nextRoundDecision, verifyNode, verifyState, writeBlockReason } from "./retryPolicy";
+import { verifyGuidance } from "./validate";
 import {
   clearRequestSession,
   loadRequestSession,
@@ -392,18 +393,20 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
   const questions = questionsFile(id);
   // 막은 카운터 — 고쳐도 다음 회차가 거부되면 그 카운터, 아니면 같은 코드 재실행(노드가 decision)
   const next = nextRoundDecision({ previous: view.state, emptyRound: view.emptyRound, treeChanged: true, budget: view.budget,
-    reviewOpenFindings: view.budget.reviewRounds.used > 0 });
+    reviewOpenFindings: view.reviewOpenFindings });
   const key = next.action === "refuse" && next.failure.counter && !(state === "environment" || state === "interrupted")
     ? next.failure.counter.key : "rerun";
+  // 사람 선택지 — verify 의 한도 안내(limitExceededText)와 같은 셋이다. 사람 허용으로 늘리지 않는 카운터(총 회차)는 허용을 빼고 고른다
+  const choices = (grant: string): string => ` — 사람이 고릅니다: ${grant ? `${grant}(${skill("ca-answer")} 의 judgment 동의 retry-grant ${key}) · ` : ""}계획을 고쳐 재승인 · 작업 종료(abort)`;
   switch (key) {
     case "fix":
-      return `고쳐 쓰기 ${view.budget.fix.limit}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${questions} 에 적고 사람에게 보고하세요`;
+      return `고쳐 쓰기 ${view.budget.fix.limit}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${questions} 에 적고 사람에게 보고하세요${choices("한 번 더 허용")}`;
     case "reviewRounds":
-      return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — 남은 지적은 사람이 판단합니다. ${questions} 에 적고 보고하세요`;
+      return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — 남은 지적은 사람이 판단합니다(지적 기각은 judgment waive-finding). ${questions} 에 적고 보고하세요${choices("회차 추가")}`;
     case "totalRounds":
-      return `검증 회차가 총 ${view.budget.totalRounds.limit}회에 닿아 막혔습니다 — ${questions} 에 적고 사람에게 보고하세요`;
+      return `검증 회차가 총 ${view.budget.totalRounds.limit}회에 닿아 막혔습니다 — ${questions} 에 적고 사람에게 보고하세요. 총 회차는 사람 허용으로 늘리지 않습니다${choices("")}`;
     default:
-      return `같은 코드 재실행 ${view.budget.rerun.limit}회를 모두 썼습니다 — 환경을 사람이 확인해야 합니다. 막힌 이유를 보고하세요`;
+      return `같은 코드 재실행 ${view.budget.rerun.limit}회를 모두 썼습니다 — 환경을 사람이 확인해야 합니다. 막힌 이유를 보고하세요${choices("환경을 고친 뒤 한 번 더 허용")}`;
   }
 }
 
@@ -423,7 +426,8 @@ function nextHint(work: Work): string {
   const questions = openQuestions(repoRoot, questionsFile(active.id));
   const open = questions.unanswered.length + questions.unverified.length;
   if (open > 0) {
-    return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — ${skill("ca-answer")}`;
+    const unverified = questions.unverified.length ? ` (${unverifiedAnswerHint(questions.unverified.map((question) => question.id))})` : "";
+    return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — ${skill("ca-answer")}${unverified}`;
   }
   if (work.plan && PHASES.indexOf(active.phase) > PHASES.indexOf("plan")) {
     const reentry = reentryHint(work);
@@ -447,6 +451,9 @@ function nextHint(work: Work): string {
         : `${stageCommand(active.phase)} — ${PHASE_LABEL[active.phase]}(${dir}/ 의 번호 문서)을 마치면 code-agent next`;
     case "plan": {
       if (!work.plan) {
+        // critic 뒤 교차 계획 검토가 남았으면 그 줄(명령·사람 판단 — crossCriticProblems)이 다음 할 일이다
+        const cross = active.planningVersion ? planningProblems(work, "plan").find((problem) => /^교차 검토/.test(problem)) : undefined;
+        if (cross) return `${stageCommand("plan")} — ${cross} — 그다음 code-agent planning advance(ready-for-gate 면 code-agent plan submit ${dir}/plan.json)`;
         return active.planningVersion
           ? `${stageCommand("plan")} — code-agent planning advance 로 계획·검토 담당을 배정하고, 관찰된 결과로 ${dir}/plan.json 이 생기면 code-agent plan submit ${dir}/plan.json`
           : `${stageCommand("plan")} — 계획 초안을 ${dir}/plan.json 에 쓰고 code-agent plan submit ${dir}/plan.json`;
@@ -483,8 +490,11 @@ function nextHint(work: Work): string {
       }
       const state = verifyState({ phase: active.phase, round: evidence.rounds, runs: evidence.runs, cases: active.phase === "test" ? evidence.testCases : undefined });
       const node = state === "precondition" || state === "passed" ? "diagnose" : verifyNode(state, view.budget);
+      // diagnose 의 재개는 verify 결과의 resume 과 같은 `verify --retry` 다 — --retry 없는 verify 는 test 커서에서 앞 기록을
+      // 다시 판정만 하고 끝난다(환경을 고친 뒤·사람이 재실행을 허용한 뒤 같은 진단을 다시 받는다). 명령 미선언(precondition)은 다시 돌려도 같다
+      const resume = node === "diagnose" && state !== "precondition" ? "code-agent verify --json --retry" : "code-agent verify --json";
       return `${stageCommand(active.phase)} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ") || "아직 돌리지 않음"} — ` +
-        `${node === "repair" ? "계획 안에서 고치고" : "원인을 확인하고"} code-agent verify --json (${budgetText(view.budget)})`;
+        `${node === "repair" ? "계획 안에서 고치고" : "원인을 확인하고"} ${resume} (${budgetText(view.budget)})`;
     }
     case "review": {
       const problems = reviewProblems(work);
@@ -494,9 +504,20 @@ function nextHint(work: Work): string {
     }
     case "integrate": {
       const evidence = loadEvidence(repoRoot, active.id, active.target);
-      return evidence && runsOf(evidence, "integrate").length > 0 && stageProblems(work, "integrate").length === 0
-        ? "통합 검증 통과 — code-agent next 로 넘긴 뒤 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다"
-        : `${stageCommand("integrate")} — code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)`;
+      const runs = evidence ? runsOf(evidence, "integrate") : [];
+      if (evidence && runs.length > 0 && stageProblems(work, "integrate").length === 0) {
+        return "통합 검증 통과 — code-agent next 로 넘긴 뒤 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다";
+      }
+      // 실패한 통합 검증이 있으면 check·test 갈래처럼 원인과 남은 재실행을 싣는다 — 원천은 integrate 출력과 같은 verifyGuidance(integrate 변형)
+      const failed = runs.filter((run) => run.outcome !== "passed");
+      if (evidence && failed.length > 0) {
+        const state = verifyState({ phase: "integrate", round: evidence.rounds, runs: evidence.runs, cases: evidence.integrationTestCases ?? [] });
+        if (state !== "passed") {
+          return `${stageCommand("integrate")} — ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ")} — ` +
+            verifyGuidance(work, evidence, "integrate", state, verifyView(work, evidence).budget);
+        }
+      }
+      return `${stageCommand("integrate")} — code-agent integrate (기준 커밋 위의 깨끗한 worktree 에서 전체 build · test)`;
     }
     case "deliver":
       // 사람이 반영 단계에서 계획 파일·경계 선언을 고쳐 증거 묶임이 깨졌으면 반영 게이트가 막는다 — 돌아갈 길을 먼저 보인다
@@ -1167,6 +1188,8 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   if (assumptions) shown.push("", assumptions);
   const sources = formatAnswerSources(repoRoot, active.id);
   if (sources) shown.push("", sources);
+  // 계획 검토(critic)·교차 계획 검토·그 사람 판단 — 반영 때 ⑩ 에 나오는 줄을 승인 때도 본다
+  shown.push(...planReviewLines(work));
   shown.push(...approvalChangeLines(state));
   const presence = confirmOnTerminal(shown.join("\n"), decision === "approved" ? "approve" : "reject");
   recordDecision(repoRoot, {

@@ -25,7 +25,8 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
   if (input.stop_hook_active === true) {
     return undefined;
   }
-  const repoRoot = canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd()));
+  // 하위 폴더에서 연 세션도 저장소 루트로 본다(PreToolUse hook·CLI 와 같은 루트)
+  const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
   const work = loadWork(repoRoot);
   if (!work || !work.active.baseCommit || !STOP_PHASES.includes(work.active.phase)) {
     // code-agent 작업이 아니거나 아직 코드를 쓰는 자리가 아니면 남의 턴에 끼어들지 않는다

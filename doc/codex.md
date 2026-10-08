@@ -79,7 +79,7 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 `code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별 토큰·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출을 센다(셸 명령 배열의 `bash -lc`·`powershell -Command`·`cmd /c` 래퍼는 벗긴다). 형식은 공개 Codex 기록 형식을 가정했고 **실제 기록으로 확인하기 전**이라 출력에 그렇게 적는다 — 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다).
 
-메인 컨텍스트 절감 중 두 가지는 Claude 전용이다. Codex 훅 입력에는 서브 에이전트 식별자(`agent_id`)가 없어 staging 쓰기를 실행 중인 담당에게만 열 수 없으므로, Codex 계획 담당은 기존처럼 결과 JSON의 `artifacts`에 `{path, content}`로 전체 내용을 싣는다. 대화 시작·압축 뒤 진행 상태를 붙이는 SessionStart 훅도 Codex에는 등록하지 않는다(지원 여부를 확인하지 않았다). 배정 파일(`assignmentFile`)과 `context --file` 전달은 두 호스트가 같다.
+메인 컨텍스트 절감 중 두 가지는 Claude 전용이다. Codex 훅 입력에는 서브 에이전트 식별자(`agent_id`)가 없어 staging 쓰기를 실행 중인 담당에게만 열 수 없으므로, Codex 계획 담당은 기존처럼 결과 JSON의 `artifacts`에 `{path, content}`로 전체 내용을 싣는다 — Codex 담당의 배정 계약(Codex 단일 설치, 또는 두 호스트 설치에서 Codex 가 부른 배정)도 staging 없이 `{path, content}`를 보인다. 대화 시작·압축 뒤 진행 상태를 붙이는 SessionStart 훅도 Codex에는 등록하지 않는다(지원 여부를 확인하지 않았다). 배정 파일(`assignmentFile`)과 `context --file` 전달은 두 호스트가 같다.
 
 자동 검증은 합성한 호스트 이벤트, 실제 CLI 프로세스, 임시 Git 저장소의 전체 작업 흐름으로 수행한다. 이전 실제 Codex 검사의 running 정체는 Windows 신뢰 키의 경로 구분자 변환과 임시 실행의 부모 기록 부재를 고친 뒤 해소됐다. 파일 읽기와 문서 지침 충돌도 보완해 실제 분석·통합 영향도 담당의 시작·완료, 결과 수락, 내용 게이트 통과를 확인했다. Claude는 실제 분석·분할 조사·영향도 정리와 내용 게이트를 통과했다. Codex UI의 수동 사용성·실제 사람 승인·전체 개발 흐름 실계정 측정은 별도 범위다. 과거 실패는 보존하고 [최신 훅 복구 이력](reviews/2026-10-02-codex-hook-recovery.md)에 수정 후 결과를 기록한다.
 

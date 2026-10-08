@@ -146,6 +146,21 @@ export function grantScope(point: GrantPoint): string {
   return "";
 }
 export function grantable(key: string): key is keyof typeof GRANT_STEP { return key in GRANT_STEP; }
+/** 허용 범위의 읽는 이름 — ⑧·⑩·커밋 메시지가 사람 허용을 보일 때 쓴다 */
+export function grantScopeLabel(scope: string): string {
+  const [kind, a, b] = scope.split(":");
+  if (kind === "round") return `${a}회차`;
+  if (kind === "tree") return `테스트 트리 ${a.slice(-8)}`;
+  if (kind === "planning") return b ? `계획 작업 ${a} · 같은 입력` : `계획 작업 ${a}`;
+  if (kind === "critic") return `critic ${a.slice(0, 8)}`;
+  return "";
+}
+/** 사람 허용 한 건의 한 줄 — `<카운터> +N (범위) — 사유 · 동의 <8자>` */
+export function grantText(grant: RetryGrant): string {
+  const scope = grantScopeLabel(grant.scope);
+  const label = (COUNTER_LABEL as Readonly<Record<string, string>>)[grant.key] ?? grant.key;
+  return `${label} +${grant.step}${scope ? ` (${scope})` : ""} — ${(grant.reason ?? "").replace(/\s+/g, " ").trim().slice(0, 200)} · 동의 ${(grant.consent ?? "").slice(0, 8)}`;
+}
 /**
  * 관찰된 사람 판단으로 남길 허용 한 건. 늘리지 않는 카운터와 소진되지 않은 카운터는 거부한다 —
  * 한도를 미리 늘려 두는 길을 닫는다.
@@ -308,7 +323,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "cross-unavailable": {
     id: "cross-unavailable", label: "교차 호스트 실행 불가", group: "cross", auxiliary: false,
-    detect: "오류 채널의 미설치·인증·한도·네트워크·장애 문구, 실행 파일 없음",
+    detect: "오류 채널의 미설치·인증·한도·네트워크·장애 문구, 실행 파일 미설치(PATH·npm 어디에도 없음)",
     retry: "no-retry", retryText: "없음 — 중지 기록 후 진행. 사람이 아닌 중지 지점은 지점 한도 안에서 다시 실행할 수 있다",
     counters: ["crossPoint"],
     limitText: `지점 시도 ${LIMITS.crossPoint}`,
@@ -319,7 +334,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "cross-config-error": {
     id: "cross-config-error", label: "교차 호출 설정 오류", group: "cross", auxiliary: false,
-    detect: "알 수 없는 옵션·모델 없음·강도 오류, 화이트리스트 밖 비정상 종료, JSON 아님",
+    detect: "알 수 없는 옵션·모델 없음·강도 오류, 화이트리스트 밖 비정상 종료, JSON 아님, 실행 파일 변수(CODE_AGENT_*_BIN)가 없는 파일·PATH 의 셸 스크립트(.cmd·.bat)",
     retry: "rerun-once", retryText: "설정을 고친 뒤 같은 명령 1회",
     counters: ["crossError", "crossPoint"],
     limitText: `설정 오류 재실행 ${LIMITS.crossError}, 지점 시도 ${LIMITS.crossPoint}`,
@@ -352,9 +367,9 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "host-sandbox-denied": {
     id: "host-sandbox-denied", label: "Codex 샌드박스 제한", group: "cross", auxiliary: false,
-    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 지점 첫 네트워크 오류 포함)",
+    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 지점 첫 네트워크 오류 포함 — 같은 지점의 두 번째 네트워크 오류는 실행 불가로 기록 후 진행)",
     retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령",
-    counters: [], limitText: "—",
+    counters: [], limitText: "— (같은 사유의 사전 거부는 한 번만 기록, 지점 시도에 세지 않음)",
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "stop", onExhausted: "consent:judgment", exceededText: "사람(judgment cross-stop)",
     guide: "Codex 샌드박스가 {host} 실행을 막았습니다({detail}) — 셸 도구의 권한 상승(샌드박스 밖 실행)을 요청해 같은 명령을 다시 실행하세요. 중지로 기록하지 않았습니다. 사용자가 권한 상승을 거절하면 ca-answer 동의 judgment cross-stop 으로 이 지점의 중지를 기록합니다.",
@@ -388,7 +403,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     counters: [], limitText: "—",
     consumesFixRound: false, fixRoundText: "—",
     handoff: "stop", onExhausted: "stop", exceededText: "사람",
-    guide: "이 동의는 쓸 수 없습니다: {detail}. 같은 ID로 다시 묻거나 적용하지 않습니다 — 바뀐 대상이나 응답을 사용자에게 알리고, 필요하면 현재 내용으로 새로 준비해 다시 확인받으세요.",
+    guide: "확인 대상이 바뀌어 이 동의는 쓸 수 없습니다: {detail}. 같은 ID로 다시 묻거나 적용하지 말고, 바뀐 것을 사용자에게 알린 뒤 현재 내용으로 새로 준비해 다시 확인받으세요.",
     enforcedAt: ["consent.ts observeConsent·applyLocked·prepareConsent"],
   },
   "consent-apply-failed": {
@@ -406,7 +421,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     detect: `같은 PC 의 죽은 pid, 주인 기록 없는 ${MIN_LOCK}분 잠금`,
     retry: "auto", retryText: `같은 호출에서 회수. 살아 있으면 대기(${SEC_WAIT}초·hook ${SEC_HOOK_WAIT}초) 뒤 같은 명령 1회`,
     counters: ["lockBusy"],
-    limitText: `대기 재실행 ${LIMITS.lockBusy}`,
+    // lockBusy 는 안내 문구의 값이다 — 세거나 판정하는 코드가 없다(같은 명령을 한 번만 다시 실행하라는 안내)
+    limitText: `대기 재실행 ${LIMITS.lockBusy}(안내만 — 기록·강제 없음)`,
     consumesFixRound: false, fixRoundText: "—",
     handoff: "none", onExhausted: "stop", exceededText: "다른 PC·판정 불가면 사람",
     guide: "잠금 때문에 멈췄습니다 — {detail}. 같은 명령은 잠시 뒤 한 번만 다시 실행하고, 계속 막히면 실행 중인 code-agent 가 없는지 확인한 뒤 사람이 별도 터미널에서 잠금 파일을 지웁니다.",
@@ -415,9 +431,9 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   "hook-failure": {
     id: "hook-failure", label: "hook 판정 실패", group: "infra", auxiliary: true,
     detect: "hook 판정 함수 예외, hook 모듈 로드 실패",
-    retry: "no-retry", retryText: "같은 호출을 반복하지 않는다. 종료 코드는 이벤트별(hookFailureExit·subagentExit)",
+    retry: "no-retry", retryText: "같은 호출을 반복하지 않는다. 리뷰어 완료 판정 실패는 그 실행에 기록하고(새 호출을 받는다) 기록하지 못한 판정 실패만 Claude 담당에게 한 번 되돌린다. 종료 코드는 이벤트별(hookFailureExit·subagentExit)",
     counters: ["agentReturn"],
-    limitText: `담당 되돌림 ${LIMITS.agentReturn}`,
+    limitText: `기록하지 못한 판정 실패의 담당 되돌림 ${LIMITS.agentReturn}`,
     consumesFixRound: false, fixRoundText: "—",
     handoff: "stop", onExhausted: "stop", exceededText: "사람(doctor 점검)",
     guide: "code-agent hook 이 판정에 실패했습니다: {detail}. 같은 호출을 반복하지 말고 사유를 사용자에게 알리세요 — 같은 실패가 반복되면 사람이 별도 터미널에서 code-agent doctor 로 점검합니다.",
@@ -459,6 +475,14 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     /** 기록된 내용 오류(failed). 기본 문구는 기록 전 되돌림이다 */
     record: "결과가 검사에 걸려 실패로 기록했습니다 — {detail}. 사유를 수정 피드백 파일로 남겨 {id} 의 inputs 에 넣고 planning prepare 뒤 planning advance 로 다시 배정하세요.",
   },
+  "cross-config-error": {
+    /** 설정 오류 재실행 한도를 다 쓴 실패 — 같은 명령은 한도로 거부되므로 재실행을 안내하지 않는다 */
+    exhausted: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 교차 설정 오류 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다 — 원인을 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossError)을 받으세요. 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 code-agent doctor --cross 로 점검합니다.",
+  },
+  "cross-result-invalid": {
+    /** 형식 교정 재실행 한도를 다 쓴 실패 */
+    exhausted: "{host} 교차 결과 형식이 맞지 않습니다({point}: {detail}) — 원문을 {raw} 에 보존했습니다. 형식 교정 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다 — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossFormat)을 받으세요.",
+  },
   "cross-timeout": {
     /** 끝 기록 없이 끊긴 실행(kind interrupted) — 중지가 되지 않고 지점 시도 한도에만 든다 */
     interrupted: "{host} 교차 실행이 끝 기록 없이 끊겼습니다 — 끊긴 실행은 중지로 기록하지 않고 게이트는 막혀 있습니다. 같은 명령을 백그라운드로 다시 실행할 수 있습니다(남은 지점 시도 {left}회).",
@@ -467,6 +491,13 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     /** 지점 한도가 남아 같은 지점을 다시 실행할 수 있을 때 */
     rerunnable: "{host} 교차 검증 중지 — 다른 호스트를 실행할 수 없습니다: {detail}. 이 지점은 교차 검증 없이 진행합니다. 두 호스트를 모두 쓸 수 있게 되면(설치·로그인·사용 한도) 다음 지점부터 다시 돕니다. 사용자가 원하면 고친 뒤 같은 명령으로 이 지점을 다시 실행할 수 있습니다(남은 {left}회).",
   },
+  "consent-target-changed": {
+    /** 동의 응답이 승인이 아니었다(기록의 failure.kind) — consent.ts consentGuide 가 갈래별로 고른다. 기본 문구는 대상 변경(target)이다 */
+    "response-change": "사용자가 수정을 요청했습니다. 같은 ID로 다시 묻지 않습니다 — 무엇을 고칠지 업무 질문으로 받아 문서·제안을 고친 뒤 새로 준비하세요.",
+    "response-defer": "사용자가 보류했습니다. 이 흐름을 멈추고 다시 묻지 않습니다 — 사용자가 이어가자고 할 때 새로 준비합니다.",
+    "response-none": "명시적 선택이 없어 응답을 기록하지 않았습니다({detail}). 미응답으로 두고 자동으로 다시 묻지 않습니다 — 사용자가 원할 때만 새로 준비해 묻습니다.",
+    "response-invalid": "응답이 준비한 질문·선택지와 맞지 않아 기록하지 않았습니다({detail}). 사용자가 직접 입력한 내용이 있으면 그 뜻을 업무 질문으로 확인하고, CLI 가 준비한 질문을 고치지 않은 채 새로 준비해 묻습니다.",
+  },
   "limit-exceeded": {
     /** 교차 지점 시도 한도(사람 판단 필요) */
     "cross-point": "이 지점의 교차 실행 한도 {limit}회를 모두 썼습니다({counts}) — 자동으로 다시 실행하지 않습니다. 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossPoint)을 받으세요.",
@@ -474,8 +505,18 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     "cross-point-stopped": "이 지점의 교차 실행 한도 {limit}회를 모두 썼습니다({counts}) — 자동으로 다시 실행하지 않습니다. 이 지점은 중지 기록대로 교차 검증 없이 진행합니다(게이트는 막히지 않습니다).",
     /** 교차 원인별 재실행 한도(crossError·crossFormat) */
     "cross-cause": "{counterLabel} 한도 {limit}회를 썼습니다 — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant {key})을 받으세요.",
+    /** 사람 허용으로 늘리지 않는 카운터(GRANT_STEP 밖 — 검증 회차 총합 등) */
+    "no-grant": "{counterLabel} 한도 {limit}회를 모두 썼습니다(원인: {originLabel}). 자동으로 다시 시도하지 않습니다 — 막힌 이유와 증거({evidence})를 사용자에게 보고하세요. 이 카운터는 사람 허용으로 늘리지 않습니다. 사람이 고릅니다: 계획을 고쳐 재승인 · 작업 종료(abort).",
   },
 };
+
+/**
+ * 기본 문구를 guidance() 로 렌더하지 않는 원인 — 실제 문구의 원천이 따로 있다(표·문서의 요지로만 쓴다). retryPolicy.test 가
+ * 이 목록 밖의 원인은 어딘가에서 guidance(<원인>) 으로 렌더되고, 목록 안의 원인은 렌더되지 않는지 소스를 대조한다.
+ * blocking-finding — review.ts reviewProblems·planningState.ts crossCriticProblems 의 지적 문구, lock-stale — lock.ts DEFAULT_LOCK_MESSAGES,
+ * hook-failure — hook 진입의 stderr(hook.ts runHook·codexHook·stopHook·담당 hook) 문구.
+ */
+export const UNRENDERED_GUIDES: readonly FailureClass[] = ["blocking-finding", "lock-stale", "hook-failure"];
 
 /** 기본 문구(POLICIES[cls].guide)의 자리표시 — 원인을 렌더하는 호출은 이 키를 모두 넘긴다(테스트가 문구와 대조한다) */
 export const GUIDE_KEYS: Readonly<Record<FailureClass, readonly string[]>> = {
@@ -510,9 +551,13 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   precondition: { rerun: ["budget", "problems"] },
   "agent-format-error": { record: ["detail", "id"] },
   "agent-content-error": { record: ["detail", "id"] },
+  "cross-config-error": { exhausted: ["detail", "host"] },
+  "cross-result-invalid": { exhausted: ["detail", "host", "point", "raw"] },
   "cross-timeout": { interrupted: ["host", "left"] },
   "cross-unavailable": { rerunnable: ["detail", "host", "left"] },
-  "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"] },
+  "consent-target-changed": { "response-change": [], "response-defer": [], "response-none": ["detail"], "response-invalid": ["detail"] },
+  "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"],
+    "no-grant": ["counterLabel", "evidence", "limit", "originLabel"] },
 };
 
 /** 문구 조각 — 결과 미확인 문구의 {collectNote} 와 꼬리 */
@@ -548,7 +593,7 @@ export function recordedVariant(record: { class: string; kind?: string }): strin
   if (record.class === "cross-timeout" && record.kind === "interrupted") return "interrupted";
   return undefined;
 }
-/** 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다 */
+/** 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다. 사람 허용으로 늘리지 않는 카운터면 그 선택지를 빼는 변형이다 */
 export function limitExceededText(record: FailureRecord, evidence: string): string {
   const counter = record.counter;
   return guidance("limit-exceeded", {
@@ -556,7 +601,7 @@ export function limitExceededText(record: FailureRecord, evidence: string): stri
     limit: counter?.limit ?? 0,
     originLabel: record.origin ? POLICIES[record.origin].label : POLICIES[record.class].label,
     evidence,
-  });
+  }, counter && !grantable(counter.key) ? "no-grant" : undefined);
 }
 
 // ---- 검증 (check·test·integrate·repro) ----
@@ -806,7 +851,7 @@ export function writeBlockReason(input: { state: VerifyState | "none"; emptyRoun
   const { path, questionsPath } = input;
   if (key === "fix") return `고쳐 쓰기 ${limit}회를 넘겨 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 무엇이 막혔는지 적고 사람에게 보고하세요 — 덮지 않고 보고하는 자리입니다. 사람이 한 회차를 더 허용하거나(ca-answer 의 judgment 동의) 계획을 고쳐 재승인해야 합니다.`;
   if (key === "reviewRounds") return `리뷰 회차 한도 ${limit}회를 모두 써서 계획 파일을 더 고칠 수 없습니다: ${path}. 남은 지적은 사람이 판단합니다 — ${questionsPath} 에 적고 보고하세요. 회차 추가·지적 기각은 ca-answer 의 judgment 동의, 범위 변경은 재계획·재승인입니다.`;
-  if (key === "totalRounds") return `검증 회차가 총 ${limit}회에 닿아 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 적고 사람에게 보고하세요 — 사람이 한 회차를 더 허용하거나 계획을 고쳐 재승인해야 합니다.`;
+  if (key === "totalRounds") return `검증 회차가 총 ${limit}회에 닿아 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 적고 사람에게 보고하세요 — 총 회차는 사람 허용으로 늘리지 않으므로 계획을 고쳐 재승인하거나 작업을 종료(abort)합니다.`;
   return undefined;
 }
 /** 남은 수 한 줄 — remainingNote·nextHint·context·renderVerification 공용 */
@@ -918,6 +963,8 @@ export const CROSS_PATTERNS: Readonly<Record<"sandbox" | "config" | "auth" | "qu
 interface CrossProbeOutput {
   /** hostCommand 가 실행 파일을 찾지 못한 이유 */
   unresolved?: string;
+  /** 그 이유가 사람이 설정으로 고치는 것(실행 파일 변수가 없는 파일·PATH 의 셸 스크립트)인가 — 설정 오류로 막는다 */
+  unresolvedConfig?: boolean;
   spawnCode?: string; spawnMessage?: string;
   status?: number | null; stderr?: string; stdout?: string;
   /**
@@ -1014,7 +1061,7 @@ export function classifyCrossFailure(probe: CrossProbe): { class: "cross-unavail
     const tail = text.replace(/\s+/g, " ").trim().slice(-300);
     return { class: cls, kind, reason: `${KIND_LABEL[kind]}(${kind})${tail ? `: ${tail}` : ""}` };
   };
-  if (probe.unresolved) return result("cross-unavailable", "missing", probe.unresolved);
+  if (probe.unresolved) return probe.unresolvedConfig ? result("cross-config-error", "config", probe.unresolved) : result("cross-unavailable", "missing", probe.unresolved);
   if (probe.spawnCode === "ENOENT") return result("cross-unavailable", "missing", probe.spawnMessage ?? "");
   if (probe.spawnCode === "ETIMEDOUT") return result("cross-timeout", "timeout", probe.spawnMessage ?? "");
   if (probe.spawnCode === "EPERM" || probe.spawnCode === "EACCES") return result("host-sandbox-denied", "sandbox", probe.spawnMessage ?? "");
@@ -1110,7 +1157,8 @@ export function crossPointDecision(input: { attempts: readonly CrossAttemptView[
   const reject = (record: FailureRecord, refusal: CrossRefusal): CrossPointDecision => ({ action: "refuse", failure: record, refusal });
   const spent = (budget: Budget) => `${COUNTER_LABEL[budget.key]} 한도 ${budget.limit}회 소진`;
   if ((input.phase ?? "before") === "before") {
-    if (point.state === "running") return reject(failure("lock-stale", "다른 교차 실행이 진행 중입니다 — 끝날 때까지 기다리세요. 같은 명령을 다시 실행하지 않습니다"), "cross-busy");
+    // 잠금이 아니라 끝 기록이 없는 다른 시도가 도는 중이다 — 잠금 고착(lock-stale)의 회수·잠금 파일 삭제 안내를 따르지 않게 전제(precondition)로 둔다
+    if (point.state === "running") return reject(failure("precondition", "다른 교차 실행이 진행 중입니다 — 끝날 때까지 기다리세요. 같은 명령을 다시 실행하지 않습니다", { kind: "cross-busy" }), "cross-busy");
     if (point.state === "completed") return reject(failure("precondition", "이미 기록한 교차 지점입니다 — 같은 지점을 다시 실행해 결과를 바꾸지 않습니다"), "cross-done");
     if (point.state === "stopped" && point.stoppedBy?.class === "cross-stop") {
       return reject(failure("precondition", "사람 판단으로 중지한 교차 지점입니다 — 같은 지점을 다시 실행하지 않습니다"), "cross-stopped");

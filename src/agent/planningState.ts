@@ -8,7 +8,7 @@ import { sha, docPaths } from "./docs";
 import { canonical, STATE_DIR, workDocsDir } from "./layout";
 import { POLICY_KINDS } from "./schemas";
 import { parseQuestions, structuralLine, type Question } from "./questions";
-import { answerSources } from "./answers";
+import { answerSources, unverifiedAnswerHint } from "./answers";
 import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
@@ -361,7 +361,10 @@ export function readyProblems(work: Work, state: PlanningState, record: TaskReco
   const parsed = text === undefined ? [] : parseQuestions(text);
   const sources = parsed.some(question => question.answer) ? answerSources(work.repoRoot, work.active.id, parsed) : new Map<string, string>();
   const open = parsed.filter(question => question.answer === "" || sources.get(question.id) === "unverified");
-  for (const question of open) if (questionApplies(question, record.task, state)) problems.push(`미결 질문 ${question.id}`);
+  for (const question of open) {
+    if (!questionApplies(question, record.task, state)) continue;
+    problems.push(question.answer === "" ? `미결 질문 ${question.id}` : unverifiedAnswerHint([question.id]));
+  }
   for (const file of record.task.inputs) if (fileHash(work.repoRoot, file) === "missing") problems.push(`입력 파일이 없습니다: ${file}`);
   return problems;
 }
@@ -506,11 +509,14 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
         "사용자가 지적을 기각하면 ca-answer 동의 judgment waive-finding 으로 기록합니다"] : [];
     }
     default: {
-      let line = view.some(attempt => attempt.class === "answered-input")
-        ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
-        : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
       const hint = crossPointHint({ attempts: view, grants: state.retry?.grants, scope: grantScope({ file: "planning", key: "crossPoint", criticDispatchId: dispatchId }),
         rawExists: path => existsSync(join(work.repoRoot, path)) });
+      // 한도로 거부될 지점에는 실행 명령을 앞세우지 않는다(리뷰 게이트와 같다) — 그 명령은 거부되고 남은 길은 사람 판단이다
+      let line = hint?.class === "limit-exceeded"
+        ? "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다"
+        : view.some(attempt => attempt.class === "answered-input")
+          ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
+          : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
       if (hint) {
         line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}. ` +
           crossHintText(hint, { host: host ?? "다른 호스트", point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, attempts: view });

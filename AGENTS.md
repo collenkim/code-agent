@@ -13,6 +13,7 @@
 ## 바꿀 때 지킨다
 
 - 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 한 줄을 남긴다.
+- 흐름도의 손으로 쓴 표 일부는 `src/test/docSync.test.ts`가 코드와 대조한다 — §4.1 동의 동작·제목 ↔ `consent.ts` `ActionSchema`·`CONSENT_TITLES`, §5.1·§5.2 hook 등록표 ↔ 임시 저장소에 `init --host both` 한 `settings.json`·`hooks.json`, §3.2 단계 ↔ `layout.ts` `PHASES`, §7 모델 기본값 ↔ `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`(§6.4 생성 블록과 함께). 시험이 깨지면 문서를 코드에 맞춘다.
 - 함께 맞출 중복 정의가 있다:
   - 동의 동작(`consent.ts` `ActionSchema`)을 바꾸면 `template/claude/skills/ca-answer/SKILL.md`·`reference.md`와 `template/codex/ca-answer.md`의 목록도 고친다(`consentBinding.test.ts`가 `CONSENT_ACTIONS`와 대조한다). 동의 제목은 `consentState.ts` `CONSENT_TITLES` 하나다.
   - 동의 준비 인자 형식(`consentTicket.ts` `parsePrepareArgs`·`INLINE_ACTIONS`)을 바꾸면 hook(`consentCommandOf` — 문법이 틀린 명령에는 티켓을 내지 않는다)과 CLI 가 같은 함수를 쓰는지, `PREPARE_UNOBSERVED`·`PREPARE_USAGE` 문구, `ca-answer/SKILL.md` 동작 준비 절·1항과 `template/codex/ca-answer.md` 1항의 명령 꼴을 함께 고친다(`consentOutput.test.ts`). `--for` 출력에서 빼는 필드(`consent.ts` `renderConsentOutput`)를 바꾸면 ca-answer 1·3항이 읽는 필드와 맞춘다.
@@ -20,7 +21,7 @@
   - 사람 허용 카운터(`retryGrant.ts` `grantTarget`)는 `GRANT_STEP`의 키와 같아야 한다 — 키를 더하면 기록 파일·범위·잠금 안 재확인을 표에 함께 정한다.
   - hook 등록(`init.ts`)을 바꾸면 `doctor.ts` 목록, `update.ts`의 hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 hook 수도 고친다.
   - 서브에이전트를 추가·삭제하면 `hostText.ts`의 `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이 목록으로 만든다), `modelPolicy.ts`의 `AGENTS`도 고친다. 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher도 고친다. 스킬을 추가·삭제하면 `hostText.ts`의 `SKILL_NAMES`도 고친다(`hostText.test.ts`가 템플릿 폴더와 대조한다).
-  - 재시도 규약(`retryPolicy.ts`의 `POLICIES`·`LIMITS`·`GRANT_STEP`·`TIMING`)을 바꾸면 `doc/process-flow.md` §6.4 생성 블록을 `renderRetryPolicyTable()` 출력으로 다시 붙인다. `docSync.test.ts`는 표에 렌더되는 값만 대조한다 — 표에 나오지 않는 값은 잡지 못하므로 §6.4 산문에 숫자를 쓰지 않는다. 안내 문구의 자리표시를 바꾸면 `GUIDE_KEYS`·`GUIDE_VARIANT_KEYS`와 그 원인을 렌더하는 호출의 값도 고친다. 카운터 이름표는 `COUNTER_LABEL` 하나다 — 다른 모듈에 따로 정의하지 않고 import한다.
+  - 재시도 규약(`retryPolicy.ts`의 `POLICIES`·`LIMITS`·`GRANT_STEP`·`TIMING`)을 바꾸면 `doc/process-flow.md` §6.4 생성 블록을 `renderRetryPolicyTable()` 출력으로 다시 붙인다. `docSync.test.ts`는 표에 렌더되는 값만 대조한다 — 표에 나오지 않는 값은 잡지 못하므로 §6.4 산문에 숫자를 쓰지 않는다. 안내 문구의 자리표시를 바꾸면 `GUIDE_KEYS`·`GUIDE_VARIANT_KEYS`와 그 원인을 렌더하는 호출의 값도 고친다. 카운터 이름표는 `COUNTER_LABEL` 하나다 — 다른 모듈에 따로 정의하지 않고 import한다. 안내 문구도 이 모듈 하나가 원천이다(동의 `failure.guide` 포함) — 기본 문구를 `guidance()`로 렌더하지 않는 원인은 `UNRENDERED_GUIDES`에 실제 문구의 원천과 함께 적는다(`retryPolicy.test.ts`가 소스를 대조한다).
   - 역할 모델 정책(`modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`)을 바꾸면 `template/claude/agents/ca-*.md` 머리말의 `model`·`effort`와 `doc/codex.md` 역할별 모델 표를 같이 고친다(`modelPolicy.test.ts`가 대조한다). 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다.
   - 스테이지(`layout.ts` `PHASES`)를 바꾸면 `phaseInfo.ts`의 `PHASE_LABEL`·`reentry.ts`의 `PHASE_SKILL`과 `ca-next` 표도 고친다.
   - `ca-next`의 '멈춘 자리별 재개' 표는 `commands.ts` `nextHint`의 판정 순서(AI-DLC → 요구 → 질문 → 승인 무효 → 검증 한도 → 원인별 실패 `failureHint`)와 함께 고친다.

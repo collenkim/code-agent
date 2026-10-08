@@ -188,7 +188,7 @@ Claude Code 2.1.286을 사용했다. 시나리오별 임시 Git 저장소에서 
 - RW3: [출처 추적](../../src/agent/sourceTrace.ts)의 `sourceItems`는 구조화 절이 있으면 원문 절을 검사 대상에서 제외한다. 확정한 항목 → 분석 → Task의 기존 추적 보완은 유효하다.
 - RW4: [답변 스킬](../../template/claude/skills/ca-answer/SKILL.md), [단계 진행 스킬](../../template/claude/skills/ca-next/SKILL.md). 질문 총수가 과도하다고 측정한 것은 아니며, 남은 수동 전환과 미측정을 구분한다.
 - RW5: [결과 파서](../../src/agent/testResults.ts), [Gradle 도입 예제](../../template/claude/skills/ca-adopt/SKILL.md). 이번 재검토에서 실제 Gradle/Maven을 실행하지 않았으며 모든 Gradle 프로젝트가 실패한다고 판정한 것은 아니다.
-- RW6: [리뷰 수정 권한](../../src/agent/review.ts)의 `findingOpensFile`, [통합 해시 검사](../../src/agent/evidence.ts)의 `stageProblems`, [재현 선행 조건](../../src/agent/validate.ts)의 `repro`. [P6의 17b 사례](../../src/test/p6.test.ts)는 테스트 약화 차단을 검증하며, 정당한 테스트 보완의 복구 완료까지 검증한 사례는 아니다.
+- RW6: [리뷰 수정 권한](../../src/agent/review.ts)의 `findingOpensFile`, [통합 해시 검사](../../src/agent/evidence.ts)의 `stageProblems`, [재현 선행 조건](../../src/agent/validate.ts)의 `repro`. [P6의 17b 사례](../../src/test/fix-flow.test.ts)(옛 `p6.test.ts` — 시험 분할 뒤 `fix-flow.test.ts`)는 테스트 약화 차단을 검증하며, 정당한 테스트 보완의 복구 완료까지 검증한 사례는 아니다.
 - RW7·RW8: [실모델 실행 범위](../../scripts/evaluate-model.cjs), [기존 실행 기록](evidence/model-evaluation-2026-10-01.json).
 
 RW2·RW3·RW5의 최소 입력과 실제 파서 결과는 [재현 코드](evidence/remaining-work-probes.cjs)와 [결과](evidence/remaining-work-probes.json)에 보존했다. 제품 코드 변경이나 새로운 전체 회귀·실모델 실행은 이번 재검토에서 수행하지 않았다.

@@ -124,7 +124,7 @@ export function runSessionHook(stdin: string): number {
   try {
     const input = JSON.parse(stdin || "{}") as { cwd?: string; source?: string; session_id?: string };
     const projectDir = process.env.CLAUDE_PROJECT_DIR;
-    const text = withNotation("claude", () => sessionAnchor(canonical(projectDir ?? findRepoRoot(input.cwd ?? process.cwd())), typeof input.source === "string" ? input.source : undefined,
+    const text = withNotation("claude", () => sessionAnchor(findRepoRoot(projectDir ?? input.cwd ?? process.cwd()), typeof input.source === "string" ? input.source : undefined,
       typeof input.session_id === "string" && input.session_id ? input.session_id : undefined));
     if (text) process.stdout.write(`${text}\n`);
   } catch (error) {

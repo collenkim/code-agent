@@ -275,7 +275,7 @@ npm test
 
 대상 프로젝트에서 로컬 개발본을 쓰려면 이 저장소에서 `npm link`를 실행한 다음, 대상 프로젝트에서 `code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js`를 사용합니다. `--cli`에는 PC별 절대 경로가 들어가므로 팀 공용 설치와 구분합니다.
 
-관찰된 계획 작업 도입 이전의 전체 흐름은 신규·기능 개선·버그 수정·리팩토링 4유형에서 실제 모델로 접수부터 로컬 반영까지 확인했습니다. 승인 입력은 명시적인 자동 fixture였으며 **실제 초보자 사용성 측정은 아닙니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도는 추가 확인 범위입니다. 우선순위 2와 실제 호스트 검증은 [최신 변경 기록](doc/reviews/2026-10-02-priority-two-native-codex.md), 앞선 계획 효율 개선과 모델 설정은 [당시 기록](doc/reviews/2026-10-02-planning-efficiency.md), 관찰된 계획 작업 도입 검증은 [당시 기록](doc/reviews/2026-10-02-planning-orchestration.md), 이전 검증 노드 회귀는 [당시 기록](doc/reviews/2026-10-02-verification-workflow.md), 같은 세션 확인·업데이트는 [당시 기록](doc/reviews/2026-10-02-session-confirmation-update.md)으로 구분합니다. 실제 사람의 질문 화면 조작과 노드화 이후 토큰·시간 절감량은 별도 실측 대상입니다.
+관찰된 계획 작업 도입 이전의 전체 흐름은 신규·기능 개선·버그 수정·리팩토링 4유형에서 실제 모델로 접수부터 로컬 반영까지 확인했습니다. 승인 입력은 명시적인 자동 fixture였으며 **실제 초보자 사용성 측정은 아닙니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도는 추가 확인 범위입니다. 우선순위 2와 실제 호스트 검증은 [당시 기록](doc/reviews/2026-10-02-priority-two-native-codex.md), 앞선 계획 효율 개선과 모델 설정은 [당시 기록](doc/reviews/2026-10-02-planning-efficiency.md), 관찰된 계획 작업 도입 검증은 [당시 기록](doc/reviews/2026-10-02-planning-orchestration.md), 이전 검증 노드 회귀는 [당시 기록](doc/reviews/2026-10-02-verification-workflow.md), 같은 세션 확인·업데이트는 [당시 기록](doc/reviews/2026-10-02-session-confirmation-update.md)으로 구분합니다. 실제 사람의 질문 화면 조작과 노드화 이후 토큰·시간 절감량은 별도 실측 대상입니다.
 
 ## 상세 문서
 

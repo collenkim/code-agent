@@ -40,6 +40,7 @@ import {
   saveEvidence,
   tcPrecheck,
   testCaseEvidence,
+  freezingTestRun,
   testFrozen,
   reproBasisOf,
   reproResultProblem,
@@ -51,7 +52,7 @@ import {
   verifyView,
 } from "./evidence";
 import type { CommandSpec, Evidence, LogBasis, Outcome, ReproAttemptClass, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
-import { logDir, questionsFile, workDocsDir } from "./layout";
+import { logDir, questionsFile, reviewFile, STATE_DIR, workDocsDir } from "./layout";
 import { acquireLock, pidAlive } from "./lock";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import {
@@ -238,6 +239,32 @@ function requireNotRunning(work: Work, retry: VerifyRetryState): void {
   );
 }
 
+/**
+ * 검증 명령이 건드리면 안 되는 code-agent 기록 — 리뷰 회차·리뷰어 실행·교차 지점·사람 판단(review.json)과 계획 기록(planning.json).
+ * hook 은 모델 도구의 .code-agent 쓰기만 막는다. 검증 명령은 모델이 쓴 테스트 코드를 실행하므로 그 기록을 지우거나 고칠 수 있다 —
+ * verify.json 은 끝 저장이 메모리 사본으로 다시 쓰지만 이 둘은 다시 쓰지 않는다. 검증·리뷰·계획 단계의 다른 쓰기는 이 실행 동안 없다
+ * (review-event·교차 리뷰는 review 단계에서만, 계획 담당 hook 은 계획 단계에서만 쓴다).
+ */
+function guardedStateFiles(work: Work): string[] {
+  const { repoRoot, active } = work;
+  return [reviewFile(repoRoot, active.id, active.target), join(repoRoot, STATE_DIR, "work", active.id, `${active.target}.planning.json`)];
+}
+function snapshotState(paths: readonly string[]): Map<string, Buffer | undefined> {
+  return new Map(paths.map((path) => [path, existsSync(path) ? readFileSync(path) : undefined]));
+}
+/** 바뀐 기록을 실행 전 바이트로 되돌리고 바뀐 경로를 돌려준다 */
+function restoreState(work: Work, before: Map<string, Buffer | undefined>): string[] {
+  const changed: string[] = [];
+  for (const [path, bytes] of before) {
+    const now = existsSync(path) ? readFileSync(path) : undefined;
+    if (bytes === undefined ? now === undefined : now !== undefined && bytes.equals(now)) continue;
+    changed.push(path.slice(work.repoRoot.length + 1).replace(/\\/g, "/"));
+    if (bytes === undefined) rmSync(path, { force: true });
+    else { mkdirSync(dirname(path), { recursive: true }); writeAtomic(path, bytes.toString("utf-8")); }
+  }
+  return changed;
+}
+
 async function runSpecs(
   work: Work,
   phase: VerifyPhase,
@@ -250,6 +277,7 @@ async function runSpecs(
   const runs: VerifyRun[] = [];
   const outputs: string[] = [];
   mkdirSync(logDir(work.repoRoot), { recursive: true });
+  const guarded = snapshotState(guardedStateFiles(work));
 
   for (const spec of specs) {
     const at = new Date().toISOString();
@@ -302,6 +330,12 @@ async function runSpecs(
       ...(cause ? { cause } : {}),
       ...(scan.truncated ? { reportScan: "truncated" as const } : {}),
     });
+  }
+  // 검증 명령이 code-agent 기록을 바꿨으면 되돌리고 이 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점을 지워 한도를 피하는 길을 닫는다
+  const tampered = restoreState(work, guarded);
+  if (tampered.length) {
+    throw new Stop(`검증 명령이 code-agent 기록을 바꿔 실행 전 내용으로 되돌렸습니다: ${tampered.join(", ")} — 이 실행은 증거로 받지 않습니다. ` +
+      "검증 명령(테스트 코드·스크립트)이 .code-agent 아래를 지우거나 고치지 않게 계획 안에서 고친 뒤 다시 검증하세요. 의도한 동작이 아니면 사용자에게 보고합니다.");
   }
   return { runs, outputs };
 }
@@ -377,7 +411,7 @@ function remainingNote(work: Work, evidence: Evidence, phase: "check" | "test" |
   if (state === "code-defect") {
     // 고쳐도 다음 회차가 거부되는가 — hook 의 쓰기 차단(writeBlockReason)과 같은 판정이다
     const next = nextRoundDecision({ previous: view.state, emptyRound: view.emptyRound, treeChanged: true, budget: view.budget,
-      reviewOpenFindings: view.budget.reviewRounds.used > 0 });
+      reviewOpenFindings: view.reviewOpenFindings });
     if (next.action === "refuse" && next.failure.counter) {
       const { key, limit } = next.failure.counter;
       return `${key === "fix" ? `고쳐 쓰기 ${limit}회를 넘겼습니다` : `${COUNTER_LABEL[key]} 한도 ${limit}회를 모두 썼습니다`} — 덮지 않고 보고합니다. ` +
@@ -815,7 +849,7 @@ export async function check(work: Work, options: { retry?: boolean } = {}): Prom
   const treeChanged = !bound || bound.treeHash !== treeHashNow(work);
   const decision = nextRoundDecision({
     previous: view?.state ?? "none", emptyRound: view?.emptyRound ?? false, treeChanged,
-    budget: view?.budget ?? emptyBudget(work), retry: !!options.retry, reviewOpenFindings: (view?.budget.reviewRounds.used ?? 0) > 0,
+    budget: view?.budget ?? emptyBudget(work), retry: !!options.retry, reviewOpenFindings: view?.reviewOpenFindings ?? false,
   });
   if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure));
 
@@ -915,9 +949,9 @@ export async function runTests(work: Work): Promise<string> {
   evidence.testCases = testCaseEvidence(work, outputs.join("\n"));
   delete evidence.retry.started;
   clearWiped(evidence.retry, "test");
-  // 동결은 결과가 인식된(또는 코드 결함으로 실패한) test 실행부터 — 그때의 kind:test 파일 해시를 기준으로 굳힌다
+  // 동결은 결과가 인식된(또는 코드 결함·시간 초과·선언된 환경 문구로 끝난 — 테스트가 실제로 돈) test 실행부터 — 그때의 kind:test 파일 해시를 기준으로 굳힌다
   const frozenBefore = testFrozen(before ?? evidence);
-  if (!evidence.testFreeze && (frozenBefore || runs.some((run) => runClass(run) === "defect") || evidence.testCases.some((entry) => entry.source === "출력"))) {
+  if (!evidence.testFreeze && (frozenBefore || runs.some(freezingTestRun) || evidence.testCases.some((entry) => entry.source === "출력"))) {
     evidence.testFreeze = { round, at: new Date().toISOString(), files: fileHashes(work.repoRoot, testStageFiles(work)) };
   }
   persist(work, evidence);

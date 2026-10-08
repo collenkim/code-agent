@@ -9,6 +9,8 @@ import { knowledgePath } from "./knowledge";
 import { reviewFile, verifyFile, workDocsDir } from "./layout";
 import {
   grantScope,
+  grantText,
+  runCauseOf,
   LIMITS,
   limitOf,
   nextRoundDecision,
@@ -456,7 +458,25 @@ export function fixLimit(work: Work, evidence: Evidence): number {
 // ---- 원인별 재시도 카운터 (판정은 retryPolicy.ts, 여기는 증거를 그 입력으로 바꾼다) ----
 
 /** 리뷰 회차 사용량 — 리뷰 회차 한도의 판정은 이 값 하나다(openRound·check()·hook·verify 가 같이 쓴다) */
-export interface ReviewRoundUsage { used: number; base: number; limit: number; usedPaths: string[]; stale: boolean }
+export interface ReviewRoundUsage {
+  used: number; base: number; limit: number; usedPaths: string[]; stale: boolean;
+  /** 마지막 회차에 기각되지 않은 열린 지적(F·X)이 있는가 — 한도 거부의 원래 원인(blocking-finding)만 고른다 */
+  openFindings?: boolean;
+}
+/** 결과 표의 열린 지적 줄 — `| F1 | 파일 | 범위 | 열림 | 지적 |` */
+const OPEN_ROW = /^\|\s*([FX]\d+)\s*\|[^|\n]*\|[^|\n]*\|\s*열림\s*\|/gm;
+function openFindingsOf(log: ReviewLog): boolean {
+  const last = log.rounds.at(-1);
+  if (!last) return false;
+  const waived = new Set((log.waivers ?? []).filter((waiver) => waiver.round === last.round).map((waiver) => waiver.id));
+  const results = [
+    ...(last.reviewers ?? []).filter((run) => !run.ignored && !run.failure && run.result !== undefined).map((run) => run.result!),
+    ...(last.reviewers === undefined && last.reviewer?.result !== undefined ? [last.reviewer.result] : []),
+    ...(last.crossAttempts ?? []).filter((attempt) => attempt.class === "completed" && attempt.result !== undefined).map((attempt) => attempt.result!),
+    ...(last.crossAttempts === undefined && last.cross?.completedAt && last.cross.result !== undefined ? [last.cross.result] : []),
+  ];
+  return results.some((text) => [...text.matchAll(OPEN_ROW)].some((match) => !waived.has(match[1])));
+}
 
 /**
  * 리뷰 회차 사용량. 순수 함수다 — 파일을 읽지 않으므로 review.json 잠금 안에서 다시 읽은 log 로도 부른다.
@@ -476,6 +496,7 @@ export function reviewRoundUsageOf(log: ReviewLog | undefined, binding: { baseCo
     limit: limitOf("reviewRounds", base, log!.grants ?? [], grantScope({ file: "review", key: "reviewRounds" })),
     usedPaths: (log!.used ?? []).map((entry) => entry.path),
     stale: false,
+    openFindings: openFindingsOf(log!),
   };
 }
 
@@ -490,6 +511,21 @@ export function reviewRoundUsage(work: Work): ReviewRoundUsage {
   }
   if (!work.plan || !work.active.baseCommit) return reviewRoundUsageOf(undefined, { baseCommit: "", planHash: "", manifestHash: "" });
   return reviewRoundUsageOf(log, { baseCommit: work.active.baseCommit, planHash: hashPlan(work.plan), manifestHash: hashManifest(work.manifest) });
+}
+
+/**
+ * 리뷰 회차 **예산**의 사용량 — review.json 회차 수와, 통과 뒤 변경으로 연 검증 회차 수(지금 묶임 증거의 retry.causes 의 review) 중
+ * 큰 값이다. 리뷰를 열지 않고 '통과 → 수정 → verify' 를 되풀이해도 리뷰 회차를 쓴다(규약: 통과 뒤 변경은 리뷰 회차). review.json 이
+ * 지워지거나 깨져도 검증 기록 쪽 수가 남는다. 한도·사람 허용은 review.json 의 값 그대로다. 검증 예산(verifyView)·리뷰 회차 허용
+ * (retryGrant·reviewBudgets)이 쓴다 — openRound 는 review.json 회차만 본다(리뷰를 받는 길은 막지 않는다).
+ */
+export function reviewRoundBudget(work: Work, evidence?: Evidence): ReviewRoundUsage {
+  const usage = reviewRoundUsage(work);
+  const bound = evidence ?? loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  const same = !!bound && !!work.plan && bound.baseCommit === work.active.baseCommit && bound.planHash === hashPlan(work.plan) &&
+    bound.manifestHash === hashManifest(work.manifest);
+  const opened = same ? Object.values(verifyRetryOf(bound!).causes).filter((cause) => cause === "review").length : 0;
+  return opened > usage.used ? { ...usage, used: opened } : usage;
 }
 
 /** 회차 전체 상태 — check() 의 다음 회차 판정과 hook 이 쓴다(앞 회차 test 상태를 이어받는다) */
@@ -509,16 +545,19 @@ export interface VerifyView {
   testState?: VerifyState;
   retry: VerifyRetryView;
   budget: VerifyBudget;
+  /** 마지막 리뷰 회차에 기각되지 않은 열린 지적이 있는가 — 통과 뒤 변경 거부의 원래 원인(blocking-finding·code-defect)을 고른다 */
+  reviewOpenFindings: boolean;
 }
 
 /** 증거 하나의 판정 입력 — 상태·카운터·예산. check()·verify·hook·status·context 가 같은 값을 본다 */
 export function verifyView(work: Work, evidence: Evidence): VerifyView {
   const retry = verifyRetryOf(evidence);
+  const reviewRounds = reviewRoundBudget(work, evidence);
   const budget = verifyBudget({
     retry, round: evidence.rounds, fixRounds: fixLimit(work, evidence),
     // fix 는 재현부터 테스트가 얼어 있다 — 수집 수정 창이 재현 동결을 열지 않게 0 이다
     collectLimit: evidence.repro ? 0 : LIMITS.collect,
-    reviewRounds: reviewRoundUsage(work),
+    reviewRounds,
   });
   const { state, emptyRound } = roundState(evidence);
   const r = evidence.rounds;
@@ -526,7 +565,7 @@ export function verifyView(work: Work, evidence: Evidence): VerifyView {
     : evidence.runs.some((run) => run.phase === "test" && run.round === r)
       ? verifyState({ phase: "test", round: r, runs: evidence.runs, cases: evidence.testCases })
       : retry.wiped?.test?.round === r ? retry.wiped.test.state : undefined;
-  return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget };
+  return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget, reviewOpenFindings: !!reviewRounds.openFindings };
 }
 
 /**
@@ -535,9 +574,19 @@ export function verifyView(work: Work, evidence: Evidence): VerifyView {
  * 결과가 하나도 인식되지 않고 실패도 없던 test 실행(결과 미확인)은 얼리지 않는다.
  */
 export function testFrozen(evidence: Evidence): boolean {
-  return !!evidence.testFreeze || !!evidence.repro ||
-    evidence.runs.some((run) => run.phase === "test" && runClass(run) === "defect") ||
+  return !!evidence.testFreeze || !!evidence.repro || evidence.runs.some(freezingTestRun) ||
     evidence.testCases.some((entry) => entry.source === "출력");
+}
+
+/**
+ * 동결을 시작하는 test 실행 — 테스트가 실제로 돈 실행이다: 코드 결함으로 실패, 제한 시간 초과(걸려 멈춘 테스트도 지우거나 약하게
+ * 고치지 못하게), 선언된 환경 문구로 실패. 실행 파일 없음·실행 실패(spawn)·명령 미선언은 테스트가 돌지 않아 얼리지 않는다.
+ * 결과가 인식된 실행(TC 결과 줄)은 testCases 쪽이 언다. 결과 미확인(exit 0, TC 없음)은 수집 수정 창 때문에 얼리지 않는다.
+ */
+export function freezingTestRun(run: VerifyRun): boolean {
+  if (run.phase !== "test") return false;
+  const cls = runClass(run);
+  return cls === "defect" || cls === "timeout" || (cls === "environment" && runCauseOf(run) === "environment");
 }
 
 /** 결과 미확인 회차의 수집 수정 창 — 그동안 kind:test 파일의 TC 이름을 고칠 수 있다. fix 작업은 수집 한도가 0 이라 없다 */
@@ -578,7 +627,7 @@ export function testFreezeProblems(work: Work, evidence: Evidence): string[] {
 export function overFixLimit(work: Work, evidence: Evidence): boolean {
   const view = verifyView(work, evidence);
   const decision = nextRoundDecision({ previous: view.state, emptyRound: view.emptyRound, treeChanged: true, budget: view.budget,
-    reviewOpenFindings: view.budget.reviewRounds.used > 0 });
+    reviewOpenFindings: view.reviewOpenFindings });
   return decision.action === "refuse" && decision.failure.counter?.key === "fix";
 }
 
@@ -802,6 +851,10 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
       );
     }
   }
+
+  // 사람이 늘린 한도(judgment retry-grant) — 기록이 있을 때만 절이 붙는다(옛 증거의 ⑧ 은 바이트가 그대로다)
+  const grants = evidence.retry?.grants ?? [];
+  if (grants.length > 0) lines.push("", "## 사람 허용", "", ...grants.map((grant) => `- ${grantText(grant)}`));
 
   const failures = evidence.runs.filter((run) => run.outcome === "failed" || run.outcome === "error");
   if (failures.length > 0) {

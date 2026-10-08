@@ -17,7 +17,7 @@ import {
 } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
 import { contextHandoff, handoffDir, writeHandoff } from "./handoff";
-import { hostAssets, hostCommand, type Host } from "./hosts";
+import { hostAssets, hostCommand, hostCommandConfigError, type Host } from "./hosts";
 import { questionsFile, workDocsDir } from "./layout";
 import { claudeModelArgs, claudeModelOf, codexModelArgs, codexModelOf, modelLabel } from "./modelPolicy";
 import { mutatePlanning, planningWork } from "./planning";
@@ -152,7 +152,8 @@ function withNotes(notes: readonly string[], refusal: RetryRefused): RetryRefuse
 function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sandboxSuspect: boolean): CrossRun {
   const invocation = crossInvocation(root, host, agent, prompt);
   if ("unresolved" in invocation) {
-    const probe: CrossProbe = host === "codex" ? { host, unresolved: invocation.unresolved, sentPrompt: "" } : { host, unresolved: invocation.unresolved };
+    const unresolvedConfig = hostCommandConfigError(invocation.unresolved);
+    const probe: CrossProbe = host === "codex" ? { host, unresolved: invocation.unresolved, unresolvedConfig, sentPrompt: "" } : { host, unresolved: invocation.unresolved, unresolvedConfig };
     return { ok: false, model: invocation.model, probe, usage: { durationMs: 0 }, output: invocation.unresolved };
   }
   const { model } = invocation;
@@ -239,6 +240,12 @@ function beforeRefusal(decision: Extract<CrossPointDecision, { action: "refuse" 
   return new RetryRefused(record, message);
 }
 
+/** 마지막 시도가 같은 사유의 사전 판정 거부인가 — 사전 거부는 지점 시도에 세지 않으므로 되풀이를 한 번만 기록한다 */
+function repeatedPreflight(attempts: readonly { mode: string; class?: string; detail?: string }[], detail: string): boolean {
+  const last = attempts.at(-1);
+  return last?.mode === "preflight" && last.class === "host-sandbox-denied" && last.detail === detail;
+}
+
 /** 실행 뒤 실패(중지가 아닌 것)의 문구 — 원인별 안내, 중지 지점의 재실행이면 이전 중지대로 진행한다는 꼬리 */
 function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointWords, budgets: Record<"crossError" | "crossFormat", Budget>, wasStopped: boolean, raw?: string): string {
   const tail = wasStopped ? WAS_STOPPED : "";
@@ -246,9 +253,11 @@ function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointW
     case "cross-timeout":
       return guidance("cross-timeout", { host: words.host, min: crossTimeoutMin() }) + tail;
     case "cross-config-error":
-      return guidance("cross-config-error", { host: words.host, detail: `${attempt.detail ?? ""}${attempt.logPath ? ` (출력 원문: ${attempt.logPath})` : ""}`, left: budgets.crossError.left }) + tail;
+      return guidance("cross-config-error", { host: words.host, detail: `${attempt.detail ?? ""}${attempt.logPath ? ` (출력 원문: ${attempt.logPath})` : ""}`, left: budgets.crossError.left },
+        budgets.crossError.left > 0 ? undefined : "exhausted") + tail;
     case "cross-result-invalid":
-      return guidance("cross-result-invalid", { host: words.host, point: words.point, detail: attempt.detail ?? "", raw: attempt.rawPath ?? "(원문 없음)", left: budgets.crossFormat.left }) + tail +
+      return guidance("cross-result-invalid", { host: words.host, point: words.point, detail: attempt.detail ?? "", raw: attempt.rawPath ?? "(원문 없음)", left: budgets.crossFormat.left },
+        budgets.crossFormat.left > 0 ? undefined : "exhausted") + tail +
         (raw !== undefined ? `\n${raw.slice(0, 300)}` : "");
     case "host-sandbox-denied":
       return guidance("host-sandbox-denied", { host: words.host, detail: attempt.detail ?? "" }) + tail;
@@ -358,10 +367,13 @@ export function crossReview(root: string, by: string | undefined): string {
     }
     const preflight = crossPreflight(host, process.env);
     if (preflight) {
+      const refusal = new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail }));
+      // 같은 사전 거부가 마지막 시도면 다시 쌓지 않는다(멱등) — 지점 시도에 세지 않는 거부라 되풀이해도 기록이 끝없이 늘지 않게
+      if (repeatedPreflight(attempts, preflight.detail)) return closed.length ? { log, value: { refusal } } : { value: { refusal } };
       attempts.push({ n: attempts.length + 1, host, ...(caller ? { caller } : {}), mode: "preflight", startedAt: at, endedAt: at,
         class: "host-sandbox-denied", kind: "preflight", detail: preflight.detail });
       last.crossAttempts = attempts;
-      return { log, value: { refusal: new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail })) } };
+      return { log, value: { refusal } };
     }
     const mode = decision.action === "correct" ? "correct" as const : "review" as const;
     const attempt: CrossAttempt = { n: attempts.length + 1, host, ...(caller ? { caller } : {}), mode, startedAt: at, pid: process.pid, machine: hostname() };
@@ -537,10 +549,17 @@ export function crossCritic(root: string, by: string | undefined): string {
       }
       const preflight = crossPreflight(host, process.env);
       if (preflight) {
+        const refusal = new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail }));
+        // 같은 사전 거부가 마지막 시도면 다시 쌓지 않는다(리뷰 쪽과 같다)
+        if (repeatedPreflight(attempts, preflight.detail)) {
+          if (!closed.length) throw refusal;
+          keep(state, attempts);
+          return { refusal };
+        }
         attempts.push({ n: attempts.length + 1, host, ...(caller ? { caller } : {}), mode: "preflight", startedAt: at, endedAt: at,
           class: "host-sandbox-denied", kind: "preflight", detail: preflight.detail, criticDispatchId: dispatchId });
         keep(state, attempts);
-        return { refusal: new RetryRefused(preflight, guidance("host-sandbox-denied", { host, detail: preflight.detail })) };
+        return { refusal };
       }
       const mode = decision.action === "correct" ? "correct" as const : "review" as const;
       const lastInvalid = [...attempts].reverse().find((item) => item.class === "cross-result-invalid");

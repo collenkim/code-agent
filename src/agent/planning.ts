@@ -8,7 +8,8 @@ import { sha } from "./docs";
 import { workDocsDir } from "./layout";
 import { acquireLock } from "./lock";
 import { Stop } from "./stop";
-import { codexAgentName } from "./hosts";
+import { codexAgentName, selectedHosts } from "./hosts";
+import { runtimeHost } from "./crossEnv";
 import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, planningDispatchDecision, RetryRefused, TIMING,
   type Budget, type CounterKey, type FailureClass } from "./retryPolicy";
 import { readSourceTrace } from "./sourceTrace";
@@ -284,17 +285,32 @@ function previousOf(attempt: TaskAttempt | undefined): { previous?: { dispatchId
   const detail = attempt.error ?? attempt.failure?.detail ?? attempt.result?.summary ?? "";
   return { previous: { dispatchId: attempt.dispatchId, status: attempt.status, ...(attempt.failure ? { class: attempt.failure.class } : {}), detail: detail.slice(0, 1000) } };
 }
+/**
+ * Codex 담당의 계약인가 — Codex 만 설치했거나 배정을 부른 쪽이 Codex 다. Codex 담당은 staging 을 쓸 수 없어(hook 이 거부한다)
+ * 출력 문서를 결과 JSON 의 {path, content} 로 돌려준다. 두 호스트 설치에서 부른 쪽을 판별하지 못하면 Claude 계약(staging)과
+ * 그 거부 시의 content 대체 문장을 그대로 둔다.
+ */
+function codexContract(work: Work): boolean {
+  let hosts: string[];
+  try { hosts = selectedHosts(work.repoRoot); } catch { return false; }
+  // 한 호스트 설치면 그 호스트의 담당이다. 두 호스트 설치에서만 부른 쪽(runtimeHost)을 본다
+  if (hosts.length === 1) return hosts[0] === "codex";
+  return runtimeHost() === "codex";
+}
+const STAGED_INSTRUCTION = "출력 문서는 staging의 경로에 Write 도구로 전체 내용을 쓰고 artifacts에는 {path, staged}만 넣으세요 — 결과 JSON에 문서 본문을 싣지 않습니다. Write 도구가 없거나 그 쓰기가 거부되면 artifacts에 {path, content}로 전체 내용을 넣으세요.";
+const CONTENT_INSTRUCTION = "출력 문서는 파일로 쓰지 말고 artifacts에 {path, content}로 전체 내용을 넣으세요(staging 은 이 호스트의 담당에게 열리지 않습니다).";
 function assignment(work: Work, state: PlanningState, record: TaskRecord) {
     const attempt = record.attempts.at(-1)!;
+    const codex = codexContract(work);
     const staged = Object.fromEntries(record.task.outputs.map(path => [path, stagingPath(work.active.id, attempt.dispatchId, path)]));
-    if (record.task.outputs.length) openStaging(work);
+    if (record.task.outputs.length && !codex) openStaging(work);
     const dependencies = record.task.dependsOn.map(dep => compactResult(state.tasks.find(item => item.task.id === dep)!));
     return { cached: false, agent: TASK_AGENTS[record.task.role], hostAgents: { claude: TASK_AGENTS[record.task.role], codex: codexAgentName(TASK_AGENTS[record.task.role]) }, task: record.task, inputs: inputFiles(work, record.task, state), dependencies,
       ...(record.task.role === "impact" ? { delegation: "조사와 02 영향도 정리를 한 담당이 수행합니다. 입력을 직접 확인하고 모든 요구의 영향·호출자·위험을 기록하세요. 별도 writer를 호출하지 않습니다. 설계·계획·독립 검토·승인은 그대로 유지합니다." } : {}),
       ...(record.task.role === "plan" ? { planShape: planFormatFor(work.order.kind).shape, stages: work.stages, target: work.active.target, kind: work.order.kind } : {}),
-      ...(record.task.outputs.length ? { staging: staged } : {}),
-      instructions: "지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. staging에 지정된 경로 외의 파일은 쓰지 말고 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄이며 경로는 저장소 루트 기준 전체 상대 경로로 씁니다(예: doc/work/<ID>/requirement.md:16, 파일명만 쓰지 않음). 원문 인용은 확정 지시서의 글자 그대로 옮기고 따옴표를 이스케이프하지 않습니다. 이 배정의 출력 문서(이전 판 포함)는 근거로 인용하지 않습니다. 출력 문서는 staging의 경로에 Write 도구로 전체 내용을 쓰고 artifacts에는 {path, staged}만 넣으세요 — 결과 JSON에 문서 본문을 싣지 않습니다. Write 도구가 없거나 그 쓰기가 거부되면 artifacts에 {path, content}로 전체 내용을 넣으세요. 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. 질문·요약·문서 설명문은 확정 지시서와 같은 언어로 씁니다. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.",
-      resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => ({ path, staged: staged[path] })), findings: [] },
+      ...(record.task.outputs.length && !codex ? { staging: staged } : {}),
+      instructions: `지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. ${codex ? "파일은 쓰지 말고" : "staging에 지정된 경로 외의 파일은 쓰지 말고"} 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄이며 경로는 저장소 루트 기준 전체 상대 경로로 씁니다(예: doc/work/<ID>/requirement.md:16, 파일명만 쓰지 않음). 원문 인용은 확정 지시서의 글자 그대로 옮기고 따옴표를 이스케이프하지 않습니다. 이 배정의 출력 문서(이전 판 포함)는 근거로 인용하지 않습니다. ${codex ? CONTENT_INSTRUCTION : STAGED_INSTRUCTION} 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. 질문·요약·문서 설명문은 확정 지시서와 같은 언어로 씁니다. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.`,
+      resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => codex ? { path, content: "<문서 전체 내용>" } : { path, staged: staged[path] }), findings: [] },
       itemShapes: { fact: { key: "공유 사실 식별자", value: "관찰값", source: { path: work.active.spec, line: 1 } }, question: { id: "Q1", question: "사용자가 결정할 사항", requirements: record.task.requirements }, finding: { id: "F1", severity: "blocking | advisory", detail: "문제와 영향", source: { path: work.active.spec, line: 1 } } },
     };
 }

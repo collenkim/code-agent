@@ -15,7 +15,7 @@ import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { readStages, STATE_DIR } from "./layout";
 import { loadPlanning, PLANNING_PHASES, ROLE_PHASE, runView } from "./planningState";
-import { guidance, isFailureClass, POLICIES, type FailureClass } from "./retryPolicy";
+import { GUIDE_VARIANTS, guidance, isFailureClass, POLICIES, type FailureClass } from "./retryPolicy";
 import type { Work } from "./work";
 
 /** 동의 기록 파일 이름(consent.ts 의 UUID 와 같다) — 같은 폴더의 index.json·snapshot-cache.json·tickets/·apply.lock 은 건너뛴다 */
@@ -89,5 +89,8 @@ function deliverHint(work: Work): string | undefined {
   if (!last || last.record.status !== "failed" || last.created < since || !failure) return undefined;
   const cls = failure.class;
   if (!isFailureClass(cls) || !CONSENT_CLASSES.includes(cls)) return undefined;
-  return `[${POLICIES[cls].label}] ${guidance(cls, { detail: typeof failure.detail === "string" ? failure.detail : "" })}`;
+  // 동의 출력의 failure.guide(consentGuide)와 같은 갈래 문구 — 승인이 아닌 응답(response-*)은 그 변형이다
+  const kind = (failure as { kind?: unknown }).kind;
+  const variant = cls === "consent-target-changed" && typeof kind === "string" && GUIDE_VARIANTS[cls]?.[kind] !== undefined ? kind : undefined;
+  return `[${POLICIES[cls].label}] ${guidance(cls, { detail: typeof failure.detail === "string" ? failure.detail : "" }, variant)}`;
 }

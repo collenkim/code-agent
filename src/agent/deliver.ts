@@ -16,7 +16,7 @@ import { clearActive, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDi
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
 import { crossQuestionViews, loadPlanning } from "./planningState";
-import { crossPointState } from "./retryPolicy";
+import { COUNTER_LABEL, crossPointState, grantText, type RetryGrant } from "./retryPolicy";
 import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./review";
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
@@ -161,15 +161,61 @@ function crossTraceLines(work: Work): string[] {
   return lines;
 }
 
+/**
+ * 사람이 늘린 한도(judgment retry-grant) — 검증(verify.json)·리뷰(review.json)·계획(planning.json) 기록. 동의 영수증에만 남지 않게
+ * ⑩ 검증 절·커밋 메시지가 같은 값을 보인다. 계획 기록을 읽지 못하면 계획 쪽은 뺀다.
+ */
+function grantRecords(work: Work, evidence: Evidence | undefined): { where: string; grant: RetryGrant }[] {
+  const { repoRoot, active } = work;
+  const out: { where: string; grant: RetryGrant }[] = [];
+  for (const grant of evidence?.retry?.grants ?? []) out.push({ where: "검증", grant });
+  for (const grant of loadReview(repoRoot, active.id, active.target)?.grants ?? []) out.push({ where: "리뷰", grant });
+  if (active.planningVersion) {
+    try { for (const grant of loadPlanning(work).retry?.grants ?? []) out.push({ where: "계획", grant }); } catch { /* 계획 기록을 읽지 못하면 뺀다 */ }
+  }
+  return out;
+}
+function grantTraceLines(work: Work, evidence: Evidence | undefined): string[] {
+  return grantRecords(work, evidence).map(({ where, grant }) => `- 사람 판단: 한도 허용(${where}) — ${grantText(grant)}`);
+}
+
+/**
+ * 계획 승인 화면의 검토 줄 — critic 결과와 교차 계획 검토·그 사람 판단(기각·중지). ⑩ 검증 절·커밋 메시지와 같은 원천(crossSummary)이라
+ * 반영 때 보이는 계획 검토 줄을 승인 때도 본다. 관찰 흐름이 아니거나 계획 기록을 읽지 못하면 없다.
+ */
+export function planReviewLines(work: Work): string[] {
+  if (!work.active.planningVersion) return [];
+  const lines: string[] = [];
+  try {
+    const critic = loadPlanning(work).tasks.find((record) => record.task.role === "critic")?.attempts.at(-1);
+    if (critic) {
+      const blocking = critic.result?.findings.filter((finding) => finding.severity === "blocking").length;
+      lines.push(`- 계획 검토(critic): ${critic.result?.status ?? critic.status}${blocking !== undefined ? ` · 차단 지적 ${blocking}` : ""}`);
+    }
+  } catch { return []; }
+  const { required, planning } = crossSummary(work);
+  if (planning) {
+    const findings = planning.done?.outcome;
+    lines.push(`- 교차 계획 검토: ${planning.label}${findings ? `(차단 ${findings.findings.filter((finding) => finding.severity === "blocking").length} · 질문 ${findings.questions})` : ""} · critic ${planning.dispatchId.slice(0, 8)}`);
+    for (const waiver of planning.waivers) lines.push(`- 사람 판단: ${waiver.id}(교차 계획 검토) 기각 — ${oneLine(waiver.reason)} · 동의 ${waiver.consent.slice(0, 8)}`);
+    for (const stop of planning.stops) lines.push(`- 사람 판단: 교차 계획 검토 중지 — ${oneLine(stop.detail)} · 동의 ${(stop.consent ?? "").slice(0, 8)}`);
+  } else if (required) {
+    lines.push("- 교차 계획 검토: 기록 없음");
+  }
+  return lines.length ? ["", "## 계획 검토", "", ...lines] : [];
+}
+
 /** 커밋 메시지의 교차 검증·사람 판단 줄 */
-function crossCommitLines(work: Work): string[] {
+function crossCommitLines(work: Work, evidence?: Evidence): string[] {
   const { required, log, rounds, planning } = crossSummary(work);
+  const granted = grantRecords(work, evidence).map(({ grant }) => `${COUNTER_LABEL[grant.key] ?? grant.key} +${grant.step}`);
   const lines: string[] = [];
   if (required) lines.push(`교차 검증: 리뷰 ${rounds.at(-1)?.label ?? "없음"} · 계획 검토 ${planning?.label ?? "없음"}`);
   const waived = [...(log?.waivers ?? []).map((waiver) => waiver.id), ...(planning?.waivers ?? []).map((waiver) => waiver.id)];
   const stops = [...rounds.filter((round) => round.stops.length).map((round) => `리뷰 ${round.round}회차`), ...(planning?.stops.length ? ["계획 검토"] : [])];
-  if (waived.length || stops.length) {
-    lines.push(`사람 판단: ${[waived.length ? `기각 ${[...new Set(waived)].join(", ")}` : "", stops.length ? `교차 중지 ${stops.join(", ")}` : ""].filter(Boolean).join(" · ")}`);
+  if (waived.length || stops.length || granted.length) {
+    lines.push(`사람 판단: ${[waived.length ? `기각 ${[...new Set(waived)].join(", ")}` : "", stops.length ? `교차 중지 ${stops.join(", ")}` : "",
+      granted.length ? `한도 허용 ${granted.join(", ")}` : ""].filter(Boolean).join(" · ")}`);
   }
   return lines;
 }
@@ -177,8 +223,9 @@ function crossCommitLines(work: Work): string[] {
 /**
  * 코드 구역 — 추적표 · 검증 · 변경 요약. 다시 렌더해 바이트로 대조한다.
  * legacy 는 교차 검증·사람 판단 줄을 더하기 전 판의 렌더다 — 갱신 전에 렌더된 구역을 손 수정으로 오인하지 않으려고 대조에만 쓴다.
+ * noGrants 는 사람 허용(한도 허용) 줄을 더하기 전 판의 렌더다 — 같은 이유로 대조에만 쓴다.
  */
-export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean } = {}): string {
+export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean; noGrants?: boolean } = {}): string {
   const { active } = work;
   const rows = traceRows(work, evidence);
   const lines = [
@@ -219,6 +266,7 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined, opt
       ),
       `- 코드 리뷰: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "회차 없음"} — ${reviewDocFile(active.id)}`,
       ...(options.legacy ? [] : crossTraceLines(work)),
+      ...(options.legacy || options.noGrants ? [] : grantTraceLines(work, evidence)),
       `- 자세한 것: ${validationDocFile(active.id)} · ${planDocFile(active.id)}`,
     );
   }
@@ -255,6 +303,28 @@ const SKELETON = (id: string): string =>
     "<!-- 남은 위험과 되돌리는 방법. 없으면 근거와 함께 '없음'. -->",
     "",
   ].join("\n");
+
+/** 확인 화면에 싣는 모델 구역(요약·확인 방법·위험·되돌리기)의 상한 — 넘으면 자른 사실을 적는다 */
+export const PROSE_SHOWN_LIMIT = 4000;
+
+/**
+ * 모델이 쓴 구역의 본문 — 반영 확인 화면에 싣는다(커밋되는 PR 본문을 사람이 보고 승인한다). 주석 줄은 빼고,
+ * 다음 제목·코드 구역 표지에서 끊는다. 합이 상한을 넘으면 자르고 그 사실과 전문 위치를 적는다.
+ */
+export function proseSectionLines(text: string, file: string): string[] {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (const heading of PROSE_SECTIONS) {
+    const from = lines.findIndex((line) => line.replace(/\s/g, "") === `##${heading.replace(/\s/g, "")}`);
+    if (from < 0) continue;
+    const to = lines.findIndex((line, index) => index > from && (/^#{1,6}\s/.test(line) || /^<!-- code-agent:/.test(line.trim())));
+    const body = lines.slice(from + 1, to < 0 ? lines.length : to).filter((line) => !line.trim().startsWith("<!--")).join("\n").trim();
+    out.push(`## ${heading}`, "", body || "(비어 있음)", "");
+  }
+  const joined = out.join("\n").trimEnd();
+  if (joined.length <= PROSE_SHOWN_LIMIT) return joined ? [joined] : [];
+  return [`${joined.slice(0, PROSE_SHOWN_LIMIT)}\n… (확인 화면에서 ${joined.length - PROSE_SHOWN_LIMIT}자를 잘랐습니다 — 전문은 ${file})`];
+}
 
 /** 제목 아래 본문 — 주석과 빈 줄만 남았으면 안 쓴 것이다 */
 function sectionFilled(text: string, heading: string): boolean {
@@ -406,7 +476,7 @@ function commitMessage(work: Work, evidence: Evidence): string {
       .map((phase) => `${phase}=${runsOf(evidence, phase).every((run) => run.outcome === "passed") ? "passed" : "?"}`)
       .join(" · ")} · 기준 커밋 ${evidence.baseCommit.slice(0, 12)} · 트리 ${evidence.treeHash.slice(-12)}`,
     ...(evidence.repro?.mode === "log" ? [`재현: ${reproLine(evidence.repro)}`] : []),
-    ...crossCommitLines(work),
+    ...crossCommitLines(work, evidence),
     `근거: ${prDocFile(active.id)} · ${validationDocFile(active.id)} · ${reviewDocFile(active.id)}`,
   ].join("\n");
 }
@@ -552,7 +622,9 @@ export function deliver(work: Work): string {
   const had = blockCount(text, PR_BLOCK);
   const rendered = upsertBlock(text, PR_BLOCK, block);
   // 갱신 전 판이 렌더한 구역(교차 검증·사람 판단 줄 없음)과 파일 전체가 같으면 손 수정이 아니다
-  const tampered = had > 0 && rendered !== text && upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { legacy: true })) !== text;
+  // 사람 허용 줄을 더하기 전 판(교차·사람 판단 줄만)의 렌더도 손 수정이 아니다
+  const tampered = had > 0 && rendered !== text && upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { legacy: true })) !== text &&
+    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noGrants: true })) !== text;
   writeAtomic(path, rendered);
 
   const problems = deliverProblems(work, rendered);
@@ -582,6 +654,8 @@ export function deliver(work: Work): string {
     `브랜치 ${active.branch ?? "(없음)"} 에 **로컬 커밋**합니다. push · MR/PR 생성은 하지 않습니다.`,
     ...(tampered ? ["", `!! ${prDocFile(active.id)} 의 코드 구역이 손으로 고쳐져 있어 다시 렌더했습니다.`] : []),
     ...answerSourceLines(work),
+    // 모델이 쓴 PR 본문 구역 — 커밋되는 글이라 사람이 보고 승인한다(코드 구역 앞)
+    ...proseSectionLines(rendered, prDocFile(active.id)).flatMap((prose) => ["", prose]),
     "",
     block,
   ].join("\n");

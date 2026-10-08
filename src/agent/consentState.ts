@@ -32,13 +32,15 @@ const RECENT_LIMIT = 3;
 export interface IndexEntry { id: string; at: string; status: string; targetChanged: boolean; detail?: string }
 export interface ConsentIndex {
   version: 1;
-  open: Record<string, { action: string; status: string; createdAt: string }>;
+  /** session — 그 동의에 답하고 적용하는 세션(응답 관찰 뒤 sessionId, 그 전 준비 세션). 셸을 좁히는 것은 그 세션만이다 */
+  open: Record<string, { action: string; status: string; createdAt: string; session?: string }>;
   recent: Record<string, IndexEntry[]>;
 }
 /** 색인이 다루는 기록의 필드 — consent.ts 의 ConsentRecord 부분 집합 */
 export interface IndexedRecord {
   id: string; action: { action: string }; status: string; createdAt: string;
   failure?: { kind?: string; class?: string; at?: string; detail?: string };
+  sessionId?: string; preparedSession?: { id: string };
 }
 
 function emptyIndex(): ConsentIndex { return { version: 1, open: Object.create(null), recent: Object.create(null) }; }
@@ -62,7 +64,8 @@ function entryOf(record: IndexedRecord): IndexEntry {
 function place(index: ConsentIndex, record: IndexedRecord): void {
   const action = record.action.action;
   if (OPEN_STATUSES.includes(record.status)) {
-    index.open[record.id] = { action, status: record.status, createdAt: record.createdAt };
+    const session = record.sessionId ?? record.preparedSession?.id;
+    index.open[record.id] = { action, status: record.status, createdAt: record.createdAt, ...(session ? { session } : {}) };
     return;
   }
   delete index.open[record.id];
@@ -104,14 +107,19 @@ export function repeatedTargetChange(root: string, action: string): { detail?: s
   return last.length === 2 && last.every((row) => row.targetChanged) ? { detail: last[1].detail } : undefined;
 }
 
-/** 세션 밖에서 응답·적용을 기다리는 동의(열린 창 안의 첫 항목). 색인 읽기만 한다 — 잠금 없음, 깨진 색인은 undefined */
-export function openConsent(root: string, now = Date.now()): { id: string; action: string; title: string } | undefined {
+/**
+ * 세션 밖에서 응답·적용을 기다리는 동의(열린 창 안의 첫 항목). 색인 읽기만 한다 — 잠금 없음, 깨진 색인은 undefined.
+ * session 을 주면 그 동의에 답할 수 없는 다른 세션의 것은 건너뛴다(그 세션의 쓰기는 동의 스냅샷 대조가 잡는다). 세션이 기록되지 않은
+ * 동의(옛 기록·프로세스 안 준비)는 누구에게나 연다.
+ */
+export function openConsent(root: string, now = Date.now(), session?: string): { id: string; action: string; title: string } | undefined {
   const index = readConsentIndex(root);
   if (!index) return undefined;
   for (const [id, entry] of Object.entries(index.open)) {
     if (!OPEN_STATUSES.includes(entry.status)) continue;
     const created = Date.parse(entry.createdAt);
     if (!Number.isFinite(created) || created < now - TIMING.consentOpenWindowMs) continue;
+    if (session && entry.session && entry.session !== session) continue;
     const title = (CONSENT_TITLES as Record<string, string>)[entry.action] ?? entry.action;
     return { id, action: entry.action, title };
   }

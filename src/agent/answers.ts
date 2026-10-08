@@ -192,6 +192,14 @@ export function answerSources(root: string, id: string, questions: Question[]): 
   return sources;
 }
 
+/**
+ * 답은 있는데 출처를 확인할 수 없는 질문의 안내 — 답이 없는 질문과 같은 사유로 막혀도 방금 답을 적은 쪽이 이유를 알 수 있게 따로 쓴다.
+ * 계획 배정(readyProblems)과 status 의 다음: 이 같은 문장을 쓴다. 호스트 중립 문구다.
+ */
+export function unverifiedAnswerHint(ids: readonly string[]): string {
+  return `답 출처 미확인 ${ids.join(", ")} — 질문 도구 응답이 관찰되지 않은 답입니다. ca-answer 절차로 질문 도구 응답을 받거나, 대화로 받은 답이면 [Answer]: 뒤에 [Source]: 대화 줄을 적습니다`;
+}
+
 /** 답이 없는 질문과 답의 출처를 확인할 수 없는 질문. 작업 폴더의 questions.md 가 아니면 출처는 보지 않는다 */
 export function openQuestions(root: string, questionsPath: string): { unanswered: Question[]; unverified: Question[] } {
   const path = join(root, questionsPath);

@@ -357,20 +357,21 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
     }
   });
 
-  test("실행 파일이 없으면 띄우지 않고 중지로 기록하며, status·doctor 가 두 호스트를 모두 쓸 수 있을 때만 쓰라고 안내한다", async () => {
+  test("실행 파일 변수가 없는 파일을 가리키면 띄우지 않고 설정 오류로 막으며(E20 — 경로 오타로 필수 교차 검증이 빠지지 않는다), status·doctor 가 호스트를 줄이는 길을 안내한다", async () => {
     await toReview();
     write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
     process.env.CODE_AGENT_CODEX_BIN = join(repo, "no-such-codex.cjs");
     try {
-      assert.match(status(repo), /교차 검증: 다른 호스트를 실행할 수 없으면[\s\S]*CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다[\s\S]*init --host/);
+      assert.match(status(repo), /교차 검증: 다른 호스트를 실행할 수 없으면[\s\S]*CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다[\s\S]*\.code-agent\/hosts\.json 에서 쓰지 않는 호스트를 빼세요/);
+      assert.doesNotMatch(status(repo), /init --host <호스트> 로 하나만/, "init 은 호스트를 줄이지 않는다(E40)");
       assert.match(doctor(repo).text, /교차 검증/);
       openRound(requireValidatable(repo, "review"));
       const doc = join(repo, reviewDocFile("ORD-1"));
       writeFileSync(doc, `${readFileSync(doc, "utf-8")}\n- 없음\n`);
       recordReviewFixture(repo, "claude", { cross: false });
-      assert.match(withCaller("claude", () => crossReview(repo, "codex")), /교차 검증 중지[\s\S]*가리키는 파일이 없습니다/);
-      next(repo);
-      assert.equal(loadActive(repo)!.phase, "integrate");
+      assert.throws(() => withCaller("claude", () => crossReview(repo, "codex")), /교차 호출 설정 오류[\s\S]*가리키는 파일이 없습니다/);
+      assert.throws(() => next(repo), /교차 리뷰가 필요합니다[\s\S]*막힘\(설정 오류\)/);
+      assert.equal(loadActive(repo)!.phase, "review");
     } finally {
       delete process.env.CODE_AGENT_CODEX_BIN;
     }

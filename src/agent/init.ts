@@ -206,7 +206,8 @@ export function codexMatcherProblem(repoRoot: string, event: string): string | u
 }
 
 function initCodex(repoRoot: string, options: InitOptions): string {
-  for (const [file, text] of hostAssets("codex", repoRoot)) {
+  const assets = hostAssets("codex", repoRoot);
+  for (const [file, text] of assets) {
     const target = join(repoRoot, file);
     mkdirSync(dirname(target), {recursive: true});
     writeFileSync(target, text);
@@ -222,9 +223,13 @@ function initCodex(repoRoot: string, options: InitOptions): string {
   upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END, GITIGNORE_LINES);
   mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
   writeFileSync(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
+  // 수는 실제로 쓴 자원에서 센다(DOC-14 — 스킬·에이전트를 더하거나 빼도 문구가 낡지 않게)
+  const paths = [...assets.keys()].map((file) => file.replace(/\\/g, "/"));
+  const skills = new Set(paths.map((file) => /^\.agents\/skills\/([^/]+)\//.exec(file)?.[1]).filter(Boolean)).size;
+  const agents = paths.filter((file) => /^\.codex\/agents\/[^/]+\.toml$/.test(file)).length;
   return ["Codex용 code-agent를 설치했습니다.",
-    "  스킬 18개: .agents/skills/ca-* · 에이전트 8개: .codex/agents/ca-*.toml",
-    "  훅 5종: .codex/hooks.json · 지침: AGENTS.md · 모델·추론 강도: 역할별 제품 기본값과 사용자 변경값",
+    `  스킬 ${skills}개: .agents/skills/ca-* · 에이전트 ${agents}개: .codex/agents/ca-*.toml`,
+    `  훅 ${CODEX_EVENTS.length}종: .codex/hooks.json · 지침: AGENTS.md · 모델·추론 강도: 역할별 제품 기본값과 사용자 변경값`,
     "  code-agent model --host codex로 역할별 설정을 확인하고 변경할 수 있습니다.",
     "  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요.",
     "  승인 응답은 ca-answer가 안내하는 사용자 대화 메시지로 관찰합니다.",

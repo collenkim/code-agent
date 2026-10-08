@@ -163,10 +163,20 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
       const work = requireValidatable(context.repoRoot, "test");
       const problems = stageProblems(work, "check");
       if (problems.length) throw new Stop(problems.join("\n"));
-      context.summaries.push(await runTests(work));
-      return "done";
+      // 같은 회차 재실행 한도 거부(끊긴 test 의 재실행을 다 썼다 등)는 check.execute 와 같이 사람 판단(decision)으로 보낸다
+      try {
+        context.summaries.push(await runTests(work));
+        return "done";
+      } catch (error) {
+        if (!(error instanceof RetryRefused) || error.failure.class !== "limit-exceeded") throw error;
+        context.failure = error.failure;
+        context.problems = [error.message];
+        const evidence = evidenceOf(work);
+        if (evidence) context.budget = verifyView(work, evidence).budget;
+        return "blocked";
+      }
     },
-    edges: { done: "test.assess" },
+    edges: { done: "test.assess", blocked: "decision" },
   },
   "test.assess": {
     executor: "program", run: (context) => assess(context, "test"),

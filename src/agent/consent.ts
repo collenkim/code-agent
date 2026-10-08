@@ -20,7 +20,7 @@ import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
 import { decideRequest, loadRequestSession } from "./request";
-import { failure, TIMING, type FailureRecord } from "./retryPolicy";
+import { failure, guidance, TIMING, type FailureRecord } from "./retryPolicy";
 import { KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS } from "./schemas";
 import { SnapshotCache } from "./snapshotCache";
 import { Stop } from "./stop";
@@ -180,21 +180,19 @@ function fail(record: ConsentRecord, kind: ConsentFailureKind, detail: string): 
 function discard(root: string, record: ConsentRecord, kind: "target" | "apply", detail: string): void {
   record.status = "failed"; record.binding = undefined; fail(record, kind, detail); save(root, record);
 }
-const GUIDES: Record<ConsentFailureKind, string> = {
-  target: "확인 대상이 바뀌어 이 동의는 쓸 수 없습니다: {detail}. 같은 ID로 다시 묻거나 적용하지 말고, 바뀐 것을 사용자에게 알린 뒤 현재 내용으로 새로 준비해 다시 확인받으세요.",
-  "response-change": "사용자가 수정을 요청했습니다. 같은 ID로 다시 묻지 않습니다 — 무엇을 고칠지 업무 질문으로 받아 문서·제안을 고친 뒤 새로 준비하세요.",
-  "response-defer": "사용자가 보류했습니다. 이 흐름을 멈추고 다시 묻지 않습니다 — 사용자가 이어가자고 할 때 새로 준비합니다.",
-  "response-none": "명시적 선택이 없어 응답을 기록하지 않았습니다({detail}). 미응답으로 두고 자동으로 다시 묻지 않습니다 — 사용자가 원할 때만 새로 준비해 묻습니다.",
-  "response-invalid": "응답이 준비한 질문·선택지와 맞지 않아 기록하지 않았습니다({detail}). 사용자가 직접 입력한 내용이 있으면 그 뜻을 업무 질문으로 확인하고, CLI 가 준비한 질문을 고치지 않은 채 새로 준비해 묻습니다.",
-  apply: "적용이 중단(실패)됐습니다 — 일부만 반영됐을 수 있습니다: {detail}. code-agent status 와 git status 로 상태를 확인한 뒤 새로 준비하세요. 같은 ID로 다시 적용하지 않습니다.",
-};
+const KINDS: readonly ConsentFailureKind[] = ["target", "response-change", "response-defer", "response-none", "response-invalid", "apply"];
 /** 실패 갈래 — kind 가 없는 기록(C5 이전에는 생길 수 없다)은 class 로 고른다 */
 function kindOf(record: Pick<ConsentFailure, "class"> & { kind?: string }): ConsentFailureKind {
-  return record.kind && record.kind in GUIDES ? record.kind as ConsentFailureKind : record.class === "consent-apply-failed" ? "apply" : "target";
+  return record.kind && (KINDS as readonly string[]).includes(record.kind) ? record.kind as ConsentFailureKind : record.class === "consent-apply-failed" ? "apply" : "target";
 }
-/** 갈래별 다음 행동 안내 — 출력의 failure.guide */
+/**
+ * 갈래별 다음 행동 안내 — 출력의 failure.guide. 문구 원천은 재시도 규약(retryPolicy.ts)이다: 적용 실패는 consent-apply-failed 기본 문구,
+ * 대상 변경은 consent-target-changed 기본 문구, 승인이 아닌 응답은 그 원인의 response-* 변형. status 의 다음:(failureHint)도 같은 원천이다.
+ */
 export function consentGuide(record: Pick<ConsentFailure, "class" | "detail"> & { kind?: string }): string {
-  return GUIDES[kindOf(record)].replace(/\{detail\}/g, record.detail);
+  const kind = kindOf(record);
+  if (kind === "apply") return guidance("consent-apply-failed", { detail: record.detail });
+  return guidance("consent-target-changed", { detail: record.detail }, kind === "target" ? undefined : kind);
 }
 function failureView(record: ConsentRecord): object | undefined {
   if (!record.failure || !["failed", "changes-requested", "deferred"].includes(record.status)) return undefined;
@@ -402,7 +400,8 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
         : `${change.model} / ${action.reasoning ?? "지금 추론 강도 유지"}`;
       summary = `${modelsTable(root, change.host)}\n\n변경: ${change.host} / ${action.agent} → ${target}\n` +
         "기본값 복원은 모델·추론 강도를 함께 복원합니다. 모델만 변경하면 그 역할의 지금 추론 강도를 유지합니다. " +
-        "적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다.";
+        "적용 후 호스트를 재시작하세요. 이미 실행 중인 서브에이전트에는 소급 적용하지 않습니다." +
+        (modelWorkWarning(root) ? `\n${modelWorkWarning(root)}` : "");
       break;
     }
     case "repro-log": confirmations = capture(() => approveLogBasis(requireReproable(root))); break;
@@ -649,8 +648,25 @@ const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
   "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
   "knowledge-prune": "결과를 보고하고 원래 흐름으로 돌아간다",
 };
+/**
+ * 진행 중인 작업이 있을 때 모델 변경의 경고 — 정의 파일(.claude/agents/ca-*.md·.codex/agents/ca-*.toml)은 커밋된 설치 파일이라
+ * 바꾸면 그 작업의 계획 밖 변경이 되어 검증·Stop hook·반영이 막힌다(근본 처리는 사용자 결정 대기 — update --templates-only 와 같은 원인).
+ */
+function modelWorkWarning(root: string): string | undefined {
+  let active: ReturnType<typeof loadActive>;
+  try { active = loadActive(root); } catch { return undefined; }
+  if (!active) return undefined;
+  return `주의: 진행 중인 작업 ${active.id}(${active.phase})이 있습니다 — 에이전트 정의 파일(.claude/agents/ca-*.md·.codex/agents/ca-*.toml)이 바뀌어 ` +
+    "그 작업의 계획 밖 변경이 되고 검증·반영이 막힙니다. 작업을 반영하거나 끝낸 뒤 바꾸세요. 이미 바꿨다면 사람이 정의 파일과 " +
+    ".code-agent/models.json(Codex 는 codex-models.json)을 함께 되돌립니다.";
+}
+
 function afterApply(root: string, action: Action["action"]): { phase?: string; next: string } {
   const fixed = AFTER_APPLY[action];
+  if (fixed && action === "model") {
+    const warning = modelWorkWarning(root);
+    return { next: warning ? `${fixed}. ${warning}` : fixed };
+  }
   if (fixed) return { next: fixed };
   try {
     const step = nextStep(root);

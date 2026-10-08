@@ -150,7 +150,7 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
       // 같은 회차 재리뷰가 막혀 있으므로 표 규칙은 기록 전에 본다 — Claude 는 같은 담당이 형식만 고치게 한 번 돌려보낸다
       if (host === "claude" && input.stop_hook_active !== true && (run.returns ?? 0) < LIMITS.agentReturn) {
         run.returns = (run.returns ?? 0) + 1;
-        return { log, value: { error: new Error(`리뷰 결과는 지적 표 또는 '- 없음'이어야 하고 표 규칙을 지켜야 합니다 — 같은 리뷰어가 형식만 고쳐 다시 반환하세요(1회): ${problems.slice(0, 3).join(" · ")}`) } };
+        return { log, value: { error: new ReturnToReviewer(`리뷰 결과는 지적 표 또는 '- 없음'이어야 하고 표 규칙을 지켜야 합니다 — 같은 리뷰어가 형식만 고쳐 다시 반환하세요(1회): ${problems.slice(0, 3).join(" · ")}`) } };
       }
       run.failure = { class: "agent-format-error", at, detail: problems.join(" · ").slice(0, 300), raw: report.slice(0, 2000) };
       const left = Math.max(0, runLimit(log, last.round) - reviewerState(last, planned).runs);
@@ -172,6 +172,32 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   if (outcome.recorded) throw new RecordedFailure(outcome.recorded);
 }
 
+/** 기록 전에 같은 리뷰어에게 형식만 고치게 돌려보내는 실패(agent-format-error) — 그 밖의 예외는 hook 판정 실패다 */
+export class ReturnToReviewer extends Error {}
+
+/**
+ * 완료(SubagentStop) 판정이 기록 전에 실패했을 때(리뷰 도중 트리·계획 변경, transcript 문제 등 — 담당이 고칠 수 없다) 그 실행에
+ * hook 판정 실패를 기록한다. 기록하지 않으면 실행이 끝나지 않은 채 남아 게이트가 고아 기한까지 "실행 중" 을 낸다. 기록하면 true.
+ */
+function recordHookFailure(input: ReviewHookInput, projectDir: string | undefined, detail: string): boolean {
+  if (input.hook_event_name !== "SubagentStop" || input.agent_type !== "ca-reviewer" || !input.session_id || !input.agent_id) return false;
+  try {
+    const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
+    const work = loadWork(repoRoot);
+    if (!work || work.active.phase !== "review" || !work.plan) return false;
+    const planned = planPaths(work);
+    return mutateReview(repoRoot, work.active.id, work.active.target, (current) => {
+      const last = current?.rounds.at(-1);
+      if (!current || !last) return { value: false };
+      const runs = materializeReviewers(last, planned);
+      const run = [...runs].reverse().find((item) => item.sessionId === input.session_id && item.agentId === input.agent_id && open(item));
+      if (!run || run.ignored) return { value: false };
+      run.failure = { class: "hook-failure", at: new Date().toISOString(), detail: detail.replace(/\s+/g, " ").slice(0, 300) };
+      return { log: current, value: true };
+    }, { hook: true });
+  } catch { return false; }
+}
+
 export function runReviewHook(stdin: string): number {
   // 교차 실행이 띄운 다른 호스트 안에서는 리뷰어 기록을 하지 않는다
   if (crossChild()) return 0;
@@ -181,7 +207,12 @@ export function runReviewHook(stdin: string): number {
     withNotation("claude", () => observeReviewer(input!, process.env.CLAUDE_PROJECT_DIR, "claude"));
     return 0;
   } catch (error) {
-    process.stderr.write(`code-agent review-event: ${error instanceof Error ? error.message : error}\n`);
-    return subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true, recorded: error instanceof RecordedFailure });
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`code-agent review-event: ${message}\n`);
+    // 담당이 고칠 수 없는 판정 실패는 같은 담당에게 되돌리지 않고 그 실행에 기록한다 — 기록되면 새 호출을 받는다(§6.4 hook 종료 코드)
+    const recorded = error instanceof RecordedFailure ||
+      (!(error instanceof ReturnToReviewer) && input !== undefined && recordHookFailure(input, process.env.CLAUDE_PROJECT_DIR, message));
+    return subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true,
+      failure: error instanceof ReturnToReviewer ? "agent-format-error" : "hook-failure", recorded });
   }
 }

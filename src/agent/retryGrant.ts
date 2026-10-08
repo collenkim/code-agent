@@ -14,7 +14,7 @@ import { relative } from "path";
 import { hashManifest, hashPlan } from "../core/approval";
 import { crossAttemptsOf, orphanView } from "./crossRecord";
 import { planningCrossBudgets } from "./crossCheck";
-import { boundEvidence, planPaths, reviewRoundUsage, testTreeHashNow, verifyView, type Evidence } from "./evidence";
+import { boundEvidence, planPaths, reviewRoundBudget, testTreeHashNow, verifyView, type Evidence } from "./evidence";
 import { reviewFile, verifyFile } from "./layout";
 import { skill } from "./hostText";
 import { mutatePlanning, planningBudget, grantPlanningRetry } from "./planning";
@@ -132,7 +132,9 @@ function verifyTarget(work: Work, key: (typeof VERIFY_KEYS)[number]): GrantTarge
 const pick = (budget: Budget) => ({ used: budget.used, limit: budget.limit, exhausted: budget.exhausted });
 
 function reviewTarget(work: Work, key: (typeof REVIEW_KEYS)[number] | (typeof CROSS_KEYS)[number]): GrantTarget {
-  requirePhase(work, key, ["review"]);
+  // 리뷰 회차 한도 거부는 검증 쪽(check() 의 통과 뒤 변경)에서 나고 그때 커서는 check 로 되감겨 있다 — 검증 단계 어디서든 받는다.
+  // 리뷰어 호출·교차 지점은 회차가 열린 review 단계만이다
+  requirePhase(work, key, key === "reviewRounds" ? VERIFY_PHASES : ["review"]);
   const rowOf = (): ReturnType<typeof reviewBudgets>[number] | undefined => reviewBudgets(work).find((row) => row.key === key);
   const row = rowOf();
   if (!row) {
@@ -140,6 +142,10 @@ function reviewTarget(work: Work, key: (typeof REVIEW_KEYS)[number] | (typeof CR
       : "지금 계획·기준에 묶인 리뷰 회차가 없습니다 — 늘릴 한도가 없습니다.");
   }
   const log = loadReview(work.repoRoot, work.active.id, work.active.target);
+  if (key === "reviewRounds" && !log?.rounds.length) {
+    throw new Stop("리뷰 회차를 연 기록이 없습니다 — 리뷰 없이 통과 뒤 변경을 되풀이해 리뷰 회차 한도를 썼습니다. 허용은 리뷰 기록(review.json)에 남기므로 " +
+      "바꾼 계획 파일을 사람이 되돌려 통과한 트리로 돌아간 뒤 code-agent next 로 리뷰를 받거나, 계획을 고쳐 재승인 · 작업 종료(abort)를 고릅니다.");
+  }
   const lastRound = log?.rounds.at(-1);
   const roundNumber = lastRound?.round;
   const lastCross = lastRound && includes(CROSS_KEYS, key)
@@ -158,7 +164,7 @@ function reviewTarget(work: Work, key: (typeof REVIEW_KEYS)[number] | (typeof CR
         if (key !== "reviewRounds" && current.rounds.at(-1)?.round !== roundNumber) throw new Stop("준비한 뒤 리뷰 회차가 바뀌었습니다 — 새로 준비하세요.");
         // 잠금 안에서 다시 읽은 기록으로 다시 계산한다(reviewBudgets 는 같은 디스크 기록을 읽는다)
         const again = key === "reviewRounds" ? (() => {
-          const usage = reviewRoundUsage(work);
+          const usage = reviewRoundBudget(work);
           if (usage.stale) throw new Stop("준비한 뒤 리뷰 묶임이 바뀌었습니다 — 새로 준비하세요.");
           return { key: "reviewRounds" as const, used: usage.used, limit: usage.limit, left: Math.max(0, usage.limit - usage.used), exhausted: usage.used >= usage.limit };
         })() : rowOf();

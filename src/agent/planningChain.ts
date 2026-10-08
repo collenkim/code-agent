@@ -107,6 +107,9 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
           const hint = chained && /planning advance/.test(guide) === false && /advance/.test(kept) ? " — 다음 advance 는 code-agent planning advance --chain" : "";
           return `${blocked[0].id}: ${kept}${hint}${blocked.length > 1 ? ` (외 ${blocked.length - 1}건 — blocked 참고)` : ""}`;
         }
+        // 배정이 막힌 작업은 없고 교차 계획 검토(crossCriticProblems)가 남았다 — 그 줄이 할 일(명령·사람 판단)을 적는다
+        const cross = blocked.length === 0 ? (view.problems ?? []).find((problem) => /^교차 검토/.test(problem)) : undefined;
+        if (cross) return `${keep(cross)} — 그다음 ${adv}`;
         return `막힘 — blocked·problems 사유를 해결한 뒤 ${adv} (미결 질문은 ca-answer 절차로 실제 답을 받는다. 보류·상태 메모는 답이 아니다). 해결할 수 없는 사유면 그대로 전하고 멈춘다`;
       }
       case "ready-for-gate":

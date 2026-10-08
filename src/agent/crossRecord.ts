@@ -39,7 +39,8 @@ export interface ReviewerRun {
   resumed?: boolean;
   /** Claude SubagentStop 에서 같은 담당에게 돌려보낸 횟수(agentReturn, 한도 1) */
   returns?: number;
-  failure?: { class: "agent-format-error"; at: string; detail: string; raw?: string };
+  /** 형식 오류(표 규칙) 또는 완료 hook 의 판정 실패(리뷰 도중 트리·계획 변경 등 — 담당이 고칠 수 없다). 둘 다 새 호출을 받는다 */
+  failure?: { class: "agent-format-error" | "hook-failure"; at: string; detail: string; raw?: string };
   /**
    * 결과를 게이트에 쓰지 않는 실행 — 완료된 회차의 재호출, 호출 한도 초과, 받아들인 실행이 끝나지 않은 동안의 동시 호출,
    * 15분 넘게 끝나지 않아 고아로 본 실행(뒤늦은 결과도 쓰지 않는다)
@@ -183,8 +184,10 @@ export interface ReviewerState {
   running?: ReviewerRun;
   /** running 이 리뷰어 고아 기한을 넘겼다 */
   orphanable: boolean;
-  /** 형식 오류로 기록됐거나 완료됐지만 표 규칙에 걸린(옛 기록) 실행 수 */
+  /** 형식 오류·hook 판정 실패로 기록됐거나 완료됐지만 표 규칙에 걸린(옛 기록) 실행 수 */
   failures: number;
+  /** failures 중 hook 판정 실패 */
+  hookFailures: number;
   /** 호출 한도에 세는 실행 수 — 무시되지 않은 실행과 고아로 처리한 실행 */
   runs: number;
   /** 완료됐지만 표 규칙에 걸린 마지막 실행의 문제(옛 기록) */
@@ -197,22 +200,22 @@ export function reviewerState(round: ReviewRound, planned: readonly string[], no
   const orphanable = !!running && now - Date.parse(running.startedAt) > TIMING.reviewerOrphanMs;
   const counted = runs.filter((run) => !run.ignored || run.ignored.reason === "orphaned").length;
   let invalid: string[] | undefined;
-  let failures = 0;
+  let failures = 0, hookFailures = 0;
   for (const run of runs) {
     if (run.ignored) continue;
-    if (run.failure) { failures++; continue; }
+    if (run.failure) { failures++; if (run.failure.class === "hook-failure") hookFailures++; continue; }
     if (run.completedAt && run.result !== undefined) {
       const problems = reviewResultProblems(run.result, planned, REVIEWER_ID);
       if (problems.length) { failures++; invalid = problems; }
     }
   }
-  return { ...(effective ? { effective } : {}), ...(running ? { running } : {}), orphanable, failures, runs: counted, ...(invalid ? { invalid } : {}) };
+  return { ...(effective ? { effective } : {}), ...(running ? { running } : {}), orphanable, failures, hookFailures, runs: counted, ...(invalid ? { invalid } : {}) };
 }
 export function reviewerRunLabel(run: ReviewerRun): string {
   if (run.ignored) {
     return { "completed-round": "완료 뒤 재호출 무시", "run-limit": "호출 한도 초과 무시", concurrent: "동시 호출 무시", orphaned: "고아로 처리(결과 무시)" }[run.ignored.reason];
   }
-  if (run.failure) return "형식 오류";
+  if (run.failure) return run.failure.class === "hook-failure" ? "hook 판정 실패" : "형식 오류";
   return run.completedAt ? "완료" : "실행 중";
 }
 

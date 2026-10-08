@@ -30,7 +30,7 @@ import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
-import { consentLockHeld, openConsent } from "./consentState";
+import { CONSENT_LOCK, consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket } from "./consentTicket";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
@@ -267,8 +267,14 @@ function aliasGuard(target: string): string | undefined {
 
 // ---- 다른 이름의 도구(MCP) ----
 
-const MCP_PATH_KEYS = /^(?:file_?path|filePath|path|paths|file|files|filename|target(?:_?path)?|destination|dest|source|src|new_?path|old_?path|directory|dir|root|uri)$/i;
-const MCP_WRITE = /(?:write|edit|create|delete|remove|move|rename|copy|patch|replace|insert|append|upload|mkdir|save|put|apply|update)/i;
+const MCP_PATH_KEYS = /^(?:file_?path|filePath|path|paths|file|files|filename|target(?:_?path)?|destination|dest|source|src|new_?path|old_?path|directory|dir|root|uri|relative_?path|relativePath|path_?in_?project|pathInProject|project_?path|projectPath|notebook_?path|notebookPath)$/i;
+/** 프로젝트 상대 경로 키 — 코딩 MCP(Serena relative_path, JetBrains pathInProject 등)는 서버 이름과 무관하게 저장소 기준으로 판정한다 */
+const MCP_PROJECT_KEYS = /^(?:relative_?path|relativePath|path_?in_?project|pathInProject|project_?path|projectPath)$/i;
+/** 쓰기 동사 — 도구 이름을 _·-·camelCase 경계로 나눈 **낱말**로 맞춘다(compute 의 put, read_output_file 의 put 처럼 부분 문자열로 걸리지 않게) */
+const MCP_WRITE_VERBS = new Set(["write", "edit", "create", "delete", "remove", "move", "rename", "copy", "patch", "replace", "insert", "append", "mkdir", "save", "put", "apply", "update", "overwrite", "truncate", "unlink", "rm"]);
+function mcpWrites(tool: string): boolean {
+  return tool.replace(/([a-z0-9])([A-Z])/g, "$1_$2").split(/[_\-\s.]+/).some((word) => MCP_WRITE_VERBS.has(word.toLowerCase()));
+}
 /** 로컬 파일 시스템 서버로 보는 이름 — 이 서버만 상대 경로를 저장소 기준으로 판정한다 */
 const LOCAL_FS_SERVERS = /^(?:fs|filesystem|files|file-system|local-?files?)$/i;
 
@@ -284,19 +290,20 @@ function localTarget(repoRoot: string, path: string): boolean {
  * (예: GitHub 의 `path`, 드라이브 서비스의 `/My Drive/x`)를 잘못 막지 않는다.
  */
 function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: string): string[] {
-  const values: string[] = [];
+  const values: { value: string; project: boolean }[] = [];
   const collect = (object: Record<string, unknown>, depth: number) => {
     for (const [key, value] of Object.entries(object)) {
       if (MCP_PATH_KEYS.test(key)) {
-        if (typeof value === "string") values.push(value);
-        else if (Array.isArray(value)) values.push(...value.filter((item): item is string => typeof item === "string"));
+        const project = MCP_PROJECT_KEYS.test(key);
+        if (typeof value === "string") values.push({ value, project });
+        else if (Array.isArray(value)) values.push(...value.filter((item): item is string => typeof item === "string").map((item) => ({ value: item, project })));
       }
       if (depth === 0 && value && typeof value === "object" && !Array.isArray(value)) collect(value as Record<string, unknown>, 1);
     }
   };
   collect(toolInput, 0);
   const paths: string[] = [];
-  for (const raw of values) {
+  for (const { value: raw, project } of values) {
     const value = raw.trim();
     if (!value) continue;
     // 로컬 파일 서버(예: server-filesystem)는 `~` 를 홈으로 푼다
@@ -305,7 +312,7 @@ function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: 
       try { path = fileURLToPath(value); } catch { continue; }
     } else if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:([\\/]|$)/i.test(value)) continue;
     if (isAbsolute(foldWindowsAlias(path))) { if (local || localTarget(repoRoot, path)) paths.push(path); }
-    else if (local) paths.push(resolve(repoRoot, path));
+    else if (local || project) paths.push(resolve(repoRoot, path));
   }
   return paths;
 }
@@ -313,10 +320,11 @@ function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: 
 function decideMcp(input: HookInput, projectDir?: string): string | undefined {
   const [, server = "", ...rest] = input.tool_name.split("__");
   const tool = rest.join("__");
-  const repoRoot = canonical(projectDir ?? input.cwd);
+  // 하위 폴더에서 연 세션(CLAUDE_PROJECT_DIR·cwd 가 저장소 안 폴더)도 저장소 루트로 판정한다 — CLI·티켓·Codex 와 같은 루트
+  const repoRoot = findRepoRoot(projectDir ?? input.cwd);
   const paths = mcpPaths(input.tool_input as Record<string, unknown>, LOCAL_FS_SERVERS.test(server), repoRoot);
   if (!paths.length) return undefined;
-  const write = MCP_WRITE.test(tool);
+  const write = mcpWrites(tool);
   for (const path of paths) {
     const reason = decideTool({ ...input, tool_name: write ? "Write" : "Read", tool_input: { file_path: path } }, projectDir);
     if (reason) return `MCP 도구 ${input.tool_name}: ${reason}`;
@@ -324,10 +332,17 @@ function decideMcp(input: HookInput, projectDir?: string): string | undefined {
   return undefined;
 }
 
+/** 쓰기 대상이 저장소 안인가(경로 없음은 안으로 본다 — 막는 쪽). 판정하지 못하면 안으로 본다 */
+function targetInsideRepo(repoRoot: string, target: string): boolean {
+  if (!target) return true;
+  try { const path = repoPath(repoRoot, target); return !(path.startsWith("..") || isAbsolute(path)); } catch { return true; }
+}
+
 /** 동의 적용 중의 쓰기 — 확인한 대상과 실제 반영이 갈라진다. 잠금 주인이 죽었거나 없으면 통과한다 */
 function consentWriteGuard(repoRoot: string): string | undefined {
   const held = consentLockHeld(repoRoot);
-  return held ? `확인·적용이 진행 중입니다(pid ${held.pid}) — 끝난 뒤 다시 쓰세요. 그 사이의 쓰기는 확인한 대상과 실제 반영을 갈라 놓습니다.` : undefined;
+  return held ? `확인·적용이 진행 중입니다(pid ${held.pid}) — 끝난 뒤 다시 쓰세요. 그 사이의 쓰기는 확인한 대상과 실제 반영을 갈라 놓습니다. ` +
+    `실행 중인 code-agent 가 없는데 계속 막히면(pid 재사용) 사람이 별도 터미널에서 ${CONSENT_LOCK} 을 지웁니다.` : undefined;
 }
 
 /**
@@ -401,12 +416,17 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   if (child) return child;
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
   if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);
-  const repoRoot = canonical(projectDir ?? input.cwd);
+  // 모드·상태 경로는 저장소 루트(findRepoRoot)에서 본다 — Claude 를 하위 폴더에서 열면 CLAUDE_PROJECT_DIR 가 그 폴더라, 그대로 쓰면
+  // 작업·세션·열린 동의·적용 잠금을 보지 못하고 루트의 .code-agent 가 저장소 밖으로 풀린다(CLI·티켓 발급·codexHook 과 같은 루트)
+  const repoRoot = findRepoRoot(projectDir ?? input.cwd);
   if (WRITE_TOOLS.includes(input.tool_name)) {
     const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
-    const early = consentWriteGuard(repoRoot) ?? aliasGuard(target);
+    // 동의 적용 잠금은 저장소 안 쓰기만 본다 — 저장소 밖 쓰기는 동의 스냅샷과 무관하다(잠금 pid 가 재사용돼도 저장소 밖은 막지 않는다)
+    const early = (targetInsideRepo(repoRoot, target) ? consentWriteGuard(repoRoot) : undefined) ?? aliasGuard(target);
     if (early) return early;
   }
+  /** 동의 주인(응답을 관찰한 세션)으로 확인된 `consent apply|finish <id>` — 사람이 그 세션에서 그 동작을 승인했다(임대를 보지 않는다) */
+  let consentOwner = false;
   if (["Bash", "PowerShell"].includes(input.tool_name)) {
     const command = input.tool_input.command ?? "";
     if (/\b(?:consent-event|planning-event|review-event|codex-event)\b/.test(command)) return "실행 관찰 명령은 호스트 hook만 호출합니다.";
@@ -416,6 +436,7 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
       ? (require("./consent") as typeof import("./consent")).consentCommandGuard(repoRoot, command, input.session_id)
       : undefined;
     if (denied) return denied;
+    consentOwner = /^code-agent consent (?:apply|finish) [a-f0-9-]+$/.test(command.trim());
   }
   let work: Work | undefined, documenting: boolean, requesting: RequestSession | undefined, manifest: Manifest | undefined;
   let docsSession: { writable?: string[] } = {};
@@ -440,6 +461,9 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
     // 작업 임대 — 기존 거부가 먼저이고, 상태를 바꾸는 code-agent 명령만 본다(읽기 명령·선언된 명령·읽기용 git 은 보지 않는다).
     // 거부되면 바깥 decide 가 동의 티켓을 내지 않는다
     if (reason || !work) return reason;
+    // 승인된 동의의 적용은 그 동의의 주인 세션이 한다 — 다른 창이 SessionStart 로 임대를 가져가도 적용이 막히지 않게(사람 확인 지점이 늘지 않는다)
+    // 임대가 비었거나 이 세션 것이면 평소처럼 잡거나 touch 하고, 다른 세션이 쥐었으면 그 거부만 무시한다
+    if (consentOwner) { leaseGuard(work, input.host ?? "claude", input.session_id); return undefined; }
     return leaseGated(command) ? leaseGuard(work, input.host ?? "claude", input.session_id) : undefined;
   }
   // 읽기는 저장소 밖도 열려 있다 — 딱 한 자리만 닫는다
@@ -501,7 +525,8 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     const command = (input.tool_input.command ?? "").trim();
     if (mentionsStore(command)) return STORE_DENIED;
     // 응답·적용을 기다리는 동의가 있으면 그동안 셸을 code-agent 명령과 읽기용 git 으로 좁힌다 — 준비부터 적용까지 대상을 바꾸지 않는다
-    const open = openConsent(repoRoot);
+    // 그 동의를 준비·응답한 세션만 좁힌다 — 다른 세션은 그 동의에 답할 수 없고, 그 세션의 쓰기는 동의 스냅샷 대조가 폐기로 잡는다
+    const open = openConsent(repoRoot, Date.now(), input.session_id);
     if (open && decideBash(undefined, command, true, input.tool_name === "PowerShell" || input.shell === "powershell")) {
       return `확인 요청 ${open.id.slice(0, 8)}(${open.title})이 응답·적용을 기다리는 동안에는 셸에서 code-agent 명령과 읽기용 git 만 실행합니다 — 준비부터 적용까지 확인 대상을 바꾸지 않습니다. 진행하지 않을 거면 그 확인 질문에서 '보류'를 고르게 하세요(${Math.round(TIMING.consentOpenWindowMs / 60_000)}분이 지나면 풀립니다).`;
     }
@@ -520,12 +545,29 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
   }
   const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
   if (insideStore(target)) return STORE_DENIED;
+  // 사용자 수준 hook 설정(disableAllHooks·hook 덮어쓰기는 모든 프로젝트의 판정을 끈다) — 셸 언급(HOST_CONFIG)과 같은 파일을 쓰기 도구로도 막는다
+  if (userHostConfig(target)) return USER_HOST_CONFIG_DENIED;
   const path = repoPath(repoRoot, target);
   if (path === "" || path.startsWith("..") || isAbsolute(path)) {
     return undefined; // 저장소 밖 — code-agent 의 일이 아니다
   }
   return streamGuard(path) ?? stateGuard(path) ?? requirementGuard(path);
 }
+
+/** 사용자 수준 호스트 설정 파일 — ~/.claude/settings(.local).json, ~/.codex(또는 CODEX_HOME)/hooks.json·config.toml */
+function userHostConfig(target: string): boolean {
+  if (!target) return false;
+  const norm = (path: string) => { const value = resolve(path).replace(/\\/g, "/"); return process.platform === "win32" ? value.toLowerCase() : value; };
+  let full: string;
+  try { full = norm(foldWindowsAlias(expandTilde(target))); } catch { return false; }
+  const claude = join(homedir(), ".claude");
+  const codexHomes = [join(homedir(), ".codex"), ...(process.env.CODEX_HOME ? [process.env.CODEX_HOME] : [])];
+  const files = [join(claude, "settings.json"), join(claude, "settings.local.json"),
+    ...codexHomes.flatMap((home) => [join(home, "hooks.json"), join(home, "config.toml")])];
+  return files.some((file) => norm(file) === full);
+}
+const USER_HOST_CONFIG_DENIED = "사용자 수준 호스트 설정(~/.claude/settings.json · settings.local.json · ~/.codex/hooks.json · config.toml)은 도구로 쓰지 않습니다 — " +
+  "disableAllHooks·hook 덮어쓰기는 모든 프로젝트의 code-agent 판정을 끕니다. 바꿔야 하면 사람이 직접 고칩니다.";
 
 /** 셸 이름은 호스트 표기다(Claude 는 `Bash 로`) */
 const stateBashDenied = (): string =>

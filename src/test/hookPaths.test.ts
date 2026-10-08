@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
@@ -95,6 +95,13 @@ test("T-13-1 Claude MCP 도구 — 로컬 파일 서버는 모든 경로를, 그
   assert.equal(tool("mcp__drive__upload_file", { path: "/My Drive/x" }), undefined, "원격 서비스의 절대 경로 모양 인자");
   assert.match(tool("mcp__github__write", { path: join(root, ".code-agent/active.json") }) ?? "", /도구로 고칠 수 없습니다/);
   assert.match(tool("mcp__fs__edit", { options: { file: `file://${join(root, ".code-agent/active.json").replace(/\\/g, "/").replace(/^([A-Za-z]):/, "/$1:")}` } }) ?? "", /MCP 도구/);
+  // 쓰기 동사는 낱말로 맞춘다 — compute 의 put·output 의 put 같은 부분 문자열로 읽기 도구가 쓰기가 되지 않는다(E30)
+  assert.equal(tool("mcp__hasher__compute_checksum", { path: join(root, "README.md") }), undefined);
+  assert.equal(tool("mcp__logs__read_output_file", { file: join(root, "README.md") }), undefined);
+  assert.match(tool("mcp__hasher__writeChecksum", { path: join(root, "src/outside.ts") }) ?? "", /^MCP 도구 mcp__hasher__writeChecksum: /, "camelCase 낱말도 본다");
+  // 프로젝트 상대 경로 키(Serena relative_path, JetBrains pathInProject)는 서버 이름과 무관하게 저장소 기준으로 판정한다(E30)
+  assert.match(tool("mcp__serena__replace_regex", { relative_path: "src/outside.ts" }) ?? "", /^MCP 도구 mcp__serena__replace_regex: /);
+  assert.match(tool("mcp__jetbrains__replace_file_text_by_path", { pathInProject: ".code-agent/active.json" }) ?? "", /도구로 고칠 수 없습니다/);
   writeFixture(root, ".code-agent/active.json", "{broken");
   assert.match(tool("mcp__fs__write_file", { path: "src/a.ts" }) ?? "", /상태·설정을 읽지 못했습니다/);
   assert.equal(tool("mcp__fs__write_file", { path: "code-agent.json" }), undefined);
@@ -175,11 +182,20 @@ test("T-L5-1 세션 밖에서도 소스 업데이트는 사람의 확인이 필�
   assert.equal(bash("code-agent update --templates-only"), undefined);
 });
 
+test("세션 밖에서도 사용자 수준 hook 설정은 쓰기 도구로 쓰지 않는다 — 셸 언급 거부와 같은 파일(E29)", () => {
+  for (const target of [join(homedir(), ".claude", "settings.json"), "~/.claude/settings.local.json", join(homedir(), ".codex", "config.toml"), "~/.codex/hooks.json"]) {
+    assert.match(write(target) ?? "", /사용자 수준 호스트 설정[\s\S]*disableAllHooks/, target);
+  }
+  assert.equal(write(join(homedir(), ".claude", "notes.md")), undefined, "다른 사용자 파일은 관여하지 않는다");
+});
+
 test("T-15-3 동의 적용 잠금을 살아 있는 프로세스가 쥐고 있으면 쓰기를 거부한다", () => {
   const lock = join(root, ".code-agent/consents/apply.lock");
   mkdirSync(dirname(lock), { recursive: true });
   writeFileSync(lock, JSON.stringify({ pid: process.pid, host: hostname(), at: "t" }));
-  assert.match(write("src/a.ts") ?? "", /확인·적용이 진행 중입니다/);
+  assert.match(write("src/a.ts") ?? "", /확인·적용이 진행 중입니다[\s\S]*\.code-agent\/consents\/apply\.lock 을 지웁니다/);
+  // 저장소 밖 쓰기는 동의 스냅샷과 무관하다 — 잠금 pid 가 재사용돼도 막지 않는다(E26)
+  assert.equal(write(join(tmpdir(), "ca-outside-scratch.txt")), undefined);
   const dead = spawnSync(process.execPath, ["-e", ""]).pid;
   writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), at: "t" }));
   assert.equal(write("src/a.ts"), undefined);

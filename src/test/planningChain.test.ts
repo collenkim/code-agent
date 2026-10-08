@@ -49,6 +49,15 @@ test("막힘 — 원인이 기록된 항목은 원인의 안내, 사유 둘은 �
   assert.match(plain, /^막힘 — blocked·problems 사유를 해결한 뒤 code-agent planning advance --chain \(미결 질문은 ca-answer/);
 });
 
+test("막힘 — 막힌 작업 없이 교차 계획 검토만 남았으면 그 줄(명령)이 next 다(E5 — '그대로 전하고 멈춘다' 가 아니다)", () => {
+  const cross = "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by codex (실행할 수 없으면 중지로 기록되고 진행합니다)";
+  const next = line({ action: "blocked", phase: "plan", blocked: [], problems: [cross] });
+  assert.equal(next, `${cross} — 그다음 code-agent planning advance`);
+  assert.doesNotMatch(next, /그대로 전하고 멈춘다/);
+  // 막힌 작업이 있으면 그 작업의 안내가 먼저다
+  assert.match(line({ action: "blocked", blocked: [{ id: "plan", reasons: ["동시 실행 한도"], class: "precondition" }], problems: [cross] }), /^막힘 —/);
+});
+
 test("게이트 — 연쇄 아닌 호출은 code-agent next 와 질문 거부 처리를, plan 은 제출을, 연쇄 결과는 통과·거부를 안내한다", () => {
   const gate = line({ action: "ready-for-gate" });
   assert.match(gate, /^게이트 — code-agent next\./);

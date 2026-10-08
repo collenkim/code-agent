@@ -433,3 +433,7 @@ learn 영역의 sandbox 실험이 `code-agent update`(소스 업데이트)를 �
 | LRN-11 | info (원 medium) | 부분 | 자기학습 | both | [설계] update 와의 공존 — 설치본은 번들 그대로, 프로젝트 개선은 코드가 읽는 오버레이로 | `src/agent/hosts.ts:63-105`<br>`src/agent/update.ts:63-141` 외 2 |
 | PVR-20 | info | 확인 | 검증·리뷰 | both | 검증·리뷰·교차·반영의 상태 기계가 코드에만 정확히 있고 문서는 흩어져 있으며 이미 어긋난 곳이 있다 — 코드에서 흐름도를 생성할 수 있는 구조 | `src/agent/verificationFlow.ts:310-356`<br>`src/agent/planning.ts:14` 외 7 |
 | PVR-21 | info | 확인 | 검증·리뷰 | both | 자기 학습 루프가 없다 — KNOWLEDGE 는 도메인 사실·R 근거·사람 선택만 받고, 실패·지적·재시도에서 나온 절차 교훈은 다음 작업으로 환류되지 않는다 | `src/agent/knowledge.ts:55-75`<br>`src/agent/deliver.ts:236-275` 외 2 |
+
+## 처리 현황
+
+이 감사의 지적 160건이 뒤 묶음(C1~C7)과 전체 검토에서 어떻게 처리됐는지는 [감사 160건 처리 현황](2026-10-08-audit-disposition.md)에 있다(원자료 [audit-disposition-2026-10-08.json](evidence/audit-disposition-2026-10-08.json)).

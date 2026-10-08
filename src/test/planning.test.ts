@@ -7,7 +7,7 @@ import { dirname, join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
 import { observeQuestionAnswers } from "./consentFixture";
-import { back, next, submitPlan, decide as approveCommand } from "../agent/commands";
+import { back, next, status, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff, handoffPlanning } from "../agent/handoff";
 import { crossCritic, CrossCriticSchema, planningCrossBudgets } from "../agent/crossCheck";
@@ -35,6 +35,7 @@ import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
 import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
 import { sequenceProblems } from "../core/plan";
+import { withInteraction } from "../agent/tty";
 
 const ID = "PLAN-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`;
 const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n근거: "값을 반환한다."\n## 가정\n- 없음';
@@ -475,6 +476,28 @@ test("취소·중복 완료·잘못된 근거 및 실행 도중 변경은 완료
   assert.equal(last.status, "cancelled", "실행 중 입력이 바뀐 배정은 취소한다 — 새 입력으로 다시 배정한다");
   assert.equal(last.failure?.class, "dispatch-orphan");
 });
+test("Codex 담당의 배정 계약은 staging 이 아니라 {path, content} 다 — Codex 단일 설치와 두 호스트 설치의 Codex 호출(E9)", () => {
+  const output = `${DIR}/01-requirements.md`;
+  preparePlanning(root);
+  // 두 호스트 설치 — 부른 쪽이 Claude 면 staging 계약, Codex 면 content 계약
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  const viaClaude = withCaller("claude", () => dispatch("analysis"));
+  assert.equal(viaClaude.resultShape.artifacts[0].staged, `${DIR}/.staging/${viaClaude.resultShape.dispatchId}/01-requirements.md`);
+  cancelPlanning(root, "analysis");
+  const viaCodex = withCaller("codex", () => dispatch("analysis"));
+  assert.deepEqual([viaCodex.staging, viaCodex.resultShape.artifacts], [undefined, [{ path: output, content: "<문서 전체 내용>" }]]);
+  cancelPlanning(root, "analysis");
+  // Codex 단일 설치 — 부른 쪽 표지와 무관하게 Codex 계약
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["codex"]));
+  const item = withCaller("claude", () => dispatch("analysis"));
+  assert.equal(item.staging, undefined, "Codex 담당은 staging 을 쓸 수 없다");
+  assert.deepEqual(item.resultShape.artifacts, [{ path: output, content: "<문서 전체 내용>" }]);
+  assert.ok(item.instructions.includes("출력 문서는 파일로 쓰지 말고 artifacts에 {path, content}로 전체 내용을 넣으세요(staging 은 이 호스트의 담당에게 열리지 않습니다)"));
+  assert.ok(!item.instructions.includes("{path, staged}") && !item.instructions.includes("staging에 지정된 경로"), item.instructions);
+  // 계약대로 돌려준 결과가 그대로 받아들여진다
+  finish(item, { [output]: REQUIREMENTS }, {}, "codex");
+  assert.equal(readFileSync(join(root, output), "utf8"), REQUIREMENTS);
+});
 test("미결 질문은 실제 답을 받은 뒤 해당 입력을 다시 배정한다", () => {
   preparePlanning(root);
   finish(dispatch("analysis"), {}, { status: "needs-input", questions: [{ id: "Q1", question: "값 선택", requirements: ["REQ-1"] }] });
@@ -485,6 +508,18 @@ test("미결 질문은 실제 답을 받은 뒤 해당 입력을 다시 배정�
   assert.throws(() => dispatch("analysis"), /미결 질문/);
   write(`${DIR}/questions.md`, question.replace(/^\[Answer\]:/m, "[Answer]: 1로 결정"));
   finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS }); next(root);
+});
+test("출처를 확인할 수 없는 답은 답 없는 질문과 다른 사유로 막는다 — 방금 답을 적은 쪽이 이유를 안다(E6)", () => {
+  preparePlanning(root);
+  finish(dispatch("analysis"), {}, { status: "needs-input", questions: [{ id: "Q1", question: "값 선택", requirements: ["REQ-1"] }] });
+  const question = readFileSync(join(root, DIR, "questions.md"), "utf8");
+  // 질문 도구 관찰 없이 답만 적는다(write 헬퍼는 관찰을 흉내 내므로 쓰지 않는다)
+  writeFileSync(join(root, DIR, "questions.md"), question.replace(/^\[Answer\]:/m, "[Answer]: 1로 결정"));
+  assert.throws(() => dispatch("analysis"), (error: Error) =>
+    /답 출처 미확인 Q1 — 질문 도구 응답이 관찰되지 않은 답입니다[\s\S]*\[Source\]: 대화/.test(error.message) && !/미결 질문 Q1/.test(error.message));
+  assert.match(JSON.stringify(advance().blocked), /답 출처 미확인 Q1/);
+  const line = status(root).split("\n").find((entry) => entry.startsWith("다음: "))!;
+  assert.match(line, /^다음: 답이 없거나 출처를 확인할 수 없는 질문 1개 — \S+ca-answer \(답 출처 미확인 Q1 — /);
 });
 test("내용 없는 AC·근거 없는 BR·미결 설계·가짜 파일 근거를 차단한다", () => {
   write(`${DIR}/01-requirements.md`, REQUIREMENTS); write(`${DIR}/02-analysis.md`, IMPACT.replace("src/current.ts:1", "missing.ts:1"));
@@ -775,6 +810,30 @@ function crossPlanningSetup() {
 }
 const crossProblems = () => planningProblems(loadWork(root)!, "plan").filter((problem) => /교차/.test(problem));
 
+test("두 호스트 설치에서 critic 뒤 교차 검토가 남으면 advance 의 next 와 status 다음: 이 planning cross 를 안내한다(E5)", () => {
+  const cross = crossPlanningSetup();
+  try {
+    const out = JSON.parse(planningAdvanceCli(root, { chain: false }).text) as { action: string; blocked: unknown[]; next: string };
+    assert.deepEqual([out.action, out.blocked.length], ["blocked", 0]);
+    assert.match(out.next, /^교차 검토: [\s\S]*code-agent planning cross --by \S+ [\s\S]* — 그다음 code-agent planning advance$/);
+    assert.doesNotMatch(out.next, /그대로 전하고 멈춘다/);
+    const line = status(root).split("\n").find((entry) => entry.startsWith("다음: "))!;
+    assert.match(line, /교차 검토: [\s\S]*code-agent planning cross --by \S+[\s\S]*그다음 code-agent planning advance/);
+  } finally { cross.cleanup(); }
+});
+
+test("계획 승인 화면에 critic·교차 계획 검토 결과와 그 사람 판단이 실린다(E12 — 반영 때 ⑩ 에 나오는 줄을 승인 때도 본다)", () => {
+  const cross = crossPlanningSetup();
+  try {
+    cross.answer({ status: "completed", summary: "AC 하나가 TC에 걸리지 않는다", findings: [{ id: "C1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: SPEC, line: 1 } }] });
+    waiveFinding(root, "C1", "consent-0001-0000-0000-000000000000", "경계값은 범위 밖");
+    submitPlan(root, join(root, DIR, "plan.json"));
+    let shown = "";
+    withInteraction({ confirm: (text) => { shown = text; return { channel: "tty", verified: true, detail: "테스트" }; }, ask: () => "" }, () => approveCommand(root, "approved"));
+    assert.match(shown, /## 계획 검토\n\n- 계획 검토\(critic\): completed · 차단 지적 0\n- 교차 계획 검토: [^\n]*\(차단 1 · 질문 0\) · critic [\w-]{8}\n- 사람 판단: C1\(교차 계획 검토\) 기각 — 경계값은 범위 밖 · 동의 consent-/);
+  } finally { cross.cleanup(); }
+});
+
 test("두 호스트가 설치되면 critic 뒤 교차 검토가 계획 제출 조건이고, 완료된 지점은 다시 실행하지 않으며 차단 지적은 사람 판단으로 기각한다 (PVR-1·PVR-6)", () => {
   const cross = crossPlanningSetup();
   try {
@@ -889,6 +948,10 @@ test("planningCrossBudgets — 현재 critic 지점(scope critic:<배정>)의 �
     state.crossAttempts = [{ ...base, n: 1, class: "cross-config-error", kind: "config", detail: "x" }, { ...base, n: 2, class: "cross-config-error", kind: "config", detail: "x" }];
   });
   assert.deepEqual(rows().map((row) => row.slice(0, 4)), [["crossPoint", 2, 4, false], ["crossError", 1, 1, true], ["crossFormat", 0, 1, false]]);
+  // 한도를 다 쓴 지점의 게이트 줄은 거부될 명령을 앞세우지 않고 사람 판단만 낸다(E4 — 리뷰 게이트와 같다)
+  const line = crossProblems().find((problem) => /계획 검토가 필요합니다/.test(problem))!;
+  assert.doesNotMatch(line, /planning cross --by claude \(실행할 수 없으면/);
+  assert.match(line, /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*retry-grant crossError/);
 });
 
 test("needs-input 인데 질문이 없는 교차 결과는 형식 오류로 보존하고 형식 교정으로 다시 돈다", () => {

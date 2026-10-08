@@ -10,7 +10,7 @@ import {
   orphanView, pointHost, pointLabel, reviewerRunLabel, reviewerState, syncLegacyRound,
   type CrossAttempt, type ReviewerRun, type Waiver,
 } from "./crossRecord";
-import { planPaths, reviewRoundUsage, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
+import { planPaths, reviewRoundBudget, reviewRoundUsage, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
 import type { ReviewRoundUsage } from "./evidence";
 import { reviewFile, workDocsDir } from "./layout";
 import { acquireLock } from "./lock";
@@ -544,7 +544,8 @@ export function reviewProblems(work: Work): string[] {
   if (!reviewer.effective) {
     const limit = limitOf("reviewerRuns", LIMITS.reviewerRuns, grants, grantScope({ file: "review", key: "reviewerRuns", round: last.round }));
     const left = Math.max(0, limit - reviewer.runs);
-    const exhausted = `리뷰어 호출 한도 ${limit}회를 모두 썼습니다(형식 오류 ${reviewer.failures}회) — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment retry-grant reviewerRuns)을 받으세요.`;
+    const failed = `형식 오류 ${reviewer.failures - reviewer.hookFailures}회${reviewer.hookFailures ? ` · hook 판정 실패 ${reviewer.hookFailures}회` : ""}`;
+    const exhausted = `리뷰어 호출 한도 ${limit}회를 모두 썼습니다(${failed}) — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment retry-grant reviewerRuns)을 받으세요.`;
     if (reviewer.running && !reviewer.orphanable) {
       problems.push(`독립 리뷰어가 실행 중입니다(${clock(reviewer.running.startedAt)} 시작) — 완료를 기다리세요.` +
         (left > 0 ? ` 사용자가 중단해 멈춘 실행이면 시작 ${REVIEWER_ORPHAN_MIN}분 뒤부터 ${agentName("ca-reviewer")} 를 새로 호출할 수 있습니다(이 회차 남은 호출 ${left}회).` : ""));
@@ -557,7 +558,7 @@ export function reviewProblems(work: Work): string[] {
     } else if (reviewer.invalid) {
       problems.push(`기록된 리뷰어 결과가 표 규칙(상태·범위·경로)에 맞지 않습니다: ${oneLine(reviewer.invalid.join(" · "), 120)} — ${agentName("ca-reviewer")} 를 새로 호출하세요(남은 ${left}회).`);
     } else if (reviewer.failures > 0) {
-      problems.push(`독립 리뷰어의 완료 결과가 없습니다(형식 오류 ${reviewer.failures}회 기록) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).`);
+      problems.push(`독립 리뷰어의 완료 결과가 없습니다(${failed} 기록) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).`);
     } else {
       problems.push(`독립 리뷰어 실행·완료 기록이 없습니다 — ${agentName("ca-reviewer")}를 호출하세요. hook 설치는 code-agent doctor로 확인합니다.`);
     }
@@ -582,9 +583,12 @@ export function reviewProblems(work: Work): string[] {
     } else if (point.state === "running") {
       problems.push(`교차 리뷰가 실행 중입니다(${point.running!.host}, ${clock(point.running!.startedAt)} 시작) — 끝난 뒤 다시 확인하세요.`);
     } else {
-      let line = `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
       const hint = crossPointHint({ attempts, grants, scope: grantScope({ file: "review", key: "crossPoint", round: last.round }),
         rawExists: (raw) => existsSync(join(repoRoot, raw)) });
+      // 한도로 거부될 지점(limit-exceeded)에는 실행 명령을 앞세우지 않는다 — 그 명령은 거부되고, 남은 길은 사람 판단이다
+      let line = hint?.class === "limit-exceeded"
+        ? "두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다"
+        : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"} (실행할 수 없으면 중지로 기록되고 진행합니다)`;
       if (hint) {
         line += ` — 직전 실행: ${pointLabel(attempts)}: ${oneLine(point.lastFailure?.detail ?? hint.detail, 120)}. ${crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts })}`;
       }
@@ -654,13 +658,14 @@ export function reviewStatusTail(work: Work, log: ReviewLog, last: ReviewRound):
 
 export type ReviewBudget = Budget & { point: string; scope: string };
 /**
- * review 단계의 카운터 예산 — 리뷰 회차(C3 reviewRoundUsage 값 그대로), 마지막 회차의 리뷰어 호출, 교차 지점 시도·설정 오류·형식 교정
+ * review 단계의 카운터 예산 — 리뷰 회차(검증 예산과 같은 reviewRoundBudget — 통과 뒤 변경으로 연 검증 회차도 센다), 마지막 회차의 리뷰어 호출, 교차 지점 시도·설정 오류·형식 교정
  * (crossBudgets, 게이트 쪽 고아 보기). 한도를 **읽기만** 한다. 허용은 mutateReview 로 grants 에 append 한다(scope 는 행의 scope).
  */
 export function reviewBudgets(work: Work): ReviewBudget[] {
   const { repoRoot, active } = work;
   const log = loadReview(repoRoot, active.id, active.target);
-  const usage = reviewRoundUsage(work);
+  // 리뷰 회차 행은 검증 예산과 같은 값이다(통과 뒤 변경으로 연 검증 회차도 센다 — reviewRoundBudget)
+  const usage = reviewRoundBudget(work);
   const rows: ReviewBudget[] = [{ key: "reviewRounds", used: usage.used, limit: usage.limit, left: Math.max(0, usage.limit - usage.used),
     exhausted: usage.used >= usage.limit, point: "리뷰 회차", scope: grantScope({ file: "review", key: "reviewRounds" }) }];
   const last = log?.rounds.at(-1);

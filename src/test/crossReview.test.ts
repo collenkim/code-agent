@@ -131,7 +131,14 @@ test("설정 오류는 중지가 아니라 게이트를 막고, 첫 오류 뒤 1
   assert.ok(existsSync(join(root, attempts()[0].logPath!)), "설정 오류는 원문 출력을 handoff 에 남긴다");
   assert.doesNotMatch(readFileSync(doc(), "utf8"), /교차 검증 중지/);
   assert.throws(() => next(root), /교차 리뷰가 필요합니다[\s\S]*막힘\(설정 오류\)/);
-  assert.throws(() => cross(), refusal(/남은 0회/));
+  // 한도를 다 쓴 실패는 '한 번 더 실행할 수 있습니다(남은 0회)' 가 아니라 사람 판단을 안내한다(E3 — 안내대로 다시 실행하면 한도 거부다)
+  assert.throws(() => cross(), (error: Error) => refusal(/재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다[\s\S]*retry-grant crossError/)(error) &&
+    !/한 번 더 실행할 수 있습니다/.test(error.message));
+  // 게이트·status 의 교차 줄도 거부될 명령을 앞세우지 않고 사람 판단만 낸다(E4)
+  const line = reviewProblems(loadWork(root)!).find((problem) => /교차 리뷰가 필요합니다/.test(problem))!;
+  assert.doesNotMatch(line, /review cross --by codex \(실행할 수 없으면/);
+  assert.match(line, /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*사람 판단/);
+  assert.doesNotMatch(status(root), /review cross --by codex \(실행할 수 없으면/);
   const cli = spawnSync(process.execPath, [join(__dirname, "../agent/cli.js"), "review", "cross", "--by", "codex"],
     { cwd: root, encoding: "utf8", env: { ...process.env, CLAUDECODE: "1", CODEX_CI: "" } });
   assert.equal(cli.status, 1, cli.stdout + cli.stderr);
@@ -265,6 +272,14 @@ test("형식 오류 — 원문을 보존하고 같은 명령이 원문의 형식
   assert.throws(() => cross("- 없음"), refusal(/이미 기록했습니다/));
 });
 
+test("형식 교정도 다시 형식 오류면 '남은 0회' 재실행 대신 사람 판단을 안내한다(E3)", async () => {
+  await crossRepo(); fakeCodex();
+  assert.throws(() => cross("설명문만 있는 응답"), refusal(/형식만 교정합니다\(남은 1회\)/));
+  assert.throws(() => cross("또 설명문"), (error: Error) =>
+    refusal(/형식 교정 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다[\s\S]*retry-grant crossFormat/)(error) && !/남은 0회/.test(error.message));
+  assert.throws(() => cross("- 없음"), refusal(/한도 1회를 썼습니다/), "안내대로 다시 실행하지 않는다 — 실행하면 한도 거부다");
+});
+
 test("내용 오류(상태·경로·범위)도 기록 전에 걸러 형식만 교정한다 — 교정 프롬프트가 표 규칙을 다시 준다", async () => {
   await crossRepo(); fakeCodex();
   assert.throws(() => cross(`| X1 | ${CODE}:3 | 계획 안 | 미해결 | x |`), refusal(/형식이 맞지 않습니다[\s\S]*상태 칸[\s\S]*계획 파일 칸/));
@@ -385,6 +400,21 @@ test("리뷰어 내용 오류를 고치지 않고 stop_hook_active 로 끝내면
   assert.equal(lastRound().reviewers![1].ignored, undefined, "새 호출을 받아들인다");
   observeReviewer({ ...event("r2"), hook_event_name: "SubagentStop", last_assistant_message: "- 없음" });
   assert.equal(lastRound().reviewer!.agentId, "r2");
+});
+
+test("리뷰 도중 계획 파일이 바뀌면 완료 hook 은 같은 리뷰어에게 되돌리지 않고 hook 판정 실패로 기록한다 — 게이트가 '실행 중' 에 갇히지 않는다(E19)", async () => {
+  await crossRepo({ reviewer: false });
+  const event = { cwd: root, session_id: "s", agent_id: "r1", agent_type: "ca-reviewer" };
+  process.env.CLAUDE_PROJECT_DIR = root;
+  observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+  writeFixture(root, CODE, "module.exports = () => 2; // 사람이 리뷰 중에 고쳤다\n");
+  assert.equal(quiet(() => runReviewHook(JSON.stringify({ ...event, hook_event_name: "SubagentStop", last_assistant_message: "- 없음" }))), 0);
+  const run = lastRound().reviewers![0];
+  assert.deepEqual([run.failure?.class, run.completedAt], ["hook-failure", undefined]);
+  assert.match(run.failure!.detail, /리뷰 도중 코드·계획·경계가 바뀌었습니다/);
+  const problems = reviewProblems(loadWork(root)!).join("\n");
+  assert.doesNotMatch(problems, /독립 리뷰어가 실행 중입니다/);
+  assert.match(problems, /1회차 뒤 계획 파일이 바뀌었습니다/);
 });
 
 test("멈춘 리뷰어 — 15분이 지나면 고아로 보고 새 호출을 받으며, 형식 오류로 끝난 같은 agent 의 재개는 새 실행이다", async () => {
@@ -589,6 +619,11 @@ test("HP-8·VER-M2: Codex 샌드박스 표지가 있으면 claude 를 띄우기 
     refusal(/Codex 샌드박스가 claude 실행을 막았습니다[\s\S]*권한 상승/));
   assert.equal(calls(), 0);
   assert.deepEqual([attempts()[0].mode, attempts()[0].class, attempts()[0].kind], ["preflight", "host-sandbox-denied", "preflight"]);
+  // 같은 사전 거부를 되풀이해도 같은 거부만 내고 기록은 한 번이다(E18 — 지점 시도에 세지 않는 거부가 끝없이 쌓이지 않는다)
+  for (let i = 0; i < 3; i++) {
+    assert.throws(() => withCaller("codex", () => { process.env.CODEX_SANDBOX_NETWORK_DISABLED = "1"; return crossReview(root, "claude"); }), refusal(/권한 상승/));
+  }
+  assert.equal(attempts().length, 1);
   assert.throws(() => next(root), /교차 리뷰가 필요합니다[\s\S]*막힘\(샌드박스\)/);
   assert.match(previewCrossStop(root, "review"), /시도 1회\(host-sandbox-denied/, "사용자가 권한 상승을 거절하면 사람 중지를 고를 수 있다");
   // 사전 판정은 다른 호스트를 띄우지 않았으므로 지점 호스트를 고정하지 않는다 — Claude Code 로 옮겨 --by codex 로 이어 간다

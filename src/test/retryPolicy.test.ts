@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { Stop } from "../agent/stop";
@@ -16,7 +16,7 @@ import {
   FAILURE_CLASSES, grantFor, grantScope, GRANT_STEP, guidance, GUIDE_KEYS, GUIDE_VARIANT_KEYS, GUIDE_VARIANTS, hookFailureExit, hookFailureInput,
   isFailureClass, LIMITS, limitExceededText, limitOf, lockDecision, nextRoundDecision, nodeCounter, orphanState, placeholdersOf,
   planningDispatchDecision, POLICIES, recordedVariant, refuse, renderRetryPolicyTable, retrySummary, RetryRefused, roundStateOf, runCauseOf,
-  runClass, sameRoundDecision, subagentExit, TIMING, verifyBudget, verifyNode, verifyRetryOf, verifyState, writeBlockReason,
+  runClass, sameRoundDecision, subagentExit, TIMING, UNRENDERED_GUIDES, verifyBudget, verifyNode, verifyRetryOf, verifyState, writeBlockReason,
   type AgentView, type Budget, type CrossAttemptView, type CrossProbe, type RetryGrant, type RunView,
   type VerifyBudget, type VerifyState,
 } from "../agent/retryPolicy";
@@ -52,6 +52,23 @@ describe("원인 정책 표는 21개 원인을 빠짐없이 같은 꼴로 정한
         assert.equal(/\{[A-Za-z]\w*\}/.test(guidance(cls, filled(keys), name)), false, `${cls}/${name}`);
       }
     }
+  });
+
+  test("안내 문구의 원천은 하나다 — 기본 문구는 어딘가에서 guidance() 로 렌더되고, 렌더하지 않는 원인은 UNRENDERED_GUIDES 에 적는다(E23)", () => {
+    const dir = join(__dirname, "..", "..", "src", "agent");
+    const sources = readdirSync(dir).filter((name) => name.endsWith(".ts") && name !== "retryPolicy.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
+    const ownUse = readFileSync(join(dir, "retryPolicy.ts"), "utf8").replace(/^(?:export )?const POLICIES[\s\S]*?^};$/m, "");
+    // 원인 이름을 리터럴로 넘기거나(guidance("x"…)), 기록의 class 를 그대로 넘기는 렌더(guidance(record.class …))는 그 원인을 담는 모듈이 연다
+    const literal = (cls: string) => new RegExp(`guidance\\(\\s*"${cls}"`).test(sources) || new RegExp(`guidance\\(\\s*"${cls}"`).test(ownUse);
+    const dynamic = /guidance\((?:hint\.class|cls|record\.class|item\.class|failure\.class)/.test(sources + ownUse);
+    assert.ok(dynamic, "기록의 class 로 렌더하는 호출이 있다");
+    for (const cls of UNRENDERED_GUIDES) assert.equal(literal(cls), false, `${cls} 는 UNRENDERED_GUIDES 에 있는데 guidance("${cls}") 로 렌더된다 — 목록에서 빼세요`);
+    // 렌더하지 않는 원인은 셋뿐이다 — 늘리면 실제 문구의 원천을 UNRENDERED_GUIDES 주석에 적는다
+    assert.deepEqual([...UNRENDERED_GUIDES], ["blocking-finding", "lock-stale", "hook-failure"]);
+    // 동의 출력의 failure.guide 는 재시도 규약의 문구 그대로다(consent.ts 에 따로 두지 않는다)
+    assert.equal(/const GUIDES\b/.test(readFileSync(join(dir, "consent.ts"), "utf8")), false);
+    assert.match(guidance("consent-target-changed", { detail: "d" }), /^확인 대상이 바뀌어 이 동의는 쓸 수 없습니다: d\./);
+    assert.match(guidance("consent-target-changed", {}, "response-defer"), /^사용자가 보류했습니다/);
   });
 
   test("안내 문구는 호스트 중립이다 — 스킬 표기·Claude 도구 이름을 쓰지 않는다", () => {
@@ -470,7 +487,8 @@ const toolOut = "exec\nnode -e … in C:/w/repo\n succeeded in 12ms:\nconst conf
 const CROSS_FIXTURES: [string, string, CrossProbe][] = [
   ["cross-unavailable/quota", "spend cap", { host: "codex", sentPrompt: "", stderr: "ERROR: You hit your spend cap set by the owner of your workspace.", status: 1 }],
   ["cross-unavailable/auth", "Not logged in", { host: "codex", sentPrompt: "", stderr: "Not logged in. Run codex login.", status: 1 }],
-  ["cross-unavailable/missing", "BIN 없음", { host: "codex", sentPrompt: "", unresolved: "CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다" }],
+  ["cross-unavailable/missing", "PATH 에 없음", { host: "codex", sentPrompt: "", unresolved: "codex 실행 파일을 PATH 에서 찾지 못했습니다" }],
+  ["cross-config-error/config", "BIN 없음(설정으로 고친다)", { host: "codex", sentPrompt: "", unresolved: "CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다", unresolvedConfig: true }],
   ["cross-config-error/config", "unexpected argument", { host: "codex", sentPrompt: "", stderr: "error: unexpected argument '--ephemeral' found\n\nUsage: codex exec [OPTIONS] [PROMPT]", status: 2 }],
   ["cross-config-error/config", "unknown option", { host: "claude", stderr: "error: unknown option '--permission-prompts'", status: 1 }],
   ["cross-config-error/config", "selected model", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, result: "There's an issue with the selected model (claude-sonnet-9). It may not exist or you may not have access to it." }) }],
@@ -557,8 +575,8 @@ const CROSS_FIXTURES: [string, string, CrossProbe][] = [
 ];
 
 describe("교차 실행 실패 분류", () => {
-  test("분류 fixture 61건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
-    assert.equal(CROSS_FIXTURES.length, 61);
+  test("분류 fixture 62건 — 실행 불가는 화이트리스트뿐이고 알 수 없는 실패는 게이트를 막는다", () => {
+    assert.equal(CROSS_FIXTURES.length, 62);
     for (const [expected, name, probe] of CROSS_FIXTURES) {
       const got = classifyCrossFailure(probe);
       assert.equal(`${got.class}/${got.kind}`, expected, `${name} — text=${JSON.stringify(crossFailureText(probe))}`);
@@ -661,7 +679,9 @@ describe("교차 지점 상태와 판정", () => {
     assert.equal(refusal(before([preflight(), preflight(), preflight(), preflight()])), "run", "사전 판정은 지점 시도에 세지 않는다");
     assert.deepEqual(refusal(before([ended("cross-stop", { mode: "human" })])), ["cross-stopped", "precondition", undefined]);
     assert.deepEqual(refusal(before([ended("cross-config-error"), ended("cross-stop", { mode: "human" })])), ["cross-stopped", "precondition", undefined]);
-    assert.deepEqual(refusal(before([{ ...ended(), endedAt: undefined }])), ["cross-busy", "lock-stale", undefined]);
+    // 실행 중인 다른 시도는 잠금 고착이 아니다(E22 — lock-stale 의 회수·삭제 안내를 따르지 않게)
+    assert.deepEqual(refusal(before([{ ...ended(), endedAt: undefined }])), ["cross-busy", "precondition", undefined]);
+    assert.equal((crossPointDecision({ attempts: [{ ...ended(), endedAt: undefined }], scope: "round:1", phase: "before" }) as { failure: { kind?: string } }).failure.kind, "cross-busy");
   });
 
   test("실행 뒤 판정 — 두 번째 제한 시간은 중지, 이전 중지 지점의 다른 실패는 중지 기록을 그대로 둔다", () => {

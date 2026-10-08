@@ -9,7 +9,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 스
 
 일반 요구사항 접수는 `/ca-request`, 신규·기능 추가·기능 변경을 명시하는 진입점은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존 구조 개선은 `/ca-refactor`다. 종류별 명령도 같은 접수 절차를 사용한다. 하나로 접수한 뒤 질문·확인에 답하면 이어가며, `/ca-next`는 중단 후 재개할 때 사용한다.
 
-모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 8개(이벤트 5종), Codex 공통 hook 등록 5개와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 5개와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인은 같은 세션에서 호스트별 응답 절차로 받는다.
 
@@ -83,8 +83,11 @@ claude                                   # 이 안에서 /ca-request 입력
 |---|---|---|
 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
 | PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell\|Read\|Grep\|Glob\|mcp__.*`, command `code-agent hook` | O |
+| 동의·업무 질문 관찰 | `.claude/settings.json` — PreToolUse·PostToolUse matcher `AskUserQuestion`, `code-agent consent-event` | O |
 | Stop hook | `.claude/settings.json` — `code-agent stop` | O |
 | ca-reviewer SubagentStart/Stop | `.claude/settings.json` — 독립 리뷰 실행·결과를 기록하는 `code-agent review-event` | O |
+| 계획 담당 SubagentStart/Stop | `.claude/settings.json` — matcher `ca-analyst\|ca-explorer\|ca-writer\|ca-critic`, `code-agent planning-event` | O |
+| SessionStart hook | `.claude/settings.json` — 진행 상태 요약을 내는 `code-agent session-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -107,8 +110,8 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 
 ## 2. 흐름 — 지금 어디까지 도는가
 
-목표 흐름과, 지금 CLI 가 실제로 가진 스테이지의 대응. **`#` 는 13단계 목표 흐름의 번호**이고 CLI 가 찍는 스테이지 번호와 다르다 —
-CLI 는 검증 스테이지를 `7 check` · `8 test` · `9 review` · `10 integrate` · `11 deliver` 로 센다 (재현은 번호가 없다 — `implement` 안에서 돈다).
+목표 흐름과, 지금 CLI 가 실제로 가진 스테이지의 대응. **`#` 는 13단계 목표 흐름의 번호**다 — `code-agent --help` 도 이 번호(예: `8 정적 분석·컴파일`·`13 반영`)를 쓰고,
+`status` 는 번호 없이 스테이지 이름(`스테이지: 정적 분석·컴파일 — …`)을 쓴다 (재현은 따로 칸이 없다 — `implement` 안에서 돈다).
 **요구사항 접수(1)에는 스테이지 번호가 없다** — 작업 커서가 생기기 전이라, 문서 작성처럼 **세션**으로 돈다.
 
 | # | 목표 흐름 | 스테이지 (`active.json` 의 `phase`) | 산출물 | 상태 |
@@ -207,8 +210,8 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 |---|---|---|---|
 | 접수 (작업 커서 전) | `/ca-request [ID] [--kind <종류>] <요구사항>` | 사람이 준 원문을 보관하고 `request.json` 으로 정리해 제출 → 코드가 지시서를 렌더 | **같은 세션의 요구사항 확인** |
 | `analysis` | `/ca-analyze [--base] [--target]` | ① `01-requirements.md` — analyst. 진행 중인 작업이 없고 요구사항이 `확정됨` 이면 `code-agent start doc/work/<ID>/requirement.md` 부터 | 질문 · `code-agent next` |
-| `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer | 질문 · `code-agent next` |
-| `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — writer | 질문 · `code-agent next` |
+| `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer. 요구 R 1~3개·조사 파일 12개 이하·합계 96,000바이트 이하면 explorer 단독(impact) — [planning.md](planning.md) | 질문 · `code-agent next` |
+| `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — analyst | 질문 · `code-agent next` |
 | `plan` | `/ca-plan` | ⑤ `plan.json` · ⑦ `07-test-spec.md` → critic → `plan submit`. 반려 사유를 읽는 자리도 여기다 | **같은 세션의 계획 승인** |
 | `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지. `fix` 는 테스트 단계가 먼저이고 그 뒤 `code-agent repro` | hook 거부 · 재현 실패 · 질문 · `check` 도달 |
 | `check` | `/ca-check` | `code-agent check` — build + 정적 분석·보안. **↺ 수정 루프의 정의가 여기 있다** | 실패 · `code-agent next` |
@@ -219,9 +222,9 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 `code-agent approve` · `reject` 는 **스테이지에 묶이지 않는다.** `plan` 에서만 받는 것이 아니라, `implement` 이후에 승인이
 `stale-*` 로 돌아서 다시 받아야 할 때도 같은 명령 그대로다 — 커서가 어디에 있든 제출된 계획이 있으면 판정한다.
 
-각 단계 스킬은 먼저 `code-agent status` 로 **자리를 확인한다.** 커서가 그 스테이지가 아니면 일하지 않는다 —
+각 단계 스킬은 **자리를 확인한다** — 방금 받은 `code-agent` 출력에 지금 스테이지가 있으면 그것을 쓰고, 없을 때만 `code-agent status` 를 부른다. 커서가 그 스테이지가 아니면 일하지 않는다 —
 아직 이르면 먼저 할 명령을 알려 주고, 이미 지났으면 `code-agent back <스테이지>` 로 되감아야 한다고 알린다.
-**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 승인 무효로 `status` 의 `다음:` 이 재진입 순서로 되감기를 안내할 때(낡은 계획 작업이 있거나 계획을 바꿔야 할 때만 — 계획이 그대로면 그 자리에서 plan 동의로 다시 승인한다)와 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때다(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다).
+**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 셋이고 원천은 `ca-next` 스킬의 되감기 문단이다: 승인 무효로 `status` 의 `다음:` 이 재진입 순서로 되감기를 안내할 때(낡은 계획 작업이 있거나 계획을 바꿔야 할 때만 — 계획이 그대로면 그 자리에서 plan 동의로 다시 승인한다), 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다), 반영(`deliver`) 단계에서 사용자가 수정을 요청해 되감기를 확인받았을 때다.
 
 `code-agent back <스테이지>` 는 **뒤로만** 간다. 커서만 움직이고 증거·승인 원장·작업 문서는 그대로 둔다 — 그래서:
 
@@ -512,7 +515,7 @@ preserve:
 접수에서 `target` 은 **저장소에 있는 경로**(결함이 나는 곳 · 바꿀 곳)이고 `scope`(건드려도 되는 경로) · `preserve`(바뀌면 안 되는 것)가 **필수**다 —
 원문으로 정할 수 없으면 접수에서 묻는다. 다른 점은 **전부 코드가 막는다** — 스킬 지시가 아니다.
 
-**`fix` — 오류 로그로 고치고, 재현이 먼저다.**
+#### `fix` — 오류 로그로 고치고, 재현이 먼저다
 
 fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수도 있어서, 재현되면 더 강한 증거로 쓰고 안 되면 로그 근거로 고친다.
 
@@ -571,7 +574,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 
 | 명령 | 하는 일 | TTY 필요 |
 |---|---|---|
-| `code-agent init [--cli <경로>]` | 이 저장소에 설치 | — |
+| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치(호스트는 이전 기록과 합집합 — 줄이지 않는다) | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다(`--host`·`--cross` 포함) | — |
 | `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |

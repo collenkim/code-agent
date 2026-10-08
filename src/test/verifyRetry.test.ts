@@ -64,6 +64,17 @@ describe("리뷰 회차 사용량 — 판정 함수는 하나다", () => {
   const round = (n: number, extra: Partial<ReviewRound> = {}): ReviewRound => ({ round: n, at: "t", treeHash: `h${n}`, ...binding, ...extra });
   const log = (rounds: ReviewRound[], extra: Partial<ReviewLog> = {}): ReviewLog => ({ id: "ORD-1", target: "order", rounds, ...extra });
 
+  test("열린 지적 여부는 마지막 회차의 기록된 결과(리뷰어·교차)에서 기각되지 않은 열림 줄로 본다 — 한도 거부의 원래 원인만 고른다(E14)", () => {
+    const reviewer = (result: string) => ({ sessionId: "s", agentId: "a", startedAt: "t", completedAt: "t", result });
+    const open = "| F1 | src/a.ts | 계획 안 | 열림 | 경계값 |";
+    assert.equal(reviewRoundUsageOf(log([round(1, { reviewers: [reviewer("- 없음")] })]), binding).openFindings, false);
+    assert.equal(reviewRoundUsageOf(log([round(1, { reviewers: [reviewer(open)] })]), binding).openFindings, true);
+    assert.equal(reviewRoundUsageOf(log([round(1, { reviewers: [reviewer(open.replace("열림", "해결"))] })]), binding).openFindings, false);
+    const waivers = [{ id: "F1", path: "src/a.ts", source: "reviewer" as const, round: 1, verdict: "기각" as const, reason: "r", consent: "c", at: "t", detailHash: "h" }];
+    assert.equal(reviewRoundUsageOf(log([round(1, { reviewers: [reviewer(open)] })], { waivers } as Partial<ReviewLog>), binding).openFindings, false, "기각한 지적은 세지 않는다");
+    assert.equal(reviewRoundUsageOf(log([round(1, { reviewers: [reviewer(open)] }), round(2, { reviewers: [reviewer("- 없음")] })]), binding).openFindings, false, "마지막 회차만 본다");
+  });
+
   test("기록이 없거나 묶임이 다른 회차가 있으면 회차를 버린다(stale) — 사람 허용도 함께 버린다", () => {
     assert.deepEqual(reviewRoundUsageOf(undefined, binding), { used: 0, base: 3, limit: 3, usedPaths: [], stale: true });
     const grants = [{ key: "reviewRounds" as const, scope: "", step: 1, consent: "c", at: "t", reason: "r" }];
@@ -73,7 +84,7 @@ describe("리뷰 회차 사용량 — 판정 함수는 하나다", () => {
 
   test("한도는 기록된 limit 에 사람 허용을 더한다. limit 이 없는 옛 기록은 3회차 이상이면 유예 1회를 받는다", () => {
     assert.deepEqual(reviewRoundUsageOf(log([round(1), round(2)], { used: [{ id: "F1", path: "t.java", round: 1 }] }), binding),
-      { used: 2, base: 3, limit: 3, usedPaths: ["t.java"], stale: false });
+      { used: 2, base: 3, limit: 3, usedPaths: ["t.java"], stale: false, openFindings: false });
     assert.equal(reviewRoundUsageOf(log([round(1), round(2), round(3), round(4)]), binding).limit, 5);
     assert.equal(reviewRoundUsageOf(log([round(1), round(2), round(3), round(4)], { limit: 3 }), binding).limit, 3, "고정된 한도는 유예하지 않는다");
     const grants = [{ key: "reviewRounds" as const, scope: "", step: 1, consent: "c", at: "t", reason: "r" }, { key: "fix" as const, scope: "", step: 1, consent: "c", at: "t", reason: "r" }];
@@ -87,7 +98,11 @@ describe("테스트 동결과 수집 수정 창", () => {
     assert.equal(testFrozen(base), false);
     assert.equal(testFrozen({ ...base, testCases: [{ id: "TC-1", source: "출력", status: "passed" }] }), true);
     assert.equal(testFrozen({ ...base, runs: [run(1, "test", "failed")] }), true);
-    assert.equal(testFrozen({ ...base, runs: [run(1, "test", "error", { cause: "environment" })] }), false, "환경 오류로 돌지 못한 실행은 얼리지 않는다");
+    // 테스트가 실제로 돈 실행은 언다 — 시간 초과(걸려 멈춘 테스트)·선언된 환경 문구도(E24). 돌지 못한 실행(실행 파일 없음·실행 실패)만 얼리지 않는다
+    assert.equal(testFrozen({ ...base, runs: [run(1, "test", "error", { cause: "environment" })] }), true, "선언된 환경 문구로 끝난 실행도 테스트가 돌았다");
+    assert.equal(testFrozen({ ...base, runs: [run(1, "test", "error", { cause: "timeout" })] }), true, "시간 초과로 끊긴 test 뒤에도 테스트 파일을 지우거나 약하게 고치지 못한다");
+    assert.equal(testFrozen({ ...base, runs: [run(1, "test", "error", { cause: "missing-tool" })] }), false, "실행 파일이 없어 돌지 못한 실행은 얼리지 않는다");
+    assert.equal(testFrozen({ ...base, runs: [run(1, "test", "error", { cause: "spawn" })] }), false, "실행 실패로 돌지 못한 실행은 얼리지 않는다");
     assert.equal(testFrozen({ ...base, testFreeze: { round: 1, at: "t", files: {} } }), true);
     assert.equal(testFrozen({ ...base, repro: { at: "t", testTreeHash: "h", cases: ["TC-1"], found: [] } }), true);
   });
@@ -96,7 +111,7 @@ describe("테스트 동결과 수집 수정 창", () => {
     const retry = verifyRetryOf({ rounds: 1, runs: [], retry: { causes: { 1: "first" } } });
     const view = (testState: VerifyView["testState"], collectLimit?: number): VerifyView => ({
       round: 1, state: "result-unconfirmed", emptyRound: false, testState, retry,
-      budget: verifyBudget({ retry, round: 1, fixRounds: 2, collectLimit, reviewRounds: { used: 0, limit: 3 } }),
+      budget: verifyBudget({ retry, round: 1, fixRounds: 2, collectLimit, reviewRounds: { used: 0, limit: 3 } }), reviewOpenFindings: false,
     });
     assert.equal(collectWindowOpen(view("result-unconfirmed")), true);
     assert.equal(collectWindowOpen(view("passed")), false);

@@ -94,7 +94,7 @@ describe("deliver 동의 실패", () => {
     consent({ createdAt: ago(10 * MIN), failure: { class: "consent-target-changed", kind: "target", at: ago(10 * MIN), detail: "대상이 바뀌었습니다" } });
     assert.match(nextLine(), /^다음: 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로/);
     consent({ failure: { class: "consent-target-changed", kind: "target", at: ago(0), detail: "대상이 바뀌었습니다" } });
-    assert.match(nextLine(), /^다음: \[동의 대상 변경·취소\] 이 동의는 쓸 수 없습니다: 대상이 바뀌었습니다/);
+    assert.match(nextLine(), /^다음: \[동의 대상 변경·취소\] 확인 대상이 바뀌어 이 동의는 쓸 수 없습니다: 대상이 바뀌었습니다/);
     rmSync(join(repo, STAGES_LOG));
     assert.match(nextLine(), /^다음: 현재 호스트 세션에서 ca-answer의 deliver 동의 절차로/, "집계 로그가 없으면 안내하지 않는다");
   });

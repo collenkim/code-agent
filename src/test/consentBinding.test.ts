@@ -214,6 +214,9 @@ test("T-2-3 세션 밖에서 응답을 기다리는 동의가 있으면 셸을 c
   const { id } = prepared({ action: "docs" }, { id: "S1", host: "claude" });
   assert.match(bash("node -e 1") ?? "", /응답·적용을 기다리는 동안/);
   assert.match(bash("codex exec x") ?? "", /응답·적용을 기다리는 동안/);
+  // 그 동의에 답할 수 없는 다른 세션은 좁히지 않는다(E27 — 그 세션의 쓰기는 동의 스냅샷 대조가 폐기로 잡는다)
+  assert.equal(bash("node -e 1", "S9-unrelated"), undefined);
+  assert.equal(JSON.parse(readFileSync(join(root, ".code-agent/consents/index.json"), "utf8")).open[id].session, "S1");
   assert.equal(bash(`code-agent consent finish ${id}`), undefined);
   assert.equal(bash("git status"), undefined);
   const index = join(root, ".code-agent/consents/index.json");
@@ -408,7 +411,8 @@ test("T-J-1 judgment 공통 검증과 카운터 검증", () => {
   refuse(judgment({ name: "collect" }), /사람 허용으로 늘리지 않습니다/);
   refuse(judgment({ name: "fix", id: "analysis" }), /id 를 빼고/);
   refuse(judgment({ name: "taskTotal" }), /계획 작업 ID/);
-  refuse(judgment({ name: "reviewRounds" }), /review 단계에서 허용/);
+  // 리뷰 회차 한도 거부는 검증 쪽(check 로 되감긴 뒤)에서 나므로 검증 단계 어디서든 받는다(E14) — 계획 단계에서는 거부
+  refuse(judgment({ name: "reviewRounds" }), /reviewRounds 는 check·test·review·integrate 단계에서 허용합니다\(지금: analysis\)/);
   refuse({ action: "judgment", kind: "waive-finding", comment: "x" }, /지적 번호/);
   refuse({ action: "judgment", kind: "cross-stop", name: "x", comment: "x" }, /review 또는 planning/);
   preparePlanning(root);

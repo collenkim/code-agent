@@ -45,7 +45,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 | 계획 진행 | `planning advance`가 action별 다음 행동 한 줄(`next`)을 싣고 — 행동 규칙의 원천은 CLI 한 곳이다 — analysis·impact·design 은 `--chain`으로 결과가 모두 준비되면 같은 호출에서 program 게이트까지 지난다(게이트용 `next` 호출과 그 status 전문이 메인에 들어가지 않는다). 다음 단계 배정·계획 승인은 잇지 않는다 |
 | 압축·비우기 | 상태는 파일에 있으므로 `/clear` 뒤 `/ca-next`로 손실 없이 잇는다. 자동 압축 요약이 단계·동의를 잃어도 SessionStart hook이 현재 위치를 다시 붙인다 |
 
-전달 파일과 staging에는 `.gitignore`(`*`)를 두어 반영 커밋에 들어가지 않는다. Agent 도구의 PostToolUse `updatedToolOutput`으로 결과를 줄이는 방법은 실험에서 쓸 수 없었다 — 서브에이전트가 비동기로 시작돼 PostToolUse가 시작 응답에 붙고, 결과는 별도 알림으로 온다.
+전달 파일과 staging은 반영 커밋에서 뺀다 — 커밋은 `deliveryExcludes`의 `:(exclude,literal)` pathspec으로 거른다(반영의 `git add -f`는 폴더 안 `.gitignore`(`*`)를 무시하므로, `.gitignore`는 사람이 치는 일반 `git add`용이다). Agent 도구의 PostToolUse `updatedToolOutput`으로 결과를 줄이는 방법은 실험에서 쓸 수 없었다 — 서브에이전트가 비동기로 시작돼 PostToolUse가 시작 응답에 붙고, 결과는 별도 알림으로 온다.
 
 ### Claude·Codex 교차 검증
 
@@ -752,18 +752,18 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 `/ca-feature`·`/ca-fix`·`/ca-refactor` 도 그 파일을 읽는다 — 단계로 끊어 돌든 사이클로 몰든 도는 내용이 갈리지 않는다.
 단계를 나눈 이유는 **단계마다 결과를 보고 보완할 자리를 만드는 것**이다 (2026-09-30 결정).
 
-단계 스킬은 넷을 한다: (1) `code-agent status` 로 자리를 확인하고 (2) 그 스테이지의 일만 하고 (3) `code-agent next` 로 게이트를 지나고
+단계 스킬은 넷을 한다: (1) 자리를 확인하고(방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 `code-agent status`) (2) 그 스테이지의 일만 하고 (3) `code-agent next` 로 게이트를 지나고
 (4) 자동 진행 중이면 다음 단계 스킬을 이어서 읽는다. 사용자가 한 단계만 요청했으면 해당 범위에서 마친다. 커서가 그 스테이지가 아니면 일하지 않는다 — 아직 이르면 먼저 할 명령을 알리고,
-이미 지났으면 `code-agent back <스테이지>` 를 알린다 (되감기는 **사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 계획 `planning advance` 의 자동 되감기 `rewind-required`·`rewind.auto: true` 다. 상태로 판정하고 같은 사유에 한 번이며, 되감기는 커서만 옮기고 사람 확인 지점은 그대로다).
+이미 지났으면 `code-agent back <스테이지>` 를 알린다 (되감기는 **사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 셋이고 원천은 `ca-next` 스킬의 되감기 문단이다: 승인 무효의 재진입(`다음:` 의 재진입 순서), 계획 `planning advance` 의 자동 되감기 `rewind-required`·`rewind.auto: true`(상태로 판정하고 같은 사유에 한 번), 반영 단계에서 사용자 확인을 받은 수정 요청. 되감기는 커서만 옮기고 사람 확인 지점은 그대로다).
 **↺ 수정 루프**는 `/ca-check` 에 한 벌 있고 `/ca-test`·`/ca-review`·`/ca-integrate` 가 그것을 가리킨다 — 루프가 돌아가는 자리가 `check` 라서다.
 
 ### 직접 CLI 명령 (선택 경로)
 
-같은 세션에서는 `setup`·`docs`·`baseline`·`request`·`plan`·`deliver`·`model`·`abort`·`knowledge-prune`·`plugin-add`·`plugin-remove`·`update` action으로 사용자 확인을 받아 적용한다. 아래 직접 확인 명령에는 기존 TTY 검사가 적용된다.
+같은 세션에서는 `setup`·`docs`·`baseline`·`request`·`plan`·`deliver`·`model`·`abort`·`knowledge-prune`·`plugin-add`·`plugin-remove`·`update`·`repro-log`·`judgment` action으로 사용자 확인을 받아 적용한다(목록의 정본은 `consent.ts` `ActionSchema` — `ca-answer` 스킬 세 곳과 흐름도 §4.1 을 시험이 대조한다). 아래 직접 확인 명령에는 기존 TTY 검사가 적용된다.
 
 | 명령 | 하는 일 | 상태 |
 |---|---|---|
-| `code-agent init [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
+| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 | P1 ✅ |
 | `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) | P8 ✅ |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | P1 ✅ |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) | ✅ |
@@ -773,7 +773,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent approve [--comment <메모>]` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만 — 남는 인자는 사용법 오류) | P1 ✅ |
 | `code-agent takeover` | 다른 세션이 쥔 작업 임대를 풀어 다음 진행 명령의 세션이 이어받게 한다(저쪽 세션 종료를 사용자가 확인한 뒤 — 스킬 규칙) | C4 ✅ |
 | `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 | P1 ✅ · 접수 ✅ |
-| `code-agent deliver` | 11 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
+| `code-agent deliver` | 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 | P5 ✅ |
 | `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델·추론 강도 조회·변경·복원 (--host, --reasoning·--effort; 변경은 같은 세션 동의 또는 TTY) | ✅ |
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 스테이지·에이전트·모델별 토큰과 호출 통계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)과 Codex 세션 기록(형식 미확인)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정(Claude 만) | P8 ✅ |
 | `code-agent knowledge` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) | P8 ✅ |
@@ -797,10 +797,10 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙. 아직 커서가 없고 접수 중이면 접수 컨텍스트를 준다(그것만 다시 보려면 `code-agent request`) | P1 ✅ |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 | P1 ✅ |
 | `code-agent repro` | 재현 (**`fix` 전용** — 스테이지가 아니라 `implement` 안에서 돈다) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 | P6 ✅ |
-| `code-agent check` | 7 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 | P5 ✅ |
-| `code-agent test` | 8 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 | P5 ✅ |
-| `code-agent review` | 9 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 | P5 ✅ |
-| `code-agent integrate` | 10 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test` | P5 ✅ · `prepare` P6 ✅ |
+| `code-agent check` | 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 | P5 ✅ |
+| `code-agent test` | 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 | P5 ✅ |
+| `code-agent review` | 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 | P5 ✅ |
+| `code-agent integrate` | 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test` | P5 ✅ · `prepare` P6 ✅ |
 | `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지). 접수 중에는 원문·ID를 유지한 채 준비하고, 종료 후 같은 접수로 돌아간다 | P2 ✅ |
 | `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — POLICY 4종(`architecture` · `conventions` · `test-strategy` · `quality`) · `knowledge`(KNOWLEDGE 3종을 한 번에) · KNOWLEDGE 낱개(`data-dictionary` · `api-catalog` · `business-rules`) · 작업 문서(`01-requirements` · `02-analysis` · `03-design` · `04-functional` · `07-test-spec`) | P2 ✅ |
 | `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 묻는 것 | P2 ✅ |
@@ -872,6 +872,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 - **TC 증거의 경계** — 승인된 테스트 명령의 결과를 신뢰한다. 명령 자체가 가짜 성공 결과를 출력하는 경우까지 증명하지는 않는다. 2026-10-01에 주석·문자열만으로 통과하던 경로는 제거했다.
 - **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 화면에 싣고, 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.
+- **검증 명령은 모델이 쓴 코드를 실행한다** — hook 은 모델 도구의 `.code-agent` 쓰기만 막는다. `check`·`test`·`integrate`·`repro` 가 돌리는 테스트 코드는 파일 시스템을 그대로 쓸 수 있다. 그래서 리뷰 회차·교차 지점·사람 판단을 담은 `review.json`과 계획 기록 `planning.json`은 명령 실행 전 바이트와 대조해 바뀌었으면 되돌리고 그 실행을 증거로 받지 않으며(`guardedStateFiles`), `verify.json`은 끝 저장이 메모리 사본으로 다시 쓴다. 그 밖의 `.code-agent` 파일(동의 기록·티켓·임대)을 검증 명령이 고치는 것은 막지 못한다 — 테스트 코드는 리뷰(⑨)와 사람의 계획 승인이 본다.
 - **KNOWLEDGE 3종은 계획 밖 변경 대조에서 빠진다** — `deliver` 가 사람이 고른 항목을 코드로 적용하는 자리라 모델이 쓸 수 없고(hook), 넣어 두지 않으면 커밋이 실패했을 때 적용본만 남아 다시 반영할 길이 영영 막힌다.
 
 **P3 실측 기준치** (2026-09-29, 가짜 레거시 — Spring, 도메인 3 × 계층 5, Java 23파일 · 지시서 "주문을 등록·조회한다" 한 줄 · 서브에이전트는 당시 기본값인 opus)

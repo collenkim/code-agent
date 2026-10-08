@@ -69,7 +69,7 @@ npm run build:bin
 | 0 | `node:sea.getAssetKeys` 가 있는가 | 없으면 **선다**. 24.8 미만으로 묶으면 빌드는 조용히 끝나고 바이너리가 실행 시점에 맨 ENOENT 로 죽는다 |
 | 1 | `tsc` | 타입이 깨진 채로 바이너리를 내지 않는다 |
 | 2 | esbuild 로 `src/agent/cli.ts` 를 CommonJS 한 파일로 (zod 포함, `--external:node:sea`) | SEA 안에서는 상대경로 `require()` 가 되지 않는다 — 빌트인만 풀린다 |
-| 3 | `dist-bin/sea-config.json` — `template/` 아래 전 파일 + `package.json` 을 **자원(assets)** 으로 (지금 29개) | 실행 파일 안에 스킬·에이전트·CLAUDE 블록이 함께 들어간다 |
+| 3 | `dist-bin/sea-config.json` — `template/` 아래 전 파일 + `package.json` 을 **자원(assets)** 으로 | 실행 파일 안에 스킬·에이전트·CLAUDE 블록이 함께 들어간다 |
 | 4 | `node --experimental-sea-config dist-bin/sea-config.json` | `prep.blob` |
 | 5 | **지금 도는 `node` 실행 파일을 복사** | ← 크로스 컴파일이 안 되는 이유 |
 | 6 | `postject … --sentinel-fuse NODE_SEA_FUSE_…` 로 blob 주입 | 이 플래그가 없으면 `Could not find the sentinel` 로 실패한다 |
@@ -123,7 +123,8 @@ claude
 ```
 code-agent 를 설치했습니다 — C:\work\shop
   - 스킬·에이전트 26개 · 보조 문서 10개: .claude/skills/ca-*, .claude/agents/ca-*
-  - hook: .claude/settings.json → PreToolUse hook · PreToolUse/PostToolUse consent-event · Stop stop · SubagentStart/SubagentStop review-event · 계획 SubagentStart/Stop planning-event · SessionStart session-event
+  - 모델·추론 강도: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium — code-agent model 로 확인·변경
+  - hook: .claude/settings.json → PreToolUse code-agent hook · 질문 Pre/PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart/Stop code-agent review-event · 계획 SubagentStart/Stop code-agent planning-event · SessionStart code-agent session-event
   - CLAUDE.md: code-agent 블록 생성
   - .gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/, lease.json)
   - 버전 고정: .code-agent/version = 1.0.0
@@ -233,7 +234,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 ```
 code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
   - 스킬·에이전트 3개 갱신: .claude/skills/ca-plan/SKILL.md · …
-  - .claude/settings.json: 그대로 (PreToolUse hook · PreToolUse/PostToolUse consent-event · Stop stop · SubagentStart/SubagentStop review-event)
+  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · 질문 PreToolUse code-agent consent-event · 질문 PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart code-agent review-event · SubagentStop code-agent review-event · 계획 SubagentStart code-agent planning-event · 계획 SubagentStop code-agent planning-event · SessionStart code-agent session-event)
   - CLAUDE.md: 갱신
   - .gitignore: 그대로
   - 에이전트 모델 오버라이드 1개 유지: implementer=opus/medium
