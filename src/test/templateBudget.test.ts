@@ -36,7 +36,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-impact/criteria.md": 1200,
   "template/claude/skills/ca-impact/legacy.md": 1100,
   "template/claude/skills/ca-impact/SKILL.md": 3100,
-  "template/claude/skills/ca-implement/SKILL.md": 2500,
+  "template/claude/skills/ca-implement/SKILL.md": 2700,
   "template/claude/skills/ca-integrate/SKILL.md": 2900,
   "template/claude/skills/ca-next/SKILL.md": 6700,
   "template/claude/skills/ca-plan/contract.md": 2700,

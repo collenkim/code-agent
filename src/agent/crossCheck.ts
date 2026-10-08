@@ -157,22 +157,26 @@ const NET_PROBE_WORKER = [
  * 연결 확인 실행 — CLI 는 동기라 같은 프로세스의 worker 가 net.connect 하는 동안 Atomics.wait 로 기다린다. 자식 프로세스를 띄우지 않으므로
  * 단일 실행 파일(process.execPath 가 code-agent 자신이라 `-e` 를 돌리지 못한다)에서도 같고, 샌드박스는 프로세스 단위라 이 프로세스의 연결이
  * 곧 그 셸의 연결이다(샌드박스 셸 안 node 의 fetch 가 `connect EACCES` — 실측). 결과는 `ok`·`timeout`·연결 오류 코드이고, worker 를
- * 띄우지 못했거나 답이 없으면 `worker-…`(거부하지 않는 결과)다. 시험만 이 자리를 바꿔 끼운다(환경 변수로 열지 않는다 — 사람이 끄는 길은
- * CODE_AGENT_CROSS_PREFLIGHT=off 하나다).
+ * 띄우지 못했거나(공유 메모리·worker 를 쓸 수 없는 런타임 포함 — 본문 전체가 try 안이다) 답이 없으면 `worker-…`(거부하지 않는 결과)다.
+ * 시험만 이 자리를 바꿔 끼운다(환경 변수로 열지 않는다 — 사람이 끄는 길은 CODE_AGENT_CROSS_PREFLIGHT=off 하나다).
  */
 export const netProbeRunner = {
   connect(host: string, port: number, ms: number): string {
-    const shared = new SharedArrayBuffer(8 + 64);
-    const state = new Int32Array(shared, 0, 2);
-    let worker: Worker;
-    try { worker = new Worker(NET_PROBE_WORKER, { eval: true, workerData: { host, port, ms, shared } }); }
-    catch (error) { return `worker-${(error as NodeJS.ErrnoException).code ?? "error"}`; }
-    worker.unref();
-    worker.on("error", () => { /* 답이 없으면 worker-timeout 으로 본다 — 뒤늦은 오류 이벤트가 CLI 를 죽이지 않게 */ });
-    Atomics.wait(state, 0, 0, ms + 3_000);
-    const out = Atomics.load(state, 0) === 1 ? Buffer.from(new Uint8Array(shared, 8, state[1])).toString("utf8") : "worker-timeout";
-    worker.terminate().catch(() => undefined);
-    return /^[\w-]{1,40}$/.test(out) ? out : "worker-invalid";
+    let worker: Worker | undefined;
+    try {
+      const shared = new SharedArrayBuffer(8 + 64);
+      const state = new Int32Array(shared, 0, 2);
+      worker = new Worker(NET_PROBE_WORKER, { eval: true, workerData: { host, port, ms, shared } });
+      worker.unref();
+      worker.on("error", () => { /* 답이 없으면 worker-timeout 으로 본다 — 뒤늦은 오류 이벤트가 CLI 를 죽이지 않게 */ });
+      Atomics.wait(state, 0, 0, ms + 3_000);
+      const out = Atomics.load(state, 0) === 1 ? Buffer.from(new Uint8Array(shared, 8, state[1])).toString("utf8") : "worker-timeout";
+      return /^[\w-]{1,40}$/.test(out) ? out : "worker-invalid";
+    } catch (error) {
+      return `worker-${(error as NodeJS.ErrnoException | undefined)?.code ?? "error"}`;
+    } finally {
+      try { worker?.terminate().catch(() => undefined); } catch { /* 정리 실패는 결과를 바꾸지 않는다 */ }
+    }
   },
 };
 /**

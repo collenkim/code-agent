@@ -312,6 +312,10 @@ test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을
     // hook 신뢰 기록은 키 꼴을 확인하지 못했다 — 찾으면 알리고, 못 찾으면 '확인 필요'(없다고 단정하지 않는다)
     assert.equal(codexTrust(root).hooks,"unknown");
     assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 확인 필요 — .*Hooks need review.*codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뜁니다/);
+    // 앞부분이 같은 형제 저장소(<저장소>-old)의 기록은 이 저장소의 것이 아니다
+    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "trusted"\n\n[hooks.state."${join(`${root}-old`,".codex","hooks.json").replace(/\\/g,"\\\\")}:pre_tool_use:0:0"]\ntrusted_hash = "abc"\n`);
+    assert.equal(codexTrust(root).hooks,"unknown");
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 확인 필요/);
     writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "trusted"\n\n[hooks.state."${join(root,".codex","hooks.json").replace(/\\/g,"\\\\")}:pre_tool_use:0:0"]\ntrusted_hash = "abc"\n`);
     assert.equal(codexTrust(root).hooks,"recorded");
     assert.match(line("Codex 훅 신뢰"),/hook 신뢰 기록\(hooks\.state\)이 있습니다/);

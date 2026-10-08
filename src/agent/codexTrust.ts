@@ -6,7 +6,8 @@
  * 꼴은 실측이다 — Windows 는 경로를 소문자·역슬래시로 적는다. 실측한 항목은 모두 저장소 경로 자체였고, 상위 폴더의 신뢰를 Codex 가
  * 그 안의 저장소에 적용하는지는 확인하지 못했다 — 그래서 저장소 자체의 항목만 신뢰로 보고 상위 폴더 항목만 있으면 '확인 필요'(parent)로 둔다.
  * hook 신뢰는 바이너리 문자열(`hooks.state."…".trusted_hash`)로만 확인했고 키의 꼴은 확인하지 못했다 —
- * 그래서 기록을 찾으면 알리고, 못 찾으면 '확인 필요' 로 둔다(없다고 단정하지 않는다).
+ * 그래서 기록을 찾으면 알리고, 못 찾으면 '확인 필요' 로 둔다(없다고 단정하지 않는다). 기록은 저장소 경로로 시작하는 키만 본다 — 다른 꼴이면
+ * 못 찾은 것('확인 필요')이 되어 안전한 쪽이고, 형제 저장소의 기록을 이 저장소의 것으로 알리지 않는다.
  */
 import { existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
@@ -86,7 +87,8 @@ export function codexTrust(repoRoot: string, env: Readonly<Record<string, string
     : project === "parent" ? `확인 필요 — 상위 폴더 항목 ${where} trust_level = "${found?.trust ?? "(없음)"}" 만 있습니다. Codex 가 상위 폴더 신뢰를 이 저장소에 ` +
       "적용하는지 확인하지 못했습니다 — 이 저장소를 직접 신뢰하세요(신뢰되지 않으면 codex exec 는 프로젝트 hook 을 알리지 않고 건너뜁니다)"
     : `${config} 에 이 저장소의 신뢰 항목이 없습니다 — 신뢰 전에는 프로젝트 hook·설정이 꺼집니다`;
-  const recorded = hookKeys.some((key) => key.includes(roots[0]));
+  // 키가 이 저장소 경로이거나 그 아래 경로(`<저장소>/.codex/hooks.json:…`)로 시작할 때만 — 앞부분이 같은 형제 저장소(`<저장소>-old`)는 아니다
+  const recorded = hookKeys.some((key) => key === roots[0] || key.startsWith(`${roots[0]}/`));
   return { project, projectText, hooks: recorded ? "recorded" : "unknown",
     hooksText: recorded ? `${config} 에 이 저장소의 hook 신뢰 기록(hooks.state)이 있습니다 — .codex/hooks.json 이 바뀌면 Codex 가 다시 검토를 요구합니다` : unknownHooks };
 }

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { delimiter, join } from "path";
 import { assetKeys, assetText, CLAUDE_ASSETS, isPackaged } from "./assets";
 import { isBatchScript, resolveExecutable } from "../core/build";
 import { Stop } from "./stop";
@@ -34,12 +34,20 @@ const CONFIG_SCRIPT = "는 셸 스크립트라 직접 실행할 수 없습니다
 const CONFIG_NODE = "는 .js 라 node 가 필요한데 PATH 에서 node 실행 파일을 찾지 못했습니다(단일 실행 파일)";
 /**
  * .js 진입점을 돌릴 node — npm 설치면 지금 node(process.execPath). 단일 실행 파일이면 process.execPath 가 code-agent 자신이라 다른 스크립트를
- * 돌리지 못하므로 PATH 의 node 실행 파일을 쓴다(셸 스크립트만 있거나 없으면 undefined)
+ * 돌리지 못하므로 PATH 의 node 실행 파일을 쓴다. PATH 디렉터리마다 보고 셸 스크립트 node(mise·nodist 류의 node.cmd 셰임)는 건너뛰어 뒤
+ * 디렉터리의 실행 파일을 고른다(실행 파일이 하나도 없으면 undefined)
  */
 export function scriptRunner(packaged: boolean = isPackaged(), env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (!packaged) return process.execPath;
-  const found = resolveExecutable(process.cwd(), "node", env, { skipLocal: true });
-  return found && !isBatchScript(found) ? found : undefined;
+  for (const dir of (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean)) {
+    const found = resolveExecutable(process.cwd(), join(dir, "node"), env);
+    if (found && !isBatchScript(found)) return found;
+  }
+  return undefined;
+}
+/** 실행 파일 변수(CODE_AGENT_*_BIN)에 지정할 것 — 단일 실행 파일은 .js 를 PATH 의 node 실행 파일로만 돌린다(scriptRunner) */
+export function binHint(packaged: boolean = isPackaged()): string {
+  return packaged ? "실행 파일(.exe — .js 는 PATH 에 node 실행 파일이 있을 때만)" : "실행 파일(.exe·.js)";
 }
 /**
  * hostCommand 의 실패 이유가 사람이 설정으로 고치는 것인가 — 실행 파일 변수(CODE_AGENT_*_BIN)가 없는 파일을 가리키거나 PATH 에
@@ -70,7 +78,7 @@ export function hostCommand(host: Host): { file: string; prefix: string[] } | st
   }
   const found = resolveExecutable(process.cwd(), host, process.env, { skipLocal: true });
   if (!found) return `${host} 실행 파일을 PATH 에서 찾지 못했습니다`;
-  if (isBatchScript(found)) return `${found} ${CONFIG_SCRIPT} — ${key} 에 실행 파일(.exe·.js)을 지정하세요`;
+  if (isBatchScript(found)) return `${found} ${CONFIG_SCRIPT} — ${key} 에 ${binHint()}을 지정하세요`;
   return { file: found, prefix: [] };
 }
 

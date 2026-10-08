@@ -77,7 +77,7 @@ npm run build:bin
 - **바이너리는 OS 별이다.** 5단계가 *그 머신의* node 를 복사하므로 Windows·macOS·Linux 각각에서 한 번씩 돌린다.
 - `useSnapshot` · `useCodeCache` 는 **false** 다 — 코드 캐시는 빌드 Node 와 주입 대상 Node 를 묶고, 스냅샷은 최상위에서 쓸 수 있는 API 를 제한한다. 지금 얻을 것이 없다.
 - 실행 파일 안에서 템플릿을 읽는 자리는 `src/agent/assets.ts` 하나다. npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 자원에서 읽고 **키는 같다**(`template/claude/skills/ca-plan/SKILL.md`).
-- 단일 실행 파일의 `process.execPath`는 code-agent 자신이라 다른 스크립트를 돌리지 못한다. 그래서 교차 검증이 띄울 다른 호스트가 `.js` 진입점(npm 설치, `.js`를 가리키는 `CODE_AGENT_*_BIN`)이면 PATH 의 `node`로 돌리고(`hosts.ts` `scriptRunner`), 실행 파일 변수가 `.js`를 가리키는데 PATH 에 `node`가 없으면 설정 오류(게이트 막힘)다. Codex 샌드박스 셸에서 claude 를 띄우기 전의 연결 확인은 자식 프로세스 없이 같은 프로세스에서 한다.
+- 단일 실행 파일의 `process.execPath`는 code-agent 자신이라 다른 스크립트를 돌리지 못한다. 그래서 교차 검증이 띄울 다른 호스트가 `.js` 진입점(npm 설치, `.js`를 가리키는 `CODE_AGENT_*_BIN`)이면 PATH 의 `node` 실행 파일로 돌리고(`hosts.ts` `scriptRunner` — PATH 디렉터리마다 보고 앞 디렉터리의 `node.cmd` 셰임(mise·nodist 류)은 건너뛴다), 실행 파일 변수가 `.js`를 가리키는데 PATH 에 `node` 실행 파일이 없으면 설정 오류(게이트 막힘)다. 그래서 단일 실행 파일에서 실행 파일 변수에는 `.exe`를 지정한다(`.js`는 PATH 에 `node` 실행 파일이 있을 때만). Codex 샌드박스 셸에서 claude 를 띄우기 전의 연결 확인은 자식 프로세스 없이 같은 프로세스에서 한다.
 
 ### 코드 서명 — 아는 단계로 둔다
 
@@ -176,9 +176,9 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 최초 커밋 또는 기존 저장소의 도입 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
 | hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>`. 옛 matcher(MCP·읽기 도구 없음)는 ✗ 로 짚는다 |
-| Codex 이벤트(Codex 설치 — 이벤트마다 한 줄) | `.codex/hooks.json`의 그 이벤트에 `codex-event` 명령이 있고, Windows 명령(`commandWindows`)이 이 버전의 꼴과 같다 | 명령이 없으면 `code-agent init --host codex`. Windows 명령만 다르면 `code-agent update --templates-only --host codex`(작업 중이면 작업이 끝난 뒤) |
+| Codex 이벤트(Codex 설치 — 이벤트마다 한 줄) | `.codex/hooks.json`의 그 이벤트에 `codex-event` 명령이 있고, Windows 명령(`commandWindows`)이 이 버전의 꼴과 같다. `commandWindows`가 없어도 Codex 가 돌리는 `command`가 이 꼴과 같으면(`--cli` 설치의 Stop·Subagent·SessionStart) 맞는 것으로 본다 | 우리 이벤트가 하나도 없으면 `code-agent init --host codex`. 다른 이벤트는 있는데 일부만 없거나(이벤트가 늘기 전의 옛 설치 — SessionStart 등) Windows 명령만 다르면 `code-agent update --templates-only --host codex`(작업 중이면 작업이 끝난 뒤) |
 | Codex 프로젝트 신뢰 | `CODEX_HOME/config.toml`(없으면 `~/.codex/config.toml`)에 이 저장소의 `trust_level = "trusted"`가 있다 — 읽기만 한다. 상위 폴더 항목만 있으면 `·` 확인 필요다(Codex 가 상위 폴더 신뢰를 이 저장소에 적용하는지 확인하지 않았다) | (`·`) Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰한다 — 신뢰 전에는 프로젝트 설정·hook 이 꺼진다 |
-| Codex 훅 신뢰(`·`) | `config.toml`에 이 저장소의 hook 신뢰 기록(`hooks.state`)이 있으면 알린다. 기록의 키 꼴을 확인하지 못해, 찾지 못하면 '확인 필요'다(없다고 단정하지 않는다) | Codex 대화형 세션의 'Hooks need review' 화면에서 검토·신뢰한다. `.codex/hooks.json`이 바뀌면 다시 검토한다 |
+| Codex 훅 신뢰(`·`) | `config.toml`에 이 저장소의 hook 신뢰 기록(`hooks.state` — 키가 저장소 경로이거나 그 아래 경로로 시작하는 것. 앞부분이 같은 형제 저장소의 기록은 아니다)이 있으면 알린다. 기록의 키 꼴을 확인하지 못해, 찾지 못하면 '확인 필요'다(없다고 단정하지 않는다) | Codex 대화형 세션의 'Hooks need review' 화면에서 검토·신뢰한다. `.codex/hooks.json`이 바뀌면 다시 검토한다 |
 | Codex 미판정 도구(`·`) | 작업·세션 중 Codex PreToolUse 가 판정하지 않은 도구 이름과 횟수(`.code-agent/log/codex-tools.json` — 하위 에이전트 조율 도구 `collaboration…`은 세지 않는다) | 파일을 쓰는 도구라면 hook 판정 밖이다 — code-agent 를 갱신하거나 사람에게 알린다 |
 | 설치 버전 | (`·`) `.code-agent/version` 이 지금 도는 버전과 다르면 알린다 | — `code-agent update`. 막지 않는다 |
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 머리말의 `model:`·`effort:` 줄은 빼고 본다 — 모델·강도는 '에이전트 모델' 줄이 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |

@@ -25,7 +25,7 @@ import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
 import { manifestCheck } from "./survey";
 import { loadManifestIfAny } from "./work";
-import { crossHostProblems, crossNotice, hostAssets, hostCommand, HostSelection, selectedHosts, type Host } from "./hosts";
+import { binHint, crossHostProblems, crossNotice, hostAssets, hostCommand, HostSelection, selectedHosts, type Host } from "./hosts";
 import { crossStopStreak } from "./crossRecord";
 import { CROSS_CHILD_ENV } from "./crossEnv";
 import { crossFlags } from "./crossCheck";
@@ -327,14 +327,21 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   if (hosts.includes("codex")) {
     const problem = settingsProblem(repoRoot, "codex");
     if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
-    else for (const event of CODEX_EVENTS) {
-      const command = installedHook(repoRoot, event, "codex-event", "codex");
-      const windows = command ? codexWindowsProblem(repoRoot, event) : undefined;
-      const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) ?? windows : "설치되지 않았습니다";
-      // 옛 설치의 Windows 명령은 번들을 다시 적용하면 고쳐진다(.codex/hooks.json 을 다시 쓴다 — 작업 중이면 계획 밖 변경)
-      add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, error !== undefined && error === windows
-        ? (work ? `${afterWork("code-agent update --templates-only --host codex")} — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다` : "code-agent update --templates-only --host codex")
-        : "code-agent init --host codex");
+    else {
+      const installed = new Map(CODEX_EVENTS.map((event) => [event, installedHook(repoRoot, event, "codex-event", "codex")]));
+      // 다른 이벤트는 있는데 일부만 없으면 이벤트가 늘기 전의 옛 설치다(SessionStart 없는 설치 등) — 옛 Windows 명령과 같이 번들을 다시
+      // 적용하면 고쳐진다(update 가 init 으로 모든 이벤트를 다시 쓴다 — .codex/hooks.json 을 다시 쓰므로 작업 중이면 계획 밖 변경)
+      const partial = [...installed.values()].some((command) => command !== undefined);
+      const reapply = work
+        ? `${afterWork("code-agent update --templates-only --host codex")} — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다`
+        : "code-agent update --templates-only --host codex";
+      for (const event of CODEX_EVENTS) {
+        const command = installed.get(event);
+        const windows = command ? codexWindowsProblem(repoRoot, event) : undefined;
+        const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) ?? windows : "설치되지 않았습니다";
+        const old = error !== undefined && (command ? error === windows : partial);
+        add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, old ? reapply : "code-agent init --host codex");
+      }
     }
     try {
       const codexAssets = [...hostAssets("codex", repoRoot)];
@@ -426,7 +433,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   if (cross) {
     const config = (crossHostProblems(repoRoot)?.config.length ?? 0) > 0;
     add(cross.includes("켜짐") ? "✓" : config ? "✗" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""),
-      config ? "셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 실행 파일(.exe·.js)로 고치거나 지우세요(PATH 에 셸 스크립트뿐이면 실행 파일을 지정) — 한쪽 호스트만 쓸 거면 .code-agent/hosts.json 에서 빼세요" : undefined);
+      config ? `셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 ${binHint()}로 고치거나 지우세요(PATH 에 셸 스크립트뿐이면 실행 파일을 지정) — 한쪽 호스트만 쓸 거면 .code-agent/hosts.json 에서 빼세요` : undefined);
   }
   crossChecks(repoRoot, add, options.cross === true);
 

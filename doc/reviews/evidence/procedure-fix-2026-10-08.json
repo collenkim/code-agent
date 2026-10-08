@@ -14,7 +14,8 @@
     "cleanup": "4c5ca83(부모 68d7a00) — 단계 기록 통합·옛 기록 삭제·현행 문서의 경위 문장 제거·흐름도 §10 압축",
     "cleanupReview": "4c5ca83 의 다음 커밋(부모 4c5ca83) — 문서 정리의 검증 지적 7건 반영(문서·evidence 만)",
     "realHostFix": "b8ebf85(부모 bd096f8)·0c0265d·b7d0a28·c11c3ab — 실제 호스트 확인의 불일치 H1~H12 반영",
-    "realHostVerify": "c11c3ab 의 다음 커밋(부모 c11c3ab) — 반영 뒤 실제 Codex 재확인과 검증 지적 반영"
+    "realHostVerify": "5f4324b(부모 c11c3ab) — 반영 뒤 실제 Codex 재확인과 검증 지적 반영",
+    "realHostReverify": "5f4324b 의 다음 커밋(부모 5f4324b) — 검증 지적 반영의 재검증 지적 W1~W6 반영"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -363,7 +364,7 @@
       "stage": "실제 호스트 검증",
       "bundle": "반영 뒤 실제 Codex 재확인(H2 샌드박스 쪽·H3·H4·H5·H6·H9 확인, H2 권한 상승 쪽 미확인)과 검증 지적 반영 — doctor 의 옛 Windows 명령 오탐, Codex exit 2 서술, 상위 폴더 신뢰, 단일 실행 파일의 연결 확인·.js 진입점, legacy.md 담당 호출, Windows 시험 단언, 교차 자식 환경, 옛 Codex 설치의 임대 이행, 게이트 줄의 같은 사유 반복, codex exec 의 hook 거부 표시",
       "commits": [
-        "검증 지적 반영(부모 c11c3ab)"
+        "5f4324b"
       ],
       "npmTest": {
         "tests": 1355,
@@ -372,6 +373,22 @@
         "skipped": 4,
         "suites": 189,
         "durationMs": 144425
+      },
+      "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
+    },
+    {
+      "stage": "실제 호스트 재검증",
+      "bundle": "검증 지적 반영(5f4324b)의 재검증 지적 W1~W6 반영 — 단일 실행 파일의 PATH node 셰임 건너뛰기와 실행 파일 변수 안내(binHint), 연결 확인 준비 실패의 worker-…, doctor 의 옛 Codex 설치(빠진 이벤트) 안내, 형제 저장소의 hook 신뢰 기록, ca-implement 다시 맡기기의 전경 실행, 결과 요약의 Codex 흐름 합계 수치",
+      "commits": [
+        "재검증 지적 반영(부모 5f4324b)"
+      ],
+      "npmTest": {
+        "tests": 1357,
+        "pass": 1353,
+        "fail": 0,
+        "skipped": 4,
+        "suites": 189,
+        "durationMs": 140176
       },
       "record": "doc/reviews/2026-10-08-procedure-fix-summary.md"
     }
@@ -3348,7 +3365,7 @@
       },
       "perCommit": "b8ebf85·0c0265d·b7d0a28 의 트리를 각각 git checkout-index 로 꺼내 npm test — 1,344개 중 1,340·1,351개 중 1,347·1,352개 중 1,348 통과, 셋 다 실패 0·생략 4",
       "verify": {
-        "at": "검증 지적 반영 커밋(부모 c11c3ab)의 트리",
+        "at": "검증 지적 반영 커밋 5f4324b(부모 c11c3ab)의 트리",
         "command": "npm run build && npm test",
         "tests": 1355,
         "pass": 1351,
@@ -3356,6 +3373,17 @@
         "skipped": 4,
         "suites": 189,
         "durationMs": 144425
+      },
+      "reverify": {
+        "at": "재검증 지적 반영 커밋(부모 5f4324b)의 트리",
+        "command": "npm run build && npm test",
+        "tests": 1357,
+        "pass": 1353,
+        "fail": 0,
+        "skipped": 4,
+        "suites": 189,
+        "durationMs": 140176,
+        "mutation": "고친 자리를 옛 동작으로 되돌린 dist(hosts.js scriptRunner·crossCheck.js connect·codexTrust.js hook 기록·doctor.js 옛 설치 안내)와 ca-implement/SKILL.md 에서 cross·codex·fullReview·templateText 시험이 각각 1개씩 실패"
       }
     },
     "budgets": {
@@ -3380,7 +3408,26 @@
         900,
         1000
       ],
-      "reasonLegacy": "이전 버전 절차의 담당 호출에도 같은 문장(V5) — 필요할 때만 읽는 보조 문서이고 흐름 합계에 들지 않음"
+      "reasonLegacy": "이전 버전 절차의 담당 호출에도 같은 문장(V5) — 필요할 때만 읽는 보조 문서이고 흐름 합계에 들지 않음",
+      "template/claude/skills/ca-implement/SKILL.md": [
+        2500,
+        2700
+      ],
+      "reasonReverify": "ca-implement 5항 다시 맡기기에도 같은 문장(W6) — 담당을 부르는 그 항목에 있어야 한다. 파일 2,543자",
+      "flowTotals": {
+        "c11c3ab·5f4324b": {
+          "claude": 51409,
+          "codex": 49014
+        },
+        "reverify": {
+          "claude": 51472,
+          "codex": 49046
+        },
+        "budget": {
+          "claude": 51700,
+          "codex": 49500
+        }
+      }
     },
     "recheck": {
       "source": "doc/reviews/2026-10-08-procedure-fix-summary.md#반영-뒤-실제-호스트-재확인",
@@ -3539,6 +3586,56 @@
         "verdict": "맞음(문서)",
         "issue": "codex exec 에서 hook 거부가 출력에 드러나지 않음",
         "change": "doc/codex.md 에 적고 consent status 로 확인"
+      }
+    ],
+    "reverificationFindings": [
+      {
+        "id": "W1",
+        "severity": "low",
+        "verdict": "맞음",
+        "issue": "단일 실행 파일의 scriptRunner 가 PATH 의 첫 node 만 봐 앞 디렉터리의 node.cmd 셰임이 뒤의 node.exe 를 가림(.js 실행 파일 변수는 CONFIG_NODE, npm 진입점 건너뛰어 claude.cmd 의 CONFIG_SCRIPT). CONFIG_SCRIPT 안내가 단일 실행 파일에서도 .exe·.js",
+        "change": "PATH 디렉터리마다 resolveExecutable(join(dir,'node')) 를 보고 셸 스크립트면 다음 디렉터리. 안내는 binHint — 단일 실행 파일이면 '.exe — .js 는 PATH 에 node 실행 파일이 있을 때만'(hostCommand·doctor 교차 검증 줄)",
+        "test": "cross.test.ts 단일 실행 파일의 .js 진입점 — 셰임 앞·실행 파일 뒤와 그 반대(Windows), binHint 두 꼴"
+      },
+      {
+        "id": "W2",
+        "severity": "low",
+        "verdict": "맞음(낮은 위험)",
+        "issue": "netProbeRunner.connect 의 SharedArrayBuffer·Atomics.wait 가 try 밖 — 공유 메모리 없는 런타임에서 ReferenceError 가 교차 명령 밖으로",
+        "change": "connect 본문 전체를 try 로, 실패는 worker-<code>(없으면 worker-error), 띄운 worker 는 finally 에서 terminate",
+        "test": "cross.test.ts 연결 확인 준비가 던져도 — 전역 SharedArrayBuffer 삭제·Atomics.wait throw, crossPreflight 통과"
+      },
+      {
+        "id": "W3",
+        "severity": "low",
+        "verdict": "맞음",
+        "issue": "결과 요약의 Codex 흐름 합계 49,262자(실제 49,014자)",
+        "change": "49,014자로 정정, 이번 합계(51,472·49,046) 기록",
+        "test": "node scripts/template-sizes.cjs"
+      },
+      {
+        "id": "W4",
+        "severity": "low",
+        "verdict": "맞음",
+        "issue": "doctor 의 빠진 Codex 이벤트 안내가 언제나 init --host codex(codex.md 는 update --templates-only), 작업 중 유보 없음, install.md 에 --cli 예외 없음",
+        "change": "다른 이벤트는 있는데 일부만 빠지면 update --templates-only --host codex(작업 중이면 afterWork), 하나도 없을 때만 init. install.md 표·codex.md·흐름도 §5.2",
+        "test": "fullReview.test.ts D1 doctor(Codex 옛 설치)"
+      },
+      {
+        "id": "W5",
+        "severity": "low",
+        "verdict": "맞음",
+        "issue": "codexTrust 의 hook 신뢰 기록을 includes 로 찾아 형제 저장소(<repo>-old)의 기록을 이 저장소의 것으로 알림",
+        "change": "fold 한 키가 저장소 경로와 같거나 '<저장소>/' 로 시작할 때만",
+        "test": "codex.test.ts H5 형제 경로 fixture"
+      },
+      {
+        "id": "W6",
+        "severity": "info",
+        "verdict": "맞음",
+        "issue": "ca-implement 5항 다시 맡기기에 전경 실행 문장 없음, H7 정규식이 놓침",
+        "change": "5항에 정본 문장(Codex 사본은 기다림 문장), H7 정규식에 '서브에이전트에게 … 맡긴다', 호출 17곳, 예산 2,700",
+        "test": "templateText.test.ts H7"
       }
     ]
   }

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 
 import { crossFlags, crossInvocation, crossInvocationArgs, crossNetProbe, crossSandboxSuspect, crossSectionText, netProbeRunner, netProbeTarget, normalizeCrossBody, runCross } from "../agent/crossCheck";
@@ -11,9 +11,9 @@ import {
   type CrossAttempt, type PlanningCrossAttempt, type ReviewerRun,
 } from "../agent/crossRecord";
 import type { PlanningState } from "../agent/planningState";
-import { classifyCrossFailure, crossPointDecision, crossPointState, guidance, recordedVariant, TIMING } from "../agent/retryPolicy";
+import { classifyCrossFailure, crossPointDecision, crossPointState, crossPreflight, guidance, recordedVariant, TIMING } from "../agent/retryPolicy";
 import { renderRoundsBlock, staleWaiver, waived, type Finding, type ReviewLog, type ReviewRound } from "../agent/review";
-import { hostCommandConfigError, scriptRunner } from "../agent/hosts";
+import { binHint, hostCommandConfigError, scriptRunner } from "../agent/hosts";
 import { deadPid } from "./deadPid";
 
 const F = /^F\d+$/, X = /^X\d+$/;
@@ -360,6 +360,25 @@ test("H2 연결 확인 — 표지가 있는 셸의 --by claude 에서만, 대상
   assert.equal(netProbeRunner.connect("127.0.0.1", closed.port, 3_000), "ECONNREFUSED");
 });
 
+test("연결 확인 준비가 던져도(공유 메모리 없음·대기 실패) 명령 밖으로 나가지 않고 worker-… 로 끝나 사전 판정이 거부하지 않는다", () => {
+  const env = { CODEX_SANDBOX_NETWORK_DISABLED: "1", HTTPS_PROXY: "http://127.0.0.1:1" };
+  // --enable-sharedarraybuffer-per-context 처럼 SharedArrayBuffer 가 없는 런타임 — 할당이 ReferenceError 로 던진다
+  const global = globalThis as { SharedArrayBuffer?: SharedArrayBufferConstructor };
+  const shared = global.SharedArrayBuffer;
+  delete global.SharedArrayBuffer;
+  try {
+    assert.equal(netProbeRunner.connect("127.0.0.1", 1, 100), "worker-error");
+    const probe = crossNetProbe("claude", env);
+    assert.deepEqual(probe, { target: "127.0.0.1:1", result: "worker-error" });
+    assert.equal(crossPreflight("claude", env, probe), undefined, "띄우지 못한 연결 확인은 거부 꼴이 아니다");
+  } finally { global.SharedArrayBuffer = shared; }
+  // worker 를 띄운 뒤의 실패(대기)도 같다 — 띄운 worker 는 정리한다(unref·terminate — 시험 프로세스가 끝난다)
+  const wait = Atomics.wait;
+  Atomics.wait = () => { throw Object.assign(new Error("wait 불가"), { code: "ERR_TEST_WAIT" }); };
+  try { assert.equal(netProbeRunner.connect("127.0.0.1", 1, 100), "worker-ERR_TEST_WAIT"); }
+  finally { Atomics.wait = wait; }
+});
+
 test("게이트 줄의 직전 실행 — 안내가 사유를 싣으면 라벨만, 싣지 않으면 라벨 뒤에 사유(120자까지)", () => {
   assert.equal(crossLastRun("막힘(샌드박스)", "연결 확인 EACCES", "Codex 샌드박스가 claude 실행을 막았습니다(연결 확인 EACCES) — 권한 상승"),
     " — 직전 실행: 막힘(샌드박스). Codex 샌드박스가 claude 실행을 막았습니다(연결 확인 EACCES) — 권한 상승");
@@ -381,8 +400,18 @@ test("단일 실행 파일의 .js 진입점 — process.execPath(code-agent 자�
       rmSync(exe);
       writeFileSync(join(bin, "node.cmd"), "@echo off\r\n");
       assert.equal(scriptRunner(true, env), undefined, "셸 스크립트 node 는 직접 실행할 수 없다");
+      // 앞 디렉터리의 node.cmd 셰임(mise·nodist 류)이 뒤 디렉터리의 node 실행 파일을 가리지 않는다
+      const later = join(bin, "뒤");
+      mkdirSync(later);
+      writeFileSync(join(later, "node.exe"), "");
+      const both = { PATH: [bin, later].join(delimiter), PATHEXT: ".COM;.EXE;.BAT;.CMD" };
+      assert.equal(scriptRunner(true, both)?.toLowerCase(), join(later, "node.exe").toLowerCase(), "셸 스크립트 node 앞·실행 파일 node 뒤");
+      assert.equal(scriptRunner(true, { ...both, PATH: [later, bin].join(delimiter) })?.toLowerCase(), join(later, "node.exe").toLowerCase());
     }
   } finally { rmSync(bin, { recursive: true, force: true }); }
+  // 지정할 것 안내 — 단일 실행 파일에서는 PATH 에 node 실행 파일이 없으면 .js 도 설정 오류(CONFIG_NODE)라 .js 를 조건 없이 권하지 않는다
+  assert.equal(binHint(false), "실행 파일(.exe·.js)");
+  assert.equal(binHint(true), "실행 파일(.exe — .js 는 PATH 에 node 실행 파일이 있을 때만)");
   assert.equal(hostCommandConfigError("CODE_AGENT_CLAUDE_BIN 는 .js 라 node 가 필요한데 PATH 에서 node 실행 파일을 찾지 못했습니다(단일 실행 파일): x.js"), true,
     "실행 파일 변수가 가리킨 .js 를 돌릴 수 없으면 설정 오류(게이트 막힘)다");
 });
