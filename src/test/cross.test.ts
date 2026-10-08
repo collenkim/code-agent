@@ -178,14 +178,22 @@ test("syncLegacyPlanning — 파생 사본 cross 는 게이트와 같은 보기�
   assert.equal(raced.cross!.summary, "먼저 완료");
 });
 
-test("pointHost·crossSandboxSuspect(D2) — 지점 호스트는 실제로 띄운 첫 시도가 정하고, Codex 가 부른 claude 의 네트워크 오류는 몇 번째든 샌드박스로 의심한다", () => {
+test("pointHost·crossSandboxSuspect(D2) — 지점 호스트는 실제로 띄운 첫 시도가 정하고, Codex 가 부른(또는 Codex 에서 부른 적이 있는 지점의) claude 의 네트워크 오류는 몇 번째든 샌드박스로 의심한다", () => {
   const preflight = { ...ended(1, "host-sandbox-denied"), host: "claude" as const, mode: "preflight" as const, kind: "preflight" };
   assert.equal(pointHost([preflight]), undefined);
   assert.equal(pointHost([preflight, ended(2, "completed")]), "codex");
   assert.equal(pointHost([{ ...ended(1, "cross-stop"), mode: "human" }]), undefined);
-  assert.equal(crossSandboxSuspect("claude", "codex"), true, "같은 지점의 두 번째 이후도 실행 불가로 넘기지 않는다(D2)");
-  assert.equal(crossSandboxSuspect("claude", undefined), false, "사람의 터미널(표지 없음)");
-  assert.equal(crossSandboxSuspect("codex", "claude"), false, "Claude 메인이 부른 codex 의 네트워크 오류는 실행 불가 — 중지 기록 후 진행");
+  assert.equal(crossSandboxSuspect("claude", "codex"), "caller", "같은 지점의 두 번째 이후도 실행 불가로 넘기지 않는다(D2)");
+  assert.equal(crossSandboxSuspect("claude", undefined), undefined, "Codex 에서 부른 적이 없는 지점의 사람 터미널(표지 없음)");
+  assert.equal(crossSandboxSuspect("claude", undefined, [{ ...ended(1, "completed"), caller: "claude" }]), undefined);
+  // 반박 검증 — 부른 쪽을 판별하지 못하는 재실행(표지 없는 셸·두 표지가 섞인 셸)도 지점 이력으로 의심을 잇는다
+  assert.equal(crossSandboxSuspect("claude", undefined, [{ ...ended(1, "host-sandbox-denied"), kind: "sandbox-network", caller: "codex" }]), "point");
+  assert.equal(crossSandboxSuspect("claude", undefined, [{ ...ended(1, "cross-unavailable"), kind: "auth", caller: "codex" }]), "point", "부른 쪽이 codex 였던 지점");
+  assert.equal(crossSandboxSuspect("claude", undefined, [{ ...ended(1, "host-sandbox-denied"), kind: "sandbox-network" }]), "point", "부른 쪽 기록이 없어도 샌드박스 네트워크 차단");
+  assert.equal(crossSandboxSuspect("claude", undefined, [preflight]), "point", "사전 판정 거부(샌드박스 표지)");
+  assert.equal(crossSandboxSuspect("claude", undefined, [{ ...ended(1, "host-sandbox-denied"), kind: "sandbox" }]), undefined, "EPERM 등은 Codex 표지가 아니다");
+  assert.equal(crossSandboxSuspect("codex", "claude"), undefined, "Claude 메인이 부른 codex 의 네트워크 오류는 실행 불가 — 중지 기록 후 진행");
+  assert.equal(crossSandboxSuspect("codex", undefined, [preflight]), undefined, "codex 를 부르는 지점은 이력과 관계없이 의심하지 않는다");
 });
 
 test("D2 classifyCrossFailure·recordedVariant — 샌드박스 의심은 네트워크 오류만 막힘으로 바꾸고(미설치·인증·사용 한도·서비스 장애는 실행 불가 그대로), 같은 지점의 두 번째 이후 네트워크 차단은 사람에게 넘기는 변형을 고른다", () => {
@@ -203,7 +211,11 @@ test("D2 classifyCrossFailure·recordedVariant — 샌드박스 의심은 네트
   assert.equal(recordedVariant(record, { attempts: [net(1)], left: 2 }), undefined, "첫 번째 — 권한 상승해 같은 명령(기본 문구)");
   assert.equal(recordedVariant(record, { attempts: [net(1), net(2)], left: 1 }), "network-repeat");
   assert.equal(recordedVariant(record, { attempts: [net(1), net(2), net(3)], left: 0 }), "network-exhausted");
-  assert.equal(recordedVariant(record, { attempts: [{ n: 1, kind: "preflight", endedAt: "x" }, net(2)], left: 2 }), undefined, "사전 판정 거부는 네트워크 오류 시도로 세지 않는다");
+  const pre = (n: number) => ({ n, kind: "preflight", endedAt: "2026-10-08T00:00:00.000Z" });
+  // 반박 검증 — 사전 판정 거부가 권한 상승 안내를 이미 냈다: 그 뒤의 첫 네트워크 오류는 권한 상승 뒤의 오류다
+  assert.equal(recordedVariant(record, { attempts: [pre(1), net(2)], left: 2 }), "network-repeat", "사전 판정 거부 뒤 첫 네트워크 오류");
+  assert.equal(recordedVariant(record, { attempts: [pre(1)], left: 3 }), undefined, "네트워크 오류 시도가 없으면 기본 문구");
+  assert.equal(recordedVariant(record, { attempts: [pre(1), pre(2), net(3)], left: 2 }), "network-repeat", "사전 거부는 몇 번이든 한 번의 안내로 센다");
   assert.equal(recordedVariant({ class: "host-sandbox-denied", kind: "sandbox" }, { attempts: [net(1), net(2)], left: 1 }), undefined, "EPERM 등 샌드박스 거부는 기본 문구");
   assert.equal(recordedVariant(record), undefined, "지점 시도를 모르면 기본 문구");
   assert.match(guidance("host-sandbox-denied", { host: "claude", detail: "d", left: 1 }, "network-repeat"), /실제 네트워크 문제일 수 있습니다[\s\S]*남은 지점 시도 1회[\s\S]*judgment cross-stop[\s\S]*사용자 확인 없이 중지를 기록하지 않습니다/);

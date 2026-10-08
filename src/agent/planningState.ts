@@ -15,7 +15,7 @@ import type { Work } from "./work";
 import { crossRunNote, selectedHosts } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
-  crossHintText, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
+  crossGateHandoff, crossHintText, crossRerunAfterUser, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
   type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
 } from "./crossRecord";
 
@@ -511,8 +511,10 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
     default: {
       const hint = crossPointHint({ attempts: view, grants: state.retry?.grants, scope: grantScope({ file: "planning", key: "crossPoint", criticDispatchId: dispatchId }),
         rawExists: path => existsSync(join(work.repoRoot, path)) });
-      // 한도로 거부될 지점에는 실행 명령을 앞세우지 않는다(리뷰 게이트와 같다) — 그 명령은 거부되고 남은 길은 사람 판단이다
-      let line = hint?.class === "limit-exceeded"
+      // 한도로 거부될 지점에는 실행 명령을 앞세우지 않는다(리뷰 게이트와 같다) — 그 명령은 거부되고 남은 길은 사람 판단이다.
+      // 네트워크 오류가 되풀이돼 사람에게 넘긴 지점은 명령을 안내 뒤에 싣는다(crossGateHandoff — D2)
+      const handoff = crossGateHandoff(hint, view);
+      let line = handoff
         ? "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다"
         : view.some(attempt => attempt.class === "answered-input")
           ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
@@ -521,6 +523,7 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
         line += ` — 직전 실행: ${pointLabel(view)}: ${(point.lastFailure?.detail ?? hint.detail).replace(/\s+/g, " ").slice(0, 120)}. ` +
           crossHintText(hint, { host: host ?? "다른 호스트", point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, attempts: view });
       }
+      if (handoff === "network") line += crossRerunAfterUser(`code-agent planning cross ${by}`);
       return [line];
     }
   }

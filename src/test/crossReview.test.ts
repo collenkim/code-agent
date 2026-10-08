@@ -691,6 +691,70 @@ test("D2(E16): 바꾸지 않는 갈래 — Claude 메인이 부른 codex 의 네
   assert.equal(reviewProblems(loadWork(root)!).filter((problem) => /교차/.test(problem)).length, 0, "중지 지점 — 게이트는 막히지 않는다");
 });
 
+test("D2(E16) 반박 검증: Codex 에서 부른 적이 있는 지점은 호스트 표지가 없는 셸(권한 상승한 셸·사람의 터미널)이나 두 호스트 표지가 섞인 셸에서 다시 실행해도 네트워크 오류를 막힘으로 둔다 — 그 지점의 중지는 사람 판단으로만 기록한다", async () => {
+  await crossRepo(); failingClaude(NETWORK_ERROR);
+  assert.throws(byClaude, rejects(/샌드박스 표지는 없지만 Codex 가 부른 claude 의 네트워크 오류라/));
+  // 표지 없는 셸 — 부른 쪽을 판별하지 못해도 지점 이력(앞선 시도의 부른 쪽 codex)으로 샌드박스 의심을 이어 간다
+  assert.throws(() => withCaller(undefined, () => crossReview(root, "claude")),
+    rejects(/다시 네트워크 오류로 끝났습니다[\s\S]*샌드박스 표지는 없지만 Codex 에서 부른 claude 지점의 네트워크 오류라[\s\S]*남은 지점 시도 1회/, /교차 검증 중지/));
+  // 두 호스트 표지가 섞인 셸(runtimeHost 판별 불가)도 같다
+  assert.throws(() => withCaller("codex", () => { process.env.CLAUDECODE = "1"; return crossReview(root, "claude"); }),
+    rejects(/Codex 에서 부른 claude 지점의 네트워크 오류라[\s\S]*교차 실행 한도를 다 써서/, /교차 검증 중지/));
+  assert.deepEqual(attempts().map((attempt) => [attempt.class, attempt.kind, attempt.caller ?? "-"]),
+    [["host-sandbox-denied", "sandbox-network", "codex"], ["host-sandbox-denied", "sandbox-network", "-"], ["host-sandbox-denied", "sandbox-network", "-"]]);
+  assert.doesNotMatch(readFileSync(doc(), "utf8"), /교차 검증 중지/, "사람 판단 없이 중지를 기록하지 않는다");
+  for (const caller of ["codex", undefined] as const) assert.throws(() => withCaller(caller, () => next(root)), /교차 리뷰가 필요합니다/);
+});
+
+test("D2(E16) 바꾸지 않는 갈래(반박 검증) — Codex 에서 부른 적이 없는 지점을 표지 없는 셸에서 실행한 claude 의 네트워크 오류는 실행 불가로 중지를 기록하고 진행한다", async () => {
+  await crossRepo(); failingClaude(NETWORK_ERROR);
+  assert.match(withCaller(undefined, () => crossReview(root, "claude")), /교차 검증 중지[\s\S]*네트워크/);
+  assert.deepEqual([attempts()[0].class, attempts()[0].kind], ["cross-unavailable", "network"]);
+  assert.equal(crossGate(), "");
+});
+
+test("D2(E16) 반박 검증: 사전 판정 거부(샌드박스 표지) 뒤 표지 없이 실행한 첫 네트워크 오류는 권한 상승 뒤의 오류로 보고 사람에게 넘긴다", async () => {
+  await crossRepo(); failingClaude(NETWORK_ERROR);
+  assert.throws(() => withCaller("codex", () => { process.env.CODEX_SANDBOX_NETWORK_DISABLED = "1"; return crossReview(root, "claude"); }), rejects(/셸 도구의 권한 상승\(샌드박스 밖 실행\)을 요청해/));
+  assert.equal(calls(), 0);
+  // 권한 상승 안내는 사전 거부가 이미 냈다 — 같은 안내를 되풀이하지 않고 사용자에게 넘긴다(지점 시도 3회 중 2회가 남는다)
+  assert.throws(byClaude, rejects(/다시 네트워크 오류로 끝났습니다[\s\S]*권한 상승\(샌드박스 밖 실행\)으로 실행했는데도 같다면[\s\S]*남은 지점 시도 2회[\s\S]*사용자 확인 없이 중지를 기록하지 않습니다/,
+    /셸 도구의 권한 상승\(샌드박스 밖 실행\)을 요청해/));
+  assert.match(crossGate(), /다시 네트워크 오류로 끝났습니다[\s\S]*남은 지점 시도 2회/);
+  assert.deepEqual(attempts().map((attempt) => [attempt.mode, attempt.kind]), [["preflight", "preflight"], ["review", "sandbox-network"]]);
+});
+
+test("D2(E16) 반박 검증: 사람에게 넘긴 네트워크 지점의 게이트 줄과 status 다음: 은 실행 명령을 앞세우지 않고, 사용자 확인 뒤의 재실행 명령을 안내 뒤에 싣는다", async () => {
+  await crossRepo(); failingClaude(NETWORK_ERROR);
+  assert.throws(byClaude, RetryRefused);
+  assert.match(crossGate(), /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
+  assert.throws(byClaude, RetryRefused);
+  const gate = crossGate();
+  assert.match(gate, /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
+  assert.match(gate, /사용자에게 알리고 지시를 받으세요[\s\S]*사용자 확인 없이 중지를 기록하지 않습니다\. \(사용자가 네트워크를 확인한 뒤 다시 실행할 명령: code-agent review cross --by claude\)$/);
+  const line = withCaller("codex", () => status(root)).split("\n").find((row) => row.startsWith("다음: ")) ?? "";
+  assert.doesNotMatch(line, /교차 리뷰가 필요합니다 — code-agent review cross/);
+  assert.match(line, /\(사용자가 네트워크를 확인한 뒤 다시 실행할 명령: code-agent review cross --by claude\)/);
+  // 지점 시도를 다 쓰면 명령을 싣지 않는다(한도 거부와 같다)
+  assert.throws(byClaude, RetryRefused);
+  assert.doesNotMatch(crossGate(), /code-agent review cross --by/);
+});
+
+test("D2(E16) 반박 검증: 사람이 아닌 중지 지점을 다시 실행해 네트워크 오류가 되풀이돼도 사람 판단을 싣지 않고 이전 중지대로 진행한다고만 안내한다", async () => {
+  await crossRepo(); failingClaude("Not logged in · Please run /login\n");
+  assert.match(byClaude(), /교차 검증 중지[\s\S]*인증/);
+  failingClaude(NETWORK_ERROR);
+  for (const left of [1, 0]) {
+    assert.throws(byClaude, rejects(new RegExp(`이미 중지로 기록되어 있어 다시 기록하지 않았습니다[\\s\\S]*남은 ${left}회\\)\\. — 이 지점은 이전 중지 기록대로 교차 검증 없이 진행합니다\\(게이트는 막히지 않습니다\\)`),
+      /judgment cross-stop|retry-grant|지시를 받으세요/));
+  }
+  assert.deepEqual(attempts().map((attempt) => [attempt.class, attempt.kind]), [["cross-unavailable", "auth"], ["host-sandbox-denied", "sandbox-network"], ["host-sandbox-denied", "sandbox-network"]]);
+  assert.equal(crossGate(), "", "중지 지점 — 게이트는 막히지 않는다");
+  assert.match(readFileSync(doc(), "utf8"), /- 교차 검증 중지 — claude 를 실행할 수 없습니다: 인증/, "중지 줄은 그대로다");
+  withCaller("codex", () => next(root));
+  assert.equal(loadActive(root)!.phase, "integrate");
+});
+
 test("D2(E16): 바꾸지 않는 갈래 — Codex 메인이 부른 claude 라도 네트워크가 아닌 실행 불가(인증)는 중지를 기록하고 진행한다", async () => {
   await crossRepo(); failingClaude("Not logged in · Please run /login\n");
   assert.match(byClaude(), /교차 검증 중지[\s\S]*인증/);

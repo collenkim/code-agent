@@ -170,6 +170,14 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   const hosts = selectedHosts(repoRoot, host);
   const checks: Check[] = [];
   const add = (mark: Mark, name: string, observed: string, hint?: string) => checks.push({ mark, name, observed, hint });
+  // 진행 중인 작업 — 정의 파일은 커밋되는 설치 파일이라 다시 쓰는 것도 그 작업이 끝난 뒤다(역할 모델 변경과 같은 규칙, D1).
+  // 상태를 읽지 못하면 없는 것으로 본다(안내만 바뀐다 — 다른 줄이 상태 오류를 알린다)
+  let work: ReturnType<typeof workInProgress>;
+  try { work = workInProgress(repoRoot); } catch { work = undefined; }
+  /** 정의 파일을 다시 쓰는 명령의 안내 — 진행 중인 작업이 있으면 그 작업이 끝난 뒤(반영 deliver 또는 종료 abort) 실행하라고 한다 */
+  const afterWork = (command: string) => work
+    ? `진행 중인 작업 ${work.id}(${work.phase})이 끝난 뒤(반영 deliver 또는 종료 abort) ${command}`
+    : command;
   const win = process.platform === "win32";
 
   // 1. 런타임
@@ -301,14 +309,9 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
         ? [`${agent} 파일 ${file.model ?? "(없음)"}${file.effort ? `/${file.effort}` : ""} ≠ 설정 ${modelDisplay(setting)}`] : [];
     });
     if (mismatches.length > 0) {
-      // 정의 파일은 커밋되는 설치 파일이다 — 진행 중인 작업이 있으면 다시 쓰는 것도 그 작업이 끝난 뒤다(역할 모델 변경과 같은 규칙, D1)
-      let work: ReturnType<typeof workInProgress>;
-      try { work = workInProgress(repoRoot); } catch { work = undefined; }
       add("✗", "에이전트 모델", `정의 파일이 설정과 다릅니다 — ${mismatches.slice(0, 5).join(" · ")}${mismatches.length > 5 ? ` (+${mismatches.length - 5})` : ""}`,
-        work
-          ? `진행 중인 작업 ${work.id}(${work.phase})이 끝난 뒤(반영 deliver 또는 종료 abort) code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. ` +
-            "작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다. 모델 변경도 작업이 끝난 뒤 요청하세요"
-          : "code-agent update --templates-only — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. 바꾸려면 모델 변경을 요청하세요");
+        `${afterWork("code-agent update --templates-only")} — 정의 파일의 model·effort 줄을 설정(.code-agent/models.json)대로 다시 씁니다. ` +
+          (work ? "작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다. 모델 변경도 작업이 끝난 뒤 요청하세요" : "바꾸려면 모델 변경을 요청하세요"));
     } else if (installed === 0) {
       // 대조할 정의 파일이 없으면 ✓ 로 찍지 않는다 — 설치 여부는 "스킬·에이전트" 줄이 알린다
       add("·", "에이전트 모델", `대조할 정의 파일이 없습니다 (.claude/agents/ca-*.md) — 설정: ${policySummary(repoRoot, "claude")}`);
@@ -331,8 +334,9 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     try {
       const codexAssets = [...hostAssets("codex", repoRoot)];
       const changed = codexAssets.filter(([path, text]) => !existsSync(join(repoRoot, path)) || readFileSync(join(repoRoot, path), "utf8").replace(/\r\n/g, "\n") !== text.replace(/\r\n/g, "\n")).map(([path]) => path);
-      add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : `${assetCount(codexAssets.map(([path]) => path))} 모두 번들과 같습니다`, "code-agent update --templates-only --host codex");
-      // TOML 의 model·model_reasoning_effort 어긋남은 위 "Codex 스킬·에이전트" 가 잡는다(번들에 설정값이 들어 있다)
+      // TOML 의 model·model_reasoning_effort 어긋남도 이 줄이 잡는다(번들에 설정값이 들어 있다) — 다시 쓰는 것은 작업이 끝난 뒤다(D1, "에이전트 모델" 과 같다)
+      add(changed.length ? "✗" : "✓", "Codex 스킬·에이전트", changed.length ? changed.join(" · ") : `${assetCount(codexAssets.map(([path]) => path))} 모두 번들과 같습니다`,
+        work ? `${afterWork("code-agent update --templates-only --host codex")} — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다` : "code-agent update --templates-only --host codex");
       add("✓", "Codex 에이전트 모델", policySummary(repoRoot, "codex"));
       const instructions = join(repoRoot, "AGENTS.md");
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());

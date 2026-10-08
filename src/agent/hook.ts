@@ -287,8 +287,10 @@ function localTarget(repoRoot: string, path: string): boolean {
 }
 /**
  * MCP 도구 인자에서 판정할 로컬 경로 — 경로 키(최상위와 한 단계 아래 객체)의 문자열·문자열 배열. `file://` 은 경로로 바꾸고 그 밖의 URI 는 버린다.
- * 로컬 파일 서버는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안을 가리키는 절대 경로만 남긴다 — 원격 서비스의 경로 인자
- * (예: GitHub 의 `path`, 드라이브 서비스의 `/My Drive/x`)를 잘못 막지 않는다.
+ * 로컬 파일 서버는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안을 가리키는 절대 경로와 사용자 수준 호스트 설정 파일(userHostConfig —
+ * ~/.claude/settings(.local).json, Codex 홈의 hooks.json·config.toml)을 가리키는 절대 경로만 남긴다 — 원격 서비스의 경로 인자
+ * (예: GitHub 의 `path`, 드라이브 서비스의 `/My Drive/x`)를 잘못 막지 않는다. 호스트 설정은 이 PC 의 그 파일(다른 이름 포함)일 때만 걸리므로
+ * 원격 경로를 막는 일이 사실상 없고, 이름이 파일 서버가 아닌 로컬 쓰기 서버도 그 파일을 쓰지 못한다(쓰기 도구의 E29 와 같은 판정).
  */
 function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: string): string[] {
   const values: { value: string; project: boolean }[] = [];
@@ -312,7 +314,7 @@ function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: 
     if (/^file:\/\//i.test(value)) {
       try { path = fileURLToPath(value); } catch { continue; }
     } else if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:([\\/]|$)/i.test(value)) continue;
-    if (isAbsolute(foldWindowsAlias(path))) { if (local || localTarget(repoRoot, path)) paths.push(path); }
+    if (isAbsolute(foldWindowsAlias(path))) { if (local || localTarget(repoRoot, path) || userHostConfig(path, [repoRoot])) paths.push(path); }
     else if (local || project) paths.push(resolve(repoRoot, path));
   }
   return paths;

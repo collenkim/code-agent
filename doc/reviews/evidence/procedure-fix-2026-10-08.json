@@ -9,7 +9,8 @@
     "summaryRecord": "16ae5ec(부모 d12bd46, 문서만)",
     "finalReverify": "5205112(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영",
     "rebuttal": "014cd85(부모 5205112) — R1~R6 수정의 반박 검증 지적 F1~F4 반영",
-    "userDecisions20261008": "이 커밋(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)"
+    "userDecisions20261008": "5e6cdcc(부모 014cd85) — 사용자 결정 D1~D3 반영(E2·E16·E20)",
+    "userDecisionsRebuttal": "이 커밋(부모 5e6cdcc) — 사용자 결정 반영의 반박 검증 지적 G1~G8 반영"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -295,7 +296,7 @@
       "stage": "11",
       "bundle": "사용자 결정 D1~D3 반영(작업 중 역할 모델 변경 거부, Codex 메인이 부른 claude 의 네트워크 오류는 몇 번째든 막힘·두 번째부터 사람 판단, 실행 파일 설정 오류 분류 현행 유지)",
       "commits": [
-        "이 커밋(부모 014cd85)"
+        "5e6cdcc"
       ],
       "record": "doc/reviews/2026-10-08-full-review.md#사용자-결정-반영d1d3",
       "npmTest": {
@@ -308,6 +309,27 @@
         "todo": 0,
         "durationMs": 133636,
         "wallSec": 135,
+        "command": "npm run build && npm test",
+        "exit": 0
+      }
+    },
+    {
+      "stage": "12",
+      "bundle": "11단계 반영의 반박 검증 지적 G1~G8 반영(샌드박스 의심의 지점 이력, 사전 거부 뒤의 첫 네트워크 오류, 중지 지점 재실행의 안내, 사람에게 넘긴 지점의 게이트 줄 명령 자리, doctor Codex 줄·모델 표의 작업 중 안내, 비파일 MCP 서버의 사용자 수준 호스트 설정 판정, 기록 수치)",
+      "commits": [
+        "이 커밋(부모 5e6cdcc)"
+      ],
+      "record": "doc/reviews/2026-10-08-full-review.md#사용자-결정-반영의-반박-검증-지적g1g8",
+      "npmTest": {
+        "tests": 1337,
+        "suites": 189,
+        "pass": 1333,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 160026,
+        "wallSec": 162,
         "command": "npm run build && npm test",
         "exit": 0
       }
@@ -540,6 +562,13 @@
         "5205112"
       ],
       "subject": "[코드 에이전트] 최종 재검증 수정의 반박 검증 지적 F1~F4 반영 — check 커서의 기록 변경 사유·기록 변경 회차의 ⑦ 미확인 줄·교차 게이트 줄 괄호와 doctor 의 설정 오류·시험의 끝난 자식 pid 탐지"
+    },
+    {
+      "hash": "5e6cdcc6b0dcefd90aa09193bdb727be696e56f7",
+      "parents": [
+        "014cd85"
+      ],
+      "subject": "[코드 에이전트] 사용자 결정 D1~D3 반영 — 작업 중 역할 모델 변경 거부·Codex 메인이 부른 claude 의 네트워크 오류는 몇 번째든 막힘·실행 파일 설정 오류 현행 유지"
     }
   ],
   "retryPolicy": {
@@ -2385,6 +2414,27 @@
         "skipped": 4
       },
       "added": "finalReverify.test.ts 5개(R2 2·R3 2·R6 1)와 planning.test.ts 1개(계획 교차 검토 줄 R3)"
+    },
+    "userDecisionsRebuttalCommit": {
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1337,
+      "suites": 189,
+      "pass": 1333,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 160026,
+      "wallSec": 162,
+      "baseAt5e6cdcc": {
+        "tests": 1328,
+        "pass": 1324,
+        "fail": 0,
+        "skipped": 4
+      },
+      "added": "crossReview 5·planning 1·fullReview 2·finalReverify 1(9개). cross.test 두 시험은 단언을 고침(G2·G6)"
     }
   },
   "needsUser": [
@@ -2419,7 +2469,8 @@
     "전체 검토 일부 반영 — E13 (b)안, E19 기록하지 못한 판정 실패, E26 잠금 나이 상한, E27 다른 세션 경고, E30 미판정 MCP 이름 기록",
     "문서화된 한계 — Codex 두 세션 동시 진행(임대는 호스트 단위), codex exec resume 프롬프트(CON-1), Codex 확인 코드는 사람 입력 증명 아님(CON-5)",
     "최종 재검증(9단계) 남긴 것 — finalReverify.remaining",
-    "사용자 결정 반영(11단계) 남긴 것 — userDecisions20261008.remaining"
+    "사용자 결정 반영(11단계) 남긴 것 — userDecisions20261008.remaining",
+    "사용자 결정 반영의 반박 검증(12단계) 남긴 것 — userDecisionsRebuttal.remaining"
   ],
   "finalReverify": {
     "source": "doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
@@ -2825,9 +2876,156 @@
     },
     "remaining": [
       "doctor 의 models.json 형식 오류 안내는 바꾸지 않음(update --templates-only 안내 그대로)",
-      "같은 지점의 첫 샌드박스 네트워크 차단 안내는 지점 시도가 남았는지와 관계없이 '권한 상승해 같은 명령' — 다른 원인으로 지점 시도를 다 쓴 뒤라면 같은 명령은 지점 한도로 거부되고 그 거부가 사람 판단을 안내",
+      "같은 지점의 첫 샌드박스 네트워크 차단 안내는 지점 시도가 남았는지와 관계없이 '권한 상승해 같은 명령' — 다른 원인으로 지점 시도를 다 쓴 뒤라면 같은 명령은 지점 한도로 거부되고 그 거부가 사람 판단을 안내 (12단계 G6 — 사전 거부 뒤의 첫 네트워크 차단은 network-repeat 으로 바꿈)",
       "작업 시작 뒤 적용한 model 동의의 폐기 안내는 대상 변경 공통 문구('새로 준비') — 폐기 사유가 '작업을 반영·종료한 뒤'를 실음",
       "실제 Codex 셸의 샌드박스 표지와 실제 claude 네트워크 오류 문구는 실제 호스트에서 미확인"
+    ]
+  },
+  "userDecisionsRebuttal": {
+    "source": "doc/reviews/2026-10-08-full-review.md 의 '사용자 결정 반영의 반박 검증 지적(G1~G8)' 절",
+    "base": "5e6cdcc",
+    "rules": [
+      "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)",
+      "code-agent update 실행하지 않음, 이 저장소 루트에 init 하지 않음",
+      "재현·시험은 HOME·USERPROFILE·APPDATA·CODEX_HOME 을 임시 폴더로 — 사용자의 실제 ~/.claude·~/.codex 는 쓰거나 지우지 않음",
+      "사람 확인 지점(요구 확정·계획 승인·결과 반영)을 줄이지 않고 게이트를 약하게 하지 않음"
+    ],
+    "items": [
+      {
+        "id": "G1",
+        "severity": "정보(R1 재공격, 기준 16ae5ec 와 같은 동작 — R1 회귀 아님)",
+        "status": "반영(조임)",
+        "finding": "이름이 파일 서버가 아니고 프로젝트 상대 경로 키도 아닌 MCP 쓰기 도구의 저장소 밖 절대 경로를 mcpPaths 가 버려(원격 서비스 인자로 가정) 사용자 수준 호스트 설정 쓰기가 hook 을 통과",
+        "change": "hook.ts mcpPaths — 그 밖의 서버의 절대 경로 중 저장소·키 저장소 안인 것에 더해 userHostConfig(이 PC 의 ~/.claude/settings(.local).json·Codex 홈 hooks.json·config.toml, 다른 이름 포함)를 가리키는 것도 판정. 원격 서비스 경로(GitHub 상대 path, /My Drive/…)·읽기 도구·그 밖의 저장소 밖 파일은 그대로",
+        "tests": [
+          "R1 공격 검증 — 이름이 파일 서버가 아닌 MCP 쓰기 도구도 사용자 수준 호스트 설정의 절대 경로(다른 이름 포함)는 막고, 그 밖의 저장소 밖 경로·읽기·원격 서비스 경로는 판정하지 않는다"
+        ]
+      },
+      {
+        "id": "G2",
+        "severity": "medium",
+        "status": "반영",
+        "finding": "crossSandboxSuspect 가 지금 runtimeHost 만 봐서, 앞선 시도를 Codex 가 부른 지점이라도 표지 없는 셸(권한 상승한 셸·사람의 터미널)·두 표지가 섞인 셸의 재실행 네트워크 오류는 cross-unavailable/network 로 중지 기록·게이트 통과",
+        "change": "crossCheck.ts crossSandboxSuspect(host, caller, attempts) → 'caller'|'point'|undefined. host claude 이고 caller codex 이거나 지점의 앞선 시도가 caller codex 또는 host-sandbox-denied(sandbox-network·preflight)면 의심. 사유 덧붙임은 SUSPECT_NOTE.point. Codex 에서 부른 적이 없는 지점의 표지 없는 셸 네트워크 오류는 실행 불가 그대로(흐름도 §6.3·codex.md 에 적음)",
+        "tests": [
+          "D2(E16) 반박 검증: Codex 에서 부른 적이 있는 지점은 호스트 표지가 없는 셸(권한 상승한 셸·사람의 터미널)이나 두 호스트 표지가 섞인 셸에서 다시 실행해도 네트워크 오류를 막힘으로 둔다 — 그 지점의 중지는 사람 판단으로만 기록한다",
+          "D2(E16) 바꾸지 않는 갈래(반박 검증) — Codex 에서 부른 적이 없는 지점을 표지 없는 셸에서 실행한 claude 의 네트워크 오류는 실행 불가로 중지를 기록하고 진행한다",
+          "D2(E16) 반박 검증: 계획 교차 검토도 Codex 에서 부른 적이 있는 지점이면 표지 없는 셸의 재실행 네트워크 오류를 막힘으로 두고, 사람에게 넘긴 지점의 게이트 줄은 재실행 명령을 안내 뒤에 싣는다",
+          "pointHost·crossSandboxSuspect(D2)(단언 갱신)"
+        ]
+      },
+      {
+        "id": "G3",
+        "severity": "low",
+        "status": "반영",
+        "finding": "doctor 의 D1 안내가 Claude '에이전트 모델' 줄만 덮고, Codex TOML 모델 줄 불일치를 잡는 'Codex 스킬·에이전트' 줄은 작업 중에도 조건 없이 update --templates-only --host codex",
+        "change": "doctor.ts — workInProgress 를 한 번 읽고 afterWork 문장을 두 줄이 같이 씀('진행 중인 작업 <ID>(<단계>)이 끝난 뒤(반영 deliver 또는 종료 abort) <명령> — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다')",
+        "tests": [
+          "D1 doctor(Codex, 반박 검증) — TOML 의 model 줄이 설정과 달라 'Codex 스킬·에이전트' 가 update --templates-only --host codex 를 안내할 때도 작업 중이면 '작업이 끝난 뒤' 실행하라고 한다"
+        ]
+      },
+      {
+        "id": "G4",
+        "severity": "low",
+        "status": "반영",
+        "finding": "작업 중에도 열리는 모델 표의 끝 줄이 '변경: 현재 세션에서 … 요청하세요' 그대로라 따르면 거부됨",
+        "change": "models.ts changeLine — 작업 중이면 model-in-work 문장(재시도 규약 원천)과 '작업이 끝난 뒤: 현재 세션에서 변경을 요청하거나 수동 TTY: …'",
+        "tests": [
+          "D1 모델 표(반박 검증) — 작업 중에도 표는 열리고, 변경 줄은 작업 중 거부와 작업이 끝난 뒤의 방법을 싣는다"
+        ]
+      },
+      {
+        "id": "G5",
+        "severity": "low",
+        "status": "반영",
+        "finding": "사람이 아닌 중지 지점의 재실행이 네트워크 오류로 되풀이되면 network-repeat·exhausted(사람 판단·judgment cross-stop)와 '이전 중지대로 진행(게이트는 막히지 않습니다)' 꼬리가 함께 나옴 — 중지 지점은 cross-stop 을 받지 않음",
+        "change": "crossCheck.ts failureText — wasStopped 면 새 변형 GUIDE_VARIANTS['host-sandbox-denied'].stopped(detail·host·left — 사람 판단을 싣지 않음)와 꼬리. 게이트는 그대로(중지대로 통과)",
+        "tests": [
+          "D2(E16) 반박 검증: 사람이 아닌 중지 지점을 다시 실행해 네트워크 오류가 되풀이돼도 사람 판단을 싣지 않고 이전 중지대로 진행한다고만 안내한다"
+        ]
+      },
+      {
+        "id": "G6",
+        "severity": "low",
+        "status": "반영",
+        "finding": "샌드박스 표지로 사전 거부된 뒤 권한 상승한 첫 실행의 네트워크 오류가 여전히 '권한 상승을 요청해 같은 명령' — 사람에게 넘기는 안내가 한 번 늦음",
+        "change": "retryPolicy.ts recordedVariant — networkAfterEscalation: 끝난 sandbox-network 시도 수 + (사전 거부가 있으면 1) ≥ 2, 네트워크 시도 1 이상. 결정의 '첫 번째 안내는 권한 상승'은 그 지점의 첫 안내로 읽음(사전 거부가 이미 냄). 게이트는 그대로",
+        "tests": [
+          "D2(E16) 반박 검증: 사전 판정 거부(샌드박스 표지) 뒤 표지 없이 실행한 첫 네트워크 오류는 권한 상승 뒤의 오류로 보고 사람에게 넘긴다",
+          "D2 classifyCrossFailure·recordedVariant(단언 갱신)"
+        ]
+      },
+      {
+        "id": "G7",
+        "severity": "low",
+        "status": "반영",
+        "finding": "network-repeat(지점 시도 남음)에서도 게이트 줄·status 다음: 이 실행 명령을 사람에게 넘기는 안내 앞에 세움",
+        "change": "crossRecord.ts crossGateHandoff(hint, attempts) → 'limit'(limit-exceeded·network-exhausted — 명령 없음)|'network'(network-repeat — 명령을 안내 뒤 crossRerunAfterUser ' (사용자가 네트워크를 확인한 뒤 다시 실행할 명령: …)')|undefined. review.ts reviewProblems·planningState.ts crossCriticProblems 가 같이 씀",
+        "tests": [
+          "D2(E16) 반박 검증: 사람에게 넘긴 네트워크 지점의 게이트 줄과 status 다음: 은 실행 명령을 앞세우지 않고, 사용자 확인 뒤의 재실행 명령을 안내 뒤에 싣는다",
+          "D2(E16) 반박 검증: 계획 교차 검토도 …(게이트 줄)"
+        ]
+      },
+      {
+        "id": "G8",
+        "severity": "low",
+        "status": "반영",
+        "finding": "doc/reviews/README.md 최신 행이 11단계를 적고도 '최종 npm test 1292개 중 1288개'",
+        "change": "단계별 수치로 고침(d12bd46·9·10·11·12단계)",
+        "tests": []
+      }
+    ],
+    "docs": [
+      "doc/process-flow.md §4.1(model 행 — 표의 변경 줄), §5.3(MCP 문단), §6.3(실행 전 판정 문단·실패 처리 표의 샌드박스 행·중지 지점 재실행 행), §6.4(생성 블록 재렌더 — host-sandbox-denied detect·retryText), §7(교차 명령 행·역할 모델 변경 행), §9(crossRecord), §10",
+      "doc/codex.md(교차 문단·모델 조회 문장)",
+      "doc/design.md(교차 결정 문단)",
+      "doc/reviews/2026-10-08-full-review.md(E2·E16 행, G1~G8 절)",
+      "doc/reviews/2026-10-08-procedure-fix-summary.md",
+      "doc/reviews/README.md"
+    ],
+    "verification": {
+      "npmTest": {
+        "tests": 1337,
+        "suites": 189,
+        "pass": 1333,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 160026,
+        "wallSec": 162,
+        "command": "npm run build && npm test",
+        "exit": 0
+      },
+      "mutation": {
+        "mutations": 7,
+        "caught": 7,
+        "script": "scratchpad/mutate2.cjs",
+        "sites": [
+          "G1 hook.ts mcpPaths 의 userHostConfig",
+          "G2 crossSandboxSuspect 의 지점 이력",
+          "G5 failureText 의 stopped 변형",
+          "G6 networkAfterEscalation 의 사전 거부 셈",
+          "G7 crossGateHandoff 의 network",
+          "G3 doctor Codex 줄 afterWork",
+          "G4 models.ts changeLine 의 작업 중 문장"
+        ]
+      },
+      "repro": {
+        "d2": "scratchpad/verify-d1d2/d2.cjs(고친 산출물, 출력 d2-after.txt) — A 1번째 기본·2번째 network-repeat(게이트 줄 명령은 끝에)·3번째 network-exhausted·4·5번째 지점 한도, 시도 3. B·B2(섞인 표지·표지 없는 셸 재실행) host-sandbox-denied·게이트 막힘(수정 전 중지 기록·통과). F 사전 거부 10회 뒤 첫 네트워크 오류 network-repeat. C·D·E 바꾸지 않는 갈래 그대로. G hook 이 env 접두 형태 모두 거부",
+        "d1": "scratchpad/verify-d1d2/d1b.cjs — 작업 중 doctor 두 줄 모두 '작업이 끝난 뒤', 두 호스트 모델 표 변경 줄이 거부 문장"
+      },
+      "r1Attack": {
+        "harness": "scratchpad/v2/harness-g.cjs(HEAD 를 고친 dist 로 바꾼 사본, 출력 harness-g.txt) — 실제 hook 프로세스·임시 홈",
+        "closed": "mcp generic write abs path·new_path abs·destination abs(저장소 둘)와 비파일 서버 relative_path ::$DATA",
+        "artifacts": "남은 LEAK 두 줄은 하네스 산물 — 'Write settings.local 8.3 parent'는 cmd 를 windowsVerbatimArguments 없이 불러 잘못된 경로(C:\\\"C:\\…\\.claude\\\")를 만듦. 실제 8.3 부모의 새 settings.local.json 은 거부(scratchpad/r1-g/check83.cjs). 'Write %USERPROFILE%\\.claude\\settings.json'은 Write 도구가 %USERPROFILE% 을 풀지 않아 저장소 안 상대 경로",
+        "overBlock": "호스트 설정이 아닌 홈 파일·저장소 안 .claude/settings.local.json 은 새로 막지 않음"
+      }
+    },
+    "remaining": [
+      "Codex 에서 부른 적이 없는 지점을 호스트 표지 없는 셸·두 표지가 섞인 셸에서 처음 --by claude 로 실행한 네트워크 오류는 실행 불가(중지 기록 후 진행) — 그 셸이 실제로 권한 상승한 Codex 셸이면 D2 밖(실제 Codex 셸 표지 미확인)",
+      "G1 은 이 PC 의 사용자 수준 호스트 설정 네 파일만 넓힘 — 비파일 MCP 서버의 그 밖의 저장소 밖 쓰기는 원격 서비스 오탐 방지로 여전히 판정하지 않음(E30 미판정 MCP 이름 기록도 남은 일)",
+      "doctor 의 Claude '스킬·에이전트' 줄(소스 code-agent update 처방)은 작업 중 안내를 달지 않음"
     ]
   }
 }

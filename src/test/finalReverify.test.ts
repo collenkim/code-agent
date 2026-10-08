@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { after, afterEach, before, beforeEach, describe, test } from "node:test";
 
 import { codexHook } from "../agent/codexHook";
@@ -136,6 +137,25 @@ describe("R1 — 사용자 수준 호스트 설정 쓰기 거부를 같은 파�
     for (const other of [join(home, ".claude", "notes.md"), join(home, ".claude", "notes.md::$DATA"), join(home, ".claude", "settings.json.bak"), join(home, "other", "settings.json")]) {
       for (const reason of writes(other)) assert.equal(reason, undefined, other);
     }
+  });
+
+  test("R1 공격 검증 — 이름이 파일 서버가 아닌 MCP 쓰기 도구도 사용자 수준 호스트 설정의 절대 경로(다른 이름 포함)는 막고, 그 밖의 저장소 밖 경로·읽기·원격 서비스 경로는 판정하지 않는다", () => {
+    const settings = join(home, ".claude", "settings.json");
+    const mcp = (name: string, input: Record<string, unknown>) => tool(name, input as HookInput["tool_input"]);
+    const writes: [string, Record<string, unknown>][] = [
+      ["mcp__acme__write_note", { path: settings }],
+      ["mcp__x__rename", { new_path: join(home, ".codex", "hooks.json") }],
+      ["mcp__x__copy", { destination: join(home, "codex-home", "config.toml") }],
+      ["mcp__x__save", { options: { file: join(home, ".claude", "settings.local.json") } }],
+      ["mcp__x__write", { uri: pathToFileURL(settings).href }],
+      ["mcp__x__write", { path: "~/.claude/settings.json" }],
+    ];
+    if (WIN) writes.push(["mcp__acme__write_note", { path: `${settings}::$DATA` }], ["mcp__acme__write_note", { path: join(home, ".CLAUDE", "SETTINGS.JSON") }]);
+    for (const [name, input] of writes) assert.match(mcp(name, input) ?? "", DENIED, `${name} ${JSON.stringify(input)}`);
+    assert.equal(mcp("mcp__acme__read_note", { path: settings }), undefined, "읽기는 판정하지 않는다(Read 와 같다)");
+    assert.equal(mcp("mcp__acme__write_note", { path: join(home, ".claude", "notes.md") }), undefined, "호스트 설정이 아닌 저장소 밖 파일");
+    assert.equal(mcp("mcp__github__create_or_update_file", { path: ".claude/settings.json" }), undefined, "원격 서비스의 상대 경로");
+    assert.equal(mcp("mcp__drive__write_file", { path: "/My Drive/settings.json" }), undefined, "원격 서비스의 절대 경로");
   });
 
   test("R1 파일 번호(dev, ino) — 하드 링크·폴더 연결(junction)로 단 다른 이름도 같은 파일로 막는다", { skip: !WIN }, () => {

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { abort, next, requireValidatable, status } from "../agent/commands";
 import { finishConsent, loadConsent, prepareConsent } from "../agent/consent";
 import { doctor } from "../agent/doctor";
-import { setModel } from "../agent/models";
+import { modelsTable, setModel } from "../agent/models";
 import { check, integrate, patchEvidence, runTests } from "../agent/validate";
 import { loadEvidence, validationDocFile, verifyView } from "../agent/evidence";
 import { loadActive, reviewFile } from "../agent/layout";
@@ -170,6 +170,41 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     toCheck();
     const working = hintOf(doctor(repo).text);
     assert.match(working, /진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only — [\s\S]*작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다/);
+  });
+
+  test("D1 doctor(Codex, 반박 검증) — TOML 의 model 줄이 설정과 달라 'Codex 스킬·에이전트' 가 update --templates-only --host codex 를 안내할 때도 작업 중이면 '작업이 끝난 뒤' 실행하라고 한다", () => {
+    init(repo, { host: "codex" });
+    const toml = join(repo, ".codex/agents/ca-writer.toml");
+    write(".codex/agents/ca-writer.toml", readFileSync(toml, "utf8").replace(/^model = .*$/m, 'model = "gpt-test-other"'));
+    git("add", "-A");
+    git("commit", "-qm", "codex");
+    const rowOf = (text: string) => {
+      const rows = text.split("\n"), index = rows.findIndex((row) => row.trim().startsWith("✗ Codex 스킬·에이전트:"));
+      assert.ok(index >= 0, text);
+      return { observed: rows[index].trim(), hint: rows[index + 1].trim() };
+    };
+    const idle = rowOf(doctor(repo).text);
+    assert.match(idle.observed, /\.codex\/agents\/ca-writer\.toml/);
+    assert.equal(idle.hint, "→ code-agent update --templates-only --host codex");
+    toCheck();
+    const working = rowOf(doctor(repo).text);
+    assert.match(working.hint, /^→ 진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only --host codex — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다$/);
+  });
+
+  test("D1 모델 표(반박 검증) — 작업 중에도 표는 열리고, 변경 줄은 작업 중 거부와 작업이 끝난 뒤의 방법을 싣는다", () => {
+    installAgent();
+    const changeLine = (text: string) => text.split("\n").find((line) => line.startsWith("변경: ")) ?? "";
+    assert.match(changeLine(modelsTable(repo, "claude")), /^변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요\. 수동 TTY: code-agent model /);
+    toCheck();
+    const table = modelsTable(repo, "claude");
+    assert.match(table, /writer\s+sonnet \/ medium/, "조회는 작업 중에도 연다");
+    const line = changeLine(table);
+    assert.match(line, REFUSED);
+    assert.match(line, /작업이 끝난 뒤: 현재 세션에서 변경을 요청하거나 수동 TTY: code-agent model <역할\|all> <모델\|default> --host claude/);
+    assert.doesNotMatch(line, /^변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요/, "작업 중에 변경을 요청하라고 하지 않는다");
+    const shown = cli("--host", "claude");
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.match(shown.stdout, REFUSED, "터미널의 표 보기도 같은 변경 줄이다");
   });
 });
 

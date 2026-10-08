@@ -6,7 +6,7 @@ import { writeAtomic } from "../core/atomic";
 import { readBlock, stripBlock, upsertBlock } from "./blocks";
 import { otherHost, runtimeHost } from "./crossEnv";
 import {
-  attemptLabel, CROSS_ID, crossAttemptsOf, crossHintText, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
+  attemptLabel, CROSS_ID, crossAttemptsOf, crossGateHandoff, crossHintText, crossRerunAfterUser, effectiveReviewer, FINDING_CLOSED, FINDING_OPEN, findingDetailHash,
   orphanView, pointHost, pointLabel, reviewerRunLabel, reviewerState, syncLegacyRound,
   type CrossAttempt, type ReviewerRun, type Waiver,
 } from "./crossRecord";
@@ -585,14 +585,17 @@ export function reviewProblems(work: Work): string[] {
     } else {
       const hint = crossPointHint({ attempts, grants, scope: grantScope({ file: "review", key: "crossPoint", round: last.round }),
         rawExists: (raw) => existsSync(join(repoRoot, raw)) });
-      // 한도로 거부될 지점(limit-exceeded)에는 실행 명령을 앞세우지 않는다 — 그 명령은 거부되고, 남은 길은 사람 판단이다.
+      // 한도로 거부될 지점(limit-exceeded)에는 실행 명령을 앞세우지 않는다 — 그 명령은 거부되고, 남은 길은 사람 판단이다. 네트워크 오류가
+      // 되풀이돼 사람에게 넘긴 지점은 명령을 안내 뒤에 싣는다(crossGateHandoff — 사용자가 네트워크를 확인한 뒤에만 다시 실행한다, D2).
       // 명령 뒤 괄호(실행하면 어떻게 되는지)는 crossRunNote — 직전 실패가 있으면 그 원인 안내가 싣고, 실행 파일 설정 오류면 그 갈래다
-      let line = hint?.class === "limit-exceeded"
+      const handoff = crossGateHandoff(hint, attempts);
+      let line = handoff
         ? "두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다"
         : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"}${crossRunNote(host, hint)}`;
       if (hint) {
         line += ` — 직전 실행: ${pointLabel(attempts)}: ${oneLine(point.lastFailure?.detail ?? hint.detail, 120)}. ${crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts })}`;
       }
+      if (handoff === "network") line += crossRerunAfterUser(`code-agent review cross --by ${host ?? "<다른 호스트>"}`);
       problems.push(line);
     }
   }

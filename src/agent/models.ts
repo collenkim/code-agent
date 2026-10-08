@@ -73,6 +73,18 @@ function row(agent: AgentName, value: string, override: boolean): string {
   return `  ${agent.padEnd(12)} ${value.padEnd(20)} ${TIER_LABEL[ROLE_POLICY[agent].tier]}  ${override ? "(바꿈)" : "(기본)"}`;
 }
 
+/**
+ * 표의 변경 줄 — 진행 중인 작업이 있으면 변경이 거부된다는 문장(model-in-work, D1)을 먼저 싣고 작업이 끝난 뒤의 방법을 붙인다.
+ * 상태를 읽지 못하면 평소 줄이다(조회는 막지 않는다 — 변경은 requireNoWorkInProgress 가 막는다)
+ */
+function changeLine(repoRoot: string, manual: string): string {
+  let work: ReturnType<typeof workInProgress>;
+  try { work = workInProgress(repoRoot); } catch { work = undefined; }
+  return work
+    ? `변경: ${guidance("precondition", { id: work.id, phase: work.phase }, "model-in-work")} 작업이 끝난 뒤: 현재 세션에서 변경을 요청하거나 수동 TTY: ${manual}`
+    : `변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요. 수동 TTY: ${manual}`;
+}
+
 export function modelsTable(repoRoot: string, host?: Host): string {
   const hosts = selectedHosts(repoRoot);
   if (host && !hosts.includes(host)) throw new Error(`${host}를 먼저 설치하세요.`);
@@ -81,7 +93,7 @@ export function modelsTable(repoRoot: string, host?: Host): string {
     return ["Codex 에이전트별 모델·추론 강도 (제품 기본값):", ...AGENTS.map(agent => {
       const config = codexModelOf(repoRoot, agent);
       return row(agent, `${config.model} / ${config.reasoning}`, isCodexOverride(repoRoot, agent));
-    }), "", "변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요. 수동 TTY: code-agent model <역할|all> <모델|default> --host codex [--reasoning <강도>]",
+    }), "", changeLine(repoRoot, "code-agent model <역할|all> <모델|default> --host codex [--reasoning <강도>]"),
     "설정한 모델의 계정 사용 권한과 추론 강도 지원은 Codex가 판정합니다. 적용 후 호스트를 재시작하세요."].join("\n");
   }
   const defaults = (name: "judgment" | "execution") => `${TIER_DEFAULTS[name].claude.model} / ${TIER_DEFAULTS[name].claude.effort}`;
@@ -92,7 +104,7 @@ export function modelsTable(repoRoot: string, host?: Host): string {
       return row(agent, `${config.model} / ${config.effort ?? "(지원 안 함)"}`, isClaudeOverride(repoRoot, agent));
     }),
     "",
-    "변경: 현재 세션에서 역할·모델·추론 강도 변경을 요청하세요. 수동 TTY: code-agent model <역할|all> <모델|default> --host claude [--effort <강도>]",
+    changeLine(repoRoot, "code-agent model <역할|all> <모델|default> --host claude [--effort <강도>]"),
     `모델: ${CLAUDE_MODEL_ALIASES.join("·")} 또는 claude-로 시작하는 전체 ID. 추론 강도: ${CLAUDE_EFFORTS.join("·")}(haiku, Sonnet 4.5·Opus 4.1 이하, claude-3 이전 전체 ID는 강도를 받지 않습니다). ` +
       "모델만 바꾸면 그 역할의 추론 강도는 유지합니다. 적용 후 Claude Code를 다시 시작하세요.",
   ].join("\n");

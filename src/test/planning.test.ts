@@ -1022,6 +1022,28 @@ test("D2(E16): Codex 에서 부른 계획 교차 검토(--by claude)의 네트�
   }
 });
 
+test("D2(E16) 반박 검증: 계획 교차 검토도 Codex 에서 부른 적이 있는 지점이면 표지 없는 셸의 재실행 네트워크 오류를 막힘으로 두고, 사람에게 넘긴 지점의 게이트 줄은 재실행 명령을 안내 뒤에 싣는다", () => {
+  const cross = crossPlanningSetup();
+  const fake = mkdtempSync(join(tmpdir(), "ca-fake-claude-net2-")), script = join(fake, "claude.cjs");
+  writeFileSync(script, "process.stderr.write('Error: getaddrinfo ENOTFOUND api.anthropic.com'); process.exit(1);\n");
+  process.env.CODE_AGENT_CLAUDE_BIN = script;
+  try {
+    const line = () => crossProblems().find((problem) => /계획 검토가 필요합니다/.test(problem)) ?? "";
+    assert.throws(() => withCaller("codex", () => crossCritic(root, "claude")), RetryRefused);
+    assert.match(line(), /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
+    assert.throws(() => withCaller(undefined, () => crossCritic(root, "claude")),
+      (error: Error) => error instanceof RetryRefused && /다시 네트워크 오류로 끝났습니다[\s\S]*Codex 에서 부른 claude 지점의 네트워크 오류라[\s\S]*남은 지점 시도 1회/.test(error.message) && !/교차 검증 중지/.test(error.message));
+    assert.deepEqual(loadPlanning(loadWork(root)!).crossAttempts!.map((attempt) => [attempt.class, attempt.kind, attempt.caller ?? "-"]),
+      [["host-sandbox-denied", "sandbox-network", "codex"], ["host-sandbox-denied", "sandbox-network", "-"]]);
+    assert.match(line(), /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
+    assert.match(line(), /\(사용자가 네트워크를 확인한 뒤 다시 실행할 명령: code-agent planning cross --by claude\)$/);
+    assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토/, "사람 판단 없이 중지를 기록하지 않는다 — 게이트가 막혀 있다");
+  } finally {
+    cross.cleanup();
+    rmSync(fake, { recursive: true, force: true });
+  }
+});
+
 // ---- 재시도 규약·질문 출처·고아·되감기·결정적 문서 검사 ----
 
 const planningJson = () => join(root, ".code-agent/work", ID, "value.planning.json");

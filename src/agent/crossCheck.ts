@@ -130,21 +130,32 @@ export function runCross(root: string, host: Host, agent: Agent, prompt: string,
     return { ok: false, model: "", probe, usage: { durationMs: 0 }, output: message };
   }
 }
+/** 샌드박스 의심의 근거 — 지금 부른 쪽이 Codex 다(caller), 이 지점을 Codex 에서 부른 적이 있다(point) */
+export type SandboxSuspicion = "caller" | "point";
 /**
  * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 의 네트워크 오류는 실행 불가(중지)가 아니라
  * 샌드박스 거부(게이트 막힘)로 본다. 같은 지점에서 몇 번째든 같다 — 권한 상승 뒤에도 다시 나면 실제 네트워크 문제인지 샌드박스인지
  * CLI 가 가를 수 없으므로 사람이 정한다(네트워크를 확인해 다시 실행하거나 judgment cross-stop — 2026-10-08 사용자 결정 D2).
+ * 지금 부른 쪽을 판별하지 못해도(호스트 표지가 없는 셸 — 권한 상승한 셸·사람의 터미널, 두 호스트 표지가 함께 있는 셸) 그 지점의 앞선 시도를
+ * Codex 가 불렀거나 Codex 샌드박스가 막았으면(sandbox-network·preflight) 같다 — 재실행이 그 지점의 중지를 사람 판단 없이 기록하지 않게 한다.
  * 지점 시도(review·correct)는 지점 시도 한도에 세므로 기록이 끝없이 늘지 않는다. Codex 기본 샌드박스는 네트워크를 막는데
  * 표지(CODEX_SANDBOX*)가 셸에 있는지는 미확인이다.
  */
-export function crossSandboxSuspect(host: Host, caller: Host | undefined): boolean {
-  return host === "claude" && caller === "codex";
+export function crossSandboxSuspect(host: Host, caller: Host | undefined,
+  attempts: readonly { caller?: string; class?: string; kind?: string }[] = []): SandboxSuspicion | undefined {
+  if (host !== "claude") return undefined;
+  if (caller === "codex") return "caller";
+  return attempts.some((attempt) => attempt.caller === "codex"
+    || (attempt.class === "host-sandbox-denied" && (attempt.kind === "sandbox-network" || attempt.kind === "preflight"))) ? "point" : undefined;
 }
-const SUSPECT_NOTE = " — 셸에 샌드박스 표지는 없지만 Codex 가 부른 claude 의 네트워크 오류라 샌드박스 차단으로 봅니다(실행 불가로 기록하지 않습니다)";
+const SUSPECT_NOTE: Readonly<Record<SandboxSuspicion, string>> = {
+  caller: " — 셸에 샌드박스 표지는 없지만 Codex 가 부른 claude 의 네트워크 오류라 샌드박스 차단으로 봅니다(실행 불가로 기록하지 않습니다)",
+  point: " — 셸에 샌드박스 표지는 없지만 Codex 에서 부른 claude 지점의 네트워크 오류라 샌드박스 차단으로 봅니다(실행 불가로 기록하지 않습니다)",
+};
 /** 실패 분류와 기록할 사유 — 샌드박스 의심으로 분류가 바뀌었으면 그 사실을 사유에 붙인다 */
-function classifyRun(probe: CrossProbe, suspect: boolean): ReturnType<typeof classifyCrossFailure> & { detail: string } {
+function classifyRun(probe: CrossProbe, suspect: SandboxSuspicion | undefined): ReturnType<typeof classifyCrossFailure> & { detail: string } {
   const classified = classifyCrossFailure(probe);
-  const note = suspect && classified.kind === "sandbox-network" && !sandboxMarkers() ? SUSPECT_NOTE : "";
+  const note = suspect && classified.kind === "sandbox-network" && !sandboxMarkers() ? SUSPECT_NOTE[suspect] : "";
   return { ...classified, detail: `${classified.reason.slice(0, 600 - note.length)}${note}` };
 }
 /** 시작 기록이 끊긴 시도를 닫았다는 알림을 결과(거부 포함) 앞에 붙인다 */
@@ -263,9 +274,10 @@ function failureText(record: FailureRecord, attempt: CrossAttempt, words: PointW
         budgets.crossFormat.left > 0 ? undefined : "exhausted") + tail +
         (raw !== undefined ? `\n${raw.slice(0, 300)}` : "");
     case "host-sandbox-denied":
-      // 같은 지점의 두 번째 이후 네트워크 차단은 사람에게 넘기는 변형(D2) — 지점 시도가 남았는지로 재실행을 안내할지 가른다
+      // 같은 지점의 두 번째 이후 네트워크 차단은 사람에게 넘기는 변형(D2) — 지점 시도가 남았는지로 재실행을 안내할지 가른다.
+      // 사람이 아닌 중지로 이미 게이트를 지난 지점의 재실행이면 사람 판단(cross-stop 은 그 지점을 받지 않는다)을 싣지 않는 stopped 변형이다
       return guidance("host-sandbox-denied", { host: words.host, detail: attempt.detail ?? "", left: budgets.crossPoint.left },
-        recordedVariant(record, { attempts, left: budgets.crossPoint.left })) + tail;
+        wasStopped ? "stopped" : recordedVariant(record, { attempts, left: budgets.crossPoint.left })) + tail;
     default:
       return `${record.detail}`;
   }
@@ -313,7 +325,7 @@ const TABLE_RULES = [
 type ReviewStart =
   | { refusal: RetryRefused }
   | { round: number; at: string; n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean;
-      previous?: string; waivers: string[]; suspect: boolean };
+      previous?: string; waivers: string[]; suspect?: SandboxSuspicion };
 
 export function crossReview(root: string, by: string | undefined): string {
   const host = parseHostArg(by);
@@ -389,7 +401,7 @@ export function crossReview(root: string, by: string | undefined): string {
     const previous = previousRound ? (crossPointState(crossAttemptsOf(previousRound, planned)).completed as CrossAttempt | undefined)?.result : undefined;
     const waivers = (log.waivers ?? []).filter((waiver) => waiver.source === "cross" && waiver.round < last.round)
       .map((waiver) => `${waiver.id}(${waiver.path}) ${waiver.verdict} — ${oneLine(waiver.reason, 120)}`);
-    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller),
+    return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller, attempts),
       ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}), ...(previous ? { previous } : {}) } };
   });
   // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
@@ -416,7 +428,7 @@ export function crossReview(root: string, by: string | undefined): string {
     "질문·설명문은 확정 지시서와 같은 언어로 쓴다.",
   ].join("\n");
 
-  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: start.suspect });
+  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: !!start.suspect });
   let body: string | undefined, renamed = 0, raw: string | undefined;
   let failed: Partial<CrossAttempt> | undefined;
   if (outcome.ok) {
@@ -503,7 +515,7 @@ function attemptQuestions(attempt: PlanningCrossView, questions: readonly Questi
 
 type CriticStart =
   | { refusal: RetryRefused }
-  | { n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean; answered: string[]; suspect: boolean };
+  | { n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean; answered: string[]; suspect?: SandboxSuspicion };
 
 export function crossCritic(root: string, by: string | undefined): string {
   const host = parseHostArg(by);
@@ -572,7 +584,7 @@ export function crossCritic(root: string, by: string | undefined): string {
       attempts.push(attempt);
       keep(state, attempts);
       const answered = [...new Set(view.filter((item) => item.class === "answered-input").flatMap((item) => attemptQuestions(item, questions)))];
-      return { n: attempt.n, startedAt: at, mode, wasStopped, answered, suspect: crossSandboxSuspect(host, caller),
+      return { n: attempt.n, startedAt: at, mode, wasStopped, answered, suspect: crossSandboxSuspect(host, caller, attempts),
         ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}) };
     });
     // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
@@ -612,7 +624,7 @@ export function crossCritic(root: string, by: string | undefined): string {
       prompt = `${file} 를 읽고 그 지시대로 교차 계획 검토 결과 JSON 하나만 반환하라.`;
     }
 
-    const outcome = runCross(root, host, "ca-critic", prompt, { sandboxSuspect: start.suspect });
+    const outcome = runCross(root, host, "ca-critic", prompt, { sandboxSuspect: !!start.suspect });
     let parsed: CrossCriticResult | undefined, raw: string | undefined;
     let failed: Partial<PlanningCrossAttempt> | undefined;
     if (outcome.ok) {

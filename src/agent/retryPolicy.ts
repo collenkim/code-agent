@@ -367,8 +367,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "host-sandbox-denied": {
     id: "host-sandbox-denied", label: "Codex 샌드박스 제한", group: "cross", auxiliary: false,
-    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 포함 — 실행 불가로 기록하지 않는다)",
-    retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령. 같은 지점에서 다시 네트워크 오류면 사람이 네트워크를 확인해 다시 실행하거나 중지를 정한다",
+    detect: "샌드박스 표지(사전 판정), EPERM·EACCES·거부 문구, 샌드박스 안 네트워크 오류(Codex 가 부른 claude 의 네트워크 오류는 같은 지점에서 몇 번째든 포함 — 그 지점을 Codex 에서 부른 적이 있으면 호스트 표지 없는 셸의 재실행도 같다. 실행 불가로 기록하지 않는다)",
+    retry: "no-retry", retryText: "권한 상승을 요청해 같은 명령. 권한 상승 안내(사전 거부 포함) 뒤 같은 지점에서 다시 네트워크 오류면 사람이 네트워크를 확인해 다시 실행하거나 중지를 정한다",
     counters: ["crossPoint"], limitText: `사전 거부는 지점 시도에 세지 않고 같은 사유면 한 번만 기록, 실행한 시도는 지점 시도 ${LIMITS.crossPoint}에 셈`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "stop", onExhausted: "consent:judgment", exceededText: "사람(judgment cross-stop)",
@@ -502,12 +502,18 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
   },
   "host-sandbox-denied": {
     /**
-     * Codex 가 부른 claude 의 네트워크 오류가 같은 지점에서 다시 났다(앞선 sandbox-network 시도가 있다 — 2026-10-08 사용자 결정 D2). 실행 불가로
-     * 넘기지 않고 사람이 정한다: 네트워크를 확인해 다시 실행하거나 judgment cross-stop. 지점 시도가 남았을 때다(recordedVariant)
+     * Codex 가 부른 claude 의 네트워크 오류가 권한 상승 안내 뒤 같은 지점에서 다시 났다(앞선 sandbox-network 시도나 사전 판정 거부가 있다 —
+     * 2026-10-08 사용자 결정 D2). 실행 불가로 넘기지 않고 사람이 정한다: 네트워크를 확인해 다시 실행하거나 judgment cross-stop.
+     * 지점 시도가 남았을 때다(recordedVariant)
      */
     "network-repeat": "{host} 교차 실행이 이 지점에서 다시 네트워크 오류로 끝났습니다({detail}) — 실행 불가(중지)로 기록하지 않았습니다. 권한 상승(샌드박스 밖 실행)으로 실행했는데도 같다면 실제 네트워크 문제일 수 있습니다. 사용자에게 알리고 지시를 받으세요 — 사용자가 네트워크를 확인하면 권한 상승한 같은 명령을 다시 실행하고(남은 지점 시도 {left}회), 이 지점을 교차 검증 없이 진행하기로 정하면 ca-answer 동의 judgment cross-stop 으로 이 지점의 중지를 기록합니다. 사용자 확인 없이 중지를 기록하지 않습니다.",
     /** 위와 같고 지점 시도 한도를 다 썼다 — 같은 명령은 한도로 거부되므로 재실행을 안내하지 않는다 */
     "network-exhausted": "{host} 교차 실행이 이 지점에서 다시 네트워크 오류로 끝났습니다({detail}) — 실행 불가(중지)로 기록하지 않았습니다. 이 지점의 교차 실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다. 권한 상승 뒤에도 같다면 실제 네트워크 문제일 수 있으니 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossPoint)을 받으세요. 사용자 확인 없이 중지를 기록하지 않습니다.",
+    /**
+     * 사람이 아닌 중지(실행 불가 등)로 이미 게이트를 지난 지점을 다시 실행했다가 샌드박스 제한으로 끝났다(crossCheck.ts failureText) — 게이트는
+     * 이전 중지대로라 사람 판단(judgment cross-stop 은 중지 지점을 받지 않는다)을 싣지 않는다. 꼬리(이전 중지대로 진행)는 호출자가 붙인다
+     */
+    stopped: "{host} 교차 실행이 Codex 샌드박스 제한(네트워크 오류 포함)으로 끝났습니다({detail}) — 이 지점은 이미 중지로 기록되어 있어 다시 기록하지 않았습니다. 다시 실행할지는 사용자가 정합니다 — 권한 상승(샌드박스 밖 실행)한 같은 명령으로, 지점 시도 한도 안에서만 실행됩니다(남은 {left}회).",
   },
   "cross-unavailable": {
     /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 실행 불가 갈래: PATH·npm 어디에도 없는 미설치 */
@@ -582,7 +588,7 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   "cross-config-error": { notice: ["detail"], exhausted: ["detail", "host"] },
   "cross-result-invalid": { exhausted: ["detail", "host", "point", "raw"] },
   "cross-timeout": { interrupted: ["host", "left"] },
-  "host-sandbox-denied": { "network-repeat": ["detail", "host", "left"], "network-exhausted": ["detail", "host"] },
+  "host-sandbox-denied": { "network-repeat": ["detail", "host", "left"], "network-exhausted": ["detail", "host"], stopped: ["detail", "host", "left"] },
   "cross-unavailable": { notice: ["detail"], gate: [], rerunnable: ["detail", "host", "left"] },
   "consent-target-changed": { "response-change": [], "response-defer": [], "response-none": ["detail"], "response-invalid": ["detail"] },
   "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"],
@@ -624,18 +630,23 @@ export function guidance(cls: FailureClass, values: Readonly<Record<string, stri
  * 기록된 실패를 안내할 때 고르는 변형 — 기록(시도의 failure·지점 안내의 crossPointHint·blocked[].class)을 렌더하는 호출은
  * `guidance(record.class, values, recordedVariant(record))` 로 쓴다. 담당 형식·내용 오류의 기본 문구는 기록 전 같은 담당에게
  * 돌려보내는 문구라 기록된 시도에는 record 변형을, 끊긴 교차 실행(cross-timeout·interrupted)에는 제한 시간 문구 대신
- * interrupted 변형을 쓴다. 교차 지점의 시도(point)를 주면 샌드박스 네트워크 차단(sandbox-network)이 그 지점에서 두 번째 이후일 때
- * 사람에게 넘기는 변형(지점 시도가 남았으면 network-repeat, 다 썼으면 network-exhausted — D2)을 고른다. 그 밖은 기본 문구(undefined)다.
+ * interrupted 변형을 쓴다. 교차 지점의 시도(point)를 주면 샌드박스 네트워크 차단(sandbox-network)이 그 지점의 권한 상승 안내 뒤일 때
+ * 사람에게 넘기는 변형(지점 시도가 남았으면 network-repeat, 다 썼으면 network-exhausted — D2)을 고른다. 권한 상승 안내는 그 지점의 앞선
+ * sandbox-network 시도나 사전 판정 거부(preflight — 같은 안내를 냈고, 그 뒤 표지 없이 실행됐다면 권한 상승한 셸이다)다. 그 밖은 기본 문구(undefined)다.
  */
 export function recordedVariant(record: { class: string; kind?: string },
   point?: { attempts: readonly { kind?: string; endedAt?: string }[]; left: number }): string | undefined {
   if (record.class === "agent-format-error" || record.class === "agent-content-error") return "record";
   if (record.class === "cross-timeout" && record.kind === "interrupted") return "interrupted";
-  if (point && record.class === "host-sandbox-denied" && record.kind === "sandbox-network"
-    && point.attempts.filter((attempt) => attempt.kind === "sandbox-network" && attempt.endedAt !== undefined).length >= 2) {
+  if (point && record.class === "host-sandbox-denied" && record.kind === "sandbox-network" && networkAfterEscalation(point.attempts)) {
     return point.left > 0 ? "network-repeat" : "network-exhausted";
   }
   return undefined;
+}
+/** 지점의 마지막 sandbox-network 시도가 권한 상승 안내 뒤인가 — 끝난 sandbox-network 시도가 둘 이상이거나, 하나 이상인데 사전 판정 거부가 있다 */
+function networkAfterEscalation(attempts: readonly { kind?: string; endedAt?: string }[]): boolean {
+  const network = attempts.filter((attempt) => attempt.kind === "sandbox-network" && attempt.endedAt !== undefined).length;
+  return network + (attempts.some((attempt) => attempt.kind === "preflight") ? 1 : 0) >= 2 && network >= 1;
 }
 /**
  * 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다. 사람 허용으로 늘리지 않는 카운터면 그 선택지를 빼는 변형이고,

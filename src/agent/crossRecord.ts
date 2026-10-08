@@ -437,6 +437,24 @@ export function crossHintText(hint: FailureRecord, values: { host: string; point
   return guidance(hint.class, { host: values.host, detail: hint.detail, left, min: crossTimeoutMin(), point: values.point, raw },
     recordedVariant(hint, { attempts: values.attempts, left })).replace(/\n/g, " ");
 }
+/**
+ * 교차 게이트 줄(리뷰 reviewProblems·계획 crossCriticProblems)이 실행 명령을 앞세우지 않는 지점 — 한도로 거부될 지점(limit-exceeded)과
+ * 네트워크 오류가 권한 상승 안내 뒤에 되풀이돼 사람에게 넘긴 지점(recordedVariant 의 network-exhausted)은 "limit" 이다: 명령을 싣지 않는다
+ * (그 명령은 거부되고 남은 길은 사람 판단이다). 지점 시도가 남은 network-repeat 은 "network" 다: 사용자가 네트워크를 확인한 뒤에만 다시
+ * 실행하므로(D2) 명령을 안내 뒤에 싣는다(crossRerunAfterUser). 그 밖은 undefined — 명령을 앞세운다.
+ */
+export function crossGateHandoff(hint: FailureRecord | undefined,
+  attempts: readonly { kind?: string; endedAt?: string }[]): "limit" | "network" | undefined {
+  if (!hint) return undefined;
+  if (hint.class === "limit-exceeded") return "limit";
+  const left = hint.counter ? Math.max(0, hint.counter.limit - hint.counter.used) : 0;
+  const variant = recordedVariant(hint, { attempts, left });
+  return variant === "network-exhausted" ? "limit" : variant === "network-repeat" ? "network" : undefined;
+}
+/** 사람에게 넘긴 네트워크 지점(crossGateHandoff "network")의 게이트 줄 꼬리 — 사용자가 네트워크를 확인한 뒤 다시 실행할 명령 */
+export function crossRerunAfterUser(command: string): string {
+  return ` (사용자가 네트워크를 확인한 뒤 다시 실행할 명령: ${command})`;
+}
 
 // ---- 연속 중지 ----
 
