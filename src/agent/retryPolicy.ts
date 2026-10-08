@@ -255,7 +255,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   precondition: {
     id: "precondition", label: "전제·선언 미충족", group: "infra", auxiliary: true,
-    detect: "명령 미선언(not-run), 단계·순서·승인·계획 밖 변경 등 전제 Stop",
+    detect: "명령 미선언(not-run), 검증 명령이 code-agent 기록(review.json·planning.json)을 바꿔 되돌린 실행, 단계·순서·승인·계획 밖 변경 등 전제 Stop",
     retry: "no-retry", retryText: "없음 — 전제를 채운 뒤 한 번",
     counters: [], limitText: "—",
     consumesFixRound: false, fixRoundText: "안 씀",
@@ -443,6 +443,12 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
 
 // ---- 안내 문구 ----
 
+/**
+ * 리뷰를 열지 않은 채 통과 뒤 변경으로 리뷰 회차 한도를 쓴 자리의 사람 선택지 — 회차 추가(허용)는 리뷰 기록(review.json)에 남으므로
+ * 받지 않는다. verify 의 한도 안내(limit-exceeded no-review 변형)·hook 쓰기 거부(writeBlockReason)·status 다음:·허용 거부(retryGrant)가 같은 셋을 쓴다
+ */
+export const NO_REVIEW_CHOICES = "바꾼 계획 파일을 사람이 되돌려 통과한 트리로 돌아간 뒤 code-agent next 로 리뷰 받기 · 계획을 고쳐 재승인 · 작업 종료(abort)";
+
 /** 원인마다 기본 문구 말고 고르는 변형 — guidance(cls, values, variant) */
 export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Record<string, string>>>>> = {
   "code-defect": {
@@ -476,6 +482,8 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     record: "결과가 검사에 걸려 실패로 기록했습니다 — {detail}. 사유를 수정 피드백 파일로 남겨 {id} 의 inputs 에 넣고 planning prepare 뒤 planning advance 로 다시 배정하세요.",
   },
   "cross-config-error": {
+    /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 설정 오류 갈래: 실행 파일 변수가 없는 파일·PATH 의 셸 스크립트(hostCommandConfigError) */
+    notice: "{detail}. 중지로 기록하지 않고 그 지점의 게이트가 막힌다 — 사람이 셸에서 실행 파일 변수(CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN)나 CLI 설치를 고친 뒤 같은 명령을 다시 실행하고, 고칠 수 없으면 사람이 중지를 정한다(ca-answer 동의 judgment cross-stop)",
     /** 설정 오류 재실행 한도를 다 쓴 실패 — 같은 명령은 한도로 거부되므로 재실행을 안내하지 않는다 */
     exhausted: "{host} 교차 호출 설정 오류 — {detail}\n중지로 기록하지 않았고 게이트는 막혀 있습니다. 교차 설정 오류 재실행 한도를 다 써서 같은 명령은 다시 실행되지 않습니다 — 원인을 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant crossError)을 받으세요. 모델 설정은 사용자 확인을 받아 ca-answer 동의 model 로 바꾸고(지금 값은 code-agent model --host {host}), CLI 옵션은 code-agent doctor --cross 로 점검합니다.",
   },
@@ -488,6 +496,8 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     interrupted: "{host} 교차 실행이 끝 기록 없이 끊겼습니다 — 끊긴 실행은 중지로 기록하지 않고 게이트는 막혀 있습니다. 같은 명령을 백그라운드로 다시 실행할 수 있습니다(남은 지점 시도 {left}회).",
   },
   "cross-unavailable": {
+    /** 교차 안내(hosts.ts crossNotice — init·status·doctor)의 실행 불가 갈래: PATH·npm 어디에도 없는 미설치 */
+    notice: "다른 호스트를 실행할 수 없으면 그 지점의 교차 검증은 중지로 기록하고 진행한다: {detail}",
     /** 지점 한도가 남아 같은 지점을 다시 실행할 수 있을 때 */
     rerunnable: "{host} 교차 검증 중지 — 다른 호스트를 실행할 수 없습니다: {detail}. 이 지점은 교차 검증 없이 진행합니다. 두 호스트를 모두 쓸 수 있게 되면(설치·로그인·사용 한도) 다음 지점부터 다시 돕니다. 사용자가 원하면 고친 뒤 같은 명령으로 이 지점을 다시 실행할 수 있습니다(남은 {left}회).",
   },
@@ -507,6 +517,8 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
     "cross-cause": "{counterLabel} 한도 {limit}회를 썼습니다 — 사용자에게 보고하고 사람 판단(ca-answer 동의 judgment cross-stop 또는 retry-grant {key})을 받으세요.",
     /** 사람 허용으로 늘리지 않는 카운터(GRANT_STEP 밖 — 검증 회차 총합 등) */
     "no-grant": "{counterLabel} 한도 {limit}회를 모두 썼습니다(원인: {originLabel}). 자동으로 다시 시도하지 않습니다 — 막힌 이유와 증거({evidence})를 사용자에게 보고하세요. 이 카운터는 사람 허용으로 늘리지 않습니다. 사람이 고릅니다: 계획을 고쳐 재승인 · 작업 종료(abort).",
+    /** 리뷰를 열지 않은 채 통과 뒤 변경으로 쓴 리뷰 회차 한도(기록의 failure.kind no-review) — 허용은 리뷰 기록에 남으므로 받지 않는다 */
+    "no-review": `{counterLabel} 한도 {limit}회를 모두 썼습니다(원인: {originLabel}) — 리뷰를 열지 않은 채 통과 뒤 변경을 되풀이했습니다. 자동으로 다시 시도하지 않습니다 — 막힌 이유와 증거({evidence})를 사용자에게 보고하세요. 리뷰 회차를 연 기록이 없어 회차 추가(허용)는 받지 않습니다. 사람이 고릅니다: ${NO_REVIEW_CHOICES}.`,
   },
 };
 
@@ -551,13 +563,13 @@ export const GUIDE_VARIANT_KEYS: Readonly<Partial<Record<FailureClass, Readonly<
   precondition: { rerun: ["budget", "problems"] },
   "agent-format-error": { record: ["detail", "id"] },
   "agent-content-error": { record: ["detail", "id"] },
-  "cross-config-error": { exhausted: ["detail", "host"] },
+  "cross-config-error": { notice: ["detail"], exhausted: ["detail", "host"] },
   "cross-result-invalid": { exhausted: ["detail", "host", "point", "raw"] },
   "cross-timeout": { interrupted: ["host", "left"] },
-  "cross-unavailable": { rerunnable: ["detail", "host", "left"] },
+  "cross-unavailable": { notice: ["detail"], rerunnable: ["detail", "host", "left"] },
   "consent-target-changed": { "response-change": [], "response-defer": [], "response-none": ["detail"], "response-invalid": ["detail"] },
   "limit-exceeded": { "cross-point": ["counts", "limit"], "cross-point-stopped": ["counts", "limit"], "cross-cause": ["counterLabel", "key", "limit"],
-    "no-grant": ["counterLabel", "evidence", "limit", "originLabel"] },
+    "no-grant": ["counterLabel", "evidence", "limit", "originLabel"], "no-review": ["counterLabel", "evidence", "limit", "originLabel"] },
 };
 
 /** 문구 조각 — 결과 미확인 문구의 {collectNote} 와 꼬리 */
@@ -566,6 +578,15 @@ export const VERIFY_NOTES = {
   collectUsed: "이번 수정은 고쳐 쓰기 회차를 씁니다.",
   reportTruncated: "보고서 탐색이 2만 항목·깊이 12에서 끊겨 JUnit 보고서를 찾지 못했을 수 있습니다.",
 } as const;
+/**
+ * 검증 명령이 code-agent 기록을 바꿔 되돌린 실행의 문구 — 게이트(stageProblemEntries)·결과 줄(verifyGuidance)·status 다음:·
+ * 같은 코드 재실행 거부(check·test·integrate)가 이 한 문장을 쓴다. 원인은 전제 미충족(precondition)이다.
+ */
+export function stateGuardText(files: readonly string[]): string {
+  return `검증 명령이 code-agent 기록을 바꿔 실행 전 내용으로 되돌렸습니다: ${files.join(", ")} — 이 실행은 증거로 받지 않습니다. ` +
+    "같은 코드로는 다시 돌리지 않습니다 — 검증 명령(테스트 코드·스크립트)이 .code-agent 아래를 지우거나 고치지 않게 계획 안에서 고친 뒤 code-agent verify 로 다시 검증하세요. " +
+    "얼어 있는 테스트라 고칠 수 없거나 의도한 동작이 아니면 고치지 말고 사용자에게 보고합니다";
+}
 /** 환경 문구의 {reason} — 선언 문구는 `출력에 선언된 문구 "X"` 로 쓴다 */
 export const ENVIRONMENT_REASON = { "missing-tool": "실행 파일 없음", spawn: "실행 실패", prepare: "준비 명령 실패" } as const;
 
@@ -593,7 +614,10 @@ export function recordedVariant(record: { class: string; kind?: string }): strin
   if (record.class === "cross-timeout" && record.kind === "interrupted") return "interrupted";
   return undefined;
 }
-/** 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다. 사람 허용으로 늘리지 않는 카운터면 그 선택지를 빼는 변형이다 */
+/**
+ * 한도 거부의 안내 — failure 의 counter·origin 으로 limit-exceeded 기본 문구를 채운다. 사람 허용으로 늘리지 않는 카운터면 그 선택지를 빼는 변형이고,
+ * 리뷰를 열지 않고 쓴 리뷰 회차(kind no-review)면 허용 대신 되돌리는 길을 싣는 변형이다
+ */
 export function limitExceededText(record: FailureRecord, evidence: string): string {
   const counter = record.counter;
   return guidance("limit-exceeded", {
@@ -601,12 +625,13 @@ export function limitExceededText(record: FailureRecord, evidence: string): stri
     limit: counter?.limit ?? 0,
     originLabel: record.origin ? POLICIES[record.origin].label : POLICIES[record.class].label,
     evidence,
-  }, counter && !grantable(counter.key) ? "no-grant" : undefined);
+  }, counter && !grantable(counter.key) ? "no-grant" : record.kind === "no-review" ? "no-review" : undefined);
 }
 
 // ---- 검증 (check·test·integrate·repro) ----
 
-export type RunCause = "timeout" | "spawn" | "missing-tool" | "environment";
+/** guard — 검증 명령이 code-agent 기록을 바꿔 되돌린 실행(validate.ts runSpecs). 증거로 받지 않는 전제 미충족이다 */
+export type RunCause = "timeout" | "spawn" | "missing-tool" | "environment" | "guard";
 export interface RunView {
   round: number; phase: string; kind: string; command?: string;
   outcome: "passed" | "failed" | "not-run" | "error";
@@ -625,6 +650,8 @@ export function runCauseOf(run: RunView): RunCause | undefined {
 }
 export type RunClass = "passed" | "defect" | "environment" | "timeout" | "precondition";
 export function runClass(run: RunView): RunClass {
+  // 검증 명령이 code-agent 기록을 바꾼 실행은 결과와 무관하게 전제 미충족이다 — 같은 코드로 다시 돌려도 같다
+  if (run.cause === "guard") return "precondition";
   if (run.outcome === "passed") return "passed";
   // 선언이 없어 돌리지 않은 명령만 전제 미충족이다. 플러그인의 not-run 은 돌지 못한 것이다
   if (run.outcome === "not-run") return run.kind.startsWith("plugin:") ? "environment" : "precondition";
@@ -766,6 +793,9 @@ function limitFailure(budget: Budget, origin: FailureClass): FailureRecord {
   return failure("limit-exceeded", `${COUNTER_LABEL[budget.key]} 한도 ${budget.limit}회 소진`, { origin, counter: { key: budget.key, used: budget.used, limit: budget.limit } });
 }
 
+/** 전제 미충족 회차를 같은 코드로 다시 돌리려 할 때의 거부 사유 — 호출자가 기록 변경(guard)이면 그 사유로 바꿔 렌더한다 */
+export const PRECONDITION_SAME_TREE = "선언되지 않은 명령·검증 명령의 code-agent 기록 변경은 같은 코드로 다시 돌려도 같습니다";
+
 export type RoundDecision =
   | { action: "reuse"; counter: "rerun" | null }
   | { action: "new"; cause: RoundCause }
@@ -798,7 +828,7 @@ export function nextRoundDecision(input: { previous: VerifyState | "none"; empty
       return budget.collect.left > 0 ? open("collect", "result-unconfirmed", undefined) : open("fix", "result-unconfirmed", budget.fix);
     case "precondition":
       return input.treeChanged ? open("fix", "precondition", budget.fix)
-        : { action: "refuse", failure: failure("precondition", "선언되지 않은 명령은 다시 돌려도 같습니다") };
+        : { action: "refuse", failure: failure("precondition", PRECONDITION_SAME_TREE) };
   }
 }
 /** test·integrate — 회차를 열지 않고 같은 회차를 다시 돈다 */
@@ -807,7 +837,7 @@ export function sameRoundDecision(input: { previous: VerifyState; budget: Verify
   switch (input.previous) {
     case "passed": return { action: "run", counter: null };
     case "code-defect": return { action: "refuse", failure: failure("code-defect", guidance("code-defect", {}, "same-tree")) };
-    case "precondition": return { action: "refuse", failure: failure("precondition", "선언되지 않은 명령은 다시 돌려도 같습니다") };
+    case "precondition": return { action: "refuse", failure: failure("precondition", PRECONDITION_SAME_TREE) };
     default: {
       const budget = input.budget[input.key];
       return budget.exhausted ? { action: "refuse", failure: limitFailure(budget, input.previous) } : { action: "run", counter: input.key };
@@ -843,14 +873,27 @@ export function nodeCounter(state: VerifyState, budget: VerifyBudget): "fix" | "
  * hook 의 계획 파일 쓰기 차단(한도 부분) — 고쳐도 다음 회차가 거부될 때만 막는다. nextRoundDecision(treeChanged)과
  * 같은 판정이라 hook 과 check() 가 갈라지지 않는다.
  */
-export function writeBlockReason(input: { state: VerifyState | "none"; emptyRound: boolean; budget: VerifyBudget; path: string; questionsPath: string }): string | undefined {
+export function writeBlockReason(input: { state: VerifyState | "none"; emptyRound: boolean; budget: VerifyBudget; path: string; questionsPath: string;
+  /** 지금 묶임의 리뷰 기록(review.json)에 연 회차가 있는가 — 없으면 회차 추가(허용)를 싣지 않는다. 주지 않으면 연 것으로 본다 */
+  reviewOpened?: boolean;
+  /** 마지막 리뷰 회차에 기각되지 않은 열린 지적이 있는가 — 있을 때만 지적 기각을 싣는다 */
+  reviewOpenFindings?: boolean }): string | undefined {
   const decision = nextRoundDecision({ previous: input.state, emptyRound: input.emptyRound, treeChanged: true, budget: input.budget,
-    retry: false, reviewOpenFindings: input.budget.reviewRounds.used > 0 });
+    retry: false, reviewOpenFindings: input.reviewOpenFindings ?? input.budget.reviewRounds.used > 0 });
   if (decision.action !== "refuse" || !decision.failure.counter) return undefined;
   const { key, limit } = decision.failure.counter;
   const { path, questionsPath } = input;
   if (key === "fix") return `고쳐 쓰기 ${limit}회를 넘겨 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 무엇이 막혔는지 적고 사람에게 보고하세요 — 덮지 않고 보고하는 자리입니다. 사람이 한 회차를 더 허용하거나(ca-answer 의 judgment 동의) 계획을 고쳐 재승인해야 합니다.`;
-  if (key === "reviewRounds") return `리뷰 회차 한도 ${limit}회를 모두 써서 계획 파일을 더 고칠 수 없습니다: ${path}. 남은 지적은 사람이 판단합니다 — ${questionsPath} 에 적고 보고하세요. 회차 추가·지적 기각은 ca-answer 의 judgment 동의, 범위 변경은 재계획·재승인입니다.`;
+  if (key === "reviewRounds") {
+    // 사람 선택지는 실제로 받는 동의와 같다 — 리뷰를 연 기록이 없으면 허용을 받지 않고(retryGrant), 열린 지적이 없으면 기각할 것이 없다
+    if (input.reviewOpened === false) {
+      return `리뷰 회차 한도 ${limit}회를 모두 써서 계획 파일을 더 고칠 수 없습니다: ${path} — 리뷰를 열지 않은 채 통과 뒤 변경으로 썼습니다. ${questionsPath} 에 적고 사람에게 보고하세요. ` +
+        `리뷰 회차를 연 기록이 없어 회차 추가(허용)는 받지 않습니다 — 사람이 고릅니다: ${NO_REVIEW_CHOICES}.`;
+    }
+    return input.reviewOpenFindings === false
+      ? `리뷰 회차 한도 ${limit}회를 모두 써서 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 적고 사람에게 보고하세요. 회차 추가는 ca-answer 의 judgment 동의, 범위 변경은 재계획·재승인입니다.`
+      : `리뷰 회차 한도 ${limit}회를 모두 써서 계획 파일을 더 고칠 수 없습니다: ${path}. 남은 지적은 사람이 판단합니다 — ${questionsPath} 에 적고 보고하세요. 회차 추가·지적 기각은 ca-answer 의 judgment 동의, 범위 변경은 재계획·재승인입니다.`;
+  }
   if (key === "totalRounds") return `검증 회차가 총 ${limit}회에 닿아 계획 파일을 더 고칠 수 없습니다: ${path}. ${questionsPath} 에 적고 사람에게 보고하세요 — 총 회차는 사람 허용으로 늘리지 않으므로 계획을 고쳐 재승인하거나 작업을 종료(abort)합니다.`;
   return undefined;
 }

@@ -16,6 +16,7 @@ import {
   nextRoundDecision,
   roundStateOf,
   runClass,
+  stateGuardText,
   verifyBudget,
   verifyRetryOf,
   verifyState,
@@ -72,6 +73,8 @@ export interface VerifyRun {
   cause?: RunCause;
   /** 보고서 탐색이 상한(2만 항목·깊이 12)에서 끊겼다 — JUnit 보고서를 놓쳤을 수 있다 */
   reportScan?: "truncated";
+  /** cause guard — 검증 명령이 바꿔 실행 전 내용으로 되돌린 code-agent 기록(저장소 상대 경로) */
+  guarded?: string[];
 }
 
 /** ⑦ 의 TC 하나가 이번 실행에서 어떻게 확인됐는가 */
@@ -442,6 +445,12 @@ export function runsOf(evidence: Evidence, phase: VerifyPhase): VerifyRun[] {
   return evidence.runs.filter((run) => run.phase === phase && run.round === last);
 }
 
+/** 지금 회차(rounds)의 기록 변경(guard) 실행이 되돌린 파일 — phase 를 주면 그 단계만. 없으면 빈 목록 */
+export function guardedFiles(evidence: Evidence, phase?: VerifyPhase): string[] {
+  const runs = evidence.runs.filter((run) => run.cause === "guard" && run.round === evidence.rounds && (!phase || run.phase === phase));
+  return [...new Set(runs.flatMap((run) => run.guarded ?? []))];
+}
+
 /** `not-run` · `error` · `skipped` 는 통과가 아니다 — passed 만 통과다 */
 export function failedRuns(runs: VerifyRun[]): VerifyRun[] {
   return runs.filter((run) => run.outcome !== "passed");
@@ -514,6 +523,15 @@ export function reviewRoundUsage(work: Work): ReviewRoundUsage {
 }
 
 /**
+ * 지금 묶임의 리뷰 기록(review.json)에 연 회차가 있는가 — 리뷰 회차 허용(judgment retry-grant reviewRounds)은 그 기록에 남으므로 없으면 받지 않는다.
+ * 허용(retryGrant)·한도 안내(check() 거부의 kind no-review·hook·status 다음:)가 이 판정 하나를 쓴다
+ */
+export function reviewOpened(work: Work): boolean {
+  const usage = reviewRoundUsage(work);
+  return !usage.stale && usage.used > 0;
+}
+
+/**
  * 리뷰 회차 **예산**의 사용량 — review.json 회차 수와, 통과 뒤 변경으로 연 검증 회차 수(지금 묶임 증거의 retry.causes 의 review) 중
  * 큰 값이다. 리뷰를 열지 않고 '통과 → 수정 → verify' 를 되풀이해도 리뷰 회차를 쓴다(규약: 통과 뒤 변경은 리뷰 회차). review.json 이
  * 지워지거나 깨져도 검증 기록 쪽 수가 남는다. 한도·사람 허용은 review.json 의 값 그대로다. 검증 예산(verifyView)·리뷰 회차 허용
@@ -547,6 +565,8 @@ export interface VerifyView {
   budget: VerifyBudget;
   /** 마지막 리뷰 회차에 기각되지 않은 열린 지적이 있는가 — 통과 뒤 변경 거부의 원래 원인(blocking-finding·code-defect)을 고른다 */
   reviewOpenFindings: boolean;
+  /** 지금 묶임의 리뷰 기록(review.json)에 연 회차가 있는가 — 없으면 리뷰 회차 허용을 받지 않는다(reviewOpened) */
+  reviewOpened: boolean;
 }
 
 /** 증거 하나의 판정 입력 — 상태·카운터·예산. check()·verify·hook·status·context 가 같은 값을 본다 */
@@ -565,7 +585,8 @@ export function verifyView(work: Work, evidence: Evidence): VerifyView {
     : evidence.runs.some((run) => run.phase === "test" && run.round === r)
       ? verifyState({ phase: "test", round: r, runs: evidence.runs, cases: evidence.testCases })
       : retry.wiped?.test?.round === r ? retry.wiped.test.state : undefined;
-  return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget, reviewOpenFindings: !!reviewRounds.openFindings };
+  return { round: r, state, emptyRound, ...(testState ? { testState } : {}), retry, budget, reviewOpenFindings: !!reviewRounds.openFindings,
+    reviewOpened: reviewOpened(work) };
 }
 
 /**
@@ -716,7 +737,11 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
     // 앞 회차의 통과로 지금 회차를 덮지 않는다 — 고쳐 쓴 뒤 check 만 다시 돌리고 test 는 건너뛰는 길
     add("rerun", `${phase} 결과가 ${evidence.rounds}회차의 것이 아닙니다 — code-agent ${phase} 를 다시 돌리세요`);
   }
+  // 검증 명령이 code-agent 기록을 바꾼 실행은 결과가 아니라 전제 미충족이다 — 같은 코드로 다시 돌려도 같다
+  const guarded = guardedFiles(evidence, phase);
+  if (guarded.length) add("stop", stateGuardText(guarded));
   for (const run of failedRuns(runs)) {
+    if (guarded.length && run.cause === "guard" && run.round === evidence.rounds) continue;
     add("result", `${run.kind}: ${run.outcome} (${run.command})`);
   }
   if (phase === "test" || phase === "integrate") {
@@ -757,13 +782,16 @@ export const RUN_CAUSE_LABEL: Record<RunCause, string> = {
   spawn: "실행 실패",
   "missing-tool": "실행 파일 없음",
   environment: "환경 오류",
+  guard: "code-agent 기록 변경 — 되돌림",
 };
 
 /** 회차를 연 원인 — ⑧ 수정 루프 줄에 붙는다 */
 const CAUSE_LABEL: Record<RoundCause, string> = { first: "첫 실행", fix: "고쳐 쓰기", collect: "수집 수정", review: "통과 뒤 변경" };
 
 function outcomeText(run: VerifyRun): string {
-  return `${OUTCOME_LABEL[run.outcome]}${run.cause ? ` · ${RUN_CAUSE_LABEL[run.cause]}` : ""}`;
+  // 기록 변경(guard)은 돈 실행이다 — "돌지 못함" 대신 증거로 받지 않았다고 쓴다
+  const outcome = run.cause === "guard" ? "error (증거로 받지 않음)" : OUTCOME_LABEL[run.outcome];
+  return `${outcome}${run.cause ? ` · ${RUN_CAUSE_LABEL[run.cause]}` : ""}`;
 }
 
 /**

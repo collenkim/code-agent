@@ -14,13 +14,13 @@ import { relative } from "path";
 import { hashManifest, hashPlan } from "../core/approval";
 import { crossAttemptsOf, orphanView } from "./crossRecord";
 import { planningCrossBudgets } from "./crossCheck";
-import { boundEvidence, planPaths, reviewRoundBudget, testTreeHashNow, verifyView, type Evidence } from "./evidence";
+import { boundEvidence, planPaths, reviewOpened, reviewRoundBudget, testTreeHashNow, verifyView, type Evidence } from "./evidence";
 import { reviewFile, verifyFile } from "./layout";
 import { skill } from "./hostText";
 import { mutatePlanning, planningBudget, grantPlanningRetry } from "./planning";
 import { criticCrossPoint, loadPlanning, planningFile, withPlanningCache } from "./planningState";
 import {
-  budgetOf, COUNTER_LABEL, GRANT_STEP, grantFor, grantScope, LIMITS, verifyRetryOf,
+  budgetOf, COUNTER_LABEL, GRANT_STEP, grantFor, grantScope, LIMITS, NO_REVIEW_CHOICES, verifyRetryOf,
   type Budget, type CounterKey, type RetryGrant,
 } from "./retryPolicy";
 import { loadReview, mutateReview, reviewBudgets } from "./review";
@@ -142,9 +142,10 @@ function reviewTarget(work: Work, key: (typeof REVIEW_KEYS)[number] | (typeof CR
       : "지금 계획·기준에 묶인 리뷰 회차가 없습니다 — 늘릴 한도가 없습니다.");
   }
   const log = loadReview(work.repoRoot, work.active.id, work.active.target);
-  if (key === "reviewRounds" && !log?.rounds.length) {
-    throw new Stop("리뷰 회차를 연 기록이 없습니다 — 리뷰 없이 통과 뒤 변경을 되풀이해 리뷰 회차 한도를 썼습니다. 허용은 리뷰 기록(review.json)에 남기므로 " +
-      "바꾼 계획 파일을 사람이 되돌려 통과한 트리로 돌아간 뒤 code-agent next 로 리뷰를 받거나, 계획을 고쳐 재승인 · 작업 종료(abort)를 고릅니다.");
+  // 판정은 한도 안내(check() 거부의 kind no-review·hook·다음:)와 같은 reviewOpened 하나다 — 선택지도 같은 NO_REVIEW_CHOICES 다
+  if (key === "reviewRounds" && !reviewOpened(work)) {
+    throw new Stop("리뷰 회차를 연 기록이 없습니다 — 리뷰 없이 통과 뒤 변경을 되풀이해 리뷰 회차 한도를 썼습니다. 허용은 리뷰 기록(review.json)에 남기므로 받지 않습니다 — " +
+      `사람이 고릅니다: ${NO_REVIEW_CHOICES}.`);
   }
   const lastRound = log?.rounds.at(-1);
   const roundNumber = lastRound?.round;

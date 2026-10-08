@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -23,6 +22,7 @@ import {
   submitConsentRequest, writeFixture,
 } from "./consentFixture";
 import type { PreparedConsentFixture } from "./consentFixture";
+import { deadPid } from "./deadPid";
 
 let root: string;
 beforeEach(() => {
@@ -64,7 +64,7 @@ test("죽은 apply 가 남긴 잠금은 되찾고, 주인을 모르거나 살아
   assert.throws(() => applyConsent(root, fixture.id), /apply\.lock 을 지운 뒤/, "주인을 모르는 잠금은 훔치지 않는다");
   writeFileSync(lock, JSON.stringify({ pid: process.pid, host: hostname(), at: "t" }));
   assert.throws(() => applyConsent(root, fixture.id), new RegExp(`pid ${process.pid}`), "살아 있는 주인은 기다린다");
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  const dead = deadPid();
   writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), at: "t" }));
   applyConsent(root, fixture.id);
   assert.equal(loadConsent(root, fixture.id).status, "applied");

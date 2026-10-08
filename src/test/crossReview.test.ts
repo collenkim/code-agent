@@ -26,6 +26,7 @@ import { check, integrate, runTests } from "../agent/validate";
 import { loadWork } from "../agent/work";
 import { CONSENT_WORK_ID, approveAndApplyFixture, gitFixture, prepareReviewFixture, setupConsentProject, writeFixture } from "./consentFixture";
 import { recordReviewFixture, withCaller } from "./reviewFixture";
+import { deadPid } from "./deadPid";
 
 const ID = CONSENT_WORK_ID, TARGET = "value", CODE = "src/value.js";
 let root: string, fakeDir: string;
@@ -204,7 +205,7 @@ test("시간 초과 — 첫 번째는 한 번 더 실행할 수 있고, 두 번�
 
 test("끊긴 실행 — 다음 실행이 기록 없이 끝난 시도를 끊긴 실행으로 닫고, 끊긴 실행은 중지가 아니라 지점 한도에 든다", async () => {
   await crossRepo(); fakeCodex();
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const dead = deadPid();
   mutateReview(root, ID, TARGET, (log) => {
     log!.rounds.at(-1)!.crossAttempts = [{ n: 1, host: "codex", mode: "review", startedAt: new Date().toISOString(), pid: dead, machine: hostname() }];
     return { log: log!, value: 0 };
@@ -217,7 +218,7 @@ test("끊긴 실행 — 다음 실행이 기록 없이 끝난 시도를 끊긴 �
 
 test("끊긴 실행 세 번은 중지가 아니라 지점 한도 — 다른 호스트를 띄우지 않고 게이트가 막힌다. 닫은 시도는 거부 문구 앞에 알린다", async () => {
   await crossRepo(); fakeCodex();
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const dead = deadPid();
   mutateReview(root, ID, TARGET, (log) => {
     log!.rounds.at(-1)!.crossAttempts = [
       ...[1, 2].map((n) => ({ n, host: "codex" as const, mode: "review" as const, startedAt: "2026-10-07T00:00:00.000Z",
@@ -237,7 +238,7 @@ test("게이트 쪽 고아 보기 — 사람이 아닌 중지 지점에 끝 기�
   await crossRepo();
   fakeCodex("process.stderr.write('ERROR: You hit your spend cap set by the owner of your workspace.'); process.exit(1);");
   assert.match(cross(), /교차 검증 중지/);
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const dead = deadPid();
   mutateReview(root, ID, TARGET, (log) => {
     const last = log!.rounds.at(-1)!;
     last.crossAttempts = [...last.crossAttempts!, { n: 2, host: "codex", mode: "review", startedAt: new Date().toISOString(), pid: dead, machine: hostname() }];
@@ -705,7 +706,7 @@ test("reviewBudgets — 리뷰 회차(reviewRoundUsage)·리뷰어 호출(고아
   assert.deepEqual([now.reviewRounds.used, now.reviewRounds.limit, now.reviewRounds.exhausted, now.reviewRounds.scope, now.reviewRounds.point], [1, 3, false, "", "리뷰 회차"]);
   assert.deepEqual([now.reviewerRuns.used, now.reviewerRuns.limit, now.reviewerRuns.scope, now.reviewerRuns.point], [0, 2, "round:1", "리뷰 1회차"]);
   assert.deepEqual([now.crossPoint.used, now.crossPoint.limit, now.crossPoint.scope, now.crossPoint.point], [0, 3, "round:1", "리뷰 1회차 교차"]);
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const dead = deadPid();
   const ended = { startedAt: "2026-10-07T00:00:00.000Z", endedAt: "2026-10-07T00:01:00.000Z" };
   mutateReview(root, ID, TARGET, (log) => {
     const last = log!.rounds.at(-1)!;

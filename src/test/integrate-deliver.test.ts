@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -15,6 +15,7 @@ import { reviewDocFile } from "../agent/review";
 import { checkoutKey, integrate, worktreeMarkerFile } from "../agent/validate";
 import { loadWork } from "../agent/work";
 import { RetryRefused } from "../agent/retryPolicy";
+import { deadPid } from "./deadPid";
 
 /** git 호출을 가로채는 자리 — validate.ts 는 호출 때마다 모듈의 execFileSync 를 찾는다 */
 const childProcessModule = require("node:child_process") as typeof import("node:child_process");
@@ -97,7 +98,7 @@ describe("code-agent integrate", () => {
     rmSync(leftover, { recursive: true, force: true });
     git("worktree", "add", "--detach", leftover, "HEAD");
     try {
-      const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+      const dead = deadPid();
       const at = new Date().toISOString();
       const evidence = loadEvidence(repo, "ORD-1", "order")!;
       mkdirSync(dirname(worktreeMarkerFile(repo)), { recursive: true });
@@ -180,7 +181,7 @@ describe("code-agent integrate", () => {
 
   test("낡은 표지의 worktree 가 이미 없으면 정리했다고 보고하지 않는다 (PVR-8)", async () => {
     await toIntegrate();
-    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const dead = deadPid();
     // worktree add 전에 끊긴 실행 — 표지만 남고 worktree 는 만들어지지 않았다
     const never = join(tmpdir(), `code-agent-integrate-${checkoutKey(repo)}-never1`);
     rmSync(never, { recursive: true, force: true });
@@ -193,7 +194,7 @@ describe("code-agent integrate", () => {
 
   test("낡은 표지는 회수 가드를 쥔 한 실행만 회수한다 — 다른 실행이 회수 중이면 아무것도 쓰지 않고 멈춘다 (PVR-8)", async () => {
     await toIntegrate();
-    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const dead = deadPid();
     const other = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { stdio: "ignore" });
     const marker = worktreeMarkerFile(repo);
     try {

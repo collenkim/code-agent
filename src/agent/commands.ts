@@ -35,10 +35,12 @@ import { changedPaths, commitOf, mergeBase, trackedPaths } from "./tree";
 import { planReviewLines, prDocFile } from "./deliver";
 import {
   bindingProblems,
+  guardedFiles,
   loadEvidence,
   outsideChanges,
   reproMissing,
   runsOf,
+  stageProblemEntries,
   stageProblems,
   testRoots,
   trackedTestFiles,
@@ -46,7 +48,7 @@ import {
   verifyView,
 } from "./evidence";
 import type { VerifyPhase, VerifyView } from "./evidence";
-import { budgetText, nextRoundDecision, verifyNode, verifyState, writeBlockReason } from "./retryPolicy";
+import { budgetText, guidance, nextRoundDecision, NO_REVIEW_CHOICES, stateGuardText, verifyNode, verifyRetryOf, verifyState, writeBlockReason } from "./retryPolicy";
 import { verifyGuidance } from "./validate";
 import {
   clearRequestSession,
@@ -379,7 +381,8 @@ export function verifyLimitHint(work: Work): string | undefined {
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
   if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) return undefined;
   const view = verifyView(work, evidence);
-  if (writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path: "", questionsPath: questionsFile(work.active.id) })) {
+  if (writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path: "", questionsPath: questionsFile(work.active.id),
+    reviewOpened: view.reviewOpened, reviewOpenFindings: view.reviewOpenFindings })) {
     return exhaustedHint(view, work.active.id);
   }
   const phase = work.active.phase === "test" ? "test" : "check";
@@ -402,7 +405,12 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
     case "fix":
       return `고쳐 쓰기 ${view.budget.fix.limit}회를 넘겨 막혔습니다 — 계획 파일은 더 고칠 수 없습니다. ${questions} 에 적고 사람에게 보고하세요${choices("한 번 더 허용")}`;
     case "reviewRounds":
-      return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — 남은 지적은 사람이 판단합니다(지적 기각은 judgment waive-finding). ${questions} 에 적고 보고하세요${choices("회차 추가")}`;
+      // 사람 선택지는 실제로 받는 동의와 같다 — 리뷰를 연 기록이 없으면 회차 추가(허용)를 받지 않고(retryGrant), 열린 지적이 없으면 기각할 것이 없다
+      if (!view.reviewOpened) {
+        return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — 리뷰를 열지 않은 채 통과 뒤 변경으로 썼습니다. ${questions} 에 적고 보고하세요. ` +
+          `리뷰 회차를 연 기록이 없어 회차 추가(허용)는 받지 않습니다 — 사람이 고릅니다: ${NO_REVIEW_CHOICES}`;
+      }
+      return `리뷰 회차 한도 ${view.budget.reviewRounds.limit}회를 모두 써서 막혔습니다 — ${view.reviewOpenFindings ? "남은 지적은 사람이 판단합니다(지적 기각은 judgment waive-finding). " : ""}${questions} 에 적고 보고하세요${choices("회차 추가")}`;
     case "totalRounds":
       return `검증 회차가 총 ${view.budget.totalRounds.limit}회에 닿아 막혔습니다 — ${questions} 에 적고 사람에게 보고하세요. 총 회차는 사람 허용으로 늘리지 않습니다${choices("")}`;
     default:
@@ -484,11 +492,28 @@ function nextHint(work: Work): string {
         return `${stageCommand(active.phase)} — code-agent verify --json (전체 흐름 · 단계만 돌릴 때는 code-agent ${active.phase})`;
       }
       const view = verifyView(work, evidence);
-      const failed = runsOf(evidence, active.phase).filter((run) => run.outcome !== "passed");
-      if (failed.length === 0 && runsOf(evidence, active.phase).length > 0) {
-        return `검증 통과 — code-agent next 로 넘긴 뒤 ${stageCommand(active.phase === "check" ? "test" : "review")}`;
-      }
+      // 지금 회차의 실행만 본다 — 앞 회차의 통과로 지금 회차를 덮지 않는다(게이트의 회차 불일치 판정과 같다)
+      const current = evidence.runs.filter((run) => run.phase === active.phase && run.round === evidence.rounds);
+      // 검증 명령이 code-agent 기록을 바꾼 실행 — 게이트(stop)·verify(전제 미충족 Stop)·같은 코드 재실행 거부와 같은 문장이다
+      const guarded = guardedFiles(evidence, active.phase);
+      if (guarded.length) return `${stageCommand(active.phase)} — ${stateGuardText(guarded)}`;
+      const failed = current.filter((run) => run.outcome !== "passed");
       const state = verifyState({ phase: active.phase, round: evidence.rounds, runs: evidence.runs, cases: active.phase === "test" ? evidence.testCases : undefined });
+      if (current.length > 0 && state === "passed") {
+        // 실행은 통과했어도 게이트(stageProblemEntries — next 가 보는 것)가 남으면 통과가 아니다. verify 가 하는 일을 그대로 싣는다:
+        // 다시 돌려도 남는 문제는 전제 Stop 의 사유, 검증 뒤 트리가 바뀌었으면 check 부터 다시 도는 verify, 그 밖의 대조는 verify --retry(diagnose)
+        const entries = stageProblemEntries(work, active.phase);
+        if (entries.length === 0) return `검증 통과 — code-agent next 로 넘긴 뒤 ${stageCommand(active.phase === "check" ? "test" : "review")}`;
+        const stops = entries.filter((entry) => entry.kind === "stop").map((entry) => entry.text);
+        if (stops.length) return `${stageCommand(active.phase)} — ${guidance("precondition", { problems: stops.join(" / ") })}`;
+        const resume = bindingProblems(work, evidence).length ? "code-agent verify --json" : "code-agent verify --json --retry";
+        return `${stageCommand(active.phase)} — ${entries[0].text} — ${resume} (${budgetText(view.budget)})`;
+      }
+      // 이 회차의 test 를 아직 돌리지 않았다(끊긴 시작 표지도 없다) — 회차를 다시 쓰는 --retry 가 아니라 이어서 돈다
+      const started = verifyRetryOf(evidence).started;
+      if (active.phase === "test" && current.length === 0 && !(started?.phase === "test" && started.round === evidence.rounds)) {
+        return `${stageCommand("test")} — ${evidence.rounds}회차 test 를 아직 돌리지 않음 — code-agent verify --json (${budgetText(view.budget)})`;
+      }
       const node = state === "precondition" || state === "passed" ? "diagnose" : verifyNode(state, view.budget);
       // diagnose 의 재개는 verify 결과의 resume 과 같은 `verify --retry` 다 — --retry 없는 verify 는 test 커서에서 앞 기록을
       // 다시 판정만 하고 끝난다(환경을 고친 뒤·사람이 재실행을 허용한 뒤 같은 진단을 다시 받는다). 명령 미선언(precondition)은 다시 돌려도 같다
@@ -878,10 +903,13 @@ export function requireReproable(repoRoot: string): Work {
 function requireEvidence(work: Work, phase: Exclude<VerifyPhase, "repro">): void {
   const problems = stageProblems(work, phase);
   if (problems.length > 0) {
+    // 검증 명령이 code-agent 기록을 바꾼 실행은 같은 코드로 다시 돌려도 같다 — 다시 돌리라는 꼬리 대신 문제 줄(할 일)을 따른다
+    const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+    const guarded = evidence ? guardedFiles(evidence, phase).length > 0 : false;
     throw new Stop(
       `${PHASE_LABEL[phase]} 를 마치지 못했습니다:\n` +
         problems.map((problem) => `  - ${problem}`).join("\n") +
-        `\ncode-agent ${phase} 로 다시 돌리세요.`,
+        (guarded ? "" : `\ncode-agent ${phase} 로 다시 돌리세요.`),
     );
   }
 }

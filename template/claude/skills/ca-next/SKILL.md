@@ -58,7 +58,7 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
 | 계획 배정 `stale`·`다음:` 의 `[배정 식별 불일치·고아 실행]`(실행 중으로 기록된 배정) | 기다리지 않는다. 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 Bash: `code-agent planning cancel <ID>` 뒤 `code-agent planning advance` |
 | `다음:` 의 `[담당 출력 형식 오류]`·`[담당 결과 내용 오류]` | Bash: `code-agent planning advance` 의 `action`·`reasons` 를 따른다(형식 교정·수정 피드백 재배정·사람 판단). 같은 배정을 스스로 다시 부르지 않는다 |
 | 계획 advance `rewind-required` | `rewind.auto` 가 true 면(`rewind.notice` 가 있으면 그 한 줄을 먼저 알리고) `rewind.command` 뒤 그 단계 스킬. false 면 되감지 말고 사유를 보고하고 지시를 받는다 |
-| 원인 `limit-exceeded`(한도 초과)·`verify` 의 `decision` | 자동 재시도를 멈춘다. 막힌 이유·기록 경로를 보고하고, 사용자에게 `judgment` 동의(`retry-grant`)·재계획·abort 중 고르게 한다 |
+| 원인 `limit-exceeded`(한도 초과)·`verify` 의 `decision` | 자동 재시도를 멈춘다. 막힌 이유·기록 경로를 보고하고, 안내가 싣는 선택지(`judgment` 동의 `retry-grant`·재계획·abort — 리뷰를 열지 않고 쓴 리뷰 회차는 허용 대신 되돌리기) 중에서 사용자가 고르게 한다 |
 | 지적 기각·막힌 교차 지점 중지를 사람이 정할 자리(출력이 `judgment` `waive-finding`·`cross-stop` 을 안내) | 그 안내대로 사용자에게 `judgment` 동의를 묻는다. 모델이 스스로 기각하거나 중지로 기록하지 않는다 |
 | 동의가 `failed`(대상 변경·적용 중단 — `consent status` 의 `failure.guide`, `다음:` 의 `[동의 …]`) | 같은 ID 를 다시 묻거나 적용하지 않는다. `failure.guide` 대로 — 적용 중단이면 `code-agent status` 와 `git status` 로 반영 상태를 확인하고 새로 `prepare` 한다 |
 | 다른 세션이 진행 중이라는 거부 · 세션 시작 요약의 `진행 기록은 다른 세션(…)이 … 쥐고 있습니다`(압축 뒤) | 같은 명령을 다시 실행하지 않는다. 사용자에게 저쪽 세션(호스트)을 끝냈거나 멈췄는지 묻고, 그렇다고 하면 Bash: `code-agent takeover` 뒤 `code-agent status` 부터. 저쪽에서 계속한다면 이 세션은 멈춘다 |

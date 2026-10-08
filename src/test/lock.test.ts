@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { acquireLock, pidAlive } from "../agent/lock";
 import { Stop } from "../agent/stop";
+import { deadPid } from "./deadPid";
 
 /** lock.js 가 부르는 fs 함수를 바꿔 끼울 수 있는 같은 모듈 객체(import * 는 읽기 전용 바인딩이다) */
 const fsModule = require("node:fs") as typeof import("node:fs");
@@ -26,7 +27,6 @@ function captureStderr<T>(run: () => T): { value: T; stderr: string } {
   process.stderr.write = ((chunk: string | Uint8Array) => { stderr += String(chunk); return true; }) as typeof process.stderr.write;
   try { return { value: run(), stderr }; } finally { process.stderr.write = original; }
 }
-const deadPid = (): number => spawnSync(process.execPath, ["-e", ""]).pid!;
 const elapsed = (run: () => void): number => { const start = Date.now(); run(); return Date.now() - start; };
 const stopMessage = (run: () => void): string => {
   try { run(); } catch (error) { assert.ok(error instanceof Stop, String(error)); return error.message; }
@@ -250,5 +250,7 @@ describe("acquireLock — 다중 프로세스 회수", () => {
 
 test("pidAlive — 자기 자신은 살아 있고 끝난 자식은 죽었다", () => {
   assert.equal(pidAlive(process.pid), true);
+  // 끝난 자식은 그 자리에서 바로 본다 — 사이에 다른 프로세스를 띄우지 않는다(다른 시험은 재사용될 수 없는 deadPid 를 쓴다)
+  assert.equal(pidAlive(spawnSync(process.execPath, ["-e", ""]).pid!), false);
   assert.equal(pidAlive(deadPid()), false);
 });

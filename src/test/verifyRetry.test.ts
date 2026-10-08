@@ -111,7 +111,7 @@ describe("테스트 동결과 수집 수정 창", () => {
     const retry = verifyRetryOf({ rounds: 1, runs: [], retry: { causes: { 1: "first" } } });
     const view = (testState: VerifyView["testState"], collectLimit?: number): VerifyView => ({
       round: 1, state: "result-unconfirmed", emptyRound: false, testState, retry,
-      budget: verifyBudget({ retry, round: 1, fixRounds: 2, collectLimit, reviewRounds: { used: 0, limit: 3 } }), reviewOpenFindings: false,
+      budget: verifyBudget({ retry, round: 1, fixRounds: 2, collectLimit, reviewRounds: { used: 0, limit: 3 } }), reviewOpenFindings: false, reviewOpened: false,
     });
     assert.equal(collectWindowOpen(view("result-unconfirmed")), true);
     assert.equal(collectWindowOpen(view("passed")), false);

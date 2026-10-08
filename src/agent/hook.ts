@@ -1,6 +1,6 @@
-import { basename, isAbsolute, relative, resolve } from "path";
+import { basename, dirname, isAbsolute, relative, resolve } from "path";
 
-import { existsSync, realpathSync } from "fs";
+import { existsSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { fileURLToPath } from "url";
@@ -168,8 +168,9 @@ const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--v
  * 온다. 경로 비교는 구분자와 대소문자를 접어 본다 (Windows 는 둘 다 흔들린다).
  */
 function normalized(path: string): string {
-  // 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\C:\…`)는 드라이브 경로로 접는다(win32)
-  const folded = foldWindowsAlias(path);
+  // 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\C:\…`)는 드라이브 경로로 접고, NTFS 스트림 표기
+  // (`credentials.json::$DATA`·`.code-agent::$INDEX_ALLOCATION\…`)·이름 끝 점·공백은 본 이름으로 접는다(win32)
+  const folded = foldStreams(foldWindowsAlias(path));
   // `\\?\C:\…`·`\\?\UNC\…` 는 같은 파일의 긴 경로 표기다 — 접두를 걷고 견준다
   const plain = folded.replace(/^[\\/]{2}\?[\\/](UNC[\\/])?/i, (_, unc?: string) => (unc ? "//" : ""));
   return resolve(plain).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -194,8 +195,8 @@ function realOrSelf(path: string): string {
   }
 }
 
-/** 키 파일 이름 — 경로를 어떻게 적든(상대·UNC 공유 등) 이 이름이면 키 자리다 */
-const STORE_FILE_NAME = /(^|[\\/])\.code-agent[\\/]+credentials\.json/i;
+/** 키 파일 이름 — 경로를 어떻게 적든(상대·UNC 공유·폴더 스트림 표기 등) 이 이름이면 키 자리다 */
+const STORE_FILE_NAME = /(^|[\\/])\.code-agent(?::[^\\/]*)?[\\/]+credentials\.json/i;
 
 function insideStore(target: string): boolean {
   if (target.trim() === "") {
@@ -348,9 +349,25 @@ function consentWriteGuard(repoRoot: string): string | undefined {
 /**
  * 세션 밖 셸이 호스트 hook 설정을 가리키는가 — settings.local.json 에는 disableAllHooks 를 둘 수 있다.
  * Windows 는 이름 끝의 점·공백을 버리고(`.claude./settings.json`) 8.3 짧은 이름(`CLAUDE~1\SETTIN~1.JSO`)도 같은 파일이며 `./` 는 같은 폴더다 —
+ * 폴더 이름 뒤의 NTFS 스트림 표기(`.claude::$INDEX_ALLOCATION\settings.json` — 같은 폴더)와 `<이름>\..\`(겹친 `a\b\..\..\` 까지 — mentionsHostConfig)도 같은 자리다.
  * 글자 그대로 쓴 이 별칭들도 본다. 와일드카드·변수로 조립한 이름은 잡지 못한다(가리키는 것만 막는다).
  */
-const HOST_CONFIG = /(?:(?:^|[^A-Za-z0-9_.-])\.claude[. ]*|(?:^|[^A-Za-z0-9_.~-])claude~\d)[\\/]+(?:\.[\\/]+)*(?:settings(?:\.local)?\.json|settin~\d\.jso)|(?:(?:^|[^A-Za-z0-9_.-])\.codex[. ]*|(?:^|[^A-Za-z0-9_.~-])codex~\d)[\\/]+(?:\.[\\/]+)*(?:hooks\.json|config\.toml|hooks~\d\.jso|config~\d\.tom)/i;
+const HOST_DIR_TAIL = String.raw`(?::[^\\/\s"'\x60]*)?[\\/]+(?:\.[\\/]+)*`;
+const HOST_CONFIG = new RegExp(
+  String.raw`(?:(?:^|[^A-Za-z0-9_.-])\.claude[. ]*|(?:^|[^A-Za-z0-9_.~-])claude~\d)${HOST_DIR_TAIL}(?:settings(?:\.local)?\.json|settin~\d\.jso)` +
+  String.raw`|(?:(?:^|[^A-Za-z0-9_.-])\.codex[. ]*|(?:^|[^A-Za-z0-9_.~-])codex~\d)${HOST_DIR_TAIL}(?:hooks\.json|config\.toml|hooks~\d\.jso|config~\d\.tom)`, "i");
+/** 구분자 뒤의 `<이름>/..` 한 짝 — `.`·`..` 는 이름이 아니다 */
+const PARENT_PAIR = /(?<=[\\/])(?!\.\.?(?:[\\/]|$))[^\\/\s"'`]+[\\/]+\.\.(?=[\\/]|$|[\s"'`])/;
+/**
+ * 셸 명령이 호스트 hook 설정을 가리키는가 — 글자 그대로의 `<이름>/..` 짝을 겹친 것까지 되풀이해 접은 꼴도 본다
+ * (`.claude/a/b/../../settings.json` 은 `.claude/settings.json` 이다). 접으면 사라지는 언급도 있어 접기 전·후 둘 다 본다.
+ */
+function mentionsHostConfig(command: string): boolean {
+  if (HOST_CONFIG.test(command)) return true;
+  let text = command;
+  for (let previous = ""; previous !== text;) { previous = text; text = text.replace(PARENT_PAIR, ""); }
+  return text !== command && HOST_CONFIG.test(text);
+}
 /** 읽기 도구 이름은 호스트 표기다(Claude 는 `Read 도구로`, Codex 는 전용 읽기 도구가 없어 `code-agent read 로` — 그 명령은 decideOutside 가 연다) */
 const hostConfigBashDenied = (): string => `호스트 hook 설정(.claude/settings.json · .claude/settings.local.json · .codex/hooks.json · .codex/config.toml)은 셸로 다루지 않습니다 — 읽기는 ${readToolVia()} 하고, 설치·갱신은 사람이 code-agent init 또는 code-agent update --templates-only 로 합니다. 설정이 지워지면 code-agent 의 모든 판정이 꺼집니다.`;
 /**
@@ -532,7 +549,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     }
     if (mentionsState(command)) return stateBashDenied();
     // 읽기 명령(code-agent read)은 연다 — Codex 의 유일한 읽기 길이고, 설정을 바꾸지 않는다
-    if (HOST_CONFIG.test(command) && !readCommand(command, input.tool_name === "PowerShell" || input.shell === "powershell")) return hostConfigBashDenied();
+    if (mentionsHostConfig(command) && !readCommand(command, input.tool_name === "PowerShell" || input.shell === "powershell")) return hostConfigBashDenied();
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
     if (SOURCE_UPDATE.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
     return undefined;
@@ -546,7 +563,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
   const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
   if (insideStore(target)) return STORE_DENIED;
   // 사용자 수준 hook 설정(disableAllHooks·hook 덮어쓰기는 모든 프로젝트의 판정을 끈다) — 셸 언급(HOST_CONFIG)과 같은 파일을 쓰기 도구로도 막는다
-  if (userHostConfig(target)) return USER_HOST_CONFIG_DENIED;
+  if (userHostConfig(target, [input.cwd, repoRoot])) return USER_HOST_CONFIG_DENIED;
   const path = repoPath(repoRoot, target);
   if (path === "" || path.startsWith("..") || isAbsolute(path)) {
     return undefined; // 저장소 밖 — code-agent 의 일이 아니다
@@ -554,17 +571,58 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
   return streamGuard(path) ?? stateGuard(path) ?? requirementGuard(path);
 }
 
-/** 사용자 수준 호스트 설정 파일 — ~/.claude/settings(.local).json, ~/.codex(또는 CODEX_HOME)/hooks.json·config.toml */
-function userHostConfig(target: string): boolean {
+/**
+ * win32 전용 — 이름 대조 전에 같은 파일의 다른 표기를 접는다. NTFS 스트림 표기(`settings.json::$DATA`·`:이름`, 폴더의
+ * `.claude::$INDEX_ALLOCATION\…`)는 콜론 앞의 본 이름으로 줄이고, 이름 끝의 점·공백은 뗀다(`.`·`..` 는 그대로).
+ * 장치 접두(`\\?\`·`\\.\`)와 드라이브(`C:`)는 그대로 둔다 — 드라이브 경로로 접는 것은 foldWindowsAlias 의 일이다. 그 밖의 플랫폼은 그대로(`:` 는 이름의 글자다).
+ */
+export function foldStreams(path: string, platform: string = process.platform): string {
+  if (platform !== "win32") return path;
+  const device = /^[\\/]{2}[?.][\\/]/.exec(path)?.[0] ?? "";
+  const drive = /^[A-Za-z]:/.exec(path.slice(device.length))?.[0] ?? "";
+  const head = device + drive;
+  return head + path.slice(head.length).split(/([\\/])/).map((part) => {
+    if (part === "\\" || part === "/") return part;
+    const name = part.split(":")[0];
+    return name === "." || name === ".." ? name : name.replace(/[. ]+$/, "") || name;
+  }).join("");
+}
+
+/** (dev, ino) — 없거나 파일 번호를 주지 않는 파일 시스템(ino 0)이면 undefined */
+function fileId(path: string): string | undefined {
+  try { const stat = statSync(path, { bigint: true }); return stat.ino ? `${stat.dev}:${stat.ino}` : undefined; } catch { return undefined; }
+}
+
+/**
+ * 사용자 수준 호스트 설정 파일 — ~/.claude/settings(.local).json, ~/.codex(또는 CODEX_HOME)/hooks.json·config.toml.
+ * 같은 파일의 다른 이름(스트림 표기·긴 경로 접두·로컬 관리 공유·이름 끝 점·공백·대소문자·8.3 짧은 이름·`..`·상대 경로)도 본다 —
+ * 이름을 접고 있는 조상까지 실제 경로로 푼 뒤 견주고, 이름으로 접지 못한 별칭(다른 이름의 UNC·하드 링크)은 파일이 있으면 그 (dev, ino),
+ * 없으면 부모 폴더의 (dev, ino)와 파일 이름으로 견준다. 상대 경로는 세션 작업 경로와 저장소 루트 양쪽에서 푼다(막는 쪽).
+ */
+function userHostConfig(target: string, bases: string[]): boolean {
   if (!target) return false;
-  const norm = (path: string) => { const value = resolve(path).replace(/\\/g, "/"); return process.platform === "win32" ? value.toLowerCase() : value; };
-  let full: string;
-  try { full = norm(foldWindowsAlias(expandTilde(target))); } catch { return false; }
+  const win = process.platform === "win32";
+  // 실제 경로로 풀지 못하면(권한 등) 접은 이름 그대로 견준다
+  const key = (path: string) => {
+    let value = resolve(path);
+    try { value = canonical(value); } catch { /* 접은 이름으로 견준다 */ }
+    value = value.replace(/\\/g, "/");
+    return win ? value.toLowerCase() : value;
+  };
   const claude = join(homedir(), ".claude");
   const codexHomes = [join(homedir(), ".codex"), ...(process.env.CODEX_HOME ? [process.env.CODEX_HOME] : [])];
   const files = [join(claude, "settings.json"), join(claude, "settings.local.json"),
     ...codexHomes.flatMap((home) => [join(home, "hooks.json"), join(home, "config.toml")])];
-  return files.some((file) => norm(file) === full);
+  const folded = foldStreams(foldWindowsAlias(expandTilde(target)));
+  const candidates = [...new Set(isAbsolute(folded) ? [resolve(folded)] : bases.filter(Boolean).map((base) => resolve(base, folded)))];
+  const wanted = new Set(files.map(key));
+  if (candidates.some((candidate) => wanted.has(key(candidate)))) return true;
+  const sameName = (a: string, b: string) => (win ? a.toLowerCase() === b.toLowerCase() : a === b);
+  return candidates.some((candidate) => {
+    const id = fileId(candidate), parent = fileId(dirname(candidate));
+    return files.some((file) => (id !== undefined && id === fileId(file)) ||
+      (parent !== undefined && parent === fileId(dirname(file)) && sameName(basename(candidate), basename(file))));
+  });
 }
 const USER_HOST_CONFIG_DENIED = "사용자 수준 호스트 설정(~/.claude/settings.json · settings.local.json · ~/.codex/hooks.json · config.toml)은 도구로 쓰지 않습니다 — " +
   "disableAllHooks·hook 덮어쓰기는 모든 프로젝트의 code-agent 판정을 끕니다. 바꿔야 하면 사람이 직접 고칩니다.";
@@ -576,10 +634,10 @@ const stateBashDenied = (): string =>
 
 /**
  * `.code-agent` 를 경로로 가리키는가 — 명령 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다. Windows 의 글자 그대로의 별칭
- * (대소문자, 이름 끝의 점·공백 `.code-agent./`, 8.3 짧은 이름 `CODE-A~1`)도 같은 폴더로 본다.
+ * (대소문자, 이름 끝의 점·공백 `.code-agent./`, 8.3 짧은 이름 `CODE-A~1`, 스트림 표기 `.code-agent::$INDEX_ALLOCATION\`)도 같은 폴더로 본다.
  */
 function mentionsState(command: string): boolean {
-  return /(?:^|[^A-Za-z0-9_.-])\.code-agent[. ]*(?:[\\/\s"'`]|$)|(?:^|[^A-Za-z0-9_.~-])code-a~\d(?:[\\/\s"'`]|$)/i.test(command);
+  return /(?:^|[^A-Za-z0-9_.-])\.code-agent[. ]*(?:[\\/\s"'`:]|$)|(?:^|[^A-Za-z0-9_.~-])code-a~\d(?:[\\/\s"'`:]|$)/i.test(command);
 }
 
 /**
@@ -907,7 +965,8 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
     return undefined;
   }
   const view = verifyView(work, evidence);
-  const blocked = writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path, questionsPath: questionsFile(work.active.id) });
+  const blocked = writeBlockReason({ state: view.state, emptyRound: view.emptyRound, budget: view.budget, path, questionsPath: questionsFile(work.active.id),
+    reviewOpened: view.reviewOpened, reviewOpenFindings: view.reviewOpenFindings });
   if (blocked) return blocked;
   // 재현을 본 순간에도 언다 — 그때부터 단언을 약하게 하면 재현이 증거가 아니게 된다.
   // (`phase: "repro"` 로 기록하는 이유가 여기다. `test` 로 기록하면 재현에 실패했을 때

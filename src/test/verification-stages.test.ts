@@ -1,5 +1,4 @@
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +17,7 @@ import { check, integrate, runTests } from "../agent/validate";
 import { verify } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
 import { RetryRefused } from "../agent/retryPolicy";
+import { deadPid } from "./deadPid";
 
 /**
  * 검증 스테이지 — 기준 커밋·check·test·증거 묶임·수정 루프·테스트 동결·검증 hook·되감기.
@@ -392,7 +392,7 @@ describe("수정 루프", () => {
     write(`${ORDER}/domain/Order.java`, "class Order { int v = 3; }\n");
     await check(requireValidatable(repo, "check"));
     // test 가 앞 명령의 로그를 남기고 끊긴 자리 — 시작 표지만 남았다
-    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const dead = deadPid();
     const third = loadEvidence(repo, "ORD-1", "order")!;
     assert.equal(third.rounds, 3);
     saveEvidence(repo, { ...third, retry: { ...third.retry!, started: { phase: "test", round: 3, pid: dead, host: hostname(), at: new Date().toISOString() } } });

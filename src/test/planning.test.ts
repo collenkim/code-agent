@@ -36,6 +36,7 @@ import { hashManifest, recordDecision } from "../core/approval";
 import { loadManifest } from "../core/manifest";
 import { sequenceProblems } from "../core/plan";
 import { withInteraction } from "../agent/tty";
+import { deadPid } from "./deadPid";
 
 const ID = "PLAN-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`;
 const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n근거: "값을 반환한다."\n## 가정\n- 없음';
@@ -1468,7 +1469,7 @@ test("사람 허용은 소진된 카운터에만 기록하고 그 범위의 한�
 test("계획 기록 잠금 — 죽은 주인·오래된 빈 잠금은 회수하고, 살아 있거나 다른 PC·주인 불명이면 사람에게 넘긴다", () => {
   preparePlanning(root);
   const lock = `${planningJson()}.lock`, display = `.code-agent/work/${ID}/value.planning.json.lock`;
-  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  const dead = deadPid();
   writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), at: new Date().toISOString() }));
   quiet((stderr) => { assert.doesNotThrow(() => advance()); assert.match(stderr(), /계획 기록 잠금을 회수했습니다 — pid \d+ 종료/); });
   writeFileSync(lock, "");

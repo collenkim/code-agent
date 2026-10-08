@@ -6,7 +6,8 @@
     "audit": "ff13950",
     "implementation": "2327975..934e5fe",
     "fullReview": "d12bd46",
-    "summaryRecord": "이 기록 커밋(부모 d12bd46, 문서만)"
+    "summaryRecord": "16ae5ec(부모 d12bd46, 문서만)",
+    "finalReverify": "이 커밋(부모 16ae5ec) — 최종 재검증 지적 R1~R6 반영"
   },
   "userDecisions": [
     "절차 결함 보완",
@@ -199,11 +200,11 @@
       "stage": "8",
       "bundle": "이 요약 기록(문서만)",
       "commits": [
-        "이 커밋(부모 d12bd46)"
+        "16ae5ec"
       ],
       "record": "doc/reviews/2026-10-08-procedure-fix-summary.md",
       "npmTest": {
-        "at": "이 기록 커밋의 트리(부모 d12bd46 + 문서만)",
+        "at": "16ae5ec 의 트리(부모 d12bd46 + 문서만)",
         "command": "npm test",
         "runs": [
           {
@@ -241,6 +242,27 @@
           }
         ],
         "log": "scratchpad/record-test.log, record-test2.log"
+      }
+    },
+    {
+      "stage": "9",
+      "bundle": "최종 재검증 지적 R1~R6 반영(사용자 수준 호스트 설정의 다른 이름, 검증 명령의 기록 변경 판정, 교차 안내의 설정 오류, 리뷰 없이 쓴 리뷰 회차의 선택지, 흐름도 줄 인용, 시험의 죽은 pid)",
+      "commits": [
+        "이 커밋(부모 16ae5ec)"
+      ],
+      "record": "doc/reviews/2026-10-08-full-review.md#후속-수정최종-재검증-지적",
+      "npmTest": {
+        "tests": 1311,
+        "suites": 189,
+        "pass": 1307,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 137876,
+        "wallSec": 140,
+        "command": "npm run build && npm test",
+        "exit": 0
       }
     }
   ],
@@ -450,6 +472,13 @@
         "934e5fe"
       ],
       "subject": "[코드 에이전트] 전체 검토 반영과 흐름도·코드 대조 시험 확장"
+    },
+    {
+      "hash": "16ae5ec3ca2cdc58fd1722d979aa5ada4033f12e",
+      "parents": [
+        "d12bd46"
+      ],
+      "subject": "[코드 에이전트] 절차 보완·재시도 규약·최적화 작업 요약 기록"
     }
   ],
   "retryPolicy": {
@@ -2215,7 +2244,7 @@
       "log": "scratchpad/reverify/matrix-all.jsonl, matrix-new-vs-head.txt, matrix-old-vs-head.txt"
     },
     "summaryRecordCommit": {
-      "at": "이 기록 커밋의 트리(부모 d12bd46 + 문서만)",
+      "at": "16ae5ec 의 트리(부모 d12bd46 + 문서만)",
       "command": "npm test",
       "runs": [
         {
@@ -2253,6 +2282,27 @@
         }
       ],
       "log": "scratchpad/record-test.log, record-test2.log"
+    },
+    "finalReverifyCommit": {
+      "command": "npm run build && npm test",
+      "buildExit": 0,
+      "testExit": 0,
+      "tests": 1311,
+      "suites": 189,
+      "pass": 1307,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 4,
+      "todo": 0,
+      "durationMs": 137876,
+      "wallSec": 140,
+      "baseAt16ae5ec": {
+        "tests": 1292,
+        "pass": 1288,
+        "fail": 0,
+        "skipped": 4
+      },
+      "added": "finalReverify.test.ts R 시험 19개"
     }
   },
   "needsUser": [
@@ -2288,6 +2338,174 @@
     "보류 13건의 다음 배정(배포·버전, 측정, 문서 구조, 검증 효율, KNOWLEDGE 반영, 최적화 2차, GAP-5 사용자 결정)",
     "일부 27건의 남은 부분(rows 의 note)",
     "전체 검토 일부 반영 — E13 (b)안, E19 기록하지 못한 판정 실패, E26 잠금 나이 상한, E27 다른 세션 경고, E30 미판정 MCP 이름 기록",
-    "문서화된 한계 — Codex 두 세션 동시 진행(임대는 호스트 단위), codex exec resume 프롬프트(CON-1), Codex 확인 코드는 사람 입력 증명 아님(CON-5)"
-  ]
+    "문서화된 한계 — Codex 두 세션 동시 진행(임대는 호스트 단위), codex exec resume 프롬프트(CON-1), Codex 확인 코드는 사람 입력 증명 아님(CON-5)",
+    "최종 재검증(9단계) 남긴 것 — finalReverify.remaining"
+  ],
+  "finalReverify": {
+    "source": "doc/reviews/2026-10-08-full-review.md 의 '후속 수정(최종 재검증 지적)' 절",
+    "base": "16ae5ec",
+    "tests": "src/test/finalReverify.test.ts — 시험 이름에 R1~R6",
+    "rules": [
+      "실제 Claude·Codex 모델을 부르지 않음 — 교차는 가짜 실행 파일",
+      "code-agent update 실행하지 않음, 이 저장소 루트에 init 하지 않음",
+      "R1 시험·실험은 USERPROFILE·HOME·CODEX_HOME 을 임시 폴더로 — 사용자의 실제 ~/.claude·~/.codex 는 읽거나 쓰지 않음",
+      "사용자 결정 대기 E2·E16·E20 은 손대지 않음"
+    ],
+    "items": [
+      {
+        "id": "R1",
+        "severity": "중간",
+        "status": "반영",
+        "finding": "E29 사용자 수준 호스트 설정 쓰기 거부를 NTFS 대체 데이터 스트림 표기(settings.json::$DATA, apply_patch 의 hooks.json::$DATA)와 다른 Windows 별칭으로 비켜 감",
+        "change": "foldStreams(스트림 표기·폴더 스트림·끝 점·공백을 본 이름으로, win32) + userHostConfig(접은 이름을 조상까지 실제 경로로, 하드 링크·이름으로 모르는 UNC 는 (dev, ino) — 없으면 부모 폴더 (dev, ino)+이름, 상대 경로는 세션 작업 경로·저장소 루트 양쪽). Codex apply_patch 는 패치 경로마다 같은 판정. 셸 언급은 폴더 스트림 표기(HOST_CONFIG·mentionsState)와 겹친 <이름>\\..\\(mentionsHostConfig). 키 자리 판정도 스트림 표기를 접음",
+        "tests": [
+          "R1 foldStreams",
+          "R1 쓰기 도구(Write·Edit·MultiEdit·NotebookEdit)",
+          "R1 파일 번호(dev, ino)",
+          "R1 Codex apply_patch",
+          "R1 셸 언급"
+        ]
+      },
+      {
+        "id": "R2",
+        "severity": "낮음~중간",
+        "status": "반영",
+        "finding": "검증 명령이 review.json·planning.json 을 바꿔 되돌린 실행이 기록되지 않아 test 커서의 다음: 이 '검증 통과', next 는 회차 불일치 거부(끝에 같은 틀린 줄), verify 는 Stop",
+        "change": "되돌린 실행을 실행마다 원인 guard(outcome error, guarded)로 남기고 runClass 가 precondition(21종 안 — 새 원인 없음). 게이트 stop·verify(노드 없는 Stop)·다음:·같은 코드 재실행 거부·재현이 stateGuardText 한 문장. TC 를 읽거나 테스트를 얼리지 않고 통합 검증 준비 명령이면 환경 실패로 분류하지 않음. 리뷰 회차 사용량은 줄지 않음(E15). 다음: check·test 갈래는 지금 회차 실행만 보고, 실행이 통과여도 게이트(stageProblemEntries)가 남으면 verify 가 할 일(전제 Stop 사유·verify --json·verify --json --retry)",
+        "decision": "verify 는 결과 JSON 을 내지 않음 — precondition 은 다시 돌려도 같은 사람 확인 멈춤이라 노드 없는 Stop 기존 설계(명령 미선언과 같음)를 따르고, Stop 사유가 status·next 와 같은 문장",
+        "tests": [
+          "R2 리뷰 기록을 지운 test",
+          "R2 첫 test 가 기록을 만듦",
+          "R2 통합 검증의 준비 명령",
+          "R2 실행은 통과했어도 게이트 문제가 남음",
+          "R2 이 회차의 test 를 아직 돌리지 않음",
+          "R2 앞 회차의 test 통과"
+        ]
+      },
+      {
+        "id": "R3",
+        "severity": "낮음",
+        "status": "반영",
+        "finding": "crossNotice(status·doctor·init)가 E20 뒤에도 설정 오류를 '중지로 기록하고 진행한다'로 씀",
+        "change": "hostCommandConfigError 로 갈라 설정 오류(게이트 막힘 — 고친 뒤 같은 명령, 못 고치면 judgment cross-stop)와 실행 불가(미설치 — 중지 기록 후 진행)를 나눠 씀. 원인 이름은 POLICIES label, 갈래 문장은 GUIDE_VARIANTS notice 변형. design.md 교차 결정 문단 서술도 맞춤",
+        "tests": [
+          "R3 없는 실행 파일 변수",
+          "R3 PATH·npm 어디에도 없는 미설치",
+          "R3 status·doctor·init",
+          "review-gate E20"
+        ]
+      },
+      {
+        "id": "R4",
+        "severity": "낮음",
+        "status": "반영",
+        "finding": "리뷰 없이 통과 뒤 변경만으로 리뷰 회차 예산을 다 쓰면 decision·다음: 이 허용·지적 기각을 안내하지만 실제 허용은 '리뷰 회차를 연 기록이 없습니다'로 거부",
+        "change": "허용을 받지 않는 쪽 — check 거부 기록 kind no-review, verify decision(limit-exceeded no-review 변형)·hook 쓰기 거부·다음:·허용 거부가 같은 세 선택지(NO_REVIEW_CHOICES), 판정은 reviewOpened 하나. 열린 지적이 없으면 지적 기각을 싣지 않음. 사람 허용으로 늘리지 않는 카운터의 check 남은 회차 줄도 허용 없이",
+        "rationale": "C5 설계 — 사람 허용 카운터는 GRANT_STEP 키, 리뷰 회차 허용은 review.json grants 에 남으므로 리뷰를 연 기록이 없으면 남길 자리가 없음. 받게 하면 리뷰 없이 통과 뒤 변경을 잇는 길이 열려(총 회차는 허용 대상 아님) 게이트가 약해짐",
+        "tests": [
+          "R4 verify decision·status 다음:·hook·허용 거부",
+          "R4 리뷰를 열었고 열린 지적이 없음"
+        ]
+      },
+      {
+        "id": "R5",
+        "severity": "낮음(문서)",
+        "status": "반영",
+        "finding": "§1.1 doc/usage.md:188(→191)·ca-next/SKILL.md:71(→72) 인용이 밀림",
+        "change": "191·72 로. §10 앞 template/·doc/ 인용 7개를 HEAD 와 대조해 모두 맞음. 시험이 인용마다 그 줄의 글을 대조(CITED_LINES). src/ 인용은 머리말 규칙대로 기준 커밋 기준 — 표본(init.ts:163-167·228-231, doctor.ts:181, commands.ts:708-722, deliver.ts:47)은 c4f3fbf 에서 맞음",
+        "tests": [
+          "R5 흐름도 인용"
+        ]
+      },
+      {
+        "id": "R6",
+        "severity": "시험 안정성",
+        "status": "반영",
+        "finding": "끝난 자식의 pid 를 죽은 pid 로 쓰는 시험이 병렬 부하에서 Windows pid 재사용으로 간헐 실패",
+        "change": "pidAlive(process.kill(pid, 0) — EPERM 만 살아 있음)는 그대로. 시험이 넘기는 값만 deadPid()(OS 가 배정하지 않는 범위 0x3fff0000 위의 4의 배수 중 실행 시점에 살아 있지 않은 값)로 — 시험 파일 10개, 고정 999999 포함. lock.test 의 pidAlive 시험 하나만 끝난 자식을 바로 봄",
+        "tests": [
+          "R6 deadPid",
+          "R6 끝난 자식 pid 금지"
+        ]
+      }
+    ],
+    "verification": {
+      "npmTest": {
+        "command": "npm run build && npm test",
+        "buildExit": 0,
+        "testExit": 0,
+        "tests": 1311,
+        "suites": 189,
+        "pass": 1307,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0,
+        "durationMs": 137876,
+        "wallSec": 140,
+        "baseAt16ae5ec": {
+          "tests": 1292,
+          "pass": 1288,
+          "fail": 0,
+          "skipped": 4
+        },
+        "added": "finalReverify.test.ts R 시험 19개"
+      },
+      "mutation": {
+        "mutations": 10,
+        "caught": 10,
+        "note": "수정 하나씩 dist 에서 되돌려 finalReverify 실행 — 처음엔 R2 다음: 지금 회차 변이를 놓쳐 2회차 시험을 더함",
+        "script": "scratchpad/r-mutate.cjs"
+      },
+      "r1HookProcess": {
+        "aliases": 36,
+        "tools": [
+          "Write",
+          "Edit",
+          "MultiEdit",
+          "NotebookEdit",
+          "apply_patch"
+        ],
+        "shellForms": 8,
+        "extra": [
+          "cwd=home 상대 경로(Write·apply_patch)",
+          "apply_patch Add File·Delete File"
+        ],
+        "leaks": 0,
+        "firstRunLeaks": "겹친 .. 셸 언급 2건 — mentionsHostConfig 로 고침",
+        "script": "scratchpad/r1-attack.cjs"
+      },
+      "repro": {
+        "R2": "sandbox-stage7-reverify/e15-restore.cjs — status·next·verify 가 같은 기록 변경 문장",
+        "R4": "sandbox-stage7-reverify/e13-noreview.cjs — decision·다음:·hook·허용 거부가 같은 세 선택지"
+      },
+      "r6": {
+        "crossReviewSolo": {
+          "runs": 6,
+          "tests": 40,
+          "pass": 40,
+          "fail": 0
+        },
+        "parallelLoad": {
+          "rounds": 2,
+          "files": [
+            "crossReview×3",
+            "cross",
+            "lock",
+            "integrate-deliver",
+            "hookPaths",
+            "consent"
+          ],
+          "runs": 16,
+          "fail": 0
+        }
+      }
+    },
+    "remaining": [
+      "셸 언급 판정은 글자 그대로의 경로만 — 따옴표로 쪼갠 이름·변수 조립은 못 잡음(hook 은 보안 경계 아님)",
+      "이름으로 모르는 UNC(FQDN 등)는 파일 시스템의 (dev, ino)에 기댐 — SMB 가 파일 번호를 다르게 주면 놓칠 수 있음",
+      "검증 명령의 기록 변경에서 verify 는 결과 JSON 없음(precondition 노드 없는 Stop 설계)",
+      "흐름도 src/ 줄 인용은 기준 커밋 기준이라 HEAD 와 기계 대조하지 않음"
+    ]
+  }
 }

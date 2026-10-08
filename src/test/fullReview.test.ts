@@ -26,6 +26,7 @@ import { decideStop } from "../agent/stopHook";
 import { createStageRepo, NOT_INSTALLED, git, ORDER, removeStageRepo, repo, toCheck, toDeliver, toIntegrate, toReview, useManifest, write, writeFileHook, writeFindings, writePr } from "./stageFixture";
 import { observeConsentFixture } from "./consentFixture";
 import { randomUUID } from "node:crypto";
+import { deadPid } from "./deadPid";
 
 const PRESENCE = { channel: "tty" as const, verified: true, detail: "테스트" };
 const nextLine = (text: string): string => text.split("\n").find((line) => line.startsWith("다음: ")) ?? "";
@@ -160,7 +161,7 @@ describe("E17 — 끊긴 test 의 재실행 한도 거부도 verify 의 decision
     await check(requireValidatable(repo, "check"));
     next(repo);
     patchEvidence(loadWork(repo)!, (disk) => {
-      disk.retry = { ...verifyRetryOf(disk), reruns: { "1": 2 }, started: { phase: "test", round: 1, pid: 999_999, host: hostname(), at: new Date().toISOString() } };
+      disk.retry = { ...verifyRetryOf(disk), reruns: { "1": 2 }, started: { phase: "test", round: 1, pid: deadPid(), host: hostname(), at: new Date().toISOString() } };
     });
     const result = await verify(repo);
     assert.equal(result.node, "decision");

@@ -16,6 +16,7 @@ import { requestBegin } from "../agent/request";
 import { sessionAnchor } from "../agent/sessionHook";
 import { storePath } from "../agent/plugins/store";
 import { CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
+import { deadPid } from "./deadPid";
 
 let root: string, home: string;
 const saved = { home: process.env.CODE_AGENT_HOME, claude: process.env.CLAUDECODE };
@@ -196,7 +197,7 @@ test("T-15-3 동의 적용 잠금을 살아 있는 프로세스가 쥐고 있으
   assert.match(write("src/a.ts") ?? "", /확인·적용이 진행 중입니다[\s\S]*\.code-agent\/consents\/apply\.lock 을 지웁니다/);
   // 저장소 밖 쓰기는 동의 스냅샷과 무관하다 — 잠금 pid 가 재사용돼도 막지 않는다(E26)
   assert.equal(write(join(tmpdir(), "ca-outside-scratch.txt")), undefined);
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  const dead = deadPid();
   writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), at: "t" }));
   assert.equal(write("src/a.ts"), undefined);
 });

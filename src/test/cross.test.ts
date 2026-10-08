@@ -1,5 +1,4 @@
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +13,7 @@ import {
 import type { PlanningState } from "../agent/planningState";
 import { crossPointDecision, crossPointState, TIMING } from "../agent/retryPolicy";
 import { renderRoundsBlock, staleWaiver, waived, type Finding, type ReviewLog, type ReviewRound } from "../agent/review";
+import { deadPid } from "./deadPid";
 
 const F = /^F\d+$/, X = /^X\d+$/;
 const PLANNED = ["src/a.ts", "src/b.ts"];
@@ -190,7 +190,7 @@ test("pointHost·crossSandboxSuspect — 지점 호스트는 실제로 띄운 �
 });
 
 test("orphanView — 같은 PC 의 죽은 pid 와 제한 + 5분이 지난 시도만 끊긴 실행으로 본다(원 배열은 그대로)", () => {
-  const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const dead = deadPid();
   const now = Date.now(), recent = new Date(now - 1_000).toISOString(), old = new Date(now - TIMING.crossTimeoutMin * 60_000 - 6 * 60_000).toISOString();
   const open = (extra: Partial<CrossAttempt>): CrossAttempt => ({ n: 1, host: "codex", mode: "review", startedAt: recent, ...extra });
   const attempts = [open({ pid: dead, machine: hostname() }), open({ pid: process.pid, machine: hostname() }), open({ pid: dead, machine: "other-pc" }), open({ startedAt: old, machine: "other-pc" })];

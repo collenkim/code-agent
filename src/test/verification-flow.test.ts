@@ -15,6 +15,7 @@ import { verify, verificationFlowFile } from "../agent/verificationFlow";
 import type { VerificationHistory } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
 import { grantScope, RetryRefused } from "../agent/retryPolicy";
+import { deadPid } from "./deadPid";
 
 /**
  * 검증 workflow 노드(verify) — check·test 를 잇는 노드 판정과 원인별 재시도.
@@ -518,7 +519,7 @@ describe("검증 workflow 노드", () => {
     toCheck();
     await check(requireValidatable(repo, "check"));
     next(repo);
-    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const dead = deadPid();
     const evidence = loadEvidence(repo, "ORD-1", "order")!;
     saveEvidence(repo, { ...evidence, retry: { ...evidence.retry!, started: { phase: "test", round: 1, pid: dead, host: hostname(), at: new Date().toISOString() } } });
     await check(requireValidatable(repo, "check"));

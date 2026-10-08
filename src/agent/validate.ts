@@ -41,6 +41,7 @@ import {
   tcPrecheck,
   testCaseEvidence,
   freezingTestRun,
+  guardedFiles,
   testFrozen,
   reproBasisOf,
   reproResultProblem,
@@ -61,6 +62,7 @@ import {
   ENVIRONMENT_REASON,
   environmentMatch,
   failure,
+  grantable,
   grantScope,
   guidance,
   LIMITS,
@@ -70,6 +72,7 @@ import {
   runCauseOf,
   runClass,
   sameRoundDecision,
+  stateGuardText,
   TIMING,
   verifyBudget,
   verifyRetryOf,
@@ -272,8 +275,9 @@ async function runSpecs(
   specs: CommandSpec[],
   /** 명령을 돌릴 자리. 통합 검증만 저장소가 아니라 임시 worktree 에서 돈다 */
   cwd: string = work.repoRoot,
-  // 출력은 `runs` 와 자리를 맞춰 돌려준다 — 재현이 "**실패한 실행의** 출력" 만 보려면 갈라져 있어야 한다
-): Promise<{ runs: VerifyRun[]; outputs: string[] }> {
+  // 출력은 `runs` 와 자리를 맞춰 돌려준다 — 재현이 "**실패한 실행의** 출력" 만 보려면 갈라져 있어야 한다.
+  // guarded 는 검증 명령이 바꿔 되돌린 code-agent 기록 — 비어 있지 않으면 runs 는 모두 원인 guard 다
+): Promise<{ runs: VerifyRun[]; outputs: string[]; guarded: string[] }> {
   const runs: VerifyRun[] = [];
   const outputs: string[] = [];
   mkdirSync(logDir(work.repoRoot), { recursive: true });
@@ -331,13 +335,19 @@ async function runSpecs(
       ...(scan.truncated ? { reportScan: "truncated" as const } : {}),
     });
   }
-  // 검증 명령이 code-agent 기록을 바꿨으면 되돌리고 이 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점을 지워 한도를 피하는 길을 닫는다
+  // 검증 명령이 code-agent 기록을 바꿨으면 되돌리고 이 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점을 지워 한도를 피하는 길을 닫는다.
+  // 실행마다 원인 guard(전제 미충족 — runClass)로 남긴다: 게이트·status·같은 코드 재실행 거부가 같은 사실을 말하고, 결과(통과)로 세지 않는다
   const tampered = restoreState(work, guarded);
   if (tampered.length) {
-    throw new Stop(`검증 명령이 code-agent 기록을 바꿔 실행 전 내용으로 되돌렸습니다: ${tampered.join(", ")} — 이 실행은 증거로 받지 않습니다. ` +
-      "검증 명령(테스트 코드·스크립트)이 .code-agent 아래를 지우거나 고치지 않게 계획 안에서 고친 뒤 다시 검증하세요. 의도한 동작이 아니면 사용자에게 보고합니다.");
+    for (const run of runs) {
+      run.outcome = "error";
+      run.cause = "guard";
+      run.guarded = tampered;
+      delete run.environment;
+      run.tail = [stateGuardText(tampered), run.tail].filter(Boolean).join("\n");
+    }
   }
-  return { runs, outputs };
+  return { runs, outputs, guarded: tampered };
 }
 
 /** ⑦ TC 미확인 이유 — 결과 미확인 안내의 {cases} */
@@ -390,8 +400,11 @@ export function verifyGuidance(work: Work, evidence: Evidence, phase: "check" | 
       });
       return runs.some((run) => run.reportScan) ? `${text} ${VERIFY_NOTES.reportTruncated}` : text;
     }
-    case "precondition":
-      return guidance("precondition", { problems: "선언되지 않은 명령(not-run)" });
+    case "precondition": {
+      // 검증 명령이 code-agent 기록을 바꾼 실행(guard)이면 그 사실, 아니면 명령 미선언이다
+      const guarded = guardedFiles(evidence, phase);
+      return guidance("precondition", { problems: guarded.length ? stateGuardText(guarded) : "선언되지 않은 명령(not-run)" });
+    }
     case "passed":
       return "전부 통과했습니다 — code-agent next 로 다음 스테이지로.";
   }
@@ -414,9 +427,12 @@ function remainingNote(work: Work, evidence: Evidence, phase: "check" | "test" |
       reviewOpenFindings: view.reviewOpenFindings });
     if (next.action === "refuse" && next.failure.counter) {
       const { key, limit } = next.failure.counter;
+      // 사람 선택지는 실제로 받는 동의와 같다 — 사람 허용으로 늘리지 않는 카운터(총 회차)는 허용을 싣지 않는다
       return `${key === "fix" ? `고쳐 쓰기 ${limit}회를 넘겼습니다` : `${COUNTER_LABEL[key]} 한도 ${limit}회를 모두 썼습니다`} — 덮지 않고 보고합니다. ` +
         "계획 파일은 더 고칠 수 없습니다(hook 이 거부합니다).\n" +
-        `${questionsFile(work.active.id)} 에 무엇이 막혔는지 적고 사람에게 알리세요. 사람이 한 회차를 더 허용하거나(ca-answer 의 judgment 동의) 계획을 고쳐 재승인합니다.`;
+        `${questionsFile(work.active.id)} 에 무엇이 막혔는지 적고 사람에게 알리세요. ` +
+        (grantable(key) ? "사람이 한 회차를 더 허용하거나(ca-answer 의 judgment 동의) 계획을 고쳐 재승인합니다."
+          : "이 카운터는 사람 허용으로 늘리지 않습니다 — 사람이 계획을 고쳐 재승인하거나 작업을 종료(abort)합니다.");
     }
     return `계획 안에서 고치고 code-agent verify 로 다시 검증하세요 — check 부터 다시 돕니다 (${budgetText(view.budget)}).`;
   }
@@ -693,7 +709,7 @@ export async function repro(work: Work): Promise<string> {
       `(남은 재현 시도 ${Math.max(0, attemptLimit - state.trees.length)}회 · 이 트리의 재실행 ${Math.max(0, rerunLimit - (state.reruns[testHash] ?? 0))}회)`;
 
     const at = new Date().toISOString();
-    let result: { runs: VerifyRun[]; outputs: string[] };
+    let result: { runs: VerifyRun[]; outputs: string[]; guarded: string[] };
     if (claim) {
       result = await inCleanWorktree(work, baseCommit, async (cwd) => {
         // 시도는 명령을 돌리기 전에 기록한다 — worktree 를 만든 **뒤**라, 만들지 못해 멈추면 시도로 세지 않는다
@@ -715,8 +731,16 @@ export async function repro(work: Work): Promise<string> {
       persist(work, evidence);
       result = await runSpecs(work, "repro", 0, specs);
     }
-    const { runs, outputs } = result;
+    const { runs, outputs, guarded } = result;
     replaceRuns(evidence, "repro", 0, runs);
+    if (guarded.length) {
+      // 검증 명령이 code-agent 기록을 바꾼 재현은 재현이 아니다 — 같은 테스트 트리로 다시 돌려도 같다(전제 미충족)
+      const problem = stateGuardText(guarded);
+      evidence.reproAttempt = { at, testTreeHash: testHash, cases, found: [], problem, class: "precondition" };
+      classify("precondition");
+      persist(work, evidence);
+      throw new Stop(`${problem}\n⑧ ${validationDocFile(active.id)} 에 실행 기록을 남겼습니다.\n${logNote} ${attemptNote()}`);
+    }
 
     // ⑧ 의 두 갈래(출력 · 테스트 파일)를 여기서는 쓰지 않는다. 재현이 주장하는 것은 "그 TC 가 실패했다"
     // 인데, 파일 안에 id 가 있다는 것은 무엇이 실패했는지 말해 주지 않는다 — 다른 TC 의 실패도, 깨진
@@ -798,8 +822,12 @@ function emptyBudget(work: Work): VerifyBudget {
 }
 
 /** 회차 거부의 문구 — 고쳐 쓰기는 지금까지의 문구를 앞에 두고, 그 밖의 카운터는 한도 안내, 전제는 전제 안내다 */
-function refusalText(work: Work, refused: FailureRecord): string {
-  if (refused.class === "precondition") return guidance("precondition", { problems: refused.detail });
+function refusalText(work: Work, refused: FailureRecord, evidence?: Evidence): string {
+  if (refused.class === "precondition") {
+    // 같은 코드로 다시 돌리려는 전제 미충족 회차 — 검증 명령이 code-agent 기록을 바꾼 실행이면 그 사실을 그대로 말한다
+    const guarded = evidence ? guardedFiles(evidence) : [];
+    return guidance("precondition", { problems: guarded.length ? stateGuardText(guarded) : refused.detail });
+  }
   if (refused.counter?.key === "fix") {
     return `고쳐 쓰기 ${refused.counter.limit}회를 이미 넘겨 다시 돌리지 않았습니다 — 덮지 않고 보고하는 자리입니다.\n` +
       `${questionsFile(work.active.id)} 에 무엇이 막혔는지 적고 사람에게 알리세요. ` +
@@ -851,7 +879,11 @@ export async function check(work: Work, options: { retry?: boolean } = {}): Prom
     previous: view?.state ?? "none", emptyRound: view?.emptyRound ?? false, treeChanged,
     budget: view?.budget ?? emptyBudget(work), retry: !!options.retry, reviewOpenFindings: view?.reviewOpenFindings ?? false,
   });
-  if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure));
+  if (decision.action === "refuse") {
+    // 리뷰를 열지 않은 채 통과 뒤 변경으로 쓴 리뷰 회차 — 허용은 리뷰 기록에 남으므로 받지 않는다. 안내(verify 의 decision·hook·다음:)가 같은 선택지를 싣게 표지를 단다
+    if (decision.failure.counter?.key === "reviewRounds" && view && !view.reviewOpened) decision.failure.kind = "no-review";
+    throw new RetryRefused(decision.failure, refusalText(work, decision.failure, bound));
+  }
 
   // 2) fix 의 격리 재현 갱신 — 다음 회차가 허용된 뒤에만
   if (work.order.kind === "fix" && bound?.repro && bound.repro.testTreeHash !== testTreeHashNow(work)) {
@@ -934,7 +966,7 @@ export async function runTests(work: Work): Promise<string> {
   if (interrupted || evidence.runs.some((run) => run.phase === "test" && run.round === round)) {
     const state: VerifyState = interrupted ? "interrupted" : verifyState({ phase: "test", round, runs: evidence.runs, cases: evidence.testCases });
     const decision = sameRoundDecision({ previous: state, budget: verifyView(work, evidence).budget, key: "rerun" });
-    if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure));
+    if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure, evidence));
     if (decision.counter) retry.reruns[String(round)] = (retry.reruns[String(round)] ?? 0) + 1;
   }
   // 시작 표지 — 명령을 돌리기 **전에** 저장한다. 앞 명령의 로그를 보고 끊어도 표지가 남아 끊긴 test 로 센다.
@@ -944,9 +976,10 @@ export async function runTests(work: Work): Promise<string> {
   persist(work, evidence);
 
   const specs = testCommands(work.repoRoot, work.manifest);
-  const { runs, outputs } = await runSpecs(work, "test", round, specs);
+  const { runs, outputs, guarded } = await runSpecs(work, "test", round, specs);
   replaceRuns(evidence, "test", round, runs);
-  evidence.testCases = testCaseEvidence(work, outputs.join("\n"));
+  // 기록을 바꾼 실행의 출력은 증거가 아니다 — TC 결과로 읽지 않고(미확인), 그 실행으로 테스트를 얼리지 않는다(runClass 가 전제 미충족)
+  evidence.testCases = testCaseEvidence(work, guarded.length ? "" : outputs.join("\n"));
   delete evidence.retry.started;
   clearWiped(evidence.retry, "test");
   // 동결은 결과가 인식된(또는 코드 결함·시간 초과·선언된 환경 문구로 끝난 — 테스트가 실제로 돈) test 실행부터 — 그때의 kind:test 파일 해시를 기준으로 굳힌다
@@ -1226,7 +1259,7 @@ export async function integrate(work: Work): Promise<string> {
     if (previousState) {
       const decision = sameRoundDecision({ previous: previousState, budget: verifyView(work, evidence).budget, key: "integrateRerun" });
       // 거부는 정리 뒤·저장 전이다 — 남은 worktree 는 정리되고 카운터·표지는 바뀌지 않는다
-      if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure));
+      if (decision.action === "refuse") throw new RetryRefused(decision.failure, refusalText(work, decision.failure, evidence));
       if (decision.counter) retry.integrateReruns[String(round)] = (retry.integrateReruns[String(round)] ?? 0) + 1;
     }
     retry.started = { phase: "integrate", round, pid: process.pid, host: hostname(), at: new Date().toISOString() };
@@ -1242,7 +1275,7 @@ export async function integrate(work: Work): Promise<string> {
       persist(work, evidence);
       const first = prep
         ? await runSpecs(work, "integrate", round, [prep], cwd)
-        : { runs: [] as VerifyRun[], outputs: [] as string[] };
+        : { runs: [] as VerifyRun[], outputs: [] as string[], guarded: [] as string[] };
       // 준비되지 않은 트리 위의 build·test 통과는 증거가 아니다 — 돌리지 않고 끝낸다
       if (first.runs.some((run) => run.outcome !== "passed")) {
         // 준비 실패는 계획이 아니라 매니페스트·환경의 문제다 — 결과(failed)는 그대로 두고 원인만 환경으로 단다
@@ -1250,14 +1283,16 @@ export async function integrate(work: Work): Promise<string> {
         return first;
       }
       const rest = await runSpecs(work, "integrate", round, specs, cwd);
-      return { runs: [...first.runs, ...rest.runs], outputs: [...first.outputs, ...rest.outputs] };
+      return { runs: [...first.runs, ...rest.runs], outputs: [...first.outputs, ...rest.outputs], guarded: [...first.guarded, ...rest.guarded] };
     }, undefined, claim.worktree);
     replaceRuns(evidence, "integrate", round, runs);
-    evidence.integrationTestCases = testCaseEvidence(work, outputs.filter((_, index) => runs[index].kind === "test").join("\n"));
+    // 기록을 바꾼 실행(guard)의 출력은 증거가 아니다 — TC 결과로 읽지 않는다
+    evidence.integrationTestCases = testCaseEvidence(work, runs.some((run) => run.cause === "guard") ? "" : outputs.filter((_, index) => runs[index].kind === "test").join("\n"));
     delete evidence.retry.started;
     clearWiped(evidence.retry, "integrate");
     persist(work, evidence);
-    const stopped = runs.some((run) => run.kind === "prepare" && run.outcome !== "passed");
+    // 기록 변경(guard)으로 받지 않은 준비 명령은 환경 실패가 아니다 — 그 사실은 결과 줄(전제 미충족)이 말한다
+    const stopped = runs.some((run) => run.kind === "prepare" && run.outcome !== "passed" && run.cause !== "guard");
     const left = verifyView(work, evidence).budget.integrateRerun.left;
     return [
       summary(work, evidence, "integrate", specs),

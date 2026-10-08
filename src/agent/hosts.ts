@@ -5,6 +5,7 @@ import { isBatchScript, resolveExecutable } from "../core/build";
 import { Stop } from "./stop";
 import { codexModelOf, codexModelText, type AgentName } from "./modelPolicy";
 import { codexAgentName, commonAgentName, ROLE_NAMES } from "./hostText";
+import { guidance, POLICIES } from "./retryPolicy";
 
 export type Host = "claude" | "codex";
 export type HostSelection = Host | "both";
@@ -58,14 +59,22 @@ export function hostCommand(host: Host): { file: string; prefix: string[] } | st
   return { file: found, prefix: [] };
 }
 
-/** 교차 검증 안내 한 줄 — 두 호스트가 설치된 프로젝트에서만. 둘 다 실행할 수 있을 때만 교차 검증이 실제로 돈다 */
+/**
+ * 교차 검증 안내 한 줄 — 두 호스트가 설치된 프로젝트에서만. 둘 다 실행할 수 있을 때만 교차 검증이 실제로 돈다.
+ * 못 쓰는 이유를 교차 실패 분류(crossCheck — hostCommandConfigError)와 같이 가른다: 미설치(PATH·npm 어디에도 없음)는 실행 불가라
+ * 그 지점을 중지로 기록하고 진행하고, 실행 파일 변수가 없는 파일을 가리키거나 PATH 에 셸 스크립트만 있으면 설정 오류라 게이트가 막힌다.
+ * 원인 이름(POLICIES label)과 갈래 문장(guidance 의 notice 변형)은 재시도 규약이 원천이다.
+ */
 export function crossNotice(root: string): string | undefined {
   if (selectedHosts(root).length < 2) return undefined;
-  const missing = (["claude", "codex"] as Host[]).map((host) => hostCommand(host)).filter((value): value is string => typeof value === "string");
-  return missing.length === 0
-    ? "교차 검증: 켜짐 — 계획 검토·코드 리뷰를 다른 호스트가 한 번 더 본다"
-    : `교차 검증: 다른 호스트를 실행할 수 없으면 그 지점의 교차 검증은 중지로 기록하고 진행한다 — ${missing.join(" · ")}. ` +
-      "두 호스트를 모두 설치·로그인해 쓸 수 있을 때만 교차 검증을 쓰고, 한쪽만 쓸 거면 .code-agent/hosts.json 에서 쓰지 않는 호스트를 빼세요(doc/codex.md 의 제거 절 — init 은 호스트를 줄이지 않는다)";
+  const reasons = (["claude", "codex"] as Host[]).map((host) => hostCommand(host)).filter((value): value is string => typeof value === "string");
+  if (reasons.length === 0) return "교차 검증: 켜짐 — 계획 검토·코드 리뷰를 다른 호스트가 한 번 더 본다";
+  const config = reasons.filter(hostCommandConfigError), missing = reasons.filter((reason) => !hostCommandConfigError(reason));
+  const part = (cls: "cross-config-error" | "cross-unavailable", details: string[]) =>
+    details.length ? [`${POLICIES[cls].label} — ${guidance(cls, { detail: details.join(" · ") }, "notice")}`] : [];
+  const parts = [...part("cross-config-error", config), ...part("cross-unavailable", missing)];
+  return `교차 검증: ${parts.join(" / ")}. ` +
+    "두 호스트를 모두 설치·로그인해 쓸 수 있을 때만 교차 검증을 쓰고, 한쪽만 쓸 거면 .code-agent/hosts.json 에서 쓰지 않는 호스트를 빼세요(doc/codex.md 의 제거 절 — init 은 호스트를 줄이지 않는다)";
 }
 
 export function hookFile(root: string, host: Host): string {
