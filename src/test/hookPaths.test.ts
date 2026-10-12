@@ -54,6 +54,38 @@ function startWork(): void {
 }
 const store = () => dirname(storePath());
 
+test("Windows .cmd 명령은 조회·임대·읽기 전용 역할·셸 제한을 같은 순서로 판정한다", () => {
+  startWork();
+  for (const toolName of ["Bash", "PowerShell"]) {
+    const run = (command: string, extra: Partial<HookInput> = {}) => tool(toolName, { command }, extra);
+    for (const command of ["status", "read code-agent.json", "doctor", "request"]) {
+      assert.equal(run(`code-agent.cmd ${command}`), undefined, command);
+    }
+    for (const command of ["abort", "approve", "status; echo x", "status && echo x", "status | echo x", "status > out", "status\nwhoami"]) {
+      assert.ok(run(`code-agent.cmd ${command}`), command);
+    }
+    for (const command of [".\\code-agent.cmd status", "code-agent.cmd.exe status", "cmd /c code-agent.cmd status"]) {
+      assert.ok(run(command), command);
+    }
+    assert.match(run("code-agent.cmd next", { agent_type: "ca-reviewer" }) ?? "", /읽기 전용 담당/);
+    assert.equal(run("code-agent.cmd status", { session_id: "other" }), undefined);
+    assert.equal(run("code-agent.cmd next"), undefined);
+    assert.ok(run("code-agent.cmd next", { session_id: "other" }), "다른 세션의 진행은 임대로 막는다");
+  }
+  assert.ok(tool("PowerShell", { command: "code-agent.cmd status (Remove-Item src)" }));
+  const previous = process.env.CODE_AGENT_CROSS;
+  try {
+    process.env.CODE_AGENT_CROSS = "1";
+    assert.equal(bash("code-agent.cmd status"), undefined);
+    assert.ok(bash("code-agent.cmd next"));
+  } finally {
+    if (previous === undefined) delete process.env.CODE_AGENT_CROSS;
+    else process.env.CODE_AGENT_CROSS = previous;
+  }
+  writeFixture(root, ".code-agent/active.json", "{broken");
+  assert.equal(bash("code-agent.cmd status"), undefined);
+});
+
 // ---- CON-8 ----
 
 test("T-8-1 Grep glob·Glob pattern 의 정적 접두와 키 저장소 상위 폴더 검색을 모든 모드에서 거부한다", () => {

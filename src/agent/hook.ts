@@ -418,6 +418,12 @@ export function crossChildGuard(input: HookInput): string | undefined {
  * 연결자·리디렉션·치환이 든 명령은 티켓을 내지 않는다. 티켓을 쓰지 못해도 판정은 바꾸지 않는다(CLI 가 거부한다).
  */
 export function decide(input: HookInput, projectDir?: string): string | undefined {
+  // Windows npm 실행 파일도 모든 가드·동의 티켓 검사를 같은 명령으로 받는다.
+  // 경로·셸 래퍼·다른 확장자는 열지 않고, 인자와 셸 메타 문자는 그대로 둔다.
+  if (["Bash", "PowerShell"].includes(input.tool_name) && input.tool_input.command) {
+    input = { ...input, tool_input: { ...input.tool_input,
+      command: input.tool_input.command.replace(/^(\s*)code-agent\.cmd(?= |$)/, "$1code-agent") } };
+  }
   const reason = decideTool(input, projectDir);
   if (reason === undefined && ["Bash", "PowerShell"].includes(input.tool_name) && input.session_id) {
     const text = (input.tool_input.command ?? "").trim();

@@ -64,6 +64,19 @@ const touchDoc = () => writeFixture(root, "doc/architecture.md", readFileSync(jo
 
 // ---- CON-1 준비 티켓 ----
 
+test("Windows .cmd 동의 명령도 준비 티켓과 적용 세션 결속을 거친다", () => {
+  assert.equal(bash("code-agent.cmd consent prepare --action docs --for claude"), undefined);
+  const ticket = takeTicket(root, "prepare");
+  assert.equal(ticket?.sessionId, "S1");
+  const { id } = prepared({ action: "docs" }, { id: "S1", host: "claude" });
+  assert.match(decide({ cwd: root, session_id: "OTHER", tool_name: "Bash", tool_input: { command: `code-agent.cmd consent finish ${id}` } }) ?? "", /현재 세션/);
+  assert.equal(takeTicket(root, "apply", id), undefined);
+  assert.equal(bash(`code-agent.cmd consent finish ${id}`), undefined);
+  assert.equal(takeTicket(root, "apply", id)?.sessionId, "S1");
+  bash("code-agent.cmd consent prepare --action docs; echo x");
+  assert.equal(takeTicket(root, "prepare"), undefined);
+});
+
 test("T-1-1 준비 티켓 — hook 이 허용한 정확한 꼴의 준비 명령만 저장소당 하나의 티켓을 낸다", () => {
   assert.equal(bash("code-agent consent prepare doc/x.json"), undefined);
   assert.ok(existsSync(ticketFile()));

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-12",
+  "parentCommit": "2376826",
+  "build": "passed",
+  "command": "node --test --test-reporter=spec dist/test/hookPaths.test.js dist/test/consentBinding.test.js dist/test/hookLoad.test.js dist/test/docSync.test.js dist/test/finalReverify.test.js",
+  "tests": 106,
+  "pass": 106,
+  "fail": 0,
+  "skipped": 0,
+  "durationMs": 69176.0928,
+  "sandboxRetryReason": "uv_os_get_passwd ENOMEM",
+  "fullSuiteRun": false,
+  "liveCloudResumeTested": false
+}
