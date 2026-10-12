@@ -161,7 +161,7 @@ function codexText(text: string): string {
     .replace(/\.claude\/agents\/([\w-]+)\.md/g, ".codex/agents/$1.toml")
     .replace(/Claude Code/g, "Codex").replace(/CLAUDE\.md/g, "AGENTS.md")
     .replace(/(?<![\w/])\/ca-/g, "$ca-")
-    .replace(/AskUserQuestion/g, "ca-answer의 Codex 응답 절차")
+    .replace(/AskUserQuestion/g, "Codex 업무 질문 도구")
     .replace(/\$ARGUMENTS/g, "<사용자가 전달한 인자>")
     .replace(/\bBash:/g, "셸:")
     .replace(/\bBash 로 /g, "셸로 ")

@@ -3,7 +3,7 @@ name: ca-next
 description: 중단된 code-agent 작업을 현재 위치부터 재개한다 — 같은 세션의 질문·동의를 처리하고 적용 뒤 다음 단계로 자동으로 이어간다.
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 사용자에게 진행은 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**의 5단계로 요약한다. 단계 명령을 나열하지 않는다. 차단 시 `ca-answer/reference.md`의 차단 복구를 따른다. 답변을 받았거나 승인이 이미 기록됐으면 현재 상태를 읽고 자동으로 이어간다.
@@ -53,7 +53,7 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
 |---|---|
 | 작업·접수 없음 | `/ca-request` — 공통 문서가 없거나 미확정이면 `다음:` 이 가리키는 준비(`setup`·`docs`·`baseline` 동의)부터 |
 | 접수 없이 문서 세션만 열림 | `/ca-docs`(설정 `code-agent.json` 이 아직 없으면 `/ca-adopt`)로 마저 쓰고 Bash: `code-agent docs end` — 그 뒤 `다음:` 의 `setup`·`docs`·`baseline` 동의. 문서 세션 중에는 접수(`request begin`)가 거부된다 |
-| AI-DLC 차단 줄이 있음 | 진행하지 않는다. 그 줄의 안내를 사용자에게 전하고 멈춘다 |
+| AI-DLC 차단 줄이 있음 | 진행하지 않고 차단 복구로 기존 절차 계속·종료 확인 후 재개·보류를 묻는다 |
 | 승인 무효(`승인 stale-*`·`unverified`·`none`) | `다음:` 의 재진입 순서대로 — 낡은 계획 작업이 있으면 `code-agent back <단계>` → 그 단계 스킬로 계획 작업 재실행 → `plan submit` → `plan` 동의, 없으면 지금 자리에서 `plan` 동의. `다음:` 이 두 갈래(계획을 바꿔야 하면 / 그대로면)를 보이면 바뀐 문서·지시서가 계획에 닿는지 사용자에게 한 줄로 알리고 고른다. 이 되감기는 사용자 지시 없이 한다 |
 | 계획 배정 `stale`·`다음:` 의 `[배정 식별 불일치·고아 실행]`(실행 중으로 기록된 배정) | 기다리지 않는다. 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 Bash: `code-agent planning cancel <ID>` 뒤 `code-agent planning advance` |
 | `다음:` 의 `[담당 출력 형식 오류]`·`[담당 결과 내용 오류]` | Bash: `code-agent planning advance` 의 `action`·`reasons` 를 따른다(형식 교정·수정 피드백 재배정·사람 판단). 같은 배정을 스스로 다시 부르지 않는다 |

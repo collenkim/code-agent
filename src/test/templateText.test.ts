@@ -55,7 +55,41 @@ test("질문·동의 공통 문단은 17개 스킬에서 같은 글자다", () =
   for (const [name, found] of lines) assert.equal(found.length, 1, name);
   const reference = lines[0][1][0];
   assert.match(reference, /이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다/);
+  assert.match(reference, /reference\.md.*차단 복구/);
+  assert.match(reference, /AskUserQuestion.*실제 호출/);
   for (const [name, found] of lines) assert.equal(found[0], reference, `공통 문단이 다릅니다: ${name}`);
+});
+
+test("두 호스트의 모든 진입은 복구로 연결하고 업무 선택 도구와 동의를 구분한다", () => {
+  for (const host of ["claude", "codex"] as const) {
+    const assets = hostAssets(host);
+    const prefix = host === "claude" ? ".claude" : ".agents";
+    const answer = assets.get(`${prefix}/skills/ca-answer/SKILL.md`)!;
+    const recovery = assets.get(`${prefix}/skills/ca-answer/reference.md`)!;
+    assert.match(answer, /reference\.md.*차단 복구/);
+    assert.match(answer, /허용된 도움말·상태 조회.*재확인 없이/);
+    assert.match(recovery, /planning --help.*code-agent help/);
+    assert.match(recovery, /이미 선택한 방향.*계속한다/);
+    assert.match(recovery, /새 결정에 의존하는 동작만/);
+    for (const [path, text] of assets) {
+      if (!path.endsWith("/SKILL.md") || path.endsWith("ca-answer/SKILL.md")) continue;
+      assert.match(text, /reference\.md.*차단 복구/, path);
+      assert.doesNotMatch(text, /거부하면 사유를 전하고 멈춘다|명령 자체가 거부되면 사유를 보고하고 멈춘다/, path);
+    }
+    const docs = assets.get(`${prefix}/skills/ca-docs/SKILL.md`)!;
+    assert.match(docs, /사용자가 특정 방식을 이미 요청했으면 바로 그 절차를 따른다/);
+    if (host === "codex") {
+      assert.match(answer, /request_user_input_async/);
+      assert.match(answer, /request_user_input.*현재 모드.*사용 조건/);
+      assert.match(answer, /도구가 없거나 호출이 거부되면.*번호·선택지 이름·결과/);
+      assert.match(answer, /승인은 이 도구의 답으로 처리하지 않고/);
+      assert.match(answer, /UserPromptSubmit/);
+    } else {
+      assert.match(answer, /AskUserQuestion.*실제로 호출/);
+      assert.match(answer, /도구가 없거나 호출이 거부되면/);
+      assert.match(answer, /대화 답을 관찰된 도구 응답이나 승인으로 기록하지 않는다/);
+    }
+  }
 });
 
 test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run_in_background: false 로 부르게 하고, Codex 사본은 결과를 기다리는 문장으로 바꾼다", () => {

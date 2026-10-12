@@ -3,12 +3,12 @@ name: ca-design
 description: 설계·정의 단계(design)를 진행한다 — ③ 03-design.md 와 ④ 04-functional.md 를 쓰고 게이트를 통과한다.
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. 소스 코드는 서브에이전트가 읽는다 — 메인은 작업 폴더 문서 · `code-agent` 출력 · 서브에이전트 결과로 일한다.
 `code-agent` 가 거부하면 차단 복구를 따른다.
 
-**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. 스테이지가 `design` 이 아니면 **멈춘다.**
+**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. 스테이지가 `design` 이 아니면 차단 복구로 현재 단계의 재개 방향을 정한다.
 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고, 이미 지났으면 `code-agent back design` 으로
 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다 — 승인 무효로 status 의 `다음:` 이 되감기를 안내할 때와 `planning advance` 가 자동 되감기(`rewind-required`, `rewind.auto: true`)를 낼 때는 예외다.
 

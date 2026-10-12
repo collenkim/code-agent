@@ -3,7 +3,7 @@ name: ca-status
 description: code-agent 작업의 현재 위치(문서·스테이지·질문·승인)와 다음 할 일을 보여 준다.
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
 
 1. Bash 로 `code-agent status` 를 실행한다.
 2. 결과를 보여 주고 다음 절차를 한 문장으로 설명한다. 상태 조회만 요청했으면 동의 준비·질문·적용이나 개발을 시작하지 않는다. 진행도 요청받았으면 해당 단계에서 공통 동의 절차를 수행한다. CLI의 기존 TTY 안내는 필수 절차로 전달하지 않는다.

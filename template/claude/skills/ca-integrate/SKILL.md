@@ -3,12 +3,12 @@ name: ca-integrate
 description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에서 전체 build·test 를 돌리고 ⑩ 10-pr.md 를 준비한 뒤 같은 세션의 동의로 로컬 커밋까지 적용한다.
 ---
 
-**질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 **반영은 사용자의 실제 동의가 필요하다.** 메인이 공통 동의 절차로 확인받고 승인된 `deliver` 동의만 적용한다.
 
-**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. 스테이지가 `integrate` 도 `deliver` 도 아니면 **멈춘다.**
+**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. 스테이지가 `integrate` 도 `deliver` 도 아니면 차단 복구로 현재 단계의 재개 방향을 정한다.
 아직 이르면 status 의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고, 이미 지났으면 `code-agent back integrate` 로
 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다. **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다 — 승인 무효로 status 의 `다음:` 이 되감기를 안내할 때는 예외다.
 스테이지가 이미 `deliver` 면 1·2 를 건너뛰고 **3. 반영 준비**부터 한다.
