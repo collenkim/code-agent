@@ -24,7 +24,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-analyze/criteria.md": 600,
   "template/claude/skills/ca-analyze/legacy.md": 700,
   "template/claude/skills/ca-analyze/SKILL.md": 3300,
-  "template/claude/skills/ca-answer/reference.md": 5300,
+  "template/claude/skills/ca-answer/reference.md": 7100,
   "template/claude/skills/ca-answer/SKILL.md": 8400,
   "template/claude/skills/ca-check/SKILL.md": 4900,
   "template/claude/skills/ca-design/criteria.md": 1100,
@@ -51,7 +51,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-test/SKILL.md": 2900,
   "template/CLAUDE.block.md": 1600,
   "template/codex/ca-answer.md": 4100,
-  "template/CODEX.block.md": 1500,
+  "template/CODEX.block.md": 1600,
 };
 /** Claude 흐름 합계(CLAUDE.block + 흐름 스킬 12) */
 const FLOW_BUDGET = 51700;

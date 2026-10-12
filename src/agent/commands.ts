@@ -165,7 +165,11 @@ function requireDocs(repoRoot: string, work?: Work): void {
         `${formatDocChecks(checks)}\n` +
         (missing
           ? `${skill("ca-docs")} 로 작성하세요 (역공학 · 사용자 입력 · 기존 문서 연결).`
-          : "공통 문서의 사람 확정이 필요합니다 — 현재 호스트 세션에서 ca-answer의 docs 동의 절차로 확정합니다 (최초 준비면 setup, 직접 CLI는 TTY의 code-agent confirm doc all)."),
+          : "공통 문서의 사람 확정이 필요합니다 — 현재 호스트 세션에서 ca-answer의 docs 동의 절차로 확정합니다 (최초 준비면 setup, 직접 CLI는 TTY의 code-agent confirm doc all).") +
+        (missing && loadActive(repoRoot)
+          ? "\n선택: 작업을 보존하고 중단 동의 후 문서 보완 / 보류. 문서 준비 뒤 같은 지시서로 시작하여 필요한 계획·승인을 다시 검증합니다."
+          : missing ? "\n선택: 문서 작성 / 기존 문서 연결 / 보류. 준비 뒤 같은 접수를 이어갑니다."
+          : "\n선택: 문서 확정 절차 진행 / 보류. 일반 답변을 확정 동의로 대신하지 않습니다."),
     );
   }
 }

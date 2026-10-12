@@ -625,7 +625,7 @@ export function preparationHint(repoRoot: string, intake = true): string | undef
     // ca-adopt 도중(docs begin 뒤 code-agent.json 작성 전) — 세션을 이어 쓴다. 문서 세션 중에는 접수(request begin)가 거부된다
     return session
       ? `${skill("ca-adopt")} 로 설정(code-agent.json)·공통 문서를 마저 준비합니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end`
-      : `${skill("ca-adopt")} 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend`;
+      : `${skill("ca-adopt")} 로 프로젝트 준비 — 접수 ID와 원문 초안을 유지합니다. 추천 설정은 code-agent docs recommend. 선택: 조사하여 준비 / 기존 설정·문서 연결 / 보류`;
   }
   const checks = checkProjectDocs(repoRoot, manifest);
   const missing = checks.some((entry) => entry.state === "missing-file" || entry.state === "missing-sections");
@@ -633,7 +633,7 @@ export function preparationHint(repoRoot: string, intake = true): string | undef
     if (missing) return `${skill("ca-docs")} 로 공통 문서를 마저 씁니다 — 문서 세션이 열려 있습니다. 다 쓰면 code-agent docs end`;
     return `code-agent docs end 로 문서 세션을 닫은 뒤 ${preparationConsent(repoRoot, checks) ?? (intake ? "접수를 이어갑니다" : "준비를 마칩니다")}`;
   }
-  if (missing) return `${skill("ca-docs")} 로 빠진 공통 문서 준비 — ${intake ? "접수를 취소하지 않고 " : ""}code-agent docs begin 으로 이어갑니다`;
+  if (missing) return `${skill("ca-docs")} 로 빠진 공통 문서 준비 — ${intake ? "접수를 취소하지 않고 " : ""}code-agent docs begin 으로 이어갑니다. 선택: 문서 작성 / 기존 문서 연결 / 보류`;
   return preparationConsent(repoRoot, checks);
 }
 

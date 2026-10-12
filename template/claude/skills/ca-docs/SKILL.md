@@ -7,7 +7,7 @@ argument-hint: [architecture | conventions | test-strategy | quality | data-dict
 **질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
 너는 **메인 에이전트**다. 문서만 쓴다 — 문서 작성 세션 동안 hook 이 코드 쓰기를 막는다.
-`code-agent` 명령이 거부하면 사유를 그대로 전하고 멈춘다. 인자가 있으면 그 문서만 다룬다.
+`code-agent` 명령이 거부하면 차단 복구를 따른다. 인자가 있으면 그 문서만 다룬다.
 
 문서는 두 층이다. **막는 것은 POLICY 4종뿐이다** — 넷 다 확정돼야 작업이 시작된다.
 KNOWLEDGE 3종은 **파일만 있으면 되고 비어 있어도 막지 않는다.** 확정 절차도 없다 — 반영(deliver)마다 그 작업 범위만 자란다.

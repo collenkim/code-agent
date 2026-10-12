@@ -5,7 +5,7 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
 
 **질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
-너는 **메인 에이전트**다. `code-agent` 가 거부하면 **사유를 그대로 전하고 멈춘다.**
+너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 **반영은 사용자의 실제 동의가 필요하다.** 메인이 공통 동의 절차로 확인받고 승인된 `deliver` 동의만 적용한다.
 
 **자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. 스테이지가 `integrate` 도 `deliver` 도 아니면 **멈춘다.**
@@ -24,7 +24,7 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
 
 ## 2. 게이트
 
-통과면 Bash: `code-agent next` — 거부되면 사유를 그대로 전하고 멈춘다. 커서가 `deliver` 로 간다.
+통과면 Bash: `code-agent next` — 거부되면 차단 복구를 따른다. 커서가 `deliver` 로 간다.
 
 ## 3. 반영 준비 — ⑩ `10-pr.md`
 

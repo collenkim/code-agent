@@ -265,6 +265,8 @@ describe("FLOW-09 — 준비 단계 안내", () => {
     assert.match(status(repo), /같은 세션의 ca-answer docs 동의로 다시 확정 \(직접 CLI: TTY 의 code-agent confirm doc architecture\)/);
     rmSync(join(repo, "doc/quality.md"));
     assert.throws(() => start(repo, join(repo, SPEC)), /\/ca-docs 로 작성하세요/);
+    assert.throws(() => start(repo, join(repo, SPEC)), /선택: 문서 작성 \/ 기존 문서 연결 \/ 보류/);
+    assert.match(preparationHint(repo) ?? "", /선택: 문서 작성 \/ 기존 문서 연결 \/ 보류/);
   });
 
   test("기준 커밋만 필요하면 baseline, 문서 세션이 열려 있으면 docs end 부터", () => {
