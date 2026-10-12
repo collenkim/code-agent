@@ -1,12 +1,14 @@
 ---
 name: ca-fix
-description: 결함 신고를 받아 버그 수정을 진행한다 — 같은 세션의 동의를 거쳐 현행 분석과 재현 테스트를 앞세우고 구현·검증·반영까지 이어간다.
-argument-hint: [ID] <결함 서술 · 붙여넣은 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
+description: Sentry 오류는 사전 판별·Jira 연결 뒤 수정하고, 기존 결함 티켓은 바로 접수해 재현·수정·검증·반영까지 진행한다.
+argument-hint: [작업ID] [--triage] <오류 로그 · 결함 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
 ---
 
 **질문·동의** — 사람에게 묻거나 승인·확정·반영을 받을 때는 `.claude/skills/ca-answer/SKILL.md`의 절차(`AskUserQuestion`·같은 세션 동의)를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. 일반 답변은 승인이 아니며, 적용 뒤에는 이 흐름을 자동으로 이어간다.
 
-`.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `fix`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다.
+**진입** — Bash: `code-agent status`. 사전 판별 중이거나 `--triage`를 받았거나, 기존 Jira 없이 오류 로그만 받았으면 `.claude/skills/ca-fix/triage.md`를 먼저 따른다. 판별 전에는 `request begin`을 부르지 않는다. 기존 결함 티켓·직접 신고·진행 중 fix는 아래 절차를 유지한다.
+
+`.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `fix`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다. 사전 판별에서 인계받은 접수는 `triage.md`·`triage.json`의 조사 근거와 제안을 활용하되 요구 확인·계획 승인·재현을 생략하지 않는다.
 접수에서 `target` 은 결함이 있는 **저장소 경로**, `scope`(건드려도 되는 경로)와 `preserve`(바뀌면 안 되는 것)는 필수다 — 원문으로 정할 수 없으면 묻는다.
 **fix 는 오류 로그로 고친다.** 접수에 오류 로그(`errorLog`·`errorLogFile`)가 필수이고, 로그가 없는 신고만 `noErrorLog`(사유·재현 절차)로 대신한다 — 지시서의 `## 오류 로그` 절이 1차 근거다. 로컬 재현은 될 수도 안 될 수도 있다.
 다른 점은 아래 넷이고, **전부 코드가 막는다** (지시가 아니다).

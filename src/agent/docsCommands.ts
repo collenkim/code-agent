@@ -158,6 +158,7 @@ function uniqueRoots(paths: string[]): string[] {
 }
 
 export function docsBegin(repoRoot: string): string {
+  (require("./triageState") as typeof import("./triageState")).requireNoTriage(repoRoot);
   const aidlc = aidlcBlock(repoRoot);
   if (aidlc) throw new Stop(aidlc);
   const hooks = requireStartHooks(repoRoot);

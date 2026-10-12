@@ -5,11 +5,11 @@ Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.
 
-code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 스킬·서브에이전트·hook을 프로젝트에 설치하고 종료한다. 같은 프로젝트에서 Claude는 `/ca-request <요구사항>`, Codex는 `$ca-request <요구사항>`으로 시작한다. 별도 서버나 수동 에이전트 등록은 필요 없다.
+code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 실행 절차·서브에이전트·hook을 프로젝트에 설치하고 종료한다. 같은 프로젝트에서 Claude는 `/ca-request <요구사항>`, Codex는 `$ca-request <요구사항>`으로 시작한다. 별도 서버나 수동 에이전트 등록은 필요 없다. `/ca-fix` 등은 **실행 명령**이다. **작업 ID**는 내부 작업 식별자(예: `WORK-0001`), **외부 업무 식별자**는 Jira 티켓 키(예: `CLOUD-123`)나 Notion 페이지 ID, **조사 ID**는 사전 판별 기록의 식별자다. Jira 티켓 키를 작업 ID로 재사용할 수 있지만 실행 명령과는 다르다.
 
 일반 요구사항 접수는 `/ca-request`, 신규·기능 추가·기능 변경을 명시하는 진입점은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존 구조 개선은 `/ca-refactor`다. 종류별 명령도 같은 접수 절차를 사용한다. 하나로 접수한 뒤 질문·확인에 답하면 이어가며, `/ca-next`는 중단 후 재개할 때 사용한다.
 
-모델이 도구를 직접 쓰고 규칙은 스킬·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 5개와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 5개와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인은 같은 세션에서 호스트별 응답 절차로 받는다.
 
@@ -25,10 +25,34 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 스
 
 | 창 | 무엇 | 왜 |
 |---|---|---|
-| Claude Code (`claude`) | `/ca-*` 스킬로 작업을 진행한다 | 모델이 일하는 자리 |
+| Claude Code (`claude`) | `/ca-*` 실행 명령으로 작업을 진행한다 | 모델이 일하는 자리 |
 | 터미널 (PowerShell · Windows Terminal) | `confirm request` · `confirm doc` · `approve` · `reject` · `deliver` · `status` | 판정은 사람이 한다. 기본은 같은 세션의 관찰된 선택 응답이며, 직접 CLI는 수동 보조 경로다 |
 
 ---
+
+## Sentry 오류의 사전 판별
+
+대상 프로젝트에서 오류 로그만으로 시작할 수 있다. 사용자가 증상·기대 동작·원인·수정 경로를 미리 작성하지 않는다.
+
+```text
+/ca-fix --triage
+아래 Sentry 오류를 조사하고, 코드 수정이 필요한 경우에만 Jira 생성과 수정 절차로 진행해줘.
+[오류 메시지와 스택 트레이스 원문]
+```
+
+Codex에서는 `$ca-fix`로 시작한다. 프로젝트와 로그 원문으로 접수하며 조직·Sentry ID는 필수가 아니다. 동일 오류는 새 Jira·수정 실행을 생략하며 유사 후보는 근거를 비교한다. URL만 있고 조회할 연결 도구가 없으면 로그 원문을 붙여 넣는다. 기존 Jira가 없는 Sentry 오류는 `--triage` 없이도 같은 사전 판별로 들어간다. 기존 Jira나 직접 결함 신고는 `/ca-fix CLOUD-123 <티켓 내용>`으로 기존 접수를 유지한다.
+
+메인은 로그와 현재 코드·발생 버전·기존 문서를 읽고 사실·가설·원인과 코드 변경 필요 여부를 기록한다. 조사 중에는 제품 코드·운영 데이터를 수정하거나 테스트를 실행하지 않는다. 데이터 문제도 검증·예외 처리 보완이 필요할 수 있으므로 원인 종류와 코드 변경 여부를 따로 판단한다.
+
+| 판별 | 다음 행동 |
+|---|---|
+| 코드 변경 필요 | 기존 Jira·진행 중 작업을 확인하고 Jira 본문을 준비한다 |
+| 코드 변경 불필요 | 데이터·설정·외부 장애의 운영 조치를 보고하고 조사를 닫는다 |
+| 판단 보류 | 부족한 증거를 요청하고 재조사한다 |
+
+Jira는 **사람이 생성·조회**한다. 현재 사전 판별의 연결은 Jira 전용이며 Notion 페이지 ID를 `triage link`에 넣지 않는다. Notion의 요구사항은 내용과 출처를 일반 접수로 전달하고 작업 ID를 발급받을 수 있다. 에이전트가 보여 준 본문과 추적 표지로 생성하거나 기존 티켓을 확인한 뒤 실제 키·URL을 알려준다. CLI는 원격 Jira를 생성하거나 실재를 검증하지 않으며, 미조회 상태·가상 키로 개발 접수를 진행하지 않는다. 키·URL을 연결하면 원본 로그와 조사 제안이 Jira 키의 작업 폴더로 인계되고 기존 요구 확인·계획 승인·재현·수정·검증·반영으로 이어진다. 조사 제안은 요구 확인 전까지 미확정이다.
+
+상태는 `code-agent status` 또는 `triage status`, 재개는 `/ca-next`다. 수동 CLI는 `.code-agent/log/triage-input.json`에 `{ "project": "cloud", "errorLog": "로그 원문" }`을 저장하고 `triage ingest .code-agent/log/triage-input.json` → 출력된 초안 작성 → `triage submit` → `triage jira` → 실제 Jira 생성/조회 → `triage link <Jira티켓키> <URL>` → `triage handoff`다. `triage close`는 조사 기록·연결을 남기고 현재 조사만 닫는다. 같은 로그 특징의 미해결 기록이 있으면 새 티켓을 만들지 않는다. 다른 체크아웃에서는 Jira의 추적 표지로 중복을 확인한다. 로컬 반영은 배포 대기다. 사람이 확인한 배포 버전·근거는 `triage deployed <조사ID> <버전> <근거>`로 기록한다. 해당 버전에서 재발하면 재조사한다. 닫힌 판정은 `triage reassess <조사ID> <사유>`로 재검토한다. 중복 기록은 로컬 범위이며 다른 PC에서는 Jira 조회가 필요하다.
 
 ## 검증 노드 실행기
 
@@ -58,7 +82,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 스
 - [3. 한 바퀴](#3-한-바퀴)
 - [4. 슬래시 명령 (Claude Code 안)](#4-슬래시-명령-claude-code-안)
 - [5. 터미널 명령 (사람)](#5-터미널-명령-사람)
-- [6. 스킬이 부르는 명령](#6-스킬이-부르는-명령)
+- [6. 실행 절차가 부르는 명령](#6-실행-절차가-부르는-명령)
 - [7. 만들어지는 파일](#7-만들어지는-파일)
 - [8. 질문과 가정](#8-질문과-가정)
 - [9. 승인과 반영 — 같은 Claude Code 세션에서](#9-승인과-반영--같은-claude-code-세션에서)
@@ -81,7 +105,7 @@ claude                                   # 이 안에서 /ca-request 입력
 
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
-| 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
+| 실행 절차·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
 | PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell\|Read\|Grep\|Glob\|mcp__.*`, command `code-agent hook` | O |
 | 동의·업무 질문 관찰 | `.claude/settings.json` — PreToolUse·PostToolUse matcher `AskUserQuestion`, `code-agent consent-event` | O |
 | Stop hook | `.claude/settings.json` — `code-agent stop` | O |
@@ -182,13 +206,13 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 사람이 멈추는 자리는 **문서 확정(처음 또는 변경 시) · 요구사항 확정 · 필요한 질문 답변 · 계획 승인 · 반영 확인**이다. 문서는 한 번에 확정하고 기술 세부는 추천값으로 묶어서 보여 준다. 일반 작업은 요구사항 확정·계획 승인·반영 확인의 세 판정을 유지한다.
 
 가운데 열이 **단계 명령**이다. 한 단계씩 끊어 결과를 보고 보완하고 싶으면 그것을 직접 부르고, 쭉 몰고 싶으면 `/ca-next` 를 부른다 —
-절차는 단계 스킬 **하나**에만 있어 어느 쪽으로 가도 같은 파일을 읽는다. 잘못 온 자리는 `code-agent back <스테이지>` 로 **뒤로만** 되감는다.
+절차는 단계 실행 절차 **하나**에만 있어 어느 쪽으로 가도 같은 파일을 읽는다. 잘못 온 자리는 `code-agent back <스테이지>` 로 **뒤로만** 되감는다.
 
 ---
 
 ## 4. 슬래시 명령 (Claude Code 안)
 
-설치되는 스킬은 모두 **18개**다 — 아래 표의 8개와 [단계별 명령](#단계별-명령) 10개.
+설치되는 실행 절차는 모두 **18개**다 — 아래 표의 8개와 [단계별 명령](#단계별-명령) 10개.
 
 | 명령 | 하는 일 | 사용자 확인 |
 |---|---|---|
@@ -196,14 +220,14 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 | `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 3종) | 같은 세션에서 문서 확인 |
 | `/ca-feature [ID] <요구사항>` | 신규 개발·기능 추가·변경의 접수부터 개발·검증·로컬 반영까지 | 요구사항 · 질문 · 계획 · 결과 |
 | `/ca-answer` | 미응답 질문을 선택 도구로 다시 열고 기록 | — |
-| `/ca-next` | **사이클** — 지금 스테이지의 단계 스킬을 따르고 다음으로 이어 간다 | 선택·확인을 받고 이어간다 |
+| `/ca-next` | **사이클** — 지금 스테이지의 단계 실행 절차를 따르고 다음으로 이어 간다 | 선택·확인을 받고 이어간다 |
 | `/ca-status` | 위치·막힌 이유·다음 할 일 | — |
 | `/ca-fix [ID] <결함>` | 결함 수정 — 현행 분석·재현 테스트를 앞세운다 (`code-agent repro` 로 재현을 본 뒤에 고친다) | **요구사항 확정** · 질문 · 계획 승인 |
 | `/ca-refactor [ID] <요청>` | 리팩토링 — 보존 조건이 계획의 중심, 기존 테스트는 손댈 수 없다 | **요구사항 확정** · 질문 · 계획 승인 |
 
 ### 단계별 명령
 
-스테이지마다 명령이 하나씩이다. 하는 일은 **그 단계 스킬에만** 적혀 있고 `/ca-next` 사이클도 같은 파일을 읽는다 —
+스테이지마다 명령이 하나씩이다. 하는 일은 **그 단계 실행 절차에만** 적혀 있고 `/ca-next` 사이클도 같은 파일을 읽는다 —
 단계로 끊어 돌든 사이클로 몰든 절차가 갈리지 않는다.
 
 | 스테이지 | 명령 | 하는 일 | 어디서 멈추나 |
@@ -222,9 +246,9 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 `code-agent approve` · `reject` 는 **스테이지에 묶이지 않는다.** `plan` 에서만 받는 것이 아니라, `implement` 이후에 승인이
 `stale-*` 로 돌아서 다시 받아야 할 때도 같은 명령 그대로다 — 커서가 어디에 있든 제출된 계획이 있으면 판정한다.
 
-각 단계 스킬은 **자리를 확인한다** — 방금 받은 `code-agent` 출력에 지금 스테이지가 있으면 그것을 쓰고, 없을 때만 `code-agent status` 를 부른다. 커서가 그 스테이지가 아니면 일하지 않는다 —
+각 단계 실행 절차는 **자리를 확인한다** — 방금 받은 `code-agent` 출력에 지금 스테이지가 있으면 그것을 쓰고, 없을 때만 `code-agent status` 를 부른다. 커서가 그 스테이지가 아니면 일하지 않는다 —
 아직 이르면 먼저 할 명령을 알려 주고, 이미 지났으면 `code-agent back <스테이지>` 로 되감아야 한다고 알린다.
-**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 셋이고 원천은 `ca-next` 스킬의 되감기 문단이다: 승인 무효로 `status` 의 `다음:` 이 재진입 순서로 되감기를 안내할 때(낡은 계획 작업이 있거나 계획을 바꿔야 할 때만 — 계획이 그대로면 그 자리에서 plan 동의로 다시 승인한다), 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다), 반영(`deliver`) 단계에서 사용자가 수정을 요청해 되감기를 확인받았을 때다.
+**되감기는 사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 셋이고 원천은 `ca-next` 실행 절차의 되감기 문단이다: 승인 무효로 `status` 의 `다음:` 이 재진입 순서로 되감기를 안내할 때(낡은 계획 작업이 있거나 계획을 바꿔야 할 때만 — 계획이 그대로면 그 자리에서 plan 동의로 다시 승인한다), 계획 단계의 `code-agent planning advance` 가 앞 단계 계획 작업이 낡았다고 판정해 `rewind-required`·`rewind.auto: true` 를 낼 때(같은 사유에 한 번. analysis 까지 또는 기준 커밋·code-agent.json·호스트 지침 변경이면 `rewind.notice` 한 줄을 먼저 알린다), 반영(`deliver`) 단계에서 사용자가 수정을 요청해 되감기를 확인받았을 때다.
 
 `code-agent back <스테이지>` 는 **뒤로만** 간다. 커서만 움직이고 증거·승인 원장·작업 문서는 그대로 둔다 — 그래서:
 
@@ -458,8 +482,8 @@ preserve:
 
 ### `/ca-next`
 
-**사이클**이다. `code-agent status` 로 스테이지를 보고, 그 스테이지의 단계 스킬(`.claude/skills/ca-<명령>/SKILL.md`)을 그대로 따르고,
-게이트를 지나면 다음 스테이지의 단계 스킬로 이어 간다. **사용자 판단이 필요하면 같은 세션에서 질문한다.**
+**사이클**이다. `code-agent status` 로 스테이지를 보고, 그 스테이지의 단계 실행 절차(`.claude/skills/ca-<명령>/SKILL.md`)을 그대로 따르고,
+게이트를 지나면 다음 스테이지의 단계 실행 명령으로 이어 간다. **사용자 판단이 필요하면 같은 세션에서 질문한다.**
 필수 질문 미응답·보류·취소, 반려, 계획 밖 실패·지적, 재시도 한도 소진(`verify` 의 `decision` — 고쳐 쓰기·리뷰 회차·같은 코드 재실행 등), 명령 거부에서는 멈춘다. 정상적인 요구·계획·결과 확인은 같은 세션에서 선택받고 이어간다.
 
 작업이 아직 시작 전이고 접수 중이면 **접수가 첫 칸**이다 — `/ca-request` 의 절차를 따르고, 요구사항이 `확정됨` 이면
@@ -511,9 +535,9 @@ preserve:
 
 ### `/ca-fix` · `/ca-refactor`
 
-`/ca-feature` 와 **같은 단계 스킬을 같은 순서로** 돌아 계획 제출까지 간다 — 접수도 같고, 종류만 `fix` · `refactor` 로 간다.
+`/ca-feature` 와 **같은 단계 실행 절차를 같은 순서로** 돌아 계획 제출까지 간다 — 접수도 같고, 종류만 `fix` · `refactor` 로 간다.
 접수에서 `target` 은 **저장소에 있는 경로**(결함이 나는 곳 · 바꿀 곳)이고 `scope`(건드려도 되는 경로) · `preserve`(바뀌면 안 되는 것)가 **필수**다 —
-원문으로 정할 수 없으면 접수에서 묻는다. 다른 점은 **전부 코드가 막는다** — 스킬 지시가 아니다.
+원문으로 정할 수 없으면 접수에서 묻는다. 다른 점은 **전부 코드가 막는다** — 실행 절차 지시가 아니다.
 
 #### `fix` — 오류 로그로 고치고, 재현이 먼저다
 
@@ -576,7 +600,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 |---|---|---|
 | `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치(호스트는 이전 기록과 합집합 — 줄이지 않는다) | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다(`--host`·`--cross` 포함) | — |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 스킬·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
+| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 실행 절차·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
@@ -586,7 +610,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
 | `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
-| `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 스킬 규칙이다 | — |
+| `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 실행 절차 규칙이다 | — |
 | `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY. 진행 중인 작업이 있으면 거부한다 — 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾼다. 조회는 작업 중에도 된다 |
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
@@ -672,7 +696,7 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
 
 도구별 호출: Bash 58 · Read 22 · Agent 11 · Skill 9 · Write 3
 code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning advance --chain 3 · next 2 · verify 1
-스킬 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
+실행 절차 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
 재시도·재배정 (작업 기록, 읽기 전용)
   ORD-1/order: 배정 14회(재배정 3) · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD
 ```
@@ -683,10 +707,10 @@ code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning a
 | 도구 호출 | `assistant` 줄의 `tool_use` 블록, 같은 `id` 는 한 번 |
 | 도구 결과(자) | `user` 줄의 `tool_result` 블록 글자(같은 `tool_use_id` 는 한 번). 큰 결과가 파일로 빠지면 대화에 들어간 미리보기만 센다 |
 | 명령별 호출 | 셸 도구의 `code-agent <명령>` — `planning`·`consent`·`docs`·`request`·`review`·`plan`·`plugin`·`setup`·`manifest`·`knowledge`·`model` 은 셋째 낱말까지, `--chain`·`--json`·`--retry` 는 키에 붙인다 |
-| 스킬 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
+| 실행 절차 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
 | 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용의 합. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
 
-Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 스킬 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다.
+Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 실행 절차 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다.
 
 `--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, models, tools, commands, skillReads, …}], retry[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
 
@@ -740,7 +764,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 
 ---
 
-## 6. 스킬이 부르는 명령
+## 6. 실행 절차가 부르는 명령
 
 사람이 칠 일은 거의 없다. 무엇이 왜 거부됐는지 읽을 때 필요하다.
 
@@ -1018,7 +1042,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `code-agent plugin example [--out <경로>]` | 예시 어댑터를 파일로 꺼낸다 — 단일 실행 파일 안에도 들어 있다 | — |
 
 `add` · `remove` 는 `approve` · `deliver` 와 같은 문이다 — **직접 호출은 막고 같은 세션의 consent로 적용한다**.
-등록은 사람이 동의를 주는 자리라서다. `list` 는 상태만 읽으므로 스킬도 부른다.
+등록은 사람이 동의를 주는 자리라서다. `list` 는 상태만 읽으므로 실행 절차도 부른다.
 
 ### 지금 무엇이 채우고 있나
 

@@ -541,7 +541,7 @@ const CITED_LINES: Record<string, RegExp> = {
   "template/claude/skills/ca-next/SKILL.md:72": /사이클이 스스로 되감지는 않는다 — 예외는/,
   "template/claude/skills/ca-plan/contract.md:10": /`questionIds`: 관련 질문 ID\. 담당·교차 검토가 낸 질문/,
   "template/claude/skills/ca-plan/contract.md:16": /^\*\*수정 피드백\*\*/,
-  "doc/usage.md:191": /^설치되는 스킬은 모두 \*\*\d+개\*\*다/,
+  "doc/usage.md:215": /^설치되는 실행 절차는 모두 \*\*\d+개\*\*다/,
 };
 
 describe("R5 — 흐름도의 줄 인용", () => {

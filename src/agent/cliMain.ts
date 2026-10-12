@@ -3,6 +3,7 @@
  * (hook 은 도구 호출마다 새 프로세스로 돌므로 명령 모듈 전체를 읽지 않는다).
  */
 import { readFileSync } from "fs";
+import { triageBegin, triageClose, triageHandoff, triageJira, triageLink, triageStatus, triageSubmit, triageIngest, triageReassess, triageDeployed, triageAttach } from "./triage";
 import { readProjectFile } from "./read";
 import { parseHost } from "./hosts";
 
@@ -49,13 +50,13 @@ import { releaseLease } from "./lease";
 
 const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 CLI
 
-실행: code-agent init --host claude|codex|both → 호스트를 다시 열고 → ca-request 스킬로 접수 (Claude Code: /ca-request, Codex: $ca-request)
-  init은 스킬·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
-  ca-request는 모든 요구사항 접수, ca-feature는 신규·기능 변경, ca-fix는 결함 수정, ca-refactor는 동작 보존 구조 개선 스킬입니다.
-  질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 사용자가 보내는 code-agent consent respond 대화 메시지). 중단한 작업은 ca-next 스킬로 재개합니다.
+실행: code-agent init --host claude|codex|both → 호스트를 다시 열고 → ca-request 실행 명령으로 접수 (Claude Code: /ca-request, Codex: $ca-request)
+  init은 실행 절차·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
+  ca-request는 모든 요구사항 접수, ca-feature는 신규·기능 변경, ca-fix는 결함 수정, ca-refactor는 동작 보존 구조 개선 실행 절차입니다.
+  질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 사용자가 보내는 code-agent consent respond 대화 메시지). 중단한 작업은 ca-next 실행 명령으로 재개합니다.
 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
-  code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 스킬·에이전트·훅 설치
+  code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 실행 절차·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
@@ -69,7 +70,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent confirm doc <all|종류>   공통 문서 한 번에 확정 또는 개별 확정 (TTY)
   code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
                                       지시서를 생략하면 doc/work/<ID>/requirement.md (손으로 쓴 지시서가 다른 자리면 경로를 준다)
-  code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — ca-request 스킬이 사유를 읽고 다시 정리한다
+  code-agent reject request <ID> [<지시서>] --comment <사유>   요구사항 반려 (TTY 에서만) — ca-request 실행 절차가 사유를 읽고 다시 정리한다
   code-agent approve [--comment <메모>]   제출된 계획 승인 (TTY 에서만) — 요구사항 확정은 confirm request
   code-agent reject --comment <사유>  제출된 계획 반려 (TTY 에서만)
   code-agent abort                    진행 중인 작업 커서 지우기 (작업이 없으면 접수 세션을 닫는다)
@@ -80,7 +81,13 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
 
-스킬이 부른다 (호스트 세션 안):
+실행 절차가 부른다 (호스트 세션 안):
+  code-agent triage begin <조직/프로젝트/이슈ID> [--base <브랜치>]  Sentry 오류 사전 판별 (제품 코드 읽기 전용)
+  code-agent triage status | submit | jira | handoff | close  조사 조회·제출·Jira 본문·fix 인계·조사 닫기
+  code-agent triage link <Jira티켓키> <URL>   사람이 생성·확인한 Jira 연결 (원격 검증 없음)
+  code-agent triage ingest <입력JSON>  project·errorLog·선택 release/base로 접수·중복 확인
+  code-agent triage status <조사ID> | reassess <조사ID> <사유> | attach <조사ID> <근거>
+  code-agent triage deployed <조사ID> <버전> <근거>  사람이 확인한 배포 기록 (원격 검증 없음)
   code-agent consent prepare <작업.json> | --action <동작> [--id <ID>] [--kind <종류>] [--spec <지시서>] [--for claude|codex]
                                       확인할 내용·파일·질문을 준비 (이 단계에서 승인·커밋하지 않음 — --for 를 주면 그 호스트가 쓰는 필드만 출력)
   code-agent consent status <ID>           실제 선택 응답과 다음 질문 조회
@@ -97,7 +104,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent survey                   뼈대 역공학용 저장소 개요 (빌드·언어·구조·계층 후보·표본)
   code-agent manifest check           code-agent.json 이 실제 참조 파일을 찾는지
   code-agent plugin list              자리·기본 구현·감지된 무료 도구·등록된 플러그인·저장소 선언
-  code-agent request begin [ID] --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
+  code-agent request begin [작업ID] --kind <feature|fix|refactor> [--base <기준 브랜치>] [--target <대상>]
                                       1 요구사항 접수를 연다 (도는 동안 그 작업 폴더 밖 쓰기 금지 · 시작 인자는 확정 뒤 start 가 쓴다)
   code-agent request                  접수 초안(request.json) 형식 · 규칙 · 대상 후보 · 지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때)
   code-agent request submit <request.json>   접수 초안 검사 → doc/work/<ID>/requirement.md 렌더 (확정은 사람이)
@@ -170,10 +177,28 @@ function positional(args: string[], valued: string[]): string[] {
 /** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
   const repoRoot = findRepoRoot(process.cwd());
-  // 출력 문구의 스킬·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
+  // 출력 문구의 실행 절차·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
   useNotation(notationFor(repoRoot));
   const print = (text: string) => process.stdout.write(`${text}\n`);
   switch (command) {
+    case "triage": {
+      const [action, ...rest] = args;
+      if (action === "begin" && rest.length === 1) print(triageBegin(repoRoot, rest[0]));
+      else if (action === "begin" && rest.length === 3 && rest[1] === "--base") print(triageBegin(repoRoot, rest[0], rest[2]));
+      else if (action === "link" && rest.length === 2) print(triageLink(repoRoot, rest[0], rest[1]));
+      else if (action === "ingest" && rest.length === 1) print(triageIngest(repoRoot, rest[0]));
+      else if (action === "status" && rest.length === 1) print(triageStatus(repoRoot, rest[0]));
+      else if (action === "reassess" && rest.length === 2) print(triageReassess(repoRoot, rest[0], rest[1]));
+      else if (action === "attach" && rest.length === 2) print(triageAttach(repoRoot, rest[0], rest[1]));
+      else if (action === "deployed" && rest.length === 3) print(triageDeployed(repoRoot, rest[0], rest[1], rest[2]));
+      else if (rest.length === 0 && action === "status") print(triageStatus(repoRoot));
+      else if (rest.length === 0 && action === "submit") print(triageSubmit(repoRoot));
+      else if (rest.length === 0 && action === "jira") print(triageJira(repoRoot));
+      else if (rest.length === 0 && action === "handoff") print(triageHandoff(repoRoot));
+      else if (rest.length === 0 && action === "close") print(triageClose(repoRoot));
+      else throw new Stop("사용법: code-agent triage ingest <입력JSON> | begin <출처> [--base <브랜치>] | status [조사ID] | submit | jira | link <Jira티켓키> <URL> | handoff | close | attach <조사ID> <근거> | reassess <조사ID> <사유> | deployed <조사ID> <버전> <근거>");
+      return 0;
+    }
     case "planning":
       if (args[0] === "advance") {
         // --chain: analysis·impact·design 결과가 모두 준비됐으면 같은 호출에서 게이트(next)까지 — 거부면 exit 1(JSON 은 그대로)

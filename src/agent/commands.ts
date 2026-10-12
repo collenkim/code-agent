@@ -90,6 +90,7 @@ import { askVia, skill } from "./hostText";
 import { PHASE_SKILL, reentryHint, staleEarliest } from "./reentry";
 import { failureHint } from "./failureHint";
 import { leaseLine } from "./lease";
+import { loadTriage, requireNoTriage, triageSummary } from "./triageState";
 import { renderContext } from "./contextRender";
 import { codeStages, PHASE_LABEL } from "./phaseInfo";
 
@@ -249,6 +250,7 @@ function toRepoPath(repoRoot: string, path: string): string {
 // ---- start ----
 
 export function start(repoRoot: string, spec: string, startOptions: { target?: string; base?: string } = {}): string {
+  requireNoTriage(repoRoot);
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop("문서 준비 세션이 열려 있습니다. code-agent docs end 뒤에 같은 요구사항으로 시작하세요.");
   }
@@ -365,6 +367,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
   writeAnswerBaseline(repoRoot, order.id, specPath);
   saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1 }, "start");
+  (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
   return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
@@ -562,6 +565,8 @@ function nextHint(work: Work): string {
 }
 
 export function status(repoRoot: string): string {
+  const triage = loadTriage(repoRoot);
+  if (triage) return triageSummary(triage);
   const manifest = loadManifestIfAny(repoRoot);
   const checks = checkProjectDocs(repoRoot, manifest);
   const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checks)];
@@ -926,12 +931,14 @@ export function abort(repoRoot: string): string {
     const session = loadRequestSession(repoRoot);
     if (session) {
       logStage(repoRoot, { id: session.id, target: "", phase: "request" }, "abort");
+      (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, session.id, "paused");
       clearRequestSession(repoRoot);
       return `요구사항 접수를 닫았습니다: ${session.id}. 작업 폴더(${workDocsDir(session.id)}/)와 확정 원장은 남아 있습니다 — 같은 ID 로 다시 접수할 수 있습니다.`;
     }
     throw new Stop("진행 중인 작업도 접수 중인 요구사항도 없습니다.");
   }
   logStage(repoRoot, active, "abort");
+  (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, active.id, "paused");
   clearActive(repoRoot);
   return `작업 커서를 지웠습니다: ${active.id}. 작업 폴더·계획·원장은 남아 있습니다 — 같은 지시서로 다시 시작할 수 있습니다.`;
 }

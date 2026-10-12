@@ -37,6 +37,7 @@ import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
+import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -101,6 +102,7 @@ const READS_OUTSIDE = /(^|\s)--no-index(=|\s|$)/;
  * 독립 CLI에서는 TTY 확인을 유지하고, init의 임의 CLI 교체로 hook을 바꾸는 길도 막는다.
  */
 const MODEL_SUBCOMMANDS = [
+  "triage",
   "start",
   "next",
   // 되감기는 열어 둔다 — 앞으로는 못 가고 지우는 것도 없어 건너뛸 수 있는 것이 없다.
@@ -133,7 +135,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help|--help|status|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -328,6 +330,7 @@ function decideMcp(input: HookInput, projectDir?: string): string | undefined {
   // 하위 폴더에서 연 세션(CLAUDE_PROJECT_DIR·cwd 가 저장소 안 폴더)도 저장소 루트로 판정한다 — CLI·티켓·Codex 와 같은 루트
   const repoRoot = findRepoRoot(projectDir ?? input.cwd);
   const paths = mcpPaths(input.tool_input as Record<string, unknown>, LOCAL_FS_SERVERS.test(server), repoRoot);
+  if (!paths.length && mcpWrites(tool) && loadTriage(repoRoot)) return "사전 판별 중에는 외부 서비스·데이터를 변경하지 않습니다. Jira 생성은 준비된 본문으로 사람이 수행합니다.";
   if (!paths.length) return undefined;
   const write = mcpWrites(tool);
   for (const path of paths) {
@@ -474,9 +477,28 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
     if (denied) return denied;
     consentOwner = /^code-agent consent (?:apply|finish) [a-f0-9-]+$/.test(command.trim());
   }
+  // 로그 입력은 증거 전달용이다. 동의 잠금·경로 검사 뒤 이 한 파일만 허용한다.
+  if (WRITE_TOOLS.includes(input.tool_name) && repoPath(repoRoot, input.tool_input.file_path ?? "") === TRIAGE_INPUT) return undefined;
   let work: Work | undefined, documenting: boolean, requesting: RequestSession | undefined, manifest: Manifest | undefined;
   let docsSession: { writable?: string[] } = {};
   try {
+    const triage = loadTriage(repoRoot);
+    if (triage) {
+      const reason = "사전 판별은 제품 코드 읽기 전용입니다 — 판별 초안만 작성하고, 코드 변경 필요·Jira 연결 뒤 triage handoff 로 접수하세요.";
+      if (READ_TOOLS.includes(input.tool_name)) return readDenied(input);
+      if (WRITE_TOOLS.includes(input.tool_name)) {
+        const target = input.tool_input.file_path ?? input.tool_input.notebook_path ?? "";
+        return !triage.jira && repoPath(repoRoot, target) === triageDraft(triage.id) ? undefined : reason;
+      }
+      if (["Bash", "PowerShell"].includes(input.tool_name)) {
+        const command = (input.tool_input.command ?? "").trim();
+        const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
+        const denied = decideBash(undefined, command, true, powershell);
+        if (denied) return denied;
+        return /^(?:code-agent (?:triage(?: .*)?|read .+|status|survey|help|--help|manifest check)|git (?:status|diff|log|show|branch)(?: .*)?)$/.test(command) ? undefined : reason;
+      }
+      return undefined;
+    }
     work = loadWork(repoRoot);
     documenting = !work && existsSync(join(repoRoot, DOCS_SESSION_FILE));
     if (documenting) docsSession = loadDocsSession(repoRoot) ?? {};

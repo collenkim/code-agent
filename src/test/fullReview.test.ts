@@ -31,6 +31,7 @@ import { createStageRepo, NOT_INSTALLED, git, ORDER, removeStageRepo, repo, toCh
 import { observeConsentFixture } from "./consentFixture";
 import { randomUUID } from "node:crypto";
 import { deadPid } from "./deadPid";
+import { withCaller } from "./reviewFixture";
 
 const PRESENCE = { channel: "tty" as const, verified: true, detail: "테스트" };
 const nextLine = (text: string): string => text.split("\n").find((line) => line.startsWith("다음: ")) ?? "";
@@ -192,7 +193,7 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     assert.match(working.hint, /^→ 진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only --host codex — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다$/);
   });
 
-  test("D1 doctor(Codex 옛 설치) — 다른 이벤트는 있는데 SessionStart 만 없으면 update --templates-only --host codex 를(작업 중이면 끝난 뒤) 안내하고, 하나도 없으면 init 이다", () => {
+  test("D1 doctor(Codex 옛 설치) — 다른 이벤트는 있는데 SessionStart 만 없으면 update --templates-only --host codex 를(작업 중이면 끝난 뒤) 안내하고, 하나도 없으면 init 이다", () => withCaller(undefined, () => {
     init(repo, { host: "codex" });
     const hooksFile = join(repo, ".codex/hooks.json");
     const settings = JSON.parse(readFileSync(hooksFile, "utf8")) as { hooks: Record<string, unknown> };
@@ -214,7 +215,7 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     // 우리 이벤트가 하나도 없으면 옛 설치가 아니라 설치가 빠진 것이다
     write(".codex/hooks.json", JSON.stringify({ hooks: {} }, null, 2));
     assert.equal(rowOf(doctor(repo).text).hint, "→ code-agent init --host codex");
-  });
+  }));
 
   test("D1 모델 표(반박 검증) — 작업 중에도 표는 열리고, 변경 줄은 작업 중 거부와 작업이 끝난 뒤의 방법을 싣는다", () => {
     installAgent();

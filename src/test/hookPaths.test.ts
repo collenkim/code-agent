@@ -19,6 +19,7 @@ import { sessionAnchor } from "../agent/sessionHook";
 import { storePath } from "../agent/plugins/store";
 import { CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
 import { deadPid } from "./deadPid";
+import { withCaller } from "./reviewFixture";
 
 let root: string, home: string;
 const saved = { home: process.env.CODE_AGENT_HOME, claude: process.env.CLAUDECODE };
@@ -268,7 +269,7 @@ test("T-17-1 세션 밖 셸이 hook 설정 파일을 가리키면 거부한다",
   assert.equal(bash("git status"), undefined);
 });
 
-test("T-17-2 hook 누락 감지 — 실행 중인 호스트의 누락은 시작을 막고, 다른 호스트·판별 불가는 경고만 한다", () => {
+test("T-17-2 hook 누락 감지 — 실행 중인 호스트의 누락은 시작을 막고, 다른 호스트·판별 불가는 경고만 한다", () => withCaller(undefined, () => {
   delete process.env.CLAUDECODE;
   assert.deepEqual(hookInstallProblems(root), [], "hosts.json 이 없으면 감지하지 않는다");
   init(root, { host: "both", cli });
@@ -292,7 +293,7 @@ test("T-17-2 hook 누락 감지 — 실행 중인 호스트의 누락은 시작�
   assert.deepEqual(hookInstallProblems(root).map((entry) => entry.host), ["codex"]);
   docsEnd(root);
   assert.match(docsBegin(root), /경고: code-agent hook 설정이 빠져 있습니다: Codex PreToolUse/, "다른 설치 호스트의 누락은 경고만 한다");
-});
+}));
 
 // ---- LRN-5 · CON-15 ----
 

@@ -23,6 +23,7 @@
 | `hostText.ts`(표기 함수 `skill`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`, 판정 `notationFor`) | §7 CLI 출력 표기 | `SKILL_NAMES` ↔ `template/claude/skills` 디렉터리, `ROLE_NAMES` ↔ `template/claude/agents`(`hostText.test.ts`), 호출 지점 — `cliMain.ts` `useNotation`, hook 진입 `withNotation`(Claude 하위 명령은 claude, `codexHook`은 codex). 파일·확인 화면에 기록되는 문자열(⑧·⑨·⑩, 원장, 동의 `confirmations`, `setupStatus`)은 리터럴을 유지한다 |
 | `lease.ts`(`leaseDecision`·`leaseGuard`·`sessionStartLease`·`releaseLease`·`leaseLine`) | §5.3, §7, §8 | `hook.ts` `LEASE_FREE`(임대를 보지 않는 읽기 전용 명령)·`decideTool`의 임대 자리(동의 티켓 발급 전), `consent.ts` `SNAPSHOT_EXCLUDED`(`lease.json*`), `init.ts` `GITIGNORE_LINES`, `sessionHook.ts` `progress`, `codexHook.ts` SessionStart 분기(같은 `sessionStartLease`), `ca-next` 재개표의 다른 세션·넘겨받기 행 |
 | `request.ts` 접수·확정, `docsCommands.ts`·`bootstrap.ts` 준비 | §3.1, §4 | `ca-request`·`ca-adopt`·`ca-docs` SKILL.md |
+| `triage.ts`·`triageState.ts`·`errorFingerprint.ts` 사전 판별·Jira 수동 연결·fix 인계 | §2, §3.1, §5.3, §8, §9 | `ca-fix/SKILL.md`·`triage.md`, `ca-request`·`ca-next` 진입, `hook.ts` 조사 쓰기 범위, `request.ts`·`commands.ts`·`docsCommands.ts` 동시 시작 거부 |
 | `init.ts` hook 등록(`initClaude`·`initCodex` — Codex PreToolUse 의 `|| exit 2`, Windows 명령 `codexWindowsCommand`·옛 꼴 점검 `codexWindowsProblem`)·`HOOK_MATCHER`(`mcp__.*` 포함)·`CLAUDE_HOOKS`·`CODEX_EVENTS`·`hookInstallProblems`·`requireStartHooks` | §5, §7 | §5.1·§5.2 등록표(`docSync.test.ts`가 임시 저장소에 `init --host both` 한 `.claude/settings.json`·`.codex/hooks.json`과 대조), `doctor.ts` hook 목록(같은 `CLAUDE_HOOKS`·`CODEX_EVENTS`를 읽는다), `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`, `doc/usage.md` hook 수·init 표 |
 | `codexHook.ts`(알려진 비파일 도구 `KNOWN_NON_FILE_TOOL`, SessionStart 의 임대 넘겨받기) | §4.2, §5.2, §7 | `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 | `codexTrust.ts`(doctor 의 Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만) | §5.2, §7, §9 | `doc/codex.md`·`doc/install.md`의 신뢰 절차와 doctor 표 |
@@ -46,7 +47,7 @@
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:191`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181` matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:215`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181` matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 변경당 한 줄(바뀐 것의 요지와 커밋 — 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -55,6 +56,15 @@
 ```mermaid
 flowchart TD
   INIT["init --host claude|codex|both<br/>hosts.json · hook · 스킬"] --> RB["request begin<br/>request-session.json"]
+  INIT -- "Sentry 오류 / ca-fix --triage" --> DUP{"triage ingest · 로그 중복 조회"}
+  DUP -- "동일·진행 중" --> EXIST["기존 작업 안내 · 발생 기록 추가"]
+  DUP -- "신규·재판별" --> TR["읽기 전용 조사 → submit"]
+  TR --> TD{"코드 변경 필요?"}
+  TD -- "불필요" --> OPS["운영 조치 보고 · triage close"]
+  TD -- "판단 보류" --> MORE["추가 증거 요청 · 재조사"]
+  MORE --> TR
+  TD -- "필요" --> JIRA["중복 조회 → Jira 수동 생성 또는 기존 티켓 확인 → triage link"]
+  JIRA -- "triage handoff · 로그와 조사 제안 보존" --> RB
   RB --> PREP{"preparationHint<br/>request.ts"}
   PREP -- "매니페스트·문서 없음" --> DOCS["/ca-adopt · /ca-docs<br/>docs begin → 작성 → docs end"]
   DOCS --> SETUP(["동의 setup<br/>문서 확정 + 준비 커밋"])
@@ -88,6 +98,14 @@ flowchart TD
 **공통 전제** (`commands.ts:516-524`) — `next`는 매번 AI-DLC 미진행, 유효한 커서와 `baseCommit`(`requireWork` 158-171), 공통 문서 확정, 요구 확정(`request.ts:350-378`), 답 없는 질문 0(`requireAnswers` 184-193)을 확인한다. analysis~plan에서는 `planningProblems`와 `planningDocumentProblems`도 본다. 게이트에 걸린 `next`는 `Stop`을 던지고 커서는 그대로 둔다.
 
 ### 3.1 커서가 생기기 전
+
+**용어** — 사용자 안내의 실행 명령(`/ca-fix` 등), 작업 ID(내부 작업), 외부 업무 식별자(Jira 티켓 키·Notion 페이지 ID), 조사 ID(사전 판별 기록)를 구분한다. `skill`·`SKILL.md`는 호스트의 기술 명칭이며 업무 식별자가 아니다. 사전 판별의 외부 연결은 현재 Jira 전용이다.
+
+**Sentry 사전 판별** — 기존 Jira가 없는 Sentry 오류 또는 명시적 `ca-fix --triage` 요청은 개발 접수 전에 `triage ingest <입력JSON>`으로 프로젝트·로그 원문과 선택 release·base를 받아 조사한다. 조직·Sentry ID는 필수가 아니며 출처 기반 begin도 지원한다. `errorFingerprint.ts` v1은 이벤트·요청·추적 ID와 ISO 시각을 정규화하되 오류 코드·숫자·스택을 일괄 제거하지 않는다. 예외와 스택이 있어야 자동 중복으로 인정한다. 동일 오류는 발생 기록을 누적하고 새 Jira·수정 실행을 생략한다. 유사 후보는 비교 근거가 있어야 Jira로 진행한다. 조회·신규 조사 예약은 같은 로컬 잠금 안에서 수행한다. 상태는 `triageState.ts`, 명령은 `triage.ts`다. 증상·기대 동작을 필수로 받지 않고 메인이 로그·발생 버전·저장소 코드와 문서를 읽어 사실·가설·원인 분류와 코드 변경 필요 여부를 따로 작성한다. 데이터·외부 장애도 코드 보완이 필요할 수 있다. `submit`은 로그·판별 형식, 근거의 실재 경로·줄 인용과 수정 제안을 검사하고 파일 해시를 기록한다. 로그 원문은 첫 제출 뒤 바꾸지 않는다. 불필요는 운영 조치를 보고 close, 판단 보류는 추가 증거를 요청한다. 둘 다 Jira 준비·연결·fix 인계를 거부한다.
+
+코드 변경 필요인 경우에도 중복 미조회(`unchecked`)면 `triage jira`·`link`·`handoff`를 거부한다. `jira`는 추적 표지가 있는 본문을 렌더하고, 사람이 기존 티켓을 확인하거나 새 Jira를 생성한다. CLI는 외부 API를 호출하지 않는다. `link <KEY> <URL>`은 키·HTTPS browse URL 일치와 기존 연결 일치를 검사하며 원격 티켓의 실재는 인증하지 않는다. `handoff`는 근거 해시를 다시 확인하고 로그 원문·보고서·미확정 수정 제안을 작업 폴더에 복사해 Jira 키로 fix 접수를 연다. 사람의 요구 확인·계획 승인과 재현·검증은 그대로 적용한다. 원문은 로그이고, 조사 제안은 배경·추적 주석으로 구분한다. 기존 작업 폴더는 덮어쓰지 않고, 같은 Sentry 출처의 인계 기록은 새 티켓 생성을 막는다. Jira 연결 뒤 근거가 바뀌면 기존 티켓을 보존하고 조사 결과를 재검토한다(조사를 닫고 그 티켓으로 직접 fix 접수 가능). `close`는 기록을 보존하고 조사 커서만 닫는다. 작업 시작은 fixing, 중단은 paused, 로컬 반영은 awaiting-deployment로 연결한다(반영 중 코드 변동 경고는 paused). `deployed <ID> <버전> <근거>`는 사람이 확인한 배포를 기록하며 원격 검증은 하지 않는다. 수정 배포 버전의 재발은 새 조사로 열고 버전 관계가 불명확하면 확인을 요청한다. `reassess`는 사유를 보존하고 닫힌 판정을 재검토한다. `attach`는 동일 원인을 기존 기록에 연결하고 신규 실행을 생략한다.
+
+조사 중에는 다른 접수·작업·문서 세션을 시작하지 않는다. `status`와 Claude 세션 요약은 조사 재개 위치를 알린다. 기존 Jira·직접 결함 신고의 fix 접수와 feature·refactor는 사전 판별을 요구하지 않는다.
 
 | 단계 | 진입 조건 | 담당 | CLI | 산출 | 넘어가는 조건 |
 |---|---|---|---|---|---|
@@ -244,6 +262,8 @@ hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드
 교차 실행이 띄운 Codex 자식(`CODE_AGENT_CROSS`)에서는 Stop·SubagentStart·SubagentStop·UserPromptSubmit·SessionStart가 `{}`로 통과한다(`CROSS_CHILD_PASS_EVENTS`). PreToolUse는 `decide`를 거치므로 Claude와 같이 진행 명령·`apply_patch`를 거부하고(§5.3 0단계) 그 밖은 그대로 판정한다.
 
 ### 5.3 PreToolUse 판정 순서 (`decide`, `hook.ts:178-223`)
+
+접수 전 사전 판별 커서가 있으면 `decideTool`은 제품 코드 쓰기·일반 셸 실행을 거부한다. 모델 쓰기는 증거 전달용 `.code-agent/log/triage-input.json`과 현재 조사의 `draft.json`만 허용하며 Jira 연결 뒤에는 이것도 닫는다. 조회·조사·triage 명령과 읽기용 git만 열고 다른 접수·개발 명령은 막는다. MCP 로컬 파일은 같은 경로 판정을 받고, 알려진 쓰기 동사의 외부 MCP는 거부한다. Jira 생성은 사람이 수행한다. `triage status [ID]`는 상태를 바꾸지 않는 임대 제외 명령이고 나머지 triage 명령은 상태를 바꾼다. hook은 도구 이름·경로·명령 꼴을 보는 사고 방지 장치이며 외부 서비스 권한을 대체하지 않는다.
 
 0. 교차 실행 자식(`CODE_AGENT_CROSS`)이면 쓰기 도구와, 읽기 전용 목록(`read <파일>`·`status`·`survey`·`planning status`·`help`, 인자 없는 `code-agent` — 연결·리다이렉트·치환 문자 없이) 밖의 `code-agent` 명령을 `CROSS_CHILD_DENY`로 거부한다(`crossChildGuard`). 작업 임대를 읽거나 쓰지 않는다. 다른 호스트의 읽기 전용 실행(Claude `--allowedTools Read,Grep,Glob`, Codex `-s read-only`)과 별개다.
    - 읽기 전용 담당(`ca-critic`·`ca-reviewer`·`ca-surveyor` — `READ_ONLY_ROLES`)의 쓰기 도구와 상태를 바꾸는 `code-agent` 명령(임대가 보는 진행 명령 — `leaseGated`)도 같은 자리에서 거부한다(`readOnlyRoleGuard`). 담당은 입력 `agent_type`으로 가린다 — 두 호스트 모두 하위 에이전트 안의 호출에 `agent_id`·`agent_type`을 싣는다(claude 2.1.293·codex-cli 0.161.0 실측, Codex 는 `ca_x`를 `commonAgentName`으로 바꾼다). 정의 파일의 `tools`와 별개로 hook 이 막는다.
@@ -578,6 +598,8 @@ stateDiagram-v2
 
 ## 8. 상태·산출물 파일 지도
 
+사전 판별은 `.code-agent/log/triage/active.json`에 현재 조사 ID를 두고, 같은 폴더의 `<출처 해시>/` 아래 `draft.json`(모델 초안), `record.json`(정본), `report-<회차>.json`(제출본), `jira.md`(수동 생성용 본문)를 둔다. 출처는 로그 접수 UUID 또는 Sentry 조직/프로젝트/이슈ID다. 로그 특징·최초 원문·접수 횟수·접수 시각·후보·작업 상태를 보존하고 반복 원문은 occurrence-N.json으로 남긴다. 기존 `log/` 무시 규칙을 쓰며 close는 active만 지운다. handoff는 원본 로그·보고서와 Jira 연결을 `doc/work/<Jira 키>/triage.json`·`triage.md`·`request.json`에 보존한다. 로컬 중복 연결은 보존된 조사 기록에 의존하므로 다른 체크아웃·PC에서는 Sentry/Jira의 추적 표지로 중복을 확인한다.
+
 `.code-agent/`는 코드만 쓴다. 모델의 도구 쓰기는 모드와 관계없이 hook이 막는다(`stateGuard` `hook.ts:337-345`). 세션이 없을 때는 셸 명령의 `.code-agent` 경로 언급도 막고(276-283), 세션·작업 중에는 셸 허용 목록(§5.4)이 쓰기 명령을 막는다.
 
 | 경로 | 쓰는 곳 | 읽는 곳 | git |
@@ -627,6 +649,7 @@ stateDiagram-v2
 | 설치·갱신·점검 | `init.ts`(Codex Windows 명령 `codexWindowsCommand`·`codexWindowsProblem`), `codexTrust.ts`(Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만), `hosts.ts`(교차 실행 파일 `hostCommand`·`hostCommandConfigError`·`.js` 진입점의 node `scriptRunner`·실행 파일 변수 안내 `binHint`, 교차 안내 `crossNotice`·`crossHostProblems`·게이트 줄 괄호 `crossRunNote`), `assets.ts`, `update.ts`, `sourceUpdate.ts`, `doctor.ts`, `models.ts`(역할 모델 변경 `setModel`·`validateModelChange`, 작업 중 변경 거부 `workInProgress`·`requireNoWorkInProgress`), `modelPolicy.ts`(역할 모델·추론 강도 정책 `ROLE_POLICY`·`TIER_DEFAULTS`) |
 | 준비·공통 문서 | `docsCommands.ts`, `docs.ts`, `schemas.ts`, `setup.ts`, `bootstrap.ts`, `survey.ts` |
 | 접수 | `request.ts`, `intakeTrace.ts` |
+| Sentry 사전 판별·Jira 수동 연결 | `triageState.ts`(형식·조회·재개 안내), `errorFingerprint.ts`(보수적 로그 특징 추출), `triage.ts`(중복·후보 비교·배포·재판별·조사 시작·제출·코드 근거 대조·Jira 본문·연결·fix 인계), `ca-fix/triage.md`(호스트 조사 절차) |
 | 커서·게이트·context | `commands.ts`(`nextHint`·`status`·`start`·`next`, `context`는 작업·요구 키를 확인하고 렌더러를 부른다), `contextRender.ts`(`renderContext` — 스테이지·종류별 절 렌더러, 후보 파일·참고 문서 절), `phaseInfo.ts`(`PHASE_LABEL`·`codeStages`), `reentry.ts`(승인 무효 재진입 `reentryHint`·`PHASE_SKILL`), `failureHint.ts`(원천이 `다음:`에 닿지 않는 실패 한 줄), `work.ts`, `layout.ts`, `git.ts`, `tree.ts` |
 | 작업 문서 검사 | `workDocs.ts`, `sourceTrace.ts`, `questions.ts`, `planningValidation.ts`, `stagedChecks.ts`(완료 hook의 게이트 검사) |
 | 계획 오케스트레이션 | `planning.ts`, `planningState.ts`, `planningHook.ts`, `handoff.ts`, `planningChain.ts`(advance 의 `next` 줄 `planningNextLine`·연쇄 `planningAdvanceCli`·단건 `planningAssignmentCli`), `lock.ts`(공통), `retryPolicy.ts`(공통) |
@@ -677,3 +700,6 @@ stateDiagram-v2
 | 2026-10-08 | 담당 호출의 Agent 도구 `run_in_background: false`(Codex 사본은 결과를 기다리는 문장), 실제 호스트 확인 기록 | 이 커밋(부모 `b7d0a28`) | §1.1, §7, §10 |
 | 2026-10-08 | 실제 호스트 반영의 검증 지적 — doctor 의 옛 Windows 명령 오탐 제거(이벤트별 사유), 상위 폴더 신뢰는 확인 필요, 연결 확인을 같은 프로세스 worker 로·단일 실행 파일의 `.js` 진입점은 PATH 의 node, 교차 자식 환경의 Claude 세션 값 제거, 이전 버전 절차의 담당 호출 전경 실행, 게이트 줄의 같은 사유 반복 제거, Codex exit 2 서술 | 이 커밋(부모 `c11c3ab`) | §1.1, §5.2, §5.3, §6.3, §7, §9, §10 |
 | 2026-10-09 | 실제 호스트 반영의 재검증 지적 — 단일 실행 파일의 PATH `node` 셰임 건너뛰기, 연결 확인 준비 실패도 `worker-…`, doctor 의 옛 Codex 설치(일부 이벤트만 빠짐)는 `update --templates-only --host codex`(작업 중이면 끝난 뒤), 형제 저장소의 hook 신뢰 기록 제외 | 이 커밋(부모 `5f4324b`) | §5.2, §6.3, §9, §10 |
+| 2026-10-12 | Sentry 오류의 사전 판별·중복 확인·Jira 수동 연결 후 fix 접수를 추가하고 기존 직접 접수와 개발 단계를 유지한다 | 이 커밋(부모 `e890e2a`) | §1.1, §2, §3.1, §5.3, §8, §9 |
+| 2026-10-12 | 로그 기반 중복 판별과 작업·배포 상태 및 재발 재판별을 연결한다 | 이 커밋(부모 `e890e2a`) | §1.1, §2, §3.1, §5.3, §8, §9 |
+| 2026-10-12 | 접수 안내에서 실행 절차와 작업·외부 업무·조사 식별자를 구분한다 | 이 커밋(부모 `e890e2a`) | §3.1 |

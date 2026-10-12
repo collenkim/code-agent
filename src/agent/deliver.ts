@@ -687,6 +687,7 @@ export function deliver(work: Work): string {
     : [];
 
   logStage(repoRoot, active, "deliver");
+  (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, active.id, drift.length ? "paused" : "awaiting-deployment");
   clearActive(repoRoot);
   return [
     `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}`,

@@ -19,6 +19,7 @@ import { checkProjectDocs, docsReady } from "./docs";
 import { hasUnmappedOriginal, intakeTrace } from "./intakeTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 import { skill } from "./hostText";
+import { loadTriage, requireNoTriage } from "./triageState";
 import { isGitRepo } from "./git";
 import { changedPaths, commitOf, type Change } from "./tree";
 import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
@@ -435,8 +436,10 @@ export function requestBegin(
   repoRoot: string,
   id: string | undefined,
   kind: string | undefined,
-  options: { base?: string; target?: string } = {},
+  options: { base?: string; target?: string; triageId?: string } = {},
 ): string {
+  const triage = loadTriage(repoRoot);
+  if (triage && !(options.triageId === triage.id && triage.report?.codeChange === "required" && triage.jira?.key === id && kind === "fix")) requireNoTriage(repoRoot);
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) throw new Stop("문서 작성 세션이 열려 있습니다 — code-agent docs end 로 닫은 뒤 요구사항을 접수하세요.");
   const aidlc = aidlcBlock(repoRoot);
   if (aidlc) throw new Stop(aidlc);

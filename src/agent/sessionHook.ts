@@ -11,6 +11,7 @@ import { hookInstallWarning } from "./init";
 import { skill, withNotation } from "./hostText";
 import { sessionStartLease } from "./lease";
 import { openConsent } from "./consentState";
+import { loadTriage, triageSummary } from "./triageState";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume) 비워지거나(clear) 압축된(compact) 뒤
@@ -88,6 +89,8 @@ function leaseNote(work: Work, session?: string, source?: string): string[] {
 }
 
 function progress(repoRoot: string, source?: string, sessionId?: string): string {
+  const triage = loadTriage(repoRoot);
+  if (triage) return triageSummary(triage);
   const work = loadWork(repoRoot);
   if (work) {
     const { active, order } = work;

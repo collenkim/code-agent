@@ -2,7 +2,9 @@
 
 **요구사항을 받아 코드를 작성하고, 테스트·리뷰를 거쳐 로컬 커밋까지 진행하는 Claude Code·Codex용 개발 에이전트입니다.** 신규 개발, 기존 기능 추가·변경, 버그 수정, 리팩토링을 지원합니다. 사용자는 원하는 동작을 설명하고, 필요한 업무 질문에 답하고, 요구사항·계획·최종 결과를 확인합니다.
 
-code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다. 별도 서버나 MCP 서버를 띄우지 않습니다. 호스트별 스킬·서브에이전트·훅을 설치하고 같은 프로젝트의 대화에서 요구사항을 전달합니다.
+code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다. 별도 서버나 MCP 서버를 띄우지 않습니다. 호스트별 실행 절차·서브에이전트·훅을 설치하고 같은 프로젝트의 대화에서 요구사항을 전달합니다.
+
+오류 로그만 있으면 `/ca-fix --triage <오류 로그>`로 읽기 전용 조사를 시작합니다. 로그 특징으로 중복을 조회하고 진행 중인 동일 오류는 기존 작업을 안내합니다. 코드 수정이 필요한 신규 건만 중복 확인과 Jira 수동 생성·연결을 거쳐 fix로 접수합니다. 데이터·환경 조치는 별도로 보고하고, 근거가 부족하면 추가 증거를 요청합니다. 기존 Jira·직접 결함 신고와 신규 개발·리팩토링은 기존 접수 절차를 사용합니다. [사전 판별 사용법](doc/usage.md#sentry-오류의-사전-판별)
 
 | 환경 | 설치 | 대화에서 시작 |
 |---|---|---|
@@ -10,7 +12,7 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 | Codex | `code-agent init --host codex` | `$ca-request <요구사항>` |
 | 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
 
-Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 스킬을 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다.
+Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
 
 두 호스트 모두 역할을 판단(analyst·critic·reviewer)과 실행(그 밖)으로 나눠 모델·추론 강도 기본값을 둡니다(Claude opus/high·sonnet/medium, Codex gpt-6.1-sol high·medium). `code-agent model`로 현재값을 확인하고 필요하면 역할별로 변경하거나 `default`로 복원합니다. 사용자 변경값은 업데이트 후에도 유지합니다. [역할별 모델 설정](doc/codex.md#역할별-모델-기본값과-변경)을 참고하세요.
 
@@ -49,7 +51,7 @@ Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합�
 ## 동작 구조
 
 ```text
-사용자 → 호스트의 ca-request 스킬 → 메인 에이전트가 단계별 스킬 실행
+사용자 → 호스트의 ca-request 실행 절차 → 메인 에이전트가 단계별 실행 절차 실행
                                       ├─ 분석·조사·작성·테스트·리뷰 서브에이전트
                                       └─ 도구 호출 → hook → code-agent CLI 판정
 
@@ -59,8 +61,8 @@ Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합�
 
 | 구성 | 역할 |
 |---|---|
-| Claude Code·Codex 메인 대화 | 현재 상태에 맞는 스킬을 읽고 개발을 진행합니다. 필요한 서브에이전트를 호출합니다. |
-| 호스트별 스킬 18개 | Claude는 `.claude/skills/`, Codex는 `.agents/skills/`의 `ca-*/SKILL.md`에 접수·단계별 절차를 정의합니다. |
+| Claude Code·Codex 메인 대화 | 현재 상태에 맞는 실행 절차를 읽고 개발을 진행합니다. 필요한 서브에이전트를 호출합니다. |
+| 호스트별 실행 절차 18개 | Claude는 `.claude/skills/`, Codex는 `.agents/skills/`의 `ca-*/SKILL.md`에 접수·단계별 절차를 정의합니다. |
 | 호스트별 서브에이전트 8개 | Claude는 `.claude/agents/ca-*.md`, Codex는 `.codex/agents/ca-*.toml`에 분석·조사·작성·구현·테스트·검토 역할을 정의합니다. |
 | hook 등록 9개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개와, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart `session-event` 1개도 등록합니다. |
 | `code-agent` CLI | 상태 전환, 승인·범위 검사, 검증 명령 실행, 증거 기록, 로컬 반영을 처리하고 종료합니다. 상주 서버가 아닙니다. |
@@ -69,7 +71,7 @@ Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합�
 
 `init`은 위 설정을 **설치만** 합니다. 호스트나 개발 작업을 자동으로 시작하지 않습니다. 설치한 프로젝트에서 사용할 호스트를 실행합니다. 별도 메인 에이전트를 등록할 필요는 없습니다.
 
-단계 절차는 스킬에 있고, 승인·변경 범위·검증 결과의 통과 조건은 CLI와 hook이 검사합니다. hook은 모델의 실수를 줄이는 장치이며 로컬 사용자를 통제하는 보안 경계는 아닙니다. Claude Code의 프로젝트 스킬 방식은 [공식 스킬 문서](https://code.claude.com/docs/en/skills)에서 확인할 수 있습니다.
+단계 절차는 실행 절차에 있고, 승인·변경 범위·검증 결과의 통과 조건은 CLI와 hook이 검사합니다. hook은 모델의 실수를 줄이는 장치이며 로컬 사용자를 통제하는 보안 경계는 아닙니다. Claude Code의 프로젝트 실행 절차 방식은 [공식 실행 절차 문서](https://code.claude.com/docs/en/skills)에서 확인할 수 있습니다.
 
 ## 설치와 실행
 
@@ -182,10 +184,10 @@ claude
 
 | 명령 | 용도 |
 |---|---|
-| `code-agent init` | 현재 프로젝트에 스킬·서브에이전트·hook 설치 |
+| `code-agent init` | 현재 프로젝트에 실행 절차·서브에이전트·hook 설치 |
 | `code-agent update` | 갱신 순서 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스 설치본을 upstream에서 fast-forward로 갱신하고 의존성·빌드·프로젝트 적용·doctor 실행 |
 | `code-agent update --templates-only` | 다운로드 없이 현재 번들의 프로젝트 설정만 적용 |
-| `code-agent doctor` | 설치 경로·스킬·hook·문서 상태 점검과 조치 안내 (읽기 전용 — 작업 중에도 조회할 수 있다) |
+| `code-agent doctor` | 설치 경로·실행 절차·hook·문서 상태 점검과 조치 안내 (읽기 전용 — 작업 중에도 조회할 수 있다) |
 | `code-agent setup` | 기존 명령·실행 환경·Git 준비 확인. 테스트 실행 없음 |
 | `code-agent setup baseline` | 준비 파일 확인 후 최초 커밋 또는 기존 저장소의 도입 커밋 생성 |
 | `code-agent confirm doc all` | 공통 POLICY 4종 일괄 확정 |
@@ -214,7 +216,7 @@ claude
 
 **code-agent 소스를 고친 것과 대상 프로젝트에 설치된 절차를 갱신한 것은 별개입니다.** `init`은 `template/`의 파일을 프로젝트로 복사하므로 이미 설치한 `.claude/`와 `CLAUDE.md`에는 이전 지시가 남을 수 있습니다.
 
-**`code-agent update`는 로컬 Git 소스에 연결된 설치본의 갱신 명령입니다.** 먼저 소스 위치·브랜치·실행할 단계(fetch·pull·의존성 설치·빌드·적용)를 미리 보여 주고, 터미널에서 `update`를 그대로 입력해야 진행합니다. 비TTY(파이프·CI)나 Claude Code·Codex 가 띄운 셸에서는 진행하지 않고 멈춥니다 — 대화 안에서는 아래의 같은 세션 확인을 씁니다. 확인한 뒤 code-agent 소스 저장소의 upstream을 `pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 잠금 파일 기준으로 `npm ci --include=dev`를 실행하고 빌드합니다. 이어서 새로 빌드한 CLI로 대상 프로젝트의 스킬·에이전트·hook·공통 지시를 적용하고 `doctor`로 점검합니다. 소스 저장소에 미커밋 변경이 있거나 이력이 분기되어 fast-forward할 수 없으면 중단합니다.
+**`code-agent update`는 로컬 Git 소스에 연결된 설치본의 갱신 명령입니다.** 먼저 소스 위치·브랜치·실행할 단계(fetch·pull·의존성 설치·빌드·적용)를 미리 보여 주고, 터미널에서 `update`를 그대로 입력해야 진행합니다. 비TTY(파이프·CI)나 Claude Code·Codex 가 띄운 셸에서는 진행하지 않고 멈춥니다 — 대화 안에서는 아래의 같은 세션 확인을 씁니다. 확인한 뒤 code-agent 소스 저장소의 upstream을 `pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 잠금 파일 기준으로 `npm ci --include=dev`를 실행하고 빌드합니다. 이어서 새로 빌드한 CLI로 대상 프로젝트의 실행 절차·에이전트·hook·공통 지시를 적용하고 `doctor`로 점검합니다. 소스 저장소에 미커밋 변경이 있거나 이력이 분기되어 fast-forward할 수 없으면 중단합니다.
 
 | 설치 방식 | code-agent 자체 갱신 | 개발 대상 프로젝트에 적용 |
 |---|---|---|
