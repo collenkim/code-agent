@@ -180,7 +180,8 @@ describe("hook·검증의 Codex 표기", () => {
     const codex = (codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }) as
       { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "";
     assert.match(codex, /^작업 중에는 셸로 code-agent 명령\(/);
-    assert.match(codex, /파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> \[시작 줄\] \[줄 수\]를 쓰세요\.$/);
+    assert.match(codex, /파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> \[시작 줄\] \[줄 수\]를 쓰세요\./);
+    assert.match(codex, /Windows PowerShell.*code-agent\.cmd/);
   });
 
   const codexReason = (command: string): string | undefined => (codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }) as

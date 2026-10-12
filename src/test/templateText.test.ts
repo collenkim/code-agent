@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { CODEX_SENTENCES, hostAssets } from "../agent/hosts";
+import { POWERSHELL_COMMAND_GUIDE } from "../agent/hostText";
 
 const TEMPLATE = join(__dirname, "../../template/claude");
 function claudeTexts(): Map<string, string> {
@@ -22,6 +23,17 @@ function claudeTexts(): Map<string, string> {
   return out;
 }
 const skill = (name: string): string => readFileSync(join(TEMPLATE, "skills", name, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
+
+test("모든 Codex 지침은 PowerShell .cmd 호출과 대화 응답 예외를 안내한다", () => {
+  for (const [path, text] of hostAssets("codex")) {
+    assert.ok(text.includes(POWERSHELL_COMMAND_GUIDE), path);
+    assert.doesNotMatch(text, /code-agent\.cmd consent respond/, path);
+    assert.doesNotMatch(text, /\.code-agent\.cmd|code-agent\.cmd\.json/, path);
+  }
+  const block = readFileSync(join(TEMPLATE, "../CODEX.block.md"), "utf8");
+  assert.ok(block.includes(POWERSHELL_COMMAND_GUIDE));
+  for (const [path, text] of hostAssets("claude")) assert.doesNotMatch(text, /code-agent\.cmd/, path);
+});
 
 test("codexText 고정 문장 치환의 원문은 Claude 템플릿 하나 이상에 있고 Codex 사본에는 남지 않는다", () => {
   const claude = [...claudeTexts().values()];

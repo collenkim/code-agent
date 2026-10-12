@@ -141,4 +141,6 @@ Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 `.code-a
 
 ## 차단 시 복구 선택
 
+Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
+
 Codex 메인은 CLI·hook 차단 시 `.agents/skills/ca-answer/reference.md`의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 질문한다. 현재 모드에서 사용 가능한 질문 도구를 실제로 호출하며 request_user_input의 모드 제한을 지킨다. 도구가 없거나 거부되면 이유와 번호·선택지·결과를 대화에 표시해 실제 답을 기다린다. 도구를 호출할 수 있는데 글머리표만 출력하고 끝내지 않는다. 동의가 필요한 실행은 ca-answer의 Codex 동의 절차를 별도로 거친다. 외부 권한·hook 차단은 진단과 사용자 환경 확인으로 연결하며, 사용자의 거절·보류를 다른 도구로 우회하지 않는다. 작업 중 공통 문서 보완은 중단 동의 후 같은 작업 ID로 재개하고 필요한 계획·승인을 다시 검증한다.

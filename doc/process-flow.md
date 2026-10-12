@@ -564,6 +564,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. npm의 `.ps1` 실행 정책 거부를 피하며 실행 정책은 변경하지 않는다. `hosts.ts`의 Codex 변환본(역할 포함), 별도 ca-answer, 설치 공통 블록과 `hostText.ts`의 파일 도구 안내가 이 규칙을 싣는다. Bash·macOS·Linux 명령, 파일 경로, 사용자가 보내는 대화 응답 `code-agent consent respond …`는 바꾸지 않는다.
+
 | 설치 | `hosts.json` | 교차 검증 |
 |---|---|---|
 | `--host claude` | `["claude"]` | 요구하지 않는다(`crossCriticProblems`·`reviewProblems`가 건너뛴다) |
@@ -711,4 +713,5 @@ stateDiagram-v2
 | 2026-10-12 | 접수 안내에서 실행 절차와 작업·외부 업무·조사 식별자를 구분한다 | `a4b6df8` | §3.1 |
 | 2026-10-12 | 문서 누락과 CLI·hook 차단에서 원인별 복구·보류 선택을 받고 기존 동의와 검증을 거쳐 이어간다 | `2376826` | §3.2, §5.3 |
 | 2026-10-12 | Windows의 code-agent.cmd 호출을 기존 명령과 같은 hook·동의·임대 검사로 판정한다 | `25a8697` | §5.3 |
-| 2026-10-12 | 두 호스트의 업무 질문을 실제 도구 호출로 연결하고 차단 후 허용된 조회·이미 정한 방향은 재확인 없이 이어간다 | 이 커밋(부모 `25a8697`) | §3.2, §5.3, §7 |
+| 2026-10-12 | 두 호스트의 업무 질문을 실제 도구 호출로 연결하고 차단 후 허용된 조회·이미 정한 방향은 재확인 없이 이어간다 | `c0a362f` | §3.2, §5.3, §7 |
+| 2026-10-12 | Windows PowerShell의 셸 호출은 .cmd를 쓰도록 모든 Codex 지침과 파일 읽기 안내에 명시한다 | 이 커밋(부모 `c0a362f`) | §7 |

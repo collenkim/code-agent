@@ -1,5 +1,7 @@
 ## code-agent
 
+Windows PowerShell에서는 본문·CLI 출력의 code-agent 셸 호출을 code-agent.cmd로 실행한다(.ps1 실행 정책 오류 방지). 그 밖의 셸은 code-agent를 쓴다. 사용자 대화 메시지인 code-agent consent respond는 바꾸지 않는다.
+
 이 프로젝트는 code-agent의 단계·문서·검증 절차를 사용한다. `$ca-request`로 시작하고 `$ca-status`, `$ca-next`로 재개한다. 스킬은 `.agents/skills/ca-*/SKILL.md`, 역할은 `.codex/agents/ca-*.toml`에서 읽는다.
 
 - 먼저 `code-agent status`로 현재 단계를 확인한다. `code-agent context`는 단계 스킬이 시킬 때만 실행하고, 담당에게 넘길 때는 `--file`로 파일 경로만 넘긴다. 프로그램이 수행하는 단계는 CLI로 실행한다. 추론이 필요한 단계만 해당 스킬·서브 에이전트로 넘긴다.

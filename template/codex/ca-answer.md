@@ -3,6 +3,8 @@ name: ca-answer
 description: Codex에서 업무 질문과 사용자 동의를 처리하고 미응답 작업을 재개한다.
 ---
 
+Windows PowerShell에서는 본문·CLI 출력의 code-agent 셸 호출을 code-agent.cmd로 실행한다(.ps1 실행 정책 오류 방지). 그 밖의 셸은 code-agent를 쓴다. 사용자 대화 메시지인 code-agent consent respond는 바꾸지 않는다.
+
 메인이 질문과 승인 처리를 담당한다. 서브 에이전트는 질문 후보만 반환한다.
 
 전용 읽기 도구가 없으면 `code-agent read <파일> [시작 줄] [줄 수]`로 기존 요구·답·동의 자료를 읽는다. 기본 200줄이며 최대 400줄이다.

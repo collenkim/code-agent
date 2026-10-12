@@ -92,9 +92,11 @@ export function editVia(n: Notation = current): string {
   return n === "claude" ? "Write/Edit 로" : n === "codex" ? "apply_patch 로" : "Write/Edit(Codex: apply_patch)로";
 }
 const CLAUDE_FILE_TOOLS = "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요.";
+/** 실행 정책을 바꾸지 않고 npm의 PowerShell 스크립트 대신 명령 파일을 호출한다. 대화 응답은 셸 명령이 아니다. */
+export const POWERSHELL_COMMAND_GUIDE = "Windows PowerShell에서는 본문·CLI 출력의 code-agent 셸 호출을 code-agent.cmd로 실행한다(.ps1 실행 정책 오류 방지). 그 밖의 셸은 code-agent를 쓴다. 사용자 대화 메시지인 code-agent consent respond는 바꾸지 않는다.";
 export function fileToolsHint(n: Notation = current): string {
   return n === "claude" ? CLAUDE_FILE_TOOLS
-    : n === "codex" ? "파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요."
+    : n === "codex" ? `파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요. ${POWERSHELL_COMMAND_GUIDE}`
       : `${CLAUDE_FILE_TOOLS} (Codex: apply_patch · code-agent read)`;
 }
 /** 호스트 이름(임대·안내 문구용) */

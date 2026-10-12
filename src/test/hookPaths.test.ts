@@ -243,12 +243,22 @@ test("H4 읽기 전용 담당(Claude 정의의 tools 에 쓰기·셸이 없는 �
 });
 
 /** Codex 가 Windows 에서 hook 을 돌리는 꼴 — `powershell.exe -NoProfile -Command "<commandWindows>"`(0.161.0 실측) */
-function powershellHook(command: string, stdin: string, env: NodeJS.ProcessEnv, policy?: string): { status: number | null; stdout: string } {
+test("PowerShell Restricted에서도 .cmd read는 .ps1 없이 문서를 읽는다", { skip: process.platform !== "win32" }, () => {
+  writeFixture(root, "code-agent.ps1", "throw 'ps1 must not run'");
+  writeFixture(root, "code-agent.cmd", `@echo off\r\n"${process.execPath}" "${cli}" %*\r\n`);
+  writeFixture(root, "read-probe.md", "read-probe-ok\n");
+  const command = `code-agent.cmd read '${join(root, "read-probe.md").replace(/'/g, "''")}' 1 300`;
+  const result = powershellHook(command, "", { ...process.env, PATH: `${root};${process.env.PATH ?? ""}` }, "Restricted", root);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /read-probe-ok/);
+});
+
+function powershellHook(command: string, stdin: string, env: NodeJS.ProcessEnv, policy?: string, cwd?: string): { status: number | null; stdout: string; stderr: string } {
   const exe = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   const childEnv = { ...env };
   delete childEnv.PSExecutionPolicyPreference;
-  const run = spawnSync(exe, ["-NoProfile", ...(policy ? ["-ExecutionPolicy", policy] : []), "-Command", command], { input: stdin, encoding: "utf8", env: childEnv, windowsHide: true, timeout: 60_000 });
-  return { status: run.status, stdout: run.stdout ?? "" };
+  const run = spawnSync(exe, ["-NoProfile", ...(policy ? ["-ExecutionPolicy", policy] : []), "-Command", command], { cwd, input: stdin, encoding: "utf8", env: childEnv, windowsHide: true, timeout: 60_000 });
+  return { status: run.status, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }
 
 test("H3 Windows — 설치된 commandWindows 를 PowerShell 로 돌리면 PreToolUse 실패는 2, 동의 응답 실패 2 는 그대로, cli 가 없으면 PreToolUse 2·UserPromptSubmit 1, node 가 없으면 PreToolUse 2·UserPromptSubmit 0", { skip: process.platform !== "win32" }, () => {

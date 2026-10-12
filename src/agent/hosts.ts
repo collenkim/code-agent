@@ -4,7 +4,7 @@ import { assetKeys, assetText, CLAUDE_ASSETS, isPackaged } from "./assets";
 import { isBatchScript, resolveExecutable } from "../core/build";
 import { Stop } from "./stop";
 import { codexModelOf, codexModelText, type AgentName } from "./modelPolicy";
-import { codexAgentName, commonAgentName, ROLE_NAMES } from "./hostText";
+import { codexAgentName, commonAgentName, POWERSHELL_COMMAND_GUIDE, ROLE_NAMES } from "./hostText";
 import { guidance, POLICIES } from "./retryPolicy";
 
 export type Host = "claude" | "codex";
@@ -172,7 +172,7 @@ function codexText(text: string): string {
     // Codex 메인의 교차 명령은 다른 호스트를 띄우고 네트워크를 쓴다 — 샌드박스 밖(권한 상승)으로 실행하게 한다(`Bash:`·`--by` 치환 뒤의 글자)
     .replace(/셸: `code-agent (review|planning) cross --by claude`/g,
       "셸(Codex 샌드박스 밖 — 다른 호스트를 띄우고 네트워크를 쓰므로 권한 상승을 요청해 실행한다): `code-agent $1 cross --by claude`")
-    + "\n\n파일 읽기는 셸에서 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 줄 수는 최대 400이다. Read/Grep/Glob 전용 도구가 없으면 배정 inputs와 `code-agent survey`의 경로를 이 명령으로 읽는다. 일반 셸 읽기·연결 명령은 작업 게이트가 거부한다.\n";
+    + `\n\n${POWERSHELL_COMMAND_GUIDE}\n파일 읽기는 code-agent read <파일> [시작 줄] [줄 수](최대 400)로 한다. Windows PowerShell 예: code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300. 전용 읽기 도구가 없으면 배정 inputs·survey의 경로를 읽는다. 일반 셸 읽기·연결 명령은 게이트가 거부한다.\n`;
 }
 export function hostAssets(host: Host, root?: string): Map<string, string> {
   const files = new Map<string, string>();

@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { runtimeHost } from "../agent/crossEnv";
 import * as hosts from "../agent/hosts";
 import {
-  agentName, askVia, codexAgentName, commonAgentName, fileToolsHint, hostLabel, installedHosts, notation, notationFor, ROLE_NAMES,
+  POWERSHELL_COMMAND_GUIDE, agentName, askVia, codexAgentName, commonAgentName, fileToolsHint, hostLabel, installedHosts, notation, notationFor, ROLE_NAMES,
   shellLabel, skill, SKILL_NAMES, viaShell, withNotation, type Notation,
 } from "../agent/hostText";
 
@@ -49,7 +49,7 @@ test("notationFor — CODE_AGENT_HOST → 설치 호스트 하나 → 실행 환
 test("표기 함수 — Claude·Codex·중립", () => {
   const table: Record<Notation, string[]> = {
     claude: ["/ca-next", "ca-tester", "AskUserQuestion으로", "Bash 로", "Bash:", "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요."],
-    codex: ["$ca-next", "ca_tester", "Codex 질문 도구(없으면 대화)로", "셸로", "셸:", "파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요."],
+    codex: ["$ca-next", "ca_tester", "Codex 질문 도구(없으면 대화)로", "셸로", "셸:", `파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> [시작 줄] [줄 수]를 쓰세요. ${POWERSHELL_COMMAND_GUIDE}`],
     neutral: ["/ca-next($ca-next)", "ca-tester(ca_tester)", "질문 도구(Claude Code: AskUserQuestion · Codex: 질문 도구 또는 대화)로", "셸로", "셸:",
       "파일은 Write/Edit 로 고치고, 읽기는 Read/Grep/Glob 을 쓰세요. (Codex: apply_patch · code-agent read)"],
   };
