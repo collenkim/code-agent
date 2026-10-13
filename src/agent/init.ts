@@ -8,6 +8,7 @@ import { readClaudeOverrides, readCodexOverrides } from "./modelPolicy";
 import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 import { runtimeHost } from "./crossEnv";
+import { checkChoiceConfig, installChoiceConfig } from "./choiceConfig";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -206,7 +207,7 @@ export function requireInstallSettings(repoRoot: string, hosts: readonly Host[])
   for (const host of hosts) {
     readSettings(settingsFile(repoRoot, host));
     if (host === "claude") readClaudeOverrides(repoRoot);
-    else readCodexOverrides(repoRoot);
+    else { readCodexOverrides(repoRoot); checkChoiceConfig(repoRoot); }
   }
 }
 
@@ -247,6 +248,7 @@ export function codexWindowsCommand(event: (typeof CODEX_EVENTS)[number], cli?: 
 }
 
 function initCodex(repoRoot: string, options: InitOptions): string {
+  installChoiceConfig(repoRoot, options.cli);
   const assets = hostAssets("codex", repoRoot);
   for (const [file, text] of assets) {
     const target = join(repoRoot, file);
@@ -273,7 +275,7 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     `  훅 ${CODEX_EVENTS.length}종: .codex/hooks.json · 지침: AGENTS.md · 모델·추론 강도: 역할별 제품 기본값과 사용자 변경값`,
     "  code-agent model --host codex로 역할별 설정을 확인하고 변경할 수 있습니다.",
     "  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요.",
-    "  승인 응답은 ca-answer가 안내하는 사용자 대화 메시지로 관찰합니다.",
+    "  선택 UI: .codex/config.toml의 code_agent MCP — 업무 질문과 동의를 방향키·Enter로 선택합니다.",
     "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",
   ].join("\n");
 }

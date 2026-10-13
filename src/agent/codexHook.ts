@@ -49,7 +49,8 @@ export function observeCodexConsent(input: CodexHookInput, root: string): void {
   if (!match || !input.turn_id) throw new Error("현재 consent status의 codexReply 형식으로 답하세요.");
   const status = JSON.parse(consentStatus(root, match[1]));
   const choices = match[2].split(",").map(Number);
-  if (status.status !== "pending" || choices.length !== status.questions.length) throw new Error("현재 미응답 질문 수와 선택이 일치하지 않습니다.");
+  if (status.status !== "pending") throw new Error(`이미 종료했거나 응답한 동의입니다 (${status.status}). 실패한 동의는 새로 준비하고 선택 UI로 확인하세요.`);
+  if (choices.length !== status.questions.length) throw new Error("현재 미응답 질문 수와 선택이 일치하지 않습니다.");
   const { required, code } = codexReplyCode(root, match[1]);
   if (required && match[3] !== code) {
     throw new Error("확인 코드가 없거나 다릅니다 — 요약과 질문 끝의 '확인 코드:' 6자를 응답 끝에 붙여 code-agent consent respond <ID> <번호> <확인 코드> 로 다시 보내세요. 요약이 줄어 코드가 보이지 않으면 메인에게 전문을 다시 보여 달라고 하세요.");
@@ -126,6 +127,19 @@ function codexEvent(input: CodexHookInput): object {
   const root = findRepoRoot(input.cwd);
   if (input.hook_event_name === "PreToolUse") {
     if (!input.tool_name || !input.tool_input) throw new Error("Codex 도구 입력이 없습니다.");
+    if (input.tool_name === "mcp__code_agent__confirm") {
+      if (crossChild() || input.agent_id !== undefined || !input.session_id) throw new Error("동의 선택 UI는 메인 세션에서만 열 수 있습니다.");
+      const id = input.tool_input.id;
+      if (typeof id !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id)
+          || Object.keys(input.tool_input).some(key => key !== "id")) throw new Error("동의 선택 UI에는 준비한 ID만 전달합니다. 답을 미리 넣을 수 없습니다.");
+      const { consentCommandGuard } = require("./consent") as typeof import("./consent");
+      const reason = consentCommandGuard(root, `code-agent consent finish ${id}`, input.session_id);
+      if (reason) return deny(reason);
+      (require("./consentTicket") as typeof import("./consentTicket")).issueTicket(root, {
+        kind: "question", id, sessionId: input.session_id, host: "codex", cwd: input.cwd, command: input.tool_name,
+      });
+      return {};
+    }
     // Windows 의 Codex 는 셸 명령을 PowerShell 로 돌린다 — 괄호·$ 평가를 같은 규칙으로 막는다.
     // 하위 에이전트 안의 호출은 agent_id·agent_type 을 싣는다(0.161.0 실측 — session_id 는 부모와 같다) — 계획 담당·읽기 전용 담당의 쓰기를 가른다
     const common = {cwd: input.cwd, session_id: input.session_id, host: "codex" as const,

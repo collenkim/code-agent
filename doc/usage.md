@@ -1,6 +1,6 @@
 # 사용 가이드 — 설치부터 승인까지
 
-Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init --host codex` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. 아래 선택 도구 예시는 Claude 기준이며, Codex에서 도구 이름을 그대로 실행하지 않는다.
+Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init --host codex` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
 
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.
@@ -1003,8 +1003,8 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 
 1. 메인은 실행할 action JSON을 허용된 작업 문서 경로에 작성한다.
 2. `code-agent consent prepare --action <동작> [--id <작업 ID>] [--kind <종류>] [--spec <지시서>] --for <claude|codex>`(자유 문구가 없는 동작) 또는 `code-agent consent prepare <action.json> --for <호스트>`(반려·model·플러그인·judgment)가 표시할 요약과 질문을 생성한다. `--for`를 주면 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply`). 메인 세션의 셸에서 이 꼴 그대로 실행해야 한다 — hook 이 그 실행을 본 세션에 동의를 묶고(준비 티켓), 다른 경로로 준비한 동의는 받지 않는다.
-3. 메인은 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다.
-4. 질문의 PreToolUse·PostToolUse hook이 같은 세션·호출·작업 경로의 실제 응답을 관찰한다.
+3. Codex는 요약을 보여 주고 `code_agent.confirm`에 준비한 ID만 전달한다. Claude는 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다.
+4. Claude는 질문의 PreToolUse·PostToolUse hook이 실제 응답을 관찰한다. Codex는 PreToolUse의 일회용 질문 티켓과 MCP 폼 응답을 같은 세션·호출·작업 경로·대상에 결속한다.
 5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다 — 결과에 지금 할 일(`next`)과 스테이지(`phase`)가 실려 적용 뒤 `code-agent status`를 다시 부르지 않는다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다. 적용은 응답을 받은 세션의 셸에서 hook 이 본 명령(적용 티켓)이나 사람의 터미널에서만 된다.
 6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 새 hook을 읽도록 Claude Code를 재시작한 뒤 재개한다.
 

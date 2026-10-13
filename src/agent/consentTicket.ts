@@ -17,7 +17,7 @@ import { hostMarked } from "./crossEnv";
 import { TIMING } from "./retryPolicy";
 import { Stop } from "./stop";
 
-export type TicketKind = "prepare" | "apply";
+export type TicketKind = "prepare" | "apply" | "question";
 export interface ConsentTicket {
   kind: TicketKind;
   /** apply: 동의 UUID */
@@ -124,7 +124,7 @@ export function consentCommandOf(command: string): { kind: "prepare" } | { kind:
 }
 
 function fileOf(kind: TicketKind, id?: string): string {
-  return kind === "prepare" ? "prepare.json" : `apply-${id}.json`;
+  return kind === "prepare" ? "prepare.json" : `${kind}-${id}.json`;
 }
 function expired(ticket: Pick<ConsentTicket, "at">, now: number): boolean {
   const at = Date.parse(ticket.at);
@@ -145,7 +145,7 @@ function sweep(dir: string, now: number): void {
 
 /** prepare → `prepare.json`(덮어쓴다), apply → `apply-<UUID>.json` */
 export function issueTicket(root: string, ticket: Omit<ConsentTicket, "at">, now = Date.now()): void {
-  if (ticket.kind === "apply" && !(ticket.id && new RegExp(`^${UUID}$`).test(ticket.id))) throw new Error("적용 티켓에는 동의 ID 가 필요합니다.");
+  if (ticket.kind !== "prepare" && !(ticket.id && new RegExp(`^${UUID}$`).test(ticket.id))) throw new Error("동의 티켓에는 동의 ID 가 필요합니다.");
   const dir = join(root, DIR);
   mkdirSync(dir, { recursive: true });
   try { sweep(dir, now); } catch { /* 정리는 덤이다 */ }
@@ -154,14 +154,14 @@ export function issueTicket(root: string, ticket: Omit<ConsentTicket, "at">, now
 
 /** 티켓을 가로채 읽고 지운다. 없거나 만료면 undefined(만료 파일은 지운다) */
 export function takeTicket(root: string, kind: TicketKind, id?: string, now = Date.now()): ConsentTicket | undefined {
-  if (kind === "apply" && !(id && new RegExp(`^${UUID}$`).test(id))) return undefined;
+  if (kind !== "prepare" && !(id && new RegExp(`^${UUID}$`).test(id))) return undefined;
   const path = join(root, DIR, fileOf(kind, id));
   if (!existsSync(path)) return undefined;
   const taking = `${path}.${process.pid}.taking`;
   try { renameSync(path, taking); } catch { return undefined; }   // 다른 프로세스가 먼저 가져갔다
   try {
     const ticket = JSON.parse(readFileSync(taking, "utf8")) as ConsentTicket;
-    if (ticket.kind !== kind || (kind === "apply" && ticket.id !== id) || typeof ticket.sessionId !== "string" || !ticket.sessionId
+    if (ticket.kind !== kind || (kind !== "prepare" && ticket.id !== id) || typeof ticket.sessionId !== "string" || !ticket.sessionId
         || (ticket.host !== "claude" && ticket.host !== "codex") || expired(ticket, now)) return undefined;
     return ticket;
   } catch { return undefined; }

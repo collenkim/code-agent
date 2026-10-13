@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
-import { userInfo } from "os";
+import { actorName } from "./actor";
 
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { ApprovalState, Decision } from "../core/approval";
@@ -1243,7 +1243,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     plan,
     manifest,
     decision,
-    approver: order.approver ?? userInfo().username,
+    approver: order.approver ?? actorName(),
     comment,
     presence,
     docsHash: docs.hash,

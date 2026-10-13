@@ -41,6 +41,10 @@ function runHookCommand(command: HookCommand): number {
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
+  if (command === "choice-server") {
+    if (args.length !== 2 || args[0] !== "--root") throw new Stop("choice-server --root <프로젝트> 형식으로 MCP 클라이언트가 실행합니다.");
+    return (require("./choiceServer") as typeof import("./choiceServer")).runChoiceServer(args[1]);
+  }
   if (command !== undefined && Object.prototype.hasOwnProperty.call(HOOKS, command)) return runHookCommand(command as HookCommand);
   return (require("./cliMain") as typeof import("./cliMain")).runCommand(command, args);
 }

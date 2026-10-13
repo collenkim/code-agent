@@ -97,10 +97,12 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
     const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
     const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
     const hooksBefore = readIfAny(join(repoRoot, ".codex", "hooks.json"));
+    const choicesBefore = readIfAny(join(repoRoot, ".codex", "config.toml"));
     const result = init(repoRoot, {host, cli});
     // hook 은 이벤트마다 command(비Windows)와 commandWindows(Windows PowerShell)를 다시 쓴다 — 옛 설치의 Windows 명령도 여기서 고쳐진다
     const hooks = `  .codex/hooks.json: ${hooksBefore === readIfAny(join(repoRoot, ".codex", "hooks.json")) ? "그대로" : "갱신"} (${CODEX_EVENTS.join(" · ")} — PreToolUse ${installedHook(repoRoot, "PreToolUse", "codex-event", "codex")})`;
-    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n${hooks}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
+    const choices = `  .codex/config.toml 선택 UI: ${choicesBefore === readIfAny(join(repoRoot, ".codex", "config.toml")) ? "그대로" : "갱신"} — Codex를 다시 열어 MCP 도구를 로드하세요.`;
+    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n${hooks}\n${choices}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
   }).join("\n\n");
   return [report, ...outsideNotice(outsideBefore, workOutside(repoRoot))].join("\n");
 }

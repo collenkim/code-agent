@@ -94,8 +94,11 @@ test("두 호스트의 모든 진입은 복구로 연결하고 업무 선택 도
     assert.match(docs, /사용자가 특정 방식을 이미 요청했으면 바로 그 절차를 따른다/);
     if (host === "codex") {
       assert.match(answer, /request_user_input_async/);
-      assert.match(answer, /request_user_input.*현재 모드.*사용 조건/);
-      assert.match(answer, /도구가 없거나 호출이 거부되면.*번호·선택지 이름·결과/);
+      assert.match(answer, /request_user_input.*모드 제한을 우회하지 않는다/);
+      assert.match(answer, /mcp__code_agent__ask/);
+      assert.match(answer, /mcp__code_agent__confirm/);
+      assert.match(answer, /방향키.*Enter/);
+      assert.match(answer, /번호 입력을 선택 UI의 대체 완료로 보고하지 않는다/);
       assert.match(answer, /승인은 이 도구의 답으로 처리하지 않고/);
       assert.match(answer, /UserPromptSubmit/);
     } else {
@@ -121,7 +124,7 @@ test("단계별 선택 표는 전체 단계와 접수·준비·재개를 다루�
       assert.ok(reference.includes(name), `${host}: ${name}`);
     }
     assert.match(reference, /이미 준 지시·답·설정.*계속한다/);
-    assert.match(reference, /도구가 없거나 거부되면 이유와 번호·선택지·결과/);
+    assert.match(reference, host === "claude" ? /도구가 없거나 거부되면 이유와 번호·선택지·결과/ : /MCP 선택 UI가 없거나 거부되면 doctor/);
     assert.match(reference, /업무 답으로 동의를 대체하지 않는다/);
     assert.match(reference, /선택지 없이 특정 문구 입력만 요청한 안내는 질문 제시 완료로 보지 않는다/);
     assert.match(get("ca-request"), /초안 저장 보고만 하고 끝내지 않는다/);

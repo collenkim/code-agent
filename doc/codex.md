@@ -22,7 +22,7 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 | 프로젝트 지침 | `AGENTS.md`의 code-agent 표시 블록 |
 | 설치 이력 | `.code-agent/hosts.json`, `.code-agent/version` |
 
-기존 `AGENTS.md`의 표시 블록 밖 내용, 다른 훅, `.codex/config.toml`은 보존한다. 스킬과 역할 파일은 번들 사본이므로 갱신하면 덮어쓴다. 프로젝트 규칙은 `AGENTS.md`의 블록 밖이나 프로젝트 문서에 둔다. 역할마다 제품 기본 모델·추론 강도를 명시하며 사용자의 역할별 변경값은 갱신 뒤에도 유지한다.
+기존 `AGENTS.md`의 표시 블록 밖 내용, 다른 훅, `.codex/config.toml`의 선택 UI 관리 블록 밖 설정은 보존한다. 스킬과 역할 파일은 번들 사본이므로 갱신하면 덮어쓴다. 프로젝트 규칙은 `AGENTS.md`의 블록 밖이나 프로젝트 문서에 둔다. 역할마다 제품 기본 모델·추론 강도를 명시하며 사용자의 역할별 변경값은 갱신 뒤에도 유지한다.
 
 설치 후 Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고, 'Hooks need review' 화면에서 프로젝트 훅을 검토·신뢰한다. Codex 는 프로젝트 신뢰(`config.toml`의 `[projects.'<경로>'] trust_level = "trusted"` — Windows 는 경로를 소문자로 적는다)와 훅 신뢰가 둘 다 있어야 프로젝트 훅을 돌리고, `codex exec`는 신뢰되지 않은 훅을 알리지 않고 건너뛴다(0.161.0 실측). `.codex/hooks.json`이 바뀌면(갱신 뒤) 다시 검토한다. 자동으로 신뢰 설정을 바꾸지 않는다. `doctor --host codex`는 `config.toml`을 읽기만 해 `Codex 프로젝트 신뢰`(이 저장소의 `trust_level` — 상위 폴더 항목만 있으면 Codex 가 그것을 이 저장소에 적용하는지 확인하지 못해 '확인 필요')와 `Codex 훅 신뢰`(훅 신뢰 기록 — 기록의 키 꼴을 확인하지 못해, 찾지 못하면 '확인 필요')를 알린다. 호스트가 훅을 무시하거나 설치된 역할을 선택하는 서브 에이전트 호출을 지원하지 않으면 관찰 결과가 없어 계획·리뷰 게이트를 통과할 수 없다. `doctor`는 설치 파일과 명령을 검사하며 실제 훅 실행·모델 실행 성공을 인증하지 않는다. 2026-10-02 추가 검사는 `codex-cli 0.160.0`에서 수행했다. 앞선 0.159.3 기능 조회와 구분하며 지원 최소 버전으로 단정하지 않는다. 이 검사(Windows, 실제 모델 `gpt-6.1-sol`, 초기 준비·요구 확정은 합성 fixture)에서 분석·통합 영향도 담당의 시작·완료 훅 호출, 결과 수락, 내용 게이트 통과를 확인했다. 접수부터 반영까지의 전체 흐름은 실제 Codex 로 확인하지 않았다. 기록은 `git show c4f3fbf:doc/reviews/2026-10-02-codex-hook-recovery.md`로 보고, 지금 구현에서 실제 호스트로 확인하지 않은 것은 [결과 요약](reviews/2026-10-08-procedure-fix-summary.md#실제-호스트에서-확인하지-않은-것)에 있다.
 
@@ -38,7 +38,7 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 | 이벤트 | code-agent 처리 |
 |---|---|
-| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
+| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령과 `code_agent.confirm`은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
 | UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 그 밖의 메시지는 기록하지 않는다(업무 답 관찰 없음) |
 | SubagentStart | 계획 담당·독립 리뷰어의 세션과 실행 ID 관찰 |
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약·문서 검사에 대조. 실패는 되돌리지 않고 기록하며 판정 실패도 `{}`·exit 0으로 통과시킨다(사유는 stderr) |
@@ -70,22 +70,24 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 ## 사용자 확인
 
-일반 업무 질문은 Codex 질문 도구 또는 대화로 받는다. Codex 에서는 훅이 업무 답을 관찰하지 않으므로, 받은 답의 원문을 `[Answer]:`에 적고 다음 줄에 `[Source]: 대화`를 둔다 — 계획 승인·반영 화면에 "관찰 안 됨"으로 이름과 답이 표시된다. 승인·확정·반영은 다음 절차를 따른다.
+업무 질문은 프로젝트에 설치한 `code_agent.ask` MCP 도구로 표시한다. Default 모드에서 방향키·Enter로 선택하고, 여러 질문은 좌우 방향키로 이동한다. 일반 질문 도구의 모드 제한이나 비동기 호출 접수 성공에 UI 표시를 의존하지 않는다. 받은 답의 원문은 `[Answer]:`와 `[Source]: 대화`에 기록한다. 업무 답 원장 대조는 Claude와 달리 자동 관찰하지 않는다.
 
-1. 메인이 이 대화의 셸에서 `consent prepare --action <동작> … --for codex`(자유 문구가 없는 동작) 또는 `consent prepare <파일> --for codex`로 동작과 대상 해시를 준비한다 — 출력은 `codexReply`만 싣는다(`toolInput`·최상위 `questions` 없음). 훅이 그 명령을 본 세션에 동의를 묶는다(다른 경로로 준비한 동의는 받지 않는다).
-2. 요약과 질문·선택지를 모두 표시한다. `codexReply`에는 질문 순서와 선택지 번호가 있고, 마지막 질문 끝에 6자 확인 코드가 있다. 확인 코드는 지금 질문 묶음의 해시이고 메인(모델)도 그 값을 본다 — 요약을 줄이다 마지막 질문과 코드 줄까지 빠뜨리는 실수를 막는 장치이며, 사람이 직접 입력했다는 증명은 아니다.
-3. 사용자가 같은 대화에서 `code-agent consent respond <요청 ID> <번호> <확인 코드>`를 직접 보낸다. 질문이 여러 개면 `1,2`처럼 질문 순서대로 적는다. 이것은 셸 명령이 아니다. 업그레이드 전에 준비한 동의는 확인 코드 없이도 받는다.
-4. `UserPromptSubmit`이 실제 메시지를 관찰한다. 메인은 다음 턴에서 `consent finish`로 확인하고, 승인된 경우만 그 자리에서 적용되며 결과의 `next`대로 이어간다(`consent status` 조회 뒤 `consent apply`로 나눠도 같다).
+1. 메인이 같은 세션의 셸에서 `consent prepare --action <동작> … --for codex` 또는 `consent prepare <파일> --for codex`로 실행 대상과 질문을 준비한다.
+2. 요약 전문을 보여 주고 `code_agent.confirm`에 반환된 `id`만 전달한다. MCP 도구 실행 허용은 프로젝트 동의와 별개다.
+3. PreToolUse가 준비 세션을 대조하고 일회용 질문 티켓을 발급한다. 서버가 저장된 요약·질문으로 폼을 열고 사용자 선택을 직접 받는다. 번호·확인 코드 복사는 요구하지 않는다. Esc·취소는 보류이며 자동 승인하지 않는다.
+4. 서버는 폼 표시 전후에 세션·호출·질문·대상 해시를 검증한다. `approved`가 반환되면 메인이 같은 턴에 `consent finish <ID>`로 적용하고 `next`대로 이어간다. 원장 출처는 `codex-elicitation`이다.
 
-첫 번째 선택지가 항상 승인이라는 가정으로 실행하지 않는다. 화면에 표시한 번호와 뜻을 확인한다. 보류·수정 요청은 그 상태로 기록하며, ‘네’ 같은 일반 답이나 모델이 대신 만든 메시지를 승인으로 바꾸지 않는다. 변경된 대상, 서브 에이전트 응답, 준비한 대화가 아닌 세션(다른 `codex exec` 포함)의 메시지, 누락된 세션, 확인 코드가 없거나 다른 응답, 이미 소비한 응답은 승인이 되지 않는다. 같은 세션을 다시 여는 `codex exec resume <세션>`으로 보낸 프롬프트는 그 세션의 사용자 메시지로 보인다 — 확인 코드를 붙여 보내도 통과한다. 훅 입력만으로 사람과 프로그램 입력을 가를 수 없는 남는 한계다. 응답·적용을 기다리는 동의가 있는 동안(세션 밖, 준비 뒤 30분) 셸은 code-agent 명령과 읽기용 git 으로 좁혀지지만, 30분이 지나도록 답하지 않은 동의는 다시 이 보호 밖이 된다 — 오래 둔 동의는 쓰지 말고 새로 준비한다. 프로세스 안에서 동의 기록 함수를 직접 부르는 조작은 열린 동의가 없을 때 막지 못한다. Codex 0.161.0 에서 PreToolUse 와 UserPromptSubmit 의 `session_id`는 같은 값이다(실측) — 준비한 대화의 응답만 받는다. 승인 원장의 출처는 `codex-prompt`다. Claude의 선택 도구 출처 `claude-question`과 구분한다.
+다른 세션·서브 에이전트·미리 넣은 답·질문 밖 응답·내용 변경·연결 종료는 승인하지 않는다. 이 처리는 신뢰하는 로컬 MCP 클라이언트와 hook의 관찰이며 사용자 신원 증명은 아니다. 서버에는 답을 전달하는 별도 도구나 CLI 옵션이 없다. 이미 실패한 동의는 새로 준비한다.
 
-훅을 사용할 수 없다면 사람이 직접 터미널에서 `confirm`·`approve`·`deliver`를 실행할 수 있다. 이 수동 승인만으로 계획·리뷰의 실행 관찰 요구가 없어지지는 않는다.
+`init --host codex`와 `update --templates-only --host codex`는 프로젝트 `.codex/config.toml`의 관리 블록에 선택 UI 서버를 등록한다. 블록 밖 사용자 설정과 전역 설정은 유지한다. Codex를 다시 열어 프로젝트·hook을 신뢰해야 한다. `doctor`는 MCP 설치 누락을 점검하며, 실제 UI 표시는 대화형 Codex에서 확인한다. MCP 폼 미지원·도구 오류는 원인을 알리고 복구하며 번호 나열을 UI 완료로 보고하지 않는다. 비대화형 `codex exec`는 UI 검증 수단이 아니다.
+
+`code-agent consent respond <ID> <번호들> <확인 코드>`와 UserPromptSubmit 관찰은 사용자가 명시적으로 요청한 대화 입력 호환 경로다. 이 경로는 `codex-prompt` 출처를 유지한다. 훅을 사용할 수 없다면 사람이 터미널에서 직접 `confirm`·`approve`·`deliver`를 실행할 수 있으나 계획·리뷰의 실행 관찰 요구는 유지한다.
 
 ## 갱신·제거·지원 범위
 
 현재 번들만 적용할 때는 `code-agent update --templates-only [--host codex]`를 사용한다. Git 소스 설치는 `code-agent update [--host codex]`로 소스·빌드·적용·점검을 진행한다 — 호스트 밖의 터미널(TTY)에서 미리보기를 보고 `update`를 입력해야 실행되고, 비TTY·호스트 셸(Codex·Claude Code 표지가 있는 셸)에서는 멈춘다. 대화 안에서는 `ca-answer`의 `update` 동의를 쓴다. 세션이 없어도 모델 셸의 소스 `update`(`--templates-only` 제외)는 훅이 거부한다. 양쪽을 설치하고 `--host`를 생략하면 둘 다 갱신한다. `--cli` 개발용 경로도 호스트별로 승계한다. 갱신으로 `.codex/hooks.json`이 바뀌면 Codex 를 다시 열어 'Hooks need review' 화면에서 다시 검토·신뢰한다. CLI 만 새 버전이고 `.codex/hooks.json`에 SessionStart 가 없는 옛 설치는 새 Codex 세션이 임대를 넘겨받지 못한다 — 이전 세션의 마지막 활동 뒤 30분 안에 새 세션의 첫 진행 명령이 '다른 세션이 이 작업을 진행 중'으로 거부되고 `takeover`가 필요하다. `code-agent update --templates-only --host codex`로 SessionStart 를 설치한다(doctor 가 `Codex SessionStart: 설치되지 않았습니다`를 `✗`로 알리고 같은 명령을 안내한다 — 진행 중인 작업이 있으면 `.codex/hooks.json`을 다시 쓰는 것이 그 작업의 계획 밖 변경이 되므로 작업이 끝난 뒤로 미룬다).
 
-제거할 때는 본 제품이 설치한 `.agents/skills/ca-*`, `.codex/agents/ca-*.toml`, `AGENTS.md` 표시 블록 및 `hooks.json`의 `code-agent codex-event` 항목만 제거한다. 다른 사용자 설정을 포함한 디렉토리 전체를 지우지 않는다. 양쪽 중 Codex만 제거했다면 `.code-agent/hosts.json`에서 `codex`만 빼고 `claude`를 남긴다.
+제거할 때는 본 제품이 설치한 `.agents/skills/ca-*`, `.codex/agents/ca-*.toml`, `AGENTS.md` 표시 블록, `hooks.json`의 `code-agent codex-event` 항목과 `.codex/config.toml`의 `# code-agent:choices:start`부터 `# code-agent:choices:end`까지의 관리 블록만 제거한다. 다른 사용자 설정을 포함한 디렉토리 전체를 지우지 않는다. 양쪽 중 Codex만 제거했다면 `.code-agent/hosts.json`에서 `codex`만 빼고 `claude`를 남긴다.
 
 모든 호스트를 제거했다면 `hosts.json`도 제거한다. 빈 배열로 남기지 않는다. 작업 문서와 증거 보존 여부는 별도로 결정한다.
 
@@ -143,4 +145,4 @@ Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 `.code-a
 
 Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
 
-Codex 메인은 CLI·hook 차단 시 `.agents/skills/ca-answer/reference.md`의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 질문한다. 현재 모드에서 사용 가능한 질문 도구를 실제로 호출하며 request_user_input의 모드 제한을 지킨다. 도구가 없거나 거부되면 이유와 번호·선택지·결과를 대화에 표시해 실제 답을 기다린다. 도구를 호출할 수 있는데 글머리표만 출력하고 끝내지 않는다. 동의가 필요한 실행은 ca-answer의 Codex 동의 절차를 별도로 거친다. 외부 권한·hook 차단은 진단과 사용자 환경 확인으로 연결하며, 사용자의 거절·보류를 다른 도구로 우회하지 않는다. 작업 중 공통 문서 보완은 중단 동의 후 같은 작업 ID로 재개하고 필요한 계획·승인을 다시 검증한다.
+Codex 메인은 CLI·hook 차단 시 `.agents/skills/ca-answer/reference.md`의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 질문한다. `code_agent.ask`의 MCP 선택 UI를 실제로 호출한다. 도구가 없거나 거부되면 설치·클라이언트 지원을 점검하고 번호 나열을 UI 완료로 보고하지 않는다. 도구를 호출할 수 있는데 글머리표만 출력하고 끝내지 않는다. 동의가 필요한 실행은 ca-answer의 Codex 동의 절차를 별도로 거친다. 외부 권한·hook 차단은 진단과 사용자 환경 확인으로 연결하며, 사용자의 거절·보류를 다른 도구로 우회하지 않는다. 작업 중 공통 문서 보완은 중단 동의 후 같은 작업 ID로 재개하고 필요한 계획·승인을 다시 검증한다.

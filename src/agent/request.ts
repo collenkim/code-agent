@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "path";
-import { userInfo } from "os";
+import { actorName } from "./actor";
 import { z } from "zod";
 
 import { writeAtomic } from "../core/atomic";
@@ -952,7 +952,7 @@ export function decideRequest(
     id,
     spec,
     decision,
-    approver: order.approver ?? userInfo().username,
+    approver: order.approver ?? actorName(),
     presence,
     comment,
     hash,

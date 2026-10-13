@@ -27,7 +27,7 @@
 
 에이전트가 `code-agent consent prepare --action <동작> --for claude`(반려·model·플러그인·judgment 처럼 자유 문구가 필요하면 `<action.json>`)로 확인 대상을 준비하고, 반환된 `toolInput` 전체(`questions`와 `metadata.source`)를 수정 없이 `AskUserQuestion`에 전달한다. `--for`는 그 호스트가 쓰는 필드만 출력하게 한다(Claude `toolInput`, Codex `codexReply`). PreToolUse·PostToolUse `consent-event`가 같은 세션·호출 ID의 질문과 실제 응답을 관찰한다. 이어서 `code-agent consent finish <ID>`(또는 `status` 뒤 `apply`)로 승인된 요청만 실행하고, 결과의 `next`·`phase`로 이어간다 — 적용 뒤 status 를 다시 부르지 않는다. 남은 질문은 반환된 내용 그대로 이어서 표시한다(요약은 처음 한 번만).
 
-준비·적용은 세션에 묶인다 — hook 이 `consent prepare`(정확한 꼴)를 허용하면 그 세션의 준비 티켓을 남기고, CLI 는 그 티켓을 소비해야 준비하며 동의에 준비 세션을 적는다. 응답은 그 세션(Codex 는 그 대화의 사용자 메시지)에서만 받고, 적용은 응답을 관찰한 세션의 hook 이 본 `consent apply|finish`(적용 티켓)나 호스트 표지가 없는 사람의 터미널에서만 한다. Codex 응답은 `codexReply` 마지막 질문 끝의 6자 확인 코드를 붙여야 한다(이전 형식 기록은 코드 없이 받는다) — 모델도 보는 값이라 요약이 잘려 코드 줄이 빠지는 실수를 막을 뿐, 사람이 입력했다는 증명은 아니다(`codex exec resume` 한계와 같다). 질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 대상 변경·응답 거부·적용 실패는 동의 기록에 `failure`(`class`·`kind`)로 남고 그 동의는 다시 쓰지 않는다 — 다음 행동(새로 준비·멈춤·상태 확인)은 갈래마다 안내가 다르다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
+준비·적용은 세션에 묶인다 — hook 이 `consent prepare`(정확한 꼴)를 허용하면 그 세션의 준비 티켓을 남기고, CLI 는 그 티켓을 소비해야 준비하며 동의에 준비 세션을 적는다. 응답은 그 세션(Codex는 MCP 선택 UI의 일회용 질문 티켓과 폼 응답)에서만 받고, 적용은 응답을 관찰한 세션의 hook 이 본 `consent apply|finish`(적용 티켓)나 호스트 표지가 없는 사람의 터미널에서만 한다. Codex 대화 입력 호환 경로의 응답은 `codexReply` 마지막 질문 끝의 6자 확인 코드를 붙여야 한다(이전 형식 기록은 코드 없이 받는다) — 모델도 보는 값이라 요약이 잘려 코드 줄이 빠지는 실수를 막을 뿐, 사람이 입력했다는 증명은 아니다(`codex exec resume` 한계와 같다). 질문 내용·선택지를 바꾸거나 답을 미리 넣을 수 없다. 취소·보류·수정 요청, 관찰되지 않은 응답, 일반 채팅의 승인 문장은 실행 동의가 아니다. 대상 변경·응답 거부·적용 실패는 동의 기록에 `failure`(`class`·`kind`)로 남고 그 동의는 다시 쓰지 않는다 — 다음 행동(새로 준비·멈춤·상태 확인)은 갈래마다 안내가 다르다. 확인 대상 파일·Git 상태가 바뀌면 다시 준비하며, 다른 세션의 응답을 가져와 적용하지 않는다. 적용 시 기존 문서·계획·검증 게이트도 다시 검사한다. `withInteraction`은 검증된 적용 경로 안에서만 기존 확인 함수를 연결하고 종료 시 해제한다. 일반 터미널에서 직접 실행하는 확인 명령은 기존 TTY 검사를 유지한다.
 
 AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름을 수행한다는 실행 방식에 한정한다. 참고: [AI-DLC Claude Code 구성](https://github.com/awslabs/aidlc-workflows/blob/main/docs/reference/14-claude-features.md), [Claude Code 프로젝트 스킬](https://code.claude.com/docs/en/skills).
 
@@ -65,7 +65,7 @@ CLI 가 다른 호스트를 **읽기 전용·비대화형**으로 직접 실행�
 
 진행 중이 아니어도 AI-DLC 훅(`record-human-turn` 등)이 설치돼 있고 의도가 해석되면(사용자별 커서, 또는 보관되지 않은 기록이 하나뿐) 그 훅이 질문·답변·세션마다 **추적되는 감사 파일**에 기록해 동의 스냅샷과 계획 밖 변경 검사를 흔든다. 이 상태는 막지 않고 status · 접수 출력 · doctor · 시작 hook 에서 경고한다 — `/aidlc intent archive`(2.9 이상)나 커서 정리 뒤 진행한다. AI-DLC 가 `.claude/settings.json` 을 통째로 다시 쓰면 code-agent 훅이 빠질 수 있으니 AI-DLC 갱신 뒤에는 `code-agent doctor` 로 확인한다. AI-DLC 자체 훅과 다른 터미널의 실행은 code-agent 가 막지 못한다.
 
-준비 커밋(`setup`·`baseline`)에는 code-agent 가 만들거나 고치는 파일만 담는다 — `ca-*` 스킬·에이전트, `settings.json`·`hooks.json`, 지시 블록 파일, POLICY·KNOWLEDGE·단계 템플릿. 다른 도구가 `.claude/`·`.codex/`·`doc/` 에 둔 파일과 README 같은 사용자 파일(최초 커밋 제외)은 담지 않는다.
+준비 커밋(`setup`·`baseline`)에는 code-agent 가 만들거나 고치는 파일만 담는다 — `ca-*` 스킬·에이전트, `settings.json`·`hooks.json`, 선택 UI 관리 블록이 있는 `.codex/config.toml`, 지시 블록 파일, POLICY·KNOWLEDGE·단계 템플릿. 다른 도구가 `.claude/`·`.codex/`·`doc/` 에 둔 파일과 README 같은 사용자 파일(최초 커밋 제외)은 담지 않는다.
 
 ## 2. 문서 모델
 

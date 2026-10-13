@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join } from "path";
-import { userInfo } from "os";
+import { actorName } from "./actor";
 
 import { MANIFEST_FILE } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
@@ -224,7 +224,7 @@ export function confirmDoc(repoRoot: string, kindArg: string | undefined): strin
     if (now.some((entry, index) => entry.hash !== checks[index].hash || entry.paths.join("\n") !== checks[index].paths.join("\n") || entry.state === "missing-sections")) {
       throw new Stop("확정하는 동안 공통 문서가 바뀌었습니다 — 판정을 남기지 않았습니다. 다시 확인하세요.");
     }
-    for (const entry of checks.filter((entry) => !entry.ok)) recordDocConfirmation(repoRoot, entry, userInfo().username, presence);
+    for (const entry of checks.filter((entry) => !entry.ok)) recordDocConfirmation(repoRoot, entry, actorName(), presence);
     return `공통 POLICY 4종을 확정했습니다.\n\n${docsStatus(repoRoot)}`;
   }
   const kind = policyKindOf(kindArg);
@@ -242,6 +242,6 @@ export function confirmDoc(repoRoot: string, kindArg: string | undefined): strin
     "확정하면 이후 모든 계획이 이 내용을 근거로 삼습니다. 내용을 직접 읽고 확인한 뒤 확정하세요.",
   ].join("\n");
   const presence = confirmOnTerminal(shown, "confirm");
-  recordDocConfirmation(repoRoot, check, userInfo().username, presence);
+  recordDocConfirmation(repoRoot, check, actorName(), presence);
   return `${check.label} 문서를 확정했습니다 (${check.hash}).\n\n${docsStatus(repoRoot)}`;
 }

@@ -28,7 +28,7 @@
 | `codexHook.ts`(알려진 비파일 도구 `KNOWN_NON_FILE_TOOL`, SessionStart 의 임대 넘겨받기) | §4.2, §5.2, §7 | `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 | `codexTrust.ts`(doctor 의 Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만) | §5.2, §7, §9 | `doc/codex.md`·`doc/install.md`의 신뢰 절차와 doctor 표 |
 | `consent.ts` `ActionSchema`(`CONSENT_ACTIONS`, `judgment` 포함)·`preview`·`applyLocked`·`observeConsent`(검사 순서)·실패 기록(`failure`·`consentGuide`)·`consentStatus`(`failure`·`warning`·Codex 확인 코드)·`SNAPSHOT_EXCLUDED` | §4 | §4.1 표의 action 칸(`docSync.test.ts`가 `CONSENT_ACTIONS`와 대조), `ca-answer/SKILL.md` 동작 준비 절·준비 절차 6항, `ca-answer/reference.md` 필드 표·예시, `template/codex/ca-answer.md` 동작 목록(`consentBinding.test.ts` T-J-3 이 세 곳을 `CONSENT_ACTIONS`와 대조한다) |
-| `consent.ts` `renderConsentOutput`(`--for` 출력에서 빼는 필드)·`AFTER_APPLY`(흐름을 멈추는 동작의 적용 뒤 `next`), `commands.ts` `nextStep`(적용 뒤 `next`) | §4.2 | `ca-answer/SKILL.md` 1·3·5·6·7항(읽는 필드 `toolInput`·`toolInput.questions`·적용 결과 `{status, result, phase, next}`), `template/codex/ca-answer.md` 1·2·4항(`codexReply`·`phase`·`next`), `status`의 `다음:`(`nextHint` — `nextStep`과 같은 값이다) |
+| `consent.ts` `renderConsentOutput`(`--for` 출력에서 빼는 필드)·`AFTER_APPLY`(흐름을 멈추는 동작의 적용 뒤 `next`), `commands.ts` `nextStep`(적용 뒤 `next`) | §4.2 | `ca-answer/SKILL.md` 1·3·5·6·7항(읽는 필드 `toolInput`·`toolInput.questions`·적용 결과 `{status, result, phase, next}`), `template/codex/ca-answer.md` 1·2·4항(`id`·`summary`·MCP 동의 상태·`phase`·`next`), `status`의 `다음:`(`nextHint` — `nextStep`과 같은 값이다) |
 | `consentTicket.ts`(준비·적용 티켓, 준비 인자 문법 `splitCommandArgs`·`parsePrepareArgs`·`INLINE_ACTIONS`)·`consentState.ts`(색인·열린 동의·적용 잠금 확인)·`answers.ts`(업무 답 관찰)·`snapshotCache.ts`·`consentReceipts.ts`·`retryGrant.ts`(사람 허용) | §4, §5.3, §6.4, §8 | 티켓 명령 꼴(`consentCommandOf`)과 `hook.ts` `isModelCommand`의 `consent` 허용 꼴, `cliMain.ts` consent 분기. `INLINE_ACTIONS`는 `ca-answer/SKILL.md` 동작 준비 절의 인라인 목록과 `template/codex/ca-answer.md` 인라인 문장의 목록과 같다(`consentOutput.test.ts`). 업무 답 규칙은 `ca-answer/SKILL.md` 1·3절과 `template/codex/ca-answer.md` 업무 질문 문단. 허용 키 표(`grantTarget`)는 `GRANT_STEP`과 같아야 한다 |
 | `cli.ts`(hook 하위 명령 지연 로드·`hookFailureExit`)·`cliMain.ts`(명령), `hook.ts`·`codexHook.ts`·`request.ts`의 지연 로드(`consent.ts`·이벤트별 모듈·`init.ts`) | §5, §6.4 hook 종료 코드, §9 | 새 hook 하위 명령은 `HOOKS`와 `retryPolicy.ts` `hookFailureExit` 표에 함께 더한다. 분기 안의 지연 `require` 실패도 같은 표로 끝나야 한다 — 가드를 `try`로 감싸 통과시키지 않는다(`hookLoad.test.ts` 지연 로드 실패 행). hook 경로 모듈(`hook`·`codexHook`·`stopHook`·`sessionHook`과 그 import)에서 명령 모듈을 정적으로 import 하지 않는다 — `hookLoad.test.ts`의 금지 목록(`HEAVY`)·실행 경로·로드 실패 표가 대조한다 |
 | `hook.ts` `decide`(티켓 발급)·`decideTool`·`decideMcp`·`readDenied`·`aliasGuard`·`decideOutside`(열린 동의 창·소스 업데이트·hook 설정)·`decideDocWrite`·`MODEL_SUBCOMMANDS`·`readOnlyRoleGuard`(`READ_ONLY_ROLES`) | §5.3, §5.4 | `template/CLAUDE.block.md`, `decideBash` 거부 문구, 읽기 전용 담당의 정의 파일 `tools`(`ca-critic`·`ca-reviewer`·`ca-surveyor` — `hookPaths.test.ts`가 대조) |
@@ -138,7 +138,7 @@ flowchart TD
 
 **hook의 쓰기 범위** (`decideWrite` `hook.ts:444-540`, 작업 커서가 있을 때) — 지시서·`05-plan.md`·`08-validation.md`는 언제나 거부한다(447-471). 관찰 흐름의 계획 출력 문서는 메인 쓰기를 거부한다(474). 그 밖의 작업 폴더는 어느 단계에서든 허용한다(475-477). refactor는 추적 중인 기존 테스트 파일을 거부한다(481-490). analysis~plan과 deliver에서는 작업 폴더 밖을 거부한다(492-497, deliver는 그 바로 뒤 — 반영 단계는 사람이 확인하는 트리다). implement부터는 제출된 계획과 `approved` 승인이 있어야 하고(498-508), implement에서 계획에 tasks가 있으면 현재 Task 파일만 허용한다(509). implement와 그 뒤 단계 모두 파일이 속한 단계 판정(512-521), fix의 재현 순서(548-568), 쓰기 한도(`writeBlockReason` — 고쳐도 다음 회차가 거부될 때만)·테스트 동결(테스트가 실제로 돈 실행부터 — 결과 인식·코드 결함·시간 초과·선언된 환경 문구, 수집 수정 1회 예외)(`freezeReason`, §6.2), 경계·계획 대조(532-538)를 적용한다.
 
-**차단 복구 선택** — CLI·hook 거부 시 메인은 `ca-answer/reference.md`의 차단 복구에 따라 원문 사유·현재 상태·기존 지시를 확인한다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 실제 질문 도구로 묻는다. Claude는 AskUserQuestion, Codex는 현재 모드에서 사용 가능한 질문 도구를 호출하며, 도구 부재·거부 시 번호 선택지로 실제 대화 답을 기다린다. 담당은 거부를 메인에 보고한다. 문서 누락은 작성·기존 문서 연결·보류, 미확정은 문서 동의·보류다. 이미 시작한 작업의 문서 보완은 작업 ID·지시서·대상·기준 브랜치·단계를 작업 폴더에 보존하고 abort 동의 후 커서만 닫아 준비한다. 같은 지시서로 다시 시작하여 필요한 분석·계획·승인을 검증하며 원래 단계로 건너뛰지 않는다. 접수 중 준비는 원문과 ID를 유지한다. 권한·외부 hook 차단은 원인 점검이나 사용자 환경 조치로 연결하고 자체 동의로 해제하지 않는다. 거부 동작을 우회하거나 재시도 한도를 늘리지 않는다. 사용자 취소·보류는 반복 질문 없이 존중한다.
+**차단 복구 선택** — CLI·hook 거부 시 메인은 `ca-answer/reference.md`의 차단 복구에 따라 원문 사유·현재 상태·기존 지시를 확인한다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 실제 질문 도구로 묻는다. Claude는 AskUserQuestion, Codex는 MCP 선택 UI를 호출한다. Codex의 UI 부재·거부는 설치·호스트 지원을 점검하며 번호 나열을 UI 완료로 보고하지 않는다. 담당은 거부를 메인에 보고한다. 문서 누락은 작성·기존 문서 연결·보류, 미확정은 문서 동의·보류다. 이미 시작한 작업의 문서 보완은 작업 ID·지시서·대상·기준 브랜치·단계를 작업 폴더에 보존하고 abort 동의 후 커서만 닫아 준비한다. 같은 지시서로 다시 시작하여 필요한 분석·계획·승인을 검증하며 원래 단계로 건너뛰지 않는다. 접수 중 준비는 원문과 ID를 유지한다. 권한·외부 hook 차단은 원인 점검이나 사용자 환경 조치로 연결하고 자체 동의로 해제하지 않는다. 거부 동작을 우회하거나 재시도 한도를 늘리지 않는다. 사용자 취소·보류는 반복 질문 없이 존중한다.
 
 ### 3.3 커서 이동
 
@@ -177,6 +177,8 @@ flowchart TD
 
 ### 4.2 응답 관찰 — 호스트별
 
+Codex의 `init`·`update --templates-only`는 `.codex/config.toml` 관리 블록에 로컬 MCP 선택 서버를 등록한다. 사용자 설정과 전역 설정은 유지한다. 선택 UI 관리 블록이 있는 설정 파일은 기존 저장소의 준비 커밋에도 포함하며 확인 화면에 파일 경로를 표시한다. Windows 샌드박스에서 원장의 표시 이름을 OS로 조회하지 못하면 환경값 또는 미확인 표기를 사용한다. 이 이름은 승인 여부·신원 증명에 쓰지 않는다. Git 커밋이 포함된 적용은 `.git` 쓰기 권한을 갖춘 셸에서 시작한다.
+
 ```mermaid
 sequenceDiagram
   participant U as 사용자
@@ -192,10 +194,14 @@ sequenceDiagram
     U->>M: 선택
     M->>H: PostToolUse → consent-event
     H->>C: observeConsent Post: 응답 기록 (approved | changes-requested | deferred)
-  else Codex (channel codex-prompt)
-    M-->>U: summary와 번호 선택지 표시
-    U->>H: 대화 메시지 "code-agent consent respond ID 번호들 확인코드" → UserPromptSubmit
-    H->>C: observeCodexConsent → Pre·Post 합성 (tool_use_id codex-prompt:turn_id)
+  else Codex (channel codex-elicitation)
+    M-->>U: summary 전문 표시
+    M->>H: MCP code_agent.confirm(id) → PreToolUse 세션 검사·일회용 질문 티켓
+    H->>C: choice-server가 티켓 소비·질문 결속·대상 검사
+    C-->>U: MCP 폼 선택 UI (방향키·Enter)
+    U->>C: 실제 선택 응답 (Esc는 보류)
+    C->>C: 응답·대상 재검증 → approved 또는 보류·실패
+    C-->>M: 동의 상태
   end
   M->>H: Bash consent finish ID (같은 session_id 확인 → 적용 티켓)
   M->>C: consent finish ID (적용 티켓 또는 사람의 TTY)
@@ -204,6 +210,7 @@ sequenceDiagram
 ```
 
 **결속 규칙** (`consent.ts` `observeConsent`·`applyLocked`·`consentCommandGuard`, `consentTicket.ts`, `hook.ts` `decide`)
+- Codex 선택 UI는 프로젝트 `.codex/config.toml`에 등록한 `choice-server` MCP의 `ask`(업무 질문)·`confirm`(동의)이다. `confirm`은 ID만 받아 PreToolUse가 발급한 `question-<ID>.json` 티켓을 한 번 소비하고 준비 세션·작업 경로·질문·대상 해시를 표시 전후 검증한다. 서버가 클라이언트의 폼 응답을 직접 받아 원장에 `codex-elicitation` 출처로 기록한다. 도구 호출 인자에 답을 넣을 수 없다. 취소·거절은 보류, 전송 오류·잘못된 답은 실패다. UI 미지원·설치 누락은 doctor와 재설치·재시작으로 안내하며 번호 나열로 대체 완료를 보고하지 않는다. `codex-prompt`는 사용자가 명시적으로 요청한 대화 입력 호환 경로다.
 - Git 설정 스냅샷은 브랜치 추적 설정과 명령 실행 환경에서 주입한 현재 저장소·하위 경로(`safe.directory=<root>`·`<root>/*`, 출처 `command line:`)를 제외한다. Windows 경로는 대소문자·구분자를 정규화해 비교한다. 설정 파일에 저장한 신뢰 경로, 다른 경로·전체 경로(`*`)의 신뢰, 사용자·커밋·훅 설정은 계속 비교한다. 실제 Git 실행 환경과 설정 파일은 바꾸지 않는다.
 - **준비 인자** — `consent prepare <파일> | --action <동작> [--id] [--kind] [--spec] [--for claude|codex]`(깃발 순서·따옴표 무관). 자유 문구가 없는 동작(`INLINE_ACTIONS` — setup·docs·baseline·request·plan·deliver·knowledge-prune·abort·update·repro-log)만 인라인으로 받고, 반려·model·plugin-add·plugin-remove·judgment 는 JSON 파일이다. 문법은 hook(`consentCommandOf`)과 CLI 가 같은 함수(`splitCommandArgs`·`parsePrepareArgs`)로 본다 — 문법이 틀린 명령에는 hook 이 티켓을 내지 않고 CLI 는 티켓을 꺼내기 전에 사용법으로 멈춘다. `--for`는 티켓의 호스트와 같아야 하고(다르면 거부) 기록의 `form`이 되어 그 동의의 prepare·status·finish CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(`renderConsentOutput` — Claude 는 `questions`·`codexReply`, Codex 는 `questions`·`toolInput`. 함수 반환은 전체 그대로라 Codex 응답 관찰·hook 은 바뀌지 않는다). `consent finish`가 적용하면 결과에 `phase`·`next`(status 의 `다음:`과 같은 값 `nextStep`, 흐름을 멈추는 deliver·abort·update·model·플러그인·knowledge-prune 은 고정 문구 `AFTER_APPLY`)를 더한다.
 - **준비 티켓** — hook 이 `code-agent consent prepare …`(셸 연결자·리디렉션·치환 없는 정확한 꼴, 인자 글자와 무관 — 문법만 본다)를 허용하면 그 세션을 `.code-agent/consents/tickets/prepare.json`(저장소당 하나, 가장 최근 것만)에 적는다(`issueTicket`, 루트는 `findRepoRoot` — 하위 폴더 세션도 저장소 루트). CLI `consent prepare`는 15분(`TIMING.consentTicketTtlMs`) 안의 티켓을 rename 으로 가로채 소비해야 준비하고, 기록에 `preparedSession`(세션·호스트)과 `format: 2`·`workId`를 남긴다(`PREPARE_UNOBSERVED`). 두 세션이 동시에 준비하면 결속이 어긋나 거부된다(fail-closed). 프로세스 안에서 `binding` 없이 부른 준비(테스트 fixture)와 이전 기록은 `preparedSession`이 없어 이전 규칙(첫 Pre 가 세션을 정함)을 따른다.
@@ -212,7 +219,7 @@ sequenceDiagram
 - 첫 Pre가 `sessionId`·`channel`·`cwd`를 정한다. Pre의 질문은 준비된 질문과 deep-equal이어야 한다.
 - Post는 결속된 toolId 하나만 한 번 소비한다. 시간 초과·추가 질문·메모가 붙은 응답은 승인으로 보지 않는다.
 - 적용은 스냅샷을 한 번 재대조한다(플러그인 동작만 설명 대조 뒤 한 번 더 — `pluginPreview`). 중단된 `applying`은 `failed`로 처리하고 다시 실행하지 않는다.
-- Codex 응답 형식은 `^code-agent consent respond <36자 id> [1-3](,[1-3]){0,3}( <확인 코드 6자>)?$`다(`observeCodexConsent`). 새 기록(`format: 2`)은 `codexReply` 마지막 질문 끝의 확인 코드(지금 질문 묶음 해시 앞 6자, `codexReplyCode`)를 요구한다 — 없거나 다르면 UserPromptSubmit 이 막고 사유를 보인다. 코드는 prepare·status 출력에 실려 모델도 보는 값이라, 요약을 줄이다 마지막 질문·코드 줄까지 빠뜨리는 실수를 막을 뿐 사람이 입력했다는 증명은 아니다(`codex exec resume`으로 코드를 붙여 보내도 통과한다 — 같은 한계). 이전 형식 기록은 코드 없이 받는다. 이벤트에 `turn_id`가 있어야 하고, 질문 수와 선택 수가 같아야 한다. Claude `toolInput`은 바뀌지 않는다.
+- Codex 대화 입력 호환 경로의 응답 형식은 `^code-agent consent respond <36자 id> [1-3](,[1-3]){0,3}( <확인 코드 6자>)?$`다(`observeCodexConsent`). 새 기록(`format: 2`)은 `codexReply` 마지막 질문 끝의 확인 코드(지금 질문 묶음 해시 앞 6자, `codexReplyCode`)를 요구한다 — 없거나 다르면 UserPromptSubmit 이 막고 사유를 보인다. 코드는 prepare·status 출력에 실려 모델도 보는 값이라, 요약을 줄이다 마지막 질문·코드 줄까지 빠뜨리는 실수를 막을 뿐 사람이 입력했다는 증명은 아니다(`codex exec resume`으로 코드를 붙여 보내도 통과한다 — 같은 한계). 이전 형식 기록은 코드 없이 받는다. 이벤트에 `turn_id`가 있어야 하고, 질문 수와 선택 수가 같아야 한다. Claude `toolInput`은 바뀌지 않는다.
 - 동의 잠금 `consents/apply.lock`은 공통 `acquireLock`(나이 회수 없음 — 같은 PC 의 죽은 pid 만 회수, 살아 있는 주인은 CLI 2초·hook 10초 대기)이다. 잠금을 살아 있는 프로세스가 쥔 동안 hook 은 모든 모드에서 저장소 안을 가리키는 쓰기 도구를 거부한다(`consentLockHeld` — 저장소 밖 쓰기는 동의 스냅샷과 무관해 막지 않는다. 거부 문구에 잠금 경로와, 실행 중인 code-agent 가 없으면 사람이 지운다는 안내가 있다).
 - 세션 밖에서 응답·적용을 기다리는 동의(색인 `consents/index.json`의 `open`, 30분 `TIMING.consentOpenWindowMs`)가 있으면 그 동의를 준비·응답한 세션(색인 항목의 `session` — 응답 뒤 `sessionId`, 그 전 준비 세션)의 셸을 code-agent 명령과 읽기용 git 으로 좁힌다. 다른 세션은 좁히지 않는다 — 그 세션의 쓰기는 스냅샷 대조가 폐기로 잡는다(세션이 기록되지 않은 옛 동의는 모든 세션을 좁힌다). 유효기간으로 동의를 무효화하지는 않는다(스냅샷·세션 결속이 대신한다). 그래서 창이 풀린 뒤에도 답하지 않은 동의는 `pending`으로 남고, 프로세스 안에서 동의 함수를 직접 부르는 조작(`node -e`)은 그때와 열린 동의가 없을 때 막지 못한다 — 오래 둔 동의는 쓰지 말고 새로 준비한다.
 - 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI 가 쓰는 자체 기록이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다 — 값은 캐시 없이 구한 것과 같다.
@@ -674,6 +681,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 검증 노드 | `verificationFlow.ts`, `core/workflow.ts` |
 | 리뷰·교차 검증 | `review.ts`(`mutateReview`·게이트·`reviewBudgets`), `reviewHook.ts`, `crossCheck.ts`(`crossReview`·`crossCritic`·`runCross`·`crossInvocationArgs`·`crossFlags`·`crossSandboxSuspect`·사전 판정의 연결 확인 `crossNetProbe`·`netProbeTarget`·`planningCrossBudgets`), `crossRecord.ts`(기록 타입·옛 기록 추정·고아 보기·파생 사본·지점 호스트 `pointHost`·게이트 안내 `crossHintText`·직전 실행 꼬리 `crossLastRun`·게이트 줄의 명령 자리 `crossGateHandoff`·`crossRerunAfterUser`·표 규칙 `reviewResultProblems`·연속 중지), `reviewJudgment.ts`(사람 판단 네 함수), `blocks.ts` |
 | 반영·지식 | `deliver.ts`, `knowledge.ts`, `knowledgeCommands.ts` |
+| 선택 UI | `choiceServer.ts`(MCP 폼·질문·동의 응답), `choiceConfig.ts`(프로젝트 MCP 설치), `actor.ts`(원장의 표시 이름) |
 | 동의 | `consent.ts`, `consentTicket.ts`(준비·적용 티켓·`terminalCaller`), `consentState.ts`(색인·`openConsent`·`consentLockHeld`·`CONSENT_TITLES`), `snapshotCache.ts`, `consentReceipts.ts`(영수증·원장 끝줄 대조), `retryGrant.ts`(`judgment retry-grant`), `answers.ts`(업무 답 관찰), `tty.ts` |
 | hook | `hook.ts`(`decide` — 교차 자식 거부 `crossChildGuard`·읽기 전용 담당 거부 `readOnlyRoleGuard`가 먼저, 경로 판정 `expandTilde`·`readDenied`·`aliasGuard`·`repoPath`·`foldStreams`·`userHostConfig`(사용자 수준 호스트 설정), 작업 임대 자리 `leaseGated`·`LEASE_FREE`), `lease.ts`(작업 임대), `layout.ts`(경로 별칭 `foldWindowsAlias`·`shareInside`), `stopHook.ts`, `sessionHook.ts`, `codexHook.ts`(이벤트별 지연 로드, SessionStart 의 임대 넘겨받기). hook 경로의 모듈 그래프·로드 실패 표는 `src/test/hookLoad.test.ts`가 지킨다 |
 | 재시도 규약·공통 기반 (§6.4, 계획 쪽·검증·리뷰 회차 한도·교차 지점·리뷰어 실행에 연결됨) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`, 판정 `notationFor` — CLI·hook 문구에 배선됨, 역할 이름 `ROLE_NAMES`의 정본) |
@@ -725,3 +733,4 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 2026-10-12 | Windows PowerShell의 셸 호출은 .cmd를 쓰도록 모든 Codex 지침과 파일 읽기 안내에 명시한다 | `8a1876e` | §7 |
 | 2026-10-13 | 미응답 준비 질문과 전체 단계의 선택 절차를 보완하고 선택지 없는 문구 입력 요구를 Stop에서 교정한다 | 이 커밋(부모 `8a1876e`) | §3.1, §3.2, §5.1, §5.2 |
 | 2026-10-13 | 셸과 훅 사이의 임시 저장소 신뢰 설정 차이로 동의가 무효화되는 오탐을 제거하고 실제 Git 설정 변경 검사를 유지한다 | 이 커밋(부모 `07c8741`) | §4 |
+| 2026-10-13 | Codex 업무 질문·동의를 실제 MCP 선택 UI에 연결하고 세션·대상 검증과 취소 처리를 유지한다 | 이 커밋(부모 `5496831`) | §3.2, §4.2, §5.2, §9 |

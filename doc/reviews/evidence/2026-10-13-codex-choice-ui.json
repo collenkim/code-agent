@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-13",
+  "host": "codex-tui",
+  "version": "0.162.1",
+  "shell": "PowerShell",
+  "mode": "Default",
+  "scope": "실제 대화형 Codex의 임시 프로젝트, MCP 폼·공식 hook·동의 적용",
+  "customerProjectModified": false,
+  "modelOverride": false,
+  "uiVerified": true,
+  "questionUi": {
+    "screen": "Field 1/2 (2 required unanswered)",
+    "navigation": "enter to submit answer | ←/→ to navigate fields | esc to cancel",
+    "input": "ArrowDown, Enter, ArrowDown, Enter",
+    "result": { "Display style": "Detailed", "Theme": "Dark" }
+  },
+  "consentUi": {
+    "navigation": "방향키로 수정 요청·확인하고 진행 사이 이동 후 Enter",
+    "statusAfterUi": "approved",
+    "appliedConsentId": "08e42b92-5007-42f3-aa7b-f0bda0e18523",
+    "sessionId": "01a132f7-0731-7c61-b43a-968d5e3359af",
+    "recordedChannel": "codex-elicitation",
+    "finalStatus": "applied",
+    "baselineCommit": "704e71b",
+    "gitPermission": "첫 finish에서 호스트의 .git 쓰기 권한 요청을 승인",
+    "syntheticResponsesInjectedIntoConsent": false
+  },
+  "targetedTests": { "passed": 49, "failed": 0, "skipped": 0, "durationMs": 35352.1004 },
+  "fullTests": { "total": 1402, "passed": 1398, "failed": 0, "skipped": 4, "durationMs": 376357.6431 }
+}

@@ -65,7 +65,7 @@ export interface ConsentRecord {
   result?: string;
   sourceSnapshot?: string;
   snapshotEntries?: SnapshotEntries;
-  channel?: "claude-question" | "codex-prompt";
+  channel?: "claude-question" | "codex-prompt" | "codex-elicitation";
   /** 새 prepare 가 쓴다 — 없으면 이전 형식(확인 코드 없이 Codex 응답을 받는다) */
   format?: 2;
   /** 준비 때의 작업·접수 ID — 반영 영수증이 이 작업의 동의를 고른다 */
@@ -530,7 +530,7 @@ export interface ConsentHookInput {
   tool_response?: unknown;
 }
 /** 신뢰하는 로컬 hook의 실행 입력을 관찰한다. OS 보안 경계나 사용자 신원 증명은 아니다. */
-export function observeConsent(input: ConsentHookInput, projectDir?: string, channel: "claude-question" | "codex-prompt" = "claude-question"): void {
+export function observeConsent(input: ConsentHookInput, projectDir?: string, channel: "claude-question" | "codex-prompt" | "codex-elicitation" = "claude-question"): void {
   if (input.tool_name !== "AskUserQuestion") return;
   if (input.hook_event_name !== "PreToolUse" && input.hook_event_name !== "PostToolUse") return;
   const source = input.tool_input?.metadata?.source;
@@ -555,8 +555,8 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
   if (record.channel && record.channel !== channel) throw new Stop("동의를 시작한 호스트와 다릅니다. 새로 준비하세요.");
   if (record.status !== "pending") throw new Stop("이미 응답했거나 종료한 확인 요청입니다.");
   if (record.preparedSession) {
-    const expected = record.preparedSession.host === "codex" ? "codex-prompt" : "claude-question";
-    if (record.preparedSession.id !== sessionId || expected !== channel) {
+    const hostMatches = record.preparedSession.host === "codex" ? channel === "codex-prompt" || channel === "codex-elicitation" : channel === "claude-question";
+    if (record.preparedSession.id !== sessionId || !hostMatches) {
       throw new Stop(`확인을 준비한 세션의 응답이 아닙니다 — 이 요청은 ${record.preparedSession.host} 세션에서 준비됐습니다. 응답은 준비한 대화에서만 받습니다. 지금 세션에서 진행하려면 새로 준비하세요.`);
     }
   }
@@ -727,7 +727,7 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
     discardIfChanged(root, record, "실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
   }
   record.status="applying";save(root,record);
-  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
+  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-elicitation" ? "Codex 선택 UI" : record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
   let passed = 0;
   try {
     record.result=withInteraction({

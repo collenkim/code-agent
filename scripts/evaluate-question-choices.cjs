@@ -79,8 +79,10 @@ const report = {
     toolOrLimitationExplained: observed || /도구[^\n]*(?:없|제공되지|사용할 수 없|지원하지)|(?:없|제공되지|사용할 수 없)[^\n]*도구/.test(reply),
   }, observedQuestions, reply, stderr: result.stderr || '',
 };
-report.passed = result.status === 0 && !parseError && Object.values(report.checks).every(Boolean);
+report.responseContractPassed = result.status === 0 && !parseError && Object.values(report.checks).every(Boolean);
+report.uiVerified = false;
+report.passed = report.responseContractPassed;
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
-console.log(JSON.stringify({ host, passed: report.passed, checks: report.checks, error: report.error, durationMs: report.durationMs }));
+console.log(JSON.stringify({ host, responseContractPassed: report.responseContractPassed, uiVerified: false, scope: "비대화형 응답 검사 — 선택 UI 검증 아님", checks: report.checks, error: report.error, durationMs: report.durationMs }));
 // 호스트가 남긴 검사 디렉터리는 증거 확인용으로 유지한다. 사용자 설정은 변경하지 않는다.
 if (!report.passed) process.exitCode = 1;

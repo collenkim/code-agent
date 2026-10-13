@@ -18,6 +18,7 @@ import {
 import { checkProjectDocs } from "./docs";
 import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
 import { codexTrust } from "./codexTrust";
+import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
 import { AGENTS, installedClaudeModel, policySummary, workInProgress } from "./models";
@@ -325,6 +326,8 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
 
   }
   if (hosts.includes("codex")) {
+    const choiceProblem = choiceConfigProblem(repoRoot);
+    add(choiceProblem ? "✗" : "✓", "Codex 선택 UI", choiceProblem ?? "MCP 폼 입력 설정 확인 — 방향키·Enter 선택은 대화형 세션에서 확인", choiceProblem ? "code-agent update --templates-only --host codex 후 Codex 재시작" : undefined);
     const problem = settingsProblem(repoRoot, "codex");
     if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
     else {
@@ -419,7 +422,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       "·",
       "터미널",
       "stdin 이 TTY 가 아닙니다 — 직접 CLI 확인은 닫혀 있지만 호스트 세션에서 관찰한 동의를 사용할 수 있습니다",
-      "Claude는 선택 도구, Codex는 ca-answer가 안내한 사용자 메시지를 훅으로 관찰합니다.",
+      "Claude는 선택 도구, Codex는 MCP 폼 선택 UI와 같은 세션의 훅 티켓으로 동의를 관찰합니다.",
     );
   }
 

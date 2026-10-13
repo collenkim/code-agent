@@ -9,7 +9,7 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 
 ---
 
-code-agent는 새 패키지·서버·필수 설정 없이 동작한다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 스킬·에이전트 정의·CLAUDE 블록·hook을 함께 갱신한다. 호스트를 다시 열고 `code-agent --help`와 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
+별도 패키지 설치나 서버 수동 실행은 필요 없다. Codex 선택 UI용 로컬 MCP 서버는 프로젝트 `.codex/config.toml`에 자동 등록되며 Codex가 stdio로 실행한다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 스킬·에이전트 정의·CLAUDE 블록·hook을 함께 갱신한다. 호스트를 다시 열고 `code-agent --help`와 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
 
 작업 임대(`.code-agent/lease.json`)는 `update --templates-only` 가 `.gitignore` 블록에 `lease.json*` 줄을 더한다 — 갱신 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 다만 진행 중인 작업이 있으면 `update --templates-only` 는 그 작업을 반영하거나 끝낸 뒤 실행한다 — 갱신이 바꾼 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)이 그 작업의 계획 밖 변경이 되어 검증·반영을 막고, 게이트가 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않는다. 이미 갱신했으면 `update` 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄이 그 파일을 알려 준다 — 사람이 그 파일들을 갱신 전으로 되돌리고 작업을 마친 뒤 다시 갱신한다.
 

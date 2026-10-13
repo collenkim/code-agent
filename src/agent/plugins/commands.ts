@@ -1,5 +1,6 @@
 import { existsSync, writeFileSync } from "fs";
-import { hostname, userInfo } from "os";
+import { hostname } from "os";
+import { actorName } from "../actor";
 import { resolve } from "path";
 
 import { resolveExecutable } from "../../core/build";
@@ -368,7 +369,7 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
       ? { secret: { required: true, delivery: secret!.delivery, ...(secret!.env ? { env: secret!.env } : {}), value: secret!.value } }
       : {}),
     adapter: { name: adapter.name, version: adapter.adapterVersion, describedAt: now },
-    consent: { user: userInfo().username, host: hostname(), at: now, slots, sendsCode, typed },
+    consent: { user: actorName(), host: hostname(), at: now, slots, sendsCode, typed },
     probe: { at: now, ok: true, ...(probe.output.detail ? { detail: redactSecret(probe.output.detail, sensitiveValue) } : {}) },
   };
   writeStore({ ...store, plugins: { ...store.plugins, [name]: stored } });

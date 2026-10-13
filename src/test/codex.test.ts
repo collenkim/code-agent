@@ -48,7 +48,8 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   assert.equal(existsSync(join(root,".claude")),false);
   assert.equal(existsSync(join(root,"CLAUDE.md")),false);
   assert.match(read("AGENTS.md"),/^# 사용자 지침/);
-  assert.equal(read(".codex/config.toml"),'model = "custom-model"\n');
+  assert.match(read(".codex/config.toml"),/^model = "custom-model"\n/);
+  assert.match(read(".codex/config.toml"),/\[mcp_servers\.code_agent\]/);
   for (const [path,text] of hostAssets("codex")) {
     assert.equal(read(path),text);
     assert.doesNotMatch(text,/AskUserQuestion|\.claude\//);
@@ -215,7 +216,7 @@ test("Codex 실제 사용자 이벤트의 동의만 적용되고 원장에 Codex
   assert.match(consentCommandGuard(root,`code-agent consent apply ${prepared.id}`,"other-session")!,/세션/);
   applyConsent(root,prepared.id);
   assert.ok(readDocLedger(root).every(row=>row.presence.channel==="codex-prompt"));
-  assert.throws(()=>codexHook(reply(prepared.id)),/미응답/);
+  assert.throws(()=>codexHook(reply(prepared.id)),/이미 종료했거나 응답한 동의/);
 });
 
 for (const change of ["subagent","missing-session","missing-turn","extra-text","changed-input","defer"] as const) {

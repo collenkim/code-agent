@@ -12,7 +12,7 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 | Codex | `code-agent init --host codex` | `$ca-request <요구사항>` |
 | 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
 
-Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
+Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. 업무 질문과 동의는 자동 등록된 로컬 MCP의 방향키·Enter 선택 UI로 받습니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
 
 두 호스트 모두 역할을 판단(analyst·critic·reviewer)과 실행(그 밖)으로 나눠 모델·추론 강도 기본값을 둡니다(Claude opus/high·sonnet/medium, Codex gpt-6.1-sol high·medium). `code-agent model`로 현재값을 확인하고 필요하면 역할별로 변경하거나 `default`로 복원합니다. 사용자 변경값은 업데이트 후에도 유지합니다. [역할별 모델 설정](doc/codex.md#역할별-모델-기본값과-변경)을 참고하세요.
 
@@ -277,7 +277,7 @@ npm test
 
 대상 프로젝트에서 로컬 개발본을 쓰려면 이 저장소에서 `npm link`를 실행한 다음, 대상 프로젝트에서 `code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js`를 사용합니다. `--cli`에는 PC별 절대 경로가 들어가므로 팀 공용 설치와 구분합니다.
 
-실제 모델로는 Claude 와 Codex(`codex-cli 0.160.0`) 모두 계획 담당의 분석·영향도 완료와 문서 게이트 통과를 확인했습니다(초기 동의는 합성 fixture). 재시도 규약·교차 검증·동의 경계 등 지금 구현에서 실제 호스트로 확인하지 않은 것은 [결과 요약](doc/reviews/2026-10-08-procedure-fix-summary.md#실제-호스트에서-확인하지-않은-것)에 있습니다. **실제 초보자 사용성은 측정하지 않았습니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도, 실제 사람의 질문 화면 조작, 노드화에 따른 토큰·시간 절감량은 추가 실측 대상입니다. 변경 경위와 검증 결과는 [문서·검증 이력](doc/reviews/README.md)에 기록합니다.
+실제 모델로는 Claude 와 Codex(`codex-cli 0.160.0`) 모두 계획 담당의 분석·영향도 완료와 문서 게이트 통과를 확인했습니다(초기 동의는 합성 fixture). Codex 선택 UI는 PowerShell·CLI 0.162.1·Default 모드에서 방향키·Enter로 질문에 답하고 동의를 적용해 준비 커밋을 생성하는 데까지 [실측했습니다](doc/reviews/2026-10-13-codex-choice-ui.md). 재시도 규약·교차 검증 등 실제 호스트에서 확인하지 않은 범위는 [결과 요약](doc/reviews/2026-10-08-procedure-fix-summary.md#실제-호스트에서-확인하지-않은-것)에 있습니다. **실제 초보자 사용성은 측정하지 않았습니다.** 대형 프로젝트·사용자 정의 테스트 출력·다양한 결함의 리뷰 정확도, 노드화에 따른 토큰·시간 절감량은 추가 실측 대상입니다. 변경 경위와 검증 결과는 [문서·검증 이력](doc/reviews/README.md)에 기록합니다.
 
 ## 상세 문서
 

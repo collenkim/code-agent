@@ -72,8 +72,8 @@ export function agentName(name: string, n: Notation = current): string {
 }
 /** 질문 도구 — 조사까지 돌려주는 문장 조각(`…절차의 ${askVia()} 답을 받아`) */
 export function askVia(n: Notation = current): string {
-  return n === "claude" ? "AskUserQuestion으로" : n === "codex" ? "Codex 질문 도구(없으면 대화)로"
-    : "질문 도구(Claude Code: AskUserQuestion · Codex: 질문 도구 또는 대화)로";
+  return n === "claude" ? "AskUserQuestion으로" : n === "codex" ? "Codex MCP 선택 UI로"
+    : "질문 도구(Claude Code: AskUserQuestion · Codex: MCP 선택 UI)로";
 }
 /** 셸 실행 — 조사까지 돌려주는 문장 조각 */
 export function viaShell(n: Notation = current): string { return n === "claude" ? "Bash 로" : "셸로"; }

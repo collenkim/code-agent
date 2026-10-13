@@ -167,7 +167,7 @@ describe("hook·검증의 Codex 표기", () => {
     toCheck();
     write("doc/work/ORD-1/questions.md", "## Q1 · 검증\n무엇을 더 볼까?\n[Answer]:\n");
     const codex = (codexHook({ cwd: repo, hook_event_name: "Stop" }) as { reason?: string }).reason ?? "";
-    assert.match(codex, /메인이 ca-answer 공통 절차의 Codex 질문 도구\(없으면 대화\)로 답을 받고 기록합니다/);
+    assert.match(codex, /메인이 ca-answer 공통 절차의 Codex MCP 선택 UI로 답을 받고 기록합니다/);
     assert.doesNotMatch(codex, /AskUserQuestion/);
     assert.match(decideStop({ cwd: repo }) ?? "", /메인이 ca-answer 공통 절차의 AskUserQuestion으로 답을 받고 기록합니다\. 미응답이면 멈춥니다/);
   });
@@ -228,7 +228,7 @@ describe("hook·검증의 Codex 표기", () => {
     const claude = stopOf(() => withNotation("claude", () => next(repo))).split("\n");
     assert.equal(claude[0], "답이 없는 질문이 1개 있어 넘어갈 수 없습니다 (doc/work/ORD-1/questions.md):");
     assert.equal(claude.at(-1), "메인은 /ca-answer 공통 절차의 AskUserQuestion으로 답을 받아 기록하세요.");
-    assert.equal(stopOf(() => withNotation("codex", () => next(repo))).split("\n").at(-1), "메인은 $ca-answer 공통 절차의 Codex 질문 도구(없으면 대화)로 답을 받아 기록하세요.");
+    assert.equal(stopOf(() => withNotation("codex", () => next(repo))).split("\n").at(-1), "메인은 $ca-answer 공통 절차의 Codex MCP 선택 UI로 답을 받아 기록하세요.");
   });
 
   test("요구 반려 결과에서 'Claude Code 에서' 가 빠졌다(예외)", () => {
