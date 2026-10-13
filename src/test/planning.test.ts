@@ -210,9 +210,17 @@ test("좁은 전달은 직접 선행 문서와 역할 정책만 보내고 독립
   const legacy = { ...task }; delete legacy.contextVersion;
   assert.ok(inputFiles(work, legacy).includes("doc/quality.md"));
   preparePlanning(root); finish(dispatch("explore")); finish(dispatch("synthesis"), { [`${DIR}/02-analysis.md`]: IMPACT }); next(root);
-  preparePlanning(root); finish(dispatch("design"), { [`${DIR}/03-design.md`]: DESIGN, [`${DIR}/04-functional.md`]: FUNCTIONAL }); next(root);
+  preparePlanning(root);
+  const design = dispatch("design");
+  // contextVersion 3 — analysis·design 은 테스트 전략·품질 기준을 받지 않는다(plan·critic 은 받는다). 옛 계약(2)은 그대로 넷 다
+  assert.equal(design.task.contextVersion, 3);
+  assert.ok(design.inputs.includes("doc/architecture.md")); assert.ok(!design.inputs.includes("doc/quality.md")); assert.ok(!design.inputs.includes("doc/test-strategy.md"));
+  assert.ok(!inputFiles(loadWork(root)!, { ...loadPlanning(loadWork(root)!).tasks.find(record => record.task.role === "analysis")!.task, contextVersion: 3 }).includes("doc/quality.md"));
+  assert.ok(inputFiles(loadWork(root)!, { ...design.task, contextVersion: 2 }).includes("doc/quality.md"));
+  finish(design, { [`${DIR}/03-design.md`]: DESIGN, [`${DIR}/04-functional.md`]: FUNCTIONAL }); next(root);
   preparePlanning(root);
   const plan = dispatch("plan");
+  assert.ok(plan.inputs.includes("doc/quality.md")); assert.ok(plan.inputs.includes("doc/test-strategy.md"));
   assert.ok(plan.inputs.includes(`${DIR}/01-requirements.md`)); assert.ok(plan.inputs.includes(`${DIR}/03-design.md`));
   assert.ok(plan.inputs.includes(`${DIR}/02-analysis.md`));
   assert.ok(inputFiles(loadWork(root)!, { ...plan.task, contextVersion: undefined }).includes(`${DIR}/02-analysis.md`));
@@ -762,6 +770,8 @@ test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당�
     { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "");
   const patch = (path: string) => ({ tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${path}\n+x\n*** End Patch` } });
   assert.equal(reason({ ...sub, ...patch(staged) }), "", "자기 배정의 staging 은 apply_patch 로 쓴다");
+  assert.equal(reason({ ...sub, ...patch(item.resultFile) }), "", "결과 파일도 자기 배정의 자리에 쓴다");
+  assert.match(reason(patch(item.resultFile)), /메인은 계획 문서를 대신 쓰지 않습니다/, "메인은 결과 파일을 대신 쓰지 않는다");
   for (const path of ["src/x.ts", `${DIR}/01-requirements.md`]) {
     assert.match(reason({ ...sub, ...patch(path) }), /계획 담당은 배정 파일의 staging 경로에만 씁니다/, path);
   }
@@ -770,6 +780,29 @@ test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당�
   // 메인(agent_id 없음)은 이전과 같다 — staging 은 메인이 대신 쓰지 않는다
   assert.match(reason(patch(staged)), /메인은 계획 문서를 대신 쓰지 않습니다/);
   assert.equal(reason({ tool_name: "Bash", tool_input: { command: `code-agent read ${staged}` } }), "");
+});
+
+test("결과 JSON 은 배정의 resultFile 에 쓰고 최종 응답은 경로 한 줄이다 — 메인 대화에 결과 본문이 실리지 않는다", () => {
+  const item = advance().assignments[0];
+  assert.equal(item.resultFile, `${DIR}/.staging/${item.resultShape.dispatchId}/result.json`);
+  assert.match(item.instructions, /결과 JSON은 resultFile 경로에 .* "결과: <resultFile>" 한 줄만 돌려주세요/);
+  const sub = { cwd: root, session_id: "s", agent_id: "pointer", agent_type: item.agent };
+  observePlanner({ ...sub, hook_event_name: "SubagentStart" });
+  const staged = item.staging[`${DIR}/01-requirements.md`];
+  write(staged, REQUIREMENTS);
+  write(item.resultFile, JSON.stringify({ ...item.resultShape, status: "completed", summary: "근거 확인", evidence: [{ path: SPEC, line: 1 }], facts: [], questions: [], findings: [],
+    artifacts: [{ path: `${DIR}/01-requirements.md`, staged }] }));
+  observePlanner({ ...sub, hook_event_name: "SubagentStop", last_assistant_message: `결과: ${item.resultFile}` });
+  assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
+  assert.equal(loadPlanning(loadWork(root)!).tasks.find((record) => record.task.id === "analysis")!.attempts.at(-1)!.status, "completed");
+  assert.equal(existsSync(join(root, item.resultFile)), false, "완료되면 staging 폴더째 지운다");
+});
+
+test("결과 파일 줄이 다른 배정의 자리이거나 파일이 없으면 형식 오류다", () => {
+  const item = advance().assignments[0];
+  const sub = { cwd: root, session_id: "s", agent_id: "wrong", agent_type: item.agent };
+  observePlanner({ ...sub, hook_event_name: "SubagentStart" });
+  assert.throws(() => observePlanner({ ...sub, hook_event_name: "SubagentStop", last_assistant_message: `결과: ${DIR}/.staging/other/result.json` }), /결과 파일 경로가 이 배정의 resultFile 이 아닙니다/);
 });
 
 test("형식 교정은 원본의 staging 본문을 지우지 않고 새 배정으로 옮겨 그대로 보존한다", () => {
@@ -1010,6 +1043,26 @@ test("planningCrossBudgets — 현재 critic 지점(scope critic:<배정>)의 �
   const line = crossProblems().find((problem) => /계획 검토가 필요합니다/.test(problem))!;
   assert.doesNotMatch(line, /planning cross --by claude \(실행할 수 없으면/);
   assert.match(line, /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*retry-grant crossError/);
+});
+
+test("critic 이 차단 지적을 낸 계획은 교차 계획 검토를 먼저 요구하지 않고 수정 재배정을 안내한다 — 고친 계획의 교차에는 직전 교차 지적을 싣는다", () => {
+  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
+  throughDesign(); preparePlanning(root);
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS });
+  const line = FUNCTIONAL.split("\n").findIndex((row) => row.startsWith("- AC-R1-1")) + 1;
+  finish(dispatch("critic"), {}, { findings: [{ id: "F1", severity: "blocking", detail: "AC-R1-1 경계값 TC 없음", source: { path: `${DIR}/04-functional.md`, line } }] });
+  assert.deepEqual(crossProblems(), [], "critic 이 막은 지점의 교차는 헛 실행이다");
+  assert.ok(planningProblems(loadWork(root)!, "plan").includes("critic: 차단 지적이 남아 있습니다"), "게이트는 critic 차단 지적이 막는다");
+  const next = chain(false).view.next as string;
+  assert.match(next, /^차단 지적 1건 — 계약의 수정 피드백으로/);
+  assert.doesNotMatch(next, /planning cross/);
+  // 이미 돈 교차(완료)는 그대로 보인다 — 차단 지적이 있으면 게이트 줄에 남는다
+  const critic = loadPlanning(loadWork(root)!).tasks.find((record) => record.task.role === "critic")!.attempts.at(-1)!;
+  editPlanning((state) => {
+    state.crossAttempts = [{ n: 1, host: "codex", mode: "review", startedAt: ago(5), endedAt: ago(4), criticDispatchId: critic.dispatchId, class: "completed",
+      outcome: { status: "completed", summary: "s", findings: [{ id: "C1", severity: "blocking", detail: "회귀 TC 없음", source: { path: `${DIR}/plan.json`, line: 1 } }], questions: 0, questionIds: [] } }];
+  });
+  assert.match(crossProblems()[0] ?? "", /^교차 검토: 차단 지적이 남아 있습니다\(C1\)/);
 });
 
 test("needs-input 인데 질문이 없는 교차 결과는 형식 오류로 보존하고 형식 교정으로 다시 돈다", () => {
@@ -1667,10 +1720,10 @@ test("planning status 는 실행 관찰·낡은 이유·재시도 예산을 보�
   assert.equal(status.run.orphan, "running");
   assert.deepEqual(status.budget, { sameInput: { used: 0, limit: 3 }, taskTotal: { used: 1, limit: 6 } });
   observePlanner(JSON.parse(stopEvent(item, "watch", completed(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))));
-  write("doc/quality.md", `${readFileSync(join(root, "doc/quality.md"), "utf8")}\n- 추가 기준\n`);
+  write("doc/conventions.md", `${readFileSync(join(root, "doc/conventions.md"), "utf8")}\n- 추가 규칙\n`);
   status = JSON.parse(planningStatus(root)).tasks[0];
   assert.equal(status.state, "stale");
-  assert.ok(status.staleBecause.includes("입력 파일: doc/quality.md"), JSON.stringify(status.staleBecause));
+  assert.ok(status.staleBecause.includes("입력 파일: doc/conventions.md"), JSON.stringify(status.staleBecause));
 });
 
 for (const via of ["claude", "direct"] as const) test(`실행 중 입력이 바뀐 완료는 취소로 기록하고 되돌리지 않는다: ${via}`, () => {
@@ -1695,9 +1748,29 @@ test("Codex 사본 — staging 문장은 그대로(쓰기 도구만 apply_patch)
     for (const phrase of ["`next` 줄이 싣는 행동의 요지는 그 줄이 원천이다", "`cancel` 목록", "rewind.auto", "feedback"]) assert.ok(text.includes(phrase), `${name}: ${phrase}`);
   }
   const analyst = assets.get(".codex/agents/ca-analyst.toml")!;
-  assert.ok(analyst.includes("출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다"));
-  assert.ok(!analyst.includes("경로에 Write로"), "Claude 쓰기 도구 이름이 남지 않는다");
+  // staging 쓰기 규칙은 배정 instructions(쓰기 도구는 editVia — Codex 는 apply_patch)에 있다. 에이전트 본문은 그것을 따르라고만 한다
+  assert.ok(analyst.includes("입력 범위·staging·결과 파일 쓰기·근거·질문 규칙은 `instructions`에 있다"));
+  assert.ok(!analyst.includes("Write로"), "Claude 쓰기 도구 이름이 남지 않는다");
+  // 요구 분석 전용 형식은 analysis 배정의 문서 기준(ca-analyze/criteria.md)에만 있다 — design·plan 배정 때 담당 본문으로 싣지 않는다
+  assert.ok(!analyst.includes("돌려줄 것:"));
+  assert.match(assets.get(".agents/skills/ca-analyze/criteria.md")!, /^## 요구 분석 담당\r?$/m);
   assert.ok(assets.get(".codex/agents/ca-explorer.toml")!.includes("문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나"));
+});
+
+test("수정 재배정은 담당 시작 때 현행 문서를 그 배정의 staging 에 미리 둔다 — 처음 배정에는 두지 않는다", () => {
+  throughDesign(); preparePlanning(root);
+  const stagedOf = (item: any, file: string) => join(root, DIR, ".staging", item.resultShape.dispatchId, file);
+  const first = dispatch("plan");
+  startAgent(first, "planner-1");
+  assert.equal(existsSync(stagedOf(first, "plan.json")), false, "처음 배정에는 현행 문서가 없다");
+  observePlanner(JSON.parse(stopEvent(first, "planner-1", completed(first, { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS }))));
+  write(`${DIR}/feedback.md`, "07 에 경계값 TC 를 더한다\n");
+  const planTask = loadPlanning(loadWork(root)!).tasks.find((record) => record.task.role === "plan")!.task;
+  preparePlanning(root, { tasks: [{ ...planTask, inputs: [...planTask.inputs, `${DIR}/feedback.md`] }] });
+  const again = dispatch("plan");
+  assert.match(again.instructions, /수정 재배정이면 그 자리에 현행 문서가 미리 들어 있습니다 — 고칠 곳만 고치고/);
+  startAgent(again, "planner-2");
+  for (const file of ["plan.json", "07-test-spec.md"]) assert.equal(readFileSync(stagedOf(again, file), "utf8"), readFileSync(join(root, DIR, file), "utf8"), file);
 });
 
 test("차단 지적은 인용 문서를 낸 작업만 후보로 보이고 자동으로 되감지 않는다", () => {
@@ -1999,7 +2072,7 @@ test("C7 실제 출력 — 차단 지적(feedback)은 다시 배정 안내를 �
   assert.equal(out.view.chain, undefined);
   assert.equal(out.view.next, planningNextLine(out.view, { chained: true, workDir: DIR }));
   assert.equal(out.view.feedback.length, 1);
-  assert.match(out.view.next, / — 차단 지적 1건: 계약의 수정 피드백으로 고칠 작업을 다시 배정한다\(feedback\[\]\.citedTask 는 근거 문서를 낸 작업일 뿐/);
+  assert.match(out.view.next, /^차단 지적 1건 — 계약의 수정 피드백으로 고칠 작업을 다시 배정한다\(feedback\[\]\.citedTask 는 근거 문서를 낸 작업일 뿐[\s\S]*고친 뒤 code-agent planning advance --chain$/);
   assert.doesNotMatch(out.view.next, /code-agent back/);
   assert.equal(loadActive(root)!.phase, "plan");
 });

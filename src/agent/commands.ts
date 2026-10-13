@@ -713,6 +713,23 @@ export function nextStep(repoRoot: string): { phase?: Phase; next: string } {
 
 // ---- next ----
 
+/**
+ * 통합 검증이 통과했으면 커서를 deliver 로 옮긴다 — 메인이 next 를 따로 부르지 않는다. 통과가 아니면(게이트 문제가 남았다) 아무것도
+ * 하지 않는다(integrate 출력의 결과 줄이 다음 할 일이다). 게이트가 다른 사유(질문·AI-DLC 등)로 막으면 옮기지 않고 그 사유를 돌려준다
+ */
+export function advancePassedIntegrate(repoRoot: string): string | undefined {
+  const work = loadWork(repoRoot);
+  if (work?.active.phase !== "integrate") return undefined;
+  const evidence = loadEvidence(repoRoot, work.active.id, work.active.target);
+  if (!evidence || runsOf(evidence, "integrate").length === 0 || stageProblems(work, "integrate").length > 0) return undefined;
+  try {
+    return next(repoRoot);
+  } catch (error) {
+    if (!(error instanceof Stop)) throw error;
+    return `deliver 로 넘기지 못했습니다:\n${error.message}`;
+  }
+}
+
 /** 작업 도중 AI-DLC 가 시작됐으면 다음 단계·검증으로 넘어가지 않는다 */
 function requireNoAidlc(repoRoot: string): void {
   const aidlc = aidlcBlock(repoRoot);
@@ -944,10 +961,12 @@ function requireEvidence(work: Work, phase: Exclude<VerifyPhase, "repro">): void
     // 검증 명령이 code-agent 기록을 바꾼 실행은 같은 코드로 다시 돌려도 같다 — 다시 돌리라는 꼬리 대신 문제 줄(할 일)을 따른다
     const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
     const guarded = evidence ? guardedFiles(evidence, phase).length > 0 : false;
+    // check·test 의 재개는 status 와 같은 갈래(nextHint — verify --json·--retry·한도 판단)다. 단계 명령을 다시 안내하면
+    // 같은 코드 재실행·회차 거부로 한 번 헛돈다
+    const resume = guarded ? "" : phase === "integrate" ? `\ncode-agent ${phase} 로 다시 돌리세요.` : `\n다음: ${nextHint(work)}`;
     throw new Stop(
       `${PHASE_LABEL[phase]} 를 마치지 못했습니다:\n` +
-        problems.map((problem) => `  - ${problem}`).join("\n") +
-        (guarded ? "" : `\ncode-agent ${phase} 로 다시 돌리세요.`),
+        problems.map((problem) => `  - ${problem}`).join("\n") + resume,
     );
   }
 }

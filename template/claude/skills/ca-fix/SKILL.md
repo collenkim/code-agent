@@ -1,7 +1,7 @@
 ---
 name: ca-fix
 description: Sentry 오류는 사전 판별·Jira 연결 뒤 수정하고, 기존 결함 티켓은 바로 접수해 재현·수정·검증·반영까지 진행한다.
-argument-hint: [작업ID] [--triage] <오류 로그 · 결함 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]
+argument-hint: "[작업ID] [--triage] <오류 로그 · 결함 티켓 · 파일 경로> [--base <기준 브랜치>] [--target <대상>]"
 ---
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.

@@ -23,7 +23,7 @@ export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", imp
 export const TaskSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
   role: z.enum(["analysis", "explore", "impact", "synthesis", "design", "plan", "critic"]),
-  contextVersion: z.literal(2).optional(),
+  contextVersion: z.union([z.literal(2), z.literal(3)]).optional(),
   title: z.string().trim().min(1).max(500).regex(/^[^\r\n]+$/),
   requirements: z.array(z.string().regex(/^(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)$/)).min(1),
   inputs: z.array(z.string().min(1)).min(1).max(100),
@@ -224,24 +224,30 @@ export function scopedFiles(work: Work, scopes: string[], focused = false): stri
     && !(focused && (/^(?:CLAUDE|AGENTS)\.md$/i.test(file) || /^doc\/code-agent(?:\/|$)/.test(file)))
     && scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
 }
-/** 새 작업만 좁은 전달 계약을 사용한다. 저장된 기존 작업의 해시 계약은 유지한다. */
+/**
+ * 새 작업만 좁은 전달 계약을 사용한다. 저장된 기존 작업의 해시 계약은 유지한다.
+ * contextVersion 2 부터 좁은 전달(직접 선행 출력·역할별 필수 문서), 3 은 analysis·design 의 정책도 아키텍처·컨벤션으로 줄인다 —
+ * 테스트 전략·품질 기준은 plan·critic 이 읽고, 두 문서만 고쳐도 analysis 부터 되감기지 않게 한다.
+ */
 export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(work)): string[] {
   const visited = new Set<string>();
+  const narrow = (task.contextVersion ?? 0) >= 2;
   const outputs = (ids: string[]): string[] => ids.flatMap(id => {
     if (visited.has(id)) return [];
     visited.add(id);
     const dep = state.tasks.find(record => record.task.id === id)?.task;
-    return dep ? [...dep.outputs, ...(task.contextVersion === 2 ? [] : outputs(dep.dependsOn))] : [];
+    return dep ? [...dep.outputs, ...(narrow ? [] : outputs(dep.dependsOn))] : [];
   });
-  const policies = task.contextVersion === 2 && ["explore", "synthesis"].includes(task.role) ? ["architecture", "conventions"] as const : POLICY_KINDS;
+  const corePolicies = (narrow && ["explore", "synthesis"].includes(task.role)) || (task.contextVersion === 3 && ["analysis", "design"].includes(task.role));
+  const policies = corePolicies ? ["architecture", "conventions"] as const : POLICY_KINDS;
   const policyFiles = policies.flatMap(kind => docPaths(work.manifest, kind));
   const allPolicyFiles = POLICY_KINDS.flatMap(kind => docPaths(work.manifest, kind));
-  const scoped = scopedFiles(work, task.scopes, task.contextVersion === 2).filter(file => !allPolicyFiles.includes(file) || policyFiles.includes(file) || task.inputs.includes(file) || task.scopes.includes(file));
-  const docs = task.contextVersion === 2 && task.role !== "analysis" ? [`${workDocsDir(work.active.id)}/01-requirements.md`] : [];
+  const scoped = scopedFiles(work, task.scopes, narrow).filter(file => !allPolicyFiles.includes(file) || policyFiles.includes(file) || task.inputs.includes(file) || task.scopes.includes(file));
+  const docs = narrow && task.role !== "analysis" ? [`${workDocsDir(work.active.id)}/01-requirements.md`] : [];
   // 계획의 회귀 TC는 영향도에서 확인한 호출자·공유 모듈 위험을 반드시 이어받는다.
-  if (task.contextVersion === 2 && task.role === "plan") docs.push(`${workDocsDir(work.active.id)}/02-analysis.md`);
+  if (narrow && task.role === "plan") docs.push(`${workDocsDir(work.active.id)}/02-analysis.md`);
   // 독립 검토는 전체 판단 문서를 읽어 범위 축소로 지적이 사라지지 않게 한다.
-  if (task.contextVersion === 2 && task.role === "critic") docs.push(...["02-analysis.md", "03-design.md", "04-functional.md"].map(file => `${workDocsDir(work.active.id)}/${file}`));
+  if (narrow && task.role === "critic") docs.push(...["02-analysis.md", "03-design.md", "04-functional.md"].map(file => `${workDocsDir(work.active.id)}/${file}`));
   return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
 }
 export function dependencyHash(record: TaskRecord | undefined): string | undefined {
@@ -253,7 +259,7 @@ export function dependencyHash(record: TaskRecord | undefined): string | undefin
 /** 선행 결과 값 — 새 계약은 판단 내용, 옛 계약은 결과 전체의 해시 */
 function dependencyValue(state: PlanningState, task: PlanningTask, id: string): string | undefined {
   const dep = state.tasks.find(item => item.task.id === id);
-  return task.contextVersion === 2 ? dependencyHash(dep) : dep?.attempts.at(-1)?.resultHash;
+  return (task.contextVersion ?? 0) >= 2 ? dependencyHash(dep) : dep?.attempts.at(-1)?.resultHash;
 }
 
 /** dependsOn 의 전이 폐포(자기 제외, 순환 안전) */
@@ -320,7 +326,7 @@ export function hashInput(work: Work, state: PlanningState, task: PlanningTask):
   if (memo) return memo;
   const inputs = inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)] as [string, string]);
   // 호스트가 직접 주입하는 지침은 중복 전달하지 않지만 변경 시 기존 판단을 재사용하지 않는다.
-  const host = task.contextVersion === 2 ? ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)] as [string, string]) : undefined;
+  const host = (task.contextVersion ?? 0) >= 2 ? ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)] as [string, string]) : undefined;
   const dependencies = task.dependsOn.map(id => [id, dependencyValue(state, task, id)] as [string, string | undefined]);
   const questions = relevantQuestions(work, task, state);
   const manifest = hashManifest(work.manifest);
@@ -382,6 +388,13 @@ const minutesSince = (now: number, at: string): number => Math.max(0, Math.floor
 export const ORPHANED_REASON = "연결된 담당이 끝났는데 결과가 기록되지 않았습니다";
 /** 출처(transcript) 검증 실패로 고아가 된 시도의 failure.kind — 담당이 고칠 수 없는 hook·환경 원인이라 advance 는 연속이면 자동 재배정을 멈춘다 */
 export const SOURCE_FAILURE = "source";
+/**
+ * 계획 담당의 결과 파일 이름 — 배정의 staging 폴더(`resultFile`)에 결과 JSON 을 쓰고 최종 응답은 `결과: <경로>` 한 줄이다.
+ * 결과 본문(사실·근거 각 100개, 요약 4,000자까지)이 메인 대화를 거치지 않는다. 그 자리는 실행 중인 그 배정의 담당만 쓴다(hook).
+ */
+export const RESULT_FILE = "result.json";
+/** 최종 응답의 결과 파일 줄 */
+export const RESULT_POINTER = /^결과:\s*(\S+)\s*$/;
 export function runView(state: PlanningState, record: TaskRecord, attempt: TaskAttempt, now: number): RunView {
   const agentType = TASK_AGENTS[record.task.role];
   const verdict = orphanState({ attempt, agentType, agents: state.agents, now });
@@ -485,6 +498,11 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
   const current = criticCrossPoint(work, state);
   if (!current) return [];
   const { dispatchId, view, awaiting, point } = current;
+  // critic 의 차단 지적이 남았으면 계획을 고쳐 critic 을 다시 돌린다 — 그 결과가 새 교차 지점이라 지금 지점을 돌리는 것은 헛 실행이다.
+  // 이미 돌았거나 도는 지점(완료·실행 중·중지)은 그대로 보인다. 게이트는 critic 차단 지적 줄이 막는다
+  const criticBlocking = (state.tasks.find(record => record.task.role === "critic")?.attempts.at(-1)?.result?.findings ?? [])
+    .some(finding => finding.severity === "blocking");
+  if (criticBlocking && !["completed", "running", "stopped"].includes(point.state)) return [];
   const caller = runtimeHost();
   const host = pointHost(view) ?? (caller ? otherHost(caller) : undefined);
   const by = `--by ${host ?? "<다른 호스트>"}`;

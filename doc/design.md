@@ -37,8 +37,8 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 
 | 경로 | 방식 |
 |---|---|
-| 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 `code-agent context --file`이 전문을 `handoff/context.md`에 쓴다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 실측에서 메인이 프롬프트를 직접 쓰면 13회 38.5K자, 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주는 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
-| 서브에이전트 → 메인 | 계획 담당은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 쓰고(Claude Write, Codex apply_patch) 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 같은 문서 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. 상세 조회(`planning result <ID>`)도 기록된 파일과 같은 본문은 되풀이하지 않는다 |
+| 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 전문을 `handoff/context.md`에 쓴다 — 구현 Task 로 옮긴 `next`·계획 승인 적용, 회차를 연 `review`가 함께 쓰고, 그 밖에는 `code-agent context --file`이 쓴다. 구현 context 에는 그 Task 의 AC·업무 규칙 줄과 03·04 절 위치(줄 범위)를 코드가 뽑아 넣어 담당이 03·04 전체를 Task 마다 다시 읽지 않게 한다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 실측에서 메인이 프롬프트를 직접 쓰면 13회 38.5K자, 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주는 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
+| 서브에이전트 → 메인 | 계획 담당은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 쓰고(Claude Write/Edit, Codex apply_patch) 결과 JSON에는 `{path, staged}`만 넣는다. 결과 JSON 도 같은 폴더의 `result.json`에 쓰고 최종 응답은 `결과: <경로>` 한 줄이라 결과 본문이 메인 대화에 실리지 않는다(쓰기 도구가 없는 critic 은 JSON 으로 답한다). 정식 문서가 이미 있는 재배정은 시작 hook 이 현행 문서를 staging 에 미리 넣어 담당이 고칠 곳만 고친다 — 출력 토큰이 입력보다 비싸다. 완료 hook이 그 파일을 읽어 같은 문서 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. 상세 조회(`planning result <ID>`)도 기록된 파일과 같은 본문은 되풀이하지 않는다 |
 | 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문·대기 전 단계별 선택과 차단 복구(`ca-answer/reference.md`), 5개 이상 선택지·동작 JSON 표·대상 변경·수동 대체 경로(`ca-answer/appendix.md`). ca-answer는 그 대화에서 아직 읽지 않았거나 압축·비우기 뒤일 때만 질문·승인 직전에 읽는다(SessionStart 가 압축·비우기 뒤 한 줄로 알린다). 템플릿 크기는 시험(`templateBudget.test.ts`)이 예산으로 묶는다 |
 | 동의 출력 | `consent prepare --for <호스트>`는 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply` — 준비 출력 약 절반). 자유 문구가 없는 동작은 JSON 파일 없이 `--action`으로 준비하고, `finish`가 적용 뒤 `next`·`phase`를 돌려준다 |
 | 계획 진행 | `planning advance`가 action별 다음 행동 한 줄(`next`)을 싣고 — 행동 규칙의 원천은 CLI 한 곳이다 — analysis·impact·design 은 `--chain`으로 결과가 모두 준비되면 같은 호출에서 program 게이트까지 지난다(게이트용 `next` 호출과 그 status 전문이 메인에 들어가지 않는다). 다음 단계 배정·계획 승인은 잇지 않는다 |
@@ -473,7 +473,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 
 `planningValidation.ts`는 필수 작업 문서의 미결 표시·실재 근거·AC 내용·BR 근거를 검사한다. plan 제출과 승인에는 현재 입력에 대한 critic 완료와 차단 지적 해소가 필요하다. 승인 해시에 작업 정의와 관찰 결과도 포함한다. 승인 후 정상 구현은 조사 당시 소스 변경만으로 승인을 깨지 않는다.
 
-설계·기능 명세와 계획 판단은 ca-analyst, 분할 조사 뒤 영향도 문서 정리는 ca-writer가 맡는다. 작은 기본 조사에서는 impact 역할의 ca-explorer가 조사와 문서 정리를 함께 수행해 호출을 하나 줄인다. 명시한 조사 분할과 독립 critic은 유지한다. 새 작업의 contextVersion 2는 직접 선행 출력·역할별 필수 문서·관련 정책만 연결하고, 선행 실행 식별자만 바뀐 동일 결과는 재사용한다. 선행 완료·현재 입력·근거·차단 조건은 계속 검사하며 이전 계약으로 시작한 작업의 해시 계약은 유지한다. 구현 tasks는 파일별 단일 소유·선행 Task·AC를 가지며 단계 안에서 별도 커서로 실행한다. 상세 기준과 호환성은 [계획 작업 안내](planning.md)를 따른다.
+설계·기능 명세와 계획 판단은 ca-analyst, 분할 조사 뒤 영향도 문서 정리는 ca-writer가 맡는다. 작은 기본 조사에서는 impact 역할의 ca-explorer가 조사와 문서 정리를 함께 수행해 호출을 하나 줄인다. 명시한 조사 분할과 독립 critic은 유지한다. 새 작업의 contextVersion 3은 직접 선행 출력·역할별 필수 문서·관련 정책만 연결하고(analysis·design 의 정책은 아키텍처·컨벤션), 선행 실행 식별자만 바뀐 동일 결과는 재사용한다. 선행 완료·현재 입력·근거·차단 조건은 계속 검사하며 이전 계약으로 시작한 작업의 해시 계약은 유지한다. 구현 tasks는 파일별 단일 소유·선행 Task·AC를 가지며 단계 안에서 별도 커서로 실행한다. 상세 기준과 호환성은 [계획 작업 안내](planning.md)를 따른다.
 
 계획의 `advance`는 준비·캐시·선행 조건·동시 한도를 하나의 상태 잠금에서 판정하고 실제 호스트 호출에 필요한 배정만 반환한다. 단계 전환과 승인은 기존 게이트가 수행한다. 선행 결과와 캐시 응답은 문서 본문을 경로·해시·길이로 바꾸고 판단·질문·차단 지적을 유지한다. 상태 조회와 상세 결과 조회를 분리한다. 형식 오류는 관찰 원본을 보존해 동일 입력에서 1회 교정하며, 새 배정 식별자와 시작·완료 이벤트를 요구한다. 병렬 실행의 출처를 확정할 수 없는 깨진 결과는 교정하지 않는다. Claude와 Codex가 이 공통 처리 코드를 사용한다. 재시도 한도는 원인별로 다르다 — 같은 입력의 실패 3회(취소·고아 제외), 작업별 총 배정 6회(같은 작업을 다시 준비해도 시도 기록이 남는다)이고, 한도는 `retryPolicy.ts`가 판정한다. 한도에 닿으면 사람이 동의 `judgment retry-grant`로 한 번 더 허용(같은 입력 +1·총 배정 +3)하거나 작업을 끝낸다 — 사람의 관찰된 선택 없이는 한도가 늘지 않는다. running 시도는 `orphanState`로 셋으로 나눈다: 연결된 담당이 끝났는데 결과가 없으면 확실한 고아라 advance가 표시하고 다시 배정하며, 시작 미관찰 10분·시작 관찰 60분이면 의심 고아(`stale`)로 메인에게 넘긴다. 고아 판정은 동시 한도보다 먼저다. 앞 단계 계획 작업이 낡으면 배정 대신 `rewind-required`를 내고, 같은 사유의 첫 회만 사용자 지시 없는 자동 되감기(`rewind.auto`)를 허용한다 — 담당·교차 검토 질문은 출처(`[Origin]`)를 질문과 계획 기록에 함께 남겨 출처 작업과 후속 작업만 낡게 하므로(기록 없는 `[Origin]` 줄은 믿지 않는다) 질문 답 때문에 앞 단계가 다시 도는 일은 줄어든다.
 
@@ -756,7 +756,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 명령 | 하는 일 |
 |---|---|
-| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정 |
+| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정. `--help`나 받지 않는 인자면 아무것도 쓰지 않는다 |
 | `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · (Codex) 이벤트별 hook·Windows 명령·프로젝트·hook 신뢰 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) |
@@ -785,15 +785,15 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 |
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, **요구사항이 지금 내용 그대로 확정됐는지** 확인, 작업 브랜치, 작업 폴더. 접수 때 말한 `--base`·`--target` 을 이어받는다(여기서 직접 준 값이 이긴다). 시작하면 접수 세션을 지운다 |
-| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
+| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 — 구현 Task 로 옮기면 그 Task 의 context 파일도 쓴다 |
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로만 되감는다 (`analysis`…`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 무효가 된다), 진행 중인 작업이 없으면 거부한다. 증거·승인 원장·작업 문서는 그대로 두고 커서만 움직이며(`implement` 로 가면 계획의 첫 단계로), **무엇이 무효가 되는지 함께 찍는다** |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙. 아직 커서가 없고 접수 중이면 접수 컨텍스트를 준다(그것만 다시 보려면 `code-agent request`) |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
 | `code-agent repro` | 재현 (**`fix` 전용** — 스테이지가 아니라 `implement` 안에서 돈다) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 |
 | `code-agent check` | 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 |
 | `code-agent test` | 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 |
-| `code-agent review` | 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더 |
-| `code-agent integrate` | 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test` |
+| `code-agent review` | 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더, 리뷰어의 context 파일도 쓴다 |
+| `code-agent integrate` | 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test`. 통과하면 커서를 deliver 로 옮긴다 |
 | `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지). 접수 중에는 원문·ID를 유지한 채 준비하고, 종료 후 같은 접수로 돌아간다 |
 | `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — POLICY 4종(`architecture` · `conventions` · `test-strategy` · `quality`) · `knowledge`(KNOWLEDGE 3종을 한 번에) · KNOWLEDGE 낱개(`data-dictionary` · `api-catalog` · `business-rules`) · 작업 문서(`01-requirements` · `02-analysis` · `03-design` · `04-functional` · `07-test-spec`) |
 | `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 묻는 것 |
@@ -849,7 +849,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 **알고 남긴 한계** (재현해 두고 고치지 않기로 한 것)
 
 - **TC 증거의 경계** — 승인된 테스트 명령의 결과를 신뢰한다. 명령 자체가 가짜 성공 결과를 출력하는 경우까지 증명하지는 않는다. 주석·문자열만으로는 TC 가 통과하지 않는다.
-- **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 내용 전문(대화의 요약·`consents/confirm-*.md`)에 싣고, 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.
+- **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 내용 전문(대화의 요약·`consents/confirm-*.md`)에 싣고(커밋 대상 목록은 변경 요약의 추가·수정·이름 변경 파일을 개수로 묶고 그 밖의 커밋 파일만 나열하며, 변경 요약에 있지만 커밋하지 않는 파일은 따로 보인다), 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.
 - **검증 명령은 모델이 쓴 코드를 실행한다** — hook 은 모델 도구의 `.code-agent` 쓰기만 막는다. `check`·`test`·`integrate`·`repro` 가 돌리는 테스트 코드는 파일 시스템을 그대로 쓸 수 있다. 그래서 리뷰 회차·교차 지점·사람 판단을 담은 `review.json`과 계획 기록 `planning.json`은 명령 실행 전 바이트와 대조해 바뀌었으면 되돌리고 그 실행을 증거로 받지 않으며(`guardedStateFiles` — 그 실행은 전제 미충족으로 남아 게이트·`status`·`verify` 가 같은 문장으로 멈추고, 같은 코드로는 다시 돌리지 않는다), `verify.json`은 끝 저장이 메모리 사본으로 다시 쓴다. 그 밖의 `.code-agent` 파일(동의 기록·티켓·임대)을 검증 명령이 고치는 것은 막지 못한다 — 테스트 코드는 리뷰(⑨)와 사람의 계획 승인이 본다.
 - **KNOWLEDGE 3종은 계획 밖 변경 대조에서 빠진다** — `deliver` 가 사람이 고른 항목을 코드로 적용하는 자리라 모델이 쓸 수 없고(hook), 넣어 두지 않으면 커밋이 실패했을 때 적용본만 남아 다시 반영할 길이 영영 막힌다.
 

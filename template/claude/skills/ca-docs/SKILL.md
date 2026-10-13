@@ -1,7 +1,7 @@
 ---
 name: ca-docs
 description: 공통 문서를 점검하고 없거나 모자라면 작성한다 — POLICY 4종(아키텍처·코드 컨벤션·테스트 전략·품질·보안 기준)과 KNOWLEDGE 3종(데이터 사전·API 목록·업무 규칙·용어집).
-argument-hint: [architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules]
+argument-hint: "[architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules]"
 ---
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.

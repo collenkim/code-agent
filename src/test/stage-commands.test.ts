@@ -171,6 +171,32 @@ describe("hook · Stop hook · context — 새 스테이지", () => {
     assert.match(decideStop({ cwd: repo }) ?? "", /계획 밖의 변경이 남아 있습니다/);
   });
 
+  test("구현 context 는 그 단계의 AC·업무 규칙 줄과 03·04 절 위치를 뽑아 싣는다 — 담당이 03·04 전체를 다시 읽지 않게", () => {
+    start(repo, join(repo, "doc/work/ORD-1.md"));
+    write("doc/work/ORD-1/01-requirements.md", REQUIREMENTS);
+    next(repo);
+    write("doc/work/ORD-1/02-analysis.md", IMPACT);
+    next(repo);
+    write("doc/work/ORD-1/03-design.md", DESIGN);
+    write("doc/work/ORD-1/04-functional.md", FUNCTIONAL);
+    next(repo);
+    write("doc/work/ORD-1/07-test-spec.md", TEST_SPEC);
+    write("doc/work/ORD-1/plan.json", JSON.stringify(PLAN));
+    submitPlan(repo, join(repo, "doc/work/ORD-1/plan.json"));
+    approve();
+    next(repo);
+    const text = context(repo);
+    const section = text.slice(text.indexOf("## 이 Task 의 근거"));
+    assert.match(section, /^doc\/work\/ORD-1\/04-functional\.md\n- \d+: - AC-R1-1: /m);
+    assert.match(section, /^- doc\/work\/ORD-1\/03-design\.md · 구성 요소 \d+-\d+ · /m);
+    assert.match(section, /^- doc\/work\/ORD-1\/04-functional\.md · 기능 정의 \d+-\d+ · 업무 규칙 /m);
+    // 검증 단계 context 도 절 위치를 싣는다(수정 루프의 구현자)
+    write(`${ORDER}/domain/Order.java`, "class Order {}\n"); next(repo);
+    write(`${ORDER}/repository/OrderRepository.java`, "interface OrderRepository {}\n"); next(repo);
+    write(TEST_FILE, "// TC-1 · TC-2\nclass OrderTest {}\n"); next(repo);
+    assert.match(context(repo), /## 03·04 절 위치[^\n]*\n- doc\/work\/ORD-1\/04-functional\.md · /);
+  });
+
   test("context 가 리뷰·반영에서 무엇을 쓰는지 알려 준다", async () => {
     await toReview();
     assert.match(context(repo), /범위는 코드가 계획과 대조해 정합니다/);

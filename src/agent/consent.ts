@@ -6,7 +6,9 @@ import { isDeepStrictEqual } from "util";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
-import { abort, decide, nextStep, requireReproable, requireValidatable, status } from "./commands";
+import { abort, decide, next, nextStep, requireReproable, requireValidatable, status } from "./commands";
+import { stageHandoff } from "./handoff";
+import { changedPaths } from "./tree";
 import { baselineFiles, setupBaseline } from "./bootstrap";
 import { docPaths } from "./docs";
 import { confirmDoc } from "./docsCommands";
@@ -397,8 +399,21 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       const first = confirmations;
       confirmations = capture(() => deliver(work));
       choices = knowledgeChoices(work).map(c => ({ shown: c.shown, prompt: "적용하려면 y", target: c.target, key: c.entry.key }));
+      // 커밋 대상 중 아래 확인 화면의 '변경 요약'(기준 커밋 대비 변경·새 파일)에 이미 나오는 파일은 수만 적는다 — 같은 목록을 두 번 싣지 않는다.
+      // 나머지(작업 상태·원장처럼 무시 목록이라 변경 요약에 없는 파일)는 하나씩 적어 커밋 범위 전체가 화면에 남는다.
+      // 변경 요약에 있지만 커밋하지 않는 파일(전달 사본·staging·잠금 등)은 따로 적어 수만 보고 범위를 오해하지 않게 한다
+      const files = [...new Set(deliveryPaths(work).flatMap(path => listLocalFiles(root, path)))].filter(file => !isDeliveryExcluded(work, file));
+      const changed = new Set(work.active.baseCommit ? changedPaths(root, work.active.baseCommit).filter(change => change.status !== "D").map(change => change.path) : []);
+      const below = files.filter(file => changed.has(file));
       summary = ["검증된 작업 파일·작업 문서·증거·선택한 지식 문서를 로컬 커밋합니다. 원격 push·배포는 하지 않습니다.",
-        "커밋 대상(작업·문서·증거·도입 설정):", ...[...new Set(deliveryPaths(work).flatMap(path => listLocalFiles(root, path)))].filter(file => !isDeliveryExcluded(work, file)).map(file => `- ${file}`),
+        `커밋 대상(작업·문서·증거·도입 설정) ${files.length}개:`,
+        ...(below.length ? [`- 아래 '변경 요약'의 추가·수정·이름변경 파일 ${below.length}개`] : []),
+        ...files.filter(file => !changed.has(file)).map(file => `- ${file}`),
+        ...(() => {
+          const committed = new Set(files);
+          const skipped = [...changed].filter(file => !committed.has(file)).sort();
+          return skipped.length ? ["", "'변경 요약'에 있지만 커밋하지 않는 파일:", ...skipped.map(file => `- ${file}`)] : [];
+        })(),
         ...(!isDeepStrictEqual(first, confirmations) ? ["준비 중 반영 보고서의 코드 구역을 다시 렌더했습니다."] : []),
       ].join("\n");
       break;
@@ -498,7 +513,8 @@ export function codexReplyCode(root: string, id: string): { required: boolean; c
   const record = loadConsent(root, id);
   return { required: record.format === 2, code: replyCode(record.status === "pending" ? questions(record) : []) };
 }
-export function consentStatus(root: string, id: string, extra: { warning?: string } = {}): string {
+/** extra.summary: false — finish 의 대기 응답. 요약은 처음 질문 전에 한 번 보여 줬고(ca-answer), 남은 질문의 toolInput 만 필요하다 */
+export function consentStatus(root: string, id: string, extra: { warning?: string; summary?: boolean } = {}): string {
   const record = loadConsent(root, id);
   const items = record.status === "pending" ? questions(record) : [];
   const coded = record.format === 2 && items.length > 0;
@@ -508,7 +524,7 @@ export function consentStatus(root: string, id: string, extra: { warning?: strin
       ? `${q.question}\n\n확인 코드: ${code} — 위 요약과 질문을 끝까지 확인했다면 응답 끝에 이 코드를 붙입니다.` : q.question,
     choices: q.options.map((o, number) => ({ number: number + 1, ...o })),
   }));
-  return JSON.stringify({id, status:record.status, summary:record.summary, questions:items,
+  return JSON.stringify({id, status:record.status, ...(extra.summary === false ? {} : { summary: record.summary }), questions:items,
     toolInput:{questions:items,metadata:{source:`code-agent:${id}`}},
     codexReply: items.length ? {
       format: coded ? `code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결> <확인 코드>` : `code-agent consent respond ${id} <질문별 선택지 번호를 쉼표로 연결>`,
@@ -668,14 +684,14 @@ function unqualifiedAnnotations(value: unknown, bound: Question[]): boolean {
 export interface ConsentCaller { sessionId?: string; tty?: true }
 
 /**
- * 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용을 돌려준다. 적용하면 지금 할 일(`next`)과
+ * 응답 뒤 한 번의 호출 — 승인이면 그 자리에서 적용하고, 아니면 status와 같은 내용(summary 제외)을 돌려준다. 적용하면 지금 할 일(`next`)과
  * 스테이지(`phase`)를 함께 돌려준다 — 메인이 적용 뒤 `code-agent status` 를 다시 부르지 않는다.
  */
 export function finishConsent(root: string, id: string, caller?: ConsentCaller): string {
   const record = loadConsent(root, id);
-  if (record.status !== "approved" && record.status !== "applied") return consentStatus(root, id);
+  if (record.status !== "approved" && record.status !== "applied") return consentStatus(root, id, { summary: false });
   const result = applyConsent(root, id, caller);
-  return JSON.stringify({ id, status: "applied", result, ...afterApply(root, record.action.action) }, null, 2);
+  return JSON.stringify({ id, status: "applied", result, ...afterApply(root, record.action) }, null, 2);
 }
 
 /** 적용 뒤 흐름이 멈추거나 원래 흐름으로 돌아가는 동작 — 나머지는 status 의 `다음:` 과 같은 값(`nextStep`) */
@@ -688,15 +704,30 @@ const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
   "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
   "knowledge-prune": "결과를 보고하고 원래 흐름으로 돌아간다",
 };
-function afterApply(root: string, action: Action["action"]): { phase?: string; next: string } {
-  const fixed = AFTER_APPLY[action];
+function afterApply(root: string, action: Action): { phase?: string; next: string; contextFile?: string; contextAgent?: string } {
+  const fixed = AFTER_APPLY[action.action];
   if (fixed) return { next: fixed };
   try {
+    const handoff = action.action === "plan" && action.decision !== "reject" ? enterImplement(root) : undefined;
     const step = nextStep(root);
-    return { ...(step.phase ? { phase: step.phase } : {}), next: step.next };
+    return { ...(step.phase ? { phase: step.phase } : {}), next: step.next, ...(handoff?.file ? { contextFile: handoff.file, contextAgent: handoff.agent } : {}) };
   } catch {
     return { next: "code-agent status 로 현재 위치를 확인한다" };
   }
+}
+/**
+ * 계획 승인을 적용했고 커서가 plan 에 있으면 구현으로 옮기고 첫 Task 의 context 파일을 쓴다 — 메인이 next·context --file 을 따로
+ * 부르지 않는다. 게이트가 막으면 옮기지 않는다(`next` 값이 그 자리의 할 일을 말한다). 이미 지난 자리의 재승인(승인 무효 재진입)은 옮기지 않는다
+ */
+function enterImplement(root: string): ReturnType<typeof stageHandoff> {
+  if (loadActive(root)?.phase !== "plan") return undefined;
+  try {
+    next(root);
+  } catch (error) {
+    if (error instanceof Stop) return undefined;
+    throw error;
+  }
+  return stageHandoff(root, "implement");
 }
 
 /** `--for` 로 준비한 동의의 CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(제외 목록이라 실패·경고·결과 필드는 남는다) */

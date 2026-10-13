@@ -597,6 +597,19 @@ function attemptQuestions(attempt: PlanningCrossView, questions: readonly Questi
   return attempt.outcome?.questionIds ?? questions.filter((question) => question.title.includes("· 교차 계획 검토(")).map((question) => question.id);
 }
 
+/**
+ * 고치기 전 판의 교차 계획 검토 지적 — 이전 critic 배정에서 완료된 마지막 교차 결과. 계획을 고친 뒤의 교차가 처음부터 다시 찾지 않고
+ * 해소 여부를 보게 brief 에 싣는다(사람이 기각한 지적은 표시해 다시 내지 않게 한다).
+ */
+function previousCrossFindings(state: ReturnType<typeof loadPlanning>, dispatchId: string): string[] {
+  const all = state.crossAttempts ?? legacyPlanningAttempts(state.cross);
+  const last = [...all].reverse().find((attempt) => attempt.criticDispatchId !== dispatchId && attempt.class === "completed" && attempt.outcome?.findings.length);
+  if (!last?.outcome) return [];
+  const waived = (id: string) => (state.crossWaivers ?? []).some((waiver) => waiver.criticDispatchId === last.criticDispatchId && waiver.id === id);
+  return last.outcome.findings.map((finding) =>
+    `- ${finding.id} [${finding.severity}${waived(finding.id) ? " · 사람이 기각" : ""}] ${finding.detail.replace(/\s+/g, " ")} (${finding.source.path}:${finding.source.line})`);
+}
+
 type CriticStart =
   | { refusal: RetryRefused }
   | { n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean; answered: string[]; suspect?: SandboxSuspicion };
@@ -615,6 +628,7 @@ export function crossCritic(root: string, by: string | undefined): string {
     if (!critic || !last || last.status !== "completed" || !taskCurrent(work, state0, critic)) throw new Stop("관찰된 critic 완료 결과가 먼저 필요합니다 — planning advance 로 critic 을 배정하세요.");
     const dispatchId = last.dispatchId;
     const inputs = inputFiles(work, critic.task, state0);
+    const previous = previousCrossFindings(state0, dispatchId);
     const scope = grantScope({ file: "planning", key: "crossPoint", criticDispatchId: dispatchId });
     const words: PointWords = { point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, noun: "검토", next: "critic 결과", host };
     const notes: string[] = [];
@@ -701,6 +715,8 @@ export function crossCritic(root: string, by: string | undefined): string {
         "다른 호스트의 critic 과 별개로 같은 계획을 독립적으로 반박 검토한다. 파일은 고치지 않는다. 아래 입력만 근거로 읽는다.", "",
         "## 입력", ...inputs.map((file) => `- ${file}`), "",
         "## 문서 기준", "", assetText("template/claude/skills/ca-plan/criteria.md").trim(), "",
+        ...(previous.length ? ["## 고치기 전 판의 교차 검토 지적", "",
+          "계획을 고치기 전 판에 낸 지적이다 — 해소됐는지 확인하고 남은 것만 다시 지적한다. 사람이 기각한 지적은 다시 내지 않는다.", "", ...previous, ""] : []),
         ...(blocks.length ? ["## 이전 교차 검토의 질문과 답", "",
           "앞선 교차 검토가 낸 질문과 사람의 답이다 — 같은 질문을 다시 내지 말고 답을 반영해 판단한다.", "", ...blocks.map((block) => block.replace(/^## /, "### ")), ""] : []),
         "## 결과", "", ...format,

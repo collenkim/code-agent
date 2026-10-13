@@ -6,7 +6,7 @@ import { join } from "path";
 import { fileURLToPath } from "url";
 
 import { hashPlan } from "../core/approval";
-import { loadPlanning, requiredOutputs, TASK_AGENTS } from "./planningState";
+import { loadPlanning, requiredOutputs, RESULT_FILE, TASK_AGENTS } from "./planningState";
 import { checkPaths, unplannedFiles } from "../core/gate";
 import { MANIFEST_FILE, type Manifest, type StageDef } from "../core/manifest";
 import { docPaths } from "./docs";
@@ -825,15 +825,30 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
   if (allowed) {
     return undefined;
   }
-  return (
-    `작업 중에는 ${viaShell()} code-agent 명령(${[...MODEL_SUBCOMMANDS, "doctor(조회)"].join(" · ")}), 선언된 명령` +
-    (declared.length > 0 ? ` (${declared.join(" / ")})` : "") +
-    ", 읽기용 git(status·diff·log·show, branch 는 목록 보기만, 파일로 내보내기 없이)만 실행할 수 있습니다. " +
-    "연결·리다이렉트(; && | >)와 줄바꿈(CR·LF)은 안 됩니다" + (powershell ? ", PowerShell 에서는 작은따옴표 밖의 ( ) { } @ $ 도 안 됩니다(경로는 작은따옴표로 감싸세요)" : "") + ". " +
-    "init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 " +
-    "직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다. " +
-    fileToolsHint()
-  );
+  return bashDenied(command, declared, powershell);
+}
+
+/**
+ * 셸 거부 문구 — 기본은 한 줄이고, 거부된 명령에 맞는 규칙만 덧붙인다(연결 문자·code-agent 하위 명령·git·선언된 명령과 같은 실행 파일).
+ * 거부마다 대화에 쌓이므로 원인과 무관한 규칙 목록을 늘 싣지 않는다.
+ */
+function bashDenied(command: string, declared: string[], powershell: boolean): string {
+  const parts = [`작업 중에는 ${viaShell()} code-agent 명령, 선언된 명령, 읽기용 git 만 실행할 수 있습니다.`];
+  if (SHELL_META.test(command) || (powershell && powershellMeta(command))) {
+    parts.push("연결·리다이렉트(; && | >)와 줄바꿈(CR·LF)은 안 됩니다" +
+      (powershell ? ", PowerShell 에서는 작은따옴표 밖의 ( ) { } @ $ 도 안 됩니다(경로는 작은따옴표로 감싸세요)" : "") + " — 명령을 하나씩 실행하세요.");
+  }
+  const head = command.split(/\s+/)[0] ?? "";
+  if (/^code-agent(?:\.cmd)?$/i.test(head)) {
+    parts.push(`code-agent 명령은 ${[...MODEL_SUBCOMMANDS, "doctor(조회)"].join(" · ")} 입니다. ` +
+      "init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다.");
+  } else if (head === "git") {
+    parts.push("git 은 status·diff·log·show 와 branch 목록 보기만 됩니다(파일로 내보내기 없이).");
+  } else if (declared.some((argv) => argv.split(" ")[0] === head)) {
+    parts.push(`선언된 명령은 글자 그대로만 실행합니다: ${declared.join(" / ")}`);
+  }
+  parts.push(fileToolsHint());
+  return parts.join(" ");
 }
 
 /**
@@ -854,7 +869,7 @@ function decidePlanner(work: Work, path: string, input: HookInput): string | und
   const [dispatchId, name, ...rest] = path.slice(staging.length).split("/");
   const record = state!.tasks.find((item) => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === dispatchId);
   if (!record || rest.length || TASK_AGENTS[record.task.role] !== agent.type || (agent.dispatchId && agent.dispatchId !== dispatchId) ||
-    !record.task.outputs.some((output) => basename(output) === name)) return `실행 중인 배정의 staging 경로가 아닙니다: ${path}`;
+    (name !== RESULT_FILE && !record.task.outputs.some((output) => basename(output) === name))) return `실행 중인 배정의 staging 경로가 아닙니다: ${path}`;
   return "";
 }
 

@@ -148,9 +148,6 @@ export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
   // 담당 호출(계획 스킬 4개 2항·ca-review·ca-implement·ca-test·ca-check·ca-docs·ca-adopt) — Claude 의 Agent 도구는 인자 없이 백그라운드로 뜰 수 있어
   // 결과를 기다리게 한다(claude 2.1.293 실측). Codex 에는 그 인자가 없다 — 결과를 기다린다는 뜻만 남긴다
   ["Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).", "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다."],
-  // 계획 담당은 두 호스트 모두 출력 문서를 staging 에 쓴다 — Codex 의 쓰기 도구는 apply_patch 다(담당 에이전트)
-  ["출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.",
-    "출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다."],
 ];
 
 /**

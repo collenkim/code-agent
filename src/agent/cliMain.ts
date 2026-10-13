@@ -9,6 +9,7 @@ import { parseHost } from "./hosts";
 
 import {
   abort,
+  advancePassedIntegrate,
   back,
   BACK_PHASES,
   context,
@@ -40,11 +41,11 @@ import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
 import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
 import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
-import { contextHandoff, handoffPlanning } from "./handoff";
+import { contextHandoff, handoffPlanning, stageHandoff } from "./handoff";
 import { planningAdvanceCli, planningAssignmentCli } from "./planningChain";
 import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSourceConfirmed } from "./sourceUpdate";
-import { renderVerification, verify } from "./verificationFlow";
+import { renderVerification, verificationJson, verify } from "./verificationFlow";
 import { notationFor, useNotation } from "./hostText";
 import { releaseLease } from "./lease";
 
@@ -174,6 +175,26 @@ function positional(args: string[], valued: string[]): string[] {
   return out;
 }
 
+/**
+ * 깃발만 받는 설치 명령(init·update·doctor)의 인자 검사 — 모르는 깃발·남는 인자는 설치·점검 전에 사용법으로 멈춘다.
+ * `--help`·`-h` 는 사용법만 돌려준다(아무것도 쓰지 않는다). 값 깃발의 값은 option() 이 따로 검사한다.
+ */
+function optionsOnly(args: string[], valued: string[], flags: string[], usage: string): "help" | undefined {
+  if (args.includes("--help") || args.includes("-h")) return "help";
+  const extra: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith("--") && valued.includes(arg.slice(2))) index += 1;
+    else if (!flags.includes(arg)) extra.push(arg);
+  }
+  if (extra.length) throw new Stop(`${usage} — 받지 않는 인자: ${extra.join(" ")}`);
+  return undefined;
+}
+
+const INIT_USAGE = "사용법: code-agent init [--host claude|codex|both] [--cli <path>]";
+const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
+const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>]";
+
 /** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
   const repoRoot = findRepoRoot(process.cwd());
@@ -245,18 +266,21 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(args[0] === "baseline" ? setupBaseline(repoRoot) : setupStatus(repoRoot));
       return 0;
     case "init":
+      if (optionsOnly(args, ["host", "cli"], [], INIT_USAGE)) { print(INIT_USAGE); return 0; }
       print(init(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
     case "status":
       print(status(repoRoot));
       return 0;
     case "doctor": {
+      if (optionsOnly(args, ["host"], ["--cross"], DOCTOR_USAGE)) { print(DOCTOR_USAGE); return 0; }
       const report = doctor(repoRoot, parseHost(option(args, "host")), { cross: args.includes("--cross") });
       print(report.text);
       return report.ok ? 0 : 1;
     }
     case "update":
       // 소스 업데이트(fetch·pull·npm ci·build)는 미리보기를 보여 주고 터미널에서 확인받는다 — 동의 적용은 이미 확인을 받았다
+      if (optionsOnly(args, ["host", "cli"], ["--templates-only"], UPDATE_USAGE)) { print(UPDATE_USAGE); return 0; }
       print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }) : updateFromSourceConfirmed(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
     case "usage": {
@@ -277,7 +301,8 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(start(repoRoot, args[0], { target: option(args, "target"), base: option(args, "base") }));
       return 0;
     case "next":
-      print(next(repoRoot));
+      // 구현 Task 로 옮겼으면 그 Task 의 context 파일도 쓴다 — context --file 왕복을 줄인다
+      print([next(repoRoot), ...(stageHandoff(repoRoot, "implement")?.lines ?? [])].join("\n"));
       return 0;
     case "back":
       print(back(repoRoot, args[0] ?? ""));
@@ -301,15 +326,19 @@ export async function runCommand(command: string | undefined, args: string[]): P
     case "verify": {
       if (args.some((arg) => arg !== "--json" && arg !== "--retry")) throw new Stop("사용법: code-agent verify [--json] [--retry]");
       const result = await verify(repoRoot, { retry: args.includes("--retry") });
-      print(args.includes("--json") ? JSON.stringify(result, null, 2) : renderVerification(result));
+      print(args.includes("--json") ? verificationJson(result) : renderVerification(result));
       return result.node === "review" ? 0 : 1;
     }
     case "review":
-      print(args[0] === "cross" ? crossReview(repoRoot, option(args, "by")) : openRound(requireValidatable(repoRoot, "review")));
+      // 회차를 열면 리뷰어에게 넘길 context 파일도 쓴다
+      print(args[0] === "cross" ? crossReview(repoRoot, option(args, "by")) : [openRound(requireValidatable(repoRoot, "review")), "", ...(stageHandoff(repoRoot, "review")?.lines ?? [])].join("\n"));
       return 0;
-    case "integrate":
-      print(await integrate(requireValidatable(repoRoot, "integrate")));
+    case "integrate": {
+      const result = await integrate(requireValidatable(repoRoot, "integrate"));
+      const moved = advancePassedIntegrate(repoRoot);
+      print(moved ? `${result}\n\n${moved}` : result);
       return 0;
+    }
     case "deliver":
       print(deliver(requireValidatable(repoRoot, "deliver")));
       return 0;

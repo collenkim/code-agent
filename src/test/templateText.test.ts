@@ -163,3 +163,31 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
   // 계획 스킬 4개·ca-review·ca-implement 둘(2항 호출·5항 다시 맡기기)·ca-test·ca-check·ca-docs 둘·ca-adopt, 이전 버전 절차(legacy.md) — 분석·설계·계획 하나씩·영향도 둘
   assert.equal(calls, 17);
 });
+
+/**
+ * 머리말 값은 YAML 평문 스칼라로 안전해야 한다 — `[`·`{` 등으로 시작하거나 `: `·` #` 가 든 값은 YAML 이 다른 꼴로 읽거나 머리말 전체를
+ * 버린다(스킬 목록에 description 대신 본문 첫 문단이 뜬다). 그런 값은 큰따옴표로 감싸고, 감싼 값은 이스케이프 없는 한 줄이어야 한다.
+ */
+function frontmatterProblems(path: string, text: string): string[] {
+  const header = /^---\n([\s\S]*?)\n---\n/.exec(text.replace(/\r\n/g, "\n"));
+  if (!header) return [];
+  const problems: string[] = [];
+  for (const line of header[1].split("\n")) {
+    const pair = /^([A-Za-z][\w-]*): (.*)$/.exec(line);
+    if (!pair) { problems.push(`${path}: 키: 값 꼴이 아닌 줄 — ${line}`); continue; }
+    const value = pair[2];
+    if (value.startsWith("\"")) {
+      if (!/^"[^"\\]*"$/.test(value)) problems.push(`${path}: ${pair[1]} 큰따옴표 값이 한 줄로 닫히지 않습니다`);
+    } else if (/^[[\]{}*&!|>'%@`#,?:-]/.test(value) || /: | #|:$/.test(value)) {
+      problems.push(`${path}: ${pair[1]} 값을 큰따옴표로 감싸야 합니다 — ${value.slice(0, 40)}`);
+    }
+  }
+  return problems;
+}
+
+test("두 호스트 사본의 머리말은 YAML 로 안전하다 — argument-hint 가 `[` 로 시작하면 큰따옴표로 감싼다", () => {
+  const problems = [...hostAssets("claude"), ...hostAssets("codex")].flatMap(([path, text]) => frontmatterProblems(path, text));
+  assert.deepEqual(problems, []);
+  assert.deepEqual(frontmatterProblems("x", "---\nname: a\nargument-hint: [ID] <서술>\n---\n"), ["x: argument-hint 값을 큰따옴표로 감싸야 합니다 — [ID] <서술>"]);
+  assert.match(skill("ca-feature"), /^argument-hint: "\[ID\] /m);
+});

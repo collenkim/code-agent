@@ -1,7 +1,7 @@
 ---
 name: ca-request
 description: 모든 코드 작업의 공통 요구사항 접수 — 원문을 보관하고 공통 문서·설정을 준비한 뒤 지시서를 제출한다. 같은 세션에서 요구사항 동의를 적용하고 개발을 이어간다.
-argument-hint: [작업ID] [--kind feature|fix|refactor] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로>
+argument-hint: "[작업ID] [--kind feature|fix|refactor] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로>"
 ---
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.

@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 ---
 
-**계획 작업 배정이 있는 경우** — 아래 일반 출력보다 배정 계약이 우선한다. 배정 파일(`assignmentFile`)을 받았으면 먼저 그 파일 전체를 읽는다 — 배정 JSON·문서 기준·뼈대가 들어 있다. 배정된 inputs·선행 결과·영역만 읽고 resultShape에 맞는 JSON 하나를 반환한다. 출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다. taskId·dispatchId·inputHash를 그대로 돌려주며 근거 path:line은 실제 읽은 위치다. 미결 사항은 needs-input과 questions, 차단 지적은 findings의 blocking으로 표시한다. 확인하지 않은 사실을 채우지 않는다. KNOWLEDGE는 코드 근거를 확인할 단서다. 키 존재만으로 현재 동작이나 호출자 영향 조사를 생략하지 않는다.
+**계획 작업 배정이 있는 경우** — 아래 일반 출력보다 배정 계약이 우선한다. 배정 파일(`assignmentFile`)을 먼저 끝까지 읽고(배정 JSON·문서 기준·뼈대) 그 `instructions`·`resultShape`대로 결과 JSON 하나를 낸다 — 입력 범위·staging·결과 파일 쓰기·근거·질문 규칙은 `instructions`에 있다. taskId·dispatchId·inputHash는 그대로 돌려주고 확인하지 않은 사실을 채우지 않는다. KNOWLEDGE는 코드 근거를 확인할 단서다. 키 존재만으로 현재 동작이나 호출자 영향 조사를 생략하지 않는다.
 
 `task.role: impact`는 작은 기본 조사의 통합 배정이다. 같은 담당이 코드 조사와 `02-analysis.md` 정리를 함께 수행한다. `기존 시스템 분석`·`영향 범위`·`Risk` 섹션을 채우고 영향 범위 표에 모든 R을 포함한다. 호출자·공유 모듈·회귀 위험의 실제 근거를 기록하고, 문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나 별도 작성 담당을 호출하지 않는다. 미결 질문이면 문서를 확정하지 않는다. 완료 문서에는 미결 표시인 `확인 필요`·TODO·TBD를 제목으로도 넣지 않는다. 실제 질문은 questions로 반환하고, 확인하지 못한 기술적 범위는 `조사 한계`에 사실 그대로 적는다. `task.role: explore`는 기존처럼 근거·사실만 반환한다.
 

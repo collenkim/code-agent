@@ -24,7 +24,7 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
 
 ## 2. 게이트
 
-통과면 Bash: `code-agent next` — 거부되면 차단 복구를 따른다. 커서가 `deliver` 로 간다.
+통과면 `integrate` 가 커서를 `deliver` 로 옮긴다(출력 끝의 `스테이지:`). `deliver 로 넘기지 못했습니다` 가 나오면 그 사유로 차단 복구를 따른다.
 
 ## 3. 반영 준비 — ⑩ `10-pr.md`
 

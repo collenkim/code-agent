@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 ---
 
-입력: `code-agent context --file`이 쓴 context 파일 경로(먼저 전체를 읽는다), 작업 폴더의 `03-design.md`(기술 설계) · `04-functional.md`(기능·업무 규칙·예외·AC) 경로.
+입력: 메인이 넘긴 context 파일(`handoff/context.md`) 경로(먼저 전체를 읽는다 — 이 Task 의 AC·업무 규칙 줄과 03·04 절 위치가 있다), 작업 폴더의 `03-design.md` · `04-functional.md` 경로. 03·04 는 필요한 절만 그 줄 범위로 읽는다 — Task 마다 전체를 다시 읽지 않는다.
 
 - **만들 파일 목록에 있는 것만** 쓴다. 다른 파일이 필요해 보이면 쓰지 말고 보고한다.
 - 참조 표준 코드의 구조·명명·예외 처리·주석 밀도를 그대로 따른다. 컨벤션 문서와 참조 코드가 다르면 참조 코드를 따르고 보고에 적는다.

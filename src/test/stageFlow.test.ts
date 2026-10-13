@@ -405,7 +405,14 @@ describe("PVR-7 — 반영 커밋의 handoff·staging·잠금 파일", () => {
     // 커밋 대상 목록 절만 본다(⑩ 의 변경 요약은 기준 커밋과의 차이 전부를 보인다)
     const summary = full.slice(full.indexOf("커밋 대상"), full.indexOf("\n\n", full.indexOf("커밋 대상")));
     assert.doesNotMatch(summary, /handoff\/|\.staging\/|json\.lock/);
-    assert.match(summary, /order\.verify\.json/);
+    // 변경 요약에 나오는 파일은 수만 적는다 — 같은 목록을 두 번 싣지 않는다. 변경 요약에 있지만 커밋하지 않는 파일은 따로 적는다
+    assert.match(summary, /^- 아래 '변경 요약'의 추가·수정·이름변경 파일 \d+개$/m);
+    assert.doesNotMatch(summary, /order\.verify\.json/);
+    const skipped = full.slice(full.indexOf("'변경 요약'에 있지만 커밋하지 않는 파일:"));
+    for (const path of ["doc/work/ORD-1/.staging/x/02-analysis.md", ".code-agent/work/ORD-1/order.review.json.lock"]) {
+      assert.match(skipped, new RegExp(`^- ${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), `${path}\n${full}`);
+    }
+    assert.doesNotMatch(skipped.slice(0, skipped.indexOf("\n\n")), /order\.verify\.json|sub\/keep\.lock/);
     // pre-commit hook 이 staging 을 강제로 더하면 반영 목록 밖으로 드러난다
     write(".git/hooks/pre-commit", "#!/bin/sh\ngit add -f doc/work/ORD-1/.staging/y.md\n");
     chmodSync(join(repo, ".git/hooks/pre-commit"), 0o755);

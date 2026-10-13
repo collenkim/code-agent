@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -321,10 +321,12 @@ describe("hook — Bash 허용 목록", () => {
       "code-agent model all sonnet",
       "code-agent model writer gpt-6-luna --host codex --reasoning high",
       "code-agent model writer sonnet --host claude --effort high",
-      "echo hello next", // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다
     ]) {
       assert.match(bash(human) ?? "", /현재 세션의 ca-answer 동의 절차/, human);
     }
+    // 앞 11글자를 무엇으로 채워도 서브명령 대조를 통과하지 못한다 — code-agent 명령이 아니므로 동의 문장은 붙지 않는다
+    assert.match(bash("echo hello next") ?? "", /^작업 중에는 /);
+    assert.doesNotMatch(bash("echo hello next") ?? "", /ca-answer/);
     for (const skill of [
       "code-agent start doc/work/ORD-1.md",
       "code-agent next",
@@ -1001,6 +1003,21 @@ describe("questions", () => {
 });
 
 describe("init", () => {
+  test("--help·-h 는 사용법만 내고, 모르는 깃발·남는 인자는 아무것도 쓰기 전에 멈춘다 — update·doctor 도 같다", () => {
+    const cli = (...args: string[]) => spawnSync(process.execPath, [join(__dirname, "..", "agent", "cli.js"), ...args], { cwd: repo, encoding: "utf8" });
+    for (const args of [["init", "--help"], ["init", "-h"], ["doctor", "--help"], ["update", "--templates-only", "--help"]]) {
+      const run = cli(...args);
+      assert.equal(run.status, 0, args.join(" "));
+      assert.match(run.stdout, new RegExp(`^사용법: code-agent ${args[0]} `), args.join(" "));
+    }
+    for (const args of [["init", "--hots", "claude"], ["init", "extra"], ["update", "--templates-only", "--bogus"], ["doctor", "--crosss"]]) {
+      const run = cli(...args);
+      assert.equal(run.status, 1, args.join(" "));
+      assert.match(run.stderr, /받지 않는 인자: /, args.join(" "));
+    }
+    for (const path of [".claude", ".agents", ".codex", ".code-agent/hosts.json", ".code-agent/version"]) assert.equal(existsSync(join(repo, path)), false, path);
+  });
+
   test("역할별 model·effort가 박혀 설치된다 — 각자 PC의 기본값에 맡기지 않는다", () => {
     init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
     for (const agent of AGENTS) {

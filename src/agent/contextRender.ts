@@ -299,6 +299,51 @@ export function fixImplementSection({ work }: RenderInput, out: string[]): void 
   );
 }
 
+const DESIGN_DOCS = ["04-functional.md", "03-design.md"] as const;
+const SOURCE_LINE_CHARS = 300;
+const SOURCE_LINES_MAX = 40;
+
+/** 03·04 의 절 위치 — `<문서> · <절> <시작>-<끝>`. 담당은 필요한 절만 그 줄 범위로 읽는다 */
+export function docSectionIndex(repoRoot: string, id: string): string[] {
+  return DESIGN_DOCS.flatMap((name) => {
+    const path = `${workDocsDir(id)}/${name}`, full = join(repoRoot, path);
+    if (!existsSync(full)) return [];
+    const lines = readFileSync(full, "utf8").split(/\r?\n/);
+    const heads = lines.map((text, index) => ({ text, line: index + 1 })).filter((row) => /^## /.test(row.text));
+    const ranges = heads.map((head, index) => `${head.text.slice(3).trim()} ${head.line}-${(heads[index + 1]?.line ?? lines.length + 1) - 1}`);
+    return ranges.length ? [`- ${path} · ${ranges.join(" · ")}`] : [];
+  });
+}
+
+/**
+ * 이 Task 의 근거 줄 — 04 의 수락 기준(Task 의 AC id, Task 가 없는 계획이면 단계 파일이 맡은 R 의 AC)과 업무 규칙(BR) 줄,
+ * 03 에서 Task 파일 이름이 나오는 줄을 줄 번호와 함께 뽑는다.
+ * 담당이 Task 마다 03·04 전체를 다시 읽지 않게 한다(절 전체가 필요하면 docSectionIndex 의 범위만 읽는다).
+ */
+export function taskSourceLines(repoRoot: string, id: string, task: { acceptance: string[]; requirements?: string[]; files: string[] }): string[] {
+  const out: string[] = [];
+  const names = [...new Set(task.files.map((file) => file.split("/").pop()!.replace(/\.[^.]+$/, "")).filter((name) => name.length >= 3))];
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const ids = [...task.acceptance.map(escape), ...(task.acceptance.length ? [] : (task.requirements ?? []).map((key) => `AC-${escape(key)}-\\d+`))];
+  const ac = ids.length ? new RegExp(`(?:^|[^\\w-])(?:${ids.join("|")})(?![\\w-])`) : undefined;
+  const named = names.length ? new RegExp(`(?:^|[^\\w])(?:${names.map(escape).join("|")})(?!\\w)`) : undefined;
+  for (const name of DESIGN_DOCS) {
+    const path = `${workDocsDir(id)}/${name}`, full = join(repoRoot, path);
+    if (!existsSync(full)) continue;
+    const picked = readFileSync(full, "utf8").split(/\r?\n/).map((text, index) => ({ text, line: index + 1 })).filter(({ text }) =>
+      !/^(?:#|<!--)/.test(text.trim()) && text.trim() !== "" &&
+      (name === "04-functional.md" ? (!!ac && ac.test(text)) || /^\s*-\s*BR-\d+/.test(text) : !!named && named.test(text)));
+    if (!picked.length) continue;
+    out.push(`${path}`);
+    for (const row of picked.slice(0, SOURCE_LINES_MAX)) {
+      const text = row.text.trim();
+      out.push(`- ${row.line}: ${text.length > SOURCE_LINE_CHARS ? `${text.slice(0, SOURCE_LINE_CHARS)}…` : text}`);
+    }
+    if (picked.length > SOURCE_LINES_MAX) out.push(`- … 외 ${picked.length - SOURCE_LINES_MAX}줄 — 절 위치로 읽는다`);
+  }
+  return out;
+}
+
 /** 구현 단계 — 현재 Task·만들 파일·단계 규칙·참조 표준 */
 export function implementSection({ repoRoot, work }: RenderInput, out: string[]): void {
   if (!work.stage || !work.plan) return; // renderContext 가 같은 조건으로 부른다 — 타입 좁히기
@@ -309,6 +354,14 @@ export function implementSection({ repoRoot, work }: RenderInput, out: string[])
   if (currentTask) out.push(`현재 Task: ${currentTask.id} · ${currentTask.title}`, `선행: ${currentTask.dependsOn.join(", ") || "없음"} · 완료 기준: ${currentTask.acceptance.join(", ")}`);
   out.push("", `## 단계 ${stage.key} — ${stage.title}`, "", "만들 파일 (승인된 계획 — 이 밖은 hook 이 거부한다):");
   out.push(...planned.map((file) => `- ${file.path} — ${file.purpose}`));
+  {
+    const unit = currentTask ?? { acceptance: [], requirements: [...new Set(planned.flatMap((file) => file.requirements ?? []))], files: planned.map((file) => file.path) };
+    const sources = taskSourceLines(repoRoot, active.id, unit), index = docSectionIndex(repoRoot, active.id);
+    if (sources.length || index.length) {
+      out.push("", "## 이 Task 의 근거 — 03·04 에서 코드가 뽑은 줄 (03·04 전체를 다시 읽지 않는다. 절 전체가 필요하면 아래 절 위치의 줄 범위만 읽는다)",
+        ...sources, ...(index.length ? ["절 위치:", ...index] : []));
+    }
+  }
   const template = join(repoRoot, stage.template);
   if (existsSync(template)) {
     out.push("", `## 단계 규칙 (${stage.template})`, readFileSync(template, "utf-8").trim());
@@ -350,6 +403,8 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
         (frozen.includes(file.path) ? frozenNote : ""),
     ),
   );
+  const index = docSectionIndex(repoRoot, active.id);
+  if (index.length) out.push("", "## 03·04 절 위치 (필요한 절만 그 줄 범위로 읽는다)", ...index);
   out.push(
     "",
     `## 검증 증거 (${validationDocFile(active.id)})`,

@@ -598,7 +598,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 
 | 명령 | 하는 일 | TTY 필요 |
 |---|---|---|
-| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치(호스트는 이전 기록과 합집합 — 줄이지 않는다) | — |
+| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치(호스트는 이전 기록과 합집합 — 줄이지 않는다). `--help`·`-h`는 사용법만 보이고 아무것도 쓰지 않으며, 받지 않는 인자가 있으면 설치하지 않고 멈춘다(`doctor`·`update`도 같다) | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다(`--host`·`--cross` 포함) | — |
 | `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 실행 절차·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
@@ -790,15 +790,15 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 (확정은 사람이). 어긋나면 파일을 쓰지 않는다. 반려된 내용 그대로의 재제출도 거부한다 |
 | `code-agent request` | 접수 중이거나 작업이 진행 중이면 접수 형식을 준다 — 초안 형식·규칙·대상 후보·지금 상태 (작업 중이면 그 작업의 요구사항을 고칠 때 쓴다). 둘 다 없으면 접수를 열라고 세우고, 문서 세션이 열려 있어도 거부한다 |
 | `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — **사람이 지금 내용으로 확정한 요구사항만** 받는다. 대상이 여럿인 지시서와, 새 작업 브랜치를 딸 때의 미커밋 변경은 거부한다(브랜치는 바꾸지 않는다). 통과하면 접수 세션을 닫는다 |
-| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 |
+| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로. 구현 Task 로 옮기면 그 Task 의 context 파일도 써 `담당`·`전문` 줄을 붙인다 |
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 대상이 바뀌어 적용되지 않는다), 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙. 작업 전 접수 중에는 `code-agent request` 와 같은 접수 형식을 준다 (작업 중에는 스테이지 컨텍스트다) |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
 | `code-agent repro` | 재현 — **`fix` 에서만** 돈다 (번호가 없다 — `implement` 안에서 돈다). `kind: "test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 ⑦ 의 `## 재현` TC 가 **실패**하는 것을 확인하고 증거에 적는다. 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다. 로그 근거면 수정 전 결과만 기록한다 |
 | `code-agent check` | 정적 분석·컴파일 — build와 품질·보안 기준 명령 실행 후 ⑧ 기록 |
 | `code-agent test` | 테스트 — 기존 명령을 실행하고 ⑦의 필수 TC별 실제 passed 확인. 이후 테스트 동결 |
-| `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
-| `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단 |
+| `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정하고 리뷰어에게 넘길 context 파일도 쓴다. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
+| `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단. 통과하면 커서를 반영(deliver)으로 옮긴다 |
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
 | `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분에 끊는다 — 사람이 셸에서 `CODE_AGENT_CROSS_TIMEOUT_MIN`(분, 기본 9, 소수 허용)으로 바꾼다. Codex 셸에서 `--by claude` 면 샌드박스 표지를 보고 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 이 사전 점검은 사람이 셸에서 `CODE_AGENT_CROSS_PREFLIGHT=off` 로만 끈다 |
 | `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번. 제한 시간(`CODE_AGENT_CROSS_TIMEOUT_MIN`)·사전 점검(`CODE_AGENT_CROSS_PREFLIGHT`)은 `review cross` 와 같다 |

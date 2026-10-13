@@ -70,6 +70,8 @@ function blockedGuide(item: Blocked): string | undefined {
 export function planningNextLine(view: AdvanceView, options: { chained: boolean; gate?: GateStep; workDir: string }): string {
   const { chained, gate } = options;
   const adv = chained ? "code-agent planning advance --chain" : "code-agent planning advance";
+  const feedback = view.feedback?.length ?? 0;
+  const FEEDBACK = "계약의 수정 피드백으로 고칠 작업을 다시 배정한다(feedback[].citedTask 는 근거 문서를 낸 작업일 뿐이고 고칠 곳은 지적 내용으로 정한다. 앞 단계를 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고하고 지시를 받는다)";
   const keep = (text: string) => keepChain(text, chained);
   const line = ((): string => {
     if (gate?.gate === "passed") {
@@ -110,6 +112,8 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
         // 배정이 막힌 작업은 없고 교차 계획 검토(crossCriticProblems)가 남았다 — 그 줄이 할 일(명령·사람 판단)을 적는다
         const cross = blocked.length === 0 ? (view.problems ?? []).find((problem) => /^교차 검토/.test(problem)) : undefined;
         if (cross) return `${keep(cross)} — 그다음 ${adv}`;
+        // 남은 것이 차단 지적뿐이면 그것이 할 일이다 — 교차 계획 검토는 고친 계획의 critic 결과로 돈다(critic 이 막은 지점은 요구하지 않는다)
+        if (blocked.length === 0 && feedback) return "";
         return `막힘 — blocked·problems 사유를 해결한 뒤 ${adv} (미결 질문은 ca-answer 절차로 실제 답을 받는다. 보류·상태 메모는 답이 아니다). 해결할 수 없는 사유면 그대로 전하고 멈춘다`;
       }
       case "ready-for-gate":
@@ -119,10 +123,8 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
         return `알 수 없는 action(${view.action}) — 출력을 그대로 전하고 멈춘다`;
     }
   })();
-  const feedback = view.feedback?.length ?? 0;
-  return feedback
-    ? `${line} — 차단 지적 ${feedback}건: 계약의 수정 피드백으로 고칠 작업을 다시 배정한다(feedback[].citedTask 는 근거 문서를 낸 작업일 뿐이고 고칠 곳은 지적 내용으로 정한다. 앞 단계를 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고하고 지시를 받는다)`
-    : line;
+  if (!feedback) return line;
+  return line ? `${line} — 차단 지적 ${feedback}건: ${FEEDBACK}` : `차단 지적 ${feedback}건 — ${FEEDBACK}. 고친 뒤 ${adv}`;
 }
 
 /**

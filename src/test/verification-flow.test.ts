@@ -10,7 +10,7 @@ import { next, requireValidatable, status, Stop } from "../agent/commands";
 import { loadEvidence, runsOf, saveEvidence, stageProblems, validationDocFile, verifyView } from "../agent/evidence";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, saveReview } from "../agent/review";
-import { check, runTests } from "../agent/validate";
+import { check, runTests, tailOf, TAIL_LINE_CHARS, TAIL_TOTAL_CHARS } from "../agent/validate";
 import { verify, verificationFlowFile } from "../agent/verificationFlow";
 import type { VerificationHistory } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
@@ -235,6 +235,14 @@ describe("검증 workflow 노드", () => {
     assert.equal(loadEvidence(repo, "ORD-1", "order"), undefined);
   });
 
+  test("실패한 단계의 next 거부는 단계 명령이 아니라 status 와 같은 재개(verify --json)를 안내한다", async () => {
+    useManifest({ test: FAIL_UNTIL_FIXED });
+    toCheck();
+    assert.equal((await verify(repo)).node, "repair");
+    saveActive(repo, { ...loadActive(repo)!, phase: "test" });
+    assert.throws(() => next(repo), (error: Error) => /\n다음: .*code-agent verify --json/.test(error.message) && !/code-agent test 로 다시 돌리세요/.test(error.message), "next");
+  });
+
   test("CLI JSON과 종료 코드는 통과·수정 요청을 구분한다", () => {
     useManifest({ test: FAIL_UNTIL_FIXED });
     toCheck();
@@ -245,7 +253,10 @@ describe("검증 workflow 노드", () => {
     assert.equal(repair.node, "repair");
     // 원인과 남은 회차가 결과 JSON 에 실린다
     assert.equal(repair.failure.class, "code-defect");
-    assert.equal(typeof repair.budget.fix.left, "number");
+    // 남은 회차는 budget 문장 한 곳이다 — task·summaries(단계 출력의 다음 할 일 줄)에 되풀이하지 않는다
+    assert.match(repair.budget, /^남은 고쳐 쓰기 \d+회/);
+    assert.equal(failed.stdout.split("남은 고쳐 쓰기").length - 1, 1, failed.stdout);
+    assert.ok(!repair.summaries.some((text: string) => text.includes("code-agent verify 로 다시 검증하세요")), repair.summaries.join("\n"));
     write(`${ORDER}/domain/Order.java`, "class Order {} // fixed\n");
     const passed = spawnSync(process.execPath, [cli, "verify", "--json"], { cwd: repo, encoding: "utf8" });
     assert.equal(passed.status, 0, passed.stderr);
@@ -530,4 +541,16 @@ describe("검증 workflow 노드", () => {
     await check(requireValidatable(repo, "check"));
     assert.equal(loadEvidence(repo, "ORD-1", "order")!.retry!.causes["2"], "fix");
   });
+});
+
+test("실패 꼬리는 줄마다 ${TAIL_LINE_CHARS}자, 전체 ${TAIL_TOTAL_CHARS}자로 자르고 끝 줄을 남긴다 — 전문은 로그 파일", () => {
+  const huge = "x".repeat(30_000);
+  const one = tailOf(`앞\n${huge}\n마지막 오류`, 40);
+  assert.ok(one.length < 400, String(one.length));
+  assert.match(one, /… \(29700자 생략\)\n마지막 오류$/);
+  const many = tailOf(Array.from({ length: 40 }, (_, index) => `${index}:${"y".repeat(250)}`).join("\n"), 40);
+  assert.ok(many.length <= TAIL_TOTAL_CHARS + 40, String(many.length));
+  assert.match(many, /^… \(앞 \d+줄 생략\)\n/);
+  assert.ok(many.endsWith(`39:${"y".repeat(250)}`));
+  assert.equal(tailOf("a\nb\nc", 2), "b\nc");
 });

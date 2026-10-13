@@ -175,11 +175,17 @@ describe("hook·검증의 Codex 표기", () => {
   test("hook 셸 거부 문구 — Claude 는 Bash·Write/Edit, Codex 는 셸·apply_patch", () => {
     toCheck();
     const claude = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "ls" } }) ?? "";
-    assert.match(claude, /^작업 중에는 Bash 로 code-agent 명령\(/);
+    assert.match(claude, /^작업 중에는 Bash 로 code-agent 명령, 선언된 명령, 읽기용 git 만 실행할 수 있습니다\. /);
     assert.match(claude, /파일은 Write\/Edit 로 고치고, 읽기는 Read\/Grep\/Glob 을 쓰세요\.$/);
+    // 원인과 무관한 규칙(하위 명령 목록·연결 문자·동의 동작)은 싣지 않는다 — 거부마다 대화에 쌓인다
+    assert.ok(claude.length < 200, claude);
+    assert.doesNotMatch(claude, /연결·리다이렉트|ca-answer|planning advance/);
+    const chained = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent check && git commit -m x" } }) ?? "";
+    assert.match(chained, /연결·리다이렉트/); assert.match(chained, /planning advance/);
+    assert.match(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git checkout -b x" } }) ?? "", /git 은 status·diff·log·show/);
     const codex = (codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }) as
       { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "";
-    assert.match(codex, /^작업 중에는 셸로 code-agent 명령\(/);
+    assert.match(codex, /^작업 중에는 셸로 code-agent 명령, /);
     assert.match(codex, /파일은 apply_patch로 고치고, 읽기는 code-agent read <파일> \[시작 줄\] \[줄 수\]를 쓰세요\./);
     assert.match(codex, /Windows PowerShell.*code-agent\.cmd/);
   });

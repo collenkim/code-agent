@@ -128,7 +128,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
       const work = requireValidatable(context.repoRoot, "check");
       // 회차 판정은 check() 한 곳이다. 한도 거부만 사람 판단(decision)으로 보내고, 그 밖의 거부는 사유 그대로 멈춘다
       try {
-        context.summaries.push(await check(work, { retry: context.retry }));
+        context.summaries.push(await check(work, { retry: context.retry, note: false }));
         return "done";
       } catch (error) {
         if (!(error instanceof RetryRefused) || error.failure.class !== "limit-exceeded") throw error;
@@ -165,7 +165,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
       if (problems.length) throw new Stop(problems.join("\n"));
       // 같은 회차 재실행 한도 거부(끊긴 test 의 재실행을 다 썼다 등)는 check.execute 와 같이 사람 판단(decision)으로 보낸다
       try {
-        context.summaries.push(await runTests(work));
+        context.summaries.push(await runTests(work, { note: false }));
         return "done";
       } catch (error) {
         if (!(error instanceof RetryRefused) || error.failure.class !== "limit-exceeded") throw error;
@@ -190,13 +190,13 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
 
 /**
  * 결과의 task — 원인이 있으면 원인별 안내다: decision 은 한도 안내, diagnose 는 원인 안내(실행은 통과했는데 대조만
- * 어긋났으면 precondition 의 rerun 문구), repair 는 노드 문구에 남은 회차를 붙인다. 그 밖은 노드의 고정 문구다.
+ * 어긋났으면 precondition 의 rerun 문구), repair 는 노드 문구다(남은 회차는 결과의 budget 한 곳). 그 밖은 노드의 고정 문구다.
  */
 function taskOf(node: string, fallback: string, context: FlowContext, work: Work): string {
   const recorded = context.failure;
   if (!recorded || !["repair", "diagnose", "decision"].includes(node)) return fallback;
   if (node === "decision") return recorded.class === "limit-exceeded" ? limitExceededText(recorded, validationDocFile(work.active.id)) : fallback;
-  if (node === "repair") return context.budget ? `${fallback} (${budgetText(context.budget)})` : fallback;
+  if (node === "repair") return fallback;
   return context.guide ?? fallback;
 }
 
@@ -256,6 +256,16 @@ export async function verify(repoRoot: string, options: { retry?: boolean } = {}
   attempt.result = result;
   persist();
   return result;
+}
+
+/**
+ * verify --json — 남은 회차는 문장 하나(budgetText)로 내고, problems 를 이어 붙인 것뿐인 failure.detail 은 뺀다.
+ * 카운터별 객체와 detail 은 증거·노드 이력(verification-flow.json)에 그대로 남는다.
+ */
+export function verificationJson(result: VerificationResult): string {
+  const failure = result.failure && result.failure.detail === result.problems.join(" / ")
+    ? (({ detail: _detail, ...rest }) => rest)(result.failure) : result.failure;
+  return JSON.stringify({ ...result, ...(failure ? { failure } : {}), ...(result.budget ? { budget: budgetText(result.budget) } : {}) }, null, 2);
 }
 
 export function renderVerification(result: VerificationResult): string {

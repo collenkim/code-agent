@@ -8,7 +8,7 @@ description: 코드 생성 단계(implement)를 진행한다 — 승인된 계�
 너는 **메인 에이전트**다. 코드는 **네가 쓰지 않는다** — 단계마다 서브에이전트를 새 컨텍스트로 부른다.
 `code-agent` 가 거부하면 차단 복구를 따른다.
 
-**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. `plan`의 승인 대기라면 `/ca-plan`의 공통 동의 절차로 확인받고 승인된 동의 적용과 `code-agent next` 뒤 구현을 이어간다. 그 밖에 스테이지가 `implement`가 아니면 차단 복구로 현재 단계의 재개 방향을 정한다.
+**자리 확인** — 방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 Bash: `code-agent status`. `plan`의 승인 대기라면 `/ca-plan`의 공통 동의 절차로 확인받고 승인된 동의를 적용한 뒤(커서가 구현으로 간다) 구현을 이어간다. 그 밖에 스테이지가 `implement`가 아니면 차단 복구로 현재 단계의 재개 방향을 정한다.
 아직 이르면 status의 `다음:` 줄이 가리키는 명령을 먼저 하라고 전하고,
 이미 지났으면 `code-agent back implement` 로 되감아야 한다고 전한다 — 무엇이 무효가 되는지는 그 명령이 찍는다.
 **되감기는 사용자가 되돌리라고 말했을 때만** 돌린다 — 승인 무효로 status 의 `다음:` 이 되감기를 안내할 때는 예외다.
@@ -17,7 +17,7 @@ description: 코드 생성 단계(implement)를 진행한다 — 승인된 계�
 
 커서가 `check` 에 닿을 때까지 단계마다 반복한다:
 
-1. Bash: `code-agent context --file` — 이 단계의 만들 파일, 단계 규칙, 참조 표준 코드를 파일로 쓰고 첫 줄·`담당`·`전문` 경로만 출력한다.
+1. 직전 `code-agent next` 출력의 `담당`·`전문` 줄(계획 동의 적용 결과면 `contextAgent`·`contextFile`)이 이 Task 의 context 다. 없을 때만 Bash: `code-agent context --file` — 만들 파일·단계 규칙·참조 표준 코드를 파일로 쓰고 `담당`·`전문` 경로만 출력한다.
 2. `담당`(테스트 단계면 `ca-tester`, 아니면 `ca-implementer`)을 부른다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 프롬프트에는 `전문` 경로와
    작업 폴더의 `03-design.md` · `04-functional.md` 경로(테스트 단계면 `07-test-spec.md` 도)를 준다 — context 본문을 옮겨 쓰지 않는다.
    서브에이전트는 새 컨텍스트에서 시작하므로 필요한 경로는 전부 넘긴다.

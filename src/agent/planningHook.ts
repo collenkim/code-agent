@@ -3,8 +3,8 @@ import { basename, dirname, relative, resolve, sep } from "path";
 import { writeAtomic } from "../core/atomic";
 import { sha } from "./docs";
 import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
-import { mutatePlanning, openStaging, requireRolePhase, stagingPath } from "./planning";
-import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
+import { mutatePlanning, openStaging, requireRolePhase, seedStaging, stagingPath } from "./planning";
+import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, RESULT_FILE, RESULT_POINTER, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
   type PlanningAgent, type PlanningResult, type PlanningState, type ResolvedResult, type TaskAttempt, type TaskRecord } from "./planningState";
 import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, type FailureRecord } from "./retryPolicy";
 import { RecordedFailure, type ReviewHookInput } from "./reviewHook";
@@ -95,14 +95,37 @@ interface Prepared {
   reported?: PlanningResult;
   staged?: Staged;
 }
+/**
+ * 최종 응답이 `결과: <경로>` 한 줄이면 그 결과 파일을 읽는다 — 이 담당이 맡을 수 있는 실행 중 배정(역할의 담당 종류·시작 때 고른 배정)의
+ * resultFile 자리만 받는다. 그 자리는 그 배정의 담당만 쓸 수 있고(hook), 줄 자체는 검증한 실행 기록에서 왔다.
+ */
+function pointedResult(work: Work, snapshot: ReturnType<typeof loadPlanning>, agent: { type: string; dispatchId?: string }, raw: string): { text: string } | { error: string } | undefined {
+  const pointer = RESULT_POINTER.exec(raw.trim());
+  if (!pointer) return undefined;
+  const allowed = snapshot.tasks.flatMap(record => {
+    const last = record.attempts.at(-1);
+    return last?.status === "running" && TASK_AGENTS[record.task.role] === agent.type && (!agent.dispatchId || agent.dispatchId === last.dispatchId)
+      ? [stagingPath(work.active.id, last.dispatchId, RESULT_FILE)] : [];
+  });
+  const path = pointer[1].replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!allowed.includes(path)) return { error: `결과 파일 경로가 이 배정의 resultFile 이 아닙니다: ${pointer[1]} — 배정 파일의 resultFile 경로를 그대로 쓰세요` };
+  const file = planningPath(work.repoRoot, path);
+  if (!existsSync(file)) return { error: `결과 파일이 없습니다: ${path} — resultFile 에 결과 JSON 을 쓴 뒤 그 경로를 돌려주세요` };
+  const text = readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+  return text.length > RESULT_LIMIT ? { error: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` } : { text };
+}
+
 /** 잠금 밖 준비 — 결과 수신·파싱·staging 읽기·문서 검사를 먼저 하고, 같은 범위의 해시 계산으로 메모를 채운다 */
 function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   const snapshot = loadPlanning(work);
   const agent = [...snapshot.agents].reverse().find(agent => agent.id === input.agent_id && agent.session === input.session_id);
   if (!agent) return undefined;
-  const received = receive(input, work.repoRoot, agent.startedAt, agent.judgedHandbacks);
+  let received = receive(input, work.repoRoot, agent.startedAt, agent.judgedHandbacks);
   if (received.sourceError !== undefined) return { received };
   if (received.tooLarge) return { received, formatError: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` };
+  const pointed = pointedResult(work, snapshot, agent, received.raw);
+  if (pointed && "error" in pointed) return { received, formatError: pointed.error };
+  if (pointed) received = { ...received, raw: pointed.text.trim() };
   let parsed: unknown, parseError: unknown;
   try { parsed = JSON.parse(received.raw); } catch (error) { parseError = error; }
   const schema = ResultSchema.safeParse(parsed);
@@ -342,16 +365,20 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
   if (!input.session_id || !input.agent_id) throw new Error("계획 담당의 세션과 에이전트 식별자가 없습니다.");
   withPlanningCache(() => {
     if (input.hook_event_name === "SubagentStart") {
-      const writes = mutatePlanning(work, state => {
+      const writers = mutatePlanning(work, state => {
         const candidates = state.tasks.filter(record => TASK_AGENTS[record.task.role] === input.agent_type && record.attempts.at(-1)?.status === "running");
-        if (!candidates.length) return false;
+        if (!candidates.length) return [];
         if (state.agents.some(agent => agent.id === input.agent_id && agent.session === input.session_id && !agent.finished)) throw new Error("중복 시작 이벤트입니다.");
         const dispatchId = candidates.length === 1 ? candidates[0].attempts.at(-1)!.dispatchId : undefined;
         state.agents.push({ id: input.agent_id!, session: input.session_id!, type: input.agent_type!, startedAt: new Date().toISOString(), dispatchId });
-        return candidates.some(record => record.task.outputs.length > 0);
+        return candidates.map(record => structuredClone(record));
       }, { waitMs: TIMING.hookLockWaitMs });
-      // staging 폴더는 샌드박스 밖인 이 hook 이 만든다(openStaging) — 담당은 그 안에 배정별 폴더와 문서를 쓴다
-      if (writes) openStaging(work);
+      // staging 폴더는 샌드박스 밖인 이 hook 이 만든다(openStaging) — 담당은 그 안에 배정별 폴더에 문서와 결과 파일을 쓴다.
+      // 수정 재배정이면 현행 문서를 그 배정의 자리에 미리 둔다(seedStaging) — 담당은 고칠 곳만 고친다
+      if (writers.length) {
+        openStaging(work);
+        for (const record of writers) seedStaging(work, record);
+      }
       return;
     }
     const prepared = prepareStop(input, work);

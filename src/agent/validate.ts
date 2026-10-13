@@ -110,8 +110,16 @@ function outcomeOf(result: CommandResult): Outcome {
   return result.status === 0 ? "passed" : "failed";
 }
 
-function tailOf(text: string, lines: number): string {
-  return text.split("\n").slice(-lines).join("\n");
+/** 실패 꼬리의 줄·전체 상한 — 한 줄짜리 거대한 출력(압축된 스택·JSON)이 증거·출력을 채우지 않게 한다. 전문은 로그 파일에 있다 */
+export const TAIL_LINE_CHARS = 300;
+export const TAIL_TOTAL_CHARS = 4000;
+export function tailOf(text: string, lines: number): string {
+  const kept = text.split("\n").slice(-lines)
+    .map((line) => line.length > TAIL_LINE_CHARS ? `${line.slice(0, TAIL_LINE_CHARS)}… (${line.length - TAIL_LINE_CHARS}자 생략)` : line);
+  // 전체 상한 — 마지막 오류에 가까운 끝 줄부터 남긴다
+  let start = kept.length, total = 0;
+  while (start > 0 && total + kept[start - 1].length + 1 <= TAIL_TOTAL_CHARS) total += kept[--start].length + 1;
+  return (start > 0 ? [`… (앞 ${start}줄 생략)`, ...kept.slice(start)] : kept).join("\n");
 }
 
 export interface ValidateOptions {
@@ -416,7 +424,8 @@ function remainingNote(work: Work, evidence: Evidence, phase: "check" | "test" |
     cases: phase === "test" ? evidence.testCases : phase === "integrate" ? evidence.integrationTestCases ?? [] : undefined,
   });
   const view = verifyView(work, evidence);
-  if (state === "passed") return "전부 통과했습니다 — code-agent next 로 다음 스테이지로.";
+  // 통합 검증 통과는 CLI 가 커서를 deliver 로 옮기고 그 결과를 붙인다(advancePassedIntegrate)
+  if (state === "passed") return phase === "integrate" ? "전부 통과했습니다." : "전부 통과했습니다 — code-agent next 로 다음 스테이지로.";
   if (state === "result-unconfirmed") {
     return "명령은 끝났지만 필수 TC의 성공이 확인되지 않았습니다. 테스트 결과 형식과 생략·실패 케이스를 확인하세요. " +
       verifyGuidance(work, evidence, phase, state, view.budget);
@@ -450,7 +459,8 @@ function wholeLog(run: VerifyRun): string {
   return run.kind.startsWith("plugin:") ? ` — 플러그인 런입니다. 요청·응답은 ${PLUGIN_LOG_DIR}/verify.extra.jsonl` : "";
 }
 
-function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "integrate", specs: CommandSpec[]): string {
+/** note: false — verify 가 부를 때. 다음 할 일과 남은 회차는 verify 결과(task·budget)가 한 번만 말한다 */
+function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "integrate", specs: CommandSpec[], note = true): string {
   const runs = runsOf(evidence, phase);
   const lines = [
     `# code-agent ${phase} — ${work.active.id} · ${evidence.rounds}회차`,
@@ -491,7 +501,7 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
   for (const run of runs.filter((entry) => entry.outcome === "failed" || entry.outcome === "error")) {
     lines.push("", `## ${run.kind} 실패 (마지막 40줄${wholeLog(run)})`, "```", run.tail.trimEnd() || "(출력 없음)", "```");
   }
-  lines.push("", `⑧ ${validationDocFile(work.active.id)} 를 렌더했습니다.`, remainingNote(work, evidence, phase));
+  lines.push("", `⑧ ${validationDocFile(work.active.id)} 를 렌더했습니다.`, ...(note ? [remainingNote(work, evidence, phase)] : []));
   return lines.join("\n");
 }
 
@@ -864,7 +874,7 @@ function rebaseTestFreeze(work: Work, evidence: Evidence, by: "collect" | "findi
 }
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
-export async function check(work: Work, options: { retry?: boolean } = {}): Promise<string> {
+export async function check(work: Work, options: { retry?: boolean; note?: boolean } = {}): Promise<string> {
   const baseCommit = requireEvidenceBase(work);
   requireCleanPlan(work);
 
@@ -936,11 +946,11 @@ export async function check(work: Work, options: { retry?: boolean } = {}): Prom
   const extra = pluginVerifyRuns(work, evidence.rounds);
   replaceRuns(evidence, "check", evidence.rounds, [...runs, ...extra.runs]);
   persist(work, evidence);
-  return [summary(work, evidence, "check", specs), ...(extra.notice ? ["", extra.notice] : [])].join("\n");
+  return [summary(work, evidence, "check", specs, options.note ?? true), ...(extra.notice ? ["", extra.notice] : [])].join("\n");
 }
 
 /** 8 테스트 — test + 테스트 전략이 적은 명령. ⑦ 의 TC id 가 전부 확인돼야 넘어간다 */
-export async function runTests(work: Work): Promise<string> {
+export async function runTests(work: Work, options: { note?: boolean } = {}): Promise<string> {
   const baseCommit = requireEvidenceBase(work);
   requireCleanPlan(work);
 
@@ -988,7 +998,7 @@ export async function runTests(work: Work): Promise<string> {
     evidence.testFreeze = { round, at: new Date().toISOString(), files: fileHashes(work.repoRoot, testStageFiles(work)) };
   }
   persist(work, evidence);
-  return summary(work, evidence, "test", specs);
+  return summary(work, evidence, "test", specs, options.note ?? true);
 }
 
 // ---- 10 통합 검증 ----

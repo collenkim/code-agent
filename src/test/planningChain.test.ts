@@ -71,10 +71,12 @@ test("게이트 — 연쇄 아닌 호출은 code-agent next 와 질문 거부 �
   assert.equal(line({ action: "ready-for-gate" }, true, { from: "design", gate: "rejected", reason: "AC 없음" }), "게이트 거부(design) — chain.reason 을 그대로 전하고 멈춘다");
 });
 
-test("차단 지적은 어느 행이든 끝에 덧붙이고, 모르는 action 은 출력을 그대로 전하고 멈춘다", () => {
+test("차단 지적은 어느 행이든 끝에 덧붙이고(남은 것이 차단 지적뿐이면 그것이 줄이다), 모르는 action 은 출력을 그대로 전하고 멈춘다", () => {
   const feedback = line({ action: "blocked", blocked: [], feedback: [{ from: "critic", citedTask: "design" }] });
-  assert.match(feedback, / — 차단 지적 1건: 계약의 수정 피드백으로 고칠 작업을 다시 배정한다[\s\S]*사용자에게 보고하고 지시를 받는다\)$/);
+  assert.match(feedback, /^차단 지적 1건 — 계약의 수정 피드백으로 고칠 작업을 다시 배정한다[\s\S]*사용자에게 보고하고 지시를 받는다\)\. 고친 뒤 code-agent planning advance$/);
   assert.doesNotMatch(feedback, /code-agent back/);
+  const appended = line({ action: "blocked", blocked: [{ id: "a", reasons: ["r"], class: "same-input-repeat", counter: { limit: 3 } }], feedback: [{ from: "critic" }] });
+  assert.match(appended, /^a: [\s\S]* — 차단 지적 1건: 계약의 수정 피드백으로/);
   assert.equal(line({ action: "bogus" }), "알 수 없는 action(bogus) — 출력을 그대로 전하고 멈춘다");
 });
 

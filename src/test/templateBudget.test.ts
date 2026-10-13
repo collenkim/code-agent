@@ -10,18 +10,18 @@ import { test } from "node:test";
 import { hostAssets } from "../agent/hosts";
 
 const ROOT = join(__dirname, "../..");
-/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄다(doc/reviews/2026-10-13-result-summary.md) */
+/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄고, 계획 담당 넷은 요구 분석 본문을 ca-analyze/criteria.md 로 옮긴 크기다(doc/reviews/2026-10-13-result-summary.md '템플릿 예산') */
 const BUDGET: Record<string, number> = {
-  "template/claude/agents/ca-analyst.md": 3100,
-  "template/claude/agents/ca-critic.md": 2000,
-  "template/claude/agents/ca-explorer.md": 2400,
+  "template/claude/agents/ca-analyst.md": 800,
+  "template/claude/agents/ca-critic.md": 1900,
+  "template/claude/agents/ca-explorer.md": 2200,
   "template/claude/agents/ca-implementer.md": 1400,
   "template/claude/agents/ca-reviewer.md": 3400,
   "template/claude/agents/ca-surveyor.md": 1500,
   "template/claude/agents/ca-tester.md": 1800,
-  "template/claude/agents/ca-writer.md": 2800,
+  "template/claude/agents/ca-writer.md": 2600,
   "template/claude/skills/ca-adopt/SKILL.md": 8600,
-  "template/claude/skills/ca-analyze/criteria.md": 600,
+  "template/claude/skills/ca-analyze/criteria.md": 2700,
   "template/claude/skills/ca-analyze/legacy.md": 700,
   "template/claude/skills/ca-analyze/SKILL.md": 2900,
   "template/claude/skills/ca-answer/appendix.md": 5400,

@@ -8,6 +8,7 @@ import { handoffDir } from "./layout";
 import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
 import { loadWork } from "./work";
 import { agentName } from "./hostText";
+import { Stop } from "./stop";
 
 /**
  * 서브에이전트에게 넘길 긴 자료를 파일로 둔다(폴더는 layout.ts handoffDir — 여기서 다시 내보낸다).
@@ -35,20 +36,42 @@ const CRITERIA: Record<string, string> = {
   design: "ca-design", plan: "ca-plan", critic: "ca-plan",
 };
 
-/** `code-agent context --file` — 전문은 파일로, 메인에게는 첫 줄·담당·경로만 */
-export function contextHandoff(root: string): string {
+/** context 전문을 handoff 파일로 쓴다 — 작업이 없으면(접수 중) 쓰지 않는다 */
+function writeContext(root: string): { text: string; file?: string; agent?: string } {
   const text = context(root);
   const work = loadWork(root);
-  if (!work) return text; // 접수 중에는 메인이 직접 쓰는 형식이라 그대로 보여 준다
+  if (!work) return { text };
   const { phase } = work.active;
   const file = writeHandoff(root, work.active.id, "context.md", `${text}\n`);
   const agent = phase === "implement" ? (work.stage?.kind === "test" ? "ca-tester" : "ca-implementer")
     : phase === "test" ? "ca-tester" : phase === "review" ? "ca-reviewer" : undefined;
-  return [
-    text.split("\n")[0],
-    ...(agent ? [`- 담당: ${agentName(agent)}`] : []),
-    `- 전문: ${file} — 서브에이전트에게 이 경로를 넘긴다. 메인이 본문을 옮겨 쓰지 않는다.`,
-  ].join("\n");
+  return { text, file, agent };
+}
+function handoffLines(file: string, agent?: string): string[] {
+  return [...(agent ? [`- 담당: ${agentName(agent)}`] : []), `- 전문: ${file} — 서브에이전트에게 이 경로를 넘긴다. 메인이 본문을 옮겨 쓰지 않는다.`];
+}
+
+/** `code-agent context --file` — 전문은 파일로, 메인에게는 첫 줄·담당·경로만 */
+export function contextHandoff(root: string): string {
+  const { text, file, agent } = writeContext(root);
+  if (!file) return text; // 접수 중에는 메인이 직접 쓰는 형식이라 그대로 보여 준다
+  return [text.split("\n")[0], ...handoffLines(file, agent)].join("\n");
+}
+
+/**
+ * 커서를 옮긴 명령이 담당을 부를 자리의 context 파일을 바로 쓴다 — 메인이 `context --file` 을 따로 부르는 왕복을 없앤다.
+ * 구현 Task 로 옮긴 `next`·계획 동의 적용은 implement, 회차를 연 `review` 는 review 다(`next` 가 review 로 옮긴 자리는 아직 회차가 없다).
+ * 커서가 그 스테이지가 아니면 undefined. 커서는 이미 옮겨졌으므로 context 를 만들지 못해도 명령을 실패시키지 않는다
+ */
+export function stageHandoff(root: string, at: "implement" | "review"): { lines: string[]; file?: string; agent?: string } | undefined {
+  if (loadWork(root)?.active.phase !== at) return undefined;
+  try {
+    const { file, agent } = writeContext(root);
+    return file ? { lines: handoffLines(file, agent), file, agent: agent && agentName(agent) } : undefined;
+  } catch (error) {
+    if (!(error instanceof Stop)) throw error;
+    return { lines: [`- context 파일을 쓰지 못했습니다: ${error.message.split("\n")[0]} — code-agent context --file 로 다시 쓰세요`] };
+  }
 }
 
 interface Assignment {
