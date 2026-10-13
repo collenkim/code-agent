@@ -416,7 +416,45 @@ test("request: preparation and observation preserve the original; apply records 
   assert.equal(records.length, 1);
   assert.equal(records[0].presence.channel, "claude-question");
   assert.equal(records[0].presence.verified, true);
-  assert.equal(loadActive(root), undefined, "confirming requirements does not implicitly start work");
+  assert.equal(loadActive(root), undefined, "apply 만으로는 시작하지 않는다 — 시작은 finish 가 잇는다");
+});
+
+test("request: finish 로 확정을 적용하면 접수 세션의 기준으로 작업을 시작한다 — start 왕복이 없다", () => {
+  approveAndApplyFixture(root, { action: "setup" });
+  submitConsentRequest(root);
+  const fixture = prepareConsentFixture(root, { action: "request", id: CONSENT_WORK_ID });
+  assert.match(confirmationText(fixture), /확정을 적용하면 작업을 시작합니다 — 작업 브랜치 feature\/CONSENT-1 를 master 에서 만들고 분석 단계로 갑니다/);
+  observeConsentFixture(fixture);
+  const applied = JSON.parse(finishConsent(root, fixture.id));
+  assert.equal(applied.phase, "analysis");
+  assert.match(applied.started, /^시작했습니다: CONSENT-1 /);
+  assert.doesNotMatch(applied.started, /^다음:/m, "지금 할 일은 next 하나가 말한다");
+  assert.equal(loadActive(root)?.phase, "analysis");
+  assert.equal(gitFixture(root, "branch", "--show-current"), "feature/CONSENT-1");
+  assert.equal(loadRequestSession(root), undefined, "접수 세션을 닫았다");
+  const again = JSON.parse(finishConsent(root, fixture.id));
+  assert.equal(again.phase, "analysis");
+  assert.equal(again.started, undefined, "다시 불러도 다시 시작하지 않는다");
+  const midWork = prepareConsentFixture(root, { action: "request", id: CONSENT_WORK_ID });
+  assert.doesNotMatch(confirmationText(midWork), /작업을 시작합니다/, "진행 중인 작업의 재확정은 시작하지 않는다");
+});
+
+test("request: 시작이 막히면 확정만 남기고 막힌 사유와 다시 시작할 명령을 돌려준다", () => {
+  approveAndApplyFixture(root, { action: "setup" });
+  submitConsentRequest(root);
+  writeFixture(root, "src/stray.js", "module.exports = 0;\n");
+  const fixture = prepareConsentFixture(root, { action: "request", id: CONSENT_WORK_ID });
+  assert.match(confirmationText(fixture), /시작 전 정리 필요: \[A\] src\/stray\.js — 이대로면 확정만 남고 시작은 막힙니다/);
+  observeConsentFixture(fixture);
+  const applied = JSON.parse(finishConsent(root, fixture.id));
+  assert.equal(applied.status, "applied");
+  assert.equal(applied.phase, undefined);
+  assert.match(applied.startBlocked, /커밋하지 않은 변경이 있어 시작하지 않았습니다/);
+  assert.match(applied.next, new RegExp(`code-agent start ${CONSENT_SPEC}$`));
+  assert.equal(requestState(root, CONSENT_WORK_ID, CONSENT_SPEC).status, "confirmed");
+  assert.equal(loadActive(root), undefined);
+  assert.equal(loadRequestSession(root)?.id, CONSENT_WORK_ID, "접수는 열린 채로 남는다");
+  assert.equal(gitFixture(root, "branch", "--show-current"), "master");
 });
 
 test("request: changed requirements invalidate a previously observed answer", () => {
@@ -440,10 +478,13 @@ test("request: cancellation leaves intake open without creating a request decisi
 
 test("request: an explicitly confirmed rejection retains its reason instead of approving", () => {
   submitConsentRequest(root);
-  approveAndApplyFixture(root, { action: "request", id: CONSENT_WORK_ID, decision: "reject", comment: "범위를 줄여 주세요" });
+  const fixture = approveAndApplyFixture(root, { action: "request", id: CONSENT_WORK_ID, decision: "reject", comment: "범위를 줄여 주세요" });
   const state = requestState(root, CONSENT_WORK_ID, CONSENT_SPEC);
   assert.equal(state.status, "rejected");
   assert.equal(readRequestLedger(root, CONSENT_WORK_ID)[0].comment, "범위를 줄여 주세요");
+  assert.doesNotMatch(confirmationText(fixture), /작업을 시작합니다/);
+  assert.equal(JSON.parse(finishConsent(root, fixture.id)).started, undefined, "반려는 시작하지 않는다");
+  assert.equal(loadActive(root), undefined);
 });
 
 test("model: applying observed consent changes only the selected agent", () => {

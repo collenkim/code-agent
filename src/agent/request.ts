@@ -878,6 +878,37 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
 
 // ---- confirm / reject (검증된 세션 선택 또는 수동 TTY) ----
 
+/** 확정할 지시서 자리 — 사람이 경로를 주면 그것, 진행 중인 작업이면 그 지시서, 아니면 접수가 렌더하는 자리 */
+export function requestSpecPath(repoRoot: string, id: string, specArg?: string): string {
+  if (specArg) return toRepoPath(repoRoot, specArg);
+  const active = loadActive(repoRoot);
+  return active && active.id === id ? active.spec : requirementFile(id);
+}
+
+/**
+ * 요구 확정 동의를 적용하면 그 자리에서 작업을 시작하는가 — 진행 중인 작업이 없고 이 ID 를 접수 중일 때(시작 인자인 기준 브랜치·대상이
+ * 접수 세션에 있다). 동의 화면의 시작 안내와 적용 뒤 시작이 이 판정 하나를 쓴다. 진행 중인 작업의 재확정은 시작하지 않는다
+ */
+export function confirmStartsWork(repoRoot: string, id: string): RequestSession | undefined {
+  if (loadActive(repoRoot)) return undefined;
+  const session = loadRequestSession(repoRoot);
+  return session?.id === id ? session : undefined;
+}
+
+/** 요구 확정 동의 화면의 시작 안내 — 만들 작업 브랜치와 기준, 시작을 막을 미커밋 변경 */
+export function confirmStartNotice(repoRoot: string, session: RequestSession, spec: string): string {
+  const branch = `${session.kind}/${session.id}`;
+  const exists = isGitRepo(repoRoot) && Boolean(commitOf(repoRoot, branch));
+  const where = !isGitRepo(repoRoot) ? "git 저장소가 아니라 브랜치는 만들지 않고"
+    : exists ? `이미 있는 작업 브랜치 ${branch} 로 전환하고`
+    : `작업 브랜치 ${branch} 를 ${session.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master"} 에서 만들고`;
+  const blockers = exists ? [] : startBlockers(repoRoot, session.id, spec);
+  return [
+    `확정을 적용하면 작업을 시작합니다 — ${where} 분석 단계로 갑니다.`,
+    ...(blockers.length > 0 ? [`시작 전 정리 필요: ${blockerList(blockers)} — 이대로면 확정만 남고 시작은 막힙니다(사람이 커밋·stash 한 뒤 시작)`] : []),
+  ].join("\n");
+}
+
 export function decideRequest(
   repoRoot: string,
   id: string | undefined,
@@ -896,13 +927,7 @@ export function decideRequest(
   if (!manifest) {
     throw new Stop(`code-agent.json 이 없습니다. ${skill("ca-adopt")} 로 프로젝트를 먼저 도입하세요.`);
   }
-  // 지시서 자리 — 사람이 경로를 주면 그것, 진행 중인 작업이면 그 지시서, 아니면 접수가 렌더하는 자리
-  const active = loadActive(repoRoot);
-  const spec = specArg
-    ? toRepoPath(repoRoot, specArg)
-    : active && active.id === id
-      ? active.spec
-      : requirementFile(id);
+  const spec = requestSpecPath(repoRoot, id, specArg);
   if (spec.startsWith("..") || !existsSync(join(repoRoot, spec))) {
     throw new Stop(
       `지시서가 없습니다: ${spec} — ${skill("ca-request")} 로 접수하면 code-agent request submit 이 ${requirementFile(id)} 에 렌더합니다.\n` +

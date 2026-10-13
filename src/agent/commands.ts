@@ -253,7 +253,8 @@ function toRepoPath(repoRoot: string, path: string): string {
 
 // ---- start ----
 
-export function start(repoRoot: string, spec: string, startOptions: { target?: string; base?: string } = {}): string {
+/** `brief` — 요구 확정 동의 적용 뒤의 시작(consent finish): 상태 줄을 붙이지 않는다. 그 결과의 phase·next 가 지금 자리다 */
+export function start(repoRoot: string, spec: string, startOptions: { target?: string; base?: string; brief?: boolean } = {}): string {
   requireNoTriage(repoRoot);
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     throw new Stop("문서 준비 세션이 열려 있습니다. code-agent docs end 뒤에 같은 요구사항으로 시작하세요.");
@@ -374,7 +375,9 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
-  return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${movedStatus(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
+  const headline = `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}`;
+  if (startOptions.brief) return `${headline}${hooks ? `\n${hooks}` : ""}`;
+  return `${headline}\n\n${movedStatus(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
 }
 
 // ---- status ----

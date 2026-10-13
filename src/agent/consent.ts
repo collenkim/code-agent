@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "util";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import type { Presence } from "../core/approval";
-import { abort, decide, next, nextStep, requireReproable, requireValidatable, status } from "./commands";
+import { abort, decide, next, nextStep, requireReproable, requireValidatable, start, status } from "./commands";
 import { stageHandoff } from "./handoff";
 import { changedPaths } from "./tree";
 import { baselineFiles, setupBaseline } from "./bootstrap";
@@ -22,7 +22,7 @@ import { modelsTable, setModel, validateModelChange, workInProgress } from "./mo
 import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
 import { pluginAdd, pluginRemove, previewPluginAdd, previewPluginRemove } from "./plugins/commands";
 import { readStore } from "./plugins/store";
-import { decideRequest, loadRequestSession } from "./request";
+import { confirmStartNotice, confirmStartsWork, decideRequest, loadRequestSession, requestSpecPath } from "./request";
 import { failure, guidance, TIMING, type FailureRecord } from "./retryPolicy";
 import { KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS } from "./schemas";
 import { SnapshotCache } from "./snapshotCache";
@@ -383,6 +383,8 @@ function judgmentOf(action: Action): { kind: JudgmentKind; reason: string } {
 function preview(root: string, action: Action): { confirmations: Prompt[]; choices: Choice[]; summary: string } {
   let confirmations: Prompt[] = [], choices: Choice[] = [], summary = "";
   const reject = action.decision === "reject";
+  // 요구 확정이 작업 시작까지 하면(finish) 만들 브랜치를 화면에 함께 싣는다 — 이미 확정된 내용이어도 시작은 변경이다
+  let starting = false;
   switch (action.action) {
     case "setup":
       confirmations = capture(() => confirmDoc(root, "all"));
@@ -390,7 +392,12 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       break;
     case "docs": confirmations = capture(() => confirmDoc(root, action.kind ?? "all")); break;
     case "baseline": confirmations = capture(() => setupBaseline(root)); break;
-    case "request": confirmations = capture(() => decideRequest(root, action.id, reject ? "rejected" : "confirmed", action.comment, action.spec)); break;
+    case "request": {
+      confirmations = capture(() => decideRequest(root, action.id, reject ? "rejected" : "confirmed", action.comment, action.spec));
+      const session = !reject && action.id ? confirmStartsWork(root, action.id) : undefined;
+      if (session) { summary = confirmStartNotice(root, session, requestSpecPath(root, action.id!, action.spec)); starting = true; }
+      break;
+    }
     case "plan": confirmations = capture(() => decide(root, reject ? "rejected" : "approved", action.comment)); break;
     case "deliver": {
       const work = requireValidatable(root, "deliver");
@@ -451,7 +458,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
     }
   }
   summary = [TITLES[action.action], ...(reject ? [`반려 사유: ${action.comment ?? ""}`] : []), summary, ...confirmations.map(c => c.shown)].filter(Boolean).join("\n\n");
-  if (!confirmations.length && ["docs", "setup", "baseline", "request"].includes(action.action)) summary += "\n현재 내용은 이미 처리되어 추가 변경이 없습니다.";
+  if (!confirmations.length && !starting && ["docs", "setup", "baseline", "request"].includes(action.action)) summary += "\n현재 내용은 이미 처리되어 추가 변경이 없습니다.";
   return { confirmations, choices, summary };
 }
 
@@ -704,15 +711,31 @@ const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
   "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
   "knowledge-prune": "결과를 보고하고 원래 흐름으로 돌아간다",
 };
-function afterApply(root: string, action: Action): { phase?: string; next: string; contextFile?: string; contextAgent?: string } {
+function afterApply(root: string, action: Action): { started?: string; startBlocked?: string; phase?: string; next: string; contextFile?: string; contextAgent?: string } {
   const fixed = AFTER_APPLY[action.action];
   if (fixed) return { next: fixed };
   try {
+    const begun = action.action === "request" && action.decision !== "reject" ? startConfirmed(root, action) : undefined;
+    if (begun && "startBlocked" in begun) return begun;
     const handoff = action.action === "plan" && action.decision !== "reject" ? enterImplement(root) : undefined;
     const step = nextStep(root);
-    return { ...(step.phase ? { phase: step.phase } : {}), next: step.next, ...(handoff?.file ? { contextFile: handoff.file, contextAgent: handoff.agent } : {}) };
+    return { ...begun, ...(step.phase ? { phase: step.phase } : {}), next: step.next, ...(handoff?.file ? { contextFile: handoff.file, contextAgent: handoff.agent } : {}) };
   } catch {
     return { next: "code-agent status 로 현재 위치를 확인한다" };
+  }
+}
+/**
+ * 요구 확정을 적용했고 이 ID 를 접수 중이며 진행 중인 작업이 없으면 그 자리에서 작업을 시작한다(접수 세션의 기준 브랜치·대상) — 메인이
+ * start 를 따로 부르지 않는다. 시작이 막히면(미커밋 변경·hook 누락 등) 확정은 남기고 막힌 사유와 다시 시작할 명령을 돌려준다
+ */
+function startConfirmed(root: string, action: Action): { started: string } | { startBlocked: string; next: string } | undefined {
+  if (!action.id || !confirmStartsWork(root, action.id)) return undefined;
+  const spec = requestSpecPath(root, action.id, action.spec);
+  try {
+    return { started: start(root, join(root, spec), { brief: true }) };
+  } catch (error) {
+    if (!(error instanceof Stop)) throw error;
+    return { startBlocked: error.message, next: `요구사항은 확정했지만 작업을 시작하지 못했다 — startBlocked 의 사유대로 정리한 뒤(사람이 할 일이면 보고하고 멈춘다) code-agent start ${spec}` };
   }
 }
 /**

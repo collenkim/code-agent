@@ -30,7 +30,7 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
    `다음:`이 `code-agent docs end`이면 그 명령으로 준비 세션을 닫고 같은 접수를 이어간다.
    계획 단계(`analysis`~`plan`)이면 `code-agent planning status`도 본다. 실행 중으로 기록된(`run`이 있는) 배정이 이 대화에서 부른 담당의 것이 아니면(대화를 새로 열었거나 재개했다) 그 결과는 이 대화로 돌아오지 않는다 — 다른 터미널에서 실행 중이 아니면 그 ID마다 `code-agent planning cancel <ID>`를 실행한 뒤 단계 스킬의 `planning advance`로 다시 배정한다.
 2. 표에서 그 스테이지의 절차 파일을 읽고 **그대로 따른다.** 자리 확인은 반복하지 않는다. `사전 판별:`이면 `.claude/skills/ca-fix/triage.md`로 재개한다.
-3. 그 스킬이 게이트(`code-agent next`)를 지났으면 — 접수라면 요구사항이 확정돼 `code-agent start` 로 시작했으면 —
+3. 그 스킬이 게이트(`code-agent next`)를 지났으면 — 접수라면 요구 확정 적용(또는 `code-agent start`)으로 작업이 시작됐으면 —
    안내만 찍고 끝내지 말고 **다음 스테이지의 절차로 이어 간다** — 2 로 돌아간다.
    계획 단계에서 `planning advance --chain` 출력의 `chain.gate`가 `passed`면 게이트(`code-agent next`)는 이미 지났다 — 출력의 `next` 줄대로 다음 스테이지(`chain.to`) 절차로 잇는다(2로 돌아간다).
    `check`·`test`의 전체 흐름은 ca-check에 정의된 `code-agent verify --json`을 사용한다. 실행기가 반환한 노드가 현재 위치다. `review`이면 `/ca-review`로 이어가고 이미 통과한 check·test·next를 반복하지 않는다. `repair`·`diagnose`·`decision`이면 해당 인계 절차를 따른다. 중단 후에도 같은 verify를 호출하면 현재 증거로 재개 위치를 계산한다.

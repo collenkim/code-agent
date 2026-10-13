@@ -269,7 +269,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
        반환된 toolInput 전체로 AskUserQuestion → hook이 실제 응답 관찰 → consent finish <확인 요청 ID>
        (승인된 요청만 그 자리에서 적용 — status·apply 로 나눠도 같다) → approvals/<slug(ID)>/request.jsonl에 해시로 남긴다
        반려를 기록할 때는 decision: "reject"와 comment에 사유를 담은 action.json 으로 다시 확인한다
-  └─ 자동으로 code-agent start doc/work/<ID>/requirement.md → 2 요구사항 분석 (중단 후 재개는 /ca-next)
+  └─ 확정을 적용한 finish 가 이어서 start(작업 브랜치 — 확인 화면에 브랜치·기준과 시작을 막을 미커밋 변경이 뜬다) → 2 요구사항 분석
+       시작이 막히면 확정만 남는다 — 정리한 뒤 code-agent start doc/work/<ID>/requirement.md (중단 후 재개는 /ca-next)
 ```
 
 **렌더된 지시서의 모양** — 머리말(`kind`·`id`·`title`·`target`·`scope`·`preserve`·`approver`·확장 속성) 다음에

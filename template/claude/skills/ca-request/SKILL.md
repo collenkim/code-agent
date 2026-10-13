@@ -31,7 +31,7 @@ argument-hint: "[작업ID] [--kind feature|fix|refactor] <요구사항 서술 ·
 정리본에는 `sourceMap`으로 원문 인용과 REQ/DONE/CON 항목을 연결한다. 원문을 그대로 옮긴 항목은 자동 연결된다. 바꿔 쓴 문장도 원문을 빠짐없이 연결하고, 제외한 내용은 OUT 항목과 이유를 명시한다. `원문 대조`의 미연결은 에이전트가 원문에 근거해 보완한다. 사용자가 표를 작성하게 하지 않는다. 기존 요구 확정 한 번에 반영·변경·제외를 함께 보여준다.
 
 Bash: `code-agent request begin [ID] --kind <종류>` — 접수를 열고 초안 형식 · 규칙 · 대상 후보를 찍는다 (다시 보려면 `code-agent request`).
-사용자가 기준 브랜치나 대상을 말했으면 `--base <기준 브랜치>` · `--target <대상>` 을 함께 넘긴다 — 사람의 확정을 사이에 두고 끊긴 뒤에도 `start` 가 그 값을 쓴다.
+사용자가 기준 브랜치나 대상을 말했으면 `--base <기준 브랜치>` · `--target <대상>` 을 함께 넘긴다 — 확정을 적용할 때의 작업 시작이 그 값을 쓴다.
 
 ## 2. 원문
 
@@ -75,7 +75,7 @@ Bash: `code-agent request submit doc/work/<ID>/request.json`
 
 ## 끝
 
-`request`(작업 ID) 동작으로 공통 동의 절차를 수행한다 — 원문·정리본 링크가 summary에 들어 있다. `approved`인 동의를 적용한 뒤 결과의 `next`로 현재 위치를 잡고, 시작 전이면 `code-agent start doc/work/<ID>/requirement.md`로 분석부터 개발 흐름을 자동으로 이어간다. 진행 중인 작업의 재확정이면 현재 상태가 요구하는 재계획·재승인으로 이어간다.
+`request`(작업 ID) 동작으로 공통 동의 절차를 수행한다 — 원문·정리본 링크가 summary에 들어 있다. `approved`인 동의를 `finish`로 적용하면 작업도 시작된다(결과의 `started`). 결과의 `phase`·`next`로 분석부터 개발 흐름을 자동으로 이어간다. `startBlocked`이면 확정만 남았다 — 사유를 따르고 `next`대로 시작한다. 진행 중인 작업의 재확정이면 현재 상태가 요구하는 재계획·재승인으로 이어간다.
 수정 요청이면 이전 동의를 적용하지 않고 초안을 고쳐 재제출·새 동의를 준비한다. 사용자가 명시적으로 반려 기록을 요청하면 `decision: "reject"`와 실제 사유인 `comment`를 넣은 `request` 동작을 별도 공통 동의 절차로 처리한다. 같은 내용을 그대로 다시 내면 `request submit`이 거부한다.
 
 ## 반려됐다면

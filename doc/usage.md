@@ -181,9 +181,9 @@ claude                           # 같은 프로젝트에서 Claude Code 실행
   /ca-next                         원문·ID를 유지한 채 같은 접수로 복귀
       접수      /ca-request   → request.json → code-agent request submit
                               → 코드가 doc/work/UZRF-145/requirement.md 를 렌더하고 멈춤
-  ────────────────────────────────  같은 세션: 원문·정리 확인 후 요구사항 확정
+  ────────────────────────────────  같은 세션: 원문·정리 확인 후 요구사항 확정 — 적용이 작업을 시작한다(브랜치)
                                     (반려는 code-agent reject request UZRF-145 --comment "사유")
-  /ca-next (또는 /ca-analyze)                       (= code-agent start + 사이클을 plan 까지)
+  같은 흐름 (중단 뒤에는 /ca-next)                 (= 사이클을 plan 까지)
       analysis  /ca-analyze   → 01-requirements.md   질문 → AskUserQuestion → 답 기록 후 진행
       impact    /ca-impact    → 02-analysis.md
       design    /ca-design    → 03-design.md · 04-functional.md
@@ -323,7 +323,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 1. `code-agent request begin [ID] --kind <종류> [--base <기준 브랜치>] [--target <대상>]` — 접수 세션(`.code-agent/request-session.json`)을 열고
    초안 형식 · 규칙 · **대상 후보**(도메인 디렉토리)를 찍는다 — `feature` 는 `- <이름> (<경로>)` 로 보여 주고 `target` 에는 **이름**만 쓰고, `fix`·`refactor` 는 경로를 보여 주고 경로를 쓴다.
    다시 보려면 `code-agent request` (접수 중에는 `code-agent context` 도 같은 것을 준다).
-   `--base`·`--target` 은 세션 파일에 남아 **확정 뒤 `start` 가 쓴다** — 접수와 시작 사이에 사람의 확정이 끼어 명령이 끊기기 때문이다 (`start` 에 직접 준 값이 이긴다).
+   `--base`·`--target` 은 세션 파일에 남아 **확정을 적용할 때의 작업 시작(`start`)이 쓴다** — 접수와 시작 사이에 사람의 확정이 끼기 때문이다 (`start` 에 직접 준 값이 이긴다).
    **ID는 선택이다** — 티켓 ID는 그대로, 생략하면 CLI가 미사용 WORK 번호를 발급한다 (명시적 ID는 영문·숫자로 시작, `[A-Za-z0-9._-]` 64자 이하).
    일반 접수 쓰기는 `doc/work/<ID>/` 안이며 **지시서 자체는 코드가 렌더한다**. 준비가 필요하면 접수를 유지한 채 `docs begin`으로 문서 세션을 열고 그 허용 범위에서 공통 문서·설정을 보완한다.
 2. 모델이 `doc/work/<ID>/request.json` 을 쓴다. **원문은 한 글자도 바꾸지 않는다** — 글이면 `original`,
@@ -337,7 +337,8 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
    지시서를 생략하면 진행 중인 작업의 지시서, 없으면 `doc/work/<ID>/requirement.md` 다 — **다른 자리에 손으로 쓴 지시서는 경로를 함께 준다.**
    반려는 `code-agent reject request <ID> [<지시서>] --comment "사유"` (사유 필수). 판정은 `.code-agent/approvals/<ID>/request.jsonl` 에 해시 사슬로 남는다 —
    원장은 **같은 ID 이면서 같은 지시서 경로**인 줄만 그 지시서의 판정으로 읽는다.
-5. 확정되면 `/ca-next`(또는 `/ca-analyze`)가 `code-agent start doc/work/<ID>/requirement.md` 로 분석을 시작한다.
+5. 같은 세션의 확인으로 확정하면 적용(`consent finish`)이 그 자리에서 작업을 시작한다 — 작업 브랜치 `<종류>/<ID>` 를 따고 분석으로 간다. 확인 화면에 만들 브랜치와 기준, 시작을 막을 미커밋 변경이 함께 뜬다.
+   시작이 막히면(미커밋 변경 등) 확정만 남고, 정리한 뒤 `/ca-next`(또는 `/ca-analyze`)가 `code-agent start doc/work/<ID>/requirement.md` 로 시작한다. 터미널의 `confirm request` 와 진행 중인 작업의 재확정은 확정만 한다.
 
 ```jsonc
 // doc/work/ORD-12/request.json — 모델이 쓴다
@@ -486,8 +487,8 @@ preserve:
 게이트를 지나면 다음 스테이지의 단계 실행 명령으로 이어 간다. **사용자 판단이 필요하면 같은 세션에서 질문한다.**
 필수 질문 미응답·보류·취소, 반려, 계획 밖 실패·지적, 재시도 한도 소진(`verify` 의 `decision` — 고쳐 쓰기·리뷰 회차·같은 코드 재실행 등), 명령 거부에서는 멈춘다. 정상적인 요구·계획·결과 확인은 같은 세션에서 선택받고 이어간다.
 
-작업이 아직 시작 전이고 접수 중이면 **접수가 첫 칸**이다 — `/ca-request` 의 절차를 따르고, 요구사항이 `확정됨` 이면
-`code-agent start doc/work/<ID>/requirement.md` 로 시작해 `analysis` 로 이어 간다.
+작업이 아직 시작 전이고 접수 중이면 **접수가 첫 칸**이다 — `/ca-request` 의 절차를 따른다. 확정 적용이 작업을 시작하므로 그대로 `analysis` 로 이어 가고,
+확정은 됐는데 시작 전이면(터미널 확정·시작이 막힌 뒤) `code-agent start doc/work/<ID>/requirement.md` 로 시작한다.
 
 사이클 자체에는 절차가 없다. 그래서 `/ca-next` 로 몰든 단계 명령으로 끊어 돌든 도는 내용이 갈리지 않는다.
 사용자가 되돌리라고 하면 `code-agent back <스테이지>` 를 돌리고 그 자리부터 다시 돈다 — 사이클이 스스로 되감지는 않는다. 예외는 계획 `planning advance` 의 자동 되감기(`rewind-required`·`rewind.auto: true`)다.

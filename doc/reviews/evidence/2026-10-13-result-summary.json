@@ -1,5 +1,5 @@
 {
-  "range": "a4b6df8..cd0550b, 그 뒤 이 커밋(부모 f24066c)",
+  "range": "a4b6df8..cd0550b, 그 뒤 ea66d4f, 이 커밋(부모 ea66d4f)",
   "note": "2026-10-12~13 evidence 를 합쳤다. a4b6df8..7ade5a6 의 개별 evidence 12개는 7ade5a6, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 cd0550b 의 doc/reviews/evidence/ 에 원본이 있다.",
   "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "commits": {
@@ -813,7 +813,7 @@
         ]
       }
     },
-    "이 커밋(부모 f24066c)": {
+    "ea66d4f": {
       "scope": "init·doctor·update 인자 검사, 스킬 머리말 YAML, 토큰 검토 중간 항목 M1~M10(교차 선실행·재작업 재작성·분석 입력·구현 재읽기·계획 결과 JSON·왕복·verify 실패 출력·셸 거부 문구·동의 출력·담당 본문 중복)",
       "decisions": {
         "scope": "사용자: 결함 둘과 중간 항목 전부",
@@ -880,7 +880,7 @@
         "saved": "Task 마다 context --file, 계획 승인 뒤 next, 통합 검증 뒤 next, 리뷰 회차마다 context --file"
       },
       "templates": {
-        "unit": "LF 글자 수, f24066c → 이 커밋",
+        "unit": "LF 글자 수, f24066c → ea66d4f",
         "files": {
           "agents/ca-analyst.md": [
             2915,
@@ -962,6 +962,49 @@
           ]
         }
       }
+    },
+    "이 커밋(부모 ea66d4f)": {
+      "scope": "요구 확정 동의 적용(finish)이 작업 시작까지 — 확인 화면의 시작 안내, 막히면 확정만 남기고 startBlocked·next",
+      "decisions": {
+        "scope": "사용자: 요구 확정과 start 합치기 진행",
+        "when": "진행 중인 작업이 없고 그 ID 를 접수 중일 때만(기준 브랜치·대상이 접수 세션에 있다). 반려·apply·TTY confirm request·진행 중 재확정은 시작하지 않는다",
+        "screen": "브랜치 생성이 동의 안으로 들어와 summary 에 만들 브랜치·기준·시작을 막을 미커밋 변경을 싣는다. decideRequest 확인 문구는 TTY 와 적용 대조 때문에 그대로",
+        "blocked": "확정은 남기고 startBlocked·next(code-agent start <지시서>), 자동 재시도 없음"
+      },
+      "fullSuite": {
+        "tests": 1431,
+        "pass": 1427,
+        "fail": 0,
+        "skipped": 4,
+        "durationMs": 229158
+      },
+      "cli": {
+        "method": "임시 git 저장소(init --host both), node dist/agent/cli.js 의 hook·consent-event·codex-event·consent prepare/finish",
+        "claude": {
+          "finishChars": 510,
+          "branch": "feature/CONSENT-1",
+          "phase": "analysis"
+        },
+        "codex": {
+          "finishChars": 510,
+          "branch": "feature/CONSENT-1",
+          "phase": "analysis"
+        },
+        "blocked": {
+          "screenLine": "시작 전 정리 필요: [A] stray.txt",
+          "finishChars": 599,
+          "branch": "master",
+          "fields": [
+            "startBlocked",
+            "next"
+          ]
+        }
+      },
+      "roundTrips": {
+        "before": "23+N (리뷰 1회차)",
+        "now": "22+N",
+        "saved": "확정 적용 뒤 start 1회(출력 419자)"
+      }
     }
   },
   "notTested": [
@@ -974,6 +1017,7 @@
     "Codex hook agent_id 와 하위 에이전트 기록 thread id 의 대응(배정별 사용량)",
     "리뷰 재검토 범위의 실제 모델 회차 비용·품질",
     "결과 파일·미리 넣은 문서·구현 context 근거 줄을 담당이 지침대로 쓰는지(모델 행동)와 실제 토큰 효과",
-    "Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본의 apply_patch 수정"
+    "Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본의 apply_patch 수정",
+    "요구 확정 적용 뒤 실제 대화에서 메인이 started·startBlocked 를 읽고 잇거나 멈추는지(모델 행동)"
   ]
 }
