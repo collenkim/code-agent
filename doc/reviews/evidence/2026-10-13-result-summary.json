@@ -1,5 +1,5 @@
 {
-  "range": "a4b6df8..이 커밋 (기록 정리 f6a8b72·f24066c·c3182f2 제외)",
+  "range": "a4b6df8..dbb3d62 (기록 정리 f6a8b72·f24066c·c3182f2 제외)",
   "note": "2026-10-12~13 evidence 를 합쳤다. a4b6df8..7ade5a6 의 개별 evidence 12개는 7ade5a6, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 cd0550b 의 doc/reviews/evidence/ 에 원본이 있다.",
   "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "commits": {
@@ -1005,7 +1005,7 @@
         "saved": "확정 적용 뒤 start 1회(출력 419자)"
       }
     },
-    "이 커밋": {
+    "dbb3d62": {
       "scope": "토큰 검토 낮음(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3). L6(교차·synthesis 강도)은 A/B 측정이 필요해 남김",
       "decisions": {
         "scope": "사용자: 마지막 토큰 검토 낮음 항목 진행",
