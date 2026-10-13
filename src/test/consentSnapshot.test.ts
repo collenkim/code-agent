@@ -132,6 +132,51 @@ test("snapshot: branch tracking written by another worktree's push -u does not i
   assert.equal(loadConsent(root, fixture.id).status, "pending");
 });
 
+function withGitConfig<T>(entries: [string, string][], run: () => T): T {
+  const start = Number(process.env.GIT_CONFIG_COUNT ?? "0");
+  const extra: Record<string, string> = { GIT_CONFIG_COUNT: String(start + entries.length) };
+  entries.forEach(([key, value], offset) => {
+    extra[`GIT_CONFIG_KEY_${start + offset}`] = key;
+    extra[`GIT_CONFIG_VALUE_${start + offset}`] = value;
+  });
+  const previous = Object.fromEntries(Object.keys(extra).map(key => [key, process.env[key]]));
+  Object.assign(process.env, extra);
+  try { return run(); } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+}
+
+for (const injectedAtPrepare of [true, false]) {
+  test(`setup: repository trust injection across shell and hook does not invalidate consent (${injectedAtPrepare})`, () => {
+    const injected = <T>(run: () => T) => withGitConfig([["safe.directory", root], ["safe.directory", `${root}/*`]], run);
+    const prepare = () => prepareConsentFixture(root, { action: "setup" });
+    const fixture = injectedAtPrepare ? injected(prepare) : prepare();
+    const respond = () => observeConsentFixture(fixture);
+    if (injectedAtPrepare) respond(); else injected(respond);
+    assert.match(applyConsent(root, fixture.id), /도입.*커밋/);
+    assert.equal(loadConsent(root, fixture.id).status, "applied");
+    assert.equal(readDocLedger(root).length, 4);
+  });
+}
+
+for (const [key, value] of [["safe.directory", "*"], ["safe.directory", "/another-repository"], ["core.hooksPath", "other-hooks"], ["user.name", "changed-user"], ["commit.gpgSign", "true"]]) {
+  test(`snapshot: command-line ${key}=${value} remains protected`, () => {
+    const fixture = prepareConsentFixture(root, { action: "docs" });
+    withGitConfig([[key, value]], () => {
+      assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /Git 설정/);
+    });
+    assert.equal(loadConsent(root, fixture.id).status, "failed");
+  });
+}
+
+test("snapshot: persistent repository trust configuration remains protected", () => {
+  const fixture = prepareConsentFixture(root, { action: "docs" });
+  gitFixture(root, "config", "--local", "--add", "safe.directory", root);
+  assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /Git 설정/);
+});
+
 test("snapshot: old records without per-path hashes still reject changed targets with reprepare guidance", () => {
   const fixture = prepareConsentFixture(root, { action: "docs" }), record = loadConsent(root, fixture.id);
   delete record.snapshotEntries;

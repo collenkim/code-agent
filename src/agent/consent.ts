@@ -288,9 +288,19 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
  */
 function gitConfigState(root: string): string {
   const parts = git(root, ["config", "--null", "--list", "--show-origin"]).split("\0");
+  const normalize = (value: string) => process.platform === "win32" ? value.replace(/\\/g, "/").toLowerCase() : value;
+  const repo = normalize(root).replace(/\/$/, "");
   let kept = "";
   for (let index = 0; index + 1 < parts.length; index += 2) {
-    if (!/^branch\./i.test(parts[index + 1])) kept += `${parts[index]}\0${parts[index + 1]}\0`;
+    const entry = parts[index + 1];
+    // Codex Windows 셸은 현재 저장소와 그 하위 경로의 신뢰를 환경변수로 주입한다.
+    // 설정 파일·다른 경로·전역 wildcard는 계속 비교하며 실제 Git 호출 환경은 바꾸지 않는다.
+    const newline = entry.indexOf("\n");
+    const value = normalize(entry.slice(newline + 1));
+    const transientTrust = parts[index] === "command line:" && newline >= 0
+      && entry.slice(0, newline).toLowerCase() === "safe.directory"
+      && (value === repo || value === `${repo}/*`);
+    if (!/^branch\./i.test(entry) && !transientTrust) kept += `${parts[index]}\0${entry}\0`;
   }
   return kept;
 }

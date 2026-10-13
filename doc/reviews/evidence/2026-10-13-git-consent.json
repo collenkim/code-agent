@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-13",
+  "scope": "동의 스냅샷의 임시 저장소 신뢰 설정 오탐",
+  "build": "passed",
+  "tests": {
+    "command": "node --test dist/test/consentSnapshot.test.js dist/test/consentBinding.test.js dist/test/docSync.test.js dist/test/hookLoad.test.js",
+    "passed": 87,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 76324.2796,
+    "execution": "Windows, outside sandbox, temporary repositories"
+  },
+  "fullSuiteRun": false,
+  "targetProjectModified": false,
+  "recovery": "수정 빌드 적용 뒤 실패한 동의를 새로 준비하고 사용자 응답을 받는다"
+}
