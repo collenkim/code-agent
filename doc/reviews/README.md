@@ -4,23 +4,13 @@
 
 | 날짜 | 기록 | 범위 |
 |---|---|---|
-| 2026-10-13 | [선택 화면에 다 들어가는 질문](2026-10-13-choice-screen-size.md) | 두 호스트의 긴 질문 잘림 실측(수정 전후 PTY 화면), 동의 질문의 앞부분·전문 파일, 업무 질문 크기 검사 |
-| 2026-10-13 | [Codex 실제 선택 UI 연결](2026-10-13-codex-choice-ui.md) | MCP 폼 질문·동의, Default 모드 방향키·Enter 조작, 실제 준비 커밋 적용, 설치·동의 회귀 검증 |
-| 2026-10-13 | [임시 Git 신뢰 설정과 동의 비교](2026-10-13-git-consent.md) | Codex 셸·훅 환경 차이의 Git 설정 오탐 수정, 실제 설정 변경 보호 |
-| 2026-10-13 | [단계별 사용자 선택 점검](2026-10-13-stage-decisions.md) | 전체 단계 선택 표, 미응답 기준 독립 선택, Stop 교정, 실제 Codex 질문 호출·Claude 대화 선택 검증 |
-| 2026-10-12 | [PowerShell 실행 파일 안내](2026-10-12-powershell-command.md) | 모든 Codex 지침·역할·별도 동의 지침의 .cmd 호출, 대화 응답 예외, Restricted 실행 검증 |
-| 2026-10-12 | [두 호스트의 질문·복구 재점검](2026-10-12-choice-recovery-audit.md) | 실제 질문 도구 호출, 도구 부재 대체, 허용된 조회·기존 선택의 재확인 방지, 전체 진입 대조 |
-| 2026-10-12 | [Windows 실행 명령의 hook 판정](2026-10-12-cmd-hook.md) | code-agent.cmd 명령의 허용 목록·동의·임대 동일 판정 |
-| 2026-10-12 | [차단 복구 선택과 재개](2026-10-12-blocked-recovery.md) | 문서·CLI·hook 차단 원인별 선택, 기존 동의를 통한 재개, 현행 문서 최신화. 최종 전체 검증 1,372개 통과·실패 0·생략 4 |
-| 2026-10-12 | [접수 용어 구분](2026-10-12-work-terminology.md) | 실행 명령·작업 ID·외부 업무 식별자·조사 ID의 사용자 안내 정리 |
-| 2026-10-12 | [로그 중복 판별과 재발 관리](2026-10-12-log-dedup.md) | 직접 로그 접수, 중복·후보 비교, 작업·배포 상태 연결과 재판별 |
-| 2026-10-12 | [Sentry 사전 판별과 fix 인계](2026-10-12-sentry-triage.md) | Sentry 오류의 읽기 전용 판별, Jira 수동 생성·연결, 기존 fix 인계와 회귀 검증 |
+| 2026-10-13 | [오류 사전 판별·질문 UI 결과 요약](2026-10-13-triage-choice-summary.md) | `a4b6df8`..`7ade5a6` 아홉 커밋 — Sentry·로그 사전 판별과 중복·재발, 차단 복구·단계별 선택, Windows `.cmd`, 동의 Git 설정 오탐, Codex MCP 선택 UI, 선택 화면 크기. 실제 호스트 확인(Codex 0.162.1 폼 조작·적용, 두 호스트 PTY 화면 실측), 예산 근거, 최종 `npm test` 1,410개 중 1,406개 통과·실패 0·생략 4 |
 | 2026-10-08 | [절차 보완·재시도 규약·최적화 결과 요약](2026-10-08-procedure-fix-summary.md) | 감사와 그 뒤 구현·검토·후속 수정 전체(`c4f3fbf..HEAD`)의 사용자 결정, 커밋, 실패 원인 21종, 묶음별 변경, 역할별 모델, 최적화 실측, 감사 160건 처리 현황, 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0)과 그 불일치 H1~H12 반영, 반영 뒤 재확인과 검증 지적·재검증 지적 반영, 남은 일. 최종 `npm test`는 1,357개 중 1,353개 통과·실패 0·생략 4다 |
 | 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | 코드 수정 없는 감사 — 두 호스트 동등성·절차·동의·검증·자기학습·최적화·하네스 원칙을 대조한 지적 160건(high 7). 프로세스 흐름도와 개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`)을 만들었다 |
 
-원자료는 `evidence/`에 있다 — 감사는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json), 결과 요약은 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
+원자료는 `evidence/`에 있다 — 감사는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json), 결과 요약은 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이고, 2026-10-12~13 은 [2026-10-13-triage-choice-summary.json](evidence/2026-10-13-triage-choice-summary.json)(커밋별 시험·실제 호스트 화면)이다.
 
-**지운 기록은 git 이력에서 본다.** `c4f3fbf` 이전 기록(2026-10-01~06 기록 15개와 그 evidence)과 결과 요약으로 합친 2026-10-07~08 단계 기록 10개·evidence 의 마지막 판은 `68d7a00`의 트리에 있다. 옛 기록의 색인은 `c4f3fbf`의 것이다. 문서 정리(`4c5ca83`)가 현행 문서에서 지운 상태 표·실측(설계 §11 의 구현 순서 P1~P8 표와 P3 실측 기준치 등)도 `68d7a00`의 그 문서에 있다.
+**지운 기록은 git 이력에서 본다.** `c4f3fbf` 이전 기록(2026-10-01~06 기록 15개와 그 evidence)과 결과 요약으로 합친 2026-10-07~08 단계 기록 10개·evidence 의 마지막 판은 `68d7a00`의 트리에 있다. 결과 요약으로 합친 2026-10-12~13 기록 11개와 evidence 12개의 마지막 판은 `7ade5a6`의 트리에 있다. 옛 기록의 색인은 `c4f3fbf`의 것이다. 문서 정리(`4c5ca83`)가 현행 문서에서 지운 상태 표·실측(설계 §11 의 구현 순서 P1~P8 표와 P3 실측 기준치 등)도 `68d7a00`의 그 문서에 있다.
 
 ```sh
 git show c4f3fbf:doc/reviews/README.md                         # c4f3fbf 이전 기록의 색인
@@ -28,6 +18,7 @@ git ls-tree --name-only c4f3fbf doc/reviews/ doc/reviews/evidence/
 git show c4f3fbf:doc/reviews/2026-10-06-token-efficiency.md     # 옛 기록 하나
 git show 68d7a00:doc/reviews/2026-10-08-full-review.md          # 합친 단계 기록 하나
 git show 68d7a00:doc/design.md                                  # 지운 상태 표·실측이 있던 설계 문서
+git ls-tree --name-only 7ade5a6 doc/reviews/ doc/reviews/evidence/  # 합친 2026-10-12~13 기록
 ```
 
 정리 원칙:
