@@ -3,7 +3,7 @@ name: ca-test
 description: 테스트 단계(test)를 진행한다 — ⑦ 의 TC 만 쓰게 하고 code-agent test 로 돌린 뒤 게이트를 통과한다. 결과가 인식된 실행 뒤 테스트는 언다.
 ---
 
-**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 검증 결과는 **네가 보고하는 것이 아니라 명령이 돌아서 남은 것만** 유효하다.

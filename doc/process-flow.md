@@ -99,6 +99,8 @@ flowchart TD
 
 ### 3.1 커서가 생기기 전
 
+**미응답 준비 질문의 재개** — 같은 ID의 새 요청·오류 원문은 초안에 보존한 뒤 ca-docs의 미응답 업무 질문을 실제 질문 도구로 제시한다. 테스트 기준과 품질 기준은 각각 제안 내용·근거와 `제안 기준 사용 / 항목 수정 / 보류`를 받는다. 특정 문구를 입력하라는 보고만으로 끝내지 않는다. 이미 준 답·선택과 대기 중인 질문은 중복해서 묻지 않는다. 업무 답 후 문서 확정·준비 커밋 동의는 별도다.
+
 **용어** — 사용자 안내의 실행 명령(`/ca-fix` 등), 작업 ID(내부 작업), 외부 업무 식별자(Jira 티켓 키·Notion 페이지 ID), 조사 ID(사전 판별 기록)를 구분한다. `skill`·`SKILL.md`는 호스트의 기술 명칭이며 업무 식별자가 아니다. 사전 판별의 외부 연결은 현재 Jira 전용이다.
 
 **Sentry 사전 판별** — 기존 Jira가 없는 Sentry 오류 또는 명시적 `ca-fix --triage` 요청은 개발 접수 전에 `triage ingest <입력JSON>`으로 프로젝트·로그 원문과 선택 release·base를 받아 조사한다. 조직·Sentry ID는 필수가 아니며 출처 기반 begin도 지원한다. `errorFingerprint.ts` v1은 이벤트·요청·추적 ID와 ISO 시각을 정규화하되 오류 코드·숫자·스택을 일괄 제거하지 않는다. 예외와 스택이 있어야 자동 중복으로 인정한다. 동일 오류는 발생 기록을 누적하고 새 Jira·수정 실행을 생략한다. 유사 후보는 비교 근거가 있어야 Jira로 진행한다. 조회·신규 조사 예약은 같은 로컬 잠금 안에서 수행한다. 상태는 `triageState.ts`, 명령은 `triage.ts`다. 증상·기대 동작을 필수로 받지 않고 메인이 로그·발생 버전·저장소 코드와 문서를 읽어 사실·가설·원인 분류와 코드 변경 필요 여부를 따로 작성한다. 데이터·외부 장애도 코드 보완이 필요할 수 있다. `submit`은 로그·판별 형식, 근거의 실재 경로·줄 인용과 수정 제안을 검사하고 파일 해시를 기록한다. 로그 원문은 첫 제출 뒤 바꾸지 않는다. 불필요는 운영 조치를 보고 close, 판단 보류는 추가 증거를 요청한다. 둘 다 Jira 준비·연결·fix 인계를 거부한다.
@@ -116,6 +118,8 @@ flowchart TD
 접수 세션 동안 모델은 `doc/work/<ID>/` 안에만 쓸 수 있고, `requirement.md`는 코드만 쓴다(`hook.ts:307-322`).
 
 ### 3.2 커서 단계 (`PHASES` `layout.ts:20-31`)
+
+**단계별 사용자 결정** — 메인은 질문·대기 전에 `ca-answer/reference.md`의 단계별 선택 표를 읽는다. 준비·접수·사전 판별, 아래 전체 단계, 재개·조회별로 결정 조건·선택 후보·답 후 연결을 정의한다. 정상 진행과 이미 정해진 일에는 질문을 추가하지 않는다. 새 결정은 내용·근거·선택지·결과를 제시하고 질문 도구로 받으며, 도구 부재·거부 때는 이유와 번호 선택지로 대화 답을 받는다. Codex의 consent respond는 일반 업무 질문의 대체 형식이 아니다. 정적 지침 대조만으로 실제 호스트의 질문 UI 호출을 검증했다고 보지 않는다.
 
 | 단계 | 담당 (메인 / 서브) | CLI | 산출 | 게이트 (`next`) | 실패 시 |
 |---|---|---|---|---|---|
@@ -240,7 +244,7 @@ sequenceDiagram
 | PreToolUse | `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell\|Read\|Grep\|Glob\|mcp__.*` | `hook` | `runHook`→`decide` | deny JSON. 허용한 동의 준비·적용 명령은 티켓을 낸다(§4.2) | 예외면 exit 2로 막는다 |
 | PreToolUse | `AskUserQuestion` | `consent-event` | `runConsentHook` — 동의 질문은 `observeConsent` Pre, 업무 질문은 `observeAnswerEvent`(§4.3) | 질문 결속 / 업무 질문 기록 | 동의 질문은 exit 2, 업무 질문 관찰 실패는 stderr 만 남기고 0 |
 | PostToolUse | `AskUserQuestion` | `consent-event` | 같은 분기 — `observeConsent` Post / `observeAnswerEvent` | 응답 기록 | 같음 |
-| Stop | 없음 | `stop` | `decideStop`(`stopHook.ts:22-54`) | implement~deliver에서 계획 밖 변경이나 미응답 질문이 있으면 `{decision:block}`을 1회 낸다(`STOP_PHASES` — 동의 흐름에서는 반영 확인 전에 사람이 TTY 앞에 있지 않다) | 언제나 exit 0(57-69) |
+| Stop | 없음 | `stop` | `decideStop`(`stopHook.ts`) | 준비·접수·전체 단계에서 마지막 응답의 선택지 없는 특정 문구 입력 요구를 검사한다(`questionPresentation.ts`). implement~deliver에서는 계획 밖 변경·미응답도 검사한다(`STOP_PHASES`). 문제가 있으면 `{decision:block}`을 1회 낸다 | 언제나 exit 0 |
 | SubagentStart·Stop | `ca-reviewer` | `review-event` | `observeReviewer`(`reviewHook.ts`) | review 단계가 아니면 아무것도 하지 않는다. 회차마다 append-only 실행 기록 — Start: 완료된 회차는 무시 기록(`completed-round`), 받아들인 실행이 끝나지 않았으면 동시 호출로 무시(15분 넘으면 고아로 보고 새 실행), 같은 agent 의 끝난 실행 재개는 새 실행, 호출 한도(회차당 2) 초과는 무시. Stop: 표 규칙(`reviewResultProblems`) 검사 후 `## 지적` 재작성 — 걸리면 한 번 되돌림 → 기록(§6.3). 기록 전 판정 실패(리뷰 도중 트리·계획 변경, transcript 문제 등 — 담당이 고칠 수 없다)는 그 실행에 `failure: hook-failure`로 기록한다(`recordHookFailure` — 게이트가 고아 기한까지 "실행 중"에 갇히지 않고 새 호출을 받는다) | `subagentExit`(`runReviewHook`): SubagentStop에서 기록 전의 형식 되돌림(`ReturnToReviewer`)과 기록하지 못한 판정 실패는 `stop_hook_active`가 아니면 2, 기록된 실패(무시된 실행·hook 판정 실패 기록 포함)·`stop_hook_active`면 0. Start 실패와 이벤트를 알 수 없는 입력(깨진·읽지 못한 stdin)은 2 |
 | SubagentStart·Stop | `ca-analyst\|ca-explorer\|ca-writer\|ca-critic` | `planning-event` | `observePlanner`(`planningHook.ts:335-357`) | §6.1 | `subagentExit`(§6.4, `runPlanningHook` 358-366): SubagentStop에서 기록 전의 되돌릴 수 있는 실패(형식·식별·내용)와 기록하지 못한 판정 실패는 `stop_hook_active`가 아니면 2, 기록된 실패·`stop_hook_active`면 0. Start 실패와 이벤트를 알 수 없는 입력(깨진·읽지 못한 stdin)은 2 |
 | SessionStart | 없음 | `session-event` | `sessionAnchor`(`sessionHook.ts:18-22`, `progress` 51-78) | 작업 4줄·접수 3줄·문서 세션 2줄의 상태를 stdout에 낸다. 입력 `source`가 `compact`·`clear`이고 진행 중인 것이 있으면 ca-answer 절차를 다시 읽으라는 한 줄을 붙인다(`withReread` — 스킬 공통 문단은 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 읽는다"). 진행 중인 것이 없어도 응답·적용을 기다리는 동의(색인의 열린 창 — `consentState.ts` `openConsent`, 도입 뒤 setup·update·model·플러그인 등)가 있으면 머리 줄·동의 제목 줄과 함께 그 한 줄을 낸다. 설치 호스트의 hook 이 빠졌으면 진행 상태와 무관하게 경고 한 줄을 붙인다(`hookInstallWarning`). 계획 배정이 running으로 기록돼 있으면 그 목록과 안내 한 줄을 더한다(`runningPlanning` 28-49 — 입력 `source`가 startup·resume·clear면 `planning cancel <ID>` 뒤 advance, 그 밖은 advance의 stale·cancel 안내). AI-DLC 경고가 있으면 1줄을 더한다(20). 입력 `session_id`가 있으면 작업 임대를 이 세션으로 넘겨받고(`source`가 `compact`면 넘겨받지 않는다 — 압축은 세션 ID 가 그대로인 같은 대화라, 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾지 않게 한다), 같은 작업의 다른 세션이었으면 작업 줄 뒤에 `이 세션이 작업 진행 기록을 넘겨받았습니다` 한 줄을 붙인다. 다른 호스트(Codex)가 쥔 신선한 임대, 또는 압축 때 다른 세션이 쥔 신선한 임대면 넘겨받지 않고 이 세션의 진행 명령이 거부된다는 `takeover` 안내 줄(`sessionStartLease`). 진행 중인 것·기다리는 동의·hook 누락이 모두 없으면 출력 없음. 루트는 `findRepoRoot`(하위 폴더에서 연 세션도 저장소 루트 — Stop hook 도 같다) | 언제나 exit 0 |
@@ -258,10 +262,12 @@ hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드
 | PreToolUse | `Bash`·`PowerShell`·`apply_patch`와 `mcp__*`(MCP 도구 — Claude 와 같은 `decideMcp`)만 판정한다. 셸은 Windows 에서도 `tool_name: "Bash"`, `tool_input.command`에 PowerShell 스크립트로 온다(0.161.0 실측 — `PowerShell` 이름은 오지 않는다). 그 밖의 도구는 `{}`를 내고, 작업·접수·문서 세션 중이면 이름을 `.code-agent/log/codex-tools.json`에 센다(`noteUnknownCodexTool` — doctor 가 "Codex 미판정 도구"로 알린다. 하위 에이전트 조율 도구 `collaboration…`은 파일을 쓰지 않아 세지 않는다 — `KNOWN_NON_FILE_TOOL`). `apply_patch`는 `patchPaths`의 모든 경로를 `Edit`로 `decide`에 넘긴다. 셸은 Windows면 `shell: powershell` 규칙으로 판정한다. `host: "codex"`를 넘기고(티켓의 호스트), 하위 에이전트 안의 호출이면 `agent_id`와 `agent_type`(`commonAgentName`)도 넘긴다(0.161.0 실측 — `session_id`는 부모와 같다) — 읽기 전용 담당의 쓰기 거부(§5.3 0단계)와 Codex 계획 담당의 파일 쓰기 거부(§5.3 6)가 쓴다. 권한 상승 여부는 PreToolUse 입력에 없다(PermissionRequest 에만 있고, 등록하지 않는다) | deny JSON. 입력을 읽지 못해도 deny JSON(`hookFailureExit`) |
 | UserPromptSubmit | `observeCodexConsent`. `code-agent consent respond`로 시작하지 않는 메시지는 무시하고 아무것도 쓰지 않는다(업무 답은 관찰하지 않는다 — `[Source]: 대화`, §4.3) | 동의 응답의 예외만 stderr와 exit 2(Codex 가 메시지를 막고 사유를 보인다). 그 밖의 메시지 판정 실패는 `{}`·exit 0(작업 경로가 없는 이벤트 포함) |
 | SubagentStart·Stop | `commonAgentName`(`ca_x`→`ca-x`)으로 바꾼 뒤 transcript 없이 `observePlanner`(`host: "codex"` — 되돌리지 않고 바로 기록)와 `observeReviewer`(`host: "codex"` — 표 규칙 위반은 되돌리지 않고 바로 형식 오류로 기록)에 넘긴다. 결과는 `last_assistant_message`만 본다. 관찰 대상이 아니면 `{}`·exit 0(진행 중 작업 없는 SubagentStop으로 sandbox 확인) | 예외면 기록 여부와 관계없이 stderr에 사유를 남기고 `{}`·exit 0(`subagentExit` codex, `runCodexHook`) — Codex 담당은 되돌리지 않는다(0.161.0 바이너리에 SubagentStop exit 2 이어가기 문구가 있으나 확인하지 않아 쓰지 않는다) |
-| Stop | `decideStop` → `{decision:"block"}`(`codexHook.ts:157-159`) | `{}`, exit 0(`runCodexEvent` 203-208) |
+| Stop | `decideStop` → `{decision:"block"}`. Claude와 같은 질문 제시 검사와 구현 이후 상태 검사를 수행한다 | `{}`, exit 0(`runCodexEvent`) |
 | SessionStart | 입력 `session_id`가 있고 작업이 있으면 작업 임대를 이 세션으로 넘겨받는다(`sessionStartLease(…, "codex")` — Claude SessionStart 와 같은 규칙: `source`가 `compact`면 넘겨받지 않고, 다른 호스트·다른 세션이 쥔 신선한 임대는 넘겨받지 않는다). Codex 는 `source`에 `startup`·`resume`을 싣고 `codex resume`은 같은 `session_id`다(0.161.0 실측). 진행 상태 요약은 내지 않는다(`{}`) | 임대 기록 실패는 삼키고 `{}`·exit 0 |
 
 교차 실행이 띄운 Codex 자식(`CODE_AGENT_CROSS`)에서는 Stop·SubagentStart·SubagentStop·UserPromptSubmit·SessionStart가 `{}`로 통과한다(`CROSS_CHILD_PASS_EVENTS`). PreToolUse는 `decide`를 거치므로 Claude와 같이 진행 명령·`apply_patch`를 거부하고(§5.3 0단계) 그 밖은 그대로 판정한다.
+
+**질문 제시 교정의 범위** — 두 호스트의 Stop은 활성 작업·접수·문서 세션이 있고 `last_assistant_message`가 들어올 때, 따옴표로 감싼 특정 문구로 답·입력하라는 요청에 목록 항목이 둘 미만이면 한 번 교정을 요청한다. 인용 로그·코드 블록·동의 응답 안내 줄은 제외한다. `stop_hook_active`이면 재차 막지 않는다. 이는 특정 누락 형태의 보조 검사이며 모든 질문의 의미·후보 적합성·UI 호출 여부를 증명하지 않는다. 실제 질문 도구가 없으면 사유와 번호 선택지를 대화로 제시해야 한다.
 
 ### 5.3 PreToolUse 판정 순서 (`decide`, `hook.ts:178-223`)
 
@@ -660,6 +666,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | Sentry 사전 판별·Jira 수동 연결 | `triageState.ts`(형식·조회·재개 안내), `errorFingerprint.ts`(보수적 로그 특징 추출), `triage.ts`(중복·후보 비교·배포·재판별·조사 시작·제출·코드 근거 대조·Jira 본문·연결·fix 인계), `ca-fix/triage.md`(호스트 조사 절차) |
 | 커서·게이트·context | `commands.ts`(`nextHint`·`status`·`start`·`next`, `context`는 작업·요구 키를 확인하고 렌더러를 부른다), `contextRender.ts`(`renderContext` — 스테이지·종류별 절 렌더러, 후보 파일·참고 문서 절), `phaseInfo.ts`(`PHASE_LABEL`·`codeStages`), `reentry.ts`(승인 무효 재진입 `reentryHint`·`PHASE_SKILL`), `failureHint.ts`(원천이 `다음:`에 닿지 않는 실패 한 줄), `work.ts`, `layout.ts`, `git.ts`, `tree.ts` |
 | 작업 문서 검사 | `workDocs.ts`, `sourceTrace.ts`, `questions.ts`, `planningValidation.ts`, `stagedChecks.ts`(완료 hook의 게이트 검사) |
+| 질문 제시 보조 검사 | `questionPresentation.ts`(선택지 없는 특정 문구 입력 요구의 Stop 교정), `scripts/evaluate-question-choices.cjs`(명시적으로 실행하는 실제 모델 검사·기록 재대조 `--recheck`) |
 | 계획 오케스트레이션 | `planning.ts`, `planningState.ts`, `planningHook.ts`, `handoff.ts`, `planningChain.ts`(advance 의 `next` 줄 `planningNextLine`·연쇄 `planningAdvanceCli`·단건 `planningAssignmentCli`), `lock.ts`(공통), `retryPolicy.ts`(공통) |
 | 계획 형식·승인 원장·경계 | `core/plan.ts`, `core/approval.ts`, `core/gate.ts`, `core/manifest.ts`, `core/workOrder.ts` |
 | 검증 | `validate.ts`(`check`·`runTests`·`integrate`·`repro`, `claimWorktree`·`checkoutKey`), `evidence.ts`(`verifyView`·`stageProblemEntries`·`reviewRoundUsageOf`), `retryPolicy.ts`(검증 판정), `lock.ts`(`pidAlive`), `testResults.ts`, `testReports.ts`, `tree.ts`(`partialTreeHash`·`fileHashes`), `core/build.ts` |
@@ -714,4 +721,5 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 2026-10-12 | 문서 누락과 CLI·hook 차단에서 원인별 복구·보류 선택을 받고 기존 동의와 검증을 거쳐 이어간다 | `2376826` | §3.2, §5.3 |
 | 2026-10-12 | Windows의 code-agent.cmd 호출을 기존 명령과 같은 hook·동의·임대 검사로 판정한다 | `25a8697` | §5.3 |
 | 2026-10-12 | 두 호스트의 업무 질문을 실제 도구 호출로 연결하고 차단 후 허용된 조회·이미 정한 방향은 재확인 없이 이어간다 | `c0a362f` | §3.2, §5.3, §7 |
-| 2026-10-12 | Windows PowerShell의 셸 호출은 .cmd를 쓰도록 모든 Codex 지침과 파일 읽기 안내에 명시한다 | 이 커밋(부모 `c0a362f`) | §7 |
+| 2026-10-12 | Windows PowerShell의 셸 호출은 .cmd를 쓰도록 모든 Codex 지침과 파일 읽기 안내에 명시한다 | `8a1876e` | §7 |
+| 2026-10-13 | 미응답 준비 질문과 전체 단계의 선택 절차를 보완하고 선택지 없는 문구 입력 요구를 Stop에서 교정한다 | 이 커밋(부모 `8a1876e`) | §3.1, §3.2, §5.1, §5.2 |

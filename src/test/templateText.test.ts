@@ -9,6 +9,7 @@ import { test } from "node:test";
 
 import { CODEX_SENTENCES, hostAssets } from "../agent/hosts";
 import { POWERSHELL_COMMAND_GUIDE } from "../agent/hostText";
+import { PHASES } from "../agent/layout";
 
 const TEMPLATE = join(__dirname, "../../template/claude");
 function claudeTexts(): Map<string, string> {
@@ -80,6 +81,7 @@ test("두 호스트의 모든 진입은 복구로 연결하고 업무 선택 도
     const recovery = assets.get(`${prefix}/skills/ca-answer/reference.md`)!;
     assert.match(answer, /reference\.md.*차단 복구/);
     assert.match(answer, /허용된 도움말·상태 조회.*재확인 없이/);
+    assert.match(answer, /실제 호출 결과 없이.*보고하지 않는다/);
     assert.match(recovery, /planning --help.*code-agent help/);
     assert.match(recovery, /이미 선택한 방향.*계속한다/);
     assert.match(recovery, /새 결정에 의존하는 동작만/);
@@ -101,6 +103,33 @@ test("두 호스트의 모든 진입은 복구로 연결하고 업무 선택 도
       assert.match(answer, /도구가 없거나 호출이 거부되면/);
       assert.match(answer, /대화 답을 관찰된 도구 응답이나 승인으로 기록하지 않는다/);
     }
+  }
+});
+
+test("단계별 선택 표는 전체 단계와 접수·준비·재개를 다루고 UZRF-392의 미응답 정책 질문을 연결한다", () => {
+  for (const host of ["claude", "codex"] as const) {
+    const assets = hostAssets(host);
+    const prefix = host === "claude" ? ".claude" : ".agents";
+    const get = (name: string, file = "SKILL.md") => assets.get(`${prefix}/skills/${name}/${file}`)!;
+    const reference = get("ca-answer", "reference.md");
+    for (const phase of PHASES) assert.ok(reference.includes(`| ${phase} |`), `${host}: ${phase}`);
+    for (const [path, text] of assets) {
+      if (!path.endsWith("/SKILL.md")) continue;
+      assert.match(text, /단계별 선택/, path);
+    }
+    for (const name of ["ca-adopt", "ca-docs", "ca-request", "ca-feature", "ca-fix", "ca-refactor", "ca-next", "ca-status", "ca-answer"]) {
+      assert.ok(reference.includes(name), `${host}: ${name}`);
+    }
+    assert.match(reference, /이미 준 지시·답·설정.*계속한다/);
+    assert.match(reference, /도구가 없거나 거부되면 이유와 번호·선택지·결과/);
+    assert.match(reference, /업무 답으로 동의를 대체하지 않는다/);
+    assert.match(reference, /선택지 없이 특정 문구 입력만 요청한 안내는 질문 제시 완료로 보지 않는다/);
+    assert.match(get("ca-request"), /초안 저장 보고만 하고 끝내지 않는다/);
+    assert.match(get("ca-request"), /미응답 질문의 내용·선택지를 같은 턴에 질문 도구로 제시/);
+    assert.match(get("ca-docs"), /테스트 기준.*품질 기준.*독립 질문/);
+    assert.match(get("ca-docs"), /제안 기준 사용.*항목 수정.*보류/);
+    assert.match(get("ca-docs"), /특정 문구 입력으로 대신하지 않는다/);
+    assert.match(get("ca-docs"), /문서 확정·준비 커밋 동의는 6에서 따로/);
   }
 });
 

@@ -1,9 +1,12 @@
 import { outsideChanges } from "./evidence";
-import { canonical, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
+import { existsSync } from "fs";
+import { join } from "path";
+import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
 import { openQuestions } from "./answers";
 import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
 import { askVia, withNotation } from "./hostText";
+import { questionPresentationProblem } from "./questionPresentation";
 
 /**
  * Claude Code Stop hook 의 판정 — **턴이 끝날 때 한 번만** 본다.
@@ -19,6 +22,7 @@ export interface StopHookInput {
   cwd?: string;
   /** 이미 이 hook 때문에 한 번 이어 붙인 턴인가. 참이면 놓아 준다 */
   stop_hook_active?: boolean;
+  last_assistant_message?: string;
 }
 
 export function decideStop(input: StopHookInput, projectDir?: string): string | undefined {
@@ -27,6 +31,11 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
   }
   // 하위 폴더에서 연 세션도 저장소 루트로 본다(PreToolUse hook·CLI 와 같은 루트)
   const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
+  // 준비·접수·전체 단계에 공통 적용한다. 작업 로딩 전에 검사하여 문서·계획 미완성도 포함한다.
+  if ([ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE].some(file => existsSync(join(repoRoot, file)))) {
+    const presentation = questionPresentationProblem(input.last_assistant_message);
+    if (presentation) return presentation;
+  }
   const work = loadWork(repoRoot);
   if (!work || !work.active.baseCommit || !STOP_PHASES.includes(work.active.phase)) {
     // code-agent 작업이 아니거나 아직 코드를 쓰는 자리가 아니면 남의 턴에 끼어들지 않는다

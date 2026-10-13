@@ -4,7 +4,7 @@ description: 모든 코드 작업의 공통 요구사항 접수 — 원문을 �
 argument-hint: [작업ID] [--kind feature|fix|refactor] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로>
 ---
 
-**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. 소스 코드는 읽지 않는다 — 사람이 준 글 · `code-agent` 출력으로 일한다.
 `code-agent` 가 거부하면 차단 복구를 따른다. 우회하지 않는다.
@@ -41,6 +41,7 @@ Bash: `code-agent request begin [ID] --kind <종류>` — 접수를 열고 초�
 
 **프로젝트 준비를 먼저 연결한다.** 먼저 `request.json`에 ID·종류·원문을 저장한다(필수값이 아직 없는 초안도 저장은 가능).
 준비 방법이 미정이면 차단 복구 선택지를 묻는다. status의 `다음:`이 준비를 안내하면 `/ca-adopt` 또는 `/ca-docs`를 같은 흐름에서 따른다. `docs begin`은 접수와 원문을 유지한다.
+이전 준비 질문이 남았으면 초안 저장 보고만 하고 끝내지 않는다. 기존 답을 보존하고 미응답 질문의 내용·선택지를 같은 턴에 질문 도구로 제시한다(`ca-docs` 3). 테스트·품질 기준을 한 문구로 답하라고 요구하지 않는다. 이미 제시해 응답을 기다리는 질문이나 보류한 질문은 중복 호출하지 않는다.
 최초 준비는 `setup` 공통 동의 절차로 POLICY 전체 확정과 필요한 준비 커밋(최초 커밋 또는 기존 저장소의 도입 파일 반영)을 한 질문으로 확인받는다. 적용 성공 후 저장된 초안에서 자동으로 이어간다. 분석은 준비·요구 확정 뒤에 시작한다.
 
 ## 3. 정리 — `doc/work/<ID>/request.json`

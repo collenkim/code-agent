@@ -3,7 +3,7 @@ name: ca-next
 description: 중단된 code-agent 작업을 현재 위치부터 재개한다 — 같은 세션의 질문·동의를 처리하고 적용 뒤 다음 단계로 자동으로 이어간다.
 ---
 
-**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 사용자에게 진행은 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**의 5단계로 요약한다. 단계 명령을 나열하지 않는다. 차단 시 `ca-answer/reference.md`의 차단 복구를 따른다. 답변을 받았거나 승인이 이미 기록됐으면 현재 상태를 읽고 자동으로 이어간다.

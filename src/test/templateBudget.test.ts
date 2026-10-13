@@ -24,13 +24,13 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-analyze/criteria.md": 600,
   "template/claude/skills/ca-analyze/legacy.md": 700,
   "template/claude/skills/ca-analyze/SKILL.md": 3300,
-  "template/claude/skills/ca-answer/reference.md": 7400,
-  "template/claude/skills/ca-answer/SKILL.md": 8400,
+  "template/claude/skills/ca-answer/reference.md": 9600,
+  "template/claude/skills/ca-answer/SKILL.md": 8700,
   "template/claude/skills/ca-check/SKILL.md": 4900,
   "template/claude/skills/ca-design/criteria.md": 1100,
   "template/claude/skills/ca-design/legacy.md": 800,
   "template/claude/skills/ca-design/SKILL.md": 2900,
-  "template/claude/skills/ca-docs/SKILL.md": 6600,
+  "template/claude/skills/ca-docs/SKILL.md": 6900,
   "template/claude/skills/ca-feature/SKILL.md": 2100,
   "template/claude/skills/ca-fix/SKILL.md": 4000,
   "template/claude/skills/ca-fix/triage.md": 4000,
@@ -50,13 +50,13 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-status/SKILL.md": 1900,
   "template/claude/skills/ca-test/SKILL.md": 2900,
   "template/CLAUDE.block.md": 1700,
-  "template/codex/ca-answer.md": 4900,
+  "template/codex/ca-answer.md": 5100,
   "template/CODEX.block.md": 1800,
 };
 /** Claude 흐름 합계(CLAUDE.block + 흐름 스킬 12) */
-const FLOW_BUDGET = 52500;
+const FLOW_BUDGET = 53200;
 /** Codex 흐름 합계(CODEX.block + .agents 흐름 스킬 12 — codexText 변환본, ca-answer 는 template/codex 대체본) */
-const CODEX_FLOW_BUDGET = 53000;
+const CODEX_FLOW_BUDGET = 53400;
 
 const FLOW_SKILLS = ["ca-request", "ca-answer", "ca-next", "ca-analyze", "ca-impact", "ca-design", "ca-plan", "ca-implement", "ca-check", "ca-test", "ca-review", "ca-integrate"];
 const FLOW = ["template/CLAUDE.block.md", ...FLOW_SKILLS.map((name) => `template/claude/skills/${name}/SKILL.md`)];

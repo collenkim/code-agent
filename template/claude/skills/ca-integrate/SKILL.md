@@ -3,7 +3,7 @@ name: ca-integrate
 description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에서 전체 build·test 를 돌리고 ⑩ 10-pr.md 를 준비한 뒤 같은 세션의 동의로 로컬 커밋까지 적용한다.
 ---
 
-**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. `code-agent` 가 거부하면 차단 복구를 따른다.
 **반영은 사용자의 실제 동의가 필요하다.** 메인이 공통 동의 절차로 확인받고 승인된 `deliver` 동의만 적용한다.

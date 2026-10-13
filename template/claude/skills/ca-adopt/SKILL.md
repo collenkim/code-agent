@@ -3,7 +3,7 @@ name: ca-adopt
 description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학(소스가 없으면 인터뷰)으로 POLICY 4종·KNOWLEDGE 3종 문서와 code-agent.json 을 만든다.
 ---
 
-**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 차단 복구를 따른다. 적용 뒤 이어간다.
+**질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
 너는 **메인 에이전트**다. 문서와 `code-agent.json` 만 쓴다. `code-agent` 명령이 거부하면 차단 복구를 따른다.
 뼈대 역공학은 **얕게** 한다 — 구조와 규약만. 도메인 하나하나의 깊은 분석은 작업마다 요구사항 범위로 한다.

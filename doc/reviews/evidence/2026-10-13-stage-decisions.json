@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-13",
+  "parentCommit": "8a1876e",
+  "build": "passed",
+  "fullSuiteRun": true,
+  "fullSuite": { "tests": 1385, "pass": 1381, "fail": 0, "cancelled": 0, "skipped": 4, "durationMs": 417325.0487 },
+  "liveCodexQuestionCall": { "passed": true, "questions": 2, "optionsPerQuestion": 3, "tool": "request_user_input_async", "accepted": true, "userAnswered": false, "evidence": "2026-10-13-choices-live-codex.json" },
+  "liveClaudeFallback": { "passed": true, "questions": 2, "numberedOptionsPerQuestion": 3, "evidence": "2026-10-13-choices-live-claude.json" },
+  "liveHostUiTested": false,
+  "cloudInstalledTemplatesChecked": false
+}
