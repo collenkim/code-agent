@@ -595,6 +595,7 @@ test("HP-12: 교차 자식(CODE_AGENT_CROSS) 안에서는 Stop·SessionStart·�
   assert.equal(out, "", "stdout 에 아무것도 내지 않는다");
   assert.equal(readFileSync(join(root, `.code-agent/work/${ID}/${TARGET}.review.json`), "utf8"), before);
   assert.deepEqual(codexHook({ cwd: root, hook_event_name: "Stop", session_id: "s" }), {});
+  assert.deepEqual(codexHook({ cwd: root, hook_event_name: "SessionStart", session_id: "s", source: "startup" }), {}, "진행 상태를 붙이지 않는다");
   assert.deepEqual(codexHook({ cwd: root, hook_event_name: "UserPromptSubmit", session_id: "s", turn_id: "t", prompt: `code-agent consent respond ${"0".repeat(8)}-0000-0000-0000-000000000000 1` }), {});
   const denied = codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "s", tool_name: "Bash", tool_input: { command: "cat ~/.code-agent/credentials.json" } }) as { hookSpecificOutput?: { permissionDecision: string } };
   assert.equal(denied.hookSpecificOutput?.permissionDecision, "deny", "PreToolUse 판정은 교차 자식에서도 그대로다");

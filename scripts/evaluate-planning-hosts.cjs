@@ -20,11 +20,13 @@ if (parentModel && (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(parentModel) || 
 if (label && !/^[a-z0-9-]+$/.test(label)) throw Error('기록 이름은 영문 소문자·숫자·하이픈만 사용합니다.');
 const outputName = `planning-live-${host}${label ? `-${label}` : ''}`;
 const vettedHooks = !!values['vetted-hooks'];
+// 인라인 훅 표(hooks·hooks.<이벤트>). hooks.state 는 호스트가 기록한 훅 신뢰 상태라 제외한다
+const INLINE_HOOKS = /^\s*\[\[?hooks(?:\]|\.(?!state[.\]]))/m;
 if (vettedHooks && host !== 'codex') throw Error('검토한 훅의 일회성 실행은 Codex 검사 전용입니다.');
 if (fs.existsSync(path.join(root, 'dist', `${outputName}.json`))) throw Error('기존 검증 기록을 덮어쓰지 않습니다. 다른 기록 이름을 지정하세요.');
 const use = file => require(path.join(root, 'dist', file));
 const fixture = use('test/consentFixture');
-const { init } = use('agent/init'), { start, next } = use('agent/commands');
+const { init, CODEX_EVENTS } = use('agent/init'), { start, next } = use('agent/commands');
 const { advancePlanning, planningStatus, preparePlanning } = use('agent/planning');
 const { loadWork } = use('agent/work'), { loadPlanning } = use('agent/planningState');
 const { hostAssets } = use('agent/hosts');
@@ -98,11 +100,11 @@ if (host === 'claude') {
       windowsSandbox = section?.match(/^\s*sandbox\s*=\s*"(elevated|unelevated)"/m)?.[1];
       if (!windowsSandbox) throw Error('격리 검사에 유지할 기존 Windows 샌드박스 설정을 확인하세요.');
     }
-    if (fs.existsSync(settings) && /^\s*\[\[?hooks[.\]]/m.test(fs.readFileSync(settings, 'utf8'))) throw Error('사용자 인라인 훅이 있는 환경에서는 일괄 신뢰 옵션을 쓰지 않습니다.');
+    if (fs.existsSync(settings) && INLINE_HOOKS.test(fs.readFileSync(settings, 'utf8'))) throw Error('사용자 인라인 훅이 있는 환경에서는 일괄 신뢰 옵션을 쓰지 않습니다.');
     for (let parent = path.dirname(repo); ; parent = path.dirname(parent)) {
       if (fs.existsSync(path.join(parent, '.codex/hooks.json'))) throw Error('상위 프로젝트 훅을 별도로 검토해야 합니다.');
       const config = path.join(parent, '.codex/config.toml');
-      if (fs.existsSync(config) && /^\s*\[\[?hooks[.\]]/m.test(fs.readFileSync(config, 'utf8'))) throw Error('상위 프로젝트 인라인 훅을 별도로 검토해야 합니다.');
+      if (fs.existsSync(config) && INLINE_HOOKS.test(fs.readFileSync(config, 'utf8'))) throw Error('상위 프로젝트 인라인 훅을 별도로 검토해야 합니다.');
       if (path.dirname(parent) === parent) break;
     }
     const installed = JSON.parse(fs.readFileSync(path.join(repo, '.codex/hooks.json'), 'utf8'));
@@ -118,11 +120,12 @@ if (host === 'claude') {
       `fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({input:JSON.parse(input),stdout:result.stdout,stderr:result.stderr,exitCode:result.status})+'\\n');`,
       "process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');process.exitCode=result.status??1;",
     ].join('\n');
-    const resumedCommand = `node "${capture.replace(/\\/g, '/')}"`;
-    if (hooks.length !== 5 || hooks.some(hook => hook.type !== 'command' || (resumeImpact ? hook.command !== resumedCommand : hook.command !== expected && hook.command !== `${expected} || exit 2`))) throw Error('생성한 검사 훅 이외의 명령이 있습니다.');
+    // 래퍼 명령도 끝에 codex-event 를 붙인다 — status·doctor 의 설치 확인이 우리 hook 으로 알아보는 꼴이다(래퍼는 인자를 쓰지 않는다)
+    const wrapped = `node "${capture.replace(/\\/g, '/')}" codex-event`, resumedCommand = `node "${capture.replace(/\\/g, '/')}"`;
+    if (hooks.length !== CODEX_EVENTS.length || hooks.some(hook => hook.type !== 'command' || (resumeImpact ? hook.command !== resumedCommand && hook.command !== wrapped : hook.command !== expected && hook.command !== `${expected} || exit 2`))) throw Error('생성한 검사 훅 이외의 명령이 있습니다.');
     if (resumeImpact && fs.readFileSync(capture, 'utf8') !== captureSource(path.join(root, 'dist', `planning-live-codex-${resumeImpact}.hooks.jsonl`))) throw Error('이전 검사 기록 훅이 변경됐습니다.');
     fs.writeFileSync(capture, captureSource(captureLog));
-    for (const hook of hooks) { hook.command = `node "${capture.replace(/\\/g, '/')}"`; delete hook.commandWindows; }
+    for (const hook of hooks) { hook.command = wrapped; delete hook.commandWindows; }
     fs.writeFileSync(path.join(repo, '.codex/hooks.json'), JSON.stringify(installed, null, 2));
   }
   // Windows의 cmd 래퍼를 셸 문자열로 조립하지 않고 설치된 Node 진입점을 직접 실행한다.
@@ -171,6 +174,11 @@ if (host === 'codex') report.runtime = {
   // 도구 응답은 실행 증거이며 역할별 설정 적용이나 계획 결과 수락의 증거로 대신 쓰지 않는다.
   hookCaptureEnabled: !!captureLog, hookEventCount: captureLog ? hookEvents.length : null,
   hookEvents: hookEvents.map(event => ({ event: event.input.hook_event_name, exitCode: event.exitCode })),
+  // 담당의 staging 쓰기 판정과 결과의 staged 표지 — 문서 본문이 메인 대화를 거치지 않았는지 본다
+  stagingWrites: hookEvents.filter(event => event.input.hook_event_name === 'PreToolUse' && event.input.agent_id && /\.staging\//.test(JSON.stringify(event.input.tool_input ?? '')))
+    .map(event => ({ role: event.input.agent_type, tool: event.input.tool_name, denied: /"deny"/.test(event.stdout || '') })),
+  stagedResults: hookEvents.filter(event => event.input.hook_event_name === 'SubagentStop')
+    .map(event => ({ role: event.input.agent_type, staged: /"staged"\s*:/.test(event.input.last_assistant_message || ''), content: /"content"\s*:/.test(event.input.last_assistant_message || '') })),
   observedModels: [...new Set(hookEvents.filter(event => event.input.model)
     .map(event => JSON.stringify({ role: event.input.agent_type ?? 'main', model: event.input.model })))].map(JSON.parse),
   diagnosis: result.error ? 'host-process-error'

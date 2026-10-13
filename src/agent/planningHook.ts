@@ -3,7 +3,7 @@ import { basename, dirname, relative, resolve, sep } from "path";
 import { writeAtomic } from "../core/atomic";
 import { sha } from "./docs";
 import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
-import { mutatePlanning, requireRolePhase, stagingPath } from "./planning";
+import { mutatePlanning, openStaging, requireRolePhase, stagingPath } from "./planning";
 import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
   type PlanningAgent, type PlanningResult, type PlanningState, type ResolvedResult, type TaskAttempt, type TaskRecord } from "./planningState";
 import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, type FailureRecord } from "./retryPolicy";
@@ -341,13 +341,16 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
   if (!input.session_id || !input.agent_id) throw new Error("계획 담당의 세션과 에이전트 식별자가 없습니다.");
   withPlanningCache(() => {
     if (input.hook_event_name === "SubagentStart") {
-      mutatePlanning(work, state => {
+      const writes = mutatePlanning(work, state => {
         const candidates = state.tasks.filter(record => TASK_AGENTS[record.task.role] === input.agent_type && record.attempts.at(-1)?.status === "running");
-        if (!candidates.length) return;
+        if (!candidates.length) return false;
         if (state.agents.some(agent => agent.id === input.agent_id && agent.session === input.session_id && !agent.finished)) throw new Error("중복 시작 이벤트입니다.");
         const dispatchId = candidates.length === 1 ? candidates[0].attempts.at(-1)!.dispatchId : undefined;
         state.agents.push({ id: input.agent_id!, session: input.session_id!, type: input.agent_type!, startedAt: new Date().toISOString(), dispatchId });
+        return candidates.some(record => record.task.outputs.length > 0);
       }, { waitMs: TIMING.hookLockWaitMs });
+      // staging 폴더는 샌드박스 밖인 이 hook 이 만든다(openStaging) — 담당은 그 안에 배정별 폴더와 문서를 쓴다
+      if (writes) openStaging(work);
       return;
     }
     const prepared = prepareStop(input, work);

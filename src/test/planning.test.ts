@@ -21,6 +21,7 @@ import { loadActive, saveActive } from "../agent/layout";
 import { init, installedHook, unmatchedTools } from "../agent/init";
 import { cancelPlanning, dispatchPlanning, grantPlanningRetry, planningBudget, preparePlanning, planningStatus, advancePlanning, repairPlanning, planningResult } from "../agent/planning";
 import { codexHook, runCodexHook } from "../agent/codexHook";
+import { withNotation } from "../agent/hostText";
 import { hostAssets } from "../agent/hosts";
 import { readProjectFile } from "../agent/read";
 import { observePlanner, runPlanningHook } from "../agent/planningHook";
@@ -121,18 +122,24 @@ test("계획 전달은 문서 원문을 중복하지 않고 판단·해시·상�
   assert.match(cached.result.artifacts[0].hash, /^[a-f0-9]{64}$/);
   assert.equal(cached.result.artifacts[0].chars, content.length);
   assert.equal(cached.result.artifacts[0].content, undefined);
-  const detail = JSON.parse(planningResult(root, "analysis"));
+  const detailText = planningResult(root, "analysis");
+  const detail = JSON.parse(detailText);
   assert.equal(detail.current, true);
-  assert.equal(detail.last.result.artifacts[0].content, content);
+  // 기록된 문서와 같은 본문은 상세 조회에서도 되풀이하지 않는다 — 그 파일을 읽는다
+  assert.deepEqual(detail.last.result.artifacts[0], { path: `${DIR}/01-requirements.md`, hash: cached.result.artifacts[0].hash, chars: content.length, inFile: true });
+  assert.equal(detail.last.result.findings[0].detail, "검토 필요", "판단·지적은 그대로다");
+  assert.ok(detailText.length < 5000, `상세 조회 ${detailText.length}자`);
   assert.doesNotMatch(planningStatus(root), /원문전용/);
   next(root);
   const explorer = advance().assignments[0];
   assert.equal(explorer.dependencies[0].artifacts[0].content, undefined);
   assert.equal(explorer.dependencies[0].findings[0].detail, "검토 필요");
   assert.ok(explorer.inputs.includes(`${DIR}/01-requirements.md`));
-  assert.ok(JSON.stringify(explorer.dependencies).length < JSON.stringify(detail.last.result).length / 10);
+  assert.ok(JSON.stringify(explorer.dependencies).length < content.length / 10);
   write(`${DIR}/01-requirements.md`, REQUIREMENTS);
-  assert.equal(JSON.parse(planningResult(root, "analysis")).current, false);
+  const changed = JSON.parse(planningResult(root, "analysis"));
+  assert.equal(changed.current, false);
+  assert.equal(changed.last.result.artifacts[0].content, content, "파일이 바뀌면 관찰된 본문을 그대로 싣는다");
 });
 
 test("계획 진행은 준비·배정을 합치고 반복 호출·캐시·단계 게이트를 구분한다", () => {
@@ -477,27 +484,31 @@ test("취소·중복 완료·잘못된 근거 및 실행 도중 변경은 완료
   assert.equal(last.status, "cancelled", "실행 중 입력이 바뀐 배정은 취소한다 — 새 입력으로 다시 배정한다");
   assert.equal(last.failure?.class, "dispatch-orphan");
 });
-test("Codex 담당의 배정 계약은 staging 이 아니라 {path, content} 다 — Codex 단일 설치와 두 호스트 설치의 Codex 호출(E9)", () => {
+test("Codex 담당의 배정 계약도 staging 이다 — 두 호스트 설치·Codex 단일 설치, 어느 쪽이 불러도 같고 쓰기 도구 이름만 호스트 표기다(E9)", () => {
   const output = `${DIR}/01-requirements.md`;
   preparePlanning(root);
-  // 두 호스트 설치 — 부른 쪽이 Claude 면 staging 계약, Codex 면 content 계약
-  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["claude", "codex"]));
-  const viaClaude = withCaller("claude", () => dispatch("analysis"));
-  assert.equal(viaClaude.resultShape.artifacts[0].staged, `${DIR}/.staging/${viaClaude.resultShape.dispatchId}/01-requirements.md`);
+  // 배정 한도(작업별 총 6회) 안에서 본다 — 두 호스트 설치의 두 호출, Codex 단일 설치의 Claude 표지 호출, 표기 둘
+  for (const [hosts, caller] of [[["claude", "codex"], "claude"], [["claude", "codex"], "codex"], [["codex"], "claude"]] as const) {
+    writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(hosts));
+    const item = withCaller(caller, () => dispatch("analysis"));
+    const label = `${hosts.join("+")} · ${caller}`;
+    assert.equal(item.staging[output], `${DIR}/.staging/${item.resultShape.dispatchId}/01-requirements.md`, label);
+    assert.deepEqual(item.resultShape.artifacts, [{ path: output, staged: item.staging[output] }], label);
+    cancelPlanning(root, "analysis");
+  }
+  assert.ok(withNotation("claude", () => dispatch("analysis")).instructions.includes("staging의 경로에 Write/Edit 로 전체 내용을 쓰고"), "Claude 표기면 Write/Edit");
   cancelPlanning(root, "analysis");
-  const viaCodex = withCaller("codex", () => dispatch("analysis"));
-  assert.deepEqual([viaCodex.staging, viaCodex.resultShape.artifacts], [undefined, [{ path: output, content: "<문서 전체 내용>" }]]);
-  cancelPlanning(root, "analysis");
-  // Codex 단일 설치 — 부른 쪽 표지와 무관하게 Codex 계약
-  writeFileSync(join(root, ".code-agent/hosts.json"), JSON.stringify(["codex"]));
-  const item = withCaller("claude", () => dispatch("analysis"));
-  assert.equal(item.staging, undefined, "Codex 담당은 staging 을 쓸 수 없다");
-  assert.deepEqual(item.resultShape.artifacts, [{ path: output, content: "<문서 전체 내용>" }]);
-  assert.ok(item.instructions.includes("출력 문서는 파일로 쓰지 말고 artifacts에 {path, content}로 전체 내용을 넣으세요(staging 은 이 호스트의 담당에게 열리지 않습니다)"));
-  assert.ok(!item.instructions.includes("{path, staged}") && !item.instructions.includes("staging에 지정된 경로"), item.instructions);
-  // 계약대로 돌려준 결과가 그대로 받아들여진다
-  finish(item, { [output]: REQUIREMENTS }, {}, "codex");
+  const again = withNotation("codex", () => dispatch("analysis"));
+  assert.ok(again.instructions.includes("출력 문서는 staging의 경로에 apply_patch 로 전체 내용을 쓰고 artifacts에는 {path, staged}만 넣으세요"), again.instructions);
+  // Codex 담당이 staging 에 쓰고 경로만 돌려준 결과가 기록된다 — 본문이 결과 JSON(메인 대화)을 거치지 않는다
+  const event = { cwd: root, session_id: "s", agent_id: "codex-staged", agent_type: again.hostAgents.codex };
+  codexHook({ ...event, hook_event_name: "SubagentStart" });
+  write(again.staging[output], REQUIREMENTS);
+  const result = { ...again.resultShape, status: "completed", summary: "실제 근거 확인", evidence: [{ path: SPEC, line: 1 }] };
+  codexHook({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
   assert.equal(readFileSync(join(root, output), "utf8"), REQUIREMENTS);
+  assert.equal(existsSync(join(root, again.staging[output])), false, "완료하면 staging 을 지운다");
+  assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "completed");
 });
 test("미결 질문은 실제 답을 받은 뒤 해당 입력을 다시 배정한다", () => {
   preparePlanning(root);
@@ -657,6 +668,7 @@ test("CLI 출력에는 배정 요약과 파일 경로만 남고, 파일에 계�
   assert.ok(text.includes(`## 뼈대 — ${DIR}/01-requirements.md`));
   assert.equal(readFileSync(join(root, ".code-agent/work", ID, "handoff/.gitignore"), "utf8"), "*\n");
   assert.equal(handed(summary).resultShape.artifacts[0].staged, `${DIR}/.staging/${summary.dispatchId}/01-requirements.md`);
+  assert.equal(existsSync(join(root, DIR, ".staging")), false, "staging 폴더는 배정(CLI)이 아니라 담당 시작 hook 이 만든다");
 });
 
 test("담당이 staging에 쓴 문서를 완료 hook이 정식 문서로 옮기고, 결과 보고에는 본문이 없다", () => {
@@ -664,6 +676,8 @@ test("담당이 staging에 쓴 문서를 완료 hook이 정식 문서로 옮기�
   const event = { cwd: root, session_id: "s", agent_id: "planner-1", agent_type: item.agent };
   const write_ = (file: string, agent?: string) => hook({ cwd: root, session_id: "s", agent_id: agent, tool_name: "Write", tool_input: { file_path: join(root, file) } });
   observePlanner({ ...event, hook_event_name: "SubagentStart" });
+  assert.equal(readFileSync(join(root, DIR, ".staging/.gitignore"), "utf8"), "*\n", "시작 hook 이 staging 폴더를 연다");
+  assert.equal(existsSync(join(root, DIR, ".staging", item.resultShape.dispatchId)), false, "배정별 폴더는 담당의 쓰기가 만든다");
   assert.match(write_(staged)!, /계획 담당만/, "메인은 staging에 대신 쓰지 못한다");
   assert.equal(write_(staged, "planner-1"), undefined);
   assert.match(write_(`${DIR}/questions.md`, "planner-1")!, /staging 경로에만/);
@@ -724,7 +738,7 @@ test("대화 시작·압축 뒤 붙는 진행 상태 — 진행 중인 것이 �
   finally { rmSync(empty, { recursive: true, force: true }); }
 });
 
-test("Codex 담당은 배정 파일을 code-agent read로 읽고, staging 대신 본문을 실어 완료한다", () => {
+test("Codex 담당은 배정 파일을 code-agent read로 읽고, 메인은 staging 을 대신 쓰지 못하며, 쓰기가 거부된 담당은 본문을 실어 완료할 수 있다", () => {
   const cli = join(__dirname, "../agent/cli.js");
   const [summary] = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" })).assignments;
   const shell = (command: string) => codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
@@ -732,13 +746,13 @@ test("Codex 담당은 배정 파일을 code-agent read로 읽고, staging 대신
   assert.ok(JSON.parse(readProjectFile(root, summary.assignmentFile)).lines.length > 10);
   const item = handed(summary), staged = item.staging[`${DIR}/01-requirements.md`];
   const patch = codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${staged}\n+x\n*** End Patch` } }) as { hookSpecificOutput?: { permissionDecisionReason: string } };
-  assert.match(patch.hookSpecificOutput!.permissionDecisionReason, /Codex.*\{path, content\}/);
-  assert.match(hostAssets("codex").get(".codex/agents/ca-analyst.toml")!, /Codex에서는 staging에 쓰지 않는다/);
+  assert.match(patch.hookSpecificOutput!.permissionDecisionReason, /메인은 계획 문서를 대신 쓰지 않습니다/);
+  assert.doesNotMatch(hostAssets("codex").get(".codex/agents/ca-analyst.toml")!, /Codex에서는 staging에 쓰지 않는다/);
   finish(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, {}, "codex");
   assert.equal(readFileSync(join(root, DIR, "01-requirements.md"), "utf8"), REQUIREMENTS);
 });
 
-test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당을 가른다 — 실행 중인 Codex 계획 담당은 staging 을 포함해 파일을 쓰지 않는다", () => {
+test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당을 가른다 — 실행 중인 Codex 계획 담당은 자기 배정의 staging 만 쓴다", () => {
   const item = advance().assignments[0];
   const staged = item.staging[`${DIR}/01-requirements.md`];
   // Codex 는 하위 에이전트 이벤트에 부모 session_id 와 자기 agent_id·agent_type(ca_x)을 싣는다(0.161.0 실측)
@@ -747,9 +761,12 @@ test("H4 Codex 하위 에이전트 hook 의 agent_id·agent_type 으로 담당�
   const reason = (input: object) => ((codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", ...input }) as
     { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "");
   const patch = (path: string) => ({ tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${path}\n+x\n*** End Patch` } });
-  for (const path of [staged, "src/x.ts", `${DIR}/01-requirements.md`]) {
-    assert.match(reason({ ...sub, ...patch(path) }), /Codex 계획 담당은 파일을 쓰지 않습니다[\s\S]*\{path, content\}/, path);
+  assert.equal(reason({ ...sub, ...patch(staged) }), "", "자기 배정의 staging 은 apply_patch 로 쓴다");
+  for (const path of ["src/x.ts", `${DIR}/01-requirements.md`]) {
+    assert.match(reason({ ...sub, ...patch(path) }), /계획 담당은 배정 파일의 staging 경로에만 씁니다/, path);
   }
+  assert.match(reason({ ...sub, ...patch(`${DIR}/.staging/other-dispatch/01-requirements.md`) }), /실행 중인 배정의 staging 경로가 아닙니다/);
+  assert.match(reason({ ...sub, agent_id: "other-agent", ...patch(staged) }), /메인은 계획 문서를 대신 쓰지 않습니다/, "시작이 관찰되지 않은 에이전트는 담당이 아니다");
   // 메인(agent_id 없음)은 이전과 같다 — staging 은 메인이 대신 쓰지 않는다
   assert.match(reason(patch(staged)), /메인은 계획 문서를 대신 쓰지 않습니다/);
   assert.equal(reason({ tool_name: "Bash", tool_input: { command: `code-agent read ${staged}` } }), "");
@@ -1669,15 +1686,17 @@ for (const via of ["claude", "direct"] as const) test(`실행 중 입력이 바�
   assert.equal(last.failure!.class, "dispatch-orphan");
 });
 
-test("Codex 사본 — 고정 치환 세 문장과 계획 루프의 새 문장이 그대로 있다", () => {
+test("Codex 사본 — staging 문장은 그대로(쓰기 도구만 apply_patch)이고 계획 루프의 새 문장이 그대로 있다", () => {
   const assets = hostAssets("codex");
   for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
     const text = assets.get(`.agents/skills/${name}/SKILL.md`)!;
-    assert.ok(text.includes("Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용)."), name);
+    assert.ok(text.includes("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다."), name);
     for (const phrase of ["planning cancel <ID>", "rewind.auto", "rewind.command", "same-input-repeat"]) assert.ok(text.includes(phrase), `${name}: ${phrase}`);
   }
-  assert.ok(assets.get(".codex/agents/ca-analyst.toml")!.includes("출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다."));
-  assert.ok(assets.get(".codex/agents/ca-explorer.toml")!.includes("문서 전체는 artifacts의 `{path, content}`로 넣는다. 파일을 쓰거나"));
+  const analyst = assets.get(".codex/agents/ca-analyst.toml")!;
+  assert.ok(analyst.includes("출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다"));
+  assert.ok(!analyst.includes("경로에 Write로"), "Claude 쓰기 도구 이름이 남지 않는다");
+  assert.ok(assets.get(".codex/agents/ca-explorer.toml")!.includes("문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나"));
 });
 
 test("차단 지적은 인용 문서를 낸 작업만 후보로 보이고 자동으로 되감지 않는다", () => {
@@ -2016,5 +2035,35 @@ test("C7 SessionStart — 압축·비우기 뒤에는 ca-answer 를 다시 읽�
   const cleared = hookRun("clear");
   assert.equal(cleared.status, 0, cleared.stderr);
   assert.match(cleared.stdout, line);
+  assert.match(cleared.stdout, /\(\.claude\/skills\/ca-answer\/SKILL\.md\)/);
   assert.doesNotMatch(hookRun("startup").stdout, line);
+});
+
+test("Codex SessionStart — Claude 와 같은 진행 상태를 additionalContext 로 붙이고, 스킬 이름·경로는 Codex 표기다", () => {
+  advance();
+  const env = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR; delete env.CODE_AGENT_CROSS;
+  const codexRun = (source: string) => spawnSync(process.execPath, [join(__dirname, "../agent/cli.js"), "codex-event"], { cwd: root, env, encoding: "utf8",
+    input: JSON.stringify({ hook_event_name: "SessionStart", cwd: root, session_id: "codex-s1", source }) });
+  const context = (source: string): string => {
+    const run = codexRun(source);
+    assert.equal(run.status, 0, run.stderr);
+    const out = JSON.parse(run.stdout) as { hookSpecificOutput?: { hookEventName?: string; additionalContext?: string } };
+    assert.equal(out.hookSpecificOutput?.hookEventName, "SessionStart", source);
+    return out.hookSpecificOutput?.additionalContext ?? "";
+  };
+  const compacted = context("compact");
+  assert.match(compacted, new RegExp(`작업 ${ID} \\(feature\\) · 스테이지 analysis`));
+  assert.match(compacted, /실행 중으로 기록된 계획 배정: analysis\(ca_analyst/, "담당 이름도 Codex 표기다");
+  assert.match(compacted, /\$ca-next/);
+  assert.doesNotMatch(compacted, /\/ca-next/);
+  assert.match(compacted, /ca-answer 절차\(\.agents\/skills\/ca-answer\/SKILL\.md\)를 다시 읽는다/);
+  const forked = context("fork");
+  assert.match(forked, /code-agent planning cancel analysis/, "분기한 대화에는 이전 대화가 부른 담당의 결과가 돌아오지 않는다");
+  assert.doesNotMatch(forked, /ca-answer 절차/);
+  const empty = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-planning-")));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: empty });
+    assert.deepEqual(codexHook({ hook_event_name: "SessionStart", cwd: empty, session_id: "codex-s1", source: "compact" }), {}, "진행 중인 것이 없으면 붙이지 않는다");
+  } finally { rmSync(empty, { recursive: true, force: true }); }
 });

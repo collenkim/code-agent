@@ -15,4 +15,4 @@
 
 **수정 피드백** — 작업 폴더의 별도 파일에 기록하고 고칠 작업의 inputs에 추가해 prepare한다. 잘못된 문서를 직접 덮어쓰지 않는다. 완료 결과에 차단 지적이 남거나 `plan submit`이 거부되면 지적 내용으로 고칠 작업을 정한다 — `planning advance`의 `feedback[].citedTask`는 근거 문서를 낸 작업이라 원인이 아닐 수 있다(예: AC→TC 공백은 04를 인용해도 고칠 곳은 07·plan이다). 고칠 작업이 이 단계면 그 작업과 후속 작업·critic을 다시 실행한다. 앞 단계 작업을 고쳐야 하면 원인과 비용(다시 도는 단계·작업)을 사용자에게 한 줄로 보고하고 지시를 받은 뒤 되감는다. 그때 피드백 파일은 원인 작업의 inputs(그 단계에서 prepare)와, 이 단계로 돌아와 실제로 고칠 후속 작업의 inputs에 모두 넣는다.
 
-배정 파일(`assignmentFile`)은 `.code-agent/work/<ID>/handoff/`에, 담당의 출력 문서는 `doc/work/<ID>/.staging/<dispatchId>/`에 둔다. 둘 다 커밋되지 않는다. staging은 실행 중인 그 배정의 담당만 쓸 수 있고, 완료 hook이 읽어 정식 문서로 옮긴 뒤 지운다. hook에 서브 에이전트 식별자가 오지 않는 호스트(Codex)의 담당은 staging 대신 결과의 `{path, content}`로 본문을 싣는다.
+배정 파일(`assignmentFile`)은 `.code-agent/work/<ID>/handoff/`에, 담당의 출력 문서는 `doc/work/<ID>/.staging/<dispatchId>/`에 둔다. 둘 다 커밋되지 않는다. staging은 실행 중인 그 배정의 담당만 쓸 수 있고, 완료 hook이 읽어 정식 문서로 옮긴 뒤 지운다. 쓰기가 거부되면 결과의 `{path, content}`로 본문을 싣는다.

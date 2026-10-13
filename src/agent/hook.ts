@@ -838,6 +838,7 @@ function decideBash(manifest: Manifest | undefined, command: string, documenting
 /**
  * 계획 담당의 출력 문서 자리(staging). 실행 중인 그 배정의 담당만 쓰고, 계획 담당은 그 밖을 쓰지 않는다.
  * 본문을 결과 보고에 싣지 않으려고 연 자리라 메인이 대신 쓸 수 없다 — 쓰면 관찰된 결과가 아니게 된다.
+ * 두 호스트가 같다 — Codex 하위 에이전트의 apply_patch 도 agent_id 와 부모 session_id 를 싣는다(0.161.0 실측).
  * 둘 다 아니면 undefined로 기존 판정에 넘기고, 허용이면 빈 문자열이다.
  */
 function decidePlanner(work: Work, path: string, input: HookInput): string | undefined {
@@ -847,10 +848,8 @@ function decidePlanner(work: Work, path: string, input: HookInput): string | und
   if (!planning) return inside ? "staging은 계획 단계의 배정 담당만 씁니다." : undefined;
   const state = inside || input.agent_id ? loadPlanning(work) : undefined;
   const agent = input.agent_id ? state?.agents.find((item) => item.id === input.agent_id && item.session === input.session_id && !item.finished) : undefined;
-  // Codex 담당의 배정 계약은 staging 이 아니라 결과의 {path, content} 다 — 실행 중인 Codex 계획 담당은 파일을 쓰지 않는다
-  if (agent && input.host === "codex") return "Codex 계획 담당은 파일을 쓰지 않습니다 — 출력 문서 전체를 결과 JSON 의 artifacts 에 {path, content} 로 넣습니다.";
   if (!inside) return agent ? `계획 담당은 배정 파일의 staging 경로에만 씁니다: ${path}` : undefined;
-  if (!agent) return "staging은 실행 중인 배정의 계획 담당만 씁니다. 메인은 계획 문서를 대신 쓰지 않습니다. Codex 담당은 staging 을 쓰지 않고 artifacts에 {path, content}로 전체 내용을 넣습니다.";
+  if (!agent) return "staging은 실행 중인 배정의 계획 담당만 씁니다. 메인은 계획 문서를 대신 쓰지 않습니다.";
   const [dispatchId, name, ...rest] = path.slice(staging.length).split("/");
   const record = state!.tasks.find((item) => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === dispatchId);
   if (!record || rest.length || TASK_AGENTS[record.task.role] !== agent.type || (agent.dispatchId && agent.dispatchId !== dispatchId) ||

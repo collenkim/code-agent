@@ -13,7 +13,7 @@ import { runtimeHost } from "../agent/crossEnv";
 import * as hosts from "../agent/hosts";
 import {
   POWERSHELL_COMMAND_GUIDE, agentName, askVia, codexAgentName, commonAgentName, fileToolsHint, hostLabel, installedHosts, notation, notationFor, ROLE_NAMES,
-  shellLabel, skill, SKILL_NAMES, viaShell, withNotation, type Notation,
+  shellLabel, skill, skillFile, SKILL_NAMES, viaShell, withNotation, type Notation,
 } from "../agent/hostText";
 
 const repo = join(__dirname, "..", "..");
@@ -60,6 +60,9 @@ test("표기 함수 — Claude·Codex·중립", () => {
   }
   assert.equal(hostLabel("claude"), "Claude Code");
   assert.equal(hostLabel("codex"), "Codex");
+  // 스킬 파일 경로는 그 호스트의 실제 설치 자리다
+  for (const host of ["claude", "codex"] as const) assert.ok(hosts.hostAssets(host).has(skillFile("ca-answer", host)), host);
+  assert.equal(skillFile("ca-answer", "neutral"), ".claude/skills/ca-answer/SKILL.md(Codex: .agents/skills/ca-answer/SKILL.md)");
 });
 
 test("withNotation 은 끝나면(예외가 나도) 이전 표기로 돌아가고 기본값은 claude 다", () => {

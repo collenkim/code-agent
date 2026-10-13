@@ -110,13 +110,28 @@ describe("작업 임대 — hook·SessionStart·takeover", () => {
     assert.deepEqual([readLease(repo)!.host, readLease(repo)!.session], ["codex", C]);
     assert.match(codexBash(D), /다른 세션이 이 작업을 진행 중입니다: Codex 세션 CCCCCCCC/);
     assert.equal(codexBash(C, { agent_id: "sub-1", agent_type: "ca_explorer" }), "", "하위 에이전트는 부모 세션과 같다");
-    // resume 은 같은 session_id 라 그대로, 새 세션의 SessionStart 는 넘겨받는다(압축 compact 은 넘겨받지 않는다)
-    assert.deepEqual(codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: C, source: "resume" }), {});
+    // resume 은 같은 session_id 라 그대로, 새 세션의 SessionStart 는 넘겨받는다(압축 compact 은 넘겨받지 않는다).
+    // 진행 상태와 임대 줄은 Claude 와 같은 sessionAnchor 를 additionalContext 로 붙인다
+    const started = (session: string, source: string): string => {
+      const out = codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: session, source }) as { hookSpecificOutput?: { hookEventName?: string; additionalContext?: string } };
+      assert.equal(out.hookSpecificOutput?.hookEventName, "SessionStart");
+      return out.hookSpecificOutput?.additionalContext ?? "";
+    };
+    const resumed = started(C, "resume");
+    assert.match(resumed, /^code-agent 진행 상태/);
+    assert.doesNotMatch(resumed, /넘겨받았습니다|쥐고 있습니다/, "같은 세션이면 임대 줄이 없다");
     assert.equal(readLease(repo)!.session, C);
-    codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: D, source: "compact" });
+    assert.match(started(D, "compact"), /진행 기록은 다른 세션\(Codex 세션 CCCCCCCC\)이 0분 전까지 쥐고 있습니다/);
     assert.equal(readLease(repo)!.session, C);
-    codexHook({ cwd: repo, hook_event_name: "SessionStart", session_id: D, source: "startup" });
+    assert.match(started(D, "startup"), /이 세션이 작업 진행 기록을 넘겨받았습니다\(이전: Codex 세션 CCCCCCCC/);
     assert.deepEqual([readLease(repo)!.session, readLease(repo)!.previous?.why], [D, "session-start"]);
+    // 이미 쥔 임대를 1분 뒤 압축·재개에서 갱신(touch)할 때는 넘겨받았다는 줄을 다시 붙이지 않는다(previous 는 남는다)
+    for (const source of ["compact", "resume"]) {
+      setLease({ ...readLease(repo)!, seenAt: ago(2 * MIN) });
+      assert.doesNotMatch(started(D, source), /넘겨받았습니다/, source);
+      assert.deepEqual([readLease(repo)!.session, readLease(repo)!.previous?.session], [D, C], source);
+      assert.ok(Date.now() - Date.parse(readLease(repo)!.seenAt) < MIN, `${source}: 갱신은 했다`);
+    }
     assert.match(codexBash(C), /다른 세션이 이 작업을 진행 중입니다: Codex 세션 DDDDDDDD/, "아직 열린 이전 세션은 다음 진행 명령이 거부된다");
     // 다른 호스트(Claude)의 신선한 임대는 Codex 세션 시작으로 넘어가지 않는다
     assert.equal(bash("code-agent next", A) !== undefined, true);

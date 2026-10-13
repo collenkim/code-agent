@@ -2,8 +2,6 @@ import { existsSync, mkdirSync, readFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { writeAtomic } from "../core/atomic";
 import { decide, HookInput } from "./hook";
-import { sessionStartLease } from "./lease";
-import { loadWork } from "./work";
 import { findRepoRoot } from "./layout";
 import type { ReviewHookInput } from "./reviewHook";
 import { hookFailureExit, hookFailureInput, subagentExit } from "./retryPolicy";
@@ -17,7 +15,7 @@ interface CodexHookInput extends ReviewHookInput {
   turn_id?: string;
   prompt?: string;
   stop_hook_active?: boolean;
-  /** SessionStart 만 — startup·resume */
+  /** SessionStart 만 — startup·resume·clear·compact·fork(0.162.1 스키마) */
   source?: string;
 }
 
@@ -173,14 +171,13 @@ function codexEvent(input: CodexHookInput): object {
     const reason = (require("./stopHook") as typeof import("./stopHook")).decideStop(input, root);
     return reason ? {decision: "block", reason} : {};
   } else if (input.hook_event_name === "SessionStart") {
-    // 작업 임대를 이 세션으로 넘겨받는다 — Claude SessionStart 와 같은 규칙(압축 compact 은 빼고, 다른 호스트의 신선한 임대는 넘겨받지 않는다).
-    // Codex 는 startup·resume 을 싣고 resume 은 같은 session_id 다(0.161.0 실측). 진행 요약은 붙이지 않는다. 임대 기록 실패는 삼킨다
-    if (input.session_id) {
-      try {
-        const work = loadWork(root);
-        if (work) sessionStartLease(work, input.session_id, typeof input.source === "string" ? input.source : undefined, Date.now(), undefined, "codex");
-      } catch { /* 임대 때문에 세션 시작이 막히지 않는다 */ }
-    }
+    // Claude session-event 와 같은 진행 상태를 붙이고 작업 임대를 이 세션으로 넘겨받는다(sessionAnchor — 압축 compact 은 넘겨받지 않고,
+    // 다른 호스트의 신선한 임대도 넘겨받지 않는다. 임대 기록 실패는 삼킨다). Codex 0.162.1 은 source 에 startup·resume·clear·compact·fork 를
+    // 싣고(수동·자동 압축 뒤에도 돈다) additionalContext 를 다음 모델 호출에 넣는다(소스 hooks.rs 시험). resume 은 같은 session_id 다(0.161.0 실측).
+    // sessionHook 은 hook 누락 경고 때문에 init 을 읽는다 — 도구 호출마다 도는 이벤트가 읽지 않게 이 분기에서만 읽는다(hookLoad.test)
+    const { sessionAnchor } = require("./sessionHook") as typeof import("./sessionHook");
+    const text = sessionAnchor(root, typeof input.source === "string" ? input.source : undefined, input.session_id || undefined, "codex");
+    return text ? {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: text}} : {};
   }
   return {};
 }

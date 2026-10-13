@@ -148,8 +148,8 @@ export function leaseGuard(work: Work, hostName: HostName, session: string | und
 }
 
 /**
- * SessionStart(Claude session-event·Codex codex-event) — 같은 호스트 임대를 이 세션으로 넘겨받고, 이전 세션이 있었으면 요약에 붙일 줄을 돌려준다
- * (Codex 는 줄을 붙이지 않는다). 다른 호스트가 쥔 신선한 임대면 넘겨받지 않고 경고 줄.
+ * SessionStart(Claude session-event·Codex codex-event, sessionHook.sessionAnchor) — 같은 호스트 임대를 이 세션으로 넘겨받고, 이전 세션이
+ * 있었으면 요약에 붙일 줄을 돌려준다. 다른 호스트가 쥔 신선한 임대면 넘겨받지 않고 경고 줄.
  * `source` 가 `compact`(자동·수동 압축)면 넘겨받지 않는다 — 압축은 세션 ID 를 바꾸지 않는 같은 대화의 이어짐이고 사용자의 행동이
  * 아니다. 넘겨받으면 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾는다. 같은 세션이면 갱신만 하고, 다른 세션이
  * 쥔 신선한 임대면 쓰지 않고 이 세션의 진행 명령이 거부된다는 줄을 낸다.
@@ -167,8 +167,9 @@ export function sessionStartLease(work: Work, session: string, source?: string, 
   if (verdict.action === "deny") return held(verdict.holder, verdict.idleMs);
   const result = record(work, { host: hostName, session, sessionStart }, now, waitMs);
   if (result?.denied) return held(result.denied.holder, result.denied.idleMs);
-  const previous = result?.written?.previous;
-  if (!previous || previous.session === session) return undefined;
+  // 넘겨받은 그 순간만 알린다 — 이미 이 세션이 쥔 임대를 압축·재개 뒤에 갱신(touch)하면 남아 있는 previous 를 다시 알리지 않는다
+  const previous = result?.written?.previous, before = result?.before;
+  if (!previous || previous.session === session || (before?.host === hostName && before.session === session && !before.released)) return undefined;
   return `- 이 세션이 작업 진행 기록을 넘겨받았습니다(이전: ${hostLabel(previous.host)} 세션 ${previous.session.slice(0, 8)}, 마지막 활동 ${minutes(now - Date.parse(previous.seenAt))}분 전). ` +
     "이전 세션이 아직 열려 있으면 그쪽에서는 진행하지 않습니다 — 그쪽의 다음 진행 명령은 거부됩니다.";
 }

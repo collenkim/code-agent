@@ -148,12 +148,9 @@ export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
   // 담당 호출(계획 스킬 4개 2항·ca-review·ca-implement·ca-test·ca-check·ca-docs·ca-adopt) — Claude 의 Agent 도구는 인자 없이 백그라운드로 뜰 수 있어
   // 결과를 기다리게 한다(claude 2.1.293 실측). Codex 에는 그 인자가 없다 — 결과를 기다린다는 뜻만 남긴다
   ["Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).", "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다."],
-  // Codex 계획 담당의 배정 계약은 staging 이 아니라 결과의 {path, content} 다(hook 이 실행 중인 Codex 계획 담당의 파일 쓰기를 거부한다)
-  // — 본문을 결과에 싣는 문장으로 바꾼다(계획 스킬 4개 3항·담당 에이전트)
-  ["담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다.", "Codex 담당은 출력 문서 전체를 결과 JSON의 artifacts에 `{path, content}`로 넣는다(staging은 Claude 전용)."],
+  // 계획 담당은 두 호스트 모두 출력 문서를 staging 에 쓴다 — Codex 의 쓰기 도구는 apply_patch 다(담당 에이전트)
   ["출력 문서는 배정의 `staging` 경로에 Write로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다.",
-    "출력 문서는 artifacts에 `{path, content}`로 전체 내용을 넣는다. 파일은 쓰지 않는다."],
-  ["문서는 staging에 쓰고 artifacts에는 경로만 넣는다. 그 밖의 파일을 쓰거나", "문서 전체는 artifacts의 `{path, content}`로 넣는다. 파일을 쓰거나"],
+    "출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다."],
 ];
 
 function codexText(text: string): string {
@@ -193,7 +190,7 @@ export function hostAssets(host: Host, root?: string): Map<string, string> {
       const body = codexText(source.slice(header[0].length));
       files.set(`.codex/agents/${name}.toml`, codexModelText([
         `name = ${JSON.stringify(codexAgentName(name))}`, `description = ${JSON.stringify(description)}`,
-        `developer_instructions = ${JSON.stringify("계획 배정 결과와 리뷰 결과는 최종 응답으로 반환한다. 승인 질문은 메인만 담당한다. Codex에서는 staging에 쓰지 않는다 — 배정의 resultShape가 artifacts를 {path, staged}로 보여 줘도 {path, content}로 전체 내용을 넣는다.\n\n" + body)}`, "",
+        `developer_instructions = ${JSON.stringify("계획 배정 결과와 리뷰 결과는 최종 응답으로 반환한다. 승인 질문은 메인만 담당한다.\n\n" + body)}`, "",
       ].join("\n"), codexModelOf(root, name.replace(/^ca-/, "") as AgentName)));
     }
   }
