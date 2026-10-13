@@ -153,8 +153,12 @@ export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
     "출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다 — 결과 JSON에 문서 본문을 싣지 않는다. 그 쓰기가 거부되면 `{path, content}`로 낸다. staging 밖의 파일은 쓰지 않는다."],
 ];
 
-function codexText(text: string): string {
-  return CODEX_SENTENCES.reduce((out, [from, to]) => out.split(from).join(to), text).replace(ROLE_PATTERN, codexAgentName)
+/**
+ * Codex 사본. footer 는 PowerShell `.cmd` 호출·`code-agent read` 안내 꼬리말이다 — 하위 에이전트 지침(TOML)에만 붙인다. 스킬은 메인이 읽고,
+ * 메인에는 같은 두 문장이 든 AGENTS.md 블록(CODEX.block.md)이 늘 실려 있다(스킬마다 붙이면 한 흐름에 같은 문장이 열 번 넘게 쌓인다).
+ */
+function codexText(text: string, footer: boolean): string {
+  const body = CODEX_SENTENCES.reduce((out, [from, to]) => out.split(from).join(to), text).replace(ROLE_PATTERN, codexAgentName)
     .replace(/`agent`/g, "`hostAgents.codex`")
     .replace(/\.claude\/skills\//g, ".agents/skills/")
     .replace(/\.claude\/agents\/([\w-]+)\.md/g, ".codex/agents/$1.toml")
@@ -170,16 +174,18 @@ function codexText(text: string): string {
     .replace(/--by codex/g, "--by claude")
     // Codex 메인의 교차 명령은 다른 호스트를 띄우고 네트워크를 쓴다 — 샌드박스 밖(권한 상승)으로 실행하게 한다(`Bash:`·`--by` 치환 뒤의 글자)
     .replace(/셸: `code-agent (review|planning) cross --by claude`/g,
-      "셸(Codex 샌드박스 밖 — 다른 호스트를 띄우고 네트워크를 쓰므로 권한 상승을 요청해 실행한다): `code-agent $1 cross --by claude`")
-    + `\n\n${POWERSHELL_COMMAND_GUIDE}\n파일 읽기는 code-agent read <파일> [시작 줄] [줄 수](최대 400)로 한다. Windows PowerShell 예: code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300. 전용 읽기 도구가 없으면 배정 inputs·survey의 경로를 읽는다. 일반 셸 읽기·연결 명령은 게이트가 거부한다.\n`;
+      "셸(Codex 샌드박스 밖 — 다른 호스트를 띄우고 네트워크를 쓰므로 권한 상승을 요청해 실행한다): `code-agent $1 cross --by claude`");
+  return footer ? `${body}\n\n${CODEX_AGENT_FOOTER}\n` : body;
 }
+/** 하위 에이전트 지침의 꼬리말 — 메인의 AGENTS.md 블록(CODEX.block.md 3·8행)과 같은 뜻이다 */
+const CODEX_AGENT_FOOTER = `${POWERSHELL_COMMAND_GUIDE}\n파일 읽기는 code-agent read <파일> [시작 줄] [줄 수](최대 400)로 한다. Windows PowerShell 예: code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300. 전용 읽기 도구가 없으면 배정 inputs·survey의 경로를 읽는다. 일반 셸 읽기·연결 명령은 게이트가 거부한다.`;
 export function hostAssets(host: Host, root?: string): Map<string, string> {
   const files = new Map<string, string>();
   for (const key of assetKeys(CLAUDE_ASSETS)) {
     const tail = key.slice(CLAUDE_ASSETS.length + 1), source = assetText(key);
     if (host === "claude") { files.set(`.claude/${tail}`, source); continue; }
     if (tail.startsWith("skills/")) {
-      const text = tail === "skills/ca-answer/SKILL.md" ? assetText("template/codex/ca-answer.md") : codexText(source);
+      const text = tail === "skills/ca-answer/SKILL.md" ? assetText("template/codex/ca-answer.md") : codexText(source, false);
       files.set(`.agents/${tail}`, text);
     } else {
       const header = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(source);
@@ -187,7 +193,7 @@ export function hostAssets(host: Host, root?: string): Map<string, string> {
       const name = /^name: (.+)$/m.exec(header[1])?.[1].trim();
       const description = /^description: (.+)$/m.exec(header[1])?.[1].trim();
       if (!name || !description) throw new Stop(`에이전트 이름·설명이 없습니다: ${key}`);
-      const body = codexText(source.slice(header[0].length));
+      const body = codexText(source.slice(header[0].length), true);
       files.set(`.codex/agents/${name}.toml`, codexModelText([
         `name = ${JSON.stringify(codexAgentName(name))}`, `description = ${JSON.stringify(description)}`,
         `developer_instructions = ${JSON.stringify("계획 배정 결과와 리뷰 결과는 최종 응답으로 반환한다. 승인 질문은 메인만 담당한다.\n\n" + body)}`, "",

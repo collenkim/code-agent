@@ -11,6 +11,7 @@ import {
   type CrossAttempt, type ReviewerRun, type Waiver,
 } from "./crossRecord";
 import { planPaths, reviewRoundBudget, reviewRoundUsage, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
+import { fileHashes } from "./tree";
 import type { ReviewRoundUsage } from "./evidence";
 import { reviewFile, workDocsDir } from "./layout";
 import { acquireLock } from "./lock";
@@ -55,6 +56,8 @@ export interface ReviewRound {
   baseCommit: string;
   planHash: string;
   manifestHash: string;
+  /** 회차를 열 때의 계획 파일별 바이트 해시 — 다음 회차의 재검토 범위(roundChanges)만 정한다. 게이트는 treeHash 만 본다. 없으면(옛 기록) 전부 다시 본다 */
+  files?: Record<string, string>;
   /** 파생 사본(옛 필드) — 배열이 저장된 회차는 syncLegacyRound 가 reviewers 에서 다시 쓴다. 판정에 쓰지 않는다 */
   reviewer?: { sessionId: string; agentId: string; startedAt: string; completedAt?: string; result?: string };
   /** 파생 사본(옛 필드) — 두 호스트 설치 프로젝트의 교차 리뷰. 배열이 저장된 회차는 syncLegacyRound 가 crossAttempts 에서 다시 쓴다 */
@@ -350,6 +353,7 @@ export function openRound(work: Work): string {
   }
 
   const treeHash = treeHashNow(work);
+  const files = fileHashes(repoRoot, planPaths(work));
   const planHash = hashPlan(work.plan!);
   const manifestHash = hashManifest(work.manifest);
   const binding = { baseCommit: active.baseCommit!, planHash, manifestHash };
@@ -384,6 +388,7 @@ export function openRound(work: Work): string {
       baseCommit: active.baseCommit!,
       planHash,
       manifestHash,
+      files,
     };
     // 동결을 푼 기록·사람 허용·사람 판단도 회차와 한 묶음이다 — 회차를 버리면(다른 계획·경계) 그 기록도 함께 버린다.
     // 이전 기록의 다른 필드(교차 기록 등)는 버리지 않는다. 한도는 이 묶임의 첫 회차에 고정한다(옛 기록은 여기서 고정되며 유예가 끝난다)
@@ -439,7 +444,47 @@ export function openRound(work: Work): string {
     "| id | 계획 파일 | 범위 | 상태 | 지적 | — 지적이 없으면 `- 없음`.",
     `계획 안 지적은 고친 뒤 code-agent verify 로 check 부터 다시 돌고, 이 명령으로 다음 회차를 엽니다 (리뷰 회차 ${round.round}/${limitOf("reviewRounds", log.limit, log.grants ?? [], grantScope({ file: "review", key: "reviewRounds" }))}).`,
     "계획 밖 경로를 가리키는 지적은 모델이 닫을 수 없습니다 — 질문으로 묻고, 사용자가 범위 밖으로 확인하면 ca-answer 동의 judgment waive-finding 으로 기록하거나 계획을 고쳐 재승인받습니다.",
+    ...changedLine(roundChanges(log, planPaths(work))),
   ].join("\n");
+}
+
+/** 2회차부터의 재검토 범위 — 직전 회차 뒤 바뀐 계획 파일과 직전 회차 리뷰어 지적 줄 */
+export interface RoundChanges { previous: number; changed: string[]; findings: string[] }
+
+/**
+ * 마지막 회차의 재검토 범위. 직전 회차와 마지막 회차가 모두 파일 해시를 남겼고 직전 회차에 받아들인 리뷰어 결과가 있을 때만 준다 —
+ * 하나라도 없으면 undefined 이고 리뷰어는 전부 다시 본다. 같은 묶임의 회차끼리라 계획 파일 목록은 같다. 게이트는 이 값을 보지 않는다.
+ */
+export function roundChanges(log: ReviewLog | undefined, planned: readonly string[]): RoundChanges | undefined {
+  const before = log?.rounds.at(-2);
+  const changed = changedSincePrevious(log);
+  const result = before && effectiveReviewer(before, planned)?.result;
+  if (!before || !changed || result === undefined) return undefined;
+  return {
+    previous: before.round,
+    changed,
+    findings: result.split("\n").map((line) => line.trim()).filter((line) => /^\|\s*F\d+\s*\|/.test(line)),
+  };
+}
+
+/** 직전 회차와 마지막 회차의 파일 해시가 다른 계획 파일 — 둘 중 하나라도 해시가 없으면 undefined */
+export function changedSincePrevious(log: ReviewLog | undefined): string[] | undefined {
+  const last = log?.rounds.at(-1), before = log?.rounds.at(-2);
+  if (!last?.files || !before?.files) return undefined;
+  const paths = [...new Set([...Object.keys(before.files), ...Object.keys(last.files)])].sort();
+  return paths.filter((path) => before.files![path] !== last.files![path]);
+}
+
+const CHANGED_LIST_LIMIT = 20;
+/** review 출력의 한 줄 — 바뀐 파일 목록은 CHANGED_LIST_LIMIT 개까지 */
+function changedLine(changes: RoundChanges | undefined): string[] {
+  if (!changes) return [];
+  return [`재검토 범위: 직전 ${changes.previous}회차 뒤 바뀐 계획 파일 ${changes.changed.length}개${changedList(changes.changed)} — code-agent context 가 직전 지적과 함께 싣는다.`];
+}
+export function changedList(paths: readonly string[]): string {
+  if (!paths.length) return "";
+  const shown = paths.slice(0, CHANGED_LIST_LIMIT).join(", ");
+  return ` (${shown}${paths.length > CHANGED_LIST_LIMIT ? ` 외 ${paths.length - CHANGED_LIST_LIMIT}개` : ""})`;
 }
 
 /**

@@ -12,6 +12,7 @@ import { stagedDocumentProblems } from "./stagedChecks";
 import { loadWork, type Work } from "./work";
 import { crossChild } from "./crossEnv";
 import { withNotation } from "./hostText";
+import { noteSubagentReturn } from "./hookLog";
 
 /** 기록하지 않고 같은 담당에게 한 번 돌려보낸다(Claude SubagentStop exit 2) — 담당이 고쳐 다시 멈추면 처음부터 다시 판정한다 */
 export class ReturnToAgent extends Error { constructor(message: string, readonly failureClass: FailureClass) { super(message); } }
@@ -366,8 +367,11 @@ export function runPlanningHook(stdin: string): number {
   let input: ReviewHookInput | undefined;
   try { input = JSON.parse(stdin) as ReviewHookInput; const event = input; withNotation("claude", () => observePlanner(event, process.env.CLAUDE_PROJECT_DIR, { host: "claude" })); return 0; }
   catch (error) {
-    process.stderr.write(`code-agent planning-event: ${error instanceof Error ? error.message : error}\n`);
+    const text = `code-agent planning-event: ${error instanceof Error ? error.message : error}\n`;
+    process.stderr.write(text);
     const cls = error instanceof ReturnToAgent || error instanceof PlanningFailure ? error.failureClass : "hook-failure";
-    return subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true, failure: cls, recorded: error instanceof RecordedFailure });
+    const code = subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true, failure: cls, recorded: error instanceof RecordedFailure });
+    if (code === 2) noteSubagentReturn(input, text);
+    return code;
   }
 }

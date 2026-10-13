@@ -43,7 +43,7 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   writeFixture(root,".codex/hooks.json",JSON.stringify({description:"사용자 훅",hooks:{Stop:[{hooks:[{type:"command",command:"custom-stop"}]}]}}));
   init(root,{host:"codex",cli});
   const before = read(".codex/hooks.json");
-  assert.equal(hostAssets("codex").size,37);
+  assert.equal(hostAssets("codex").size,38);
   assert.deepEqual(selectedHosts(root),["codex"]);
   assert.equal(existsSync(join(root,".claude")),false);
   assert.equal(existsSync(join(root,"CLAUDE.md")),false);
@@ -103,7 +103,7 @@ test("역할별 Codex 모델은 동의 후 적용되고 다른 호스트와 역�
 });
 
 test("Codex 사본의 동의 필드 표는 JSON 필드 이름 \"agent\" 를 그대로 둔다 — 계획 배정 필드 치환에 걸리지 않는다", () => {
-  const reference = hostAssets("codex").get(".agents/skills/ca-answer/reference.md")!;
+  const reference = hostAssets("codex").get(".agents/skills/ca-answer/appendix.md")!;
   assert.match(reference, /\| `"agent"`, `"model"` \|/);
   assert.doesNotMatch(reference, /`hostAgents\.codex`, `model`/);
   assert.match(reference, /\| `reasoning` \| 선택 문자열: 추론 강도/);
@@ -169,7 +169,7 @@ test("잘못된 설정은 설치 전에 거부하고 같은 그룹의 사용자 
 test("doctor는 Codex 설치를 인식하고 빠진 역할 파일을 찾는다", () => {
   setupConsentProject(root); init(root,{host:"codex",cli});
   const report = doctor(root).text;
-  assert.match(report,/Codex 스킬·에이전트: 26개 · 보조 문서 11개 모두/);
+  assert.match(report,/Codex 스킬·에이전트: 26개 · 보조 문서 12개 모두/);
   assert.doesNotMatch(report,/설치되지 않았습니다 \(\.claude/);
   writeFixture(root,".codex/agents/ca-critic.toml","누락된 지침");
   assert.match(doctor(root).text,/✗ Codex 스킬·에이전트/);
@@ -199,7 +199,8 @@ test("Codex는 작업 중 전용 파일 읽기를 제공하고 일반 셸 쓰기
   assert.ok(pre("Bash", "code-agent read code-agent.json; Set-Content x y").hookSpecificOutput);
   const result = spawnSync(process.execPath,[cli,"read",CONSENT_SPEC,"1","2"],{cwd:root,encoding:"utf8"});
   assert.equal(result.status,0,result.stderr);
-  assert.equal(JSON.parse(result.stdout).lines.length,2);
+  assert.deepEqual(result.stdout.trim().split("\n").slice(1,3).map(line=>line.split("\t")[0]),["1","2"]);
+  assert.match(result.stdout,new RegExp(`^${CONSENT_SPEC.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")} · 1-2 / 전체 \\d+줄\\n`));
   assert.match(read(".codex/agents/ca-analyst.toml"),/code-agent read/);
   assert.match(read(".agents/skills/ca-analyze/SKILL.md"),/^---/);
 });

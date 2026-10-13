@@ -11,8 +11,10 @@ import { loadEvidence } from "../agent/evidence";
 import { init } from "../agent/init";
 import { proposalFile } from "../agent/knowledge";
 import { loadActive, saveActive } from "../agent/layout";
-import { openRound } from "../agent/review";
-import { decideStop } from "../agent/stopHook";
+import { loadReview, openRound, roundChanges } from "../agent/review";
+import { decideStop, runStopHook, STOP_LIST_LIMIT } from "../agent/stopHook";
+import { HOOK_LOG, readHookOutputs, reasonKey } from "../agent/hookLog";
+import { runHook } from "../agent/hook";
 import { changedPaths } from "../agent/tree";
 import { check, integrate, runTests } from "../agent/validate";
 import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
@@ -28,6 +30,19 @@ import {
 } from "./stageFixture";
 
 beforeEach(() => createStageRepo());
+
+/** production hook 진입점의 stdout — CLAUDE_PROJECT_DIR 을 이 저장소로 둔다 */
+function hookStdout(run: () => void): string {
+  const saved = process.env.CLAUDE_PROJECT_DIR, out = process.stdout.write;
+  let printed = "";
+  process.env.CLAUDE_PROJECT_DIR = repo;
+  process.stdout.write = ((chunk: string) => { printed += chunk; return true; }) as typeof process.stdout.write;
+  try { run(); } finally {
+    process.stdout.write = out;
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+  }
+  return printed;
+}
 
 afterEach(() => removeStageRepo());
 
@@ -67,6 +82,25 @@ describe("Stop hook", () => {
     write(`${ORDER}/domain/Sneaky.java`, "class Sneaky {}\n");
     assert.match(decideStop({ cwd: repo }) ?? "", /계획 밖의 변경이 남아 있습니다/);
     assert.equal(decideStop({ cwd: repo, stop_hook_active: true }), undefined);
+  });
+
+  test("목록은 STOP_LIST_LIMIT 줄까지 싣고, 같은 세션의 같은 사유는 한 번만 막는다 — 목록이 바뀌면 다시 막는다", () => {
+    toCheck();
+    for (let i = 0; i < STOP_LIST_LIMIT + 3; i++) write(`${ORDER}/domain/Sneaky${String(i).padStart(2, "0")}.java`, "class Sneaky {}\n");
+    const run = (session: string): string => {
+      const printed = hookStdout(() => assert.equal(runStopHook(JSON.stringify({ cwd: repo, session_id: session, hook_event_name: "Stop" })), 0));
+      return printed ? (JSON.parse(printed) as { reason: string }).reason : "";
+    };
+    const first = run("s1");
+    assert.equal(first.split("\n").filter((line) => line.startsWith("  - [")).length, STOP_LIST_LIMIT);
+    assert.match(first, /외 3개 — git status 로 확인하세요/);
+    assert.equal(run("s1"), "", "같은 세션·같은 사유는 다시 막지 않는다");
+    assert.match(run("s2"), /계획 밖의 변경이 남아 있습니다/, "다른 세션은 막는다");
+    write(`${ORDER}/domain/Another.java`, "class Another {}\n");
+    assert.match(run("s1"), /외 4개/, "목록이 바뀌면 다시 막는다");
+    const rows = readHookOutputs(repo).filter((row) => row.event === "Stop");
+    assert.deepEqual(rows.map((row) => [row.session, row.kind]), [["s1", "block"], ["s2", "block"], ["s1", "block"]]);
+    assert.equal(rows[0].chars, first.length);
   });
 
   test("답 없는 질문이 있으면 막는다", () => {
@@ -113,6 +147,18 @@ describe("hook · Stop hook · context — 새 스테이지", () => {
     assert.equal(hook("Bash", { command: "code-agent review" }), undefined);
     assert.equal(hook("Bash", { command: "code-agent integrate" }), undefined);
     assert.match(hook("Bash", { command: "code-agent deliver" }) ?? "", /현재 세션의 ca-answer 동의 절차/);
+  });
+
+  test("PreToolUse 거부는 hook 출력 기록에 길이·해시만 남긴다 — 글은 남기지 않는다", async () => {
+    await toReview();
+    const printed = hookStdout(() => assert.equal(runHook(JSON.stringify({ cwd: repo, session_id: "s1", tool_name: "Bash", tool_input: { command: "code-agent deliver" } })), 0));
+    const reason = (JSON.parse(printed) as { hookSpecificOutput: { permissionDecisionReason: string } }).hookSpecificOutput.permissionDecisionReason;
+    const rows = readHookOutputs(repo);
+    assert.deepEqual(rows.map((row) => [row.host, row.event, row.kind, row.tool, row.session, row.chars, row.key]),
+      [["claude", "PreToolUse", "deny", "Bash", "s1", reason.length, reasonKey(reason)]]);
+    assert.equal(readFileSync(join(repo, HOOK_LOG), "utf8").includes(reason.slice(0, 20)), false);
+    hookStdout(() => runHook(JSON.stringify({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent status" } })));
+    assert.equal(readHookOutputs(repo).length, 1, "허용은 남기지 않는다");
   });
 
   test("Stop hook 은 implement·deliver 모두 계획 밖 변경을 보고한다", async () => {
@@ -262,6 +308,50 @@ describe("스테이지 명령", () => {
     assert.match(status(repo), /승인됨 — code-agent next 로 넘긴 뒤 \/ca-implement/);
     next(repo);
     assert.match(status(repo), /다음: \/ca-implement \(또는 \/ca-next 로 사이클\)/);
+  });
+
+  test("start·next·back 은 전체 status 대신 옮긴 자리 요약만 낸다 — 다음 줄은 status 와 같다", () => {
+    const started = start(repo, join(repo, "doc/work/ORD-1.md"));
+    const moved = /전체 상태는 code-agent status/;
+    assert.match(started, moved);
+    assert.doesNotMatch(started, /프로젝트 문서:/);
+    write("doc/work/ORD-1/01-requirements.md", REQUIREMENTS);
+    const advanced = next(repo);
+    assert.match(advanced, moved);
+    assert.match(advanced, /스테이지: .*\[impact\]/);
+    assert.doesNotMatch(advanced, /프로젝트 문서:/);
+    const nextLine = (text: string) => text.split("\n").find((line) => line.startsWith("다음: "));
+    assert.equal(nextLine(advanced), nextLine(status(repo)));
+    const rewound = back(repo, "analysis");
+    assert.match(rewound, moved);
+    assert.match(rewound, /스테이지: .*\[analysis\]/);
+    assert.equal(nextLine(rewound), nextLine(status(repo)));
+  });
+
+  test("2회차 리뷰 context 는 직전 회차 뒤 바뀐 계획 파일과 직전 지적을 재검토 범위로 싣는다", async () => {
+    await toReview();
+    const first = openRound(requireValidatable(repo, "review"));
+    assert.doesNotMatch(first, /재검토 범위/, "1회차는 전부 본다");
+    assert.doesNotMatch(context(repo), /재검토 범위/);
+    const planned = loadWork(repo)!.plan!.files.map((file) => file.path);
+    const changedPath = `${ORDER}/domain/Order.java`;
+    assert.ok(planned.includes(changedPath));
+    writeFindings(`| F1 | ${changedPath} | 계획 안 | 열림 | 1줄: 근거 R1 · 고치는 방향 |`);
+    const log = loadReview(repo, "ORD-1", "order")!;
+    assert.equal(Object.keys(log.rounds[0].files ?? {}).length, planned.length, "회차가 계획 파일별 해시를 남긴다");
+    write(changedPath, "class Order { long id; }\n");
+    // 리뷰 수정은 check 부터 다시 — check 가 커서를 check 로 되감는다
+    await check(requireValidatable(repo, "check"));
+    next(repo);
+    await runTests(requireValidatable(repo, "test"));
+    next(repo);
+    const second = openRound(requireValidatable(repo, "review"));
+    assert.ok(second.includes(`재검토 범위: 직전 1회차 뒤 바뀐 계획 파일 1개 (${changedPath})`), second);
+    const text = context(repo);
+    assert.match(text, /\*\*재검토 범위\*\* — 직전 1회차 뒤 바뀐 계획 파일 1개/);
+    assert.match(text, /바뀌지 않은 계획 파일은 직전 회차 판정을 이어받는다/);
+    assert.match(text, /직전 1회차 ca-reviewer 지적 — 같은 id·경로로 상태를 갱신한다:\n  \| F1 \|/);
+    assert.deepEqual(roundChanges(loadReview(repo, "ORD-1", "order"), planned)?.changed, [changedPath]);
   });
 
   test("검증 칸도 제 스킬을 부르고 deliver는 같은 세션의 확인으로 이어진다", async () => {

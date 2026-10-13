@@ -25,9 +25,10 @@ function claudeTexts(): Map<string, string> {
 }
 const skill = (name: string): string => readFileSync(join(TEMPLATE, "skills", name, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
 
-test("모든 Codex 지침은 PowerShell .cmd 호출과 대화 응답 예외를 안내한다", () => {
+test("Codex 하위 에이전트 지침과 AGENTS.md 블록은 PowerShell .cmd 호출과 대화 응답 예외를 안내한다 — 스킬 사본은 블록을 늘 싣는 메인이 읽어 꼬리말이 없다", () => {
   for (const [path, text] of hostAssets("codex")) {
-    assert.ok(text.includes(POWERSHELL_COMMAND_GUIDE), path);
+    if (path.startsWith(".codex/agents/")) assert.ok(text.includes(POWERSHELL_COMMAND_GUIDE), path);
+    else if (path !== ".agents/skills/ca-answer/SKILL.md") assert.ok(!text.includes(POWERSHELL_COMMAND_GUIDE), `스킬 사본에 꼬리말이 붙었습니다: ${path}`);
     assert.doesNotMatch(text, /code-agent\.cmd consent respond/, path);
     assert.doesNotMatch(text, /\.code-agent\.cmd|code-agent\.cmd\.json/, path);
   }

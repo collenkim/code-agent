@@ -42,12 +42,12 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 | UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 그 밖의 메시지는 기록하지 않는다(업무 답 관찰 없음) |
 | SubagentStart | 계획 담당·독립 리뷰어의 세션과 실행 ID 관찰 |
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약·문서 검사에 대조. 실패는 되돌리지 않고 기록하며 판정 실패도 `{}`·exit 0으로 통과시킨다(사유는 stderr) |
-| Stop | 계획 밖 변경·미결 질문 검사와 필요한 후속 안내 |
+| Stop | 계획 밖 변경·미결 질문 검사와 필요한 후속 안내. 목록은 10줄까지 싣고, 같은 세션에서 같은 사유로 이미 막았으면 다시 막지 않는다 |
 | SessionStart | Claude 와 같은 진행 상태 요약(작업·스테이지·실행 중 계획 배정·압축 뒤 ca-answer 다시 읽기)을 `additionalContext`로 붙이고, 작업 임대를 이 세션으로 넘겨받는다(대화 압축 제외 — Claude 와 같은 규칙). codex-cli 0.162.1 은 수동·자동 압축 뒤에도 이 훅을 부른다 |
 
 여섯 이벤트는 `code-agent codex-event` 하나로 들어온다. Codex의 셸 훅은 `Bash`와 `tool_input.command`를 사용하고(Windows 에서도 같다 — 스크립트는 PowerShell, 0.161.0 실측. 권한 상승 여부는 PreToolUse 입력에 없고 PermissionRequest 에만 있다), 패치는 `apply_patch`의 `command`를 사용한다. 패치 일부라도 금지 경로이면 호출 전체를 거부한다. 판정 대상은 셸·패치와 MCP 도구(`mcp__*`)의 경로 인자이며, 그 밖의 도구는 판정하지 않고 이름만 기록한다(위 표). Codex 는 hook 의 exit 2 와 stderr 사유를 막음으로 받는다(0.161.0 — PreToolUse·UserPromptSubmit 은 실제 호출로 확인). code-agent 는 PreToolUse 판정 실패를 거부 응답으로 막고(입력을 읽지 못해도 같다) exit 2 는 판정 전 프로세스 실패의 닫힘으로만 쓴다 — PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 설치해 판정 전에 프로세스가 죽어도 막는다. Windows 용 `commandWindows`는 Codex 가 `powershell.exe -NoProfile -Command`로 돌리고 Windows PowerShell 5.1 이 exit 2 를 1 로 바꾸므로, PreToolUse 는 `cmd /c code-agent codex-event; if ($LASTEXITCODE -ne 0) { exit 2 }`, UserPromptSubmit 은 `cmd /c code-agent codex-event; exit $LASTEXITCODE`, 나머지는 `cmd /c code-agent codex-event`로 설치한다(`cmd /c`는 실행 정책 Restricted 에서 막히는 npm 의 `code-agent.ps1` 대신 `.cmd`를 고른다). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 이 꼴이 된다 — 옛 꼴이면 doctor 가 그 이벤트 줄을 `✗`로 알린다(`commandWindows`가 없어도 Codex 가 돌리는 `command`가 이 꼴과 같은 이벤트 — `--cli` 설치의 Stop·Subagent·SessionStart — 는 알리지 않는다). UserPromptSubmit 판정 실패는 동의 응답(`code-agent consent respond`로 시작하는 메시지)만 막고 사유를 보이며, 그 밖의 사용자 메시지는 막지 않는다. `codex exec`에서는 hook 거부가 출력에 드러나지 않는다 — 동의 응답이 막히면 사유 없이 `turn.completed`(사용량 0)만 남고, PreToolUse 가 거부한 명령은 이벤트에 없이 모델 답(`Command blocked by PreToolUse hook: <사유>`)으로만 보인다(0.161.0 실측). exec 로 동의 응답을 보냈으면 `consent status`로 기록됐는지 확인한다. Stop 판정 실패는 Claude와 같이 턴을 막지 않는다. 하위 실행 transcript는 파싱하지 않고 `last_assistant_message`만 결과로 받는다. 담당은 `SubagentHandback` 대신 최종 응답으로 계약에 맞는 JSON 또는 리뷰 지적을 반환한다.
 
-전용 Read 도구가 없는 Codex에서는 `code-agent read <파일> [시작 줄] [줄 수]`로 파일을 읽는다. 줄 번호를 포함하며 기본 200줄·최대 400줄이다. 저장소 안의 1 MB 이하 텍스트만 허용하고 연결 경로를 통한 저장소 밖 접근도 거부한다. 연결자 없이 쓴 이 명령은 상태·설정을 읽지 못한 때(깨진 `code-agent.json` 의 원인 확인)와 세션 밖에서 hook 설정 파일을 읽을 때도 열린다 — hook 의 거부 문구도 Codex 에서는 `code-agent read`·`apply_patch` 로 안내한다. 일반 셸 읽기·연결 명령을 허용하도록 게이트를 풀지 않는다.
+전용 Read 도구가 없는 Codex에서는 `code-agent read <파일> [시작 줄] [줄 수]`로 파일을 읽는다. 머리 한 줄(`<경로> · <시작>-<끝> / 전체 N줄`)과 `줄번호<탭>본문`을 내고, 남은 줄이 있으면 `(이어서: code-agent read <경로> <다음 줄>)`을 붙인다. 기본 200줄·최대 400줄이다. 저장소 안의 1 MB 이하 텍스트만 허용하고 연결 경로를 통한 저장소 밖 접근도 거부한다. 연결자 없이 쓴 이 명령은 상태·설정을 읽지 못한 때(깨진 `code-agent.json` 의 원인 확인)와 세션 밖에서 hook 설정 파일을 읽을 때도 열린다 — hook 의 거부 문구도 Codex 에서는 `code-agent read`·`apply_patch` 로 안내한다. 일반 셸 읽기·연결 명령을 허용하도록 게이트를 풀지 않는다.
 
 Codex 셸의 환경 표지와 네트워크(Windows, codex-cli 0.161.0 실측) — 교차 명령의 사전 판정과 지금 호스트 판별이 이 값에 기댄다.
 
@@ -145,6 +145,6 @@ Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 `.code-a
 
 ## 차단 시 복구 선택
 
-Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
+Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 이 안내와 `code-agent read` 안내는 메인에게는 AGENTS.md 블록으로 늘 실리고, 하위 에이전트에게는 `.codex/agents/*.toml` 지침 끝에 붙는다(스킬 사본에는 붙이지 않는다). 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
 
 Codex 메인은 CLI·hook 차단 시 `.agents/skills/ca-answer/reference.md`의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 질문한다. `code_agent.ask`의 MCP 선택 UI를 실제로 호출한다. 도구가 없거나 거부되면 설치·클라이언트 지원을 점검하고 번호 나열을 UI 완료로 보고하지 않는다. 도구를 호출할 수 있는데 글머리표만 출력하고 끝내지 않는다. 동의가 필요한 실행은 ca-answer의 Codex 동의 절차를 별도로 거친다. 외부 권한·hook 차단은 진단과 사용자 환경 확인으로 연결하며, 사용자의 거절·보류를 다른 도구로 우회하지 않는다. 작업 중 공통 문서 보완은 중단 동의 후 같은 작업 ID로 재개하고 필요한 계획·승인을 다시 검증한다.

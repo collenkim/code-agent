@@ -27,10 +27,10 @@ export interface CodexTokens { input: number; cachedInput: number; cacheWrite: n
 /** 메인 세션 행의 이름 — 하위 에이전트는 공통 역할 이름(ca-explorer)이나 Codex 가 적은 출처(guardian) */
 export const CODEX_MAIN_AGENT = "main";
 /** 한 요청(토큰 기록) */
-export interface CodexRequest { at: string; agent: string; tokens: CodexTokens }
+export interface CodexRequest { at: string; agent: string; tokens: CodexTokens; thread?: string }
 /** 한 도구 호출 */
-export interface CodexToolCall { at: string; agent: string; id?: string; name: string }
-export interface CodexResult { at: string; agent: string; id?: string; chars: number }
+export interface CodexToolCall { at: string; agent: string; id?: string; name: string; thread?: string }
+export interface CodexResult { at: string; agent: string; id?: string; chars: number; thread?: string }
 /** 셸 명령 한 건(래퍼를 벗긴 문자열) */
 export interface CodexCommand { at: string; agent: string; command: string }
 export interface CodexLog {
@@ -149,6 +149,8 @@ export function readCodexLog(repoRoot: string, dir: string = codexSessionsDir())
     if (!meta || !inside(root, meta.cwd)) continue;
     const [agent, isSubagent] = agentOf(meta);
     if (isSubagent) log.subagents += 1; else log.sessions += 1;
+    // 하위 에이전트 파일의 thread id — usage 가 배정(계획 담당·리뷰어 기록의 agent id)과 잇는다
+    const thread = isSubagent && typeof meta.id === "string" && meta.id ? { thread: meta.id } : {};
     // 하위 에이전트 파일 앞머리의 부모 대화 사본(ordinal 이 시작 번호보다 작은 줄)은 세지 않는다
     const start = num(meta.subagent_history_start_ordinal);
     const own = rows.filter((row) => !(start > 0 && typeof row.ordinal === "number" && row.ordinal < start));
@@ -164,14 +166,14 @@ export function readCodexLog(repoRoot: string, dir: string = codexSessionsDir())
         const usage = record(payload.usage), response = typeof payload.response_id === "string" ? payload.response_id : undefined;
         if (!usage || (response && responses.has(response))) continue;
         if (response) responses.add(response);
-        log.requests.push({ at, agent, tokens: tokensOf(usage) });
+        log.requests.push({ at, agent, tokens: tokensOf(usage), ...thread });
       } else if (row.type === "event_msg" && payload.type === "token_count") {
         const info = record(payload.info), usage = record(info?.last_token_usage);
         if (records || !usage) continue;
         const total = info?.total_token_usage === undefined ? undefined : JSON.stringify(info.total_token_usage);
         if (total !== undefined && total === lastTotal) continue;     // 같은 값을 한 번 더 낸 줄
         lastTotal = total;
-        log.requests.push({ at, agent, tokens: tokensOf(usage) });
+        log.requests.push({ at, agent, tokens: tokensOf(usage), ...thread });
       } else if (row.type === "event_msg" && payload.type === "item_completed") {
         const item = record(payload.item);
         if (item?.type === "FileChange") log.fileChanges.push({ at, agent });
@@ -180,12 +182,12 @@ export function readCodexLog(repoRoot: string, dir: string = codexSessionsDir())
       } else if (row.type === "response_item" && ["function_call", "custom_tool_call", "local_shell_call"].includes(String(payload.type))) {
         const name = typeof payload.name === "string" && payload.name ? payload.name : String(payload.type);
         const id = typeof payload.call_id === "string" ? payload.call_id : undefined;
-        log.calls.push({ at, agent, ...(id ? { id } : {}), name });
+        log.calls.push({ at, agent, ...(id ? { id } : {}), name, ...thread });
         const command = executions ? undefined : shellCommand(payload);
         if (command !== undefined) log.commands.push({ at, agent, command });
       } else if (row.type === "response_item" && ["function_call_output", "custom_tool_call_output"].includes(String(payload.type))) {
         const id = typeof payload.call_id === "string" ? payload.call_id : undefined;
-        log.results.push({ at, agent, ...(id ? { id } : {}), chars: outputChars(payload.output) });
+        log.results.push({ at, agent, ...(id ? { id } : {}), chars: outputChars(payload.output), ...thread });
       }
     }
   }

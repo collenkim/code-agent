@@ -23,7 +23,7 @@ import { questionsFile, workDocsDir } from "./layout";
 import { claudeModelArgs, claudeModelOf, codexModelArgs, codexModelOf, modelLabel } from "./modelPolicy";
 import { mutatePlanning, planningWork } from "./planning";
 import { criticCrossPoint, crossQuestionViews, inputFiles, loadPlanning, questionText, referenceProblem, taskCurrent, withPlanningCache } from "./planningState";
-import { CROSS_HEADING, crossRequired, loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog } from "./review";
+import { changedList, changedSincePrevious, CROSS_HEADING, crossRequired, loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog } from "./review";
 import {
   classifyCrossFailure, COUNTER_LABEL, CROSS_NO_ANSWER, crossBudgets, crossPointDecision, crossPointState, crossPreflight, grantScope,
   guidance, recordedVariant, refuse, RetryRefused, TIMING,
@@ -76,8 +76,9 @@ export function crossInvocationArgs(root: string, host: Host, agent: Agent, prom
   if (host === "claude") {
     const config = claudeModelOf(root, role);
     return {
+      // 세션 기록을 남기지 않는다 — 남기면 저장소 기록 폴더의 최상위 jsonl 이 되어 usage 가 메인 대화로 센다(사용량은 결과 JSON 에서 기록한다)
       args: ["-p", prompt, "--agent", agent, ...claudeModelArgs(config), "--output-format", "json", "--setting-sources", "project",
-        "--permission-prompts", "none", "--allowedTools", "Read,Grep,Glob"],
+        "--permission-prompts", "none", "--allowedTools", "Read,Grep,Glob", "--no-session-persistence"],
       model: modelLabel(config), sentPrompt: prompt,
     };
   }
@@ -234,6 +235,10 @@ function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sa
     const result = spawnSync(invocation.file, [...invocation.prefix, ...invocation.args], { cwd: root, env: invocation.env, encoding: "utf8",
       windowsHide: true, timeout: crossTimeoutMs(), maxBuffer: 16 * 1024 * 1024 });
     const usage: CrossUsage = { durationMs: Date.now() - started };
+    if (host === "codex") {
+      const tokens = codexTokensUsed(result.stderr ?? "");
+      if (tokens !== undefined) usage.codexTokens = tokens;
+    }
     const sandboxed = sandboxMarkers() || sandboxSuspect;
     const probe: CrossProbe = host === "codex" ? { host, sentPrompt: invocation.sentPrompt, sandboxed } : { host, sentPrompt: invocation.sentPrompt, sandboxed };
     const stderr = result.stderr ?? "", stdout = result.stdout ?? "";
@@ -271,6 +276,22 @@ function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sa
   } finally {
     if (invocation.scratch) rmSync(invocation.scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * Codex exec 사람용 출력 끝의 토큰 수 — `tokens used` 줄 다음 줄의 숫자(같은 줄의 `tokens used: N` 꼴도 읽는다). codex-cli 0.162.1 은
+ * stderr 에 `blended_total`(캐시 아닌 입력 + 출력 — 캐시 입력은 빠진다)을 천 단위 쉼표로 쓴다(`exec/src/event_processor_with_human_output.rs`
+ * `print_final_output`). 입력·출력으로 나뉘지 않는다. 없으면 undefined
+ */
+export function codexTokensUsed(output: string): number | undefined {
+  const all = output.replace(/\r\n?/g, "\n").split("\n").map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trim());
+  for (let index = all.length - 1; index >= 0; index -= 1) {
+    const match = /^(?:\[[^\]]*\]\s*)?tokens used\b:?\s*([\d,]*)$/i.exec(all[index]);
+    if (!match) continue;
+    const text = match[1] || (all.slice(index + 1).find(Boolean) ?? "");
+    return /^\d[\d,]*$/.test(text) ? Number(text.replace(/,/g, "")) : undefined;
+  }
+  return undefined;
 }
 
 function unfence(text: string): string {
@@ -386,7 +407,7 @@ const TABLE_RULES = [
 type ReviewStart =
   | { refusal: RetryRefused }
   | { round: number; at: string; n: number; startedAt: string; mode: "review" | "correct"; rawPath?: string; lastDetail?: string; wasStopped: boolean;
-      previous?: string; waivers: string[]; suspect?: SandboxSuspicion };
+      previous?: string; changed?: string[]; waivers: string[]; suspect?: SandboxSuspicion };
 
 export function crossReview(root: string, by: string | undefined): string {
   const host = parseHostArg(by);
@@ -464,7 +485,7 @@ export function crossReview(root: string, by: string | undefined): string {
     const waivers = (log.waivers ?? []).filter((waiver) => waiver.source === "cross" && waiver.round < last.round)
       .map((waiver) => `${waiver.id}(${waiver.path}) ${waiver.verdict} — ${oneLine(waiver.reason, 120)}`);
     return { log, value: { round: last.round, at: last.at, n: attempt.n, startedAt: at, mode, wasStopped, waivers, suspect: crossSandboxSuspect(host, caller, attempts),
-      ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}), ...(previous ? { previous } : {}) } };
+      ...(decision.action === "correct" ? { rawPath: decision.rawPath, lastDetail: lastInvalid?.detail } : {}), ...(previous ? { previous, changed: changedSincePrevious(log) } : {}) } };
   });
   // 끊긴 시도를 닫은 뒤의 거부(지점 한도·사전 판정)에도 닫았다는 알림을 앞에 붙인다 — 닫은 기록은 이미 저장됐다
   if ("refusal" in start) throw withNotes(notes, start.refusal);
@@ -483,6 +504,7 @@ export function crossReview(root: string, by: string | undefined): string {
     `code-agent 교차 리뷰 — 작업 ${id} ${start.round}회차. 다른 호스트의 독립 리뷰와 별개로 같은 코드를 독립적으로 반박 검토한다. 파일은 고치지 않는다.`,
     `먼저 ${context} 를 읽는다(계획 파일·요구 항목·검증 증거 요약·로그 경로). 이어서 ${docs.join(", ")} 와 그 안에서 가리키는 컨벤션·테스트 전략·품질 기준, 계획 파일과 관련 호출자를 읽는다.`,
     ...(start.previous ? ["직전 회차의 교차 지적이다 — 고쳐졌는지 다시 확인해 상태를 `해결` 또는 `열림` 으로 갱신하고 같은 id 를 유지한다:", start.previous] : []),
+    ...(start.changed ? [`재검토 범위 — 직전 회차 뒤 바뀐 계획 파일 ${start.changed.length}개${changedList(start.changed)}. 바뀌지 않은 계획 파일은 직전 회차 판정을 이어받는다 — 바뀐 파일과 그 호출자·테스트, 직전 지적의 수정 여부를 먼저 대조하고, 바뀐 것이 닿는 나머지만 다시 읽는다.`] : []),
     ...(start.waivers.length ? [`참고 — 사람이 이번 작업에서 다루지 않기로 한 교차 지적이다(판단은 독립적으로 한다. 같은 문제가 아직 있으면 같은 id·경로로 내고, 새 문제에는 새 id 를 쓴다): ${start.waivers.join(" · ")}`] : []),
     "결과는 아래 형식의 표 하나만 출력한다(설명문·코드 펜스 없이). id 는 X1, X2… (역할 지침의 F 번호 대신 X 를 쓴다). 계획 파일 칸은 저장소 기준 경로 그대로(백틱·줄번호 없이), 범위는 `계획 안`·`계획 밖`, 상태는 `열림`·`해결`, 지적 칸에 근거(path:line · R/AC · 증거)를 적는다. 취향·가정은 지적이 아니다.",
     plannedLine,

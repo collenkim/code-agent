@@ -37,6 +37,7 @@ import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
+import { noteHookOutput } from "./hookLog";
 import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
 
 /**
@@ -1043,11 +1044,21 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
   return undefined;
 }
 
+/** PreToolUse 거부 한 건을 측정 기록(hookLog)에 남긴다 — 저장소를 찾지 못하면 남기지 않는다 */
+export function noteDenial(dir: string | undefined, input: HookInput, reason: string): void {
+  try {
+    if (!dir) return;
+    noteHookOutput(findRepoRoot(dir), { host: input.host ?? "claude", event: "PreToolUse", kind: "deny", tool: input.tool_name, text: reason,
+      ...(input.session_id ? { session: input.session_id } : {}), ...(input.agent_id ? { agent: input.agent_id } : {}) });
+  } catch { /* 측정용 기록이다 */ }
+}
+
 /** stdin 으로 받아 stdout 으로 낸다. 판정 자체가 실패하면 exit 2 — 막는 쪽으로 닫는다 */
 export function runHook(stdin: string): number {
   try {
     // Claude PreToolUse — 거부 문구는 Claude 표기다(같은 판정을 Codex 진입은 Codex 표기로 부른다)
-    const reason = withNotation("claude", () => decide({ ...(JSON.parse(stdin) as HookInput), host: "claude" }, process.env.CLAUDE_PROJECT_DIR));
+    const input = { ...(JSON.parse(stdin) as HookInput), host: "claude" as const };
+    const reason = withNotation("claude", () => decide(input, process.env.CLAUDE_PROJECT_DIR));
     if (reason) {
       process.stdout.write(
         JSON.stringify({
@@ -1058,6 +1069,7 @@ export function runHook(stdin: string): number {
           },
         }),
       );
+      noteDenial(process.env.CLAUDE_PROJECT_DIR ?? input.cwd, input, reason);
     }
     return 0;
   } catch (error) {

@@ -14,8 +14,9 @@ import { CONSENT_DIR } from "./consentState";
 import { STATE_DIR } from "./layout";
 import { COUNTER_KEYS, COUNTER_LABEL, isFailureClass, retrySummary, type CounterKey, type FailureClass } from "./retryPolicy";
 
-export interface CrossTotals { attempts: number; durationMs: number; costUsd: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number }
-const emptyCross = (): CrossTotals => ({ attempts: 0, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
+/** 교차 실행 합계 — codexTokens 는 Codex 의 `tokens used`(캐시 아닌 입력 + 출력, 입력·출력으로 나뉘지 않는다) */
+export interface CrossTotals { attempts: number; durationMs: number; costUsd: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; codexTokens: number }
+const emptyCross = (): CrossTotals => ({ attempts: 0, durationMs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, codexTokens: 0 });
 export interface RetryReport {
   id: string;
   target: string;
@@ -60,6 +61,7 @@ function addCross(totals: CrossTotals, attempts: unknown[]): void {
     totals.outputTokens += num(usage.outputTokens);
     totals.cacheCreationInputTokens += num(usage.cacheCreationInputTokens);
     totals.cacheReadInputTokens += num(usage.cacheReadInputTokens);
+    totals.codexTokens += num(usage.codexTokens);
   }
 }
 
@@ -157,6 +159,44 @@ export function retryReports(repoRoot: string, work?: string): RetryReport[] {
   return reports;
 }
 
+/**
+ * 담당 실행의 id(Claude `subagents/agent-<id>.jsonl` 의 id, Codex 하위 에이전트 기록의 thread id) → 배정 이름. `usage` 가 서브에이전트
+ * 기록을 배정·리뷰 회차별로 묶는다. 계획 담당은 `planning.json` `agents[]`(시작 hook 이 남긴 id·dispatchId)와 `tasks[].attempts[]`
+ * 로 `<작업>/<대상> <task>#<시도>`, 리뷰어는 `review.json` 회차의 `reviewers[]` 로 `<작업>/<대상> 리뷰 <n>회차` 다.
+ */
+export function assignmentLabels(repoRoot: string, work?: string): Map<string, string> {
+  const labels = new Map<string, string>();
+  const base = join(repoRoot, STATE_DIR, "work");
+  const ids = work !== undefined ? [work] : existsSync(base) ? readdirSync(base).sort() : [];
+  for (const id of ids) {
+    const dir = join(base, id);
+    let targets: string[];
+    try { targets = targetsIn(dir); } catch { continue; }
+    for (const target of targets) {
+      const name = `${id}/${target}`;
+      const plan = record(readJson(join(dir, `${target}.planning.json`), [], ""));
+      const tasks = list(plan?.tasks).map(record);
+      for (const agent of list(plan?.agents).map(record)) {
+        if (typeof agent?.id !== "string") continue;
+        let label: string | undefined;
+        for (const task of tasks) {
+          const attempts = list(task?.attempts).map(record);
+          const at = attempts.findIndex((attempt) => (agent.dispatchId !== undefined && attempt?.dispatchId === agent.dispatchId) || attempt?.agentId === agent.id);
+          if (at >= 0) { label = `${name} ${String(record(task?.task)?.id ?? "?")}#${at + 1}`; break; }
+        }
+        labels.set(agent.id, label ?? `${name} ${typeof agent.type === "string" ? agent.type : "계획 담당"}`);
+      }
+      const review = record(readJson(join(dir, `${target}.review.json`), [], ""));
+      for (const round of list(review?.rounds).map(record)) {
+        for (const run of reviewerRuns(round ?? {}).map(record)) {
+          if (typeof run?.agentId === "string") labels.set(run.agentId, `${name} 리뷰 ${num(round?.round)}회차`);
+        }
+      }
+    }
+  }
+  return labels;
+}
+
 /** 출력 한 줄 — 값이 0 인 항목은 쓰지 않는다. 비용에는 `$` 를 쓰지 않는다(usage 표 파서가 `$숫자` 줄을 표 행으로 읽는다) */
 export function retryLine(report: RetryReport): string {
   const parts: string[] = [];
@@ -169,8 +209,12 @@ export function retryLine(report: RetryReport): string {
   const failures = Object.entries(report.failures).sort(([a], [b]) => a.localeCompare(b));
   if (failures.length) parts.push(`실패 원인 ${failures.map(([cls, count]) => `${cls} ${count}`).join(" · ")}`);
   if (report.cross.attempts) {
-    const seconds = Math.round(report.cross.durationMs / 1000);
-    parts.push(`교차 실행 ${report.cross.attempts}회 ${seconds}초${report.cross.costUsd > 0 ? ` 비용 ${report.cross.costUsd.toFixed(2)} USD` : ""}`);
+    const { attempts, durationMs, costUsd, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, codexTokens } = report.cross;
+    const count = (value: number) => value.toLocaleString("en-US");
+    const claude = inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens > 0
+      ? ` 토큰 입력 ${count(inputTokens)}·캐시 쓰기 ${count(cacheCreationInputTokens)}·캐시 읽기 ${count(cacheReadInputTokens)}·출력 ${count(outputTokens)}` : "";
+    const codex = codexTokens > 0 ? ` Codex 토큰 ${count(codexTokens)}(캐시 아닌 입력+출력)` : "";
+    parts.push(`교차 실행 ${attempts}회 ${Math.round(durationMs / 1000)}초${costUsd > 0 ? ` 비용 ${costUsd.toFixed(2)} USD` : ""}${claude}${codex}`);
   }
   if (report.unreadable.length) parts.push(`읽지 못한 기록 ${report.unreadable.join(", ")}`);
   const name = report.target ? `${report.id}/${report.target}` : report.id;

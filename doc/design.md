@@ -39,7 +39,7 @@ AI-DLC와의 비교는 Claude Code의 스킬·규칙·hook으로 개발 흐름�
 |---|---|
 | 메인 → 서브에이전트 | `planning advance`·`dispatch`·`repair`는 배정 전문·문서 기준(`ca-*/criteria.md`)·뼈대·단계 context(`code-agent context`)를 `.code-agent/work/<ID>/handoff/<dispatchId>.md`에 쓰고 요약과 `assignmentFile`만 출력한다. 구현·테스트·리뷰는 `code-agent context --file`이 전문을 `handoff/context.md`에 쓴다. 메인은 경로를 넘기고 재배정이면 파일에 없는 사유만 2~3줄 덧붙인다(하이브리드). 실측에서 메인이 프롬프트를 직접 쓰면 13회 38.5K자, 배정 파일 방식은 1.1K자였다. 다만 메인이 써 주는 안내가 빠지면 첫 시도 실패가 늘 수 있어, 그 안내의 결정론적 부분(접수 요구 원문 목록·형식·경로·인용 규칙)을 파일에 넣는다 |
 | 서브에이전트 → 메인 | 계획 담당은 출력 문서를 `doc/work/<ID>/.staging/<dispatchId>/`에 쓰고(Claude Write, Codex apply_patch) 결과 JSON에는 `{path, staged}`만 넣는다. 완료 hook이 그 파일을 읽어 같은 문서 검사 뒤 정식 문서로 옮기고 지운다. staging은 PreToolUse가 `agent_id`로 실행 중인 그 배정의 담당만 쓰게 하고, 계획 담당은 그 밖을 쓰지 못한다. 상세 조회(`planning result <ID>`)도 기록된 파일과 같은 본문은 되풀이하지 않는다 |
-| 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문 페이지·동작 JSON 표(`ca-answer/reference.md`). ca-answer는 그 대화에서 아직 읽지 않았거나 압축·비우기 뒤일 때만 질문·승인 직전에 읽는다(SessionStart 가 압축·비우기 뒤 한 줄로 알린다). 템플릿 크기는 시험(`templateBudget.test.ts`)이 예산으로 묶는다 |
+| 상시 지침 | CLAUDE 블록은 진입점과 불변 규칙만 둔다. 스킬은 필요할 때 읽는 보조 문서로 나눈다 — 이전 버전 작업 절차(`legacy.md`), 문서 기준(`criteria.md`), 계획 작업 계약(`ca-plan/contract.md`), 질문·대기 전 단계별 선택과 차단 복구(`ca-answer/reference.md`), 5개 이상 선택지·동작 JSON 표·대상 변경·수동 대체 경로(`ca-answer/appendix.md`). ca-answer는 그 대화에서 아직 읽지 않았거나 압축·비우기 뒤일 때만 질문·승인 직전에 읽는다(SessionStart 가 압축·비우기 뒤 한 줄로 알린다). 템플릿 크기는 시험(`templateBudget.test.ts`)이 예산으로 묶는다 |
 | 동의 출력 | `consent prepare --for <호스트>`는 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply` — 준비 출력 약 절반). 자유 문구가 없는 동작은 JSON 파일 없이 `--action`으로 준비하고, `finish`가 적용 뒤 `next`·`phase`를 돌려준다 |
 | 계획 진행 | `planning advance`가 action별 다음 행동 한 줄(`next`)을 싣고 — 행동 규칙의 원천은 CLI 한 곳이다 — analysis·impact·design 은 `--chain`으로 결과가 모두 준비되면 같은 호출에서 program 게이트까지 지난다(게이트용 `next` 호출과 그 status 전문이 메인에 들어가지 않는다). 다음 단계 배정·계획 승인은 잇지 않는다 |
 | 압축·비우기 | 상태는 파일에 있으므로 `/clear` 뒤 `/ca-next`로 손실 없이 잇는다. 자동 압축 요약이 단계·동의를 잃어도 SessionStart hook이 현재 위치를 다시 붙인다 |
@@ -348,7 +348,7 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 
 애매하거나 모호하면 지어내지 않고 묻는다. 질문은 작업 폴더의 `questions.md` 에 쌓이고, **답이 없는 질문이
 있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 과 `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가 확인한다.
-턴 끝에 보는 Stop hook 은 `implement`~`deliver` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다).
+턴 끝에 보는 Stop hook 은 `implement`~`deliver` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다). 같은 세션에서 같은 사유로 이미 막았으면 다음 턴들도 다시 막지 않는다 — 상기는 한 번이면 되고, 막을 때마다 모델이 한 턴을 더 돌며 같은 목록을 다시 읽는다. 목록이 바뀌면 사유가 달라져 다시 막는다.
 
 ```
 ## Q3 · 요구사항 분석
@@ -416,6 +416,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 관찰된 결과를 코드가 ⑨에 옮기고 게이트에서 대조한다. **범위(계획 안/밖)는
 코드가 계획 파일 목록과 대조해 정한다** — 동결 여부는 범위 분류와 별개다. 경로 단위 hook 으로
 구역 안쪽만 막으려면 Edit 의 부분 치환까지 봐야 해 비싸므로, ⑨·⑩ 은 **다시 렌더해 바이트로 대조한다**.
+2회차부터는 리뷰어가 직전 회차 뒤 바뀐 계획 파일(회차마다 남긴 파일별 해시로 코드가 정한다)과 직전 지적부터 보고, 바뀌지 않은 파일은 직전 판정을 이어받는다 — 수정 루프의 재리뷰가 같은 파일 전체를 회차마다 다시 정독하지 않게 한다. 범위는 읽는 순서를 줄일 뿐이고 게이트(마지막 회차의 트리·열린 지적 0)는 그대로라, 바뀐 것이 닿는 파일은 다시 읽고 새 지적을 낼 수 있다.
 
 **통합 검증이 다른 이유** — `check`·`test` 는 사람이 보고 있는 작업 트리에서 돈다. 거기 남아 있던
 산출물이 결과를 떠받칠 수 있어, `integrate` 는 굳혀 둔 기준 커밋 위에 **깨끗한 worktree** 를 만들고

@@ -743,7 +743,7 @@ test("Codex 담당은 배정 파일을 code-agent read로 읽고, 메인은 stag
   const [summary] = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" })).assignments;
   const shell = (command: string) => codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
   assert.deepEqual(shell(`code-agent read ${summary.assignmentFile}`), {});
-  assert.ok(JSON.parse(readProjectFile(root, summary.assignmentFile)).lines.length > 10);
+  assert.ok(readProjectFile(root, summary.assignmentFile).split("\n").filter((line) => /^\d+\t/.test(line)).length > 10);
   const item = handed(summary), staged = item.staging[`${DIR}/01-requirements.md`];
   const patch = codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command: `*** Begin Patch\n*** Add File: ${staged}\n+x\n*** End Patch` } }) as { hookSpecificOutput?: { permissionDecisionReason: string } };
   assert.match(patch.hookSpecificOutput!.permissionDecisionReason, /메인은 계획 문서를 대신 쓰지 않습니다/);
@@ -1691,7 +1691,8 @@ test("Codex 사본 — staging 문장은 그대로(쓰기 도구만 apply_patch)
   for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
     const text = assets.get(`.agents/skills/${name}/SKILL.md`)!;
     assert.ok(text.includes("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다."), name);
-    for (const phrase of ["planning cancel <ID>", "rewind.auto", "rewind.command", "same-input-repeat"]) assert.ok(text.includes(phrase), `${name}: ${phrase}`);
+    // action 별 행동은 advance 의 next 줄(planningNextLine)이 원천이다 — 스킬 4항은 그 줄을 따르라는 요지만 둔다
+    for (const phrase of ["`next` 줄이 싣는 행동의 요지는 그 줄이 원천이다", "`cancel` 목록", "rewind.auto", "feedback"]) assert.ok(text.includes(phrase), `${name}: ${phrase}`);
   }
   const analyst = assets.get(".codex/agents/ca-analyst.toml")!;
   assert.ok(analyst.includes("출력 문서는 배정의 `staging` 경로에 apply_patch로 전체 내용을 쓰고 artifacts에는 `{path, staged}`만 넣는다"));

@@ -8,6 +8,7 @@ import { hookFailureExit, hookFailureInput, subagentExit } from "./retryPolicy";
 import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
 import { commonAgentName, withNotation } from "./hostText";
 import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
+import { noteHookOutput } from "./hookLog";
 
 interface CodexHookInput extends ReviewHookInput {
   tool_name?: string;
@@ -199,12 +200,30 @@ function recordedFailure(error: unknown): boolean {
   try { return error instanceof (require("./reviewHook") as typeof import("./reviewHook")).RecordedFailure; } catch { return false; }
 }
 
+/** 모델에게 간 글(거부·차단·세션 시작 주입)을 측정 기록(hookLog)에 남긴다 — Claude 진입과 같은 기록이다 */
+function noteCodexOutput(input: CodexHookInput, output: object): void {
+  try {
+    if (typeof input.cwd !== "string" || !isAbsolute(input.cwd)) return;
+    const out = output as { decision?: string; reason?: string; hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string; additionalContext?: string } };
+    const base = { host: "codex" as const, ...(input.session_id ? { session: input.session_id } : {}), ...(input.agent_id ? { agent: input.agent_id } : {}) };
+    if (out.hookSpecificOutput?.permissionDecision === "deny") {
+      noteHookOutput(findRepoRoot(input.cwd), { ...base, event: "PreToolUse", kind: "deny", ...(input.tool_name ? { tool: input.tool_name } : {}), text: out.hookSpecificOutput.permissionDecisionReason ?? "" });
+    } else if (out.decision === "block") {
+      noteHookOutput(findRepoRoot(input.cwd), { ...base, event: input.hook_event_name ?? "Stop", kind: "block", text: out.reason ?? "" });
+    } else if (out.hookSpecificOutput?.additionalContext) {
+      noteHookOutput(findRepoRoot(input.cwd), { ...base, event: "SessionStart", kind: "context", ...(input.source ? { tool: input.source } : {}), text: out.hookSpecificOutput.additionalContext });
+    }
+  } catch { /* 측정용 기록이다 */ }
+}
+
 function runCodexEvent(stdin: string): number {
   let event: string | undefined;
   try {
     const input = JSON.parse(stdin) as CodexHookInput;
     event = input.hook_event_name;
-    process.stdout.write(JSON.stringify(codexHook(input)));
+    const output = codexHook(input);
+    process.stdout.write(JSON.stringify(output));
+    noteCodexOutput(input, output);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

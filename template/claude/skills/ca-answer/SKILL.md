@@ -30,7 +30,7 @@ CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 **차단 복구**
 - 각 질문은 `question`, 12자 이하 `header`, `options`의 `label`·`description`, `multiSelect`로 구성한다. `multiSelect`는 기본 `false`, 서로 함께 선택할 수 있는 항목만 `true`다. `question`은 10줄 이내로 쓰고 긴 근거는 호출 전에 대화에 쓴다.
 - 한 화면의 `options`는 **2~4개**다. 내장 Other/직접 입력으로 다른 답이나 경로·버전을 입력할 수 있다고 처음 한 번만 안내한다. 내장 입력과 중복되는 `X. 기타` 옵션을 넣지 않는다. 추천 표시나 기본 강조는 사용자 응답이 아니다.
 - 경로·버전·회사 규칙처럼 자유 입력이 필요한 질문도 도구를 사용한다. 관측한 후보가 없으면 `직접 입력으로 지정` / `아직 정하지 않음`을 제시하고 내장 입력을 안내한다. `직접 입력으로 지정`만 선택하고 실제 값이 없으면 미응답이며 필요한 값을 같은 도구로 받는다. 경로를 지어내지 않는다.
-- 선택지가 5개 이상이면 `.claude/skills/ca-answer/reference.md`의 **5개 이상 선택지** 절차를 읽고 따른다. `options`에 5개 이상 넣지 않는다.
+- 선택지가 5개 이상이면 `appendix.md`의 **5개 이상 선택지** 절차를 읽고 따른다. `options`에 5개 이상 넣지 않는다.
 
 ## 3. 답 기록과 진행
 
@@ -48,7 +48,7 @@ CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 **차단 복구**
 
 자유 문구가 없는 동작은 파일 없이 준비한다 — Bash: `code-agent consent prepare --action <동작> [--id <작업 ID>] [--kind <문서 종류>] [--spec <지시서 경로>] --for claude`. 흔한 동작은 `setup`(POLICY 전체 확정과 필요한 준비 커밋을 **사용자 질문 하나**로 묶는다. 최초 커밋과 기존 저장소의 도입 파일 반영을 모두 지원한다) · `request`(`--id <작업 ID>`) · `plan` · `deliver`다. `docs`·`baseline`·`knowledge-prune`·`abort`·`update`·`repro-log`도 같다.
 
-반려(`"decision":"reject","comment":"<사용자 사유>"`)·`model`·`plugin-add`·`plugin-remove`·`judgment`(사람 판단: 한도 추가·지적 기각·교차 중지)처럼 자유 문구나 여러 필드가 필요하면 JSON 파일을 **작업 중에는 허용된 `doc/work/<ID>/` 아래**, **문서 준비 세션 중에는 허용된 `doc/` 아래**에 먼저 작성하고(예: `doc/work/<ID>/consent-action.json`, `doc/consent-action.json`) Bash: `code-agent consent prepare <json-path> --for claude`로 준비한다. 임의의 임시 디렉토리나 `.code-agent/`에 직접 쓰지 않는다. 쓰기 가능한 문서 세션이 없으면 먼저 허용된 문서 준비 절차로 진입한다. 키와 문자열은 큰따옴표를 쓰고, 필요한 선택 필드만 넣는다. 필드 형식은 `.claude/skills/ca-answer/reference.md`를 읽는다. 동작을 준비하는 것은 사용자의 승인 응답을 만드는 일이 아니다.
+반려(`"decision":"reject","comment":"<사용자 사유>"`)·`model`·`plugin-add`·`plugin-remove`·`judgment`(사람 판단: 한도 추가·지적 기각·교차 중지)처럼 자유 문구나 여러 필드가 필요하면 JSON 파일을 **작업 중에는 허용된 `doc/work/<ID>/` 아래**, **문서 준비 세션 중에는 허용된 `doc/` 아래**에 먼저 작성하고(예: `doc/work/<ID>/consent-action.json`, `doc/consent-action.json`) Bash: `code-agent consent prepare <json-path> --for claude`로 준비한다. 임의의 임시 디렉토리나 `.code-agent/`에 직접 쓰지 않는다. 쓰기 가능한 문서 세션이 없으면 먼저 허용된 문서 준비 절차로 진입한다. 키와 문자열은 큰따옴표를 쓰고, 필요한 선택 필드만 넣는다. 필드 형식·예시는 `appendix.md`를 읽는다. 동작을 준비하는 것은 사용자의 승인 응답을 만드는 일이 아니다.
 
 비밀값은 질문·요약·작업 JSON·명령 인자·문서·대화에 넣지 않는다. 환경변수 값을 조회하거나 출력해 질문을 채우지 않는다. 필요한 환경변수가 없으면 사용자가 대화 밖에서 설정해야 하며, 키 값을 질문으로 받지 않는다. 플러그인의 실행 명령에도 키 값을 삽입하지 않는다. 비밀값이 준비 결과에 포함됐다면 표시하거나 질문하지 말고 해당 동의 절차를 멈춘다.
 
@@ -59,12 +59,12 @@ CLI·hook 차단은 `.claude/skills/ca-answer/reference.md`의 **차단 복구**
 3. `status`가 `pending`이고 `toolInput.questions`가 있으면 메인이 `AskUserQuestion`을 실제 호출한다. 도구 입력은 **반환된 `toolInput` 객체 전체를 정확히 그대로** 전달한다. `{questions}`만 추려 새 객체를 만들지 않는다. CLI가 생성한 `metadata.source`는 내부 상관관계 식별용이므로 그대로 유지하고 사용자에게 표시하지 않는다. 메인이 메타데이터를 직접 만들거나 고치지 않는다. 질문·순서·선택지·문구를 수정하거나 번역·재정렬·분할하지 않고, 질문에 UUID 접두사를 붙이지 않는다. `answers`·`annotations`·기본 응답 등 어떤 필드도 수동으로 추가하거나 미리 채우지 않는다. 일반 업무 질문을 같은 배열에 섞지 않는다. `toolInput`이 없거나 불완전하면 임의로 재구성하지 말고 미승인 상태와 사유를 알린다.
 4. `PreToolUse`·`PostToolUse` hook이 같은 세션의 실제 질문 호출과 사용자 응답을 관찰·기록한다. 메인은 hook을 직접 호출하거나 응답·승인 기록을 생성·수정하지 않는다. 대화의 ‘진행해’, 과거 승인, 추천 선택, Claude 권한 창은 이 기록을 대신하지 못한다.
 5. 매 질문 응답 뒤 Bash: `code-agent consent finish <uuid>` — 상태 확인과 승인된 경우의 적용을 한 번에 한다. `pending`이면 summary를 다시 보여 주지 않고 **이번 응답의 `toolInput`**으로 3~5를 반복한다. 이전 질문 입력을 재사용하지 않는다. `deliver`와 `knowledge-prune`의 **지식 항목 선택을 먼저 모두 받은 뒤 최종 승인**을 받는다. 항목 선택만으로 반영하지 않는다.
-6. `finish`는 방금 읽은 상태가 **`approved`일 때만** 적용하고 `{status:"applied", result, phase, next}`를 돌려준다. 나눠서 `code-agent consent status <uuid>`로 확인하고 `approved`일 때만 `code-agent consent apply <uuid>`를 실행해도 같다. 질문 응답을 보고 메인이 승인 여부를 추정하지 않는다. 준비부터 적용까지 대상 파일·Git 상태·설정을 바꾸지 않고, 일반 업무 질문 호출·답 기록이나 임시 파일 정리도 끼워 넣지 않는다(업무 질문도 hook 이 작업 기록에 남겨 확인 대상이 바뀐다). 바뀌었으면 이전 UUID를 적용하지 않고 변경을 마친 뒤 새로 `prepare`하여 전부 다시 확인받는다. 상태·결과에 `failure`가 있으면 같은 UUID로 다시 묻거나 적용하지 않고 `failure.guide`를 따른다 — 갈래(`failure.kind`)마다 다르다: `target`은 바뀐 것을 알리고 새로 준비, `response-change`는 고칠 내용을 업무 질문으로 받아 고친 뒤 새로 준비, `response-defer`·`response-none`은 멈추고 다시 묻지 않는다, `apply`는 상태를 확인한 뒤 새로 준비한다. 준비 결과의 `warning`은 사용자에게 그대로 알린다.
+6. `finish`는 방금 읽은 상태가 **`approved`일 때만** 적용하고 `{status:"applied", result, phase, next}`를 돌려준다. 나눠서 `code-agent consent status <uuid>`로 확인하고 `approved`일 때만 `code-agent consent apply <uuid>`를 실행해도 같다. 질문 응답을 보고 메인이 승인 여부를 추정하지 않는다. 준비부터 적용까지 대상 파일·Git 상태·설정을 바꾸지 않고, 일반 업무 질문 호출·답 기록이나 임시 파일 정리도 끼워 넣지 않는다(업무 질문도 hook 이 작업 기록에 남겨 확인 대상이 바뀐다). 바뀌었으면 이전 UUID를 적용하지 않고 변경을 마친 뒤 새로 `prepare`하여 전부 다시 확인받는다. 상태·결과에 `failure`가 있으면 같은 UUID로 다시 묻거나 적용하지 않고 `failure.guide`를 따른다 — 갈래(`failure.kind`)마다 다르다: `target`은 바뀐 것을 알리고 새로 준비, `response-change`는 고칠 내용을 업무 질문으로 받아 고친 뒤 새로 준비, `response-defer`·`response-none`은 멈추고 다시 묻지 않는다, `apply`는 상태를 확인한 뒤 새로 준비한다. 준비 결과의 `warning`은 사용자에게 그대로 알린다. `변경 대상:`이 표시된 대상 변경은 `appendix.md`의 **대상 변경 안내**를 읽는다.
 7. 적용 성공 뒤에는 결과의 `next`(지금 할 일)와 `phase`로 현재 위치를 잡는다 — `code-agent status`를 다시 부르지 않는다. 그리고 **호출한 작업 흐름을 같은 세션에서 자동으로 이어간다.** 준비 후 접수, 요구 확정 후 분석, 계획 승인 후 `code-agent next`와 구현·검증, 반영 후 결과 보고로 잇는다. 반려 동작 적용 후에는 해당 스킬의 반려 처리로 돌아간다. 사용자가 단계 하나만 요청했다면 그 범위를 지키되 승인 적용 뒤 남은 해당 단계 작업은 마친다. `/ca-next` 재입력을 완료 조건으로 두지 않는다. **`update`만은 적용 결과를 보고한 뒤 멈추고, 갱신된 hook을 로드하도록 Claude Code 재시작을 안내한다.** 재시작 전에는 다음 작업으로 이어가지 않는다. 재시작 후 중단된 작업은 `/ca-next`로 재개한다.
 
 `changes-requested` 등 수정 요청, 취소, `deferred`, 빈 응답·미응답, 대상 변경, 다른 세션, hook 누락·거부에서는 **`apply`하지 않는다**. 수정 요청은 필요한 내용을 일반 업무 질문으로 확인해 문서·제안을 고친 다음 새로 `prepare`한다. 취소·보류는 해당 흐름을 멈추고 자동으로 재질문하지 않는다. `failed`나 알 수 없는 상태도 승인으로 간주하지 않는다. `applied`면 재적용하지 않고 결과와 현재 위치를 확인한다. 중단된 흐름은 `/ca-next`로 재개할 수 있으며, 다른 세션에서는 새 동의를 준비한다.
 
-같은 세션의 도구·hook을 쓸 수 없으면 미승인 상태와 사유를 알린다. 사용자가 직접 실행하는 TTY 대체 경로는 `.claude/skills/ca-answer/reference.md`의 **수동 대체 경로**를 안내할 수 있다.
+같은 세션의 도구·hook을 쓸 수 없으면 미승인 상태와 사유를 알린다. 사용자가 직접 실행하는 TTY 대체 경로는 `appendix.md`의 **수동 대체 경로**를 안내할 수 있다.
 
 ## 도구를 쓸 수 없는 경우
 

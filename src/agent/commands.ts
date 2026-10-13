@@ -374,7 +374,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
-  return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${status(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
+  return `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}\n\n${movedStatus(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
 }
 
 // ---- status ----
@@ -662,6 +662,29 @@ export function status(repoRoot: string): string {
 }
 
 /**
+ * 커서를 옮긴 명령(start·next·back)의 출력 — status 전체(프로젝트 문서·작업 메타·Task 표)를 다시 찍지 않고 옮긴 자리와 다음 할 일만 낸다.
+ * `스테이지:`·`단계:`·`다음:` 줄은 status 와 같은 꼴이다(스킬의 자리 확인이 이 줄을 읽는다). implement 는 지금 Task 한 줄만 낸다 —
+ * Task 마다 next 를 부르므로 표 전체를 싣으면 Task 수의 제곱으로 는다. 전체는 code-agent status.
+ */
+function movedStatus(repoRoot: string): string {
+  const work = requireWork(repoRoot);
+  const { active, order } = work;
+  const flow = PHASES.map((phase) => (phase === active.phase ? `[${phase}]` : phase)).join(" → ");
+  const lines = [`작업: ${order.id} (${order.kind}, 대상 ${active.target}) — 전체 상태는 code-agent status`, `스테이지: ${PHASE_LABEL[active.phase]} — ${flow}`];
+  if (active.phase === "implement") {
+    lines.push(`단계: ${plannedStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key)).join(" → ")}`);
+    const task = work.plan ? planTasks(work.plan).find((item) => active.task ? item.id === active.task : item.stage === active.stage) : undefined;
+    if (task) lines.push(`Task: ${task.id} ${task.stage} · ${task.requirements.join(", ")}`);
+  }
+  const outside = outsideChanges(work);
+  if (outside.length > 0) {
+    lines.push(`계획 밖 변경: ${outside.slice(0, 10).map((change) => `[${change.status}] ${change.path}`).join(", ")}${outside.length > 10 ? ` 외 ${outside.length - 10}개` : ""}`);
+  }
+  lines.push(`다음: ${nextHint(work)}`);
+  return lines.join("\n");
+}
+
+/**
  * 처리 주체가 없는 상태(FLOW-13)의 `다음:` — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
  * 준비 동의(preparationHint 가 고른다) 순으로 본다. 문서 세션 중에는 request begin 이 거부되므로 접수 안내를 내지 않는다
  */
@@ -713,7 +736,7 @@ export function next(repoRoot: string): string {
   }
   const advance = (phase: Phase, stage?: string, task?: string): string => {
     saveActive(repoRoot, { ...active, phase, stage, task }, "next");
-    return status(repoRoot);
+    return movedStatus(repoRoot);
   };
 
   switch (active.phase) {
@@ -1009,7 +1032,7 @@ export function back(repoRoot: string, to: string): string {
     backNotes(target, active.phase)
       .map((note) => `  - ${note}`)
       .join("\n") +
-    `\n\n${status(repoRoot)}`
+    `\n\n${movedStatus(repoRoot)}`
   );
 }
 

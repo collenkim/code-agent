@@ -73,7 +73,7 @@ Jira는 **사람이 생성·조회**한다. 현재 사전 판별의 연결은 Ji
 
 변경·검증 기록은 [문서 이력](reviews/README.md)에서 확인한다.
 
-전용 파일 읽기 도구가 없는 호스트는 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 저장소 안의 1 MB 이하 텍스트를 줄 번호와 함께 반환하며, 기본 200줄·최대 400줄이다. 배정받은 입력 범위는 그대로 지켜야 한다. 명령은 파일을 읽을 뿐 작업 완료나 실행 관찰을 대신하지 않는다.
+전용 파일 읽기 도구가 없는 호스트는 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 저장소 안의 1 MB 이하 텍스트를 머리 한 줄(`<경로> · <시작>-<끝> / 전체 N줄`)과 `줄번호<탭>본문`으로 반환하고, 남은 줄이 있으면 `(이어서: code-agent read <경로> <다음 줄>)`을 붙인다. 기본 200줄·최대 400줄이다. 배정받은 입력 범위는 그대로 지켜야 한다. 명령은 파일을 읽을 뿐 작업 완료나 실행 관찰을 대신하지 않는다.
 
 ## 목차
 
@@ -698,8 +698,15 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
 code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning advance --chain 3 · next 2 · verify 1
 실행 절차 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
 재시도·재배정 (작업 기록, 읽기 전용)
-  ORD-1/order: 배정 14회(재배정 3) · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD
+  ORD-1/order: 배정 14회(재배정 3) · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD 토큰 입력 12·캐시 쓰기 41,200·캐시 읽기 188,400·출력 3,050
+
+hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용)
+  claude PreToolUse 거부(Bash): 6회 · 5,120자 · 같은 글 반복 2
+  claude SubagentStop 되돌림(ca-analyst): 1회 · 640자
+  claude Stop 차단: 1회 · 410자
 ```
+
+서브에이전트 기록이 작업 기록의 담당 id(계획 담당은 `planning.json` 의 담당 기록, 리뷰어는 `review.json` 회차의 실행 기록)와 이어지면 **배정별** 표(`ORD-1/order analysis#2` — 작업/대상, 계획 작업, 몇 번째 배정 · `ORD-1/order 리뷰 2회차`)와 `호출별 (배정)` 표가 붙는다 — 같은 역할이라도 어느 배정·회차가 비쌌는지 본다.
 
 | 무엇 | 어떻게 센다 |
 |---|---|
@@ -708,11 +715,12 @@ code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning a
 | 도구 결과(자) | `user` 줄의 `tool_result` 블록 글자(같은 `tool_use_id` 는 한 번). 큰 결과가 파일로 빠지면 대화에 들어간 미리보기만 센다 |
 | 명령별 호출 | 셸 도구의 `code-agent <명령>` — `planning`·`consent`·`docs`·`request`·`review`·`plan`·`plugin`·`setup`·`manifest`·`knowledge`·`model` 은 셋째 낱말까지, `--chain`·`--json`·`--retry` 는 키에 붙인다 |
 | 실행 절차 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
-| 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용의 합. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
+| hook 출력 | `.code-agent/log/hooks.jsonl` — hook 이 모델에게 낸 PreToolUse 거부·Stop 차단·질문 도구 막음·담당 되돌림·세션 시작 주입의 호스트·이벤트·도구·글자 수·글 해시(글은 남기지 않는다). `같은 글 반복` 은 같은 세션에서 같은 글이 앞서 나온 횟수다 |
+| 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용·토큰의 합(Claude 는 입력·캐시 쓰기·캐시 읽기·출력, Codex 는 `tokens used` 합계 하나 — 캐시 아닌 입력 + 출력). Claude 교차 실행은 대화 기록을 남기지 않으므로 그 사용량은 이 줄에만 나온다. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
 
-Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 실행 절차 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다.
+Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 실행 절차 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다. 하위 에이전트 기록의 thread id 가 작업 기록의 담당 id 와 같으면 배정별 표에도 넣는다(Codex 에서 두 id 가 같다는 것은 아직 실제 기록으로 확인하지 않았다 — 이어지지 않으면 배정별 표가 비어 있다).
 
-`--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, models, tools, commands, skillReads, …}], retry[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
+`--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, assignments, models, tools, commands, skillReads, …}], retry[], hooks[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
 
 `--work <ID>` 는 그 작업의 구간만, `--since <날짜>` 는 그 시각 이후만 센다. 두 깃발 다 값이 없으면 멈춘다 —
 `--since` 만 치면 전 기간을 세면서 그럴듯한데 틀린 숫자가 나온다.

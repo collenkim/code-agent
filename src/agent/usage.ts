@@ -8,7 +8,8 @@ import { PRICES_AS_OF, priceKey, priceOf } from "./prices";
 import { Stop } from "./stop";
 import { selectedHosts } from "./hosts";
 import { readCodexLog, type CodexTokens } from "./codexUsage";
-import { retryLine, retryReports, type RetryReport } from "./retryReport";
+import { assignmentLabels, retryLine, retryReports, type RetryReport } from "./retryReport";
+import { readHookOutputs, type HookOutputKind } from "./hookLog";
 
 /**
  * `code-agent usage` — 이 저장소에 쓴 토큰을 **스테이지별·에이전트별·모델별**로 센다.
@@ -24,6 +25,8 @@ import { retryLine, retryReports, type RetryReport } from "./retryReport";
  * 토큰 표 뒤에 호출 통계를 더한다 — 요청 수, 도구 호출(`tool_use` 블록, id 로 한 번), 도구 결과 글자(대화에 들어간 `tool_result` 글자 —
  * 큰 결과가 파일로 빠지면 미리보기만 센다), 도구 이름별·`code-agent` 하위 명령별 호출, 스킬 파일 읽기, 작업 기록의 재시도·재배정
  * (`retryReport.ts` — 읽기만 한다). Codex 설치면 Codex 세션 기록을 같은 구간으로 센다(`codexUsage.ts` — codex-cli 0.161.0 기록 꼴, 하위 에이전트 행 따로, 비용 없음).
+ * 서브에이전트 기록은 작업 기록의 담당 id 로 배정·리뷰 회차별 행(`배정별`)으로도 묶고(`assignmentLabels`), hook 이 모델에게 낸 글
+ * (거부·차단·되돌림·세션 시작 주입 — `hookLog.ts`)을 이벤트별 횟수·글자 수로 센다.
  * `usageReport` 가 같은 값을 객체로 돌려준다(`--json`).
  */
 
@@ -52,6 +55,8 @@ interface Message {
   agent: string;
   model: string;
   tokens: Tokens;
+  /** 작업 기록에 이어진 서브에이전트 기록이면 그 배정 이름 */
+  assignment?: string;
 }
 
 export interface UsageOptions {
@@ -79,6 +84,8 @@ export interface UsageSection {
   range?: { from: string; to: string };
   stages: UsageRow[];
   agents: UsageRow[];
+  /** 작업 기록(계획 담당·리뷰어)에 이어진 서브에이전트 기록의 배정·리뷰 회차별 행 */
+  assignments: UsageRow[];
   /** Claude 만 — 단가표 키별 */
   models: UsageRow[];
   /** 도구 이름별 호출 수 */
@@ -95,7 +102,9 @@ export interface UsageSection {
   /** 기록 없음·셀 것 없음 안내 — 있으면 표가 없다 */
   note?: string[];
 }
-export interface UsageReport { head: string; sections: UsageSection[]; retry: RetryReport[]; pricesAsOf: string }
+/** hook 이 모델에게 낸 글 — 호스트·이벤트·종류·도구별. repeats 는 같은 세션에서 같은 글이 앞서 나온 횟수 */
+export interface HookSummary { host: string; event: string; kind: HookOutputKind; tool?: string; count: number; chars: number; repeats: number }
+export interface UsageReport { head: string; sections: UsageSection[]; retry: RetryReport[]; hooks: HookSummary[]; pricesAsOf: string }
 
 /**
  * Claude Code 가 저장소 경로를 폴더 이름으로 바꾸는 방식 — **영숫자가 아닌 글자 하나마다 `-` 하나**.
@@ -120,15 +129,17 @@ export function transcriptDir(repoRoot: string): string {
 interface Transcript {
   path: string;
   agent: string;
+  assignment?: string;
 }
 
 /**
  * 읽을 파일. 메인 세션은 폴더 바로 아래 `<세션>.jsonl` 이고, 서브에이전트는 **프로젝트 루트가 아니라**
  * `<세션>/subagents/agent-*.jsonl` 이다 — 짝 `.meta.json` 에 `agentType` 이 들어 있다. 그 아래 하위 폴더(워크플로가 띄운
  * 서브에이전트 `subagents/workflows/<실행>/agent-*.jsonl`)도 읽는다 — 하위 폴더에서는 `agent-*.jsonl` 만(같은 폴더의
- * `journal.jsonl` 같은 실행 기록은 대화 기록이 아니다).
+ * `journal.jsonl` 같은 실행 기록은 대화 기록이 아니다). 서브에이전트 파일 이름의 id(`agent-<id>.jsonl` — 계획 hook 이 같은 경로를 기대한다)가
+ * 작업 기록의 담당 id 면 배정 이름을 붙인다.
  */
-function transcripts(dir: string): Transcript[] {
+function transcripts(dir: string, labels: ReadonlyMap<string, string> = new Map()): Transcript[] {
   const found: Transcript[] = [];
   const subagentFiles = (folder: string, depth: number): void => {
     let entries;
@@ -137,7 +148,8 @@ function transcripts(dir: string): Transcript[] {
       const path = join(folder, entry.name);
       if (entry.isDirectory()) { if (depth < 4) subagentFiles(path, depth + 1); continue; }
       if (!entry.isFile() || !entry.name.endsWith(".jsonl") || (depth > 0 && !entry.name.startsWith("agent-"))) continue;
-      found.push({ path, agent: agentTypeOf(path.replace(/\.jsonl$/, ".meta.json")) });
+      const assignment = labels.get(/^agent-(.+)\.jsonl$/.exec(entry.name)?.[1] ?? "");
+      found.push({ path, agent: agentTypeOf(path.replace(/\.jsonl$/, ".meta.json")), ...(assignment ? { assignment } : {}) });
     }
   };
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -178,9 +190,9 @@ interface RawLine {
   message?: { id?: string; model?: string; usage?: RawUsage; content?: unknown };
 }
 /** 도구 호출 하나 — 버킷은 그 줄의 시각과 기록 파일의 에이전트 */
-interface ToolCall { at: string; agent: string; name: string; input: Record<string, unknown> }
+interface ToolCall { at: string; agent: string; name: string; input: Record<string, unknown>; assignment?: string }
 /** 도구 결과 하나 — 대화에 들어간 글자 수 */
-interface ToolResult { at: string; agent: string; chars: number }
+interface ToolResult { at: string; agent: string; chars: number; assignment?: string }
 interface Collected { messages: Message[]; calls: ToolCall[]; results: ToolResult[] }
 
 function blocks(content: unknown): RawBlock[] {
@@ -233,6 +245,7 @@ function collect(files: Transcript[]): Collected {
     } catch {
       continue; // 지워졌거나 잠긴 파일
     }
+    const assigned = file.assignment ? { assignment: file.assignment } : {};
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let row: RawLine;
@@ -245,9 +258,9 @@ function collect(files: Transcript[]): Collected {
         // 도구 호출은 assistant 줄의 tool_use 블록(id 로 한 번), 결과는 user 줄의 tool_result 블록(tool_use_id 로 한 번)
         for (const block of blocks(row.message?.content)) {
           if (row.type === "assistant" && block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !calls.has(block.id)) {
-            calls.set(block.id, { at: row.timestamp, agent: file.agent, name: block.name, input: block.input && typeof block.input === "object" ? block.input : {} });
+            calls.set(block.id, { at: row.timestamp, agent: file.agent, name: block.name, input: block.input && typeof block.input === "object" ? block.input : {}, ...assigned });
           } else if (row.type === "user" && block.type === "tool_result" && typeof block.tool_use_id === "string" && !results.has(block.tool_use_id)) {
-            results.set(block.tool_use_id, { at: row.timestamp, agent: file.agent, chars: resultChars(block.content) });
+            results.set(block.tool_use_id, { at: row.timestamp, agent: file.agent, chars: resultChars(block.content), ...assigned });
           }
         }
       }
@@ -260,6 +273,7 @@ function collect(files: Transcript[]): Collected {
         agent: file.agent,
         model: row.message?.model ?? UNKNOWN_MODEL,
         tokens: tokensOf(usage),
+        ...assigned,
       });
     }
   }
@@ -461,17 +475,17 @@ function withCalls(rows: Row[], stats: Map<string, CallStats>): UsageRow[] {
 
 // ---- 집계 ----
 
-interface Filter { since?: number; work?: string; stages: StageTransition[] }
+interface Filter { since?: number; work?: string; stages: StageTransition[]; labels: ReadonlyMap<string, string> }
 const kept = (filter: Filter) => (at: string): boolean =>
   (filter.since === undefined || Date.parse(at) >= filter.since) && (filter.work === undefined || bucketOf(filter.stages, at).id === filter.work);
 
 function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
   const dir = options.transcripts ?? transcriptDir(repoRoot);
-  const empty = { source: "claude" as const, dir, sessions: 0, subagents: 0, stages: [], agents: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
+  const empty = { source: "claude" as const, dir, sessions: 0, subagents: 0, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!existsSync(dir)) {
     return { ...empty, note: [`기록을 찾지 못했습니다: ${dir}`, "  이 저장소를 이 경로에서 Claude Code 로 연 적이 없거나, 다른 PC 의 기록입니다."] };
   }
-  const files = transcripts(dir);
+  const files = transcripts(dir, filter.labels);
   const subagents = files.filter((file) => file.agent !== MAIN_AGENT).length;
   const all = collect(files);
   const keep = kept(filter);
@@ -489,6 +503,8 @@ function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter):
   const used = (message: Message) => Object.values(message.tokens).some((count) => count > 0);
   const stageRows = group(messages, (message) => stageOf(message.at));
   const agentRows = group(messages, (message) => message.agent);
+  const assigned = messages.filter((message) => message.assignment);
+  const assignmentRows = group(assigned, (message) => message.assignment!);
   return {
     ...empty,
     sessions: files.length - subagents,
@@ -498,6 +514,8 @@ function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter):
       results.map((r) => ({ label: stageOf(r.at), chars: r.chars })))),
     agents: withCalls(agentRows, callStats(agentRows.map((row) => row.label), messages.map((m) => m.agent), calls.map((c) => c.agent),
       results.map((r) => ({ label: r.agent, chars: r.chars })))),
+    assignments: withCalls(assignmentRows, callStats(assignmentRows.map((row) => row.label), assigned.map((m) => m.assignment!),
+      calls.flatMap((c) => c.assignment ? [c.assignment] : []), results.flatMap((r) => r.assignment ? [{ label: r.assignment, chars: r.chars }] : []))),
     models: modelRows(messages),
     ...countCalls(calls),
     unpriced: [...new Set(messages.filter((message) => !priceOf(message.model) && used(message)).map((message) => message.model))].sort(),
@@ -513,7 +531,7 @@ function modelRows(messages: Message[]): UsageRow[] {
 const zeroCodex = (): CodexTokens => ({ input: 0, cachedInput: 0, cacheWrite: 0, output: 0, reasoningOutput: 0 });
 function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
   const log = readCodexLog(repoRoot, options.codexSessions);
-  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: log.subagents, stages: [], agents: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
+  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: log.subagents, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!log.found) return { ...empty, note: [`Codex 기록을 찾지 못했습니다: ${log.dir}`] };
   const keep = kept(filter);
   const requests = log.requests.filter((request) => keep(request.at));
@@ -521,15 +539,18 @@ function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): 
   const results = log.results.filter((result) => keep(result.at));
   if (log.sessions + log.subagents === 0 || requests.length + calls.length === 0) return { ...empty, note: [`${log.dir} 에 이 저장소의 Codex 세션이 없습니다.`] };
   const stageOf = (item: { at: string }) => bucketOf(filter.stages, item.at).label;
-  const rows = (labelOf: (item: { at: string; agent: string }) => string): UsageRow[] => {
+  type Item = { at: string; agent: string; thread?: string };
+  /** labelOf 가 undefined 인 항목은 그 표에 넣지 않는다 */
+  const rows = (labelOf: (item: Item) => string | undefined): UsageRow[] => {
+    const labelled = <T extends Item>(items: T[]) => items.flatMap((item) => { const label = labelOf(item); return label === undefined ? [] : [{ item, label }]; });
     const tokens = new Map<string, CodexTokens>();
-    for (const request of requests) {
-      const label = labelOf(request);
+    for (const { item: request, label } of labelled(requests)) {
       const sum = tokens.get(label) ?? zeroCodex();
       for (const key of Object.keys(sum) as (keyof CodexTokens)[]) sum[key] += request.tokens[key];
       tokens.set(label, sum);
     }
-    const stats = callStats([...tokens.keys()], requests.map(labelOf), calls.map(labelOf), results.map((r) => ({ label: labelOf(r), chars: r.chars })));
+    const stats = callStats([...tokens.keys()], labelled(requests).map((entry) => entry.label), labelled(calls).map((entry) => entry.label),
+      labelled(results).map((entry) => ({ label: entry.label, chars: entry.item.chars })));
     return [...stats.entries()].map(([label, calls]) => ({ label, tokens: tokens.get(label) ?? zeroCodex(), cost: 0, calls }))
       .sort((a, b) => b.calls.requests - a.calls.requests || a.label.localeCompare(b.label));
   };
@@ -538,6 +559,8 @@ function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): 
   const { tools } = countCalls(calls.map((call) => ({ name: call.name })));
   const { commands, skillReads } = countCalls(log.commands.filter((entry) => keep(entry.at)).map((entry) => ({ name: "", command: entry.command })));
   return { ...empty, range: { from: times[0], to: times[times.length - 1] }, stages: rows(stageOf), agents: rows((item) => item.agent),
+    // 하위 에이전트 기록의 thread id 를 작업 기록의 담당 id(hook 이 받은 agent_id)와 잇는다
+    assignments: rows((item) => item.thread === undefined ? undefined : filter.labels.get(item.thread)),
     tools, commands, skillReads, fileChanges: log.fileChanges.filter((change) => keep(change.at)).length };
 }
 
@@ -554,11 +577,37 @@ export function usageReport(repoRoot: string, options: UsageOptions = {}): Usage
     }
   }
   const hosts = selectedHosts(repoRoot);
-  const filter: Filter = { since, work: options.work, stages: readStages(repoRoot) };
+  const filter: Filter = { since, work: options.work, stages: readStages(repoRoot), labels: assignmentLabels(repoRoot, options.work) };
   const sections: UsageSection[] = [];
   if (options.transcripts || hosts.includes("claude")) sections.push(claudeSection(repoRoot, options, filter));
   if (options.codexSessions || hosts.includes("codex")) sections.push(codexSection(repoRoot, options, filter));
-  return { head: [...(options.work ? [options.work] : []), repoRoot].join(" · "), sections, retry: retryReports(repoRoot, options.work), pricesAsOf: PRICES_AS_OF };
+  return { head: [...(options.work ? [options.work] : []), repoRoot].join(" · "), sections, retry: retryReports(repoRoot, options.work),
+    hooks: hookSummaries(repoRoot, filter), pricesAsOf: PRICES_AS_OF };
+}
+
+/** hook 출력 기록(hookLog)을 호스트·이벤트·종류·도구로 묶는다. 같은 세션에서 같은 글이 앞서 나왔으면 repeats 에 센다 */
+function hookSummaries(repoRoot: string, filter: Filter): HookSummary[] {
+  const keep = kept(filter);
+  const groups = new Map<string, HookSummary>();
+  const seen = new Set<string>();
+  for (const row of readHookOutputs(repoRoot).filter((entry) => keep(entry.at))) {
+    const id = [row.host, row.event, row.kind, row.tool ?? ""].join("\u0000");
+    const sum = groups.get(id) ?? { host: row.host, event: row.event, kind: row.kind, ...(row.tool ? { tool: row.tool } : {}), count: 0, chars: 0, repeats: 0 };
+    sum.count += 1;
+    sum.chars += row.chars;
+    const same = `${row.session ?? ""}\u0000${row.event}\u0000${row.key}`;
+    if (row.session && seen.has(same)) sum.repeats += 1;
+    seen.add(same);
+    groups.set(id, sum);
+  }
+  return [...groups.values()].sort((a, b) => b.chars - a.chars || a.event.localeCompare(b.event));
+}
+
+const HOOK_KIND: Record<HookOutputKind, string> = { deny: "거부", block: "차단", return: "되돌림", context: "주입" };
+function hookBlock(hooks: HookSummary[]): string[] {
+  if (!hooks.length) return [];
+  return ["hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용)", ...hooks.map((row) =>
+    `  ${row.host} ${row.event} ${HOOK_KIND[row.kind]}${row.tool ? `(${row.tool})` : ""}: ${row.count}회 · ${row.chars.toLocaleString("en-US")}자${row.repeats ? ` · 같은 글 반복 ${row.repeats}` : ""}`)];
 }
 
 // ---- 출력(텍스트) ----
@@ -601,12 +650,14 @@ function renderClaude(report: UsageReport, section: UsageSection, retry: string[
     "",
     ...table("에이전트별", "에이전트", section.agents.filter((row) => row.calls.requests > 0).map(toRow)),
     "",
+    ...(section.assignments.some((row) => row.calls.requests > 0) ? [...table("배정별 (작업 기록의 계획 담당·리뷰어)", "배정", section.assignments.filter((row) => row.calls.requests > 0).map(toRow)), ""] : []),
     ...table("모델별", "모델", section.models.map(toRow)),
     "",
     ...plainTable("호출별 (스테이지)", "스테이지", CALL_HEADERS, section.stages.map((row) => ({ label: row.label, values: callValues(row) }))),
     "",
     ...plainTable("호출별 (에이전트)", "에이전트", CALL_HEADERS, section.agents.map((row) => ({ label: row.label, values: callValues(row) }))),
     "",
+    ...(section.assignments.length ? [...plainTable("호출별 (배정)", "배정", CALL_HEADERS, section.assignments.map((row) => ({ label: row.label, values: callValues(row) }))), ""] : []),
     ...(extra.length ? [...extra, ""] : []),
     ...(section.unpriced.length > 0 ? [`비용 미산정 모델: ${section.unpriced.join(" · ")} — 단가표에 없어 0 으로 셌습니다.`] : []),
     `비용은 추정치입니다 — ${report.pricesAsOf} 기준 공개 단가표로 계산했고 실제 청구와 다를 수 있습니다.`,
@@ -626,6 +677,8 @@ function renderCodex(report: UsageReport, section: UsageSection, retry: string[]
     "",
     ...plainTable("에이전트별", "에이전트", headers, section.agents.map((row) => ({ label: row.label, values: values(row) }))),
     "",
+    ...(section.assignments.length ? [...plainTable("배정별 (작업 기록의 계획 담당·리뷰어 — 하위 에이전트 thread id 로 잇는다)", "배정", headers,
+      section.assignments.map((row) => ({ label: row.label, values: values(row) }))), ""] : []),
     ...(extra.length ? [...extra, ""] : []),
     "Codex 비용은 단가표가 없어 산정하지 않습니다.",
   ];
@@ -633,8 +686,9 @@ function renderCodex(report: UsageReport, section: UsageSection, retry: string[]
 
 export function usage(repoRoot: string, options: UsageOptions = {}): string {
   const report = usageReport(repoRoot, options);
-  const retry = retryBlock(report.retry);
+  const hooks = hookBlock(report.hooks);
+  const retry = [...retryBlock(report.retry), ...(report.retry.length && hooks.length ? [""] : []), ...hooks];
   if (!report.sections.length) return retry.length ? retry.join("\n") : "집계할 호스트 기록이 없습니다.";
-  // 재시도 절은 첫 절에 한 번만 싣는다(저장소 기록이라 호스트와 무관하다)
+  // 재시도·hook 출력 절은 첫 절에 한 번만 싣는다(저장소 기록이라 호스트와 무관하다)
   return report.sections.map((section, index) => (section.source === "claude" ? renderClaude : renderCodex)(report, section, index === 0 ? retry : []).join("\n")).join("\n\n");
 }

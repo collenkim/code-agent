@@ -13,13 +13,13 @@ import { docPaths } from "./docs";
 import { AFTER_IMPLEMENT, questionsFile, workDocsDir } from "./layout";
 import { prDocFile } from "./deliver";
 import { proposalFile } from "./knowledge";
-import { collectWindowOpen, loadEvidence, reviewRoundUsage, runsOf, testFrozen, testRoots, testStageFiles, validationDocFile, verifyView } from "./evidence";
+import { collectWindowOpen, loadEvidence, planPaths, reviewRoundUsage, runsOf, testFrozen, testRoots, testStageFiles, validationDocFile, verifyView } from "./evidence";
 import { budgetText } from "./retryPolicy";
 import { docRefs, isTestPath, keywordsOf, rankCandidatesScan, relevantDocSections, requirementItems, type RankScan } from "./plugins/defaults";
 import { MAX_ITEMS } from "./plugins/protocol";
 import type { RequirementRef } from "./plugins/protocol";
 import { callSlot, clamp, sourceLines } from "./plugins/run";
-import { loadReview, reviewDocFile } from "./review";
+import { changedList, loadReview, reviewDocFile, roundChanges } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
 import { sourceFileScan, SURVEY_MAX_FILES } from "./survey";
 import type { Work } from "./work";
@@ -378,12 +378,18 @@ export function reviewSection({ repoRoot, work }: RenderInput, out: string[]): v
   const review = loadReview(repoRoot, active.id, active.target);
   const last = review?.rounds[review.rounds.length - 1];
   const usage = reviewRoundUsage(work);
+  const changes = roundChanges(review, planPaths(work));
   out.push(
     "",
     `## ⑨ ${reviewDocFile(active.id)} — 코드 리뷰`,
     `- 회차: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "없음 — code-agent review 로 먼저 여세요"} · 남은 리뷰 회차 ${Math.max(0, usage.limit - usage.used)}회`,
     "- 회차 구역(`<!-- code-agent:review:... -->`)은 코드가 렌더합니다. 손대면 게이트가 거부합니다.",
     `- ${agentName("ca-reviewer")} 에게는 위 계획 파일 목록·검증 증거·컨벤션 경로만 넘깁니다 — 저장소를 다시 훑게 하지 않습니다.`,
+    ...(changes ? [
+      `- **재검토 범위** — 직전 ${changes.previous}회차 뒤 바뀐 계획 파일 ${changes.changed.length}개${changedList(changes.changed)}. ` +
+        "바뀌지 않은 계획 파일은 직전 회차 판정을 이어받는다 — 바뀐 파일과 그 호출자·테스트, 직전 지적의 수정 여부를 먼저 대조하고, 바뀐 것이 닿는 나머지만 다시 읽는다.",
+      ...(changes.findings.length ? [`- 직전 ${changes.previous}회차 ${agentName("ca-reviewer")} 지적 — 같은 id·경로로 상태를 갱신한다:`, ...changes.findings.map((line) => `  ${line}`)] : []),
+    ] : []),
     ...(review?.waivers ?? []).map((waiver) => `- 사람 판단으로 기각한 지적: ${waiver.id}(${waiver.path}) — ${waiver.reason.replace(/\s+/g, " ").slice(0, 120)} · ${waiver.round}회차 — 리뷰어에게 넘겨 같은 지적을 새 번호로 다시 내지 않게 한다`),
     "",
     `${agentName("ca-reviewer")}를 호출하면 hook이 실행·완료를 관찰하고 \`## 지적\` 표를 자동 기록합니다. 메인은 결과·상태를 대신 쓰지 않습니다:`,

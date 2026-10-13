@@ -482,7 +482,7 @@ test("judgment retry-grant(taskTotal) 통합 — 작업 총 배정 6회 소진 �
 });
 
 test("T-J-3 동작 목록·judgment 문구 동기화 — ca-answer 세 곳과 안내 문구가 같은 이름을 쓴다", () => {
-  const files = ["template/claude/skills/ca-answer/SKILL.md", "template/claude/skills/ca-answer/reference.md", "template/codex/ca-answer.md"]
+  const files = ["template/claude/skills/ca-answer/SKILL.md", "template/claude/skills/ca-answer/appendix.md", "template/codex/ca-answer.md"]
     .map((file) => [file, readFileSync(join(__dirname, "../..", file), "utf8")] as const);
   for (const [file, text] of files) {
     for (const action of CONSENT_ACTIONS) assert.ok(text.includes(`\`${action}\``) || text.includes(`"action":"${action}"`), `${file} 에 ${action} 이 없습니다`);

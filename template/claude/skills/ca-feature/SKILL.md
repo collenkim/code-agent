@@ -23,7 +23,7 @@ Bash: `code-agent status` 로 자리를 본다.
 
 ## 1. 분석부터 반영까지 사이클
 
-`.claude/skills/ca-next/SKILL.md`의 단계 순서에 따라 **반영까지** 이어간다. 사용자에게 `/ca-next`를 다시 입력하게 하지 않는다 —
+아래 단계 순서로 **반영까지** 이어간다(`ca-next` 스킬 파일을 따로 읽지 않는다). 사용자에게 `/ca-next`를 다시 입력하게 하지 않는다 —
 `analysis`(`/ca-analyze`) → `impact`(`/ca-impact`) → `design`(`/ca-design`) → `plan`(`/ca-plan`) → `implement` → `check` → `test` → `review` → `integrate` → `deliver`.
 스테이지마다 하는 일은 그 단계 스킬에 있다. 한 단계씩 끊어 보고 고치고 싶으면 그 명령을 직접 불러도 된다 — 읽는 절차는 같다.
 

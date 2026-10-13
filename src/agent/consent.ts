@@ -14,6 +14,7 @@ import { deliver, deliveryPaths, isDeliveryExcluded, knowledgeChoices } from "./
 import { approveLogBasis } from "./validate";
 import { knowledgePrune, pruneCandidates } from "./knowledgeCommands";
 import { findRepoRoot, loadActive, STATE_DIR } from "./layout";
+import { noteHookOutput } from "./hookLog";
 import { acquireLock, type LockMessages } from "./lock";
 import { modelsTable, setModel, validateModelChange, workInProgress } from "./models";
 import { claudeSupportsEffort, modelPolicyFingerprint } from "./modelPolicy";
@@ -843,14 +844,24 @@ function consentEvent(stdin:string):number {
   let input: ConsentHookInput;
   try { input = JSON.parse(stdin) as ConsentHookInput; }
   catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+  // 질문을 막은 사유는 모델에게 간다 — 측정 기록(hookLog)에도 남긴다
+  const block = (text: string): number => {
+    process.stderr.write(text);
+    try {
+      const dir = process.env.CLAUDE_PROJECT_DIR ?? input?.cwd;
+      if (dir) noteHookOutput(findRepoRoot(dir), { host: "claude", event: input?.hook_event_name ?? "PreToolUse", kind: "block", tool: "AskUserQuestion", text,
+        ...(input?.session_id ? { session: input.session_id } : {}), ...(input?.agent_id ? { agent: input.agent_id } : {}) });
+    } catch { /* 측정용 기록이다 */ }
+    return 2;
+  };
   const source = input?.tool_input?.metadata?.source;
   if (typeof source === "string" && source.startsWith("code-agent:")) {
     try { observeConsent(input, process.env.CLAUDE_PROJECT_DIR); return 0; }
-    catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
+    catch (error) { return block(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); }
   }
   // 업무 질문도 선택 화면에 다 보여야 답할 수 있다 — 화면을 넘는 질문은 표시하기 전에 돌려보낸다(Codex ask 와 같은 기준)
   const problem = input?.hook_event_name === "PreToolUse" && input.tool_name === "AskUserQuestion" ? askScreenProblem(input.tool_input?.questions) : undefined;
-  if (problem) { process.stderr.write(`code-agent consent-event: ${problem}\n`); return 2; }
+  if (problem) return block(`code-agent consent-event: ${problem}\n`);
   try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
   catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
   return 0;

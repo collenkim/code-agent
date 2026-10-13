@@ -50,6 +50,8 @@ export interface ReviewerRun {
 /** 교차 실행 사용량 — 토큰·비용은 claude 성공 JSON 에서만 온다(inputTokens 는 캐시 밖 입력이고 캐시 생성·읽기는 따로 센다) */
 export interface CrossUsage {
   durationMs: number; costUsd?: number; inputTokens?: number; outputTokens?: number; cacheCreationInputTokens?: number; cacheReadInputTokens?: number; turns?: number;
+  /** Codex 만 — 사람용 출력 끝 `tokens used` 의 수(codex-cli 0.162.1 `blended_total`: 캐시 아닌 입력 + 출력) */
+  codexTokens?: number;
 }
 export interface CrossAttempt {
   /** 지점 안 순번, 1부터 */

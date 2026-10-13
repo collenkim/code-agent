@@ -18,7 +18,9 @@ import { Stop } from "../agent/stop";
 import { update } from "../agent/update";
 import { commandKey, encodeRepoPath, usage, usageReport } from "../agent/usage";
 import { unwrapShellArgv } from "../agent/codexUsage";
-import { retryReports } from "../agent/retryReport";
+import { assignmentLabels, retryReports } from "../agent/retryReport";
+import { codexTokensUsed } from "../agent/crossCheck";
+import { HOOK_LOG } from "../agent/hookLog";
 import { loadManifestIfAny } from "../agent/work";
 
 /**
@@ -194,7 +196,7 @@ describe("P8 · doctor", () => {
     assert.equal(line(report.text, "PreToolUse hook"), `✓ PreToolUse hook: node "${CLI.replace(/\\/g, "/")}" hook`);
     assert.match(line(report.text, "Stop hook"), /^✓ Stop hook:/);
     assert.equal(line(report.text, "설치 버전"), `✓ 설치 버전: ${packageVersion()}`);
-    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 11개 모두 번들과 같습니다$/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 12개 모두 번들과 같습니다$/);
     assert.equal(line(report.text, "에이전트 모델"), "✓ 에이전트 모델: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium");
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
@@ -437,7 +439,7 @@ describe("P8 · update", () => {
     gitInit();
     init(repo, { cli: CLI });
     const report = update(repo);
-    assert.match(report, /스킬·에이전트 26개 · 보조 문서 11개 그대로/);
+    assert.match(report, /스킬·에이전트 26개 · 보조 문서 12개 그대로/);
     assert.match(report, /\.claude\/settings\.json: 그대로/);
     assert.match(report, /CLAUDE\.md: 그대로/);
     assert.equal(report.includes("!!"), false);
@@ -820,17 +822,68 @@ describe("P8 · usage 호출·재시도 집계", () => {
     const before = readdirSync(work).sort();
     const [report, second] = retryReports(repo, "ORD-1");
     assert.equal(second.target, "second");
-    assert.deepEqual(second.cross, { attempts: 1, durationMs: 1000, costUsd: 0.1, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 11, cacheReadInputTokens: 13 });
+    assert.deepEqual(second.cross, { attempts: 1, durationMs: 1000, costUsd: 0.1, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 11, cacheReadInputTokens: 13, codexTokens: 0 });
     assert.equal(report.dispatches, 4);
     assert.equal(report.reassignments, 2);
     assert.deepEqual(report.failures, { "agent-format-error": 1, "cross-unavailable": 1 });
-    assert.deepEqual(report.cross, { attempts: 1, durationMs: 412_000, costUsd: 0.81, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
+    assert.deepEqual(report.cross, { attempts: 1, durationMs: 412_000, costUsd: 0.81, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, codexTokens: 0 });
     assert.deepEqual(report.unreadable, [".code-agent/work/ORD-1/order.verify.json"]);
     const text = usage(repo, { transcripts: dir });
     assert.match(text, /재시도·재배정 \(작업 기록, 읽기 전용\)\n  ORD-1\/order: 배정 4회\(재배정 2\)/);
     assert.match(text, /교차 실행 1회 412초 비용 0\.81 USD/);
     assert.ok(!text.split("\n").some((row) => row.startsWith("  ORD-1/order") && row.includes("$")));
     assert.deepEqual(readdirSync(work).sort(), before, "측정은 기록을 쓰지 않는다");
+  });
+
+  test("교차 실행 토큰 — Codex 는 stderr 의 tokens used 를 읽고, 합계 줄은 Claude 토큰과 Codex 토큰을 따로 싣는다", () => {
+    assert.equal(codexTokensUsed("codex\n본문\ntokens used\n12,345\n"), 12345);
+    assert.equal(codexTokensUsed("\u001b[2mtokens used\u001b[0m: 987"), 987);
+    assert.equal(codexTokensUsed("[2026-10-13T00:00:00] tokens used\r\n5\r\n"), 5);
+    assert.equal(codexTokensUsed("tokens used 표시 없음"), undefined);
+    const work = join(repo, STATE_DIR, "work", "ORD-3");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "order.review.json"), JSON.stringify({ rounds: [{ round: 1, crossAttempts: [
+      { n: 1, host: "codex", mode: "review", startedAt: "", class: "completed", usage: { durationMs: 2000, codexTokens: 4321 } },
+    ] }] }));
+    writeFileSync(join(work, "second.review.json"), JSON.stringify({ rounds: [{ round: 1, crossAttempts: [
+      { n: 1, host: "claude", mode: "review", startedAt: "", class: "completed",
+        usage: { durationMs: 1000, inputTokens: 5, outputTokens: 7, cacheCreationInputTokens: 1100, cacheReadInputTokens: 13 } },
+    ] }] }));
+    const text = usage(repo, { transcripts: dir });
+    assert.match(text, /ORD-3\/order: .*교차 실행 1회 2초 Codex 토큰 4,321\(캐시 아닌 입력\+출력\)/);
+    assert.match(text, /ORD-3\/second: .*교차 실행 1회 1초 토큰 입력 5·캐시 쓰기 1,100·캐시 읽기 13·출력 7/);
+  });
+
+  test("배정별 — 작업 기록의 담당 id 로 서브에이전트 기록을 계획 배정·리뷰 회차에 잇는다", () => {
+    const work = join(repo, STATE_DIR, "work", "ORD-1");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "order.planning.json"), JSON.stringify({ agents: [{ id: "a1", dispatchId: "d1", type: "ca-analyst" }, { id: "a2", type: "ca-critic" }],
+      tasks: [{ task: { id: "analysis" }, attempts: [{ dispatchId: "d0", status: "failed" }, { dispatchId: "d1", status: "completed" }] }] }));
+    writeFileSync(join(work, "order.review.json"), JSON.stringify({ rounds: [{ round: 2, reviewers: [{ agentId: "r9", sessionId: "s", startedAt: "" }] }] }));
+    assert.deepEqual([...assignmentLabels(repo)].sort(), [["a1", "ORD-1/order analysis#2"], ["a2", "ORD-1/order ca-critic"], ["r9", "ORD-1/order 리뷰 2회차"]]);
+    mkdirSync(join(dir, "s1", "subagents"), { recursive: true });
+    writeFileSync(join(dir, "s1", "subagents", "agent-a1.jsonl"), `${line({ type: "assistant", timestamp: "2026-09-30T02:30:00.000Z",
+      message: { id: "sub1", model: "claude-opus-5", usage: { input_tokens: 70, output_tokens: 3 }, content: [{ type: "tool_use", id: "u1", name: "Read", input: { file_path: "x" } }] } })}\n`);
+    const text = usage(repo, { transcripts: dir });
+    assert.match(text, /^배정별 \(작업 기록의 계획 담당·리뷰어\)$/m);
+    assert.deepEqual(rows(text, "호출별 (배정)").get("ORD-1/order analysis#2")?.slice(0, 2), ["1", "1"]);
+    assert.equal(rows(text, "호출별 (배정)").has("ORD-1/order 리뷰 2회차"), false, "기록이 없는 배정은 행이 없다");
+    assert.equal(usageReport(repo, { transcripts: dir, work: "없는작업" }).sections[0].assignments.length, 0);
+  });
+
+  test("hook 출력 — 모델에게 간 거부·차단·되돌림·주입을 이벤트별 횟수·글자 수로 세고, 같은 세션의 같은 글은 반복으로 센다", () => {
+    const row = (entry: object) => JSON.stringify({ at: "2026-09-30T02:00:00.000Z", host: "claude", ...entry });
+    write(HOOK_LOG, [
+      row({ event: "PreToolUse", kind: "deny", tool: "Bash", chars: 800, key: "k1", session: "s" }),
+      row({ event: "PreToolUse", kind: "deny", tool: "Bash", chars: 800, key: "k1", session: "s" }),
+      row({ event: "Stop", kind: "block", chars: 120, key: "k2", session: "s" }),
+      row({ host: "codex", event: "SessionStart", kind: "context", tool: "startup", chars: 300, key: "k3" }),
+      "{ 깨진 줄",
+      "",
+    ].join("\n"));
+    const text = usage(repo, { transcripts: dir });
+    assert.match(text, /hook 출력 \(모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용\)\n  claude PreToolUse 거부\(Bash\): 2회 · 1,600자 · 같은 글 반복 1\n  codex SessionStart 주입\(startup\): 1회 · 300자\n  claude Stop 차단: 1회 · 120자/);
+    assert.equal(usage(repo, { transcripts: dir, since: "2026-10-01T00:00:00.000Z" }).includes("hook 출력"), false, "--since 밖의 기록은 세지 않는다");
   });
 
   test("옛 기록 — 배열 없는 교차(cross)·단수 리뷰어(reviewer)의 실패 원인도 카운터와 같은 범위로 센다", () => {

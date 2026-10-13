@@ -8,6 +8,7 @@ import { agentName, withNotation } from "./hostText";
 import { effectiveReviewer, materializeReviewers, REVIEWER_ID, reviewersOf, reviewerState, reviewResultProblems, type ReviewerRun } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
 import { findRepoRoot } from "./layout";
+import { noteSubagentReturn } from "./hookLog";
 import { grantScope, LIMITS, limitOf, subagentExit, TIMING } from "./retryPolicy";
 import { loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog, type ReviewRound } from "./review";
 import { loadWork } from "./work";
@@ -208,11 +209,14 @@ export function runReviewHook(stdin: string): number {
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`code-agent review-event: ${message}\n`);
+    const text = `code-agent review-event: ${message}\n`;
+    process.stderr.write(text);
     // 담당이 고칠 수 없는 판정 실패는 같은 담당에게 되돌리지 않고 그 실행에 기록한다 — 기록되면 새 호출을 받는다(§6.4 hook 종료 코드)
     const recorded = error instanceof RecordedFailure ||
       (!(error instanceof ReturnToReviewer) && input !== undefined && recordHookFailure(input, process.env.CLAUDE_PROJECT_DIR, message));
-    return subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true,
+    const code = subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true,
       failure: error instanceof ReturnToReviewer ? "agent-format-error" : "hook-failure", recorded });
+    if (code === 2) noteSubagentReturn(input, text);
+    return code;
   }
 }

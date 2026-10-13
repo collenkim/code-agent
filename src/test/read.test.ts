@@ -9,7 +9,9 @@ test("호스트 파일 읽기는 줄 범위를 보존하고 잘못된 범위·�
   const root = mkdtempSync(join(tmpdir(), "ca-read-"));
   try {
     writeFileSync(join(root, "a.txt"), "하나\r\n둘\r\n셋\n");
-    assert.deepEqual(JSON.parse(readProjectFile(root, "a.txt", 2, 1)), {path:"a.txt",totalLines:4,start:2,lines:[{line:2,text:"둘"}]});
+    assert.equal(readProjectFile(root, "a.txt", 2, 1), "a.txt · 2-2 / 전체 4줄\n2\t둘\n(이어서: code-agent read a.txt 3)");
+    assert.equal(readProjectFile(root, "a.txt"), "a.txt · 1-4 / 전체 4줄\n1\t하나\n2\t둘\n3\t셋\n4\t", "끝까지 읽으면 이어 읽기 줄이 없다");
+    assert.equal(readProjectFile(root, "a.txt", 9), "a.txt · 범위 밖 / 전체 4줄");
     for (const start of [0, -1, 1.5, NaN]) assert.throws(() => readProjectFile(root, "a.txt", start), /사용법/);
     assert.throws(() => readProjectFile(root, "a.txt", 1, 401), /사용법/);
     writeFileSync(join(root, "binary"), "a\0b");
