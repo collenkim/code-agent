@@ -114,6 +114,38 @@ const cellsOf = (line: string): string[] => {
   const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   return inner.split("|").map((cell) => cell.trim());
 };
+const OPEN_WORDS = /^(?:open|opened|unresolved|열린|미해결)$/i;
+const CLOSED_WORDS = /^(?:resolved|closed|fixed|해결됨)$/i;
+/**
+ * 판단을 바꾸지 않는 표 칸 정규화 — 기록 전에 reviewResultProblems 앞에서 부른다. 형식만 틀린 결과로 판단 등급 담당을
+ * 다시 부르지 않게 한다. 범위 칸은 계획 파일 목록에서 정해지는 값이라 다시 쓰고, 계획 파일 칸의 백틱·`./`·역슬래시·끝 줄번호는
+ * 걷어 내며(줄번호가 붙은 원래 위치는 지적 칸 앞에 옮긴다), 상태 칸의 영어·동의어(open·resolved 등)는 열림·해결로 바꾼다.
+ * 고친 줄이 없으면 본문을 그대로 돌려준다. `fixed` 는 고친 칸 수다.
+ */
+export function normalizeReviewTable(body: string, planned: readonly string[], idPattern: RegExp): { body: string; fixed: number } {
+  const allowed = new Set(planned);
+  let fixed = 0;
+  const lines = body.split("\n").map((line) => {
+    if (!/^\|.*\|$/.test(line.trim())) return line;
+    const cells = cellsOf(line);
+    if (!idPattern.test(cells[0] ?? "") || cells.length < 5) return line;
+    const [id, path, written, status, ...rest] = cells;
+    let detail = rest.join(" | ");
+    const bare = path.replace(/[`*]/g, "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+    const located = /^(.+?):(\d+(?::\d+)?)$/.exec(bare);
+    const cleanPath = located ? located[1] : bare;
+    if (located && !detail.includes(bare)) detail = `${bare} — ${detail}`;
+    const plain = status.replace(/[`*]/g, "").trim();
+    const cleanStatus = OPEN_WORDS.test(plain) || plain === FINDING_OPEN ? FINDING_OPEN : CLOSED_WORDS.test(plain) || plain === FINDING_CLOSED ? FINDING_CLOSED : status;
+    const scope = allowed.has(cleanPath) ? "계획 안" : "계획 밖";
+    const changes = Number(cleanPath !== path) + Number(cleanStatus !== status) + Number(scope !== written);
+    if (!changes || !cleanPath) return line;
+    fixed += changes;
+    return `| ${id} | ${cleanPath} | ${scope} | ${cleanStatus} | ${detail} |`;
+  });
+  return fixed ? { body: lines.join("\n"), fixed } : { body, fixed: 0 };
+}
+
 /**
  * 리뷰 결과(독립 리뷰 F·교차 리뷰 X)의 형식·내용 검사 — 표 모양·id·다섯 칸·id 중복·상태 값·경로 형식·범위 칸.
  * hook(observeReviewer)과 교차(crossReview)가 기록 **전에** 부르고, 옛 기록은 같은 함수로 유효 결과에서 거른다.

@@ -6,7 +6,7 @@ import { MANIFEST_FILE } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
 import { Stop } from "./commands";
 import { checkDoc, checkKnowledge, checkProjectDocs, docPaths, docsReady, formatDocChecks, formatKnowledgeChecks, recordDocConfirmation } from "./docs";
-import { DOCS_SESSION_FILE, loadActive, loadDocsSession } from "./layout";
+import { DOCS_SESSION_FILE, loadActive, loadDocsSession, SURVEY_DRAFTS } from "./layout";
 import { loadRequestSession, requestStatusLines } from "./request";
 import { interview, isDocKind, isPolicyKind, isWorkDocKind, KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS, skeleton, WORK_SCHEMAS } from "./schemas";
 import type { DocKind, KnowledgeKind, PolicyKind } from "./schemas";
@@ -173,6 +173,9 @@ export function docsBegin(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
   const writable = uniqueRoots(["doc", ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind))]);
   writeFileSync(join(repoRoot, DOCS_SESSION_FILE), `${JSON.stringify({ startedAt: new Date().toISOString(), version: 2, writable })}\n`);
+  // surveyor 초안 자리 — 안쪽 .gitignore 가 폴더째 Git 밖에 둔다. 세션을 닫을 때 지운다
+  mkdirSync(join(repoRoot, SURVEY_DRAFTS), { recursive: true });
+  writeFileSync(join(repoRoot, SURVEY_DRAFTS, ".gitignore"), "*\n");
   const created = createKnowledgeSkeletons(repoRoot);
   return [
     "문서 작성 세션을 열었습니다. 끝날 때까지 doc/ · 세션을 열 때 등록된 .md 문서 · code-agent.json 밖은 쓸 수 없습니다.",
@@ -204,6 +207,7 @@ function createKnowledgeSkeletons(repoRoot: string): string[] {
 
 export function docsEnd(repoRoot: string): string {
   rmSync(join(repoRoot, DOCS_SESSION_FILE), { force: true });
+  rmSync(join(repoRoot, SURVEY_DRAFTS), { recursive: true, force: true });
   const session = loadRequestSession(repoRoot);
   return `문서 작성 세션을 닫았습니다.\n\n${docsStatus(repoRoot)}` + (session ? `\n\n접수 ${session.id} 유지 — 다음: ${requestStatusLines(repoRoot, session).hint}` : "");
 }

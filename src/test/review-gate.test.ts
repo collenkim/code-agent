@@ -213,19 +213,23 @@ describe("코드 리뷰 게이트 (review → integrate)", () => {
     assert.throws(() => next(repo), /계획 밖을 가리키는 지적: F1/);
   });
 
-  test("범위 칸은 코드가 계획과 대조해 정한다 — 모델이 다르게 적으면 드러난다", async () => {
+  test("범위 칸은 코드가 계획과 대조해 정한다 — 모델이 다르게 적으면 hook 이 고쳐 기록하고, 기록 뒤 손으로 바꾼 문서는 게이트가 드러낸다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
     const row = `| F1 | ${ORDER}/domain/Order.java | 계획 밖 | 해결 | 이름이 다르다 |`;
     writeFindingsDoc(row);
-    // hook 이 기록 전에 같은 표 규칙으로 돌려보낸다 — 같은 회차 재리뷰가 막혀 있어 기록 뒤에는 고칠 길이 없다
+    // 범위는 계획 파일 목록에서 정해지는 값이라 판단 등급 리뷰어를 다시 부르지 않고 hook 이 고친다
     const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
     observeReviewer({ ...event, hook_event_name: "SubagentStart" });
-    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row }), /F1 범위 칸이 계획과 다릅니다\(계획 밖 → 계획 안\)/);
+    observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row });
+    const fixed = `| F1 | ${ORDER}/domain/Order.java | 계획 안 | 해결 | 이름이 다르다 |`;
     const run = loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![0];
-    assert.equal(run.returns, 1);
-    assert.equal(run.result, undefined);
-    // 게이트는 문서의 표도 본다
+    assert.equal(run.returns, undefined, "범위 칸 때문에 돌려보내지 않는다");
+    assert.equal(run.result, fixed);
+    const path = join(repo, reviewDocFile("ORD-1"));
+    assert.ok(readFileSync(path, "utf-8").includes(fixed), "⑨ 의 지적 절도 고친 표로 다시 쓴다");
+    // 게이트는 문서의 표도 본다 — 손으로 범위를 바꾸면 드러난다
+    writeFileSync(path, readFileSync(path, "utf-8").replace(fixed, row));
     assert.throws(() => next(repo), /범위 칸이 계획과 다릅니다: F1/);
   });
 

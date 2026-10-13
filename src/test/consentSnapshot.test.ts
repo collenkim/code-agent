@@ -206,10 +206,10 @@ test("snapshot: Git worktrees also ignore external session noise", () => {
   assert.equal(consentSnapshot(worktree, action), before);
 });
 
-test("intake: help and --help are allowed while appended commands remain blocked", () => {
+test("intake: help, help <command> and --help are allowed while appended commands remain blocked", () => {
   requestBegin(root, "HELP-1", "fix");
   for (const tool_name of ["Bash", "PowerShell"]) {
-    for (const command of ["code-agent", "code-agent help", "code-agent --help"]) assert.equal(decide({ cwd: root, tool_name, tool_input: { command } }, root), undefined);
-    for (const command of ["code-agent help extra", "code-agent --help && git add .", "code-agent help > help.txt"]) assert.ok(decide({ cwd: root, tool_name, tool_input: { command } }, root));
+    for (const command of ["code-agent", "code-agent help", "code-agent help planning", "code-agent --help"]) assert.equal(decide({ cwd: root, tool_name, tool_input: { command } }, root), undefined);
+    for (const command of ["code-agent help planning extra", "code-agent --help && git add .", "code-agent help > help.txt"]) assert.ok(decide({ cwd: root, tool_name, tool_input: { command } }, root));
   }
 });

@@ -1,6 +1,6 @@
 # 오류 사전 판별·질문 UI·맥락·토큰 결과 요약 (2026-10-12~14)
 
-`a4b6df8`..`c372f2e` 열세 커밋(기록 정리 커밋 `f6a8b72`·`f24066c` 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
+`a4b6df8`..이 커밋까지 열네 커밋(기록 정리 커밋 `f6a8b72`·`f24066c`·`c3182f2` 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
 
 | 커밋 | 날짜 | 변경 |
 |---|---|---|
@@ -17,6 +17,7 @@
 | `cd0550b` | 10-13 | 토큰 사용 측정 보완(hook 출력·교차 토큰·배정별), 커서 이동·Stop·`read` 출력 축약, 리뷰 재검토 범위, 템플릿 중복 정리 |
 | `ea66d4f` | 10-13 | `init` 인자 검사·스킬 머리말 YAML 결함, 토큰 검토 중간 항목 열 가지(M1~M10) |
 | `c372f2e` | 10-14 | 요구 확정 동의 적용(`finish`)이 작업 시작까지 한다 |
+| 이 커밋 | 10-14 | 토큰 검토 낮음 항목(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3) |
 
 ## 오류 사전 판별 (`a4b6df8`)
 
@@ -91,9 +92,9 @@ Codex 폼의 잘림은 소스(`rust-v0.162.1` `codex-rs/tui/src/bottom_pane/mcp_
 
 - **Windows 샌드박스 폴더 권한**: 샌드박스 셸이 첫 `apply_patch` 전에 만든 폴더(소유자 `CodexSandboxOffline`)에는 그 뒤 `apply_patch`의 쓰기 SID 권한이 퍼지지 않았다(소스 `windows-sandbox-rs/src/cap.rs` — SID 를 명령 cwd·쓰기 루트별로 둔다. 작은 저장소 실험으로 확인, `%TEMP%` 아래에서는 재현되지 않음). 그래서 staging 폴더는 샌드박스 밖에서 도는 담당 시작 hook 이 만든다. 같은 조건의 접수 폴더·지식 문서 뼈대는 고치지 않고 [Codex 연동](../codex.md)에 조건과 우회만 적었다.
 
-## 토큰 최적화와 결함 (`cd0550b`·`ea66d4f`·`c372f2e`)
+## 토큰 최적화와 결함 (`cd0550b`·`ea66d4f`·`c372f2e`·이 커밋)
 
-토큰을 더 줄일 수 있는 구간을 전수 검토한 뒤(대화 보고) 사용자가 진행 범위를 차례로 정했다 — 측정 공백과 효과 '높음'(`cd0550b`), 검토 중 찾은 결함 둘과 '중간' 전부(`ea66d4f`), 브랜치 생성이 동의 안으로 들어와 사용자 결정으로 남겼던 요구 확정과 `start` 합치기(`c372f2e`). '낮음'은 남은 일에 있다.
+토큰을 더 줄일 수 있는 구간을 전수 검토한 뒤(대화 보고) 사용자가 진행 범위를 차례로 정했다 — 측정 공백과 효과 '높음'(`cd0550b`), 검토 중 찾은 결함 둘과 '중간' 전부(`ea66d4f`), 브랜치 생성이 동의 안으로 들어와 사용자 결정으로 남겼던 요구 확정과 `start` 합치기(`c372f2e`). 마지막으로 '낮음'과 이 저장소 개발 문서 항목(이 커밋)이다 — 교차·synthesis 강도는 A/B 측정이 필요해 남겼다.
 
 ### 측정과 높음 (`cd0550b`)
 
@@ -162,6 +163,29 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - 왕복: 확정 적용 뒤 `start` 한 번(출력 419자, 시험 fixture)이 빠지고 `finish` 출력 510자 하나가 남는다.
 - **실제 CLI**(임시 git 저장소에 `init --host both`, `node dist/agent/cli.js`): hook 이 본 `consent prepare --action request`·`consent finish`, Claude 는 `consent-event`의 질문 Pre/Post, Codex 는 `codex-event`의 `consent respond` 응답으로 적용했다. 두 호스트 모두 `feature/CONSENT-1` 브랜치·`analysis`였다. 미추적 파일을 둔 저장소는 확인 화면에 `시작 전 정리 필요: [A] stray.txt` 줄이 뜨고, 적용 뒤 `startBlocked`·`next`가 나오며 브랜치는 `master` 그대로였다.
 
+### 낮음 (이 커밋 — 부모 `c3182f2`)
+
+| 구분 | 항목 | 처리 |
+|---|---|---|
+| L1 | 계획 담당 되돌림이 zod 오류 JSON 을 그대로 실었다 | `경로: 메시지` 줄(20개까지) |
+| L2 | 계획 CLI 출력이 들여쓴 JSON 이고 `hostAgents`·`dispatchId`가 `agent`·`assignmentFile`과 겹쳤다 | 최상위 키마다 한 줄, 빈 배열 생략(`problems`는 남김). 배정 요약은 지금 호스트가 부를 담당 이름만(Claude `agent`, Codex 에 `hostAgents.codex`), 배정 ID 는 파일 이름으로 |
+| L3 | 긴 선언 명령(기본 node build 의 인라인 스크립트)이 검증 요약·⑧ 단계 문제 줄·셸 거부 문구에 argv 그대로 실렸다 | 120자까지와 글자 수. 셸 거부는 같은 실행 파일의 선언만 싣는다. 사람이 보는 준비 화면·⑧ 표·실행 로그는 그대로 |
+| L4 | 오타 명령에 사용법 전문이 나왔다 | 가까운 명령과 `help <명령>` 안내(exit 1). `help <명령>`은 그 명령의 줄만 내고 hook 이 모델에게 연다 |
+| L5 | 리뷰 표의 범위·경로·상태처럼 판단이 아닌 칸이 틀려도 판단 등급 담당을 다시 불렀다(Codex 는 새 리뷰어, 교차는 같은 판단 모델로 교정) | 기록 전에 코드가 고친다(`normalizeReviewTable` — 범위는 계획 대조 값, 경로의 백틱·`./`·끝 줄번호는 걷어 위치를 지적 칸으로, 상태 영어·동의어는 열림·해결). 교차 형식 교정(`correct`)은 writer 역할 설정(실행 등급)으로 돈다 |
+| L6 | 교차 전용 강도 medium·synthesis writer 강도 low | 하지 않았다 — 남은 일 |
+| L7 | 도입(`ca-docs`) 때 surveyor 초안이 메인 대화를 거쳐 writer 프롬프트로 다시 출력됐다 | surveyor 가 `doc/.survey/<영역>.md`에 쓰고 경로만 돌려준다. hook 이 surveyor 에게 그 자리 바로 아래 `.md`만 연다. 문서 세션이 폴더(안쪽 `.gitignore *`)를 만들고 닫을 때 지운다 |
+| L8 | 세션 시작 요약의 고정 두 줄이 설치 지침 블록과 겹쳤다 | 이어가기 안내는 머리 줄의 스킬 이름만, 동의 줄은 응답·적용을 기다리는 동의가 있을 때만 |
+| D1 | `AGENTS.md`의 '함께 맞출 중복 정의' 목록이 흐름도 §1.1 과 겹쳤다 | §1.1 셋째 칸을 정본으로 하고, 빠져 있던 규칙(동의 제목·준비 문구·`[Source]`·`COUNTER_LABEL`·`UNRENDERED_GUIDES`·단가표·연쇄·`parseFindings`·`CODEX_TURN`·표기 함수·교차 자식 명령·허용 키)을 §1.1 로 옮겼다. `AGENTS.md`에는 대조하는 시험 이름과 시험이 없거나 일부만 보는 항목·코드 규칙만 남겼다 |
+| D2 | 흐름도 전문을 읽게 했다 | §1.1·§9 로 절을 찾고 그 절만 읽는다 |
+| D3 | 흐름도에 2,000자 넘는 줄이 둘(§5.2 Codex 등록 문단, §6.3 실행 전 판정) | 글자를 바꾸지 않고 문단·목록으로 나눴다 |
+
+- **측정**: L1 흔한 형식 오류(문제 7개) 1,696 → 456자. L2 시험 fixture 의 advance 출력 analysis 배정 695 → 416, 대기 561 → 428, 게이트 준비 329 → 251, impact 배정 728 → 442자(합 2,313 → 1,537, −34%) — 작업당 advance 는 9회쯤이다. L3 기본 node build 선언 441 → 128자. L4 오타 7,638 → 106자, `help planning` 753자. L8 작업 요약 −147자(머리 줄 +13자). D1 `AGENTS.md` 6,995 → 4,324자. D3 가장 긴 줄 2,255 → 1,924자.
+- **L2 호환**: 함수 반환·배정 파일은 그대로이고 CLI 출력만 줄였다. Claude 스킬은 `agent`를, Codex 사본은 `hostAgents.codex`를 읽는다(변환 규칙 그대로). 호스트를 정할 수 없는 CLI(두 호스트 설치·호스트 표지 없음)는 `hostAgents` 전체를 싣는다.
+- **L5 경계**: 범위 칸은 계획 파일 목록에서 정해지는 값이라 다시 써도 판단이 바뀌지 않는다. 뜻을 정할 수 없는 상태(`열림(경미)`·`해결 안 됨` 등)·빈 경로는 고치지 않고 표 규칙이 그대로 잡는다. 동의어를 `열림`으로 고친 계획 안 지적은 리뷰어가 뜻한 그대로 그 파일을 고칠 열쇠가 된다(시험 3개의 기대를 이 동작으로 바꿨다 — 옛 기대는 거부·되돌림이었다). 손으로 고친 ⑨ 의 상태·범위 칸은 게이트가 여전히 글자 그대로 본다. Claude 독립 리뷰어는 여전히 남은 문제가 있으면 같은 담당에게 한 번 돌려보낸다. 교차 교정 모델은 사람이 `code-agent model writer …`로 바꾼 값을 따른다 — 역할 정책·기본값(`ROLE_POLICY`·`TIER_DEFAULTS`)은 바꾸지 않아 model 동의의 정책 지문도 그대로다.
+- **L7 경계**: surveyor 는 여전히 코드를 쓰지 못한다 — 초안 자리 밖 쓰기와 진행 명령은 hook 이 두 호스트 모두 거부하고(하위 에이전트 PreToolUse 의 `agent_type`), 초안 자리 쓰기도 문서 세션 규칙을 그대로 지난다. 폴더 안 `.gitignore *`로 Git·동의 스냅샷·준비 커밋에 들지 않고, 문서 경로를 폴더로 등록한 저장소에서도 점으로 시작하는 폴더는 문서로 세지 않는다.
+- **실제 CLI**(임시 git 저장소, `node dist/agent/cli.js`): `planning advance`는 Claude 표기에서 배정 요약에 `agent`만, Codex 표기(`CODE_AGENT_HOST=codex`)에서 `hostAgents: {codex: ca_analyst}`를 더해 416·452자였다. 기본 node build 를 선언한 작업에서 `node -e 1`은 Claude `hook`·Codex `codex-event` 모두 선언을 `… (441자)`로 줄여 거부했다(427·604자 — Codex 는 PowerShell `.cmd` 문장 포함). `planing`은 exit 1 과 106자, `help consent`는 660자. 작업 중 `session-event`·Codex SessionStart 는 고정 두 줄 없이 머리 줄에 `/ca-next`·`$ca-next`를 실었다. `init --host both` 한 저장소에서 `docs begin`이 `doc/.survey/.gitignore`(`*`)를 만들었고, `agent_type` surveyor 의 초안 자리 쓰기는 Claude `Write`·Codex `apply_patch` 모두 허용, `doc/architecture.md`·`doc/conventions.md`·`app.js`는 거부였다. 초안은 `git status -uall`에 나오지 않았고 `docs end` 뒤 폴더가 없었다.
+- **L6 을 하지 않은 이유**: 교차 리뷰·계획 검토의 추론 강도와 synthesis 강도를 낮추면 비용은 줄지만 판단 품질이 바뀐다. 같은 입력으로 A/B 를 재야 정할 수 있고 그 측정은 유료 평가다. 형식 교정은 판단이 없는 일이라 L5 에서 writer 설정으로 옮겼다.
+
 ## 템플릿 예산
 
 | 파일 | 예산(자) | 근거 |
@@ -193,6 +217,7 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 | `cd0550b` | 1,418개 중 1,414 통과·생략 4 | |
 | `ea66d4f` | 1,429개 중 1,425 통과·생략 4 | |
 | `c372f2e` | 1,431개 중 1,427 통과·생략 4 | |
+| 이 커밋 | 1,436개 중 1,432 통과·생략 4 | |
 
 실패는 모두 0 이다. 생략 4개는 플랫폼 조건이다. Windows 샌드박스 안에서는 OS 사용자 정보 조회(`uv_os_get_passwd`)가 ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 돌렸다. `consentScreens` T-15-1(2초 대기 뒤 캐시 생성)은 부하에서 한 번 실패한 뒤 단독·재실행에서 통과했다.
 
@@ -204,8 +229,9 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - 임대 넘겨받음 줄 수정의 실제 호스트 재확인.
 - Codex hook 의 `agent_id`가 하위 에이전트 기록의 thread id 와 같은지 — 다르면 Codex 배정별 표가 빈다.
 - 결과 파일·미리 넣은 문서·context 근거 줄을 담당이 지침대로 쓰는지, 요구 확정 적용 뒤 메인이 `started`·`startBlocked`를 읽고 잇거나 멈추는지(모델 행동)와 그 실제 토큰 효과 — 모델 완주 실측이 필요하다. Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본을 `apply_patch`로 고칠 수 있는지도 확인하지 않았다(거부되면 `{path, content}`로 낸다).
+- surveyor 가 초안을 `doc/.survey/`에 쓰고 경로만 돌려주며 writer 가 그 파일을 읽는지(모델 행동)와 실제 도입의 토큰 효과, 교차 형식 교정을 writer 모델로 돌린 결과의 품질 — 모델을 부르는 실측이 필요하다.
 - 대상 프로젝트의 설치본 — 이 저장소의 변경은 `code-agent update --templates-only --host <호스트>`와 호스트 재시작 뒤에 적용된다.
 
 ## 남은 일
 
-- 토큰 검토의 낮음 항목: 계획 담당 되돌림의 zod 오류 덤프, 계획 JSON 들여쓰기·중복 키, 선언 명령 argv 반복, USAGE 전문 출력, 형식 오류 교정의 판단 등급 실행, 교차 전용 강도·synthesis 강도(A/B 측정 필요), 도입 초안의 메인 경유, 세션 시작 고정 줄. 이 저장소 개발 비용(AGENTS.md 와 흐름도 §1.1 의 중복, Read 줄 한도를 넘는 흐름도 줄).
+- 교차 리뷰·계획 검토 전용 추론 강도(medium)와 synthesis writer 강도(low) — 같은 입력의 A/B 로 품질 영향을 잰 뒤 정한다(유료 평가. 역할 정책을 바꾸면 model 동의의 정책 지문도 바뀐다).

@@ -126,12 +126,13 @@ test("§5.1·§5.2 hook 등록표는 init --host both 가 실제로 설치하는
     }).sort();
     assert.deepEqual(documented, installed, "§5.1 표의 이벤트·matcher·하위 명령을 init.ts 가 설치하는 .claude/settings.json 에 맞추세요");
     // Codex — 이벤트 집합, matcher 없음, 모두 codex-event, PreToolUse 만 `|| exit 2`. commandWindows 는 모든 이벤트에 있고(cmd /c),
-    // PreToolUse 는 실패를 2 로 닫고 UserPromptSubmit 은 종료 코드를 넘긴다(H3 — 문서 §5.2 첫 문단이 같은 꼴을 적는다)
+    // PreToolUse 는 실패를 2 로 닫고 UserPromptSubmit 은 종료 코드를 넘긴다(H3 — 문서 §5.2 표 앞 문단·목록이 같은 꼴을 적는다)
     const codex = read(".codex/hooks.json");
     const codexRows = tableRows(section(doc(), "### 5.2 "), "| 이벤트 | 처리 |");
     const codexDocumented = codexRows.flatMap((row) => code(row[0]).split(/\s*·\s*/).map((event, _, all) => all.length > 1 && event === "Stop" ? "SubagentStop" : event)).sort();
     assert.deepEqual(codexDocumented, Object.keys(codex.hooks).sort(), "§5.2 표의 이벤트를 .codex/hooks.json 에 맞추세요");
-    const lead = section(doc(), "### 5.2 ").split("\n").find((line) => line.trim())!;
+    // 표 앞의 첫 문단과 그 목록(Windows 명령·설치 점검·신뢰·종료 코드·지연 로드)
+    const intro = section(doc(), "### 5.2 "), lead = intro.slice(0, intro.search(/^\|/m)).trim();
     assert.match(lead, new RegExp(`^${["", "일", "이", "삼", "사", "다섯", "여섯"][Object.keys(codex.hooks).length] ?? ""} ?이벤트가 matcher 없이 모두 \`code-agent codex-event\``));
     for (const [event, entries] of Object.entries(codex.hooks)) {
       for (const entry of entries) {
@@ -144,7 +145,7 @@ test("§5.1·§5.2 hook 등록표는 init --host both 가 실제로 설치하는
             assert.match(hook.command, /codex-event$/, `${event} 는 래핑하지 않는다`);
             assert.equal(hook.commandWindows, event === "UserPromptSubmit" ? "cmd /c code-agent codex-event; exit $LASTEXITCODE" : "cmd /c code-agent codex-event", event);
           }
-          if (hook.commandWindows) assert.ok(lead.includes(`\`${hook.commandWindows}\``), `§5.2 첫 문단에 ${event} 의 Windows 명령 \`${hook.commandWindows}\` 을 적으세요`);
+          if (hook.commandWindows) assert.ok(lead.includes(`\`${hook.commandWindows}\``), `§5.2 표 앞 문단·목록에 ${event} 의 Windows 명령 \`${hook.commandWindows}\` 을 적으세요`);
         }
       }
     }

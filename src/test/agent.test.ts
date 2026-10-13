@@ -1018,6 +1018,29 @@ describe("init", () => {
     for (const path of [".claude", ".agents", ".codex", ".code-agent/hosts.json", ".code-agent/version"]) assert.equal(existsSync(join(repo, path)), false, path);
   });
 
+  test("모르는 명령은 사용법 전문 대신 가까운 명령과 help <명령>을 안내하고, help <명령>은 그 명령의 줄만 낸다", () => {
+    const cli = (...args: string[]) => spawnSync(process.execPath, [join(__dirname, "..", "agent", "cli.js"), ...args], { cwd: repo, encoding: "utf8" });
+    const typo = cli("planing");
+    assert.equal(typo.status, 1);
+    assert.match(typo.stderr, /^모르는 명령입니다: planing — planning 이면 code-agent help planning\n사용법: code-agent help <명령> · 전체: code-agent help/);
+    assert.ok(typo.stdout.length + typo.stderr.length < 300, "사용법 전문을 싣지 않는다");
+    const planning = cli("help", "planning");
+    assert.equal(planning.status, 0);
+    const lines = planning.stdout.trimEnd().split(/\r?\n/);
+    assert.ok(lines.every((line) => /^ {2}code-agent planning |^ {10,}\S/.test(line)), "planning 줄과 이어지는 설명 줄만");
+    assert.ok(lines.some((line) => line.includes("--chain 이면")), "이어지는 들여쓴 설명 줄도 함께");
+    for (const args of [["help", "bogus"], ["help", "planning", "advance"]]) {
+      const run = cli(...args);
+      assert.equal(run.status, 1, args.join(" "));
+      assert.match(run.stderr, /^모르는 명령입니다: /, args.join(" "));
+    }
+    for (const args of [[], ["help"], ["--help"], ["-h"]]) {
+      const run = cli(...args);
+      assert.equal(run.status, 0, args.join(" "));
+      assert.match(run.stdout, /^code-agent — /, args.join(" "));
+    }
+  });
+
   test("역할별 model·effort가 박혀 설치된다 — 각자 PC의 기본값에 맡기지 않는다", () => {
     init(repo, { cli: "C:/tools/code-agent/dist/agent/cli.js" });
     for (const agent of AGENTS) {

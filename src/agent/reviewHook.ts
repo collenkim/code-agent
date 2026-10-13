@@ -5,7 +5,7 @@ import { hashManifest, hashPlan } from "../core/approval";
 import { stripBlock } from "./blocks";
 import { crossChild } from "./crossEnv";
 import { agentName, withNotation } from "./hostText";
-import { effectiveReviewer, materializeReviewers, REVIEWER_ID, reviewersOf, reviewerState, reviewResultProblems, type ReviewerRun } from "./crossRecord";
+import { effectiveReviewer, materializeReviewers, normalizeReviewTable, REVIEWER_ID, reviewersOf, reviewerState, reviewResultProblems, type ReviewerRun } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
 import { findRepoRoot } from "./layout";
 import { noteSubagentReturn } from "./hookLog";
@@ -130,7 +130,8 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   const started = [...candidates].reverse().find(open) ?? candidates.at(-1);
   if (!started) throw new Error("이 회차에서 시작한 리뷰어의 완료 이벤트가 아닙니다.");
   const report = reviewerReport(input, repoRoot, started.startedAt);
-  const body = normalizeFindings(report.replace(/^##\s*지적\s*\n/, ""));
+  // 범위·경로·상태 칸처럼 판단이 아닌 형식은 코드가 고친다 — 그래도 남는 문제만 담당에게 돌려보낸다
+  const body = normalizeReviewTable(normalizeFindings(report.replace(/^##\s*지적\s*\n/, "")), planned, REVIEWER_ID).body;
   const problems = reviewResultProblems(body, planned, REVIEWER_ID);
   const docPath = join(repoRoot, reviewDocFile(id));
   let section: string | undefined;

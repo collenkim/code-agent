@@ -24,7 +24,7 @@ import { TIMING, writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, SURVEY_DRAFTS, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
@@ -38,6 +38,7 @@ import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVi
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
 import { noteHookOutput } from "./hookLog";
+import { shortCommand } from "./screenText";
 import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
 
 /**
@@ -136,7 +137,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -150,7 +151,7 @@ function isModelCommand(command: string): boolean {
     return false;
   }
   const rest = command.slice("code-agent ".length);
-  if (rest === "help" || rest === "--help") return true;
+  if (rest === "--help" || /^help(?: [a-z][a-z-]*)?$/.test(rest)) return true; // help <명령> 은 그 명령의 사용법 줄만
   if (/^model(?: --host (?:claude|codex))?$/.test(rest)) return true; // 조회만 허용한다. 변경은 관찰된 동의로 적용한다.
   if (/^consent (prepare\s+\S.*|(?:status|apply|finish) [a-f0-9-]+)$/.test(rest)) return true;
   if (rest === "setup") return true; // baseline은 사람의 TTY 확인 전용
@@ -446,19 +447,34 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
  * 읽기 전용 담당 — Claude 정의(template/claude/agents)의 tools 에 쓰기·셸이 없는 역할(hookPaths.test 가 정의 파일과 대조한다). Claude 는 도구가
  * 없어 쓰지 못하지만 Codex 하위 에이전트는 셸·apply_patch 를 가지므로 hook 이 막는다(Codex 0.161.0 의 하위 에이전트 PreToolUse 에 agent_type 이 온다)
  */
-export const READ_ONLY_ROLES = ["ca-critic", "ca-reviewer", "ca-surveyor"] as const;
-/** 읽기 전용 담당의 쓰기·상태를 바꾸는 code-agent 명령은 거부한다 — 결과는 최종 응답으로만 돌려준다 */
-export function readOnlyRoleGuard(input: HookInput): string | undefined {
+export const READ_ONLY_ROLES = ["ca-critic", "ca-reviewer"] as const;
+/**
+ * 읽기 전용 담당의 쓰기·상태를 바꾸는 code-agent 명령은 거부한다 — 결과는 최종 응답으로만 돌려준다.
+ * ca-surveyor 는 코드를 읽기만 하고 초안 자리(SURVEY_DRAFTS)의 .md 만 쓴다 — 그 쓰기도 뒤의 문서 세션 규칙을 그대로 지난다
+ */
+export function readOnlyRoleGuard(input: HookInput, projectDir?: string): string | undefined {
   const role = commonAgentName(input.agent_type);
-  if (!role || !(READ_ONLY_ROLES as readonly string[]).includes(role)) return undefined;
-  const reason = `${agentName(role)} 은 읽기 전용 담당입니다 — 파일을 쓰거나 작업을 진행하지 않고, 결과를 최종 응답으로 돌려줍니다.`;
-  if (WRITE_TOOLS.includes(input.tool_name)) return reason;
+  const surveyor = role === "ca-surveyor";
+  if (!role || (!surveyor && !(READ_ONLY_ROLES as readonly string[]).includes(role))) return undefined;
+  const reason = surveyor
+    ? `${agentName(role)} 는 ${SURVEY_DRAFTS}/ 의 초안(.md)만 씁니다 — 문서·코드를 쓰거나 작업을 진행하지 않고, 초안 경로를 최종 응답으로 돌려줍니다.`
+    : `${agentName(role)} 은 읽기 전용 담당입니다 — 파일을 쓰거나 작업을 진행하지 않고, 결과를 최종 응답으로 돌려줍니다.`;
+  if (WRITE_TOOLS.includes(input.tool_name)) {
+    if (surveyor && surveyDraft(findRepoRoot(projectDir ?? input.cwd), input.tool_input.file_path ?? "")) return undefined;
+    return reason;
+  }
   if (["Bash", "PowerShell"].includes(input.tool_name) && leaseGated((input.tool_input.command ?? "").trim())) return reason;
   return undefined;
 }
 
+/** 초안 자리 바로 아래의 .md 한 장 */
+function surveyDraft(repoRoot: string, target: string): boolean {
+  const path = repoPath(repoRoot, target);
+  return path.startsWith(`${SURVEY_DRAFTS}/`) && path.endsWith(".md") && !path.slice(SURVEY_DRAFTS.length + 1).includes("/");
+}
+
 function decideTool(input: HookInput, projectDir?: string): string | undefined {
-  const child = crossChildGuard(input) ?? readOnlyRoleGuard(input);
+  const child = crossChildGuard(input) ?? readOnlyRoleGuard(input, projectDir);
   if (child) return child;
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
   if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);
@@ -844,8 +860,10 @@ function bashDenied(command: string, declared: string[], powershell: boolean): s
       "init·abort·approve·reject·confirm·model·deliver·plugin add·plugin remove 는 직접 호출하지 않고 현재 세션의 ca-answer 동의 절차를 사용합니다.");
   } else if (head === "git") {
     parts.push("git 은 status·diff·log·show 와 branch 목록 보기만 됩니다(파일로 내보내기 없이).");
-  } else if (declared.some((argv) => argv.split(" ")[0] === head)) {
-    parts.push(`선언된 명령은 글자 그대로만 실행합니다: ${declared.join(" / ")}`);
+  } else {
+    // 같은 실행 파일의 선언만 — 긴 인라인 스크립트는 앞부분만 싣는다(전문은 code-agent.json)
+    const same = declared.filter((argv) => argv.split(" ")[0] === head);
+    if (same.length) parts.push(`선언된 명령은 code-agent.json 의 값을 글자 그대로만 실행합니다: ${same.map((argv) => shortCommand(argv)).join(" / ")}`);
   }
   parts.push(fileToolsHint());
   return parts.join(" ");

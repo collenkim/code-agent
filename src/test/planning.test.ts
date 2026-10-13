@@ -6,7 +6,7 @@ import { hostname, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
-import { observeQuestionAnswers } from "./consentFixture";
+import { observeQuestionAnswers, prepareConsentFixture } from "./consentFixture";
 import { back, next, status, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff, handoffPlanning } from "../agent/handoff";
@@ -668,14 +668,18 @@ test("동시에 도착한 세 프로세스의 조사 완료 기록을 모두 보
 
 test("CLI 출력에는 배정 요약과 파일 경로만 남고, 파일에 계약·문서 기준·뼈대가 들어 있다", () => {
   const cli = join(__dirname, "../agent/cli.js");
-  const [summary] = JSON.parse(execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8" })).assignments;
-  assert.deepEqual(Object.keys(summary).sort(), ["agent", "assignmentFile", "dispatchId", "hostAgents", "role", "taskId", "title"]);
+  const out = execFileSync(process.execPath, [cli, "planning", "advance"], { cwd: root, encoding: "utf8", env: { ...process.env, CODE_AGENT_HOST: "claude" } });
+  const [summary] = JSON.parse(out).assignments;
+  assert.deepEqual(Object.keys(summary).sort(), ["agent", "assignmentFile", "role", "taskId", "title"], "Claude 는 agent 만 — 배정 ID 는 assignmentFile 이름에 있다");
+  assert.ok(out.split("\n").every((line) => !line.startsWith("  ")), "최상위 키마다 한 줄이고 들여쓰지 않는다");
+  const full = handed(summary), codex = withNotation("codex", () => JSON.parse(handoffPlanning(root, JSON.stringify(full))));
+  assert.deepEqual(codex.hostAgents, { codex: full.hostAgents.codex }, "Codex 는 자기 담당 이름만 함께 받는다");
   const text = readFileSync(join(root, summary.assignmentFile), "utf8");
   assert.match(text, /## 문서 기준[\s\S]*01-requirements\.md 작성 기준/);
   assert.match(text, /## 단계 context[\s\S]*확정된 접수 요구/, "이전 흐름에서 담당이 받던 접수 요구 원문 목록을 함께 넘긴다");
   assert.ok(text.includes(`## 뼈대 — ${DIR}/01-requirements.md`));
   assert.equal(readFileSync(join(root, ".code-agent/work", ID, "handoff/.gitignore"), "utf8"), "*\n");
-  assert.equal(handed(summary).resultShape.artifacts[0].staged, `${DIR}/.staging/${summary.dispatchId}/01-requirements.md`);
+  assert.equal(handed(summary).resultShape.artifacts[0].staged, `${DIR}/.staging/${handed(summary).resultShape.dispatchId}/01-requirements.md`);
   assert.equal(existsSync(join(root, DIR, ".staging")), false, "staging 폴더는 배정(CLI)이 아니라 담당 시작 hook 이 만든다");
 });
 
@@ -740,7 +744,12 @@ test("context --file은 전문을 전달 파일로 두고 메인에게는 첫 �
 });
 
 test("대화 시작·압축 뒤 붙는 진행 상태 — 진행 중인 것이 없으면 아무것도 붙이지 않는다", () => {
-  assert.ok(sessionAnchor(root).includes(`작업 ${ID} (feature) · 스테이지 analysis`));
+  const anchor = sessionAnchor(root);
+  assert.ok(anchor.includes(`작업 ${ID} (feature) · 스테이지 analysis`));
+  assert.match(anchor.split("\n")[0], /자동 요약 — 이어갈 때는 \/ca-next\)$/);
+  assert.doesNotMatch(anchor, /이전 대화 내용이 아니라|동의는 준비한 세션에서만/, "이어가는 방법은 설치 지침 블록에 있고, 기다리는 동의가 없으면 동의 줄도 없다");
+  prepareConsentFixture(root, { action: "abort" });
+  assert.match(sessionAnchor(root), /\n- 응답·적용을 기다리는 동의가 있다\(.+\)\. 동의는 준비한 세션에서만 적용된다/, "기다리는 동의가 있으면 그 줄만 더한다");
   const empty = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-planning-")));
   try { execFileSync("git", ["init", "-q"], { cwd: empty }); assert.equal(sessionAnchor(empty), ""); }
   finally { rmSync(empty, { recursive: true, force: true }); }
@@ -904,8 +913,8 @@ const crossProblems = () => planningProblems(loadWork(root)!, "plan").filter((pr
 test("두 호스트 설치에서 critic 뒤 교차 검토가 남으면 advance 의 next 와 status 다음: 이 planning cross 를 안내한다(E5)", () => {
   const cross = crossPlanningSetup();
   try {
-    const out = JSON.parse(planningAdvanceCli(root, { chain: false }).text) as { action: string; blocked: unknown[]; next: string };
-    assert.deepEqual([out.action, out.blocked.length], ["blocked", 0]);
+    const out = JSON.parse(planningAdvanceCli(root, { chain: false }).text) as { action: string; blocked?: unknown[]; next: string };
+    assert.deepEqual([out.action, out.blocked], ["blocked", undefined], "CLI 출력은 빈 배열(막힌 작업 없음)을 싣지 않는다");
     assert.match(out.next, /^교차 검토: [\s\S]*code-agent planning cross --by \S+ [\s\S]* — 그다음 code-agent planning advance$/);
     assert.doesNotMatch(out.next, /그대로 전하고 멈춘다/);
     const line = status(root).split("\n").find((entry) => entry.startsWith("다음: "))!;
@@ -1529,6 +1538,8 @@ test("Claude 완료 hook — 형식 오류는 첫 Stop 에서 되돌리고, 이�
   quiet((stderr) => {
     assert.equal(runPlanningHook(stopEvent(item, "format", broken)), 2);
     assert.match(stderr(), /resultShape 형태 JSON 하나로 다시 반환/);
+    assert.match(stderr(), /결과 JSON 이 resultShape 와 다릅니다:\n {2}- summary: /, "스키마 오류는 경로: 메시지 줄로 싣는다");
+    assert.doesNotMatch(stderr(), /"code":/, "zod 오류 JSON 을 그대로 싣지 않는다");
     assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!.status, "running");
     assert.equal(runPlanningHook(stopEvent(item, "format", broken, { stop_hook_active: true })), 0);
   });

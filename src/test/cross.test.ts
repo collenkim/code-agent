@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { crossFlags, crossInvocation, crossInvocationArgs, crossNetProbe, crossSandboxSuspect, crossSectionText, netProbeRunner, netProbeTarget, normalizeCrossBody, runCross } from "../agent/crossCheck";
 import {
   attemptLabel, crossAttemptsOf, crossLastRun, crossStopStreak, effectiveReviewer, findingDetailHash, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
-  planningCrossView, pointHost, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyPlanning, syncLegacyRound, waiveVerdict,
+  normalizeReviewTable, planningCrossView, pointHost, pointLabel, reviewersOf, reviewerState, reviewResultProblems, stopBody, syncLegacyPlanning, syncLegacyRound, waiveVerdict,
   type CrossAttempt, type PlanningCrossAttempt, type ReviewerRun,
 } from "../agent/crossRecord";
 import type { PlanningState } from "../agent/planningState";
@@ -41,6 +41,23 @@ test("reviewResultProblems — 표 모양·id·다섯 칸·중복·상태·경�
   assert.match(reviewResultProblems("| F1 | src/a.ts | 계획 안 | 열림 | x |\n| F1 | src/b.ts | 계획 안 | 열림 | y |", PLANNED, F).join("\n"), /F1 가 여러 줄입니다/);
   assert.match(reviewResultProblems("| X1 | src/other.ts | 계획 안 | 열림 | x |", PLANNED, X).join("\n"), /X1 범위 칸이 계획과 다릅니다\(계획 안 → 계획 밖\)/);
   assert.deepEqual(reviewResultProblems("| X1 | src/other.ts | 계획 밖 | 해결 | x |", PLANNED, X), []);
+});
+
+test("normalizeReviewTable — 범위·경로·상태처럼 판단이 아닌 칸만 고치고, 고친 표는 표 규칙을 지난다", () => {
+  const header = "| id | 계획 파일 | 범위 | 상태 | 지적 |\n|---|---|---|---|---|";
+  const raw = `${header}\n| F1 | \`src/a.ts:12\` | 계획 밖 | Open | 경계값 누락 |\n| F2 | ./src/b.ts | 계획 안 | resolved | 고쳐짐 |\n| F3 | src/other.ts | 계획 안 | 열림 | 범위 밖 |`;
+  const { body, fixed } = normalizeReviewTable(raw, PLANNED, F);
+  assert.equal(fixed, 6);
+  assert.deepEqual(reviewResultProblems(body, PLANNED, F), []);
+  assert.ok(body.includes("| F1 | src/a.ts | 계획 안 | 열림 | src/a.ts:12 — 경계값 누락 |"), "줄번호가 붙은 위치는 지적 칸 앞으로 옮긴다");
+  assert.ok(body.includes("| F2 | src/b.ts | 계획 안 | 해결 | 고쳐짐 |"));
+  assert.ok(body.includes("| F3 | src/other.ts | 계획 밖 | 열림 | 범위 밖 |"), "범위 칸은 계획 대조 값이다");
+  assert.ok(body.startsWith(header), "머리·구분 줄은 그대로");
+  // 뜻을 정할 수 없는 상태·빈 경로는 고치지 않는다 — 표 규칙이 그대로 잡는다
+  const kept = normalizeReviewTable(`${header}\n| F1 | src/a.ts | 계획 안 | 열림(경미) | x |\n| F2 |  | 계획 안 | 열림 | y |`, PLANNED, F);
+  assert.equal(kept.fixed, 0);
+  assert.match(reviewResultProblems(kept.body, PLANNED, F).join("\n"), /F1 상태 칸은 열림 · 해결 둘뿐입니다[\s\S]*F2 계획 파일 칸은 저장소 기준 경로만/);
+  assert.deepEqual(normalizeReviewTable("- 없음", PLANNED, F), { body: "- 없음", fixed: 0 });
 });
 
 test("waiveVerdict — 게이트를 막는 지적만 기각할 수 있고, 종류는 상태·범위로 정한다", () => {
@@ -289,6 +306,16 @@ test("교차 실행 인자 — 역할 정책의 모델·강도(--model·--effort
   });
   withModels({ critic: "sonnet", effort: { critic: "max" } }, (root) => {
     assert.match(crossInvocationArgs(root, "claude", "ca-critic", "x", "").args.join(" "), /--model sonnet --effort max/);
+  });
+  // 형식 교정은 원문을 형식으로만 옮긴다 — 지침은 그 담당 것, 모델·강도는 writer(실행 등급) 설정
+  withModels({ writer: "haiku" }, (root) => {
+    const claude = crossInvocationArgs(root, "claude", "ca-reviewer", "x", "", true);
+    assert.match(claude.args.join(" "), /--agent ca-reviewer --model haiku --output-format/);
+    assert.equal(crossInvocationArgs(root, "claude", "ca-reviewer", "x", "").model, "opus/high", "교정이 아니면 판단 등급 그대로");
+  });
+  withModels(undefined, (root) => {
+    assert.equal(crossInvocationArgs(root, "claude", "ca-critic", "x", "", true).model, "sonnet/medium");
+    assert.equal(crossInvocationArgs(root, "codex", "ca-reviewer", "x", "out.txt", true).model, "gpt-6.1-sol/medium");
   });
   withModels({ critic: "haiku" }, (root) => {
     const args = crossInvocationArgs(root, "claude", "ca-critic", "x", "");

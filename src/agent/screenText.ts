@@ -30,6 +30,11 @@ export function screenRows(text: string, width = SCREEN_WIDTH): number {
   return text.split("\n").reduce((rows, line) => rows + Math.max(1, Math.ceil(displayWidth(line.trimEnd()) / width)), 0);
 }
 /** 한 줄을 화면 폭에 맞춰 자른다(잘렸으면 끝에 …) */
+/** 모델에게 다시 보이는 선언 명령 — 긴 인라인 스크립트(기본 build 등)는 앞부분과 글자 수만. 전문은 code-agent.json 과 실행 로그 첫 줄에 있다 */
+export function shortCommand(command: string, max = 120): string {
+  return command.length <= max ? command : `${command.slice(0, max)}… (${command.length}자)`;
+}
+
 export function clipLine(line: string, width = SCREEN_WIDTH): { text: string; clipped: boolean } {
   if (displayWidth(line) <= width) return { text: line, clipped: false };
   let used = 0, text = "";

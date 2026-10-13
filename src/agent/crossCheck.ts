@@ -13,7 +13,7 @@ import { requireValidatable } from "./commands";
 import { crossChild, crossChildEnv, otherHost, runtimeHost, sandboxMarkers } from "./crossEnv";
 import {
   attemptCounts, CROSS_ID, crossAttemptsOf, crossTimeoutMin, crossTimeoutMs, legacyPlanningAttempts, orphanView, planningCrossAttemptsOf,
-  planningCrossView, pointHost, RESULT_SHAPE_PROBLEM, reviewResultProblems, stopBody, syncLegacyPlanning,
+  normalizeReviewTable, planningCrossView, pointHost, RESULT_SHAPE_PROBLEM, reviewResultProblems, stopBody, syncLegacyPlanning,
   type CrossAttempt, type CrossUsage, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
 } from "./crossRecord";
 import { planPaths, treeHashNow } from "./evidence";
@@ -71,8 +71,12 @@ function codexInstructions(root: string, agent: Agent): string {
  * 다른 호스트에 넘길 인자 — 실행 파일 찾기·임시 폴더 없이 순수하게 만든다. 모델·강도는 역할 정책(claudeModelOf·codexModelOf)에서 온다.
  * sentPrompt 는 보낸 프롬프트 전문(Codex 는 지침 + 프롬프트) — 실패 분류가 출력에 되풀이된 줄을 뺀다.
  */
-export function crossInvocationArgs(root: string, host: Host, agent: Agent, prompt: string, outFile: string): { args: string[]; model: string; sentPrompt: string } {
-  const role = agent === "ca-reviewer" ? "reviewer" : "critic";
+/**
+ * 교차 실행 인자. 형식 교정(`format`)은 원문을 형식으로만 옮기는 일이라 지침은 그 담당 것을 쓰고 모델은 writer 역할(실행 등급 —
+ * 받은 재료를 형식으로 옮긴다) 설정을 쓴다. 판단 등급 모델을 형식 때문에 다시 부르지 않는다.
+ */
+export function crossInvocationArgs(root: string, host: Host, agent: Agent, prompt: string, outFile: string, format = false): { args: string[]; model: string; sentPrompt: string } {
+  const role = format ? "writer" : agent === "ca-reviewer" ? "reviewer" : "critic";
   if (host === "claude") {
     const config = claudeModelOf(root, role);
     return {
@@ -91,15 +95,15 @@ export interface CrossInvocation {
   file: string; prefix: string[]; args: string[]; env: Record<string, string | undefined>; model: string; sentPrompt: string; outFile?: string; scratch?: string;
 }
 /** 실행 준비 — 실행 파일·임시 폴더·자식 환경(부른 쪽 호스트 표지를 지우고 CODE_AGENT_CROSS=<호스트>)을 더한다 */
-export function crossInvocation(root: string, host: Host, agent: Agent, prompt: string): CrossInvocation | { unresolved: string; model: string } {
+export function crossInvocation(root: string, host: Host, agent: Agent, prompt: string, format = false): CrossInvocation | { unresolved: string; model: string } {
   const resolved = hostCommand(host);
-  if (typeof resolved === "string") return { unresolved: resolved, model: crossInvocationArgs(root, host, agent, prompt, "").model };
+  if (typeof resolved === "string") return { unresolved: resolved, model: crossInvocationArgs(root, host, agent, prompt, "", format).model };
   let scratch: string | undefined, outFile: string | undefined;
   if (host === "codex") {
     scratch = mkdtempSync(join(tmpdir(), "code-agent-cross-"));
     outFile = join(scratch, "last-message.txt");
   }
-  const { args, model, sentPrompt } = crossInvocationArgs(root, host, agent, prompt, outFile ?? "");
+  const { args, model, sentPrompt } = crossInvocationArgs(root, host, agent, prompt, outFile ?? "", format);
   return { file: resolved.file, prefix: resolved.prefix, args, env: crossChildEnv(process.env, host), model, sentPrompt, ...(outFile ? { outFile } : {}), ...(scratch ? { scratch } : {}) };
 }
 
@@ -124,8 +128,8 @@ export type CrossRun =
  * 시작 기록 뒤에 부르므로 던지지 않는다 — 실행 준비 중의 예외도 오류 줄 하나인 실패로 돌려준다(시도가 끝 기록 없이 남지 않게).
  * sandboxSuspect: 샌드박스 표지가 없어도 네트워크 오류를 샌드박스 거부로 본다(Codex 가 부른 claude — crossSandboxSuspect).
  */
-export function runCross(root: string, host: Host, agent: Agent, prompt: string, options: { sandboxSuspect?: boolean } = {}): CrossRun {
-  try { return runCrossOnce(root, host, agent, prompt, !!options.sandboxSuspect); }
+export function runCross(root: string, host: Host, agent: Agent, prompt: string, options: { sandboxSuspect?: boolean; format?: boolean } = {}): CrossRun {
+  try { return runCrossOnce(root, host, agent, prompt, !!options.sandboxSuspect, !!options.format); }
   catch (error) {
     const message = `error: ${error instanceof Error ? error.message : String(error)}`.replace(/\s+/g, " ");
     const probe: CrossProbe = host === "codex" ? { host, status: null, stderr: message, sentPrompt: "" } : { host, status: null, stderr: message };
@@ -222,8 +226,8 @@ function classifyRun(probe: CrossProbe, suspect: SandboxSuspicion | undefined): 
 function withNotes(notes: readonly string[], refusal: RetryRefused): RetryRefused {
   return notes.length ? new RetryRefused(refusal.failure, `${notes.join("\n")}\n${refusal.message}`) : refusal;
 }
-function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sandboxSuspect: boolean): CrossRun {
-  const invocation = crossInvocation(root, host, agent, prompt);
+function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sandboxSuspect: boolean, format: boolean): CrossRun {
+  const invocation = crossInvocation(root, host, agent, prompt, format);
   if ("unresolved" in invocation) {
     const unresolvedConfig = hostCommandConfigError(invocation.unresolved);
     const probe: CrossProbe = host === "codex" ? { host, unresolved: invocation.unresolved, unresolvedConfig, sentPrompt: "" } : { host, unresolved: invocation.unresolved, unresolvedConfig };
@@ -512,19 +516,21 @@ export function crossReview(root: string, by: string | undefined): string {
     "질문·설명문은 확정 지시서와 같은 언어로 쓴다.",
   ].join("\n");
 
-  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: !!start.suspect });
-  let body: string | undefined, renamed = 0, raw: string | undefined;
+  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: !!start.suspect, format: start.mode === "correct" });
+  let body: string | undefined, renamed = 0, fixedCells = 0, raw: string | undefined;
   let failed: Partial<CrossAttempt> | undefined;
   if (outcome.ok) {
     const cleaned = normalizeFindings(unfence(outcome.text).replace(new RegExp(`^##\\s*${CROSS_HEADING}\\s*\\n`), ""));
     const normalized = normalizeCrossBody(cleaned);
     renamed = normalized.renamed;
-    const problems = reviewResultProblems(normalized.body, planned, CROSS_ID);
+    const table = normalizeReviewTable(normalized.body, planned, CROSS_ID);
+    fixedCells = table.fixed;
+    const problems = reviewResultProblems(table.body, planned, CROSS_ID);
     if (problems.length) {
       raw = outcome.text;
       const rawPath = writeHandoff(root, id, `cross-review-r${start.round}-${start.n}-raw.md`, outcome.text);
       failed = { class: "cross-result-invalid", kind: problems[0] === RESULT_SHAPE_PROBLEM ? "format" : "content", detail: problems.join(" · ").slice(0, 600), rawPath };
-    } else body = normalized.body;
+    } else body = table.body;
   } else {
     const classified = classifyRun(outcome.probe, start.suspect);
     failed = { class: classified.class, kind: classified.kind, detail: classified.detail };
@@ -575,7 +581,7 @@ export function crossReview(root: string, by: string | undefined): string {
   if ("refused" in end) throw new RetryRefused(end.refused, prefix + failureText(end.refused, end.attempt, words, end.budgets, start.wasStopped, end.attempts, raw));
   const open = body!.split("\n").filter((line) => /^\|\s*X\d+\s*\|/.test(line) && /\|\s*열림\s*\|/.test(line)).length;
   return prefix + `${host}(${end.model}) 교차 리뷰를 ${start.round}회차에 기록했습니다 — ${body === "- 없음" ? "지적 없음" : `열린 지적 ${open}개`}` +
-    `${start.mode === "correct" ? " (형식 교정)" : ""}${renamed ? " · F 번호를 X 로 바꿔 기록했습니다" : ""}. ${reviewDocFile(id)} 의 ## ${CROSS_HEADING}` +
+    `${start.mode === "correct" ? " (형식 교정)" : ""}${renamed ? " · F 번호를 X 로 바꿔 기록했습니다" : ""}${fixedCells ? ` · 표 칸 ${fixedCells}곳(범위·경로·상태)을 고쳐 기록했습니다` : ""}. ${reviewDocFile(id)} 의 ## ${CROSS_HEADING}` +
     (!end.winner ? " — 같은 회차에 먼저 완료된 교차 결과가 있어 ⑨ 는 바꾸지 않았습니다(기록만 남겼습니다)"
       : !end.isLast ? ` — 지금은 ${end.lastRound}회차라 ⑨ 는 바꾸지 않았습니다(기록만 남겼습니다)` : "");
 }
@@ -725,7 +731,7 @@ export function crossCritic(root: string, by: string | undefined): string {
       prompt = `${file} 를 읽고 그 지시대로 교차 계획 검토 결과 JSON 하나만 반환하라.`;
     }
 
-    const outcome = runCross(root, host, "ca-critic", prompt, { sandboxSuspect: !!start.suspect });
+    const outcome = runCross(root, host, "ca-critic", prompt, { sandboxSuspect: !!start.suspect, format: start.mode === "correct" });
     let parsed: CrossCriticResult | undefined, raw: string | undefined;
     let failed: Partial<PlanningCrossAttempt> | undefined;
     if (outcome.ok) {

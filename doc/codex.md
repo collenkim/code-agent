@@ -38,7 +38,7 @@ Claude도 함께 사용할 프로젝트는 `code-agent init --host both`로 설�
 
 | 이벤트 | code-agent 처리 |
 |---|---|
-| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령과 `code_agent.confirm`은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer·surveyor)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
+| PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령과 `code_agent.confirm`은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer, surveyor 는 초안 자리 `doc/.survey/` 밖)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
 | UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 그 밖의 메시지는 기록하지 않는다(업무 답 관찰 없음) |
 | SubagentStart | 계획 담당·독립 리뷰어의 세션과 실행 ID 관찰 |
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약·문서 검사에 대조. 실패는 되돌리지 않고 기록하며 판정 실패도 `{}`·exit 0으로 통과시킨다(사유는 stderr) |

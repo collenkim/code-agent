@@ -128,6 +128,15 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
 }
 
 /**
+ * 계획 CLI 출력 — 최상위 키마다 한 줄(값은 들여쓰지 않은 JSON)이고 빈 배열은 뺀다. `problems` 는 비어도 남긴다(advance 의 기존 키).
+ * 함수(`advancePlanning` 등)의 JSON 은 그대로다 — 메인 대화로 가는 CLI 출력에서만 줄인다
+ */
+export function planningJson(value: Record<string, unknown>): string {
+  const entries = Object.entries(value).filter(([key, item]) => item !== undefined && !(Array.isArray(item) && item.length === 0 && key !== "problems"));
+  return `{\n${entries.map(([key, item]) => `${JSON.stringify(key)}:${JSON.stringify(item)}`).join(",\n")}\n}`;
+}
+
+/**
  * CLI `planning advance [--chain]`. 출력은 advance JSON(기존 키·problems 그대로)에 `next`(와 연쇄면 `chain`)를 더한 것이다.
  * 게이트 거부면 exit 1 이다(`code-agent next` 의 Stop 과 같다) — JSON 은 그대로 낸다.
  */
@@ -147,7 +156,7 @@ export function planningAdvanceCli(root: string, options: { chain: boolean }): {
     }
   }
   const workDir = active ? workDocsDir(active.id) : "doc/work/<ID>";
-  const text = JSON.stringify({ ...view, ...(gate ? { chain: gate } : {}), next: planningNextLine(view, { chained: options.chain, gate, workDir }) }, null, 2);
+  const text = planningJson({ ...view, ...(gate ? { chain: gate } : {}), next: planningNextLine(view, { chained: options.chain, gate, workDir }) });
   return { text, exit: gate?.gate === "rejected" ? 1 : 0 };
 }
 
@@ -157,5 +166,5 @@ export function planningAssignmentCli(json: string): string {
   const next = value.cached
     ? "현재 입력의 결과가 이미 있다 — code-agent planning advance"
     : `이 배정을 담당에게 맡긴다${value.mode === "correction" ? " (형식만 고친다)" : ""} — 프롬프트에는 assignmentFile 경로만 넘기고, 완료 알림을 받으면 code-agent planning advance`;
-  return JSON.stringify({ ...value, next }, null, 2);
+  return planningJson({ ...value, next });
 }

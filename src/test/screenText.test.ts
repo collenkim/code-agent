@@ -6,7 +6,7 @@ import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { consentStatus, loadConsent, runConsentHook } from "../agent/consent";
-import { clipLine, displayWidth, excerpt, QUESTION_ROWS, questionScreenProblem, screenRows, SCREEN_WIDTH } from "../agent/screenText";
+import { clipLine, displayWidth, excerpt, QUESTION_ROWS, questionScreenProblem, screenRows, SCREEN_WIDTH, shortCommand } from "../agent/screenText";
 import { confirmationText, prepareConsentFixture, prepareDeliveryFixture, setupConsentProject } from "./consentFixture";
 import type { PreparedConsentFixture } from "./consentFixture";
 
@@ -30,6 +30,12 @@ test("화면 폭: 한글·전각은 두 칸, 넘치는 줄은 자동 줄넘김 �
   const clipped = clipLine("가".repeat(100));
   assert.ok(clipped.clipped && clipped.text.endsWith("…") && displayWidth(clipped.text) <= SCREEN_WIDTH);
   assert.deepEqual(clipLine("짧은 줄"), { text: "짧은 줄", clipped: false });
+});
+
+test("shortCommand — 모델에게 다시 보이는 긴 선언 명령은 앞부분과 글자 수만", () => {
+  assert.equal(shortCommand("npm test"), "npm test");
+  const long = `node -e "${"x".repeat(300)}"`;
+  assert.equal(shortCommand(long), `${long.slice(0, 120)}… (${long.length}자)`);
 });
 
 test("앞부분 발췌: 빈 줄·표 구분선은 줄 수에 넣지 않고, 빠지거나 잘린 줄이 있으면 complete 가 아니다", () => {

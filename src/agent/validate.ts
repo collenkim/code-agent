@@ -83,6 +83,7 @@ import {
 import type { FailureRecord, RunCause, VerifyBudget, VerifyRetryState, VerifyState, WipedRuns } from "./retryPolicy";
 import { reviewProblems } from "./review";
 import { Stop } from "./stop";
+import { shortCommand } from "./screenText";
 import { confirmOnTerminal } from "./tty";
 import { freshTestReports, reportSnapshot } from "./testReports";
 import type { ReportScan } from "./testReports";
@@ -467,7 +468,7 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
     "",
     ...runs.map((run) =>
       `- ${run.kind}: ${run.outcome}${run.cause ? ` · ${RUN_CAUSE_LABEL[run.cause]}` : ""}` +
-      `${run.command ? ` (${run.command})` : " — code-agent.json 에 선언이 없습니다"}${run.logFile ? ` · 로그 ${run.logFile}` : ""}`),
+      `${run.command ? ` (${shortCommand(run.command)})` : " — code-agent.json 에 선언이 없습니다"}${run.logFile ? ` · 로그 ${run.logFile}` : ""}`),
   ];
   if (specs.every((spec) => !spec.argv)) {
     lines.push("", `!! ${phase} 로 돌릴 명령이 하나도 선언돼 있지 않습니다 — 검증 없이 통과할 수 없습니다.`);
@@ -595,7 +596,7 @@ function reproSummary(work: Work, evidence: Evidence): string {
     "",
     ...runs.map(
       (run) =>
-        `- ${run.kind}: ${run.outcome}${run.command ? ` (${run.command})` : " — code-agent.json 에 선언이 없습니다"}` +
+        `- ${run.kind}: ${run.outcome}${run.command ? ` (${shortCommand(run.command)})` : " — code-agent.json 에 선언이 없습니다"}` +
         `${run.logFile ? ` · 로그 ${run.logFile}` : ""}`,
     ),
     "",

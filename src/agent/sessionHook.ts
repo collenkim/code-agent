@@ -61,6 +61,16 @@ function runningPlanning(work: Work, source?: string): string[] {
   }
 }
 
+/** 머리 줄 — 이어가는 길(ca-next)은 설치 지침 블록(CLAUDE.block·CODEX.block)에도 있어 여기서는 스킬 이름만 */
+const heading = (): string => `code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동 요약 — 이어갈 때는 ${skill("ca-next")})`;
+
+/** 응답·적용을 기다리는 동의가 있을 때만 붙는 줄 — 압축 요약에 남은 이전 세션의 동의 ID 를 적용하지 않게 */
+function openConsentLine(repoRoot: string): string | undefined {
+  let open: ReturnType<typeof openConsent>;
+  try { open = openConsent(repoRoot); } catch { open = undefined; }
+  return open ? `- 응답·적용을 기다리는 동의가 있다(${open.title}). 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.` : undefined;
+}
+
 /**
  * 압축·비우기 뒤에는 이전 대화가 읽은 ca-answer 절차가 사라진다 — 스킬은 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 읽는다" 이므로
  * 진행 중인 것이 있을 때 다시 읽으라고 한 줄 붙인다. 작업·접수·문서 세션 밖에서 응답·적용을 기다리는 동의(색인의 열린 창 안 —
@@ -70,13 +80,8 @@ function withReread(repoRoot: string, anchor: string, source?: string): string {
   if (source !== "compact" && source !== "clear") return anchor;
   const line = `- 대화가 압축·비워졌다 — 질문·동의 전에 ca-answer 절차(${skillFile("ca-answer")})를 다시 읽는다.`;
   if (anchor) return `${anchor}\n${line}`;
-  let open: ReturnType<typeof openConsent>;
-  try { open = openConsent(repoRoot); } catch { open = undefined; }
-  return open ? [
-    "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
-    `- 응답·적용을 기다리는 동의가 있다(${open.title}). 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.`,
-    line,
-  ].join("\n") : "";
+  const open = openConsentLine(repoRoot);
+  return open ? [heading(), open, line].join("\n") : "";
 }
 
 /** 작업 임대 넘겨받기 줄 — 이 hook 은 막지 않으므로 실패는 삼킨다 */
@@ -96,26 +101,26 @@ function progress(repoRoot: string, source: string | undefined, sessionId: strin
   const work = loadWork(repoRoot);
   if (work) {
     const { active, order } = work;
+    const open = openConsentLine(repoRoot);
     return [
-      "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
+      heading(),
       `- 작업 ${order.id} (${order.kind}) · 스테이지 ${active.phase}${active.task ? ` · Task ${active.task}` : ""} · 계획 ${work.plan ? approvalOf(work).status : "미제출"} · 작업 폴더 ${workDocsDir(active.id)}/`,
       ...leaseNote(work, host, sessionId, source),
       ...runningPlanning(work, source),
-      `- 이전 대화 내용이 아니라 \`code-agent status\`와 그 스테이지의 스킬로 이어간다. 사용자가 이어가자고 하면 \`${skill("ca-next")}\` 절차를 따른다.`,
-      "- 동의는 준비한 세션에서만 적용된다. 이전 세션의 동의 ID는 적용하지 말고 필요하면 새로 준비한다.",
+      ...(open ? [open] : []),
     ].join("\n");
   }
   const session = loadRequestSession(repoRoot);
   if (session) {
     return [
-      "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
+      heading(),
       `- 요구사항 접수 중: ${session.id} (${session.kind}) · 작업 폴더 ${workDocsDir(session.id)}/`,
       `- 사용자가 이어가자고 하면 \`code-agent status\`로 확인하고 \`${skill("ca-request")}\`(또는 \`${skill("ca-next")}\`) 절차로 이어간다.`,
     ].join("\n");
   }
   if (existsSync(join(repoRoot, DOCS_SESSION_FILE))) {
     return [
-      "code-agent 진행 상태 (대화 시작·재개·압축·비우기 뒤 자동으로 붙는 요약)",
+      heading(),
       `- 공통 문서 준비 세션이 열려 있다. 사용자가 이어가자고 하면 \`${skill("ca-docs")}\` 또는 \`${skill("ca-adopt")}\` 절차로 이어간다.`,
     ].join("\n");
   }

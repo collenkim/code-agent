@@ -286,9 +286,17 @@ test("형식 교정도 다시 형식 오류면 '남은 0회' 재실행 대신 �
   assert.throws(() => cross("- 없음"), refusal(/한도 1회를 썼습니다/), "안내대로 다시 실행하지 않는다 — 실행하면 한도 거부다");
 });
 
-test("내용 오류(상태·경로·범위)도 기록 전에 걸러 형식만 교정한다 — 교정 프롬프트가 표 규칙을 다시 준다", async () => {
+test("판단이 아닌 칸(상태 동의어·경로의 백틱과 줄번호·범위)은 코드가 고쳐 기록한다 — 형식 교정을 부르지 않는다", async () => {
   await crossRepo(); fakeCodex();
-  assert.throws(() => cross(`| X1 | ${CODE}:3 | 계획 안 | 미해결 | x |`), refusal(/형식이 맞지 않습니다[\s\S]*상태 칸[\s\S]*계획 파일 칸/));
+  assert.match(cross(`| X1 | \`${CODE}:3\` | 계획 밖 | 미해결 | 경계값 누락 |`), /표 칸 3곳\(범위·경로·상태\)을 고쳐 기록했습니다/);
+  assert.deepEqual(attempts().map((attempt) => attempt.mode), ["review"]);
+  assert.ok(readFileSync(doc(), "utf8").includes(`| X1 | ${CODE} | 계획 안 | 열림 | ${CODE}:3 — 경계값 누락 |`));
+  assert.throws(() => next(root), /열린 지적: X1/);
+});
+
+test("뜻을 정할 수 없는 내용 오류는 기록 전에 걸러 형식만 교정한다 — 교정 프롬프트가 표 규칙을 다시 준다", async () => {
+  await crossRepo(); fakeCodex();
+  assert.throws(() => cross(`| X1 | ${CODE} | 계획 안 | 열림(경미) | x |\n| X2 |  | 계획 안 | 열림 | y |`), refusal(/형식이 맞지 않습니다[\s\S]*상태 칸[\s\S]*계획 파일 칸/));
   assert.equal(attempts()[0].kind, "content");
   assert.match(cross(`| X1 | ${CODE} | 계획 안 | 열림 | x (3줄) |`), /열린 지적 1개 \(형식 교정\)/);
   assert.match(prompt(), /상태는 `열림`·`해결` 둘 중 원문의 뜻대로/);

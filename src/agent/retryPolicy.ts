@@ -358,8 +358,8 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "cross-result-invalid": {
     id: "cross-result-invalid", label: "교차 결과 형식 오류", group: "cross", auxiliary: false,
-    detect: "지적 표·JSON 아님, 표 규칙·근거 범위 위반(F→X 정규화 뒤)",
-    retry: "correct-once", retryText: "같은 명령으로 원문의 형식만 교정 1회",
+    detect: "지적 표·JSON 아님, 표 규칙·근거 범위 위반(F→X·표 칸 정규화 뒤)",
+    retry: "correct-once", retryText: "같은 명령으로 원문의 형식만 교정 1회(writer 역할 모델)",
     counters: ["crossFormat", "crossPoint"],
     limitText: `형식 교정 ${LIMITS.crossFormat}, 지점 시도 ${LIMITS.crossPoint}`,
     consumesFixRound: false, fixRoundText: "안 씀",

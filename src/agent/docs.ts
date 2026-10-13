@@ -100,7 +100,8 @@ function markdownFiles(repoRoot: string, path: string): string[] {
     .sort()
     .flatMap((name) => {
       const child = posix.join(path, name);
-      if (statSync(join(repoRoot, child)).isDirectory()) return markdownFiles(repoRoot, child);
+      // 점으로 시작하는 폴더(초안 자리 .survey·.staging)는 문서가 아니다
+      if (statSync(join(repoRoot, child)).isDirectory()) return name.startsWith(".") ? [] : markdownFiles(repoRoot, child);
       return name.endsWith(".md") ? [child] : [];
     });
 }

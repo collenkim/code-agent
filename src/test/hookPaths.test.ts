@@ -9,7 +9,7 @@ import { codexHook, runCodexHook } from "../agent/codexHook";
 import { start } from "../agent/commands";
 import { docsBegin, docsEnd } from "../agent/docsCommands";
 import { doctor } from "../agent/doctor";
-import { decide, expandTilde, READ_ONLY_ROLES, type HookInput } from "../agent/hook";
+import { decide, expandTilde, READ_ONLY_ROLES, readOnlyRoleGuard, type HookInput } from "../agent/hook";
 import { assetText } from "../agent/assets";
 import { foldWindowsAlias, shareInside } from "../agent/layout";
 import { CODEX_EVENTS, codexWindowsCommand, codexWindowsProblem, hookInstallProblems, init, installedHook } from "../agent/init";
@@ -240,6 +240,22 @@ test("H4 읽기 전용 담당(Claude 정의의 tools 에 쓰기·셸이 없는 �
     assert.match(decide({ cwd: root, session_id: "s", agent_id: "x", agent_type: role, tool_name: "Write", tool_input: { file_path: join(root, "src/a.md") } }) ?? "", /읽기 전용 담당입니다/, `Claude 표기 ${role}`);
   }
   for (const role of ["ca_writer", "ca_implementer", undefined]) assert.doesNotMatch(pre(role, "apply_patch", patch), /읽기 전용 담당/, String(role));
+  // surveyor 는 코드를 읽기만 하고 초안 자리 바로 아래의 .md 만 쓴다 — 본문을 메인 대화로 돌려 writer 프롬프트에 다시 싣지 않게
+  const surveyor = (file: string) => readOnlyRoleGuard({ cwd: root, session_id: "s", agent_id: "x", agent_type: "ca-surveyor", tool_name: "Write", tool_input: { file_path: join(root, file) } }, root);
+  assert.equal(surveyor("doc/.survey/architecture-structure.md"), undefined);
+  for (const file of ["doc/architecture.md", "doc/.survey/a/b.md", "doc/.survey/a.txt", "doc/.survey/../x.md", "src/a.md"]) assert.match(surveyor(file) ?? "", /초안\(\.md\)만/, file);
+  assert.match(pre("ca_surveyor", "apply_patch", patch), /초안\(\.md\)만/);
+  assert.match(pre("ca_surveyor", "Bash", { command: "code-agent next" }), /초안\(\.md\)만/);
+  assert.doesNotMatch(pre("ca_surveyor", "Bash", { command: "code-agent survey" }), /초안/);
+});
+
+test("문서 세션은 surveyor 초안 자리를 Git 밖에 열고 닫을 때 지운다", () => {
+  docsBegin(root);
+  assert.equal(readFileSync(join(root, "doc/.survey/.gitignore"), "utf8"), "*\n");
+  writeFileSync(join(root, "doc/.survey/conventions-naming.md"), "# 초안\n");
+  assert.equal(spawnSync("git", ["status", "--porcelain", "--", "doc/.survey"], { cwd: root, encoding: "utf8" }).stdout, "", "초안은 Git 이 보지 않는다");
+  docsEnd(root);
+  assert.equal(existsSync(join(root, "doc/.survey")), false);
 });
 
 /** Codex 가 Windows 에서 hook 을 돌리는 꼴 — `powershell.exe -NoProfile -Command "<commandWindows>"`(0.161.0 실측) */

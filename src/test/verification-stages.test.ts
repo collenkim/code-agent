@@ -708,22 +708,23 @@ describe("동결을 푸는 지적은 열린 회차에 묶인다", () => {
     assert.throws(() => next(repo), /F1 이 표에 없습니다/);
   });
 
-  test("상태 칸은 글자 그대로 본다 — 미해결 은 해결이 아니다", async () => {
+  test("상태 칸 — 미해결 은 해결이 아니다: hook 은 같은 뜻의 열림으로 고쳐 기록하고, 뜻을 정할 수 없는 값은 글자 그대로 본다", async () => {
     await toReview();
     openRound(requireValidatable(repo, "review"));
     const row = `| F1 | ${TEST_FILE} | 계획 안 | 미해결 | 단언이 틀렸다 |`;
     writeFindingsDoc(row);
-    // hook 이 기록 전에 상태 값을 돌려보낸다 — 기록이 없으므로 열쇠도 될 수 없다
     const event = { cwd: repo, session_id: "session", agent_id: "reviewer", agent_type: "ca-reviewer" };
     observeReviewer({ ...event, hook_event_name: "SubagentStart" });
-    assert.throws(() => observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row }), /상태 칸은 열림 · 해결 둘뿐입니다\(미해결\)/);
+    observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: row });
+    assert.equal(loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!.reviewers![0].result, `| F1 | ${TEST_FILE} | 계획 안 | 열림 | 단언이 틀렸다 |`);
     assert.throws(() => next(repo), /열린 지적: F1/);
-    assert.throws(() => next(repo), /상태 칸은 열림 · 해결 둘뿐입니다/);
-    // 열쇠로도 쓰이지 않는다 — 여는 쪽과 닫는 쪽이 같은 규칙을 딛는다
-    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/, "유효하지 않은 상태는 동결을 풀지 않는다");
+    // 고친 값은 리뷰어가 뜻한 그대로(열림)라 계획 안 열린 지적으로서 그 파일을 고칠 열쇠가 된다 — 해결로 읽히지는 않는다
+    assert.equal(writeFileHook(TEST_FILE), undefined, "계획 안 열린 지적은 그 파일의 동결을 푼다");
 
+    // 손으로 쓴 문서의 상태 칸은 게이트가 글자 그대로 본다 — 해결이 아닌 값은 열쇠가 되지 않는다
     const path = join(repo, reviewDocFile("ORD-1"));
-    writeFileSync(path, readFileSync(path, "utf-8").replace("| 미해결 |", "| 해결 안 됨 |"));
-    assert.throws(() => next(repo), /열린 지적: F1/);
+    writeFileSync(path, readFileSync(path, "utf-8").replace("| 열림 | 단언이 틀렸다 |", "| 해결 안 됨 | 단언이 틀렸다 |"));
+    assert.throws(() => next(repo), /상태 칸은 열림 · 해결 둘뿐입니다/);
+    assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/, "유효하지 않은 상태는 동결을 풀지 않는다");
   });
 });

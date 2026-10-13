@@ -183,6 +183,8 @@ describe("hook·검증의 Codex 표기", () => {
     const chained = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent check && git commit -m x" } }) ?? "";
     assert.match(chained, /연결·리다이렉트/); assert.match(chained, /planning advance/);
     assert.match(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git checkout -b x" } }) ?? "", /git 은 status·diff·log·show/);
+    // 선언 명령의 첫 낱말이면 같은 실행 파일의 선언만 싣는다(긴 선언은 shortCommand 로 줄인다)
+    assert.match(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "node -e 1" } }) ?? "", /선언된 명령은 code-agent\.json 의 값을 글자 그대로만 실행합니다: node -e process\.exit\(0\)/);
     const codex = (codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }) as
       { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "";
     assert.match(codex, /^작업 중에는 셸로 code-agent 명령, /);

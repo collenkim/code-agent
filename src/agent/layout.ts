@@ -13,6 +13,11 @@ import { writeAtomic } from "../core/atomic";
 export const STATE_DIR = ".code-agent";
 export const ACTIVE_FILE = `${STATE_DIR}/active.json`;
 export const WORK_DOCS_DIR = "doc/work";
+/**
+ * 뼈대 역공학 초안 자리 — ca-surveyor 가 영역별 초안을 쓰고 ca-writer 가 읽는다(본문이 메인 대화를 거쳐 다시 출력되지 않게 경로만 넘긴다).
+ * 문서 세션이 열 때 자기 자신을 무시하는 `.gitignore` 와 함께 만들고 닫을 때 지운다
+ */
+export const SURVEY_DRAFTS = "doc/.survey";
 /** 문서 작성 세션 — 있는 동안 hook 이 문서 자리 밖 쓰기를 막는다 */
 export const DOCS_SESSION_FILE = `${STATE_DIR}/docs-session.json`;
 /** 요구사항 접수 세션 — 있는 동안 hook 이 그 작업 폴더 밖 쓰기와 지시서 쓰기를 막는다 */

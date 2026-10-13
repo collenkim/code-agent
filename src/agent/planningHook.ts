@@ -115,6 +115,12 @@ function pointedResult(work: Work, snapshot: ReturnType<typeof loadPlanning>, ag
   return text.length > RESULT_LIMIT ? { error: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` } : { text };
 }
 
+/** 결과 스키마 위반 — zod 의 JSON 덤프 대신 `경로: 문구` 한 줄씩(20개까지) */
+function resultIssues(issues: { path: PropertyKey[]; message: string }[]): string {
+  const lines = issues.slice(0, 20).map((issue) => `  - ${issue.path.map(String).join(".") || "(root)"}: ${issue.message}`);
+  return ["결과 JSON 이 resultShape 와 다릅니다:", ...lines, ...(issues.length > 20 ? [`  - 외 ${issues.length - 20}개`] : [])].join("\n");
+}
+
 /** 잠금 밖 준비 — 결과 수신·파싱·staging 읽기·문서 검사를 먼저 하고, 같은 범위의 해시 계산으로 메모를 채운다 */
 function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   const snapshot = loadPlanning(work);
@@ -129,7 +135,7 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   let parsed: unknown, parseError: unknown;
   try { parsed = JSON.parse(received.raw); } catch (error) { parseError = error; }
   const schema = ResultSchema.safeParse(parsed);
-  if (!schema.success) return { received, parsed, formatError: (parseError instanceof Error ? parseError.message : schema.error.message).slice(0, 4000) };
+  if (!schema.success) return { received, parsed, formatError: (parseError instanceof Error ? parseError.message : resultIssues(schema.error.issues)).slice(0, 4000) };
   const reported = schema.data;
   const record = snapshot.tasks.find(item => item.task.id === reported.taskId), last = record?.attempts.at(-1);
   let staged: Staged | undefined;

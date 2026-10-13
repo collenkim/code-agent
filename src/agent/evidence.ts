@@ -31,6 +31,7 @@ import type { Work } from "./work";
 import { parseTestCases, readWorkDoc, reproCases, reproMode } from "./workDocs";
 import { parseTestResults, resultFor } from "./testResults";
 import type { CaseStatus } from "./testResults";
+import { shortCommand } from "./screenText";
 
 /**
  * ⑧ 의 원본 — `.code-agent/work/<ID>/<대상>.verify.json`.
@@ -742,7 +743,7 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
   if (guarded.length) add("stop", stateGuardText(guarded));
   for (const run of failedRuns(runs)) {
     if (guarded.length && run.cause === "guard" && run.round === evidence.rounds) continue;
-    add("result", `${run.kind}: ${run.outcome} (${run.command})`);
+    add("result", `${run.kind}: ${run.outcome} (${shortCommand(run.command)})`);
   }
   // 기록 변경(guard) 실행의 출력은 TC 결과로 읽지 않았다 — 그 회차의 ⑦ 미확인 줄('TC id 를 남기세요')은 틀린 할 일이라 싣지 않는다.
   // 게이트는 위 stop 줄로 막혀 있고, 고친 뒤 새 회차에서 TC 대조가 다시 돈다

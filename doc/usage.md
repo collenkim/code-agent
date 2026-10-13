@@ -290,7 +290,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 
 | 경로 | 언제 | 어떻게 |
 |---|---|---|
-| 기본으로 생성 | 코드가 있을 때 | `survey` → `ca-surveyor` 병렬 → `ca-writer` 가 작성. 코드로 알 수 없는 것은 POLICY 면 `확인 필요`, KNOWLEDGE 면 **빈칸** |
+| 기본으로 생성 | 코드가 있을 때 | `survey` → `ca-surveyor` 병렬(초안은 `doc/.survey/` — 세션을 닫으면 지운다) → `ca-writer` 가 초안 파일을 읽어 작성. 코드로 알 수 없는 것은 POLICY 면 `확인 필요`, KNOWLEDGE 면 **빈칸** |
 | 대화로 생성 | 신규거나, 의도·정책·임계처럼 코드에 없는 것 | `code-agent docs interview <종류>`의 후보로 메인이 AskUserQuestion을 구성하고 답을 기록한다 (한 번에 최대 4개 질문) |
 | 기존 문서 연결 | 다른 곳에 이미 있을 때 | `code-agent docs link <종류> <경로...>` — 섹션 검사는 똑같이 받는다 |
 

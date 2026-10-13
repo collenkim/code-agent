@@ -42,7 +42,7 @@ import { setupBaseline, setupStatus } from "./bootstrap";
 import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
 import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
 import { contextHandoff, handoffPlanning, stageHandoff } from "./handoff";
-import { planningAdvanceCli, planningAssignmentCli } from "./planningChain";
+import { planningAdvanceCli, planningAssignmentCli, planningJson } from "./planningChain";
 import { crossCritic, crossReview } from "./crossCheck";
 import { updateFromSourceConfirmed } from "./sourceUpdate";
 import { renderVerification, verificationJson, verify } from "./verificationFlow";
@@ -54,9 +54,10 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
 실행: code-agent init --host claude|codex|both → 호스트를 다시 열고 → ca-request 실행 명령으로 접수 (Claude Code: /ca-request, Codex: $ca-request)
   init은 실행 절차·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
   ca-request는 모든 요구사항 접수, ca-feature는 신규·기능 변경, ca-fix는 결함 수정, ca-refactor는 동작 보존 구조 개선 실행 절차입니다.
-  질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 사용자가 보내는 code-agent consent respond 대화 메시지). 중단한 작업은 ca-next 실행 명령으로 재개합니다.
+  질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 로컬 MCP 선택 UI). 중단한 작업은 ca-next 실행 명령으로 재개합니다.
 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
+  code-agent help [<명령>]            이 사용법 — 명령을 주면 그 명령의 줄만
   code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 실행 절차·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
@@ -191,6 +192,41 @@ function optionsOnly(args: string[], valued: string[], flags: string[], usage: s
   return undefined;
 }
 
+/** USAGE 에 나오는 명령 이름 — `help <명령>` 과 오타 제안이 쓴다 */
+function usageNames(): string[] {
+  return [...new Set([...USAGE.matchAll(/^ {2}code-agent ([a-z][a-z-]*)/gm)].map((match) => match[1]))];
+}
+
+/** `help <명령>` — USAGE 에서 그 명령의 줄과 이어지는 들여쓴 설명 줄만 */
+function commandUsage(name: string): string | undefined {
+  const out: string[] = [];
+  let taking = false;
+  for (const line of USAGE.split("\n")) {
+    if (line === `  code-agent ${name}` || line.startsWith(`  code-agent ${name} `)) { out.push(line); taking = true; }
+    else if (taking && /^ {10,}\S/.test(line)) out.push(line);
+    else taking = false;
+  }
+  return out.length ? out.join("\n") : undefined;
+}
+
+/** 편집 거리 — 오타 제안에만 쓴다 */
+function distance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j += 1) next.push(Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    row = next;
+  }
+  return row[b.length];
+}
+
+/** 모르는 명령 — 사용법 전문(약 8천 자) 대신 가까운 명령과 도움말 명령만. 모델이 오타를 내도 전문이 대화에 다시 실리지 않는다 */
+function unknownCommand(command: string): string {
+  const near = usageNames().map((name) => ({ name, gap: name.startsWith(command) ? 0 : distance(command, name) }))
+    .filter((item) => item.gap <= 2).sort((a, b) => a.gap - b.gap)[0]?.name;
+  return `모르는 명령입니다: ${command}${near ? ` — ${near} 이면 code-agent help ${near}` : ""}\n사용법: code-agent help <명령> · 전체: code-agent help`;
+}
+
 const INIT_USAGE = "사용법: code-agent init [--host claude|codex|both] [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>]";
@@ -230,8 +266,8 @@ export async function runCommand(command: string | undefined, args: string[]): P
         return out.exit;
       }
       if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
-      else if (args[0] === "status") print(planningStatus(repoRoot));
-      else if (args[0] === "result" && args[1]) print(planningResult(repoRoot, args[1]));
+      else if (args[0] === "status") print(planningJson(JSON.parse(planningStatus(repoRoot))));
+      else if (args[0] === "result" && args[1]) print(planningJson(JSON.parse(planningResult(repoRoot, args[1]))));
       else if (args[0] === "repair" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1]))));
       else if (args[0] === "dispatch" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1]))));
       else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
@@ -482,9 +518,20 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(result.text);
       return result.ok ? 0 : 1;
     }
-    default:
+    case undefined:
+    case "--help":
+    case "-h":
       print(USAGE);
-      return command === undefined || command === "help" || command === "--help" ? 0 : 1;
+      return 0;
+    case "help": {
+      if (args.length === 0) { print(USAGE); return 0; }
+      const lines = args.length === 1 ? commandUsage(args[0]) : undefined;
+      if (!lines) throw new Stop(unknownCommand(args.join(" ")));
+      print(lines);
+      return 0;
+    }
+    default:
+      throw new Stop(unknownCommand(command));
   }
 }
 

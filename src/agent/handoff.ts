@@ -7,7 +7,7 @@ import { context } from "./commands";
 import { handoffDir } from "./layout";
 import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
 import { loadWork } from "./work";
-import { agentName } from "./hostText";
+import { agentName, notation } from "./hostText";
 import { Stop } from "./stop";
 
 /**
@@ -126,9 +126,11 @@ export function handoffPlanning(root: string, json: string): string {
       try { stage = context(root); } catch (error) { stage = `(context를 만들지 못했습니다: ${error instanceof Error ? error.message : error})`; }
     }
     const file = writeHandoff(root, work.active.id, `${assignment.resultShape.dispatchId}.md`, assignmentText(assignment, stage));
+    // 담당 이름은 지금 호스트가 부를 것만 — Claude 는 agent, Codex 는 hostAgents.codex(표기를 정할 수 없으면 둘 다). 배정 ID 는 assignmentFile 이름에 있다
+    const n = notation();
     return {
-      taskId: assignment.task.id, role: assignment.task.role, title: assignment.task.title,
-      agent: assignment.agent, hostAgents: assignment.hostAgents, dispatchId: assignment.resultShape.dispatchId,
+      taskId: assignment.task.id, role: assignment.task.role, title: assignment.task.title, agent: assignment.agent,
+      ...(n === "claude" ? {} : { hostAgents: n === "codex" ? { codex: assignment.hostAgents.codex } : assignment.hostAgents }),
       ...(assignment.mode ? { mode: assignment.mode } : {}), ...(assignment.previous ? { previous: assignment.previous } : {}), assignmentFile: file,
     };
   };

@@ -1,5 +1,5 @@
 {
-  "range": "a4b6df8..c372f2e (기록 정리 f6a8b72·f24066c 제외)",
+  "range": "a4b6df8..이 커밋 (기록 정리 f6a8b72·f24066c·c3182f2 제외)",
   "note": "2026-10-12~13 evidence 를 합쳤다. a4b6df8..7ade5a6 의 개별 evidence 12개는 7ade5a6, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 cd0550b 의 doc/reviews/evidence/ 에 원본이 있다.",
   "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "commits": {
@@ -1004,6 +1004,89 @@
         "now": "22+N",
         "saved": "확정 적용 뒤 start 1회(출력 419자)"
       }
+    },
+    "이 커밋": {
+      "scope": "토큰 검토 낮음(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3). L6(교차·synthesis 강도)은 A/B 측정이 필요해 남김",
+      "decisions": {
+        "scope": "사용자: 마지막 토큰 검토 낮음 항목 진행",
+        "L2": "함수 반환·배정 파일은 그대로, CLI 출력만 — 담당 이름은 지금 호스트 것만(표기를 정할 수 없으면 전체), dispatchId 는 assignmentFile 이름으로",
+        "L5": "범위·경로·상태처럼 판단이 아닌 칸만 코드가 고친다. 뜻을 정할 수 없는 값은 그대로 표 규칙에 걸린다. 교차 형식 교정은 writer 역할 설정 — ROLE_POLICY·TIER_DEFAULTS 는 그대로",
+        "L6": "하지 않음 — 판단 품질이 바뀌어 같은 입력의 A/B(유료)가 필요",
+        "L7": "surveyor 는 doc/.survey/ 바로 아래 .md 만(hook, 두 호스트), 문서 세션이 폴더(.gitignore *)를 만들고 지운다",
+        "D1": "흐름도 §1.1 셋째 칸이 정본 — 빠진 규칙을 옮기고 AGENTS.md 는 시험 이름·시험 밖 항목·코드 규칙만"
+      },
+      "measured": {
+        "L1": {
+          "zodDump": 1696,
+          "pathLines": 456,
+          "issues": 7
+        },
+        "L2": {
+          "fixture": "analysis 배정·대기·게이트 준비, impact 배정",
+          "before": [
+            695,
+            561,
+            329,
+            728
+          ],
+          "after": [
+            416,
+            428,
+            251,
+            442
+          ],
+          "total": [
+            2313,
+            1537
+          ]
+        },
+        "L3": {
+          "defaultNodeBuild": 441,
+          "shown": 128
+        },
+        "L4": {
+          "usage": 7638,
+          "typo": 106,
+          "helpPlanning": 753
+        },
+        "L8": {
+          "removedChars": 147,
+          "headerChars": [
+            47,
+            60
+          ]
+        },
+        "D1": {
+          "agentsMd": [
+            6995,
+            4324
+          ]
+        },
+        "D3": {
+          "longestLine": [
+            2255,
+            1924
+          ],
+          "over2000": [
+            2,
+            0
+          ]
+        }
+      },
+      "changedTests": [
+        "crossReview: 상태 동의어·경로 줄번호·범위는 고쳐 기록(교정 없음), 뜻을 정할 수 없는 값만 형식 교정",
+        "review-gate: 범위 칸을 hook 이 고쳐 기록, 손으로 바꾼 문서는 게이트가 드러냄",
+        "verification-stages: 미해결 → 열림(계획 안이면 열쇠), 손으로 쓴 해결 안 됨 은 게이트가 거부",
+        "planning: CLI 배정 요약 키(Claude agent 만·Codex hostAgents.codex), 빈 blocked 생략",
+        "docSync: §5.2 Windows 명령은 표 앞 문단·목록에서 찾는다(D3 로 문단을 나눔)"
+      ],
+      "fullSuite": {
+        "tests": 1436,
+        "pass": 1432,
+        "fail": 0,
+        "skipped": 4,
+        "durationMs": 218984
+      }
     }
   },
   "notTested": [
@@ -1016,6 +1099,7 @@
     "Codex hook agent_id 와 하위 에이전트 기록 thread id 의 대응(배정별 사용량)",
     "리뷰 재검토 범위의 실제 모델 회차 비용·품질",
     "결과 파일·미리 넣은 문서·구현 context 근거 줄을 담당이 지침대로 쓰는지, 요구 확정 적용 뒤 메인이 started·startBlocked 를 읽고 잇거나 멈추는지(모델 행동)와 실제 토큰 효과",
-    "Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본의 apply_patch 수정"
+    "Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본의 apply_patch 수정",
+    "surveyor 초안 파일 전달과 writer 의 읽기(모델 행동)·실제 도입의 토큰 효과, writer 모델로 돈 교차 형식 교정의 품질"
   ]
 }
