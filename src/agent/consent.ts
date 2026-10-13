@@ -30,6 +30,7 @@ import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./s
 import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, repeatedTargetChange, updateConsentIndex } from "./consentState";
 import { observeAnswerEvent } from "./answers";
 import { withNotation } from "./hostText";
+import { clipLine, excerpt, questionScreenProblem } from "./screenText";
 
 export { openConsent } from "./consentState";
 
@@ -68,6 +69,8 @@ export interface ConsentRecord {
   channel?: "claude-question" | "codex-prompt" | "codex-elicitation";
   /** 새 prepare 가 쓴다 — 없으면 이전 형식(확인 코드 없이 Codex 응답을 받는다) */
   format?: 2;
+  /** 확인 내용 전문 파일(저장소 기준 경로). 있으면 선택 화면 질문에는 앞부분과 이 경로만 싣는다 — 없는 이전 기록은 전문을 질문에 싣는다 */
+  fullText?: string;
   /** 준비 때의 작업·접수 ID — 반영 영수증이 이 작업의 동의를 고른다 */
   workId?: string;
   /** 준비 명령을 관찰한 hook 의 세션(CON-1) — 응답·적용은 이 세션에서만 받는다. 없으면 첫 응답 관찰이 세션을 정한다(이전 규칙) */
@@ -444,17 +447,43 @@ function listLocalFiles(root: string, file: string): string[] {
   return readdirSync(full).sort().flatMap(name => listLocalFiles(root, `${file}/${name}`));
 }
 
+/**
+ * 확인 내용 전문 — 요약과 문서 변경 후보 전부. 선택 화면은 긴 질문을 잘라 보이므로(screenText) 질문에는 앞부분과 이 파일 경로만 싣는다.
+ * 이름이 내용 해시라 같은 이름은 같은 내용이다. consents/ 아래라 스냅샷에서 빠지고, hook 이 모델의 도구 쓰기를 막는다.
+ */
+function writeFullText(root: string, summary: string, choices: Choice[]): string {
+  const text = ["<!-- code-agent 확인 내용 전문 — 확인 준비 때 CLI 가 썼다. 선택 화면에는 앞부분만 보인다. -->", "", summary,
+    ...(choices.length ? ["", "## 문서 변경 후보", ...choices.flatMap((choice, index) => ["", `### ${index + 1}번 후보`, "", choice.shown])] : []), ""].join("\n");
+  const file = `${DIR}/confirm-${createHash("sha256").update(text).digest("hex").slice(0, 12)}.md`;
+  const full = localPath(root, file); mkdirSync(dirname(full), { recursive: true });
+  writeAtomic(full, text);
+  return file;
+}
+/** 앞부분 발췌 + 생략 줄 수 + 전문 경로(다 보이면 생략) */
+function brief(text: string, lines: number, fullText: string, where = ""): string {
+  const head = excerpt(text, lines);
+  return [head.text, ...(head.omitted ? [`… 이하 ${head.omitted}줄 생략`] : []), ...(head.complete ? [] : [`전문: ${fullText}${where}`])].join("\n");
+}
+/** 선택 화면 질문의 앞부분 줄 수 — 문서 변경 선택 목록이 붙는 최종 확인은 줄여 screenText.QUESTION_ROWS 안에 든다 */
+const HEAD_LINES = 6, HEAD_LINES_WITH_CHOICES = 3, CHOICE_LINES = 4, SELECTED_LINES = 2;
+const FINAL_OPTIONS = [{label: ACCEPT,description: "표시한 내용과 선택한 범위에 한해 실행합니다."}, {label: CHANGE,description: "수정할 내용을 정리한 뒤 다시 확인합니다."}, {label: DEFER,description: "현재 상태를 유지하고 나중에 이어갑니다."}];
 function questions(record: ConsentRecord): Question[] {
   const pending = record.choices.map((choice, index) => ({ choice, index })).filter(c => c.choice.answer === undefined);
+  const fullText = record.fullText;
   if (pending.length) return pending.slice(0, 4).map(({choice,index}) => ({
-    question: `${index + 1}. ${choice.shown}\n${record.action.action === "knowledge-prune" ? "이 항목을 삭제할까요?" : "이 문서 갱신을 적용할까요?"}`,
+    question: `${index + 1}. ${fullText ? brief(choice.shown, CHOICE_LINES, fullText, ` (${index + 1}번 후보)`) : choice.shown}\n${record.action.action === "knowledge-prune" ? "이 항목을 삭제할까요?" : "이 문서 갱신을 적용할까요?"}`,
     header: "문서 변경", multiSelect: false,
     options: [{label: APPLY, description: record.action.action === "knowledge-prune" ? "이 항목을 삭제합니다." : "제안한 내용으로 갱신합니다."}, {label: KEEP, description: "현재 내용을 유지합니다."}, {label: DEFER, description: "변경하지 않고 확인을 보류합니다."}],
   }));
-  const selected = record.choices.length ? ["", "", "문서 변경 선택:", ...record.choices.map(c =>
-    `- ${c.answer}: ${c.target ?? c.shown.split("\n")[0]}${c.key ? ` · ${c.key}` : ""}`)].join("\n") : "";
-  return [{ question: `${record.summary}${selected}\n이 내용으로 진행할까요?`, header: "진행 확인", multiSelect: false,
-    options: [{label: ACCEPT,description: "표시한 내용과 선택한 범위에 한해 실행합니다."}, {label: CHANGE,description: "수정할 내용을 정리한 뒤 다시 확인합니다."}, {label: DEFER,description: "현재 상태를 유지하고 나중에 이어갑니다."}]}];
+  const answered = record.choices.map(c => `- ${c.answer}: ${c.target ?? c.shown.split("\n")[0]}${c.key ? ` · ${c.key}` : ""}`);
+  if (fullText) {
+    const selected = answered.length ? ["문서 변경 선택:", ...answered.slice(0, SELECTED_LINES).map(line => clipLine(line).text),
+      ...(answered.length > SELECTED_LINES ? [`… 외 ${answered.length - SELECTED_LINES}개`] : [])] : [];
+    return [{ question: [brief(record.summary, answered.length ? HEAD_LINES_WITH_CHOICES : HEAD_LINES, fullText), ...selected, "이 내용으로 진행할까요?"].join("\n"),
+      header: "진행 확인", multiSelect: false, options: FINAL_OPTIONS }];
+  }
+  const selected = answered.length ? ["", "", "문서 변경 선택:", ...answered].join("\n") : "";
+  return [{ question: `${record.summary}${selected}\n이 내용으로 진행할까요?`, header: "진행 확인", multiSelect: false, options: FINAL_OPTIONS }];
 }
 /**
  * Codex 응답의 확인 코드(CON-5) — 지금 묻는 질문 묶음의 해시 앞 6자. prepare·status 출력에 실려 모델도 보는 값이다 — 요약을 줄이다
@@ -508,8 +537,9 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
     const repeated = repeatedTargetChange(root, action.action);
     const at = new Date().toISOString();
     const workId = currentWorkId(root);
+    const fullText = writeFullText(root, displayed.summary, displayed.choices);
     const record: ConsentRecord = {id:randomUUID(),root,action,...displayed,snapshot,snapshotEntries:inspected.entries,createdAt:at,status:"pending",
-      format: 2, ...(workId ? { workId } : {}), ...(options.form ? { form: options.form } : {}),
+      format: 2, fullText, ...(workId ? { workId } : {}), ...(options.form ? { form: options.form } : {}),
       ...(options.binding ? { preparedSession: { id: options.binding.id, host: options.binding.host, at } } : {}),
       ...(action.action === "update" ? {sourceSnapshot:sourceUpdateSnapshot(root)} : {})};
     save(root,record);
@@ -791,9 +821,20 @@ export function consentCommandGuard(root:string,command:string,sessionId?:string
   }
   catch{return "확인 요청을 읽을 수 없습니다.";}
 }
+/** Claude 업무 질문의 화면 크기 — 선택지는 이름과 설명을 함께 센다. 형식이 다른 입력은 판단하지 않는다(도구가 거른다) */
+function askScreenProblem(items: unknown): string | undefined {
+  if (!Array.isArray(items)) return undefined;
+  for (const item of items as Partial<Question>[]) {
+    if (typeof item?.question !== "string") continue;
+    const options = Array.isArray(item.options) ? item.options.map(option => [option?.label, option?.description].filter(text => typeof text === "string").join("\n")) : [];
+    const problem = questionScreenProblem(item.question, options);
+    if (problem) return problem;
+  }
+}
 /**
  * Claude AskUserQuestion 관찰. 동의 질문(metadata.source 가 code-agent:)의 관찰 실패는 질문을 막는다(exit 2).
- * 업무 질문은 답 관찰(answers.jsonl)만 하고, 실패해도 질문을 막지 않는다 — 게이트가 나중에 '답 출처 미확인'으로 잡는다.
+ * 업무 질문은 선택 화면을 넘는 크기만 막고(PreToolUse, exit 2) 답 관찰(answers.jsonl)은 실패해도 질문을 막지 않는다 — 게이트가
+ * 나중에 '답 출처 미확인'으로 잡는다.
  */
 export function runConsentHook(stdin:string):number {
   return withNotation("claude", () => consentEvent(stdin));
@@ -807,6 +848,9 @@ function consentEvent(stdin:string):number {
     try { observeConsent(input, process.env.CLAUDE_PROJECT_DIR); return 0; }
     catch (error) { process.stderr.write(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); return 2; }
   }
+  // 업무 질문도 선택 화면에 다 보여야 답할 수 있다 — 화면을 넘는 질문은 표시하기 전에 돌려보낸다(Codex ask 와 같은 기준)
+  const problem = input?.hook_event_name === "PreToolUse" && input.tool_name === "AskUserQuestion" ? askScreenProblem(input.tool_input?.questions) : undefined;
+  if (problem) { process.stderr.write(`code-agent consent-event: ${problem}\n`); return 2; }
   try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
   catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
   return 0;

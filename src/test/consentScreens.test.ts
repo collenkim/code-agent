@@ -18,7 +18,7 @@ import { approvalDocsHash, approvalDocsState, approvalOf, loadWork } from "../ag
 import { workDocsHash } from "../agent/workDocs";
 import { approvalChangeLines, start } from "../agent/commands";
 import {
-  CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, consentEvent, gitFixture, prepareConsentFixture, prepareDeliveryFixture, preparePlanFixture,
+  CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, confirmationText, consentEvent, gitFixture, prepareConsentFixture, prepareDeliveryFixture, preparePlanFixture,
   setupConsentProject, submitConsentRequest, writeFixture,
 } from "./consentFixture";
 
@@ -120,7 +120,7 @@ test("T-4-1·T-4-2 경계 선언 리팩터는 해시 값을 바꾸지 않고, �
 test("T-4-3·T-4-4·T-4-5 승인이 경계 스냅샷과 문서별 해시를 남기고, 재승인 상태가 바뀐 것을 보인다", () => {
   preparePlanFixture(root);
   const consent = prepareConsentFixture(root, { action: "plan" });
-  assert.match(consent.questions[0].question, /경계·검증 선언 \(승인이 묶는 code-agent\.json 항목/);
+  assert.match(confirmationText(consent), /경계·검증 선언 \(승인이 묶는 code-agent\.json 항목/);
   const work = loadWork(root)!;
   // 리팩터 전 식과 같은 docsHash
   const project = projectDocsHash(checkProjectDocs(root, work.manifest))!;

@@ -6,6 +6,7 @@ import { consentStatus, observeConsent } from "./consent";
 import type { ConsentHookInput } from "./consent";
 import { takeTicket } from "./consentTicket";
 import { findRepoRoot } from "./layout";
+import { QUESTION_ROWS, questionScreenProblem } from "./screenText";
 import { Stop } from "./stop";
 
 const Question = z.object({
@@ -15,6 +16,7 @@ const Question = z.object({
 const Ask = z.object({ questions: z.array(Question).min(1).max(4) }).strict();
 const Confirm = z.object({ id: z.string().uuid() }).strict();
 type Form = { message: string; requestedSchema: Record<string, unknown>; mode: "form" };
+const CONFIRM_MESSAGE = "확인 내용 전문을 읽은 뒤 방향키로 선택하고 Enter로 확정하세요. Esc는 보류입니다.";
 export type Elicit = (form: Form) => Promise<unknown>;
 
 function formOf(message: string, questions: { title: string; options: string[] }[]): Form {
@@ -28,6 +30,11 @@ function formOf(message: string, questions: { title: string; options: string[] }
 export async function askChoice(args: unknown, elicit: Elicit): Promise<unknown> {
   const { questions } = Ask.parse(args);
   for (const question of questions) if (new Set(question.options).size !== question.options.length) throw new Stop("선택지 이름은 서로 달라야 합니다.");
+  // 폼은 화면 높이를 넘는 본문을 스크롤 없이 자른다 — 다 보이지 않는 질문은 표시하지 않고 모델에게 돌려보낸다
+  for (const question of questions) {
+    const problem = questionScreenProblem(question.title, question.options);
+    if (problem) throw new Stop(problem);
+  }
   const response = await elicit(formOf("각 질문의 선택지를 방향키로 이동하고 Enter로 확정하세요. Esc는 취소입니다.", questions));
   const parsed = readResponse(response, questions.map(q => q.options));
   return parsed ? { status: "answered", answers: questions.map((q, i) => ({ question: q.title, answer: parsed[i] })) }
@@ -60,7 +67,8 @@ export async function confirmChoice(root: string, args: unknown, elicit: Elicit)
   observeConsent({ ...event, hook_event_name: "PreToolUse" }, root, "codex-elicitation");
   let answers: Record<string, string> = {};
   try {
-    const result = await elicit(formOf(status.summary, questions.map(q => ({ title: q.question, options: q.options.map(o => o.label) }))));
+    // 요약 전문은 대화와 전문 파일에 있다 — 폼의 message 에 다시 실으면 질문 줄이 화면 밖으로 밀려 잘린다
+    const result = await elicit(formOf(CONFIRM_MESSAGE, questions.map(q => ({ title: q.question, options: q.options.map(o => o.label) }))));
     const selected = readResponse(result, questions.map(q => q.options.map(o => o.label)));
     if (selected) answers = Object.fromEntries(questions.map((q, i) => [q.question, selected[i]]));
     else answers = Object.fromEntries(questions.map(q => [q.question, "보류"]));
@@ -89,7 +97,7 @@ export async function runChoiceServer(root: string): Promise<number> {
     send({ id, method: "elicitation/create", params: form });
   });
   const tools = [
-    { name: "ask", description: "업무 질문을 방향키·Enter 선택 UI로 표시하고 실제 사용자 답을 기다립니다. 문서·정책·복구 선택에 사용합니다. 실행 동의는 confirm을 사용하세요.", inputSchema: z.toJSONSchema(Ask) },
+    { name: "ask", description: `업무 질문을 방향키·Enter 선택 UI로 표시하고 실제 사용자 답을 기다립니다. 문서·정책·복구 선택에 사용합니다. 폼은 화면을 넘는 본문을 자르므로 title은 ${QUESTION_ROWS}줄 이내로 쓰고 긴 배경은 호출 전에 대화에 씁니다. 실행 동의는 confirm을 사용하세요.`, inputSchema: z.toJSONSchema(Ask) },
     { name: "confirm", description: "현재 세션에서 준비한 code-agent 동의를 선택 UI로 표시합니다. ID만 전달하며 응답은 사용자가 직접 선택합니다. 반환 후 승인 상태에서 consent finish로 진행합니다.", inputSchema: z.toJSONSchema(Confirm) },
   ];
   lines.on("line", async line => {

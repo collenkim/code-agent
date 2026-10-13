@@ -10,6 +10,7 @@ import { takeTicket } from "../agent/consentTicket";
 import { readDocLedger } from "../agent/docs";
 import { init } from "../agent/init";
 import { checkChoiceConfig, choiceConfigProblem } from "../agent/choiceConfig";
+import { QUESTION_ROWS, screenRows } from "../agent/screenText";
 import { setupConsentProject, writeFixture } from "./consentFixture";
 
 let root: string;
@@ -40,11 +41,26 @@ test("선택 UI: 독립 질문 두 개의 실제 선택만 반환하고 취소·
   await assert.rejects(askChoice({ ...args, answers: ["추천"] }, selected("추천")));
 });
 
+test("선택 UI: 폼 화면을 넘는 질문·선택지는 표시하지 않고 줄이라고 돌려보낸다", async () => {
+  let shown = 0;
+  const count = async () => { shown++; return { action: "cancel" }; };
+  const long = Array.from({ length: QUESTION_ROWS + 1 }, (_, i) => `${i + 1}. 배경 설명`).join("\n");
+  await assert.rejects(askChoice({ questions: [{ title: long, options: ["추천", "보류"] }] }, count), /질문 본문이 선택 화면 11줄로 10줄을 넘어/);
+  await assert.rejects(askChoice({ questions: [{ title: "범위", options: ["가".repeat(120), "보류"] }] }, count), /선택지 "가+…"가 3줄을 넘어/);
+  assert.equal(shown, 0, "잘릴 질문은 폼을 열지 않는다");
+  await askChoice({ questions: [{ title: Array.from({ length: QUESTION_ROWS }, (_, i) => `${i + 1}줄`).join("\n"), options: ["추천", "보류"] }] }, count);
+  assert.equal(shown, 1);
+});
+
 test("동의 UI: 동일 세션 hook 티켓 → 서버 폼 응답 → 적용 원장에 UI 출처", async () => {
   const id = prepare();
   assert.deepEqual(open(id), {});
   const result: any = await confirmChoice(root, { id }, async form => {
-    assert.match(form.message, /공통 POLICY/);
+    // 요약 전문은 대화·전문 파일에 있다 — 폼에는 짧은 안내와 화면에 다 들어가는 질문만 싣는다(Codex 폼은 넘치는 줄을 자른다)
+    const field = (form.requestedSchema.properties as Record<string, { title: string }>).q1;
+    assert.doesNotMatch(form.message, /공통 POLICY/);
+    assert.match(field.title, /공통 POLICY[\s\S]*전문: \.code-agent\/consents\/confirm-[a-f0-9]{12}\.md\n이 내용으로 진행할까요\?$/);
+    assert.ok(screenRows(`${form.message}\n\n${field.title}`) <= QUESTION_ROWS + 2);
     assert.equal(loadConsent(root, id).status, "pending");
     assert.equal(loadConsent(root, id).channel, "codex-elicitation");
     return { action: "accept", content: { q1: "확인하고 진행" } };

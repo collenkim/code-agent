@@ -17,7 +17,7 @@ import { approvalOf, loadManifestIfAny, loadWork } from "../agent/work";
 import { hashPlan, readLedger } from "../core/approval";
 import {
   ACCEPT_CONSENT, CONSENT_SPEC, CONSENT_WORK_ID, DEFER_CONSENT,
-  approveAndApplyFixture, consentEvent, gitFixture, nativeAnswers, nativeResponse, observeConsentFixture,
+  approveAndApplyFixture, confirmationText, consentEvent, gitFixture, nativeAnswers, nativeResponse, observeConsentFixture,
   prepareConsentFixture, prepareDeliveryFixture, preparePlanFixture, setupConsentProject,
   submitConsentRequest, writeFixture,
 } from "./consentFixture";
@@ -551,7 +551,7 @@ test("deliver: commits approved docs and validated work once, preserving unrelat
   assert.ok(!paths.includes(unrelated));
   const before = gitFixture(root, "rev-parse", "HEAD");
   const fixture = prepareConsentFixture(root, { action: "deliver" });
-  assert.ok(fixture.questions.some(question => question.question.includes(docsLedger)), "final confirmation shows the docs ledger it will commit");
+  assert.ok(confirmationText(fixture).includes(docsLedger), "final confirmation shows the docs ledger it will commit");
   assert.equal(gitFixture(root, "rev-parse", "HEAD"), before);
   observeConsentFixture(fixture);
   assert.equal(gitFixture(root, "rev-parse", "HEAD"), before);

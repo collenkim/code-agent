@@ -13,7 +13,7 @@ import { parseQuestions } from "../agent/questions";
 import { requestBegin, requestSubmit } from "../agent/request";
 import { decideStop } from "../agent/stopHook";
 import {
-  CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, consentEvent, prepareConsentFixture, preparePlanFixture,
+  CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, confirmationText, consentEvent, prepareConsentFixture, preparePlanFixture,
   setupConsentProject, submitConsentRequest, writeFixture,
 } from "./consentFixture";
 
@@ -84,8 +84,8 @@ test("T-6-3·T-6-8 대화로 받은 답은 [Source]: 대화 로 지나고, 확�
   assert.equal(sources().get("Q1"), "conversation");
   assert.match(formatAnswerSources(root, CONSENT_WORK_ID) ?? "", /대화 직접 입력\(관찰 안 됨\) 1[\s\S]*Q1 · 범위: "모듈 하나로 해 주세요"/);
   const consent = prepareConsentFixture(root, { action: "plan" });
-  assert.match(consent.questions[0].question, /대화 직접 입력\(관찰 안 됨\) 1/);
-  assert.match(consent.questions[0].question, /경계·검증 선언/);
+  assert.match(confirmationText(consent), /대화 직접 입력\(관찰 안 됨\) 1[\s\S]*Q1 · 범위: "모듈 하나로 해 주세요"/);
+  assert.match(confirmationText(consent), /경계·검증 선언/);
 });
 
 test("T-6-4 선택지 글자 답은 그 선택지 문장으로 관찰과 대조한다", () => {

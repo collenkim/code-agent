@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { applyConsent, codexReplyCode, consentStatus, observeConsent, prepareConsent } from "../agent/consent";
+import { applyConsent, codexReplyCode, consentStatus, loadConsent, observeConsent, prepareConsent } from "../agent/consent";
 import type { ConsentAction, ConsentHookInput } from "../agent/consent";
 import { next, requireValidatable, start, submitPlan } from "../agent/commands";
 import { docsBegin, docsEnd } from "../agent/docsCommands";
@@ -79,6 +79,13 @@ export function consentEvent(
     tool_use_id: fixture.toolUseId, tool_name: "AskUserQuestion",
     tool_input: structuredClone(fixture.toolInput), ...overrides,
   };
+}
+
+/** 확인 내용 전문 — 선택 화면 질문에는 앞부분과 이 파일 경로만 실리고(screenText), 사람이 확인하는 전체 내용은 이 파일과 대화의 요약이다 */
+export function confirmationText(fixture: PreparedConsentFixture): string {
+  const file = loadConsent(fixture.root, fixture.id).fullText;
+  assert.ok(file, "새 동의는 확인 내용 전문 파일을 남긴다");
+  return readFileSync(join(fixture.root, file), "utf8");
 }
 
 export function nativeAnswers(fixture: PreparedConsentFixture, label = ACCEPT_CONSENT): Record<string, string> {
