@@ -24,11 +24,11 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
   → 모델이 doc/work/<ID>/request.json 을 쓴다                        원문 + 정리 + 접수 때 물은 것
   → 공통 문서·설정 확인 → 부족하면 준비·확정 후 같은 접수로 복귀   요구사항 분석보다 먼저
   → code-agent request submit doc/work/<ID>/request.json            검사 → requirement.md 렌더
-  → code-agent consent prepare <action.json>                      action: "request", id: "<ID>"
+  → code-agent consent prepare --action request --id <ID>           같은 화면에 만들 작업 브랜치·시작을 막을 미커밋 변경
   → 반환된 toolInput 전체로 AskUserQuestion → hook 관찰             같은 화면에서 원문·정리본 확인
-  → code-agent consent status <확인 요청 ID>                       보류·수정 요청은 적용하지 않음
-  → code-agent consent apply <확인 요청 ID>                        승인된 요청만 실행
-  → code-agent start doc/work/<ID>/requirement.md                   자동으로 분석 → 계획·구현·검증·결과 확인
+  → code-agent consent finish <확인 요청 ID>                       승인된 요청만 확정하고 이어서 start(작업 브랜치)
+                                                                    보류·수정 요청은 적용하지 않음
+  → 분석 → 계획·구현·검증·결과 확인                                  시작이 막히면 확정만 남고, 정리한 뒤 code-agent start
 ```
 
 - **티켓 ID는 그대로 사용한다.** 생략하면 CLI가 사용하지 않은 `WORK-0001` 형식의 ID를 발급한다. 모델이 임의 번호를 만들거나 ID만을 위해 질문하지 않는다.
@@ -37,7 +37,7 @@ code-agent 로 들어오는 **모든** 작업의 입력이다. 목표 흐름 13�
 - **종류는 요청에서 판단한다.** 명시한 `/ca-feature` · `/ca-fix` · `/ca-refactor`를 우선한다. `/ca-request`는 명확한 요청이면 신규·개선(feature), 버그(fix), 동작 보존 구조 개선(refactor)으로 분류해 알리고 진행한다. 두 가지로 해석될 때만 묻는다.
 - **시작 인자(`--base` · `--target`)도 접수에서 받는다.** 접수와 시작 사이에는 사람의 확정이 끼어
   명령이 끊기므로, `request begin` 이 받은 값을 접수 세션(`.code-agent/request-session.json`)에 적어
-  두고 확정 뒤 `start` 가 그대로 쓴다. `start` 에 직접 준 값이 있으면 그쪽이 이긴다.
+  두고 확정을 적용할 때의 작업 시작(`start`)이 그대로 쓴다. `start` 에 직접 준 값이 있으면 그쪽이 이긴다.
   `code-agent status` 가 접수 중에 `시작할 때 기준 브랜치 … · 대상 …` 으로 보여 준다.
 - 접수에서 묻는 것은 **원문만으로 정할 수 없는 필수값**(대상·범위·보존·확장 속성)과 원문이 두 가지로
   읽히는 곳뿐이다. 업무 규칙의 세부·설계·테스트는 분석 단계가 맡는다.
@@ -617,7 +617,7 @@ code-agent start doc/spec/<어디든>.md
 ```
 
 스킬이 `code-agent request begin <ID> --kind <종류> [--base <기준 브랜치>] [--target <대상>]` 로 접수를
-열고, 초안을 제출해 지시서를 렌더한다. 같은 화면에서 사용자가 요구사항을 확인하면 consent 적용 뒤 자동으로 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`를 호출해 분석을 시작한다. 중단된 작업은 `/ca-next`로 재개한다. `--target`을 주면 지시서의 대상과 같아야 하고, 생략하면 접수 때 말한 대상,
+열고, 초안을 제출해 지시서를 렌더한다. 같은 화면에서 사용자가 요구사항을 확인하면 consent 적용(`finish`)이 접수 세션의 기준 브랜치·대상으로 작업을 시작해 분석으로 간다. 시작이 막혔거나 터미널에서 확정했으면 `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]`로 시작한다. 중단된 작업은 `/ca-next`로 재개한다. `--target`을 주면 지시서의 대상과 같아야 하고, 생략하면 접수 때 말한 대상,
 그것도 없으면 지시서의 대상이다 — `--base` 도 같다(접수 때 적어 둔 값을 `start` 가 쓰고, 지금 준 값이 이긴다).
 
 접수 초안이 규격에 맞지 않으면 `request submit` 에서 멈추고, 확정되지 않은 요구사항 위에서는
