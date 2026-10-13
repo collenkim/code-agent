@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { hostAssets } from "../agent/hosts";
 
 const ROOT = join(__dirname, "../..");
-/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄다(doc/reviews/2026-10-13-token-optimization.md) */
+/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄다(doc/reviews/2026-10-13-result-summary.md) */
 const BUDGET: Record<string, number> = {
   "template/claude/agents/ca-analyst.md": 3100,
   "template/claude/agents/ca-critic.md": 2000,

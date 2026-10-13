@@ -1,6 +1,7 @@
 {
-  "range": "a4b6df8..7ade5a6",
-  "note": "2026-10-12~13 개별 evidence 12개를 합쳤다. 원본은 7ade5a6 의 doc/reviews/evidence/ 에 있다.",
+  "range": "a4b6df8..cd0550b",
+  "note": "2026-10-12~13 evidence 를 합쳤다. a4b6df8..7ade5a6 의 개별 evidence 12개는 7ade5a6, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 cd0550b 의 doc/reviews/evidence/ 에 원본이 있다.",
+  "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "commits": {
     "2376826": {
       "scope": "문서·CLI·hook 차단 복구 선택, 공통 준비 안내 및 현행 문서 최신화",
@@ -369,13 +370,458 @@
         "durationMs": 205313
       },
       "sideEffects": "하네스의 80×24 Claude 첫 시도에서 이미 신뢰된 임시 폴더라 신뢰 창 대신 합성 질문(동의 아님)에 \"수정 요청\"이 입력됐다 — 새 폴더로 다시 캡처했다. Codex hook 신뢰는 각 임시 저장소 경로에 대해 기록됐다."
+    },
+    "f837f9d": {
+      "scope": "맥락·상태 빈곳 — Codex 세션 시작 상태 주입, CLI 출력 크기 측정과 계획 상세 조회 축약, Codex 계획 담당 staging",
+      "hosts": {
+        "codexCli": "0.162.1",
+        "codexSource": "rust-v0.162.1",
+        "windowsSandbox": "elevated",
+        "os": "Windows 11 Pro 10.0.26200"
+      },
+      "sessionStart": {
+        "sourceEvidence": {
+          "inputSource": [
+            "startup",
+            "resume",
+            "clear",
+            "compact",
+            "fork"
+          ],
+          "output": "hookSpecificOutput.additionalContext (plain stdout 도) → 다음 턴 developer 메시지",
+          "test": "codex-rs/core/tests/suite/hooks.rs compact_session_start_hook_records_additional_context_for_next_turn"
+        },
+        "tui": {
+          "flags": "--enable hooks --dangerously-bypass-hook-trust -s read-only -a never",
+          "startupQuote": "ANCHOR1:- 작업 ORD-1 (feature) · 스테이지 analysis · 계획 미제출 · 작업 폴더 doc/work/ORD-1/",
+          "compact": "Context compacted · 15s",
+          "rolloutDeveloperMessages": [
+            {
+              "line": 8,
+              "at": "04:51:17Z",
+              "source": "startup"
+            },
+            {
+              "line": 28,
+              "at": "04:52:59Z",
+              "source": "compact",
+              "contains": "대화가 압축·비워졌다 — 질문·동의 전에 ca-answer 절차(.agents/skills/ca-answer/SKILL.md)를 다시 읽는다."
+            }
+          ],
+          "verbatimCopy": "모델이 거절 — 요약으로만 답함",
+          "warnings": [
+            "Running without the shared background server: command-line configuration overrides ... requires embedded mode.(하네스 플래그)",
+            "두 번째 경고는 열어 보지 않음"
+          ]
+        },
+        "exec": "planning-live-codex-staging2·3 의 SessionStart(source startup) 출력에 같은 진행 요약 additionalContext",
+        "leaseTakeoverRepeat": {
+          "found": "압축·재개마다 넘겨받음 줄 반복(이전 보유자 기록 보존 때문)",
+          "fix": "같은 세션이 이미 쥔 임대면 줄을 내지 않음",
+          "verifiedBy": "lease.test.ts",
+          "realHostRecheck": false
+        }
+      },
+      "cliOutputSize": {
+        "method": "전체 npm test 를 측정 전용 preload 로 실행 — 시험 코드가 직접 부른 명령 함수의 반환 글자 수(저장소 코드 무변경)",
+        "suite": {
+          "tests": 1411,
+          "pass": 1407,
+          "fail": 0,
+          "skipped": 4
+        },
+        "samples": 5620,
+        "top": [
+          {
+            "fn": "planning.planningResult",
+            "n": 9,
+            "median": 4154,
+            "p90": 47514,
+            "max": 47514
+          },
+          {
+            "fn": "doctor.doctor",
+            "n": 59,
+            "median": 2093,
+            "p90": 4465,
+            "max": 4929
+          },
+          {
+            "fn": "consent.renderConsentOutput",
+            "n": 1,
+            "median": 3592,
+            "p90": 3592,
+            "max": 3592
+          },
+          {
+            "fn": "planning.planningStatus",
+            "n": 10,
+            "median": 968,
+            "p90": 2857,
+            "max": 2857
+          },
+          {
+            "fn": "commands.context",
+            "n": 24,
+            "median": 1758,
+            "p90": 2290,
+            "max": 2790
+          },
+          {
+            "fn": "request.requestBegin",
+            "n": 90,
+            "median": 1961,
+            "p90": 2070,
+            "max": 2198
+          },
+          {
+            "fn": "request.requestFormat",
+            "n": 1,
+            "median": 1863,
+            "p90": 1863,
+            "max": 1863
+          },
+          {
+            "fn": "commands.status",
+            "n": 103,
+            "median": 820,
+            "p90": 1660,
+            "max": 2479
+          },
+          {
+            "fn": "setup.setupProject",
+            "n": 254,
+            "median": 1651,
+            "p90": 1651,
+            "max": 1653
+          }
+        ],
+        "planningResultBeforeAfter": {
+          "before": [
+            47513,
+            47514,
+            2547,
+            2266,
+            4154,
+            4154,
+            4234,
+            4155,
+            2537
+          ],
+          "after": [
+            2572,
+            47514,
+            2605,
+            2266,
+            3209,
+            3209,
+            3289,
+            3210,
+            2595
+          ],
+          "note": "after 의 47514 는 기록 뒤 파일을 바꾼 시험 — 관찰된 본문을 그대로 싣는 의도된 경우"
+        }
+      },
+      "codexStaging": {
+        "runs": [
+          {
+            "label": "staging",
+            "result": "no-observed-agent",
+            "durationMs": 21133,
+            "cause": "캡처 래퍼 명령을 status 가 훅 누락으로 봄 → 모델이 담당 호출 전에 멈춤(올바른 중단). 평가 스크립트 보정"
+          },
+          {
+            "label": "staging2",
+            "result": {
+              "staged": false,
+              "content": true,
+              "messageChars": 3409,
+              "artifactsChars": 1838,
+              "docChars": 1728
+            },
+            "durationMs": 125488,
+            "hookEvents": 27,
+            "stagingWrite": {
+              "tool": "apply_patch",
+              "hookDenied": false,
+              "hostError": "Failed to create parent directories for ...\\.staging\\<dispatchId>\\01-requirements.md"
+            },
+            "stagingOwner": "CodexSandboxOffline(planning advance 가 샌드박스 셸에서 만듦)"
+          },
+          {
+            "label": "staging3",
+            "after": "staging 폴더를 담당 시작 hook 이 만듦",
+            "result": {
+              "staged": true,
+              "content": false,
+              "messageChars": 1624,
+              "artifactsChars": 145,
+              "docChars": 2358
+            },
+            "durationMs": 123782,
+            "hookEvents": 25,
+            "stagingWrite": {
+              "tool": "apply_patch",
+              "hookDenied": false,
+              "hostError": null
+            },
+            "stagingOwner": "kai(hook)",
+            "dispatchFolderAfterCompletion": "삭제됨"
+          }
+        ],
+        "models": {
+          "main": "gpt-6.1-sol",
+          "ca_analyst": "gpt-6.1-sol"
+        }
+      },
+      "windowsSandboxAcl": {
+        "sidSource": "windows-sandbox-rs/src/cap.rs — workspace_by_cwd(명령 cwd 별) · writable_root_by_path(쓰기 루트별) capability SID, ~/.codex/cap_sid",
+        "observation": "staging2 저장소 루트에 cwd SID 와 루트 SID 가 명시 ACE 로 있었으나 샌드박스 셸이 먼저 만든 .staging·handoff(소유자 CodexSandboxOffline)에는 루트 SID 가 없음. 사용자 소유 폴더(doc/work/CONSENT-1)에는 전파됨",
+        "experiments": [
+          {
+            "dir": "%TEMP%\\ca-acl-*",
+            "flags": "기본",
+            "steps": "셸 mkdir shellmade → apply_patch shellmade/sub/a.txt · shellmade/b.txt · fresh/c.txt",
+            "result": "모두 성공(두 SID 가 처음부터 상속됨)"
+          },
+          {
+            "dir": "dist\\ca-acl-*",
+            "flags": "평가 스크립트와 같은 --ignore-user-config 등",
+            "result": "shellmade 아래 두 쓰기 실패(Failed to create parent directories · Failed to write file), fresh/c.txt 성공"
+          },
+          {
+            "dir": "dist\\ca-acl-*",
+            "flags": "기본",
+            "result": "위와 같음"
+          },
+          {
+            "dir": "같은 dist 폴더, 두 번째 세션",
+            "steps": "셸 mkdir shellmade2 → apply_patch shellmade2/sub/a.txt · shellmade/b.txt",
+            "result": "shellmade2 성공, 먼저 막힌 shellmade 는 계속 실패"
+          }
+        ],
+        "conclusion": "작업 공간에서 apply_patch 를 처음 쓰기 전에 샌드박스 셸이 만든 폴더·파일은 그 뒤에도 apply_patch 로 쓸 수 없다. 첫 apply_patch 뒤 셸이 만든 것과 사용자 소유는 쓸 수 있다",
+        "notFixed": [
+          "requestBegin 의 doc/work/<ID>/",
+          "도입의 지식 문서 뼈대"
+        ]
+      },
+      "templateBudget": {
+        "raised": false,
+        "codexFlowTotal": {
+          "before": 53396,
+          "after": 53208
+        },
+        "claudeFlowTotal": 53000
+      },
+      "fullSuite": {
+        "beforeStagingHook": {
+          "tests": 1411,
+          "pass": 1407,
+          "fail": 0,
+          "skipped": 4,
+          "durationMs": 212723
+        },
+        "afterStagingHook": {
+          "tests": 1411,
+          "pass": 1407,
+          "fail": 0,
+          "skipped": 4,
+          "durationMs": 272456
+        }
+      }
+    },
+    "cd0550b": {
+      "scope": "토큰 최적화 — hook 출력·교차 토큰·배정별 사용량 측정, start·next·back 요약 출력, 리뷰 2회차 재검토 범위, Codex read 출력, 템플릿 중복 정리, Stop 목록 상한·같은 사유 재차단 억제",
+      "hosts": {
+        "claudeCli": "2.1.296 — --help 의 --no-session-persistence(--print 와 함께만 유효)",
+        "codexSource": "rust-v0.162.1 exec/src/event_processor_with_human_output.rs — 'tokens used' 를 eprintln 으로 쓰고 값은 blended_total(캐시 아닌 입력 + 출력)"
+      },
+      "movedStatus": {
+        "method": "stage-commands 시험 fixture 에서 출력 글자 수와 같은 자리의 전체 status 글자 수(옛 출력은 머리 줄 + 전체 status)",
+        "rows": [
+          {
+            "at": "start",
+            "output": 410,
+            "fullStatus": 620
+          },
+          {
+            "at": "next→impact",
+            "output": 255,
+            "fullStatus": 617
+          },
+          {
+            "at": "next→design",
+            "output": 253,
+            "fullStatus": 615
+          },
+          {
+            "at": "next→plan",
+            "output": 284,
+            "fullStatus": 646
+          },
+          {
+            "at": "next→implement",
+            "output": 289,
+            "fullStatus": 751
+          },
+          {
+            "at": "next(Task)",
+            "output": 297,
+            "fullStatus": 762
+          }
+        ],
+        "reviewBaseline": "검토 때 3개 Task 흐름에서 커서 이동 출력 8회 7,497자"
+      },
+      "read": [
+        {
+          "file": "src/agent/review.ts",
+          "lines": "1-200",
+          "body": 8142,
+          "oldJson": 17804,
+          "output": 8920
+        },
+        {
+          "file": "template/claude/skills/ca-plan/SKILL.md",
+          "lines": "1-200",
+          "body": 4506,
+          "oldJson": 7056,
+          "output": 4710
+        },
+        {
+          "file": "doc/process-flow.md",
+          "lines": "1-200",
+          "body": 34221,
+          "oldJson": 43924,
+          "output": 34999
+        },
+        {
+          "file": "doc/process-flow.md",
+          "lines": "300-499",
+          "body": 31838,
+          "oldJson": 41564,
+          "output": 32726
+        }
+      ],
+      "templates": {
+        "unit": "LF 글자 수, f837f9d → cd0550b",
+        "files": {
+          "ca-answer/reference.md": [
+            9574,
+            4432
+          ],
+          "ca-answer/appendix.md": [
+            null,
+            5195
+          ],
+          "ca-answer/SKILL.md": [
+            8699,
+            8679
+          ],
+          "template/codex/ca-answer.md": [
+            5061,
+            4894
+          ],
+          "ca-analyze/SKILL.md": [
+            3283,
+            2791
+          ],
+          "ca-impact/SKILL.md": [
+            3033,
+            2541
+          ],
+          "ca-design/SKILL.md": [
+            2838,
+            2346
+          ],
+          "ca-plan/SKILL.md": [
+            4905,
+            4506
+          ],
+          "ca-feature/SKILL.md": [
+            2057,
+            2050
+          ],
+          "ca-review/SKILL.md": [
+            3361,
+            3397
+          ],
+          "agents/ca-reviewer.md": [
+            3208,
+            3343
+          ]
+        },
+        "claudeFlowTotal": [
+          53000,
+          51141
+        ],
+        "budgets": {
+          "ca-answer/reference.md": [
+            9600,
+            4600
+          ],
+          "ca-answer/appendix.md": [
+            null,
+            5400
+          ],
+          "ca-analyze/SKILL.md": [
+            3300,
+            2900
+          ],
+          "ca-impact/SKILL.md": [
+            3100,
+            2700
+          ],
+          "ca-design/SKILL.md": [
+            2900,
+            2500
+          ],
+          "ca-plan/SKILL.md": [
+            5000,
+            4700
+          ],
+          "claudeFlow": [
+            53200,
+            52200
+          ],
+          "codexFlow": [
+            53400,
+            52300
+          ]
+        }
+      },
+      "stopReviewBaseline": "검토 때 계획 밖 파일 200개면 Stop 차단 사유가 턴마다 10,588자",
+      "smoke": {
+        "method": "임시 git 저장소에서 node dist/agent/cli.js",
+        "init": "init --host both — 두 호스트에 ca-answer/appendix.md 설치, Codex ca-answer 에 PowerShell 문장 없음, 보조 문서 12개",
+        "read": "read a.txt 2 2 → 'a.txt · 2-3 / 전체 6줄' + 두 줄 + 이어 읽기 줄",
+        "hookLog": "Claude hook·Codex codex-event PreToolUse 거부가 한 줄씩 기록(244·253자, 글 없음)",
+        "usage": "usage 의 hook 출력 절에 두 줄"
+      },
+      "fullSuite": {
+        "tests": 1418,
+        "pass": 1414,
+        "fail": 0,
+        "skipped": 4,
+        "durationMs": 187410,
+        "firstRunFailures": [
+          "보조 문서 수 11 → 12 를 가정하지 않은 시험",
+          "Codex 설치 파일 수 37 → 38",
+          "read 의 옛 JSON 출력을 가정한 시험",
+          "새 리뷰 시험의 커서 이동(check 뒤 next)",
+          "consentScreens T-15-1 — 전체 실행 부하에서 한 번, 단독·재실행 통과"
+        ]
+      }
     }
   },
-  "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "notTested": [
     "실제 cloud 저장소·Sentry·Jira·배포 연동",
     "실제 대화의 차단 → 복구 선택 → 재개",
     "Claude 동의 화면의 답 → 적용(이 기간에는 표시만)",
-    "대상 프로젝트 설치본 갱신"
+    "대상 프로젝트 설치본 갱신",
+    "접수부터 반영까지의 실제 모델 완주(scripts/evaluate-full-flow.cjs — 유료 평가라 실행은 사람이 정한다)",
+    "SessionStart 넘겨받음 줄 수정의 실제 호스트 재확인",
+    "Codex hook agent_id 와 하위 에이전트 기록 thread id 의 대응(배정별 사용량)",
+    "리뷰 재검토 범위의 실제 모델 회차 비용·품질"
   ]
 }
