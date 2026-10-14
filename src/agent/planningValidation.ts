@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { buildIndex } from "./knowledgeIndex";
 import { workDocsDir } from "./layout";
 import { referenceProblem } from "./planningState";
 import { parseQuestions } from "./questions";
@@ -31,6 +32,8 @@ export function planningDocumentProblems(work: Work, phase: string, options: { o
   const root = work.repoRoot, dir = workDocsDir(work.active.id), problems: string[] = [];
   const questionsPath = join(root, dir, "questions.md");
   const answered = existsSync(questionsPath) ? parseQuestions(readFileSync(questionsPath, "utf8")).filter(question => question.answer).map(question => question.id) : [];
+  let rules: string[] | undefined;
+  const knownRules = (): string[] => (rules ??= buildIndex(root, work.manifest, []).entries.filter(entry => entry.kind === "business-rules").map(entry => entry.key));
   for (const file of files) {
     const path = `${dir}/${file}`;
     const staged = options.overlay?.get(path);
@@ -45,7 +48,8 @@ export function planningDocumentProblems(work: Work, phase: string, options: { o
     if (file === "04-functional.md") {
       for (const row of text.split(/\r?\n/)) {
         if (/AC-R\d+-\d+/.test(row) && !row.replace(/AC-R\d+-\d+/g, "").replace(/[\s|:#*`._-]/g, "")) problems.push(`${path}: AC 번호에 구체적인 완료 조건이 없습니다: ${row.trim()}`);
-        if (/\bBR-\w+/.test(row) && !/[\w가-힣./-]+\.[A-Za-z]\w*:\d+/.test(row) && !answered.some(id => new RegExp(`\\b${id}\\b`).test(row))) problems.push(`${path}: 업무 규칙에 실제 파일:줄 또는 답변된 Q 번호 근거를 넣으세요: ${row.trim()}`);
+        // 업무 정책 문서에 이미 있는 BR 키를 가리키면 근거다 — 정책 본문은 한곳(business-rules)에 두고 작업 문서는 ID 로 잇는다
+        if (/\bBR-\w+/.test(row) && !/[\w가-힣./-]+\.[A-Za-z]\w*:\d+/.test(row) && !answered.some(id => new RegExp(`\\b${id}\\b`).test(row)) && !knownRules().some(key => new RegExp(`(?<![\\w-])${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(row))) problems.push(`${path}: 업무 규칙에 실제 파일:줄 · 답변된 Q 번호 · 업무 정책 문서의 BR 키 중 하나를 근거로 넣으세요: ${row.trim()}`);
       }
     }
   }

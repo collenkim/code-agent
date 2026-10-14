@@ -66,9 +66,10 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 갱신·의존성·빌드·프로젝트 적용·점검 (호스트 밖 TTY 에서만)
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
   code-agent usage [--work <ID>] [--since <날짜>] [--json]   이 저장소에 쓴 토큰·비용(추정)·요청·도구 호출·재시도 기록을 스테이지별·에이전트별로
-  code-agent knowledge                공통 KNOWLEDGE 항목과 그 키를 마지막으로 쓴 작업
+  code-agent knowledge                공통 KNOWLEDGE 항목 · 그 키를 마지막으로 쓴 작업 · 최신성(재검토 필요·참조 없음·보류)
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
-  code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 3종 — 섹션·확정 상태
+  code-agent knowledge find <낱말|키|경로...>  KNOWLEDGE 항목·POLICY 절을 키·경로·별칭·본문으로 찾아 줄 범위·상태·연결을 보여 준다 (읽기 전용 — 작업 중에도 된다)
+  code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 5종 — 섹션·확정 상태
   code-agent confirm doc <all|종류>   공통 문서 한 번에 확정 또는 개별 확정 (TTY)
   code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
                                       지시서를 생략하면 doc/work/<ID>/requirement.md (손으로 쓴 지시서가 다른 자리면 경로를 준다)
@@ -328,7 +329,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
       return 0;
     }
     case "knowledge":
-      print(knowledge(repoRoot, args[0]));
+      print(knowledge(repoRoot, args));
       return 0;
     case "start":
       if (!args[0] || args[0].startsWith("--")) {

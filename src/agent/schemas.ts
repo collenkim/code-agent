@@ -8,12 +8,16 @@ import { askVia } from "./hostText";
 
 /** 막는 문서 — 넷 다 확정돼야 작업이 시작된다 */
 export type PolicyKind = "architecture" | "conventions" | "test-strategy" | "quality";
-/** 막지 않는 문서 — 파일만 있으면 되고, 반영마다 자란다 */
-export type KnowledgeKind = "data-dictionary" | "api-catalog" | "business-rules";
+/**
+ * 막지 않는 문서 — 파일만 있으면 되고, 반영마다 자란다.
+ * POLICY 는 개발 지침(구조·코드·테스트·품질), `business-rules` 는 업무 정책이다. `features`·`flows` 는 현재 기능과 업무 흐름의
+ * 최신 요약 — 작업 문서(doc/work/<ID>/)가 변경 이력·근거이고 이 둘은 지금 상태다.
+ */
+export type KnowledgeKind = "data-dictionary" | "api-catalog" | "business-rules" | "features" | "flows";
 export type DocKind = PolicyKind | KnowledgeKind;
 
 export const POLICY_KINDS: PolicyKind[] = ["architecture", "conventions", "test-strategy", "quality"];
-export const KNOWLEDGE_KINDS: KnowledgeKind[] = ["data-dictionary", "api-catalog", "business-rules"];
+export const KNOWLEDGE_KINDS: KnowledgeKind[] = ["data-dictionary", "api-catalog", "business-rules", "features", "flows"];
 
 export interface SectionSchema {
   id: string;
@@ -357,8 +361,56 @@ export const BUSINESS_RULES: DocSchema = {
       heading: "업무 규칙",
       aliases: ["규칙", "business rules"],
       required: true,
-      guide: "항목 하나에 ``### `BR-<도메인>-<두자리>` 한 줄 규칙``. 본문: 조건 → 결과 · 적용 범위 · 예외 · 근거. 코드를 보면 아는 구현 세부는 규칙이 아니다",
+      guide:
+        "항목 하나에 ``### `BR-<도메인>-<두자리>` 한 줄 규칙``. 본문: 조건 → 결과, 이어서 `- 이름: 값` 줄 — " +
+        "구분(필수 | 권장) · 상태(확정 | 관찰 — 관찰은 코드에서 본 현재 동작이고 승인된 정책이 아니다) · " +
+        "출처(확정은 작업 ID+R번호 또는 사용자 결정, 관찰은 path:line) · 범위(적용 경로·도메인) · 예외 · 검증(TC·테스트 경로). " +
+        "다른 문서는 본문을 옮기지 않고 이 ID 로 가리킨다. 코드를 보면 아는 구현 세부는 규칙이 아니다",
       questions: [{ ask: "코드만 봐서는 알 수 없는 업무 규칙 하나를 예로 들면? (승인 한도·마감 시각·예외 관례)" }],
+    },
+  ],
+};
+
+/**
+ * 기능 목록 — 여러 작업의 변경을 합친 기능별 **현재** 요약. 모든 함수가 아니라 사용자·호출자가 보는 기능 단위만 둔다.
+ * 코드·테스트 경로가 최신성 판단(`knowledgeIndex.ts`)의 근거이고, 정책·흐름은 ID 로만 잇는다(본문은 그 문서에 한 번).
+ */
+export const FEATURES: DocSchema = {
+  kind: "features",
+  label: "기능 목록",
+  defaultPath: "doc/knowledge/features.md",
+  layer: "knowledge",
+  sections: [
+    {
+      id: "features",
+      heading: "기능",
+      aliases: ["기능 목록", "features"],
+      required: true,
+      guide:
+        "항목 하나에 ``### `FEAT-<도메인>-<이름>` 기능 이름``. 본문은 `- 이름: 값` 줄 — 목적 · 진입점 · 입력·출력 · " +
+        "정책(BR ID) · 흐름(FLOW ID) · 예외 · 코드(경로) · 테스트(경로) · 별칭(업무 용어·다른 이름) · 상세(이미 있는 문서 경로, 있으면) · 근거(작업 ID+R번호). " +
+        "지금 동작만 쓴다 — 변경 이력은 작업 문서에 있다",
+      questions: [],
+    },
+  ],
+};
+
+/** 업무 흐름 — 주요 업무 시나리오를 단계로 나누고 단계마다 기능 키로 잇는다. 세부는 기능 항목에 둔다 */
+export const FLOWS: DocSchema = {
+  kind: "flows",
+  label: "업무 흐름",
+  defaultPath: "doc/knowledge/flows.md",
+  layer: "knowledge",
+  sections: [
+    {
+      id: "flows",
+      heading: "흐름",
+      aliases: ["업무 흐름", "시나리오", "flows"],
+      required: true,
+      guide:
+        "항목 하나에 ``### `FLOW-<이름>` 시나리오 이름``. 본문 — `- 시나리오:` 한 줄 · `- 단계:` 아래 번호 목록(단계마다 기능 키 `FEAT-…`) · " +
+        "`- 정책:` BR ID · `- 근거:` 작업 ID+R번호",
+      questions: [],
     },
   ],
 };
@@ -371,6 +423,8 @@ export const SCHEMAS: Record<DocKind, DocSchema> = {
   "data-dictionary": DATA_DICTIONARY,
   "api-catalog": API_CATALOG,
   "business-rules": BUSINESS_RULES,
+  features: FEATURES,
+  flows: FLOWS,
 };
 
 /**
@@ -428,6 +482,13 @@ export const ANALYSIS: DocSchema = {
     {
       id: "callpath", heading: "호출 경로", aliases: ["호출 흐름"], required: false, questions: [],
       guide: "진입점(컨트롤러·핸들러)부터 저장소까지, 필요한 만큼만",
+    },
+    {
+      // 스키마로는 선택이다 — 문서 영향 판단이 켜진 작업(`knowledgeVersion`)만 workDocs 가 요구한다(진행 중이던 작업의 02 를 막지 않는다)
+      id: "docImpact", heading: "문서 영향", aliases: ["문서 갱신", "지식 영향"], required: false, questions: [],
+      guide:
+        "새로 시작한 작업은 필수. 표 한 장: `| 문서 | 키 | 판단 | 근거 |` — 판단은 갱신 · 신규 · 삭제 · 이름 변경 · 영향 없음 · 충돌. " +
+        "context 의 '이 작업이 닿는 파일을 근거로 든 항목'은 빠짐없이 판단한다. 바꿀 문서가 없으면 `| - | - | 영향 없음 | <근거> |` 한 줄",
     },
   ],
 };

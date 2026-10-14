@@ -42,6 +42,7 @@ const COMMON_PLAN_FIELDS = {
     .array(
       z.object({
         topic: z.string(),
+        level: z.enum(["필수", "권장"]).optional().describe("문서 규칙의 구분 — 필수(컨벤션 [필수]·업무 정책 구분 필수)면 문서를 따르고, 권장·표시 없음이면 참조 코드를 따른다"),
         docSays: z.string().describe("컨벤션 문서가 말하는 것"),
         codeSays: z.string().describe("참조 표준 코드가 실제로 하는 것"),
         decision: z.string().describe("어느 쪽을 따를지와 그 이유"),
@@ -124,7 +125,7 @@ const PLAN_SHAPE = `{
   "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
-  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
+  "conflicts": [{ "topic": "", "level": "필수 또는 권장", "docSays": "", "codeSays": "", "decision": "" }],
   "openQuestions": ["사람이 답해야 하는 것"],
   "reasoning": "판단 근거"
 }`;
@@ -136,7 +137,7 @@ const REFACTOR_PLAN_SHAPE = `{
   "sequence": [{ "step": "실행 단계 key (파일이 있는 각 단계를 한 번씩)", "why": "왜 그 차례인지" }],
   "approach": "구현 방법 한 문단",
   "conventions": [{ "rule": "적용할 규칙", "source": "근거 위치" }],
-  "conflicts": [{ "topic": "", "docSays": "", "codeSays": "", "decision": "" }],
+  "conflicts": [{ "topic": "", "level": "필수 또는 권장", "docSays": "", "codeSays": "", "decision": "" }],
   "openQuestions": ["사람이 답해야 하는 것"],
   "reasoning": "판단 근거"
 }`;
@@ -302,7 +303,7 @@ export function formatPlan(plan: BuildPlan): string {
     lines.push("", `### 문서 vs 참조 표준 코드 충돌 (${plan.conflicts.length}건)`);
     for (const conflict of plan.conflicts) {
       lines.push(
-        `- ${conflict.topic}`,
+        `- ${conflict.topic}${conflict.level ? ` [${conflict.level}]` : ""}`,
         `  - 문서: ${conflict.docSays}`,
         `  - 코드: ${conflict.codeSays}`,
         `  - 판단: ${conflict.decision}`,

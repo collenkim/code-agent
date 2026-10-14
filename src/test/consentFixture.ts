@@ -155,7 +155,7 @@ export function preparePlanFixture(root: string, host: Host = "claude"): void {
   document(prefix + "01-requirements.md", '## R1 · 값\n출처: REQ-1\n근거: "값 1을 반환한다."\n## R2 · 오류\n출처: REQ-2\n근거: "음수는 거부한다."\n## 가정\n- 없음\n');
   completePlanningFixture(root, "analysis", artifacts, host); artifacts = {};
   next(root);
-  document(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n");
+  document(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n## 문서 영향\n| 문서 | 키 | 판단 | 근거 |\n|---|---|---|---|\n| - | - | 영향 없음 | 지식 항목이 없다 |\n");
   completePlanningFixture(root, "explore", {}, host);
   completePlanningFixture(root, "synthesis", artifacts, host); artifacts = {};
   next(root);

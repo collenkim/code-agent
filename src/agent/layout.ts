@@ -51,6 +51,8 @@ export const STOP_PHASES: readonly Phase[] = ["implement", "check", "test", "rev
 export interface ActiveWork {
   /** 신규 작업은 관찰된 분석·조사·설계·계획 검토를 필수로 한다. 없는 기록은 기존 작업이다. */
   planningVersion?: 1;
+  /** 신규 작업은 02 의 `문서 영향` 판단과 계획 파일에 걸린 지식 항목 판단을 필수로 한다(knowledgeImpact.ts). 없는 기록은 기존 작업이다. */
+  knowledgeVersion?: 1;
   /** 구현 단계 안에서 현재 수행하는 독립 Task. */
   task?: string;
   /** 작업 지시서 id */

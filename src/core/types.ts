@@ -54,6 +54,8 @@ export interface ConventionRule {
  */
 export interface DocConflict {
   topic: string;
+  /** 문서 규칙의 구분 — 필수면 문서를, 권장·없음이면 참조 코드를 따른다 */
+  level?: "필수" | "권장";
   docSays: string;
   codeSays: string;
   decision: string;

@@ -11,7 +11,9 @@ import { blockCount, stripBlock, upsertBlock } from "./blocks";
 import { crossAttemptsOf, planningCrossAttemptsOf, planningCrossView, pointLabel, type CrossAttempt, type PlanningCrossView } from "./crossRecord";
 import { loadEvidence, planPaths, reproLine, roundsText, runsOf, stageProblems, treeHashNow, validationDocFile } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
-import { applyEntry, existingEntry, knowledgePath, parseProposal, proposalFile, readKnowledge } from "./knowledge";
+import { applyProposal, existingEntry, knowledgePath, parseProposal, proposalCheck, proposalFile, readKnowledge } from "./knowledge";
+import { deliverImpact, workDocImpact } from "./knowledgeImpact";
+import { buildIndex } from "./knowledgeIndex";
 import { clearActive, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
@@ -96,6 +98,9 @@ export function traceRows(work: Work, evidence: Evidence | undefined): TraceRow[
 function cell(values: string[]): string {
   return values.join("<br>") || "없음";
 }
+
+/** 표 칸 하나 — 칸을 가르는 `|` 와 줄바꿈을 지운다 */
+const tableCell = (text: string): string => text.replace(/\|/g, "/").replace(/\s+/g, " ").trim() || "-";
 
 const oneLine = (text: string | undefined, max = 200): string => (text ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const openCrossFindings = (result: string | undefined): number =>
@@ -271,6 +276,8 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined, opt
     );
   }
 
+  if (active.knowledgeVersion) lines.push("", ...docImpactTraceLines(work));
+
   lines.push("", "## 변경 요약", "");
   const changes = active.baseCommit ? changedPaths(work.repoRoot, active.baseCommit) : [];
   const label = { A: "추가", M: "수정", D: "삭제", R: "이름변경" } as const;
@@ -284,6 +291,18 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined, opt
     lines.push("- 없음");
   }
   return lines.join("\n");
+}
+
+/** 코드 구역의 문서 영향 — 02 의 판단을 옮긴다(승인된 02 라 반영 사이에 바뀌지 않는다). 적용 결과는 반영 결과 줄과 `knowledge` 가 보여 준다 */
+function docImpactTraceLines(work: Work): string[] {
+  const rows = workDocImpact(work) ?? [];
+  const conflicts = rows.filter((row) => row.decision === "충돌");
+  return [
+    "## 문서 영향",
+    "",
+    ...(rows.length === 0 ? ["- 02 에 문서 영향 표가 없습니다"] : ["| 문서 | 키 | 판단 | 근거 |", "|---|---|---|---|", ...rows.map((row) => `| ${tableCell(row.doc)} | ${tableCell(row.keys.join(", ") || "-")} | ${tableCell(row.raw)} | ${tableCell(row.reason)} |`)]),
+    ...(conflicts.length ? ["", `- 정책·코드 충돌: ${conflicts.map((row) => row.keys.join(", ") || row.doc).join(", ")} — 리뷰어가 판단을 확인합니다`] : []),
+  ];
 }
 
 const SKELETON = (id: string): string =>
@@ -405,6 +424,8 @@ export function knowledgeChoices(work: Work) {
   for (const reason of skipped) {
     process.stderr.write(`건너뜀: ${reason}\n`);
   }
+  // 가리키는 키가 있는가 — 지금 문서의 항목이거나 같은 제안이 더하는 항목
+  const known = new Set([...buildIndex(repoRoot, manifest, []).entries.map(entry => entry.key), ...entries.filter(entry => entry.op !== "remove").map(entry => entry.key)]);
 
   return entries.flatMap(entry => {
     const target = knowledgePath(manifest, entry.kind);
@@ -414,26 +435,35 @@ export function knowledgeChoices(work: Work) {
       return [];
     }
     const current = readKnowledge(repoRoot, manifest, entry.kind);
-    const before = existingEntry(current, entry.key);
+    const check = proposalCheck(repoRoot, entry, current, { keys, strict: !!active.knowledgeVersion, known: key => known.has(key) });
+    if (check.skip) {
+      process.stderr.write(`건너뜀: ${check.skip}\n`);
+      return [];
+    }
+    const before = existingEntry(current, entry.op === "replace" && entry.replaces ? entry.replaces : entry.key);
+    const what = entry.op === "remove" ? "삭제" : entry.op === "replace" ? `\`${entry.replaces}\` → \`${entry.key}\` 이름 변경·이동` : before ? "갱신" : "새 항목";
     // 같은 키에 다른 내용이 오면 조용히 덮지 않는다 — 양쪽을 나란히 보여 주고 사람이 고른다
     const shown = [
-      `--- ${target} · \`${entry.key}\` (근거 ${entry.requirements.join(", ")})`,
+      `--- ${target} · \`${entry.key}\` ${what} (근거 ${entry.requirements.join(", ")})`,
       before ? `[지금]\n${before}\n` : "[지금] 없음 — 새 항목입니다\n",
-      `[제안]\n${entry.text}`,
+      entry.op === "remove" ? `[제안] 이 항목을 지웁니다\n${entry.text}` : `[제안]\n${entry.text}`,
+      ...check.notes.map(note => `확인: ${note}`),
     ].join("\n");
     return [{ target, entry, shown }];
   });
 }
 
 /** 고른 KNOWLEDGE 갱신을 쓴다. 쓰기 전 원본(없던 파일은 undefined)을 돌려준다 — 커밋이 실패하면 되돌린다 */
-function selectKnowledge(work: Work): { targets: string[]; originals: Map<string, string | undefined> } {
+function selectKnowledge(work: Work): { targets: string[]; originals: Map<string, string | undefined>; applied: string[] } {
   const pending = new Map<string, string>();
+  const applied: string[] = [];
   for (const { target, entry, shown } of knowledgeChoices(work)) {
     if (askOnTerminal(shown, "적용하려면 y") !== "y") {
       continue;
     }
     const current = pending.get(target) ?? readKnowledge(work.repoRoot, work.manifest, entry.kind);
-    pending.set(target, applyEntry(current, entry));
+    pending.set(target, applyProposal(current, entry));
+    applied.push(entry.key, ...(entry.replaces ? [entry.replaces] : []));
   }
   const originals = new Map<string, string | undefined>();
   for (const [target, text] of pending) {
@@ -441,7 +471,7 @@ function selectKnowledge(work: Work): { targets: string[]; originals: Map<string
     originals.set(target, existsSync(full) ? readFileSync(full, "utf-8") : undefined);
     writeAtomic(full, text);
   }
-  return { targets: [...pending.keys()], originals };
+  return { targets: [...pending.keys()], originals, applied };
 }
 
 /** 커밋 실패 때 고른 KNOWLEDGE 갱신을 스테이지에서 내리고 원본으로 되돌린다(없던 파일은 지운다). 되돌렸으면 true */
@@ -671,7 +701,8 @@ export function deliver(work: Work): string {
     throw new Stop(`확인하는 동안 반영 대상이 바뀌었습니다 — 커밋하지 않았습니다:\n${late.map((problem) => `  - ${problem}`).join("\n")}`);
   }
 
-  const { targets: knowledge, originals } = selectKnowledge(work);
+  const { targets: knowledge, originals, applied } = selectKnowledge(work);
+  const impact = deliverImpact(work, applied);
   // 동의 영수증(선택 label·시각·세션·실패 원인) — 동의 기록 자체는 커밋하지 않으므로 이 작업의 확인 이력을 커밋에 남긴다
   writeConsentReceipts(work);
   const { commit, outside } = commitDelivery(work, evidence!, knowledge, originals);
@@ -693,6 +724,9 @@ export function deliver(work: Work): string {
     `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}`,
     `확인한 사람: ${presence.detail}`,
     ...(knowledge.length > 0 ? [`공통 KNOWLEDGE 갱신: ${knowledge.join(", ")}`] : ["공통 KNOWLEDGE 는 갱신하지 않았습니다."]),
+    // 선언한 갱신을 적용하지 않았으면 그 항목은 최신이 아니다 — 문서에는 손대지 않고 code-agent knowledge 가 보류로 보여 준다
+    ...(impact.pending.length > 0 ? [`문서 갱신 보류(02 문서 영향에서 선언, 적용 안 함): ${impact.pending.map((row) => `${row.keys.join(", ")} ${row.raw}`).join(" · ")} — code-agent knowledge 에 보류로 보입니다`] : []),
+    ...(impact.conflicts.length > 0 ? [`정책·코드 충돌로 판단한 항목: ${impact.conflicts.map((row) => `${row.keys.join(", ") || row.doc} — ${row.reason}`).join(" · ")}`] : []),
     "",
     `PR 본문은 ${prDocFile(active.id)} 에 있습니다. push · MR/PR 생성은 하지 않았습니다 — git 호스트가 붙을 때까지 보류입니다.`,
     "확인한 작업 파일·증거·원장과 표시한 도입 설정을 함께 커밋했습니다. 관련 없는 스테이징 파일은 포함하지 않았습니다.",

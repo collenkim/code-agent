@@ -44,6 +44,8 @@ const KNOWLEDGE_KEY: Record<KnowledgeKind, string> = {
   "data-dictionary": "dataDictionary",
   "api-catalog": "apiCatalog",
   "business-rules": "businessRules",
+  features: "features",
+  flows: "flows",
 };
 
 export function docsStatus(repoRoot: string): string {
@@ -70,7 +72,7 @@ export function docsStatus(repoRoot: string): string {
   ].join("\n");
 }
 
-/** POLICY 4종 · KNOWLEDGE 3종(`knowledge` 면 셋 다) · 작업 문서(01-requirements … 07-test-spec)의 뼈대 */
+/** POLICY 4종 · KNOWLEDGE 5종(`knowledge` 면 다섯 다) · 작업 문서(01-requirements … 07-test-spec)의 뼈대 */
 export function docsSkeleton(kind: string | undefined): string {
   if (kind === "knowledge") {
     return KNOWLEDGE_KINDS.map((entry) => `<!-- ${SCHEMAS[entry].defaultPath} -->\n${skeleton(SCHEMAS[entry])}`).join("\n");

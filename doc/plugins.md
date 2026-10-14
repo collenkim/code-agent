@@ -38,7 +38,7 @@ PreToolUse hook과 같은 규약이라 언어를 가리지 않는다. 플러그�
 |---|---|---|
 | `survey.classify` | `code-agent survey` | 경로 규칙 + surveyor — 출력 끝에 분류 블록이 붙을 뿐 |
 | `candidates.rank` | `code-agent context` (`impact` · `design`) | 내장 키워드 스캔 (결정론) |
-| `context.docs` | `code-agent context` (`impact` · `design` · `plan`) | 등록된 문서의 제목 매칭 |
+| `context.docs` | `code-agent context` (`analysis` · `impact` · `design` · `plan`) | 지식 항목·문서 절의 키·경로·별칭·본문 검색 |
 | `review.prefilter` | `code-agent review` | reviewer 가 전부 봄 |
 | `verify.extra` | `code-agent check` | 매니페스트 `commands` 에 선언한 명령 |
 | `code.index` | **예약 — 부르는 곳이 없다** | 없음 |
@@ -52,8 +52,10 @@ PreToolUse hook과 같은 규약이라 언어를 가리지 않는다. 플러그�
 - **`candidates.rank`** — ① `01-requirements.md` 의 `## R<n> · <제목>` 제목과 `근거:` 인용문을 토큰으로 쪼개,
   소스 파일의 경로·파일명 히트를 ×3, 내용 히트를 ×1 로 세어 0..1 로 정규화한다. 상위 20개, 동점은 경로 사전순.
   **같은 트리에서는 언제나 같은 순위**가 나온다.
-- **`context.docs`** — 등록된 문서(아키텍처 · 컨벤션 · KNOWLEDGE 3종)의 제목과 본문 첫 200자에 대한
-  키워드 겹침으로 상위 10개 절을 고른다.
+- **`context.docs`** — 등록된 문서(아키텍처 · 컨벤션 · KNOWLEDGE 5종)를 요청 때 읽어 KNOWLEDGE 는 ``### `키` `` 항목,
+  POLICY 는 절 단위로 나누고, 키 일치 > 근거 경로 일치 > 걸린 항목이 가리키는 키 > 제목·별칭 낱말 > 본문 낱말 순으로 상위 10개를 고른다.
+  저장해 두는 인덱스는 없다. 줄 범위·최신성·잘림 표시와 반드시 적용하는 업무 정책(`구분: 필수`, `관찰` 아님)은
+  플러그인이 채운 결과에도 `code-agent context` 가 붙인다 — 플러그인 요청·응답 형식은 아래 표 그대로다.
 - 나머지 셋은 **이미 있던 동작 그대로**다 — 계층 후보 절 · reviewer 전량 열람 · 매니페스트 `commands`.
 
 ripgrep 이 PATH 에 있어도 `candidates.rank` 는 **쓰지 않는다.** rg 의 ignore 규칙과 유니코드 단어 경계가

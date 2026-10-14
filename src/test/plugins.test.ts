@@ -75,7 +75,7 @@ const CONV = [
   "## 계층별 규칙", "- app 은 순수 함수로",
   "## 예외 처리", "- Error 를 던진다",
   "## 테스트 규칙", "- 테스트 이름·주석에 TC id 를 남긴다",
-  // context.docs 의 기본 구현(제목 매칭)이 고를 절 — 제목에 요구 항목의 낱말이 들어 있다
+  // context.docs 의 기본 구현(키·경로·별칭·본문 검색)이 고를 절 — 제목에 요구 항목의 낱말이 들어 있다
   "## 주문 등록 규칙", "- order 를 만들 때는 총액을 함께 센다",
 ].join("\n");
 
@@ -804,6 +804,7 @@ const ANALYSIS = [
   "## 영향 범위", "| R 번호 | 닿는 파일/모듈 | 부르는 곳 | 파급 |", "|---|---|---|---|",
   `| R1 | ${SRC} | 없음 | 없음 — 신규 |`,
   "## Risk", "- 없음 — 신규 파일 하나",
+  "## 문서 영향", "| 문서 | 키 | 판단 | 근거 |", "|---|---|---|---|", "| - | - | 영향 없음 | 지식 항목이 없다 |",
 ].join("\n");
 
 const DESIGN = [
@@ -944,12 +945,12 @@ describe("P7 · 자리 연결 — context", () => {
     assert.equal(/등록돼 있지 않습니다/.test(text), false);
   });
 
-  test("36. context.docs 의 기본 제목 매칭이 등록된 문서의 관련 절을 고른다", () => {
+  test("36. context.docs 의 기본 검색이 등록된 문서의 관련 절을 줄 범위와 함께 고른다", () => {
     toImpact();
     const text = context(repo);
-    assert.match(text, /## 참고 문서 섹션 \(제목 매칭 — 전문을 읽지 말고 이 절만\)/);
-    assert.match(text, /- 출처: 기본 구현 \(제목 매칭\)/);
-    assert.match(text, /- doc\/conventions\.md · ## 주문 등록 규칙/);
+    assert.match(text, /## 참고 문서 \(지식 항목·문서 절 순위 — 전문을 읽지 말고 이 줄 범위만\)/);
+    assert.match(text, /- 출처: 기본 구현 \(키·경로·별칭·본문 검색\)/);
+    assert.match(text, /- doc\/conventions\.md L\d+-L\d+ · ## 주문 등록 규칙 \[개발 지침 · 코드 컨벤션\]/);
   });
 
   test("36b. plan 스테이지에는 문서 절만 붙고 후보 파일 순위는 붙지 않는다", () => {
@@ -962,7 +963,7 @@ describe("P7 · 자리 연결 — context", () => {
     assert.equal(loadActive(repo)!.phase, "plan");
 
     const text = context(repo);
-    assert.match(text, /## 참고 문서 섹션/);
+    assert.match(text, /## 참고 문서 \(/);
     // 계획 스테이지는 이미 ②③④ 가 파일을 짚어 놓은 자리다 — 순위를 다시 주면 그 판단을 흔든다
     assert.equal(text.includes("## 관련 후보 파일"), false);
   });

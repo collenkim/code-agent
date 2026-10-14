@@ -38,6 +38,7 @@ import {
   guardedFiles,
   loadEvidence,
   outsideChanges,
+  planPaths,
   reproMissing,
   runsOf,
   stageProblemEntries,
@@ -69,6 +70,7 @@ import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsState, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
+import { docImpactProblems, proposalHint } from "./knowledgeImpact";
 import {
   analysisProblems,
   designProblems,
@@ -86,7 +88,7 @@ import type { Requirements } from "./workDocs";
 import { formatSourceTrace, readSourceTrace } from "./sourceTrace";
 import { aidlcBlock, aidlcWarning } from "./aidlc";
 import { crossNotice } from "./hosts";
-import { askVia, skill } from "./hostText";
+import { askVia, notation, skill, skillFile } from "./hostText";
 import { PHASE_SKILL, reentryHint, staleEarliest } from "./reentry";
 import { failureHint } from "./failureHint";
 import { leaseLine } from "./lease";
@@ -371,7 +373,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   }
   // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
   writeAnswerBaseline(repoRoot, order.id, specPath);
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1 }, "start");
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1 }, "start");
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
@@ -660,6 +662,8 @@ export function status(repoRoot: string): string {
   if (outside.length > 0) {
     lines.push(`계획 밖 변경: ${outside.map((change) => `[${change.status}] ${change.path}`).join(", ")}`);
   }
+  const proposal = proposalHint(work, planPaths(work), skillFile("ca-integrate", notation(), "knowledge.md"));
+  if (proposal) lines.push(proposal);
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
 }
@@ -683,6 +687,8 @@ function movedStatus(repoRoot: string): string {
   if (outside.length > 0) {
     lines.push(`계획 밖 변경: ${outside.slice(0, 10).map((change) => `[${change.status}] ${change.path}`).join(", ")}${outside.length > 10 ? ` 외 ${outside.length - 10}개` : ""}`);
   }
+  const proposal = proposalHint(work, planPaths(work), skillFile("ca-integrate", notation(), "knowledge.md"));
+  if (proposal) lines.push(proposal);
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
 }
@@ -765,7 +771,7 @@ export function next(repoRoot: string): string {
       return advance("impact");
     case "impact": {
       const { keys } = requireRequirements(repoRoot, active);
-      requireWorkDocs(analysisProblems(repoRoot, active.id, keys, work.order.kind, active.spec));
+      requireWorkDocs([...analysisProblems(repoRoot, active.id, keys, work.order.kind, active.spec), ...docImpactProblems(work)]);
       return advance("design");
     }
     case "design": {
@@ -1099,6 +1105,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   const testSpec = testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind, active.spec);
   requireWorkDocs([
     ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind, active.spec),
+    ...docImpactProblems(work),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
     ...testSpec.problems,
@@ -1264,6 +1271,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   const functional = functionalProblems(repoRoot, active.id, requirements.keys);
   requireWorkDocs([
     ...analysisProblems(repoRoot, active.id, requirements.keys, order.kind, active.spec),
+    ...docImpactProblems(work),
     ...designProblems(repoRoot, active.id),
     ...functional.problems,
     ...testSpecProblems(repoRoot, active.id, functional.acceptance, manifest, order.kind, active.spec).problems,

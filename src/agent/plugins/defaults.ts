@@ -3,6 +3,7 @@ import { join, posix } from "path";
 
 import type { Manifest } from "../../core/manifest";
 import { docPaths, sectionsOf } from "../docs";
+import { buildIndex, search, type Hit } from "../knowledgeIndex";
 import type { DocKind } from "../schemas";
 import type { DocRef, DocSection, FileRef, RankedFile, RequirementRef } from "./protocol";
 
@@ -18,9 +19,6 @@ import type { DocRef, DocSection, FileRef, RankedFile, RequirementRef } from "./
 
 /** 파일 하나에서 읽는 최대 바이트 */
 const MAX_READ_BYTES = 256 * 1024;
-
-/** 본문 미리보기 — 제목 다음 이만큼만 본다 */
-const PREVIEW_CHARS = 200;
 
 /**
  * 짧은 불용어. 길이 2 미만은 이미 걸러지므로(한국어 조사 대부분이 여기서 빠진다) 남는 것만 적는다.
@@ -153,8 +151,8 @@ export function rankCandidates(repoRoot: string, files: FileRef[], keywords: str
 
 // ---- context.docs ----
 
-/** 등록된 문서 — 아키텍처 · 컨벤션 · KNOWLEDGE 3종. 테스트 전략·품질은 검증 자리의 것이라 뺀다 */
-const DOC_KINDS: DocKind[] = ["architecture", "conventions", "data-dictionary", "api-catalog", "business-rules"];
+/** 플러그인에 보내는 문서 목차 — 아키텍처 · 컨벤션 · KNOWLEDGE 전부. 테스트 전략·품질은 검증 자리의 것이라 뺀다 */
+const DOC_KINDS: DocKind[] = ["architecture", "conventions", "data-dictionary", "api-catalog", "business-rules", "features", "flows"];
 
 function markdownIn(repoRoot: string, path: string): string[] {
   const full = join(repoRoot, path);
@@ -175,7 +173,6 @@ interface Section {
   path: string;
   heading: string;
   line: number;
-  preview: string;
 }
 
 function allSections(repoRoot: string, manifest: Manifest | undefined): Section[] {
@@ -189,7 +186,6 @@ function allSections(repoRoot: string, manifest: Manifest | undefined): Section[
           path,
           heading: section.heading,
           line: section.line,
-          preview: section.body.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS),
         });
       }
     }
@@ -208,33 +204,27 @@ export function docRefs(repoRoot: string, manifest: Manifest | undefined): DocRe
   return [...byPath.values()];
 }
 
-/** 제목 매칭 — 제목과 본문 첫 200자에 든 키워드 수로. 동점은 경로·줄 순서 */
+/** 문서 검색이 읽는 POLICY — 테스트 전략·품질은 검증 자리의 것이라 아키텍처·컨벤션만. KNOWLEDGE 는 전부 */
+export const CONTEXT_POLICY_KINDS: DocKind[] = ["architecture", "conventions"];
+
+/** 검색 결과를 플러그인 출력 꼴(DocSection)로 — 항목은 제목 줄의 `### ` 를 뗀 글자다(docRefs 가 보내는 제목과 같다) */
+export function hitSection(hit: Hit): DocSection {
+  return hit.entry
+    ? { path: hit.entry.path, heading: hit.entry.heading.replace(/^#+\s*/, ""), why: hit.why.join(" · ") }
+    : { path: hit.section!.path, heading: hit.section!.heading, why: hit.why.join(" · ") };
+}
+
+/**
+ * 기본 문서 검색 — 키 언급 · 근거 경로 겹침 · 연결 · 별칭·제목·본문 낱말(`knowledgeIndex.ts` `search`). 동점은 경로·줄 순서.
+ * `files` 는 이 작업이 닿는 파일(후보·영향 범위·계획 파일), `keys` 는 요구에 나온 키다.
+ */
 export function relevantDocSections(
   repoRoot: string,
   manifest: Manifest | undefined,
   keywords: string[],
   limit: number,
+  query: { keys?: string[]; files?: string[] } = {},
 ): DocSection[] {
-  if (keywords.length === 0) {
-    return [];
-  }
-  const scored = allSections(repoRoot, manifest)
-    .map((section) => {
-      const heading = section.heading.toLowerCase();
-      const preview = section.preview.toLowerCase();
-      const hit = keywords.filter((keyword) => heading.includes(keyword) || preview.includes(keyword));
-      // 제목에 걸린 것이 본문에 스친 것보다 무겁다
-      const score = hit.reduce((sum, keyword) => sum + (heading.includes(keyword) ? 3 : 1), 0);
-      return { section, score, why: hit.slice(0, 4).join(" · ") };
-    })
-    .filter((entry) => entry.score > 0);
-  return scored
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        (a.section.path < b.section.path ? -1 : a.section.path > b.section.path ? 1 : 0) ||
-        a.section.line - b.section.line,
-    )
-    .slice(0, limit)
-    .map((entry) => ({ path: entry.section.path, heading: entry.section.heading, why: entry.why }));
+  const index = buildIndex(repoRoot, manifest, CONTEXT_POLICY_KINDS);
+  return search(index, { keywords, keys: query.keys ?? [], files: query.files ?? [] }).slice(0, limit).map(hitSection);
 }

@@ -41,7 +41,7 @@ import { deadPid } from "./deadPid";
 
 const ID = "PLAN-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`;
 const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n근거: "값을 반환한다."\n## 가정\n- 없음';
-const IMPACT = '# 영향도\n## 기존 시스템 분석\n- src/current.ts:1 에 값을 반환한다\n## 영향 범위\n| R 번호 | 닿는 파일 | 호출자 | 파급 |\n|---|---|---|---|\n| R1 | src/current.ts:1 | 없음 | 새 진입점 |\n## Risk\n- 기존 반환값 보존';
+const IMPACT = '# 영향도\n## 기존 시스템 분석\n- src/current.ts:1 에 값을 반환한다\n## 영향 범위\n| R 번호 | 닿는 파일 | 호출자 | 파급 |\n|---|---|---|---|\n| R1 | src/current.ts:1 | 없음 | 새 진입점 |\n## Risk\n- 기존 반환값 보존\n## 문서 영향\n| 문서 | 키 | 판단 | 근거 |\n|---|---|---|---|\n| - | - | 영향 없음 | 지식 항목이 없다 |\n';
 const DESIGN = '# 설계\n## 구성 요소\n- 새 함수\n## 처리 흐름\n- 호출 → 반환\n## API\n해당 없음 — 내부 함수다\n## 데이터\n해당 없음 — 저장하지 않는다\n## 설계 결정\n- 순수 함수';
 const FUNCTIONAL = '# 기능\n## 기능 정의\n- R1: 값 반환\n## 업무 규칙\n- BR-1: 숫자 반환 (src/current.ts:1)\n## 예외\n- 없음 — 입력 없다\n## 수락 기준\n- AC-R1-1: 호출하면 숫자가 반환된다';
 const TESTS = '# 테스트\n## 테스트 케이스\n| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n| TC-1 | Unit | AC-R1-1 | 호출 | 숫자 반환 |';
@@ -547,6 +547,15 @@ test("내용 없는 AC·근거 없는 BR·미결 설계·가짜 파일 근거를
   write(`${DIR}/04-functional.md`, FUNCTIONAL.replace(" (src/current.ts:1)", "").replace("호출하면 숫자가 반환된다", ""));
   const problems = planningDocumentProblems(loadWork(root)!, "design").join("\n");
   assert.match(problems, /근거 파일/); assert.match(problems, /미결/); assert.match(problems, /완료 조건/); assert.match(problems, /업무 규칙/);
+});
+test("04 의 업무 규칙은 업무 정책 문서에 있는 BR 키로 근거를 댈 수 있다 — 키 일부만 같은 것은 아니다", () => {
+  write(`${DIR}/01-requirements.md`, REQUIREMENTS); write(`${DIR}/02-analysis.md`, IMPACT); write(`${DIR}/03-design.md`, DESIGN);
+  write("doc/knowledge/business-rules.md", "# 업무 규칙\n\n### `BR-RET-1` 숫자 반환\n- 구분: 필수\n- 상태: 확정\n- 출처: 사용자 결정\n");
+  const rule = (key: string) => FUNCTIONAL.replace("- BR-1: 숫자 반환 (src/current.ts:1)", `- ${key}: 숫자 반환`);
+  write(`${DIR}/04-functional.md`, rule("BR-RET-1"));
+  assert.doesNotMatch(planningDocumentProblems(loadWork(root)!, "design").join("\n"), /업무 규칙/);
+  write(`${DIR}/04-functional.md`, rule("BR-RET-10"));
+  assert.match(planningDocumentProblems(loadWork(root)!, "design").join("\n"), /업무 규칙에 실제 파일:줄 · 답변된 Q 번호 · 업무 정책 문서의 BR 키/);
 });
 test("잘못된 DAG·출력 소유·Task 순환 및 중복 파일을 거부한다", () => {
   const task = TaskSchema.parse({ id: "analysis", role: "analysis", title: "분석", requirements: ["REQ-1"], inputs: [SPEC], outputs: [`${DIR}/01-requirements.md`], dependsOn: ["analysis"] });
@@ -1702,7 +1711,7 @@ test("새 analysis 작업은 업무 규칙 KNOWLEDGE 를 입력으로 받고 ana
   assert.ok(item.task.inputs.includes("doc/knowledge/business-rules.md"), JSON.stringify(item.task.inputs));
   const text = readFileSync(join(root, summary.assignmentFile), "utf8");
   assert.match(text, /업무 규칙 KNOWLEDGE[^\n]*doc\/knowledge\/business-rules\.md/);
-  assert.match(text, /## 참고 문서 섹션[\s\S]*doc\/knowledge\/business-rules\.md · ## 반환 규칙/);
+  assert.match(text, /## 참고 문서 \([\s\S]*doc\/knowledge\/business-rules\.md L\d+-L\d+ · ## 반환 규칙/);
   finish(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }, { evidence: [{ path: SPEC, line: 1 }, { path: "doc/knowledge/business-rules.md", line: 3 }] });
   assert.equal(JSON.parse(planningResult(root, "analysis")).current, true, "업무 규칙 근거는 배정 범위 안이다");
 });

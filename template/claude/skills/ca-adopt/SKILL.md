@@ -1,6 +1,6 @@
 ---
 name: ca-adopt
-description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학(소스가 없으면 인터뷰)으로 POLICY 4종·KNOWLEDGE 3종 문서와 code-agent.json 을 만든다.
+description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공학(소스가 없으면 인터뷰)으로 POLICY 4종·KNOWLEDGE 5종 문서와 code-agent.json 을 만든다.
 ---
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
@@ -42,7 +42,7 @@ description: 저장소에 code-agent 를 처음 도입한다 — 뼈대 역공�
 - **POLICY 4종** — 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준. `확인 필요` 로 남은 섹션은 **3. 대화로 생성** 으로 채운다.
   테스트 전략과 품질·보안 기준은 도구·명령을 survey 의 도구 후보와 CI 설정에서 초안으로 잡고,
   수준별 필수 여부·통과 기준·임계·차단 정책은 기존 정책을 재사용하거나 기본안을 제시한다. 제품 특성에 따라 정해야 할 결정만 묻는다. **적은 명령 이름은 3 의 `code-agent.json` 에 같이 등록한다** — 이름이 매니페스트에 없으면 게이트가 막는다.
-- **KNOWLEDGE 3종** — 데이터 사전 · API 목록은 기본으로 생성(각각 상위 30·40개), 업무 규칙·용어집은 **빈 뼈대**가 추천이다.
+- **KNOWLEDGE 5종** — 데이터 사전 · API 목록은 기본으로 생성(각각 상위 30·40개), 업무 규칙·용어집 · 기능 목록 · 업무 흐름은 **빈 뼈대**가 추천이다(반영마다 닿은 항목만 자란다).
   비어 있어도 작업을 막지 않는다. 확정 절차도 없다.
 
 경로는 기본값(`doc/architecture.md` · `doc/conventions.md` · `doc/test-strategy.md` · `doc/quality.md` · `doc/knowledge/*.md`)을 쓴다.
@@ -126,7 +126,7 @@ survey 와 아키텍처 문서로 초안을 만든다. 기술 기본값은 근�
 
 ## 5. 마무리
 
-1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 3종 파일이 있는지.
+1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 5종 파일이 있는지.
 2. `{"action":"setup"}` JSON을 접수·작업 중 허용된 `doc/work/<ID>/`에, 작업 ID가 없으면 문서 준비 중 허용된 `doc/`에 작성한다. 문서 세션이 필요하면 `code-agent docs begin`으로 열고 작성한다.
-3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. `code-agent.json`·POLICY 4종의 링크를 포함한 `summary` 전문을 보여 주고, 전체 문서 확정과 필요한 준비 커밋(최초 커밋 또는 기존 저장소의 도입 파일 반영)을 사용자 질문 하나로 확인받는다. KNOWLEDGE 3종은 확정 대상이 아니다.
+3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. `code-agent.json`·POLICY 4종의 링크를 포함한 `summary` 전문을 보여 주고, 전체 문서 확정과 필요한 준비 커밋(최초 커밋 또는 기존 저장소의 도입 파일 반영)을 사용자 질문 하나로 확인받는다. KNOWLEDGE 5종은 확정 대상이 아니다.
 4. 승인된 동의 적용이 성공하면 현재 상태를 확인해 원래 접수·작업으로 자동 복귀한다. `/ca-docs`에서 이미 같은 준비를 적용했으면 동의를 반복하지 않는다. 기준 커밋은 동의된 파일 범위만 포함하며 별도로 전체 파일을 커밋하지 않는다.

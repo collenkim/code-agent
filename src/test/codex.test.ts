@@ -43,7 +43,7 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   writeFixture(root,".codex/hooks.json",JSON.stringify({description:"사용자 훅",hooks:{Stop:[{hooks:[{type:"command",command:"custom-stop"}]}]}}));
   init(root,{host:"codex",cli});
   const before = read(".codex/hooks.json");
-  assert.equal(hostAssets("codex").size,38);
+  assert.equal(hostAssets("codex").size,39);
   assert.deepEqual(selectedHosts(root),["codex"]);
   assert.equal(existsSync(join(root,".claude")),false);
   assert.equal(existsSync(join(root,"CLAUDE.md")),false);
@@ -169,7 +169,7 @@ test("잘못된 설정은 설치 전에 거부하고 같은 그룹의 사용자 
 test("doctor는 Codex 설치를 인식하고 빠진 역할 파일을 찾는다", () => {
   setupConsentProject(root); init(root,{host:"codex",cli});
   const report = doctor(root).text;
-  assert.match(report,/Codex 스킬·에이전트: 26개 · 보조 문서 12개 모두/);
+  assert.match(report,/Codex 스킬·에이전트: 26개 · 보조 문서 13개 모두/);
   assert.doesNotMatch(report,/설치되지 않았습니다 \(\.claude/);
   writeFixture(root,".codex/agents/ca-critic.toml","누락된 지침");
   assert.match(doctor(root).text,/✗ Codex 스킬·에이전트/);

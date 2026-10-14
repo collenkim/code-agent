@@ -148,6 +148,8 @@ const ManifestSchema = z.object({
           dataDictionary: z.string().optional(),
           apiCatalog: z.string().optional(),
           businessRules: z.string().optional(),
+          features: z.string().optional().describe("기능 목록 — 기능별 현재 요약. 기본 doc/knowledge/features.md"),
+          flows: z.string().optional().describe("업무 흐름 — 시나리오를 기능 키로 잇는다. 기본 doc/knowledge/flows.md"),
         })
         .optional()
         .describe(

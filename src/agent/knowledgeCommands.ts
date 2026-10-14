@@ -3,8 +3,10 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { writeAtomic } from "../core/atomic";
-import { documentEntries, knowledgePath, removeEntry } from "./knowledge";
+import { codeRefs, documentEntries, knowledgePath, missingRefs, removeEntry } from "./knowledge";
 import type { DocumentEntry } from "./knowledge";
+import { buildIndex, freshness, freshnessText, hitLine, linkLine, mandatoryPolicies, parseQuery, pendingWithoutEntry, search } from "./knowledgeIndex";
+import { keywordsOf } from "./plugins/defaults";
 import { KNOWLEDGE_KINDS, SCHEMAS } from "./schemas";
 import type { KnowledgeKind } from "./schemas";
 import { Stop } from "./stop";
@@ -13,17 +15,20 @@ import { loadManifestIfAny } from "./work";
 import { skill } from "./hostText";
 
 /**
- * `code-agent knowledge` · `code-agent knowledge prune` — 쌓인 공통 KNOWLEDGE 를 사람이 들여다보는 자리.
+ * `code-agent knowledge` · `knowledge find` · `knowledge prune` — 쌓인 공통 KNOWLEDGE 를 들여다보는 자리.
  *
- * 문서는 `deliver` 가 키 단위로 upsert 하며 자란다. 자라기만 하고 줄지 않으므로, 어느 작업이 무엇을
- * 넣었는지 보는 길과 **사람이** 썩은 항목을 걷어내는 길이 필요하다. 둘 다 사람의 자리라 모델이
- * 부르는 서브명령 목록(`MODEL_SUBCOMMANDS`)에는 넣지 않는다.
+ * 문서는 `deliver` 가 키 단위로 upsert·삭제·이름 변경하며 자란다. 목록은 항목마다 마지막으로 쓴 작업과
+ * 최신성(그 뒤에 근거 코드·테스트가 바뀌었는가)을, `find` 는 키·경로·별칭·낱말로 줄 범위를 찾는다.
+ * `find` 만 읽기 전용이라 모델이 부르는 서브명령 목록(`MODEL_SUBCOMMANDS`)에 있다. 목록과 정리는 사람의 자리다.
  */
 
 /** 출처를 알 수 없는 항목 — 사람이 손으로 넣었거나, 아직 커밋되지 않았거나, git 저장소가 아니다 */
 const UNKNOWN = "(미상)";
 
-const USAGE = "사용법: code-agent knowledge [prune]";
+const USAGE = "사용법: code-agent knowledge [find <낱말|키|경로...> | prune]";
+
+/** `find` 가 한 번에 보여 주는 결과 수 — 넘으면 수를 적는다 */
+const FIND_LIMIT = 15;
 
 // ---- 출처 (작업 ID) ----
 
@@ -69,46 +74,9 @@ function blameIds(repoRoot: string, file: string): Map<number, string> {
   return ids;
 }
 
-// ---- 썩은 참조 ----
+// ---- 썩은 참조 ---- (판정은 knowledge.ts — 반영 검사와 같은 함수를 쓴다)
 
-/** `path/to/File.java:31` · `src/x/y.ts` — 확장자가 있고 경로 구분자가 있는 것만 참조로 본다 */
-const REF = /[\w./-]+\.[A-Za-z]\w*(?::\d+)?/g;
-
-/**
- * 항목 본문이 닻으로 든 저장소 경로.
- *
- * 세 가지를 뺀다. **URL** 은 저장소 경로가 아니고(`example.com/a.md` 가 그대로 걸린다),
- * 경로 구분자 없는 **홑이름**(`Order.java`)은 어디를 가리키는지 모르며,
- * **KNOWLEDGE 문서 자신**을 가리키는 줄은 늘 존재해 판정을 무의미하게 만든다.
- */
-export function codeRefs(body: string, knowledgeDocs: string[]): string[] {
-  const withoutUrls = body.replace(/https?:\/\/\S+/g, " ");
-  const refs = new Set<string>();
-  for (const match of withoutUrls.matchAll(REF)) {
-    const ref = match[0];
-    const path = ref.replace(/:\d+$/, "");
-    if (!path.includes("/") || knowledgeDocs.includes(path)) continue;
-    refs.add(ref);
-  }
-  return [...refs].sort();
-}
-
-/** 트리에 없는 참조. `existsSync` 가 아니라고 하면 git 에게 한 번 더 묻는다 (경로 형식·대소문자 차이) */
-export function missingRefs(repoRoot: string, refs: string[]): string[] {
-  return refs.filter((ref) => {
-    const path = ref.replace(/:\d+$/, "");
-    if (existsSync(join(repoRoot, path))) return false;
-    try {
-      execFileSync("git", ["ls-files", "--error-unmatch", "--", path], {
-        cwd: repoRoot,
-        stdio: "ignore",
-      });
-      return false;
-    } catch {
-      return true;
-    }
-  });
-}
+export { codeRefs, missingRefs };
 
 // ---- 문서 읽기 ----
 
@@ -145,29 +113,86 @@ export function knowledgeList(repoRoot: string): string {
       `  ${skill("ca-docs")} 로 뼈대를 만들거나, code-agent docs link <종류> <경로> 로 이미 있는 문서를 등록하세요.`,
     ].join("\n");
   }
+  const index = buildIndex(repoRoot, loadManifestIfAny(repoRoot), []);
+  const fresh = freshness(repoRoot, index.entries);
   const lines: string[] = [];
   for (const doc of docs) {
-    lines.push(`${doc.path} (항목 ${doc.entries.length})`);
+    lines.push(`${doc.path} (항목 ${doc.entries.length}) · ${SCHEMAS[doc.kind].label}`);
     if (doc.entries.length === 0) {
       lines.push("  (비어 있습니다)");
       continue;
     }
     const ids = blameIds(repoRoot, doc.path);
     const keyWidth = Math.max(...doc.entries.map((entry) => entry.key.length));
+    const indexed = index.entries.filter((entry) => entry.kind === doc.kind && entry.path === doc.path);
     for (const entry of doc.entries) {
       const refs = codeRefs(entry.body, paths);
+      const state = fresh.get(indexed.find((item) => item.line === entry.line)!);
+      const status = state ? freshnessText(state) || state.state : "";
       lines.push(
-        `  ${entry.key.padEnd(keyWidth)}  ${(ids.get(entry.line) ?? UNKNOWN).padEnd(10)}  ${refs[0] ?? "근거 경로 없음"}`,
+        `  ${entry.key.padEnd(keyWidth)}  ${(ids.get(entry.line) ?? UNKNOWN).padEnd(10)}  ${refs[0] ?? "근거 경로 없음"}${status && status !== "근거 경로 없음" ? `  [${status}]` : ""}`,
       );
     }
   }
+  const pending = pendingWithoutEntry(repoRoot, index);
   return [
     ...lines,
+    ...(pending.length > 0
+      ? ["", "갱신을 선언하고 반영한 작업인데 문서에 없는 키 (반영에서 거부·보류했다 — 다음 작업에서 다시 판단한다):", ...pending.map((item) => `  - ${item.key} · ${item.id} (${item.decision})`)]
+      : []),
     "",
-    "근거 경로 존재와 마지막 작업 ID는 내용의 최신성을 보장하지 않습니다. 조사에서 현재 코드를 확인하세요.",
+    "[최신] 은 항목을 마지막으로 바꾼 커밋 뒤에 근거 코드·테스트가 바뀌지 않았다는 뜻이지 내용이 맞다는 보장은 아닙니다. 조사에서 현재 코드를 확인하세요.",
+    "[재검토 필요]·[참조 없음]·[보류] 항목은 원문과 근거 코드를 직접 확인하고, 동작을 바꾸는 작업의 문서 영향에서 갱신을 판단합니다.",
     "작업 ID 는 **그 키를 마지막으로 쓴 작업**입니다 — 같은 키를 다시 반영하면 최신 것만 보입니다.",
     `커밋되지 않았거나 사람이 손으로 넣은 항목은 ${UNKNOWN} 입니다.`,
   ].join("\n");
+}
+
+// ---- 찾기 ----
+
+/**
+ * `knowledge find <낱말|키|경로...>` — KNOWLEDGE 항목과 POLICY 절을 같은 점수로 찾아 줄 범위·상태·연결을 보여 준다.
+ * 반드시 적용하는 업무 정책은 상위 결과에서 빠져도 따로 적는다. 읽기 전용이다.
+ */
+export function knowledgeFind(repoRoot: string, text: string): string {
+  const index = buildIndex(repoRoot, loadManifestIfAny(repoRoot));
+  const query = parseQuery(text, index, (value) => keywordsOf([{ key: "", text: value }]));
+  if (query.keys.length === 0 && query.files.length === 0 && query.keywords.length === 0) {
+    throw new Stop(USAGE);
+  }
+  const hits = search(index, query);
+  const shown = hits.slice(0, FIND_LIMIT);
+  const shownEntries = shown.flatMap((hit) => (hit.entry ? [hit.entry] : []));
+  const mandatory = mandatoryPolicies(index, query, shownEntries).filter(({ entry }) => !shownEntries.includes(entry));
+  const fresh = freshness(repoRoot, [...shownEntries, ...mandatory.map(({ entry }) => entry)]);
+  const searched = [...new Set([...index.docs.filter((doc) => doc.exists).map((doc) => doc.path), ...index.sections.map((section) => section.path)])];
+  const lines = [`찾기: ${[...query.keys, ...query.files, ...query.keywords].join(" · ")}`];
+  if (hits.length === 0) {
+    lines.push(
+      "",
+      searched.length > 0 ? `걸린 항목이 없습니다 (찾은 문서: ${searched.join(", ")}).` : "찾을 문서가 없습니다.",
+      "문서에 없는 동작일 수 있습니다 — 코드와 테스트를 직접 찾으세요.",
+    );
+  } else {
+    lines.push("");
+    for (const hit of shown) {
+      lines.push(hitLine(hit, hit.entry ? fresh.get(hit.entry) : undefined));
+      const link = hit.entry ? linkLine(hit.entry) : undefined;
+      if (link) lines.push(link);
+    }
+    if (hits.length > shown.length) {
+      lines.push(`- 범위: 걸린 ${hits.length}개 중 상위 ${shown.length}개만 — 키·경로·낱말을 더 좁혀 다시 찾으세요`);
+    }
+  }
+  if (mandatory.length > 0) {
+    lines.push("", "반드시 적용하는 업무 정책 (순위와 관계없이 — 구분 필수·관찰 아님):");
+    for (const { entry, why } of mandatory) lines.push(hitLine({ entry, score: 0, why: [why] }, fresh.get(entry)));
+  }
+  if ([...fresh.values()].some((state) => state.state !== "최신" && state.state !== "근거 경로 없음")) {
+    lines.push("", "상태가 붙은 항목(재검토 필요·참조 없음·보류·미커밋)은 요약을 믿지 말고 그 범위의 원문과 근거 코드·테스트를 직접 확인하세요.");
+  }
+  if (hits.length > 0 || mandatory.length > 0) lines.push("", "줄 범위만 읽으세요 — 문서 전문을 열지 않습니다.");
+  return lines.join("\n");
 }
 
 // ---- 정리 ----
@@ -255,11 +280,15 @@ export function knowledgePrune(repoRoot: string): string {
   ].join("\n");
 }
 
-export function knowledge(repoRoot: string, subcommand: string | undefined): string {
+export function knowledge(repoRoot: string, args: string[]): string {
+  const [subcommand, ...rest] = args;
   if (subcommand === undefined) {
     return knowledgeList(repoRoot);
   }
-  if (subcommand === "prune") {
+  if (subcommand === "find" && rest.length > 0) {
+    return knowledgeFind(repoRoot, rest.join(" "));
+  }
+  if (subcommand === "prune" && rest.length === 0) {
     return knowledgePrune(repoRoot);
   }
   throw new Stop(USAGE);

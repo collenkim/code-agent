@@ -81,7 +81,7 @@ function confirmAll(): void {
  */
 function submitOrderPlan(): void {
   write("doc/work/ORD-1/01-requirements.md", "## R1 · 주문\n근거: \"주문\"\n## 가정\n- 없음\n");
-  write("doc/work/ORD-1/02-analysis.md", "## 기존 시스템 분석\n- 주문 도메인은 없다\n## 영향 범위\n| R1 | 새 파일 | 없음 | 없음 |\n## Risk\n- 없음 — 새 도메인\n");
+  write("doc/work/ORD-1/02-analysis.md", "## 기존 시스템 분석\n- 주문 도메인은 없다\n## 영향 범위\n| R1 | 새 파일 | 없음 | 없음 |\n## Risk\n- 없음 — 새 도메인\n## 문서 영향\n| 문서 | 키 | 판단 | 근거 |\n|---|---|---|---|\n| - | - | 영향 없음 | 지식 항목이 없다 |\n");
   write("doc/work/ORD-1/03-design.md", "## 구성 요소\n- Order\n## 처리 흐름\n- 저장\n## API\n해당 없음 — 접점을 안 건드린다\n## 데이터\n- Order(id)\n## 설계 결정\n- 식별자 Long\n");
   write("doc/work/ORD-1/04-functional.md", "## 기능 정의\n- 등록\n## 업무 규칙\n- 없음\n## 예외\n- 없음\n## 수락 기준\n- AC-R1-1: 등록하면 id 가 생긴다\n");
   write("doc/work/ORD-1/07-test-spec.md", "## 테스트 케이스\n| TC | 수준 | 대상 AC | 케이스 | 기대 결과 |\n|---|---|---|---|---|\n| TC-1 | Unit | AC-R1-1 | 저장 | id 가 생긴다 |\n");

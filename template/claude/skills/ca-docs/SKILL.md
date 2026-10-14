@@ -1,7 +1,7 @@
 ---
 name: ca-docs
-description: 공통 문서를 점검하고 없거나 모자라면 작성한다 — POLICY 4종(아키텍처·코드 컨벤션·테스트 전략·품질·보안 기준)과 KNOWLEDGE 3종(데이터 사전·API 목록·업무 규칙·용어집).
-argument-hint: "[architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules]"
+description: 공통 문서를 점검하고 없거나 모자라면 작성한다 — POLICY 4종(아키텍처·코드 컨벤션·테스트 전략·품질·보안 기준)과 KNOWLEDGE 5종(데이터 사전·API 목록·업무 규칙·용어집·기능 목록·업무 흐름).
+argument-hint: "[architecture | conventions | test-strategy | quality | data-dictionary | api-catalog | business-rules | features | flows]"
 ---
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
@@ -10,7 +10,7 @@ argument-hint: "[architecture | conventions | test-strategy | quality | data-dic
 `code-agent` 명령이 거부하면 차단 복구를 따른다. 인자가 있으면 그 문서만 다룬다.
 
 문서는 두 층이다. **막는 것은 POLICY 4종뿐이다** — 넷 다 확정돼야 작업이 시작된다.
-KNOWLEDGE 3종은 **파일만 있으면 되고 비어 있어도 막지 않는다.** 확정 절차도 없다 — 반영(deliver)마다 그 작업 범위만 자란다.
+KNOWLEDGE 5종은 **파일만 있으면 되고 비어 있어도 막지 않는다.** 확정 절차도 없다 — 반영(deliver)마다 그 작업 범위만 자란다.
 
 | 문서 | 층 | 기본 경로 | 추천 경로 |
 |---|---|---|---|
@@ -21,6 +21,8 @@ KNOWLEDGE 3종은 **파일만 있으면 되고 비어 있어도 막지 않는다
 | 데이터 사전 | KNOWLEDGE | `doc/knowledge/data-dictionary.md` | **기본으로 생성** (상세는 상위 30개까지) |
 | API 목록 | KNOWLEDGE | `doc/knowledge/api-catalog.md` | **기본으로 생성** (상위 40개까지) |
 | 업무 규칙·용어집 | KNOWLEDGE | `doc/knowledge/business-rules.md` | **빈 뼈대** — 작업마다 질문의 답으로 쌓이는 것이 정상 경로다 |
+| 기능 목록 | KNOWLEDGE | `doc/knowledge/features.md` | **빈 뼈대** — 반영마다 닿은 기능만 자란다. 기존 기능 문서는 항목의 `상세`로 잇는다 |
+| 업무 흐름 | KNOWLEDGE | `doc/knowledge/flows.md` | **빈 뼈대** — 주요 시나리오만, 단계는 기능 키로 |
 
 ## 0. 점검
 
@@ -48,7 +50,7 @@ Bash: `code-agent docs begin`
 - **사용자 입력으로 작성**하더라도 현재 코드·설정이 사라지는 것은 아니다. `현행`은 survey 근거, `변경할 방향`은 사용자 선택으로 구분한다. 다른 언어·명령·구조를 골랐다는 이유만으로 기존 설정이나 코드를 바꾸지 않는다. 전환이 필요하면 별도 요구사항·Task와 승인된 변경으로 연결한다.
 - **파일은 있는데 섹션이 비었으면** 선택한 방식으로 빠진 섹션만 채운다. 이미 확정된 문서를 새 정책으로 바꾸는 요청은 차이를 보여 주고 재확정한다. 기존 내용을 조용히 덮지 않는다.
 - 사용자가 요청에 이미 답이나 경로를 적었으면 다시 묻지 않고 그것을 쓴다.
-- KNOWLEDGE 3종은 **빈 뼈대로 두는 것도 정상 선택지**다. 업무 규칙·용어집은 그쪽이 추천이다.
+- KNOWLEDGE 5종은 **빈 뼈대로 두는 것도 정상 선택지**다. 업무 규칙·용어집은 그쪽이 추천이다.
 
 ## 2. 기본으로 생성 (역공학)
 
@@ -58,7 +60,7 @@ Bash: `code-agent docs begin`
    `지원 목록 밖 언어입니다` 로 찍혔으면 아직 갈라지지 않는다 — survey 가 아는 확장자 밖의 코드가 있을 수 있으니 **사용자에게 확인**하고,
    코드가 있으면 그 언어의 파일을 직접 짚어 역공학을 이어 간다.
 2. 파일이 없으면 Bash: `code-agent docs skeleton <종류>` — 써야 할 섹션과 안내.
-   종류: `architecture` · `conventions` · `test-strategy` · `quality` · `data-dictionary` · `api-catalog` · `business-rules`.
+   종류: `architecture` · `conventions` · `test-strategy` · `quality` · `data-dictionary` · `api-catalog` · `business-rules` · `features` · `flows`.
 3. `ca-surveyor` 를 **한 메시지에서 병렬로** 부른다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 각자에게 survey 출력, 맡은 섹션의 안내, 읽을 표본, 초안 파일 `doc/.survey/<영역>.md`(영역마다 다른 이름)를 넘긴다.
    - 아키텍처: ① 기술 스택(빌드 파일) ② 모듈/패키지 구조 · 계층과 책임 · 의존 방향 ③ 공통 모듈 · 주요 결정
    - 컨벤션: ④ 명명 · 계층별 규칙 ⑤ 예외 처리 · 테스트 규칙(표기법만 — 위치·이름·TC id 를 코드에 남기는 방법)
@@ -75,7 +77,6 @@ Bash: `code-agent docs begin`
 첫 목록의 백틱 이름(``- `unit`: …``)이 `code-agent.json` 의 `build`·`test`·`commands` 키에 **실재해야 한다.**
 없는 이름을 적으면 문서가 게이트를 통과하지 못한다. 탐지한 도구는 문서와 `code-agent.json` 을 **같이** 채운다.
 자동 검사가 없는 갈래는 `없음` 으로 적는다 — `없음` 은 대조하지 않는다.
-(이 대조가 없으면 명령이 없는 저장소에서 "테스트를 돌렸다"는 보고가 아무것도 돌리지 않은 결과 위에 선다.)
 
 ## 3. 대화로 생성
 
@@ -99,14 +100,14 @@ Bash: `code-agent docs begin`
 
 ## 5. KNOWLEDGE — 빈 뼈대로 두기
 
-Bash: `code-agent docs skeleton <data-dictionary | api-catalog | business-rules>` 로 제목만 있는 뼈대를 만들고 경로를 등록한다.
+Bash: `code-agent docs skeleton <종류>` 로 제목만 있는 뼈대를 만들고 경로를 등록한다.
 비어 있어도 작업은 시작된다. **모델은 이 파일들을 작업 중에 쓰지 않는다** — 작업에서는 인용만 하고,
 갱신은 반영(deliver)에서 사람이 항목을 고른 뒤 코드가 한다.
 
 ## 6. 마무리
 
-1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 3종 파일이 있는지 본다. ✗ 가 남으면 1 로.
+1. Bash: `code-agent docs` — POLICY 4종의 필수 섹션이 전부 ✓ 이고 KNOWLEDGE 5종 파일이 있는지 본다. ✗ 가 남으면 1 로.
 2. 최초 준비는 `{"action":"setup"}`으로 POLICY 전체 확정과 필요한 준비 커밋(최초 커밋 또는 기존 저장소의 도입 파일 반영)을 사용자 질문 하나로 묶는다. 이후 문서 재확정은 `{"action":"docs","kind":"all"}`을 사용하며, 특정 문서만 요청받았으면 `kind`를 그 종류로 지정한다. JSON은 접수·작업 중 허용된 `doc/work/<ID>/`에, 작업 ID가 없으면 문서 준비 중 허용된 `doc/`에 작성한다. 문서 세션이 필요하면 `code-agent docs begin`으로 열고 작성한다.
 3. 열린 문서 세션을 Bash: `code-agent docs end`로 닫은 뒤 공통 동의 절차의 `prepare`부터 수행한다. 요약 전문·문서 링크를 보여 주고 실제 응답 뒤 `consent finish`(또는 `status` 확인 후 `apply`)로 승인된 동의만 적용한다.
-   **넷 다 확정해야** 작업(`/ca-feature` 등)이 시작된다. KNOWLEDGE 3종은 확정하지 않는다.
+   **넷 다 확정해야** 작업(`/ca-feature` 등)이 시작된다. KNOWLEDGE 5종은 확정하지 않는다.
 4. 적용 성공 후 원래 접수·작업으로 자동 복귀한다. 문서 재확정 자체를 별도 커밋의 승인으로 취급하지 않는다.

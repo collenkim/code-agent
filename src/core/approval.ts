@@ -604,7 +604,7 @@ export function diffPlans(before: BuildPlan, after: BuildPlan): PlanDiffEntry[] 
     (conflict) => conflict.topic,
     (conflict) => `${conflict.topic} — ${conflict.decision}`,
     (old, now) =>
-      old.docSays === now.docSays && old.codeSays === now.codeSays && old.decision === now.decision
+      old.level === now.level && old.docSays === now.docSays && old.codeSays === now.codeSays && old.decision === now.decision
         ? undefined
         : `${old.topic}: ${old.decision} → ${now.decision}`,
   );

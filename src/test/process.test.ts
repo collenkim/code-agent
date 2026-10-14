@@ -145,7 +145,7 @@ async function preparedPlan() {
   assert.throws(() => next(repo), /빠진 요구 REQ-2/);
   write(prefix + "01-requirements.md", one + '\n## R2 · 오류\n출처: REQ-2\n근거: "음수는 거부한다."\n');
   next(repo);
-  write(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n");
+  write(prefix + "02-analysis.md", "## 기존 시스템 분석\n새 기능\n## 영향 범위\n| R | 파일 | 호출 | 파급 |\n|---|---|---|---|\n| R1 | src/value.js | 없음 | 새 기능 |\n| R2 | src/value.js | 없음 | 예외 |\n## Risk\n잘못된 입력\n## 문서 영향\n| 문서 | 키 | 판단 | 근거 |\n|---|---|---|---|\n| - | - | 영향 없음 | 지식 항목이 없다 |\n");
   next(repo);
   write(prefix + "03-design.md", "## 구성 요소\nvalue 함수\n## 처리 흐름\n입력 검사 후 값 반환\n## API\n해당 없음 — 외부 접점 없음\n## 데이터\n해당 없음 — 저장 없음\n## 설계 결정\n순수 함수\n");
   write(prefix + "04-functional.md", "## 기능 정의\n값과 오류\n## 업무 규칙\n음수 거부\n## 예외\n음수는 Error\n## 수락 기준\n- AC-R1-1: 양수이면 1\n- AC-R2-1: 음수이면 Error\n");

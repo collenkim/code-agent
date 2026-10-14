@@ -1,0 +1,56 @@
+{
+  "record": "doc/reviews/2026-10-14-knowledge-docs.md",
+  "base": "43c77cf",
+  "decisions": {
+    "index": "요청 시 계산 — 저장하는 인덱스 없음",
+    "featureDocs": "종류별 한 파일 (doc/knowledge/features.md · flows.md)",
+    "docImpactGate": "새 작업(knowledgeVersion: 1)만",
+    "approval": "구현·시험·실제 CLI 확인·문서·커밋(push 없음)"
+  },
+  "tests": {
+    "command": "npm test",
+    "total": 1450,
+    "pass": 1446,
+    "fail": 0,
+    "skipped": 4,
+    "durationMs": 218445,
+    "added": ["src/test/knowledgeDocs.test.ts (13)", "src/test/planning.test.ts — 04 의 업무 규칙은 업무 정책 문서에 있는 BR 키로 근거를 댈 수 있다 (1)"],
+    "intermediateFailure": "stage-commands.test.ts 'context 가 리뷰·반영에서 무엇을 쓰는지 알려 준다' — 제안 없음 문구에 제안 파일 경로 누락, 문구 수정"
+  },
+  "contextChars": {
+    "method": "stageFixture ORD-1 을 기준 빌드(43c77cf worktree)와 지금 빌드에서 같은 순서로 진행하며 단계마다 code-agent context 출력 길이(JS 문자열 길이)",
+    "knowledgeScenario": "업무 정책 4(필수 확정·권장 확정·다른 도메인 필수·필수 관찰) · 데이터 2 · API 2 · 기능 1 · 흐름 1 · 컨벤션 [필수] 1줄. 기준 빌드는 기능·흐름 문서를 읽지 않는다",
+    "base": {
+      "none": { "analysis": 1472, "impact": 1542, "design": 1643, "plan": 2195, "implement-entity": 764, "implement-repository": 771, "implement-test": 713 },
+      "knowledge": { "analysis": 2070, "impact": 2121, "design": 2222, "plan": 2774, "implement-entity": 764, "implement-repository": 771, "implement-test": 713 }
+    },
+    "now": {
+      "none": { "analysis": 1514, "impact": 2048, "design": 1736, "plan": 2258, "implement-entity": 764, "implement-repository": 771, "implement-test": 713 },
+      "knowledge": { "analysis": 2399, "impact": 2914, "design": 2602, "plan": 3124, "implement-entity": 1096, "implement-repository": 1103, "implement-test": 812 }
+    },
+    "notMeasured": "모델 완주의 토큰·탐색 호출·수정 왕복 — 유료 실행을 하지 않았다. usage 의 문서 탐색 줄로 이후 비교한다"
+  },
+  "templateChars": {
+    "template/claude/skills/ca-docs/SKILL.md": { "base": 6858, "now": 6993, "budget": [6900, 7300] },
+    "template/claude/skills/ca-integrate/SKILL.md": { "base": 2842, "now": 2983, "budget": [2900, 3100] },
+    "template/claude/skills/ca-integrate/knowledge.md": { "base": null, "now": 1359, "budget": [null, 1400] },
+    "template/claude/agents/ca-explorer.md": { "base": 2084, "now": 2115 },
+    "template/claude/agents/ca-implementer.md": { "base": 1390, "now": 1399 },
+    "template/claude/agents/ca-reviewer.md": { "base": 3341, "now": 3388 },
+    "template/claude/agents/ca-surveyor.md": { "base": 1489, "now": 1495 },
+    "template/claude/agents/ca-writer.md": { "base": 2514, "now": 2579 },
+    "template/claude/skills/ca-adopt/SKILL.md": { "base": 8370, "now": 8403 },
+    "template/claude/skills/ca-design/criteria.md": { "base": 973, "now": 1002 },
+    "template/claude/skills/ca-impact/criteria.md": { "base": 1077, "now": 1157 },
+    "claudeFlowTotal": { "base": 51368, "now": 51509, "budget": 52200 },
+    "codexFlowTotal": { "now": 47533, "budget": 52300 }
+  },
+  "cliChecks": [
+    { "what": "init --host both", "result": "ca-integrate/knowledge.md 두 호스트 동일, Codex SKILL 은 .agents/skills 경로" },
+    { "what": "Claude hook (check 단계)", "result": "knowledge find 허용 · knowledge 거부 · knowledge prune 거부 · Write doc/knowledge/features.md 거부" },
+    { "what": "Codex codex-event (check 단계)", "result": "Bash·PowerShell knowledge find 허용 · knowledge prune 거부 · apply_patch doc/knowledge/features.md 거부" },
+    { "what": "deliver 단계 next·status·context", "result": "지식 제안 줄 — 02 신규 키와 02 에서 판단하지 않은 관련 항목" },
+    { "what": "knowledge · knowledge find", "result": "재검토 필요(커밋·경로), 반드시 적용 정책, 미발견 안내 — 관련 정책 필드 연결 누락을 찾아 수정" },
+    { "what": "usage", "result": "문서 탐색(스테이지별 …): impact 2" }
+  ]
+}

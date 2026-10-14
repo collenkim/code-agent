@@ -65,9 +65,9 @@ export function withNotation<T>(value: Notation, run: () => T): T {
 export function skill(name: SkillName, n: Notation = current): string {
   return n === "claude" ? `/${name}` : n === "codex" ? `$${name}` : `/${name}($${name})`;
 }
-/** 설치된 스킬 절차 파일 — Claude `.claude/skills`, Codex `.agents/skills` */
-export function skillFile(name: SkillName, n: Notation = current): string {
-  const claude = `.claude/skills/${name}/SKILL.md`, codex = `.agents/skills/${name}/SKILL.md`;
+/** 설치된 스킬 절차 파일(또는 그 폴더의 보조 문서) — Claude `.claude/skills`, Codex `.agents/skills` */
+export function skillFile(name: SkillName, n: Notation = current, file = "SKILL.md"): string {
+  const claude = `.claude/skills/${name}/${file}`, codex = `.agents/skills/${name}/${file}`;
   return n === "claude" ? claude : n === "codex" ? codex : `${claude}(Codex: ${codex})`;
 }
 /** 서브에이전트 이름. 역할 이름이 아니면 그대로 */

@@ -345,7 +345,7 @@ export function preservedTestProblems(work: Work): string[] {
  * 검증 명령을 돌리기 **전에** 본다. 빌드가 산출물을 남기면 실행 뒤의 대조는 제 쓰레기를
  * 계획 위반으로 읽는다.
  *
- * KNOWLEDGE 3종을 넣어 둔 이유 — `deliver` 가 사람이 고른 항목을 **코드로** 적용한 뒤 커밋한다.
+ * KNOWLEDGE 5종을 넣어 둔 이유 — `deliver` 가 사람이 고른 항목을 **코드로** 적용한 뒤 커밋한다.
  * 그 커밋이 실패하면(pre-commit hook · user.email 미설정 · 서명) 적용본만 남는데, 그것을 계획 밖
  * 변경으로 읽으면 사람이 손으로 되돌리기 전에는 `deliver` 도 `check` 도 영영 열리지 않는다.
  */

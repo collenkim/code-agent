@@ -6,6 +6,7 @@ import type { PlanningTask } from "./planningState";
 import { planDraftProblems, planningDocumentProblems } from "./planningValidation";
 import { sourceTrace } from "./sourceTrace";
 import type { Work } from "./work";
+import { docImpactProblems } from "./knowledgeImpact";
 import { analysisProblems, designProblems, functionalProblems, loadRequirements, parseRequirements, testSpecProblems, type DocOverlay } from "./workDocs";
 
 /**
@@ -30,7 +31,7 @@ export function stagedDocumentProblems(work: Work, role: PlanningTask["role"], a
       break;
     }
     case "impact": case "synthesis":
-      problems.push(...analysisProblems(root, id, keys(), work.order.kind, work.active.spec, overlay));
+      problems.push(...analysisProblems(root, id, keys(), work.order.kind, work.active.spec, overlay), ...docImpactProblems(work, overlay));
       problems.push(...planningDocumentProblems(work, "impact", { overlay, only: ["02-analysis.md"] }));
       break;
     case "design":

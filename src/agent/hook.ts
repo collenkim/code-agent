@@ -123,6 +123,8 @@ const MODEL_SUBCOMMANDS = [
   // `plugin list` **만** 연다. `"plugin"` 을 넣으면 isModelCommand 의 접두어 일치로 add·remove 까지
   // 열려, 모델이 "어디로 코드가 나가는가" 를 제 손으로 정하게 된다.
   "plugin list",
+  // 지식 찾기는 읽기 전용이다 — `knowledge` 목록·`prune` 은 사람의 자리라 열지 않는다
+  "knowledge find",
   "repro",
   "check",
   "test",
@@ -137,7 +139,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);

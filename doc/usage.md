@@ -140,10 +140,10 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 
 | # | 목표 흐름 | 스테이지 (`active.json` 의 `phase`) | 산출물 |
 |---|---|---|---|
-| — | 공통 POLICY 4종 · KNOWLEDGE 3종 | (스테이지 밖 게이트) | `doc/architecture.md` · 컨벤션 · `doc/test-strategy.md` · `doc/quality.md` · `doc/knowledge/*.md` |
+| — | 공통 POLICY 4종 · KNOWLEDGE 5종 | (스테이지 밖 게이트) | `doc/architecture.md` · 컨벤션 · `doc/test-strategy.md` · `doc/quality.md` · `doc/knowledge/*.md` |
 | 1 | 요구사항 접수 | (스테이지 밖 — 접수 세션) | `request.json` → 코드가 지시서 `requirement.md` 렌더 + 사람의 확정 원장 |
 | 2 | 분석·명세화 | `analysis` | ① `01-requirements.md` |
-| 3 | 영향도 분석 | `impact` | ② `02-analysis.md` |
+| 3 | 영향도 분석 | `impact` | ② `02-analysis.md` (새 작업은 `문서 영향` 표 포함) |
 | 4·5 | 시스템 설계 + 기능·API·데이터 정의 | `design` | ③ `03-design.md` · ④ `04-functional.md` |
 | 6 | 구현 계획 | `plan` | ⑤ `plan.json` → 코드가 `05-plan.md` 렌더 · ⑦ `07-test-spec.md` |
 | 7 | 코드 생성 | `implement` | ⑥ 소스 코드 (`06-` 파일은 없다). `fix` 는 테스트 단계가 먼저이고 `code-agent repro` 가 재현을 본 뒤에 고친다 |
@@ -152,7 +152,7 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 | 10 | 결과 분석 · 수정 루프 (8 부터 다시, 원인별 카운터 — 고쳐 쓰기 기본 2회) | — | ⑧ 의 `수정 루프` |
 | 11 | 코드 리뷰 (지적은 수정 루프로) | `review` | ⑨ `09-review.md` |
 | 12 | 통합 검증 | `integrate` | ⑧ 의 마지막 회차 |
-| 13 | 반영 — 사람 최종 확인 → 로컬 커밋 | `deliver` | ⑩ `10-pr.md` + KNOWLEDGE 3종 갱신 |
+| 13 | 반영 — 사람 최종 확인 → 로컬 커밋 | `deliver` | ⑩ `10-pr.md` + KNOWLEDGE 갱신(사람이 고른 제안 항목만) |
 
 - **요구사항은 명령으로 받는다.** 지시서 `requirement.md` 는 `/ca-request`의 **공통 접수**가 만든다 —
   사람은 서술·티켓·파일을 말로 주고, 모델이 `request.json` 으로 정리하고, 코드가 지시서를 렌더하고, **사람이 같은 세션에서 확정**한다.
@@ -217,7 +217,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 | 명령 | 하는 일 | 사용자 확인 |
 |---|---|---|
 | `/ca-adopt` | 첫 도입 — 소스 기준·사용자 입력·기존 문서 연결로 문서와 설정 준비 | 같은 세션에서 준비 확인 |
-| `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 3종) | 같은 세션에서 문서 확인 |
+| `/ca-docs [종류]` | 공통 문서 점검·작성 (POLICY 4종 · KNOWLEDGE 5종) | 같은 세션에서 문서 확인 |
 | `/ca-feature [ID] <요구사항>` | 신규 개발·기능 추가·변경의 접수부터 개발·검증·로컬 반영까지 | 요구사항 · 질문 · 계획 · 결과 |
 | `/ca-answer` | 미응답 질문을 선택 도구로 다시 열고 기록 | — |
 | `/ca-next` | **사이클** — 지금 스테이지의 단계 실행 절차를 따르고 다음으로 이어 간다 | 선택·확인을 받고 이어간다 |
@@ -234,7 +234,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 |---|---|---|---|
 | 접수 (작업 커서 전) | `/ca-request [ID] [--kind <종류>] <요구사항>` | 사람이 준 원문을 보관하고 `request.json` 으로 정리해 제출 → 코드가 지시서를 렌더 | **같은 세션의 요구사항 확인** |
 | `analysis` | `/ca-analyze [--base] [--target]` | ① `01-requirements.md` — analyst. 진행 중인 작업이 없고 요구사항이 `확정됨` 이면 `code-agent start doc/work/<ID>/requirement.md` 부터 | 질문 · `code-agent next` |
-| `impact` | `/ca-impact` | ② `02-analysis.md` — explorer 병렬 → writer. 요구 R 1~3개·조사 파일 12개 이하·합계 96,000바이트 이하면 explorer 단독(impact) — [planning.md](planning.md) | 질문 · `code-agent next` |
+| `impact` | `/ca-impact` | ② `02-analysis.md`(새 작업은 `문서 영향` 표까지) — explorer 병렬 → writer. 요구 R 1~3개·조사 파일 12개 이하·합계 96,000바이트 이하면 explorer 단독(impact) — [planning.md](planning.md) | 질문 · `code-agent next` |
 | `design` | `/ca-design` | ③ `03-design.md` · ④ `04-functional.md` — analyst | 질문 · `code-agent next` |
 | `plan` | `/ca-plan` | ⑤ `plan.json` · ⑦ `07-test-spec.md` → critic → `plan submit`. 반려 사유를 읽는 자리도 여기다 | **같은 세션의 계획 승인** |
 | `implement` | `/ca-implement` | 계획의 단계마다 implementer(테스트 단계는 tester), 커서가 `check` 에 닿을 때까지. `fix` 는 테스트 단계가 먼저이고 그 뒤 `code-agent repro` | hook 거부 · 재현 실패 · 질문 · `check` 도달 |
@@ -261,7 +261,7 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 ### `/ca-adopt`
 
 레거시 저장소에 처음 들일 때. `code-agent docs begin` 으로 문서 세션을 열고 `code-agent survey` 로 저장소 개요와 **도구 후보**(테스트·정적 분석·보안 의존성, CI 설정)를 받은 뒤,
-`ca-surveyor` 여럿을 병렬로 돌려 POLICY 4종 초안과 KNOWLEDGE 3종 뼈대를 쓰고, `code-agent.json` 을 만든다.
+`ca-surveyor` 여럿을 병렬로 돌려 POLICY 4종 초안과 KNOWLEDGE 5종 뼈대를 쓰고, `code-agent.json` 을 만든다.
 
 사람이 하는 일 — 신규에서는 목적에 맞는 추천 또는 직접 선택. 기존에서는 탐지한 설정을 묶어서 확인한다. 내부 속성을 하나씩 결정할 필요는 없고, 기술 기본값과 근거는 문서·설정 요약에서 검토한다.
 끝나면 `code-agent manifest check` 가 ✓ 여야 한다. `- 확인:` 으로 시작하는 줄은 **경고**다 (종료 코드 0) —
@@ -303,6 +303,8 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 | 데이터 사전 | KNOWLEDGE | `doc/knowledge/data-dictionary.md` | 기본으로 생성 (상세 상위 30개) |
 | API 목록 | KNOWLEDGE | `doc/knowledge/api-catalog.md` | 기본으로 생성 (상위 40개) |
 | 업무 규칙·용어집 | KNOWLEDGE | `doc/knowledge/business-rules.md` | **빈 뼈대** — 작업마다 질문의 답으로 쌓인다 |
+| 기능 목록 | KNOWLEDGE | `doc/knowledge/features.md` | **빈 뼈대** — 반영마다 닿은 기능만 자란다. 기존 기능 문서는 항목의 `상세`로 잇는다 |
+| 업무 흐름 | KNOWLEDGE | `doc/knowledge/flows.md` | **빈 뼈대** — 주요 업무 시나리오만, 단계는 기능 키로 |
 
 **POLICY 4종**의 통과 조건은 셋이다. ① 파일이 있다 ② 필수 섹션이 있고 비어 있지 않다 ③ **사람이 확정했다.**
 모델이 임의로 확정하지 않는다. 사용자가 같은 세션에서 문서를 읽고 일괄 확정한다. 개별 확정과 직접 TTY 경로도 유지한다.
@@ -311,9 +313,19 @@ ID 없이 `/ca-request "원하는 동작"`으로 시작해도 된다. ID는 자�
 첫 목록의 백틱 이름(``- `unit`: …``)이 `code-agent.json` 의 `build`·`test`·`commands` 키에 실재해야 한다.
 없으면 섹션 미충족으로 막힌다. 자동 검사가 없는 갈래는 `없음` 으로 적고, `없음` 은 대조하지 않는다.
 
-**KNOWLEDGE 3종**은 **파일 존재만** 본다. 섹션 검사도 확정도 없고, 비어 있어도 작업을 막지 않는다.
+**KNOWLEDGE 5종**은 **파일 존재만** 본다. 섹션 검사도 확정도 없고, 비어 있어도 작업을 막지 않는다.
 모델은 작업 중에 이 파일들을 쓰지 않는다 — 인용만 하고, 제안은 `doc/work/<ID>/knowledge.proposal.md` 에 적는다.
-갱신은 반영(`code-agent deliver`)에서 사람이 항목을 고른 뒤 코드가 한다 (키 단위 upsert, 삭제 없음).
+갱신은 반영(`code-agent deliver`)에서 사람이 항목을 고른 뒤 코드가 한다 (키 단위 upsert. 제안 항목에 `- 삭제:` 가 있으면 지우고, `- 대체: \`옛 키\`` 가 있으면 옛 항목 자리에 새 키로 바꾼다 — 고른 것만).
+
+POLICY 는 **개발 지침**(구조·코드·테스트·품질), `business-rules` 는 **업무 정책**이다. 둘은 문서가 다르고, 업무 정책 본문은 `business-rules` 한곳에만 쓴다 — 기능·흐름·작업 문서는 `BR-` 키로 가리킨다.
+
+| 구분 | 값 | 뜻 |
+|---|---|---|
+| 컨벤션 규칙 | `[필수]` 표시 | 참조 코드와 달라도 문서를 따른다. 표시가 없으면 권장이고, 참조 코드(기존 구현 사례)와 다르면 참조 코드를 따르고 보고한다 |
+| 업무 정책 `구분` | `필수` · `권장` | 필수는 그 범위의 모든 작업에 적용한다. context·`knowledge find` 가 검색 순위와 관계없이 싣는다 |
+| 업무 정책 `상태` | `확정` · `관찰` | 확정은 출처가 요구 항목(R)이나 사용자 결정(Q)이다. 관찰은 코드에서 본 현재 동작이고 승인된 정책으로 쓰지 않는다 — 필수여도 반드시 적용 목록에 싣지 않는다 |
+
+업무 정책 항목은 `범위`(경로·도메인, 모든 작업이면 `전체`) · `예외` · `출처` · `검증`(TC·테스트 경로)을 함께 적는다. 기능 항목은 목적·진입점·입력·출력·정책 키·흐름 키·예외·코드·테스트 위치, 흐름 항목은 시나리오와 단계별 기능 키다. 작업 문서(`doc/work/<ID>/`)는 변경 이력과 근거로 남고, 기능·흐름 항목은 지금 동작만 설명한다. 형식은 `.claude/skills/ca-integrate/knowledge.md`(Codex 는 `.agents/skills/…`).
 
 ### `/ca-request [ID] [--kind <feature|fix|refactor>] <요구사항>`
 
@@ -503,6 +515,7 @@ preserve:
   `근거:` 는 접수가 렌더한 지시서에서는 `## 원문` · `## 요구 내용` · `## 완료 조건` · `## 접수 때 정한 것` 에서 찾는다 (손으로 쓴 지시서는 그 본문에서 인용한다).
 - `impact`(`/ca-impact`) — ② `02-analysis.md`. 요구 항목을 닿는 영역으로 묶어 `ca-explorer` 를 병렬로 돌리고 `ca-writer` 가 쓴다.
   `doc/knowledge/` 에 키가 있어도 explorer가 현재 코드와 호출자 영향을 확인한 뒤 인용한다.
+  새 작업의 02 에는 `## 문서 영향` 표(`| 문서 | 키 | 판단 | 근거 |`)가 있어야 영향도 게이트를 지난다. 판단은 `갱신` · `신규` · `삭제` · `이름 변경` · `영향 없음` · `충돌` 중 하나이고 근거는 비울 수 없다 — 바꿀 문서가 없으면 `| - | - | 영향 없음 | <근거> |` 한 줄이다. 영향 범위 표의 파일을 근거로 든 기존 지식 항목은 모두 판단해야 하고, 관련 없는 항목은 판단하지 않는다. 지금 문서와 다른 정책을 발견하면 고치지 않고 `충돌`로 남긴다(반영 결과에 따로 나온다).
 - `design`(`/ca-design`) — ③ `03-design.md` · ④ `04-functional.md` 를 `ca-analyst` 가 판단해 같은 스테이지에서 함께 작성한다. AC(`AC-R<n>-<m>`)가 여기서 나온다.
   지시서의 `## 완료 조건`(또는 수락 기준) 문장은 **그대로** AC 에 옮긴다 — 사람이 확정한 완료 조건을 다듬다 뜻이 달라지는 자리를 막는다.
 - `plan`(`/ca-plan`) — ⑤ `plan.json` + ⑦ `07-test-spec.md` → `ca-critic` 반박 검토 → `code-agent plan submit` (통과하면 코드가 `05-plan.md` 를 렌더한다).
@@ -614,7 +627,8 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 실행 절차 규칙이다 | — |
 | `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY. 진행 중인 작업이 있으면 거부한다 — 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾼다. 조회는 작업 중에도 된다 |
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
-| `code-agent knowledge` | 공통 KNOWLEDGE 문서 3종의 항목과 그것을 마지막으로 넣은 작업 ID (아래) | — |
+| `code-agent knowledge` | 공통 KNOWLEDGE 문서 5종의 항목, 그것을 마지막으로 넣은 작업 ID, 최신성 (아래) | — |
+| `code-agent knowledge find <낱말\|키\|경로...>` | 지식 항목·POLICY 절을 키·코드 경로·별칭·본문으로 찾아 줄 범위·상태·연결과 반드시 적용하는 업무 정책을 보여 준다 (아래). 읽기 전용 — 작업 중 담당도 부른다 | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
@@ -625,7 +639,9 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 
 `deliver` 는 화면을 그리기 **전에** 게이트를 한 번 더 돌린다 — 증거가 지금 트리와 맞는지, 승인이 아직 `approved` 인지,
 ⑨ 에 열린 `계획 안` 지적이 없고 마지막 회차의 트리 해시가 지금과 같은지. 하나라도 어긋나면 **커밋하지 않고** 무엇이 어긋났는지 찍는다.
-KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면에서 고른 것만 반영한다 (삭제는 없다).
+KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면에서 고른 것만 반영한다 — 갱신·새 항목·삭제·이름 변경·이동이 항목마다 표시되고, 고르지 않은 삭제·대체는 적용하지 않는다.
+제안 항목은 반영 전에 검사해 걸러 낸다 — 이번 작업의 R 번호가 없거나, 기능의 코드·테스트 경로가 지금 트리에 없거나, `확정` 정책의 출처가 R·Q 가 아니면 `건너뜀:` 으로 알리고 묻지 않는다(새 작업은 업무 정책의 구분·상태·출처도 요구한다). `관찰` 정책과 문서에 없는 키를 가리키는 항목은 화면에 `확인:` 줄이 붙는다.
+02 문서 영향에서 갱신을 선언했는데 적용하지 않은 키는 결과에 `문서 갱신 보류` 로, `충돌` 로 판단한 줄은 따로 나오고 ⑩ 추적표의 `## 문서 영향` 표에 남는다.
 
 `status` 가 보여 주는 것 — 프로젝트 문서 ✓/✗, 작업 id·제목·종류·대상, 지시서 경로, **요구사항 확정 상태**, 작업 폴더, 브랜치와 기준,
 스테이지(전체 흐름에서 지금 자리를 `[ ]` 로), `implement` 면 단계 목록, 답 없는 질문, 계획·승인 상태, `다음:` 한 줄.
@@ -697,7 +713,8 @@ ORD-1 · C:\IdeaProjects\shop · 2026-09-28 ~ 2026-09-30
 
 도구별 호출: Bash 58 · Read 22 · Agent 11 · Skill 9 · Write 3
 code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning advance --chain 3 · next 2 · verify 1
-실행 절차 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
+스킬 읽기: ca-answer/SKILL.md 2 · ca-plan/SKILL.md 1
+문서 탐색(스테이지별 — 공통 POLICY·KNOWLEDGE 읽기·검색·knowledge find): impact 3 · implement 2 · deliver 1
 재시도·재배정 (작업 기록, 읽기 전용)
   ORD-1/order: 배정 14회(재배정 3) · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD 토큰 입력 12·캐시 쓰기 41,200·캐시 읽기 188,400·출력 3,050
 
@@ -715,7 +732,8 @@ hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, �
 | 도구 호출 | `assistant` 줄의 `tool_use` 블록, 같은 `id` 는 한 번 |
 | 도구 결과(자) | `user` 줄의 `tool_result` 블록 글자(같은 `tool_use_id` 는 한 번). 큰 결과가 파일로 빠지면 대화에 들어간 미리보기만 센다 |
 | 명령별 호출 | 셸 도구의 `code-agent <명령>` — `planning`·`consent`·`docs`·`request`·`review`·`plan`·`plugin`·`setup`·`manifest`·`knowledge`·`model` 은 셋째 낱말까지, `--chain`·`--json`·`--retry` 는 키에 붙인다 |
-| 실행 절차 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
+| 스킬 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
+| 문서 탐색 | 스테이지별로, `code-agent.json` 에 등록된 공통 POLICY·KNOWLEDGE 경로를 연 읽기·검색 도구(Read·Grep·Glob) 호출, 그 경로를 언급한 셸 명령, `code-agent knowledge find`. 작업 폴더 문서는 세지 않는다. 문서 생성·갱신 비용은 같은 구간의 토큰·호출 표에 함께 들어 있다 |
 | hook 출력 | `.code-agent/log/hooks.jsonl` — hook 이 모델에게 낸 PreToolUse 거부·Stop 차단·질문 도구 막음·담당 되돌림·세션 시작 주입의 호스트·이벤트·도구·글자 수·글 해시(글은 남기지 않는다). `같은 글 반복` 은 같은 세션에서 같은 글이 앞서 나온 횟수다 |
 | 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로, 실패 원인은 기록된 `failure.class`, 교차 실행은 시도마다 남긴 시간·비용·토큰의 합(Claude 는 입력·캐시 쓰기·캐시 읽기·출력, Codex 는 `tokens used` 합계 하나 — 캐시 아닌 입력 + 출력). Claude 교차 실행은 대화 기록을 남기지 않으므로 그 사용량은 이 줄에만 나온다. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
 
@@ -750,12 +768,25 @@ Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/session
 ### `code-agent knowledge` — 공통 KNOWLEDGE 점검
 
 ```
-doc/knowledge/data-dictionary.md (항목 4)
-  ORDER            ORD-1     src/main/java/.../Order.java:31
-  ORDER_ITEM       ORD-1     src/main/java/.../OrderItem.java:12
-  PAYMENT          (미상)     근거 경로 없음
+doc/knowledge/business-rules.md (항목 2) · 업무 규칙·용어집
+  BR-ORDER-01  ORD-0       test/cancel.test.ts  [최신]
+  BR-ORDER-02  ORD-0       src/order/refund.ts  [최신]
+doc/knowledge/features.md (항목 1) · 기능 목록
+  FEAT-ORDER-CANCEL  ORD-0       src/order/cancel.ts  [재검토 필요: 7580678 가 src/order/cancel.ts 를 바꿈]
 ```
 
+항목마다 **최신성**을 붙인다. 기준은 그 항목 줄을 마지막으로 바꾼 커밋이고, 근거는 항목의 `코드`·`테스트`·`범위`·본문 경로다. 계산은 부를 때마다 git 으로 한다 — 저장해 두는 인덱스는 없다.
+
+| 상태 | 뜻 |
+|---|---|
+| `최신` | 기준 커밋 뒤에 근거 코드·테스트가 바뀌지 않았다. 내용이 맞다는 보장은 아니다 |
+| `재검토 필요` | 기준 커밋 뒤에 근거 경로를 바꾼 커밋이 있다 — 어느 작업(커밋)이 어느 파일을 바꿨는지 함께 적는다. 그 작업의 02 문서 영향이 이 키를 `영향 없음` 으로 판단했으면 세지 않는다. 관련 없는 파일의 변경은 어떤 항목도 흔들지 않는다 |
+| `보류` | 반영된 작업이 02 에서 이 키의 갱신을 선언했는데 항목은 그 반영 전 그대로다 |
+| `참조 없음` | 근거 경로가 지금 트리에 없다 — 삭제·이름 변경·이동을 반영하지 않았다 |
+| `미커밋` | 항목이 아직 커밋되지 않았다 |
+| (표시 없음) | 근거 경로가 없는 항목. 업무 정책은 사람의 결정에서 오므로 정상이다 |
+
+갱신을 선언하고 반영한 작업인데 문서에 없는 키(새 항목을 거부·보류한 것)는 목록 아래에 따로 나온다.
 작업 ID 는 문서에 적혀 있는 것이 아니라 **git 이력에서 복원한다** — 항목 제목 줄을 마지막으로 건드린 커밋의 제목(`[<ID>] …`)에서 뽑는다.
 그래서 "그 키를 **마지막으로 쓴** 작업"이고, 사람이 손으로 넣었거나 아직 커밋되지 않았으면 `(미상)` 이다.
 
@@ -771,6 +802,29 @@ doc/knowledge/data-dictionary.md (항목 4)
 
 지운 뒤 `git add`·`commit` 은 사람이 한다 — 명령은 파일만 고치고 커밋하지 않는다.
 
+### `code-agent knowledge find` — 항목·절 찾기
+
+```
+찾기: 주문 · 철회
+
+- doc/knowledge/features.md L3-L13 · `FEAT-ORDER-CANCEL` 주문 취소 [기능 · 재검토 필요: 7580678 가 src/order/cancel.ts 를 바꿈] (낱말 주문 · 철회)
+  코드 src/order/cancel.ts · 테스트 test/cancel.test.ts · 정책 BR-ORDER-01 · 흐름 FLOW-ORDER
+
+반드시 적용하는 업무 정책 (순위와 관계없이 — 구분 필수·관찰 아님):
+- doc/knowledge/business-rules.md L3-L10 · `BR-ORDER-01` 배송 전 취소만 허용 [업무 정책 · 필수 확정] (FEAT-ORDER-CANCEL 가 가리킴)
+
+상태가 붙은 항목(재검토 필요·참조 없음·보류·미커밋)은 요약을 믿지 말고 그 범위의 원문과 근거 코드·테스트를 직접 확인하세요.
+
+줄 범위만 읽으세요 — 문서 전문을 열지 않습니다.
+```
+
+인자의 낱말마다 `BR-`·`FEAT-`·`FLOW-` 같은 키, 코드·테스트 경로, 업무 용어로 나눠 KNOWLEDGE 항목과 POLICY 절을 찾는다. 순위는 키 일치 > 근거 경로 일치 > 걸린 항목이 가리키는 키 > 제목·별칭 낱말 > 본문 낱말이다. 결과는 문서 경로와 **줄 범위**, 종류·최신성·업무 정책의 구분·상태, 걸린 이유, 연결(코드·테스트·정책·흐름·기능)이다.
+
+- **반드시 적용하는 업무 정책**은 상위 결과에 없어도 붙는다 — `구분: 필수` 이고 `관찰` 이 아닌 정책 중 범위가 `전체` 이거나, 찾은 경로가 범위에 들거나, 걸린 항목이 가리키는 것. `권장` 과 `관찰` 은 붙이지 않는다.
+- 결과가 15개를 넘으면 `- 범위: 걸린 N개 중 상위 15개만` 으로 잘렸다고 적는다.
+- 걸린 것이 없으면 찾은 문서를 적고 코드와 테스트를 직접 찾으라고 한다.
+- 읽기 전용이라 작업 중에도 hook 이 막지 않는다 — 메인 대화와 셸이 있는 담당(구현·테스트)이 지식 문서 전문 대신 부른다. 셸이 없는 담당(조사·리뷰 등)은 context 가 준 줄 범위를 읽고, 더 필요하면 지식 문서에서 키·낱말을 검색한다. `knowledge`·`knowledge prune` 은 작업 중에 모델이 부를 수 없다.
+
 ---
 
 ## 6. 실행 절차가 부르는 명령
@@ -780,7 +834,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | 명령 | 하는 일 |
 |---|---|
 | `code-agent docs begin` · `end` | 문서 작성 세션. 도는 동안 hook 이 문서 자리 밖 쓰기를 막는다 |
-| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대. 종류 — POLICY: `architecture` `conventions` `test-strategy` `quality` · KNOWLEDGE: `data-dictionary` `api-catalog` `business-rules`(`knowledge` 면 셋을 한 번에) · 작업 문서: `01-requirements` `02-analysis` `03-design` `04-functional` `07-test-spec` |
+| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대. 종류 — POLICY: `architecture` `conventions` `test-strategy` `quality` · KNOWLEDGE: `data-dictionary` `api-catalog` `business-rules` `features` `flows`(`knowledge` 면 다섯을 한 번에) · 작업 문서: `01-requirements` `02-analysis` `03-design` `04-functional` `07-test-spec` |
 | `code-agent docs interview <종류> [--sections a,b]` | 대화로 채울 때 물을 것 |
 | `code-agent docs link <종류> <경로...>` | 이미 있는 문서를 `code-agent.json`에 등록. 작업 중에는 거부한다. 접수 중에는 `docs begin`으로 준비 세션을 연 뒤 연결하고 `docs end` 후 접수를 이어간다 |
 | `code-agent docs recommend` · `docs setup node\|python` | 신규 추천 설명 · 설정과 POLICY·단계 규칙 생성. setup은 문서 세션에서만 가능하고 기존 프로젝트 파일은 덮지 않는다 |
@@ -836,7 +890,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | 경로 | 무엇 | 누가 쓴다 | 커밋 |
 |---|---|---|---|
 | `doc/architecture.md` · 컨벤션 · `doc/test-strategy.md` · `doc/quality.md` | 공통 POLICY 4종 — 확정해야 작업이 시작된다 | 모델 초안 + **사람 확정** | O |
-| `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md` | 공통 KNOWLEDGE 3종 — 도입에 빈 뼈대, 반영마다 자란다 | `docs begin` 이 없는 것을 빈 뼈대로 만들고 `deliver` 가 갱신 (사람이 고른 항목만) | O |
+| `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md` · `features.md` · `flows.md` | 공통 KNOWLEDGE 5종 — 도입에 빈 뼈대, 반영마다 자란다 | `docs begin` 이 없는 것을 빈 뼈대로 만들고 `deliver` 가 갱신 (사람이 고른 항목만) | O |
 | `doc/work/<ID>/request.json` | 접수 초안 — 원문(`original`\|`originalFile`) · 머리말 값 · 요구 내용 · 접수 때 정한 것 | 모델 (접수에서) | O |
 | `doc/work/<ID>/requirement.md` | 작업 지시서 — 작업의 입력. **사람이 확정해야** 작업이 시작된다 | **`request submit` 만** (hook 이 모델 쓰기 거부) · 사람이 손으로 써도 된다 | O |
 | `doc/work/<ID>/questions.md` | 질문과 답 | `start` 가 만들고 모델이 덧붙인다 | O |
@@ -850,7 +904,7 @@ doc/knowledge/data-dictionary.md (항목 4)
 | `doc/work/<ID>/08-validation.md` ⑧ | 검증 보고서 — 기준·실행 결과·TC·수정 루프·실패 로그 | **`repro`·`check`·`test`·`integrate` 만** (hook 이 모델 쓰기 거부, 재렌더 바이트 대조) | O |
 | `doc/work/<ID>/09-review.md` ⑨ | 리뷰 회차 · 지적 표(`id · 계획 파일 · 범위 · 상태 · 지적`) | 독립 리뷰어가 판정하고 hook이 실행 기록과 함께 결과를 기록 | O |
 | `doc/work/<ID>/10-pr.md` ⑩ | MR/PR 본문 — 요약 · 추적표 · 검증 · 확인 방법 · 위험 | `code-agent:trace` 블록은 **`deliver` 만**, 나머지는 모델 | O |
-| `doc/work/<ID>/knowledge.proposal.md` | KNOWLEDGE 갱신 제안 — `deliver` 가 항목별로 물어 고른 것만 반영 | 모델이 적고 사람이 고른다 | O |
+| `doc/work/<ID>/knowledge.proposal.md` | KNOWLEDGE 갱신 제안(새 작업은 02 문서 영향에서 갱신으로 판단한 키만) — `deliver` 가 항목별로 물어 고른 것만 반영. 형식은 `ca-integrate` 의 `knowledge.md` | 모델이 적고 사람이 고른다 | O |
 | `.code-agent/work/<ID>/<대상>.plan.json` | 제출된 계획 | `plan submit` 만 | O |
 | `.code-agent/work/<ID>/<대상>.verify.json` | 검증 증거 — 기준 커밋 · 부분 트리 해시 · `manifestHash` · `planHash` · 회차 · 실행 목록 · (`fix` 면) 재현 증거 `repro`(재현 TC · 그때의 테스트 파일 트리 해시) · 원인별 재시도 카운터 `retry` · 테스트 동결 기준 `testFreeze` | `repro` · `check` · `test` · `integrate` 만 | O (증거) |
 | `.code-agent/approvals/docs.jsonl` | 문서 확정 원장 (해시 사슬) | `confirm doc` 만 | O |
@@ -1063,7 +1117,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | survey.classify  | 경로 규칙 + surveyor (code-agent survey)  | 기본 구현 |
 | candidates.rank  | 내장 키워드 스캔 (code-agent context)     | 플러그인 jev |
 | review.prefilter | reviewer 가 전부 봄 (code-agent review)   | 기본 구현 |
-| context.docs     | 제목 매칭 (code-agent context)            | 기본 구현 |
+| context.docs     | 키·경로·별칭·본문 검색 (code-agent context)   | 기본 구현 |
 | code.index       | 없음 — 예약 (이 버전은 부르지 않는다)      | 예약 — 부르는 지점이 없습니다 |
 | verify.extra     | 매니페스트 commands (code-agent check)    | 기본 구현 |
 ```
@@ -1116,7 +1170,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | 명령 | 무엇이 붙나 |
 |---|---|
 | `code-agent context` (`impact`·`design`) | `## 관련 후보 파일 (순위 …)` — 출처 줄이 `기본 구현` 인지 `플러그인 <이름>` 인지 찍는다. 본 범위가 잘렸으면 `- 범위:` 줄이 붙는다(본문은 32 MiB 예산 안에서 경로가 걸린 파일·테스트가 아닌 파일부터 읽는다, 저장소 파일 2만 개 상한, 플러그인에는 앞 3,000개) — 순위에 없으면 직접 찾는다 |
-| `code-agent context` (`analysis`·`impact`·`design`·`plan`) | `## 참고 문서 섹션 (제목 매칭 …)` — analysis 는 지시서의 접수 요구 낱말로 고르고, 업무 규칙 KNOWLEDGE 줄을 함께 싣는다 |
+| `code-agent context` (`analysis`·`impact`·`design`·`plan`) | `## 참고 문서 (지식 항목·문서 절 순위 …)` — 지식 항목·POLICY 절을 키·경로·별칭·본문으로 골라 줄 범위·최신성·연결을 싣는다(analysis 는 지시서의 접수 요구 낱말로 고른다). 잘렸으면 수를 적고, 반드시 적용하는 업무 정책은 순위와 관계없이 따로 싣는다. 플러그인이 채운 결과도 지식 항목·문서 절과 맞으면 줄 범위·최신성을 붙인다 |
 | `code-agent review` | `## 의심 항목` — **단서일 뿐 판정이 아니다.** ⑨ 에 적히는 지적은 `ca-reviewer` 가 낸 것뿐이다 |
 | `code-agent check` | `verify.extra` 의 결과가 증거 런으로 **추가**된다 (`kind: "plugin:<이름>:…"`). 더하기만 하므로 실패한 빌드를 통과로 만들 수 없다 |
 | `code-agent survey` | 계층·컴포넌트 분류 블록 (플러그인이 없으면 출력이 지금과 같다) |

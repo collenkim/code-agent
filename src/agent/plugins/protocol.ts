@@ -274,7 +274,7 @@ export const SLOT_NOTES: Record<Slot, { where: string; fallback: string }> = {
   "survey.classify": { where: "code-agent survey", fallback: "경로 규칙 + surveyor" },
   "candidates.rank": { where: "code-agent context", fallback: "내장 키워드 스캔" },
   "review.prefilter": { where: "code-agent review", fallback: "reviewer 가 전부 봄" },
-  "context.docs": { where: "code-agent context", fallback: "제목 매칭" },
+  "context.docs": { where: "code-agent context", fallback: "키·경로·별칭·본문 검색" },
   // 부르는 지점이 없는 자리 — where 가 비어 있으면 `plugin list` 가 괄호를 붙이지 않는다
   "code.index": { where: "", fallback: "없음 — 예약 (이 버전은 부르지 않는다)" },
   "verify.extra": { where: "code-agent check", fallback: "매니페스트 commands" },

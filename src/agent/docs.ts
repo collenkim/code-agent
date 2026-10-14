@@ -15,7 +15,7 @@ import type { DocKind, DocSchema, KnowledgeKind } from "./schemas";
  * 넷 다 셋을 만족해야 작업이 시작되고 스테이지가 넘어간다. 그 빈자리를 모델이 지어내기 때문이다.
  * 1. 파일이 있다  2. 필수 섹션이 있고 비어 있지 않다(`확인 필요` 가 남지 않았다)  3. 사람이 지금 내용으로 확정했다
  *
- * 공통 KNOWLEDGE(데이터 사전·API 목록·업무 규칙)는 여기에 끼지 않는다 — 파일 존재만 보고 막지 않는다(checkKnowledge).
+ * 공통 KNOWLEDGE(데이터 사전·API 목록·업무 규칙·기능 목록·업무 흐름)는 여기에 끼지 않는다 — 파일 존재만 보고 막지 않는다(checkKnowledge).
  */
 export type DocState = "missing-file" | "missing-sections" | "unconfirmed" | "stale" | "confirmed";
 
@@ -56,6 +56,8 @@ export function docPaths(manifest: Manifest | undefined, kind: DocKind): string[
     "data-dictionary": manifest?.docs.knowledge?.dataDictionary,
     "api-catalog": manifest?.docs.knowledge?.apiCatalog,
     "business-rules": manifest?.docs.knowledge?.businessRules,
+    features: manifest?.docs.knowledge?.features,
+    flows: manifest?.docs.knowledge?.flows,
   }[kind];
   return [registered ?? SCHEMAS[kind].defaultPath];
 }
@@ -123,7 +125,8 @@ export function normalizeHeading(text: string): string {
  * 절을 가리키고 문서 제목(level 1, 본문이 문서 전체다)을 걸러 낼 때 쓴다.
  */
 export function sectionsOf(text: string): { heading: string; body: string; line: number; level: number }[] {
-  const lines = text.replace(/<!--[\s\S]*?-->/g, "").split("\n");
+  // 주석은 지우되 줄바꿈은 남긴다 — 여러 줄 주석이 뒤 제목의 줄 번호를 당기면 context 가 짚는 범위가 어긋난다
+  const lines = text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, "")).split("\n");
   const found: { heading: string; level: number; start: number }[] = [];
   lines.forEach((line, index) => {
     const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);

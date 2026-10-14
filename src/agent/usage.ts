@@ -10,6 +10,9 @@ import { selectedHosts } from "./hosts";
 import { readCodexLog, type CodexTokens } from "./codexUsage";
 import { assignmentLabels, retryLine, retryReports, type RetryReport } from "./retryReport";
 import { readHookOutputs, type HookOutputKind } from "./hookLog";
+import { docPaths } from "./docs";
+import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
+import { loadManifestIfAny } from "./work";
 
 /**
  * `code-agent usage` — 이 저장소에 쓴 토큰을 **스테이지별·에이전트별·모델별**로 센다.
@@ -23,7 +26,7 @@ import { readHookOutputs, type HookOutputKind } from "./hookLog";
  * `logStage` 가 남긴다)로 구간을 만들고 메시지의 `timestamp` 를 그 구간에 담는다.
  *
  * 토큰 표 뒤에 호출 통계를 더한다 — 요청 수, 도구 호출(`tool_use` 블록, id 로 한 번), 도구 결과 글자(대화에 들어간 `tool_result` 글자 —
- * 큰 결과가 파일로 빠지면 미리보기만 센다), 도구 이름별·`code-agent` 하위 명령별 호출, 스킬 파일 읽기, 작업 기록의 재시도·재배정
+ * 큰 결과가 파일로 빠지면 미리보기만 센다), 도구 이름별·`code-agent` 하위 명령별 호출, 스킬 파일 읽기, 스테이지별 공통 문서 탐색(등록된 POLICY·KNOWLEDGE 경로를 읽거나 찾은 호출과 `knowledge find`), 작업 기록의 재시도·재배정
  * (`retryReport.ts` — 읽기만 한다). Codex 설치면 Codex 세션 기록을 같은 구간으로 센다(`codexUsage.ts` — codex-cli 0.161.0 기록 꼴, 하위 에이전트 행 따로, 비용 없음).
  * 서브에이전트 기록은 작업 기록의 담당 id 로 배정·리뷰 회차별 행(`배정별`)으로도 묶고(`assignmentLabels`), hook 이 모델에게 낸 글
  * (거부·차단·되돌림·세션 시작 주입 — `hookLog.ts`)을 이벤트별 횟수·글자 수로 센다.
@@ -94,6 +97,8 @@ export interface UsageSection {
   commands: Record<string, number>;
   /** 읽기 도구(Codex 는 code-agent read)가 읽은 스킬 파일(<스킬>/<파일>)별 횟수 */
   skillReads: Record<string, number>;
+  /** 스테이지별 문서 탐색 — 등록된 공통 문서(POLICY·KNOWLEDGE)를 읽거나 검색한 호출과 `knowledge find` 수 */
+  docReads: Record<string, number>;
   /** Codex 만 — 파일 변경(FileChange) 기록 수 */
   fileChanges?: number;
   unpriced: string[];
@@ -456,6 +461,39 @@ function countCalls(calls: { name: string; input?: Record<string, unknown>; comm
   return { tools, commands, skillReads };
 }
 
+/** 등록된 공통 문서 경로 — 문서 탐색을 세는 기준. 작업 폴더 문서는 그 작업 자신의 산출물이라 세지 않는다 */
+function docRoots(repoRoot: string): string[] {
+  let manifest;
+  try { manifest = loadManifestIfAny(repoRoot); } catch { manifest = undefined; }
+  return [...new Set([...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap((kind) => docPaths(manifest, kind)))]
+    .map((path) => path.split("\\").join("/").replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean);
+}
+
+/** 호출 한 건이 공통 문서를 읽거나 찾는가 — 읽기 도구의 경로, 검색 도구의 경로, 셸 명령의 경로 언급과 `knowledge find` */
+function docCall(repoRoot: string, roots: string[], call: { name: string; input?: Record<string, unknown>; command?: string }): boolean {
+  const base = repoRoot.split("\\").join("/").replace(/\/+$/, "").toLowerCase();
+  const under = (raw: string): boolean => {
+    let path = raw.split("\\").join("/");
+    if (path.toLowerCase().startsWith(`${base}/`)) path = path.slice(base.length + 1);
+    path = path.replace(/^\.\//, "");
+    return roots.some((root) => path === root || path.startsWith(`${root}/`));
+  };
+  const shell = shellOf(call);
+  if (shell !== undefined) {
+    const text = shell.split("\\").join("/");
+    return commandKey(shell) === "knowledge find" || roots.some((root) => text.includes(root));
+  }
+  if (!["Read", "Grep", "Glob"].includes(call.name)) return false;
+  return ["file_path", "path"].some((field) => typeof call.input?.[field] === "string" && under(call.input[field] as string));
+}
+
+function docReadsBy(repoRoot: string, calls: { at: string; name: string; input?: Record<string, unknown>; command?: string }[], stageOf: (at: string) => string): Record<string, number> {
+  const roots = docRoots(repoRoot);
+  const counts: Record<string, number> = {};
+  for (const call of calls) if (docCall(repoRoot, roots, call)) counts[stageOf(call.at)] = (counts[stageOf(call.at)] ?? 0) + 1;
+  return counts;
+}
+
 /** 행 라벨마다 요청·도구 호출·도구 결과 글자 */
 function callStats(labels: string[], requests: string[], calls: string[], results: { label: string; chars: number }[]): Map<string, CallStats> {
   const stats = new Map<string, CallStats>(labels.map((label) => [label, { requests: 0, toolCalls: 0, toolResultChars: 0 }]));
@@ -481,7 +519,7 @@ const kept = (filter: Filter) => (at: string): boolean =>
 
 function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
   const dir = options.transcripts ?? transcriptDir(repoRoot);
-  const empty = { source: "claude" as const, dir, sessions: 0, subagents: 0, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
+  const empty = { source: "claude" as const, dir, sessions: 0, subagents: 0, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, docReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!existsSync(dir)) {
     return { ...empty, note: [`기록을 찾지 못했습니다: ${dir}`, "  이 저장소를 이 경로에서 Claude Code 로 연 적이 없거나, 다른 PC 의 기록입니다."] };
   }
@@ -518,6 +556,7 @@ function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter):
       calls.flatMap((c) => c.assignment ? [c.assignment] : []), results.flatMap((r) => r.assignment ? [{ label: r.assignment, chars: r.chars }] : []))),
     models: modelRows(messages),
     ...countCalls(calls),
+    docReads: docReadsBy(repoRoot, calls, stageOf),
     unpriced: [...new Set(messages.filter((message) => !priceOf(message.model) && used(message)).map((message) => message.model))].sort(),
   };
 }
@@ -531,7 +570,7 @@ function modelRows(messages: Message[]): UsageRow[] {
 const zeroCodex = (): CodexTokens => ({ input: 0, cachedInput: 0, cacheWrite: 0, output: 0, reasoningOutput: 0 });
 function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
   const log = readCodexLog(repoRoot, options.codexSessions);
-  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: log.subagents, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
+  const empty = { source: "codex" as const, dir: log.dir, sessions: log.sessions, subagents: log.subagents, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, docReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!log.found) return { ...empty, note: [`Codex 기록을 찾지 못했습니다: ${log.dir}`] };
   const keep = kept(filter);
   const requests = log.requests.filter((request) => keep(request.at));
@@ -561,7 +600,8 @@ function codexSection(repoRoot: string, options: UsageOptions, filter: Filter): 
   return { ...empty, range: { from: times[0], to: times[times.length - 1] }, stages: rows(stageOf), agents: rows((item) => item.agent),
     // 하위 에이전트 기록의 thread id 를 작업 기록의 담당 id(hook 이 받은 agent_id)와 잇는다
     assignments: rows((item) => item.thread === undefined ? undefined : filter.labels.get(item.thread)),
-    tools, commands, skillReads, fileChanges: log.fileChanges.filter((change) => keep(change.at)).length };
+    tools, commands, skillReads, docReads: docReadsBy(repoRoot, log.commands.filter((entry) => keep(entry.at)).map((entry) => ({ at: entry.at, name: "", command: entry.command })), (at) => stageOf({ at })),
+    fileChanges: log.fileChanges.filter((change) => keep(change.at)).length };
 }
 
 /**
@@ -633,7 +673,8 @@ function retryBlock(retry: RetryReport[]): string[] {
   return retry.length ? ["재시도·재배정 (작업 기록, 읽기 전용)", ...retry.map(retryLine)] : [];
 }
 function countLines(section: UsageSection): string[] {
-  return [...countLine("도구별 호출", section.tools), ...countLine("code-agent 명령별 호출", section.commands), ...countLine("스킬 읽기", section.skillReads)];
+  return [...countLine("도구별 호출", section.tools), ...countLine("code-agent 명령별 호출", section.commands), ...countLine("스킬 읽기", section.skillReads),
+    ...countLine("문서 탐색(스테이지별 — 공통 POLICY·KNOWLEDGE 읽기·검색·knowledge find)", section.docReads)];
 }
 const rangeText = (section: UsageSection): string => section.range ? `${day(section.range.from)} ~ ${day(section.range.to)}` : "";
 
