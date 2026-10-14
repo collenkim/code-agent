@@ -1,5 +1,5 @@
 {
-  "range": "53e81d4..(이 커밋)",
+  "range": "53e81d4..e45c6c1",
   "scope": "상위 조정자·러너 연결 준비 — 작업 경험(experience)·발견 보고(finding)·기계 판독용 상태(status --json)",
   "fullSuite": {
     "final": { "tests": 1482, "pass": 1478, "fail": 0, "skipped": 4, "durationMs": 186219 },
