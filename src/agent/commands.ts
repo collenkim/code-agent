@@ -91,6 +91,8 @@ import { crossNotice } from "./hosts";
 import { askVia, notation, skill, skillFile } from "./hostText";
 import { PHASE_SKILL, reentryHint, staleEarliest } from "./reentry";
 import { failureHint } from "./failureHint";
+import { findingStatusLine } from "./findings";
+import { workExperienceCount } from "./experience";
 import { leaseLine } from "./lease";
 import { loadTriage, requireNoTriage, triageSummary } from "./triageState";
 import { renderContext } from "./contextRender";
@@ -664,6 +666,11 @@ export function status(repoRoot: string): string {
   }
   const proposal = proposalHint(work, planPaths(work), skillFile("ca-integrate", notation(), "knowledge.md"));
   if (proposal) lines.push(proposal);
+  // 발견 보고·작업 경험 — 있을 때만 한 줄씩(없어도 어떤 단계도 막지 않는다)
+  const found = findingStatusLine(repoRoot, active.id);
+  if (found) lines.push(found);
+  const experiences = workExperienceCount(repoRoot, active.id);
+  if (experiences > 0) lines.push(`작업 경험: 이 작업이 쓴 기록 ${experiences}건 — code-agent experience list`);
   lines.push(`다음: ${nextHint(work)}`);
   return lines.join("\n");
 }

@@ -24,7 +24,7 @@ import { TIMING, writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, SURVEY_DRAFTS, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, draftFile, experienceFile, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, SURVEY_DRAFTS, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
@@ -125,6 +125,9 @@ const MODEL_SUBCOMMANDS = [
   "plugin list",
   // 지식 찾기는 읽기 전용이다 — `knowledge` 목록·`prune` 은 사람의 자리라 열지 않는다
   "knowledge find",
+  // 작업 경험·발견 보고 — add·report 는 이 작업의 기록 파일만 검사 뒤 쓴다(쓰기 경계·승인·한도를 바꾸지 않는다). list·show 는 읽기 전용
+  "experience",
+  "finding",
   "repro",
   "check",
   "test",
@@ -139,7 +142,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -920,6 +923,10 @@ function decideWrite(work: Work, path: string): string | undefined {
       `${validationDocFile(active.id)} 는 코드가 렌더합니다 — code-agent check · test · integrate 가 검증 증거에서 만듭니다. ` +
       "검증 결과는 모델이 보고하는 것이 아니라 명령이 돌아서 남은 것만 유효합니다."
     );
+  }
+  // 경험 기록은 코드가 ID·버전·근거 대조·민감 정보 검사를 거쳐 쓴다 — 도구로 직접 쓰면 그 검사를 건너뛴다
+  if (path.toLowerCase() === experienceFile(active.id).toLowerCase()) {
+    return `${experienceFile(active.id)} 는 code-agent experience add <초안> 이 씁니다(초안 자리 ${draftFile(active.id, "experience")}) — ID·버전을 정하고 검증 근거와 민감 정보를 확인합니다. 기록은 선택입니다.`;
   }
   // 작업 폴더(번호 문서·질문·계획 초안)는 어느 스테이지에서든 쓴다.
   const workDir = workDocsDir(active.id);

@@ -7,6 +7,7 @@ import { codeRefs, documentEntries, knowledgePath, missingRefs, removeEntry } fr
 import type { DocumentEntry } from "./knowledge";
 import { buildIndex, freshness, freshnessText, hitLine, linkLine, mandatoryPolicies, parseQuery, pendingWithoutEntry, search } from "./knowledgeIndex";
 import { keywordsOf } from "./plugins/defaults";
+import { EXPERIENCE_ID, EXPERIENCE_NOTE, experienceIndex, experienceLine, searchExperience } from "./experience";
 import { KNOWLEDGE_KINDS, SCHEMAS } from "./schemas";
 import type { KnowledgeKind } from "./schemas";
 import { Stop } from "./stop";
@@ -156,8 +157,11 @@ export function knowledgeList(repoRoot: string): string {
  */
 export function knowledgeFind(repoRoot: string, text: string): string {
   const index = buildIndex(repoRoot, loadManifestIfAny(repoRoot));
-  const query = parseQuery(text, index, (value) => keywordsOf([{ key: "", text: value }]));
-  if (query.keys.length === 0 && query.files.length === 0 && query.keywords.length === 0) {
+  // 경험 ID 는 KNOWLEDGE 키가 아니다 — 낱말로 쪼개지지 않게 먼저 떼어 경험 검색의 키로만 쓴다
+  const experienceKeys = text.split(/\s+/).map((token) => token.replace(/^`|`$/g, "")).filter((token) => EXPERIENCE_ID.test(token));
+  const rest = text.split(/\s+/).filter((token) => !experienceKeys.includes(token.replace(/^`|`$/g, ""))).join(" ");
+  const query = parseQuery(rest, index, (value) => keywordsOf([{ key: "", text: value }]));
+  if (query.keys.length === 0 && query.files.length === 0 && query.keywords.length === 0 && experienceKeys.length === 0) {
     throw new Stop(USAGE);
   }
   const hits = search(index, query);
@@ -166,11 +170,11 @@ export function knowledgeFind(repoRoot: string, text: string): string {
   const mandatory = mandatoryPolicies(index, query, shownEntries).filter(({ entry }) => !shownEntries.includes(entry));
   const fresh = freshness(repoRoot, [...shownEntries, ...mandatory.map(({ entry }) => entry)]);
   const searched = [...new Set([...index.docs.filter((doc) => doc.exists).map((doc) => doc.path), ...index.sections.map((section) => section.path)])];
-  const lines = [`찾기: ${[...query.keys, ...query.files, ...query.keywords].join(" · ")}`];
+  const lines = [`찾기: ${[...experienceKeys, ...query.keys, ...query.files, ...query.keywords].join(" · ")}`];
   if (hits.length === 0) {
     lines.push(
       "",
-      searched.length > 0 ? `걸린 항목이 없습니다 (찾은 문서: ${searched.join(", ")}).` : "찾을 문서가 없습니다.",
+      searched.length > 0 ? `KNOWLEDGE·POLICY 에서 걸린 항목이 없습니다 (찾은 문서: ${searched.join(", ")}).` : "찾을 문서가 없습니다.",
       "문서에 없는 동작일 수 있습니다 — 코드와 테스트를 직접 찾으세요.",
     );
   } else {
@@ -191,9 +195,21 @@ export function knowledgeFind(repoRoot: string, text: string): string {
   if ([...fresh.values()].some((state) => state.state !== "최신" && state.state !== "근거 경로 없음")) {
     lines.push("", "상태가 붙은 항목(재검토 필요·참조 없음·보류·미커밋)은 요약을 믿지 말고 그 범위의 원문과 근거 코드·테스트를 직접 확인하세요.");
   }
-  if (hits.length > 0 || mandatory.length > 0) lines.push("", "줄 범위만 읽으세요 — 문서 전문을 열지 않습니다.");
+  // 작업 경험 — KNOWLEDGE 결과·반드시 적용하는 정책과 섞지 않고 그 뒤에 따로(상한도 따로) 보인다
+  const experiences = searchExperience(experienceIndex(repoRoot), { ...query, keys: [...query.keys, ...experienceKeys] });
+  const shownExperiences = experiences.slice(0, EXPERIENCE_FIND_LIMIT);
+  if (shownExperiences.length > 0) {
+    const drift = freshness(repoRoot, shownExperiences.map((hit) => hit.record.current));
+    lines.push("", "작업 경험 (확정 정책 아님 — 당시 작업의 기록):", ...shownExperiences.map((hit) => experienceLine(hit, drift.get(hit.record.current))));
+    if (experiences.length > shownExperiences.length) lines.push(`- 범위: 걸린 ${experiences.length}개 중 ${shownExperiences.length}개만 — code-agent experience list`);
+    lines.push(EXPERIENCE_NOTE);
+  }
+  if (hits.length > 0 || mandatory.length > 0 || shownExperiences.length > 0) lines.push("", "줄 범위만 읽으세요 — 문서 전문을 열지 않습니다.");
   return lines.join("\n");
 }
+
+/** `find` 가 보여 주는 작업 경험 수 — KNOWLEDGE 결과와 따로 센다 */
+const EXPERIENCE_FIND_LIMIT = 5;
 
 // ---- 정리 ----
 

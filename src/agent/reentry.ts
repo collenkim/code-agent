@@ -28,7 +28,7 @@ export const PHASE_SKILL: Record<Exclude<Phase, "deliver">, SkillName> = {
   integrate: "ca-integrate",
 };
 
-const APPROVAL_LABEL: Record<Exclude<ApprovalState["status"], "approved">, string> = {
+export const APPROVAL_LABEL: Record<Exclude<ApprovalState["status"], "approved">, string> = {
   none: "승인 기록이 없습니다",
   rejected: "계획이 반려됐습니다",
   "stale-plan": "제출된 계획이 승인 뒤 바뀌었습니다",

@@ -27,6 +27,9 @@ import { doctor } from "./doctor";
 import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, docsStatus } from "./docsCommands";
 import { init } from "./init";
 import { knowledge } from "./knowledgeCommands";
+import { experience } from "./experienceCommands";
+import { finding } from "./findings";
+import { stateExitCode, stateView } from "./stateView";
 import { findRepoRoot } from "./layout";
 import { modelsTable, setModel } from "./models";
 import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
@@ -60,6 +63,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent help [<명령>]            이 사용법 — 명령을 주면 그 명령의 줄만
   code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 실행 절차·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
+  code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]
+                                      기계 판독용 상태(스키마 code-agent.state v1) — 읽기 전용. 재개 코드·근거·stateVersion, 기대와 다르면 stale-request(종료 코드 3)
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
   code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음) — 작업 중에도 조회할 수 있다
@@ -68,7 +73,9 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent usage [--work <ID>] [--since <날짜>] [--json]   이 저장소에 쓴 토큰·비용(추정)·요청·도구 호출·재시도 기록을 스테이지별·에이전트별로
   code-agent knowledge                공통 KNOWLEDGE 항목 · 그 키를 마지막으로 쓴 작업 · 최신성(재검토 필요·참조 없음·보류)
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
-  code-agent knowledge find <낱말|키|경로...>  KNOWLEDGE 항목·POLICY 절을 키·경로·별칭·본문으로 찾아 줄 범위·상태·연결을 보여 준다 (읽기 전용 — 작업 중에도 된다)
+  code-agent knowledge find <낱말|키|경로...>  KNOWLEDGE 항목·POLICY 절을 키·경로·별칭·본문으로 찾아 줄 범위·상태·연결을 보여 준다 (읽기 전용 — 작업 중에도 된다). 작업 경험은 따로 묶어 보인다
+  code-agent experience [add <초안.json> | list [--all] | show <EXP-ID>]  작업 경험 기록(선택) — add 는 이 작업 폴더의 experience.md 에 ID·버전을 정해 쓴다. 확정 정책이 아니다
+  code-agent finding [report <초안.json> | list [--json] [--work <ID>]]  진행 중 발견 보고 — 분류(a~d)·근거·영향·차단·상태. 보고일 뿐 권한이 아니다
   code-agent docs                     공통 POLICY 4종 · KNOWLEDGE 5종 — 섹션·확정 상태
   code-agent confirm doc <all|종류>   공통 문서 한 번에 확정 또는 개별 확정 (TTY)
   code-agent confirm request <ID> [<지시서>]   1 요구사항 확정 (TTY 에서만) — 원문과 정리를 나란히 보여 주고 확정해야 작업이 시작된다
@@ -306,9 +313,16 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (optionsOnly(args, ["host", "cli"], [], INIT_USAGE)) { print(INIT_USAGE); return 0; }
       print(init(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
-    case "status":
-      print(status(repoRoot));
-      return 0;
+    case "status": {
+      if (args.length === 0) { print(status(repoRoot)); return 0; }
+      const STATUS_USAGE = "사용법: code-agent status [--json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]]";
+      if (optionsOnly(args, ["expect-state", "expect-work", "expect-attempt", "session", "run-id"], ["--json"], STATUS_USAGE)) { print(STATUS_USAGE); return 0; }
+      if (!args.includes("--json")) throw new Stop(`${STATUS_USAGE} — 대조·식별 옵션은 --json 과 함께 씁니다`);
+      const view = stateView(repoRoot, { expectState: option(args, "expect-state"), expectWork: option(args, "expect-work"), expectAttempt: option(args, "expect-attempt"),
+        session: option(args, "session"), runId: option(args, "run-id") });
+      print(JSON.stringify(view, null, 2));
+      return stateExitCode(view);
+    }
     case "doctor": {
       if (optionsOnly(args, ["host"], ["--cross"], DOCTOR_USAGE)) { print(DOCTOR_USAGE); return 0; }
       const report = doctor(repoRoot, parseHost(option(args, "host")), { cross: args.includes("--cross") });
@@ -330,6 +344,12 @@ export async function runCommand(command: string | undefined, args: string[]): P
     }
     case "knowledge":
       print(knowledge(repoRoot, args));
+      return 0;
+    case "experience":
+      print(experience(repoRoot, args));
+      return 0;
+    case "finding":
+      print(finding(repoRoot, args));
       return 0;
     case "start":
       if (!args[0] || args[0].startsWith("--")) {

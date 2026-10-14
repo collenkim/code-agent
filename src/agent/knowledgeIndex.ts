@@ -314,12 +314,15 @@ function declaredUpdates(repoRoot: string, rows = declaredRows(repoRoot)): { id:
   return rows.filter(({ row }) => row.decision && CHANGING_DECISIONS.includes(row.decision));
 }
 
+/** 최신성을 재는 항목의 모양 — KNOWLEDGE 항목과 작업 경험(experience.ts)이 같은 판정을 쓴다 */
+export interface FreshTarget { path: string; key: string; line: number; end: number; refs: string[] }
+
 /**
  * 항목들의 최신성 — 보여 줄 항목에만 계산한다(기준 커밋마다 git 을 한 번 부른다).
  * git 저장소가 아니거나 HEAD 가 없으면 전부 미커밋이다.
  */
-export function freshness(repoRoot: string, entries: IndexEntry[]): Map<IndexEntry, Freshness> {
-  const result = new Map<IndexEntry, Freshness>();
+export function freshness<T extends FreshTarget>(repoRoot: string, entries: T[]): Map<T, Freshness> {
+  const result = new Map<T, Freshness>();
   if (entries.length === 0) return result;
   const blames = new Map<string, Map<number, BlameLine> | undefined>();
   const since = new Map<string, LogCommit[]>();

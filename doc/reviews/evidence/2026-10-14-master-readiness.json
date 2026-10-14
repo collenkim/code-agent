@@ -1,0 +1,68 @@
+{
+  "range": "53e81d4..(이 커밋)",
+  "scope": "상위 조정자·러너 연결 준비 — 작업 경험(experience)·발견 보고(finding)·기계 판독용 상태(status --json)",
+  "fullSuite": {
+    "final": { "tests": 1482, "pass": 1478, "fail": 0, "skipped": 4, "durationMs": 186219 },
+    "beforeLastTests": { "tests": 1481, "pass": 1477, "fail": 0, "skipped": 4, "durationMs": 185084 },
+    "baseline52b49b0": { "tests": 1450, "pass": 1446, "fail": 0, "skipped": 4 }
+  },
+  "newTests": {
+    "src/test/experience.test.ts": 10,
+    "src/test/findings.test.ts": 8,
+    "src/test/stateView.test.ts": 13,
+    "src/test/consent.test.ts": "deliver — 경험·발견 기록은 커밋되고 남은 초안은 빠진다 (1)"
+  },
+  "fixedDuringWork": [
+    "저장소 루트 초안이 status 의 계획 밖 변경으로 잡힘 → 초안 자리를 doc/work/<ID>/{experience,finding}.draft.json 으로 고정, 기록 뒤 삭제",
+    "거부된 초안(비밀 값 포함 가능)이 반영 커밋에 들어갈 수 있음 → deliveryExcludes 에 초안 자리",
+    "finding list --work 값이 경로 조각으로 쓰임 → 작업 ID 꼴만",
+    "상태 조회의 git status 가 색인을 갱신할 수 있음 → GIT_OPTIONAL_LOCKS=0",
+    "손상 원장 시험이 마지막 줄 변경이라 사슬 검사를 지나감 → JSON 아닌 줄을 덧붙여 시험"
+  ],
+  "templateSizes": {
+    "template/claude/skills/ca-check/SKILL.md": { "before": 4885, "after": 5069, "budget": "4900 → 5200" },
+    "template/claude/skills/ca-integrate/SKILL.md": { "before": 2983, "after": 3174, "budget": "3100 → 3300" },
+    "flowTotals": { "claude": 51884, "codex": 47908, "budget": { "claude": 52200, "codex": 52300 } }
+  },
+  "realCli": {
+    "how": "임시 git 저장소(dist/test/stageFixture.js)에서 node dist/agent/cli.js — 판정은 실제 CLI 프로세스",
+    "statusJson": {
+      "noWork": { "exit": 0, "code": "no-work" },
+      "afterCheck": { "exit": 0, "code": "ready", "attempt": "verify:r1:1", "approval": "approved", "bound": true, "budgetsFix": "0/2" },
+      "expectSame": { "exit": 0, "code": "ready", "matches": true },
+      "expectOtherAttempt": { "exit": 3, "code": "stale-request" },
+      "expectWithoutJson": { "exit": 1, "output": "사용법 — 대조·식별 옵션은 --json 과 함께 씁니다" },
+      "afterBlockingFindingC": { "code": "needs-human", "reason": "finding-c", "stateVersionChanged": true },
+      "otherSessionLease": "ownership-conflict (--session 주인이면 다음 판정으로)"
+    },
+    "experience": {
+      "add": "기록: EXP-ORD-1-1 v1 · 검증됨 — 정해진 자리 초안 삭제",
+      "secret": { "exit": 1, "valueEchoed": false },
+      "list": "[경험 · 검증됨 · v1 · 미커밋]",
+      "knowledgeFind": "KNOWLEDGE·POLICY 결과와 별도 '작업 경험 (확정 정책 아님 …)' 절"
+    },
+    "finding": {
+      "report": "기록: FND-c5a5004b90 v1",
+      "resend": "이미 같은 보고가 있습니다 — 새로 만들지 않음",
+      "classD": "후속 후보 — 작업을 막지 않음",
+      "humanStatus": "발견: 열린 2건 (차단 1) · 사람 판단 필요 1 / 전체 2"
+    }
+  },
+  "hooks": {
+    "how": "다른 세션(AAAA)이 임대를 쥔 상태에서 세션 BBBB 의 PreToolUse — claude: cli.js hook, codex: cli.js codex-event",
+    "allowedBoth": ["status --json", "status --json --expect-state … --run-id …", "experience list --all", "experience show EXP-ORD-1-1", "finding list --json"],
+    "deniedBothByLease": ["finding report <초안>", "experience add <초안>"],
+    "directWrite": {
+      "doc/work/<ID>/experience.md": "Claude Write·Codex apply_patch 거부 — experience add 안내",
+      ".code-agent/work/<ID>/findings.json": "Claude Write·Codex apply_patch 거부 — 상태 폴더",
+      "doc/work/<ID>/experience.draft.json": "허용"
+    }
+  },
+  "notVerified": [
+    "실제 모델 세션(Claude·Codex)이 수정 루프에서 발견을 남기고 반영 준비에서 경험을 고르는지 — 유료 평가",
+    "실제 러너·상위 조정자와의 왕복 — 이 저장소에 없음",
+    "다른 PC 의 동의 적용·실행 중 배정의 프로세스 생존 — 러너 몫",
+    "민감 정보 검사가 모든 자격 증명 형식을 잡는지 — 꼴 검사",
+    "대상 프로젝트 설치본 적용 — update --templates-only 와 호스트 재시작 뒤"
+  ]
+}

@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "fs";
 import { hostname, networkInterfaces } from "os";
-import { basename, dirname, join, posix } from "path";
+import { basename, dirname, join, posix, resolve } from "path";
 
 import { writeAtomic } from "../core/atomic";
 
@@ -107,6 +107,33 @@ export function verifyFile(repoRoot: string, id: string, target: string): string
 /** 리뷰 회차. `code-agent review` 만이 이 자리에 쓴다 — 회차의 기준 트리 해시를 모델이 지어내지 못하게 */
 export function reviewFile(repoRoot: string, id: string, target: string): string {
   return join(repoRoot, STATE_DIR, "work", id, `${target}.review.json`);
+}
+
+/** 작업 경험 기록(선택) — `code-agent experience add` 만이 쓴다(hook 이 도구 쓰기를 막는다). 작업 폴더라 반영 커밋에 함께 들어간다 */
+export function experienceFile(id: string): string {
+  return posix.join(workDocsDir(id), "experience.md");
+}
+
+/**
+ * 경험·발견 초안의 정해진 자리 — 작업 폴더라 모델이 쓸 수 있다. 기록하면 코드가 이 자리의 초안을 지운다(기록 파일이 정본이라
+ * 같은 내용이 반영 커밋에 둘로 남지 않게). 다른 자리의 초안은 지우지 않는다
+ */
+export function draftFile(id: string, kind: "experience" | "finding"): string {
+  return posix.join(workDocsDir(id), `${kind}.draft.json`);
+}
+
+/** 기록한 뒤 부른다 — 받은 초안이 정해진 자리의 것일 때만 지우고 true */
+export function removeDraft(repoRoot: string, id: string, kind: "experience" | "finding", given: string): boolean {
+  const own = join(repoRoot, draftFile(id, kind));
+  const fold = (path: string): string => (process.platform === "win32" ? path.toLowerCase() : path);
+  if (!existsSync(own) || fold(canonical(resolve(process.cwd(), given))) !== fold(canonical(own))) return false;
+  rmSync(own, { force: true });
+  return true;
+}
+
+/** 진행 중 발견 보고 — `code-agent finding report` 만이 쓴다. 상태 폴더라 도구 쓰기는 hook 이 막고, 반영 커밋에 함께 들어간다 */
+export function findingsFile(repoRoot: string, id: string): string {
+  return join(repoRoot, STATE_DIR, "work", id, "findings.json");
 }
 
 /** 검증 로그. `.gitignore` 에 있어 커밋되지 않는다 — 근거는 ⑧ 이 들고 있다 */

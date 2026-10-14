@@ -629,6 +629,9 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 5종의 항목, 그것을 마지막으로 넣은 작업 ID, 최신성 (아래) | — |
 | `code-agent knowledge find <낱말\|키\|경로...>` | 지식 항목·POLICY 절을 키·코드 경로·별칭·본문으로 찾아 줄 범위·상태·연결과 반드시 적용하는 업무 정책을 보여 준다 (아래). 읽기 전용 — 작업 중 담당도 부른다 | — |
+| `code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]` | 기계 판독용 상태 — 재개 코드·근거·`stateVersion`. 읽기 전용, 기대와 다르면 종료 코드 3 (아래) | — |
+| `code-agent experience [list [--all] \| show <EXP-ID>]` | 작업 경험 기록 목록·한 기록의 버전 이력 (아래). 읽기 전용 | — |
+| `code-agent finding list [--json] [--work <ID>]` | 진행 중 발견 보고 목록 — 사람이 판단할 것(차단 b·c)이 위에 표시된다 (아래). 읽기 전용 | — |
 | `code-agent knowledge prune` | 근거 경로가 트리에서 사라진 항목을 보여 주고 **사람이 고른 것만** 지운다. 자동 삭제는 없다 | **O** |
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
@@ -645,7 +648,7 @@ KNOWLEDGE 갱신은 `doc/work/<ID>/knowledge.proposal.md` 의 항목을 화면�
 
 `status` 가 보여 주는 것 — 프로젝트 문서 ✓/✗, 작업 id·제목·종류·대상, 지시서 경로, **요구사항 확정 상태**, 작업 폴더, 브랜치와 기준,
 스테이지(전체 흐름에서 지금 자리를 `[ ]` 로), `implement` 면 단계 목록, 답 없는 질문, 계획·승인 상태, `다음:` 한 줄.
-`진행 세션:` 줄은 이 작업을 진행 중인 호스트·세션과 마지막 활동이다(작업 임대 — 풀렸으면 `없음 — … 풀었습니다`). `계획 밖 변경:` 줄은 모든 스테이지에 뜬다 — 기준 커밋 뒤 승인된 계획 파일·작업 폴더 밖에서 바뀐 파일이다(analysis~plan 은 계획 파일이 없어 작업 폴더 밖 변경 전부, 그 단계의 모델은 거기를 쓸 수 없으므로 사람·외부 도구의 변경이다). 검증·반영을 막으므로 되돌리거나 사람에게 알린다.
+`진행 세션:` 줄은 이 작업을 진행 중인 호스트·세션과 마지막 활동이다(작업 임대 — 풀렸으면 `없음 — … 풀었습니다`). `발견:` 줄은 진행 중 발견 보고가 있을 때만, `작업 경험:` 줄은 이 작업이 경험을 기록했을 때만 붙는다. `계획 밖 변경:` 줄은 모든 스테이지에 뜬다 — 기준 커밋 뒤 승인된 계획 파일·작업 폴더 밖에서 바뀐 파일이다(analysis~plan 은 계획 파일이 없어 작업 폴더 밖 변경 전부, 그 단계의 모델은 거기를 쓸 수 없으므로 사람·외부 도구의 변경이다). 검증·반영을 막으므로 되돌리거나 사람에게 알린다.
 작업이 아직 없는데 접수 중이면 그 자리(`접수: <ID> (<종류>)` · 초안 · 요구사항 상태)가 대신 뜬다. 새 작업 브랜치로 따라갈 미커밋 변경이 있으면 `시작 전 정리 필요:` 줄이 붙는다 — 그대로면 `start` 가 거부하므로 확정 전에 사람이 커밋·stash 하거나 되돌린다.
 
 | `요구사항:` 줄 | 뜻 | 할 일 |
@@ -824,6 +827,106 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 - 결과가 15개를 넘으면 `- 범위: 걸린 N개 중 상위 15개만` 으로 잘렸다고 적는다.
 - 걸린 것이 없으면 찾은 문서를 적고 코드와 테스트를 직접 찾으라고 한다.
 - 읽기 전용이라 작업 중에도 hook 이 막지 않는다 — 메인 대화와 셸이 있는 담당(구현·테스트)이 지식 문서 전문 대신 부른다. 셸이 없는 담당(조사·리뷰 등)은 context 가 준 줄 범위를 읽고, 더 필요하면 지식 문서에서 키·낱말을 검색한다. `knowledge`·`knowledge prune` 은 작업 중에 모델이 부를 수 없다.
+- 작업 경험이 걸리면 `작업 경험 (확정 정책 아님 — 당시 작업의 기록):` 절에 따로 5개까지 싣는다 — KNOWLEDGE 결과 수·반드시 적용하는 업무 정책과 섞지 않는다. `context` 의 참고 문서 절도 같다(3개까지).
+
+### `code-agent status --json` — 기계 판독용 상태
+
+러너나 상위 조정자가 사람용 `status` 문장을 파싱하지 않고 상태를 읽는 자리다. 스키마는 `code-agent.state` 버전 1이다. 진행·승인·재시도 카운터·작업 임대를 바꾸지 않는 **읽기 전용**이라 작업 중 다른 세션이 임대를 쥐고 있어도 hook 이 막지 않는다.
+
+| 칸 | 내용 |
+|---|---|
+| `schema` · `schemaVersion` · `observedAt` | `code-agent.state` · `1` · 관측 시각 |
+| `stateVersion` | 재개 판단의 근거(HEAD·작업·단계·시도·승인·검증·리뷰 회차·질문·열린 동의·임대·차단 발견·관측 불가 원인)의 해시. 관측 시각·경과 분·안내 문장은 넣지 않는다 |
+| `repo` | 루트·HEAD·브랜치·미커밋 변경(`known`·`count`·앞 20개 `paths`·`truncated`) — git 을 실행하지 못하면 `known: false` |
+| `work` · `attempt` · `request` | 작업 ID·대상·종류·단계·브랜치·기준 커밋 · 지금 시도 식별자(아래) · 요구사항 확정 상태 |
+| `approval` | 계획 승인 상태(`approved`·`none`·`rejected`·`stale-plan`·`stale-docs`·`stale-manifest` …)와 표시 이름, 낡은 계획 작업이 시작되는 단계 `staleFrom` |
+| `planning` | 계획 작업마다 마지막 배정(`dispatchId`·상태·시각, 실행 중이면 `run` — 시작 관찰 여부·경과 분·담당 세션) |
+| `verification` | 회차, 증거 묶임(`bound.valid` · 어긋난 항목 `base-commit`·`tree`·`manifest`·`plan`), 단계별 마지막 회차의 실행 수·통과 |
+| `review` · `retry` · `questions` | 리뷰 회차 수 · 원인별 재시도 사용량 `used` 과 검증 한도 `budgets`(`used`·`limit`·`left`·`exhausted`) · 답 없는 질문·답 출처 미확인 질문 |
+| `ownership` | 작업 임대(`none`·`held`·`idle`·`released`·`other-work`·`unreadable`, 호스트·세션·마지막 활동, `--session` 을 주면 `self`)와 `process: "unverified"` |
+| `consents` · `findings` · `files` | 열린 동의(적용 중이면 같은 PC 의 잠금 보유 `lockHeld`) · 발견 요약 · 상태 파일 경로 |
+| `resume` | `code`(아래) · `reasons[]`(`code`·`detail`) · `next`(`action`·`by` — `model`·`human`·`runner`·`none` · `hint` 는 사람용 `다음:` 줄로, 파싱하지 않는다) |
+| `expect` · `correlation` · `unknown` | 대조 결과(`matches`·`mismatches`) · `--run-id` 를 되돌려 준 값 · 확인하지 못한 것(프로세스 생존은 언제나 여기에 있다) |
+
+시도 식별자(`attempt.id`)는 단계마다 이렇게 정한다 — 계획 단계 `<단계>:<작업>:<dispatchId>`(배정 전 `<단계>:none`), 구현 `implement:<Task>`, 검증 `verify:r<회차>:<실행 수>`, 리뷰 `review:r<회차>`, 반영 `deliver`. 새 배정·검증 실행·리뷰 회차가 생기면 바뀐다.
+
+| `resume.code` | 뜻 | `next.by` |
+|---|---|---|
+| `stale-request` | `--expect-*` 와 지금이 다르다 — 조회 뒤 상태가 바뀌었다. `observed` 에 원래 판정이 있다. 종료 코드 3 | `runner`(다시 조회) |
+| `unobservable` | 커서·승인 원장·계획 기록·질문·요구 원장·임대를 읽지 못했거나 지원하지 않는 버전, 또는 잠금 없이 `applying` 으로 남은 동의 적용(`consent-apply-interrupted` — 일부만 반영됐을 수 있다). 파일을 고치지 않는다 | `human` |
+| `no-work` | 진행 중인 작업이 없다(열린 조사가 있으면 `triage-open`) | `none` |
+| `ownership-conflict` | 다른 세션이 30분 안에 쓴 임대가 있다 — 그 실행이 끝났는지는 러너가 확인한다. 30분 넘게 쉰 임대는 이유(`lease-idle`)로만 적고 기존 규칙대로 다음 명령이 넘겨받는다 | `runner` |
+| `wait` | 같은 PC 에서 동의를 적용하는 중이거나, 계획 배정이 기한 안에서 실행 중으로 기록돼 있다 | `runner` |
+| `needs-human` | AI-DLC 진행 중, 요구사항 미확정, 답 없는 질문, 응답을 기다리는 동의, 계획 승인 대기, 차단으로 보고된 발견(b·c), 반영 확인 | `human` |
+| `replan-required` | 승인이 무효가 됐고 낡은 계획 작업이 있다 — `staleFrom` 단계로 되감아 다시 계획한다 | `model` |
+| `reapproval-required` | 승인이 무효가 됐다(계획·근거 문서·매니페스트 변경) — 다시 승인받는다 | `human` |
+| `limit-reached` | check·test 의 재시도 한도에 닿았다 — 사람 판단 | `human` |
+| `ready` | 진행할 수 있다. 기한을 넘긴 배정·실패 기록은 이유로만 붙는다(기존 흐름이 한도 안에서 다시 배정한다) | `model` |
+
+```
+$ code-agent status --json --expect-state sha256:4f2e… --expect-work ORD-1 --expect-attempt verify:r1:1
+{ "schema": "code-agent.state", "schemaVersion": 1, …, "attempt": { "id": "verify:r1:1", "kind": "verify" },
+  "approval": { "status": "approved", "label": "승인됨" },
+  "verification": { "rounds": 1, "bound": { "valid": true, "problems": [] }, "phases": { "check": { "round": 1, "runs": 1, "passed": true } } },
+  "ownership": { "lease": { "state": "none" }, "process": "unverified" },
+  "resume": { "code": "ready", "reasons": [], "next": { "action": "verify", "by": "model", "hint": "검증 통과 — code-agent next 로 넘긴 뒤 /ca-test …" } },
+  "expect": { "state": "sha256:4f2e…", "work": "ORD-1", "attempt": "verify:r1:1", "matches": true, "mismatches": [] }, … }
+```
+
+러너가 지킬 순서:
+
+1. 실행 직전에 `status --json --expect-state <조회한 stateVersion> --expect-work <ID> --expect-attempt <시도>` 를 다시 부른다. 종료 코드 3 이면 실행하지 않고 다시 조회한다.
+2. `resume.code` 가 `ready` 일 때만 모델 세션을 띄워 기존 재개 경로(`/ca-next`·`$ca-next`)를 따르게 한다. 그 경로의 명령이 승인·임대·한도를 다시 확인한다 — 조회와 실행 사이에 상태가 바뀌어도 명령이 막는다.
+3. `ownership-conflict`·`wait` 는 그 실행이 정말 살아 있는지 러너가 확인한다(이 출력은 프로세스를 보지 않는다). 끝난 것이 확인되면 사람의 확인을 받아 `takeover` 한다.
+4. `needs-human`·`reapproval-required`·`limit-reached`·`unobservable` 은 사람에게 넘긴다. 상태·승인 파일을 고쳐 잇지 않는다.
+
+`--run-id` 는 결과에 `correlation` 으로 되돌려 줄 뿐 판정에 쓰지 않는다. 외부에서 받은 ID·승인 문자열은 권한이 아니다. 대조·식별 옵션을 `--json` 없이 주면 사용법과 함께 멈춘다(종료 코드 1).
+
+### `code-agent experience` — 작업 경험 기록 (선택)
+
+다시 쓸 만한 문제·실패한 시도·원인·해결이 있었던 작업만 남긴다. 매 작업에 쓰지 않고, 없어도 어떤 단계도 막지 않는다. 확정 정책이 아니다 — 정책으로 올릴 것은 지식 제안으로 쓴다.
+
+```
+$ code-agent experience add doc/work/ORD-1/experience.draft.json
+기록: EXP-ORD-1-1 v1 · 검증됨 → doc/work/ORD-1/experience.md L5-L19 · 초안 doc/work/ORD-1/experience.draft.json 는 지웠습니다
+```
+
+- 초안은 `doc/work/<ID>/experience.draft.json` 에 쓴다(형식은 인자 없는 `code-agent experience`). 칸 — `title`·`problem`·`environment`·`attempts`(`approach`·`failure`)·`cause`·`solution`·`evidence`·`conditions`·`status`(`가설`·`검증됨`·`폐기`, 기본 가설)·`features`·`policies`·`code`·`tests`·`aliases`·`revises`·`supersedes`·`change`.
+- 기록은 `doc/work/<ID>/experience.md` 에 ``### `EXP-…` 제목`` 항목으로 들어가고 반영 커밋에 작업 폴더와 함께 들어간다. 손으로 고치지 않는다(hook 이 막는다). 기준 커밋(기록할 때의 HEAD)과 기록 날짜를 코드가 적는다.
+- ID 는 `EXP-<작업 ID>-<순번>`. 같은 문제·원인·적용 조건이 이미 있으면 `같은 경험이 이미 있습니다` 로 새로 만들지 않는다. 지난 작업의 기록을 고치려면 `revises` 와 `change` 를 주면 같은 ID 의 버전 +1 이 이 작업 폴더에 쓰인다 — 지난 작업의 폴더는 그대로다.
+- `검증됨` 은 `evidence` 에 `verify:repro|check|test|integrate` 를 주고 그 단계의 마지막 회차가 이 작업에서 통과했어야 한다. 근거가 없으면 거부하고, 나중에 근거와 이어지지 않으면 목록에 `검증 근거 없음` 으로 보인다.
+- 자격 증명 꼴(개인 키·접근 키·토큰·인증 헤더·URL 의 계정 정보·`password=` 같은 대입)과 6줄 넘는 칸·코드 블록은 거부한다. 걸린 값은 출력에 찍지 않는다. 경로는 저장소 안의 상대 경로만 받는다.
+- 정해진 자리의 초안은 기록 뒤 지운다. 거부되면 초안은 남는다 — 그 자리는 반영 커밋에 들어가지 않는다.
+
+`experience list [--all]` 은 살아 있는 기록(폐기·대체됨은 `--all`)을, `show <EXP-ID>` 는 버전마다의 작업·줄 범위·선언 상태·근거 판정을 보인다. 상태 칸은 `가설`·`검증됨`·`검증 근거 없음`·`폐기`·`대체됨`·`버전 충돌`, 최신성 칸은 `knowledge` 와 같고 근거 경로가 없으면 `근거 경로 없음 — 코드 변경 감지 불가` 다.
+
+### `code-agent finding` — 진행 중 발견 보고
+
+구현·검증·리뷰 중 계획 밖에서 본 것을 남긴다. **보고일 뿐 권한이 아니다** — 등록해도 쓰기 경계·승인·재시도 한도·게이트는 그대로다.
+
+```
+$ code-agent finding report doc/work/ORD-1/finding.draft.json
+기록: FND-c5a5004b90 v1 · 초안 doc/work/ORD-1/finding.draft.json 는 지웠습니다
+FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차단(계약 합의 전에는 반영할 수 없다) · 사람 판단 필요 — 결제 서비스가 주문 조회 응답을 그대로 읽는다
+  처리: 외부 조정이 필요하다는 보고입니다 — 다른 저장소를 직접 고치지 않습니다
+  관련 프로젝트: payment-service(미확정)
+```
+
+| 분류 | 처리 경로 |
+|---|---|
+| `a` 승인 범위 안 결함·테스트 누락 | 기존 수정 루프와 그 한도 |
+| `b` 로컬 요구·계획 변경 | 사람이 판단한 뒤 `back plan` 으로 재계획·재승인 |
+| `c` 다른 프로젝트·공유 계약 영향 | 외부 조정이 필요하다는 보고 — 다른 저장소를 고치지 않는다 |
+| `d` 무관한 개선 | 후속 후보 — 차단으로 등록할 수 없다 |
+
+- 초안은 `doc/work/<ID>/finding.draft.json`(형식은 인자 없는 `code-agent finding`). 기록은 `.code-agent/work/<ID>/findings.json` 이고 반영 커밋에 들어간다.
+- ID(`FND-` + 10자)는 작업·분류·제목·근거 목록에서 정해진다. 같은 보고를 다시 보내면 `이미 같은 보고가 있습니다` 로 하나만 남는다. 근거가 다르면 다른 발견이다. 같은 정체에 내용을 바꾸려면 `id` 와 지금 버전 `expectVersion` 을 함께 보낸다 — 버전이 다르면 `오래된 갱신입니다` 로 거부한다. `resolved`·`dismissed` 로 닫으려면 `resolution` 이 필요하다.
+- 리뷰 지적(`review:F2`)·질문(`question:Q3`)·계획 배정(`attempt:<dispatchId>`)과 같은 것은 `links` 로 가리키고 내용을 옮기지 않는다. 가리킨 기록이 없으면 거부한다.
+- `related` 의 프로젝트는 `source` 로 준 이 저장소 파일이 그 이름을 담을 때만 확인(`known`), 아니면 미확정이다. 영향 경로는 저장소 안 상대 경로만 받는다.
+- 차단으로 보고한 b·c 는 `status` 에 `사람 판단 필요` 로, `status --json` 에 `needs-human`(`finding-b`·`finding-c`)으로 보인다. 진행 명령은 막지 않는다.
+- 기록 파일이 손상되었거나 모르는 버전이면 새로 만들지 않고 멈춘다(`status` 의 `발견:` 줄과 `status --json` 의 `unknown` 에 보인다).
+
+`finding list` 는 사람용 목록, `--json` 은 `{schema: "code-agent.findings", schemaVersion: 1, work, findings}` 다. 반영한 작업은 `--work <ID>` 로 본다.
 
 ---
 
@@ -849,6 +952,8 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `code-agent back <스테이지>` | 커서를 **이전** 스테이지로 되감는다 (`analysis`\|`impact`\|`design`\|`plan`\|`implement`\|`check`\|`test`\|`review`\|`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 대상이 바뀌어 적용되지 않는다), 진행 중인 작업이 없으면 거부한다. 무엇이 무효가 되는지 함께 찍는다 — 증거·승인 원장·작업 문서는 지우지 않는다 |
 | `code-agent context` | 지금 스테이지에 필요한 것 — 경로·형식·참조 코드·단계 규칙. 작업 전 접수 중에는 `code-agent request` 와 같은 접수 형식을 준다 (작업 중에는 스테이지 컨텍스트다) |
 | `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
+| `code-agent finding report <초안.json>` | 진행 중 발견 보고 — `ca-check` 수정 루프가 계획 밖에서 본 것을 남긴다 ([5절](#code-agent-finding--진행-중-발견-보고)) |
+| `code-agent experience add <초안.json>` | 작업 경험 기록(선택) — `ca-integrate` 반영 준비가 다시 쓸 만한 것이 있을 때만 남긴다 ([5절](#code-agent-experience--작업-경험-기록-선택)) |
 | `code-agent repro` | 재현 — **`fix` 에서만** 돈다 (번호가 없다 — `implement` 안에서 돈다). `kind: "test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 ⑦ 의 `## 재현` TC 가 **실패**하는 것을 확인하고 증거에 적는다. 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다. 로그 근거면 수정 전 결과만 기록한다 |
 | `code-agent check` | 정적 분석·컴파일 — build와 품질·보안 기준 명령 실행 후 ⑧ 기록 |
 | `code-agent test` | 테스트 — 기존 명령을 실행하고 ⑦의 필수 TC별 실제 passed 확인. 이후 테스트 동결 |
@@ -905,6 +1010,9 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `doc/work/<ID>/09-review.md` ⑨ | 리뷰 회차 · 지적 표(`id · 계획 파일 · 범위 · 상태 · 지적`) | 독립 리뷰어가 판정하고 hook이 실행 기록과 함께 결과를 기록 | O |
 | `doc/work/<ID>/10-pr.md` ⑩ | MR/PR 본문 — 요약 · 추적표 · 검증 · 확인 방법 · 위험 | `code-agent:trace` 블록은 **`deliver` 만**, 나머지는 모델 | O |
 | `doc/work/<ID>/knowledge.proposal.md` | KNOWLEDGE 갱신 제안(새 작업은 02 문서 영향에서 갱신으로 판단한 키만) — `deliver` 가 항목별로 물어 고른 것만 반영. 형식은 `ca-integrate` 의 `knowledge.md` | 모델이 적고 사람이 고른다 | O |
+| `doc/work/<ID>/experience.md` | 작업 경험(선택) — 확정 정책이 아니다 | **`experience add` 만** (hook 이 모델 쓰기 거부) | O |
+| `doc/work/<ID>/experience.draft.json` · `finding.draft.json` | 경험·발견 초안 — 기록하면 코드가 지운다 | 모델 | X (반영 커밋에서 뺀다) |
+| `.code-agent/work/<ID>/findings.json` | 진행 중 발견 보고 — ID·버전·분류·근거·영향·차단·상태·이력 | `finding report` 만 | O |
 | `.code-agent/work/<ID>/<대상>.plan.json` | 제출된 계획 | `plan submit` 만 | O |
 | `.code-agent/work/<ID>/<대상>.verify.json` | 검증 증거 — 기준 커밋 · 부분 트리 해시 · `manifestHash` · `planHash` · 회차 · 실행 목록 · (`fix` 면) 재현 증거 `repro`(재현 TC · 그때의 테스트 파일 트리 해시) · 원인별 재시도 카운터 `retry` · 테스트 동결 기준 `testFreeze` | `repro` · `check` · `test` · `integrate` 만 | O (증거) |
 | `.code-agent/approvals/docs.jsonl` | 문서 확정 원장 (해시 사슬) | `confirm doc` 만 | O |
@@ -1378,6 +1486,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 - **push · MR/PR 생성 · 병합** — 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. 그 뒤는 사람이 손으로 한다 —
   git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정한다.
 - **fix·refactor·신규 저장소의 전 과정 완주 실측** — 코드는 갖췄고, 실제 작업으로 끝까지 돌려 잰 기록은 아직 없다.
+- **상위 조정자(master)·실행 러너** — 연결 지점은 `status --json` 뿐이다([5절](#code-agent-status---json--기계-판독용-상태)). 여러 프로젝트의 권한·배정·전체 DAG·예산·서비스 간 승인·전체 복구와, 프로세스 생존 확인·실행 로그·실제 종료·취소·실행 소유권은 이 저장소에 없다.
 - **Jev A/B 실측** — 플러그인 코드([10. 플러그인](#10-플러그인-선택))는 갖췄고, 효과는 실제 Jev 가 붙어야 잰다([plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)).
 
 ## 관찰된 계획 작업

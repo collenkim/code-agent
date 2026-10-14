@@ -664,6 +664,22 @@ test("deliver: commits approved docs and validated work once, preserving unrelat
   assert.equal(gitFixture(root, "rev-parse", "HEAD"), commit);
 });
 
+test("deliver: 작업 경험·발견 기록은 반영 커밋에 들어가고, 남은 초안(걸린 비밀 값이 있을 수 있다)은 빠진다", async () => {
+  await prepareDeliveryFixture(root);
+  const work = `doc/work/${CONSENT_WORK_ID}`;
+  writeFixture(root, `${work}/experience.md`, `# ${CONSENT_WORK_ID} 작업 경험\n`);
+  writeFixture(root, `.code-agent/work/${CONSENT_WORK_ID}/findings.json`, `{"version":1,"id":"${CONSENT_WORK_ID}","findings":[]}\n`);
+  writeFixture(root, `${work}/experience.draft.json`, '{"environment":"DB_PASSWORD=hunter2secret"}\n');
+  writeFixture(root, `${work}/finding.draft.json`, "{}\n");
+  const fixture = prepareConsentFixture(root, { action: "deliver" });
+  observeConsentFixture(fixture);
+  applyConsent(root, fixture.id);
+  const files = gitFixture(root, "show", "--format=", "--name-only", "HEAD").split(/\r?\n/);
+  assert.ok(files.includes(`${work}/experience.md`) && files.includes(`.code-agent/work/${CONSENT_WORK_ID}/findings.json`));
+  assert.ok(!files.includes(`${work}/experience.draft.json`) && !files.includes(`${work}/finding.draft.json`));
+  assert.ok(existsSync(join(root, `${work}/experience.draft.json`)), "초안을 지우지 않고 남긴다 — 커밋에만 넣지 않는다");
+});
+
 test("deliver: cancellation and changed code preserve HEAD, index and active work", async () => {
   await prepareDeliveryFixture(root);
   const before = gitFixture(root, "rev-parse", "HEAD");

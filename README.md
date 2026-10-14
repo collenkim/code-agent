@@ -196,6 +196,8 @@ claude
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록을 풀어 이 세션이 이어받게 한다 — 저쪽 세션을 멈춘 것을 확인한 뒤 |
 | `code-agent status` · `code-agent usage` | 진행 상태 · 토큰·추정 비용·요청·도구 호출·재시도·hook 출력·교차 실행 토큰·스테이지별 문서 탐색 기록 확인 (`--json`) |
 | `code-agent knowledge` · `code-agent knowledge find <낱말\|키\|경로>` | KNOWLEDGE 항목의 최신성(최신·재검토 필요·갱신 보류 등) 목록 · 키·코드 경로·별칭·본문으로 항목과 POLICY 절을 찾아 줄 범위와 연결 정책을 보여 줌 (읽기 전용 — `find`는 작업 중 담당도 쓴다) |
+| `code-agent status --json` | 기계 판독용 상태(`code-agent.state` v1) — 재개 코드·근거·`stateVersion`. 읽기 전용이며 `--expect-state`·`--expect-work`·`--expect-attempt`가 지금과 다르면 종료 코드 3. 러너·상위 조정자의 연결 지점 |
+| `code-agent experience list` · `code-agent finding list` | 작업 경험 기록(선택 — 확정 정책 아님)과 진행 중 발견 보고(보고일 뿐 권한 아님) 조회. 기록은 실행 절차가 `experience add`·`finding report`로 남긴다 |
 
 ## 문서와 결과물
 
@@ -207,7 +209,8 @@ claude
 | `doc/work/<ID>/request.json` · `requirement.md` | 접수 원문, 정리된 요구사항, 원문 대조 |
 | 같은 폴더의 `01`~`05`, `07` 문서 | 분석·영향도·설계·기능 명세·Task 계획·테스트 명세 |
 | `08-validation.md` · `09-review.md` · `10-pr.md` | 실제 검증 결과, 관찰된 독립 리뷰 결과, 요구사항별 완료 보고·위험·되돌리기 |
-| `.code-agent/` | 작업 상태, 승인 원장, 검증 증거와 로그. CLI가 관리합니다. |
+| `experience.md` (선택) | 다시 쓸 만한 문제·실패한 시도·원인·해결·적용 조건. 확정 정책이 아니며 `검증됨`은 통과한 검증 기록과 이어질 때만 인정됩니다. |
+| `.code-agent/` | 작업 상태, 승인 원장, 검증 증거와 로그, 진행 중 발견 보고(`work/<ID>/findings.json`). CLI가 관리합니다. |
 
 `06-` 문서는 없습니다. 해당 산출물은 소스 코드 자체입니다. 요구사항·계획이 승인 후 바뀌면 기존 승인이 무효화되고 다시 확인해야 합니다. 최종 확인은 계획 파일·작업 문서·증거·승인 원장과 선택한 KNOWLEDGE를 포함한 실제 커밋 경로를 보여 줍니다. 존재하는 `.code-agent/version`, `.code-agent/models.json`·`.code-agent/codex-models.json`, `.code-agent/approvals/docs.jsonl`도 이 목록과 최종 커밋에 포함하므로, 이 설정·확정 파일을 반영 후 별도로 수동 커밋할 필요는 없습니다. 다른 설정·소스 파일이나 `.code-agent/` 전체를 일괄 추가하지 않습니다.
 

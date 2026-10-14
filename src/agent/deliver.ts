@@ -14,7 +14,7 @@ import type { Evidence, VerifyPhase } from "./evidence";
 import { applyProposal, existingEntry, knowledgePath, parseProposal, proposalCheck, proposalFile, readKnowledge } from "./knowledge";
 import { deliverImpact, workDocImpact } from "./knowledgeImpact";
 import { buildIndex } from "./knowledgeIndex";
-import { clearActive, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
+import { clearActive, draftFile, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
 import { crossQuestionViews, loadPlanning } from "./planningState";
@@ -541,12 +541,16 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
 }
 
 /**
- * 반영하지 않는 하위 자리 — 전달 사본(handoff)과 담당 staging(폴더째), 작업 상태 폴더 바로 아래의 잠금 파일(`*.lock` — 비정상
+ * 반영하지 않는 하위 자리 — 전달 사본(handoff)과 담당 staging(폴더째), 경험·발견 초안(정해진 자리 — 기록이 정본이고, 거부된 초안에는
+ * 걸린 비밀 값이 남아 있을 수 있다), 작업 상태 폴더 바로 아래의 잠금 파일(`*.lock` — 비정상
  * 종료로 남은 계획·리뷰 기록 잠금). 안쪽 `.gitignore` 는 `git add -f` 가 무시하므로 pathspec 으로 뺀다. 잠금 규칙은 작업 상태 폴더
  * **바로 아래**만 본다(glob 의 `*` 는 `/` 를 넘지 않는다) — 하위 폴더나 다른 자리의 `.lock` 이름 파일(계획 파일 포함)은 그대로 반영한다.
  */
 export function deliveryExcludes(work: Work): { dirs: string[]; lockDir: string } {
-  return { dirs: [handoffDir(work.active.id), `${workDocsDir(work.active.id)}/.staging`], lockDir: `${STATE_DIR}/work/${work.active.id}` };
+  return {
+    dirs: [handoffDir(work.active.id), `${workDocsDir(work.active.id)}/.staging`, draftFile(work.active.id, "experience"), draftFile(work.active.id, "finding")],
+    lockDir: `${STATE_DIR}/work/${work.active.id}`,
+  };
 }
 /** 커밋 대상에서 빼는가 — 반영 커밋(commitDelivery)·커밋 뒤 대조(committedOutside)·동의 미리보기의 커밋 대상 목록이 같은 규칙을 쓴다 */
 export function isDeliveryExcluded(work: Work, file: string): boolean {

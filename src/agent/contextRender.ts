@@ -18,6 +18,7 @@ import { buildIndex, freshness, hitLine, mandatoryPolicies, relatedEntries, requ
 import type { Freshness, Hit, IndexEntry, KnowledgeIndex, SearchQuery } from "./knowledgeIndex";
 import { collectWindowOpen, loadEvidence, planPaths, reviewRoundUsage, runsOf, testFrozen, testRoots, testStageFiles, validationDocFile, verifyView } from "./evidence";
 import { budgetText } from "./retryPolicy";
+import { experienceIndex, experienceLine, searchExperience } from "./experience";
 import { CONTEXT_POLICY_KINDS, docRefs, hitSection, isTestPath, keywordsOf, rankCandidatesScan, requirementItems, type RankScan } from "./plugins/defaults";
 import { MAX_ITEMS } from "./plugins/protocol";
 import type { DocSection, RequirementRef } from "./plugins/protocol";
@@ -152,6 +153,29 @@ function docSectionLines(repoRoot: string, manifest: Manifest, items: Requiremen
     ...(hits && hits.length > shown.length ? [`- 범위: 걸린 ${hits.length}개 중 상위 ${shown.length}개만 — 더 찾으려면 ${FIND_HINT}`] : []),
     ...(staleShown(fresh) ? [STALE_NOTE] : []),
     ...mandatoryLines(mandatory, fresh),
+    ...experienceLines(repoRoot, query),
+  ];
+}
+
+/** 단계 context 에 싣는 작업 경험 수 — 키·경로·이름 낱말로 걸린 것(점수 3 이상)만 */
+const EXPERIENCE_LIMIT = 3;
+
+/**
+ * 작업 경험 — KNOWLEDGE 순위와 따로 세고 반드시 적용하는 정책 뒤에 둔다(정책 자리를 차지하지 않는다). 본문 낱말 하나로만 걸린 것은
+ * 싣지 않는다(요구 문장의 흔한 낱말이 매번 경험을 끌어오지 않게). 걸린 것이 없으면 아무 줄도 없다.
+ */
+function experienceLines(repoRoot: string, query: SearchQuery): string[] {
+  const index = experienceIndex(repoRoot);
+  if (index.records.length === 0) return [];
+  const hits = searchExperience(index, query).filter((hit) => hit.score >= 3);
+  if (hits.length === 0) return [];
+  const shown = hits.slice(0, EXPERIENCE_LIMIT);
+  const fresh = freshness(repoRoot, shown.map((hit) => hit.record.current));
+  return [
+    "",
+    "## 작업 경험 (확정 정책 아님 — 당시 작업의 기록. 적용 전에 줄 범위와 현재 코드로 확인한다)",
+    ...shown.map((hit) => experienceLine(hit, fresh.get(hit.record.current))),
+    ...(hits.length > shown.length ? [`- 범위: 걸린 ${hits.length}개 중 ${shown.length}개만 — 나머지는 code-agent experience list`] : []),
   ];
 }
 
