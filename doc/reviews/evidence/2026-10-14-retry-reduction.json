@@ -1,5 +1,5 @@
 {
-  "range": "34e96ac..(이 커밋)",
+  "range": "34e96ac..ea23577",
   "scope": "재시도·토큰 낭비 줄이기 — plan 완료 hook 의 제출 규칙 공유, 01 근거·출처 파서 통일과 문서 검사 오탐 제거, 규칙 식별자·역할별 제출 전 점검, 결과 상태별 계약·초안 보존·재배정 문맥, contextVersion 4 입력, 02·03 가정의 승인 묶음, 검증 수정 배정 파일·TC 표기 안내, usage 계획 담당 측정",
   "fullSuite": {
     "final": { "tests": 1500, "pass": 1496, "fail": 0, "skipped": 4, "durationMs": 242863 },
