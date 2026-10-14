@@ -17,7 +17,7 @@
 - 시험이 없거나 일부만 보는 것 — §1.1 해당 행에 상세가 있다:
   - hook 등록(`init.ts`) → `doctor.ts` 목록, `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md` hook 수.
   - 서브에이전트 추가·삭제 → `modelPolicy.ts` `AGENTS`, 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher.
-  - `PHASES` → `PHASE_LABEL`·`PHASE_SKILL`·`ca-next` 표. `ca-next` '멈춘 자리별 재개' 표 ↔ `nextHint` 판정 순서.
+  - `PHASES` → `PHASE_LABEL`·`PHASE_SKILL`·`ca-next` 표. `ca-next` '멈춘 자리별 재개' 표 ↔ `nextHint` 판정 순서 ↔ `stateView.ts` 재개 판정 순서(`RESUME_CODES`)·`doc/usage.md` 5절 재개 코드 표.
   - 계획 advance action·출력 키 → `doc/planning.md` action 표. 연쇄(`--chain`)는 program 게이트만 잇는다.
   - `ca-reviewer.md` 출력 표 ↔ `reviewResultProblems`·`normalizeReviewTable`·`parseFindings`.
   - `grantTarget` ↔ `GRANT_STEP` 키. `MODEL_SUBCOMMANDS`에 더하면 `LEASE_FREE`에도 넣을지 정한다.

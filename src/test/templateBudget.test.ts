@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { hostAssets } from "../agent/hosts";
 
 const ROOT = join(__dirname, "../..");
-/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄고, 계획 담당 넷은 요구 분석 본문을 ca-analyze/criteria.md 로 옮긴 크기다(doc/reviews/2026-10-13-result-summary.md '템플릿 예산'). ca-docs·ca-integrate 와 ca-integrate/knowledge.md 는 기능·흐름 지식과 지식 제안 형식을 더한 크기다(같은 기록의 '템플릿 예산'). ca-check·ca-integrate 는 발견 보고·작업 경험 안내 한 줄씩을 더한 크기다(doc/reviews/2026-10-14-master-readiness.md '템플릿 예산') */
+/** LF 글자 수 예산 — C7 기준(근거: doc/reviews/2026-10-08-procedure-fix-summary.md '템플릿 크기 예산'). 계획 스킬 4개·ca-answer 참고 문서·흐름 합계는 2026-10-13 토큰 최적화로 줄인 크기에 다시 맞췄고, 계획 담당 넷은 요구 분석 본문을 ca-analyze/criteria.md 로 옮긴 크기다(doc/reviews/2026-10-13-result-summary.md '템플릿 예산'). ca-docs·ca-integrate 와 ca-integrate/knowledge.md 는 기능·흐름 지식과 지식 제안 형식을 더한 크기다(같은 기록의 '템플릿 예산'). ca-check·ca-integrate 는 발견 보고·작업 경험 안내 한 줄씩을 더한 크기다(같은 기록의 '템플릿 예산') */
 const BUDGET: Record<string, number> = {
   "template/claude/agents/ca-analyst.md": 800,
   "template/claude/agents/ca-critic.md": 1900,
