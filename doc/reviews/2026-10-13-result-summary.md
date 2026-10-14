@@ -1,6 +1,6 @@
-# 오류 사전 판별·질문 UI·맥락·토큰 결과 요약 (2026-10-12~14)
+# 오류 사전 판별·질문 UI·맥락·토큰·지식 결과 요약 (2026-10-12~14)
 
-`5815323`..`8aec8c8`까지 열네 커밋(기록 정리 커밋 `ee6d9a4`·`89ec0f0`·`8597f90` 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
+`5815323`..`52b49b0`까지 열다섯 커밋(기록 정리·해시 갱신 커밋 `ee6d9a4`·`89ec0f0`·`8597f90`·`4d5f1fb`·`43c77cf`·`17bd089`와 그 뒤 정리 커밋 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
 
 | 커밋 | 날짜 | 변경 |
 |---|---|---|
@@ -18,6 +18,7 @@
 | `3c7efc4` | 10-13 | `init` 인자 검사·스킬 머리말 YAML 결함, 토큰 검토 중간 항목 열 가지(M1~M10) |
 | `298c4cc` | 10-14 | 요구 확정 동의 적용(`finish`)이 작업 시작까지 한다 |
 | `8aec8c8` | 10-14 | 토큰 검토 낮음 항목(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3) |
+| `52b49b0` | 10-14 | 문서·지식 관리 — 기능·흐름 KNOWLEDGE, 업무 정책 구분·상태, 02 문서 영향과 반영 제안 범위, 요청 시 검색·최신성, `knowledge find` |
 
 ## 오류 사전 판별 (`5815323`)
 
@@ -186,6 +187,47 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - **실제 CLI**(임시 git 저장소, `node dist/agent/cli.js`): `planning advance`는 Claude 표기에서 배정 요약에 `agent`만, Codex 표기(`CODE_AGENT_HOST=codex`)에서 `hostAgents: {codex: ca_analyst}`를 더해 416·452자였다. 기본 node build 를 선언한 작업에서 `node -e 1`은 Claude `hook`·Codex `codex-event` 모두 선언을 `… (441자)`로 줄여 거부했다(427·604자 — Codex 는 PowerShell `.cmd` 문장 포함). `planing`은 exit 1 과 106자, `help consent`는 660자. 작업 중 `session-event`·Codex SessionStart 는 고정 두 줄 없이 머리 줄에 `/ca-next`·`$ca-next`를 실었다. `init --host both` 한 저장소에서 `docs begin`이 `doc/.survey/.gitignore`(`*`)를 만들었고, `agent_type` surveyor 의 초안 자리 쓰기는 Claude `Write`·Codex `apply_patch` 모두 허용, `doc/architecture.md`·`doc/conventions.md`·`app.js`는 거부였다. 초안은 `git status -uall`에 나오지 않았고 `docs end` 뒤 폴더가 없었다.
 - **L6 을 하지 않은 이유**: 교차 리뷰·계획 검토의 추론 강도와 synthesis 강도를 낮추면 비용은 줄지만 판단 품질이 바뀐다. 같은 입력으로 A/B 를 재야 정할 수 있고 그 측정은 유료 평가다. 형식 교정은 판단이 없는 일이라 L5 에서 writer 설정으로 옮겼다.
 
+## 문서·지식 관리 (`52b49b0`)
+
+요청은 대상 프로젝트의 기능·업무 정책·업무 흐름을 최신으로 유지하고 다음 작업의 맥락을 빠르게 찾게 하되 **문서 생성량을 늘리지 말라**는 것이었다. 현재 동작은 [design.md §2.2](../design.md#22-공통-knowledge--비어서-시작하고-반영마다-자란다)와 usage 의 KNOWLEDGE·`knowledge` 절이 정본이다.
+
+- **사용자 결정**: 인덱스는 요청 시 계산(저장 파일 없음), 기능 문서는 종류별 한 파일(`features.md`·`flows.md`), 문서 영향 판단은 새 작업(`knowledgeVersion: 1`)만 게이트. 구현 전에 차이·최소 범위·변경 파일·호환·시험 계획을 제시하고 받았다.
+- **검토 내용 대조**(기준 `43c77cf`) — 일곱 가지 모두 해당했다.
+
+| 검토 내용 | 근거 |
+|---|---|
+| POLICY 4종 · KNOWLEDGE 3종 | `schemas.ts` `POLICY_KINDS`·`KNOWLEDGE_KINDS` |
+| 기능별 최신 문서·전체 흐름 없음 | 03·04 는 작업 단위다. 여러 작업을 합친 현재 기능·흐름 문서가 없었다 |
+| 업무 규칙 빈 뼈대, 지식 갱신 선택적 | `ca-integrate` 2항이 "올릴 것이 있으면" 이었고 제안이 없어도 반영이 지났다 — 바꿀 항목을 판단한 기록이 없었다 |
+| context.docs 기본이 제목 중심 | `plugins/defaults.ts` 제목 매칭 — 제목과 본문 첫 200자의 키워드 수 |
+| 코드 변경으로 낡는 것을 못 본다 | `knowledge prune` 은 근거 경로가 **전부** 사라진 항목만 본다 |
+| 컨벤션 대 참조 코드는 참조 코드 우선 | `ca-implementer.md` 한 문장 — 필수·권장 구분이 없었다 |
+
+| 결정 | 이유 |
+|---|---|
+| 인덱스·최신성을 저장하지 않는다 | 저장본은 그 자체가 낡고, 모든 반영이 고쳐야 하며 병렬 작업이 같은 파일에서 부딪힌다. 문서 다섯 개와 git blame 은 요청 때 계산해도 싸다 |
+| 계획 제출에서 문서 영향을 다시 막지 않는다 | 처음에는 계획 파일에 걸린 미판단 항목을 계획 제출에서 막았는데, 02 는 계획 단계에서 고칠 수 없어 막으면 되감기가 된다 — 반영의 `지식 제안:` 줄이 알리게 옮겼다 |
+| `영향 없음` 판단을 검토로 친다 | 근거 코드를 바꾼 작업이 그 항목을 보고 영향 없다고 적었으면 다시 재검토 필요로 띄우는 것은 소음이다 |
+| `knowledge find` 만 모델에게 연다 | 읽기 전용이라 임대·쓰기 경계를 건드리지 않는다. 목록·`prune`은 사람의 자리. 교차 자식(`CROSS_CHILD_READONLY`)에는 넣지 않았다 — 받은 문서와 코드를 읽는 자리다 |
+| 플러그인 프로토콜은 그대로 | 줄 범위·최신성·반드시 적용 정책은 플러그인 결과가 인덱스의 항목·절과 맞을 때 code-agent 가 붙인다 |
+| `- 관련 정책:` 도 `정책:` 으로 읽는다 | 실제 CLI 확인에서 손으로 쓴 `관련 정책` 필드의 연결과 반드시 적용 정책이 빠졌다. 필드 이름 앞 `관련`을 뗀다 |
+| 04 의 BR 키 대조는 낱말 경계로 | 부분 문자열이면 `BR-ORDER-1` 이 `BR-ORDER-10` 줄의 근거로 통과한다 |
+
+- **호환**: 매니페스트 `docs.knowledge.features`·`flows`는 선택이고 파일이 없어도 막지 않는다(`docs begin`·`docs skeleton knowledge`·첫 반영에서 생긴다). 승인·계획 입력 해시는 그대로다. 문서 영향 게이트·`지식 제안:` 줄·⑩ `문서 영향` 표·업무 정책 필드 필수는 새 작업에만, 이전 작업의 제안은 R 번호·경로 검사만 받는다. 계획 `conflicts`의 `level`은 선택 필드다.
+- **측정** — 같은 `stageFixture` 작업을 기준 빌드(`43c77cf`, 별도 worktree)와 지금 빌드로 진행하며 단계별 `context` 글자 수를 쟀다. '지식 있음'은 업무 정책 4(필수 확정·권장·다른 도메인 필수·관찰)·데이터 2·API 2·기능 1·흐름 1·컨벤션 `[필수]` 1줄이다.
+
+| 단계 | 지식 없음 기준 → 지금 | 지식 있음 기준 → 지금 |
+|---|---:|---:|
+| analysis | 1,472 → 1,514 | 2,070 → 2,399 |
+| impact | 1,542 → 2,048 | 2,121 → 2,914 |
+| design | 1,643 → 1,736 | 2,222 → 2,602 |
+| plan | 2,195 → 2,258 | 2,774 → 3,124 |
+| implement (Task 3개) | 764 · 771 · 713 → 같음 | 764 · 771 · 713 → 1,096 · 1,103 · 812 |
+
+  출력은 늘었다 — impact 는 문서 영향 지시·예시, 지식이 있으면 항목마다 줄 범위·상태·걸린 이유, implement 는 그 Task 파일에 걸린 정책과 `[필수]` 줄. 담당이 지식 문서 전문 대신 줄 범위만 읽어 줄어드는 탐색과 수정 왕복은 모델 실행으로 재지 않아 개선율을 주장하지 않는다. `usage`의 `문서 탐색` 줄(스테이지별 공통 문서 읽기·검색·`knowledge find`)이 그 비교의 자리다.
+- **실제 CLI**(임시 저장소, `node dist/agent/cli.js`): `init --host both`가 `ca-integrate/knowledge.md`를 두 호스트에 같은 글로 설치하고 Codex `ca-integrate/SKILL.md`는 `.agents/skills/…`를 가리켰다. check 단계에서 Claude `hook`은 `knowledge find` 허용·`knowledge`·`prune`·`doc/knowledge/features.md` Write 거부, Codex `codex-event`는 Bash·PowerShell `knowledge find` 허용·`prune`·`apply_patch` 거부였다. 반영 단계 `next`·`status`가 `지식 제안: \`FEAT-ORDER-REGISTER\`(신규) · 02 에서 판단하지 않은 관련 항목 \`FEAT-ORDER-QUERY\` …`, `context`가 같은 범위의 `## 지식 제안` 절을 냈다. `knowledge`는 근거 파일을 바꾼 커밋 뒤 `[재검토 필요: <커밋> 가 src/order/cancel.ts 를 바꿈]`, `usage`는 `문서 탐색(…): impact 2`.
+- **정리 커밋에서 고친 것**: 단계 context 의 절 이름이 `참고 문서`로 바뀐 것을 템플릿 네 곳(`ca-analyze/criteria.md`, `ca-design/criteria.md`·`legacy.md`, `ca-impact/legacy.md`)과 design·requirement 문서에 맞추고, 흐름도 §1.1 에 그 이름과 KNOWLEDGE 종류 목록을 함께 맞출 곳으로 더했다.
+
 ## 템플릿 예산
 
 | 파일 | 예산(자) | 근거 |
@@ -198,7 +240,8 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 | `ca-analyze`·`ca-impact`·`ca-design`·`ca-plan` SKILL.md | 3,300·3,100·2,900·5,000 → 2,900·2,700·2,500·4,700 | 4·5항을 `next` 줄 원천 규칙으로 줄인 크기에 묶었다 |
 | `CLAUDE.block.md` · `CODEX.block.md` | 1,600 → 1,700 · 1,500 → 1,800 | 복구 참조, PowerShell `.cmd` 규칙(담당도 읽도록 공통 블록에) |
 | 계획 담당 넷(`ca-analyst`·`ca-critic`·`ca-explorer`·`ca-writer`) · `ca-analyze/criteria.md` | 3,100·2,000·2,400·2,800 → 800·1,900·2,200·2,600 · 600 → 2,700 | 요구 분석 형식을 분석 배정의 문서 기준으로 옮겼다(실측 2,915·1,859·2,305·2,711 → 781·1,779·2,084·2,491, criteria 497 → 2,513). 분석 배정 파일은 전과 같은 글을 싣고, design·plan 배정은 그만큼 덜 읽는다 |
-| 흐름 합계 Claude · Codex | 51,700 → 52,200 · 49,500 → 52,300 | 위 진입 문장의 합. 가장 클 때 53,200·53,400 이었고 템플릿 중복을 줄인 크기에 다시 묶었다 |
+| `ca-docs/SKILL.md` · `ca-integrate/SKILL.md` · `ca-integrate/knowledge.md`(새 보조 문서) | 6,900 → 7,300 · 2,900 → 3,100 · 새 1,400 | 기능·흐름 KNOWLEDGE 의 표 행·인자·종류 목록, `지식 제안:` 줄을 따르는 두 문장(실측 6,858 → 6,993 · 2,842 → 2,983 · 1,359). 제안 형식(필드·예시·삭제·대체·보류·충돌)은 제안을 쓸 때만 읽도록 보조 문서로 뺐다 |
+| 흐름 합계 Claude · Codex | 51,700 → 52,200 · 49,500 → 52,300 | 위 진입 문장의 합. 가장 클 때 53,200·53,400 이었고 템플릿 중복을 줄인 크기에 다시 묶었다. `52b49b0` 뒤 Claude 51,509 · Codex 47,533 |
 
 ## 검증 수치
 
@@ -218,6 +261,7 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 | `3c7efc4` | 1,429개 중 1,425 통과·생략 4 | |
 | `298c4cc` | 1,431개 중 1,427 통과·생략 4 | |
 | `8aec8c8` | 1,436개 중 1,432 통과·생략 4 | |
+| `52b49b0` | 1,450개 중 1,446 통과·생략 4 | 새 `knowledgeDocs` 13개·04 BR 키 근거 1개. 중간 실행에서 반영 context 의 '제안 없음' 문구에 제안 파일 경로가 빠져 1개 실패 → 문구 수정 |
 
 실패는 모두 0 이다. 생략 4개는 플랫폼 조건이다. Windows 샌드박스 안에서는 OS 사용자 정보 조회(`uv_os_get_passwd`)가 ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 돌렸다. `consentScreens` T-15-1(2초 대기 뒤 캐시 생성)은 부하에서 한 번 실패한 뒤 단독·재실행에서 통과했다.
 
@@ -230,8 +274,10 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - Codex hook 의 `agent_id`가 하위 에이전트 기록의 thread id 와 같은지 — 다르면 Codex 배정별 표가 빈다.
 - 결과 파일·미리 넣은 문서·context 근거 줄을 담당이 지침대로 쓰는지, 요구 확정 적용 뒤 메인이 `started`·`startBlocked`를 읽고 잇거나 멈추는지(모델 행동)와 그 실제 토큰 효과 — 모델 완주 실측이 필요하다. Codex Windows 샌드박스에서 훅이 만든 배정 폴더·문서 사본을 `apply_patch`로 고칠 수 있는지도 확인하지 않았다(거부되면 `{path, content}`로 낸다).
 - surveyor 가 초안을 `doc/.survey/`에 쓰고 경로만 돌려주며 writer 가 그 파일을 읽는지(모델 행동)와 실제 도입의 토큰 효과, 교차 형식 교정을 writer 모델로 돌린 결과의 품질 — 모델을 부르는 실측이 필요하다.
+- 문서·지식 변경의 모델 완주 효과 — context 출력 증가는 쟀고, 줄 범위 읽기로 줄어드는 탐색·수정 왕복과 담당이 `문서 영향`·`지식 제안`을 지침대로 쓰는지는 모델 실행이 필요하다. 셸이 없는 조사·리뷰 담당은 `knowledge find`를 부를 수 없어 context 의 줄 범위와 문서 검색으로 찾는다. 검색은 낱말 단위라 조사가 붙은 형태는 별칭·키로 보완한다.
 - 대상 프로젝트의 설치본 — 이 저장소의 변경은 `code-agent update --templates-only --host <호스트>`와 호스트 재시작 뒤에 적용된다.
 
 ## 남은 일
 
 - 교차 리뷰·계획 검토 전용 추론 강도(medium)와 synthesis writer 강도(low) — 같은 입력의 A/B 로 품질 영향을 잰 뒤 정한다(유료 평가. 역할 정책을 바꾸면 model 동의의 정책 지문도 바뀐다).
+- 문서·지식 — 같은 요구를 기준(`43c77cf`)·지금 빌드로 완주시켜 `usage`의 문서 탐색·토큰·재배정을 비교한다(유료 평가).
