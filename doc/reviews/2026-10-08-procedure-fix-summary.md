@@ -1,21 +1,21 @@
 # 절차 보완·재시도 규약·최적화 결과 요약 (2026-10-07~08)
 
-[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `c4f3fbf..HEAD`(감사 기준 `c4f3fbf`의 다음 커밋부터)다 — 감사 `ff13950`, 구현·검토 `ff13950..68d7a00`(`2327975`부터 `68d7a00`까지), 문서 정리 `4c5ca83`과 그 검증 지적 반영 커밋(`bd096f8`), 실제 호스트 확인의 불일치 반영 `b8ebf85`·`0c0265d`·`b7d0a28`·`c11c3ab`과 그 검증 지적 반영 `5f4324b`, 재검증 지적 반영 커밋(부모 `5f4324b`). 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
+[이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) 뒤의 구현·검토·후속 수정 전체의 결과를 한 곳에 모은 기록이다. 커밋 범위는 `2c97a43..HEAD`(감사 기준 `2c97a43`의 다음 커밋부터)다 — 감사 `0807d32`, 구현·검토 `0807d32..0a77595`(`7b698d8`부터 `0a77595`까지), 문서 정리 `eefd4e9`과 그 검증 지적 반영 커밋(`4838e1f`), 실제 호스트 확인의 불일치 반영 `e7caf31`·`e14dbf9`·`e2afdca`·`5107697`과 그 검증 지적 반영 `1293955`, 재검증 지적 반영 커밋(부모 `1293955`). 현재 동작은 [프로세스 흐름도](../process-flow.md)가 정본이다. 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이다.
 
-단계마다 남겼던 기록 10개와 그 evidence 는 문서 정리 `4c5ca83`에서 이 기록으로 합치고 지웠다. 원문은 `git show 68d7a00:doc/reviews/<파일>`로 본다([지운 기록](#지운-기록)).
+단계마다 남겼던 기록 10개와 그 evidence 는 문서 정리 `eefd4e9`에서 이 기록으로 합치고 지웠다. 원문은 `git show 0a77595:doc/reviews/<파일>`로 본다([지운 기록](#지운-기록)).
 
 ## 사용자 결정
 
 | 결정 | 내용 | 반영 |
 |---|---|---|
-| 첫 요청(2026-10-07) — 감사 | Claude·Codex 이중 호스트 프로세스를 코드 수정 없이 감사한다 — 두 호스트를 함께·각각 쓸 수 있는가, 절차에 문제가 없는가, 스스로 학습하는 구조인가, 최적화할 부분, 하네스 엔지니어링 원칙 대비, 전체 흐름 문서가 필요한가 | `ff13950` — 감사 기록(지적 160건)·[프로세스 흐름도](../process-flow.md)·개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`) |
+| 첫 요청(2026-10-07) — 감사 | Claude·Codex 이중 호스트 프로세스를 코드 수정 없이 감사한다 — 두 호스트를 함께·각각 쓸 수 있는가, 절차에 문제가 없는가, 스스로 학습하는 구조인가, 최적화할 부분, 하네스 엔지니어링 원칙 대비, 전체 흐름 문서가 필요한가 | `0807d32` — 감사 기록(지적 160건)·[프로세스 흐름도](../process-flow.md)·개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`) |
 | 두 번째 요청 — 감사 지적 처리 | 절차 결함을 보완하고, 실패 원인별 재시도 규약을 코드가 강제하고 문서화하며, 최적화한다 | 공통 모듈과 묶음 C1~C7. 원천은 `retryPolicy.ts`, 흐름도 §6.4 표는 그 생성 블록이다 |
 | Claude 역할별 모델 | 판단 역할 opus/high, 실행 역할 sonnet/medium | C6([역할별 모델](#claude-역할별-모델)). 비용·품질 A/B 실측은 사용자 승인 뒤로 미뤘다 |
 | 커밋 방식 | 작업 브랜치 `fix/procedure-retry-optimization`에 묶음별 로컬 커밋 — 구현 커밋과 독립 검토 반영 커밋을 나누고, 따로 작업한 묶음(C2·C3·C6)은 병합 커밋으로 잇는다. push·PR 은 하지 않는다 | [단계와 커밋](#단계와-커밋) |
 | HX-5 제외 | 작은 작업용 경량 경로는 만들지 않는다 | 범위 밖 |
 | 자가 학습 보류 | 측정은 기록을 읽기만 하고 다음 작업으로 환류하지 않는다 | 자가 학습 지적 17건과 호스트 자체 기억(GAP-3)은 범위 밖 |
 | 사람 확인 지점 셋 유지 | 요구 확정·계획 승인·결과 반영을 줄이지 않는다 | 연쇄 `planning advance --chain`도 계획 승인을 잇지 않는다. 한도를 넘으면 자동 재시도를 멈추고 사람 판단 동의(`judgment`)로 넘긴다 |
-| 게이트 약화 금지 | 수정·후속 수정이 게이트를 약하게 하지 않는다 | 후속 수정(R·F·D·G)은 안내·기록만 고치거나 게이트를 강하게 했다. C1~C7 의 의도한 완화는 세션 중 셸의 `takeover`(작업 임대)·`doctor --cross`(C4 FLOW-10) 허용 둘이다 — hook 판정 행렬의 감사 기준 `c4f3fbf`→`d12bd46`에서 약해진 판정 72가 모두 이 둘이다([재검증](#전체-검토와-후속-수정)). 알고 남긴 틈은 [남은 일](#범위-밖보류남은-일)의 단계 기록 위험에 있다 |
+| 게이트 약화 금지 | 수정·후속 수정이 게이트를 약하게 하지 않는다 | 후속 수정(R·F·D·G)은 안내·기록만 고치거나 게이트를 강하게 했다. C1~C7 의 의도한 완화는 세션 중 셸의 `takeover`(작업 임대)·`doctor --cross`(C4 FLOW-10) 허용 둘이다 — hook 판정 행렬의 감사 기준 `2c97a43`→`7e80d6b`에서 약해진 판정 72가 모두 이 둘이다([재검증](#전체-검토와-후속-수정)). 알고 남긴 틈은 [남은 일](#범위-밖보류남은-일)의 단계 기록 위험에 있다 |
 | 교차 실행 불가면 중지 기록 후 진행 | 다른 호스트를 실행할 수 없으면 그 지점의 교차를 중지로 기록하고 진행한다 | 실행 불가는 화이트리스트(미설치·인증·사용 한도·네트워크·장애)뿐이다. 설정 오류·형식 오류·샌드박스 거부·끊긴 실행은 게이트를 막는다 |
 | 두 호스트면 교차 필수 | 두 호스트 설치에서 교차 검증을 끄는 설정은 두지 않는다 | HP-20 은 끄는 설정을 두지 않는 쪽(일부)으로 닫았다 |
 | D1(2026-10-08) | 작업 중에는 역할 모델·추론 강도를 바꿀 수 없다 — 작업이 끝난 뒤(반영 deliver 또는 종료 abort) 바꾼다 | 동의 준비(질문 전)·동의 적용 시점 재확인·터미널 `code-agent model`이 같은 `model-in-work` 문구로 거부한다. 조회는 연다. `update --templates-only` 동작은 바꾸지 않았다 |
@@ -28,25 +28,25 @@
 
 | 단계 | 묶음 | 커밋 |
 |---|---|---|
-| 감사 | 이중 호스트 프로세스 감사·흐름도·개발 지침(코드 변경 없음) | `ff13950` |
-| 1 | 공통 재시도 규약 모듈 | `2327975`·`3b5e867` |
-| 2 | C2 계획 오케스트레이션 · C3 검증 재시도 · C6 역할별 모델(따로 작업한 뒤 차례로 병합) | `fa70f74`·`110ec6a`(병합 `de8a073`) · `e3e082d`·`53368a4`(병합 `7e169c2`) · `eaad713`·`ca36d3e`(병합 `f8d0dda`) |
-| 3 | C1 리뷰·교차 검증 무결성 | `a1a70d8`·`2facbc0`·`77407a9` |
-| 4 | C5 동의·업무 답 관찰·hook 경계 | `248e704`·`6584910` |
-| 5 | C4 단계 전이·CLI 안내·반영 범위·작업 임대 | `9d3e285`·`4b1333b` |
-| 6 | C7 최적화 | `669aa66`·`f3b34ff`·`df22bdf`·`f230734`·`64d1c50`·`69fbe28`·`337ab1f`·`1141beb`·`934e5fe` |
-| 7 | 전체 검토 반영(지적 43건)·흐름도 대조 시험·감사 처리 현황 | `d12bd46` |
-| 8 | 작업 요약 기록(문서만) | `16ae5ec` |
-| 9 | 최종 재검증 지적 R1~R6 반영 | `5205112` |
-| 10 | 9단계 수정의 반박 검증 지적 F1~F4 반영 | `014cd85` |
-| 11 | 사용자 결정 D1~D3 반영 | `5e6cdcc` |
-| 12 | 11단계 반영의 반박 검증 지적 G1~G8 반영 | `68d7a00` |
-| 정리 | 문서 최신화·이력 정리(단계 기록 통합, 옛 기록 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)와 그 검증 지적 7건 반영 | `4c5ca83` · `bd096f8` |
-| 실제 호스트 | 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정 · Codex hook·신뢰·담당 식별·임대 · Codex 사용량 · 담당 호출·기록([실제 호스트 확인](#실제-호스트-확인-2026-10-08)) | `b8ebf85` · `0c0265d` · `b7d0a28` · `c11c3ab` |
-| 실제 호스트 검증 | 반영 뒤 실제 Codex 재확인과 검증 지적 반영 — doctor 의 옛 Windows 명령 오탐, 상위 폴더 신뢰, 단일 실행 파일의 연결 확인·`.js` 진입점, 이전 버전 절차의 담당 호출, 교차 자식 환경, 게이트 줄의 같은 사유 반복, 문서([반영 뒤 재확인](#반영-뒤-실제-호스트-재확인)·[검증 지적](#검증-지적-처리)) | `5f4324b` |
-| 실제 호스트 재검증 | 검증 지적 반영(`5f4324b`)의 재검증 지적 W1~W6 반영 — 단일 실행 파일의 PATH `node` 셰임 건너뛰기와 실행 파일 변수 안내, 연결 확인 준비 실패의 `worker-…`, doctor 의 옛 Codex 설치(빠진 이벤트) 안내, 형제 저장소의 hook 신뢰 기록, `ca-implement` 다시 맡기기의 전경 실행, 결과 요약 수치([재검증 지적](#재검증-지적-처리)) | 재검증 지적 반영(부모 `5f4324b`) |
+| 감사 | 이중 호스트 프로세스 감사·흐름도·개발 지침(코드 변경 없음) | `0807d32` |
+| 1 | 공통 재시도 규약 모듈 | `7b698d8`·`c38f1e2` |
+| 2 | C2 계획 오케스트레이션 · C3 검증 재시도 · C6 역할별 모델(따로 작업한 뒤 차례로 병합) | `99628c5`·`c38c5bf`(병합 `33e5d85`) · `2bd69e5`·`357a471`(병합 `8441786`) · `5029925`·`92f6ce1`(병합 `04fd909`) |
+| 3 | C1 리뷰·교차 검증 무결성 | `7b7ca8b`·`2faedb4`·`241094e` |
+| 4 | C5 동의·업무 답 관찰·hook 경계 | `b557e35`·`3485d37` |
+| 5 | C4 단계 전이·CLI 안내·반영 범위·작업 임대 | `473a6aa`·`73aaa78` |
+| 6 | C7 최적화 | `04af60d`·`113c9f6`·`4ca343f`·`442c8ac`·`36e99f5`·`1b0a5ec`·`b978e0c`·`5c52392`·`c700fda` |
+| 7 | 전체 검토 반영(지적 43건)·흐름도 대조 시험·감사 처리 현황 | `7e80d6b` |
+| 8 | 작업 요약 기록(문서만) | `952594c` |
+| 9 | 최종 재검증 지적 R1~R6 반영 | `72f6b97` |
+| 10 | 9단계 수정의 반박 검증 지적 F1~F4 반영 | `bf4b32e` |
+| 11 | 사용자 결정 D1~D3 반영 | `c9312f6` |
+| 12 | 11단계 반영의 반박 검증 지적 G1~G8 반영 | `0a77595` |
+| 정리 | 문서 최신화·이력 정리(단계 기록 통합, 옛 기록 삭제, 현행 문서의 경위 문장 제거, 흐름도 §10 압축)와 그 검증 지적 7건 반영 | `eefd4e9` · `4838e1f` |
+| 실제 호스트 | 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0, Windows)의 불일치 H1~H12 반영 — 교차 분류·사전 판정 · Codex hook·신뢰·담당 식별·임대 · Codex 사용량 · 담당 호출·기록([실제 호스트 확인](#실제-호스트-확인-2026-10-08)) | `e7caf31` · `e14dbf9` · `e2afdca` · `5107697` |
+| 실제 호스트 검증 | 반영 뒤 실제 Codex 재확인과 검증 지적 반영 — doctor 의 옛 Windows 명령 오탐, 상위 폴더 신뢰, 단일 실행 파일의 연결 확인·`.js` 진입점, 이전 버전 절차의 담당 호출, 교차 자식 환경, 게이트 줄의 같은 사유 반복, 문서([반영 뒤 재확인](#반영-뒤-실제-호스트-재확인)·[검증 지적](#검증-지적-처리)) | `1293955` |
+| 실제 호스트 재검증 | 검증 지적 반영(`1293955`)의 재검증 지적 W1~W6 반영 — 단일 실행 파일의 PATH `node` 셰임 건너뛰기와 실행 파일 변수 안내, 연결 확인 준비 실패의 `worker-…`, doctor 의 옛 Codex 설치(빠진 이벤트) 안내, 형제 저장소의 hook 신뢰 기록, `ca-implement` 다시 맡기기의 전경 실행, 결과 요약 수치([재검증 지적](#재검증-지적-처리)) | 재검증 지적 반영(부모 `1293955`) |
 
-묶음마다 구현 커밋 뒤에 독립 검토를 거쳤고, 지적을 코드로 확인한 반영 커밋을 따로 두었다. 7단계는 `ff13950..934e5fe` 전체를 네 관점(e2e·재시도 규약·hook·문서)으로 다시 검토한 결과이고, 9~12단계는 그 뒤를 다시 검증하거나 반박 검증해 남은 문제를 고친 결과다.
+묶음마다 구현 커밋 뒤에 독립 검토를 거쳤고, 지적을 코드로 확인한 반영 커밋을 따로 두었다. 7단계는 `0807d32..c700fda` 전체를 네 관점(e2e·재시도 규약·hook·문서)으로 다시 검토한 결과이고, 9~12단계는 그 뒤를 다시 검증하거나 반박 검증해 남은 문제를 고친 결과다.
 
 ## 실패 원인별 재시도 규약 요지
 
@@ -88,8 +88,8 @@
 
 | 단계 | 지적 | 처리 |
 |---|---|---|
-| 7 전체 검토(`ff13950..934e5fe`, e2e·재시도 규약·hook·문서 네 관점) | E1~E43 — 43건 | 반영 36·일부 5·사용자 결정 2(E2·E16 — 11단계 D1·D2 로 반영). E20 의 엄격화는 D3 로 확정 |
-| 9 최종 재검증(`d12bd46`·`16ae5ec`) | R1~R6 — 6건 | 모두 반영 |
+| 7 전체 검토(`0807d32..c700fda`, e2e·재시도 규약·hook·문서 네 관점) | E1~E43 — 43건 | 반영 36·일부 5·사용자 결정 2(E2·E16 — 11단계 D1·D2 로 반영). E20 의 엄격화는 D3 로 확정 |
+| 9 최종 재검증(`7e80d6b`·`952594c`) | R1~R6 — 6건 | 모두 반영 |
 | 10 9단계 수정의 반박 검증 | F1~F4 — 4건(낮음) | 모두 반영. 게이트는 그대로 |
 | 11 사용자 결정 | D1~D3 — 3건 | D1·D2 반영, D3 현행 유지 |
 | 12 11단계 반영의 반박 검증 | G1~G8 — 8건(정보 1·medium 1·low 6) | 모두 반영 |
@@ -98,7 +98,7 @@
 - **R1~R6** — 사용자 수준 호스트 설정 쓰기 거부가 같은 파일의 다른 이름(NTFS 스트림 표기·폴더 스트림·긴 경로 접두·관리 공유·끝 점·공백·8.3·상대 경로, 하드 링크는 (dev, ino))을 접어 본다(R1). 검증 명령이 code-agent 기록을 바꿔 되돌린 실행은 전제 미충족으로 남고 게이트·verify·`다음:`이 같은 문장을 쓴다(R2). 교차 안내가 설정 오류(게이트 막힘)와 실행 불가(중지 기록 후 진행)를 나눈다(R3). 리뷰를 열지 않고 쓴 리뷰 회차는 허용을 받지 않는다(R4). 흐름도의 `template/`·`doc/` 줄 인용을 시험이 대조한다(R5, `finalReverify.test.ts` `CITED_LINES`). 시험의 죽은 pid 는 재사용될 수 없는 값이다(R6).
 - **F1~F4** — `다음:`의 check·test 갈래가 지금 회차의 기록 변경 실행을 단계 필터 없이 본다(F1). 그 갈래가 그 단계 게이트의 stop 문제 전부를 싣고, 기록 변경 회차의 게이트는 ⑦ 미확인 줄을 싣지 않는다(F2). 교차 게이트 줄 괄호는 `crossRunNote`이고 doctor 는 교차 설정 오류를 `✗`로 쓴다(F3). 시험의 끝난 자식 pid 탐지를 넓혔다(F4).
 - **G1~G8** — 샌드박스 의심이 지점 이력을 본다(G2). 사전 거부 뒤의 첫 네트워크 오류부터 사람에게 넘긴다(G6). 사람에게 넘긴 지점의 게이트 줄은 재실행 명령을 안내 뒤에 싣는다(G7, `crossGateHandoff`). 중지 지점 재실행의 샌드박스 제한은 사람 판단을 싣지 않는 `stopped` 변형이다(G5). doctor 'Codex 스킬·에이전트'와 모델 표의 변경 줄도 작업 중이면 작업이 끝난 뒤를 안내한다(G3·G4). 이름이 파일 서버가 아닌 MCP 쓰기 도구도 사용자 수준 호스트 설정의 절대 경로는 막는다(G1). 기록 수치(G8).
-- **재검증**(`d12bd46`, 실제 모델 호출 없음) — e2e 재실행(가짜 호스트 실행 파일, 23개 실행)의 검사 수가 이전과 같고 E1·E5·E7·E8·E10·E11·E12 반영을 출력에서 확인했다. 의도한 변경 때문에 낡은 가정으로 실패한 실행 셋(E20 의 미설치 흉내, E9 의 Codex staging, E2 경고)은 가정을 고친 사본으로 다시 돌리거나 D1 로 정리했다. 재시도 규약 탐침의 P7·P8 은 재현되지 않았다(고쳐짐). hook 판정 행렬(실제 hook 프로세스, 5,040 경우)에서 `934e5fe`→`d12bd46`에 약해진 판정은 0이다(강해진 56 — E30 의 MCP 프로젝트 상대 경로 키). 감사 기준 `c4f3fbf`→`d12bd46`에서 약해진 72는 모두 의도한 허용 — 세션 중 셸의 `takeover` 36(작업 임대)·`doctor --cross` 36(C4 FLOW-10)이다. 9~12단계는 수정마다 빌드 산출물에서 하나씩 되돌린 변이 검사에서 그 지적의 시험이 모두 깨졌다.
+- **재검증**(`7e80d6b`, 실제 모델 호출 없음) — e2e 재실행(가짜 호스트 실행 파일, 23개 실행)의 검사 수가 이전과 같고 E1·E5·E7·E8·E10·E11·E12 반영을 출력에서 확인했다. 의도한 변경 때문에 낡은 가정으로 실패한 실행 셋(E20 의 미설치 흉내, E9 의 Codex staging, E2 경고)은 가정을 고친 사본으로 다시 돌리거나 D1 로 정리했다. 재시도 규약 탐침의 P7·P8 은 재현되지 않았다(고쳐짐). hook 판정 행렬(실제 hook 프로세스, 5,040 경우)에서 `c700fda`→`7e80d6b`에 약해진 판정은 0이다(강해진 56 — E30 의 MCP 프로젝트 상대 경로 키). 감사 기준 `2c97a43`→`7e80d6b`에서 약해진 72는 모두 의도한 허용 — 세션 중 셸의 `takeover` 36(작업 임대)·`doctor --cross` 36(C4 FLOW-10)이다. 9~12단계는 수정마다 빌드 산출물에서 하나씩 되돌린 변이 검사에서 그 지적의 시험이 모두 깨졌다.
 
 ## Claude 역할별 모델
 
@@ -121,7 +121,7 @@
 
 Windows, Node 24.19, sandbox, 실제 모델 호출 없음.
 
-**hook 프로세스 시간**(spawn~종료, 기준 빌드 `4b1333b`와 C7 독립 검토 반영 빌드를 같은 반복 안에서 번갈아 돌린 31회 중앙값):
+**hook 프로세스 시간**(spawn~종료, 기준 빌드 `73aaa78`와 C7 독립 검토 반영 빌드를 같은 반복 안에서 번갈아 돌린 31회 중앙값):
 
 | hook | 기준 | 뒤 |
 |---|---|---|
@@ -144,7 +144,7 @@ hook 진입 모듈 그래프(dist 모듈 수, zod 79 파일 별도): `hook.js` 6
 
 summary 가 크면 비율이 작아진다(plan 7,868→3,707·abort 4,840→2,193). 적용 결과에 `next`가 붙어 줄어드는 `code-agent status` 한 번은 작업이 없는 저장소 약 620~730자, 작업 중 약 0.6~0.9K자다. `request`·`request begin` 출력은 2,161→1,810자(−16%)다.
 
-**템플릿 크기**(LF 글자, `scripts/template-sizes.cjs`, 기준 `4b1333b`):
+**템플릿 크기**(LF 글자, `scripts/template-sizes.cjs`, 기준 `73aaa78`):
 
 | | 기준 | C7 뒤 | 차이 |
 |---|---|---|---|
@@ -162,11 +162,11 @@ summary 가 크면 비율이 작아진다(plan 7,868→3,707·abort 4,840→2,19
 
 ## 템플릿 크기 예산
 
-`src/test/templateBudget.test.ts` `BUDGET`(C7, `69fbe28`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 실제 호스트 반영(H7)에서 담당 호출 문장(63자)을 더해 `ca-impact/SKILL.md`(3,007자)·`ca-design/SKILL.md`(2,812자)가 예산을 넘었다 — 문장은 담당을 부르는 그 항목에 있어야 모델이 호출할 때 보므로 보조 문서로 옮기지 않고 `--suggest` 값(3,100·2,900)으로 올렸다. 그 밖의 파일·합계 예산은 그대로이고, 합계는 Claude 51,409자·Codex 49,014자로 예산 안이다. 검증 지적 반영에서 같은 문장을 이전 버전 절차(`legacy.md`)의 담당 호출 다섯 곳에도 넣어 `ca-design/legacy.md`(723자)·`ca-impact/legacy.md`(1,067자)·`ca-plan/legacy.md`(914자)가 예산을 넘었다 — 이 문서들은 필요할 때만 읽는 보조 문서이고 문장은 그 호출 항목에 있어야 하므로 `--suggest` 값(800·1,100·1,000)으로 올렸다. `ca-analyze/legacy.md`(693자)는 예산(700) 안이고, 흐름 합계는 보조 문서를 세지 않아 그대로다. 재검증 지적 반영에서 `ca-implement/SKILL.md` 5항의 다시 맡기기(역할 이름 없이 같은 서브에이전트에게 맡기는 담당 호출)에도 같은 문장을 넣어 그 파일이 2,543자로 예산(2,500)을 넘었다 — 같은 이유로 `--suggest` 값(2,700)으로 올렸다. 흐름 합계는 Claude 51,472자·Codex 49,046자로 예산(51,700·49,500) 안이다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
+`src/test/templateBudget.test.ts` `BUDGET`(C7, `1b0a5ec`)은 `template/`의 모든 `.md`에 파일별 예산을, 두 흐름에 합계 예산을 둔다. 값은 `node scripts/template-sizes.cjs --suggest`로 정했다 — 파일별은 그때 크기×1.03, 합계는 ×1.02 를 100 단위로 올렸다(Claude 흐름 50,638자 → 51,700, Codex 흐름 48,442자 → 49,500). 실제 호스트 반영(H7)에서 담당 호출 문장(63자)을 더해 `ca-impact/SKILL.md`(3,007자)·`ca-design/SKILL.md`(2,812자)가 예산을 넘었다 — 문장은 담당을 부르는 그 항목에 있어야 모델이 호출할 때 보므로 보조 문서로 옮기지 않고 `--suggest` 값(3,100·2,900)으로 올렸다. 그 밖의 파일·합계 예산은 그대로이고, 합계는 Claude 51,409자·Codex 49,014자로 예산 안이다. 검증 지적 반영에서 같은 문장을 이전 버전 절차(`legacy.md`)의 담당 호출 다섯 곳에도 넣어 `ca-design/legacy.md`(723자)·`ca-impact/legacy.md`(1,067자)·`ca-plan/legacy.md`(914자)가 예산을 넘었다 — 이 문서들은 필요할 때만 읽는 보조 문서이고 문장은 그 호출 항목에 있어야 하므로 `--suggest` 값(800·1,100·1,000)으로 올렸다. `ca-analyze/legacy.md`(693자)는 예산(700) 안이고, 흐름 합계는 보조 문서를 세지 않아 그대로다. 재검증 지적 반영에서 `ca-implement/SKILL.md` 5항의 다시 맡기기(역할 이름 없이 같은 서브에이전트에게 맡기는 담당 호출)에도 같은 문장을 넣어 그 파일이 2,543자로 예산(2,500)을 넘었다 — 같은 이유로 `--suggest` 값(2,700)으로 올렸다. 흐름 합계는 Claude 51,472자·Codex 49,046자로 예산(51,700·49,500) 안이다. 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다.
 
 ## 감사 160건 처리 현황
 
-판정은 문서 관점 독립 검토가 감사 지적마다 코드·단계 기록과 대조한 결과(반영 78·일부 29·범위 밖 35·보류 18)에, 전체 검토 반영(`d12bd46`)과 문서 정리 커밋의 처리를 더한 것이다. `d12bd46`이 아홉 건의 상태를 바꿨다 — DOC-3·DOC-4·DOC-9(일부→반영), DOC-5·DOC-6·DOC-14·DOC-M1(보류→반영), HP-16(범위 밖→반영), HP-14(보류→일부). 문서 정리 `4c5ca83`이 DOC-12 를 보류→일부로 바꿨다(현행 문서의 변경 이력 문장을 지웠고, 목차 밖 절은 남았다).
+판정은 문서 관점 독립 검토가 감사 지적마다 코드·단계 기록과 대조한 결과(반영 78·일부 29·범위 밖 35·보류 18)에, 전체 검토 반영(`7e80d6b`)과 문서 정리 커밋의 처리를 더한 것이다. `7e80d6b`이 아홉 건의 상태를 바꿨다 — DOC-3·DOC-4·DOC-9(일부→반영), DOC-5·DOC-6·DOC-14·DOC-M1(보류→반영), HP-16(범위 밖→반영), HP-14(보류→일부). 문서 정리 `eefd4e9`이 DOC-12 를 보류→일부로 바꿨다(현행 문서의 변경 이력 문장을 지웠고, 목차 밖 절은 남았다).
 
 | 상태 | 수 | high | medium | low | info | 뜻 |
 |---|---|---|---|---|---|---|
@@ -176,7 +176,7 @@ summary 가 크면 비율이 작아진다(plan 7,868→3,707·abort 4,840→2,19
 | 보류 | 12 | 0 | 1 | 11 | 0 | 배정되지 않았다 — 아래 표에 다음 배정이나 결정 필요 사유 |
 | 계 | 160 | 7 | 58 | 86 | 9 | |
 
-DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`이 대조 시험을 §4.1·§5.1·§5.2·§3.2·§7 표로 넓힌 뒤에도 일부다 — 코드가 생성하는 블록은 §6.4 하나이고, 수치·링크·USAGE 대조는 없다. LEARN-M1 의 KNOWLEDGE 256KB 이후 항목 누락은 자가 학습과 묶어 범위 밖으로 두었지만 결함은 남아 있다.
+DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `7e80d6b`이 대조 시험을 §4.1·§5.1·§5.2·§3.2·§7 표로 넓힌 뒤에도 일부다 — 코드가 생성하는 블록은 §6.4 하나이고, 수치·링크·USAGE 대조는 없다. LEARN-M1 의 KNOWLEDGE 256KB 이후 항목 누락은 자가 학습과 묶어 범위 밖으로 두었지만 결함은 남아 있다.
 
 ### 보류 항목의 다음 배정
 
@@ -201,123 +201,123 @@ DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`
 
 | ID | 심각도 | 상태 | 처리 | 메모 |
 |---|---|---|---|---|
-| DOC-2 | high | 일부 | 감사 ff13950 + 공통 모듈 2327975 | 흐름도 process-flow.md 작성(감사 커밋). 코드 생성 블록은 §6.4 하나뿐이고 usage·design 의 중복 흐름 서술은 남음 |
-| FLOW-01 | high | 반영 | C2 fa70f74·110ec6a | 질문 [Origin]·questionOrigins 로 출처 작업과 후손만 낡게, rewind-required·rewind.auto(같은 사유 한 번) |
+| DOC-2 | high | 일부 | 감사 0807d32 + 공통 모듈 7b698d8 | 흐름도 process-flow.md 작성(감사 커밋). 코드 생성 블록은 §6.4 하나뿐이고 usage·design 의 중복 흐름 서술은 남음 |
+| FLOW-01 | high | 반영 | C2 99628c5·c38c5bf | 질문 [Origin]·questionOrigins 로 출처 작업과 후손만 낡게, rewind-required·rewind.auto(같은 사유 한 번) |
 | HX-1 | high | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
 | HP-1 | high | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — code-agent grep·files 없음, Codex 검색 격차 그대로 |
 | LRN-1 | high | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
-| PVR-1 | high | 반영 | C1 a1a70d8·77407a9 | 교차 시도 append-only crossAttempts, 완료 지점 재실행 거부(crossCheck 'cross-done'), 실행 불가만 중지 |
-| PVR-2 | high | 반영 | C1 a1a70d8·77407a9 | 리뷰어 실행 append-only reviewers[], 완료 회차·동시 호출 무시, 기록 전 표 규칙 |
-| CON-1 | medium | 반영 | C5 248e704·6584910 | 준비 티켓·preparedSession 결속(fail-closed). codex exec resume 프롬프트는 못 가름(문서화된 한계) |
-| CON-2 | medium | 반영 | C5 248e704·6584910 | 적용 티켓 또는 호스트 표지 없는 TTY(terminalCaller), 30분 열린 동의 창 |
-| CON-3 | medium | 반영 | C5 248e704·6584910 | docs-session.json writable 고정·doc/ 밖은 .md 만 |
-| CON-4 | medium | 반영 | C5 248e704·6584910 | 승인 화면 경계·검증 선언 절·경계 스냅샷·approvalChangeLines |
-| CON-5 | medium | 반영 | C5 248e704·6584910 | Codex 6자 확인 코드(사람 입력 증명은 아님 — 문서화) |
-| CON-6 | medium | 일부 | C5 248e704·6584910 | Claude 업무 답 관찰(answers.jsonl)·출처 게이트. Codex 는 관찰 없이 [Source]: 대화로 화면 노출 |
-| CON-8 | medium | 반영 | C5 248e704·6584910 | Grep glob·Glob pattern 정적 접두·키 저장소 상위 폴더 거부, ~ 전개(6584910) |
-| GAP-1 | medium | 반영 | C2 fa70f74·110ec6a | rankCandidatesScan — 3,000개 절단 제거·32 MiB 예산·오름차순 순회 |
+| PVR-1 | high | 반영 | C1 7b7ca8b·241094e | 교차 시도 append-only crossAttempts, 완료 지점 재실행 거부(crossCheck 'cross-done'), 실행 불가만 중지 |
+| PVR-2 | high | 반영 | C1 7b7ca8b·241094e | 리뷰어 실행 append-only reviewers[], 완료 회차·동시 호출 무시, 기록 전 표 규칙 |
+| CON-1 | medium | 반영 | C5 b557e35·3485d37 | 준비 티켓·preparedSession 결속(fail-closed). codex exec resume 프롬프트는 못 가름(문서화된 한계) |
+| CON-2 | medium | 반영 | C5 b557e35·3485d37 | 적용 티켓 또는 호스트 표지 없는 TTY(terminalCaller), 30분 열린 동의 창 |
+| CON-3 | medium | 반영 | C5 b557e35·3485d37 | docs-session.json writable 고정·doc/ 밖은 .md 만 |
+| CON-4 | medium | 반영 | C5 b557e35·3485d37 | 승인 화면 경계·검증 선언 절·경계 스냅샷·approvalChangeLines |
+| CON-5 | medium | 반영 | C5 b557e35·3485d37 | Codex 6자 확인 코드(사람 입력 증명은 아님 — 문서화) |
+| CON-6 | medium | 일부 | C5 b557e35·3485d37 | Claude 업무 답 관찰(answers.jsonl)·출처 게이트. Codex 는 관찰 없이 [Source]: 대화로 화면 노출 |
+| CON-8 | medium | 반영 | C5 b557e35·3485d37 | Grep glob·Glob pattern 정적 접두·키 저장소 상위 폴더 거부, ~ 전개(3485d37) |
+| GAP-1 | medium | 반영 | C2 99628c5·c38c5bf | rankCandidatesScan — 3,000개 절단 제거·32 MiB 예산·오름차순 순회 |
 | GAP-2 | medium | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — AGENTS.md 32KiB 한도 검사 없음 |
 | GAP-3 | medium | 범위 밖 | — | 호스트 자체 기억 정책 — 자가 학습 보류와 같은 축, 템플릿·init 변경 없음 |
-| DOC-1 | medium | 반영 | 감사 ff13950 | 루트 AGENTS.md·CLAUDE.md(감사 커밋), 이번 범위에서 규칙 갱신 |
-| DOC-3 | medium | 반영 | C5 248e704·6584910 + 전체 검토 반영 d12bd46 | design.md 동의 동작 목록에 repro-log·judgment, 흐름도 §4.1 표를 docSync.test 가 ActionSchema·CONSENT_TITLES 와 대조 |
-| DOC-4 | medium | 반영 | C5 248e704·6584910 + 전체 검토 반영 d12bd46 | usage.md hook 수 9개(이벤트 6종)·init 표에 consent-event·planning-event·SessionStart 행, §5.1·§5.2 등록표를 docSync.test 가 init 설치 결과와 대조 |
-| DOC-6 | medium | 반영 | 전체 검토 반영 d12bd46 | usage.md design 담당 analyst, impact 의 explorer 단독 조건 |
-| DOC-10 | medium | 일부 | C5 248e704·6584910 | CLAUDE_HOOKS·CODEX_EVENTS 를 doctor 가 공유. update.ts hook 출력은 인라인 9개, 문서의 수치 반복은 그대로 |
-| DOC-11 | medium | 일부 | 공통 모듈 2327975 + C5·C6·C7 | docSync(§6.4)·consentBinding·modelPolicy(codex.md 표)·hostText·templateText 대조. 수치·링크·USAGE 대조는 없음(usage.md:12·DOC-M1 이 그대로 통과) |
-| FLOW-02 | medium | 반영 | C4 9d3e285·4b1333b | deliver 쓰기 거부·back 허용·증거 무효면 check 되감기·STOP_PHASES deliver |
-| FLOW-03 | medium | 반영 | C4 9d3e285·4b1333b | reentry.ts reentryHint — status·next·hook·검증 거부가 같은 문장 |
-| FLOW-04 | medium | 반영 | C2 fa70f74·110ec6a | orphanState — 확실한 고아 자동 재배정, 의심 고아 stale·cancel, SessionStart 실행 중 배정 요약 |
-| FLOW-05 | medium | 반영 | C3 e3e082d·53368a4 | 동결은 결과가 인식된 실행부터, 수집 수정 1회 창 |
-| FLOW-07 | medium | 반영 | C4 9d3e285·4b1333b | start 의 startBlockers 거부, request begin·status 경고 |
-| FLOW-08 | medium | 반영 | C4 9d3e285·4b1333b | request 초안 target .max(1), start 가 다중 대상 지시서 거부 |
-| FLOW-11 | medium | 반영 | C4 9d3e285·4b1333b | hostText.ts 표기 함수 배선(Claude 바이트 동일) |
-| FLOW-14 | medium | 일부 | C2 fa70f74·110ec6a | 코드가 쓴 질문만 범위 한정 — 메인이 쓴 출처 없는 질문은 여전히 겹치는 모든 작업을 낡게 한다(기록 '남은 위험') |
-| FLOW-15 | medium | 일부 | C4 9d3e285 + C7 f230734 | hostNotation·templateText·planningChain·consentOutput 시험. 흐름도 생성·템플릿 명령 lint 는 없음 |
+| DOC-1 | medium | 반영 | 감사 0807d32 | 루트 AGENTS.md·CLAUDE.md(감사 커밋), 이번 범위에서 규칙 갱신 |
+| DOC-3 | medium | 반영 | C5 b557e35·3485d37 + 전체 검토 반영 7e80d6b | design.md 동의 동작 목록에 repro-log·judgment, 흐름도 §4.1 표를 docSync.test 가 ActionSchema·CONSENT_TITLES 와 대조 |
+| DOC-4 | medium | 반영 | C5 b557e35·3485d37 + 전체 검토 반영 7e80d6b | usage.md hook 수 9개(이벤트 6종)·init 표에 consent-event·planning-event·SessionStart 행, §5.1·§5.2 등록표를 docSync.test 가 init 설치 결과와 대조 |
+| DOC-6 | medium | 반영 | 전체 검토 반영 7e80d6b | usage.md design 담당 analyst, impact 의 explorer 단독 조건 |
+| DOC-10 | medium | 일부 | C5 b557e35·3485d37 | CLAUDE_HOOKS·CODEX_EVENTS 를 doctor 가 공유. update.ts hook 출력은 인라인 9개, 문서의 수치 반복은 그대로 |
+| DOC-11 | medium | 일부 | 공통 모듈 7b698d8 + C5·C6·C7 | docSync(§6.4)·consentBinding·modelPolicy(codex.md 표)·hostText·templateText 대조. 수치·링크·USAGE 대조는 없음(usage.md:12·DOC-M1 이 그대로 통과) |
+| FLOW-02 | medium | 반영 | C4 473a6aa·73aaa78 | deliver 쓰기 거부·back 허용·증거 무효면 check 되감기·STOP_PHASES deliver |
+| FLOW-03 | medium | 반영 | C4 473a6aa·73aaa78 | reentry.ts reentryHint — status·next·hook·검증 거부가 같은 문장 |
+| FLOW-04 | medium | 반영 | C2 99628c5·c38c5bf | orphanState — 확실한 고아 자동 재배정, 의심 고아 stale·cancel, SessionStart 실행 중 배정 요약 |
+| FLOW-05 | medium | 반영 | C3 2bd69e5·357a471 | 동결은 결과가 인식된 실행부터, 수집 수정 1회 창 |
+| FLOW-07 | medium | 반영 | C4 473a6aa·73aaa78 | start 의 startBlockers 거부, request begin·status 경고 |
+| FLOW-08 | medium | 반영 | C4 473a6aa·73aaa78 | request 초안 target .max(1), start 가 다중 대상 지시서 거부 |
+| FLOW-11 | medium | 반영 | C4 473a6aa·73aaa78 | hostText.ts 표기 함수 배선(Claude 바이트 동일) |
+| FLOW-14 | medium | 일부 | C2 99628c5·c38c5bf | 코드가 쓴 질문만 범위 한정 — 메인이 쓴 출처 없는 질문은 여전히 겹치는 모든 작업을 낡게 한다(기록 '남은 위험') |
+| FLOW-15 | medium | 일부 | C4 473a6aa + C7 442c8ac | hostNotation·templateText·planningChain·consentOutput 시험. 흐름도 생성·템플릿 명령 lint 는 없음 |
 | HAR-M1 | medium | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — Codex 메인 평가 하네스 없음(실제 모델 호출 금지 규칙) |
-| HX-2 | medium | 반영 | 감사 ff13950 | AGENTS.md·process-flow.md 지도 |
-| HX-3 | medium | 일부 | 공통 모듈 2327975 + C5·C6·C7 | DOC-11 과 같은 범위의 기계 대조만, doc-gardening 없음 |
+| HX-2 | medium | 반영 | 감사 0807d32 | AGENTS.md·process-flow.md 지도 |
+| HX-3 | medium | 일부 | 공통 모듈 7b698d8 + C5·C6·C7 | DOC-11 과 같은 범위의 기계 대조만, doc-gardening 없음 |
 | HX-4 | medium | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 — KNOWLEDGE flows 종류 없음 |
 | HX-5 | medium | 범위 밖 | — | 사용자 결정으로 경량 경로 제외(C7 명세 31행) |
 | HX-6 | medium | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — Codex SessionStart 미등록(CODEX_EVENTS 5개) |
-| HX-7 | medium | 보류 | C6 eaad713(일부) | version 1.0.0 그대로. templateHash 가 머리말 model·effort 줄만 빼게 됨 — 상류 템플릿 변경 오인은 그대로 |
-| HP-2 | medium | 반영 | C4 4b1333b | decideUnreadable 이 연결자 없는 code-agent read 허용, 거부 문구 readVia·editVia 표기 |
-| HP-5 | medium | 반영 | C4 9d3e285·4b1333b | FLOW-11 과 같은 변경 |
+| HX-7 | medium | 보류 | C6 5029925(일부) | version 1.0.0 그대로. templateHash 가 머리말 model·effort 줄만 빼게 됨 — 상류 템플릿 변경 오인은 그대로 |
+| HP-2 | medium | 반영 | C4 73aaa78 | decideUnreadable 이 연결자 없는 code-agent read 허용, 거부 문구 readVia·editVia 표기 |
+| HP-5 | medium | 반영 | C4 473a6aa·73aaa78 | FLOW-11 과 같은 변경 |
 | HP-6 | medium | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — doc/codex.md:82 '지원 여부를 확인하지 않았다' 그대로 |
 | HP-7 | medium | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — 역할 TOML sandbox_mode 없음 |
-| HP-8 | medium | 반영 | C1 a1a70d8·77407a9 | crossPreflight(샌드박스 표지)·crossSandboxSuspect — 실제 Codex 셸 표지는 미확인 |
-| HP-9 | medium | 반영 | C1 a1a70d8·77407a9 | classifyCrossFailure — 설정 오류·분류 안 된 종료는 막힘, status·doctor 연속 중지 경고, doctor --cross |
+| HP-8 | medium | 반영 | C1 7b7ca8b·241094e | crossPreflight(샌드박스 표지)·crossSandboxSuspect — 실제 Codex 셸 표지는 미확인 |
+| HP-9 | medium | 반영 | C1 7b7ca8b·241094e | classifyCrossFailure — 설정 오류·분류 안 된 종료는 막힘, status·doctor 연속 중지 경고, doctor --cross |
 | HP-21 | medium | 범위 밖 | — | 실제 Codex 호스트 검증 — 이번 규칙상 실제 모델 호출 금지 |
-| LRN-2 | medium | 반영 | C2 fa70f74·110ec6a | 새 analysis·design 작업 inputs 에 업무 규칙 KNOWLEDGE(businessRuleFiles) |
-| LRN-5 | medium | 반영 | C5 248e704·6584910 | 직접 CLI 소스 update 미리보기+TTY 'update' 입력, 세션 밖 hook·호스트 셸 거부 |
-| OPT-1 | medium | 반영 | C7 df22bdf·f230734 | 인라인 준비 --action·finish 의 next·advance --chain·자리 확인 조건화. 효과는 유료 평가 미실행으로 미측정 |
-| OPT-2 | medium | 일부 | C7 df22bdf | --for claude\|codex 호스트별 출력(−51~57%). --for 없으면 전체, summary 첫 표시는 유지 |
-| OPT-5 | medium | 반영 | C2 fa70f74·110ec6a | stagedChecks.ts — 완료 hook 이 게이트 함수를 staging 본문에 먼저 실행 |
-| OPT-6 | medium | 반영 | C7 f3b34ff·934e5fe | usage 호출 통계·retryReport(읽기 전용)·Codex 세션 집계(형식 미확인)·--json |
-| OPT-8 | medium | 반영 | C4 9d3e285·4b1333b | FLOW-11 과 같은 변경 |
-| OPT-9 | medium | 일부 | C4 9d3e285 + C7 f230734 | CODEX_SENTENCES 표와 원문·잔재 시험. 호스트 조건 블록 전환은 안 함(정규식 변환 유지) |
-| OPT-12 | medium | 반영 | C6 eaad713·ca36d3e | 판단 opus/high·실행 sonnet/medium, 머리말 effort. A/B 실측은 미실행(사용자 승인 뒤) |
-| OPT-17 | medium | 일부 | 감사 ff13950 | 흐름도 있음, 코드 대조는 §6.4·일부 표만 |
-| PVR-3 | medium | 반영 | C3 e3e082d·53368a4 | 원인별 카운터와 한 판정 함수(nextRoundDecision·verifyNode·writeBlockReason) |
-| PVR-4 | medium | 반영 | C3 e3e082d·53368a4 | 환경 분류는 실패 결과가 없을 때만(environmentMatch), 같은 코드 재실행 2/회차 |
-| PVR-5 | medium | 반영 | C2 fa70f74·110ec6a | 완료 hook 재구성 — 식별 불일치·출처 실패도 기록하고 orphaned |
-| PVR-6 | medium | 반영 | C1 a1a70d8·77407a9 + C5 248e704·6584910 | C1 은 reviewJudgment 네 함수만, 동의 judgment waive-finding·cross-stop 배선은 C5 |
-| PVR-7 | medium | 반영 | C4 9d3e285·4b1333b | deliveryExcludes — handoff·.staging·작업 상태 폴더 *.lock 을 pathspec 으로 제외 |
-| PVR-8 | medium | 반영 | C3 e3e082d·53368a4 | 체크아웃별 worktree.lock·자기 키 잔여 worktree 정리·시작 표지 retry.started |
-| PVR-9 | medium | 반영 | C3 e3e082d·53368a4 | FLOW-05 와 같은 변경 |
-| VER-M1 | medium | 반영 | C1 a1a70d8·77407a9 | review.json 모든 쓰기 mutateReview(잠금+다시 읽기) |
-| VER-M2 | medium | 반영 | C1 a1a70d8·77407a9 | HP-8 과 같은 변경 — 샌드박스 거부는 중지가 아니라 exit 1 |
-| CON-7 | low | 반영 | C2 fa70f74·110ec6a | QUESTION_FIELD_LINE(m 플래그 ^\s*, [Origin]·[Source] 포함) |
-| CON-9 | low | 반영 | C5 248e704·6584910 | 끝 점·공백 거부, 관리 공유 접기(foldWindowsAlias)·shareInside |
+| LRN-2 | medium | 반영 | C2 99628c5·c38c5bf | 새 analysis·design 작업 inputs 에 업무 규칙 KNOWLEDGE(businessRuleFiles) |
+| LRN-5 | medium | 반영 | C5 b557e35·3485d37 | 직접 CLI 소스 update 미리보기+TTY 'update' 입력, 세션 밖 hook·호스트 셸 거부 |
+| OPT-1 | medium | 반영 | C7 4ca343f·442c8ac | 인라인 준비 --action·finish 의 next·advance --chain·자리 확인 조건화. 효과는 유료 평가 미실행으로 미측정 |
+| OPT-2 | medium | 일부 | C7 4ca343f | --for claude\|codex 호스트별 출력(−51~57%). --for 없으면 전체, summary 첫 표시는 유지 |
+| OPT-5 | medium | 반영 | C2 99628c5·c38c5bf | stagedChecks.ts — 완료 hook 이 게이트 함수를 staging 본문에 먼저 실행 |
+| OPT-6 | medium | 반영 | C7 113c9f6·c700fda | usage 호출 통계·retryReport(읽기 전용)·Codex 세션 집계(형식 미확인)·--json |
+| OPT-8 | medium | 반영 | C4 473a6aa·73aaa78 | FLOW-11 과 같은 변경 |
+| OPT-9 | medium | 일부 | C4 473a6aa + C7 442c8ac | CODEX_SENTENCES 표와 원문·잔재 시험. 호스트 조건 블록 전환은 안 함(정규식 변환 유지) |
+| OPT-12 | medium | 반영 | C6 5029925·92f6ce1 | 판단 opus/high·실행 sonnet/medium, 머리말 effort. A/B 실측은 미실행(사용자 승인 뒤) |
+| OPT-17 | medium | 일부 | 감사 0807d32 | 흐름도 있음, 코드 대조는 §6.4·일부 표만 |
+| PVR-3 | medium | 반영 | C3 2bd69e5·357a471 | 원인별 카운터와 한 판정 함수(nextRoundDecision·verifyNode·writeBlockReason) |
+| PVR-4 | medium | 반영 | C3 2bd69e5·357a471 | 환경 분류는 실패 결과가 없을 때만(environmentMatch), 같은 코드 재실행 2/회차 |
+| PVR-5 | medium | 반영 | C2 99628c5·c38c5bf | 완료 hook 재구성 — 식별 불일치·출처 실패도 기록하고 orphaned |
+| PVR-6 | medium | 반영 | C1 7b7ca8b·241094e + C5 b557e35·3485d37 | C1 은 reviewJudgment 네 함수만, 동의 judgment waive-finding·cross-stop 배선은 C5 |
+| PVR-7 | medium | 반영 | C4 473a6aa·73aaa78 | deliveryExcludes — handoff·.staging·작업 상태 폴더 *.lock 을 pathspec 으로 제외 |
+| PVR-8 | medium | 반영 | C3 2bd69e5·357a471 | 체크아웃별 worktree.lock·자기 키 잔여 worktree 정리·시작 표지 retry.started |
+| PVR-9 | medium | 반영 | C3 2bd69e5·357a471 | FLOW-05 와 같은 변경 |
+| VER-M1 | medium | 반영 | C1 7b7ca8b·241094e | review.json 모든 쓰기 mutateReview(잠금+다시 읽기) |
+| VER-M2 | medium | 반영 | C1 7b7ca8b·241094e | HP-8 과 같은 변경 — 샌드박스 거부는 중지가 아니라 exit 1 |
+| CON-7 | low | 반영 | C2 99628c5·c38c5bf | QUESTION_FIELD_LINE(m 플래그 ^\s*, [Origin]·[Source] 포함) |
+| CON-9 | low | 반영 | C5 b557e35·3485d37 | 끝 점·공백 거부, 관리 공유 접기(foldWindowsAlias)·shareInside |
 | CON-10 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — HP-6 과 같음 |
 | CON-11 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — Codex Stop 반복 차단 상한 없음(codexHook Stop 분기 그대로) |
-| CON-12 | low | 반영 | C5 248e704 + C7 df22bdf | Codex ca-answer 목록에 repro-log, 단계 스킬의 toolInput 지시 재수록 제거(Codex 사본에 toolInput 0건) |
-| CON-13 | low | 일부 | C5 248e704·6584910 | matcher mcp__.*·MCP 경로 판정·Codex 미판정 도구 기록. Claude 쪽 프로세스 실패(PATH·timeout)는 여전히 비차단 |
-| CON-14 | low | 반영 | C5 248e704·6584910 | 제어 경로 아래 링크는 link:<대상> 해시 |
-| CON-15 | low | 일부 | C5 248e704·6584910 | 내용 해시 캐시·재대조 1회. hook timeout 명시는 하지 않음 |
-| CON-16 | low | 반영 | C5 248e704·6584910 | 동의 영수증 consents.jsonl·원장 끝줄 대조 |
-| CON-17 | low | 일부 | C5 248e704·6584910 | 세션 밖 hook 설정 언급 거부·hook 누락 감지·시작 게이트. 폴더 단위 삭제(rm -rf .claude)는 못 막음 |
-| CONS-M1 | low | 반영 | C5 248e704·6584910 | KNOWLEDGE 예외·반영을 .md 로 한정, manifest check ✗ |
+| CON-12 | low | 반영 | C5 b557e35 + C7 4ca343f | Codex ca-answer 목록에 repro-log, 단계 스킬의 toolInput 지시 재수록 제거(Codex 사본에 toolInput 0건) |
+| CON-13 | low | 일부 | C5 b557e35·3485d37 | matcher mcp__.*·MCP 경로 판정·Codex 미판정 도구 기록. Claude 쪽 프로세스 실패(PATH·timeout)는 여전히 비차단 |
+| CON-14 | low | 반영 | C5 b557e35·3485d37 | 제어 경로 아래 링크는 link:<대상> 해시 |
+| CON-15 | low | 일부 | C5 b557e35·3485d37 | 내용 해시 캐시·재대조 1회. hook timeout 명시는 하지 않음 |
+| CON-16 | low | 반영 | C5 b557e35·3485d37 | 동의 영수증 consents.jsonl·원장 끝줄 대조 |
+| CON-17 | low | 일부 | C5 b557e35·3485d37 | 세션 밖 hook 설정 언급 거부·hook 누락 감지·시작 게이트. 폴더 단위 삭제(rm -rf .claude)는 못 막음 |
+| CONS-M1 | low | 반영 | C5 b557e35·3485d37 | KNOWLEDGE 예외·반영을 .md 로 한정, manifest check ✗ |
 | GAP-4 | low | 보류 | — | evaluate-review.cjs·evaluate-model.cjs 변경 없음(날짜 고정 파일명·모델) — 배정 없음 |
 | GAP-5 | low | 보류 | — | CI 없음, Windows 단일 — 배정 없음 |
-| DOC-5 | low | 반영 | 전체 검토 반영 d12bd46 | usage.md 스테이지 번호 진술을 --help(13단계 번호)·status(이름) 로 고치고 design.md 명령 표의 번호를 뺐다 |
-| DOC-7 | low | 일부 | C1 a1a70d8·77407a9 + C4 9d3e285·4b1333b + 전체 검토 반영 d12bd46 | design.md·usage.md init 에 --host. design.md §6 표의 verify·read·planning·consent 행 보강은 남음(다음 문서 묶음) |
-| DOC-8 | low | 반영 | C4 9d3e285·4b1333b | --help 호스트 중립 문구 — 단 USAGE 의 단계 번호(1·8·9·11·12·13)는 남음(DOC-5) |
-| DOC-9 | low | 반영 | C4 9d3e285 + 전체 검토 반영 d12bd46 | install.md 자원 수 문장 삭제, init·update 예시를 sandbox 실제 출력으로(모델 줄·hook 9개) |
-| DOC-12 | low | 일부 | 문서 정리 4c5ca83 | 현행 문서(README·doc/*.md)의 변경 이력·경위 문장을 지우고 AGENTS.md 에 규칙을 적었다. README·usage 의 목차 밖 절(요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업)은 그대로 — 다음: 문서 구조(목차 밖 절 정리) |
-| DOC-13 | low | 일부 | C5 248e704 + C7 64d1c50 | CONSENT_ACTIONS·CONSENT_TITLES·CLAUDE_HOOKS·CODEX_EVENTS·PHASE_LABEL export. CLI 명령 상수 없음 |
-| DOC-14 | low | 반영 | 전체 검토 반영 d12bd46 | init.ts Codex 안내의 스킬·에이전트·훅 수를 쓴 자원에서 센다(시험 fullReview DOC-14) |
-| DOC-M1 | low | 반영 | 전체 검토 반영 d12bd46 | usage.md 의 fix 로그 근거 절을 #### 제목으로 — 앵커가 산다 |
+| DOC-5 | low | 반영 | 전체 검토 반영 7e80d6b | usage.md 스테이지 번호 진술을 --help(13단계 번호)·status(이름) 로 고치고 design.md 명령 표의 번호를 뺐다 |
+| DOC-7 | low | 일부 | C1 7b7ca8b·241094e + C4 473a6aa·73aaa78 + 전체 검토 반영 7e80d6b | design.md·usage.md init 에 --host. design.md §6 표의 verify·read·planning·consent 행 보강은 남음(다음 문서 묶음) |
+| DOC-8 | low | 반영 | C4 473a6aa·73aaa78 | --help 호스트 중립 문구 — 단 USAGE 의 단계 번호(1·8·9·11·12·13)는 남음(DOC-5) |
+| DOC-9 | low | 반영 | C4 473a6aa + 전체 검토 반영 7e80d6b | install.md 자원 수 문장 삭제, init·update 예시를 sandbox 실제 출력으로(모델 줄·hook 9개) |
+| DOC-12 | low | 일부 | 문서 정리 eefd4e9 | 현행 문서(README·doc/*.md)의 변경 이력·경위 문장을 지우고 AGENTS.md 에 규칙을 적었다. README·usage 의 목차 밖 절(요구 분석·설계·계획, 검증 노드 실행, 관찰된 계획 작업)은 그대로 — 다음: 문서 구조(목차 밖 절 정리) |
+| DOC-13 | low | 일부 | C5 b557e35 + C7 36e99f5 | CONSENT_ACTIONS·CONSENT_TITLES·CLAUDE_HOOKS·CODEX_EVENTS·PHASE_LABEL export. CLI 명령 상수 없음 |
+| DOC-14 | low | 반영 | 전체 검토 반영 7e80d6b | init.ts Codex 안내의 스킬·에이전트·훅 수를 쓴 자원에서 센다(시험 fullReview DOC-14) |
+| DOC-M1 | low | 반영 | 전체 검토 반영 7e80d6b | usage.md 의 fix 로그 근거 절을 #### 제목으로 — 앵커가 산다 |
 | DOC-M2 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — .agents/skills/ca-answer/reference.md 를 어떤 Codex 지침도 참조하지 않음 |
 | DOC-M3 | low | 보류 | — | README '요구사항부터 완료까지' 표 입력할 곳 열이 Claude Code 고정 — C4 는 CLI 표기만 고침 |
-| FLOW-06 | low | 반영 | C3 e3e082d·53368a4 | 리뷰 회차 3·총 회차, reviewRoundUsageOf 하나 |
-| FLOW-09 | low | 반영 | C4 9d3e285·4b1333b | preparationHint 가 setup·docs·baseline 중 하나를 고름 |
-| FLOW-10 | low | 반영 | C4 9d3e285·4b1333b | doctor [--host] [--cross] 를 isModelCommand·LEASE_FREE 에 |
-| FLOW-12 | low | 반영 | C4 9d3e285·4b1333b | 관찰 흐름 다음: planning advance, check·test 는 verify --json |
-| FLOW-13 | low | 반영 | C4 9d3e285·4b1333b | ca-next '멈춘 자리별 재개' 표, 작업 없는 status 의 AI-DLC·문서 세션 우선 |
-| FLOW-16 | low | 반영 | C4 9d3e285·4b1333b | 작업 임대 lease.ts — Codex 는 호스트 단위 비교라 Codex 두 세션 동시 진행은 못 막음(문서화) |
-| FLOW-17 | low | 반영 | C4 9d3e285·4b1333b | approve·reject·confirm 남는 인자 사용법 오류 |
-| FLOW-18 | low | 반영 | C5 248e704 + C6 eaad713 | reference.md action 목록 repro-log·judgment, host·reasoning 행 |
-| FLOW-M1 | low | 반영 | C2 fa70f74·110ec6a | mutatePlanning 이 공통 acquireLock(죽은 주인·오래된 빈 잠금 회수) |
+| FLOW-06 | low | 반영 | C3 2bd69e5·357a471 | 리뷰 회차 3·총 회차, reviewRoundUsageOf 하나 |
+| FLOW-09 | low | 반영 | C4 473a6aa·73aaa78 | preparationHint 가 setup·docs·baseline 중 하나를 고름 |
+| FLOW-10 | low | 반영 | C4 473a6aa·73aaa78 | doctor [--host] [--cross] 를 isModelCommand·LEASE_FREE 에 |
+| FLOW-12 | low | 반영 | C4 473a6aa·73aaa78 | 관찰 흐름 다음: planning advance, check·test 는 verify --json |
+| FLOW-13 | low | 반영 | C4 473a6aa·73aaa78 | ca-next '멈춘 자리별 재개' 표, 작업 없는 status 의 AI-DLC·문서 세션 우선 |
+| FLOW-16 | low | 반영 | C4 473a6aa·73aaa78 | 작업 임대 lease.ts — Codex 는 호스트 단위 비교라 Codex 두 세션 동시 진행은 못 막음(문서화) |
+| FLOW-17 | low | 반영 | C4 473a6aa·73aaa78 | approve·reject·confirm 남는 인자 사용법 오류 |
+| FLOW-18 | low | 반영 | C5 b557e35 + C6 5029925 | reference.md action 목록 repro-log·judgment, host·reasoning 행 |
+| FLOW-M1 | low | 반영 | C2 99628c5·c38c5bf | mutatePlanning 이 공통 acquireLock(죽은 주인·오래된 빈 잠금 회수) |
 | HX-8 | low | 보류 | — | 기준선 build·Task별 증분 build 없음(PVR-19 완료 판정과 별개) |
-| HX-9 | low | 반영 | C6 eaad713·ca36d3e | ROLE_POLICY[역할].reason 과 doc/codex.md 역할 표(modelPolicy.test 대조) |
+| HX-9 | low | 반영 | C6 5029925·92f6ce1 | ROLE_POLICY[역할].reason 과 doc/codex.md 역할 표(modelPolicy.test 대조) |
 | HX-10 | low | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
 | HX-11 | low | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
-| HX-12 | low | 반영 | C7 f230734 | templateText.test — CODEX_SENTENCES(staging 세 문장 포함) 원문 존재·사본 잔재 없음 |
+| HX-12 | low | 반영 | C7 442c8ac | templateText.test — CODEX_SENTENCES(staging 세 문장 포함) 원문 존재·사본 잔재 없음 |
 | HX-13 | low | 보류 | — | 스킬 description 호출 경계·진입률 평가 없음 |
-| HOST-M1 | low | 반영 | C1 a1a70d8·77407a9 | PVR-11 과 같은 변경 |
+| HOST-M1 | low | 반영 | C1 7b7ca8b·241094e | PVR-11 과 같은 변경 |
 | HOST-M2 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — HP-7 과 같음 |
-| HP-3 | low | 반영 | C6 eaad713 + C5 248e704 | reference.md 의 "agent" 표기로 과잉 치환 회피, 동작 목록 대조 시험 |
-| HP-4 | low | 반영 | C4 9d3e285 + C7 f230734 | hostNotation.test(Bash·600000ms)·templateText.test(원문 1회 이상 일치) |
-| HP-10 | low | 반영 | C1 a1a70d8·77407a9 | TIMING.crossTimeoutMin 9, 스킬 timeout 600000ms 또는 백그라운드, 끊긴 실행 닫기(orphanView) |
-| HP-11 | low | 반영 | C4 9d3e285·4b1333b + C1 a1a70d8·77407a9 | 임대(C4)와 review.json 잠금 저장 mutateReview(C1). Codex 두 세션은 FLOW-16 과 같은 한계 |
-| HP-12 | low | 반영 | C1 a1a70d8·77407a9 | CODE_AGENT_CROSS 자식에서 Stop·SessionStart·담당 hook 통과, PreToolUse crossChildGuard(77407a9) |
-| HP-13 | low | 반영 | C1 a1a70d8·77407a9 | F→X 정규화(normalizeCrossBody), 형식만 교정(correct) |
-| HP-14 | low | 일부 | 전체 검토 반영 d12bd46 | PATH 의 .cmd·.bat 와 실행 파일 변수의 없는 파일은 실행 불가가 아니라 설정 오류로 막는다(경로 오타로 필수 교차 검증이 빠지지 않게). .cmd 래퍼 파싱은 다음 묶음(호스트 동등성) |
-| HP-15 | low | 일부 | C2 fa70f74·110ec6a + C1 a1a70d8·77407a9 | Codex 담당·리뷰어 실패를 되돌림 없이 기록(subagentExit codex 0). 되돌림(block) 지원은 미확인이라 안 함 |
+| HP-3 | low | 반영 | C6 5029925 + C5 b557e35 | reference.md 의 "agent" 표기로 과잉 치환 회피, 동작 목록 대조 시험 |
+| HP-4 | low | 반영 | C4 473a6aa + C7 442c8ac | hostNotation.test(Bash·600000ms)·templateText.test(원문 1회 이상 일치) |
+| HP-10 | low | 반영 | C1 7b7ca8b·241094e | TIMING.crossTimeoutMin 9, 스킬 timeout 600000ms 또는 백그라운드, 끊긴 실행 닫기(orphanView) |
+| HP-11 | low | 반영 | C4 473a6aa·73aaa78 + C1 7b7ca8b·241094e | 임대(C4)와 review.json 잠금 저장 mutateReview(C1). Codex 두 세션은 FLOW-16 과 같은 한계 |
+| HP-12 | low | 반영 | C1 7b7ca8b·241094e | CODE_AGENT_CROSS 자식에서 Stop·SessionStart·담당 hook 통과, PreToolUse crossChildGuard(241094e) |
+| HP-13 | low | 반영 | C1 7b7ca8b·241094e | F→X 정규화(normalizeCrossBody), 형식만 교정(correct) |
+| HP-14 | low | 일부 | 전체 검토 반영 7e80d6b | PATH 의 .cmd·.bat 와 실행 파일 변수의 없는 파일은 실행 불가가 아니라 설정 오류로 막는다(경로 오타로 필수 교차 검증이 빠지지 않게). .cmd 래퍼 파싱은 다음 묶음(호스트 동등성) |
+| HP-15 | low | 일부 | C2 99628c5·c38c5bf + C1 7b7ca8b·241094e | Codex 담당·리뷰어 실패를 되돌림 없이 기록(subagentExit codex 0). 되돌림(block) 지원은 미확인이라 안 함 |
 | HP-17 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — read.ts JSON 출력 그대로 |
 | HP-18 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 |
 | HP-19 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — CLAUDE.block·CODEX.block 변경·대조 없음 |
-| HP-20 | low | 일부 | C1 a1a70d8·77407a9 + C7 f3b34ff | 끄는 설정은 wontfix(두 호스트 설치 시 필수 — 사용자 결정). 시도별 비용 기록(C1)·usage 재시도 절 합산(C7) |
+| HP-20 | low | 일부 | C1 7b7ca8b·241094e + C7 113c9f6 | 끄는 설정은 wontfix(두 호스트 설치 시 필수 — 사용자 결정). 시도별 비용 기록(C1)·usage 재시도 절 합산(C7) |
 | LEARN-M1 | low | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 — KNOWLEDGE 256KB 이후 항목 누락(plugins/defaults readCapped) 결함은 남음 |
 | LRN-3 | low | 보류 | — | 기존 KNOWLEDGE 반영 결함(upsert 가 항목 전체 교체) — 자가 학습과 별개인데 배정·결정 기록 없음 |
 | LRN-4 | low | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 — 국소 스킬 오버레이(LRN-11 계열) |
@@ -331,50 +331,50 @@ DOC-2·DOC-11·HX-3·OPT-17·PVR-20(흐름 문서의 기계 대조)은 `d12bd46`
 | LRN-16 | low | 보류 | — | 근거 부족 제안 사유가 stderr 로만 — 배정·결정 기록 없음 |
 | LRN-17 | low | 보류 | — | knowledge prune 결과 미커밋 → 다음 deliver 혼입 위험 — 배정·결정 기록 없음 |
 | LRN-18 | low | 보류 | — | 같은 제안 파일 중복 키 미검사 — 배정·결정 기록 없음 |
-| OPT-3 | low | 일부 | C7 f230734·934e5fe | ca-answer 조건부 읽기·SessionStart compact·clear 재확인 줄. 질문/동의 파일 분리는 defer |
-| OPT-4 | low | 반영 | C7 69fbe28 | templateBudget.test.ts·scripts/template-sizes.cjs |
+| OPT-3 | low | 일부 | C7 442c8ac·c700fda | ca-answer 조건부 읽기·SessionStart compact·clear 재확인 줄. 질문/동의 파일 분리는 defer |
+| OPT-4 | low | 반영 | C7 1b0a5ec | templateBudget.test.ts·scripts/template-sizes.cjs |
 | OPT-7 | low | 보류 | — | 교차 검증이 critic 뒤 순차 — C7 묶음 밖, 결정 기록 없음 |
-| OPT-10 | low | 반영 | C5 248e704·6584910 | Codex ca-answer 동작 목록에 repro-log(consentBinding.test 대조) |
-| OPT-11 | low | 반영 | C7 337ab1f | p5·p6 주제별 8개·p7·p8 이름 변경, npm test 208→112초 |
-| OPT-13 | low | 반영 | C6 eaad713·ca36d3e | prices.ts claude-sonnet-5-5·claude-fable-5, priceKey 날짜 접미사 |
-| OPT-14 | low | 반영 | C7 f230734 | planningChain.ts planningNextLine, 계획 스킬 1~5항(2·3·4항 같은 글자) |
-| OPT-15 | low | 일부 | C5 248e704 + C7 669aa66 | cli.ts 지연 로드(C5)·hook 경로 명령 모듈 지연 로드(PreToolUse 104→95ms). hook 전용 번들은 defer |
-| OPT-16 | low | 일부 | C7 64d1c50·69fbe28 | context 렌더러 분리(바이트 동일)·서브에이전트 절 문장 2곳. submitPlan 등 거대 함수·템플릿 조각은 defer |
+| OPT-10 | low | 반영 | C5 b557e35·3485d37 | Codex ca-answer 동작 목록에 repro-log(consentBinding.test 대조) |
+| OPT-11 | low | 반영 | C7 b978e0c | p5·p6 주제별 8개·p7·p8 이름 변경, npm test 208→112초 |
+| OPT-13 | low | 반영 | C6 5029925·92f6ce1 | prices.ts claude-sonnet-5-5·claude-fable-5, priceKey 날짜 접미사 |
+| OPT-14 | low | 반영 | C7 442c8ac | planningChain.ts planningNextLine, 계획 스킬 1~5항(2·3·4항 같은 글자) |
+| OPT-15 | low | 일부 | C5 b557e35 + C7 04af60d | cli.ts 지연 로드(C5)·hook 경로 명령 모듈 지연 로드(PreToolUse 104→95ms). hook 전용 번들은 defer |
+| OPT-16 | low | 일부 | C7 36e99f5·1b0a5ec | context 렌더러 분리(바이트 동일)·서브에이전트 절 문장 2곳. submitPlan 등 거대 함수·템플릿 조각은 defer |
 | OPT-M1 | low | 범위 밖 | — | 호스트 동등성(Codex) 중 이번 범위 밖 — 묶음 배정 없음 — DOC-M2 와 같음 |
-| PVR-10 | low | 일부 | C1 a1a70d8·77407a9 | 9분 제한·지점 3·원인별 재실행 1·시도별 소요·비용 기록. --max-budget-usd 전달은 미룸 |
-| PVR-11 | low | 반영 | C1 a1a70d8·77407a9 | runtimeHost 와 같은 --by 거부(requireCrossCaller), 지점 호스트 pointHost |
-| PVR-12 | low | 반영 | C1 a1a70d8·77407a9 | HP-12 와 같은 변경 |
-| PVR-13 | low | 반영 | C3 e3e082d·53368a4 | 부분 트리 해시를 파일 바이트로 |
-| PVR-14 | low | 일부 | C3 e3e082d·53368a4 | <?xml 선언이 있는 콘솔 JUnit 만·탐색 중단 기록. TAP 헤더 요구·보고서 경로 선언은 미룸 |
-| PVR-15 | low | 반영 | C3 e3e082d·53368a4 | testFreeze 해시를 test·integrate 게이트가 대조 |
-| PVR-16 | low | 반영 | C1 a1a70d8·77407a9 | ⑩·커밋 메시지 교차·사람 판단 줄, 커밋 중 계획 파일 변경 경고, 커밋 실패 시 KNOWLEDGE 되돌림 |
-| PVR-17 | low | 반영 | C2 fa70f74·110ec6a + C3 e3e082d·53368a4 | 계획 쪽 sameInput 3·taskTotal 6(C2), 검증 쪽 timedOut·같은 회차 rerun(C3) |
-| PVR-18 | low | 반영 | C2 fa70f74·110ec6a | withPlanningCache 명령 1회 범위 메모(해시 골든 고정) |
-| PVR-19 | low | 일부 | C7 f230734 | 독립 Task 병렬화는 wontfix(Codex agent_id 없음). Task 완료 판정 untouchedTaskFiles 만 fix |
-| VER-M3 | low | 반영 | C4 9d3e285 | 장시간 실행 정본 문장 문장째 치환 — Codex 사본에 600000ms·run_in_background 0건(sandbox init 확인) |
-| CON-18 | info | 일부 | C5 248e704·6584910 | hookPaths.test.ts 우회 말뭉치. 모드×호스트×도구 판정표·흐름도 생성은 없음 |
-| HP-16 | info | 반영 | 전체 검토 반영 d12bd46 | Codex 담당 배정(Codex 단일 설치·두 호스트 설치의 Codex 호출)은 staging 없이 {path, content} 계약(codexContract) |
-| HP-22 | info | 일부 | C4 9d3e285 | 표기·문장째 치환으로 잔재 줄임. 변환 문구 품질 전수 점검은 없음 |
-| LEARN-M2 | info | 반영 | 감사 ff13950 + C5 248e704·6584910 | AGENTS.md 실험 규칙(update 금지)과 LRN-5 소스 update 확인 — 이번 범위에서 update 실행 기록 없음 |
+| PVR-10 | low | 일부 | C1 7b7ca8b·241094e | 9분 제한·지점 3·원인별 재실행 1·시도별 소요·비용 기록. --max-budget-usd 전달은 미룸 |
+| PVR-11 | low | 반영 | C1 7b7ca8b·241094e | runtimeHost 와 같은 --by 거부(requireCrossCaller), 지점 호스트 pointHost |
+| PVR-12 | low | 반영 | C1 7b7ca8b·241094e | HP-12 와 같은 변경 |
+| PVR-13 | low | 반영 | C3 2bd69e5·357a471 | 부분 트리 해시를 파일 바이트로 |
+| PVR-14 | low | 일부 | C3 2bd69e5·357a471 | <?xml 선언이 있는 콘솔 JUnit 만·탐색 중단 기록. TAP 헤더 요구·보고서 경로 선언은 미룸 |
+| PVR-15 | low | 반영 | C3 2bd69e5·357a471 | testFreeze 해시를 test·integrate 게이트가 대조 |
+| PVR-16 | low | 반영 | C1 7b7ca8b·241094e | ⑩·커밋 메시지 교차·사람 판단 줄, 커밋 중 계획 파일 변경 경고, 커밋 실패 시 KNOWLEDGE 되돌림 |
+| PVR-17 | low | 반영 | C2 99628c5·c38c5bf + C3 2bd69e5·357a471 | 계획 쪽 sameInput 3·taskTotal 6(C2), 검증 쪽 timedOut·같은 회차 rerun(C3) |
+| PVR-18 | low | 반영 | C2 99628c5·c38c5bf | withPlanningCache 명령 1회 범위 메모(해시 골든 고정) |
+| PVR-19 | low | 일부 | C7 442c8ac | 독립 Task 병렬화는 wontfix(Codex agent_id 없음). Task 완료 판정 untouchedTaskFiles 만 fix |
+| VER-M3 | low | 반영 | C4 473a6aa | 장시간 실행 정본 문장 문장째 치환 — Codex 사본에 600000ms·run_in_background 0건(sandbox init 확인) |
+| CON-18 | info | 일부 | C5 b557e35·3485d37 | hookPaths.test.ts 우회 말뭉치. 모드×호스트×도구 판정표·흐름도 생성은 없음 |
+| HP-16 | info | 반영 | 전체 검토 반영 7e80d6b | Codex 담당 배정(Codex 단일 설치·두 호스트 설치의 Codex 호출)은 staging 없이 {path, content} 계약(codexContract) |
+| HP-22 | info | 일부 | C4 473a6aa | 표기·문장째 치환으로 잔재 줄임. 변환 문구 품질 전수 점검은 없음 |
+| LEARN-M2 | info | 반영 | 감사 0807d32 + C5 b557e35·3485d37 | AGENTS.md 실험 규칙(update 금지)과 LRN-5 소스 update 확인 — 이번 범위에서 update 실행 기록 없음 |
 | LRN-7 | info | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
 | LRN-10 | info | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
 | LRN-11 | info | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
-| PVR-20 | info | 일부 | 감사 ff13950 | 흐름도는 있으나 코드 생성은 §6.4 하나 |
+| PVR-20 | info | 일부 | 감사 0807d32 | 흐름도는 있으나 코드 생성은 §6.4 하나 |
 | PVR-21 | info | 범위 밖 | — | 자가 학습 보류(사용자 결정) — 어느 묶음에도 배정 안 됨 |
 
 ## 시험
 
-- **기준** — 감사 기준 커밋 `c4f3fbf`: `npm test` 802개 중 798개 통과·실패 0·생략 4(133초).
-- **최종** — 문서 정리의 검증 지적 반영 커밋(부모 `4c5ca83`)의 트리: `npm run build && npm test` 1337개 중 1333개 통과·실패 0·생략 4(suites 189, `duration_ms` 148,064). 문서·evidence 만 바꿔 시험 수는 `4c5ca83`과 같다(그 트리는 `duration_ms` 257,931 — 벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다).
-- **실제 호스트 반영** — 기록 커밋 `c11c3ab`(부모 `b7d0a28`)의 트리: `npm run build && npm test` 1,353개 중 1,349개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,516). 커밋 `b8ebf85`·`0c0265d`·`b7d0a28`의 트리도 각각 전체 시험을 통과했다(원자료 `realHost20261008.tests`).
-- **실제 호스트 검증 지적 반영** — 검증 지적 반영 커밋 `5f4324b`(부모 `c11c3ab`)의 트리: `npm run build && npm test` 1,355개 중 1,351개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,425). 실제 모델은 부르지 않았다(실제 호스트 재확인은 반영 커밋 `c11c3ab`에서 따로 했다).
-- **실제 호스트 재검증 지적 반영** — 재검증 지적 반영 커밋(부모 `5f4324b`)의 트리: `npm run build && npm test` 1,357개 중 1,353개 통과·실패 0·생략 4(suites 189, `duration_ms` 140,176). 시험 둘(W2 연결 확인 준비 실패, W4 doctor 의 옛 Codex 설치)을 더했고 W1·W5·W6 은 기존 시험에 단언을 더했다(W3 은 문서 수치). 고친 자리를 옛 동작으로 되돌린 `dist`·템플릿에서 해당 시험 다섯 개가 각각 실패하는 것을 확인했다. 실제 모델은 부르지 않았다.
+- **기준** — 감사 기준 커밋 `2c97a43`: `npm test` 802개 중 798개 통과·실패 0·생략 4(133초).
+- **최종** — 문서 정리의 검증 지적 반영 커밋(부모 `eefd4e9`)의 트리: `npm run build && npm test` 1337개 중 1333개 통과·실패 0·생략 4(suites 189, `duration_ms` 148,064). 문서·evidence 만 바꿔 시험 수는 `eefd4e9`과 같다(그 트리는 `duration_ms` 257,931 — 벽시계는 같은 PC 의 다른 작업 부하에 따라 달라진다).
+- **실제 호스트 반영** — 기록 커밋 `5107697`(부모 `e2afdca`)의 트리: `npm run build && npm test` 1,353개 중 1,349개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,516). 커밋 `e7caf31`·`e14dbf9`·`e2afdca`의 트리도 각각 전체 시험을 통과했다(원자료 `realHost20261008.tests`).
+- **실제 호스트 검증 지적 반영** — 검증 지적 반영 커밋 `1293955`(부모 `5107697`)의 트리: `npm run build && npm test` 1,355개 중 1,351개 통과·실패 0·생략 4(suites 189, `duration_ms` 144,425). 실제 모델은 부르지 않았다(실제 호스트 재확인은 반영 커밋 `5107697`에서 따로 했다).
+- **실제 호스트 재검증 지적 반영** — 재검증 지적 반영 커밋(부모 `1293955`)의 트리: `npm run build && npm test` 1,357개 중 1,353개 통과·실패 0·생략 4(suites 189, `duration_ms` 140,176). 시험 둘(W2 연결 확인 준비 실패, W4 doctor 의 옛 Codex 설치)을 더했고 W1·W5·W6 은 기존 시험에 단언을 더했다(W3 은 문서 수치). 고친 자리를 옛 동작으로 되돌린 `dist`·템플릿에서 해당 시험 다섯 개가 각각 실패하는 것을 확인했다. 실제 모델은 부르지 않았다.
 
 생략 4개는 플랫폼 조건(대소문자 구분 없는 파일 시스템 2개, POSIX chmod 2개)이다. 단계마다의 시험 수는 원자료의 `stages[].npmTest`에 있다.
 
 ## 실제 호스트 확인 (2026-10-08)
 
-Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, codex-cli 0.161.0(`[windows] sandbox=elevated`). 확인 대상 코드는 `68d7a00`(그때 `src/`와 같은 판)이고, 실험은 작업 scratchpad 의 임시 저장소에서 했다. `~/.claude/settings*.json`·`~/.codex/config.toml`은 쓰지 않았다 — Codex 실행은 `-c projects=…`·`--dangerously-bypass-hook-trust`로 신뢰를 그 실행에만 주고, 끝난 뒤 `config.toml`이 시작과 바이트 단위로 같은지 확인했다. 반영은 실제 모델을 다시 부르지 않고 증거 원문을 고정 자료로 시험에 넣었다(본문·계정 정보 없이 키 꼴만).
+Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, codex-cli 0.161.0(`[windows] sandbox=elevated`). 확인 대상 코드는 `0a77595`(그때 `src/`와 같은 판)이고, 실험은 작업 scratchpad 의 임시 저장소에서 했다. `~/.claude/settings*.json`·`~/.codex/config.toml`은 쓰지 않았다 — Codex 실행은 `-c projects=…`·`--dangerously-bypass-hook-trust`로 신뢰를 그 실행에만 주고, 끝난 뒤 `config.toml`이 시작과 바이트 단위로 같은지 확인했다. 반영은 실제 모델을 다시 부르지 않고 증거 원문을 고정 자료로 시험에 넣었다(본문·계정 정보 없이 키 꼴만).
 
 **확인됨**
 
@@ -405,7 +405,7 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 ### 반영 뒤 실제 호스트 재확인
 
-반영 커밋 `c11c3ab`의 `src/`를 같은 PC 에서 실제 Codex 로 다시 확인했다 — codex-cli 0.161.0, 임시 저장소(하네스로 리뷰·분석 배정 직전까지 만든 두 호스트 설치 저장소 포함). 신뢰는 `-c projects=…`·`--dangerously-bypass-hook-trust`로 그 실행에만 주었고, `~/.codex/config.toml`은 시작과 끝의 sha256 이 같고 바이트 단위로 같다. claude 는 띄우지 않았다.
+반영 커밋 `5107697`의 `src/`를 같은 PC 에서 실제 Codex 로 다시 확인했다 — codex-cli 0.161.0, 임시 저장소(하네스로 리뷰·분석 배정 직전까지 만든 두 호스트 설치 저장소 포함). 신뢰는 `-c projects=…`·`--dangerously-bypass-hook-trust`로 그 실행에만 주었고, `~/.codex/config.toml`은 시작과 끝의 sha256 이 같고 바이트 단위로 같다. claude 는 띄우지 않았다.
 
 | 항목 | 확인한 것 |
 |---|---|
@@ -424,7 +424,7 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 ### 검증 지적 처리
 
-반영 커밋(`b8ebf85..c11c3ab`)을 코드와 실제 호스트로 다시 본 검증 지적이다. 지적마다 코드로 확인했고, 고친 것에는 되돌리면 실패하는 시험을 더했다(검증 지적 반영 커밋 `5f4324b`, 부모 `c11c3ab`).
+반영 커밋(`e7caf31..5107697`)을 코드와 실제 호스트로 다시 본 검증 지적이다. 지적마다 코드로 확인했고, 고친 것에는 되돌리면 실패하는 시험을 더했다(검증 지적 반영 커밋 `1293955`, 부모 `5107697`).
 
 | 지적 | 판정 | 처리 |
 |---|---|---|
@@ -442,13 +442,13 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 ### 재검증 지적 처리
 
-검증 지적 반영 커밋 `5f4324b`를 코드로 다시 본 지적이다(실제 모델은 부르지 않았다). 지적마다 코드로 확인했고, 고친 것에는 되돌리면 실패하는 시험·단언을 더했다(재검증 지적 반영 커밋, 부모 `5f4324b`). 판정·게이트·사람 확인 지점은 바꾸지 않았다 — 설정 오류(막힘)와 미설치(실행 불가)의 갈래(D3)는 그대로이고, 고친 것은 그 갈래에 들어가는 입력과 안내다.
+검증 지적 반영 커밋 `1293955`를 코드로 다시 본 지적이다(실제 모델은 부르지 않았다). 지적마다 코드로 확인했고, 고친 것에는 되돌리면 실패하는 시험·단언을 더했다(재검증 지적 반영 커밋, 부모 `1293955`). 판정·게이트·사람 확인 지점은 바꾸지 않았다 — 설정 오류(막힘)와 미설치(실행 불가)의 갈래(D3)는 그대로이고, 고친 것은 그 갈래에 들어가는 입력과 안내다.
 
 | 지적 | 판정 | 처리 |
 |---|---|---|
 | W1 단일 실행 파일의 `scriptRunner`가 PATH 의 첫 `node`만 봐서, 앞 디렉터리의 `node.cmd` 셰임(mise·nodist 류)이 뒤의 `node.exe`를 가렸다 — `.js`를 가리키는 실행 파일 변수가 설정 오류(`CONFIG_NODE`)로 막히고 npm 진입점을 건너뛰어 `claude.cmd`의 설정 오류(`CONFIG_SCRIPT`)가 됐다. `CONFIG_SCRIPT` 안내는 단일 실행 파일에서도 '`.exe`·`.js`를 지정'이라고 했다 | 맞음 | PATH 디렉터리마다 보고 셸 스크립트 `node`는 건너뛴다. 실행 파일 변수의 안내(`hostCommand`·doctor 의 교차 검증 줄)는 `binHint` 하나로, 단일 실행 파일이면 '`.exe` — `.js`는 PATH 에 node 실행 파일이 있을 때만'이다. 시험은 셰임 앞·실행 파일 뒤와 그 반대 순서, 두 안내 문구를 단언한다(Windows) |
 | W2 연결 확인의 `SharedArrayBuffer` 할당·`Atomics.wait`가 `try` 밖이라, 공유 메모리가 없는 런타임에서 `ReferenceError`가 교차 명령 밖으로 나가 내부 오류로 끝났다(약속한 '띄우지 못하면 `worker-…`'와 다름) | 맞음(낮은 위험 — 명령줄 플래그로만 생기는 런타임) | `connect` 본문 전체를 `try`로 감싸 `worker-<code>`(없으면 `worker-error`)를 돌려주고, 띄운 worker 는 `finally`에서 정리한다. 시험은 전역 `SharedArrayBuffer`를 지운 실행과 `Atomics.wait`가 던지는 실행에서 `worker-…`와 사전 판정 통과를 본다 |
-| W3 이 요약의 Codex 흐름 합계가 49,262자로 적혀 있었다(실제 49,014자) | 맞음 | 템플릿 크기 예산 절의 수치를 49,014자로 고쳤다(`c11c3ab`·`5f4324b` 트리 모두 같다). 이번 커밋의 합계도 함께 적었다 |
+| W3 이 요약의 Codex 흐름 합계가 49,262자로 적혀 있었다(실제 49,014자) | 맞음 | 템플릿 크기 예산 절의 수치를 49,014자로 고쳤다(`5107697`·`1293955` 트리 모두 같다). 이번 커밋의 합계도 함께 적었다 |
 | W4 doctor 의 빠진 Codex 이벤트 안내가 언제나 `init --host codex`였다 — Codex 문서는 SessionStart 없는 옛 설치에 `update --templates-only --host codex`를 안내했고, 작업 중의 계획 밖 변경 유보도 없었다. 설치 문서 표에 `--cli` 예외가 없었다 | 맞음 | 다른 이벤트는 있는데 일부만 빠졌으면(옛 설치) 옛 Windows 명령과 같은 `update --templates-only --host codex`(작업 중이면 작업이 끝난 뒤)를 안내하고, 우리 이벤트가 하나도 없을 때만 `init --host codex`다. 설치 문서 표에 옛 설치와 `--cli` 예외를 적었다 |
 | W5 hook 신뢰 기록을 부분 문자열로 찾아 앞부분이 같은 형제 저장소(`<저장소>-old`)의 기록을 이 저장소의 것으로 알렸다 | 맞음 | 키가 저장소 경로이거나 그 아래 경로로 시작할 때만 기록으로 본다(다른 꼴은 '확인 필요' — 안전한 쪽). 형제 경로 fixture 를 H5 시험에 더했다 |
 | W6 `ca-implement` 5항의 다시 맡기기('같은 서브에이전트에게 그 Task만 한 번 더 맡긴다')에 전경 실행 문장이 없고 시험 정규식에도 걸리지 않았다 | 맞음 | 그 항목에 정본 문장을 넣고(Codex 사본은 결과를 기다리는 문장), 시험 정규식에 '서브에이전트에게 … 맡긴다' 꼴을 더했다(담당 호출 17곳). 파일 예산은 2,700 으로 올렸다([템플릿 크기 예산](#템플릿-크기-예산)) |
@@ -477,7 +477,7 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 - 역할별 모델(C6) — `node scripts/evaluate-full-flow.cjs run new --model opus --agents exec-opus --label c6-execopus-<n>`과 `--agents policy --label c6-policy-<n>`을 각 3회 돌린다. 두 쪽은 실행 역할의 모델 하나만 다르다.
 - 최적화 효과(C7) — `scripts/evaluate-full-flow.cjs` 3회(보고서의 `usageData`·`retry`·`numTurns`)와 `scripts/summarize-evaluations.cjs`로 흐름당 메인 요청·도구 호출·비용을 잰다. 동의 왕복은 평가 드라이버가 TTY fixture 로 대신하므로 실제 세션의 `usage` 명령별 호출로 잰다.
-- 기준선 — 2026-10-06 opus 기준선 보고서(`full-flow-new-2026-10-06-opus-baseline`·`-both`·`-optimized`·`-optimized-v2`·`-optimized-v3`.json)와 토큰 효율 원자료(`token-efficiency-2026-10-06.json`)는 작업 트리에서 지웠고 `c4f3fbf`의 `doc/reviews/evidence/`에 있다. `--agents opus`(모든 역할 opus, 강도 줄 없음)는 이 기준선과 잇는 용도로만 쓴다. `summarize-evaluations.cjs`는 작업 트리의 `doc/reviews/evidence/`만 읽으므로 기준선과 견주려면 먼저 꺼내 둔다 — 예: `git show c4f3fbf:doc/reviews/evidence/full-flow-new-2026-10-06-opus-baseline.json > doc/reviews/evidence/full-flow-new-2026-10-06-opus-baseline.json`.
+- 기준선 — 2026-10-06 opus 기준선 보고서(`full-flow-new-2026-10-06-opus-baseline`·`-both`·`-optimized`·`-optimized-v2`·`-optimized-v3`.json)와 토큰 효율 원자료(`token-efficiency-2026-10-06.json`)는 작업 트리에서 지웠고 `2c97a43`의 `doc/reviews/evidence/`에 있다. `--agents opus`(모든 역할 opus, 강도 줄 없음)는 이 기준선과 잇는 용도로만 쓴다. `summarize-evaluations.cjs`는 작업 트리의 `doc/reviews/evidence/`만 읽으므로 기준선과 견주려면 먼저 꺼내 둔다 — 예: `git show 2c97a43:doc/reviews/evidence/full-flow-new-2026-10-06-opus-baseline.json > doc/reviews/evidence/full-flow-new-2026-10-06-opus-baseline.json`.
 - `evaluate-full-flow.cjs`의 기본 `--label`은 `2026-10-01`이다. 이름을 주지 않으면 지운 옛 보고서와 같은 이름(`full-flow-<유형>-2026-10-01.json`)으로 새 보고서를 쓰므로 실행마다 `--label`을 준다. 기본값 수정은 GAP-4(날짜 고정 파일명)와 함께 한다.
 
 ## 범위 밖·보류·남은 일
@@ -503,7 +503,7 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 - 비동기 자식(`spawn`)이 끝난 뒤의 `.pid`를 죽은 pid 로 쓰는 꼴은 시험이 탐지하지 않는다.
 - doctor 의 `models.json` 형식 오류 안내와 Claude '스킬·에이전트' 줄(소스 `code-agent update` 처방)은 작업 중 안내를 달지 않았다. 작업이 없을 때 승인한 model 동의를 작업 시작 뒤 적용하면 대상 변경으로 폐기되고 안내는 '새로 준비'다.
 - Codex 에서 부른 적이 없는 지점을 호스트 표지 없는 셸이나 두 표지가 섞인 셸에서 처음 `--by claude`로 실행한 네트워크 오류는 실행 불가(중지 기록 후 진행)다. 권한 상승한 Codex 셸에는 표지가 남아(실측 — 지금 호스트는 codex) 이 갈래에 들지 않는다.
-- 단계 기록이 남긴 위험과 한계 — 지운 단계 기록(`68d7a00`)의 '남은 위험'·'남는 한계' 절을 지금 코드에서 다시 확인해 아직 맞는 것만 옮겼다. 뒤 커밋이 고친 것(`review.json` 잠금 없는 저장 → C1 `mutateReview`, 사람 판단 동의 부재 → C5 `judgment`, 하위 폴더 세션의 hook 루트 → E25, 권한 상승한 Codex 메인의 첫 네트워크 오류 → D2·G6)과 위 미확인 목록·감사 메모에 이미 있는 것은 뺐다.
+- 단계 기록이 남긴 위험과 한계 — 지운 단계 기록(`0a77595`)의 '남은 위험'·'남는 한계' 절을 지금 코드에서 다시 확인해 아직 맞는 것만 옮겼다. 뒤 커밋이 고친 것(`review.json` 잠금 없는 저장 → C1 `mutateReview`, 사람 판단 동의 부재 → C5 `judgment`, 하위 폴더 세션의 hook 루트 → E25, 권한 상승한 Codex 메인의 첫 네트워크 오류 → D2·G6)과 위 미확인 목록·감사 메모에 이미 있는 것은 뺐다.
   - **교차 — Codex 전사의 끝 `ERROR:` 줄**(C1, `retryPolicy.ts` `crossFailureText`의 Codex 세션 갈래). 읽은 파일·도구 출력의 마지막 줄이 화이트리스트 문구의 `ERROR:` 줄이고 Codex 가 자기 오류 줄 없이 신호가 아닌 종료 코드로 끝나면(Windows 강제 종료 등) 그 줄을 Codex 의 오류 줄로 읽는다. 그 문구가 실행 불가(인증·한도·네트워크·장애)에 맞으면 중지가 기록되고 게이트가 통과한다 — '두 호스트면 교차 필수'·'게이트 약화 금지' 결정에 걸리는 남은 틈이다. 도구 실행 뒤 한도에 닿아 Codex 가 스스로 낸 `ERROR:` 줄과 글로 가를 수 없어 남겼다. 실제 Codex 오류 출력 꼴(위 미확인 목록의 첫 항목)을 확인할 때 함께 정한다.
   - 교차 — 분류 창이 좁아 앞줄에 원인이 있는 실행 불가는 `unclassified`(설정 오류)로 막히고, Codex 가 오류 줄 뒤에 안내 줄을 더 찍는 꼴이면 실행 불가도 막힌다(안전 쪽 — 원문은 `logPath`에 남는다).
   - 리뷰어 — 사용자가 리뷰어를 중단하면 그 실행은 고아 기한(`TIMING.reviewerOrphanMs`, 15분)까지 실행 중이라 그동안 새 호출이 결과를 쓰지 않는다(게이트 문구가 시각과 남은 횟수를 알린다).
@@ -518,7 +518,7 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 
 ## 지운 기록
 
-문서 정리 `4c5ca83`에서 이 기록으로 합치고 지운 단계 기록과 evidence 다. 원문은 `68d7a00`의 트리에 있다(예: `git show 68d7a00:doc/reviews/2026-10-08-full-review.md`).
+문서 정리 `eefd4e9`에서 이 기록으로 합치고 지운 단계 기록과 evidence 다. 원문은 `0a77595`의 트리에 있다(예: `git show 0a77595:doc/reviews/2026-10-08-full-review.md`).
 
 | 기록 | 내용 |
 |---|---|
@@ -533,6 +533,6 @@ Windows 한 대에서 실제 호스트로 확인했다 — Claude Code 2.1.293, 
 | `2026-10-08-full-review.md` | 전체 검토 43건·R1~R6·F1~F4·D1~D3·G1~G8 의 지적별 처리와 시험 |
 | `2026-10-08-audit-disposition.md` | 감사 160건 처리 현황(원자료 `evidence/audit-disposition-2026-10-08.json` — 위 [전체 목록](#전체-목록)과 원자료의 `disposition`으로 옮김) |
 
-같은 커밋이 현행 문서에서 지운 상태 표와 실측(설계 §11 의 구현 순서 P1~P8 표와 P3 실측 기준치, 제목의 P 상태 표지)은 `git show 68d7a00:doc/design.md`로 본다(근거 문장은 설계 §7 에 남았다).
+같은 커밋이 현행 문서에서 지운 상태 표와 실측(설계 §11 의 구현 순서 P1~P8 표와 P3 실측 기준치, 제목의 P 상태 표지)은 `git show 0a77595:doc/design.md`로 본다(근거 문장은 설계 §7 에 남았다).
 
 재검증 로그와 sandbox 는 작업 scratchpad 에 있었다. `dist/`와 함께 재생성 가능한 로컬 산출물이라 커밋하지 않았다.

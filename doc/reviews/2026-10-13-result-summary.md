@@ -1,25 +1,25 @@
 # 오류 사전 판별·질문 UI·맥락·토큰 결과 요약 (2026-10-12~14)
 
-`a4b6df8`..`dbb3d62`까지 열네 커밋(기록 정리 커밋 `f6a8b72`·`f24066c`·`c3182f2` 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
+`5815323`..`8aec8c8`까지 열네 커밋(기록 정리 커밋 `ee6d9a4`·`89ec0f0`·`8597f90` 제외)의 변경 경위와 검증 결과다. 현재 동작은 [프로세스 흐름도](../process-flow.md)와 현행 문서가 기준이고, 여기에는 결정 근거·실제 호스트 확인·측정·예산 근거·확인하지 않은 것만 남긴다. 원자료는 [evidence/2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)에 있다. 합친 기록의 원문은 git 이력에 있다(README 의 '지운 기록').
 
 | 커밋 | 날짜 | 변경 |
 |---|---|---|
-| `a4b6df8` | 10-12 | Sentry·로그 오류의 사전 판별, 로그 중복 판별과 재발 관리, 접수 용어 구분 |
-| `2376826` | 10-12 | 문서 누락과 CLI·hook 차단의 원인별 복구·보류 선택 |
-| `25a8697` | 10-12 | Windows `code-agent.cmd` 호출의 hook 판정 |
-| `c0a362f` | 10-12 | 두 호스트의 업무 질문을 실제 도구 호출로, 차단 뒤 허용된 조회는 재확인 없이 |
-| `8a1876e` | 10-12 | PowerShell 셸 호출은 `.cmd` — 모든 Codex 지침과 읽기 안내 |
-| `07c8741` | 10-13 | 단계별 선택 표, 선택지 없는 문구 입력 요구의 Stop 교정 |
-| `5496831` | 10-13 | 셸이 주입한 임시 `safe.directory`로 동의가 무효화되던 오탐 제거 |
-| `c5e6529` | 10-13 | Codex 업무 질문·동의를 로컬 MCP 폼(`ask`·`confirm`)으로 |
-| `7ade5a6` | 10-13 | 선택 화면에 다 들어가는 동의·업무 질문 크기 |
-| `f837f9d` | 10-13 | Codex 세션 시작 상태 주입, Codex 계획 담당 staging, 계획 상세 조회 축약 |
-| `cd0550b` | 10-13 | 토큰 사용 측정 보완(hook 출력·교차 토큰·배정별), 커서 이동·Stop·`read` 출력 축약, 리뷰 재검토 범위, 템플릿 중복 정리 |
-| `ea66d4f` | 10-13 | `init` 인자 검사·스킬 머리말 YAML 결함, 토큰 검토 중간 항목 열 가지(M1~M10) |
-| `c372f2e` | 10-14 | 요구 확정 동의 적용(`finish`)이 작업 시작까지 한다 |
-| `dbb3d62` | 10-14 | 토큰 검토 낮음 항목(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3) |
+| `5815323` | 10-12 | Sentry·로그 오류의 사전 판별, 로그 중복 판별과 재발 관리, 접수 용어 구분 |
+| `fe843a5` | 10-12 | 문서 누락과 CLI·hook 차단의 원인별 복구·보류 선택 |
+| `fb8bd01` | 10-12 | Windows `code-agent.cmd` 호출의 hook 판정 |
+| `c7385c4` | 10-12 | 두 호스트의 업무 질문을 실제 도구 호출로, 차단 뒤 허용된 조회는 재확인 없이 |
+| `729abe7` | 10-12 | PowerShell 셸 호출은 `.cmd` — 모든 Codex 지침과 읽기 안내 |
+| `bcc0f00` | 10-13 | 단계별 선택 표, 선택지 없는 문구 입력 요구의 Stop 교정 |
+| `e564bff` | 10-13 | 셸이 주입한 임시 `safe.directory`로 동의가 무효화되던 오탐 제거 |
+| `188acda` | 10-13 | Codex 업무 질문·동의를 로컬 MCP 폼(`ask`·`confirm`)으로 |
+| `b2fd2b7` | 10-13 | 선택 화면에 다 들어가는 동의·업무 질문 크기 |
+| `4e0c786` | 10-13 | Codex 세션 시작 상태 주입, Codex 계획 담당 staging, 계획 상세 조회 축약 |
+| `1ededc0` | 10-13 | 토큰 사용 측정 보완(hook 출력·교차 토큰·배정별), 커서 이동·Stop·`read` 출력 축약, 리뷰 재검토 범위, 템플릿 중복 정리 |
+| `3c7efc4` | 10-13 | `init` 인자 검사·스킬 머리말 YAML 결함, 토큰 검토 중간 항목 열 가지(M1~M10) |
+| `298c4cc` | 10-14 | 요구 확정 동의 적용(`finish`)이 작업 시작까지 한다 |
+| `8aec8c8` | 10-14 | 토큰 검토 낮음 항목(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3) |
 
-## 오류 사전 판별 (`a4b6df8`)
+## 오류 사전 판별 (`5815323`)
 
 - 요청: Sentry 오류 → 판별 → 코드 변경 필요 → Jira 생성 → 수정. 자동 서비스 연결 전에 작업 절차부터 검증하고 기존 직접 fix·feature·refactor 접수는 유지한다.
 - `ca-fix`의 Sentry·로그 진입과 `triage` CLI만 더했다 — 새 단계·서브에이전트·동의 동작은 없다. 판별 중에는 초안 밖 쓰기·일반 셸·알려진 외부 MCP 쓰기를 막고, 원인과 코드 변경 필요 여부를 따로 판단한다. 코드 근거는 실제 경로·줄 인용·파일 해시로 대조하고, 불필요·판단 보류·중복 미조회는 Jira 준비와 인계를 막는다.
@@ -28,19 +28,19 @@
 - 로컬 반영은 '배포 대기'이며 배포 완료를 추정하지 않는다. `deployed`는 사람이 확인한 버전·근거를 적고, 같은 배포 버전의 재발은 새 조사, 다른 버전·버전 불명은 관계 확인으로 가른다(버전 대소를 추측하지 않는다).
 - 용어: 실행 명령(`/ca-fix`·`$ca-fix`), 작업 ID(외부 식별자 재사용 또는 `WORK-0001` 발급), 외부 업무 식별자(Jira 키·Notion 페이지 ID), 조사 ID(판별 기록 — Jira 키와 다름). 판별의 외부 연결은 Jira 전용이다.
 
-## 차단 복구와 질문 도구 (`2376826`·`c0a362f`·`07c8741`)
+## 차단 복구와 질문 도구 (`fe843a5`·`c7385c4`·`bcc0f00`)
 
 - 일괄 중지 지침을 원인별 복구 선택으로 바꿨다. 공통 문서 누락은 작성·기존 문서 연결·보류, 미확정은 확정 동의·보류. 작업 중 문서 보완은 기존 abort 동의 뒤 같은 지시서로 다시 시작해 계획·승인을 다시 검증한다 — 중단 없는 문서 쓰기나 강제 복귀는 만들지 않았다. 외부 권한·hook 은 읽기 전용 진단과 사용자 설정 확인으로만 잇고, 모델이 권한 경계를 풀 수 있다고 안내하지 않는다.
 - 차단된 동작만 멈추고 허용된 도움말·상태 조회와 이미 고른 방향은 재확인 없이 잇는다(`planning --help` 거부 뒤 `code-agent help`에도 확인을 요구하던 사례). 명시적 취소·보류는 되묻지 않는다.
 - 17개 진입의 질문 공통 문단을 같은 글자로 맞췄다. 글머리표 출력은 도구 호출이 아니다 — 도구가 없거나 거부될 때만 대화로 번호 선택지를 받고, 대화 답은 승인이 아니다.
 - 단계별 선택 표는 필요할 때 읽는 `ca-answer/reference.md`에 둔다. 매 단계 강제 질문 목록이 아니다. Stop 은 마지막 응답의 '선택지 없는 특정 문구 입력 요구'만 한 번 교정한다(인용 로그·코드·동의 안내 제외). 의미 전체를 판정하지 않고, 목록 항목 둘 이상이 적절한 후보를 보장하지도 않는다.
 
-## Windows 명령 (`25a8697`·`8a1876e`)
+## Windows 명령 (`fb8bd01`·`729abe7`)
 
 - UZRF-392 접수 중 `code-agent.cmd status`가 셸 허용 목록에서 거부됐다. `decide` 진입에서 맨 앞의 `code-agent.cmd`만 기존 이름으로 정규화한다 — 교차 자식·읽기 전용 담당·임대·동의 결속·티켓 발급보다 먼저. 인자·연결 문자는 그대로 보고 경로·래퍼를 새로 허용하지 않는다.
-- `code-agent read`가 npm 의 `.ps1`로 실행 정책에 막힌 사례 — hook 만 고쳐서는 지침의 명령 선택이 바뀌지 않아, Codex 지침과 CLI·hook 의 파일 도구 안내에 PowerShell 은 `.cmd`라고 적었다. 실행 정책은 바꾸지 않고, 동의 대화 메시지(`consent respond`)는 그대로 둔다. 이 안내는 메인이 늘 싣는 AGENTS.md 블록과 하위 에이전트 지침에 둔다 — 스킬 사본마다 붙이던 꼬리말은 `cd0550b`에서 뺐다.
+- `code-agent read`가 npm 의 `.ps1`로 실행 정책에 막힌 사례 — hook 만 고쳐서는 지침의 명령 선택이 바뀌지 않아, Codex 지침과 CLI·hook 의 파일 도구 안내에 PowerShell 은 `.cmd`라고 적었다. 실행 정책은 바꾸지 않고, 동의 대화 메시지(`consent respond`)는 그대로 둔다. 이 안내는 메인이 늘 싣는 AGENTS.md 블록과 하위 에이전트 지침에 둔다 — 스킬 사본마다 붙이던 꼬리말은 `1ededc0`에서 뺐다.
 
-## 동의와 선택 UI (`5496831`·`c5e6529`·`7ade5a6`)
+## 동의와 선택 UI (`e564bff`·`188acda`·`b2fd2b7`)
 
 - Windows Codex 셸이 환경변수로 주입한 현재 저장소·하위 경로의 `safe.directory`(출처 `command line:`)가 스냅샷에 들어가, 그 환경이 없는 응답 hook 에서 'Git 설정 변경'으로 거부됐다. 그 두 값만 빼고(경로는 구분자·대소문자 정규화) 설정 파일의 신뢰 경로, 다른 경로·`*`, 사용자·hook·서명 설정 변경은 계속 동의를 무효화한다.
 - Codex 의 번호 나열·응답 문자열 복사는 방향키 선택 UI 가 아니었고, `request_user_input_async`의 `accepted`는 화면 표시·사용자 답을 증명하지 않았다. 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`(ID 만 받음 — PreToolUse 의 일회용 질문 티켓을 소비하고 서버가 폼 응답을 직접 받아 `codex-elicitation`으로 기록)으로 옮겼다. 취소·거절은 보류, 미응답·잘못된 응답·연결 오류는 승인하지 않는다. 커밋이 들어가는 동의는 `.git` 쓰기가 막힌 샌드박스에서 첫 finish 부터 호스트 권한 요청을 쓰고, 실패한 ID 를 다시 실행하지 않는다.
@@ -50,11 +50,11 @@
 
 | 커밋 | 호스트 | 확인한 것 |
 |---|---|---|
-| `8a1876e` | PowerShell Restricted | `code-agent.cmd read` 실제 실행 |
-| `07c8741` | codex·claude 실제 모델(`evaluate-question-choices.cjs`) | Codex: 독립 질문 2개의 `request_user_input_async` 호출과 같은 call_id 의 `accepted: true`(화면 표시·답은 아님). Claude(질문 도구 없는 비대화형): 사유와 질문 2개의 번호 선택지 |
-| `c5e6529` | codex-cli 0.162.1 TUI · PowerShell · Default 모드(사람이 조작) | `ask` 폼 `Field 1/2`에서 방향키·Enter 로 고른 값이 그대로 반환. setup 동의 폼에서 `확인하고 진행` → `approved` → 첫 finish 를 `.git` 쓰기 권한으로 실행해 `applied`와 준비 커밋 생성. 동의 응답·원장 주입 없음 |
-| `7ade5a6` | claude 2.1.296 · codex-cli 0.162.1(PTY 하네스) | 아래 표 — 키 입력은 하네스가 보냈고 동의는 임시 저장소의 setup 을 Esc(보류)로 끝냈다 |
-| `f837f9d` | codex-cli 0.162.1 TUI·`codex exec`, `evaluate-planning-hosts.cjs`(gpt-6.1-sol) | 세션 시작·압축 뒤 상태 주입, Codex 계획 담당의 staging 쓰기 — 아래 '맥락·상태 빈곳' |
+| `729abe7` | PowerShell Restricted | `code-agent.cmd read` 실제 실행 |
+| `bcc0f00` | codex·claude 실제 모델(`evaluate-question-choices.cjs`) | Codex: 독립 질문 2개의 `request_user_input_async` 호출과 같은 call_id 의 `accepted: true`(화면 표시·답은 아님). Claude(질문 도구 없는 비대화형): 사유와 질문 2개의 번호 선택지 |
+| `188acda` | codex-cli 0.162.1 TUI · PowerShell · Default 모드(사람이 조작) | `ask` 폼 `Field 1/2`에서 방향키·Enter 로 고른 값이 그대로 반환. setup 동의 폼에서 `확인하고 진행` → `approved` → 첫 finish 를 `.git` 쓰기 권한으로 실행해 `applied`와 준비 커밋 생성. 동의 응답·원장 주입 없음 |
+| `b2fd2b7` | claude 2.1.296 · codex-cli 0.162.1(PTY 하네스) | 아래 표 — 키 입력은 하네스가 보냈고 동의는 임시 저장소의 setup 을 Esc(보류)로 끝냈다 |
+| `4e0c786` | codex-cli 0.162.1 TUI·`codex exec`, `evaluate-planning-hosts.cjs`(gpt-6.1-sol) | 세션 시작·압축 뒤 상태 주입, Codex 계획 담당의 staging 쓰기 — 아래 '맥락·상태 빈곳' |
 
 | 화면 | 수정 전 | 수정 후 |
 |---|---|---|
@@ -64,7 +64,7 @@
 
 Codex 폼의 잘림은 소스(`rust-v0.162.1` `codex-rs/tui/src/bottom_pane/mcp_server_elicitation.rs` — `message`와 필드 제목을 이어 붙이고 남은 높이로 스크롤 없이 자르며 선택지 설명은 쓰지 않음)로도 확인했다. 비대화형 `codex exec`와 합성 응답 시험은 UI 검증으로 치지 않는다.
 
-## 맥락·상태 빈곳 (`f837f9d`)
+## 맥락·상태 빈곳 (`4e0c786`)
 
 별도의 Context & State Manager 나 외부 AI 프레임워크가 필요한지 검토했다. 상태 파일·잠금·작업 임대, `code-agent context`, 배정 파일 전달, 세션 시작 상태 주입, 템플릿 예산, 동의 `--for` 출력이 이미 나뉘어 있어 새 관리자는 만들지 않았다. 대부분의 에이전트 프레임워크는 LLM 루프를 직접 소유해야 해서 호스트 위에서 도는 이 구조와 맞지 않는다. 대신 빈곳을 채우고, 프레임워크 사용 여부는 사용자가 그 뒤에 다시 판단하기로 했다.
 
@@ -92,11 +92,11 @@ Codex 폼의 잘림은 소스(`rust-v0.162.1` `codex-rs/tui/src/bottom_pane/mcp_
 
 - **Windows 샌드박스 폴더 권한**: 샌드박스 셸이 첫 `apply_patch` 전에 만든 폴더(소유자 `CodexSandboxOffline`)에는 그 뒤 `apply_patch`의 쓰기 SID 권한이 퍼지지 않았다(소스 `windows-sandbox-rs/src/cap.rs` — SID 를 명령 cwd·쓰기 루트별로 둔다. 작은 저장소 실험으로 확인, `%TEMP%` 아래에서는 재현되지 않음). 그래서 staging 폴더는 샌드박스 밖에서 도는 담당 시작 hook 이 만든다. 같은 조건의 접수 폴더·지식 문서 뼈대는 고치지 않고 [Codex 연동](../codex.md)에 조건과 우회만 적었다.
 
-## 토큰 최적화와 결함 (`cd0550b`·`ea66d4f`·`c372f2e`·`dbb3d62`)
+## 토큰 최적화와 결함 (`1ededc0`·`3c7efc4`·`298c4cc`·`8aec8c8`)
 
-토큰을 더 줄일 수 있는 구간을 전수 검토한 뒤(대화 보고) 사용자가 진행 범위를 차례로 정했다 — 측정 공백과 효과 '높음'(`cd0550b`), 검토 중 찾은 결함 둘과 '중간' 전부(`ea66d4f`), 브랜치 생성이 동의 안으로 들어와 사용자 결정으로 남겼던 요구 확정과 `start` 합치기(`c372f2e`). 마지막으로 '낮음'과 이 저장소 개발 문서 항목(`dbb3d62`)이다 — 교차·synthesis 강도는 A/B 측정이 필요해 남겼다.
+토큰을 더 줄일 수 있는 구간을 전수 검토한 뒤(대화 보고) 사용자가 진행 범위를 차례로 정했다 — 측정 공백과 효과 '높음'(`1ededc0`), 검토 중 찾은 결함 둘과 '중간' 전부(`3c7efc4`), 브랜치 생성이 동의 안으로 들어와 사용자 결정으로 남겼던 요구 확정과 `start` 합치기(`298c4cc`). 마지막으로 '낮음'과 이 저장소 개발 문서 항목(`8aec8c8`)이다 — 교차·synthesis 강도는 A/B 측정이 필요해 남겼다.
 
-### 측정과 높음 (`cd0550b`)
+### 측정과 높음 (`1ededc0`)
 
 | 구분 | 항목 | 처리 |
 |---|---|---|
@@ -116,7 +116,7 @@ Codex 폼의 잘림은 소스(`rust-v0.162.1` `codex-rs/tui/src/bottom_pane/mcp_
 - **H3**(200줄): `src/agent/review.ts` 본문 8,142 → 옛 JSON 17,804 / 새 꼴 8,920자, `ca-plan/SKILL.md` 4,506 → 7,056 / 4,710, `process-flow.md`(긴 줄) 34,221 → 43,924 / 34,999.
 - **H5**: 검토 때 계획 밖 파일 200개면 Stop 사유가 턴마다 10,588자였다. 같은 사유 판정은 hook 출력 기록으로 하고, 세션 id 가 없으면 옛 동작이다.
 
-| H4 템플릿(LF 글자 수) | `f837f9d` | `cd0550b` |
+| H4 템플릿(LF 글자 수) | `4e0c786` | `1ededc0` |
 |---|---|---|
 | `ca-answer/reference.md`(질문·대기와 차단 때마다 읽는다) | 9,574 | 4,432 |
 | `ca-answer/appendix.md`(5개 이상 선택지·동작 JSON·대상 변경·수동 대체 — 가리킬 때만) | — | 5,195 |
@@ -129,7 +129,7 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 
 - **실제 CLI**(임시 git 저장소, `node dist/agent/cli.js`): `init --host both`가 두 호스트에 `appendix.md`를 설치하고(보조 문서 12개) Codex `ca-answer`에 PowerShell 문장이 없다. `read a.txt 2 2` → `a.txt · 2-3 / 전체 6줄` + 두 줄 + 이어 읽기 줄. Claude `hook`·Codex `codex-event` PreToolUse 거부가 한 줄씩 기록되고(244·253자, 글 없음) `usage`의 `hook 출력` 절에 나온다. 실제 모델 실행은 하지 않았다.
 
-### 결함과 중간 (`ea66d4f`)
+### 결함과 중간 (`3c7efc4`)
 
 | 구분 | 항목 | 처리 |
 |---|---|---|
@@ -154,7 +154,7 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - **M3**: 진행 중 작업의 입력 해시는 바뀌지 않는다(골든 해시 시험 그대로). 버전 3 작업을 옛 CLI 가 읽으면 스키마(2 만 받음)에서 거부된다 — CLI 와 템플릿을 함께 갱신하는 설치 규칙과 같다.
 - **실제 CLI**(임시 git 저장소, `node dist/agent/cli.js`): `init --help`는 사용법만 내고(종료 0) 아무것도 쓰지 않았다. `init --hots both`·`init extra`·`doctor --bogus`·`update --bogus`는 사용법과 받지 않는 인자를 내고 종료 1, 파일은 그대로였다. `init --host both`는 설치했고, 설치된 두 호스트 사본 44개의 머리말이 모두 값 꼴 규칙을 지키며 `argument-hint` 여섯 개가 큰따옴표 값이다. Codex 사본의 `ca-implement`·`ca-review`·`ca-integrate` 바뀐 문장과 `.codex/agents/ca-analyst.toml`의 새 소개 문장, Claude `ca-analyst`의 `tools: … Write, Edit`를 확인했다. `next`·`review`·`integrate` CLI 출력과 계획 승인 `finish`는 시험(consent.test)이 실제 CLI 를 띄워 본다. 실제 모델 실행은 하지 않았다.
 
-### 요구 확정과 시작 합치기 (`c372f2e`)
+### 요구 확정과 시작 합치기 (`298c4cc`)
 
 - 요구 확정 동의를 `finish`로 적용하면 진행 중인 작업이 없고 그 ID 를 접수 중일 때 그 자리에서 `start`를 부른다. 기준 브랜치·대상은 접수 세션의 값이다(손으로 쓴 지시서만 있고 접수 세션이 없으면 시작 인자를 알 수 없어 시작하지 않는다). 결과에 `started`(시작 줄·브랜치 줄 — 상태 줄은 `next`가 맡는다)와 `phase: analysis`가 붙는다.
 - 시작하지 않는 경로: 반려, `apply`, 사람의 TTY `confirm request`, 진행 중인 작업의 재확정. 다시 `finish`해도 다시 시작하지 않는다(계획 승인 뒤 이동과 같은 규칙).
@@ -163,7 +163,7 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 - 왕복: 확정 적용 뒤 `start` 한 번(출력 419자, 시험 fixture)이 빠지고 `finish` 출력 510자 하나가 남는다.
 - **실제 CLI**(임시 git 저장소에 `init --host both`, `node dist/agent/cli.js`): hook 이 본 `consent prepare --action request`·`consent finish`, Claude 는 `consent-event`의 질문 Pre/Post, Codex 는 `codex-event`의 `consent respond` 응답으로 적용했다. 두 호스트 모두 `feature/CONSENT-1` 브랜치·`analysis`였다. 미추적 파일을 둔 저장소는 확인 화면에 `시작 전 정리 필요: [A] stray.txt` 줄이 뜨고, 적용 뒤 `startBlocked`·`next`가 나오며 브랜치는 `master` 그대로였다.
 
-### 낮음 (`dbb3d62`)
+### 낮음 (`8aec8c8`)
 
 | 구분 | 항목 | 처리 |
 |---|---|---|
@@ -204,20 +204,20 @@ ca-feature 는 `ca-next` 스킬 파일(6.6K 자)을 따로 읽지 않는다. Cod
 
 | 커밋 | 전체 `npm test` | 전체를 돌리지 않은 커밋의 관련 시험 |
 |---|---|---|
-| `a4b6df8` | 1,376개 중 1,372 통과·생략 4 | 판별 19개 포함 관련 96개 |
-| `2376826` | 1,376개 중 1,372 통과·생략 4 | |
-| `25a8697` | — | hookPaths·consentBinding·hookLoad·docSync·finalReverify 106개 |
-| `c0a362f` | 1,379개 중 1,375 통과·생략 4 | |
-| `8a1876e` | — | hook·호스트 표기·템플릿·Codex 103개 |
-| `07c8741` | 1,385개 중 1,381 통과·생략 4 | |
-| `5496831` | — | consentSnapshot·consentBinding·docSync·hookLoad 87개 |
-| `c5e6529` | 1,402개 중 1,398 통과·생략 4 | |
-| `7ade5a6` | 1,410개 중 1,406 통과·생략 4 | |
-| `f837f9d` | 1,411개 중 1,407 통과·생략 4(staging hook 변경 전후 같음) | |
-| `cd0550b` | 1,418개 중 1,414 통과·생략 4 | |
-| `ea66d4f` | 1,429개 중 1,425 통과·생략 4 | |
-| `c372f2e` | 1,431개 중 1,427 통과·생략 4 | |
-| `dbb3d62` | 1,436개 중 1,432 통과·생략 4 | |
+| `5815323` | 1,376개 중 1,372 통과·생략 4 | 판별 19개 포함 관련 96개 |
+| `fe843a5` | 1,376개 중 1,372 통과·생략 4 | |
+| `fb8bd01` | — | hookPaths·consentBinding·hookLoad·docSync·finalReverify 106개 |
+| `c7385c4` | 1,379개 중 1,375 통과·생략 4 | |
+| `729abe7` | — | hook·호스트 표기·템플릿·Codex 103개 |
+| `bcc0f00` | 1,385개 중 1,381 통과·생략 4 | |
+| `e564bff` | — | consentSnapshot·consentBinding·docSync·hookLoad 87개 |
+| `188acda` | 1,402개 중 1,398 통과·생략 4 | |
+| `b2fd2b7` | 1,410개 중 1,406 통과·생략 4 | |
+| `4e0c786` | 1,411개 중 1,407 통과·생략 4(staging hook 변경 전후 같음) | |
+| `1ededc0` | 1,418개 중 1,414 통과·생략 4 | |
+| `3c7efc4` | 1,429개 중 1,425 통과·생략 4 | |
+| `298c4cc` | 1,431개 중 1,427 통과·생략 4 | |
+| `8aec8c8` | 1,436개 중 1,432 통과·생략 4 | |
 
 실패는 모두 0 이다. 생략 4개는 플랫폼 조건이다. Windows 샌드박스 안에서는 OS 사용자 정보 조회(`uv_os_get_passwd`)가 ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 돌렸다. `consentScreens` T-15-1(2초 대기 뒤 캐시 생성)은 부하에서 한 번 실패한 뒤 단독·재실행에서 통과했다.
 

@@ -1,9 +1,9 @@
 {
-  "range": "a4b6df8..dbb3d62 (기록 정리 f6a8b72·f24066c·c3182f2 제외)",
-  "note": "2026-10-12~13 evidence 를 합쳤다. a4b6df8..7ade5a6 의 개별 evidence 12개는 7ade5a6, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 cd0550b 의 doc/reviews/evidence/ 에 원본이 있다.",
+  "range": "5815323..8aec8c8 (기록 정리 ee6d9a4·89ec0f0·8597f90 제외)",
+  "note": "2026-10-12~13 evidence 를 합쳤다. 5815323..b2fd2b7 의 개별 evidence 12개는 b2fd2b7, 이 파일로 합친 두 evidence(2026-10-13-triage-choice-summary.json·2026-10-13-context-gaps.json)는 1ededc0 의 doc/reviews/evidence/ 에 원본이 있다.",
   "sandbox": "Windows 샌드박스 안에서는 uv_os_get_passwd ENOMEM 으로 실패하는 시험이 있어 전체·관련 시험을 샌드박스 밖에서 실행했다",
   "commits": {
-    "2376826": {
+    "fe843a5": {
       "scope": "문서·CLI·hook 차단 복구 선택, 공통 준비 안내 및 현행 문서 최신화",
       "fullSuite": {
         "tests": 1376,
@@ -14,7 +14,7 @@
       },
       "liveHostRecoveryInteractionTested": false
     },
-    "5496831": {
+    "e564bff": {
       "scope": "동의 스냅샷의 임시 저장소 신뢰 설정 오탐",
       "targeted": {
         "files": [
@@ -29,7 +29,7 @@
       "fullSuiteRun": false,
       "targetProjectModified": false
     },
-    "a4b6df8": {
+    "5815323": {
       "scope": "Sentry·로그 사전 판별, 중복·재발, 접수 용어",
       "fullSuite": {
         "tests": 1376,
@@ -57,7 +57,7 @@
       "deduplicationScope": "동일 로컬 체크아웃",
       "jiraAndDeployment": "사용자 확인 입력; 원격 API 검증 없음"
     },
-    "25a8697": {
+    "fb8bd01": {
       "scope": "code-agent.cmd hook 판정",
       "targeted": {
         "files": [
@@ -72,7 +72,7 @@
       },
       "fullSuiteRun": false
     },
-    "c0a362f": {
+    "c7385c4": {
       "scope": "두 호스트 질문 도구·차단 복구",
       "fullSuite": {
         "tests": 1379,
@@ -83,7 +83,7 @@
       },
       "liveHostChoiceUiTested": false
     },
-    "8a1876e": {
+    "729abe7": {
       "scope": "PowerShell .cmd 안내",
       "targeted": {
         "files": [
@@ -102,7 +102,7 @@
       "restrictedPowershellReadTested": true,
       "fullSuiteRun": false
     },
-    "07c8741": {
+    "bcc0f00": {
       "scope": "단계별 선택·Stop 교정",
       "fullSuite": {
         "tests": 1385,
@@ -145,7 +145,7 @@
         "scope": "생성 지침을 제공한 실제 모델 응답·질문 호출 기록. UI 표시·사용자 답·프로젝트 훅·cloud 설치본 검증 아님."
       }
     },
-    "c5e6529": {
+    "188acda": {
       "scope": "실제 대화형 Codex의 임시 프로젝트, MCP 폼·공식 hook·동의 적용",
       "host": "codex-tui 0.162.1",
       "shell": "PowerShell",
@@ -175,7 +175,7 @@
         "durationMs": 376358
       }
     },
-    "7ade5a6": {
+    "b2fd2b7": {
       "scope": "선택 화면 크기",
       "method": "@lydell/node-pty 1.1.0(ConPTY)으로 실제 대화형 호스트를 띄우고 @xterm/headless 5.5.0으로 화면 버퍼를 캡처했다. 키 입력(신뢰 창·MCP 실행 허용·Esc)은 하네스가 보냈다 — 사람의 동의 응답이 아니다. 모든 동의는 임시 저장소의 합성 setup 동의이며 Esc(보류)로 끝냈다.",
       "hosts": {
@@ -371,7 +371,7 @@
       },
       "sideEffects": "하네스의 80×24 Claude 첫 시도에서 이미 신뢰된 임시 폴더라 신뢰 창 대신 합성 질문(동의 아님)에 \"수정 요청\"이 입력됐다 — 새 폴더로 다시 캡처했다. Codex hook 신뢰는 각 임시 저장소 경로에 대해 기록됐다."
     },
-    "f837f9d": {
+    "4e0c786": {
       "scope": "맥락·상태 빈곳 — Codex 세션 시작 상태 주입, CLI 출력 크기 측정과 계획 상세 조회 축약, Codex 계획 담당 staging",
       "hosts": {
         "codexCli": "0.162.1",
@@ -631,7 +631,7 @@
         }
       }
     },
-    "cd0550b": {
+    "1ededc0": {
       "scope": "토큰 최적화 — hook 출력·교차 토큰·배정별 사용량 측정, start·next·back 요약 출력, 리뷰 2회차 재검토 범위, Codex read 출력, 템플릿 중복 정리, Stop 목록 상한·같은 사유 재차단 억제",
       "hosts": {
         "claudeCli": "2.1.296 — --help 의 --no-session-persistence(--print 와 함께만 유효)",
@@ -704,7 +704,7 @@
         }
       ],
       "templates": {
-        "unit": "LF 글자 수, f837f9d → cd0550b",
+        "unit": "LF 글자 수, 4e0c786 → 1ededc0",
         "files": {
           "ca-answer/reference.md": [
             9574,
@@ -813,7 +813,7 @@
         ]
       }
     },
-    "ea66d4f": {
+    "3c7efc4": {
       "scope": "init·doctor·update 인자 검사, 스킬 머리말 YAML, 토큰 검토 중간 항목 M1~M10(교차 선실행·재작업 재작성·분석 입력·구현 재읽기·계획 결과 JSON·왕복·verify 실패 출력·셸 거부 문구·동의 출력·담당 본문 중복)",
       "decisions": {
         "scope": "사용자: 결함 둘과 중간 항목 전부",
@@ -875,11 +875,11 @@
       },
       "roundTrips": {
         "review": "26+2N",
-        "now": "23+N (리뷰 1회차) — c372f2e 뒤 22+N",
+        "now": "23+N (리뷰 1회차) — 298c4cc 뒤 22+N",
         "saved": "Task 마다 context --file, 계획 승인 뒤 next, 통합 검증 뒤 next, 리뷰 회차마다 context --file"
       },
       "templates": {
-        "unit": "LF 글자 수, f24066c → ea66d4f",
+        "unit": "LF 글자 수, 89ec0f0 → 3c7efc4",
         "files": {
           "agents/ca-analyst.md": [
             2915,
@@ -962,7 +962,7 @@
         }
       }
     },
-    "c372f2e": {
+    "298c4cc": {
       "scope": "요구 확정 동의 적용(finish)이 작업 시작까지 — 확인 화면의 시작 안내, 막히면 확정만 남기고 startBlocked·next",
       "decisions": {
         "scope": "사용자: 요구 확정과 start 합치기 진행",
@@ -1005,7 +1005,7 @@
         "saved": "확정 적용 뒤 start 1회(출력 419자)"
       }
     },
-    "dbb3d62": {
+    "8aec8c8": {
       "scope": "토큰 검토 낮음(L1~L5·L7·L8)과 이 저장소 개발 문서(D1~D3). L6(교차·synthesis 강도)은 A/B 측정이 필요해 남김",
       "decisions": {
         "scope": "사용자: 마지막 토큰 검토 낮음 항목 진행",

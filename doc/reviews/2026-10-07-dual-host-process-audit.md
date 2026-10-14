@@ -1,6 +1,6 @@
 # Claude·Codex 이중 호스트 프로세스 감사
 
-기준일: 2026-10-07. 기준 커밋: `c4f3fbf`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다. 근거의 줄 인용(이 기록과 원자료)은 `c4f3fbf` 트리 기준이다 — 그 뒤 지운 기록·evidence(`doc/reviews/2026-10-01~06` 기록 등)는 `git show c4f3fbf:<경로>`로 본다.
+기준일: 2026-10-07. 기준 커밋: `2c97a43`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다. 근거의 줄 인용(이 기록과 원자료)은 `2c97a43` 트리 기준이다 — 그 뒤 지운 기록·evidence(`doc/reviews/2026-10-01~06` 기록 등)는 `git show 2c97a43:<경로>`로 본다.
 
 처리 현황(지적별 상태·보류 항목의 다음 배정)은 [결과 요약](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있다.
 
@@ -257,7 +257,7 @@ code-agent의 원칙(코드가 판정하고, 사람이 승인하고, 원장·증
 
 learn 영역의 sandbox 실험이 `code-agent update`(소스 업데이트)를 실행했다(LEARN-M2). 이 명령은 확인 없이 code-agent 소스 저장소에서 `git fetch`·`pull --ff-only`·`npm ci --include=dev`(의존성이 바뀌었거나 없을 때)·`npm run build`를 수행한다(LRN-5). 그 결과 2026-10-07 10:15:36~38에 이 저장소의 `node_modules`와 `dist`가 다시 만들어졌다.
 
-- 소스는 바뀌지 않았다. HEAD는 `c4f3fbf` 그대로이고 작업 트리도 깨끗했다(이미 최신이라 pull은 변화가 없었다).
+- 소스는 바뀌지 않았다. HEAD는 `2c97a43` 그대로이고 작업 트리도 깨끗했다(이미 최신이라 pull은 변화가 없었다).
 - 기준 테스트는 10:10:10에 끝나 이 재빌드와 겹치지 않았다.
 - 이 사고는 LRN-5의 실증이다. 실험 지침에는 "`update`는 `--templates-only`로만"을 명시해야 한다. 루트 `AGENTS.md`에 이 규칙을 넣었다.
 
@@ -360,7 +360,7 @@ learn 영역의 sandbox 실험이 `code-agent update`(소스 업데이트)를 �
 | DOC-12 | low | 확인 | 문서 | both | 현행 동작 문서에 변경 이력이 섞이고, 새 절이 목차 밖에 덧붙여지고 있다 | `README.md:17-19`<br>`README.md:21-31` 외 8 |
 | DOC-13 | low (원 medium) | 부분 | 문서 | both | 흐름 생성의 원천이 될 상수가 export되지 않았거나 상수가 아닌 인라인 호출이다 | `src/agent/consent.ts:28-29`<br>`src/agent/commands.ts:94-121` 외 5 |
 | DOC-14 | low | 확인 | 문서 | codex | Codex init 메시지에 스킬·에이전트 수가 하드코딩돼 있고 커밋 안내가 없다 | `src/agent/init.ts:196`<br>`src/agent/init.ts:218` 외 1 |
-| DOC-M1 | low | 검증자 발견 | 문서 | both | usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(c4f3fbf에서 추가) | `doc/usage.md:826`<br>`doc/usage.md:508` |
+| DOC-M1 | low | 검증자 발견 | 문서 | both | usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(2c97a43에서 추가) | `doc/usage.md:826`<br>`doc/usage.md:508` |
 | DOC-M2 | low | 검증자 발견 | 문서 | codex | Codex 설치물의 ca-answer/reference.md는 설치되지만 어떤 Codex 지침도 참조하지 않는 고아 자원이다 | `src/agent/hosts.ts:89`<br>`template/codex/ca-answer.md:16` 외 1 |
 | DOC-M3 | low | 검증자 발견 | 문서 | codex | README의 핵심 사용 흐름 절이 Claude 전용으로 쓰여 Codex 사용자 경로와 어긋난다 | `README.md:122`<br>`README.md:134` 외 3 |
 | FLOW-06 | low (원 medium) | 부분 | 절차 | both | 고쳐 쓰기 한도는 '실패한 채 넘긴' 회차만 막아서, 통과 상태의 리뷰 수정 루프에는 상한이 없음 (문서와 불일치) | `src/agent/evidence.ts:420-427`<br>`src/agent/validate.ts:494-503` 외 4 |

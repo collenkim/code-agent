@@ -1,6 +1,6 @@
 {
  "date": "2026-10-07",
- "baseCommit": "c4f3fbf",
+ "baseCommit": "2c97a43",
  "codeChanged": false,
  "scope": "Claude-Codex dual-host process audit: host parity, stage flow, consent and hooks, planning/verification/review/cross/deliver, self-learning vs Hermes Agent, docs drift and flow document, optimization, harness-engineering principles",
  "method": {
@@ -33,7 +33,7 @@
  },
  "incident": {
   "id": "LEARN-M2",
-  "note": "A sandbox experiment ran `code-agent update` (source update) without confirmation; it fetched upstream and ran npm ci + build in the code-agent source checkout at 10:15:36-38. HEAD stayed c4f3fbf and the work tree stayed clean. The baseline test run had already finished at 10:10:10."
+  "note": "A sandbox experiment ran `code-agent update` (source update) without confirmation; it fetched upstream and ran npm ci + build in the code-agent source checkout at 10:15:36-38. HEAD stayed 2c97a43 and the work tree stayed clean. The baseline test run had already finished at 10:10:10."
  },
  "counts": {
   "total": 160,
@@ -1672,7 +1672,7 @@
    "verdict": "verifier-found",
    "host": "both",
    "kind": "defect",
-   "title": "usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(c4f3fbf에서 추가)",
+   "title": "usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(2c97a43에서 추가)",
    "locations": [
     "doc/usage.md:826",
     "doc/usage.md:508"

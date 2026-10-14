@@ -1,6 +1,6 @@
 /**
- * 최종 재검증(16ae5ec) 지적 R1~R6 의 회귀 시험 — 지적마다 되돌리면 실패한다. 지적 번호는 doc/reviews/2026-10-08-procedure-fix-summary.md 의
- * '전체 검토와 후속 수정' 절이다(지적별 처리 표는 git show 68d7a00:doc/reviews/2026-10-08-full-review.md). 그 수정(5205112)의 반박 검증 지적 F1~F4 시험도 고친 R 의 이름으로 여기 있다(F1·F2 → R2, F3 → R3, F4 → R6 —
+ * 최종 재검증(952594c) 지적 R1~R6 의 회귀 시험 — 지적마다 되돌리면 실패한다. 지적 번호는 doc/reviews/2026-10-08-procedure-fix-summary.md 의
+ * '전체 검토와 후속 수정' 절이다(지적별 처리 표는 git show 0a77595:doc/reviews/2026-10-08-full-review.md). 그 수정(72f6b97)의 반박 검증 지적 F1~F4 시험도 고친 R 의 이름으로 여기 있다(F1·F2 → R2, F3 → R3, F4 → R6 —
  * 같은 절). 모델·호스트는 부르지 않는다(교차는 가짜 실행 파일 경로만 쓴다).
  * R1 은 사용자 홈을 임시 폴더로 바꾼 뒤(USERPROFILE·HOME·CODEX_HOME) 판정 함수만 부른다 — 사용자의 실제 ~/.claude·~/.codex 파일은 읽거나 쓰지 않는다.
  */

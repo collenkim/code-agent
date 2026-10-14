@@ -1365,7 +1365,7 @@ test("해시 계약 — 질문은 고정 투영으로 직렬화하고 옛 questi
     const work = { repoRoot: repo, manifest, active: { id: "X", target: "t", baseCommit: "abc", spec: "doc/work/X/requirement.md", phase: "design" }, order: { kind: "feature" } } as unknown as Args[0];
     const task = { id: "design", role: "design", contextVersion: 2, title: "설계", requirements: ["R1"], inputs: ["doc/work/X/requirement.md"], scopes: [], outputs: [], dependsOn: [], questionIds: [] } as Args[2];
     const state = { version: 1, id: "X", target: "t", maxParallel: 3, tasks: [{ task, attempts: [] }], agents: [] } as Args[1];
-    // 골든 — 구현 전(3b5e867) dist 의 taskHash 값이다. 바뀌면 진행 중인 모든 관찰 작업이 다시 돈다
+    // 골든 — 구현 전(c38f1e2) dist 의 taskHash 값이다. 바뀌면 진행 중인 모든 관찰 작업이 다시 돈다
     assert.equal(taskHash(work, state, task), "sha256:db1f7ff0e520c33d");
     const legacy = { ...task }; delete legacy.contextVersion;
     assert.equal(taskHash(work, { ...state, tasks: [{ task: legacy, attempts: [] }] }, legacy), "sha256:c21019bbdf154ea9");
