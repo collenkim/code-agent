@@ -9,11 +9,11 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 
 ---
 
-별도 패키지 설치나 서버 수동 실행은 필요 없다. Codex 선택 UI용 로컬 MCP 서버는 프로젝트 `.codex/config.toml`에 자동 등록되며 Codex가 stdio로 실행한다. CLI를 빌드·갱신한 뒤 대상 프로젝트에서 `code-agent update --templates-only`로 스킬·에이전트 정의·CLAUDE 블록·hook을 함께 갱신한다. 호스트를 다시 열고 `code-agent --help`와 `doctor`로 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
+별도 패키지 설치나 서버 수동 실행은 필요 없다. Codex 선택 UI용 로컬 MCP 서버는 프로젝트 `.codex/config.toml`에 자동 등록되며 Codex가 stdio로 실행한다. 새 버전은 `code-agent update`(Git 소스 설치) 또는 패키지 관리자(npm 패키지)로 설치하고, 프로젝트마다 진행 중인 일이 없을 때 적용된다([5절](#5-code-agent-update--갱신)). 호스트는 종료하지 않는다 — 다시 열어야 하는 변경이 있으면 적용 보고가 그것만 알린다. `code-agent version`과 `doctor`로 적용 버전과 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
 
-작업 임대(`.code-agent/lease.json`)는 `update --templates-only` 가 `.gitignore` 블록에 `lease.json*` 줄을 더한다 — 갱신 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 다만 진행 중인 작업이 있으면 `update --templates-only` 는 그 작업을 반영하거나 끝낸 뒤 실행한다 — 갱신이 바꾼 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)이 그 작업의 계획 밖 변경이 되어 검증·반영을 막고, 게이트가 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않는다. 이미 갱신했으면 `update` 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄이 그 파일을 알려 준다 — 사람이 그 파일들을 갱신 전으로 되돌리고 작업을 마친 뒤 다시 갱신한다.
+작업 임대(`.code-agent/lease.json`)·이 PC 의 적용 버전(`runtime.json`) 같은 개인 기록은 적용이 `.gitignore` 블록에 줄을 더한다 — 적용 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 진행 중인 작업이 있으면 적용은 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)을 바꾸지 않고 예약한다(`update --templates-only`는 종료 코드 3) — 바뀐 설치 파일이 그 작업의 계획 밖 변경이 되어 검증·반영을 막지 않게 한다. 적용으로 바뀐 설치 파일은 다음 작업 전에 준비 커밋(setup/baseline 확인)으로 반영한다.
 
-CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex 사본도 같은 템플릿에서 생성되므로 사용 중인 호스트를 재시작한다. 이전 입력 계약으로 시작한 작업은 그 계약을 유지하고 새 기본 작업은 contextVersion 4를 사용한다. `doctor`의 설치 점검은 실제 연동 성공을 인증하지 않는다.
+CLI와 템플릿(스킬·에이전트 정의)은 한 릴리스로 함께 적용된다 — Codex 사본도 같은 템플릿에서 생성된다. 호스트를 다시 열어야 하는 변경(Codex hook 등록·MCP 설정·새 에이전트 파일)은 적용 보고가 따로 알린다. 이전 입력 계약으로 시작한 작업은 그 계약을 유지하고 새 기본 작업은 contextVersion 4를 사용한다. `doctor`의 설치 점검은 실제 연동 성공을 인증하지 않는다.
 
 ## 목차
 
@@ -34,7 +34,7 @@ CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex �
 | 전제 | Node 22 이상 (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.8 이상 ([2절](#2-단일-실행-파일-만들기)) |
 | 크기 | 수 MB | **~90 MB** (Node 실행 파일 그대로 + 자원 1 MB) |
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
-| 갱신 | 로컬 Git 소스 연결은 `code-agent update`. 비Git 패키지는 재설치 후 `update --templates-only` | 새 파일로 교체한 뒤 `update --templates-only` |
+| 갱신 | 로컬 Git 소스 연결은 `code-agent update`(릴리스 저장소에 설치한 뒤 적용). npm 패키지는 패키지 관리자로 설치 — 다음 작업을 열 때 그 사본을 적용한다 | 새 파일로 교체한 뒤 `update --templates-only` |
 
 어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 14개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
@@ -172,7 +172,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 런타임 | 단일 실행 파일이거나 Node 22 이상 | Node 를 올리거나 단일 실행 파일을 쓴다 |
 | git | `git --version` 이 답한다 | PATH 에 git 을 넣는다 — 브랜치·기준 커밋·반영이 git 을 쓴다 |
 | PATH 의 code-agent | PATH 에서 찾았다. 단일 실행 파일인지 npm 설치/링크인지(그 경우 푼 `cli.js` 경로까지) 함께 찍는다 | hook 명령이 풀리지 않는다. `npm i -g <저장소>` 또는 바이너리를 PATH 에 둔다 |
-| 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 것이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
+| 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 진입점이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
+| 적용 버전 | 이 프로젝트의 적용 버전(고정이 없으면 진입점 번들)과 적용 대기를 찍는다 | `runtime.json`을 읽지 못하거나 적용 버전이 릴리스 저장소에 없다 — `code-agent version`으로 확인하고 `update`로 다시 설치하거나 `update --bundled`로 고정을 푼다 |
 | git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 최초 커밋 또는 기존 저장소의 도입 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
 | hook 등록 9개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>`. 옛 matcher(MCP·읽기 도구 없음)는 ✗ 로 짚는다 |
@@ -211,16 +212,59 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 ```
 code-agent update [--cli <경로>]
-code-agent update --templates-only [--cli <경로>]
+code-agent update --templates-only [--host claude|codex|both] [--cli <경로>]
+code-agent update --release <ID>
+code-agent update --bundled
+code-agent version [--json]
 ```
 
-기본 `update`는 **로컬 Git 소스에 연결된 code-agent 설치본**을 자동 갱신한다. 개발 대상 프로젝트에서 실행하면 code-agent 소스의 upstream을 `git pull --ff-only`로 받고, 의존성이 바뀌었거나 설치가 필요하면 `npm ci --include=dev`로 잠금 파일에 맞춰 설치한 뒤 빌드한다. 새로 빌드한 CLI가 대상 프로젝트의 스킬·에이전트·hook·CLAUDE 블록과 버전 파일을 적용하고 `doctor`를 실행한다. 개발 대상 프로젝트의 애플리케이션 소스를 pull하는 명령이 아니다.
+**설치와 적용은 따로다.** 새 버전은 실행 중인 설치 폴더를 건드리지 않고 릴리스 저장소(`~/.code-agent/releases/<ID>/` — `CODE_AGENT_RELEASE_HOME`으로 바꿀 수 있다)의 새 폴더에 설치한다. 설치·검증(진입 파일·버전·모든 모듈 로드·`help` 실행)을 마친 폴더만 이름 바꾸기 한 번으로 등록하므로, 설치가 실패하거나 중간에 끊기거나 두 갱신이 겹쳐도(설치 잠금) 불완전한 폴더는 고를 수 없다. 프로젝트마다 적용 버전을 `.code-agent/runtime.json`에 두고, 고정 진입점(`code-agent` 명령·hook·선택 UI MCP 가 부르는 `cli.js`)이 명령·hook 마다 그 버전을 골라 넘긴다 — 한 프로젝트의 적용이 다른 프로젝트를 바꾸지 않고, 한 프로세스는 처음 고른 버전의 모듈만 읽는다.
 
-code-agent 소스에 미커밋 변경이 있거나 upstream과 이력이 분기되어 fast-forward할 수 없으면 중단한다. 변경을 버리거나 임의로 병합하지 않는다. upstream이 없거나 갱신·의존성 설치·빌드에 실패하면 사유를 확인하고 해결해야 한다. 이 명령은 변경을 자동 커밋하거나 원격에 push하지 않는다.
+| 설치 방식 | 새 버전 받기 | 식별값 | 적용 |
+|---|---|---|---|
+| 로컬 Git 소스(개발 설치) | `code-agent update` — 소스 브랜치의 upstream 만 받아(`FETCH_HEAD`만 쓴다 — 소스의 작업 트리·브랜치·원격 추적 브랜치는 그대로) 그 커밋을 새 폴더에 꺼내 `npm ci --include=dev`·빌드·개발 의존성 정리·검증 | 커밋·트리·내용 해시. ID `<버전>-<커밋 12자>` | 진행 중인 일이 없으면 바로, 있으면 예약 |
+| npm 패키지 | 기존 설치에 쓴 패키지 관리자로 설치한다 — code-agent 는 받지 않는다(원본 주소·설치 범위를 추정하지 않는다) | 내용 해시(`dist`·`template`·`package.json`). ID `<버전>-<해시 12자>` | 다음 작업을 열 때(또는 `update --templates-only`) 그 패키지를 릴리스 저장소에 복사·검증해 적용 |
+| 단일 실행 파일 | 새 파일로 교체 | — | 교체한 뒤 `update --templates-only`(릴리스 저장소를 쓰지 않는다) |
 
-**`--templates-only`는 현재 번들만 적용한다.** fetch·pull·의존성 설치·빌드를 수행하지 않는다. Git 소스가 없는 npm 패키지와 단일 실행 파일은 기본 Git 자동 갱신을 지원하지 않는다고 안내하며, 새 패키지 설치·실행 파일 교체 후 이 옵션으로 프로젝트마다 적용한다. 직접 수정 중인 개발본에도 필요한 빌드를 마친 뒤 이 옵션을 사용할 수 있다.
+Git 소스를 고쳐 빌드한 개발본은 고정이 없는 프로젝트에 바로 쓰인다(빌드가 곧 적용 — 개발 정책). 고정된 프로젝트는 그대로이고, 개발본을 쓰려면 그 프로젝트에서 `update --bundled`로 고정을 푼다. npm 패키지는 패키지 관리자가 진입점을 통째로 바꾸므로 작업을 늘 복사본으로 돌린다 — 패키지를 다시 설치해도 진행 중인 작업은 복사해 둔 버전으로 끝까지 간다.
 
-같은 Claude Code에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 반환된 질문을 그대로 표시해 사용자 선택을 받은 뒤 적용한다. **갱신 후에는 Claude Code를 종료하고 같은 프로젝트에서 다시 실행해야 새 hook이 활성화된다.** 재시작 후 `/ca-status`로 상태를 확인하고 `/ca-next`로 기존 작업을 재개한다 — 갱신이 진행 중인 작업의 계획 밖 변경을 만들었으면 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄대로 사람이 먼저 되돌린다(맨 위 안내). 일반 터미널에서 `code-agent update`를 직접 실행하는 경로도 사용할 수 있다 — 이때는 미리보기(소스·브랜치·upstream·실행 순서)를 보인 뒤 `update` 를 그대로 입력해야 진행한다(TTY 가 아니거나 Claude Code·Codex 가 띄운 셸이면 동의 절차를 안내하고 멈춘다). 모델이 셸에서 소스 `update` 를 부르는 것은 작업·세션 밖에서도, `npx`·경로·`cli.js update` 같은 꼴로 불러도 hook 이 막는다(`--templates-only` 는 연다). 업그레이드 전에 준비한 확인 요청은 새로 준비해야 할 수 있다(확인 화면·스냅샷 범위가 바뀌면 대상 변경으로 폐기된다).
+**진행 중인 일이 있으면 설치만 하고 적용을 예약한다.** 진행 중인 일은 작업·요구사항 접수·공통 문서 세션·사전 판별, 응답·적용을 기다리는 확인, 다른 프로세스의 동의 적용이다. 판정과 전환은 프로젝트 실행 잠금(`.code-agent/runtime.lock`) 안에서 다시 확인한다. 예약하면 이렇게 알린다.
+
+```
+새 버전 1.0.0-3d58e60bd17e 설치 완료. 현재 작업은 기존 버전(1.0.0-8845432bdd39)으로 계속 진행하며, 작업 완료 후 다음 작업부터 새 버전을 적용합니다.
+  대기 사유: 진행 중인 작업 WORK-0003 (implement)
+  적용 시점: 진행 중인 일이 끝난 뒤 다음 작업을 시작할 때(요구사항 접수·문서 준비·사전 판별 시작) 자동으로 — 호스트를 종료할 필요가 없습니다.
+  지금 할 일: 없습니다. 바로 적용하려면 작업을 반영하거나 끝낸 뒤 code-agent update --templates-only 를 실행합니다.
+```
+
+진행 중인 작업은 끝까지 지금 버전(CLI·hook·검증·지침)으로 돈다. 다음 작업을 여는 명령(`request begin`·`docs begin`·`triage begin`·`start`)이 예약된 버전을 먼저 적용하고 같은 명령을 새 버전으로 다시 실행한다. 모델이 셸로 그 명령을 부르면 직전의 훅이 먼저 적용하고, 명령은 새 버전으로 적용 보고를 낸 뒤 연다. 적용은 내용이 바뀐 설치 파일만 쓴다. 적용에 실패하면 반영한 파일을 되돌리고 지금 버전으로 시작하며 예약은 그대로 둔다. Codex 의 Windows workspace-write 샌드박스는 셸의 자식 프로세스나 `.codex/`·`.agents/` 쓰기를 막지만, 신뢰한 프로젝트의 훅은 샌드박스 밖에서 돌아 그 안에서도 적용된다(0.162.1 실측). 훅이 돌지 않아 적용이 물러서면 출력이 그렇다고 알리고, 진행 중인 일이 없을 때 호스트 밖 터미널에서 `code-agent update --templates-only`를 실행하면 적용된다.
+
+**호스트를 종료하지 않는다.** hook 은 호출마다 새 프로세스라 적용 다음 호출부터 새 버전으로 돈다. 적용 보고는 바뀐 것에 따라 할 일을 나눠 적는다.
+
+| 바뀐 것 | 실행 중인 세션 | 근거 |
+|---|---|---|
+| CLI·hook·검증 코드 | 다음 호출부터 새 버전 | Claude Code 2.1.299·codex-cli 0.162.1 실측 |
+| 스킬(`SKILL.md`) | 대화에 실린 본문은 이전 버전이다 — 보고가 그 파일을 다시 읽으라고 적는다 | Claude Code 2.1.299 실측(파일 감시가 늦게 반영한다 — 바꾼 지 2초 뒤 호출은 이전 본문, 20초 뒤는 새 본문) |
+| `CLAUDE.md`·`AGENTS.md`의 code-agent 블록 | 보고가 다시 읽으라고 적는다 | 대화에 실린 지침은 파일을 바꿔도 그대로다 |
+| 바뀐 에이전트 정의 | 다음 서브에이전트 호출부터 | Claude Code 공식 문서, codex-rs 0.162.1 소스 |
+| `.claude/settings.json` hook 설정 | 설정 파일 감시가 반영한다(몇 초 안에 반영되지 않으면 다시 연다) | Claude Code 공식 문서 |
+| `.codex/hooks.json`·`.codex/config.toml`의 MCP 설정·새 Codex 에이전트 파일 | **Codex 를 다시 열어야 한다**(hook 은 다시 열고 `/hooks`에서 검토·신뢰) | codex-rs 0.162.1 소스 — 세션을 만들 때만 읽는다 |
+
+code-agent 의 hook 명령과 MCP 설정은 고정 진입점을 가리키므로 보통의 버전 적용에서는 바뀌지 않는다 — 이때 보고는 `호스트를 다시 열 필요가 없습니다.`다. 선택 UI MCP 는 Codex 가 세션 동안 한 프로세스로 띄운다. 그 프로세스(연결부)는 시작 때의 코드로 돌고, 도구 호출마다 프로젝트의 적용 버전 처리기를 부른다. `code-agent version`이 연결부 버전과 마지막 호출을 처리한 버전을 보인다.
+
+**템플릿은 적용할 때만 쓴다.** 설치만으로는 프로젝트의 스킬·에이전트·hook 설정·지침 블록을 바꾸지 않는다. 적용은 바뀐 사본만 쓰고, 도중에 실패하면 반영 전 파일로 되돌리고 적용 버전을 바꾸지 않는다. 마지막으로 적용한 사본의 해시(`.code-agent/templates.json` — 준비·반영 커밋에 담긴다)와 다른 사본은 사람이 고친 것으로 보고 덮어쓰지 않는다 — 새 번들 내용은 `.code-agent/template-conflicts/` 아래 같은 경로에 두고 `!!`로 알린다(사람이 병합한 뒤 `update --templates-only`). 기록이 없는 처음 적용은 사람이 고친 사본을 가리지 못해 새 번들로 바꾸고 그 파일을 알린다.
+
+**동의 흐름.** 같은 Claude Code·Codex 세션에서 업데이트를 요청하면 `action: "update"`를 담은 확인 요청을 준비하고, 사람의 선택을 받은 뒤 적용한다. Codex 에서는 적용이 네트워크와 사용자 홈의 릴리스 저장소를 쓰므로 샌드박스 밖(권한 상승)으로 실행한다. 적용 결과의 `호스트를 다시 열어야 하는 것`이 있으면 그것만 안내하고, 다시 읽으라는 지침·스킬 파일이 있으면 읽은 뒤 이어 간다. 일반 터미널에서 `code-agent update`를 직접 실행하면 미리보기(소스·적용·적용 대기 버전·설치된 릴리스·실행 순서)를 보인 뒤 `update`를 그대로 입력해야 진행한다(TTY 가 아니거나 Claude Code·Codex 가 띄운 셸이면 동의 절차를 안내하고 멈춘다). 모델이 셸에서 소스 `update`·`--release`·`--bundled`를 부르는 것은 작업·세션 밖에서도, `npx`·경로·`cli.js update` 같은 꼴로 불러도 hook 이 막는다(버전을 고르는 깃발 없는 `--templates-only`만 연다). 업그레이드 전에 준비한 확인 요청은 새로 준비해야 할 수 있다(확인 화면·스냅샷 범위가 바뀌면 대상 변경으로 폐기된다).
+
+**`--templates-only`는 받지 않는다.** 적용 대기 버전이 있으면 그것을 적용하고, 없으면 지금 적용 버전의 템플릿을 다시 반영한다. npm 패키지 진입점이면 설치된 패키지를 릴리스로 들인다. 진행 중인 일이 있으면 바꾸지 않고 종료 코드 3으로 알린다.
+
+**설치된 프로젝트 안에서 실행한다.** `update`(모든 갈래)의 대상은 실행 위치가 속한 git 저장소의 루트다 — 하위 폴더에서 실행해도 된다. 적용 버전은 프로젝트마다 따로라 적용할 프로젝트마다 실행한다. code-agent 가 설치되지 않은 폴더(설치 기록 `.code-agent/version`·`hosts.json`도, 두 호스트의 hook 등록도 없다 — 프로젝트 밖·설치하지 않은 저장소)에서는 릴리스 설치·템플릿·적용 버전 기록을 하나도 쓰지 않고 종료 코드 1로 멈춘다. 처음 설치는 `code-agent init`이다.
+
+**되돌리기와 고정 풀기.** `code-agent update --release <ID>`는 저장소에 설치된 릴리스 하나를 골라 적용한다(터미널 확인, 진행 중인 일이 있으면 예약). 상태 형식 세대(`stateSchema`)가 프로젝트보다 낮은 릴리스는 적용하지 않는다 — 새 버전이 승인·증거·작업 기록의 형식을 올렸으면 그 이전 버전으로는 되돌릴 수 없다. 실패했다고 적용 버전을 자동으로 되돌리지 않는다. 설치·검증·템플릿 반영이 실패하면 적용 버전은 처음부터 바뀌지 않는다. npm 패키지 진입점에서 `--release`로 고른 버전은 새 패키지를 설치할 때까지 그대로 둔다. `code-agent update --bundled`는 고정을 풀고 진입점의 번들로 돈다(진행 중인 일이 없을 때).
+
+**조회.** `code-agent version`은 이 명령을 돌린 코드, 이 프로젝트의 적용 버전·적용 대기·진행 중인 일, 진입점 npm 패키지, 저장소에 설치된 릴리스(식별값·상태 세대), 실행 중인 선택 UI MCP 를 보인다(`--json`은 스키마 `code-agent.version v1`). `status`·`doctor`도 적용 버전 한 줄을 낸다. 적용 버전이 저장소에서 사라졌는데 진행 중인 일이 있으면 hook 은 다른 버전으로 잇지 않는다(PreToolUse 는 거부, Stop 은 막지 않는다) — `version`·`status`·`doctor`·`update`·도움말만 진입점 번들로 돈다. 진행 중인 일이 없으면 진입점 번들로 돈다.
+
+**이행.** 이 구조 전에 설치한 프로젝트는 처음 한 번 이전 버전의 갱신(설치 폴더에서 pull·빌드)으로 이 버전을 받는다. 그 뒤로는 위 방식이다. 직접 절대 경로로 등록한 hook·MCP(`--cli`)는 설정을 바꾸지 않는다 — 그 경로의 `cli.js`가 고정 진입점이 되어 적용 버전을 고른다. 공유 설정에 릴리스 폴더 경로를 쓰지 않는다. 처음 이행 때 이미 떠 있던 Codex 선택 UI MCP 는 이전 코드라 한 번 다시 열어야 버전을 고르는 연결부로 바뀐다. 이 첫 회의 결과 판정도 이전 갱신기가 하므로, 마지막 `doctor`에 ✗ 가 있으면(공통 문서가 아직 없는 프로젝트 등) 템플릿 적용이 끝났어도 중단으로 보고한다 — `code-agent version`으로 적용 버전을, `doctor`로 남은 항목을 확인한다.
 
 **PreToolUse matcher 가 좁은 설치본은 `update` 로 넓힌다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).
@@ -260,11 +304,9 @@ code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
 **이 버전에 없는 `ca-*` 가 남아 있으면 `!!` 로 알린다.** 이름이 바뀌었거나 빠진 스킬은 `update` 가 쓰는 키에 없어서
 영영 남고 Claude Code 는 계속 읽는다. 지우지는 않는다 — 사람이 만든 `ca-` 스킬과 가릴 수 없다. `doctor` 도 같은 줄을 `·` 로 찍는다.
 
-**스킬·에이전트는 템플릿 사본이다 — 갱신이 덮어쓴다.** 손으로 고쳐 두었던 것이 있으면 `!!` 로 알린다
-(판정은 "같은 버전인데 내용이 달랐던 파일". 이전 버전의 번들 해시가 남아 있지 않아 이보다 정확히는 가리지 못한다).
-프로젝트 규칙은 `CLAUDE.md` 의 블록 **밖**이나 `doc/` 에 둔다.
+**스킬·에이전트는 템플릿 사본이다.** 버전 적용은 마지막 적용 기록과 같은 사본만 바꾸고, 사람이 고친 사본은 보존한다(위 '템플릿은 적용할 때만 쓴다'). 프로젝트 규칙은 `CLAUDE.md` 의 블록 **밖**이나 `doc/` 에 둔다.
 
-작업 진행 상태만으로 템플릿 적용을 막지는 않는다. 기본 소스 갱신의 미커밋 변경·분기 검사와 같은 세션 확인은 별도로 적용된다. 승인·증거는 `planHash`·`manifestHash`·트리 해시에 묶여 있어 템플릿을 갱신해도 무효였던 승인이 되살아나지 않는다. 재시작 후 현재 스테이지와 필요한 확인을 다시 점검한다.
+버전 적용은 진행 중인 일이 없을 때만 하므로 새 버전으로 옮겨 갈 작업 승인이 없다 — 기존 승인을 새 버전에 옮기지 않는다. 승인·증거는 `planHash`·`manifestHash`·트리 해시에 묶여 있어 템플릿을 갱신해도 무효였던 승인이 되살아나지 않는다.
 
 ### AWS AI-DLC 가 함께 설치된 저장소
 

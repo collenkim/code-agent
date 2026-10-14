@@ -1,0 +1,205 @@
+{
+  "subject": "릴리스 업데이트의 설치와 적용 분리",
+  "date": "2026-10-14",
+  "environment": {
+    "os": "Windows 11 Pro 10.0.26200",
+    "node": "v24.19.0",
+    "npm": "11.17.0",
+    "git": "2.55.0.windows.5",
+    "claudeCode": "2.1.299",
+    "codexCli": "0.162.1"
+  },
+  "isolation": "모든 실험은 스크래치 폴더의 임시 git 저장소·격리된 릴리스 저장소(CODE_AGENT_RELEASE_HOME)에서 했다. 이 저장소 루트에서 init·실제 source update 를 실행하지 않았다. 릴리스 A(1.0.0-aaaaaaaaaaaa)·B(1.0.0-bbbbbbbbbbbb)는 이 저장소의 빌드를 복사한 것이고 B 는 ca-status 스킬에 표지 한 줄을 더했다. 실행 기록은 CODE_AGENT_RUNTIME_TRACE(명령마다 {at, pid, command, runtime, file})다.",
+  "claudeCode": {
+    "hookAndCliSwitchInOneSession": {
+      "invocation": "claude -p --model haiku --allowedTools Bash — 같은 세션에서 (1) code-agent version (2) node switch.cjs(B 가 스스로 적용 — update --apply-release) (3) code-agent version",
+      "trace": [
+        "session-event 1.0.0-aaaaaaaaaaaa",
+        "hook 1.0.0-aaaaaaaaaaaa",
+        "version 1.0.0-aaaaaaaaaaaa",
+        "hook 1.0.0-aaaaaaaaaaaa",
+        "update 1.0.0-bbbbbbbbbbbb",
+        "hook 1.0.0-bbbbbbbbbbbb",
+        "version 1.0.0-bbbbbbbbbbbb",
+        "stop 1.0.0-bbbbbbbbbbbb"
+      ],
+      "modelResult": "The \"running code\" line went from 1.0.0-aaaaaaaaaaaa (command 1) to 1.0.0-bbbbbbbbbbbb (command 3), after node switch.cjs switched the applied version.",
+      "model": "claude-haiku-5-5",
+      "turns": 4,
+      "costUsd": 0.0046,
+      "conclusion": "hook·CLI 는 호출마다 새 프로세스라 적용 다음 호출부터 새 릴리스로 돈다. 세션을 다시 열지 않았다."
+    },
+    "skillReload": {
+      "runs": [
+        { "probe": "적용 직후(약 2초 뒤) Skill ca-status 호출", "bodyHasReleaseBMarker": false, "modelResult": "NONE", "costUsd": 0.0043 },
+        { "probe": "적용 뒤 20초 기다린 다음 Skill ca-status 호출", "bodyHasReleaseBMarker": true, "modelResult": "RELEASE-B-7731", "costUsd": 0.0045 }
+      ],
+      "conclusion": "스킬 파일 감시는 늦게 반영된다. 적용 보고는 바뀐 SKILL.md 를 파일로 다시 읽으라고 적는다."
+    },
+    "hookApplyBeforeOpening": {
+      "date": "2026-10-15",
+      "invocation": "claude -p --model haiku --allowedTools Bash — 적용 A·적용 대기 B(공통 문서 세션 중 예약, 세션 종료) 상태에서 (1) code-agent docs begin (2) code-agent version",
+      "trace": [
+        "session-event 1.0.0-aaaaaaaaaaaa (×2)",
+        "hook 1.0.0-aaaaaaaaaaaa",
+        "update 1.0.0-bbbbbbbbbbbb",
+        "hook 1.0.0-aaaaaaaaaaaa",
+        "docs 1.0.0-bbbbbbbbbbbb",
+        "hook 1.0.0-bbbbbbbbbbbb (×2)",
+        "version 1.0.0-bbbbbbbbbbbb",
+        "stop 1.0.0-bbbbbbbbbbbb (×2)"
+      ],
+      "docsBeginFirstLine": "적용 버전: 1.0.0-aaaaaaaaaaaa → 1.0.0-bbbbbbbbbbbb",
+      "runtimeAfter": { "applied": "1.0.0-bbbbbbbbbbbb", "pending": null },
+      "skillMarkerApplied": true,
+      "turns": 3,
+      "costUsd": 0.0051,
+      "note": "이 PC 의 사용자 설정(~/.claude/settings.json)에도 code-agent hook 이 등록돼 있어 hook 마다 두 번 돌았다. 적용(update 행)은 한 번뿐이었다.",
+      "conclusion": "docs begin 직전의 PreToolUse hook 이 B 를 적용했고 docs begin 은 처음부터 B 로 돌았다(docs A 행이 없다). 세션을 다시 열지 않았다."
+    },
+    "documentedOnly": [
+      "settings 파일의 hook 직접 수정은 파일 감시가 반영한다(\"Direct edits to hooks in settings files are normally picked up automatically by the file watcher\") — 실측하지 않았다",
+      "에이전트 정의 변경은 다음 서브에이전트 호출부터 쓴다 — 실측하지 않았다"
+    ]
+  },
+  "codex": {
+    "hookAndCliSwitchInOneSession": {
+      "invocation": "codex exec --enable hooks --dangerously-bypass-hook-trust --sandbox danger-full-access, model gpt-6.1-sol low — (1) code-agent version (2) node switch.cjs (3) code-agent version",
+      "trace": [
+        "codex-event 1.0.0-aaaaaaaaaaaa (×3)",
+        "version 1.0.0-aaaaaaaaaaaa",
+        "codex-event 1.0.0-aaaaaaaaaaaa",
+        "update 1.0.0-bbbbbbbbbbbb",
+        "codex-event 1.0.0-bbbbbbbbbbbb",
+        "version 1.0.0-bbbbbbbbbbbb",
+        "codex-event 1.0.0-bbbbbbbbbbbb"
+      ],
+      "conclusion": "같은 세션의 codex-event hook 과 CLI 가 적용 다음 호출부터 B 로 돌았다."
+    },
+    "mcpConnector": {
+      "versionLine": "선택 UI MCP (pid 17300): 연결부 1.0.0-aaaaaaaaaaaa · 시작 · 호출 없음 — 연결부는 시작 때 버전, 처리는 호출마다 이 프로젝트의 적용 버전",
+      "finding": "Codex 는 MCP 서버에 임의 환경 변수(CODE_AGENT_RELEASE_HOME 등)를 넘기지 않는다 — 처음에는 연결부가 릴리스를 찾지 못해 번들로 보였다. runtime.json 에 적용 릴리스의 저장소 경로(home)를 기록하도록 고친 뒤 연결부가 A 로 보였다.",
+      "handlerSwitch": "도구 호출마다 처리기를 고르는 것은 시험(runtimeRelease — 연결부 A·처리 B, 결과의 runtime 필드)으로 확인했다. codex exec 는 MCP 폼(elicitation)을 띄우지 못해 실제 호스트에서 처리기 전환은 확인하지 않았다."
+    },
+    "nextWorkInSandbox": {
+      "invocation": "codex exec --sandbox workspace-write -c windows.sandbox=\"unelevated\" — 적용 A·적용 대기 B(공통 문서 세션 중 예약, 세션 종료) 상태에서 (1) code-agent version (2) node diag.cjs (3) code-agent docs begin (4) code-agent version",
+      "diag": [
+        "plain child: status=null error=EPERM",
+        "release child: status=null signal=null error=EPERM"
+      ],
+      "docsBegin": [
+        "새 버전 1.0.0-bbbbbbbbbbbb 적용에 실패했습니다 — 지금 버전으로 계속 돕니다 (spawnSync C:\\Program Files\\nodejs\\node.exe EPERM)",
+        "이 셸이 새 프로세스 실행을 막았습니다(Codex 샌드박스 등). 진행 중인 일이 없을 때 호스트 밖 터미널이나 샌드박스 밖 실행으로 code-agent update --templates-only 를 실행하면 적용합니다.",
+        "지금 버전(1.0.0-aaaaaaaaaaaa)으로 시작합니다 — 적용 대기는 그대로 둡니다.",
+        "문서 작성 세션을 열었습니다."
+      ],
+      "runtimeAfter": { "applied": "1.0.0-aaaaaaaaaaaa", "pending": "1.0.0-bbbbbbbbbbbb" },
+      "trace": ["version 1.0.0-aaaaaaaaaaaa", "docs 1.0.0-aaaaaaaaaaaa", "version 1.0.0-aaaaaaaaaaaa"],
+      "conclusion": "이 샌드박스의 셸에서는 node 의 자식 프로세스가 모두 EPERM 이다(node -e 도). 적용 위임은 같은 프로세스의 require 라 그대로 돌고, 다음 작업의 적용만 지금 버전으로 물러서며 예약을 둔다 — 버전이 섞이지 않았다.",
+      "projectHooks": "이 실행은 프로젝트 신뢰 키를 슬래시 경로(C:/…)로 넘겨 Codex 가 프로젝트를 신뢰하지 않았고 프로젝트 hook 이 돌지 않았다(실행 기록에 codex-event 가 없다). 셸 안 관문의 물러섬만 본 결과다 — hook 이 도는 경우는 sandboxNextWork."
+    },
+    "sandboxNextWork": {
+      "date": "2026-10-15",
+      "invocation": "codex exec --ephemeral --ignore-user-config --sandbox workspace-write --enable hooks --dangerously-bypass-hook-trust -c windows.sandbox=\"<elevated|unelevated>\" -c projects={<Windows 경로>={trust_level=\"trusted\"}}, model gpt-6.1-sol low",
+      "shellChildProcess": {
+        "unelevated": ["node: EPERM", "git: EPERM", "cmd: EPERM", "execFileSync git: EPERM", "worker_threads: ok"],
+        "elevated": ["node: ok", "git: ok", "cmd: ok", "execFileSync git: ok", "worker_threads: ok"]
+      },
+      "shellWritesElevated": [
+        "README.md·AGENTS.md·.gitignore(기존): ok",
+        ".code-agent/ 새 파일·templates.json: ok",
+        ".agents/skills/ca-status/SKILL.md(기존)·.agents/ 새 파일: EPERM",
+        ".codex/config.toml(기존)·.codex/ 새 파일: EPERM"
+      ],
+      "beforeFix": "elevated 셸의 다음 작업 적용이 처음에는 .codex/config.toml(내용이 같아도 다시 쓰던 파일)에서, 바뀐 파일만 쓰게 한 뒤에는 .agents/skills/ca-status/SKILL.md 에서 EPERM 으로 물러섰다 — 되돌리기·A 로 열기·예약 유지는 맞았다.",
+      "hookContext": "진단 hook 기록 — 두 모드 모두 PreToolUse hook 은 사용자 kai 로 돌며 .agents/ 와 작업 공간 밖에 쓸 수 있었고(샌드박스 밖), 실행 환경 변수(CODE_AGENT_RUNTIME_TRACE)가 넘어왔다.",
+      "probeMistake": "처음 실행들은 신뢰 키를 슬래시 경로로 넘겨 프로젝트 hook 이 돌지 않았다(진단 hook 기록·실행 기록이 비었다). Windows 경로로 넘긴 뒤 돌았다.",
+      "elevated": {
+        "trace": ["codex-event 1.0.0-aaaaaaaaaaaa (×3)", "update 1.0.0-bbbbbbbbbbbb", "docs 1.0.0-bbbbbbbbbbbb", "codex-event 1.0.0-bbbbbbbbbbbb", "version 1.0.0-bbbbbbbbbbbb", "codex-event 1.0.0-bbbbbbbbbbbb"],
+        "docsBeginFirstLine": "적용 버전: 1.0.0-aaaaaaaaaaaa → 1.0.0-bbbbbbbbbbbb",
+        "runtimeAfter": { "applied": "1.0.0-bbbbbbbbbbbb", "pending": null },
+        "skillMarkerApplied": true,
+        "ms": 14441
+      },
+      "unelevated": {
+        "trace": ["codex-event 1.0.0-aaaaaaaaaaaa (×3)", "update 1.0.0-bbbbbbbbbbbb", "docs 1.0.0-bbbbbbbbbbbb", "codex-event 1.0.0-bbbbbbbbbbbb", "version 1.0.0-bbbbbbbbbbbb", "codex-event 1.0.0-bbbbbbbbbbbb"],
+        "docsBeginFirstLine": "적용 버전: 1.0.0-aaaaaaaaaaaa → 1.0.0-bbbbbbbbbbbb",
+        "runtimeAfter": { "applied": "1.0.0-bbbbbbbbbbbb", "pending": null },
+        "skillMarkerApplied": true,
+        "ms": 12359
+      },
+      "conclusion": "다음 작업을 여는 명령 직전의 PreToolUse hook(샌드박스 밖)이 B 를 적용하고(.agents/ 사본 포함), docs begin 은 처음부터 B 로 돌았다. 두 샌드박스 모드 모두 호스트 밖 터미널 없이 적용됐다. 프로젝트 hook 이 돌려면 프로젝트·hook 신뢰가 필요하다(보통의 설치 절차)."
+    },
+    "nextWorkOutsideSandbox": {
+      "invocation": "같은 준비, --sandbox danger-full-access",
+      "docsBegin": ["적용 버전: 1.0.0-aaaaaaaaaaaa → 1.0.0-bbbbbbbbbbbb", "(B 의 템플릿 반영 보고)", "문서 작성 세션을 열었습니다."],
+      "trace": ["version 1.0.0-aaaaaaaaaaaa", "docs 1.0.0-aaaaaaaaaaaa", "update 1.0.0-bbbbbbbbbbbb", "docs 1.0.0-bbbbbbbbbbbb", "version 1.0.0-bbbbbbbbbbbb"],
+      "runtimeAfter": { "applied": "1.0.0-bbbbbbbbbbbb", "pending": null },
+      "skillMarkerApplied": true,
+      "conclusion": "다음 작업을 여는 명령이 예약된 B 를 적용하고 같은 명령을 B 로 다시 열었다. 세션을 다시 열지 않았다."
+    },
+    "earlierFinding": "workspace-write 샌드박스에서 모델이 부른 update 적용 자식도 같은 이유로 끝났다(exit null) — Codex 의 update 적용은 샌드박스 밖(권한 상승)으로 실행하라고 template/codex/ca-answer.md 에 적었다.",
+    "sourceBased": [
+      "hooks.json 은 hooks 엔진을 만들 때(세션 생성) 한 번 읽는다 — 파일 감시·자동 다시 읽기가 없다(codex-rs 0.162.1 hooks/src/engine/discovery.rs·registry.rs)",
+      "MCP 서버는 세션 시작 때 띄운다",
+      "에이전트 역할 목록은 세션 시작 때 Config 를 읽을 때 만든다. 역할 TOML 은 하위 에이전트를 띄울 때 다시 읽는다",
+      "스킬 변경은 자동으로 감지한다(\"Codex detects skill changes automatically. If an update doesn't appear, restart Codex.\")"
+    ]
+  },
+  "realBuild": {
+    "setup": "이 저장소의 커밋+작업 트리 변경을 임시 클론에 커밋(이 저장소에는 커밋하지 않았다) → bare upstream → 설치본(Git 소스, 실제 npm ci·build) → 대상 프로젝트(init --host both). upstream 에 표지 한 줄을 단 커밋을 올리고 설치본의 updateFromSource 를 실제 git·npm 으로 돌렸다.",
+    "v2": {
+      "id": "1.0.0-8845432bdd39",
+      "source": { "kind": "git", "commit": "8845432bdd3982d7cb6ec8a2294c74f6d647a3e7", "tree": "103b3b4862c1e2a09e6e0ddb789e3fc59a9e7bcd", "remote": "origin", "ref": "refs/heads/master" },
+      "contentHashPrefix": "14091c030d19541b",
+      "ms": 5200,
+      "result": "적용 버전: 번들 → 1.0.0-8845432bdd39 · 호스트를 다시 열 필요가 없습니다. · doctor 의 적용 버전 ✓(그 밖의 ✗ 는 빈 프로젝트의 공통 문서 미작성)",
+      "installedSourceUntouched": true,
+      "devDependenciesPruned": "node_modules 는 zod 5.9 MB 만(빈 범위 폴더 @esbuild·@types·@typescript 가 남는다)",
+      "skillMarkerApplied": true
+    },
+    "v3WhileBusy": {
+      "id": "1.0.0-3d58e60bd17e",
+      "source": { "kind": "git", "commit": "3d58e60bd17edb81ef10dc924b9725de91e4ada7", "tree": "e5eab85d1c456a408250e677f8455b31b2e74d7a" },
+      "contentHashPrefix": "2aa41701dcff93b1",
+      "result": [
+        "새 버전 1.0.0-3d58e60bd17e 설치 완료. 현재 작업은 기존 버전(1.0.0-8845432bdd39)으로 계속 진행하며, 작업 완료 후 다음 작업부터 새 버전을 적용합니다.",
+        "  대기 사유: 공통 문서 준비 세션"
+      ],
+      "afterSessionEnd": "docs begin(대상 프로젝트에서) 이 v3 를 적용하고 세션을 열었다 — runtime.json applied 1.0.0-3d58e60bd17e, pending 없음"
+    },
+    "trace": ["help bundle", "update 1.0.0-8845432bdd39", "doctor 1.0.0-8845432bdd39", "version 1.0.0-8845432bdd39", "docs 1.0.0-8845432bdd39", "help bundle", "update 1.0.0-3d58e60bd17e", "version 1.0.0-8845432bdd39"]
+  },
+  "firstMigration": {
+    "setup": "임시 클론에 이 변경을 커밋(1f9234f62a73, 이 저장소에는 없다) → bare upstream. 설치본은 그 한 커밋 앞(299d0d2dc14d — 이 기능 전)으로 되돌려 실제 npm ci·build. 대상 프로젝트는 이전 코드로 init --host both.",
+    "beforeMigration": "이전 코드에는 version 명령이 없다(\"모르는 명령입니다: version\", exit 1)",
+    "migration": {
+      "how": "이전 코드의 updateFromSource — 설치 폴더에서 pull --ff-only·build 뒤 새 CLI 의 update --templates-only, 이어서 doctor",
+      "installedHead": "새 커밋(이전 방식의 pull — 마지막 한 번)",
+      "applyReport": ["적용 버전: 번들 1.0.0 (그대로 — 템플릿 다시 반영)", "호스트를 다시 열 필요가 없습니다.", "바뀐 스킬 6개(ca-answer · ca-next · ca-status — 두 호스트) — 파일로 다시 읽으라는 줄"],
+      "runtimeJson": "없음(고정 없음 — 진입점 번들)",
+      "templatesJson": "생김",
+      "gitignore": ".code-agent/runtime.json 줄이 더해짐",
+      "store": "비어 있음",
+      "exit": "1 — 이전 갱신기의 마지막 doctor 단계가 빈 프로젝트의 공통 문서 4종 missing-file 로 ✗ 를 내 STOP 으로 보고했다(적용 버전 줄은 ✓)",
+      "ms": 4573
+    },
+    "normalUpdateAfter": {
+      "how": "upstream 에 표지 커밋(f3762bd6549c)을 올리고 이제 새 코드인 설치본의 updateFromSource",
+      "result": ["1.0.0-f3762bd6549c 을 설치했습니다 — <저장소>/1.0.0-f3762bd6549c", "적용 버전: 번들 → 1.0.0-f3762bd6549c", "호스트를 다시 열 필요가 없습니다."],
+      "installedHeadUnchanged": true,
+      "release": { "kind": "git", "commit": "f3762bd6549c35405e27e520a19475786ef915b6", "tree": "34a6651c0f281c3279d95e616257d44977975bc9" },
+      "runtimeApplied": "1.0.0-f3762bd6549c",
+      "skillMarkerApplied": true,
+      "hookAfter": "PreToolUse hook exit 0, 실행 기록 hook 1.0.0-f3762bd6549c",
+      "ms": 5259
+    },
+    "trace": ["update bundle", "doctor bundle", "version bundle", "hook bundle (실험 스크립트가 stdin 을 넘기지 않아 판정 실패로 막힘 — exit 2)", "help bundle", "update 1.0.0-f3762bd6549c", "doctor 1.0.0-f3762bd6549c", "hook 1.0.0-f3762bd6549c"]
+  },
+  "incident": {
+    "what": "실제 빌드 검증 중 docs begin 한 번을 작업 폴더를 지정하지 않고 실행해 이 저장소 루트에서 돌았다.",
+    "created": [".code-agent/docs-session.json", "doc/.survey/.gitignore", "doc/knowledge/api-catalog.md", "doc/knowledge/business-rules.md", "doc/knowledge/data-dictionary.md", "doc/knowledge/features.md", "doc/knowledge/flows.md"],
+    "cleanup": "모두 추적되지 않은 새 파일(폴더도 새로 생김)이라 그 파일들만 지웠다. 그 뒤 git status 는 이 작업의 변경만 보인다. 다른 파일은 바뀌지 않았다.",
+    "homeStore": "사용자 홈에 빈 ~/.code-agent/releases/ 가 생겨 있었다(생성 16:18:01, 수정 16:18:22, 릴리스 없음). 이후 전체 시험 세 번(16:49·17:12·17:19 종료)은 수정 시각을 바꾸지 않았다. 비어 있음을 확인하고 두 폴더를 rmdir 로 지웠다."
+  }
+}

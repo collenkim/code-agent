@@ -115,7 +115,7 @@ claude                                   # 이 안에서 /ca-request 입력
 | SessionStart hook | `.claude/settings.json` — 진행 상태 요약을 내는 `code-agent session-event` | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
-| 버전 고정 | `.code-agent/version` | O |
+| 설치한 절차 버전 | `.code-agent/version` | O |
 
 표시된 블록 **안쪽만** 바꾼다. `settings.json` 의 다른 hook·설정과 `CLAUDE.md` 의 블록 밖은 건드리지 않는다.
 
@@ -128,7 +128,7 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 설치한 파일은 커밋해 팀과 공유한다.
 
 설치는 두 가지다 — npm 전역, 그리고 Node 가 필요 없는 **단일 실행 파일**(`npm run build:bin` → `dist-bin/code-agent(.exe)`, OS 별 ~90 MB).
-저장소에 들어가는 것은 어느 쪽이든 같다(hook 명령이 PATH 에서 풀린다). 바이너리 만들기와 서명 · `doctor` 의 검사 항목 · `update` 가 보존하는 것 ·
+저장소에 들어가는 것은 어느 쪽이든 같다(hook 명령이 PATH 에서 풀린다 — 버전별 경로를 담지 않는다). 프로젝트가 실제로 쓰는 code-agent 버전은 이 PC 의 릴리스 저장소에서 프로젝트마다 고른다(`.code-agent/runtime.json`, `code-agent version`으로 조회). 바이너리 만들기와 서명 · `doctor` 의 검사 항목 · `update` 가 보존하는 것 ·
 지우는 순서는 [install.md](install.md).
 
 ---
@@ -615,7 +615,8 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 |---|---|---|
 | `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치(호스트는 이전 기록과 합집합 — 줄이지 않는다). `--help`·`-h`는 사용법만 보이고 아무것도 쓰지 않으며, 받지 않는 인자가 있으면 설치하지 않고 멈춘다(`doctor`·`update`도 같다) | — |
 | `code-agent doctor` | 설치·환경 점검 — `✓` 확인 · `✗` 막는 것(다음 줄에 고치는 법) · `·` 알림. `✗` 가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다(`--host`·`--cross` 포함) | — |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스 갱신·필요 의존성 설치·빌드 후 새 CLI로 실행 절차·에이전트·hook 적용. 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 현재 번들만 적용(확인 없음). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
+| `code-agent update [--cli <경로>]` | 로컬 Git 소스의 upstream 커밋을 릴리스 저장소(`~/.code-agent/releases`)의 새 폴더에 설치·검증한 뒤 이 프로젝트에 적용 — 진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용한다(호스트 종료 불필요. 실행 중인 설치 폴더·소스 폴더·다른 프로젝트는 그대로). 직접 실행은 미리보기를 보인 뒤 터미널에서 `update` 를 입력해야 진행한다(호스트 밖 TTY — Claude Code·Codex 가 띄운 셸이면 거부한다. 세션 중에는 `/ca-answer` 의 update 동의, 세션 밖에서도 모델의 셸 실행은 hook 이 막는다). `--templates-only`는 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영한다(npm 패키지 진입점이면 설치된 패키지를 들인다, 확인 없음 — 진행 중인 일이 있으면 종료 코드 3). `--release <ID>`는 설치된 릴리스로 되돌리거나 다시 앞으로(터미널 확인), `--bundled`는 고정을 풀고 진입점 번들로. 대상은 실행 위치가 속한 git 저장소의 루트(하위 폴더에서 실행해도 된다)이고, code-agent 가 설치되지 않은 폴더에서는 어느 갈래든 아무것도 쓰지 않고 멈춘다(종료 코드 1 — 처음 설치는 `init`). 다른 hook · 블록 밖 · 역할별 모델·추론 강도 변경값은 그대로. 정의 파일의 model·effort를 설정대로 다시 쓴 역할은 전후 값을 출력에 표시(이전 번들 기본값이던 역할은 따로 표시) ([install.md §5](install.md#5-code-agent-update--갱신)) | — |
+| `code-agent version [--json]` | 이 명령을 돌린 코드 · 이 프로젝트의 적용 버전·적용 대기와 사유·진행 중인 일 · 진입점 npm 패키지 · 릴리스 저장소에 설치된 릴리스(식별값·상태 세대) · 실행 중인 선택 UI MCP(연결부 버전·마지막 호출을 처리한 버전). 읽기 전용이라 작업 중에도 모델이 조회할 수 있다 | — |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 | — |
 | `code-agent docs` | 공통 문서의 섹션별 상태와 확정 여부 (KNOWLEDGE 는 있음/없음만) | — |
 | `code-agent confirm doc <architecture\|conventions\|test-strategy\|quality>` | POLICY 문서 확정 — 해시를 원장에 남긴다. **넷 다** 해야 작업이 시작된다 | **O** |
@@ -1021,6 +1022,10 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `.code-agent/approvals/<ID>.jsonl` | 계획 승인·반려 원장 (해시 사슬) | `approve` · `reject` 만 | O |
 | `.code-agent/approvals/<ID>/<대상>-<n>.plan.json` | 판정한 그 계획의 사본 — 재승인 때 바뀐 곳을 이것과 대조해 보여 준다 | `approve` · `reject` 만 | O |
 | `.code-agent/version` | 설치된 code-agent 버전 | `init` | O |
+| `.code-agent/runtime.json` · `runtime.lock` | 이 PC 에서 이 프로젝트에 적용한 code-agent 릴리스(ID·저장소)·적용 대기와 사유 · 버전 적용 잠금 | 버전 적용(`update`·다음 작업을 열 때) | X |
+| `.code-agent/templates.json` | 마지막으로 적용한 스킬·에이전트 사본의 해시 — 다음 적용이 사람이 고친 사본을 가린다 | 버전 적용 | O |
+| `.code-agent/template-conflicts/` | 사람이 고친 사본 대신 둔 새 번들 내용(같은 경로) — 병합한 뒤 `update --templates-only` | 버전 적용 | X |
+| `.code-agent/log/choice-server/<pid>.json` | 실행 중인 선택 UI MCP 의 연결부 버전·마지막 호출 — `version`이 읽는다 | 선택 UI MCP | X |
 | `.code-agent/active.json` | 진행 커서 (id·지시서·대상·스테이지·단계·브랜치) | `start` · `next` · `back` · `check`(수정 루프의 되감기) 가 쓰고, `abort` · `deliver` 가 지운다 | X |
 | `.code-agent/docs-session.json` | 문서 작성 세션 표시 | `docs begin` · `end` | X |
 | `.code-agent/request-session.json` | 요구사항 접수 세션 표시 (id·종류·연 시각 · 접수 때 준 `base`·`target`) | `request begin` 이 쓰고 `start` · `abort` 가 지운다 | X |
@@ -1178,7 +1183,7 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 3. Codex는 요약을 보여 주고 `code_agent.confirm`에 준비한 ID만 전달한다. Claude는 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다. 두 호스트의 선택 화면은 화면 높이를 넘는 질문을 잘라 보이므로, 질문에는 요약 앞부분·생략 줄 수·전문 파일 경로와 질문 줄만 싣는다. 확인할 전체 내용은 대화의 요약과 준비 때 CLI가 쓴 `.code-agent/consents/confirm-<내용 해시>.md`에서 본다.
 4. Claude는 질문의 PreToolUse·PostToolUse hook이 실제 응답을 관찰한다. Codex는 PreToolUse의 일회용 질문 티켓과 MCP 폼 응답을 같은 세션·호출·작업 경로·대상에 결속한다.
 5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다 — 결과에 지금 할 일(`next`)과 스테이지(`phase`)가 실려 적용 뒤 `code-agent status`를 다시 부르지 않는다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다. 적용은 응답을 받은 세션의 셸에서 hook 이 본 명령(적용 티켓)이나 사람의 터미널에서만 된다.
-6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 새 hook을 읽도록 Claude Code를 재시작한 뒤 재개한다.
+6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 호스트를 종료하지 않는다 — 적용 보고의 '호스트를 다시 열어야 하는 것'이 있을 때만 다시 열고, 다시 읽으라는 지침·스킬 파일은 읽은 뒤 이어 간다(진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용한다).
 
 취소·보류·응답 누락·시간 초과·추가 질문·다른 세션은 승인으로 처리하지 않는다. 확인 이후 파일·설정·Git 상태가 바뀌면 그 동의는 폐기되고(같은 ID로 다시 묻거나 적용하지 않는다) 새로 준비하여 확인한다. 상태 출력의 `failure`(`class`·`kind`·`guide`)가 다음 행동을 알려 준다 — 보류·명시적 선택 없음은 다시 묻지 않고, 수정 요청은 고친 뒤 새로 준비하며, 적용 실패는 상태를 확인한 뒤 새로 준비한다. 같은 동작이 연속 두 번 대상 변경으로 폐기되면 준비 결과에 `warning` 이 붙는다(외부 hook·편집기·빌드가 대상을 바꾸는지 확인). 작업·세션이 없을 때 응답·적용을 기다리는 동의가 있으면 30분 동안 셸은 code-agent 명령과 읽기용 git 만 돈다 — 진행하지 않을 거면 그 질문에서 `보류` 를 고른다. 동의 자체에는 유효기간이 없어 30분이 지나도 답하지 않은 동의는 `pending` 으로 남지만, 그때부터는 이 셸 제한이 풀려 다시 보호되지 않는다 — 오래 둔 동의는 쓰지 말고 새로 준비한다. 적용이 도는 동안에는 쓰기 도구가 막힌다. 같은 요청을 중복 적용해도 커밋을 반복하지 않는다. 이 기록은 신뢰하는 로컬 hook의 관찰이며 사용자 신원 증명이나 OS 보안 경계는 아니다.
 
@@ -1350,8 +1355,10 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `확인 요청 …(…)이 응답·적용을 기다리는 동안에는 셸에서 code-agent 명령과 읽기용 git 만…` | 작업·세션이 없을 때 응답·적용을 기다리는 동의가 있다(준비 뒤 30분) — 준비부터 적용까지 대상을 바꾸지 않게 한다 | 그 동의를 끝낸다 — 답하고 `consent finish`, 진행하지 않을 거면 그 질문에서 `보류`. 30분이 지나면 풀리지만 그 동의는 쓰지 말고 새로 준비한다 |
 | `확인 코드가 없거나 다릅니다` | Codex 응답에 확인 코드가 없거나 지금 질문 묶음의 코드와 다르다(새로 준비한 동의만 코드를 요구한다) | `codexReply` 마지막 질문 끝의 `확인 코드:` 6자를 붙여 다시 보낸다. 요약이 줄어 코드가 보이지 않으면 메인에게 전문을 다시 보여 달라고 한다 |
 | `확인·적용이 진행 중입니다(pid …) — 끝난 뒤 다시 쓰세요` | 동의 적용이 도는 동안 쓰기 도구를 썼다 | 적용이 끝난 뒤 다시 쓴다 |
-| `code-agent 소스 업데이트(fetch · pull · npm ci · build)는 사람의 확인이 필요합니다` | 모델 셸이 소스 update 를 부르려 했다 — 작업·세션이 없어도, `npx`·경로·`cli.js update` 같은 꼴도 막는다 | `ca-answer` 의 `update` 동의를 쓰거나, 사람이 호스트 밖 터미널에서 실행한다(미리보기 뒤 `update` 입력). 템플릿만 다시 적용하려면 `code-agent update --templates-only` |
-| `호스트(Claude Code·Codex) 셸 안에서는 code-agent 소스 업데이트를 터미널 확인으로 받지 않습니다` | 직접 CLI 소스 update 를 호스트 표지(`CLAUDECODE`·Codex 표지)가 있는 셸에서 불렀다 — 모델이 PTY 로 확인 단어를 넣을 수 있는 경로라 막는다 | 위와 같다 |
+| `이 폴더(…)에는 code-agent 가 설치되어 있지 않아 갱신하지 않습니다 — 아무것도 바꾸지 않았습니다` | `update`를 프로젝트 밖이나 code-agent 를 설치하지 않은 저장소에서 실행했다 — 대상은 실행 위치가 속한 git 저장소의 루트다 | 적용할 프로젝트 안(하위 폴더도 된다)에서 다시 실행한다. 그 폴더에 처음 설치하려면 `code-agent init` |
+| `새 버전 … 적용에 실패했습니다 — 지금 버전으로 계속 돕니다` + `이 셸이 새 프로세스 실행이나 설치 파일 쓰기를 막았습니다` | 다음 작업을 열 때의 적용을 샌드박스 셸(Codex Windows — 자식 프로세스나 `.codex/`·`.agents/` 쓰기를 막는다)이 맡았다 — 보통은 그 명령 직전의 hook 이 샌드박스 밖에서 먼저 적용하는데, 프로젝트나 hook 을 신뢰하지 않아 hook 이 돌지 않았다. 반영한 파일은 되돌렸고 예약은 남는다 | 지금 버전으로 이어 간다. 진행 중인 일이 없을 때 호스트 밖 터미널에서 `code-agent update --templates-only`, 또는 Codex 에서 프로젝트·hook 을 신뢰한 뒤 다음 작업을 연다 |
+| `code-agent 새 버전 설치(fetch · npm ci · build)와 적용 버전 선택(--release · --bundled)은 사람의 확인이 필요합니다` | 모델 셸이 소스 update·`--release`·`--bundled`를 부르려 했다 — 작업·세션이 없어도, `npx`·경로·`cli.js update` 같은 꼴도 막는다 | `ca-answer` 의 `update` 동의를 쓰거나, 사람이 호스트 밖 터미널에서 실행한다(미리보기 뒤 `update` 입력). 설치해 둔 적용 대기 버전 적용·지금 적용 버전의 템플릿 다시 반영은 `code-agent update --templates-only` |
+| `호스트(Claude Code·Codex) 셸 안에서는 code-agent 새 버전 설치·적용 버전 선택을 터미널 확인으로 받지 않습니다` | 직접 CLI 소스 update·`--release` 를 호스트 표지(`CLAUDECODE`·Codex 표지)가 있는 셸에서 불렀다 — 모델이 PTY 로 확인 단어를 넣을 수 있는 경로라 막는다 | 위와 같다 |
 | `호스트 hook 설정(.claude/settings.json · …)은 셸로 다루지 않습니다` | 세션 밖 셸이 hook 설정 파일을 가리켰다(`.claude./`·`CLAUDE~1\SETTIN~1.JSO` 같은 Windows 별칭 포함) | 읽기는 Read 도구로 한다(Codex 는 `code-agent read <파일>` — 연결자 없이 쓰면 열린다). 설치·갱신은 사람이 `code-agent init` 또는 `code-agent update --templates-only` 로 한다 |
 | `Windows 에서 이름 끝의 점·공백은 다른 이름의 같은 파일이 됩니다` | 쓰기 경로의 이름 끝에 점·공백이 있다(`.code-agent./`·`requirement.md `) — 경로 대조를 비켜 가는 길이라 모든 모드에서 막는다 | 이름 끝의 점·공백을 빼고 쓴다 |
 | `등록된 플러그인 키가 들어 있는 상위 폴더(…)는 검색하지 않습니다` | Grep·Glob 이 키 저장소의 상위 폴더(예: 홈 `~`)를 통째로 검색하려 했다 | 저장소 안에서 검색한다. 키 저장소를 프로젝트 안에 두었다면(`CODE_AGENT_HOME`) 밖으로 옮긴다 |

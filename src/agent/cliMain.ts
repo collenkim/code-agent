@@ -37,7 +37,6 @@ import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./req
 import { openRound } from "./review";
 import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repairPlanning, planningResult } from "./planning";
 import { manifestCheck, survey } from "./survey";
-import { update } from "./update";
 import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
@@ -47,7 +46,7 @@ import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, ter
 import { contextHandoff, handoffPlanning, stageHandoff } from "./handoff";
 import { planningAdvanceCli, planningAssignmentCli, planningJson } from "./planningChain";
 import { crossCritic, crossReview } from "./crossCheck";
-import { updateFromSourceConfirmed } from "./sourceUpdate";
+import { atNextWork, renderVersion, runUpdate, versionView } from "./runtimeGate";
 import { renderVerification, verificationJson, verify } from "./verificationFlow";
 import { notationFor, useNotation } from "./hostText";
 import { releaseLease } from "./lease";
@@ -68,8 +67,12 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
   code-agent setup baseline           준비 파일 목록 확인 후 최초 기준 커밋 (TTY)
   code-agent doctor [--host claude|codex|both] [--cross]  설치·환경 점검 (생략하면 설치된 호스트). --cross 는 두 호스트 설치 때 다른 호스트의 --help 로 교차 실행 옵션을 점검한다(모델 호출 없음) — 작업 중에도 조회할 수 있다
-  code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 갱신·의존성·빌드·프로젝트 적용·점검 (호스트 밖 TTY 에서만)
-  code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 현재 번들을 프로젝트에 적용
+  code-agent update [--cli <path>]    Git 소스 설치: 미리보기 뒤 update 입력으로 upstream 커밋을 릴리스 저장소의 새 폴더에 설치·검증하고
+                                      이 프로젝트에 적용 — 진행 중인 일이 있으면 다음 작업부터 (호스트 밖 TTY 에서만, 호스트 종료 불필요)
+  code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영
+                                      (npm 패키지 진입점이면 설치된 패키지를 릴리스로 들인다. 진행 중인 일이 있으면 바꾸지 않고 종료 코드 3)
+  code-agent update --release <ID> | --bundled   설치된 릴리스로 되돌리거나 다시 앞으로(TTY 확인) · 고정을 풀고 진입점 번들로 (진행 중인 일이 없을 때)
+  code-agent version [--json]         이 명령을 돌린 코드 · 이 프로젝트의 적용 버전 · 적용 대기 · 설치된 릴리스 · 실행 중인 선택 UI MCP (읽기 전용)
   code-agent usage [--work <ID>] [--since <날짜>] [--json]   이 저장소에 쓴 토큰·비용(추정)·요청·도구 호출·재시도 기록을 스테이지별·에이전트별로
   code-agent knowledge                공통 KNOWLEDGE 항목 · 그 키를 마지막으로 쓴 작업 · 최신성(재검토 필요·참조 없음·보류)
   code-agent knowledge prune          근거 경로가 전부 사라진 항목을 하나씩 보여 주고 지운다 (TTY 에서만)
@@ -237,7 +240,7 @@ function unknownCommand(command: string): string {
 
 const INIT_USAGE = "사용법: code-agent init [--host claude|codex|both] [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
-const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>]";
+const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
 
 /** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
@@ -245,15 +248,22 @@ export async function runCommand(command: string | undefined, args: string[]): P
   // 출력 문구의 실행 절차·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
   useNotation(notationFor(repoRoot));
   const print = (text: string) => process.stdout.write(`${text}\n`);
+  // 다음 작업을 여는 명령 — 예약된 새 버전을 먼저 적용하고 세션은 실행 잠금 안에서 연다(runtimeGate.atNextWork)
+  const opening = (open: () => string): number => {
+    const out = atNextWork(repoRoot, [command!, ...args], open, print);
+    if (typeof out === "number") return out;
+    print(out);
+    return 0;
+  };
   switch (command) {
     case "triage": {
       const [action, ...rest] = args;
-      if (action === "begin" && rest.length === 1) print(triageBegin(repoRoot, rest[0]));
-      else if (action === "begin" && rest.length === 3 && rest[1] === "--base") print(triageBegin(repoRoot, rest[0], rest[2]));
+      if (action === "begin" && rest.length === 1) return opening(() => triageBegin(repoRoot, rest[0]));
+      else if (action === "begin" && rest.length === 3 && rest[1] === "--base") return opening(() => triageBegin(repoRoot, rest[0], rest[2]));
       else if (action === "link" && rest.length === 2) print(triageLink(repoRoot, rest[0], rest[1]));
-      else if (action === "ingest" && rest.length === 1) print(triageIngest(repoRoot, rest[0]));
+      else if (action === "ingest" && rest.length === 1) return opening(() => triageIngest(repoRoot, rest[0]));
       else if (action === "status" && rest.length === 1) print(triageStatus(repoRoot, rest[0]));
-      else if (action === "reassess" && rest.length === 2) print(triageReassess(repoRoot, rest[0], rest[1]));
+      else if (action === "reassess" && rest.length === 2) return opening(() => triageReassess(repoRoot, rest[0], rest[1]));
       else if (action === "attach" && rest.length === 2) print(triageAttach(repoRoot, rest[0], rest[1]));
       else if (action === "deployed" && rest.length === 3) print(triageDeployed(repoRoot, rest[0], rest[1], rest[2]));
       else if (rest.length === 0 && action === "status") print(triageStatus(repoRoot));
@@ -329,10 +339,21 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(report.text);
       return report.ok ? 0 : 1;
     }
-    case "update":
-      // 소스 업데이트(fetch·pull·npm ci·build)는 미리보기를 보여 주고 터미널에서 확인받는다 — 동의 적용은 이미 확인을 받았다
-      if (optionsOnly(args, ["host", "cli"], ["--templates-only"], UPDATE_USAGE)) { print(UPDATE_USAGE); return 0; }
-      print(args.includes("--templates-only") ? update(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }) : updateFromSourceConfirmed(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
+    case "update": {
+      // 새 버전 설치(fetch·npm ci·build)와 버전 선택은 미리보기를 보여 주고 터미널에서 확인받는다 — 동의 적용은 이미 확인을 받았다.
+      // --apply-release 는 갱신·다음 작업 관문이 새 릴리스의 CLI 로 부르는 내부 갈래다
+      if (optionsOnly(args, ["host", "cli", "release", "apply-release", "trigger", "consent"], ["--templates-only", "--bundled"], UPDATE_USAGE)) { print(UPDATE_USAGE); return 0; }
+      const result = runUpdate(repoRoot, {
+        templatesOnly: args.includes("--templates-only"), bundled: args.includes("--bundled"), release: option(args, "release"),
+        applyRelease: option(args, "apply-release"), trigger: option(args, "trigger"), consent: option(args, "consent"),
+        cli: option(args, "cli"), host: parseHost(option(args, "host")),
+      });
+      print(result.text);
+      return result.code;
+    }
+    case "version":
+      if (args.length > 1 || (args.length === 1 && args[0] !== "--json")) throw new Stop("사용법: code-agent version [--json]");
+      print(args[0] === "--json" ? JSON.stringify(versionView(repoRoot), null, 2) : renderVersion(versionView(repoRoot)));
       return 0;
     case "usage": {
       // 값 없는 깃발이 먼저다 — `--work --since x` 는 사용법이 아니라 --work 의 값이 없다고 알린다
@@ -355,8 +376,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (!args[0] || args[0].startsWith("--")) {
         throw new Stop("지시서 경로가 필요합니다: code-agent start <지시서>");
       }
-      print(start(repoRoot, args[0], { target: option(args, "target"), base: option(args, "base") }));
-      return 0;
+      return opening(() => start(repoRoot, args[0], { target: option(args, "target"), base: option(args, "base") }));
     case "next":
       // 구현 Task 로 옮겼으면 그 Task 의 context 파일도 쓴다 — context --file 왕복을 줄인다
       print([next(repoRoot), ...(stageHandoff(repoRoot, "implement")?.lines ?? [])].join("\n"));
@@ -433,13 +453,12 @@ export async function runCommand(command: string | undefined, args: string[]): P
           print(requestFormat(repoRoot));
           return 0;
         case "begin":
-          print(
+          return opening(() =>
             requestBegin(repoRoot, positional(args.slice(1), ["kind", "base", "target"])[0], option(args, "kind"), {
               base: option(args, "base"),
               target: option(args, "target"),
             }),
           );
-          return 0;
         case "submit":
           print(requestSubmit(repoRoot, args[1]));
           return 0;
@@ -461,8 +480,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
           print(docsStatus(repoRoot));
           return 0;
         case "begin":
-          print(docsBegin(repoRoot));
-          return 0;
+          return opening(() => docsBegin(repoRoot));
         case "end":
           print(docsEnd(repoRoot));
           return 0;

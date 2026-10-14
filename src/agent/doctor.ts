@@ -21,6 +21,7 @@ import { codexTrust } from "./codexTrust";
 import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
+import { appliedStore, entryScript, installedRelease, ownRelease, readRuntime, RUNTIME_FILE, type RuntimeState } from "./runtimeSelect";
 import { AGENTS, installedClaudeModel, policySummary, workInProgress } from "./models";
 import { claudeModelOf, modelDisplay } from "./modelPolicy";
 import { storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE } from "./plugins/store";
@@ -210,10 +211,21 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     add("✓", "PATH 의 code-agent", `단일 실행 파일 ${onPath}`);
   }
 
-  // 3b. 지금 도는 것과 PATH 의 것이 같은가 — 막지는 않는다
-  const running = isPackaged() ? process.execPath : join(__dirname, "cli.js");
+  // 3b. 지금 도는 진입점과 PATH 의 것이 같은가 — 막지는 않는다. 적용 버전(릴리스)으로 넘겨 돌 때도 진입점을 견준다
+  const running = isPackaged() ? process.execPath : entryScript();
   if (onPath && !samePath(onPathCli ?? onPath, running)) {
     add("·", "지금 도는 것", `${running} — PATH 의 code-agent 는 다른 설치본입니다 (${onPathCli ?? onPath})`);
+  }
+
+  // 3c. 이 프로젝트의 적용 버전 — 고정이 없으면 진입점 번들. 적용 버전이 저장소에 없으면 진행 중인 일의 hook 이 멈춘다
+  {
+    let applied: string | undefined, pending: string | undefined, problem: string | undefined, state: RuntimeState | undefined;
+    try { state = readRuntime(repoRoot); applied = state?.applied; pending = state?.pending?.id; }
+    catch (error) { problem = error instanceof Error ? error.message : String(error); }
+    const own = ownRelease()?.id;
+    if (problem) add("✗", "적용 버전", `${RUNTIME_FILE}: ${problem}`, "사람이 파일을 확인하세요 — 지우면 진입점 번들로 돕니다(진행 중인 일이 없을 때)");
+    else if (applied && !installedRelease(applied, appliedStore(state))) add("✗", "적용 버전", `${applied} 가 릴리스 저장소(${appliedStore(state)})에 없습니다`, "code-agent version 으로 확인하고 code-agent update 로 다시 설치하거나 update --bundled 로 고정을 푸세요");
+    else add("✓", "적용 버전", `${applied ?? "진입점 번들(고정 없음)"}${own ? ` · 이 점검은 ${own}` : ""}${pending ? ` · 적용 대기 ${pending}(다음 작업부터)` : ""}`);
   }
 
   // 4. git 저장소

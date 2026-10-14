@@ -40,6 +40,7 @@ import { leaseGuard } from "./lease";
 import { noteHookOutput } from "./hookLog";
 import { shortCommand } from "./screenText";
 import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
+import { entryPackage, OPENING_COMMAND, pendingSwitch } from "./runtimeSelect";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -136,13 +137,15 @@ const MODEL_SUBCOMMANDS = [
   "integrate",
   // 다른 세션이 쥔 작업 임대를 푼다 — 사용자 확인 뒤(스킬 규칙). 임대는 사고 방지 장치이지 권한 경계가 아니다(lease.ts)
   "takeover",
+  // 실행 중·적용·적용 대기·설치된 버전 조회 — 읽기 전용
+  "version",
 ];
 
 /**
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -396,7 +399,7 @@ function readCommand(command: string, powershell: boolean): boolean {
  * 진짜 관문은 CLI 쪽(updateFromSourceConfirmed — 호스트 셸 거부·TTY 확인)이고, 이 판정은 그 앞의 안내다.
  */
 const SOURCE_UPDATE = /(?:^|[\s&;|("'\\/])code-agent(?:\.cmd|\.ps1)?["']?\s+update(?=\s|$)|\bcli\.js["']?\s+update(?=\s|$)/i;
-const SOURCE_UPDATE_DENIED = "code-agent 소스 업데이트(fetch · pull · npm ci · build)는 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 호스트 밖의 터미널에서 직접 실행합니다(미리보기 뒤 update 입력). 번들 템플릿만 다시 적용하려면 code-agent update --templates-only 를 씁니다.";
+const SOURCE_UPDATE_DENIED = "code-agent 새 버전 설치(fetch · npm ci · build)와 적용 버전 선택(--release · --bundled)은 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 호스트 밖의 터미널에서 직접 실행합니다(미리보기 뒤 update 입력). 이미 설치한 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿만 다시 반영하려면 code-agent update --templates-only 를 씁니다(진행 중인 일이 없을 때).";
 
 /**
  * 교차 실행이 띄운 다른 호스트 안(CODE_AGENT_CROSS)에서 여는 code-agent 명령 — 읽기 전용 검토에 필요한 것만(파일 읽기·상태·조사).
@@ -432,6 +435,11 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
       command: input.tool_input.command.replace(/^(\s*)code-agent\.cmd(?= |$)/, "$1code-agent") } };
   }
   const reason = decideTool(input, projectDir);
+  if (reason === undefined && ["Bash", "PowerShell"].includes(input.tool_name) && !input.agent_id) {
+    const text = (input.tool_input.command ?? "").trim();
+    const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
+    if (OPENING_COMMAND.test(text) && !SHELL_META.test(text) && !(powershell && powershellMeta(text))) applyBeforeOpening(findRepoRoot(projectDir ?? input.cwd));
+  }
   if (reason === undefined && ["Bash", "PowerShell"].includes(input.tool_name) && input.session_id) {
     const text = (input.tool_input.command ?? "").trim();
     const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
@@ -446,6 +454,17 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     }
   }
   return reason;
+}
+
+/**
+ * 다음 작업을 여는 명령 직전 — 예약된 새 버전을 hook 에서 적용한다(runtimeGate.applyBeforeOpening). 호스트는 hook 을 샌드박스 밖에서 돌리므로
+ * Codex 샌드박스 셸이 쓰지 못하는 .agents/·.codex/ 사본도 반영된다. 판정은 바꾸지 않는다 — 실패하면 그 명령의 관문이 다시 시도하고 알린다.
+ * 적용 모듈은 무거워 적용할 것이 있을 때만 읽는다
+ */
+function applyBeforeOpening(root: string): void {
+  if (!pendingSwitch(root) && !entryPackage()) return;
+  const gate = require("./runtimeGate") as typeof import("./runtimeGate");
+  try { gate.applyBeforeOpening(root); } catch { /* 여는 명령의 관문(atNextWork)이 다시 시도하고 사유를 알린다 */ }
 }
 
 /**
@@ -620,7 +639,8 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     // 읽기 명령(code-agent read)은 연다 — Codex 의 유일한 읽기 길이고, 설정을 바꾸지 않는다
     if (mentionsHostConfig(command) && !readCommand(command, input.tool_name === "PowerShell" || input.shell === "powershell")) return hostConfigBashDenied();
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
-    if (SOURCE_UPDATE.test(command) && !/(^|\s)--templates-only(\s|$)/.test(command)) return SOURCE_UPDATE_DENIED;
+    // --templates-only 는 지금 적용 버전(또는 이미 설치된 적용 대기 버전)의 템플릿 반영뿐이다 — 버전 선택 깃발과 함께면 막는다
+    if (SOURCE_UPDATE.test(command) && (!/(^|\s)--templates-only(\s|$)/.test(command) || /(^|\s)--(?:bundled|release|apply-release|trigger|consent)(\s|=|$)/.test(command))) return SOURCE_UPDATE_DENIED;
     return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {

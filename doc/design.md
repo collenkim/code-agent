@@ -743,7 +743,7 @@ code-agent 는 네트워크를 직접 쓰지 않는다. 외부 서비스에 붙�
 ```
 npm install -g <사내 저장소>/code-agent     # 한 번 — Node 22 이상
 npm run build:bin → dist-bin/code-agent(.exe)  # 또는 단일 실행 파일 (Node 불필요, OS 별 ~90 MB — install.md)
-cd <프로젝트> && code-agent init             # 프로젝트마다 — .claude/ 설치, 버전 고정
+cd <프로젝트> && code-agent init             # 프로젝트마다 — .claude/ 설치, 설치 버전 기록
 code-agent doctor                            # 설치·환경 점검 (✗ 가 없으면 종료 코드 0)
 claude  →  /ca-request [ID] <요구사항 서술·티켓·파일>
         →  필요한 초기 준비 확인(setup: POLICY 4종 + 최초/도입 준비 커밋)
@@ -753,9 +753,21 @@ claude  →  /ca-request [ID] <요구사항 서술·티켓·파일>
 
 설치·점검·갱신·지우기의 정본은 [install.md](install.md) 다. **템플릿을 읽는 자리는 `src/agent/assets.ts` 하나**이고 —
 npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 내장 자원에서 **같은 키**로 읽는다 — 그래서 `init`·`update`·`doctor` 가
-번들 적용은 두 설치에서 같다. 기본 `update`의 Git 소스 자동 갱신은 로컬 Git 소스 설치본만 지원하며, 바이너리·비Git 패키지는 새 설치본으로 교체한 뒤 `update --templates-only`로 적용한다. 바이너리는 자기 OS 의 node 를 복사해 만들므로 **OS 별로 따로** 만들고, **만드는 Node 는 24.8 이상**이어야 한다
+번들 적용은 두 설치에서 같다. 기본 `update`의 받기는 로컬 Git 소스 설치본만 지원하며, npm 패키지는 패키지 관리자로 설치한 것을 릴리스로 복사하고, 바이너리는 새 파일로 교체한 뒤 `update --templates-only`로 적용한다. 바이너리는 자기 OS 의 node 를 복사해 만들므로 **OS 별로 따로** 만들고, **만드는 Node 는 24.8 이상**이어야 한다
 (`node:sea.getAssetKeys` 가 그 버전에 들어왔다 — 없으면 자원을 못 읽는 바이너리가 나오므로 빌드 스크립트가 막고, 그래도 그런 바이너리가
 돌면 `assets.ts` 가 한 문장으로 세운다).
+
+**새 버전의 설치와 적용을 나눈다.** 설치 폴더를 그 자리에서 pull·빌드하면 실행 중인 hook·MCP·검증이 반쯤 바뀐 모듈을 읽고, 모든 프로젝트의 진행 중인 작업이 한꺼번에 새 코드로 넘어간다. 그래서 새 버전은 릴리스 저장소(`~/.code-agent/releases/<ID>/`)의 새 폴더에 설치하고, 검증을 마친 뒤 이름 바꾸기 한 번으로 등록한다 — 등록 전의 폴더는 어느 진입점도 고르지 않고, 등록한 폴더는 바꾸지 않는다. 식별값은 Git 소스면 커밋·트리, npm 패키지면 내용 해시다(버전 번호는 같은 번호의 다른 빌드를 가리지 못한다).
+
+- **고정 진입점이 고른다.** hook 명령·MCP 설정·PATH 는 늘 같은 `cli.js`를 가리키고, 그 진입점이 명령마다 프로젝트의 적용 버전(`.code-agent/runtime.json`)을 읽어 그 릴리스의 `cli.js`를 **같은 프로세스에서** 읽는다. 한 프로세스는 처음 고른 버전의 모듈만 읽고, hook 은 호출마다 새 프로세스라 다음 호출부터 새 버전으로 돈다 — 호스트를 다시 열 필요가 없다. 새 서비스나 데몬은 두지 않는다. 위임 계약(`runtimeSelect.ts` 머리말)은 이미 설치된 진입점이 새 릴리스를 부르는 규약이라 바꾸지 않는다.
+- **적용 버전은 PC·프로젝트별이다.** `runtime.json`은 이 PC 의 저장소 경로를 담으므로 커밋하지 않는다. 공유 설정(hook·MCP)에는 릴리스 폴더 경로를 쓰지 않는다. 한 프로젝트의 적용은 다른 프로젝트를 바꾸지 않는다.
+- **안전한 시점은 '다음 작업을 열 때'다.** 진행 중인 일(작업·접수·문서 세션·사전 판별·기다리는 확인·다른 프로세스의 동의 적용)이 있으면 설치만 하고 예약한다. 작업 중 단계 경계의 전환은 하지 않는다 — 승인·증거·계획 입력이 그 버전의 규칙에 묶여 있어, 버전 번호만으로 호환을 추정할 수 없다. 판정과 전환은 프로젝트 실행 잠금 안에서 다시 보고, 다음 작업의 세션 파일도 같은 잠금 안에서 만든다.
+- **다음 작업의 적용은 여는 명령 직전의 훅이 한다.** 모델의 셸은 호스트 샌드박스 안에 있어 자식 프로세스나 호스트 설정 폴더 쓰기가 막힐 수 있지만(Codex Windows), 훅은 호스트가 샌드박스 밖에서 돌린다. 그래서 적용은 그 명령의 PreToolUse 훅이 하고 명령은 보고만 낸다. 훅이 돌지 않았으면 명령의 관문이 같은 적용을 다시 시도한다 — 둘 다 실행 잠금 안에서 진행 중인 일과 적용 버전을 다시 보므로 겹쳐도 한 번만 적용된다. 적용이 내용이 바뀐 설치 파일만 쓰는 것도 같은 까닭이다 — 바뀌지 않은 호스트 설정 때문에 적용이 실패하지 않는다.
+- **승인은 옮기지 않는다.** 진행 중인 작업이 없을 때만 바꾸므로 새 버전으로 이어 받을 작업 승인이 없다. 원장·증거의 형식이 바뀌면 릴리스의 상태 형식 세대(`stateSchema`)를 올리고, 프로젝트보다 낮은 세대의 릴리스는 적용하지 않는다 — 되돌리기가 그 지점에서 막힌다.
+- **템플릿은 적용할 때만 쓴다.** 설치는 프로젝트 파일을 건드리지 않는다. 적용은 마지막 적용 기록(`templates.json`)과 같은 사본만 바꾸고, 사람이 고친 사본은 보존하며, 도중에 실패하면 반영 전 파일로 되돌린다. 적용은 진행 중인 작업이 없을 때만 하므로 바뀐 설치 파일이 그 작업의 계획 밖 변경이 되지 않는다 — 게이트를 끄거나 설치 파일을 검사에서 빼지 않는다.
+- **대화에 실린 지침은 파일 교체로 바뀌지 않는다.** 적용 보고가 바뀐 스킬·지침 파일을 다시 읽으라고 적고, 다시 열어야 하는 변경(Codex hook 등록·MCP 설정·새 에이전트 파일)만 따로 알린다.
+- **장시간 도는 MCP 는 연결부와 처리기를 나눈다.** Codex 가 세션 동안 띄우는 선택 UI 서버는 시작 때의 코드로 프로토콜을 잇고, 도구 호출마다 그때의 적용 버전 처리기를 부른다 — 질문·동의 상태는 파일에 있어 처리기가 바뀌어도 중복 실행되지 않는다.
+- **npm 패키지는 복사해서 쓴다.** 패키지 관리자는 진입점 폴더를 통째로 바꾸므로, 다음 작업을 열 때 설치된 패키지를 릴리스로 복사해 그 사본으로 작업을 돌린다. code-agent 가 패키지를 받지 않으므로 배포 경로·신뢰 기준은 사람이 쓴 패키지 관리자의 것 그대로다.
 
 | 대상 저장소에 생기는 것 | 커밋 |
 |---|---|
@@ -773,7 +785,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `.code-agent/work/<ID>/<대상>.plan.json` · `<대상>.verify.json` · `<대상>.review.json` — 제출된 계획 · 검증 증거 · 리뷰 회차. 코드만 쓴다 | O |
 | `.code-agent/approvals/` — 확정·승인 원장 (해시 사슬) · 판정 스냅샷. `docs.jsonl`(POLICY) · `<slug(ID)>.jsonl`(계획) · **`<slug(ID)>/request.jsonl`(요구사항 확정·반려)** | O (증거) |
 | `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델·추론 강도 (바꾼 것만) | O |
-| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함), `.code-agent/lease.json`(작업 임대 — 진행 세션·마지막 활동) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 |
+| `.code-agent/templates.json` — 마지막으로 적용한 스킬·에이전트 사본의 해시(사람이 고친 사본을 가린다) | O |
+| `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함), `.code-agent/lease.json`(작업 임대 — 진행 세션·마지막 활동), `.code-agent/runtime.json`·`runtime.lock`(이 PC 의 적용 버전·적용 대기 — 저장소 경로가 든다), `.code-agent/template-conflicts/`(사람이 고친 사본 대신 둔 새 번들) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 |
 | `.code-agent/work/<ID>/answers.jsonl`(업무 답 관찰) · `.code-agent/approvals/<slug(ID)>/consents.jsonl`(동의 영수증) · `<target>-<seq>.manifest.json`(승인 때 경계 스냅샷) | O |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
@@ -843,8 +856,9 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `code-agent knowledge` · `knowledge find` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원)·최신성 · 키·경로·별칭·본문으로 항목·POLICY 절을 찾아 줄 범위와 반드시 적용하는 업무 정책 보이기(읽기 전용 — 작업 중에도 된다) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 변수 이름>]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스의 upstream fetch·fast-forward 전용 pull → 필요 시 잠금 파일 기준 의존성 설치 → 빌드 → 새 CLI로 프로젝트 적용·doctor. 소스 미커밋 변경·분기 시 중단하며 바이너리·비Git 패키지의 Git 자동 갱신은 지원하지 않는다 |
-| `code-agent update --templates-only [--cli <경로>]` | fetch·pull 없이 현재 번들만 적용한다. 다른 hook·블록 밖·모델 설정은 보존한다. 갱신 후 Claude Code 재시작으로 새 hook을 활성화하고 `/ca-next`로 작업을 재개한다 |
+| `code-agent update [--cli <경로>]` | 로컬 Git 소스의 upstream 을 받아(`FETCH_HEAD`만 — 소스의 작업 트리·브랜치는 그대로) 그 커밋을 릴리스 저장소의 새 폴더에 꺼내 잠금 파일 기준 의존성 설치·빌드·검증 → 등록 → 그 릴리스가 이 프로젝트에 적용(진행 중인 일이 있으면 예약)·doctor. 바이너리·npm 패키지는 받지 않는다 |
+| `code-agent update --templates-only [--cli <경로>]` | 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영한다(npm 패키지 진입점이면 설치된 패키지를 들인다). 다른 hook·블록 밖·모델 설정·사람이 고친 사본은 보존한다. 진행 중인 일이 있으면 바꾸지 않는다 |
+| `code-agent update --release <ID>` · `update --bundled` · `version [--json]` | 설치된 릴리스 고르기(TTY) · 고정 풀기 · 적용·적용 대기·설치 버전과 실행 중인 MCP 조회 |
 
 ### 스킬·hook 이 부른다
 
@@ -920,6 +934,8 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 - **매니페스트의 `kind: "verify"` · 단계의 `expect` 는 죽은 선언이다** — 코드가 한 번도 읽지 않는다(스키마 정의와 에이전트 문장뿐). 그런데 둘 다 `hashManifest` 안이라 **지우면 기존 승인이 전부 무효가 된다** — 해시 중립이 아니어서 남겨 둔다. fix 의 재현 표시는 `expect` 가 아니라 ⑦ 의 `## 재현` 절이 맡는다.
 
 **알고 남긴 한계** (재현해 두고 고치지 않기로 한 것)
+
+- **버전 적용의 범위** — 진입점의 선택 논리는 진입점 버전에 묶인다(새 릴리스가 선택 규약을 바꿔도 이미 설치된 진입점은 옛 규약으로 고른다 — 그래서 위임 계약을 바꾸지 않는다). 릴리스 저장소는 지우지 않는다(정리 명령 없음). 단일 실행 파일은 릴리스로 복사하지 않아 교체가 곧 적용이다. Codex 의 Windows workspace-write 샌드박스는 셸의 자식 프로세스나 `.codex/`·`.agents/` 쓰기를 막는다 — 다음 작업의 적용을 샌드박스 밖에서 도는 훅이 맡아 그 안에서도 적용되지만, 프로젝트나 훅을 신뢰하지 않아 훅이 돌지 않으면 적용이 물러선다(예약은 남는다). 이 구조 전에 설치한 프로젝트는 처음 한 번 이전 방식으로 받고, 그때 떠 있던 Codex MCP 는 한 번 다시 열어야 한다.
 
 - **TC 증거의 경계** — 승인된 테스트 명령의 결과를 신뢰한다. 명령 자체가 가짜 성공 결과를 출력하는 경우까지 증명하지는 않는다. 주석·문자열만으로는 TC 가 통과하지 않는다.
 - **작업 폴더는 사람이 읽는 묶음이다** — `deliver` 의 커밋은 `doc/work/<ID>/` 를 통째로 올리므로 모델이 그 아래 떨어뜨린 파일도 함께 커밋된다. 감춰지지는 않는다: `## 변경 요약` 이 기준 커밋 대비 전 목록을 확인 내용 전문(대화의 요약·`consents/confirm-*.md`)에 싣고(커밋 대상 목록은 변경 요약의 추가·수정·이름 변경 파일을 개수로 묶고 그 밖의 커밋 파일만 나열하며, 변경 요약에 있지만 커밋하지 않는 파일은 따로 보인다), 그 밖의 계획 밖 변경은 `outsideChanges` 가 막는다. "검증된 변경 집합만" 은 **코드**에 대한 보증이다.

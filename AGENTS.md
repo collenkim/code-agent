@@ -22,6 +22,7 @@
   - `ca-reviewer.md` 출력 표 ↔ `reviewResultProblems`·`normalizeReviewTable`·`parseFindings`.
   - TC 인식 규칙(`testResults.ts` `TC_ID`·`tcToken`, 보고서 이름 `reportSnapshot`) ↔ `ca-tester.md` TC 표기 문장·`ca-test/tc-names.md` 러너 표. 규칙 식별자의 검사 내용 ↔ 담당 지침(`criteria.md`·`ca-writer.md`)의 같은 규칙.
   - `grantTarget` ↔ `GRANT_STEP` 키. `MODEL_SUBCOMMANDS`에 더하면 `LEASE_FREE`에도 넣을지 정한다.
+  - 버전 선택·위임 계약(`runtimeSelect.ts` 머리말 — `runtime.json`·`release.json`·`RUNTIME_KEY`·`CODE_AGENT_RUNTIME_SELF`)은 이미 설치된 진입점이 새 릴리스를 부르는 규약이라 바꾸지 않는다. 승인·증거·작업 기록의 형식을 바꾸면 `STATE_SCHEMA`를 올린다(낮은 세대의 릴리스는 그 프로젝트에 적용되지 않는다). 다음 작업을 여는 명령(`cliMain.ts` `opening`)을 바꾸면 hook 이 그 직전에 적용하는 `runtimeSelect.ts` `OPENING_COMMAND`도 맞춘다.
   - Codex exec 배너·`CODEX_TURN` → `crossFailureText`. 교차 자식이 여는 명령 → `CROSS_CHILD_READONLY`·§5.3 0단계. `ca-review`·`ca-plan` 4-1 교차 문장 → `codexText` 권한 상승 정규식.
   - 재시도 규약 → §6.4 생성 블록을 `renderRetryPolicyTable()` 출력으로 다시 붙인다. 시험은 표에 렌더되는 값만 보므로 §6.4 산문에 숫자를 쓰지 않는다.
 - 코드 규칙:
@@ -46,5 +47,6 @@ Node 22 이상이 필요하다. 전체 테스트는 Windows에서 약 2~3분 걸
 ## 실험할 때
 
 - 대상 프로젝트 동작은 임시 git 저장소에서 `node <이 저장소>/dist/agent/cli.js <명령>`으로 확인한다. 이 저장소 루트에 `init`을 실행하지 않는다.
-- 실험 중 `code-agent update`(소스 업데이트)를 실행하지 않는다. 이 명령은 터미널에서 미리보기를 확인하면(`update` 입력) 이 저장소에서 fetch·pull·(의존성이 바뀌었거나 없으면) `npm ci`·build를 실행한다. 템플릿 적용 확인은 `update --templates-only`로 한다.
+- 실험 중 `code-agent update`(소스 업데이트)를 실행하지 않는다. 이 명령은 터미널에서 미리보기를 확인하면(`update` 입력) 이 저장소의 upstream 을 fetch 하고 사용자 홈의 릴리스 저장소(`~/.code-agent/releases`)에 `npm ci`·build 해 등록한 뒤 그 프로젝트에 적용한다. 버전 적용 실험은 임시 폴더의 릴리스 저장소(`CODE_AGENT_RELEASE_HOME`)와 `update --apply-release`로 하고(`runtimeRelease.test.ts`의 방식), 템플릿 적용 확인은 `update --templates-only`로 한다.
 - 다른 작업이 테스트를 돌리는 동안 `npm run build`를 다시 실행하면 `dist`가 경합한다.
+- Windows 에서 `codex exec -c projects={…}`로 임시 프로젝트를 신뢰할 때 키는 Windows 경로(`C:\…`)로 쓴다. 슬래시 경로는 신뢰로 인정되지 않아 프로젝트 hook 이 알림 없이 돌지 않는다.

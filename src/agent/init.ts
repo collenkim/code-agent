@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
+import { writeIfChanged } from "../core/atomic";
 import { assetBytes, assetCount, assetKeys, assetText, CLAUDE_ASSETS, installedPath, packageVersion } from "./assets";
 import { STATE_DIR } from "./layout";
 import { applyModels, policySummary } from "./models";
@@ -14,8 +15,12 @@ const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
 const GITIGNORE_START = "# code-agent:start";
 const GITIGNORE_END = "# code-agent:end";
-/** .gitignore 블록 — 개인 진행 상태·세션·동의 기록·작업 임대(lease.json·잠금). 두 호스트 설치가 같은 블록을 쓴다 */
-const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*"].map((line) => `${STATE_DIR}/${line}`).join("\n");
+/**
+ * .gitignore 블록 — 개인 진행 상태·세션·동의 기록·작업 임대(lease.json·잠금)·이 PC 의 적용 버전(runtime.json·잠금)·보존한 사본 대신 둔
+ * 번들 내용. 두 호스트 설치가 같은 블록을 쓴다
+ */
+const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*", "runtime.json", "runtime.lock",
+  "template-conflicts/"].map((line) => `${STATE_DIR}/${line}`).join("\n");
 
 /**
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
@@ -36,13 +41,17 @@ export interface InitOptions {
   /** hook 이 부를 CLI. 생략하면 PATH 의 code-agent — 개발 중에는 로컬 빌드를 가리킨다 */
   cli?: string;
   host?: HostSelection;
+  /** 쓰지 않을 사본(저장소 기준 `/` 경로) — 사람이 고친 스킬·에이전트를 버전 적용이 보존할 때(runtimeApply.ts) */
+  preserve?: ReadonlySet<string>;
+  /** 다시 설치(update) — 처음 설치의 '다시 열고 훅을 신뢰' 안내를 빼고, 다시 열지는 바뀐 종류대로 따로 말한다(runtimeApply.hostGuidance) */
+  refresh?: boolean;
 }
 
 /** 표시된 블록만 넣거나 바꾼다. 블록 밖은 사람의 것이라 건드리지 않는다 */
 function upsertBlock(path: string, start: string, end: string, body: string): "created" | "updated" {
   const block = `${start}\n${body.trim()}\n${end}`;
   if (!existsSync(path)) {
-    writeFileSync(path, `${block}\n`);
+    writeIfChanged(path, `${block}\n`);
     return "created";
   }
   const text = readFileSync(path, "utf-8");
@@ -52,7 +61,7 @@ function upsertBlock(path: string, start: string, end: string, body: string): "c
     from >= 0 && to > from
       ? text.slice(0, from) + block + text.slice(to + end.length)
       : `${text.replace(/\s*$/, "")}\n\n${block}\n`;
-  writeFileSync(path, next);
+  writeIfChanged(path, next);
   return "updated";
 }
 
@@ -193,8 +202,7 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
     { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command, ...(extra.commandWindows ? { commandWindows: extra.commandWindows } : {}) }] },
   ];
   settings.hooks = hooks;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+  writeIfChanged(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 /**
@@ -218,8 +226,7 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   const previous = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) ? selectedHosts(repoRoot) :
     installedHook(repoRoot, "PreToolUse", "hook") ? ["claude" as Host] : [];
   const results = hosts.map(host => host === "claude" ? initClaude(repoRoot, options) : initCodex(repoRoot, options));
-  mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
-  writeFileSync(join(repoRoot, STATE_DIR, "hosts.json"), JSON.stringify([...new Set([...previous, ...hosts])]) + "\n");
+  writeIfChanged(join(repoRoot, STATE_DIR, "hosts.json"), JSON.stringify([...new Set([...previous, ...hosts])]) + "\n");
   // 두 호스트를 함께 깔면 교차 검증이 붙는다 — 둘 다 실행할 수 있을 때만 쓰도록 지금 상태를 알린다
   const cross = crossNotice(repoRoot);
   return [...results, ...(cross ? [cross] : [])].join("\n\n");
@@ -251,9 +258,8 @@ function initCodex(repoRoot: string, options: InitOptions): string {
   installChoiceConfig(repoRoot, options.cli);
   const assets = hostAssets("codex", repoRoot);
   for (const [file, text] of assets) {
-    const target = join(repoRoot, file);
-    mkdirSync(dirname(target), {recursive: true});
-    writeFileSync(target, text);
+    if (options.preserve?.has(file)) continue;
+    writeIfChanged(join(repoRoot, file), text);
   }
   const command = options.cli ? `node "${options.cli.replace(/\\/g, "/")}" codex-event` : "code-agent codex-event";
   for (const event of CODEX_EVENTS) {
@@ -264,8 +270,7 @@ function initCodex(repoRoot: string, options: InitOptions): string {
   }
   upsertBlock(join(repoRoot, "AGENTS.md"), BLOCK_START, BLOCK_END, assetText("template/CODEX.block.md"));
   upsertBlock(join(repoRoot, ".gitignore"), GITIGNORE_START, GITIGNORE_END, GITIGNORE_LINES);
-  mkdirSync(join(repoRoot, STATE_DIR), {recursive: true});
-  writeFileSync(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
+  writeIfChanged(join(repoRoot, STATE_DIR, "version"), `${packageVersion()}\n`);
   // 수는 실제로 쓴 자원에서 센다(DOC-14 — 스킬·에이전트를 더하거나 빼도 문구가 낡지 않게)
   const paths = [...assets.keys()].map((file) => file.replace(/\\/g, "/"));
   const skills = new Set(paths.map((file) => /^\.agents\/skills\/([^/]+)\//.exec(file)?.[1]).filter(Boolean)).size;
@@ -274,7 +279,7 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     `  스킬 ${skills}개: .agents/skills/ca-* · 에이전트 ${agents}개: .codex/agents/ca-*.toml`,
     `  훅 ${CODEX_EVENTS.length}종: .codex/hooks.json · 지침: AGENTS.md · 모델·추론 강도: 역할별 제품 기본값과 사용자 변경값`,
     "  code-agent model --host codex로 역할별 설정을 확인하고 변경할 수 있습니다.",
-    "  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요.",
+    ...(options.refresh ? [] : ["  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요."]),
     "  선택 UI: .codex/config.toml의 code_agent MCP — 업무 질문과 동의를 방향키·Enter로 선택합니다.",
     "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",
   ].join("\n");
@@ -329,9 +334,8 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
   // 파일이 아니라 자원(asset)에서 설치한다 — 단일 실행 파일에는 패키지 폴더가 없다
   const keys = assetKeys(CLAUDE_ASSETS);
   for (const key of keys) {
-    const target = installedPath(repoRoot, key);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, assetBytes(key));
+    if (options.preserve?.has(`.claude/${key.slice(CLAUDE_ASSETS.length + 1)}`)) continue;
+    writeIfChanged(installedPath(repoRoot, key), assetBytes(key));
   }
   lines.push(`스킬·에이전트 ${assetCount(keys)}: .claude/skills/ca-*, .claude/agents/ca-*`);
   // 템플릿 머리말은 제품 기본값(ROLE_POLICY)이다. 사람이 바꿔 둔 모델·강도가 있으면 다시 설치해도 그대로 바른다.
@@ -361,11 +365,10 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     GITIGNORE_END,
     GITIGNORE_LINES,
   );
-  lines.push(".gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/, lease.json)");
+  lines.push(".gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/, lease.json, runtime.json, template-conflicts/)");
 
-  mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
   const version = packageVersion();
-  writeFileSync(join(repoRoot, STATE_DIR, "version"), `${version}\n`);
+  writeIfChanged(join(repoRoot, STATE_DIR, "version"), `${version}\n`);
   lines.push(`버전 고정: ${STATE_DIR}/version = ${version}`);
 
   const hasManifest = existsSync(join(repoRoot, "code-agent.json"));

@@ -32,6 +32,6 @@ MCP 도구가 없거나 폼이 거부되면 `code-agent doctor --host codex`로 
 
 모델은 먼저 `code-agent model --host codex`로 역할별 현재값을 조회한다. 사용자가 변경을 요청하면 `{"action":"model","host":"codex","agent":"writer","model":"gpt-6-luna","reasoning":"high"}`처럼 준비한다. 두 호스트를 함께 설치했으면 Claude 역할은 `--host claude`로 조회하고 `"host":"claude"`로 준비한다(강도 low·medium·high·xhigh·max, haiku는 강도를 넣지 않는다). `agent:"all"`은 모든 역할, `model:"default"`는 제품 기본값 복원이다. 복원에는 reasoning을 넣지 않는다. 모델만 지정하면 기존 추론 강도를 유지한다. 진행 중인 작업이 있으면 준비가 거부되므로 작업을 반영하거나 종료한 뒤 요청하게 한다. 계정에서 사용할 수 있는 모델인지 확인하고, 오류가 나면 사용자에게 알려 사용 가능한 모델을 선택하게 한다. 임의로 다른 모델로 바꾸지 않는다.
 
-`update`나 `model`을 적용한 뒤에는 Codex를 다시 열어 역할 설정을 다시 로드한다. update로 훅이 바뀌었으면 확인·신뢰한 다음 이어간다. Claude 역할을 바꿨으면 Claude도 다시 연다.
+`model`을 적용한 뒤에는 Codex를 다시 열어 역할 설정을 다시 로드한다. Claude 역할을 바꿨으면 Claude도 다시 연다. `update`는 결과의 '호스트를 다시 열어야 하는 것'이 있을 때만 다시 열고(훅이 바뀌었으면 확인·신뢰한 다음 이어간다), 없으면 결과가 다시 읽으라는 지침·스킬 파일을 읽고 이어간다. `update` 적용은 네트워크와 사용자 홈의 릴리스 저장소를 쓰므로 샌드박스 밖(권한 상승)으로 실행한다.
 
 직접 이 스킬을 호출했다면 `code-agent status`로 현재 작업을 찾고 미응답 질문부터 처리한다. 답이 모이면 현재 단계로 복귀한다.

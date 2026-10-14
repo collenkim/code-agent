@@ -94,15 +94,16 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
   const report = hosts.map(host => {
     if (host === "claude") return updateClaude(repoRoot, {...options, host});
     const assets = hostAssets("codex", repoRoot);
-    const changed = [...assets].filter(([path, text]) => readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
+    const changed = [...assets].filter(([path, text]) => !options.preserve?.has(path) && readIfAny(join(repoRoot, path)) !== text).map(([path]) => path);
     const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
     const hooksBefore = readIfAny(join(repoRoot, ".codex", "hooks.json"));
     const choicesBefore = readIfAny(join(repoRoot, ".codex", "config.toml"));
-    const result = init(repoRoot, {host, cli});
+    const result = init(repoRoot, {host, cli, preserve: options.preserve, refresh: true});
     // hook 은 이벤트마다 command(비Windows)와 commandWindows(Windows PowerShell)를 다시 쓴다 — 옛 설치의 Windows 명령도 여기서 고쳐진다
     const hooks = `  .codex/hooks.json: ${hooksBefore === readIfAny(join(repoRoot, ".codex", "hooks.json")) ? "그대로" : "갱신"} (${CODEX_EVENTS.join(" · ")} — PreToolUse ${installedHook(repoRoot, "PreToolUse", "codex-event", "codex")})`;
-    const choices = `  .codex/config.toml 선택 UI: ${choicesBefore === readIfAny(join(repoRoot, ".codex", "config.toml")) ? "그대로" : "갱신"} — Codex를 다시 열어 MCP 도구를 로드하세요.`;
-    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n${hooks}\n${choices}\n  기존 사용자 설정·진행 상태를 유지했습니다. 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다.`;
+    // 다시 열지는 바뀌었을 때만 — 실행 중인 Codex 는 시작 때 띄운 MCP 를 쓴다(안내는 runtimeApply.hostGuidance)
+    const choices = `  .codex/config.toml 선택 UI: ${choicesBefore === readIfAny(join(repoRoot, ".codex", "config.toml")) ? "그대로" : "갱신"}`;
+    return `${result}\n  번들 변경 ${changed.length}개${changed.length ? `: ${list(changed)}` : ""}\n${hooks}\n${choices}\n  기존 사용자 설정·진행 상태를 유지했습니다.${options.preserve ? "" : " 설치된 스킬·에이전트의 수동 수정은 번들로 덮어씁니다."}`;
   }).join("\n\n");
   return [report, ...outsideNotice(outsideBefore, workOutside(repoRoot))].join("\n");
 }
@@ -120,7 +121,7 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
   // `upsertHook` 은 우리 항목을 걷어내고 새로 넣으므로, 승계하지 않으면 개발용 설치가
   // 조용히 `code-agent hook` 으로 갈아 끼워진다.
   const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "hook"));
-  init(repoRoot, {cli, host: "claude"});
+  init(repoRoot, {cli, host: "claude", preserve: options.preserve});
 
   const shown = (key: string) => `.claude/${key.slice(CLAUDE_ASSETS.length + 1)}`;
   const added = keys.filter((key) => before.get(key) === undefined);
@@ -130,7 +131,8 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
   });
   // 손으로 고쳐 둔 것의 근사: **같은 버전인데** 내용이 달랐던 파일. 이전 버전의 번들 해시가 남아 있지
   // 않아 이보다 정확히는 가릴 수 없다 — 버전이 올랐으면 템플릿이 바뀐 것과 구분되지 않는다.
-  const handmade = beforeVersion === version ? changed : [];
+  // 버전 적용(preserve 를 준다)은 마지막 적용 기록으로 사람이 고친 사본을 가려 보존한다 — 이 근사는 쓰지 않는다(runtimeApply.ts)
+  const handmade = beforeVersion === version && !options.preserve ? changed : [];
   // templateHash 는 머리말의 model·effort 줄을 빼고 보므로 그 줄의 변화는 여기서 따로 센다. 손으로 고친 값을 되돌렸는지,
   // 기본값이 바뀌었는지, 다른 사람이 커밋한 models.json 을 받았는지는 가릴 수 없어 전후 값만 말한다.
   const label = (config: { model?: string; effort?: string }) => `${config.model ?? "(없음)"}${config.effort ? `/${config.effort}` : ""}`;

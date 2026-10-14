@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { existsSync, readFileSync } from "fs";
+import { join, resolve } from "path";
+import { writeIfChanged } from "../core/atomic";
 import { isPackaged } from "./assets";
 import { Stop } from "./stop";
 import { scriptRunner } from "./hosts";
+import { entryScript } from "./runtimeSelect";
 
 const START = "# code-agent:choices:start", END = "# code-agent:choices:end";
 function configText(root: string): string {
@@ -23,12 +25,12 @@ export function installChoiceConfig(root: string, cli?: string): void {
   const file = join(root, ".codex/config.toml"), text = configText(root);
   const command = cli ? scriptRunner() : process.execPath;
   if (!command) throw new Stop("선택 UI의 --cli 실행에 필요한 node를 PATH에서 찾지 못했습니다.");
-  const args = [...(isPackaged() && !cli ? [] : [resolve(cli ?? join(__dirname, "cli.js"))]), "choice-server", "--root", resolve(root)];
+  // 진입점 경로 — 릴리스 폴더가 아니다. 그래야 버전을 바꿔도 이 설정이 그대로라 Codex 를 다시 열 필요가 없다(runtimeSelect.entryScript)
+  const args = [...(isPackaged() && !cli ? [] : [resolve(cli ?? entryScript())]), "choice-server", "--root", resolve(root)];
   const block = `${START}\n[mcp_servers.code_agent]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\ntool_timeout_sec = 3600\n${END}`;
   const start = text.indexOf(START), end = text.indexOf(END);
   const next = start < 0 ? `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${block}\n` : text.slice(0, start) + block + text.slice(end + END.length);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, next);
+  writeIfChanged(file, next);
 }
 export function choiceConfigProblem(root: string): string | undefined {
   try {

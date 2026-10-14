@@ -12,8 +12,30 @@
  * `plan submit` 이 쓰고 `loadWork` 가 읽는 계획 파일이다. 모델이 작업트리에 쓰는 코드
  * 파일에는 쓰지 않는다.
  */
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+
+const lf = (text: string): string => text.replace(/\r\n/g, "\n");
+/** UTF-8 글이면 줄바꿈을 맞춘 글, 아니면 undefined(바이트로만 견준다) */
+const textOf = (bytes: Buffer): string | undefined => {
+  try { return lf(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); } catch { return undefined; }
+};
+
+/**
+ * 설치 파일 쓰기 — 내용이 같으면(줄바꿈만 다른 git autocrlf 체크아웃 포함) 쓰지 않는다. 돌려주는 것: 썼는지.
+ * 바뀐 파일만 건드려야 호스트 설정 폴더를 쓰지 못하는 셸(Codex 샌드박스는 `.codex/`·`.agents/` 쓰기를 막는다)에서도 바뀌지 않은 설정 때문에
+ * 적용이 실패하지 않는다.
+ */
+export function writeIfChanged(path: string, content: string | Buffer): boolean {
+  if (existsSync(path)) {
+    const current = readFileSync(path), next = typeof content === "string" ? Buffer.from(content, "utf8") : content;
+    if (current.equals(next)) return false;
+    const was = textOf(current);
+    if (was !== undefined && was === textOf(next)) return false;
+  } else mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+  return true;
+}
 
 let counter = 0;
 

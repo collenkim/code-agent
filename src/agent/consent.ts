@@ -705,7 +705,7 @@ export function finishConsent(root: string, id: string, caller?: ConsentCaller):
 const AFTER_APPLY: Partial<Record<Action["action"], string>> = {
   deliver: "반영을 마쳤습니다 — 커밋과 변경 파일을 보고하고 끝낸다",
   abort: "진행을 종료했습니다 — 결과를 보고하고 멈춘다",
-  update: "결과를 보고하고 멈춘다 — 호스트를 다시 열어 갱신된 hook·스킬을 로드한 뒤 ca-next 로 재개한다",
+  update: "결과를 보고한다 — 보고의 '호스트를 다시 열어야 하는 것'이 있으면 그것만 사람에게 알리고, 다시 읽으라는 지침 파일이 있으면 읽은 뒤 ca-next 로 이어 간다(적용 대기면 지금 버전으로 그대로 이어 간다)",
   model: "결과를 보고한다 — 새 모델은 호스트를 다시 시작한 뒤 적용된다",
   "plugin-add": "결과를 보고하고 원래 흐름으로 돌아간다",
   "plugin-remove": "결과를 보고하고 원래 흐름으로 돌아간다",
@@ -841,7 +841,8 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
         case "repro-log": return approveLogBasis(requireReproable(root));
         case "plugin-add": return pluginAdd(root,action);
         case "plugin-remove": return pluginRemove(action.name);
-        case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot}) + "\n사용 중인 호스트를 다시 열어 새 훅·스킬을 적용한 뒤 ca-next로 이어가세요.";
+        // 다시 열지는 보고의 '호스트를 다시 열어야 하는 것' 줄이 바뀐 종류대로 말한다(runtimeApply.hostGuidance) — 일괄 안내하지 않는다
+        case "update": return updateFromSource(root,{expectedSourceSnapshot:record.sourceSnapshot,consentId:id});
         case "judgment": {
           // 각 함수가 소유 기록의 잠금 안에서 전제(카운터 소진·지적 존재·교차 지점 막힘)를 다시 확인한다
           const { kind, reason } = judgmentOf(action);

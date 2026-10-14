@@ -18,5 +18,5 @@ description: code-agent 작업의 현재 위치(문서·스테이지·질문·�
    - 그 밖이면 `다음:` 줄이 가리키는 **단계 명령**(`/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` · `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate`) 하나,
      또는 중단된 흐름을 `/ca-next`로 재개한다. 승인 적용 후에는 재입력 없이 자동으로 이어간다. 이전 스테이지로 돌아가야 하면 `code-agent back <스테이지>` (앞으로는 못 간다)
    - 스테이지가 `deliver`면 `/ca-integrate`의 `deliver` 동의 절차 — 지식 선택 후 최종 승인된 동의를 적용해 로컬 커밋한다
-   - `update` 적용 직후면 Claude Code 재시작 — 갱신된 hook을 로드하기 전에는 작업을 재개하지 않는다
+   - `update` 적용 직후면 결과의 '호스트를 다시 열어야 하는 것'만 따른다 — 결과가 다시 읽으라는 지침·스킬 파일을 읽기 전에는 작업을 재개하지 않는다
    - `다음:` 이 원인별 안내(승인 무효·한도 초과·고아 배정·동의 실패)나 다른 세션 진행을 보이면 `/ca-next` 의 '멈춘 자리별 재개' 표를 따른다

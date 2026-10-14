@@ -65,6 +65,7 @@ import {
 import { loadReview, reviewDocFile, reviewProblems, reviewStatusTail } from "./review";
 import { crossStopStreak } from "./crossRecord";
 import { Stop } from "./stop";
+import { runtimeLine } from "./runtimeSelect";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsState, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
@@ -584,6 +585,9 @@ export function status(repoRoot: string): string {
   if (cross) lines.push("", cross);
   const hookWarning = hookInstallWarning(repoRoot);
   if (hookWarning) lines.push("", `hook: ${hookWarning}`);
+  // 이 PC 에서 이 프로젝트가 쓰는 code-agent 버전 — 고정한 적이 없으면 줄이 없다(진입점 번들)
+  const runtime = runtimeLine(repoRoot);
+  if (runtime) lines.push("", `code-agent: ${runtime}`);
   if (cross) {
     // 실행 불가 중지가 이어지면 다른 호스트의 설치·로그인·한도 문제일 수 있다 — 설정 오류는 중지가 아니라 게이트를 막는다
     const streak = crossStopStreak(repoRoot);

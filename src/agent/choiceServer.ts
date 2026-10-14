@@ -1,11 +1,22 @@
-/** 로컬 MCP 폼 입력. 사용자 답은 클라이언트의 elicitation 응답으로만 받는다. */
+/**
+ * 로컬 MCP 폼 입력. 사용자 답은 클라이언트의 elicitation 응답으로만 받는다.
+ *
+ * 이 프로세스는 Codex 세션이 끝날 때까지 돈다. 연결부(JSON-RPC·폼 왕복)는 시작 때의 버전이고, 질문·동의 처리(askChoice·confirmChoice)는
+ * 호출마다 이 프로젝트의 **지금 적용 버전**의 것을 쓴다 — 그래야 hook 과 같은 버전이 동의를 관찰한다. 다른 릴리스의 처리기는 그 릴리스
+ * 폴더(설치 뒤 바뀌지 않는다)에서 통째로 읽는다. 적용 버전을 쓸 수 없는데 진행 중인 일이 있으면 다른 버전으로 처리하지 않는다.
+ * 두 함수의 이름·인자는 릴리스 사이의 계약이다(runtimeSelect.ts 머리말).
+ */
 import { randomUUID } from "crypto";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { dirname, join, resolve } from "path";
 import { createInterface } from "readline";
 import { z } from "zod";
+import { isPackaged, packageVersion } from "./assets";
 import { consentStatus, observeConsent } from "./consent";
 import type { ConsentHookInput } from "./consent";
 import { takeTicket } from "./consentTicket";
-import { findRepoRoot } from "./layout";
+import { findRepoRoot, STATE_DIR } from "./layout";
+import { appliedStore, busyMarker, entryScript, installedRelease, ownRelease, readRuntime, type RuntimeState } from "./runtimeSelect";
 import { QUESTION_ROWS, questionScreenProblem } from "./screenText";
 import { Stop } from "./stop";
 
@@ -82,9 +93,46 @@ export async function confirmChoice(root: string, args: unknown, elicit: Elicit)
   return { id: after.id, status: after.status, failure: after.failure };
 }
 
+interface Handlers { id: string; askChoice: typeof askChoice; confirmChoice: typeof confirmChoice }
+
+function load(file: string, id: string): Handlers {
+  const loaded = require(file) as Partial<Handlers>;
+  if (typeof loaded.askChoice !== "function" || typeof loaded.confirmChoice !== "function") throw new Stop(`${id} 의 선택 UI 처리기를 읽지 못했습니다.`);
+  return { id, askChoice: loaded.askChoice, confirmChoice: loaded.confirmChoice };
+}
+
+/**
+ * 이 호출을 처리할 버전 — 진입점이 hook 에 고르는 것과 같다(runtimeSelect.selectRuntime): 적용 버전이 있으면 그 릴리스, 없으면 진입점의 번들.
+ * 적용 버전이 없어졌거나 기록을 읽지 못했는데 진행 중인 일이 있으면 처리하지 않는다. 연결부 자신이면 이 모듈의 함수다.
+ */
+export function handlersFor(root: string): Handlers {
+  const own = ownRelease()?.id;
+  const mine = { id: own ?? `번들 ${packageVersion()}`, askChoice, confirmChoice };
+  if (isPackaged()) return mine;
+  let applied: string | undefined, state: RuntimeState | undefined;
+  try { state = readRuntime(root); applied = state?.applied; }
+  catch (error) {
+    if (busyMarker(root)) throw new Stop(`적용 버전 기록을 읽지 못해 선택 UI 를 처리하지 않습니다 — ${error instanceof Error ? error.message : String(error)}. 사람이 code-agent version 으로 확인하세요.`);
+  }
+  if (applied) {
+    if (applied === own) return mine;
+    const release = installedRelease(applied, appliedStore(state));
+    if (release) return load(join(release.dir, "dist", "agent", "choiceServer.js"), applied);
+    if (busyMarker(root)) throw new Stop(`이 프로젝트에 적용한 code-agent ${applied} 가 릴리스 저장소에 없어 선택 UI 를 처리하지 않습니다 — 사람이 code-agent version 으로 확인하고 code-agent update 로 다시 설치하세요.`);
+  }
+  const bundle = join(dirname(entryScript()), "choiceServer.js");
+  return !own && resolve(bundle) === resolve(__filename) ? mine : load(bundle, "진입점 번들");
+}
+
 /** 줄 단위 JSON-RPC stdio. stdout에는 프로토콜만 쓰고 임의 실행·답 입력 인자는 제공하지 않는다. */
 export async function runChoiceServer(root: string): Promise<number> {
   root = findRepoRoot(root);
+  const connector = ownRelease()?.id ?? `번들 ${packageVersion()}`;
+  // 실행 기록 — version 이 이 연결부와 마지막 호출의 처리 버전을 보인다(.code-agent/log 는 커밋하지 않는다)
+  const recordFile = join(root, STATE_DIR, "log", "choice-server", `${process.pid}.json`);
+  const started = { pid: process.pid, connector, entry: entryScript(), startedAt: new Date().toISOString() };
+  const record = (extra: object = {}) => { try { mkdirSync(join(recordFile, ".."), { recursive: true }); writeFileSync(recordFile, JSON.stringify({ ...started, ...extra })); } catch { /* 기록은 조회용이다 */ } };
+  record();
   const lines = createInterface({ input: process.stdin });
   const send = (message: object) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
   let formSupported = false, initialized = false, busy = false;
@@ -120,7 +168,7 @@ export async function runChoiceServer(root: string): Promise<number> {
         if (initialized) throw new Stop("이미 초기화한 연결입니다.");
         initialized = true;
         formSupported = !!message.params?.capabilities?.elicitation?.form;
-        result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "code-agent-choices", version: "1.0.0" } };
+        result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "code-agent-choices", version: connector } };
       } else if (!initialized) throw new Stop("초기화되지 않은 연결입니다.");
       else if (message.method === "ping") result = {};
       else if (message.method === "tools/list") result = { tools };
@@ -130,10 +178,13 @@ export async function runChoiceServer(root: string): Promise<number> {
         busy = true;
         activeCallId = message.id;
         try {
-          const value = message.params?.name === "ask" ? await askChoice(message.params.arguments, elicit)
-            : message.params?.name === "confirm" ? await confirmChoice(root, message.params.arguments, elicit)
-            : (() => { throw new Stop("지원하지 않는 선택 도구입니다."); })();
-          result = { content: [{ type: "text", text: JSON.stringify(value) }] };
+          const name = message.params?.name;
+          if (name !== "ask" && name !== "confirm") throw new Stop("지원하지 않는 선택 도구입니다.");
+          const handlers = handlersFor(root);
+          record({ lastCall: { at: new Date().toISOString(), tool: name, handler: handlers.id } });
+          const value = name === "ask" ? await handlers.askChoice(message.params.arguments, elicit) : await handlers.confirmChoice(root, message.params.arguments, elicit);
+          // 처리한 버전을 함께 돌려준다 — 실행 중인 세션에서 새 버전 적용을 실제 결과로 확인한다
+          result = { content: [{ type: "text", text: JSON.stringify(value && typeof value === "object" ? { ...value, runtime: handlers.id } : value) }] };
         } finally { busy = false; activeCallId = undefined; }
       } else { send({ id: message.id, error: { code: -32601, message: "Method not found" } }); return; }
       send({ id: message.id, result });
@@ -144,5 +195,6 @@ export async function runChoiceServer(root: string): Promise<number> {
     }
   });
   await new Promise<void>(resolve => lines.once("close", () => { pending?.reject(new Stop("선택 UI 연결이 종료됐습니다.")); resolve(); }));
+  try { rmSync(recordFile, { force: true }); } catch { /* 다음 조회가 살아 있는 pid 만 본다 */ }
   return 0;
 }
