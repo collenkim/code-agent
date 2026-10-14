@@ -1,6 +1,6 @@
 # 릴리스 업데이트 — 설치와 적용 분리 (2026-10-14)
 
-커밋 `(이 커밋)`의 변경 경위와 검증 결과다. 현재 동작은 [흐름도](../process-flow.md) §1.1·§3.1·§4.1·§5.1·§5.3·§5.4·§7·§8·§9, [설치 §5](../install.md#5-code-agent-update--갱신), [설계 §8](../design.md#8-배포와-대상-저장소), [README 업데이트](../../README.md#업데이트)에 있다. 원자료는 [evidence/2026-10-14-release-update.json](evidence/2026-10-14-release-update.json)이다.
+커밋 `d01b4d1`의 변경 경위와 검증 결과다. 현재 동작은 [흐름도](../process-flow.md) §1.1·§3.1·§4.1·§5.1·§5.3·§5.4·§7·§8·§9, [설치 §5](../install.md#5-code-agent-update--갱신), [설계 §8](../design.md#8-배포와-대상-저장소), [README 업데이트](../../README.md#업데이트)에 있다. 원자료는 [evidence/2026-10-14-release-update.json](evidence/2026-10-14-release-update.json)이다.
 
 ## 요청
 
