@@ -13,7 +13,7 @@ Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host cla
 
 작업 임대(`.code-agent/lease.json`)는 `update --templates-only` 가 `.gitignore` 블록에 `lease.json*` 줄을 더한다 — 갱신 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 다만 진행 중인 작업이 있으면 `update --templates-only` 는 그 작업을 반영하거나 끝낸 뒤 실행한다 — 갱신이 바꾼 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)이 그 작업의 계획 밖 변경이 되어 검증·반영을 막고, 게이트가 작업의 기준 커밋과 견주므로 커밋해도 풀리지 않는다. 이미 갱신했으면 `update` 출력의 `!! 이번 갱신이 바꾼 설치 파일이 …` 줄이 그 파일을 알려 준다 — 사람이 그 파일들을 갱신 전으로 되돌리고 작업을 마친 뒤 다시 갱신한다.
 
-CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex 사본도 같은 템플릿에서 생성되므로 사용 중인 호스트를 재시작한다. 이전 입력 계약으로 시작한 작업은 그 계약을 유지하고 새 기본 작업은 contextVersion 3을 사용한다. `doctor`의 설치 점검은 실제 연동 성공을 인증하지 않는다.
+CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex 사본도 같은 템플릿에서 생성되므로 사용 중인 호스트를 재시작한다. 이전 입력 계약으로 시작한 작업은 그 계약을 유지하고 새 기본 작업은 contextVersion 4를 사용한다. `doctor`의 설치 점검은 실제 연동 성공을 인증하지 않는다.
 
 ## 목차
 
@@ -36,7 +36,7 @@ CLI와 템플릿(스킬·에이전트 정의)은 함께 갱신한다 — Codex �
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | 로컬 Git 소스 연결은 `code-agent update`. 비Git 패키지는 재설치 후 `update --templates-only` | 새 파일로 교체한 뒤 `update --templates-only` |
 
-어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 13개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
+어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 14개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -123,7 +123,7 @@ claude
 
 ```
 code-agent 를 설치했습니다 — C:\work\shop
-  - 스킬·에이전트 26개 · 보조 문서 13개: .claude/skills/ca-*, .claude/agents/ca-*
+  - 스킬·에이전트 26개 · 보조 문서 14개: .claude/skills/ca-*, .claude/agents/ca-*
   - 모델·추론 강도: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium — code-agent model 로 확인·변경
   - hook: .claude/settings.json → PreToolUse code-agent hook · 질문 Pre/PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart/Stop code-agent review-event · 계획 SubagentStart/Stop code-agent planning-event · SessionStart code-agent session-event
   - CLAUDE.md: code-agent 블록 생성

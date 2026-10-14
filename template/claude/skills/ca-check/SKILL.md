@@ -18,7 +18,7 @@ description: 정적 분석·컴파일 단계(check)를 진행한다 — code-age
 **전체 작업 흐름에서는** 계획된 테스트 작성이 끝난 상태에서 Bash: `code-agent verify --json`을 호출한다. CLI가 `check → 결과 판정 → test → 결과 판정`을 연속 실행하고 기존 게이트를 통과하면 `review`까지 이동한다. 아래 단일 단계 명령을 중복 실행하지 않는다.
 
 - `node: review` — `/ca-review` 절차로 이어간다. `next`를 추가 호출하지 않는다.
-- `node: repair` — 반환된 `problems`·`failure`·`evidence`·`plannedFiles`를 근거로 아래 수정 루프를 수행하고 `code-agent verify --json`으로 재검증한다. 사용자 보고에는 `budget`의 남은 고쳐 쓰기 회차를 함께 적는다.
+- `node: repair` — 반환된 `repairFile`(실패 명령·로그 경로·실패 TC→AC→Task·고칠 수 없는 테스트)·`problems`·`plannedFiles`를 근거로 아래 수정 루프를 수행하고 `code-agent verify --json`으로 재검증한다. 사용자 보고에는 `budget`의 남은 고쳐 쓰기 회차를 함께 적는다.
 - `node: diagnose` — 코드 결함이 아니라 실행·환경·결과 수집 문제다. `failure.class`와 `task`를 따른다. `environment`(선언 문구·실행 파일 없음·준비 명령 실패)·`interrupted`(시간 초과·기록 없이 끊김)면 코드를 고치지 말고 사용자에게 환경을 확인받은 뒤 `code-agent verify --json --retry` — 같은 회차를 다시 쓰고 고쳐 쓰기 회차를 쓰지 않지만, 같은 코드 재실행은 회차당 2회까지다. `result-unconfirmed`(TC 결과 미확인)면 테스트 이름의 TC id·결과 형식을 고친 뒤 `code-agent verify --json` — 첫 수집 수정 1회는 고쳐 쓰기 회차를 쓰지 않고, 그동안만 `kind: test` 파일의 TC 이름을 고칠 수 있다(단언·기대값은 고치지 않는다. `fix` 는 재현부터 얼어 있어 이 창이 없다). `precondition`(실행은 통과했지만 증거 대조가 어긋남 — 검증 명령이 계획 파일을 고침·⑧ 불일치)이면 고치지 말고 `code-agent verify --json --retry` 로 check 부터 다시 돈다 — 고쳐 쓰기 회차를 쓰지 않는다(`--retry` 없이는 ⑧ 이 다시 렌더되지 않는다). 같은 문제가 되풀이되면 보고한다. 변경 없는 실패를 자동 반복하지 않는다. 실패 TC가 함께 찍힌 실행은 선언 문구가 있어도 환경 오류가 아니다. 같은 환경 실패가 반복되는데 선언이 없으면 사용자에게 그 문구의 `environmentErrors` 선언을 제안한다(직접 고치지 않는다).
 - `node: decision` — 재시도 한도를 다 썼다(`failure.counter`). 자동으로 다시 시도하지 않는다. 막힌 이유와 증거 경로를 보고하고 `task` 가 싣는 선택지에서 사람이 고르게 한다 — 한 번 더 허용(ca-answer 의 `judgment` 동의), 재계획·재승인, 작업 종료. 리뷰를 열지 않고 쓴 리뷰 회차는 허용 대신 통과한 트리로 되돌리기다. 이 응답 자체는 승인이나 사용자 답변이 아니다.
 - 명령 자체가 거부되면 차단 복구를 따른다. 종료 코드 1과 유효한 노드 JSON은 인계 요청이며, JSON 없는 오류와 구분한다.
@@ -40,7 +40,7 @@ description: 정적 분석·컴파일 단계(check)를 진행한다 — code-age
 `check` · `test` · `review` · `integrate` 가 함께 쓴다. 회차는 **코드가 원인별로 센다** — 실패를 고치는 고쳐 쓰기(`code-agent.json` 의 `fixRounds`, 기본 2), TC 결과 수집 수정(1), 같은 코드 재실행(회차당 2), 리뷰 회차(3). 남은 수는 `verify` 결과의 `budget` 과 `code-agent status` 가 보여 준다:
 
 1. 실패·지적마다 어느 **계획 파일**의 문제인지 가른다. `code-agent context` 가 준 계획 파일 목록이 기준이고, 네 기억이 아니다.
-2. **계획 안** — `ca-implementer` 에게 파일별로 맡긴다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 무엇이 왜 실패했는지(명령 · outcome · 로그 **경로**)와 고칠 파일만 넘긴다.
+2. **계획 안** — `ca-implementer` 에게 원인 단위로 맡긴다 — 같은 원인에 닿는 계획 파일은 한 담당에게 묶는다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). `repairFile` 경로(리뷰 지적이면 지적 id·근거)와 맡길 파일만 넘기고, 실패 내용을 옮겨 쓰지 않는다.
    끝나면 **`code-agent verify --json` 으로 다시** 검증한다 — check 부터 다시 돈다. 중간부터 잇지 않는다. `test` · `review` · `integrate` 어디서 불러도 커서를 check 로 되감으므로 스테이지를 되돌리려고 따로 할 일은 없다 (`code-agent back` 도 필요 없다). 단일 단계만 요청받았으면 `code-agent check` 를 쓴다 — 회차 판정은 같다.
 3. **계획 밖** — 고치지 않는다. `questions.md`에 기록하고 공통 선택 절차로 처리 방향을 받는다. 범위를 넓히기로 답했어도 그 일반 답변을 승인으로 적용하지 않는다. 구현은 멈추고 재계획·재승인(`plan submit` → `plan` 공통 동의 절차)으로 연결한다. 승인된 동의 적용 후 검증 흐름을 이어간다. 필요한 답이 없으면 미응답으로 남긴다. 계획 밖에서 본 것은 `code-agent finding report doc/work/<ID>/finding.draft.json`(형식: `code-agent finding`)으로도 남긴다 — 질문·지적과 같으면 `links` 로 가리키고, 다른 저장소는 고치지 않으며 무관한 개선은 작업을 막지 않는다. 보고는 권한이 아니다.
 4. 얼어 있는 테스트 파일(`kind: test` 단계)은 기본적으로 수정할 수 없다. 범위는 동결 여부와 무관하게 계획 파일 목록으로 정한다.

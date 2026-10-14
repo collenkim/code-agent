@@ -29,9 +29,10 @@ import type { Change } from "./tree";
 import { approvalOf } from "./work";
 import type { Work } from "./work";
 import { parseTestCases, readWorkDoc, reproCases, reproMode } from "./workDocs";
-import { parseTestResults, resultFor } from "./testResults";
+import { parseTestResults, resultFor, tcToken } from "./testResults";
 import type { CaseStatus } from "./testResults";
 import { shortCommand } from "./screenText";
+import { stageTestRoots, testRoots, trackedTestFiles } from "./testFiles";
 
 /**
  * ⑧ 의 원본 — `.code-agent/work/<ID>/<대상>.verify.json`.
@@ -285,41 +286,8 @@ export function reproMissing(work: Work, evidence: Evidence | undefined): string
 
 // ---- refactor: 기존 테스트 보호 ----
 
-/**
- * 한 단계가 **스스로 밝힌** 테스트 자리. 밝히지 않았으면 빈 목록이다.
- *
- * `domainBase` 로 물러서지 않는다 — 그러면 소스 루트 전체가 "기존 테스트" 가 되어, 테스트가 소스
- * 옆에 있는 프로젝트(`*.test.ts` · `_test.go` · pytest)에서 refactor 가 **제 파일도** 못 고친다.
- * 자리를 밝히지 않은 단계는 테스트 파일을 가려낼 수 없어 아무것도 지키지 못한다
- * (`code-agent manifest check` 가 그 사실을 경고한다).
- */
-export function stageTestRoots(stage: StageDef): string[] {
-  const roots =
-    stage.scope === "project" && stage.outputDirs.length > 0 ? stage.outputDirs : stage.base ? [stage.base] : [];
-  return roots.map((root) => root.replace(/\/+$/, "")).filter((root) => root !== "");
-}
-
-/**
- * kind:"test" 단계가 덮는 저장소 기준 경로 접두어.
- *
- * **매니페스트의 모든 `kind:"test"` 단계를 본다** — `work.stages` 는 이번 종류로 도는 단계뿐이라,
- * `kinds` 에서 `refactor` 를 뺀 테스트 단계(새 테스트를 만들지 않으니 자연스러운 선언)가 거기서
- * 사라지고 기존 테스트 보호가 세 자리(제출 · 쓰기 · 검증)에서 한꺼번에 꺼진다.
- */
-export function testRoots(work: Work): string[] {
-  return work.manifest.stages.filter((stage) => stage.kind === "test").flatMap(stageTestRoots);
-}
-
-/** 기준 커밋에 이미 있던 테스트 파일 — refactor 가 손대면 안 되는 것 */
-export function trackedTestFiles(work: Work): string[] {
-  const roots = testRoots(work);
-  if (!work.active.baseCommit || roots.length === 0) {
-    return [];
-  }
-  return trackedPaths(work.repoRoot, work.active.baseCommit).filter((path) =>
-    roots.some((root) => path === root || path.startsWith(`${root}/`)),
-  );
-}
+// 테스트 자리·기존 테스트 파일은 testFiles.ts 가 원천이다(planningState 가 순환 없이 쓴다) — 기존 import 경로를 위해 다시 내보낸다
+export { stageTestRoots, testRoots, trackedTestFiles };
 
 /**
  * refactor 가 기존 테스트를 고쳤는가. 동작이 보존되는지 보는 것이 그 테스트라,
@@ -621,14 +589,33 @@ export function tcPrecheck(work: Work): string[] {
   const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
   const cases = spec ? parseTestCases(spec) : [];
   if (cases.length === 0) return [];
+  const texts = tcSearchTexts(work);
+  return cases.map((entry) => entry.id).filter((id) => !texts.some((text) => tcToken(id).test(text)));
+}
+
+/** TC id 를 찾는 파일 — kind:test 단계의 계획 파일(refactor 는 기존 테스트까지), 테스트 단계가 없으면 계획 파일 전체 */
+function tcSearchTexts(work: Work): string[] {
   const files = work.stages.some((stage) => stage.kind === "test")
     ? [...testStageFiles(work), ...(work.order.kind === "refactor" ? trackedTestFiles(work) : [])]
     : planPaths(work);
-  const texts = [...new Set(files)].map((path) => {
+  return [...new Set(files)].map((path) => {
     const full = join(work.repoRoot, path);
     return existsSync(full) ? readFileSync(full, "utf-8") : "";
   });
-  return cases.map((entry) => entry.id).filter((id) => !texts.some((text) => new RegExp(`\\b${id}\\b`).test(text)));
+}
+
+/**
+ * 결과 인식(`TC-<숫자>`)에 걸리지 않게 적은 TC id — `TC_3`·`TC3`·`tc-3`·`TC 3`·`TC-3a`. id → 찾은 표기(없으면 빠진다).
+ * 막지 않는다 — 사전 점검·결과 미확인 문구의 고칠 방향에만 쓴다.
+ */
+export function tcNearMisses(work: Work, ids: string[]): Map<string, string> {
+  const texts = tcSearchTexts(work), found = new Map<string, string>();
+  for (const id of ids) {
+    const variant = new RegExp(`(?<![A-Za-z0-9])TC[-_ ]?${id.slice(3)}(?![0-9])[A-Za-z]*`, "gi");
+    const near = texts.flatMap((text) => [...text.matchAll(variant)].map((match) => match[0])).find((text) => text !== id);
+    if (near) found.set(id, near);
+  }
+  return found;
 }
 
 /**
@@ -750,13 +737,16 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
   if ((phase === "test" || phase === "integrate") && guarded.length === 0) {
     const records = phase === "test" ? evidence.testCases : evidence.integrationTestCases ?? [];
     const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
-    const uncovered = (spec ? parseTestCases(spec) : []).filter((item) => records.find((entry) => entry.id === item.id)?.status !== "passed")
-      .map((item) => `${item.id}(${records.find((entry) => entry.id === item.id)?.status ?? "unknown"})`);
-    if (uncovered.length > 0) {
+    const statuses = (spec ? parseTestCases(spec) : []).map((item) => ({ id: item.id, status: records.find((entry) => entry.id === item.id)?.status ?? "unknown" }))
+      .filter((item) => item.status !== "passed");
+    if (statuses.length > 0) {
+      // 결과가 인식돼 실패한 TC 만 있으면 할 일은 코드 수정이다 — 'TC id 를 남기세요' 는 결과가 인식되지 않은 TC 에만 맞는 안내다
+      const allFailed = statuses.every((item) => item.status === "failed");
       add(
         "result",
-        `⑦ 의 테스트 케이스가 확인되지 않았습니다: ${uncovered.join(", ")} — ` +
-          "필수 TC가 실제 실행되어 passed여야 합니다. TAP·unittest verbose·pytest verbose·Go JSON·code-agent-test JSONL 결과에 TC id를 남기세요. 파일의 주석만으로는 통과하지 않습니다",
+        `⑦ 의 테스트 케이스가 확인되지 않았습니다: ${statuses.map((item) => `${item.id}(${item.status})`).join(", ")} — ` +
+          (allFailed ? "필수 TC가 실제 실행되어 passed여야 합니다. 실패한 TC는 테스트를 약하게 하지 않고 계획 안의 코드를 고칩니다"
+            : "필수 TC가 실제 실행되어 passed여야 합니다. TAP·unittest verbose·pytest verbose·Go JSON·code-agent-test JSONL 결과에 TC id를 남기세요. 파일의 주석만으로는 통과하지 않습니다"),
       );
     }
   }
@@ -917,7 +907,7 @@ export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[]
 
   return cases.map((entry) => {
     // id 가 다른 id 의 앞부분이면 안 된다 — TC-1 이 TC-12 에 걸리면 덮이지 않은 것이 덮인 것으로 읽힌다
-    const token = new RegExp(`\\b${entry.id}\\b`);
+    const token = tcToken(entry.id);
     const result = resultFor(entry.id, results);
     if (result.status !== "unknown") {
       return { id: entry.id, status: result.status, source: "출력" as const, where: `테스트 실행 결과 (${result.format})` };

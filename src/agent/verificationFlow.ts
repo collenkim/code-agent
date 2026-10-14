@@ -24,6 +24,7 @@ import {
 } from "./retryPolicy";
 import type { FailureRecord, VerifyBudget } from "./retryPolicy";
 import { Stop } from "./stop";
+import { writeRepairHandoff } from "./repairHandoff";
 import { check, runTests, verifyGuidance } from "./validate";
 import { loadWork } from "./work";
 import type { Work } from "./work";
@@ -47,6 +48,8 @@ export interface VerificationResult extends WorkflowHandoff {
   summaries: string[];
   evidence: string;
   plannedFiles: string[];
+  /** repair 노드의 수정 배정 파일(repairHandoff) — 실패 명령·로그·실패 TC→AC→Task·동결 테스트·남은 회차 */
+  repairFile?: string;
   resume: string;
   failure?: FailureRecord;
   budget?: VerifyBudget;
@@ -182,7 +185,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
     executor: "program", run: (context) => assess(context, "test"),
     edges: { passed: "review", repair: "repair", diagnose: "diagnose", blocked: "decision" },
   },
-  repair: { executor: "agent", task: "검증 증거와 로그를 분석하고 승인된 계획 안에서 수정하세요. ca-check의 수정 루프와 테스트 동결 규칙을 따릅니다. 수정 후 code-agent verify로 재검증하세요." },
+  repair: { executor: "agent", task: "repairFile(실패 명령·로그·실패 TC→AC→Task·동결 테스트)을 근거로 승인된 계획 안에서 원인별로 수정하세요. ca-check의 수정 루프와 테스트 동결 규칙을 따릅니다. 수정 후 code-agent verify로 재검증하세요." },
   diagnose: { executor: "agent", task: "미실행·실행 오류·TC 결과 미확인 원인을 확인하세요. 이를 코드 결함이나 통과로 단정하지 않습니다. 환경·결과 수집 문제를 해결한 뒤 code-agent verify --retry로 다시 검증하세요. 선언된 환경 오류(environmentErrors)로 막힌 회차는 코드를 그대로 둔 재실행에 회차를 쓰지 않습니다." },
   review: { executor: "agent", task: "검증을 통과했습니다. ca-review 절차로 독립 리뷰를 진행하세요." },
   decision: { executor: "human", task: "재시도 한도에 닿았습니다. 막힌 이유를 보고하고 사람 판단(ca-answer)을 받으세요." },
@@ -253,6 +256,10 @@ export async function verify(repoRoot: string, options: { retry?: boolean } = {}
     ...(context.failure ? { failure: context.failure } : {}),
     ...(context.budget ? { budget: context.budget } : {}),
   };
+  if (handoff.node === "repair") {
+    // 수정 배정 파일을 못 써도 검증 결과는 그대로다 — 담당은 problems·evidence 로도 고칠 수 있다
+    try { const repairFile = writeRepairHandoff(loadWork(repoRoot) ?? work, context.problems, context.budget); if (repairFile) result.repairFile = repairFile; } catch { /* 위 주석 */ }
+  }
   attempt.result = result;
   persist();
   return result;
@@ -278,6 +285,7 @@ export function renderVerification(result: VerificationResult): string {
       : []),
     ...(result.budget ? [`남은 회차: ${budgetText(result.budget)}`] : []),
     result.task,
+    ...(result.repairFile ? [`수정 배정: ${result.repairFile}`] : []),
     `증거: ${result.evidence}`,
     `다음: ${result.resume}`,
   ].join("\n");

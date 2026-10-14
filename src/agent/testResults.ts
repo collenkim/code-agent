@@ -6,6 +6,11 @@ export interface ScannedResult { name: string; status: CaseStatus; format: strin
 
 const TC_ID = /(?<![A-Za-z0-9])TC-\d+(?![A-Za-z0-9])/g;
 
+/** 파일 텍스트에서 TC id 하나를 찾는 토큰 — 결과 인식(TC_ID)과 같은 경계다. `TC-6_empty` 는 걸리고 `TC-12`·`TC-1a` 는 TC-1 이 아니다 */
+export function tcToken(id: string): RegExp {
+  return new RegExp(`(?<![A-Za-z0-9])${id}(?![A-Za-z0-9])`);
+}
+
 /** 콘솔 출력의 결과 행(TAP·node spec·unittest·pytest·Go JSON·code-agent JSONL)을 하나씩 넘긴다 */
 function scanLines(output: string, onResult: (name: string, status: CaseStatus, format: string) => void): void {
   for (const raw of output.replace(/\x1b\[[0-9;]*m/g, "").split(/\r?\n/)) {

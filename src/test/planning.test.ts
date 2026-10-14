@@ -26,7 +26,8 @@ import { hostAssets } from "../agent/hosts";
 import { readProjectFile } from "../agent/read";
 import { observePlanner, runPlanningHook } from "../agent/planningHook";
 import { fileHash, hashedQuestion, inputFiles, invalidatePlanningCache, loadPlanning, planningProblems, taskCurrent, taskHash, TaskSchema, ResultSchema, withPlanningCache, type PlanningResult, type PlanningState } from "../agent/planningState";
-import { planningDocumentProblems } from "../agent/planningValidation";
+import { planningDocumentProblems, planRuleProblems } from "../agent/planningValidation";
+import { planFormatFor } from "../core/plan";
 import { parseQuestions, type Question } from "../agent/questions";
 import { acquireLock } from "../agent/lock";
 import { orphanState, RetryRefused } from "../agent/retryPolicy";
@@ -212,8 +213,8 @@ test("좁은 전달은 직접 선행 문서와 역할 정책만 보내고 독립
   preparePlanning(root); finish(dispatch("explore")); finish(dispatch("synthesis"), { [`${DIR}/02-analysis.md`]: IMPACT }); next(root);
   preparePlanning(root);
   const design = dispatch("design");
-  // contextVersion 3 — analysis·design 은 테스트 전략·품질 기준을 받지 않는다(plan·critic 은 받는다). 옛 계약(2)은 그대로 넷 다
-  assert.equal(design.task.contextVersion, 3);
+  // contextVersion 3 부터(새 작업은 4) — analysis·design 은 테스트 전략·품질 기준을 받지 않는다(plan·critic 은 받는다). 옛 계약(2)은 그대로 넷 다
+  assert.equal(design.task.contextVersion, 4);
   assert.ok(design.inputs.includes("doc/architecture.md")); assert.ok(!design.inputs.includes("doc/quality.md")); assert.ok(!design.inputs.includes("doc/test-strategy.md"));
   assert.ok(!inputFiles(loadWork(root)!, { ...loadPlanning(loadWork(root)!).tasks.find(record => record.task.role === "analysis")!.task, contextVersion: 3 }).includes("doc/quality.md"));
   assert.ok(inputFiles(loadWork(root)!, { ...design.task, contextVersion: 2 }).includes("doc/quality.md"));
@@ -555,7 +556,7 @@ test("04 의 업무 규칙은 업무 정책 문서에 있는 BR 키로 근거를
   write(`${DIR}/04-functional.md`, rule("BR-RET-1"));
   assert.doesNotMatch(planningDocumentProblems(loadWork(root)!, "design").join("\n"), /업무 규칙/);
   write(`${DIR}/04-functional.md`, rule("BR-RET-10"));
-  assert.match(planningDocumentProblems(loadWork(root)!, "design").join("\n"), /업무 규칙에 실제 파일:줄 · 답변된 Q 번호 · 업무 정책 문서의 BR 키/);
+  assert.match(planningDocumentProblems(loadWork(root)!, "design").join("\n"), /\[FUN-BR\] .*04-functional\.md:5: 업무 규칙 BR-RET-10 에 근거가 없습니다 — 실제 파일:줄 · 답변된 Q 번호 · 업무 정책 문서의 BR 키/);
 });
 test("잘못된 DAG·출력 소유·Task 순환 및 중복 파일을 거부한다", () => {
   const task = TaskSchema.parse({ id: "analysis", role: "analysis", title: "분석", requirements: ["REQ-1"], inputs: [SPEC], outputs: [`${DIR}/01-requirements.md`], dependsOn: ["analysis"] });
@@ -1599,6 +1600,28 @@ test("plan 결과도 plan.json 의 요구 커버리지를 완료 전에 받는�
   assert.equal(last.failure!.class, "agent-content-error");
 });
 
+test("plan 완료 hook 은 제출 규칙(순서·경로)을 plan submit 과 같은 함수로 먼저 본다 — hook 을 지난 초안은 제출에서 같은 규칙으로 걸리지 않는다", () => {
+  throughDesign(); preparePlanning(root);
+  // 단계 위치 밖 파일과 이유 없는 순서 — 스키마·커버리지(planShapeProblems)는 지나고 제출 규칙에서만 걸리는 초안
+  const outside = { ...PLAN, files: PLAN.files.map((file) => file.path === "src/b.ts" ? { ...file, path: "lib/b.ts" } : file),
+    tasks: PLAN.tasks.map((task) => task.id === "T2" ? { ...task, files: ["lib/b.ts"] } : task), sequence: [{ step: "app", why: " " }, { step: "test", why: "검증" }] };
+  const work = loadWork(root)!;
+  const expected = planRuleProblems(work, planFormatFor("feature").toPlan(planFormatFor("feature").schema.parse(outside)));
+  assert.ok(expected.some((problem) => /lib\/b\.ts/.test(problem)) && expected.some((problem) => /순서의 이유/.test(problem)), expected.join("\n"));
+  assert.throws(() => finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(outside), [`${DIR}/07-test-spec.md`]: TESTS }),
+    (error: Error) => expected.every((problem) => error.message.includes(problem)));
+  assert.equal(existsSync(join(root, DIR, "plan.json")), false, "정식 문서로 옮기지 않는다");
+  // 같은 규칙을 지킨 초안은 hook·critic 을 지나 제출된다 — 제출의 최종 재검사도 같은 함수다
+  finish(dispatch("plan"), { [`${DIR}/plan.json`]: JSON.stringify(PLAN), [`${DIR}/07-test-spec.md`]: TESTS });
+  finish(dispatch("critic"));
+  assert.match(submitPlan(root, join(root, DIR, "plan.json")), /계획을 제출하고/);
+  // 제출 전에 사람이 매니페스트 단계 위치를 바꾸면(상태 변화) 최종 재검사가 막는다 — 입력이 바뀌어 게이트부터 낡는다
+  const manifest = JSON.parse(readFileSync(join(root, "code-agent.json"), "utf8"));
+  manifest.stages[0].outputDirs = ["lib"];
+  writeFileSync(join(root, "code-agent.json"), JSON.stringify(manifest));
+  assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /낡았|src\/a\.ts/);
+});
+
 test("교정 시도의 문서 검사 실패는 되돌리지 않고 실패로 기록한다", () => {
   const item = advance().assignments[0];
   const bad = REQUIREMENTS.replace('근거: "값을 반환한다."', "");
@@ -1788,7 +1811,7 @@ test("수정 재배정은 담당 시작 때 현행 문서를 그 배정의 stagi
   const planTask = loadPlanning(loadWork(root)!).tasks.find((record) => record.task.role === "plan")!.task;
   preparePlanning(root, { tasks: [{ ...planTask, inputs: [...planTask.inputs, `${DIR}/feedback.md`] }] });
   const again = dispatch("plan");
-  assert.match(again.instructions, /수정 재배정이면 그 자리에 현행 문서가 미리 들어 있습니다 — 고칠 곳만 고치고/);
+  assert.match(again.instructions, /수정 재배정이면 그 자리에 현행 문서\(직전 시도의 초안이 있으면 그 초안\)가 미리 들어 있습니다 — 고칠 곳만 고치고/);
   startAgent(again, "planner-2");
   for (const file of ["plan.json", "07-test-spec.md"]) assert.equal(readFileSync(stagedOf(again, file), "utf8"), readFileSync(join(root, DIR, file), "utf8"), file);
 });

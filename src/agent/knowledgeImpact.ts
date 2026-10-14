@@ -4,6 +4,7 @@ import { buildIndex, CHANGING_DECISIONS, DOC_DECISIONS, docImpactBody, docImpact
 import type { DocImpactRow, IndexEntry, KnowledgeIndex } from "./knowledgeIndex";
 import { WORK_SCHEMAS } from "./schemas";
 import type { Work } from "./work";
+import { ruled } from "./planningRules";
 import { readWorkDoc, workDocPath, type DocOverlay } from "./workDocs";
 
 /**
@@ -50,7 +51,7 @@ export function docImpactProblems(work: Work, overlay?: DocOverlay, index?: Know
   if (text === undefined) return [];   // 02 가 없다는 문제는 analysisProblems 가 낸다
   const body = docImpactBody(text);
   if (body === undefined) {
-    return [`${path} — \`## 문서 영향\` 표가 없습니다: | 문서 | 키 | 판단 | 근거 | (바꿀 문서가 없으면 | - | - | 영향 없음 | <근거> | 한 줄)`];
+    return [ruled("IMP-DOC", `${path} — \`## 문서 영향\` 표가 없습니다: | 문서 | 키 | 판단 | 근거 | (바꿀 문서가 없으면 | - | - | 영향 없음 | <근거> | 한 줄)`)];
   }
   const rows = docImpactRows(body);
   const problems: string[] = [];
@@ -66,7 +67,7 @@ export function docImpactProblems(work: Work, overlay?: DocOverlay, index?: Know
   if (missing.length) {
     problems.push(`${path} — 영향 범위의 파일을 근거로 든 지식 항목을 문서 영향에서 판단하세요: ${missing.map((entry) => `${entry.key}(${entry.path}:${entry.line})`).join(", ")}`);
   }
-  return problems;
+  return problems.map((problem) => ruled("IMP-DOC", problem));
 }
 
 /**

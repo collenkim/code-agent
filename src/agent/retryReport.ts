@@ -12,6 +12,7 @@ import type { PlanningState } from "./planningState";
 import type { ReviewRound } from "./review";
 import { CONSENT_DIR } from "./consentState";
 import { STATE_DIR } from "./layout";
+import { ruleIdsIn } from "./planningRules";
 import { COUNTER_KEYS, COUNTER_LABEL, isFailureClass, retrySummary, type CounterKey, type FailureClass } from "./retryPolicy";
 
 /** 교차 실행 합계 — codexTokens 는 Codex 의 `tokens used`(캐시 아닌 입력 + 출력, 입력·출력으로 나뉘지 않는다) */
@@ -26,6 +27,15 @@ export interface RetryReport {
   dispatches: number;
   /** Σ max(0, attempts.length − 1) */
   reassignments: number;
+  /**
+   * 계획 담당 역할별 첫 시도 — tasks: 결과까지 간 첫 시도가 있는 task, passed: 그 시도가 되돌림·형식 교정 없이 완료(completed)나
+   * 사람 결정 대기(needs-input)로 끝난 것, waited: 그중 needs-input. 정상 결정 대기는 실패가 아니다
+   */
+  firstAttempt: Record<string, { tasks: number; passed: number; waited: number }>;
+  /** 거부 문구의 규칙 식별자별 횟수 — 기록된 실패(error)와 Claude 되돌림(returnedRules). 되돌림·형식 교정 횟수는 counters 에 있다 */
+  rules: Record<string, number>;
+  /** 직전 시도의 미완성 초안이 남아 있던 재배정 — 그 초안이 staging 에 미리 놓인다(seedStaging) */
+  draftReuse: number;
   failures: Partial<Record<FailureClass | "(기타)", number>>;
   /** 교차 시도의 usage 합 — usage 가 기록된 시도만 */
   cross: CrossTotals;
@@ -92,16 +102,40 @@ function reportOf(dir: string, id: string, target: string): RetryReport {
   const counters = Object.fromEntries(COUNTER_KEYS.filter((key) => totals[key] > 0).map((key) => [key, totals[key]])) as RetryReport["counters"];
   const failures: RetryReport["failures"] = {};
   const cross = emptyCross();
-  let dispatches = 0, reassignments = 0;
+  let dispatches = 0, reassignments = 0, draftReuse = 0;
+  const firstAttempt: RetryReport["firstAttempt"] = {}, rules: RetryReport["rules"] = {};
+  const countRules = (ids: unknown[]) => { for (const id of ids) if (typeof id === "string") rules[id] = (rules[id] ?? 0) + 1; };
   const plan = record(planning);
   if (plan) {
+    const agents = list(plan.agents).map(record);
+    const returnsOf = (dispatchId: unknown) => agents.filter((agent) => dispatchId !== undefined && agent?.dispatchId === dispatchId).reduce((sum, agent) => sum + num(agent?.returns), 0);
     for (const task of list(plan.tasks).map(record)) {
       const attempts = list(task?.attempts).map(record);
       dispatches += attempts.length;
       reassignments += Math.max(0, attempts.length - 1);
-      for (const attempt of attempts) countFailure(failures, record(attempt?.failure)?.class);
+      let drafts = false;
+      attempts.forEach((attempt, index) => {
+        countFailure(failures, record(attempt?.failure)?.class);
+        if (typeof attempt?.error === "string") countRules(ruleIdsIn(attempt.error));
+        if (index > 0 && drafts) draftReuse += 1;
+        if (list(attempt?.drafts).length) drafts = true;
+        if (attempt?.status === "completed") drafts = false;
+      });
+      const first = attempts.find((attempt) => !["running", "cancelled"].includes(String(attempt?.status)));
+      if (first) {
+        const role = String(record(task?.task)?.role ?? "(역할 없음)");
+        const entry = firstAttempt[role] ??= { tasks: 0, passed: 0, waited: 0 };
+        entry.tasks += 1;
+        if (["completed", "needs-input"].includes(String(first.status)) && !record(first.correction) && returnsOf(first.dispatchId) === 0) {
+          entry.passed += 1;
+          if (first.status === "needs-input") entry.waited += 1;
+        }
+      }
     }
-    for (const agent of list(plan.agents).map(record)) countFailure(failures, record(agent?.failure)?.class);
+    for (const agent of agents) {
+      countFailure(failures, record(agent?.failure)?.class);
+      countRules(list(agent?.returnedRules));
+    }
     const attempts = planningCrossAttempts(plan);
     for (const attempt of attempts.map(record)) countFailure(failures, attempt?.class);
     addCross(cross, attempts);
@@ -117,7 +151,7 @@ function reportOf(dir: string, id: string, target: string): RetryReport {
     }
   }
   for (const attempt of list(record(flow)?.attempts).map(record)) countFailure(failures, record(record(attempt?.result)?.failure)?.class);
-  return { id, target, counters, dispatches, reassignments, failures, cross, unreadable };
+  return { id, target, counters, dispatches, reassignments, firstAttempt, rules, draftReuse, failures, cross, unreadable };
 }
 
 /** 대상 이름 — `<대상>.<종류>.json` 의 앞부분 */
@@ -153,7 +187,8 @@ export function retryReports(repoRoot: string, work?: string): RetryReport[] {
       }
     }
     if (Object.keys(failures).length || unreadable.length) {
-      reports.push({ id: "(동의)", target: "", counters: {}, dispatches: 0, reassignments: 0, failures, cross: emptyCross(), unreadable });
+      reports.push({ id: "(동의)", target: "", counters: {}, dispatches: 0, reassignments: 0, firstAttempt: {}, rules: {}, draftReuse: 0,
+        failures, cross: emptyCross(), unreadable });
     }
   }
   return reports;
@@ -201,11 +236,18 @@ export function assignmentLabels(repoRoot: string, work?: string): Map<string, s
 export function retryLine(report: RetryReport): string {
   const parts: string[] = [];
   if (report.dispatches) parts.push(`배정 ${report.dispatches}회(재배정 ${report.reassignments})`);
+  const roles = Object.entries(report.firstAttempt).sort(([a], [b]) => a.localeCompare(b));
+  if (roles.length) {
+    parts.push(`첫 시도 통과 ${roles.map(([role, entry]) => `${role} ${entry.passed}/${entry.tasks}${entry.waited ? `(질문 대기 ${entry.waited})` : ""}`).join(" · ")}`);
+  }
   for (const key of COUNTER_KEYS) {
     const value = report.counters[key];
     if (!value || key === "taskTotal") continue;
     parts.push(`${COUNTER_LABEL[key]} ${value}`);
   }
+  if (report.draftReuse) parts.push(`초안 이어 쓰기 ${report.draftReuse}`);
+  const rules = Object.entries(report.rules).sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+  if (rules.length) parts.push(`거부 규칙 ${rules.map(([id, count]) => `${id} ${count}`).join(" · ")}`);
   const failures = Object.entries(report.failures).sort(([a], [b]) => a.localeCompare(b));
   if (failures.length) parts.push(`실패 원인 ${failures.map(([cls, count]) => `${cls} ${count}`).join(" · ")}`);
   if (report.cross.attempts) {

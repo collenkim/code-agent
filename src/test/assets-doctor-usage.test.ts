@@ -196,7 +196,7 @@ describe("P8 · doctor", () => {
     assert.equal(line(report.text, "PreToolUse hook"), `✓ PreToolUse hook: node "${CLI.replace(/\\/g, "/")}" hook`);
     assert.match(line(report.text, "Stop hook"), /^✓ Stop hook:/);
     assert.equal(line(report.text, "설치 버전"), `✓ 설치 버전: ${packageVersion()}`);
-    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 13개 모두 번들과 같습니다$/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 14개 모두 번들과 같습니다$/);
     assert.equal(line(report.text, "에이전트 모델"), "✓ 에이전트 모델: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium");
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
@@ -439,7 +439,7 @@ describe("P8 · update", () => {
     gitInit();
     init(repo, { cli: CLI });
     const report = update(repo);
-    assert.match(report, /스킬·에이전트 26개 · 보조 문서 13개 그대로/);
+    assert.match(report, /스킬·에이전트 26개 · 보조 문서 14개 그대로/);
     assert.match(report, /\.claude\/settings\.json: 그대로/);
     assert.match(report, /CLAUDE\.md: 그대로/);
     assert.equal(report.includes("!!"), false);
@@ -833,6 +833,35 @@ describe("P8 · usage 호출·재시도 집계", () => {
     assert.match(text, /교차 실행 1회 412초 비용 0\.81 USD/);
     assert.ok(!text.split("\n").some((row) => row.startsWith("  ORD-1/order") && row.includes("$")));
     assert.deepEqual(readdirSync(work).sort(), before, "측정은 기록을 쓰지 않는다");
+  });
+
+  test("계획 담당 측정 — 역할별 첫 시도 통과·규칙별 거부·되돌림·형식 교정·초안 이어 쓰기를 기록에서 센다", () => {
+    const work = join(repo, STATE_DIR, "work", "ORD-4");
+    mkdirSync(work, { recursive: true });
+    const attempt = (dispatchId: string, status: string, extra: object = {}) => ({ dispatchId, inputHash: "h", at: "2026-09-30T02:00:00.000Z", status, ...extra });
+    writeFileSync(join(work, "order.planning.json"), JSON.stringify({
+      agents: [{ id: "a1", dispatchId: "d1", type: "ca-analyst", returns: 1, returnedRules: ["REQ-TRACE"] }],
+      tasks: [
+        // 되돌림을 한 번 받고 완료 — 첫 시도 통과가 아니다
+        { task: { id: "analysis", role: "analysis" }, attempts: [attempt("d1", "completed")] },
+        // 질문 대기(정상 결정 대기)는 통과로 센다. 초안이 남은 뒤 두 재배정은 그 초안을 이어 쓴다
+        { task: { id: "impact", role: "impact" }, attempts: [
+          attempt("d2", "needs-input", { drafts: [{ path: "doc/work/ORD-4/02-analysis.md", staged: "s", chars: 10 }] }),
+          attempt("d3", "failed", { error: "결과 내용 오류:\n[DOC-REF] a.md:3: 없는 파일\n[DOC-REF] a.md:4: 없는 파일\n[FUN-BR] 근거 없음\n[NOT-RULE] 등록되지 않은 표기" }),
+          attempt("d4", "completed")] },
+        // 입력이 바뀌어 취소된 시도는 첫 시도가 아니다. 형식 교정을 받은 완료는 통과가 아니다
+        { task: { id: "design", role: "design" }, attempts: [attempt("d5", "cancelled"),
+          attempt("d6", "completed", { correction: { raw: "", error: "JSON", agentId: "a", sessionId: "s", used: true } })] },
+        { task: { id: "plan", role: "plan" }, attempts: [attempt("d7", "completed")] },
+      ] }));
+    const [report] = retryReports(repo, "ORD-4");
+    assert.deepEqual(report.firstAttempt, { analysis: { tasks: 1, passed: 0, waited: 0 }, impact: { tasks: 1, passed: 1, waited: 1 },
+      design: { tasks: 1, passed: 0, waited: 0 }, plan: { tasks: 1, passed: 1, waited: 0 } });
+    assert.deepEqual(report.rules, { "DOC-REF": 2, "FUN-BR": 1, "REQ-TRACE": 1 });
+    assert.equal(report.draftReuse, 2);
+    // 되돌림·형식 교정 횟수는 재시도 규약의 카운터(retrySummary) 그대로다 — 따로 세지 않는다
+    assert.deepEqual([report.counters.agentReturn, report.counters.correction], [1, 1]);
+    assert.match(usage(repo, { transcripts: dir }), /ORD-4\/order: 배정 7회\(재배정 3\) · 첫 시도 통과 analysis 0\/1 · design 0\/1 · impact 1\/1\(질문 대기 1\) · plan 1\/1 · .*담당 되돌림 1 · 형식 교정 1 · .*초안 이어 쓰기 2 · 거부 규칙 DOC-REF 2 · FUN-BR 1 · REQ-TRACE 1/);
   });
 
   test("교차 실행 토큰 — Codex 는 stderr 의 tokens used 를 읽고, 합계 줄은 Claude 토큰과 Codex 토큰을 따로 싣는다", () => {

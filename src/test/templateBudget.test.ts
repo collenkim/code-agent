@@ -51,6 +51,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-review/SKILL.md": 3400,
   "template/claude/skills/ca-status/SKILL.md": 1900,
   "template/claude/skills/ca-test/SKILL.md": 2900,
+  "template/claude/skills/ca-test/tc-names.md": 1500,
   "template/CLAUDE.block.md": 1700,
   "template/codex/ca-answer.md": 5100,
   "template/CODEX.block.md": 1800,

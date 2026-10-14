@@ -13,13 +13,14 @@
 ## 바꿀 때 지킨다
 
 - 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 변경당 한 줄(바뀐 것의 요지 한 문장과 커밋 — 함수·상수 이름을 늘어놓지 않는다. 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다.
-- **함께 맞출 중복 정의는 §1.1 셋째 칸이 정본이다** — 바꾸는 코드의 행을 찾아 그 칸을 모두 맞춘다. 다음 시험이 일부를 대조한다. 깨지면 사본(문서·템플릿·목록)을 코드에 맞춘다: `docSync`(흐름도 §3.2 단계·§4.1 동의·§5.1·§5.2 hook 등록표·§6.4 생성 블록·§7 모델 기본값), `consentBinding`·`consentOutput`(동의 동작·준비 인자 목록), `retryPolicy`(안내 자리표시·`UNRENDERED_GUIDES`), `modelPolicy`(에이전트 머리말·`doc/codex.md` 모델 표), `hostText`(`SKILL_NAMES`·`ROLE_NAMES` ↔ 템플릿 폴더), `hostNotation`·`templateText`(Codex 사본 치환·공통 문단·계획 스킬 2·3·4항), `planningChain`(`planningNextLine`), `hookLoad`(hook 경로의 import), `hookPaths`(읽기 전용 담당 ↔ 정의 파일 `tools`), `templateBudget`.
+- **함께 맞출 중복 정의는 §1.1 셋째 칸이 정본이다** — 바꾸는 코드의 행을 찾아 그 칸을 모두 맞춘다. 다음 시험이 일부를 대조한다. 깨지면 사본(문서·템플릿·목록)을 코드에 맞춘다: `docSync`(흐름도 §3.2 단계·§4.1 동의·§5.1·§5.2 hook 등록표·§6.4 생성 블록·§7 모델 기본값), `consentBinding`·`consentOutput`(동의 동작·준비 인자 목록), `retryPolicy`(안내 자리표시·`UNRENDERED_GUIDES`), `modelPolicy`(에이전트 머리말·`doc/codex.md` 모델 표), `hostText`(`SKILL_NAMES`·`ROLE_NAMES` ↔ 템플릿 폴더), `hostNotation`·`templateText`(Codex 사본 치환·공통 문단·계획 스킬 2·3·4항), `planningChain`(`planningNextLine`), `hookLoad`(hook 경로의 import), `hookPaths`(읽기 전용 담당 ↔ 정의 파일 `tools`), `planningRetry`(`planningRules.ts` `RULES` ↔ 검사 문구의 `ruled("…")` 식별자), `templateBudget`.
 - 시험이 없거나 일부만 보는 것 — §1.1 해당 행에 상세가 있다:
   - hook 등록(`init.ts`) → `doctor.ts` 목록, `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md` hook 수.
   - 서브에이전트 추가·삭제 → `modelPolicy.ts` `AGENTS`, 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher.
   - `PHASES` → `PHASE_LABEL`·`PHASE_SKILL`·`ca-next` 표. `ca-next` '멈춘 자리별 재개' 표 ↔ `nextHint` 판정 순서 ↔ `stateView.ts` 재개 판정 순서(`RESUME_CODES`)·`doc/usage.md` 5절 재개 코드 표.
   - 계획 advance action·출력 키 → `doc/planning.md` action 표. 연쇄(`--chain`)는 program 게이트만 잇는다.
   - `ca-reviewer.md` 출력 표 ↔ `reviewResultProblems`·`normalizeReviewTable`·`parseFindings`.
+  - TC 인식 규칙(`testResults.ts` `TC_ID`·`tcToken`, 보고서 이름 `reportSnapshot`) ↔ `ca-tester.md` TC 표기 문장·`ca-test/tc-names.md` 러너 표. 규칙 식별자의 검사 내용 ↔ 담당 지침(`criteria.md`·`ca-writer.md`)의 같은 규칙.
   - `grantTarget` ↔ `GRANT_STEP` 키. `MODEL_SUBCOMMANDS`에 더하면 `LEASE_FREE`에도 넣을지 정한다.
   - Codex exec 배너·`CODEX_TURN` → `crossFailureText`. 교차 자식이 여는 명령 → `CROSS_CHILD_READONLY`·§5.3 0단계. `ca-review`·`ca-plan` 4-1 교차 문장 → `codexText` 권한 상승 정규식.
   - 재시도 규약 → §6.4 생성 블록을 `renderRetryPolicyTable()` 출력으로 다시 붙인다. 시험은 표에 렌더되는 값만 보므로 §6.4 산문에 숫자를 쓰지 않는다.

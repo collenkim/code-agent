@@ -9,6 +9,7 @@ import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning,
 import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, type FailureRecord } from "./retryPolicy";
 import { RecordedFailure, type ReviewHookInput } from "./reviewHook";
 import { stagedDocumentProblems } from "./stagedChecks";
+import { ruled, ruleIdsIn } from "./planningRules";
 import { loadWork, type Work } from "./work";
 import { crossChild } from "./crossEnv";
 import { withNotation } from "./hostText";
@@ -59,6 +60,30 @@ function stagedContent(root: string, id: string, dispatchId: string, item: { pat
   const content = readFileSync(file, "utf8");
   if (content.length > 131072) throw new Error(`staging 문서가 크기 한도를 넘었습니다: ${item.staged}`);
   return content;
+}
+/**
+ * 미완성 초안 — needs-input·failed 결과의 artifacts, 문서 검사에 걸린 완료 결과의 출력. 정식 문서로 옮기지 않고 배정 출력 경로·이 배정의 staging 자리·
+ * 크기를 확인한 것만 그 staging 에 남긴다({path, content} 로 낸 것은 그 자리에 쓴다). 다음 배정이 이어 쓰는 참고 자료다(seedStaging).
+ * 맞지 않는 초안은 버린다 — 초안은 판단이 아니라 결과를 거부할 이유가 아니다. 미리 채운 resultShape 를 쓰지 않고 둔 자리(파일 없음)도 초안이 아니다.
+ */
+function keepDrafts(work: Work, record: TaskRecord, dispatchId: string, artifacts: PlanningResult["artifacts"]): NonNullable<TaskAttempt["drafts"]> {
+  const drafts: NonNullable<TaskAttempt["drafts"]> = [];
+  for (const item of artifacts) {
+    if (!record.task.outputs.includes(item.path) || drafts.some(draft => draft.path === item.path)) continue;
+    const staged = stagingPath(work.active.id, dispatchId, item.path);
+    try {
+      let content: string;
+      if ("staged" in item) {
+        if (item.staged !== staged || !existsSync(planningPath(work.repoRoot, staged))) continue;
+        content = stagedContent(work.repoRoot, work.active.id, dispatchId, item);
+      } else {
+        content = item.content;
+        writeAtomic(planningPath(work.repoRoot, staged), content);
+      }
+      if (content.trim()) drafts.push({ path: item.path, staged, chars: content.length });
+    } catch { /* 읽을 수 없는 초안은 남기지 않는다 */ }
+  }
+  return drafts;
 }
 /** 형식 교정 비교용 — 원본이 staging으로 냈다면 그 파일이 남아 있을 때 본문으로 바꿔 대조한다 */
 function comparable(root: string, items: PlanningResult["artifacts"]): unknown {
@@ -188,6 +213,8 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   const canReturn = host === "claude" && input.stop_hook_active !== true && (agent.returns ?? 0) < LIMITS.agentReturn;
   const giveBack = (message: string, cls: FailureClass): Decision => {
     agent.returns = (agent.returns ?? 0) + 1;
+    const rules = ruleIdsIn(message);
+    if (rules.length) agent.returnedRules = [...(agent.returnedRules ?? []), ...rules];
     if (prepared.received.sourceError === undefined) agent.judgedHandbacks = prepared.received.handbacks;
     return { kind: "return", message, cls };
   };
@@ -289,17 +316,24 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   const problems: string[] = [...(staged?.readErrors ?? [])];
   const result: ResolvedResult = { ...reported, artifacts: reported.status === "completed" ? staged?.artifacts ?? [] : [] };
   const permitted = new Set(inputFiles(work, record.task, state));
-  for (const dep of record.task.dependsOn) for (const ref of state.tasks.find(item => item.task.id === dep)?.attempts.at(-1)?.result?.evidence ?? []) permitted.add(ref.path);
-  for (const ref of [...result.evidence, ...result.facts.map(fact => fact.source), ...result.findings.map(finding => finding.source)]) {
-    if (!permitted.has(ref.path)) { problems.push(`배정 범위 밖 근거입니다: ${ref.path}`); continue; }
-    const problem = referenceProblem(root, ref);
-    if (problem) problems.push(problem);
+  // 직접 선행 결과의 근거(evidence·facts·findings 의 출처)는 그 담당의 완료 hook 이 이미 배정 범위·실재를 확인했다 — 후속 담당이 그 사실을 인용할 수 있다.
+  // 선행 입력이 바뀌면 선행 결과가 낡고(readyProblems) 후속도 다시 돈다
+  for (const dep of record.task.dependsOn) {
+    const prior = state.tasks.find(item => item.task.id === dep)?.attempts.at(-1)?.result;
+    for (const ref of [...prior?.evidence ?? [], ...(prior?.facts ?? []).map(fact => fact.source), ...(prior?.findings ?? []).map(finding => finding.source)]) permitted.add(ref.path);
   }
-  if (result.status === "completed" && (!result.evidence.length || result.questions.length)) problems.push("완료 결과에는 실제 근거가 필요하며 미결 질문이 없어야 합니다.");
-  if (result.questions.some(question => question.requirements.some(key => !record.task.requirements.includes(key)))) problems.push("배정 요구 범위 밖 질문입니다.");
+  for (const ref of [...result.evidence, ...result.facts.map(fact => fact.source), ...result.findings.map(finding => finding.source)]) {
+    if (!permitted.has(ref.path)) { problems.push(ruled("RES-SCOPE", `배정 범위 밖 근거입니다: ${ref.path} — 배정 inputs 와 선행 결과(dependencies)의 근거 파일만 인용합니다`)); continue; }
+    const problem = referenceProblem(root, ref);
+    if (problem) problems.push(ruled("RES-SCOPE", problem));
+  }
+  if (result.status === "completed" && (!result.evidence.length || result.questions.length)) problems.push(ruled("RES-STATUS", "완료 결과에는 실제 근거가 필요하며 미결 질문이 없어야 합니다."));
+  if (result.status === "needs-input" && !result.questions.length) problems.push(ruled("RES-STATUS", "needs-input 결과에는 사용자가 정할 질문이 하나 이상 있어야 합니다 — 결정할 것이 없으면 completed, 진행할 수 없으면 failed 로 반환합니다."));
+  const strayQuestions = result.questions.flatMap(question => question.requirements.filter(key => !record.task.requirements.includes(key)));
+  if (strayQuestions.length) problems.push(ruled("RES-QREQ", `배정 요구 범위 밖 질문입니다: ${[...new Set(strayQuestions)].join(", ")} — 질문의 requirements 는 이 배정의 ${record.task.requirements.join(", ") || "(없음)"} 중에서 고릅니다`));
   const outputs = reported.artifacts.map(artifact => artifact.path);
-  if (result.status === "completed" && JSON.stringify([...outputs].sort()) !== JSON.stringify([...record.task.outputs].sort())) problems.push("배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다.");
-  if (result.status !== "completed" && outputs.length) problems.push("미완료 결과는 확정 문서를 쓰지 않습니다.");
+  if (result.status === "completed" && JSON.stringify([...outputs].sort()) !== JSON.stringify([...record.task.outputs].sort())) problems.push(ruled("RES-OUTPUT", `배정된 출력 문서 전체를 정확히 한 번 반환해야 합니다: ${record.task.outputs.join(", ")}`));
+  // 미완료 결과의 artifacts 는 거부하지 않는다 — 정식 문서로 옮기지 않고 초안으로만 남긴다(keepDrafts)
   if (last.correction?.used && result.status !== "failed") {
     let original: unknown;
     try { original = JSON.parse(last.correction.raw); } catch { /* 깨진 JSON은 원본과 근거를 사람이 검토할 수 있도록 보존한다. */ }
@@ -323,6 +357,11 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
     last.status = "failed";
     last.error = problems.join("\n");
     last.failure = failure("agent-content-error", problems[0]);
+    // 다음 배정이 처음부터 다시 쓰지 않게 쓰던 문서와 질문을 남긴다 — 정식 문서·questions.md 에는 쓰지 않는다
+    const drafts = keepDrafts(work, record, last.dispatchId, reported.artifacts);
+    if (drafts.length) last.drafts = drafts;
+    const questions = result.questions.filter(question => question.requirements.every(key => record.task.requirements.includes(key))).map(({ question, requirements }) => ({ question, requirements }));
+    if (questions.length) last.pendingQuestions = questions;
     endAgent(agent);
     return recorded(last.error, "agent-content-error");
   }
@@ -352,7 +391,11 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   delete last.failure;   // 교정 전 형식 오류 기록은 교정된 결과의 원인이 아니다
   last.result = result;
   last.resultHash = sha(JSON.stringify(result));
-  last.outputs = Object.fromEntries(outputs.map(path => [path, fileHash(root, path)]));
+  last.outputs = Object.fromEntries(result.artifacts.map(artifact => [artifact.path, fileHash(root, artifact.path)]));
+  if (result.status !== "completed") {
+    const drafts = keepDrafts(work, record, last.dispatchId, reported.artifacts);
+    if (drafts.length) last.drafts = drafts;
+  }
   last.agentId = agent.id;
   last.sessionId = agent.session;
   if (result.status === "failed") last.failure = failure("agent-content-error", `담당이 failed로 반환: ${result.summary.slice(0, 200)}`);

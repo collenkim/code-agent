@@ -5,7 +5,8 @@ import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { planFormatFor } from "../core/plan";
 import { sha } from "./docs";
-import { workDocsDir } from "./layout";
+import { questionsFile, workDocsDir } from "./layout";
+import { parseQuestions } from "./questions";
 import { acquireLock } from "./lock";
 import { Stop } from "./stop";
 import { codexAgentName } from "./hosts";
@@ -14,9 +15,9 @@ import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, plann
   type Budget, type CounterKey, type FailureClass } from "./retryPolicy";
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
-import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
+import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputChanges, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
   ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
-  type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
+  type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 import type { PlanningCrossView } from "./crossRecord";
 
 /** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
@@ -41,22 +42,35 @@ export function openStaging(work: Work): void {
 
 /**
  * 수정 재배정이면 현행 출력 문서를 그 배정의 staging 자리에 미리 둔다 — 담당은 고칠 곳만 고치고 전체 본문을 다시 출력하지 않는다
- * (출력 토큰이 입력의 몇 배다). 담당 시작 hook 이 openStaging 과 같은 이유(샌드박스 밖)로 부른다. 처음 배정(현행 문서 없음)과
+ * (출력 토큰이 입력의 몇 배다). 마지막 완료 뒤에 남은 미완성 초안(질문·실패 결과 — keepDrafts)이 있으면 현행 문서 대신 그것을 둔다 —
+ * 완료된 정식 문서보다 오래된 초안은 쓰지 않는다. 초안은 이어 쓸 자료일 뿐이라 새 결과도 같은 완료 검사를 다시 받는다.
+ * 담당 시작 hook 이 openStaging 과 같은 이유(샌드박스 밖)로 부른다. 처음 배정(현행 문서·초안 없음)과
  * 형식 교정 배정(원본 staging 을 그대로 옮겨 써야 한다)에는 두지 않는다. 이미 있는 staging 파일은 덮지 않는다.
  */
 export function seedStaging(work: Work, record: TaskRecord): string[] {
   const attempt = record.attempts.at(-1);
   if (!attempt || attempt.status !== "running" || attempt.correction?.used) return [];
+  const drafts = latestDrafts(record);
   const seeded: string[] = [];
   for (const output of record.task.outputs) {
-    const current = planningPath(work.repoRoot, output);
+    const draft = drafts.get(output);
+    const source = draft && existsSync(planningPath(work.repoRoot, draft)) ? planningPath(work.repoRoot, draft) : planningPath(work.repoRoot, output);
     const staged = planningPath(work.repoRoot, stagingPath(work.active.id, attempt.dispatchId, output));
-    if (!existsSync(current) || existsSync(staged)) continue;
+    if (!existsSync(source) || existsSync(staged)) continue;
     mkdirSync(dirname(staged), { recursive: true });
-    copyFileSync(current, staged);
+    copyFileSync(source, staged);
     seeded.push(output);
   }
   return seeded;
+}
+/** 실행 중 시도를 뺀 마지막 완료 뒤의 가장 최근 초안 — 출력 경로 → 초안 staging 경로 */
+export function latestDrafts(record: TaskRecord): Map<string, string> {
+  const drafts = new Map<string, string>();
+  const attempts = record.attempts.at(-1)?.status === "running" ? record.attempts.slice(0, -1) : record.attempts;
+  for (let index = attempts.length - 1; index >= 0 && attempts[index].status !== "completed"; index -= 1) {
+    for (const draft of attempts[index].drafts ?? []) if (!drafts.has(draft.path)) drafts.set(draft.path, draft.staged);
+  }
+  return drafts;
 }
 
 export function planningWork(root: string): Work {
@@ -113,7 +127,7 @@ function defaults(work: Work, state: PlanningState, optimize = false): unknown {
     const existing = pending.tasks.find(item => item.task.role === role);
     if (existing) return existing.task;
     // 업무 규칙 KNOWLEDGE 는 묻기 전에 먼저 찾는 자료다 — 새로 만드는 analysis·design 작업에만 넣는다(기존 작업의 해시는 그대로)
-    const task: PlanningTask = { id: role, role, contextVersion: 3, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
+    const task: PlanningTask = { id: role, role, contextVersion: 4, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
     pending.tasks.push({ task, attempts: [] });
     return task;
   });
@@ -305,28 +319,66 @@ function dispatchState(work: Work, state: PlanningState, id: string, swept?: Swe
     const prior = record.attempts.at(-1);
     const attempt: TaskAttempt = { dispatchId: randomUUID(), inputHash, inputParts: parts, at: new Date().toISOString(), status: "running" };
     record.attempts.push(attempt);
-    try { return { ...assignment(work, state, record), ...previousOf(prior) }; }
+    try { return { ...assignment(work, state, record), ...previousOf(work, record, prior, parts) }; }
     catch (error) { record.attempts.pop(); throw error; }
 }
+/** 재배정의 직전 시도 — `detail` 은 요약(1,000자)이고 나머지는 배정 파일 `## 직전 시도` 에만 싣는다(handoff 가 요약에서 뺀다) */
+export interface PreviousAttempt {
+  dispatchId: string; status: string; class?: FailureClass; detail: string;
+  /** 검사 문구 전체 — 규칙 ID·문서:줄이 그대로 있다 */
+  problems?: string[];
+  /** staging 에 미리 둔 직전 초안(출력 경로) */
+  drafts?: string[];
+  /** 실패로 기록돼 questions.md 에 쓰지 않은 직전 질문 */
+  questions?: { question: string; requirements: string[] }[];
+  /** 직전 시도가 낸 질문 중 이제 답이 있는 것 */
+  answered?: { id: string; question: string; answer: string }[];
+  /** 직전 시도 뒤 바뀐 입력(staleCauses 와 같은 문구) */
+  changed?: string[];
+}
 /**
- * 다시 배정할 때 직전 시도의 실패(완료 hook 이 기록한 고아·실패 포함) — 메인의 재배정 메모와 담당이 같은 원인을 되풀이하지 않게
- * 배정에 싣는다. Claude 완료 hook 의 기록 뒤 실패는 exit 0 이라 메인에게 사유가 보이지 않기 때문이다.
+ * 다시 배정할 때 직전 시도(완료 hook 이 기록한 고아·실패·질문 대기) — 담당이 같은 원인을 되풀이하지 않고 직전 초안·새 답변·바뀐 입력에서 이어 가게
+ * 배정에 싣는다. Claude 완료 hook 의 기록 뒤 실패는 exit 0 이라 메인에게 사유가 보이지 않기 때문이다. 메인은 이 내용을 다시 설명하지 않는다.
  */
-function previousOf(attempt: TaskAttempt | undefined): { previous?: { dispatchId: string; status: string; class?: FailureClass; detail: string } } {
-  if (!attempt || (attempt.status !== "orphaned" && attempt.status !== "failed")) return {};
+function previousOf(work: Work, record: TaskRecord, attempt: TaskAttempt | undefined, parts: InputParts): { previous?: PreviousAttempt } {
+  if (!attempt || !["orphaned", "failed", "needs-input"].includes(attempt.status)) return {};
   const detail = attempt.error ?? attempt.failure?.detail ?? attempt.result?.summary ?? "";
-  return { previous: { dispatchId: attempt.dispatchId, status: attempt.status, ...(attempt.failure ? { class: attempt.failure.class } : {}), detail: detail.slice(0, 1000) } };
+  const problems = attempt.error ? attempt.error.split("\n").filter(Boolean) : [];
+  const drafts = [...latestDrafts(record).keys()];
+  const asked = attempt.result?.questions ?? [];
+  const text = asked.length && existsSync(planningPath(work.repoRoot, questionsFile(work.active.id))) ? readFileSync(planningPath(work.repoRoot, questionsFile(work.active.id)), "utf8") : "";
+  const recorded = text ? parseQuestions(text) : [];
+  const answered = asked.flatMap(question => {
+    const answer = recorded.find(item => item.id === question.id)?.answer;
+    return answer ? [{ id: question.id, question: question.question, answer }] : [];
+  });
+  const changed = attempt.inputHash !== record.attempts.at(-1)?.inputHash ? inputChanges(attempt.inputParts, parts).map(cause => cause.text) : [];
+  return { previous: { dispatchId: attempt.dispatchId, status: attempt.status, ...(attempt.failure ? { class: attempt.failure.class } : {}), detail: detail.slice(0, 1000),
+    ...(problems.length > 1 || detail.length > 1000 ? { problems } : {}), ...(drafts.length ? { drafts } : {}),
+    ...(attempt.pendingQuestions?.length ? { questions: attempt.pendingQuestions } : {}), ...(answered.length ? { answered } : {}), ...(changed.length ? { changed } : {}) } };
 }
 /**
  * 출력 문서는 두 호스트 모두 staging 에 쓰고 결과 JSON 에는 경로만 넣는다 — 본문이 메인 대화를 거치지 않는다.
  * 쓰기 도구 이름은 CLI 표기(editVia — Claude Write/Edit, Codex apply_patch)다. 쓰기가 거부되면 {path, content} 로 낸다.
  */
 function stagedInstruction(): string {
-  return `출력 문서는 staging의 경로에 ${editVia()} 전체 내용을 쓰고 artifacts에는 {path, staged}만 넣으세요 — 결과 JSON에 문서 본문을 싣지 않습니다. 수정 재배정이면 그 자리에 현행 문서가 미리 들어 있습니다 — 고칠 곳만 고치고 나머지는 그대로 둡니다(전체를 다시 쓰지 않습니다). 쓰기 도구가 없거나 그 쓰기가 거부되면 artifacts에 {path, content}로 전체 내용을 넣으세요.`;
+  return `출력 문서는 staging의 경로에 ${editVia()} 전체 내용을 쓰고 artifacts에는 {path, staged}만 넣으세요 — 결과 JSON에 문서 본문을 싣지 않습니다. 수정 재배정이면 그 자리에 현행 문서(직전 시도의 초안이 있으면 그 초안)가 미리 들어 있습니다 — 고칠 곳만 고치고 나머지는 그대로 둡니다(전체를 다시 쓰지 않습니다). 쓰기 도구가 없거나 그 쓰기가 거부되면 artifacts에 {path, content}로 전체 내용을 넣으세요.`;
 }
 /** 결과 JSON 도 파일로 넘긴다 — 메인은 최종 응답 한 줄만 받는다. 쓰기 도구가 없는 담당(critic)·거부된 쓰기는 최종 응답에 JSON 을 그대로 낸다 */
 function resultInstruction(): string {
   return `결과 JSON은 resultFile 경로에 ${editVia()} 쓰고 최종 응답에는 "결과: <resultFile>" 한 줄만 돌려주세요 — 메인 대화에 결과 본문을 싣지 않습니다. 쓰기 도구가 없거나 그 쓰기가 거부되면 결과 JSON을 최종 응답으로 그대로 돌려주세요.`;
+}
+/**
+ * 결과 상태별 계약 — 완료 hook 의 RES-STATUS·RES-OUTPUT·RES-QREQ 와 같은 내용이다. 미완료 결과의 artifacts 는 거부하지 않고 초안으로 남긴다(keepDrafts).
+ */
+function statusContract(task: PlanningTask): Record<"completed" | "needs-input" | "failed", string> {
+  const outputs = task.outputs.length > 0;
+  return {
+    completed: `${outputs ? `출력 문서 전체(${task.outputs.join(", ")})를 staging 에 쓰고 artifacts 에 한 번씩 · ` : ""}evidence 하나 이상 · questions 는 비운다`,
+    "needs-input": `사용자가 정할 질문 하나 이상(requirements 는 ${task.requirements.join(", ")} 중에서)` +
+      (outputs ? " · 쓰던 문서는 staging 에 두고 artifacts 에 남긴다 — 정식 문서로 옮기지 않고, 답을 받은 뒤 다음 배정의 staging 에 다시 놓인다" : ""),
+    failed: `진행할 수 없는 이유를 summary 에 적는다${outputs ? " · 쓰던 문서는 needs-input 과 같이 초안으로 남는다" : ""}`,
+  };
 }
 function assignment(work: Work, state: PlanningState, record: TaskRecord) {
     const attempt = record.attempts.at(-1)!;
@@ -339,6 +391,7 @@ function assignment(work: Work, state: PlanningState, record: TaskRecord) {
       ...(record.task.outputs.length ? { staging: staged } : {}),
       resultFile,
       instructions: `지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. staging에 지정된 경로 외의 파일은 쓰지 말고 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄이며 경로는 저장소 루트 기준 전체 상대 경로로 씁니다(예: doc/work/<ID>/requirement.md:16, 파일명만 쓰지 않음). 원문 인용은 확정 지시서의 글자 그대로 옮기고 따옴표를 이스케이프하지 않습니다. 이 배정의 출력 문서(이전 판 포함)는 근거로 인용하지 않습니다. ${stagedInstruction()} ${resultInstruction()} 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. 질문·요약·문서 설명문은 확정 지시서와 같은 언어로 씁니다. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.`,
+      statusContract: statusContract(record.task),
       resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => ({ path, staged: staged[path] })), findings: [] },
       itemShapes: { fact: { key: "공유 사실 식별자", value: "관찰값", source: { path: work.active.spec, line: 1 } }, question: { id: "Q1", question: "사용자가 결정할 사항", requirements: record.task.requirements }, finding: { id: "F1", severity: "blocking | advisory", detail: "문제와 영향", source: { path: work.active.spec, line: 1 } } },
     };

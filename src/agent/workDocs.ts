@@ -9,6 +9,8 @@ import { checkSections, docPaths, normalizeHeading, sectionBody, sha } from "./d
 import { workDocsDir } from "./layout";
 import { SCHEMAS, WORK_SCHEMAS } from "./schemas";
 import type { WorkDocKind } from "./schemas";
+import { ruled } from "./planningRules";
+import { citationText, requirementBlocks } from "./requirementFields";
 
 /**
  * 작업 폴더의 번호 문서 — ① 요구사항 → ② 영향도 → ③ 설계 → ④ 기능 → ⑤ 계획 → ⑦ 테스트 명세.
@@ -53,7 +55,7 @@ export function readWorkDoc(repoRoot: string, id: string, kind: WorkDocKind, ove
 }
 
 function absent(id: string, kind: WorkDocKind): string {
-  return `${workDocPath(id, kind)} — 없거나 비어 있습니다 (code-agent docs skeleton ${kind})`;
+  return ruled("DOC-MISSING", `${workDocPath(id, kind)} — 없거나 비어 있습니다 (code-agent docs skeleton ${kind})`);
 }
 
 /** 필수 섹션이 비었거나 없는 것 — 프로젝트 문서와 같은 검사다 */
@@ -61,7 +63,7 @@ function lackingSections(id: string, kind: WorkDocKind, text: string): string[] 
   const empty = checkSections(WORK_SCHEMAS[kind], text).filter((section) => section.required && !section.filled);
   return empty.length === 0
     ? []
-    : [`${workDocPath(id, kind)} — 필수 섹션이 비었거나 없습니다: ${empty.map((section) => section.heading).join(", ")} (code-agent docs skeleton ${kind})`];
+    : [ruled("DOC-SECTION", `${workDocPath(id, kind)} — 필수 섹션이 비었거나 없습니다: ${empty.map((section) => section.heading).join(", ")} (code-agent docs skeleton ${kind})`)];
 }
 
 function lines(body: string): string[] {
@@ -94,15 +96,14 @@ export function parseRequirements(text: string): Requirements {
   if (keys.length === 0) problems.push("요구 항목(`## R1 · …`)이 없습니다");
   const duplicated = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicated.length > 0) problems.push(`요구 항목 번호가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`);
-  // 인용할 지시서 문장이 없는 요구는 지시서에 없는 요구다 — 모델이 보탠 것이 여기서 드러난다
-  const groundless = items.filter((block) => ![...block.matchAll(/^[ \t]*근거[ \t]*:[ \t]*(.*)$/gm)]
-    .some((match) => match[1].replace(/["“”「」]/g, "").trim() !== "")).map((block) => /^(R\d+)/.exec(block)![1]);
+  // 인용할 지시서 문장이 없는 요구는 지시서에 없는 요구다 — 모델이 보탠 것이 여기서 드러난다. 근거 줄은 원문 추적(sourceTrace)과 같은 파서로 읽는다
+  const groundless = requirementBlocks(text).filter((block) => !block.grounds.some((ground) => citationText(ground.value).replace(/["“”「」]/g, "").trim() !== ""));
   if (groundless.length > 0) {
-    problems.push(`근거: 줄이 없는 요구 항목: ${groundless.join(", ")} — 지시서 문장을 그대로 인용하세요`);
+    problems.push(`근거: 줄이 없는 요구 항목: ${groundless.map((block) => `${block.key}(${block.line}행)`).join(", ")} — 블록마다 \`근거: "<지시서 문장 그대로>"\` 를 한 줄 이상 씁니다`);
   }
   if (!assumptionsBlock) problems.push("`## 가정` 섹션이 없습니다 — 정한 것이 없으면 `- 없음`");
   if (problems.length > 0) {
-    throw new Error(problems.join("\n"));
+    throw new Error(problems.map((problem) => ruled("REQ-FORMAT", problem)).join("\n"));
   }
   return { keys, assumptions: firstList(assumptionsBlock).filter((item) => item !== "없음") };
 }
@@ -170,10 +171,10 @@ function currentSectionProblems(id: string, text: string, kind: WorkKind): strin
   // 규칙은 "'해당 없음' 으로 **비울** 수 없다" 이지 "그 말을 쓸 수 없다" 가 아니다. 한 줄이라도 걸면,
   // 다 쓴 분석에 `- 캐시 계층: 해당 없음 — 이 경로는 캐시를 타지 않는다` 같은 하위 항목 하나로 막힌다.
   if (body.length > 0 && body.every((line) => NOT_APPLICABLE.test(line))) {
-    problems.push(`${path} — ${kind} 는 기존 시스템 분석에 ${what}: '해당 없음' 으로 비울 수 없습니다`);
+    problems.push(ruled("IMP-CURRENT", `${path} — ${kind} 는 기존 시스템 분석에 ${what}: '해당 없음' 으로 비울 수 없습니다`));
   }
   if (!EVIDENCE_REF.test(current)) {
-    problems.push(`${path} — ${kind} 는 기존 시스템 분석에 ${what}: 근거 path:line 이 최소 하나 있어야 합니다`);
+    problems.push(ruled("IMP-CURRENT", `${path} — ${kind} 는 기존 시스템 분석에 ${what}: 근거 path:line 이 최소 하나 있어야 합니다`));
   }
   return problems;
 }
@@ -192,11 +193,10 @@ function logMappingProblems(repoRoot: string, id: string, text: string, log: str
     return quotes.some((quote) => haystack.includes(quote)) &&
       [...outside.matchAll(/([\w./-]+\.[A-Za-z]\w*):\d+/g)].some((match) => existsSync(join(repoRoot, match[1])));
   });
-  return mapped ? [] : [
+  return mapped ? [] : [ruled("IMP-LOG",
     `${workDocPath(id, "02-analysis")} — fix 는 기존 시스템 분석에 **오류 로그의 어느 줄이 어느 코드에서 나는지** 적습니다: ` +
       "로그 문구를 `백틱` 으로 그대로 인용하고 같은 줄 백틱 밖에 저장소에 있는 원인 코드 path:line 을 함께 " +
-      "(예: - `NullPointerException: items is null` → src/main/java/app/OrderService.java:42 — items 를 확인하지 않는다)",
-  ];
+      "(예: - `NullPointerException: items is null` → src/main/java/app/OrderService.java:42 — items 를 확인하지 않는다)")];
 }
 
 export function analysisProblems(repoRoot: string, id: string, keys: string[], kind: WorkKind, spec?: string, overlay?: DocOverlay): string[] {
@@ -211,15 +211,15 @@ export function analysisProblems(repoRoot: string, id: string, keys: string[], k
   const rows = tableRows(sectionBody(WORK_SCHEMAS["02-analysis"], text, "impact"));
   const uncovered = keys.filter((key) => !rows.some((row) => row.key === key));
   if (uncovered.length > 0) {
-    problems.push(
+    problems.push(ruled("IMP-TABLE",
       `${path} — 영향 범위 표에 없는 요구 항목: ${uncovered.join(", ")}` +
         " (표 첫 열에 R 번호로 한 줄씩. 영향이 없으면 근거와 함께 '없음')",
-    );
+    ));
   }
   // R 번호만 적고 나머지 칸을 비우면 '영향을 봤다'가 아니라 '표를 채웠다'다 — 근거가 없는 줄은 없는 줄로 본다
   const blank = rows.filter((row) => row.rest.every((cell) => cell === "")).map((row) => row.key);
   if (blank.length > 0) {
-    problems.push(`${path} — 영향 범위 표의 줄이 비었습니다: ${blank.join(", ")} (닿는 곳·부르는 곳·파급을 채우고, 영향이 없으면 근거와 함께 '없음')`);
+    problems.push(ruled("IMP-TABLE", `${path} — 영향 범위 표의 줄이 비었습니다: ${blank.join(", ")} (닿는 곳·부르는 곳·파급을 채우고, 영향이 없으면 근거와 함께 '없음')`));
   }
   return problems;
 }
@@ -246,10 +246,10 @@ export function designProblems(repoRoot: string, id: string, overlay?: DocOverla
         .some((line) => NOT_APPLICABLE.test(line) && !NOT_APPLICABLE_WITH_REASON.test(line)),
     );
   if (groundless.length > 0) {
-    problems.push(
+    problems.push(ruled("DES-NA",
       `${workDocPath(id, "03-design")} — 해당 없음 에 근거가 없습니다: ${groundless.map((section) => section.heading).join(", ")}` +
         " (`해당 없음 — <근거>` 로 왜 안 건드리는지 씁니다)",
-    );
+    ));
   }
   return problems;
 }
@@ -277,15 +277,15 @@ export function functionalProblems(repoRoot: string, id: string, keys: string[],
 
   const duplicated = acceptance.filter((ac, index) => acceptance.indexOf(ac) !== index);
   if (duplicated.length > 0) {
-    problems.push(`${path} — 수락 기준 id 가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`);
+    problems.push(ruled("FUN-AC", `${path} — 수락 기준 id 가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`));
   }
   const unknown = [...new Set(acceptance.filter((ac) => !keys.includes(/^AC-(R\d+)-/.exec(ac)![1])))];
   if (unknown.length > 0) {
-    problems.push(`${path} — 01 에 없는 요구 항목을 가리키는 수락 기준: ${unknown.join(", ")}`);
+    problems.push(ruled("FUN-AC", `${path} — 01 에 없는 요구 항목을 가리키는 수락 기준: ${unknown.join(", ")}`));
   }
   const uncovered = keys.filter((key) => !acceptance.some((ac) => ac.startsWith(`AC-${key}-`)));
   if (uncovered.length > 0) {
-    problems.push(`${path} — AC 가 없는 요구 항목: ${uncovered.join(", ")} (\`AC-<R번호>-1\` 로 R 마다 최소 하나)`);
+    problems.push(ruled("FUN-AC", `${path} — AC 가 없는 요구 항목: ${uncovered.join(", ")} (\`AC-<R번호>-1\` 로 R 마다 최소 하나)`));
   }
   return { problems, acceptance: [...new Set(acceptance)] };
 }
@@ -405,32 +405,32 @@ export function testSpecProblems(
   const notes: string[] = [];
   const cases = parseTestCases(text);
   if (cases.length === 0) {
-    problems.push(`${path} — 테스트 케이스 표를 읽지 못했습니다: \`| TC-1 | Unit | AC-R1-1 | 케이스 | 기대 결과 |\` 형식으로 쓰세요`);
+    problems.push(ruled("TST-CASE", `${path} — 테스트 케이스 표를 읽지 못했습니다: \`| TC-1 | Unit | AC-R1-1 | 케이스 | 기대 결과 |\` 형식으로 쓰세요`));
     return { problems, notes };
   }
 
   const ids = cases.map((entry) => entry.id);
   const duplicated = ids.filter((tc, index) => ids.indexOf(tc) !== index);
   if (duplicated.length > 0) {
-    problems.push(`${path} — TC id 가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`);
+    problems.push(ruled("TST-CASE", `${path} — TC id 가 겹칩니다: ${[...new Set(duplicated)].join(", ")}`));
   }
   const empty = cases.filter((entry) => entry.acceptance.length === 0).map((entry) => entry.id);
   if (empty.length > 0) {
-    problems.push(`${path} — 대상 AC 가 없는 테스트 케이스: ${empty.join(", ")} (세 번째 열에 04 의 AC id)`);
+    problems.push(ruled("TST-CASE", `${path} — 대상 AC 가 없는 테스트 케이스: ${empty.join(", ")} (세 번째 열에 04 의 AC id)`));
   }
   // 케이스·기대 결과가 빈 줄은 AC 를 덮은 것이 아니다 — 한 줄로 모든 AC 커버리지를 채우는 길을 닫는다
   const half = cases.filter((entry) => entry.scenario === "" || entry.expected === "").map((entry) => entry.id);
   if (half.length > 0) {
-    problems.push(`${path} — 케이스·기대 결과가 빈 테스트 케이스: ${half.join(", ")} (네 번째·다섯 번째 열에 무엇을 하고 무엇이 되는지)`);
+    problems.push(ruled("TST-CASE", `${path} — 케이스·기대 결과가 빈 테스트 케이스: ${half.join(", ")} (네 번째·다섯 번째 열에 무엇을 하고 무엇이 되는지)`));
   }
   const unknown = [...new Set(cases.flatMap((entry) => entry.acceptance).filter((ac) => !acceptance.includes(ac)))];
   if (unknown.length > 0) {
-    problems.push(`${path} — 04 에 없는 수락 기준을 가리킵니다: ${unknown.join(", ")}`);
+    problems.push(ruled("TST-CASE", `${path} — 04 에 없는 수락 기준을 가리킵니다: ${unknown.join(", ")}`));
   }
   const covered = new Set(cases.flatMap((entry) => entry.acceptance));
   const uncovered = acceptance.filter((ac) => !covered.has(ac));
   if (uncovered.length > 0) {
-    problems.push(`${path} — 테스트 케이스가 없는 수락 기준: ${uncovered.join(", ")} (모든 AC 가 최소 한 TC 에 걸립니다)`);
+    problems.push(ruled("TST-CASE", `${path} — 테스트 케이스가 없는 수락 기준: ${uncovered.join(", ")} (모든 AC 가 최소 한 TC 에 걸립니다)`));
   }
 
   // fix 는 '무엇이 결함인가' 를 TC 로 지목해야 재현을 강제할 자리가 생긴다 — 여기서 비면
@@ -438,17 +438,17 @@ export function testSpecProblems(
   if (kind === "fix") {
     const repro = reproCases(text);
     if (repro.length === 0) {
-      problems.push(`${path} — fix 는 \`## 재현\` 절에 결함을 재현하는 TC id 를 최소 하나 적습니다 (\`- TC-1\`). 수준은 무엇이든 됩니다`);
+      problems.push(ruled("TST-REPRO", `${path} — fix 는 \`## 재현\` 절에 결함을 재현하는 TC id 를 최소 하나 적습니다 (\`- TC-1\`). 수준은 무엇이든 됩니다`));
     }
     const stray = repro.filter((tc) => !ids.includes(tc));
     if (stray.length > 0) {
-      problems.push(`${path} — \`## 재현\` 이 표에 없는 TC 를 가리킵니다: ${stray.join(", ")}`);
+      problems.push(ruled("TST-REPRO", `${path} — \`## 재현\` 이 표에 없는 TC 를 가리킵니다: ${stray.join(", ")}`));
     }
     const declared = reproMode(text);
     if (declared.mode === "log") {
-      if (!declared.reason) problems.push(`${path} — \`## 재현\` 의 \`방식: 로그 근거\` 뒤에 로컬에서 재현하지 않는 사유를 적습니다 (예: \`- 방식: 로그 근거 — 운영 데이터에서만 발생\`)`);
+      if (!declared.reason) problems.push(ruled("TST-REPRO", `${path} — \`## 재현\` 의 \`방식: 로그 근거\` 뒤에 로컬에서 재현하지 않는 사유를 적습니다 (예: \`- 방식: 로그 근거 — 운영 데이터에서만 발생\`)`));
       const logged = spec && existsSync(join(repoRoot, spec)) ? errorLogOf(readFileSync(join(repoRoot, spec), "utf-8")) : undefined;
-      if (spec && !(logged && "log" in logged)) problems.push(`${path} — 로그 근거는 지시서의 \`## 오류 로그\` 가 있을 때만 씁니다 — 로그가 없는 결함은 로컬 재현으로 계획합니다`);
+      if (spec && !(logged && "log" in logged)) problems.push(ruled("TST-REPRO", `${path} — 로그 근거는 지시서의 \`## 오류 로그\` 가 있을 때만 씁니다 — 로그가 없는 결함은 로컬 재현으로 계획합니다`));
     }
   }
 
@@ -460,10 +460,10 @@ export function testSpecProblems(
     const used = [...new Set(cases.map((entry) => entry.level))].filter((level) => skipped.includes(level));
     const reason = lines(sectionBody(WORK_SCHEMAS["07-test-spec"], text, "skipped"));
     if (used.length > 0 && reason.length === 0) {
-      problems.push(
+      problems.push(ruled("TST-LEVEL",
         `${path} — 테스트 전략이 '하지 않음' 이라 한 수준을 씁니다: ${used.join(", ")}` +
           " (`안 하는 것` 에 근거를 적거나 전략의 수준을 따르세요)",
-      );
+      ));
     }
   }
   return { problems, notes };
@@ -529,6 +529,19 @@ export function workDocsEntries(repoRoot: string, id: string, spec: string): str
 
 // ---- ⑤ 05-plan.md (코드가 렌더한다) ----
 
+/**
+ * 승인 묶음의 가정 — 01 `## 가정` 과, 01 을 쓸 수 없는 뒤 단계(02 영향도·03 설계)가 자기 문서의 `## 가정` 에 남긴 기술 기본값.
+ * 뒤 단계의 것은 어느 문서에서 왔는지 붙인다. 세 문서 모두 승인 해시(approvalDocsHash)에 묶인다.
+ */
+export function workAssumptions(repoRoot: string, id: string, requirements: string[]): string[] {
+  const later = (["02-analysis", "03-design"] as const).flatMap((kind) => {
+    const text = readWorkDoc(repoRoot, id, kind);
+    if (!text || !WORK_SCHEMAS[kind].sections.some((section) => section.id === "assumptions")) return [];
+    return firstList(`\n${sectionBody(WORK_SCHEMAS[kind], text, "assumptions")}`).filter((item) => item !== "없음").map((item) => `${item} (${kind}.md)`);
+  });
+  return [...requirements, ...later];
+}
+
 /** 승인하면 함께 받아들이는 가정 — 승인 화면·제출 결과·05-plan.md 에 같은 모양으로 */
 export function formatAssumptions(assumptions: string[]): string | undefined {
   if (assumptions.length === 0) {
@@ -553,7 +566,9 @@ export function renderPlanDoc(id: string, plan: BuildPlan, assumptions: string[]
     formatPlan(plan),
   ];
   if (assumptions.length > 0) {
-    lines.push("", "### 가정 (01-requirements.md)", ...assumptions.map((item) => `- ${item}`));
+    // 02·03 의 가정은 항목 끝에 출처 문서가 붙어 있다(workAssumptions)
+    const later = assumptions.some((item) => / \((?:02-analysis|03-design)\.md\)$/.test(item));
+    lines.push("", later ? "### 가정 (01-requirements.md · 02·03 은 항목 끝에)" : "### 가정 (01-requirements.md)", ...assumptions.map((item) => `- ${item}`));
   }
   return `${lines.join("\n")}\n`;
 }

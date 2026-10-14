@@ -4,13 +4,13 @@ import { actorName } from "./actor";
 
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { ApprovalState, Decision } from "../core/approval";
-import { checkPaths, missingPlannedFiles } from "../core/gate";
+import { missingPlannedFiles } from "../core/gate";
 import { stagesFor } from "../core/manifest";
 import { errorLogProblems } from "../core/workOrder";
 import type { Manifest, StageDef } from "../core/manifest";
-import { formatPlan, missingPreserve, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
+import { formatPlan, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
 import { planningProblems, requiredOutputs } from "./planningState";
-import { formatPlanIssues, planningDocumentProblems, planShapeProblems, reviewedPlanProblems } from "./planningValidation";
+import { formatPlanIssues, planningDocumentProblems, planRuleProblems, planShapeProblems, reviewedPlanProblems } from "./planningValidation";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docsReady, formatDocChecks } from "./docs";
 import {
@@ -43,8 +43,6 @@ import {
   runsOf,
   stageProblemEntries,
   stageProblems,
-  testRoots,
-  trackedTestFiles,
   validationDocFile,
   verifyView,
 } from "./evidence";
@@ -75,11 +73,10 @@ import {
   analysisProblems,
   designProblems,
   formatAssumptions,
+  workAssumptions,
   functionalProblems,
   loadRequirements,
-  parseTestCases,
   planDocFile,
-  readWorkDoc,
   renderPlanDoc,
   testSpecProblems,
   workDocPath,
@@ -96,7 +93,7 @@ import { workExperienceCount } from "./experience";
 import { leaseLine } from "./lease";
 import { loadTriage, requireNoTriage, triageSummary } from "./triageState";
 import { renderContext } from "./contextRender";
-import { codeStages, PHASE_LABEL } from "./phaseInfo";
+import { PHASE_LABEL } from "./phaseInfo";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -1130,94 +1127,9 @@ export function submitPlan(repoRoot: string, draft: string): string {
     throw new Stop(formatPlanIssues(parsed.error.issues));
   }
   const plan = format.toPlan(parsed.data);
-  // 계획 초안의 자기 완결 검사(tasks·AC·요구 커버리지·남은 질문)는 완료 hook 과 같은 함수다. 순서·경로·preserve·종류별 규칙은 여기에만 있다
-  const problems: string[] = [...planShapeProblems(work, plan, functional.acceptance, requirements.keys), ...sequenceProblems(plan, work.stages, order.kind)];
-  if (format.requiresPreserve) {
-    problems.push(...missingPreserve(order, plan).map((item) => `preserve 가 계획에 없습니다: ${item}`));
-  }
-  // 검증 명령이 이 계획이 쓰는 파일을 가리키면 모델이 제 검증기를 쓰게 된다 — 그래도 묶임은
-  // 전부 들어맞는다(가짜 검증기까지 함께 굳으므로). 코드가 판별할 수 있는 것이 아니라 사람이
-  // 판단할 것이라, 조용히 지나가지 않게 제출을 세우고 무엇이 걸렸는지 그대로 보여 준다.
-  const planned = new Set(plan.files.map((file) => file.path));
-  const declared = [manifest.build, manifest.test, manifest.prepare, ...Object.values(manifest.commands)]
-    .filter((argv): argv is string[] => Array.isArray(argv))
-    .flat()
-    .map((element) => element.replace(/^\.\//, ""));
-  for (const path of [...new Set(declared.filter((element) => planned.has(element)))]) {
-    problems.push(
-      `검증 명령이 이 계획이 쓰는 파일을 가리킵니다: ${path} — 검증을 스스로 쓰는 계획은 증거가 되지 않습니다`,
-    );
-  }
-
-  const stages = codeStages(work);
-  // fix 는 재현 테스트가 먼저다 — 계획이 그 순서를 담지 않으면 강제할 자리가 없다
-  if (order.kind === "fix") {
-    const testKeys = stages.filter((stage) => stage.kind === "test").map((stage) => stage.key);
-    if (testKeys.length === 0) {
-      problems.push(
-        "이 프로젝트에는 fix 로 도는 kind:\"test\" 단계가 없습니다 — code-agent.json 의 stages 에 하나 두고 " +
-          "kinds 에 \"fix\" 를 넣으세요 (확인: code-agent manifest check)",
-      );
-    } else {
-      const first = (plan.sequence[0]?.step ?? "").trim();
-      if (!testKeys.includes(first)) {
-        problems.push(
-          `계획의 sequence[0] 이 테스트 단계가 아닙니다 (지금: "${first}") — fix 는 재현 테스트가 먼저입니다. ` +
-            `받는 값: ${testKeys.join(", ")}`,
-        );
-      }
-      if (!plan.files.some((file) => testKeys.includes(file.stage))) {
-        problems.push(`fix 의 계획에 kind:"test" 단계의 파일이 없습니다 — 재현 테스트 파일을 계획에 넣으세요 (단계: ${testKeys.join(", ")})`);
-      }
-      // '재현 먼저' 는 **단계 이름표**로 판정된다 (hook 도 repro 의 깨끗한 트리 검사도). 그래서 고칠 파일을
-      // 테스트 단계에 적어 넣으면 재현 전에 쓸 수 있고 — outputDirs 가 비면 위치 검사도 서지 않는다 —
-      // 그 파일이 바뀐 채로 repro 가 통과한다. 이름표가 가리키는 자리 안에 있는지 여기서 본다.
-      const roots = testRoots(work);
-      const mislabeled = plan.files.filter(
-        (file) => testKeys.includes(file.stage) && !roots.some((root) => file.path === root || file.path.startsWith(`${root}/`)),
-      );
-      for (const file of mislabeled) {
-        problems.push(
-          roots.length === 0
-            ? `kind:"test" 단계(${file.stage})가 자리를 밝히지 않아 재현 테스트를 가려낼 수 없습니다: ${file.path} — ` +
-                "code-agent.json 의 그 단계에 scope:\"project\" 의 outputDirs 나 base 를 적으세요 (확인: code-agent manifest check)"
-            : `계획이 kind:"test" 단계에 테스트 자리 밖의 파일을 넣었습니다: ${file.path} (단계 ${file.stage}) — ` +
-                `'재현 먼저' 는 그 자리로 잽니다. 테스트 자리: ${roots.join(", ")}`,
-        );
-      }
-    }
-  }
-  // 리팩토링이 기존 테스트를 고칠 수 있으면 '동작 보존' 을 재는 자가 없어진다. 부하를 지는 자리가 여기다
-  if (order.kind === "refactor") {
-    const tracked = new Set(trackedTestFiles(work));
-    const createsTests = plan.files.some(file => stages.some(stage => stage.key === file.stage && stage.kind === "test"));
-    const knownCases = new Set([...tracked].flatMap(path => existsSync(join(repoRoot, path))
-      ? readFileSync(join(repoRoot, path), "utf8").match(/\bTC-\d+\b/g) ?? [] : []));
-    if (!createsTests && knownCases.size) {
-      const spec = readWorkDoc(repoRoot, active.id, "07-test-spec");
-      for (const entry of spec ? parseTestCases(spec) : []) if (!knownCases.has(entry.id)) {
-        problems.push(`기존 테스트에 없는 ${entry.id}를 실행할 계획이 없습니다 — refactor는 기존 TC ID를 재사용하세요. 도구·파일 보존 같은 절차 확인을 실행하지 않는 TC로 만들지 않습니다`);
-      }
-    }
-    const hit = plan.files.map((file) => file.path).filter((path) => tracked.has(path));
-    if (hit.length > 0) {
-      problems.push(
-        `리팩토링은 기존 테스트를 고치지 않습니다 — 계획에서 빼세요: ${hit.join(", ")}. ` +
-          "동작이 보존되는지 보는 것이 그 테스트입니다. " +
-          `테스트를 고쳐야 할 이유가 보이면 ${questionsFile(active.id)} 로 물으세요`,
-      );
-    }
-  }
-  for (const file of plan.files) {
-    const stage = stages.find((candidate) => candidate.key === file.stage);
-    if (!stage) {
-      problems.push(`${file.path}: 알 수 없는 단계 ${file.stage} (단계: ${stages.map((s) => s.key).join(", ")})`);
-      continue;
-    }
-    for (const violation of checkPaths({ repoRoot, order, manifest, plan, stage, files: [file.path].map((path) => ({ path, content: "" })) })) {
-      problems.push(`[${violation.item}] ${violation.file}: ${violation.detail}`);
-    }
-  }
+  // 계획 초안의 자기 완결 검사(tasks·AC·요구 커버리지·남은 질문)와 제출 규칙(순서·경로·preserve·종류별)은 plan 담당 완료 hook 과 같은 함수다 —
+  // hook 을 지난 같은 초안이 여기서 뒤늦게 걸리지 않는다. 그 사이 바뀐 상태(문서·질문·critic)는 위 게이트가 다시 본다
+  const problems: string[] = [...planShapeProblems(work, plan, functional.acceptance, requirements.keys), ...planRuleProblems(work, plan)];
   if (problems.length > 0) {
     throw new Stop(`계획을 제출하지 않았습니다:\n${problems.map((problem) => `  - ${problem}`).join("\n")}`);
   }
@@ -1227,9 +1139,10 @@ export function submitPlan(repoRoot: string, draft: string): string {
   writeAtomic(path, `${JSON.stringify(plan, null, 2)}\n`);
   // ⑤ 05-plan.md 는 제출본의 파생물이다 — 승인하는 사람과 구현하는 모델이 같은 것을 보게 코드가 렌더한다.
   const rendered = join(repoRoot, planDocFile(active.id));
-  writeAtomic(rendered, renderPlanDoc(active.id, plan, requirements.assumptions));
+  const accepted = workAssumptions(repoRoot, active.id, requirements.assumptions);
+  writeAtomic(rendered, renderPlanDoc(active.id, plan, accepted));
 
-  const assumptions = formatAssumptions(requirements.assumptions);
+  const assumptions = formatAssumptions(accepted);
   return (
     `계획을 제출하고 ${planDocFile(active.id)} 를 렌더했습니다.\n\n${formatPlan(plan)}\n\n` +
     (assumptions ? `${assumptions}\n\n` : "") +
@@ -1289,7 +1202,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   requireWorkDocs(sequenceProblems(plan, work.stages, order.kind));
   // 승인이 묶는 것을 화면에 모두 싣는다 — 계획·경계·검증 선언(code-agent.json)·가정·답 출처
   const shown = [formatSourceTrace(readSourceTrace(repoRoot, active.id, active.spec).rows), formatPlan(plan), "", formatBoundary(manifestBoundary(manifest))];
-  const assumptions = formatAssumptions(requirements.assumptions);
+  const assumptions = formatAssumptions(workAssumptions(repoRoot, active.id, requirements.assumptions));
   if (assumptions) shown.push("", assumptions);
   const sources = formatAnswerSources(repoRoot, active.id);
   if (sources) shown.push("", sources);

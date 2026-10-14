@@ -490,6 +490,11 @@ export const ANALYSIS: DocSchema = {
         "새로 시작한 작업은 필수. 표 한 장: `| 문서 | 키 | 판단 | 근거 |` — 판단은 갱신 · 신규 · 삭제 · 이름 변경 · 영향 없음 · 충돌. " +
         "context 의 '이 작업이 닿는 파일을 근거로 든 항목'은 빠짐없이 판단한다. 바꿀 문서가 없으면 `| - | - | 영향 없음 | <근거> |` 한 줄",
     },
+    {
+      // 01 을 고칠 수 없는 뒤 단계가 정한 기술 기본값 — 승인 화면·05-plan 에 01 의 가정과 함께 실린다(workAssumptions)
+      id: "assumptions", heading: "가정", aliases: ["기술 가정"], required: false, questions: [],
+      guide: "조사 중 질문하지 않고 기본값으로 정한 기술 세부 + 근거(path:line · 컨벤션 위치). 업무 규칙·범위·권한은 여기 두지 않고 질문으로 낸다. 01 은 고치지 않는다",
+    },
   ],
 };
 
@@ -525,6 +530,11 @@ export const DESIGN: DocSchema = {
     {
       id: "nonfunctional", heading: "비기능", aliases: ["비기능 요구", "성능·보안"], required: false, questions: [],
       guide: "성능·보안·동시성 중 이번에 실제로 걸리는 것만. 품질·보안 기준이 요구한 항목이 있으면 그것만",
+    },
+    {
+      // 01 을 고칠 수 없는 뒤 단계가 정한 기술 기본값 — 승인 화면·05-plan 에 01 의 가정과 함께 실린다(workAssumptions)
+      id: "assumptions", heading: "가정", aliases: ["기술 가정"], required: false, questions: [],
+      guide: "설계 중 질문하지 않고 기본값으로 정한 기술 세부 + 근거(path:line · 컨벤션 위치). 업무 규칙·범위·권한은 여기 두지 않고 질문으로 낸다. 01 은 고치지 않는다",
     },
   ],
 };
@@ -608,14 +618,17 @@ export function isPolicyKind(value: string): value is PolicyKind {
   return (POLICY_KINDS as string[]).includes(value);
 }
 
-/** 빈 문서의 뼈대 — 제목과 안내 주석. 역공학·사용자 입력이 이 틀을 채운다 */
-export function skeleton(schema: DocSchema): string {
+/**
+ * 빈 문서의 뼈대 — 제목과 안내 주석. 역공학·사용자 입력이 이 틀을 채운다.
+ * `pending: false` 는 계획 배정 파일용이다 — 담당이 남긴 미결 표시는 완료 hook 이 거부하므로 뼈대에 미리 넣지 않는다(빈 필수 섹션은 섹션 검사가 잡는다).
+ */
+export function skeleton(schema: DocSchema, options: { pending?: boolean } = {}): string {
   const lines = [`# ${schema.label}`, ""];
   for (const section of schema.sections) {
     lines.push(`## ${section.heading}`, "");
     lines.push(`<!-- ${section.required ? "필수" : "선택"}: ${section.guide} -->`, "");
     // KNOWLEDGE 의 빈 뼈대에는 미결 표시를 남기지 않는다 — 막지 않는 문서라 아무도 지우러 오지 않는다
-    if (section.required && schema.layer !== "knowledge") {
+    if (section.required && schema.layer !== "knowledge" && options.pending !== false) {
       lines.push(`${GAP_MARKER}`, "");
     }
   }

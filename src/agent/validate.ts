@@ -38,6 +38,7 @@ import {
   RUN_CAUSE_LABEL,
   runsOf,
   saveEvidence,
+  tcNearMisses,
   tcPrecheck,
   testCaseEvidence,
   freezingTestRun,
@@ -53,6 +54,7 @@ import {
   verifyView,
 } from "./evidence";
 import type { CommandSpec, Evidence, LogBasis, Outcome, ReproAttemptClass, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
+import { skillFile } from "./hostText";
 import { logDir, questionsFile, reviewFile, STATE_DIR, workDocsDir } from "./layout";
 import { acquireLock, pidAlive } from "./lock";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
@@ -359,6 +361,12 @@ async function runSpecs(
   return { runs, outputs, guarded: tampered };
 }
 
+/** 인식 규칙(`TC-<숫자>`)에 걸리지 않는 표기로 적힌 TC — 막지 않고 고칠 표기만 알린다 */
+function nearMissLines(work: Work, ids: string[]): string[] {
+  return [...tcNearMisses(work, ids)].map(([id, found]) =>
+    `  - ${id}: 계획 파일에 ${found} 가 있습니다 — 결과는 ${id} 표기(대문자 TC, 하이픈, 숫자)만 인식합니다. 테스트 이름을 ${id} 로 고치세요.`);
+}
+
 /** ⑦ TC 미확인 이유 — 결과 미확인 안내의 {cases} */
 function unconfirmedCases(cases: TestCaseEvidence[]): string {
   return cases.filter((entry) => entry.status !== "passed").map((entry) => {
@@ -481,6 +489,7 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
     const missing = tcPrecheck(work);
     if (missing.length > 0) {
       lines.push("", `!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다: ${missing.join(", ")} — code-agent test 전에 테스트 이름에 넣으세요. 결과가 인식된 test 실행부터 kind:test 파일이 업니다.`);
+      lines.push(...nearMissLines(work, missing));
     }
   }
   if (phase === "test") {
@@ -490,11 +499,13 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
       `⑦ 테스트 케이스: ${evidence.testCases.length}개 중 ${evidence.testCases.length - missing.length}개 확인` +
         (missing.length > 0 ? ` · 확인되지 않음 ${missing.map((entry) => `${entry.id}(${entry.status ?? "unknown"})`).join(", ")}` : ""),
     );
-    for (const entry of missing.filter((item) => (item.status ?? "unknown") === "unknown")) {
+    const unknown = missing.filter((item) => (item.status ?? "unknown") === "unknown");
+    for (const entry of unknown) {
       lines.push(`  - ${entry.id}: ${entry.source === "테스트 파일"
-        ? "테스트 파일에 id 는 있지만 실행 결과에 없습니다 — 러너 출력·보고서 형식을 확인하세요"
+        ? `테스트 파일에 id 는 있지만 실행 결과에 없습니다 — 러너 출력·보고서 형식을 확인하세요(러너별 이름: ${skillFile("ca-test", undefined, "tc-names.md")})`
         : "계획 파일 어디에도 id 가 없습니다 — 테스트 이름에 TC id 를 넣으세요"}`);
     }
+    lines.push(...nearMissLines(work, unknown.filter((entry) => entry.source !== "테스트 파일").map((entry) => entry.id)));
     if (work.stages.every((stage) => stage.kind !== "test")) {
       lines.push(`!! kind:"test" 단계가 선언돼 있지 않습니다 — 테스트 동결이 걸리지 않습니다 (code-agent.json 의 stages[].kind).`);
     }

@@ -14,6 +14,8 @@ import { Stop } from "./stop";
 import type { Work } from "./work";
 import { crossRunNote, selectedHosts } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
+import { collectExemplars } from "../core/exemplar";
+import { trackedTestFiles } from "./testFiles";
 import {
   crossGateHandoff, crossHintText, crossLastRun, crossRerunAfterUser, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
   type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
@@ -23,7 +25,7 @@ export const TASK_AGENTS = { analysis: "ca-analyst", explore: "ca-explorer", imp
 export const TaskSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
   role: z.enum(["analysis", "explore", "impact", "synthesis", "design", "plan", "critic"]),
-  contextVersion: z.union([z.literal(2), z.literal(3)]).optional(),
+  contextVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
   title: z.string().trim().min(1).max(500).regex(/^[^\r\n]+$/),
   requirements: z.array(z.string().regex(/^(?:R\d+|REQ-\d+|DONE-\d+|CON-\d+)$/)).min(1),
   inputs: z.array(z.string().min(1)).min(1).max(100),
@@ -72,12 +74,21 @@ export interface TaskAttempt {
   /** 실패 원인(retryPolicy) — 새로 기록하는 시도에만 붙인다 */
   failure?: FailureRecord;
   inputParts?: InputParts;
+  /**
+   * 미완성 초안 — needs-input·failed 결과나 문서 검사에 걸린 완료 결과가 남긴 이 배정의 staging 문서(출력 경로·크기·배정 소속을 확인한 것).
+   * 정식 문서로 옮기지 않는다. 다음 배정의 staging 에 미리 두는 참고 자료일 뿐이다(seedStaging).
+   */
+  drafts?: { path: string; staged: string; chars: number }[];
+  /** 실패로 기록한 결과의 질문(형식·요구 범위가 맞는 것) — questions.md 에 쓰지 않고 다음 배정의 previous 로만 넘긴다 */
+  pendingQuestions?: { question: string; requirements: string[] }[];
 }
 export interface TaskRecord { task: PlanningTask; attempts: TaskAttempt[] }
 export interface PlanningAgent {
   id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string;
   /** 같은 담당에게 되돌린 횟수(Claude SubagentStop exit 2) */
   returns?: number;
+  /** 되돌린 문구의 규칙 식별자(planningRules) — 측정(retryReport)에만 쓴다. 판정은 이 값을 보지 않는다 */
+  returnedRules?: string[];
   /** 되돌릴 때까지 판정한 SubagentHandback 보고 수 — 다음 완료는 그 뒤의 보고만 결과로 본다(되돌린 옛 보고를 다시 읽지 않는다) */
   judgedHandbacks?: number;
   failure?: FailureRecord;
@@ -219,15 +230,45 @@ function inventory(root: string): string[] {
   cache.inventory.set(root, files);
   return files;
 }
+/** 파일 이름만 적은 근거를 고칠 후보 — 저장소에서 이름이 같은 파일(최대 3개). 거부 문구의 고칠 방향에만 쓴다 */
+export function similarPaths(root: string, name: string): string[] {
+  try { return inventory(root).filter(file => file === name || file.endsWith(`/${name}`)).slice(0, 3); } catch { return []; }
+}
 export function scopedFiles(work: Work, scopes: string[], focused = false): string[] {
   return scopes.length ? inventory(work.repoRoot).filter(file => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(file)
     && !(focused && (/^(?:CLAUDE|AGENTS)\.md$/i.test(file) || /^doc\/code-agent(?:\/|$)/.test(file)))
     && scopes.some(scope => scope === "." || file === scope || file.startsWith(`${scope.replace(/\/$/, "")}/`))) : [];
 }
 /**
+ * contextVersion 4 — 지침·context 가 "읽으라" 고 주는 파일을 인용 가능한 입력으로 둔다. design·plan·critic 은 참조 표준 파일
+ * (context `## 참조 도메인`), critic 은 계획 files 가 가리키는 기존 파일, refactor 의 plan·critic 은 TC ID 가 있는 기존 테스트 파일.
+ * 입력이라 그 파일이 바뀌면 입력 해시가 바뀌어 결과가 낡는다. 저장소 전체를 열어 주지 않는다.
+ */
+function supportFiles(work: Work, task: PlanningTask): string[] {
+  const files: string[] = [];
+  const { repoRoot, manifest } = work;
+  if (["design", "plan", "critic"].includes(task.role) && manifest.referenceDomain) {
+    for (const stage of work.stages.filter(stage => stage.kind !== "verify")) {
+      try { files.push(...collectExemplars(repoRoot, manifest, manifest.referenceDomain, stage).files.map(file => file.path)); }
+      catch { /* 참조를 못 찾으면 context 가 그렇게 알린다 — 입력에 없는 파일을 지어내지 않는다 */ }
+    }
+  }
+  if (task.role === "critic") {
+    try {
+      const plan = JSON.parse(readFileSync(join(repoRoot, workDocsDir(work.active.id), "plan.json"), "utf8")) as { files?: { path?: unknown }[] };
+      files.push(...(plan.files ?? []).map(file => file.path).filter((path): path is string => typeof path === "string"));
+    } catch { /* 계획 초안이 없거나 깨졌으면 critic 의 준비 검사가 먼저 막는다 */ }
+  }
+  if ((task.role === "plan" || task.role === "critic") && work.order.kind === "refactor") {
+    files.push(...trackedTestFiles(work).filter(path => { try { return /\bTC-\d+\b/.test(readFileSync(join(repoRoot, path), "utf8")); } catch { return false; } }));
+  }
+  return files.filter(path => !/^(?:\.git|\.code-agent|\.claude|\.codex|\.agents|doc\/work)(?:\/|$)/.test(path) && !path.split("/").includes("..")
+    && (() => { try { return statSync(planningPath(repoRoot, path)).isFile(); } catch { return false; } })());
+}
+/**
  * 새 작업만 좁은 전달 계약을 사용한다. 저장된 기존 작업의 해시 계약은 유지한다.
  * contextVersion 2 부터 좁은 전달(직접 선행 출력·역할별 필수 문서), 3 은 analysis·design 의 정책도 아키텍처·컨벤션으로 줄인다 —
- * 테스트 전략·품질 기준은 plan·critic 이 읽고, 두 문서만 고쳐도 analysis 부터 되감기지 않게 한다.
+ * 테스트 전략·품질 기준은 plan·critic 이 읽고, 두 문서만 고쳐도 analysis 부터 되감기지 않게 한다. 4 는 supportFiles 를 더한다.
  */
 export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(work)): string[] {
   const visited = new Set<string>();
@@ -238,7 +279,7 @@ export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(
     const dep = state.tasks.find(record => record.task.id === id)?.task;
     return dep ? [...dep.outputs, ...(narrow ? [] : outputs(dep.dependsOn))] : [];
   });
-  const corePolicies = (narrow && ["explore", "synthesis"].includes(task.role)) || (task.contextVersion === 3 && ["analysis", "design"].includes(task.role));
+  const corePolicies = (narrow && ["explore", "synthesis"].includes(task.role)) || ((task.contextVersion ?? 0) >= 3 && ["analysis", "design"].includes(task.role));
   const policies = corePolicies ? ["architecture", "conventions"] as const : POLICY_KINDS;
   const policyFiles = policies.flatMap(kind => docPaths(work.manifest, kind));
   const allPolicyFiles = POLICY_KINDS.flatMap(kind => docPaths(work.manifest, kind));
@@ -248,7 +289,8 @@ export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(
   if (narrow && task.role === "plan") docs.push(`${workDocsDir(work.active.id)}/02-analysis.md`);
   // 독립 검토는 전체 판단 문서를 읽어 범위 축소로 지적이 사라지지 않게 한다.
   if (narrow && task.role === "critic") docs.push(...["02-analysis.md", "03-design.md", "04-functional.md"].map(file => `${workDocsDir(work.active.id)}/${file}`));
-  return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
+  const support = (task.contextVersion ?? 0) >= 4 ? supportFiles(work, task) : [];
+  return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...support, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
 }
 export function dependencyHash(record: TaskRecord | undefined): string | undefined {
   const result = record?.attempts.at(-1)?.result;
@@ -427,36 +469,39 @@ export interface StaleCause { kind: StaleKind; text: string }
 export const STALE_PRIORITY: readonly StaleKind[] = ["base", "manifest", "host", "task", "inputs", "questions", "dependencies", "outputs", "upstream", "unknown", "status", "no-run"];
 const listed = (paths: string[]): string => paths.length <= 6 ? paths.join(", ") : `${paths.slice(0, 6).join(", ")} … 외 ${paths.length - 6}개`;
 /** 작업이 current 가 아닌 이유 — 기록된 입력 부품과 지금 값을 항목별로 비교한다 */
+/**
+ * 두 입력 해시 부품의 차이 — 낡은 이유(staleCauses)와 재배정의 '바뀐 입력'(planning previousOf)이 같은 문구를 쓴다.
+ * 해시가 다를 때만 부른다. `before` 가 없으면(부품을 기록하지 않던 옛 시도) 알 수 없다고 답한다.
+ */
+export function inputChanges(before: InputParts | undefined, after: InputParts): StaleCause[] {
+  if (!before) return [{ kind: "unknown", text: "입력이 바뀌었습니다 — 이전 기록이라 바뀐 항목을 알 수 없습니다" }];
+  const causes: StaleCause[] = [];
+  if (before.task !== after.task) causes.push({ kind: "task", text: "작업 정의(inputs·requirements 등)가 바뀌었습니다" });
+  if (before.base !== after.base) causes.push({ kind: "base", text: "기준 커밋이 바뀌었습니다" });
+  if (before.manifest !== after.manifest) causes.push({ kind: "manifest", text: "code-agent.json 이 바뀌었습니다" });
+  if (before.host !== after.host) causes.push({ kind: "host", text: "CLAUDE.md·AGENTS.md 가 바뀌었습니다" });
+  if (before.inputs !== after.inputs) {
+    if (before.files && after.files) {
+      const paths = [...new Set([...Object.keys(before.files), ...Object.keys(after.files)])].sort().filter(path => before.files![path] !== after.files![path]);
+      causes.push({ kind: "inputs", text: paths.length ? `입력 파일: ${listed(paths)}` : "입력 파일 내용·목록이 바뀌었습니다" });
+    } else causes.push({ kind: "inputs", text: "입력 파일 내용·목록이 바뀌었습니다" });
+  }
+  const depBefore = new Map(before.dependencies), changedDeps = after.dependencies.filter(([id, hash]) => depBefore.get(id) !== hash).map(([id]) => id);
+  if (changedDeps.length || before.dependencies.length !== after.dependencies.length) causes.push({ kind: "dependencies", text: `선행 결과가 바뀌었습니다: ${changedDeps.join(", ") || before.dependencies.map(([id]) => id).join(", ")}` });
+  const qBefore = new Map(before.questions.map(item => [item[0], item])), qAfter = new Map(after.questions.map(item => [item[0], item]));
+  const scope = (origin?: string) => origin ? `출처 ${origin}` : "출처 없음 — [Requirements] 범위로 적용";
+  for (const [id, item] of qAfter) if (qBefore.get(id)?.[1] !== item[1]) causes.push({ kind: "questions", text: `질문 ${id} 추가·변경(${scope(item[2])})` });
+  for (const [id, item] of qBefore) if (!qAfter.has(id)) causes.push({ kind: "questions", text: `질문 ${id} 빠짐(${scope(item[2])})` });
+  if (!causes.length) causes.push({ kind: "unknown", text: "입력이 바뀌었습니다 — 바뀐 항목을 알 수 없습니다" });
+  return causes;
+}
 export function staleCauses(work: Work, state: PlanningState, record: TaskRecord): StaleCause[] {
   const last = record.attempts.at(-1);
   if (!last) return [{ kind: "no-run", text: "실행 기록이 없습니다" }];
   if (last.status !== "completed") return [{ kind: "status", text: `마지막 실행 상태: ${last.status}` }];
   const causes: StaleCause[] = [];
   const now = hashInput(work, state, record.task);
-  if (now.hash !== last.inputHash) {
-    const before = last.inputParts;
-    if (!before) causes.push({ kind: "unknown", text: "입력이 바뀌었습니다 — 이전 기록이라 바뀐 항목을 알 수 없습니다" });
-    else {
-      const after = now.parts;
-      if (before.task !== after.task) causes.push({ kind: "task", text: "작업 정의(inputs·requirements 등)가 바뀌었습니다" });
-      if (before.base !== after.base) causes.push({ kind: "base", text: "기준 커밋이 바뀌었습니다" });
-      if (before.manifest !== after.manifest) causes.push({ kind: "manifest", text: "code-agent.json 이 바뀌었습니다" });
-      if (before.host !== after.host) causes.push({ kind: "host", text: "CLAUDE.md·AGENTS.md 가 바뀌었습니다" });
-      if (before.inputs !== after.inputs) {
-        if (before.files && after.files) {
-          const paths = [...new Set([...Object.keys(before.files), ...Object.keys(after.files)])].sort().filter(path => before.files![path] !== after.files![path]);
-          causes.push({ kind: "inputs", text: paths.length ? `입력 파일: ${listed(paths)}` : "입력 파일 내용·목록이 바뀌었습니다" });
-        } else causes.push({ kind: "inputs", text: "입력 파일 내용·목록이 바뀌었습니다" });
-      }
-      const depBefore = new Map(before.dependencies), changedDeps = after.dependencies.filter(([id, hash]) => depBefore.get(id) !== hash).map(([id]) => id);
-      if (changedDeps.length || before.dependencies.length !== after.dependencies.length) causes.push({ kind: "dependencies", text: `선행 결과가 바뀌었습니다: ${changedDeps.join(", ") || before.dependencies.map(([id]) => id).join(", ")}` });
-      const qBefore = new Map(before.questions.map(item => [item[0], item])), qAfter = new Map(after.questions.map(item => [item[0], item]));
-      const scope = (origin?: string) => origin ? `출처 ${origin}` : "출처 없음 — [Requirements] 범위로 적용";
-      for (const [id, item] of qAfter) if (qBefore.get(id)?.[1] !== item[1]) causes.push({ kind: "questions", text: `질문 ${id} 추가·변경(${scope(item[2])})` });
-      for (const [id, item] of qBefore) if (!qAfter.has(id)) causes.push({ kind: "questions", text: `질문 ${id} 빠짐(${scope(item[2])})` });
-      if (!causes.length) causes.push({ kind: "unknown", text: "입력이 바뀌었습니다 — 바뀐 항목을 알 수 없습니다" });
-    }
-  }
+  if (now.hash !== last.inputHash) causes.push(...inputChanges(last.inputParts, now.parts));
   for (const [file, hash] of Object.entries(last.outputs ?? {})) if (fileHash(work.repoRoot, file) !== hash) causes.push({ kind: "outputs", text: `출력 문서가 기록 뒤 바뀌었습니다: ${file}` });
   for (const id of record.task.dependsOn) {
     const dep = state.tasks.find(item => item.task.id === id);

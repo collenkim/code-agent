@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, posix } from "path";
 
 import { writeAtomic } from "../core/atomic";
@@ -9,6 +9,12 @@ import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
 import { loadWork } from "./work";
 import { agentName, notation } from "./hostText";
 import { Stop } from "./stop";
+import { submitChecklist, type ChecklistContext } from "./planningRules";
+import type { PreviousAttempt } from "./planning";
+import { errorLogOf } from "../core/workOrder";
+import { planFormatFor } from "../core/plan";
+import { stageTestRoots } from "./testFiles";
+import type { Work } from "./work";
 
 /**
  * 서브에이전트에게 넘길 긴 자료를 파일로 둔다(폴더는 layout.ts handoffDir — 여기서 다시 내보낸다).
@@ -77,14 +83,38 @@ export function stageHandoff(root: string, at: "implement" | "review"): { lines:
 interface Assignment {
   agent: string;
   hostAgents: Record<string, string>;
-  task: { id: string; role: string; title: string };
+  task: { id: string; role: string; title: string; requirements: string[]; outputs: string[] };
   resultShape: { dispatchId: string };
   mode?: string;
-  /** 다시 배정할 때 직전 시도의 실패(planning.ts previousOf) — 메인의 재배정 메모 근거라 요약에도 남긴다 */
-  previous?: unknown;
+  /** 다시 배정할 때 직전 시도(planning.ts previousOf) — 요약에는 상태·분류·1,000자 사유·초안만 남기고 전체는 배정 파일에 둔다 */
+  previous?: PreviousAttempt;
 }
 
-function assignmentText(item: Assignment & { staging?: Record<string, string> }, stage: string): string {
+/** 점검 목록에 넣을 값 — 코드가 아는 것(지시서 로그·문서 영향·preserve·단계 위치)을 채운다 */
+function checklistContext(work: Work, item: Assignment): ChecklistContext {
+  let log = false;
+  try { const logged = errorLogOf(readFileSync(join(work.repoRoot, work.active.spec), "utf8")); log = !!logged && "log" in logged; } catch { /* 지시서가 없으면 로그도 없다 */ }
+  return {
+    role: item.task.role, kind: work.order.kind, requirements: item.task.requirements, outputs: item.task.outputs, log,
+    knowledge: !!work.active.knowledgeVersion, preserve: planFormatFor(work.order.kind).requiresPreserve,
+    stages: work.stages.filter((stage) => stage.kind !== "verify").map((stage) => ({ key: stage.key, test: stage.kind === "test",
+      dirs: stage.kind === "test" ? stageTestRoots(stage) : stage.scope === "project" ? stage.outputDirs : ["도메인 안"] })),
+  };
+}
+
+/** 배정 파일의 `## 직전 시도` — 담당이 같은 원인을 되풀이하지 않고 초안·답변·바뀐 입력에서 이어 가게 */
+function previousSection(previous: PreviousAttempt): string[] {
+  const lines = ["", "## 직전 시도", "", `- 상태: ${previous.status}${previous.class ? ` (${previous.class})` : ""}`];
+  const problems = previous.problems ?? (previous.detail ? [previous.detail] : []);
+  if (problems.length) lines.push("- 거부·실패 사유 — 이 부분만 고친다:", ...problems.map((problem) => `  - ${problem.replace(/^- /, "")}`));
+  if (previous.drafts?.length) lines.push(`- staging 에 직전 초안을 미리 두었다: ${previous.drafts.join(", ")} — 처음부터 다시 쓰지 않고 위 사유·답변·바뀐 입력에 걸리는 곳만 고친다. 초안은 완료 결과가 아니라 같은 검사를 다시 받는다`);
+  if (previous.answered?.length) lines.push("- 직전 질문의 답:", ...previous.answered.map((item) => `  - ${item.id} ${item.question} → ${item.answer}`));
+  if (previous.questions?.length) lines.push("- 실패로 기록돼 사용자에게 가지 않은 직전 질문 — 아직 필요하면 needs-input 으로 다시 낸다:", ...previous.questions.map((item) => `  - ${item.question} (${item.requirements.join(", ")})`));
+  if (previous.changed?.length) lines.push("- 직전 시도 뒤 바뀐 입력:", ...previous.changed.map((text) => `  - ${text}`));
+  return lines;
+}
+
+function assignmentText(item: Assignment & { staging?: Record<string, string> }, stage: string, checklist?: ChecklistContext): string {
   const lines = [
     `# 계획 배정 — ${item.task.id} · ${item.task.title}`,
     "",
@@ -98,15 +128,23 @@ function assignmentText(item: Assignment & { staging?: Record<string, string> },
     "```",
   ];
   if (item.mode === "correction") return `${lines.join("\n")}\n`;
+  if (item.previous) lines.push(...previousSection(item.previous));
+  if (checklist) lines.push("", submitChecklist(checklist));
   const criteria = CRITERIA[item.task.role];
   if (criteria) lines.push("", "## 문서 기준", "", assetText(`template/claude/skills/${criteria}/criteria.md`).trim());
   // 이전 흐름에서 담당이 받던 결정론적 자료 — 접수 요구 원문 목록·문서 형식·후보 파일·계획 형식
   lines.push("", "## 단계 context (code-agent context)", "", stage.trim());
   for (const output of Object.keys(item.staging ?? {})) {
     const kind = posix.basename(output, ".md");
-    if (isWorkDocKind(kind)) lines.push("", `## 뼈대 — ${output}`, "", "```markdown", skeleton(WORK_SCHEMAS[kind]).trim(), "```");
+    if (isWorkDocKind(kind)) lines.push("", `## 뼈대 — ${output}`, "", "```markdown", skeleton(WORK_SCHEMAS[kind], { pending: false }).trim(), "```");
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** 메인이 받는 직전 시도 요약 — 전체 사유·질문·답변·바뀐 입력은 배정 파일에 있다(메인이 다시 설명하지 않는다) */
+function summaryOf(previous: PreviousAttempt): Pick<PreviousAttempt, "dispatchId" | "status" | "class" | "detail" | "drafts"> {
+  const { dispatchId, status, class: kind, detail, drafts } = previous;
+  return { dispatchId, status, ...(kind ? { class: kind } : {}), detail, ...(drafts ? { drafts } : {}) };
 }
 
 /**
@@ -125,13 +163,15 @@ export function handoffPlanning(root: string, json: string): string {
     if (stage === undefined) {
       try { stage = context(root); } catch (error) { stage = `(context를 만들지 못했습니다: ${error instanceof Error ? error.message : error})`; }
     }
-    const file = writeHandoff(root, work.active.id, `${assignment.resultShape.dispatchId}.md`, assignmentText(assignment, stage));
+    let checklist: ChecklistContext | undefined;
+    try { checklist = checklistContext(work, assignment); } catch { /* 점검 목록을 못 만들어도 배정 파일은 남긴다 */ }
+    const file = writeHandoff(root, work.active.id, `${assignment.resultShape.dispatchId}.md`, assignmentText(assignment, stage, checklist));
     // 담당 이름은 지금 호스트가 부를 것만 — Claude 는 agent, Codex 는 hostAgents.codex(표기를 정할 수 없으면 둘 다). 배정 ID 는 assignmentFile 이름에 있다
     const n = notation();
     return {
       taskId: assignment.task.id, role: assignment.task.role, title: assignment.task.title, agent: assignment.agent,
       ...(n === "claude" ? {} : { hostAgents: n === "codex" ? { codex: assignment.hostAgents.codex } : assignment.hostAgents }),
-      ...(assignment.mode ? { mode: assignment.mode } : {}), ...(assignment.previous ? { previous: assignment.previous } : {}), assignmentFile: file,
+      ...(assignment.mode ? { mode: assignment.mode } : {}), ...(assignment.previous ? { previous: summaryOf(assignment.previous) } : {}), assignmentFile: file,
     };
   };
   if (Array.isArray(value.assignments)) return JSON.stringify({ ...value, assignments: value.assignments.map(move) }, null, 2);

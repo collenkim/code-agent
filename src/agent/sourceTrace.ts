@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { withoutErrorLog } from "../core/workOrder";
+import { ruled } from "./planningRules";
+import { citationText, requirementBlocks, sourceIds } from "./requirementFields";
 
 export interface SourceItem { id: string; text: string; }
 export interface SourceRow extends SourceItem { requirements: string[]; missing: string; }
@@ -38,24 +40,56 @@ export function sourceItems(text: string): SourceItem[] {
     .map((line, index) => ({ id: `REQ-${index + 1}`, text: line }));
 }
 
-function analysisItems(text: string) {
-  return text.split(/^## /m).slice(1).filter((block) => /^R\d+\b/.test(block)).map((block) => ({
-    key: /^(R\d+)\b/.exec(block)![1],
-    sources: [...(block.match(/^\s*출처\s*:\s*(.*)$/m)?.[1] ?? "").matchAll(/\b(?:REQ|DONE|CON)-\d+\b/g)].map((m) => m[0]),
-    citations: [...block.matchAll(/^\s*근거\s*:[ \t]*(.*)$/gm)].map((m) => normalize(m[1].replace(/^["“「]|["”」]$/g, ""))).filter(Boolean),
-  }));
+/**
+ * 인용이 덮지 않아도 되는 글자 — 문장 사이의 쉼표·마침표 같은 문장부호만, 그것도 양옆이 모두 글자·숫자가 아닐 때만이다.
+ * `3.5`·`1,000`·`v1.2`·`a.ts` 의 점·쉼표는 값의 일부라 빠지면 안 된다. 하이픈(음수)·부등호·괄호·슬래시는 허용하지 않는다.
+ */
+const SOFT_PUNCTUATION = /^[,.;!?、。，．；！？]+$/u;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** 인용이 덮지 못한 조각들 — 무시해도 되는 문장부호는 뺀다 */
+function uncoveredFragments(text: string, covered: boolean[]): string[] {
+  const settled = [...covered];
+  for (let start = 0; start < text.length;) {
+    if (settled[start] || /\s/.test(text[start])) { start += 1; continue; }
+    let end = start;
+    while (end < text.length && !settled[end] && !/\s/.test(text[end])) end += 1;
+    if (SOFT_PUNCTUATION.test(text.slice(start, end)) && !(WORD_CHAR.test(text[start - 1] ?? "") && WORD_CHAR.test(text[end] ?? ""))) {
+      for (let index = start; index < end; index += 1) settled[index] = true;
+    }
+    start = end;
+  }
+  const fragments: string[] = [];
+  let current = "";
+  for (let index = 0; index <= text.length; index += 1) {
+    if (index < text.length && !settled[index]) { current += text[index]; continue; }
+    if (current.trim()) fragments.push(current.trim());
+    current = "";
+  }
+  return fragments;
 }
 
-export function sourceTrace(order: string, analysis: string): { rows: SourceRow[]; problems: string[] } {
+/**
+ * 01 의 R 블록이 확정 지시서의 항목을 빠짐없이 인용하는가. `근거:`·`출처:` 는 parseRequirements 와 같은 파서(requirementFields)로 읽는다.
+ * `path` 는 문구의 위치 표시에만 쓴다.
+ */
+export function sourceTrace(order: string, analysis: string, path = "01-requirements.md"): { rows: SourceRow[]; problems: string[] } {
   const sources = sourceItems(order);
-  const items = analysisItems(analysis);
+  const items = requirementBlocks(analysis).map((block) => {
+    const { ids, invalid } = sourceIds(block.sources);
+    const citations = block.grounds.map((ground) => ({ quote: normalize(citationText(ground.value)), line: ground.line })).filter((citation) => citation.quote);
+    return { key: block.key, sources: ids, invalid, citations };
+  });
   const problems: string[] = [];
-  if (!sources.length) problems.push("확정 지시서에 추적할 요구 내용이 없습니다 — 요구사항을 보완하고 다시 확정하세요");
+  if (!sources.length) problems.push(ruled("REQ-TRACE", "확정 지시서에 추적할 요구 내용이 없습니다 — 요구사항을 보완하고 다시 확정하세요"));
+  const known = sources.map((source) => source.id).join(", ");
   for (const item of items) {
-    for (const id of item.sources) if (!sources.some((s) => s.id === id)) problems.push(`${item.key}: 지시서에 없는 출처 ${id}`);
-    for (const quote of item.citations) {
+    for (const bad of item.invalid) problems.push(ruled("REQ-TRACE", `${path}:${bad.line} ${item.key}: 출처 ID 형식이 아닙니다: ${bad.value} — context 의 ID 를 글자 그대로 씁니다 (${known})`));
+    for (const id of item.sources) if (!sources.some((s) => s.id === id)) problems.push(ruled("REQ-TRACE", `${item.key}: 지시서에 없는 출처 ${id} — 있는 ID: ${known}`));
+    for (const { quote, line } of item.citations) {
       if (!sources.some((source) => (!item.sources.length || item.sources.includes(source.id)) && normalize(source.text).includes(quote))) {
-        problems.push(`${item.key}: 근거 인용이 확정된 요구 내용·완료 조건·제약에 없습니다: ${quote}`);
+        problems.push(ruled("REQ-TRACE", `${path}:${line} ${item.key}: 근거 인용이 확정된 요구 내용·완료 조건·제약에 없습니다: ${quote} — ` +
+          `${item.sources.length ? `출처(${item.sources.join(", ")}) 항목의 ` : ""}글자를 그대로 옮기고 설명은 닫는 따옴표 뒤에 둡니다`));
       }
     }
   }
@@ -65,23 +99,28 @@ export function sourceTrace(order: string, analysis: string): { rows: SourceRow[
     const owners = new Set<string>();
     for (const item of items) {
       if (item.sources.length && !item.sources.includes(source.id)) continue;
-      for (const quote of item.citations) {
+      for (const { quote } of item.citations) {
         for (let from = text.indexOf(quote); from >= 0; from = text.indexOf(quote, from + quote.length)) {
           owners.add(item.key);
           for (let i = from; i < from + quote.length; i++) covered[i] = true;
         }
       }
     }
-    const missing = text.split("").map((char, i) => covered[i] ? " " : char).join("").trim();
-    if (!owners.size || /\S/u.test(missing)) problems.push(`분석에서 빠진 요구 ${source.id}: ${missing || source.text} — R 블록에 출처와 원문 근거를 연결하세요`);
-    return { ...source, requirements: [...owners], missing };
+    const fragments = owners.size ? uncoveredFragments(text, covered) : [];
+    if (!owners.size) {
+      problems.push(ruled("REQ-TRACE", `분석에서 빠진 요구 ${source.id}: ${text} — R 블록에 \`출처: ${source.id}\` 와 이 원문을 인용한 \`근거: "…"\` 를 연결하세요`));
+    } else if (fragments.length) {
+      problems.push(ruled("REQ-TRACE", `분석에서 빠진 요구 ${source.id}: ${fragments.map((fragment) => `"${fragment}"`).join(", ")} — ` +
+        `인용(${[...owners].join(", ")})이 덮지 못한 부분입니다. 이 부분까지 근거: 로 인용하세요`));
+    }
+    return { ...source, requirements: [...owners], missing: fragments.join(" … ") };
   });
   return { rows, problems };
 }
 
 export function readSourceTrace(repoRoot: string, id: string, spec: string) {
-  const analysis = join(repoRoot, `doc/work/${id}/01-requirements.md`);
-  return sourceTrace(readFileSync(join(repoRoot, spec), "utf8"), existsSync(analysis) ? readFileSync(analysis, "utf8") : "");
+  const path = `doc/work/${id}/01-requirements.md`, analysis = join(repoRoot, path);
+  return sourceTrace(readFileSync(join(repoRoot, spec), "utf8"), existsSync(analysis) ? readFileSync(analysis, "utf8") : "", path);
 }
 
 export function formatSourceTrace(rows: SourceRow[]): string {

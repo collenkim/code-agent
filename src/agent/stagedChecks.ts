@@ -12,7 +12,7 @@ import { analysisProblems, designProblems, functionalProblems, loadRequirements,
 /**
  * 계획 담당 완료 hook 의 결정적 문서 검사 — staging 본문을 정식 문서로 옮기기 전에 그 역할의 `next`·`plan submit` 게이트와
  * **같은 함수**를 먼저 돌린다. 같은 본문·같은 함수라 hook 판정이 최종 게이트보다 엄격해지지 않는다(게이트는 그대로 남는다).
- * plan 역할은 07 검사와 plan.json 의 스키마·tasks·AC·요구 커버리지·남은 질문까지다 — 순서·경로·preserve·종류별 규칙은 submit 에만 있다.
+ * plan 역할은 07 검사와 plan.json 의 스키마·tasks·AC·요구 커버리지·남은 질문, 제출 규칙(순서·경로·preserve·종류별 — planRuleProblems)까지다.
  * needs-input·failed 결과와 explore·critic 에는 문서 검사가 없다(호출자가 고른다).
  */
 export function stagedDocumentProblems(work: Work, role: PlanningTask["role"], artifacts: { path: string; content: string }[]): string[] {
@@ -25,8 +25,9 @@ export function stagedDocumentProblems(work: Work, role: PlanningTask["role"], a
     case "analysis": {
       const path = `${dir}/01-requirements.md`, text = overlay.get(path) ?? "";
       try { parseRequirements(text); }
-      catch (error) { problems.push(...String(error instanceof Error ? error.message : error).split("\n").map((line) => `${path}: ${line}`)); }
-      problems.push(...sourceTrace(readFileSync(join(root, work.active.spec), "utf8"), text).problems);
+      // 규칙 ID 는 문구 맨 앞에 둔다 — `[REQ-FORMAT] <경로>: …`
+      catch (error) { problems.push(...String(error instanceof Error ? error.message : error).split("\n").map((line) => line.replace(/^(\[[A-Z]+-[A-Z]+\] )?/, (tag) => `${tag}${path}: `))); }
+      problems.push(...sourceTrace(readFileSync(join(root, work.active.spec), "utf8"), text, path).problems);
       problems.push(...planningDocumentProblems(work, "analysis", { overlay, only: ["01-requirements.md"] }));
       break;
     }
@@ -42,7 +43,7 @@ export function stagedDocumentProblems(work: Work, role: PlanningTask["role"], a
       const acceptance = functionalProblems(root, id, keys()).acceptance;   // 04 는 선행 결과(디스크)
       problems.push(...testSpecProblems(root, id, acceptance, work.manifest, work.order.kind, work.active.spec, overlay).problems);
       problems.push(...planningDocumentProblems(work, "plan", { overlay, only: ["07-test-spec.md"] }));
-      problems.push(...planDraftProblems(work, overlay.get(`${dir}/plan.json`), acceptance, keys()));
+      problems.push(...planDraftProblems(work, overlay.get(`${dir}/plan.json`), acceptance, keys(), overlay));
       break;
     }
   }
