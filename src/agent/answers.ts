@@ -24,7 +24,12 @@ interface AnswerItem { q?: string; questionHash: string; answer: string; free: b
 export type AnswerRow =
   | { type: "start"; at: string; version: 1; intake: { q: string; hash: string }[] }
   | { type: "ask"; at: string; host: "claude"; session: string; toolId: string; prefilled: boolean; items: AskItem[] }
-  | { type: "answer"; at: string; host: "claude"; session: string; toolId: string; items: AnswerItem[] };
+  | { type: "answer"; at: string; host: "claude"; session: string; toolId: string; items: AnswerItem[] }
+  /**
+   * master 가 넣은 답 — actor ai 는 위임 판단, human 은 master 를 거쳐 온 사람의 답(code-agent 가 응답을 관찰하지 않았다). 사람이 TTY 에서 준
+   * 권한(grant) 범위에서만 master/delegation.ts 가 쓴다. hash 는 questions.md 에 쓴 답(sha16)이다 — 답을 고치면 출처가 사라진다
+   */
+  | { type: "delegated"; at: string; q: string; hash: string; actor: "ai" | "human"; decisionId: string; grantId: string; controller: string; generation: number; category: string };
 
 /** consent.ts ConsentHookInput 과 같은 꼴(순환을 피하려고 따로 둔다) */
 interface QuestionHookInput {
@@ -69,11 +74,15 @@ export function readAnswerRows(root: string, id: string): AnswerRow[] {
     if (!line.trim()) continue;
     try {
       const row = JSON.parse(line) as AnswerRow;
-      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer")) rows.push(row);
+      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer" || row.type === "delegated")) rows.push(row);
     } catch { /* 반쯤 쓰인 줄 */ }
   }
   return rows;
 }
+/** master 가 넣은 답의 기록 — master/delegation.ts 만 부른다 */
+export function appendDelegatedAnswer(root: string, id: string, row: Extract<AnswerRow, { type: "delegated" }>): void { appendRow(root, id, row); }
+/** 답 해시 — 기록의 hash 와 같은 계산 */
+export function answerHash(answer: string): string { return sha16(answer); }
 function appendRow(root: string, id: string, row: AnswerRow): void {
   const path = join(root, answersFile(id));
   mkdirSync(dirname(path), { recursive: true });
@@ -175,7 +184,13 @@ export function writeAnswerBaseline(root: string, id: string, specPath: string):
   appendRow(root, id, { type: "start", at: new Date().toISOString(), version: 1, intake });
 }
 
-export type AnswerSource = "observed" | "intake" | "conversation" | "legacy" | "unverified";
+export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "conversation" | "legacy" | "unverified";
+/** master 가 넣은 답과 지금 답이 같은가 — 같은 Q 번호의 마지막 기록만 본다 */
+function delegatedMatch(question: Question, rows: AnswerRow[]): Extract<AnswerRow, { type: "delegated" }> | undefined {
+  const row = rows.filter((item): item is Extract<AnswerRow, { type: "delegated" }> => item.type === "delegated" && item.q === question.id).at(-1);
+  return row && row.hash === sha16(question.answer) ? row : undefined;
+}
+
 /** 답이 있는 질문마다 답의 출처 */
 export function answerSources(root: string, id: string, questions: Question[]): Map<string, AnswerSource> {
   const rows = readAnswerRows(root, id);
@@ -186,6 +201,7 @@ export function answerSources(root: string, id: string, questions: Question[]): 
     if (!start) sources.set(question.id, "legacy");
     else if (start.intake.some((entry) => entry.q === question.id && entry.hash === sha16(question.answer))) sources.set(question.id, "intake");
     else if (observedMatch(question, rows)) sources.set(question.id, "observed");
+    else if (delegatedMatch(question, rows)) sources.set(question.id, delegatedMatch(question, rows)!.actor === "ai" ? "delegated" : "relayed");
     else if (question.source?.startsWith("대화")) sources.set(question.id, "conversation");
     else sources.set(question.id, "unverified");
   }
@@ -221,10 +237,10 @@ export function formatAnswerSources(root: string, id: string): string | undefine
   if (sources.size === 0) return undefined;
   const count = (source: AnswerSource) => [...sources.values()].filter((value) => value === source).length;
   if (count("legacy") === sources.size) return `질문 답 출처: 이전 형식(관찰 기록 없음) ${sources.size}`;
-  const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
+  const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["delegated", "master 위임 판단(사람 응답 아님)"], ["relayed", "master 경유 사람 답(관찰 안 됨)"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
     ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
     .filter(([source]) => count(source) > 0).map(([source, label]) => `${label} ${count(source)}`);
-  const conversation = questions.filter((question) => sources.get(question.id) === "conversation");
+  const conversation = questions.filter((question) => ["conversation", "delegated", "relayed"].includes(sources.get(question.id) ?? ""));
   const shown = conversation.slice(0, 10).map((question) =>
     `  - ${question.title}: ${JSON.stringify(question.answer.split("\n").map((line) => line.trim()).find(Boolean) ?? "")}`);
   if (conversation.length > 10) shown.push(`  - 외 ${conversation.length - 10}개 (questions.md)`);

@@ -41,6 +41,7 @@ import { noteHookOutput } from "./hookLog";
 import { shortCommand } from "./screenText";
 import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
 import { entryPackage, OPENING_COMMAND, pendingSwitch } from "./runtimeSelect";
+import { MASTER_CONTROL_COMMAND, MASTER_CONTROL_DENIED, masterRunGuard } from "./master/runGuard";
 
 /**
  * Claude Code PreToolUse hook 의 판정.
@@ -498,6 +499,9 @@ function surveyDraft(repoRoot: string, target: string): boolean {
 }
 
 function decideTool(input: HookInput, projectDir?: string): string | undefined {
+  // master 실행 세션(감독이 띄운 호스트)만 — 정지 요청·질문 도구·임대·제어 명령. 그 밖의 세션은 아무것도 하지 않는다
+  const master = masterRunGuard(input, findRepoRoot(projectDir ?? input.cwd));
+  if (master) return master;
   const child = crossChildGuard(input) ?? readOnlyRoleGuard(input, projectDir);
   if (child) return child;
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
@@ -641,6 +645,8 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
     // --templates-only 는 지금 적용 버전(또는 이미 설치된 적용 대기 버전)의 템플릿 반영뿐이다 — 버전 선택 깃발과 함께면 막는다
     if (SOURCE_UPDATE.test(command) && (!/(^|\s)--templates-only(\s|$)/.test(command) || /(^|\s)--(?:bundled|release|apply-release|trigger|consent)(\s|=|$)/.test(command))) return SOURCE_UPDATE_DENIED;
+    // master 제어(연동 설정·위임 판단·실행 제어)는 러너와 사람의 터미널이 부른다 — 세션 안에서는 허용 목록(MODEL_SUBCOMMANDS)에 없어 이미 막힌다
+    if (MASTER_CONTROL_COMMAND.test(command)) return MASTER_CONTROL_DENIED;
     return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {

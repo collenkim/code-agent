@@ -24,6 +24,8 @@ export interface Receipt {
   channel?: string; preparedSession?: { host: string; id: string }; sessionId?: string;
   observed: { at: string; toolId: string; choices: string[] }[];
   failure?: { class: string; kind?: string; detail: string };
+  /** master 위임 판단으로 답한 동의 — 사람의 응답(observed)이 아니다 */
+  delegation?: { decisionId: string; grantId: string; controller: string; generation: number; verdict: string; category: string; at: string };
 }
 interface StoredConsent {
   id?: string; workId?: string; createdAt?: string; status?: string; channel?: string; sessionId?: string;
@@ -31,6 +33,7 @@ interface StoredConsent {
   preparedSession?: { host?: string; id?: string };
   observed?: { at?: string; toolId?: string; answers?: Record<string, unknown> }[];
   failure?: { class?: string; kind?: string; detail?: string };
+  delegation?: { decisionId?: string; grantId?: string; controller?: string; generation?: number; verdict?: string; category?: string; at?: string };
 }
 
 function storedConsents(root: string, workId: string): StoredConsent[] {
@@ -61,6 +64,8 @@ export function consentReceipts(root: string, workId: string): Receipt[] {
     observed: (record.observed ?? []).map((row) => ({ at: row.at ?? "", toolId: row.toolId ?? "",
       choices: Object.values(row.answers ?? {}).filter((value): value is string => typeof value === "string") })),
     ...(record.failure?.class ? { failure: { class: record.failure.class, ...(record.failure.kind ? { kind: record.failure.kind } : {}), detail: record.failure.detail ?? "" } } : {}),
+    ...(record.delegation?.decisionId ? { delegation: { decisionId: record.delegation.decisionId, grantId: record.delegation.grantId ?? "?", controller: record.delegation.controller ?? "?",
+      generation: record.delegation.generation ?? 0, verdict: record.delegation.verdict ?? "?", category: record.delegation.category ?? "?", at: record.delegation.at ?? "" } } : {}),
   }));
 }
 

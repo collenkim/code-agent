@@ -16,6 +16,7 @@ import { prepareConsent } from "../agent/consent";
 import { hostAssets } from "../agent/hosts";
 import { init } from "../agent/init";
 import { packageRelease } from "../agent/releaseStore";
+import { STATE_SCHEMA } from "../agent/runtimeSelect";
 import { setupConsentProject } from "./consentFixture";
 
 const REPO = join(__dirname, "..", "..");
@@ -33,7 +34,7 @@ function release(id: string, change?: (dir: string) => void): void {
   cpSync(join(REPO, "package.json"), join(dir, "package.json"));
   symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "junction");
   change?.(dir);
-  writeFileSync(join(dir, "release.json"), JSON.stringify({ schema: 1, id, version: "1.0.0", stateSchema: 1, installedAt: new Date().toISOString(),
+  writeFileSync(join(dir, "release.json"), JSON.stringify({ schema: 1, id, version: "1.0.0", stateSchema: STATE_SCHEMA, installedAt: new Date().toISOString(),
     source: { kind: "git", commit: id.slice(-12).repeat(4).slice(0, 40), tree: "0".repeat(40), remote: "origin", ref: "refs/heads/main" }, contentHash: "0".repeat(64) }));
 }
 
@@ -336,11 +337,12 @@ describe("적용 버전 선택 — 고정 진입점", () => {
   test("상태 형식 세대가 더 높은 프로젝트에는 낮은 세대의 릴리스를 적용하지 않는다(되돌리기의 한계)", () => {
     const root = project();
     mkdirSync(join(root, ".code-agent"), { recursive: true });
-    writeFileSync(join(root, ".code-agent", "runtime.json"), JSON.stringify({ schema: 1, stateSchema: 2 }));
+    const newer = STATE_SCHEMA + 1;
+    writeFileSync(join(root, ".code-agent", "runtime.json"), JSON.stringify({ schema: 1, stateSchema: newer }));
     const refused = applyAs(root, A);
     assert.equal(refused.status, 1);
-    assert.match(refused.stderr, /더 새 형식\(세대 2\)/);
-    assert.deepEqual(runtime(root), { schema: 1, stateSchema: 2 });
+    assert.ok(refused.stderr.includes(`더 새 형식(세대 ${newer})`), refused.stderr);
+    assert.deepEqual(runtime(root), { schema: 1, stateSchema: newer });
   });
 });
 

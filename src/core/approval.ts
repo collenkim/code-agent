@@ -46,6 +46,11 @@ export type PresenceChannel =
   | "claude-question"
   | "codex-prompt"
   | "codex-elicitation"
+  /**
+   * master 의 위임 판단 — 사람이 TTY 에서 준 권한 범위 안의 판단이다. 사람의 존재 증거가 아니므로 언제나 verified false 다
+   * (`requireVerifiedApproval` 프로젝트는 이 통로를 받지 않는다)
+   */
+  | "master-delegation"
   /** 사람의 입력을 관측하지 못했다 — 스크립트·비대화형 셸·명시적 우회 */
   | "unattended";
 

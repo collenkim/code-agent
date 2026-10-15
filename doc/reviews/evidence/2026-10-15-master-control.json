@@ -1,0 +1,4733 @@
+{
+  "schema": "code-agent.review-evidence",
+  "topic": "master-control",
+  "date": "2026-10-15",
+  "commit": "(이 커밋)",
+  "environment": {
+    "os": "Windows 11",
+    "node": "24.19.0",
+    "claudeCli": "2.1.300",
+    "model": "CLI 기본값"
+  },
+  "emulated": [
+    "공통 문서 확정(recordDocConfirmation)",
+    "master enable",
+    "master grant"
+  ],
+  "emulationNote": "사람 TTY 단계는 withInteraction 으로 흉내 냈다 — 기록 detail \"사람 TTY 흉내(실제 사람 확인 아님)\". 작업별 확인 요청·업무 질문은 흉내 내지 않았다. 사람 역할 답(relay)은 operator 에 적는다.",
+  "tests": {
+    "codeAgent": {
+      "command": "npm test (작업 트리 사본)",
+      "tests": 1549,
+      "pass": 1545,
+      "fail": 0,
+      "skipped": 4,
+      "files": {
+        "master.test.ts": 21,
+        "masterRuns.test.ts": 8
+      },
+      "kind": "모의 — 가짜 호스트 masterFakeHost(실제 모델 아님)",
+      "regressionCheck": "master.test.ts 의 위임 수정 요청 이어 실행 접수 시험은 control.ts 수정을 되돌리면 실패하는 것을 확인",
+      "supervisorFix": "감독 수정 전 전체 실행: 1549 중 1538 통과·7 실패(감독을 띄우는 masterRuns 6·master 1 — 30초 기다림 초과). 원인: Windows 에서 콘솔 없이 띄운 감독의 상태 조회 git 이 호출마다 콘솔을 할당(상태 조회 약 4초). 수정 뒤 전체 통과, masterRuns 8개 약 3분 → 9.6초"
+    },
+    "masterAgent": {
+      "command": "npm.cmd test",
+      "tests": 155,
+      "pass": 155,
+      "fail": 0,
+      "check": "구문 검사 60개, 문서 링크 19개 통과",
+      "files": {
+        "control.test.mjs": 20,
+        "code-agent-control.test.mjs": 1,
+        "engine.test.mjs(잠금 대기 1 포함)": 21
+      },
+      "kinds": {
+        "control.test.mjs": "모의 — 통신 계약 흉내 전송과 가짜 판단기",
+        "code-agent-control.test.mjs": "실제 code-agent CLI 빌드 산출물 + 가짜 호스트(모델 아님)"
+      },
+      "flakyBeforeFix": "code-agent-control.test.mjs 전체 실행 4회 중 2회 실패(run.finished 이벤트 누락) → 끝 상태 뒤 한 번 더 받기로 고친 뒤 3회 연속 통과",
+      "regressionCheck": "control.test.mjs 의 실제 AI 시험 결함 회귀 시험 7개(반영 단계 검증 2·위임 수정 요청 재준비·이어 실행 거부 막힘·반영 확인 수정 요청 재준비·선행 증거 요약·업무 질문 판단 자료의 앞선 답)는 각 수정을 되돌리면 실패하는 것을 확인",
+      "note": "155개에는 같은 시기 다른 작업(LangGraph 전환)이 더한 시험 7개가 들어 있다"
+    }
+  },
+  "realStop": {
+    "project": "<시험 폴더>\\stop1\\stop-demo",
+    "head0": "0d2684d939721fd21aef19616a99bab4aeb31ab3",
+    "steps": [
+      {
+        "name": "pause-requested",
+        "at": "2026-10-15T02:41:04.292Z",
+        "runId": "run-mv8xm201-bb4938ca",
+        "requested": true,
+        "stopped": false,
+        "state": "running",
+        "hostPid": 35288,
+        "supervisorPid": 10540
+      },
+      {
+        "name": "pause-final",
+        "at": "2026-10-15T02:41:16.273Z",
+        "state": "paused",
+        "outcome": {
+          "state": "paused",
+          "reason": "정지 시험",
+          "cooperative": true,
+          "forced": false
+        },
+        "hostAlive": false,
+        "supervisorAlive": false,
+        "exitCode": 0,
+        "denials": 1,
+        "changedFiles": [],
+        "gitStatus": ""
+      },
+      {
+        "name": "resume-running",
+        "at": "2026-10-15T02:41:27.145Z",
+        "runId": "run-mv8xmnvu-d48b6463",
+        "sessionId": "8f371a80-5789-4377-8de7-987b538bd6de",
+        "sameSession": true,
+        "hostPid": 32404
+      },
+      {
+        "name": "handover-transferred",
+        "at": "2026-10-15T02:41:40.557Z",
+        "transferred": true,
+        "runState": "paused",
+        "outcome": {
+          "state": "paused",
+          "reason": "제어권 인계(ho-cb5645ea-d0c)",
+          "cooperative": true,
+          "forced": false
+        },
+        "hostAlive": false,
+        "m1Owner": false
+      },
+      {
+        "name": "handover-accepted",
+        "at": "2026-10-15T02:41:41.652Z",
+        "oldOwnerSubmit": "control-fenced",
+        "newOwnerBeforeAccept": "control-fenced",
+        "owner": true,
+        "generation": 2
+      },
+      {
+        "name": "cancel-force",
+        "at": "2026-10-15T02:41:58.701Z",
+        "requested": true,
+        "stopped": true,
+        "state": "cancelled",
+        "outcome": {
+          "state": "cancelled",
+          "reason": "강제 취소 시험",
+          "cooperative": false,
+          "forced": true
+        },
+        "hostPidBefore": 13656,
+        "hostAlive": false,
+        "supervisorAlive": false,
+        "gitStatus": "",
+        "head": "0d2684d939721fd21aef19616a99bab4aeb31ab3"
+      },
+      {
+        "name": "snapshot",
+        "at": "2026-10-15T02:41:58.985Z",
+        "activeRuns": 0,
+        "recent": [
+          "run-mv8xm201-bb4938ca:paused",
+          "run-mv8xmnvu-d48b6463:paused",
+          "run-mv8xn7dp-de1eff6b:cancelled"
+        ],
+        "events": {
+          "logId": "log-7d8cacf2-b1dc-485d-a517-1b41eb1e88fd",
+          "latestSeq": 38
+        }
+      }
+    ]
+  },
+  "run2": {
+    "purpose": "결함 찾기(수정 전 코드로 시작)",
+    "operator": [
+      "2026-10-15T01:28:44.491Z 운영자 mission continue discount attempt=1a096385-d9cf-4622-a19e-a902119c3987 state=awaiting-verification resume=ready phase=analysis stateVersion=sha256:4c02e94b2994bb888595390e4b67b14a revision=17",
+      "2026-10-15T01:37:47.538Z 운영자 mission continue total attempt=4f1b2be7-95a6-4656-aae6-dd79b7cabc2d state=awaiting-verification resume=ready phase=analysis stateVersion=sha256:0e5609a8896da806104f2609ad6749a1 revision=19",
+      "2026-10-15T01:54:15Z 운영자(사람 역할 흉내) mission relay discount Q1 → B"
+    ],
+    "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+    "missionState": "waiting-decision",
+    "missionReason": "호스트 회차와 code-agent 상태를 기록했습니다. 작업 완료 판정은 별도 검증이 필요합니다.",
+    "tasks": [
+      {
+        "id": "discount",
+        "state": "verified",
+        "attempts": 1
+      },
+      {
+        "id": "total",
+        "state": "waiting-decision",
+        "attempts": 1
+      },
+      {
+        "id": "checkout",
+        "state": "queued",
+        "attempts": 0
+      }
+    ],
+    "attempts": [
+      {
+        "taskId": "discount",
+        "id": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "projectId": "price-core",
+        "state": "verified",
+        "codeAgentWorkId": "MA-ed7a8bab-27f9-4747-a145-a589d9a7c741",
+        "turns": [
+          {
+            "at": "2026-10-15T01:15:37.316Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv8uh0wo-f6265242",
+            "runState": "completed",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T01:16:38.740Z",
+            "disposition": "awaiting-verification",
+            "resume": "ready",
+            "phase": "analysis",
+            "runId": "run-mv8ukusd-160bf7b6",
+            "runState": "completed",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T01:37:47.278Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8v1eef-fb53f938",
+            "runState": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:14:15.640Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8wbvmt-f84f844e",
+            "runState": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:27:53.622Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8wogjc-69dbf1b2",
+            "runState": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:31:39.598Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv8x5vih-d70f83e7",
+            "runState": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "c75e1a3e-008f-4493-8482-d84489bee18b"
+      },
+      {
+        "taskId": "total",
+        "id": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "projectId": "invoice-app",
+        "state": "waiting-decision",
+        "codeAgentWorkId": "MA-38509561-26a6-48da-b0e5-5ac43a239ba6",
+        "turns": [
+          {
+            "at": "2026-10-15T01:18:37.550Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv8ulv3v-d7950d52",
+            "runState": "completed",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T01:27:45.408Z",
+            "disposition": "awaiting-verification",
+            "resume": "ready",
+            "phase": "analysis",
+            "runId": "run-mv8uopqt-b2574b9a",
+            "runState": "completed",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T01:50:54.128Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8vd1ad-0e75e9ef",
+            "runState": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:04:52.362Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8vuj2b-198e4e3b",
+            "runState": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:34:42.995Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "test",
+            "runId": "run-mv8xb89m-f7fc1336",
+            "runState": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": null
+      }
+    ],
+    "delegations": [
+      {
+        "id": "34dd3c8a-3055-475f-88e9-39b39ab07131",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q1",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "reason": "이 결정은 배정된 작업의 목표, 완료 조건, 허용 변경 범위 안에서 판단할 수 있습니다. 완료 조건 'total'은 '잘못된 줄에 RangeError 를 던진다'이고, 줄이 null·undefined처럼 객체가 아니면 '잘못된 줄'로 보는 것이 자연스럽습니다. 이런 줄에서는 qty를 숫자로 읽을 수 없어, 목표에 적힌 'qty 가 숫자가 아님'과 같은 경우가 됩니다. 선택지 1은 완료 조건을 문자 그대로 충족하고, 내용이 확인되지 않은 master 독립 검사에도 안전합니다. 완료 조건을 완화하지도 않고 더 엄격하게 지킵니다. 변경 파일은 그대로 src/total.js와 tests/total.test.js로, 허용 변경 범위 안입니다. 외부 영향이나 보안·데이터 위험도 없습니다. analysis 단계부터 다시",
+        "evidence": 6,
+        "error": null
+      },
+      {
+        "id": "59795e89-e7d4-4864-a6b5-357b6e9019ad",
+        "kind": "consent",
+        "action": "plan",
+        "target": "4544c3a8-68d9-440b-b32d-0ead77d0aeaf",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "reason": "계획이 배정된 작업 목표·완료 조건·허용 변경 범위 안에 있습니다. 생성 파일은 src/total.js와 tests/total.test.js 두 개뿐이며 task.allowedChanges, recipe.allowedPaths와 정확히 같습니다. 제외 파일(README.md, code-agent.json, doc/*)은 건드리지 않고, config 단계 파일도 계획하지 않습니다. REQ-1~REQ-5는 원문 그대로 반영했습니다(CommonJS 내보내기, Σ qty*price에 Math.round(x*100)/100을 한 번 적용, 빈 배열이면 0, 숫자가 아니거나 음수인 값에 RangeError, node:test). 완료 조건 DONE-1·DONE-2도 완화하지 않았습니다. AC-R4-2를 master의 ",
+        "evidence": 10,
+        "error": null
+      },
+      {
+        "id": "5afca316-6b0f-4703-b30c-2898bfacb3c7",
+        "kind": "consent",
+        "action": "plan",
+        "target": "8a72e45b-751c-4574-9d20-937f8cdd649d",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "reason": "This plan fits inside the assigned task. It only changes the two allowed files, src/discount.js and tests/discount.test.js. No excluded file is touched and no setup file is added. The code follows the task goal exactly: it exports discount with CommonJS, computes the discounted value, rounds it with Math.round(x * 100) / 100, and throws RangeError for a negative amount or a percent outside 0–100. ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "6ec70990-3418-4cff-9333-8f3baaa901ec",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q2",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "reason": "Q1에서 이미 B(제약은 추적만 하고 실행 TC를 두지 않음)로 정했습니다. A는 그 결정을 일관되게 반영하는 유일한 방법입니다. 분석 기준은 \"변경 범위 같은 기술 제약은 해당 동작 요구의 제약으로 묶고 독립 기능 R을 늘리지 않는다\"고 명시합니다. 따라서 CON-1·CON-2를 R1·R4의 제약으로 묶고 독립 요구 R5를 없애는 것은 기준을 바로잡는 일이지 요구를 줄이는 일이 아닙니다. 작업 목표(discount 구현·테스트), 완료 조건(criteria: discount), 허용 변경 범위(src/discount.js, tests/discount.test.js)도 바뀌지 않습니다. 변경 범위는 계획 files·check·리뷰·master 독립 검증으로 계속 추적하므로 완료 조건이 느슨해지지 않습니다. ",
+        "evidence": 6,
+        "error": null
+      },
+      {
+        "id": "841532be-c3eb-4120-bcc9-deb91bd6f448",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q1",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "human",
+        "relayed": true,
+        "grantId": "e2e-price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "reason": "E2E 시험 운영자가 사람 역할로 답함(실제 사람 확인 아님) — critical 로 이관된 질문",
+        "evidence": 1,
+        "error": null
+      },
+      {
+        "id": "c87dc7f7-15c5-4182-b306-8531cee5c246",
+        "kind": "consent",
+        "action": "request",
+        "target": "c4abdcfe-e6c7-41e7-af2e-46221c86d0e6",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "reason": "이 요구사항 정리는 배정된 작업(task total)의 목표, 완료 조건, 허용 변경 범위와 그대로 일치하므로 승인합니다. - REQ-1~5는 task.goal을 빠짐없이 옮겼고 의미도 바뀌지 않았습니다(CommonJS 내보내기, Σ qty*price를 Math.round(x*100)/100으로 반올림, 빈 배열은 0, 숫자가 아니거나 음수면 RangeError, node:test 테스트). - DONE-1·DONE-2는 criteria.total과 verification을 그대로 옮겼고 조건을 완화하지 않았습니다. - CON-1·CON-2는 allowedChanges와 exclusions를 그대로 옮겼습니다. - 범위 밖 항목(price-core 할인 함수, checkout 연결)은 다른 criteria인",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "fefbdcbc-2a74-40d5-b85b-ed71422be635",
+        "kind": "consent",
+        "action": "request",
+        "target": "67f8c79d-8e26-4a93-a779-b6c33488db75",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "reason": "이 요청은 요구사항을 확정해 달라는 것이고, 정리된 요구사항이 배정 작업(discount)의 목표, 완료 조건, 허용 변경 범위와 그대로 맞으므로 일상 판단(routine)으로 승인합니다. REQ-1~4는 task.goal 문장을 의미 변경 없이 하나씩 나눈 것입니다. 완료 조건 DONE-1은 수락 기준 discount의 설명과 같고, DONE-2는 task.verification과 outputs(discount-check)를 그대로 반영했습니다. 따라서 완료 조건이 느슨해진 곳이 없습니다. 제약 CON-1과 CON-2도 allowedChanges, exclusions와 똑같습니다. 범위 밖으로 뺀 total과 checkout은 invoice-app 프로젝트의 수락 기준입니다. 이 작업은 price-core",
+        "evidence": 8,
+        "error": null
+      }
+    ],
+    "escalations": [
+      {
+        "kind": "question",
+        "target": "Q2",
+        "state": "open",
+        "category": "critical",
+        "reason": "이 질문은 위임 범위에서 판단할 수 없습니다. 어느 선택지든 승인된 계획(07, 경우에 따라 04의 AC-R4-1·AC-R4-2와 plan.json)을 바꿔야 하고, 질문 본문도 되감기·재제출·재승인이 필요하다고 밝힙니다. 추천안인 1번은 AC-R4-2·TC-13을 TC 표에서 빼 code-agent 게이트 밖의 '반영 뒤 master 외부 확인'으로 옮깁니다. 이는 승인된 완료 조건의 검증 방식을 바꾸는 것이고, 게이트 기준으로 보면 완료 조건 완화로 읽힐 수 있습니다. 그래서 승인권자인 사람이 정해야 합니다. 2번은 저장소 테스"
+      },
+      {
+        "kind": "question",
+        "target": "Q1",
+        "state": "resolved",
+        "category": "critical",
+        "reason": "This question is about how to verify a completion condition (AC-R5-1), not a routine judgment inside the plan. The recommended option, B, goes back to design and changes 04's AC-R5-1 from a runnable test to tracking through the plan, check and review. That changes how a completion condition is verif"
+      },
+      {
+        "kind": "consent",
+        "target": "86220a0e-941b-4bc7-9243-6f93d8f2e1a1",
+        "state": "open",
+        "category": "critical",
+        "reason": "The implementation looks finished. src/discount.js and tests/discount.test.js stay inside allowedChanges, master's own checks passed (discount-independent and discount-project-tests), and code-agent's check, test and integrate steps all passed, with 0 review findings. This step does more than commit"
+      }
+    ],
+    "verificationRuns": [
+      {
+        "id": "c75e1a3e-008f-4493-8482-d84489bee18b",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "controlRuns": [
+      {
+        "id": "run-mv8uh0wo-f6265242",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv8ukusd-160bf7b6",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "continue",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 ready"
+        }
+      },
+      {
+        "id": "run-mv8ulv3v-d7950d52",
+        "projectId": "invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv8uopqt-b2574b9a",
+        "projectId": "invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "mode": "continue",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 ready"
+        }
+      },
+      {
+        "id": "run-mv8v1eef-fb53f938",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8vd1ad-0e75e9ef",
+        "projectId": "invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8vuj2b-198e4e3b",
+        "projectId": "invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8wbvmt-f84f844e",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8wogjc-69dbf1b2",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8x5vih-d70f83e7",
+        "projectId": "price-core",
+        "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8xb89m-f7fc1336",
+        "projectId": "invoice-app",
+        "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      }
+    ],
+    "eventTypes": {
+      "control-event": 197,
+      "control-run-accepted": 11,
+      "decision-escalated": 3,
+      "decision-recorded": 35,
+      "delegation-finished": 7,
+      "delegation-recorded": 7,
+      "delegation-resolved": 7,
+      "host-returned": 11,
+      "live-continued": 9,
+      "live-dispatched": 2,
+      "live-observed": 11,
+      "live-reattach": 1,
+      "mission-created": 1,
+      "plan-activated": 1,
+      "verification-configured": 3,
+      "verification-recorded": 1,
+      "verification-started": 1
+    },
+    "projects": {
+      "price-core": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T01:12:31.037Z",
+          "history": [
+            {
+              "at": "2026-10-15T01:12:31.037Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T02:34:43.134Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv8uh0wo-f6265242",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "38997b3e-803c-4b15-8eaf-fb2f0d4210b8"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8ukusd-160bf7b6",
+            "mode": "continue",
+            "state": "completed",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "1f92dda6-7586-45cb-b008-31e917e8b3c9"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 ready"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "ready",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8v1eef-fb53f938",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "9a37d68a-6407-43c5-88da-5eb5b4189199"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8wbvmt-f84f844e",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "cf3292cc-3ed2-4760-9bfc-65246faedc7e"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8wogjc-69dbf1b2",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "d344e211-9664-4403-8ca2-0afd0ef993fc"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8x5vih-d70f83e7",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "a711988b-4097-45d2-b93a-8cf84673f934",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "discount",
+              "attemptId": "1a096385-d9cf-4622-a19e-a902119c3987",
+              "planVersion": "1",
+              "invocationId": "d2188aad-2fde-4113-b84f-23a08973e705"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "fefbdcbc-2a74-40d5-b85b-ed71422be635",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "67f8c79d-8e26-4a93-a779-b6c33488db75",
+              "workId": "MA-ed7a8bab-27f9-4747-a145-a589d9a7c741",
+              "shownHash": "sha256:ce96fbcdf1cf1677c5d5dfa8d13cea72cb6c0b1a6548b044fc6fd017416529fb"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "fefbdcbc-2a74-40d5-b85b-ed71422be635",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "841532be-c3eb-4120-bcc9-deb91bd6f448",
+            "actor": "human",
+            "action": "answer",
+            "target": {
+              "workId": "MA-ed7a8bab-27f9-4747-a145-a589d9a7c741",
+              "questions": [
+                "Q1"
+              ],
+              "questionsHash": "sha256:497ffe67415265a6a569e961957a6f026a8967ee4ec1740c30b4e59ea481410b"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "841532be-c3eb-4120-bcc9-deb91bd6f448",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "6ec70990-3418-4cff-9333-8f3baaa901ec",
+            "actor": "ai",
+            "action": "answer",
+            "target": {
+              "workId": "MA-ed7a8bab-27f9-4747-a145-a589d9a7c741",
+              "questions": [
+                "Q2"
+              ],
+              "questionsHash": "sha256:47231a4b7ccc2e97f5ce3457af11f763a3ad639cdb0cb0ef7a6cea4c66cd7e1b"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "6ec70990-3418-4cff-9333-8f3baaa901ec",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "5afca316-6b0f-4703-b30c-2898bfacb3c7",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "8a72e45b-751c-4574-9d20-937f8cdd649d",
+              "workId": "MA-ed7a8bab-27f9-4747-a145-a589d9a7c741",
+              "shownHash": "sha256:c91a2de98cef5984df4c3f9f82654be2a15d9557d86ff682844b3f22aa51049a"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "5afca316-6b0f-4703-b30c-2898bfacb3c7",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-price-core",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "539ab0a chore: code-agent 도입과 node 시작 구성(시험 하네스)\n342985a init",
+        "status": "?? .code-agent/approvals/MA-ed7a8bab-27f9-4747-a145-a589d9a7c741.jsonl\n?? .code-agent/approvals/MA-ed7a8bab-27f9-4747-a145-a589d9a7c741/\n?? .code-agent/work/\n?? doc/work/\n?? src/\n?? tests/"
+      },
+      "invoice-app": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T01:12:32.191Z",
+          "history": [
+            {
+              "at": "2026-10-15T01:12:32.191Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T02:34:44.300Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv8ulv3v-d7950d52",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "total",
+              "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+              "planVersion": "1",
+              "invocationId": "769fed89-a301-4d1e-a723-cf0d5dad0c74"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8uopqt-b2574b9a",
+            "mode": "continue",
+            "state": "completed",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "total",
+              "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+              "planVersion": "1",
+              "invocationId": "0f463214-b3ef-4e58-841c-a75f442f4837"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 ready"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "ready",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8vd1ad-0e75e9ef",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "total",
+              "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+              "planVersion": "1",
+              "invocationId": "31aeaebe-4fc4-4ea4-a84b-f94887bf71bd"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8vuj2b-198e4e3b",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "total",
+              "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+              "planVersion": "1",
+              "invocationId": "7eec8649-3f46-425e-97f1-5616edecb277"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8xb89m-f7fc1336",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "850990ed-1b20-47f1-99bb-52eee4f9478a",
+            "links": {
+              "missionId": "9075365e-a044-4ea8-8dec-dff75e8428a7",
+              "taskId": "total",
+              "attemptId": "4f1b2be7-95a6-4656-aae6-dd79b7cabc2d",
+              "planVersion": "1",
+              "invocationId": "051b1c81-8b0b-4d74-a24f-66082349e55a"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "c87dc7f7-15c5-4182-b306-8531cee5c246",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "c4abdcfe-e6c7-41e7-af2e-46221c86d0e6",
+              "workId": "MA-38509561-26a6-48da-b0e5-5ac43a239ba6",
+              "shownHash": "sha256:0b70cdc17fa0f5448e2bf78c1fa7c79e65e050dd4a13e73c4691ffb1f8e5cc4a"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "c87dc7f7-15c5-4182-b306-8531cee5c246",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "34dd3c8a-3055-475f-88e9-39b39ab07131",
+            "actor": "ai",
+            "action": "answer",
+            "target": {
+              "workId": "MA-38509561-26a6-48da-b0e5-5ac43a239ba6",
+              "questions": [
+                "Q1"
+              ],
+              "questionsHash": "sha256:66ade8db10936ce3aae9c6cbfe213ee691a24bee0f66a1fef7a1d39455efef1d"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "34dd3c8a-3055-475f-88e9-39b39ab07131",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "59795e89-e7d4-4864-a6b5-357b6e9019ad",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "4544c3a8-68d9-440b-b32d-0ead77d0aeaf",
+              "workId": "MA-38509561-26a6-48da-b0e5-5ac43a239ba6",
+              "shownHash": "sha256:7d7ebd05ad05d0aba7f6553c328a1a70289ee66fe594f0dfb47495c4b7400d71"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "59795e89-e7d4-4864-a6b5-357b6e9019ad",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-invoice-app",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "157f0d1 chore: code-agent 도입과 node 시작 구성(시험 하네스)\ne729b05 init",
+        "status": "?? .code-agent/approvals/MA-38509561-26a6-48da-b0e5-5ac43a239ba6.jsonl\n?? .code-agent/approvals/MA-38509561-26a6-48da-b0e5-5ac43a239ba6/\n?? .code-agent/work/\n?? doc/work/\n?? src/\n?? tests/"
+      }
+    }
+  },
+  "run3": {
+    "purpose": "run2 수정 뒤 처음부터 — 결함 셋을 찾고 멈춤(완료 아님)",
+    "operator": [
+      "2026-10-15T03:21:08Z drive-1 종료(blocked: total:handoff-pending) — 결함: 통신 계약에서 code-agent 리뷰 자리(위임 답 Q1 직후)에 독립 검증을 해 verified 가 됐고 이어 갈 길이 없었다. master-agent drive.mjs·live.mjs 수정(반영 자리에서만 검증, 반영 자리를 떠난 verified 시도는 같은 세션 계속) 뒤 mission drive 재시작(drive-2.log). 사람 판단·답 대행 없음.",
+      "2026-10-15T03:41:01Z drive-2 종료(blocked: total:reapproval-required) — 위임 판단기가 다시 낸 계획을 ambiguous 로 보고 수정 요청을 보냈는데(정상), master 가 수정 요청 뒤 같은 세션을 이어 가는 길이 없었다(code-agent 는 다시 받을 계획 확인을 사람 몫 reapproval-required 로 보인다). 또 수정 지시가 code-agent 실패 기록·master 메모 모두 앞 300자로 잘렸다. master-agent drive.mjs·live.mjs(수정 요청 회차의 계속·지시 전문 전달)·code-agent consent.ts(지시 전문 보존) 수정 뒤 mission drive 재시작(drive-3.log). 사람 판단·답 대행 없음.",
+      "2026-10-15T03:45:00Z drive-3 종료(blocked: total:unknown) — master 가 수정 요청 회차를 이어 가려 했으나 code-agent 접수 검사가 reapproval-required 에서 이어 실행을 거부했고(invalid-state), master 는 거부를 unknown 으로 남겼다(자동 재실행 없음). code-agent control.ts(위임 수정 요청 뒤 그 세션의 이어 실행 접수)·master control-host.mjs(이어 실행 거부는 같은 세션의 막힘) 수정. run3 은 여기서 멈추고(완료 아님) 수정 뒤 run4 를 처음부터 돌린다. 사람 판단·답 대행 없음."
+    ],
+    "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+    "missionState": "blocked",
+    "missionReason": "호스트 실행 또는 결과 관측을 확인하지 못했습니다. 자동 재실행하지 않습니다.",
+    "tasks": [
+      {
+        "id": "discount",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "total",
+        "state": "unknown",
+        "attempts": 1
+      },
+      {
+        "id": "checkout",
+        "state": "queued",
+        "attempts": 0
+      }
+    ],
+    "attempts": [
+      {
+        "taskId": "discount",
+        "id": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "projectId": "price-core",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-0f73e69f-0e30-4a4a-b455-f5cf8f68a876",
+        "turns": [
+          {
+            "at": "2026-10-15T02:39:36.277Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv8xiowg-1f9f9b74",
+            "runState": "completed",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:50:14.663Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8xkufe-24b56147",
+            "runState": "blocked",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T02:53:14.883Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv8xylbc-9c281b44",
+            "runState": "blocked",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "0afebb28-3d13-4d4b-83dc-d0acb6a0e6d6"
+      },
+      {
+        "taskId": "total",
+        "id": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "projectId": "invoice-app",
+        "state": "unknown",
+        "codeAgentWorkId": "MA-84798672-fe46-42d1-b1bb-68b597984fa4",
+        "turns": [
+          {
+            "at": "2026-10-15T02:55:07.448Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv8y2nrt-cdf2f35c",
+            "runState": "completed",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T03:11:22.378Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8y4sji-c071bd91",
+            "runState": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T03:16:02.071Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "review",
+            "runId": "run-mv8ypupx-1f7e78cb",
+            "runState": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T03:32:42.470Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv8z24mj-dbbe8fdb",
+            "runState": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T03:41:11.375Z",
+            "disposition": "unknown",
+            "resume": null,
+            "phase": null,
+            "runId": null,
+            "runState": null,
+            "sessionId": null,
+            "commits": [],
+            "error": "control-invalid-state"
+          }
+        ],
+        "verificationRunId": "36068b1f-16a6-49ce-979b-3aaa75f49646"
+      }
+    ],
+    "delegations": [
+      {
+        "id": "3d55b05e-b4c0-41a3-b2e7-29487a7e59e7",
+        "kind": "consent",
+        "action": "plan",
+        "target": "f1a66faa-ad3e-4ecf-9bcd-2cf302362ed3",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "reason": "이 계획은 배정된 작업 목표(discount)와 허용 변경 범위 안에 있으므로 승인한다. 만들 파일은 src/discount.js 와 tests/discount.test.js 두 개뿐이며, 이는 task.allowedChanges 및 recipe.allowedPaths 와 정확히 같다. 제외 대상(README.md, code-agent.json, doc/*)은 건드리지 않고, config 단계도 쓰지 않는다고 명시했다. 요구 추적에서 REQ-1~3(CommonJS 공개 모양, Math.round(x * 100) / 100 한 번 반올림, amount 음수·percent 범위 밖이면 RangeError)과 CON-1(node:test)이 목표 문장과 그대로 맞는다. 13개 AC 는 모두 테스트 TC-1~TC-",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "6639834a-b5cb-4c4e-a10a-25fb30921a98",
+        "kind": "consent",
+        "action": "plan",
+        "target": "75dd1eca-32e7-447a-8c27-6f0a2e1e8752",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "reason": "이 계획은 배정된 작업 'total'의 목표, 완료 조건, 허용 변경 범위 안에 있다. 그래서 일상 판단으로 승인한다. 1. 만들 파일은 src/total.js 와 tests/total.test.js 두 개뿐이다. 둘 다 task.allowedChanges 및 recipe.allowedPaths 와 정확히 같다. 제외 대상(README.md, code-agent.json, doc/*)은 건드리지 않는다. 2. 요구 REQ-1~5 는 모두 task.goal 문장과 1:1로 맞는다. 다룬 항목은 CommonJS 내보내기, Σ qty*price 를 Math.round(x*100)/100 으로 한 번 반올림하기, 빈 배열이면 0, 숫자가 아니거나 음수면 RangeError, node:test 사용이다. 3. 가정 ",
+        "evidence": 10,
+        "error": null
+      },
+      {
+        "id": "6c9662a1-8ee5-4278-930a-33ea673e8ea8",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q1",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "reason": "Option 1 is the choice that stays inside the delegated scope. It does not weaken the done-condition. It adds a regression test for behaviour the code already has: under F2, src/total.js throws RangeError for an empty slot in a sparse array. This matches the \"total\" criterion, which says a bad line must throw RangeError. Only two files change, src/total.js and tests/total.test.js, and both are in a",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "808074bc-b9a6-4106-92fd-2e724b8653c4",
+        "kind": "consent",
+        "action": "request",
+        "target": "af97c576-c028-4719-9037-1a7820fcb4fb",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "reason": "요구사항 확정 요청이고, 내용이 배정된 작업 목표와 그대로 일치합니다. REQ-1~3과 CON-1은 task.goal 문장을 의미 변경 없이 하나씩 옮긴 것이며, 원문 대조표에서 반영되지 않은 원문은 0건입니다. 언급된 파일은 src/discount.js와 tests/discount.test.js뿐이고 둘 다 allowedChanges(recipe.allowedPaths) 안에 있습니다. 제외 대상(README.md, code-agent.json, doc/*)은 건드리지 않습니다. 다른 기준(total, checkout)이나 invoice-app으로 범위를 넓히지도 않습니다. 요구사항의 완료 조건이 '분석 단계 AC에서 정한다'로 미뤄져 있지만, 작업 완료 기준(criteria: discount)과 검증 방",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "89293da7-444e-486e-8380-506d211a15e1",
+        "kind": "consent",
+        "action": "request",
+        "target": "281470a6-95dc-40bf-a67d-1d864d5912f8",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "reason": "이 확인 요청은 요구사항을 확정하는 일상 판단이다. 정리된 요구 REQ-1~REQ-5는 배정된 task.goal 문장을 의미를 바꾸지 않고 나눈 것이다. 완료 조건 DONE-1은 criteria 'total'의 설명과 글자까지 같다. 원문에서 반영되지 않은 항목은 없고(unmapped: 0), 범위 밖·제약 항목이 새로 추가되지 않았다. 완료 조건을 완화하거나 목표와 다른 요구를 넣은 것도 없다. 언급된 파일은 src/total.js와 tests/total.test.js뿐이고, 둘 다 allowedChanges·recipe.allowedPaths에 들어 있다. 제외 목록(README.md, code-agent.json, doc/*)은 건드리지 않는다. 확정 뒤 하는 일은 master에서 작업 브랜치를 하나 ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "c1d09e34-50b9-4d51-a3a2-3d8ac651e321",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "387755ed-b489-427c-ad09-c43ba4e0062a",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "reason": "이 요청은 배정된 discount 작업의 결과를 로컬에만 커밋하는 반영이며, 위임 범위 안의 일상 판단입니다. 승인합니다. - 코드 변경 범위: 코드 변경은 allowedChanges 에 있는 src/discount.js 와 tests/discount.test.js 두 파일뿐입니다. - 나머지 파일: 나머지는 code-agent 작업 산출물(doc/work/MA-…, .code-agent/work·approvals/MA-…)과 도입 설정(.code-agent/version, .code-agent/approvals/docs.jsonl)입니다. 제외 대상(README.md, code-agent.json, doc/architecture.md, doc/conventions.md)은 하나도 건드리지 않았습니다. - ",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "cc08c712-d465-4e09-b5e5-24e201832e26",
+        "kind": "consent",
+        "action": "plan",
+        "target": "ebb80ca8-be4a-400a-832a-a44c0da4d12c",
+        "category": "ambiguous",
+        "verdict": "request-changes",
+        "state": "changes-requested",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "reason": "계획 자체는 작업 범위 안에 있습니다. 바뀌는 파일은 src/total.js와 tests/total.test.js 두 개뿐이고, 둘 다 allowedChanges에 들어 있습니다. 구현 방식도 목표 문구와 같습니다(Σ qty*price, 합계에 Math.round(x*100)/100을 한 번 적용, 빈 배열이면 0, 잘못된 값이면 RangeError, CommonJS로 내보냄, node:test 사용). 완료 조건을 느슨하게 만든 부분도 없고, master 검증 2건(total-independent, total-project-tests)과 code-agent의 check·test도 모두 통과했습니다. 다만 승인하면 함께 받아들이게 되는 가정 하나가 계획 본문과 맞지 않습니다. 03-design.md에서 가져",
+        "evidence": 9,
+        "error": null
+      }
+    ],
+    "escalations": [],
+    "verificationRuns": [
+      {
+        "id": "0afebb28-3d13-4d4b-83dc-d0acb6a0e6d6",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "36068b1f-16a6-49ce-979b-3aaa75f49646",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "total-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "total-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "controlRuns": [
+      {
+        "id": "run-mv8xiowg-1f9f9b74",
+        "projectId": "price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv8xkufe-24b56147",
+        "projectId": "price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8xylbc-9c281b44",
+        "projectId": "price-core",
+        "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8y2nrt-cdf2f35c",
+        "projectId": "invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv8y4sji-c071bd91",
+        "projectId": "invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8ypupx-1f7e78cb",
+        "projectId": "invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv8z24mj-dbbe8fdb",
+        "projectId": "invoice-app",
+        "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      }
+    ],
+    "eventTypes": {
+      "control-event": 131,
+      "control-run-accepted": 7,
+      "decision-recorded": 33,
+      "delegation-finished": 7,
+      "delegation-recorded": 7,
+      "delegation-resolved": 7,
+      "delivery-started": 1,
+      "host-returned": 7,
+      "live-continued": 6,
+      "live-dispatched": 2,
+      "live-handed-off": 1,
+      "live-observed": 8,
+      "mission-created": 1,
+      "plan-activated": 1,
+      "verification-configured": 3,
+      "verification-recorded": 2,
+      "verification-started": 2
+    },
+    "projects": {
+      "price-core": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T02:38:00.610Z",
+          "history": [
+            {
+              "at": "2026-10-15T02:38:00.610Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T02:53:39.775Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv8xiowg-1f9f9b74",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "discount",
+              "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+              "planVersion": "1",
+              "invocationId": "e44e8d48-69bf-4272-a6a0-de23a5493d87"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8xkufe-24b56147",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "discount",
+              "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+              "planVersion": "1",
+              "invocationId": "81584269-416d-4960-b6b6-497d9c366086"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8xylbc-9c281b44",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "80579f3a-e5e8-46e4-b6be-e1c9501daaef",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "discount",
+              "attemptId": "7fa82102-4e11-4933-ab5c-81a44650568b",
+              "planVersion": "1",
+              "invocationId": "c7321eef-e46d-4c70-b2b1-d942d3a7f895"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "808074bc-b9a6-4106-92fd-2e724b8653c4",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "af97c576-c028-4719-9037-1a7820fcb4fb",
+              "workId": "MA-0f73e69f-0e30-4a4a-b455-f5cf8f68a876",
+              "shownHash": "sha256:00250852e562c39d32a7e6c416b5e78b11c11514a46740d2edaa3551b1a5470d"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "808074bc-b9a6-4106-92fd-2e724b8653c4",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "3d55b05e-b4c0-41a3-b2e7-29487a7e59e7",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "f1a66faa-ad3e-4ecf-9bcd-2cf302362ed3",
+              "workId": "MA-0f73e69f-0e30-4a4a-b455-f5cf8f68a876",
+              "shownHash": "sha256:689dbf3c4a672d3cead8cfba19858ae0c0bae3cfa8179525d8eff7bb49c3ab77"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "3d55b05e-b4c0-41a3-b2e7-29487a7e59e7",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "c1d09e34-50b9-4d51-a3a2-3d8ac651e321",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "387755ed-b489-427c-ad09-c43ba4e0062a",
+              "workId": "MA-0f73e69f-0e30-4a4a-b455-f5cf8f68a876",
+              "shownHash": "sha256:4bcedf7a57d8b664b3c59a509daa1f27a8ff06c1cf7cc9f6ef949ed915e04afe"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "c1d09e34-50b9-4d51-a3a2-3d8ac651e321",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-price-core",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "dc384e2 [MA-0f73e69f-0e30-4a4a-b455-f5cf8f68a876] price-core 할인 함수 discount(amount, percent) 추가\n8f6da2d chore: code-agent 도입과 node 시작 구성(시험 하네스)\nb150626 init",
+        "status": ""
+      },
+      "invoice-app": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T02:38:01.739Z",
+          "history": [
+            {
+              "at": "2026-10-15T02:38:01.739Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T03:41:09.750Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv8y2nrt-cdf2f35c",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "total",
+              "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+              "planVersion": "1",
+              "invocationId": "daa51d46-fcd6-4502-a5a3-d71019621a38"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8y4sji-c071bd91",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "total",
+              "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+              "planVersion": "1",
+              "invocationId": "d89bb83e-10d3-445b-84ac-22c6c24561a2"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 2,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8ypupx-1f7e78cb",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "total",
+              "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+              "planVersion": "1",
+              "invocationId": "58309001-bbd6-447e-adb5-f69b7a07b843"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv8z24mj-dbbe8fdb",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "9ebd3215-1910-44a1-bf10-0f9e495833d2",
+            "links": {
+              "missionId": "a2c01532-71d3-41eb-9b0d-ba3e1ecaddf6",
+              "taskId": "total",
+              "attemptId": "da2fdf29-20c5-4e8a-b7e0-86bbfe2f0acd",
+              "planVersion": "1",
+              "invocationId": "505ee957-e4da-41d4-98be-f008dd015830"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "89293da7-444e-486e-8380-506d211a15e1",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "281470a6-95dc-40bf-a67d-1d864d5912f8",
+              "workId": "MA-84798672-fe46-42d1-b1bb-68b597984fa4",
+              "shownHash": "sha256:5b5f97ee0b538ee832f6e82c9b6a3ebc318600a575e5687567350f7a6c28f037"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "89293da7-444e-486e-8380-506d211a15e1",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "6639834a-b5cb-4c4e-a10a-25fb30921a98",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "75dd1eca-32e7-447a-8c27-6f0a2e1e8752",
+              "workId": "MA-84798672-fe46-42d1-b1bb-68b597984fa4",
+              "shownHash": "sha256:a180827dde3bf3e2589c1a9f8dfb10b82e88a662c7fe986e9205e261d47a77a2"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "6639834a-b5cb-4c4e-a10a-25fb30921a98",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "6c9662a1-8ee5-4278-930a-33ea673e8ea8",
+            "actor": "ai",
+            "action": "answer",
+            "target": {
+              "workId": "MA-84798672-fe46-42d1-b1bb-68b597984fa4",
+              "questions": [
+                "Q1"
+              ],
+              "questionsHash": "sha256:3fd6bcfa590567b6f33e5a166da6a0af218dd18c5860d5203d32b55767e6b940"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "6c9662a1-8ee5-4278-930a-33ea673e8ea8",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "cc08c712-d465-4e09-b5e5-24e201832e26",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "ebb80ca8-be4a-400a-832a-a44c0da4d12c",
+              "workId": "MA-84798672-fe46-42d1-b1bb-68b597984fa4",
+              "shownHash": "sha256:1f82e26d1dad3462aea6dcabb59d0f9bb38bca79625a0d69188913eb2034fe3d"
+            },
+            "category": "ambiguous",
+            "verdict": "request-changes",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "cc08c712-d465-4e09-b5e5-24e201832e26",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-invoice-app",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "7a22e03 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n43ea521 init",
+        "status": "?? .code-agent/approvals/MA-84798672-fe46-42d1-b1bb-68b597984fa4.jsonl\n?? .code-agent/approvals/MA-84798672-fe46-42d1-b1bb-68b597984fa4/\n?? .code-agent/work/\n?? doc/work/\n?? src/\n?? tests/"
+      }
+    }
+  },
+  "run4": {
+    "purpose": "run3 의 세 결함 수정 뒤 처음부터 — 독립 작업 둘 완료, 통합 작업 접수 거부로 멈춤(완료 아님)",
+    "operator": [
+      "2026-10-15T04:17:05Z drive-1 종료(blocked: discount:handoff-pending) — price-core 반영 확인에 판단기가 ambiguous 수정 요청(반영 목록 27 vs master 검증 경로 25, 지식 문서 문구 불일치)을 보냈는데(정상), 검증된 시도의 반영 확인 수정 요청 뒤 이어 갈 길이 없었다. master-agent drive.mjs·live.mjs 수정(반영 확인 위임 수정 요청이면 검증된 시도도 같은 세션을 이어 가고 반영 전에 다시 검증) 뒤 mission drive 재시작(drive-2.log). invoice-app total 은 그동안 사람 개입 없이 인계까지 끝났다. 사람 판단·답 대행 없음.",
+      "2026-10-15T04:25:00Z drive-2 종료(blocked: checkout:unknown) — price-core 는 수정 요청 반영 확인을 고쳐 다시 준비 → 재검증 → 위임 반영 → 인계까지 끝났고, 통합 작업 checkout 의 접수를 code-agent 가 invalid-request(프롬프트 20000자 초과)로 거부했다 — master 프롬프트가 선행 증거 둘의 파일 트리·원격 상태를 통째로 실었다. master-agent claude-host.mjs 수정(통신 계약 프롬프트는 선행 증거 요약만). 첫 실행 거부는 세션이 없어 unknown 으로 남았다(자동 재실행 없음) — run4 는 여기서 멈추고 run5 를 처음부터 돌린다. 사람 판단·답 대행 없음."
+    ],
+    "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+    "missionState": "blocked",
+    "missionReason": "호스트 실행 또는 결과 관측을 확인하지 못했습니다. 자동 재실행하지 않습니다.",
+    "tasks": [
+      {
+        "id": "discount",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "total",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "checkout",
+        "state": "unknown",
+        "attempts": 1
+      }
+    ],
+    "attempts": [
+      {
+        "taskId": "discount",
+        "id": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "projectId": "price-core",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-5291fc67-a6b6-4480-96ef-16f777f4dea4",
+        "turns": [
+          {
+            "at": "2026-10-15T03:48:46.965Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv9000l3-1f45e72f",
+            "runState": "completed",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T03:58:16.470Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv901u1b-5860a97c",
+            "runState": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:01:41.086Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv90e3if-c7c8d9c5",
+            "runState": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:18:58.495Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv911wdk-be69633c",
+            "runState": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "14662395-df49-4d66-89a5-98c145cca169"
+      },
+      {
+        "taskId": "total",
+        "id": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "projectId": "invoice-app",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-07d9f69f-6226-4097-a3d6-f3bd05647619",
+        "turns": [
+          {
+            "at": "2026-10-15T04:03:28.042Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv90ik9j-1b4e4aa1",
+            "runState": "completed",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:12:27.926Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv90ksbk-39a00d97",
+            "runState": "blocked",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:16:25.310Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv90wl89-0f918228",
+            "runState": "blocked",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "def991d4-304d-4109-a869-cf4fe603b0d1"
+      },
+      {
+        "taskId": "checkout",
+        "id": "b5e5529a-06d1-41f4-a443-1b5bf7150ec9",
+        "projectId": "invoice-app",
+        "state": "unknown",
+        "codeAgentWorkId": "MA-be29f93d-04fb-4759-a798-9b5b9a385763",
+        "turns": [
+          {
+            "at": "2026-10-15T04:19:22.499Z",
+            "disposition": "unknown",
+            "resume": null,
+            "phase": null,
+            "runId": null,
+            "runState": null,
+            "sessionId": null,
+            "commits": [],
+            "error": "control-invalid-request"
+          }
+        ],
+        "verificationRunId": null
+      }
+    ],
+    "delegations": [
+      {
+        "id": "00c04290-e3b4-408a-aacb-ab06f8be4e16",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "bb0deea2-91b2-45fb-8efb-8de83cdd0607",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "reason": "이 요청은 검증을 마친 결과를 로컬에 커밋하는 단계입니다. push·MR/PR·배포는 하지 않으므로 git revert 로 되돌릴 수 있습니다. 코드 변경은 허용 범위인 src/discount.js 와 tests/discount.test.js 두 파일뿐이고, 제외 목록의 파일(README.md, code-agent.json, doc/architecture.md, doc/conventions.md)은 건드리지 않았습니다. 나머지 23개 파일은 이 작업의 code-agent 기록(doc/work/MA-5291fc67…, .code-agent/approvals|work/MA-5291fc67…)입니다. 반영할 때 늘 함께 올라가는 작업 산출물이고, 다른 소스나 설정 변경이 아닙니다. 확인 화면에 함께 보이는 .co",
+        "evidence": 10,
+        "error": null
+      },
+      {
+        "id": "288e7d17-8398-41b8-9ca7-5dd062f39b14",
+        "kind": "consent",
+        "action": "request",
+        "target": "9bf7cbe0-0073-4588-b70e-c57ade9c2c5c",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "reason": "이 요청은 요구사항을 확정해 달라는 것입니다. 요구사항 문서는 task.goal 문장을 의미 그대로 옮겼습니다. REQ-1~REQ-4와 CON-1이 원문의 각 문장에 하나씩 대응하고, 연결되지 않은 원문은 0건입니다(code-agent-original-unmapped: 0). 원문에 없는 요구를 더하지 않았고, 범위를 넓히거나 조건을 완화하지도 않았습니다. 언급된 파일은 src/total.js와 tests/total.test.js뿐이며, 둘 다 allowedChanges·recipe.allowedPaths에 있고 제외 목록(exclusions)에는 없습니다. 완료 조건은 '분석 단계의 수락 기준(AC)에서 정한다'로 미뤄 두었습니다. 원문에 완료 조건이 없으니 이렇게 미룬 것은 완화가 아닙니다. 기준은 ta",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "581c4ce2-18ad-4c7f-b8eb-bd292f384267",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "bdb58ef2-0d70-4e18-89f1-9eac2702dc65",
+        "category": "ambiguous",
+        "verdict": "request-changes",
+        "state": "changes-requested",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "reason": "I can't approve this local commit yet. The implementation itself is in scope and passed verification: src/discount.js and tests/discount.test.js are the only allowed paths, none of the excluded files are touched, master verification is \"verified\" with both checks passed, and code-agent's check, test and integrate runs all passed (TC 9/9). The problem is the commit list. It names 27 files, but mast",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "93cc3328-5cc4-42a8-a0cf-8276d69d9050",
+        "kind": "consent",
+        "action": "request",
+        "target": "e0348417-451f-42c0-b1bd-b29647ed1bba",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "reason": "요구사항 확정 요청이 배정된 작업 'discount'의 목표와 그대로 맞습니다. REQ-1~3과 CON-1은 task.goal 문장을 의미 변경 없이 한 줄씩 옮긴 것입니다. DONE-1은 criterion 'discount'의 설명과 글자까지 같습니다. 요구가 다루는 파일은 src/discount.js와 tests/discount.test.js뿐이고, 둘 다 allowedChanges와 recipe.allowedPaths 안에 있습니다. exclusions에 있는 파일(README.md, code-agent.json, doc/*)은 건드리지 않습니다. 완료 조건은 줄지 않았습니다. 배경 문장은 invoice-app 연결을 언급하지만 BACKGROUND로만 분류되어 있고, 'total'·'checkout' ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "abf5b1bd-f863-4570-b925-2181eacc5cea",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "d8734c3c-f230-487f-a909-7b56b320faae",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "reason": "This is a routine approval to make a local commit of work that has already passed verification, and the task stays inside its delegated scope. Only two code files changed, src/total.js and tests/total.test.js, and both are on the allowed list (allowedChanges/recipe.allowedPaths). No excluded file was touched (README.md, code-agent.json, doc/architecture.md, doc/conventions.md). The other paths in ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "e1ba39e7-e0a5-4604-ae8d-867c1b487eac",
+        "kind": "consent",
+        "action": "plan",
+        "target": "d4aafc2a-76a8-45fc-9b6a-77db7a98cf05",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "reason": "계획이 배정된 작업 'total'의 목표와 허용 변경 범위 안에 있습니다. 바꾸는 파일은 src/total.js, tests/total.test.js 두 개뿐이고 allowedChanges·recipe.allowedPaths와 정확히 같습니다. 제외 파일(README.md, code-agent.json, doc/*)이나 package.json 같은 config 산출물은 만들지 않습니다. 요구 REQ-1~REQ-4와 제약 CON-1이 모두 분석 항목 R1~R3, 수락 기준 AC, 테스트 케이스 TC-1~TC-14로 이어져 있습니다. 완료 조건 'total'도 줄이지 않습니다. 가정 18개는 목표 문장을 엄격한 쪽으로 읽은 기술 세부입니다. - 반올림은 합계에 한 번만 적용합니다. - 형변환 없이 Number.",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "f3c58016-808b-4d58-9a1d-c1515c0c97ab",
+        "kind": "consent",
+        "action": "plan",
+        "target": "79305df1-7085-4a46-9340-324c40826a2a",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "reason": "이 계획은 배정된 작업(discount)의 목표·완료 조건·허용 변경 범위 안에 있어 승인한다. 고칠 파일은 src/discount.js 와 tests/discount.test.js 두 개뿐이고, 이는 task.allowedChanges 및 recipe.allowedPaths 와 정확히 같다. 제외 대상(README.md, code-agent.json, doc/*)은 건드리지 않는다. 지시 사항은 그대로 계획에 반영됐다: CommonJS export, 계산식 Math.round(x*100)/100, 음수 amount 와 0~100 밖 percent 에 RangeError, 테스트는 node:test 로 tests/discount.test.js 에 작성. 완료 조건 'discount' 를 낮추지도 않았다. 가",
+        "evidence": 9,
+        "error": null
+      }
+    ],
+    "escalations": [],
+    "verificationRuns": [
+      {
+        "id": "14662395-df49-4d66-89a5-98c145cca169",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "def991d4-304d-4109-a869-cf4fe603b0d1",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "total-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "total-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "e072b6fe-d6f2-45d8-b1fa-a9273ebfb7df",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "controlRuns": [
+      {
+        "id": "run-mv9000l3-1f45e72f",
+        "projectId": "price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv901u1b-5860a97c",
+        "projectId": "price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv90e3if-c7c8d9c5",
+        "projectId": "price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv90ik9j-1b4e4aa1",
+        "projectId": "invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv90ksbk-39a00d97",
+        "projectId": "invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv90wl89-0f918228",
+        "projectId": "invoice-app",
+        "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv911wdk-be69633c",
+        "projectId": "price-core",
+        "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      }
+    ],
+    "eventTypes": {
+      "control-event": 113,
+      "control-run-accepted": 7,
+      "decision-recorded": 37,
+      "delegation-finished": 7,
+      "delegation-recorded": 7,
+      "delegation-resolved": 7,
+      "delivery-started": 2,
+      "host-returned": 7,
+      "live-continued": 5,
+      "live-dispatched": 3,
+      "live-handed-off": 2,
+      "live-observed": 8,
+      "mission-created": 1,
+      "plan-activated": 1,
+      "verification-configured": 3,
+      "verification-recorded": 3,
+      "verification-started": 3
+    },
+    "projects": {
+      "price-core": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T03:47:27.764Z",
+          "history": [
+            {
+              "at": "2026-10-15T03:47:27.764Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T04:19:19.000Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv9000l3-1f45e72f",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "discount",
+              "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+              "planVersion": "1",
+              "invocationId": "f05ce981-9270-496f-9e72-3c37ab2d7704"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv901u1b-5860a97c",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "discount",
+              "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+              "planVersion": "1",
+              "invocationId": "8c8bdbb3-3f5c-47ae-8846-75e632856cd3"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv90e3if-c7c8d9c5",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "discount",
+              "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+              "planVersion": "1",
+              "invocationId": "6edad722-dba2-41cc-af9b-8f910402f8df"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv911wdk-be69633c",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "8bed2ee3-2663-4593-a1bd-d29140c341d6",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "discount",
+              "attemptId": "2c31e205-bd79-4248-b395-48c93932f7f7",
+              "planVersion": "1",
+              "invocationId": "57418d93-337c-42b6-b76b-3f1d8784d619"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "93cc3328-5cc4-42a8-a0cf-8276d69d9050",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "e0348417-451f-42c0-b1bd-b29647ed1bba",
+              "workId": "MA-5291fc67-a6b6-4480-96ef-16f777f4dea4",
+              "shownHash": "sha256:67b0d7708ffd31d7f47ac8171a2ae17b4ae423b867b069c07985b6966a19e4e8"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "93cc3328-5cc4-42a8-a0cf-8276d69d9050",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "f3c58016-808b-4d58-9a1d-c1515c0c97ab",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "79305df1-7085-4a46-9340-324c40826a2a",
+              "workId": "MA-5291fc67-a6b6-4480-96ef-16f777f4dea4",
+              "shownHash": "sha256:833478339bbf60968be521ee6075db1cbeea8b14830ccf7167390090ae8c54cd"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "f3c58016-808b-4d58-9a1d-c1515c0c97ab",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "581c4ce2-18ad-4c7f-b8eb-bd292f384267",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "bdb58ef2-0d70-4e18-89f1-9eac2702dc65",
+              "workId": "MA-5291fc67-a6b6-4480-96ef-16f777f4dea4",
+              "shownHash": "sha256:06befcf78f1111660d8786692ae32377746611a612cefabb15f7a4270e3d0d53"
+            },
+            "category": "ambiguous",
+            "verdict": "request-changes",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "581c4ce2-18ad-4c7f-b8eb-bd292f384267",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "00c04290-e3b4-408a-aacb-ab06f8be4e16",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "bb0deea2-91b2-45fb-8efb-8de83cdd0607",
+              "workId": "MA-5291fc67-a6b6-4480-96ef-16f777f4dea4",
+              "shownHash": "sha256:8c8a92b4f9b4cc841fdc2395de793952772dc4415b4c12c89f9678b7aaa3912f"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "00c04290-e3b4-408a-aacb-ab06f8be4e16",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-price-core",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "cf129e0 [MA-5291fc67-a6b6-4480-96ef-16f777f4dea4] price-core 할인 함수 discount(amount, percent) 구현\ne981a2c chore: code-agent 도입과 node 시작 구성(시험 하네스)\n222a8b0 init",
+        "status": ""
+      },
+      "invoice-app": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T03:47:28.902Z",
+          "history": [
+            {
+              "at": "2026-10-15T03:47:28.902Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T04:16:47.363Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv90ik9j-1b4e4aa1",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "total",
+              "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+              "planVersion": "1",
+              "invocationId": "bb67ee50-31c4-42c5-be5d-ba7963eb9744"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv90ksbk-39a00d97",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "total",
+              "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+              "planVersion": "1",
+              "invocationId": "ac464f5d-e3ca-4cb7-b73a-ca3c64886efe"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv90wl89-0f918228",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "ccb89c44-d673-4dd5-ae92-06661877f3de",
+            "links": {
+              "missionId": "7bfe22dd-faff-43aa-b2c0-1db9161ee486",
+              "taskId": "total",
+              "attemptId": "da9d7b0a-dc10-4663-8e59-c9be94338b67",
+              "planVersion": "1",
+              "invocationId": "92ab3766-82ea-430c-aae7-82c6c33f985c"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "288e7d17-8398-41b8-9ca7-5dd062f39b14",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "9bf7cbe0-0073-4588-b70e-c57ade9c2c5c",
+              "workId": "MA-07d9f69f-6226-4097-a3d6-f3bd05647619",
+              "shownHash": "sha256:4d37d4bf08c050fc8a48200cf2faa15c3b5caa48d5bef4cb85454a67a22e15c0"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "288e7d17-8398-41b8-9ca7-5dd062f39b14",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "e1ba39e7-e0a5-4604-ae8d-867c1b487eac",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "d4aafc2a-76a8-45fc-9b6a-77db7a98cf05",
+              "workId": "MA-07d9f69f-6226-4097-a3d6-f3bd05647619",
+              "shownHash": "sha256:f89611edf14f7da46cb1763ed51eec7d0b726e287aa7ec4a45db37895abe493c"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "e1ba39e7-e0a5-4604-ae8d-867c1b487eac",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "abf5b1bd-f863-4570-b925-2181eacc5cea",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "d8734c3c-f230-487f-a909-7b56b320faae",
+              "workId": "MA-07d9f69f-6226-4097-a3d6-f3bd05647619",
+              "shownHash": "sha256:f67c87911704333ef8703e7997f919f882b1fc6f7943fcc264435a2f61cc78be"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "abf5b1bd-f863-4570-b925-2181eacc5cea",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-invoice-app",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "725c0be [MA-07d9f69f-6226-4097-a3d6-f3bd05647619] 청구서 합계 함수 invoiceTotal(lines) 구현\nc5b1e51 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n9fd124e init",
+        "status": ""
+      }
+    }
+  },
+  "run5": {
+    "purpose": "run4 의 결함 둘 수정 뒤 처음부터 — 독립 작업 둘 완료, 통합 작업은 통합 검증 worktree 에서 형제 상대 경로가 풀리지 않아 critical 사람 이관으로 멈춤(완료 아님, 원인은 시험 시나리오)",
+    "operator": [
+      "2026-10-15T05:40Z drive 가 checkout Q1(critical 사람 이관)에서 끝남 — 사람 판단을 대신 내지 않고 run5 를 여기서 닫음. 원인(통합 의존이 형제 상대 경로라 깨끗한 worktree 에서 풀리지 않음)은 시험 시나리오라 run6 에서 도입 설정(prepare)으로 바로잡음"
+    ],
+    "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+    "missionState": "waiting-decision",
+    "missionReason": "호스트 회차와 code-agent 상태를 기록했습니다. 작업 완료 판정은 별도 검증이 필요합니다.",
+    "tasks": [
+      {
+        "id": "discount",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "total",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "checkout",
+        "state": "waiting-decision",
+        "attempts": 1
+      }
+    ],
+    "attempts": [
+      {
+        "taskId": "discount",
+        "id": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "projectId": "price-core",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-208e7c76-116e-4e06-adda-8ef34ceadacf",
+        "turns": [
+          {
+            "at": "2026-10-15T04:26:10.400Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv91bvta-20571979",
+            "runState": "completed",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:36:53.056Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv91dxol-cf7e5b3b",
+            "runState": "blocked",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:40:57.803Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv91rryi-c8a6b93b",
+            "runState": "blocked",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "b5773363-e982-42d9-8f56-862ea9ed66e3"
+      },
+      {
+        "taskId": "total",
+        "id": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "projectId": "invoice-app",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-f34dba57-38e3-41a3-a74d-3e6a01160f72",
+        "turns": [
+          {
+            "at": "2026-10-15T04:43:08.827Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv91x44b-be07ee9f",
+            "runState": "completed",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T04:55:45.384Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv91zrs8-7b7c23be",
+            "runState": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:08:04.597Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv92g1b6-c88bae3d",
+            "runState": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:13:08.279Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv92vz8j-481f9f81",
+            "runState": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "45bc1dd2-3cb5-4b0e-951d-bc6c3229a5fa"
+      },
+      {
+        "taskId": "checkout",
+        "id": "707568a7-37cf-4706-840d-0e42700e7190",
+        "projectId": "invoice-app",
+        "state": "waiting-decision",
+        "codeAgentWorkId": "MA-e5e9336b-1c80-4006-ba28-c252020807de",
+        "turns": [
+          {
+            "at": "2026-10-15T05:15:09.407Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv932mnq-52527c82",
+            "runState": "completed",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:32:07.908Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv934veo-a535c998",
+            "runState": "blocked",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:36:15.300Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "integrate",
+            "runId": "run-mv93qwd5-bc842fbb",
+            "runState": "blocked",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": null
+      }
+    ],
+    "delegations": [
+      {
+        "id": "3b9a9406-12cf-4d3e-8f59-9a50ecbe2f53",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "cddba5e0-682f-49a8-9bca-3cd66b11d3ba",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "reason": "이번 반영은 로컬 커밋만 합니다. 원격 push·MR 생성·배포가 없으므로 외부 영향이 없고, 커밋 하나를 되돌리면 원래 상태로 돌아갑니다. 코드 변경은 허용 범위(allowedChanges)인 src/discount.js 와 tests/discount.test.js 두 파일뿐이고, 제외 대상(README.md, code-agent.json, doc/architecture.md, doc/conventions.md)은 건드리지 않았습니다. 나머지 커밋 대상은 이 작업 ID 에 속한 작업 문서·승인·증거 파일(doc/work/MA-…, .code-agent/work/MA-…, .code-agent/approvals/MA-…)로, 반영 단계의 일반 산출물입니다. master 의 독립 검사(discount-inde",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "472eef00-e721-4c20-80a4-5cc0d5b5e8b6",
+        "kind": "consent",
+        "action": "plan",
+        "target": "01c0a887-bb04-4a08-85c9-835fe46a7358",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "reason": "계획이 배정된 작업 'total' 의 목표, 완료 조건, 허용 변경 범위 안에 있습니다. 새로 만드는 파일은 src/total.js 와 tests/total.test.js 두 개뿐이며 task.allowedChanges 와 recipe.allowedPaths 와 정확히 일치합니다. 제외 목록(README.md, code-agent.json, doc/*)의 파일은 건드리지 않습니다. REQ-1~5(CommonJS 내보내기, Σ qty*price 합계에 Math.round(x*100)/100 를 한 번 적용, 빈 배열이면 0, 숫자가 아니거나 음수면 RangeError, node:test 테스트)와 DONE-1 이 모두 T1·T2 의 AC 와 TC-1~17 에 연결되어 있습니다. 완료 조건을 완화하거나 목표와 ",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "64732b9c-be80-41de-9802-03690576c75b",
+        "kind": "consent",
+        "action": "plan",
+        "target": "ce0b25b1-3795-4ff0-a59f-11903d45714d",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "reason": "이 계획은 배정된 작업(discount)의 목표, 허용 변경 범위, 완료 조건 안에 있습니다. 새로 만드는 파일은 src/discount.js 와 tests/discount.test.js 두 개뿐이며, 둘 다 task.allowedChanges 및 recipe.allowedPaths 와 정확히 일치합니다. 제외 대상(README.md, code-agent.json, doc/*)이나 config 단계 파일은 만들지 않는다고 명시되어 있습니다. 요구 REQ-1~REQ-4 는 task.goal 문장(경로, CommonJS 내보내기, 반올림 식, RangeError 조건, node:test)과 그대로 대응하고, 완료 조건을 낮춘 부분도 없습니다. 검증 계획(node --test 와 TC-1~TC-11)도 recip",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "7b7a369c-72e4-451b-b955-19b4a061db5f",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "973060a4-0fc2-4e11-939e-f76f5e43f455",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "reason": "This is a routine approval: verified work is being committed locally, and nothing in the request falls outside the delegated scope. 1) Scope: the only code files changed are src/total.js and tests/total.test.js. Both are in allowedChanges. No excluded path (README.md, code-agent.json, doc/architecture.md, doc/conventions.md) is in the change list. The other files are code-agent's own records: work",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "904c0b84-3039-4b27-9e67-8989ec639c18",
+        "kind": "consent",
+        "action": "plan",
+        "target": "c7253094-b21a-4ce0-9b60-b68f8f5fd051",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+        "reason": "이 계획은 배정된 작업의 목표, 완료 조건, 허용 변경 범위 안에 있습니다. 새로 만드는 파일은 src/checkout.js 와 tests/checkout.test.js 두 개이고, 허용 변경 목록(allowedChanges)과 정확히 같습니다. 제외 목록(README.md, code-agent.json, doc/*)과 src/total.js, price-core, package.json 은 건드리지 않습니다. config 단계는 경계 선언에만 있고 계획된 파일은 없습니다. 출력 위치에 제외 대상인 README.md 가 들어 있지만, 실제 변경 범위는 허용 목록이 정하므로 이 계획을 막을 이유는 아닙니다. 요구 REQ-1~5 와 완료 조건 DONE-1 은 R1·R2 에 연결되어 있습니다. 구현 형태는 Com",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "97554d17-d497-48f1-8e6e-2d821c7bc87d",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q1",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "reason": "작업 목표에 'Σ qty*price 를 Math.round(x * 100) / 100 으로 반올림'이라고 적혀 있습니다. 반올림하는 x 는 합계이므로 합계에서 한 번만 반올림한다는 BR-1 해석은 목표 문장 그대로입니다. 해석이 갈릴 여지가 없습니다. critic 지적 F1 은 이 규칙을 가려내는 AC·TC 가 없다는 검증 공백입니다. 이를 메우면 완료 조건이 오히려 강해지고, 완화되거나 목표와 다른 요구가 생기지 않습니다. 지적이 04(design 산출물)의 AC 공백을 직접 가리키고, plan 담당은 04 를 고칠 수 없습니다. 선택지 2 는 TC 가 AC 문장과 맞지 않아 critic 이 다시 차단할 위험을 질문 스스로 밝히고 있습니다. 선택지 1 의 비용은 담당 3회 재실행뿐입니다. 코드 변경 범위(",
+        "evidence": 6,
+        "error": null
+      },
+      {
+        "id": "9ae14653-e1d0-4eef-b452-869965ed9310",
+        "kind": "consent",
+        "action": "request",
+        "target": "deeefd61-5765-4063-9412-1858f59c03c0",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+        "reason": "This is a request to confirm the requirements. The cleaned-up requirements match the assigned task goal (task.goal) with no change in meaning. REQ-1 through REQ-5 cover all of the source text: the export, combining invoiceTotal with discount, the no-copy require path, delegating validation, and the test location. The original-text mapping shows 0 unmapped items. DONE-1 matches the 'checkout' crite",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "bbcf11d5-9647-464a-b9c7-6054565bdd8c",
+        "kind": "consent",
+        "action": "request",
+        "target": "1a965139-1c6d-4782-b94c-e54b408a5876",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "reason": "이 요구사항 확정은 배정된 작업 목표와 그대로 맞으므로 승인합니다. REQ-1부터 REQ-4까지가 task.goal 문장과 글자 그대로 같고, 원문 대조 표에서 빠진 항목도 0건입니다. 다룰 파일(src/discount.js, tests/discount.test.js)도 allowedChanges·recipe.allowedPaths 와 같고, 제외 대상 파일은 건드리지 않습니다. 완료 조건 칸은 '원문에 없음 — 분석 단계 AC에서 정한다'로 되어 있습니다. 하지만 원문에 완료 조건이 처음부터 없었기 때문에 조건을 완화한 것이 아니고, master 쪽 criterion 'discount'와 검사 2개가 그대로 남아 있습니다. 확정 뒤 일어나는 일은 master에서 feature 작업 브랜치를 만들고 분석 단",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "ca1ca583-b0c3-41c1-bf7d-4919e6216be1",
+        "kind": "consent",
+        "action": "request",
+        "target": "45bb9d2a-09c5-42a1-bb99-52c380c4bb73",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "reason": "요구사항 확정 요청입니다. 정리된 요구가 배정된 작업 목표와 하나씩 그대로 대응합니다. task.goal 문장이 REQ-1~REQ-5로 빠짐없이 나뉘었고, 원문 대조표에서 반영되지 않은 원문은 0건입니다. 바뀐 처리는 괄호 안의 '빈 배열은 0'을 REQ-3으로 따로 떼어 낸 것 하나뿐이고, 뜻은 그대로입니다. 완료 조건 DONE-1은 criteria 'total'의 설명과 같은 문장이라 완화되지 않았습니다. 요구가 다루는 파일(src/total.js, tests/total.test.js)도 allowedChanges·recipe.allowedPaths와 같고, 제외 목록에 있는 파일은 건드리지 않습니다. 목표와 다른 요구나 범위를 넓히는 요구, 정책·보안·외부 영향이 있는 요구는 없습니다. 확정하면 mas",
+        "evidence": 8,
+        "error": null
+      }
+    ],
+    "escalations": [
+      {
+        "kind": "question",
+        "target": "Q1",
+        "state": "open",
+        "category": "critical",
+        "reason": "이 실패는 배정된 범위 안에서 처리할 수 없습니다. 어느 선택지를 골라도 위임 범위를 넘으므로 사람이 정해야 합니다. (1) 추천안은 master 배정의 제외 목록(exclusions)에 있는 code-agent.json 을 바꿔야 합니다. 그러면 범위가 바뀌고 계획 재승인이 필요하며, 공용 %TEMP% 에 디렉터리 정션이 남는 부작용도 생깁니다. (2) 요구 변경은 목표에 고정된 require(\"../../price-core/src/discount.js\") 방식을 바꾸는 일입니다. 허용 변경 밖인 package.json 까지 넓혀"
+      }
+    ],
+    "verificationRuns": [
+      {
+        "id": "45bc1dd2-3cb5-4b0e-951d-bc6c3229a5fa",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "total-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "total-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "b5773363-e982-42d9-8f56-862ea9ed66e3",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "controlRuns": [
+      {
+        "id": "run-mv91bvta-20571979",
+        "projectId": "price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv91dxol-cf7e5b3b",
+        "projectId": "price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv91rryi-c8a6b93b",
+        "projectId": "price-core",
+        "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv91x44b-be07ee9f",
+        "projectId": "invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv91zrs8-7b7c23be",
+        "projectId": "invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv92g1b6-c88bae3d",
+        "projectId": "invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv92vz8j-481f9f81",
+        "projectId": "invoice-app",
+        "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv932mnq-52527c82",
+        "projectId": "invoice-app",
+        "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv934veo-a535c998",
+        "projectId": "invoice-app",
+        "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv93qwd5-bc842fbb",
+        "projectId": "invoice-app",
+        "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      }
+    ],
+    "eventTypes": {
+      "control-event": 188,
+      "control-run-accepted": 10,
+      "decision-escalated": 1,
+      "decision-recorded": 41,
+      "delegation-finished": 9,
+      "delegation-recorded": 9,
+      "delegation-resolved": 9,
+      "delivery-started": 2,
+      "host-returned": 10,
+      "live-continued": 7,
+      "live-dispatched": 3,
+      "live-handed-off": 2,
+      "live-observed": 10,
+      "mission-created": 1,
+      "plan-activated": 1,
+      "verification-configured": 3,
+      "verification-recorded": 2,
+      "verification-started": 2
+    },
+    "projects": {
+      "price-core": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T04:24:40.467Z",
+          "history": [
+            {
+              "at": "2026-10-15T04:24:40.467Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T04:41:18.979Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv91bvta-20571979",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "discount",
+              "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+              "planVersion": "1",
+              "invocationId": "370fc508-58f3-42b3-993d-36feb61c72f6"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv91dxol-cf7e5b3b",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "discount",
+              "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+              "planVersion": "1",
+              "invocationId": "ed32b565-078a-4f80-9698-4eaa680f0d67"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv91rryi-c8a6b93b",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "1b6b2985-48b7-42cd-92bb-28c9ca14c320",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "discount",
+              "attemptId": "78fd8ad4-14eb-4dc9-a302-ba9bd2307d89",
+              "planVersion": "1",
+              "invocationId": "d94f75da-4f56-45b0-8289-516026e14b97"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "bbcf11d5-9647-464a-b9c7-6054565bdd8c",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "1a965139-1c6d-4782-b94c-e54b408a5876",
+              "workId": "MA-208e7c76-116e-4e06-adda-8ef34ceadacf",
+              "shownHash": "sha256:cdc0fd97123516dd497b8d6b21c5ef32d30cbaa7dee0ed982cd90703982a1042"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "bbcf11d5-9647-464a-b9c7-6054565bdd8c",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "64732b9c-be80-41de-9802-03690576c75b",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "ce0b25b1-3795-4ff0-a59f-11903d45714d",
+              "workId": "MA-208e7c76-116e-4e06-adda-8ef34ceadacf",
+              "shownHash": "sha256:16622202e3240ddf12af21b41a2ed3b15e989cd5ac7412f0b7c1ebcdf7b0c538"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "64732b9c-be80-41de-9802-03690576c75b",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "3b9a9406-12cf-4d3e-8f59-9a50ecbe2f53",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "cddba5e0-682f-49a8-9bca-3cd66b11d3ba",
+              "workId": "MA-208e7c76-116e-4e06-adda-8ef34ceadacf",
+              "shownHash": "sha256:f88fbea118ff11a6ebd8134df89dfe7f1f276789bd2b41cfa3327c6431bf740e"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "3b9a9406-12cf-4d3e-8f59-9a50ecbe2f53",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-price-core",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "0c305ab [MA-208e7c76-116e-4e06-adda-8ef34ceadacf] price-core 할인 함수 discount(amount, percent) 구현\n5eddce7 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n11d88d5 init",
+        "status": ""
+      },
+      "invoice-app": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T04:24:41.896Z",
+          "history": [
+            {
+              "at": "2026-10-15T04:24:41.896Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T05:36:15.941Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv91x44b-be07ee9f",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "total",
+              "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+              "planVersion": "1",
+              "invocationId": "e8c0efcf-b632-45d4-abb9-8cd0e51f54e1"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv91zrs8-7b7c23be",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "total",
+              "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+              "planVersion": "1",
+              "invocationId": "555ad603-5580-4296-bda5-163116046dd6"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv92g1b6-c88bae3d",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "total",
+              "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+              "planVersion": "1",
+              "invocationId": "4496afa8-2613-44ca-8cd7-86e1a3cef0c3"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv92vz8j-481f9f81",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "3b739c1d-4a03-43ea-bcf0-59f91c93ecfc",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "total",
+              "attemptId": "550c2e5f-9891-4b74-b097-981a12d078f7",
+              "planVersion": "1",
+              "invocationId": "f9096f5e-28d6-4489-8328-24a24c69a032"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv932mnq-52527c82",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "checkout",
+              "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+              "planVersion": "1",
+              "invocationId": "5df41914-7c05-4862-aa4c-cfdab4a1b29f"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv934veo-a535c998",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "checkout",
+              "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+              "planVersion": "1",
+              "invocationId": "42d62d8a-6169-4796-886e-056acac5167a"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv93qwd5-bc842fbb",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "dad53d0e-9d26-4f2b-a333-e631be1539b8",
+            "links": {
+              "missionId": "7bab95c4-cff6-44d5-a666-b9d91fe39acc",
+              "taskId": "checkout",
+              "attemptId": "707568a7-37cf-4706-840d-0e42700e7190",
+              "planVersion": "1",
+              "invocationId": "66c58825-8a80-4713-8864-0353b744b6fb"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "ca1ca583-b0c3-41c1-bf7d-4919e6216be1",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "45bb9d2a-09c5-42a1-bb99-52c380c4bb73",
+              "workId": "MA-f34dba57-38e3-41a3-a74d-3e6a01160f72",
+              "shownHash": "sha256:6942b02d25f83a36e44c2ad779e9e50aff7fd60c0555281928e7cb98e66108e7"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "ca1ca583-b0c3-41c1-bf7d-4919e6216be1",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "97554d17-d497-48f1-8e6e-2d821c7bc87d",
+            "actor": "ai",
+            "action": "answer",
+            "target": {
+              "workId": "MA-f34dba57-38e3-41a3-a74d-3e6a01160f72",
+              "questions": [
+                "Q1"
+              ],
+              "questionsHash": "sha256:63d33865d19e3c70bd4760d7c75f3a2f5f50a639d3daa4ff19554d2842650c5b"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "97554d17-d497-48f1-8e6e-2d821c7bc87d",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "472eef00-e721-4c20-80a4-5cc0d5b5e8b6",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "01c0a887-bb04-4a08-85c9-835fe46a7358",
+              "workId": "MA-f34dba57-38e3-41a3-a74d-3e6a01160f72",
+              "shownHash": "sha256:cc6eb4f950dd10350ae252ea3d178971c8c0072dcafa50e52005e49c0dfb64cc"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "472eef00-e721-4c20-80a4-5cc0d5b5e8b6",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "7b7a369c-72e4-451b-b955-19b4a061db5f",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "973060a4-0fc2-4e11-939e-f76f5e43f455",
+              "workId": "MA-f34dba57-38e3-41a3-a74d-3e6a01160f72",
+              "shownHash": "sha256:33faf08dc5e5372e16e383ec5f5b23d0a12c03329ab6af310549d7ebbd13500d"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "7b7a369c-72e4-451b-b955-19b4a061db5f",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "9ae14653-e1d0-4eef-b452-869965ed9310",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "deeefd61-5765-4063-9412-1858f59c03c0",
+              "workId": "MA-e5e9336b-1c80-4006-ba28-c252020807de",
+              "shownHash": "sha256:40c78606cc6f4d76c81dc6f59033989507dca427aa0f305fdd86536334c86d17"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "9ae14653-e1d0-4eef-b452-869965ed9310",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "904c0b84-3039-4b27-9e67-8989ec639c18",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "c7253094-b21a-4ce0-9b60-b68f8f5fd051",
+              "workId": "MA-e5e9336b-1c80-4006-ba28-c252020807de",
+              "shownHash": "sha256:1d5cddd5a30381b2ca327be3e10602557bab5e6768c01111fa3c659909bcdd09"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "904c0b84-3039-4b27-9e67-8989ec639c18",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-invoice-app",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "8124084 [MA-f34dba57-38e3-41a3-a74d-3e6a01160f72] 청구서 합계 함수 invoiceTotal(lines) 구현\n0428ff3 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n65a7f09 init",
+        "status": "?? .code-agent/approvals/MA-e5e9336b-1c80-4006-ba28-c252020807de.jsonl\n?? .code-agent/approvals/MA-e5e9336b-1c80-4006-ba28-c252020807de/\n?? .code-agent/work/MA-e5e9336b-1c80-4006-ba28-c252020807de/\n?? doc/work/MA-e5e9336b-1c80-4006-ba28-c252020807de/\n?? src/checkout.js\n?? tests/checkout.test.js"
+      }
+    }
+  },
+  "run6": {
+    "purpose": "통합 의존을 도입 설정(prepare 연결)으로 바로잡은 시나리오로 처음부터",
+    "scenarioChange": "invoice-app 도입 커밋에 scripts/link-price-core.cjs·.gitignore node_modules/·code-agent.json prepare 를 넣고 통합 요구를 require(\"price-core/src/discount.js\")로 바꿨다",
+    "operator": [
+      "2026-10-15T05:52Z discount Q1(ambiguous 사람 이관)에 사용자가 Claude Code 대화(AskUserQuestion)에서 답 'RangeError + TC 추가'를 골랐고 운영자가 mission relay(actor human)로 전달",
+      "2026-10-15T05:57Z discount Q2(ambiguous 사람 이관 — 판단기 입력에 앞선 답이 없던 결함)에 사용자가 대화에서 'analysis 로 되감아 진행'을 골랐고 운영자가 mission relay(actor human)로 전달"
+    ],
+    "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+    "missionState": "succeeded",
+    "missionReason": "현재 계획의 모든 작업이 독립 검증과 로컬 산출물 인계를 마쳤습니다.",
+    "tasks": [
+      {
+        "id": "discount",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "total",
+        "state": "succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "checkout",
+        "state": "succeeded",
+        "attempts": 1
+      }
+    ],
+    "attempts": [
+      {
+        "taskId": "discount",
+        "id": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "projectId": "price-core",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+        "turns": [
+          {
+            "at": "2026-10-15T05:41:49.085Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv940swn-62e9c537",
+            "runState": "completed",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:50:43.119Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv9436jb-4a265797",
+            "runState": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T05:56:04.718Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv94gzbz-ebe03fd7",
+            "runState": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:27:12.782Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv950bnl-0f543efc",
+            "runState": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:30:46.530Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv95pulr-fc781006",
+            "runState": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "94ca4e09-c2c1-47ac-8214-3646161e62cf"
+      },
+      {
+        "taskId": "total",
+        "id": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "projectId": "invoice-app",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-890342e9-b645-45cf-9b9d-6f533f213108",
+        "turns": [
+          {
+            "at": "2026-10-15T05:52:47.487Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv94eoiy-bcd582e7",
+            "runState": "completed",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:07:49.835Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv94megy-3933e16e",
+            "runState": "blocked",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:36:04.223Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv95uvnf-902f4192",
+            "runState": "blocked",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "23cca24f-f15d-4a41-89df-8ead6deb0496"
+      },
+      {
+        "taskId": "checkout",
+        "id": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "projectId": "invoice-app",
+        "state": "succeeded",
+        "codeAgentWorkId": "MA-7e2ca74f-ef9b-42a9-a145-ca5a4fc2830f",
+        "turns": [
+          {
+            "at": "2026-10-15T06:38:37.145Z",
+            "disposition": "waiting-decision",
+            "resume": "no-work",
+            "phase": null,
+            "runId": "run-mv96196i-2d34d00d",
+            "runState": "completed",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:49:51.180Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "plan",
+            "runId": "run-mv964bkl-3355d7ad",
+            "runState": "blocked",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "commits": [],
+            "error": null
+          },
+          {
+            "at": "2026-10-15T06:54:32.574Z",
+            "disposition": "waiting-decision",
+            "resume": "needs-human",
+            "phase": "deliver",
+            "runId": "run-mv96iqfh-51df11fe",
+            "runState": "blocked",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "commits": [],
+            "error": null
+          }
+        ],
+        "verificationRunId": "af3459fb-26c5-4073-b1a0-b778f6f27ebc"
+      }
+    ],
+    "delegations": [
+      {
+        "id": "37d29d67-dc71-4648-b0df-14caf52b3ff1",
+        "kind": "consent",
+        "action": "plan",
+        "target": "cffafd41-0fac-490f-bff9-34b5381cda13",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "reason": "이 계획은 배정된 작업 목표(total)와 허용 변경 범위 안에 있습니다. 새로 만드는 파일은 src/total.js, tests/total.test.js 두 개뿐이고, 두 파일 모두 task.allowedChanges와 recipe.allowedPaths에 들어 있습니다. 제외 목록(README.md, code-agent.json, .gitignore, scripts/link-price-core.cjs, doc/*)에 있는 파일은 계획 Task에 하나도 없습니다. package.json 같은 설정 파일도 바꾸지 않습니다. REQ-1~4와 CON-1은 task.goal의 문장과 하나씩 맞고, criteria 'total'의 설명과도 일치합니다. 모든 줄을 더한 합에 Math.round(x*100)/100을 ",
+        "evidence": 10,
+        "error": null
+      },
+      {
+        "id": "46380972-04f9-4e77-b4b4-210f165f0833",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "31817924-600a-4a3a-a0cd-ba886a501ad0",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "reason": "배정 작업(total)의 목표·완료 조건·허용 변경 범위 안에서 검증을 통과한 결과를 로컬 커밋하는 일상 반영이다. 코드 변경은 allowedChanges 의 두 파일(src/total.js, tests/total.test.js) 신규 생성뿐이고, 나머지는 이 작업 ID 전용 경로(.code-agent/work|approvals/MA-890342e9-…, doc/work/MA-890342e9-…)의 code-agent 작업 문서·증거라 exclusions 와 겹치지 않는다. 요구 R1~R4·CON-1 이 task.goal 과 일치하고 완료 조건 'total' 을 완화하지 않았다. master 독립 검사와 프로젝트 테스트가 모두 통과했다(verified). push·배포 없이 로컬 커밋만 하므로 git rev",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "53a0c715-40a4-42a2-ac69-4f5d4ee147fa",
+        "kind": "consent",
+        "action": "request",
+        "target": "9180da8d-d9a5-480e-a212-1404603e679b",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "요구사항 확정 요청의 내용이 배정된 작업(discount)의 목표·완료 조건·허용 변경 범위와 그대로 일치합니다. REQ-1~4는 task.goal의 네 문장을 바꾸지 않고 옮긴 것이고, DONE-1은 기준 'discount'의 설명과 같은 문장입니다. 원문 대조표에 빠진 원문이 없습니다(unmapped: 0). 완료 조건을 느슨하게 하거나 목표와 다른 요구를 넣은 부분도 없습니다. 언급된 파일은 src/discount.js와 tests/discount.test.js뿐이고, 둘 다 allowedChanges 안에 있으며 제외 대상(exclusions)과 겹치지 않습니다. 확정하면 하는 일은 master에서 작업 브랜치를 만들고 분석 단계로 넘어가는 것인데, 로컬에서 되돌릴 수 있는 일상 절차라 외부에 영향이",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "784eaf42-27cf-4cb1-8883-25dd60189d0a",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q3",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "이 질문은 배정된 작업 목표 안에서 입력을 어떻게 검증할지 정하는 판단이며, 앞서 정한 Q1 답의 취지를 그대로 이어 갑니다. 작업 목표는 amount 가 음수이거나 percent 가 0~100 밖이면 RangeError 를 던지라고 정합니다. Q1 은 여기서 더 나아가 NaN·문자열·undefined 같은 숫자가 아닌 입력도 RangeError 로 정했고, 그 목적은 결과에 NaN 이 조용히 섞이는 것을 막는 것입니다. 그런데 amount = Infinity 를 받으면 할인 계산이 Infinity − Infinity 가 되어 NaN 이 나옵니다. 그래서 Number.isFinite 로 판정해야 Q1 이 정한 방향과 맞습니다. percent = ±Infinity 는 지금의 0~100 범위 검사로 이미 Ran",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "7de78d44-f536-4f26-9773-3a2f112d8450",
+        "kind": "consent",
+        "action": "plan",
+        "target": "826ea66f-fca5-4cac-b7e2-a857a659e3ab",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "reason": "계획이 배정된 작업의 목표·허용 범위·완료 조건과 일치하고 범위 안에 있습니다. 새로 만드는 파일은 allowedChanges 와 정확히 같은 src/checkout.js, tests/checkout.test.js 두 개뿐입니다. 기존 파일(src/total.js, tests/total.test.js)과 제외 목록(code-agent.json, scripts/link-price-core.cjs, README.md, .gitignore, doc/*) 및 package.json 은 건드리지 않는다고 명시했습니다. 구현 방식은 task.goal 과 같습니다. 즉 checkoutTotal 이 discount(invoiceTotal(lines), percent) 를 그대로 반환하고, CommonJS 단일 내보내기를 ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "c647f871-b2d1-42b9-b643-749236630aab",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q2",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "human",
+        "relayed": true,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "사용자(사람)가 Claude Code 대화에서 고른 답을 운영자가 master relay 로 전달한다 — 위임 판단기가 ambiguous 로 사람에게 넘긴 질문.",
+        "evidence": 1,
+        "error": null
+      },
+      {
+        "id": "c67a150b-2427-484e-bfcf-398ae1c12f0d",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "0df7699a-bcde-47d5-a10a-4425d9d2160d",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "reason": "이 요청은 검증을 통과한 결과를 로컬에만 커밋하는 일상 반영이라 승인합니다. push·MR/PR·배포는 하지 않습니다. - 코드 변경은 허용 범위(allowedChanges)인 src/checkout.js 와 tests/checkout.test.js 두 파일뿐입니다. 제외 목록(exclusions)에 있는 파일(code-agent.json, scripts/link-price-core.cjs, README.md 등)은 바꾸지 않았습니다. - 구현은 작업 목표와 맞습니다. discount(invoiceTotal(lines), percent) 를 그대로 반환하고, price-core 는 복사하지 않고 require 로 가져옵니다. 입력 검증·범위 오류는 두 함수에 맡기고 자체 처리하지 않습니다. - 완료 조건을 ",
+        "evidence": 8,
+        "error": null
+      },
+      {
+        "id": "cda550d4-b3ce-4882-8862-d74fcb716191",
+        "kind": "consent",
+        "action": "request",
+        "target": "6cedebfa-90a7-4302-b78a-ce27f8c18cb3",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "reason": "요구사항 확정 요청입니다. 정리된 REQ-1~4, CON-1, 배경 항목을 task.goal 원문과 문장 단위로 대조했고, 의미가 빠지거나 바뀐 곳은 없습니다(원문 대조표의 미반영 항목 0건). 해석이 들어간 곳은 REQ-4 하나입니다. '그 함수들'을 invoiceTotal · discount 로 풀어 썼는데, 바로 앞 문장이 가리키는 대상이 이 둘뿐이라 다르게 읽힐 여지가 없습니다. 이 해석은 criteria(total·discount 가 범위 오류에 RangeError 를 던짐)와도 맞습니다. node_modules 연결 설명은 실행 환경에 관한 내용이므로 요구가 아닌 배경으로 둔 처리가 타당합니다. 이 설명에 나오는 code-agent.json 과 scripts/link-price-core.cjs 는",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "e366a585-c023-4df7-b4ea-47d94879bf39",
+        "kind": "consent",
+        "action": "request",
+        "target": "45aa0090-dacb-47c3-a53e-7cb46814d047",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "reason": "이 요청은 작업 'total'의 요구사항을 확정하는 일입니다. 정리된 요구(REQ-1~4, CON-1)는 task.goal 문장을 그대로 나눠 옮긴 것이고, 원문 대조표에서 연결되지 않은 원문은 0건입니다. 의미가 바뀐 곳은 없습니다. 괄호 안의 '빈 배열은 0'을 REQ-3으로 따로 떼어 낸 것도 뜻이 같습니다. 언급된 파일은 src/total.js와 tests/total.test.js뿐이며 둘 다 allowedChanges와 recipe.allowedPaths 안에 있습니다. 제외 목록의 파일은 하나도 건드리지 않습니다. '완료 조건: 원문에 없음 — 분석 단계 AC에서 정한다'는 조건을 낮춘 것이 아닙니다. 원문에 따로 적힌 완료 조건이 없다는 사실을 그대로 적은 것이고, 실제 판정은 criteria ",
+        "evidence": 7,
+        "error": null
+      },
+      {
+        "id": "f01f05fb-a05f-4c1e-9a87-b816c1074d3c",
+        "kind": "consent",
+        "action": "deliver",
+        "target": "bb7137d4-0e10-4877-8a73-ff5a9bd090d8",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "This is a local commit of the discount task's verified result, and it stays inside the delegated scope. The only code changes are src/discount.js and tests/discount.test.js, which are exactly the task's allowedChanges. None of the excluded files (README.md, code-agent.json, .gitignore, scripts/link-price-core.cjs, doc/architecture.md, doc/conventions.md) were touched. The rest of the commit is cod",
+        "evidence": 9,
+        "error": null
+      },
+      {
+        "id": "f3363528-33de-444c-836b-66d16c9ca32d",
+        "kind": "question",
+        "action": "answer",
+        "target": "Q1",
+        "category": "routine",
+        "verdict": "answer",
+        "state": "answered",
+        "provider": "human",
+        "relayed": true,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "사용자(사람)가 Claude Code 대화에서 고른 답을 운영자가 master relay 로 전달한다 — 위임 판단기가 ambiguous 로 사람에게 넘긴 질문.",
+        "evidence": 1,
+        "error": null
+      },
+      {
+        "id": "fd3b7866-f7f4-4d5d-a089-79977c64731a",
+        "kind": "consent",
+        "action": "plan",
+        "target": "a2b82dd8-a727-4ab8-98a9-64fd3e1b89d9",
+        "category": "routine",
+        "verdict": "approve",
+        "state": "applied",
+        "provider": "claude",
+        "relayed": false,
+        "grantId": "e2e-price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "reason": "이 계획은 배정된 작업 범위 안에 있습니다. 만드는 파일은 src/discount.js 와 tests/discount.test.js 두 개뿐이고, 둘 다 task.allowedChanges 에 들어 있으며 exclusions 에 있는 파일은 건드리지 않습니다. 구현 내용은 작업 목표 문장을 그대로 따릅니다. CommonJS 로 module.exports = { discount } 를 내보내고, Math.round(x * 100) / 100 으로 반올림하며, amount 가 음수이거나 percent 가 0~100 밖이면 RangeError 를 던집니다. 완료 조건 'discount' 와 recipe 검사(discount-independent, discount-project-tests)는 그대로 유지되고 완화되",
+        "evidence": 8,
+        "error": null
+      }
+    ],
+    "escalations": [
+      {
+        "kind": "question",
+        "target": "Q2",
+        "state": "resolved",
+        "category": "ambiguous",
+        "reason": "추가 정보가 필요합니다: analysis 로 되감는 일은 작업 흐름 안의 절차입니다. 다만 그것이 맞는지는 질문 본문의 설명만으로 판단할 수 없습니다. (1) Q1 답의 실제 내용, critic 의 F1~F4 지적, feedback-critic-q1.md 의 수정 내용을 이 판단 자료에서는 확인할 수 없습니다. (2) 작업 목표(task.goal)가 RangeError 를 요구하는 경우는 'amount 가 음수'와 'percent 가 0~100 밖' 두 가지뿐이고, 숫자가 아닌 입력은 언급하지 않습니다. 그래서 01-requirem"
+      },
+      {
+        "kind": "question",
+        "target": "Q1",
+        "state": "resolved",
+        "category": "ambiguous",
+        "reason": "추가 정보가 필요합니다: 작업 목표에는 \"amount 가 음수이거나 percent 가 0~100 밖이면 RangeError\"라고만 적혀 있습니다. 숫자가 아닌 입력을 어떻게 다룰지는 정해져 있지 않고, 읽는 방법이 둘입니다. (1) 글자대로 보면 NaN 은 0~100 안에 있지 않으니 범위 밖으로 볼 수 있습니다. (2) 비교식으로 보면 percent < 0 || percent > 100 만 검사하면 됩니다. 추천 선택지는 percent 뿐 아니라 amount 가 숫자가 아닐 때도 RangeError 를 던지자고 합니다. 그런데 목"
+      }
+    ],
+    "verificationRuns": [
+      {
+        "id": "23cca24f-f15d-4a41-89df-8ead6deb0496",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "total-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "total-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "94ca4e09-c2c1-47ac-8214-3646161e62cf",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "discount-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "af3459fb-26c5-4073-b1a0-b778f6f27ebc",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "state": "verified",
+        "passed": null,
+        "checks": [
+          {
+            "id": "checkout-independent",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "discount-recheck",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "total-recheck",
+            "exitCode": 0,
+            "passed": true
+          },
+          {
+            "id": "checkout-project-tests",
+            "exitCode": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "controlRuns": [
+      {
+        "id": "run-mv940swn-62e9c537",
+        "projectId": "price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv9436jb-4a265797",
+        "projectId": "price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv94eoiy-bcd582e7",
+        "projectId": "invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv94gzbz-ebe03fd7",
+        "projectId": "price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv94megy-3933e16e",
+        "projectId": "invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv950bnl-0f543efc",
+        "projectId": "price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv95pulr-fc781006",
+        "projectId": "price-core",
+        "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv95uvnf-902f4192",
+        "projectId": "invoice-app",
+        "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv96196i-2d34d00d",
+        "projectId": "invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "mode": "start",
+        "state": "completed",
+        "outcome": {
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+        }
+      },
+      {
+        "id": "run-mv964bkl-3355d7ad",
+        "projectId": "invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      },
+      {
+        "id": "run-mv96iqfh-51df11fe",
+        "projectId": "invoice-app",
+        "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+        "mode": "continue",
+        "state": "blocked",
+        "outcome": {
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human"
+        }
+      }
+    ],
+    "eventTypes": {
+      "control-event": 217,
+      "control-run-accepted": 11,
+      "decision-escalated": 2,
+      "decision-recorded": 51,
+      "delegation-finished": 12,
+      "delegation-recorded": 12,
+      "delegation-resolved": 11,
+      "delivery-started": 3,
+      "host-returned": 11,
+      "live-completed": 1,
+      "live-continued": 8,
+      "live-dispatched": 3,
+      "live-handed-off": 3,
+      "live-observed": 11,
+      "mission-created": 1,
+      "plan-activated": 1,
+      "verification-configured": 3,
+      "verification-recorded": 3,
+      "verification-started": 3
+    },
+    "projects": {
+      "price-core": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T05:39:43.164Z",
+          "history": [
+            {
+              "at": "2026-10-15T05:39:43.164Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T06:31:07.746Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv940swn-62e9c537",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "discount",
+              "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+              "planVersion": "1",
+              "invocationId": "df7c2270-0907-4b33-8bab-a5ed366d53af"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv9436jb-4a265797",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "discount",
+              "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+              "planVersion": "1",
+              "invocationId": "8896eae2-d477-4297-af51-78e284d50019"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv94gzbz-ebe03fd7",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "discount",
+              "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+              "planVersion": "1",
+              "invocationId": "cf5d3168-b711-4ca7-b5b0-deb2ac7fe252"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv950bnl-0f543efc",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "discount",
+              "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+              "planVersion": "1",
+              "invocationId": "bd44a3a3-7172-4d47-8742-eef13fa7116e"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 5,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv95pulr-fc781006",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "70f70e0e-d5c1-489a-a685-8f57f551f765",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "discount",
+              "attemptId": "a460e3f5-21a2-458d-8849-fe1288f9a873",
+              "planVersion": "1",
+              "invocationId": "7777885b-9a3a-4b79-86b7-dae9794013ee"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "53a0c715-40a4-42a2-ac69-4f5d4ee147fa",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "9180da8d-d9a5-480e-a212-1404603e679b",
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "shownHash": "sha256:772a2f12788ef1d5cee6e6e826176e6553620fcdf0bf2603cca2093903fadd6d"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "53a0c715-40a4-42a2-ac69-4f5d4ee147fa",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "f3363528-33de-444c-836b-66d16c9ca32d",
+            "actor": "human",
+            "action": "answer",
+            "target": {
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "questions": [
+                "Q1"
+              ],
+              "questionsHash": "sha256:ef03793b9a475e447bddb6d5015c4dce6ac71087c306cb49ea963aa65161f129"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "f3363528-33de-444c-836b-66d16c9ca32d",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "784eaf42-27cf-4cb1-8883-25dd60189d0a",
+            "actor": "ai",
+            "action": "answer",
+            "target": {
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "questions": [
+                "Q3"
+              ],
+              "questionsHash": "sha256:8fad42d99186af74571a7952b4c3dda2867756abb22b517e383bfc7673b22207"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "784eaf42-27cf-4cb1-8883-25dd60189d0a",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "c647f871-b2d1-42b9-b643-749236630aab",
+            "actor": "human",
+            "action": "answer",
+            "target": {
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "questions": [
+                "Q2"
+              ],
+              "questionsHash": "sha256:85abb6d7bf671fc5aa4306aeb16cd12c83e9ed6d806157b3abdc4f8d0c050e37"
+            },
+            "category": "routine",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "c647f871-b2d1-42b9-b643-749236630aab",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "fd3b7866-f7f4-4d5d-a089-79977c64731a",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "a2b82dd8-a727-4ab8-98a9-64fd3e1b89d9",
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "shownHash": "sha256:99d9d4732b50fffc5d7149cf9f2488734a8a4f47843537fab12345a1976b682c"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "fd3b7866-f7f4-4d5d-a089-79977c64731a",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "f01f05fb-a05f-4c1e-9a87-b816c1074d3c",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "bb7137d4-0e10-4877-8a73-ff5a9bd090d8",
+              "workId": "MA-769c1f65-1d59-45ab-aea4-a2531514850a",
+              "shownHash": "sha256:e087e35318efcdaecb619ade3265d8afa9fcd5a652763f391b2d424af2c0fc66"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "f01f05fb-a05f-4c1e-9a87-b816c1074d3c",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-price-core",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "3237eb2 [MA-769c1f65-1d59-45ab-aea4-a2531514850a] price-core 할인 함수 discount(amount, percent) 구현\ncd0b7e6 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n9cb7923 init",
+        "status": ""
+      },
+      "invoice-app": {
+        "owner": {
+          "controller": "master-e2e",
+          "generation": 1,
+          "since": "2026-10-15T05:39:44.622Z",
+          "history": [
+            {
+              "at": "2026-10-15T05:39:44.622Z",
+              "controller": "master-e2e",
+              "generation": 1,
+              "how": "enable"
+            }
+          ],
+          "lastSeenAt": "2026-10-15T06:54:57.237Z"
+        },
+        "runs": [
+          {
+            "runId": "run-mv94eoiy-bcd582e7",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "total",
+              "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+              "planVersion": "1",
+              "invocationId": "07766ebb-fb59-4f23-8bb7-abc2e034e0d2"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv94megy-3933e16e",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "total",
+              "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+              "planVersion": "1",
+              "invocationId": "1d64681e-968f-47b7-9053-e0c112e45be3"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv95uvnf-902f4192",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "3b03c13f-6ef2-4c69-94f9-59ffc085d276",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "total",
+              "attemptId": "99ccb439-3d63-4238-a909-fb8c3e5706c5",
+              "planVersion": "1",
+              "invocationId": "a0b17a9c-91a8-4007-9871-04d6de276677"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv96196i-2d34d00d",
+            "mode": "start",
+            "state": "completed",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "checkout",
+              "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+              "planVersion": "1",
+              "invocationId": "602db90f-71a7-46dc-84b8-935c9ec5eae6"
+            },
+            "outcome": {
+              "state": "completed",
+              "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+            },
+            "exitCode": 0,
+            "denials": 0,
+            "resume": "no-work",
+            "commits": []
+          },
+          {
+            "runId": "run-mv964bkl-3355d7ad",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "checkout",
+              "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+              "planVersion": "1",
+              "invocationId": "7d976572-67bc-40bf-9fa2-ebc7c03ec2b0"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          },
+          {
+            "runId": "run-mv96iqfh-51df11fe",
+            "mode": "continue",
+            "state": "blocked",
+            "sessionId": "025a5211-95a9-48aa-9e1b-d324d938bdc4",
+            "links": {
+              "missionId": "9ba873d9-4038-4146-996c-05a7bdee32a2",
+              "taskId": "checkout",
+              "attemptId": "9ad668e7-b6fd-4bee-835e-be0f4ce2dfb0",
+              "planVersion": "1",
+              "invocationId": "937eb246-e24f-4688-987f-1f0f9b614148"
+            },
+            "outcome": {
+              "state": "blocked",
+              "reason": "code-agent 재개 판정 needs-human"
+            },
+            "exitCode": 0,
+            "denials": 1,
+            "resume": "needs-human",
+            "commits": []
+          }
+        ],
+        "decisions": [
+          {
+            "type": "decision",
+            "id": "e366a585-c023-4df7-b4ea-47d94879bf39",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "45aa0090-dacb-47c3-a53e-7cb46814d047",
+              "workId": "MA-890342e9-b645-45cf-9b9d-6f533f213108",
+              "shownHash": "sha256:c4a98ad88a9f0a4bcc78335f228f58a22a4f26ae9babd2ecb3dbbfa0df99e47a"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "e366a585-c023-4df7-b4ea-47d94879bf39",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "37d29d67-dc71-4648-b0df-14caf52b3ff1",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "cffafd41-0fac-490f-bff9-34b5381cda13",
+              "workId": "MA-890342e9-b645-45cf-9b9d-6f533f213108",
+              "shownHash": "sha256:8b2b64f1c7cc02ac6e75f3e31eb8099c2055af3f1db3ed4678ea4659e1b8e9c1"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "37d29d67-dc71-4648-b0df-14caf52b3ff1",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "46380972-04f9-4e77-b4b4-210f165f0833",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "31817924-600a-4a3a-a0cd-ba886a501ad0",
+              "workId": "MA-890342e9-b645-45cf-9b9d-6f533f213108",
+              "shownHash": "sha256:27b165ebe3095388277d3ab4714fba100da16a33bc522abc6200ee0510018b87"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "46380972-04f9-4e77-b4b4-210f165f0833",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "cda550d4-b3ce-4882-8862-d74fcb716191",
+            "actor": "ai",
+            "action": "request",
+            "target": {
+              "consentId": "6cedebfa-90a7-4302-b78a-ce27f8c18cb3",
+              "workId": "MA-7e2ca74f-ef9b-42a9-a145-ca5a4fc2830f",
+              "shownHash": "sha256:cb90cecdb2b63f73882ab39e12726d02c4fa0b961bb9f4765e2a78db9bb96a70"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "cda550d4-b3ce-4882-8862-d74fcb716191",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "7de78d44-f536-4f26-9773-3a2f112d8450",
+            "actor": "ai",
+            "action": "plan",
+            "target": {
+              "consentId": "826ea66f-fca5-4cac-b7e2-a857a659e3ab",
+              "workId": "MA-7e2ca74f-ef9b-42a9-a145-ca5a4fc2830f",
+              "shownHash": "sha256:940cc2c82f94192d37a32ed3ef78f13f312acefe8b2d16846c509ee3891a0af6"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "7de78d44-f536-4f26-9773-3a2f112d8450",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          },
+          {
+            "type": "decision",
+            "id": "c67a150b-2427-484e-bfcf-398ae1c12f0d",
+            "actor": "ai",
+            "action": "deliver",
+            "target": {
+              "consentId": "0df7699a-bcde-47d5-a10a-4425d9d2160d",
+              "workId": "MA-7e2ca74f-ef9b-42a9-a145-ca5a4fc2830f",
+              "shownHash": "sha256:5b9cd0e9e4ee7334507f0eddda77163ee4cbeb685274c1a599db30f6e743a8ce"
+            },
+            "category": "routine",
+            "verdict": "approve",
+            "error": null
+          },
+          {
+            "type": "decision-result",
+            "id": "c67a150b-2427-484e-bfcf-398ae1c12f0d",
+            "actor": null,
+            "status": "applied",
+            "error": null
+          }
+        ],
+        "grants": [
+          {
+            "type": "grant",
+            "id": "e2e-invoice-app",
+            "actions": [
+              "request",
+              "plan",
+              "deliver",
+              "answer"
+            ],
+            "uses": null
+          }
+        ],
+        "log": "67e968a [MA-7e2ca74f-ef9b-42a9-a145-ca5a4fc2830f] 결제 합계 함수 checkoutTotal(lines, percent) 구현 — invoiceTotal 에 price-core discount 적용\n57c161d [MA-890342e9-b645-45cf-9b9d-6f533f213108] 청구서 합계 함수 invoiceTotal(lines) 구현\nf8ffde2 chore: code-agent 도입과 node 시작 구성(시험 하네스)\n564334c init",
+        "status": ""
+      }
+    }
+  }
+}

@@ -69,7 +69,7 @@ export interface ConsentRecord {
   result?: string;
   sourceSnapshot?: string;
   snapshotEntries?: SnapshotEntries;
-  channel?: "claude-question" | "codex-prompt" | "codex-elicitation";
+  channel?: "claude-question" | "codex-prompt" | "codex-elicitation" | "master-delegation";
   /** 새 prepare 가 쓴다 — 없으면 이전 형식(확인 코드 없이 Codex 응답을 받는다) */
   format?: 2;
   /** 확인 내용 전문 파일(저장소 기준 경로). 있으면 선택 화면 질문에는 앞부분과 이 경로만 싣는다 — 없는 이전 기록은 전문을 질문에 싣는다 */
@@ -81,6 +81,15 @@ export interface ConsentRecord {
   failure?: ConsentFailure;
   /** `consent prepare --for <호스트>` — CLI 출력(prepare·status·finish)을 그 호스트가 쓰는 필드로 줄인다. 없으면 전체 출력(이전 형식) */
   form?: "claude" | "codex";
+  /** master 위임 판단(사람의 응답이 아니다) — decideDelegatedConsent 가 쓴다. 있으면 원장 통로는 master-delegation, verified false */
+  delegation?: ConsentDelegation;
+}
+/** master 의 위임 판단 — 사람이 TTY 에서 준 권한(grant) 범위 안에서만 master/delegation.ts 가 부른다. 사람의 응답(observed)과 섞지 않는다 */
+export interface ConsentDelegation {
+  decisionId: string; grantId: string; controller: string; generation: number; commandId: string;
+  verdict: "approve" | "request-changes" | "defer"; category: string; reason: string; at: string;
+  /** 문서 변경 후보별 선택(1부터 센 번호 → 적용·유지). 없는 후보는 유지 */
+  choices?: Record<string, string>;
 }
 const DIR = CONSENT_DIR;
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -94,8 +103,9 @@ export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
  * 동의 스냅샷에서 빼는 code-agent 자체 기록 — hook·CLI 가 응답을 기다리는 동안에도 쓴다(모두 gitignore 대상).
  * 동의 기록·티켓·색인·캐시(consents), 단계 이동·검증·플러그인 로그와 Codex 미판정 도구 기록(log), 작업 임대(lease.json*).
  * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
+ * master 연동 기록(master — 실행 heartbeat·이벤트·명령 기록)도 응답을 기다리는 동안 감독 프로세스가 쓰므로 뺀다.
  */
-const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`];
+const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`];
 
 function canonicalRoot(root: string): string {
   return realpathSync.native(resolve(root));
@@ -771,13 +781,55 @@ export function applyConsent(root: string, id: string, caller?: ConsentCaller): 
   if (cached.status === "applied") return cachedResult(cached);
   return withConsentLock(root, () => applyLocked(root, id, caller));
 }
+/**
+ * master 위임 판단으로 동의에 답하고(승인이면) 같은 적용 함수로 적용한다. 사람이 응답하기 시작한 동의(질문 호출 관찰·응답)는 받지 않는다.
+ * `guard` 는 동의 잠금 안에서 기록을 보고 권한 범위·준비 세션·보여 준 내용의 해시를 확인한다(던지면 아무것도 바꾸지 않는다).
+ * 승인이 아니면(수정 요청·보류) 사람의 같은 응답과 같은 상태·실패 갈래로 남긴다 — 적용하지 않는다.
+ */
+export function decideDelegatedConsent(root: string, id: string, delegation: ConsentDelegation, guard: (record: Readonly<ConsentRecord>) => void): { status: string; result?: string; failure?: object; after?: ReturnType<typeof afterApply> } {
+  root = canonicalRoot(root);
+  const decided = withConsentLock(root, () => {
+    const record = loadConsent(root, id);
+    if (record.delegation) throw new Stop(`이미 위임 판단(${record.delegation.decisionId})을 받은 확인 요청입니다.`);
+    if (record.status !== "pending") throw new Stop(`응답을 기다리는 확인 요청이 아닙니다(${record.status}).`);
+    if (record.observed?.length || record.binding || record.seenToolIds?.length) throw new Stop("사람의 응답이 시작된 확인 요청입니다 — 위임으로 답하지 않습니다.");
+    guard(record);
+    record.delegation = delegation;
+    record.channel = "master-delegation";
+    if (delegation.verdict === "approve") {
+      for (const [index, choice] of record.choices.entries()) {
+        const picked = delegation.choices?.[String(index + 1)] ?? KEEP;
+        if (picked !== APPLY && picked !== KEEP) throw new Stop(`문서 변경 후보 ${index + 1} 의 선택은 ${APPLY} 또는 ${KEEP} 입니다.`);
+        choice.answer = picked;
+      }
+      record.status = "approved";
+      save(root, record);
+      return { status: "applied", result: applyLocked(root, id, undefined, delegation) };
+    }
+    record.status = delegation.verdict === "defer" ? "deferred" : "changes-requested";
+    fail(record, delegation.verdict === "defer" ? "response-defer" : "response-change", `master 위임 판단 ${delegation.decisionId}: ${delegation.verdict === "defer" ? "보류" : "수정 요청"} — ${delegation.reason}`);
+    save(root, record);
+    return { status: record.status, failure: failureView(record) };
+  });
+  if (decided.status !== "applied") return decided;
+  return { ...decided, after: afterApply(root, loadConsent(root, id).action) };
+}
+/** 위임 판단 전에 master 가 본 내용 — 요약 전문과 문서 변경 후보. 판단 요청은 이 해시(shownHash)를 함께 낸다 */
+export function delegationView(root: string, id: string): { id: string; action: string; decision: string; status: string; workId?: string; createdAt: string;
+  preparedSession?: ConsentRecord["preparedSession"]; summary: string; choices: { index: number; shown: string; target?: string; key?: string }[]; shownHash: string; delegation?: ConsentDelegation } {
+  const record = loadConsent(root, id);
+  const choices = record.choices.map((choice, index) => ({ index: index + 1, shown: choice.shown, ...(choice.target ? { target: choice.target } : {}), ...(choice.key ? { key: choice.key } : {}) }));
+  const shownHash = `sha256:${createHash("sha256").update(JSON.stringify({ summary: record.summary, choices: choices.map((choice) => choice.shown) })).digest("hex")}`;
+  return { id, action: record.action.action, decision: record.action.decision, status: record.status, ...(record.workId ? { workId: record.workId } : {}), createdAt: record.createdAt,
+    ...(record.preparedSession ? { preparedSession: record.preparedSession } : {}), summary: record.summary, choices, shownHash, ...(record.delegation ? { delegation: record.delegation } : {}) };
+}
 function cachedResult(record: ConsentRecord): string {
   if (typeof record.result !== "string") throw new Stop("적용 완료 기록의 결과가 없습니다. 자동으로 다시 실행하지 않습니다.");
   return record.result;
 }
 /** 적용 때 확인 화면·문서 선택이 준비 때와 다르다 — 앞선 확인을 지났는지로 대상 변경과 적용 실패를 가른다 */
 class ScreenMismatch extends Stop {}
-function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
+function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated?: ConsentDelegation): string {
   // 잠금을 얻기 전에 읽은 승인 상태를 재사용하지 않는다.
   const record = loadConsent(root, id);
   if (record.status === "applied") return cachedResult(record);
@@ -786,10 +838,15 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
     discard(root, record, "apply", "이전 적용이 끝나지 않은 채 중단");
     throw new Stop("이전 적용이 끝나지 않은 채 중단됐습니다 — 일부만 반영됐을 수 있습니다. code-agent status 와 git status 로 상태를 확인하고, 필요하면 code-agent consent prepare 로 새로 확인하세요.");
   }
-  if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
-  // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
-  if (record.preparedSession && !caller?.tty && caller?.sessionId !== record.sessionId) {
-    throw new Stop("응답을 관찰한 세션의 셸에서 hook 이 확인한 적용 명령만 실행할 수 있습니다. 다른 경로로 적용하지 않습니다.");
+  if (delegated) {
+    // 위임 판단은 그 판단을 남긴 호출만 적용한다 — 사람의 응답(observed)이 섞인 기록은 위임으로 적용하지 않는다
+    if (record.status !== "approved" || record.delegation?.decisionId !== delegated.decisionId || record.observed?.length) throw new Stop("이 위임 판단으로 승인된 확인 요청이 아닙니다.");
+  } else {
+    if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
+    // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
+    if (record.preparedSession && !caller?.tty && caller?.sessionId !== record.sessionId) {
+      throw new Stop("응답을 관찰한 세션의 셸에서 hook 이 확인한 적용 명령만 실행할 수 있습니다. 다른 경로로 적용하지 않습니다.");
+    }
   }
   // 역할 모델은 작업 중에 바꾸지 않는다(D1) — 준비 뒤 접수·작업이 시작됐으면 대상 변경으로 폐기하고 그 사유로 멈춘다. 스냅샷 대조보다
   // 먼저 본다 — 시작은 상태 파일도 바꾸므로 대조가 사유 없이 '파일이 바뀌었다'로만 멈추지 않게. 같은 검사를 setModel 이 한 번 더 한다
@@ -812,7 +869,10 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller): string {
     discardIfChanged(root, record, "실행 준비 중 확인 대상이 바뀌었습니다. 다시 확인하세요.");
   }
   record.status="applying";save(root,record);
-  const presence:Presence={channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-elicitation" ? "Codex 선택 UI" : record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
+  // 위임 판단은 사람의 존재 증거가 아니다(verified false) — 원장에 통로·판단 ID·권한·제어자를 남겨 사람의 응답과 가른다
+  const presence:Presence=delegated
+    ? {channel:"master-delegation",verified:false,detail:`master 위임 판단 ${delegated.decisionId} · 권한 ${delegated.grantId} · 제어자 ${delegated.controller} 세대 ${delegated.generation} · 동의 ${id} · 분류 ${delegated.category} · 사람 응답 아님`}
+    : {channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-elicitation" ? "Codex 선택 UI" : record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
   let passed = 0;
   try {
     record.result=withInteraction({

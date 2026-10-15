@@ -93,6 +93,13 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
+  code-agent master status [--json]   master 연동(선택) 상태 — 제어자·소유 세대·인계·위임 권한·최근 실행 (읽기 전용)
+  code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]
+                                      master 연동 켜기·제어자 추가 (TTY 에서만) — 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다
+  code-agent master grant <권한.json> | revoke <권한 ID> [--reason <사유>]   위임 권한 주기·회수 (TTY 에서만 — 작업·임무·동작·경로·만료·한도로 좁힌다)
+  code-agent master handover --to <제어자 ID> [--force-stop]   사람의 강제 인계 (TTY 에서만 — 실행이 멈춘 것을 확인한 뒤 넘긴다)
+  code-agent master disable           master 연동 끄기 (TTY 에서만, 실행 중인 실행이 없을 때)
+  code-agent master call              master 러너의 요청 한 건(stdin JSON, code-agent.master v1) → 응답 한 건(stdout JSON) — doc/master-control.md
 
 실행 절차가 부른다 (호스트 세션 안):
   code-agent triage begin <조직/프로젝트/이슈ID> [--base <브랜치>]  Sentry 오류 사전 판별 (제품 코드 읽기 전용)
@@ -240,6 +247,8 @@ function unknownCommand(command: string): string {
 
 const INIT_USAGE = "사용법: code-agent init [--host claude|codex|both] [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
+const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>] | " +
+  "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | call (stdin 요청 → stdout 응답)";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
 
 /** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
@@ -328,8 +337,10 @@ export async function runCommand(command: string | undefined, args: string[]): P
       const STATUS_USAGE = "사용법: code-agent status [--json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]]";
       if (optionsOnly(args, ["expect-state", "expect-work", "expect-attempt", "session", "run-id"], ["--json"], STATUS_USAGE)) { print(STATUS_USAGE); return 0; }
       if (!args.includes("--json")) throw new Stop(`${STATUS_USAGE} — 대조·식별 옵션은 --json 과 함께 씁니다`);
+      // master 실행 세션 안에서 부른 조회는 그 실행의 세션으로 본다 — 자기 임대를 다른 세션의 임대로 읽지 않는다(감독이 넣은 실행 환경 변수가 있을 때만)
+      const session = option(args, "session") ?? (require("./master/runGuard") as typeof import("./master/runGuard")).masterRun(repoRoot)?.sessionId;
       const view = stateView(repoRoot, { expectState: option(args, "expect-state"), expectWork: option(args, "expect-work"), expectAttempt: option(args, "expect-attempt"),
-        session: option(args, "session"), runId: option(args, "run-id") });
+        session, runId: option(args, "run-id") });
       print(JSON.stringify(view, null, 2));
       return stateExitCode(view);
     }
@@ -447,6 +458,26 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (args.length) throw new Stop("사용법: code-agent takeover");
       print(releaseLease(repoRoot));
       return 0;
+    case "master": {
+      // master 연동 — call·supervise 는 러너가, 나머지는 사람이 터미널에서 부른다(설정 명령은 TTY 확인). 연동 모듈은 이 명령에서만 읽는다
+      const sub = args[0];
+      if (sub === "call") {
+        if (args.length !== 1) throw new Stop(MASTER_USAGE);
+        const response = (require("./master/control") as typeof import("./master/control")).call(repoRoot, readFileSync(0, "utf8"));
+        print(JSON.stringify(response));
+        return response.ok ? 0 : 1;
+      }
+      if (sub === "supervise" && args.length === 2) return (require("./master/supervisor") as typeof import("./master/supervisor")).supervise(repoRoot, args[1]);
+      const admin = require("./master/admin") as typeof import("./master/admin");
+      if (sub === "enable") print(admin.masterEnable(repoRoot, { controller: option(args, "controller"), label: option(args, "label"), tokenOut: option(args, "token-out"), policy: option(args, "policy"), host: option(args, "host") }));
+      else if (sub === "disable" && args.length === 1) print(admin.masterDisable(repoRoot));
+      else if (sub === "grant" && args.length === 2) print(admin.masterGrant(repoRoot, args[1]));
+      else if (sub === "revoke" && args[1]) print(admin.masterRevoke(repoRoot, args[1], option(args, "reason")));
+      else if (sub === "handover") print(admin.masterHandover(repoRoot, option(args, "to"), args.includes("--force-stop")));
+      else if (sub === "status" && args.length <= 2 && (args.length === 1 || args[1] === "--json")) print(admin.masterStatus(repoRoot, args[1] === "--json"));
+      else throw new Stop(MASTER_USAGE);
+      return 0;
+    }
     case "request":
       switch (args[0]) {
         case undefined:

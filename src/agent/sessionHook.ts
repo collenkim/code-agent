@@ -13,6 +13,7 @@ import { sessionStartLease } from "./lease";
 import { openConsent } from "./consentState";
 import { loadTriage, triageSummary } from "./triageState";
 import { noteHookOutput } from "./hookLog";
+import { masterRunNote } from "./master/runGuard";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume·fork) 비워지거나(clear) 압축된(compact) 뒤
@@ -137,7 +138,8 @@ export function runSessionHook(stdin: string): number {
     const root = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
     const source = typeof input.source === "string" ? input.source : undefined;
     const session = typeof input.session_id === "string" && input.session_id ? input.session_id : undefined;
-    const text = withNotation("claude", () => sessionAnchor(root, source, session));
+    // master 실행 세션이면 그 규칙을 붙인다(감독이 넣은 실행 표지가 있을 때만)
+    const text = withNotation("claude", () => [sessionAnchor(root, source, session), masterRunNote(root)].filter(Boolean).join("\n"));
     if (text) {
       process.stdout.write(`${text}\n`);
       noteHookOutput(root, { host: "claude", event: "SessionStart", kind: "context", text, ...(source ? { tool: source } : {}), ...(session ? { session } : {}) });

@@ -638,6 +638,10 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 `./echo-adapter.js`, 있는 파일은 덮지 않는다) | — |
+| `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` · `master disable` | 상위 조정자(master) 연동 켜기·제어자 추가·끄기 (선택, [master 연동](master-control.md)). 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다 | **O** |
+| `code-agent master grant <권한.json>` · `master revoke <권한 ID> [--reason <사유>]` | master 위임 권한 주기·회수 — 작업·임무·동작(요구 확정·계획 승인·반영·업무 질문)·경로·만료(최대 7일)·사용 한도로 좁힌다. 범위 안의 routine 판단만 받고 원장에 '사람 응답 아님'으로 남는다 | **O** |
+| `code-agent master handover --to <제어자 ID> [--force-stop]` | 사람의 강제 인계 — 실행이 멈춘 것을 확인한 뒤 넘긴다 | **O** |
+| `code-agent master status [--json]` | 연동·제어자·소유 세대·인계·위임 권한·최근 실행. 읽기 전용 | — |
 
 `abort` 는 작업 폴더·제출된 계획·원장을 남긴다. 같은 지시서로 다시 `start` 할 수 있다.
 접수 중에 치면 접수 세션만 닫는다 — `request.json` 과 지시서, 확정 원장은 그대로라 같은 ID 로 다시 접수할 수 있다.
@@ -1495,7 +1499,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 - **push · MR/PR 생성 · 병합** — 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. 그 뒤는 사람이 손으로 한다 —
   git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정한다.
 - **fix·refactor·신규 저장소의 전 과정 완주 실측** — 코드는 갖췄고, 실제 작업으로 끝까지 돌려 잰 기록은 아직 없다.
-- **상위 조정자(master)·실행 러너** — 연결 지점은 `status --json` 뿐이다([5절](#code-agent-status---json--기계-판독용-상태)). 여러 프로젝트의 권한·배정·전체 DAG·예산·서비스 간 승인·전체 복구와, 프로세스 생존 확인·실행 로그·실제 종료·취소·실행 소유권은 이 저장소에 없다.
+- **상위 조정자(master)의 전체 조정** — 이 저장소는 사람이 켠 프로젝트의 실행 접수·관찰·정지·재개·인계와 권한 범위의 위임 판단까지 맡는다([master 연동](master-control.md)). 여러 프로젝트의 배정·전체 DAG·예산·서비스 간 승인·전체 복구는 master 가 맡고 이 저장소에 없다. Codex 실행 호스트는 연동 계약에서 지원하지 않는다(`hello`의 `unsupported`).
 - **Jev A/B 실측** — 플러그인 코드([10. 플러그인](#10-플러그인-선택))는 갖췄고, 효과는 실제 Jev 가 붙어야 잰다([plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)).
 
 ## 관찰된 계획 작업

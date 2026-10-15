@@ -79,10 +79,20 @@ export interface StateJson {
   unknown: string[];
 }
 
+/**
+ * 콘솔 없이 띄운 프로세스(Windows 의 master 감독 — detached)는 콘솔 프로그램을 띄울 때마다 새 콘솔을 할당해 git 한 번이 1초를 넘긴다.
+ * 그 프로세스만 git 을 창 없이(windowsHide) 띄우게 켠다 — 콘솔이 있는 CLI·hook 에서는 창 없이 띄우는 쪽이 오히려 느려 켜지 않는다.
+ */
+let hideGitWindow = false;
+export function hideGitWindowInThisProcess(): void {
+  hideGitWindow = true;
+}
+
 /** 조회는 git 색인도 갱신하지 않는다(`GIT_OPTIONAL_LOCKS=0` — status 가 index.lock 을 잡고 색인을 다시 쓰지 않는다) */
 function git(repoRoot: string, args: string[]): string | undefined {
   try {
-    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      ...(hideGitWindow ? { windowsHide: true } : {}) });
   } catch {
     return undefined;
   }
