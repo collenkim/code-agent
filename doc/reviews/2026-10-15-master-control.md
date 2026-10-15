@@ -1,6 +1,6 @@
 # master 연동(선택) — 통신·실행 제어와 위임 판단 (2026-10-15)
 
-커밋 `(이 커밋)`의 변경 경위와 검증 결과다. 현재 동작은 [master 연동 계약](../master-control.md)과 [흐름도](../process-flow.md) §1.1·§3.2·§4.2·§4.3·§5.1·§5.3·§5.4·§8·§9에 있다. 원자료는 [evidence/2026-10-15-master-control.json](evidence/2026-10-15-master-control.json)이다. master-agent 쪽 연동은 그 저장소의 `docs/code-agent-control.md`에 있다.
+커밋 `e5f136a`의 변경 경위와 검증 결과다. 현재 동작은 [master 연동 계약](../master-control.md)과 [흐름도](../process-flow.md) §1.1·§3.2·§4.2·§4.3·§5.1·§5.3·§5.4·§8·§9에 있다. 원자료는 [evidence/2026-10-15-master-control.json](evidence/2026-10-15-master-control.json)이다. master-agent 쪽 연동은 그 저장소의 `docs/code-agent-control.md`에 있다.
 
 ## 요청
 

@@ -2,7 +2,7 @@
   "schema": "code-agent.review-evidence",
   "topic": "master-control",
   "date": "2026-10-15",
-  "commit": "(이 커밋)",
+  "commit": "e5f136a",
   "environment": {
     "os": "Windows 11",
     "node": "24.19.0",
