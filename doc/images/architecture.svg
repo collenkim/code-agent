@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1120" viewBox="0 0 1200 1120" role="img" aria-labelledby="title desc">
+  <title id="title">code-agent 전체 구조</title>
+  <desc id="desc">사용자 또는 선택적으로 연동한 master-agent가 Claude Code·Codex 호스트에 작업을 전달한다. 호스트는 설치된 실행 절차와 서브에이전트로 작업하고, CLI 안의 LangGraph가 실행·인계·대기·재개 위치를 결정한다. CLI의 승인·범위·증거 검사와 호스트 이벤트 hook이 진행 조건과 실제 응답을 확인한다. 프로젝트 문서·소스, 작업·승인·검증 기록, SQLite 그래프 기록을 저장하며 재개 시 최신 기록을 다시 읽는다.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0L8 4.5L0 9Z" fill="#526780"/></marker>
+    <style>
+      text { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; fill: #172b46; }
+      .title { font-size: 30px; font-weight: 700; }
+      .heading { font-size: 23px; font-weight: 700; }
+      .label { font-size: 20px; font-weight: 700; }
+      .body { font-size: 19px; }
+      .small { font-size: 17px; fill: #455b74; }
+      .line { fill: none; stroke: #526780; stroke-width: 2; marker-end: url(#arrow); }
+      .both { marker-start: url(#arrow); }
+      .card { fill: #fff; stroke: #c5d1df; stroke-width: 1.5; }
+    </style>
+  </defs>
+  <rect width="1200" height="1120" fill="#f5f7fb"/>
+  <text x="40" y="48" class="title">code-agent 전체 구조</text>
+  <text x="1160" y="46" text-anchor="end" class="small">호스트에서 실행하는 개발 절차 · 별도 상주 서버 없음</text>
+
+  <rect x="40" y="80" width="540" height="96" rx="14" class="card"/>
+  <text x="64" y="117" class="heading">사용자</text>
+  <text x="64" y="150" class="body">요구사항 전달 · 업무 질문 응답 · 계획과 결과 승인</text>
+  <rect x="620" y="80" width="540" height="96" rx="14" fill="#fff" stroke="#9aa9ba" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="644" y="117" class="heading">master-agent <tspan class="small">선택 연동</tspan></text>
+  <text x="644" y="150" class="body">여러 프로젝트의 임무 · 제어권 · 위임 · 실행 관찰</text>
+  <path d="M310 176V230" class="line both"/>
+  <text x="328" y="211" class="small">요청 · 질문 · 확인</text>
+  <path d="M890 176V230" class="line both" stroke-dasharray="6 5"/>
+  <text x="908" y="211" class="small">실행 · 관제</text>
+
+  <rect x="40" y="230" width="1120" height="196" rx="16" fill="#eaf2ff" stroke="#a9c6ee" stroke-width="1.5"/>
+  <text x="64" y="268" class="heading">01  호스트 — Claude Code / Codex</text>
+  <rect x="60" y="290" width="330" height="112" rx="10" class="card"/>
+  <text x="80" y="321" class="label">메인 대화</text>
+  <text x="80" y="352" class="body">반환된 절차 수행 · 담당 호출</text>
+  <text x="80" y="381" class="small">Claude 선택 도구 / Codex 선택 UI</text>
+  <rect x="420" y="290" width="330" height="112" rx="10" class="card"/>
+  <text x="440" y="321" class="label">설치된 실행 절차</text>
+  <text x="440" y="352" class="body">접수 · 단계별 작업 · 질문과 동의</text>
+  <text x="440" y="381" class="small">ca-* 스킬 · 호스트 공통 지침</text>
+  <rect x="780" y="290" width="360" height="112" rx="10" class="card"/>
+  <text x="800" y="321" class="label">서브에이전트</text>
+  <text x="800" y="352" class="body">분석 · 조사 · 작성 · 구현 · 테스트</text>
+  <text x="800" y="381" class="small">계획 검토 · 독립 리뷰 · 결과 제출</text>
+  <path d="M390 346H420" class="line"/>
+  <path d="M750 346H780" class="line"/>
+
+  <path d="M290 426V500" class="line"/>
+  <text x="65" y="457" class="small">명령 실행 · 결과 기록 뒤 재개</text>
+  <text x="65" y="482" class="small">flow advance --json</text>
+  <path d="M650 500V426" class="line"/>
+  <text x="669" y="457" class="small">담당 절차 · 사람 판단</text>
+  <text x="669" y="482" class="small">대기 · 완료 인계</text>
+  <text x="945" y="458" class="small">호스트 이벤트</text>
+
+  <rect x="40" y="500" width="1120" height="290" rx="16" fill="#edf8f4" stroke="#9acaba" stroke-width="1.5"/>
+  <text x="64" y="538" class="heading">02  code-agent CLI — 실행 흐름과 진행 조건 검사</text>
+  <rect x="60" y="556" width="710" height="210" rx="12" fill="#fff" stroke="#4a9b83" stroke-width="2"/>
+  <text x="82" y="590" class="heading">LangGraph 실행기</text>
+  <text x="82" y="621" class="body">전체 흐름: 준비 → 접수 → 계획 → 구현 → 검증 → 리뷰 → 반영</text>
+  <rect x="82" y="640" width="150" height="42" rx="8" fill="#e1f2eb"/>
+  <text x="157" y="667" text-anchor="middle" class="body">계획 배정</text>
+  <rect x="246" y="640" width="150" height="42" rx="8" fill="#e1f2eb"/>
+  <text x="321" y="667" text-anchor="middle" class="body">단계 전이</text>
+  <rect x="410" y="640" width="150" height="42" rx="8" fill="#e1f2eb"/>
+  <text x="485" y="667" text-anchor="middle" class="body">검증 실행</text>
+  <rect x="574" y="640" width="172" height="42" rx="8" fill="#e1f2eb"/>
+  <text x="660" y="667" text-anchor="middle" class="body">명령별 실행</text>
+  <text x="82" y="717" class="body">최신 기록 관찰 → 실행 위치 선택 → 실행 또는 인계</text>
+  <text x="82" y="747" class="small">정적 검사 · 테스트 · 통합 검증 자동 실행 / 담당·사람 대기</text>
+  <rect x="800" y="556" width="340" height="100" rx="10" class="card"/>
+  <text x="820" y="588" class="label">CLI 기능과 진행 조건</text>
+  <text x="820" y="617" class="body">승인 · 변경 범위 · 검증 증거 검사</text>
+  <text x="820" y="643" class="small">단계 이동 · 검증 명령 · 로컬 커밋</text>
+  <path d="M770 606H800" class="line both"/>
+  <rect x="800" y="675" width="340" height="91" rx="10" class="card"/>
+  <text x="820" y="706" class="label">hook — 이벤트 검사·기록</text>
+  <text x="820" y="735" class="body">도구 경계 · 사용자 응답 · 담당 결과</text>
+  <text x="820" y="757" class="small">도구 호출마다 그래프를 실행하지 않음</text>
+  <path d="M1120 426V442H1180V720H1140" class="line" stroke-dasharray="5 5"/>
+
+  <path d="M350 790V850" class="line both"/>
+  <text x="371" y="827" class="small">최신 기록 읽기 · 결과 저장</text>
+  <path d="M970 790V850" class="line both"/>
+
+  <rect x="40" y="850" width="1120" height="170" rx="16" fill="#fff" stroke="#c5d1df" stroke-width="1.5"/>
+  <text x="64" y="887" class="heading">03  대상 프로젝트의 파일과 기록</text>
+  <path d="M408 909V997M788 909V997" stroke="#d6dfeb" stroke-width="1.5"/>
+  <text x="64" y="925" class="label">프로젝트 산출물</text>
+  <text x="64" y="956" class="body">공통·작업 문서 · 소스 · 테스트</text>
+  <text x="64" y="986" class="small">승인된 결과 → 작업 브랜치 로컬 커밋</text>
+  <text x="432" y="925" class="label">작업 · 승인 · 검증 기록</text>
+  <text x="432" y="956" class="body">단계 · 동의 원장 · 담당 결과 · 증거</text>
+  <text x="432" y="986" class="small">승인과 완료 여부를 판단하는 근거</text>
+  <text x="812" y="925" class="label">그래프 기록 · SQLite</text>
+  <text x="812" y="956" class="body">체크포인트 · 실행 위치 · 대기 사유</text>
+  <text x="812" y="986" class="small">재개 때 최신 근거 재검사 · Git 제외</text>
+
+  <rect x="40" y="1042" width="1120" height="54" rx="12" fill="#172b46"/>
+  <text x="600" y="1077" text-anchor="middle" style="font-size:21px; font-weight:700; fill:#fff">사용자 흐름   준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인</text>
+</svg>
