@@ -32,6 +32,18 @@ afterEach(() => removeStageRepo());
 // ---- 9 코드 리뷰 ----
 
 describe("code-agent review — 회차", () => {
+  test("구조화 리뷰는 검토 위치와 지적을 분리하고 한 번의 완료로 게이트를 통과한다", async () => {
+    await toReview();
+    openRound(requireValidatable(repo, "review"));
+    const event = { cwd: repo, session_id: "structured", agent_id: "reviewer-json", agent_type: "ca-reviewer" };
+    observeReviewer({ ...event, hook_event_name: "SubagentStart" });
+    observeReviewer({ ...event, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify({ findings: "- 없음", checked: [{ path: TEST_FILE, acceptance: ["AC-R1-1"] }] }) });
+    const round = loadReview(repo, "ORD-1", "order")!.rounds.at(-1)!;
+    assert.equal(round.reviewers!.length, 1);
+    assert.equal(round.reviewers![0].result, "- 없음");
+    assert.doesNotThrow(() => next(repo));
+  });
+
   test("검증이 통과한 뒤에만 열리고, 회차 구역은 코드가 렌더한다", async () => {
     await toReview();
     // 리뷰 스테이지에서 계획 파일을 고치면 증거가 무효라 회차가 열리지 않는다

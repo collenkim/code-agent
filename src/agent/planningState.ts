@@ -16,6 +16,7 @@ import { crossRunNote, selectedHosts } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import { collectExemplars } from "../core/exemplar";
 import { trackedTestFiles } from "./testFiles";
+import { dependencyContracts } from "./dependencyContracts";
 import {
   crossGateHandoff, crossHintText, crossLastRun, crossRerunAfterUser, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
   type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
@@ -59,7 +60,7 @@ export type ResolvedResult = Omit<PlanningResult, "artifacts"> & { artifacts: { 
 export interface InputParts {
   task: string; base?: string; manifest: string; inputs: string;
   /** 입력 파일이 50개 이하일 때만 경로별 해시 */
-  files?: Record<string, string>; host?: string;
+  files?: Record<string, string>; host?: string; contracts?: string;
   dependencies: [string, string | undefined][];
   /** [id, sha(질문 투영), origin] */
   questions: [string, string, string?][];
@@ -290,7 +291,7 @@ export function inputFiles(work: Work, task: PlanningTask, state = loadPlanning(
   // 독립 검토는 전체 판단 문서를 읽어 범위 축소로 지적이 사라지지 않게 한다.
   if (narrow && task.role === "critic") docs.push(...["02-analysis.md", "03-design.md", "04-functional.md"].map(file => `${workDocsDir(work.active.id)}/${file}`));
   const support = (task.contextVersion ?? 0) >= 4 ? supportFiles(work, task) : [];
-  return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...support, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
+  return [...new Set([work.active.spec, "code-agent.json", ...policyFiles, ...docs, ...task.inputs, ...scoped, ...support, ...dependencyContracts(work.repoRoot, work.active.id).files, ...outputs(task.dependsOn)])].filter(file => !task.outputs.includes(file)).sort();
 }
 export function dependencyHash(record: TaskRecord | undefined): string | undefined {
   const result = record?.attempts.at(-1)?.result;
@@ -363,7 +364,8 @@ function relevantQuestions(work: Work, task: PlanningTask, state: PlanningState)
 }
 /** 입력 해시와 그 부품. 직렬화 객체는 기존 taskHash 와 키 순서까지 같다 — 진행 중 작업의 결과를 낡게 만들지 않는다 */
 export function hashInput(work: Work, state: PlanningState, task: PlanningTask): HashedInput {
-  const memoKey = cache ? JSON.stringify([task, task.dependsOn.map(id => [id, dependencyValue(state, task, id)]), [...ancestorsOf(state, task.id)].sort(), state.tasks.map(record => record.task.id)]) : undefined;
+  const contracts = dependencyContracts(work.repoRoot, work.active.id).hash;
+  const memoKey = cache ? JSON.stringify([task, contracts, task.dependsOn.map(id => [id, dependencyValue(state, task, id)]), [...ancestorsOf(state, task.id)].sort(), state.tasks.map(record => record.task.id)]) : undefined;
   const memo = memoKey === undefined ? undefined : cache!.hashes.get(memoKey);
   if (memo) return memo;
   const inputs = inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)] as [string, string]);
@@ -372,9 +374,9 @@ export function hashInput(work: Work, state: PlanningState, task: PlanningTask):
   const dependencies = task.dependsOn.map(id => [id, dependencyValue(state, task, id)] as [string, string | undefined]);
   const questions = relevantQuestions(work, task, state);
   const manifest = hashManifest(work.manifest);
-  const hash = sha(JSON.stringify({ task, base: work.active.baseCommit, manifest, inputs, ...(host ? { hostInstructions: host } : {}), dependencies, questions }));
+  const hash = sha(JSON.stringify({ task, base: work.active.baseCommit, manifest, inputs, ...(host ? { hostInstructions: host } : {}), dependencies, questions, ...(contracts ? { contracts } : {}) }));
   const value: HashedInput = { hash, parts: {
-    task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)),
+    task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)), ...(contracts ? { contracts } : {}),
     ...(inputs.length <= 50 ? { files: Object.fromEntries(inputs) } : {}), ...(host ? { host: sha(JSON.stringify(host)) } : {}), dependencies,
     // 셋째 칸은 적용 범위를 정한 출처(코드가 기록한 출처만) — 낡은 이유 문구가 실제 적용 규칙을 보인다
     questions: questions.map(question => {
@@ -397,7 +399,7 @@ export function taskCurrent(work: Work, state: PlanningState, record: TaskRecord
     record.task.dependsOn.every(id => { const dep = state.tasks.find(item => item.task.id === id); return !!dep && taskCurrent(work, state, dep, next); });
 }
 export function readyProblems(work: Work, state: PlanningState, record: TaskRecord): string[] {
-  const problems: string[] = [];
+  const problems: string[] = [...dependencyContracts(work.repoRoot, work.active.id).problems];
   for (const id of record.task.dependsOn) {
     const dep = state.tasks.find(item => item.task.id === id);
     if (!dep || !taskCurrent(work, state, dep)) problems.push(`선행 작업 ${id}의 현재 입력에 대한 완료 결과가 없습니다`);
@@ -436,7 +438,7 @@ export const SOURCE_FAILURE = "source";
  */
 export const RESULT_FILE = "result.json";
 /** 최종 응답의 결과 파일 줄 */
-export const RESULT_POINTER = /^결과:\s*(\S+)\s*$/;
+export const RESULT_POINTER = /^결과:[ \t]*(\S+)[ \t]*$/m;
 export function runView(state: PlanningState, record: TaskRecord, attempt: TaskAttempt, now: number): RunView {
   const agentType = TASK_AGENTS[record.task.role];
   const verdict = orphanState({ attempt, agentType, agents: state.agents, now });
@@ -476,6 +478,7 @@ const listed = (paths: string[]): string => paths.length <= 6 ? paths.join(", ")
 export function inputChanges(before: InputParts | undefined, after: InputParts): StaleCause[] {
   if (!before) return [{ kind: "unknown", text: "입력이 바뀌었습니다 — 이전 기록이라 바뀐 항목을 알 수 없습니다" }];
   const causes: StaleCause[] = [];
+  if (before.contracts !== after.contracts) causes.push({ kind: "inputs", text: "외부 의존 계약 또는 근거 내용이 바뀌었습니다" });
   if (before.task !== after.task) causes.push({ kind: "task", text: "작업 정의(inputs·requirements 등)가 바뀌었습니다" });
   if (before.base !== after.base) causes.push({ kind: "base", text: "기준 커밋이 바뀌었습니다" });
   if (before.manifest !== after.manifest) causes.push({ kind: "manifest", text: "code-agent.json 이 바뀌었습니다" });

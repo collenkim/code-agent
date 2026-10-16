@@ -4,6 +4,8 @@
 
 코드는 `src/agent/master/`에 있다. 계약 상수(명령·오류 코드·이벤트·실행 상태·위임 동작·정책 기본값)는 `protocol.ts` 하나가 원천이다.
 
+선행 작업의 계약 자료는 [외부 의존 계약 인계](dependency-contracts.md)의 JSON과 `planning contracts`로 담당에게 전달한다. `planning reuse-answer`의 `contract` 출처는 사람 답과 master 위임·전달 출처를 대신하지 않으며, v1의 위임 권한 검사는 그대로 적용한다.
+
 ## 1. 적용 조건과 역할
 
 | 항목 | 동작 |

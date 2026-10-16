@@ -19,6 +19,24 @@ import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, ha
   ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
   type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 import type { PlanningCrossView } from "./crossRecord";
+import { dependencyContracts, registerContracts } from "./dependencyContracts";
+import { reuseContractAnswer } from "./answers";
+
+/** 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다. */
+export function planningContracts(root: string, input: string): string {
+  const work = planningWork(root);
+  return mutatePlanning(work, state => {
+    if (!PLANNING_PHASES.some(phase => phase === work.active.phase) || state.tasks.some(task => task.attempts.at(-1)?.status === "running")) throw new Stop("계약 등록은 실행 중 배정이 없는 계획 단계에서만 가능합니다");
+    return registerContracts(work.repoRoot, work.active.id, input);
+  });
+}
+export function planningReuseAnswer(root: string, question: string, contract: string, claim: string): string {
+  const work = planningWork(root);
+  return mutatePlanning(work, state => {
+    if (!PLANNING_PHASES.some(phase => phase === work.active.phase) || state.tasks.some(task => task.attempts.at(-1)?.status === "running")) throw new Stop("계약 재인용은 실행 중 배정이 없는 계획 단계에서만 가능합니다");
+    return reuseContractAnswer(work.repoRoot, work.active.id, question, contract, claim);
+  });
+}
 
 /** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
 export { ROLE_PHASE as PHASE } from "./planningState";
@@ -391,6 +409,8 @@ function assignment(work: Work, state: PlanningState, record: TaskRecord) {
       ...(record.task.outputs.length ? { staging: staged } : {}),
       resultFile,
       instructions: `지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. staging에 지정된 경로 외의 파일은 쓰지 말고 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄이며 경로는 저장소 루트 기준 전체 상대 경로로 씁니다(예: doc/work/<ID>/requirement.md:16, 파일명만 쓰지 않음). 원문 인용은 확정 지시서의 글자 그대로 옮기고 따옴표를 이스케이프하지 않습니다. 이 배정의 출력 문서(이전 판 포함)는 근거로 인용하지 않습니다. ${stagedInstruction()} ${resultInstruction()} 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. 질문·요약·문서 설명문은 확정 지시서와 같은 언어로 씁니다. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.`,
+      externalContracts: dependencyContracts(work.repoRoot, work.active.id).contracts.map(({ content, ...ref }) => ref),
+      externalContractInstructions: "inputs의 dependency-contracts.json은 지정 Git 원문·커밋·해시를 대조한 계약 사본입니다. 입력 범위 밖 저장소를 탐색하지 말고 이 사본의 content·claims를 사용하세요. 사람 답이나 승인 권한이 아니며 요구·다른 근거와 모순되거나 필요한 계약이 없으면 needs-input 질문을 반환하세요.",
       statusContract: statusContract(record.task),
       resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => ({ path, staged: staged[path] })), findings: [] },
       itemShapes: { fact: { key: "공유 사실 식별자", value: "관찰값", source: { path: work.active.spec, line: 1 } }, question: { id: "Q1", question: "사용자가 결정할 사항", requirements: record.task.requirements }, finding: { id: "F1", severity: "blocking | advisory", detail: "문제와 영향", source: { path: work.active.spec, line: 1 } } },

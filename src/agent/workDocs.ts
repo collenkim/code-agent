@@ -424,6 +424,11 @@ export function testSpecProblems(
     problems.push(ruled("TST-CASE", `${path} — 케이스·기대 결과가 빈 테스트 케이스: ${half.join(", ")} (네 번째·다섯 번째 열에 무엇을 하고 무엇이 되는지)`));
   }
   const unknown = [...new Set(cases.flatMap((entry) => entry.acceptance).filter((ac) => !acceptance.includes(ac)))];
+  for (const entry of cases) {
+    if (!entry.acceptance.length) problems.push(ruled("TST-CASE", `${path} — ${entry.id}: 연결된 AC가 없습니다`));
+    const procedure = /^(?:(?:기존|전체|모든)\s*(?:테스트|test)(?:\s*(?:스위트|suite))?\s*(?:실행|통과|성공|passed?).*|(?:기존\s*)?파일\s*(?:보존|유지|변경\s*없음).*)$/i;
+    if (/^(?:전체|모든)\s*테스트\s*(?:통과|성공)(?:한다|함)?[.!]?$/.test(entry.scenario) || (procedure.test(entry.scenario) && procedure.test(entry.expected))) problems.push(ruled("TST-CASE", `${path} — ${entry.id}: 실행·파일 보존 절차 자체는 기능 TC가 아닙니다. 입력과 관측 가능한 기대값을 단언하고 전체 실행·보존은 절차에 적으세요`));
+  }
   if (unknown.length > 0) {
     problems.push(ruled("TST-CASE", `${path} — 04 에 없는 수락 기준을 가리킵니다: ${unknown.join(", ")}`));
   }

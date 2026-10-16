@@ -21,6 +21,8 @@ MCP 도구가 없거나 폼이 거부되면 `code-agent doctor --host codex`로 
 
 ## 승인·확정·반영
 
+기존 계약 재인용은 `code-agent planning reuse-answer <Q번호> <계약ID> <항목키>`로 기록한다. 등록된 Git 근거와 같은 원문만 받으며 사람 답·동의가 아니다. 근거가 없거나 요구와 상충하면 질문하고 `[Source]: 대화`로 대신 적지 않는다.
+
 동작 JSON의 `action`은 `setup`, `docs`, `baseline`, `request`, `plan`, `deliver`, `knowledge-prune`, `model`, `abort`, `plugin-add`, `plugin-remove`, `update`, `repro-log`, `judgment` 중 하나다. 문서 종류는 `kind`, 작업 식별자는 `id`, 지시서 경로는 `spec`을 사용한다. 요청·계획 반려는 `decision: "reject"`와 `comment`로 준비한다. 플러그인은 `name`, `command`, `slots`, `sendsCode`, 필요 시 실제 키 대신 환경 변수 이름인 `secretEnv`를 사용한다. 관련 없는 필드는 넣지 않는다. 예: `{"action":"request","id":"작업 ID"}`, `{"action":"plan"}`. `judgment`는 `kind`(`retry-grant`·`waive-finding`·`cross-stop`), `name`·`id`, 필수 `comment`를 쓰며 사용자가 그 선택을 고른 뒤에만 준비한다. 지적 기각(waive-finding)은 그 회차에만 적용되고, 교차 중지(cross-stop)는 설정 오류·형식 오류·샌드박스 거절로 막힌 지점에만 준비할 수 있다. 자유 문구가 없는 동작(`setup`·`docs`·`baseline`·`request`·`plan`·`deliver`·`knowledge-prune`·`abort`·`update`·`repro-log`)은 파일 없이 `code-agent consent prepare --action <동작> [--id <작업 ID>] [--kind <종류>] [--spec <지시서>] --for codex`로 준비한다. 반려·`model`·플러그인·`judgment`처럼 자유 문구나 여러 필드가 필요한 동작만 JSON 파일로 준비한다.
 
 1. 실행 내용을 구체화하고, 파일이 필요한 동작이면 허용된 작업 문서 폴더에 동작 JSON을 작성한다. `code-agent consent prepare <파일> --for codex`(또는 위의 `--action` 형식)로 준비한다. 동작 종류와 필드는 CLI의 검증을 따른다. `consent prepare`는 이 대화의 셸에서 이 꼴 그대로 실행한다(훅이 이 세션에 묶는다). 셸 연결자나 리디렉션을 붙이지 않는다.

@@ -221,6 +221,8 @@ export function findingsBody(text: string, heading: string = FINDINGS_HEADING): 
 }
 
 export function normalizeFindings(text: string): string {
+  // JSON 문자열 안의 주석처럼 보이는 글자도 판단 내용이다. 구조 검사 전에 지우지 않는다.
+  if (text.trim().startsWith("{")) return text.trim();
   return text.replace(/<!--[\s\S]*?-->/g, "").split("\n").map((line) => line.trim()).filter(Boolean).join("\n");
 }
 

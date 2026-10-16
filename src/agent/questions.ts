@@ -25,7 +25,7 @@ export interface Question {
   origin?: string;
   /** `[Answer]:` 앞 본문의 선택지 줄(`A. 문장`) — 답이 선택지 글자일 때 관찰된 응답과 대조한다 */
   options?: Record<string, string>;
-  /** 답의 출처 — `[Answer]:` 뒤의 마지막 `[Source]:` 줄(관찰 안 된 대화 답은 `대화`). 답이 비면 두지 않는다 */
+  /** 답의 출처 표시 — 대화·기존 계약·master 전달 등. 문자열만으로 인증하지 않고 answers.ts의 기록·근거를 대조한다 */
   source?: string;
 }
 

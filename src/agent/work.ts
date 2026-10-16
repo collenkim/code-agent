@@ -42,7 +42,7 @@ export function readOrder(repoRoot: string, spec: string, manifest: Manifest): W
 }
 
 /**
- * 승인이 묶는 문서의 해시 — 확정된 POLICY 4종 + 이 작업의 고정 목록(지시서 본문 · 01 · 02 · 03 · 04 · 07).
+ * 승인이 묶는 문서의 해시 — 확정된 POLICY 4종 + 작업 문서(지시서 본문 · 01 · 02 · 03 · 04 · 07) + 등록한 외부 계약의 검증 해시.
  * 승인은 "이 문서들을 근거로 한 이 계획"에 대한 것이라, 승인 뒤 어느 쪽이 바뀌어도 무효가 된다.
  * 필수 문서가 확정되지 않았으면 undefined — 묶을 근거가 없다 (대조하는 쪽은 그것을 어긋난 것으로 받는다).
  */
@@ -54,6 +54,8 @@ export function approvalDocsHash(work: Work): string | undefined {
  * 바뀐 문서를 고르는 데만 쓴다(POLICY 종류별 확정 해시 · 작업 문서 경로별 해시 · 계획 작업 기록).
  */
 export function approvalDocsState(work: Work): { hash?: string; parts?: Record<string, string> } {
+  const contracts = require("./dependencyContracts") as typeof import("./dependencyContracts");
+  const contractHash = contracts.dependencyContracts(work.repoRoot, work.active.id).hash;
   const checks = checkProjectDocs(work.repoRoot, work.manifest);
   const project = projectDocsHash(checks);
   if (!project) {
@@ -66,7 +68,8 @@ export function approvalDocsState(work: Work): { hash?: string; parts?: Record<s
   // 항목은 `<경로>:sha256:<해시>` 꼴이다
   for (const entry of entries) { const at = entry.lastIndexOf(":sha256:"); parts[entry.slice(0, at)] = entry.slice(at + 1); }
   if (proof) parts["계획 작업 기록"] = sha(proof);
-  return { hash: sha(`${project}\n${sha(entries.join("\n"))}${proof ? `\n${proof}` : ""}`), parts };
+  if (contractHash) parts["외부 의존 계약"] = contractHash;
+  return { hash: sha(`${project}\n${sha(entries.join("\n"))}${proof ? `\n${proof}` : ""}${contractHash ? `\ncontracts:${contractHash}` : ""}`), parts };
 }
 
 /**

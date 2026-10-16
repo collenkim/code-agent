@@ -416,6 +416,7 @@ npm test
 | [LangGraph 실행 구조](doc/langgraph.md) | 전체 그래프·호스트 인계·SQLite·중단 후 재개 계약 |
 | [프로세스 흐름도](doc/process-flow.md) | 접수부터 반영까지 단계·게이트·동의·hook·Claude/Codex 차이·파일과 모듈 지도. 기능을 바꿀 때 함께 갱신 |
 | [계획 작업 안내](doc/planning.md) | 서브 에이전트 배정·병렬 조사·입력 변경·독립 검토·Task 실행 |
+| [외부 의존 계약](doc/dependency-contracts.md) | 선행 계약의 Git 근거 전달·변경 감지·사람 답과 구분한 계약 재인용 |
 | [사용 가이드](doc/usage.md) | 단계별 실행, 질문·승인, 명령과 만들어지는 파일, 상태 조회·경험·발견 형식, 예외와 복구 |
 | [설치 문서](doc/install.md) | npm·실행 파일 설치, 빌드, 갱신, 제거 |
 | [Codex 연동](doc/codex.md) | Codex 설치·신뢰, 훅 이벤트, 선택 UI, 역할별 모델 기본값 |

@@ -117,7 +117,7 @@ const MODEL_SUBCOMMANDS = [
   "read",
   "status",
   "plan submit",
-  "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel", "planning cross",
+  "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel", "planning cross", "planning contracts", "planning reuse-answer",
   "docs",
   "survey",
   "manifest check",

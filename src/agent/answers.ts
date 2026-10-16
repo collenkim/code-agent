@@ -6,8 +6,8 @@
  * `[Answer]:` 다음 줄의 `[Source]: 대화` 로 남겨 통과시키되, 계획 승인·반영 화면에 '관찰 안 됨'으로 이름과 답을 싣는다.
  * Codex 사용자 메시지 원문은 기록하지 않는다.
  *
- * 판정 입력은 questions.md·answers.jsonl·확정 지시서뿐이고 모두 동의 스냅샷 안이다 — 동의를 준비한 뒤 판정이 바뀌면 그 동의는
- * 대상 변경으로 폐기된다. hook 이 읽으므로 consent.ts·request.ts 를 import 하지 않는다.
+ * 질문·답 원장·확정 지시서·등록 계약 사본은 동의 스냅샷 안이다. 외부 계약 원문은 출처 판정과 승인 해시에서 재검증한다.
+ * hook 이 읽으므로 consent.ts·request.ts 를 import 하지 않는다.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { createHash } from "crypto";
@@ -15,6 +15,9 @@ import { dirname, join } from "path";
 
 import { findRepoRoot, loadActive, questionsFile, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
 import { parseQuestions, type Question } from "./questions";
+import { dependencyContracts } from "./dependencyContracts";
+import { writeAtomic } from "../core/atomic";
+import { skill } from "./hostText";
 
 export const ANSWERS_FILE = "answers.jsonl";
 export function answersFile(id: string): string { return `${STATE_DIR}/work/${id}/${ANSWERS_FILE}`; }
@@ -29,7 +32,8 @@ export type AnswerRow =
    * master 가 넣은 답 — actor ai 는 위임 판단, human 은 master 를 거쳐 온 사람의 답(code-agent 가 응답을 관찰하지 않았다). 사람이 TTY 에서 준
    * 권한(grant) 범위에서만 master/delegation.ts 가 쓴다. hash 는 questions.md 에 쓴 답(sha16)이다 — 답을 고치면 출처가 사라진다
    */
-  | { type: "delegated"; at: string; q: string; hash: string; actor: "ai" | "human"; decisionId: string; grantId: string; controller: string; generation: number; category: string };
+  | { type: "delegated"; at: string; q: string; hash: string; actor: "ai" | "human"; decisionId: string; grantId: string; controller: string; generation: number; category: string }
+  | { type: "contract"; at: string; q: string; hash: string; questionHash: string; contractId: string; claimKey: string; bundleHash: string };
 
 /** consent.ts ConsentHookInput 과 같은 꼴(순환을 피하려고 따로 둔다) */
 interface QuestionHookInput {
@@ -74,7 +78,7 @@ export function readAnswerRows(root: string, id: string): AnswerRow[] {
     if (!line.trim()) continue;
     try {
       const row = JSON.parse(line) as AnswerRow;
-      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer" || row.type === "delegated")) rows.push(row);
+      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer" || row.type === "delegated" || row.type === "contract")) rows.push(row);
     } catch { /* 반쯤 쓰인 줄 */ }
   }
   return rows;
@@ -184,7 +188,37 @@ export function writeAnswerBaseline(root: string, id: string, specPath: string):
   appendRow(root, id, { type: "start", at: new Date().toISOString(), version: 1, intake });
 }
 
-export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "conversation" | "legacy" | "unverified";
+export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "contract" | "conversation" | "legacy" | "unverified";
+/** 질문 원문도 결속한다. Q 번호만 같은 다른 질문으로 답을 옮길 수 없다. */
+function questionHash(root: string, id: string, q: string): string {
+  const text = readFileSync(join(root, questionsFile(id)), "utf8");
+  const block = text.split(/^## /m).slice(1).find(block => block.split(/\s/)[0] === q);
+  return sha16((block ?? "").split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "").trim());
+}
+export function reuseContractAnswer(root: string, id: string, q: string, contractId: string, claimKey: string): string {
+  const bundle = dependencyContracts(root, id);
+  if (bundle.problems.length) throw new Error(bundle.problems.join("\n"));
+  const claim = bundle.contracts.find(item => item.id === contractId)?.claims.find(item => item.key === claimKey);
+  if (!claim || !bundle.hash) throw new Error("검증된 계약 항목이 없습니다 — 근거가 없으면 질문하세요");
+  const path = join(root, questionsFile(id)), text = readFileSync(path, "utf8");
+  const questions = parseQuestions(text).filter(item => item.id === q);
+  if (questions.length !== 1 || questions[0].answer || questions[0].status === "deferred") throw new Error("답이 없는 단일 질문만 계약으로 재인용할 수 있습니다");
+  const blocks = text.split(/^## /m), index = blocks.findIndex((block, i) => i > 0 && block.split(/\s/)[0] === q);
+  if (!/^[ \t]*\[Answer\]:/m.test(blocks[index])) throw new Error("질문에 Answer 필드가 없습니다");
+  const row: Extract<AnswerRow, { type: "contract" }> = { type: "contract", at: new Date().toISOString(), q, hash: sha16(claim.text), questionHash: questionHash(root, id, q), contractId, claimKey, bundleHash: bundle.hash };
+  const head = blocks[index].split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "");
+  blocks[index] = head + `[Answer]: ${claim.text}\n[Source]: 기존 계약 ${contractId} ${claimKey}\n[Status]: answered\n\n`;
+  // 기록이 먼저다. 중단돼도 답이 비어 있으면 통과하지 않는다.
+  appendRow(root, id, row);
+  writeAtomic(path, blocks.join("## "));
+  return `${q}: 기존 계약 ${contractId} ${claimKey} 재인용 — 사람 응답 아님`;
+}
+function contractMatch(root: string, id: string, question: Question, rows: AnswerRow[]): boolean {
+  const row = rows.filter((item): item is Extract<AnswerRow, { type: "contract" }> => item.type === "contract" && item.q === question.id).at(-1);
+  if (!row || question.source !== `기존 계약 ${row.contractId} ${row.claimKey}` || row.hash !== sha16(question.answer) || row.questionHash !== questionHash(root, id, question.id)) return false;
+  const bundle = dependencyContracts(root, id);
+  return !bundle.problems.length && bundle.hash === row.bundleHash && bundle.contracts.some(contract => contract.id === row.contractId && contract.claims.some(claim => claim.key === row.claimKey && claim.text === question.answer));
+}
 /** master 가 넣은 답과 지금 답이 같은가 — 같은 Q 번호의 마지막 기록만 본다 */
 function delegatedMatch(question: Question, rows: AnswerRow[]): Extract<AnswerRow, { type: "delegated" }> | undefined {
   const row = rows.filter((item): item is Extract<AnswerRow, { type: "delegated" }> => item.type === "delegated" && item.q === question.id).at(-1);
@@ -198,7 +232,11 @@ export function answerSources(root: string, id: string, questions: Question[]): 
   const sources = new Map<string, AnswerSource>();
   for (const question of questions) {
     if (!question.answer) continue;
-    if (!start) sources.set(question.id, "legacy");
+    const lastContract = rows.reduce((last, row, index) => row.type === "contract" && row.q === question.id ? index : last, -1);
+    const later = lastContract < 0 ? [] : rows.slice(lastContract + 1);
+    if (question.source?.startsWith("기존 계약")) sources.set(question.id, contractMatch(root, id, question, rows) ? "contract" : "unverified");
+    else if (lastContract >= 0) sources.set(question.id, observedMatch(question, later) ? "observed" : delegatedMatch(question, later)?.actor === "ai" ? "delegated" : delegatedMatch(question, later)?.actor === "human" ? "relayed" : "unverified");
+    else if (!start) sources.set(question.id, "legacy");
     else if (start.intake.some((entry) => entry.q === question.id && entry.hash === sha16(question.answer))) sources.set(question.id, "intake");
     else if (observedMatch(question, rows)) sources.set(question.id, "observed");
     else if (delegatedMatch(question, rows)) sources.set(question.id, delegatedMatch(question, rows)!.actor === "ai" ? "delegated" : "relayed");
@@ -213,7 +251,7 @@ export function answerSources(root: string, id: string, questions: Question[]): 
  * 계획 배정(readyProblems)과 status 의 다음: 이 같은 문장을 쓴다. 호스트 중립 문구다.
  */
 export function unverifiedAnswerHint(ids: readonly string[]): string {
-  return `답 출처 미확인 ${ids.join(", ")} — 질문 도구 응답이 관찰되지 않은 답입니다. ca-answer 절차로 질문 도구 응답을 받거나, 대화로 받은 답이면 [Answer]: 뒤에 [Source]: 대화 줄을 적습니다`;
+  return `답 출처 미확인 ${ids.join(", ")} — 질문 도구 응답이 관찰되지 않은 답입니다. ${skill("ca-answer")} 절차로 질문 도구 응답을 받거나, 실제 대화로 받은 답이면 [Answer]: 뒤에 [Source]: 대화 줄을 적습니다. 기존 계약 재인용은 code-agent planning reuse-answer로 검증하며 계약·답 변조를 Source 변경으로 대신하지 않습니다`;
 }
 
 /** 답이 없는 질문과 답의 출처를 확인할 수 없는 질문. 작업 폴더의 questions.md 가 아니면 출처는 보지 않는다 */
@@ -238,11 +276,11 @@ export function formatAnswerSources(root: string, id: string): string | undefine
   const count = (source: AnswerSource) => [...sources.values()].filter((value) => value === source).length;
   if (count("legacy") === sources.size) return `질문 답 출처: 이전 형식(관찰 기록 없음) ${sources.size}`;
   const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["delegated", "master 위임 판단(사람 응답 아님)"], ["relayed", "master 경유 사람 답(관찰 안 됨)"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
-    ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
+    ["contract", "기존 계약 재인용(사람 응답 아님)"], ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
     .filter(([source]) => count(source) > 0).map(([source, label]) => `${label} ${count(source)}`);
-  const conversation = questions.filter((question) => ["conversation", "delegated", "relayed"].includes(sources.get(question.id) ?? ""));
+  const conversation = questions.filter((question) => ["conversation", "delegated", "relayed", "contract"].includes(sources.get(question.id) ?? ""));
   const shown = conversation.slice(0, 10).map((question) =>
-    `  - ${question.title}: ${JSON.stringify(question.answer.split("\n").map((line) => line.trim()).find(Boolean) ?? "")}`);
+    `  - ${question.title}: ${JSON.stringify(question.answer.split("\n").map((line) => line.trim()).find(Boolean) ?? "")}${sources.get(question.id) === "contract" ? ` — ${question.source}` : ""}`);
   if (conversation.length > 10) shown.push(`  - 외 ${conversation.length - 10}개 (questions.md)`);
   return [`질문 답 출처: ${parts.join(" · ")}`, ...shown].join("\n");
 }

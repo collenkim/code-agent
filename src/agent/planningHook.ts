@@ -121,12 +121,13 @@ interface Prepared {
   staged?: Staged;
 }
 /**
- * 최종 응답이 `결과: <경로>` 한 줄이면 그 결과 파일을 읽는다 — 이 담당이 맡을 수 있는 실행 중 배정(역할의 담당 종류·시작 때 고른 배정)의
+ * 최종 응답의 단일 `결과: <경로>` 줄에서 그 결과 파일을 읽는다(앞뒤 설명 허용) — 이 담당이 맡을 수 있는 실행 중 배정(역할의 담당 종류·시작 때 고른 배정)의
  * resultFile 자리만 받는다. 그 자리는 그 배정의 담당만 쓸 수 있고(hook), 줄 자체는 검증한 실행 기록에서 왔다.
  */
 function pointedResult(work: Work, snapshot: ReturnType<typeof loadPlanning>, agent: { type: string; dispatchId?: string }, raw: string): { text: string } | { error: string } | undefined {
   const pointer = RESULT_POINTER.exec(raw.trim());
   if (!pointer) return undefined;
+  if (raw.split(/\r?\n/).filter(line => /^\s*결과:/.test(line)).length !== 1) return { error: "복수 결과 포인터는 받을 수 없습니다" };
   const allowed = snapshot.tasks.flatMap(record => {
     const last = record.attempts.at(-1);
     return last?.status === "running" && TASK_AGENTS[record.task.role] === agent.type && (!agent.dispatchId || agent.dispatchId === last.dispatchId)

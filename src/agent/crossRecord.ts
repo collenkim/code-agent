@@ -12,6 +12,7 @@ import { createHash } from "crypto";
 import { readdirSync, readFileSync, statSync } from "fs";
 import { hostname } from "os";
 import { join } from "path";
+import { z } from "zod";
 
 import type { HostName } from "./crossEnv";
 import { pidAlive } from "./lock";
@@ -116,6 +117,11 @@ const cellsOf = (line: string): string[] => {
 };
 const OPEN_WORDS = /^(?:open|opened|unresolved|열린|미해결)$/i;
 const CLOSED_WORDS = /^(?:resolved|closed|fixed|해결됨)$/i;
+/** 설명은 판단 문장이 아닌 검토 위치 목록으로 분리한다. 실제 지적은 findings에만 둔다. */
+const ReviewEnvelope = z.object({
+  findings: z.string().min(1),
+  checked: z.array(z.object({ path: z.string().min(1), acceptance: z.array(z.string().regex(/^AC-R\d+-\d+$/)).max(100) }).strict()).max(100),
+}).strict();
 /**
  * 판단을 바꾸지 않는 표 칸 정규화 — 기록 전에 reviewResultProblems 앞에서 부른다. 형식만 틀린 결과로 판단 등급 담당을
  * 다시 부르지 않게 한다. 범위 칸은 계획 파일 목록에서 정해지는 값이라 다시 쓰고, 계획 파일 칸의 백틱·`./`·역슬래시·끝 줄번호는
@@ -123,6 +129,15 @@ const CLOSED_WORDS = /^(?:resolved|closed|fixed|해결됨)$/i;
  * 고친 줄이 없으면 본문을 그대로 돌려준다. `fixed` 는 고친 칸 수다.
  */
 export function normalizeReviewTable(body: string, planned: readonly string[], idPattern: RegExp): { body: string; fixed: number } {
+  if (body.trim().startsWith("{")) {
+    try {
+      const envelope = ReviewEnvelope.parse(JSON.parse(body));
+      if (envelope.findings.trim().startsWith("{") || envelope.checked.some(item => !planned.includes(item.path))) return { body, fixed: 0 };
+      const normalized = normalizeReviewTable(envelope.findings, planned, idPattern);
+      if (reviewResultProblems(normalized.body, planned, idPattern).length) return { body, fixed: 0 };
+      return { body: normalized.body, fixed: normalized.fixed + 1 };
+    } catch { return { body, fixed: 0 }; }
+  }
   const allowed = new Set(planned);
   let fixed = 0;
   const lines = body.split("\n").map((line) => {

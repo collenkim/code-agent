@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-16",
+  "baseCommit": "2552d3a",
+  "scope": "code-agent",
+  "node": "24.19.0",
+  "platform": "win32",
+  "stateSchema": 4,
+  "build": { "command": "npm.cmd run build", "exitCode": 0 },
+  "fullSuite": {
+    "command": "npm.cmd test",
+    "execution": "샌드박스 밖",
+    "exitCode": 0,
+    "tests": 1595,
+    "suites": 218,
+    "passed": 1591,
+    "failed": 0,
+    "skipped": 4,
+    "cancelled": 0,
+    "durationMs": 202369.0869,
+    "logSha256": "f85ddb44ee2e24a41be068f1301192ef1159801f0ceb96203614fa72b42a0774"
+  },
+  "finalFocusedSuite": {
+    "reason": "최종 안내 문구의 호스트 표기 함수 적용 후 재검증",
+    "command": "node --test dist/test/answers.test.js dist/test/hostText.test.js dist/test/hookLoad.test.js dist/test/templateBudget.test.js dist/test/docSync.test.js",
+    "exitCode": 0,
+    "tests": 47,
+    "suites": 3,
+    "passed": 47,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "durationMs": 26911.7464,
+    "logSha256": "12c17be251423eebc24449d42ae5f587b25ca6b180760a4a2980c9f000667038"
+  },
+  "newRegressionCases": {
+    "src/test/dependencyContracts.test.ts": 19,
+    "src/test/resultContracts.test.ts": 11,
+    "src/test/review-gate.test.ts": 1
+  },
+  "coverage": [
+    "별도 임시 Git 저장소의 커밋된 계약을 explore와 design에 전달하고 원본 변경을 입력 및 승인 해시에 반영",
+    "잘못된 경로와 커밋과 해시와 원문, 상충 키, 크기 초과, 진행 중 배정의 계약 등록 거부",
+    "계약 재인용의 질문과 답과 출처와 근거 결속 및 변조 거부, 기존 사람 관찰과 위임과 전달 답 보존",
+    "단일 결과 포인터와 설명 수용, 경로와 복수 포인터와 JSON과 스키마와 소유권과 입력 해시와 크기 오류 거부",
+    "구조화 리뷰의 한 번 완료 및 게이트 통과, 실제 지적 보존, 상충과 추가 필드와 지적 은닉 거부",
+    "실행 가능한 테스트 계획 수용, AC 없는 TC와 자기참조 TC와 T2 담당 요구의 AC 누락 거부"
+  ],
+  "realModelRun": false,
+  "limitations": [
+    "담당 응답과 사람 관찰 기록은 회귀 시험 fixture이며 실제 Claude와 Codex의 두 프로젝트 재실행은 수행하지 않았다",
+    "재질문과 재호출과 토큰 감소량은 측정하지 않았다",
+    "같은 항목 키의 상충을 검사하며 자연어 요구와 계약의 의미상 모순 전체를 자동 판정하지 않는다"
+  ],
+  "masterFollowup": "선행 산출물의 커밋된 계약 문서와 항목 키를 선정하고 계약 JSON을 개발 호스트에 전달해 첫 세부 배정 전에 등록한다. 기존 master v1 위임 및 사람 전달 계약은 유지한다.",
+  "cleanup": "이번 작업의 중간 실행 로그는 최종 결과와 해시를 이 자료로 정리한 뒤 제거한다. 기존 실행 증거와 Git 이력은 보존한다."
+}

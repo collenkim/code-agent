@@ -34,7 +34,7 @@ import { modelsTable, setModel } from "./models";
 import { pluginAdd, pluginExample, pluginList, PLUGIN_USAGE, pluginRemove } from "./plugins/commands";
 import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./request";
 import { openRound } from "./review";
-import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repairPlanning, planningResult } from "./planning";
+import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repairPlanning, planningResult, planningContracts, planningReuseAnswer } from "./planning";
 import { manifestCheck, survey } from "./survey";
 import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
@@ -135,6 +135,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent read <파일> [시작 줄] [줄 수]  저장소 텍스트를 줄 번호와 함께 읽기 (기본 200줄, 최대 400줄)
   code-agent plan submit <초안.json>  계획 검사 후 제출
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
+  code-agent planning contracts <계약.json>  지정 Git 근거의 경로·커밋·해시를 검증해 담당 입력으로 등록 (계획 단계)
+  code-agent planning reuse-answer <Q번호> <계약ID> <항목키>  검증된 계약 원문 재인용 (사람 답·승인 아님)
   code-agent planning advance [--chain]   준비·재사용·선행 조건 판정 후 실행할 배정 묶음과 다음 행동(next) 반환 (배정 전문은 assignmentFile에)
                                       --chain 이면 analysis·impact·design 결과가 모두 준비됐을 때 같은 호출에서 게이트(next)까지 지난다 (거부되면 exit 1, 다음 단계 배정은 하지 않는다)
   code-agent planning status          배정·입력 변경·선행 조건·미결 질문 요약
@@ -300,6 +302,8 @@ export async function runCommand(command: string | undefined, args: string[]): P
         return out.exit;
       }
       if (args[0] === "prepare") print(await operation("prepare", () => preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined)));
+      else if (args[0] === "contracts" && args.length === 2) print(await operation("contracts", () => planningContracts(repoRoot, args[1])));
+      else if (args[0] === "reuse-answer" && args.length === 4) print(await operation("reuse-answer", () => planningReuseAnswer(repoRoot, args[1], args[2], args[3])));
       else if (args[0] === "status") print(planningJson(JSON.parse(planningStatus(repoRoot))));
       else if (args[0] === "result" && args[1]) print(planningJson(JSON.parse(planningResult(repoRoot, args[1]))));
       else if (args[0] === "repair" && args[1]) print(await operation("repair", () => planningAssignmentCli(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1])))));

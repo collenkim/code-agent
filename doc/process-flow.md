@@ -14,6 +14,8 @@
 
 ### 1.1 변경 → 갱신 대응표
 
+외부 의존 계약(`dependencyContracts.ts`·계획 등록/입력·`answers.ts`·`work.ts`)을 바꾸면 §4.3·§6.1·§8·§9, `doc/dependency-contracts.md`·`doc/planning.md`·`doc/master-control.md`, Claude·Codex 답 지침과 상태 형식 세대를 함께 맞춘다. 등록·재인용 명령은 hook 허용 목록에 있고 읽기 전용 임대 예외에는 없다.
+
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
 | `graph/` 실행기·전체 흐름·계획·전이, `core/workflow.ts`, `cliMain.ts` 실행 경계 | §3.3, §6, §8, §9 | `doc/langgraph.md`, `ca-next` 재개 절차, Claude·Codex 공통 블록, `stateView.ts` 그래프 관찰, master `hello.execution`·`graph.changed`, `runtimeSelect.ts` 상태 세대·실행 잠금, 동의 스냅샷·반영 제외 경로 |
@@ -261,6 +263,8 @@ sequenceDiagram
 
 ### 4.3 업무 질문 답 관찰 (`answers.ts`)
 
+- 기존 계약 재인용은 `planning reuse-answer <Q번호> <계약ID> <항목키>`가 기록한다. `contract` 행은 질문 본문·답·검증된 계약 묶음 해시에 묶이고 출처는 `contract`(사람 응답 아님)다. `[Source]: 기존 계약 …` 문자열만으로 인증하지 않으며 답·질문·원문·사본 변경과 상충은 `unverified`다. 기록 이후 Source를 대화로 바꾸어 우회하지 못한다. 실제 관찰 답과 권한 있는 master 답의 경로는 유지한다. [계약 인계](dependency-contracts.md)를 따른다.
+
 - Claude 의 업무 `AskUserQuestion`(동의 질문이 아닌 것)을 `consent-event` hook 이 `.code-agent/work/<ID>/answers.jsonl`(반영 커밋에 들어간다)에 기록한다 — Pre 는 `ask` 행, Post 는 같은 세션·호출·질문의 `ask`가 있고 미리 채운 답이 아닐 때만 `answer` 행. 서브에이전트 질문·작업 없는 질문은 기록하지 않는다. 관찰 실패는 질문을 막지 않는다(stderr). `start`가 시작 행(`writeAnswerBaseline`)을 쓴다.
 - 판정(`answerSources`, 답이 있는 질문만): 시작 행이 없으면 `legacy`(이전 작업) → 시작 행의 접수 답(확정 지시서의 "접수 때 정한 것" `- A:` 값과 같았던 답)이면 `intake` → 같은 Q 번호(질문 도구의 `header`·`question` 앞부분의 `Q<n>`)로 관찰된 응답과 첫 줄(선택지 글자면 그 문장도, NFC·공백·끝의 `(추천)`·따옴표 정규화)이 같으면 `observed` — Q 번호 없는 질문 호출의 응답은 어느 질문에도 맞추지 않는다 → `[Answer]:` **뒤**의 마지막 `[Source]:` 줄이 `대화`로 시작하면 `conversation` → 그 밖은 `unverified`.
 - `unverified`는 답이 없는 것과 같이 막는다: `next`·`plan submit`·승인(`requireAnswers`), Stop hook(`(답 출처 미확인)`), 반영(`deliverProblems`), `status` 다음 줄, 계획 배정의 관련 질문(`readyProblems`).
@@ -351,6 +355,10 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 
 ### 6.1 계획 작업 (analysis·impact·design·plan, `planningVersion=1`)
 
+**외부 의존 계약** — `planning contracts <계약.json>`은 계획 잠금 안에서, 실행 중 배정이 없는 계획 단계에만 등록한다. `dependencyContracts.ts`가 지정 파일의 Git 커밋·현재 바이트·SHA256·원문 항목과 같은 키의 충돌을 대조하고 `.code-agent/work/<ID>/dependency-contracts.json`에 사본을 쓴다. `inputFiles`는 이 사본을 모든 담당에게 주고 배정의 `externalContracts`는 출처를 전달한다. 원본 저장소 탐색·수정 권한은 없다. `hashInput`·`readyProblems`와 `approvalDocsState`가 원본·사본을 재검증해 입력 변경과 승인 무효에 반영한다. 없는 자료나 의미상 모순은 질문 대상이다. 계약 미사용 작업의 해시는 유지한다.
+
+**결과·계획 사전 점검** — 단일 `결과: <resultFile>` 줄 앞뒤의 설명은 허용한다. 복수 포인터는 거부하며 경로·소유권·스키마·입력 해시·크기 검사는 그대로다. 판단·질문·지적은 결과 JSON에 기록한다. `submitChecklist`는 각 Task의 R → AC → 실행 가능한 TC 연결과 기능 단언·절차 구분을 안내한다. `testSpecProblems`는 AC 없는 TC와 명백한 전체 테스트 통과 자기참조 TC를 거부하고, `planRuleProblems`의 작업별 AC 검사는 완료 hook과 제출에서 같은 함수를 쓴다.
+
 `advancePlanning`은 `graph/planning.ts`의 준비 → 작업 선택 → 개별 배정 → 판정 → 대기 그래프를 실행한다. 각 배정은 최신 계획을 파일 잠금 안에서 다시 검사한다. 자동 되감기 허용은 준비 노드에서 한 번만 소비한다. 배정 이후 중단되면 다음 호출이 기록된 배정을 관찰하므로 같은 효과 노드를 체크포인트에서 재생하지 않는다.
 
 | 역할 | 단계 | 담당(Claude / Codex) | 출력 | 선행(dependsOn) |
@@ -388,7 +396,7 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 **관찰 — SubagentStart·Stop** (`observePlanner` `planningHook.ts:335-357`)
 - 공통 전제: `session_id`·`agent_id`가 없으면 오류다(339). 갱신은 hook 잠금 대기(`TIMING.hookLockWaitMs`)로 `mutatePlanning` 안에서 한다.
 - Start: 실행 중인 같은 담당 종류의 배정이 있으면 담당을 등록하고, 후보가 하나일 때만 `dispatchId`를 연결한다(342-348). 후보 배정마다(결과 파일 자리 때문에 출력 문서가 없는 explore·critic 도) 잠금 뒤 staging 폴더와 그 `.gitignore`를 만들고(`openStaging`), 정식 출력 문서가 이미 있거나(되감기·수정 피드백 재배정) 직전 시도의 초안이 남아 있으면 그 배정의 staging 자리에 미리 넣는다(`seedStaging` `planning.ts:50-66` — 초안이 현행 문서보다 우선이고, 마지막 완료 뒤의 초안만 쓴다(`latestDrafts`). 교정 시도와 이미 있는 staging 파일은 건드리지 않는다. 담당은 고칠 곳만 고친다) — 배정(CLI)이 만들지 않는다. Windows Codex 샌드박스 셸이 만든 폴더는 그 작업 공간의 첫 `apply_patch` 전에 생기면 `apply_patch`로 쓸 수 없게 남기 때문이다(0.162.1 실측). hook 은 샌드박스 밖에서 돈다.
-- Stop은 잠금 밖 준비(`prepareStop` 96-118 — 결과 수신 29-50(최종 응답이 `결과: <경로>` 한 줄이면 실행 중인 그 담당 종류 배정의 `resultFile` 자리일 때만 그 파일을 결과로 읽는다. 다른 자리·없는 파일은 형식 오류다 — `pointedResult`), 파싱, staging 읽기와 그 역할의 문서 검사, 해시 메모) 뒤 잠금 안에서 판정한다(`decideStop` 151-329). 판정은 값으로 돌려준다(예외면 저장하지 않으므로 되돌림 횟수·고아 기록을 남기려고). `return`(기록 없이 같은 담당에게 되돌림)은 Claude(`host: "claude"`)에서 `stop_hook_active`가 아니고 그 담당의 되돌림(`agents[].returns`)이 한도 전일 때만이다. 되돌릴 때 그때까지 판정한 `SubagentHandback` 수(`agents[].judgedHandbacks`)를 남기고, 다음 Stop은 그 뒤의 보고만 본다(없으면 `last_assistant_message`) — 되돌린 옛 보고를 다시 판정하지 않는다. 시도를 `orphaned`로 둘 때(2~4)는 같은 시도에 연결된 다른 미완료 담당이 없을 때만이다(`orphanLinked` 136-139 — `orphanState`와 같은 기준). 순서:
+- Stop은 잠금 밖 준비(`prepareStop` 96-118 — 결과 수신 29-50(최종 응답의 단일 `결과: <경로>` 줄이 실행 중인 그 담당 종류 배정의 `resultFile` 자리일 때만 그 파일을 결과로 읽는다. 다른 자리·없는 파일은 형식 오류다 — `pointedResult`), 파싱, staging 읽기와 그 역할의 문서 검사, 해시 메모) 뒤 잠금 안에서 판정한다(`decideStop` 151-329). 판정은 값으로 돌려준다(예외면 저장하지 않으므로 되돌림 횟수·고아 기록을 남기려고). `return`(기록 없이 같은 담당에게 되돌림)은 Claude(`host: "claude"`)에서 `stop_hook_active`가 아니고 그 담당의 되돌림(`agents[].returns`)이 한도 전일 때만이다. 되돌릴 때 그때까지 판정한 `SubagentHandback` 수(`agents[].judgedHandbacks`)를 남기고, 다음 Stop은 그 뒤의 보고만 본다(없으면 `last_assistant_message`) — 되돌린 옛 보고를 다시 판정하지 않는다. 시도를 `orphaned`로 둘 때(2~4)는 같은 시도에 연결된 다른 미완료 담당이 없을 때만이다(`orphanLinked` 136-139 — `orphanState`와 같은 기준). 순서:
   1. 같은 id·세션의 담당이 없으면 무시하고, 이미 끝난 담당이면 기록된 실패("이미 처리한 완료 이벤트입니다")다(154-155).
   2. 출처(transcript) 검증 실패는 되돌리지 않는다 — 담당 기록(`agents[].failure`)에 남기고 연결된 running 시도를 `orphaned`로 둔다(`failure.kind: source`, 174-180).
   3. 형식 오류(JSON·스키마·크기, 182-225): 식별 필드가 이미 running이 아닌 시도를 가리키면 4와 같은 늦은 결과다. 배정을 특정할 수 없으면 연결 시도가 있을 때 한 번 되돌리고(식별 필드 안내), 아니면 연결 시도를 `orphaned`로 기록한다. 실행 중 단계·입력이 바뀌었으면 시도를 `cancelled`로 둔다. 되돌릴 수 있으면 되돌리고(스키마 오류는 `경로: 메시지` 줄로 — 최대 20줄, `resultIssues`), 아니면 `needs-correction`(교정을 이미 썼거나 결과가 크기 한도 500,000자를 넘어 원본을 보존하지 않으면 `failed`)과 `failure.class: agent-format-error`를 기록한다.
@@ -518,6 +526,8 @@ stateDiagram-v2
 - CLI 종료 코드는 review면 0, 그 밖은 1이다(`cliMain.ts` `runCommand`의 verify 분기).
 
 ### 6.3 리뷰와 교차 검증
+
+리뷰 응답은 기존 지적 표·`- 없음` 또는 `{findings, checked}` JSON이다. `findings`에는 같은 표/없음 규칙을 적용하고 `checked`는 계획 파일 경로와 AC 번호 목록만 허용한다. 추가 키·자유 설명·계획 밖 검토 경로는 거부한다. `normalizeReviewTable`이 구조와 지적을 모두 확인한 뒤 기존 표로 정규화한다. `- 없음`과 실제 지적을 함께 쓴 응답은 정규화로 숨기지 않는다. 설명을 붙일 때는 JSON으로 분리하고 자유 산문을 표 뒤에 붙이지 않는다.
 
 이 절의 인용은 함수 이름 기준이다. 기록 타입과 접근 함수는 `crossRecord.ts`, 사람 판단 기록은 `reviewJudgment.ts`다.
 
@@ -674,6 +684,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
+외부 의존 계약 사본 `work/<ID>/dependency-contracts.json`은 `planning contracts`가 기록하고 계획 담당 입력·입력 해시·승인 문서 해시·동의 스냅샷·답 출처 판정이 읽는다. 반영 커밋에 포함된다. `answers.jsonl`의 `contract` 행은 `planning reuse-answer`가 질문·답·계약 묶음의 해시를 결속해 기록한다. 상태 형식 세대는 4다.
+
 `.code-agent/graph/`에는 체크포인트·실행 기록 `state.sqlite`, 읽기 전용 조회용 사본 `view.json`, 실행 잠금 `run.lock`을 둔다. 보존·제외·형식 규칙은 [SQLite와 기록의 역할](langgraph.md#sqlite와-기록의-역할)을 따른다.
 
 사전 판별은 `.code-agent/log/triage/active.json`에 현재 조사 ID를 두고, 같은 폴더의 `<출처 해시>/` 아래 `draft.json`(모델 초안), `record.json`(정본), `report-<회차>.json`(제출본), `jira.md`(수동 생성용 본문)를 둔다. 출처는 로그 접수 UUID 또는 Sentry 조직/프로젝트/이슈ID다. 로그 특징·최초 원문·접수 횟수·접수 시각·후보·작업 상태를 보존하고 반복 원문은 occurrence-N.json으로 남긴다. 기존 `log/` 무시 규칙을 쓰며 close는 active만 지운다. handoff는 원본 로그·보고서와 Jira 연결을 `doc/work/<Jira 키>/triage.json`·`triage.md`·`request.json`에 보존한다. 로컬 중복 연결은 보존된 조사 기록에 의존하므로 다른 체크아웃·PC에서는 Sentry/Jira의 추적 표지로 중복을 확인한다.
@@ -733,6 +745,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+외부 의존 계약은 `dependencyContracts.ts`(Git 근거·현재 바이트·사본·항목 충돌 검사·등록), `planning.ts`(등록·재인용 명령·배정), `planningState.ts`(입력·변경 감지), `answers.ts`(질문·답 결속·출처), `work.ts`(승인 해시)에 연결된다.
+
 | 단계·기능 | 파일 (`src/agent/` 기준) |
 |---|---|
 | LangGraph 실행·관찰 | `graph/lifecycle.ts`(전체 재개), `graph/planning.ts`(계획 배정), `graph/transition.ts`(단계 게이트·이동), `graph/operation.ts`(명령 적용), `graph/runtime.ts`(SQLite·잠금·master 가드), `graph/view.ts`(조회 사본), `graph/types.ts`(hook 공용 순수 계약), `../core/workflow.ts`(검증 노드 실행) |
@@ -774,6 +788,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 | 날짜 | 변경 | 커밋 | 대상 섹션 |
 |---|---|---|---|
+| 2026-10-16 | 외부 계약의 Git 근거 전달과 사람 답과 구분한 재인용을 지원하고 결과 포인터·구조화 리뷰·요구와 테스트 연결 점검을 보완한다 | 이 변경 커밋 | §1.1, §4.3, §6.1, §6.3, §8, §9 |
 | 2026-10-07 | 최초 작성 — 코드 판독과 sandbox 확인으로 만든 현재 동작 지도(줄 인용 기준 `2c97a43`) | `0807d32` | 전체 |
 | 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록 | `7b698d8`·`c38f1e2` | §1.1, §6.4, §9 |
 | 2026-10-07 | 계획 오케스트레이션을 재시도 규약에 연결 — 질문 출처·자동 되감기·고아 배정 정리·같은 입력 실패와 작업 총 배정 한도·공통 잠금 | `99628c5`·`c38c5bf` | 머리말, §1.1, §3.2, §3.3, §4.2, §5.1, §5.2, §6.1, §6.3, §6.4, §7, §8, §9 |
