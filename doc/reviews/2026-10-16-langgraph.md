@@ -1,6 +1,6 @@
 # LangGraph 전체 실행 전환
 
-기준 커밋은 `0024b18`이며 구현은 작업 트리에 있다. Node 범위와 타입을 master-agent에 맞춘 뒤 전체 실행 계층을 전환했다. 현재 동작은 [LangGraph 실행 구조](../langgraph.md)와 [흐름도](../process-flow.md)를 따른다.
+기준 커밋은 `0024b18`, 구현·문서 정리 커밋은 `cb0c466`이다. Node 범위와 타입을 master-agent에 맞춘 뒤 전체 실행 계층을 전환했다. 현재 동작은 [LangGraph 실행 구조](../langgraph.md)와 [흐름도](../process-flow.md)를 따른다.
 
 ## 반영 범위
 

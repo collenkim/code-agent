@@ -1,7 +1,7 @@
 {
   "date": "2026-10-16",
   "baseCommit": "0024b18",
-  "implementation": "working-tree",
+  "implementation": "cb0c466",
   "environment": {
     "platform": "win32",
     "node": "24.19.0",
