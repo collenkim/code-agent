@@ -15,4 +15,4 @@
 - 추가 시험은 Node 22·24.18.9·25·24.19.0 사전 릴리스를 거부하고 24.19.0·24.20.0을 허용하는 doctor 판정과, SEA 빌드가 지원 범위 밖에서는 산출물 정리 전에 멈추는지를 확인한다. 경계 버전은 모의 값이며 다른 Node 바이너리를 설치해 실행한 것은 아니다.
 - code-agent·master-agent·lockfile의 Node 지원 범위 일치와 `git diff --check` 통과. SEA 실행 파일의 실제 재생성은 수행하지 않았다.
 
-원자료 요약은 [검증 근거](evidence/2026-10-16-node-runtime.json)에 있다. 커밋 전 작업 트리의 결과다.
+원자료 요약은 [검증 근거](evidence/2026-10-16-node-runtime.json)에 있다. 구현 커밋은 `c2ccccb`다.

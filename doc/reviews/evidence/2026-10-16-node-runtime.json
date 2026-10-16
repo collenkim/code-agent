@@ -1,5 +1,6 @@
 {
   "date": "2026-10-16",
+  "implementationCommit": "c2ccccb",
   "node": "v24.19.0",
   "platform": "win32",
   "engines": ">=24.19.0 <25",
