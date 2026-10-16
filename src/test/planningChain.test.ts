@@ -1,6 +1,6 @@
 /**
  * 계획 advance 의 다음 행동 한 줄(`next`) — action 별 행동의 원천(C7 OPT-14). 합성 출력으로 표의 행을 하나씩 본다.
- * 실제 advance·연쇄(`--chain`)는 planning.test 의 "C7 — 연쇄" 시험이 본다.
+ * 실제 advance·연쇄(`--chain`)는 planningChainFlow.test 의 "C7 — 연쇄" 시험이 본다.
  */
 import { strict as assert } from "node:assert";
 import { test } from "node:test";

@@ -97,7 +97,7 @@ export function buildResult(root: string, run: RunRecord, host: HostOutcome, vie
       work: view.work ? { id: view.work.id, phase: view.work.phase, kind: view.work.kind ?? null, branch: view.work.branch ?? null, baseCommit: view.work.baseCommit ?? null } : null,
       attempt: view.attempt, request: view.request, approval: view.approval, questions: view.questions,
       consents: view.consents.open, resume: { code: view.resume.code, action: view.resume.next.action, by: view.resume.next.by, reasons: view.resume.reasons.slice(0, 8) },
-      findings: view.findings,
+      findings: view.findings, ...(view.graph ? { graph: view.graph } : {}),
     },
     verification: view.verification ? {
       rounds: view.verification.rounds, bound: view.verification.bound, phases: view.verification.phases,

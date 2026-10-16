@@ -241,7 +241,7 @@ export const EVENT_TYPES = [
   "run.accepted", "run.starting", "run.started", "run.stop-requested", "run.finished", "run.abandoned", "run.orphaned", "run.unknown",
   "master.disconnected", "master.reconnected",
   "work.bound", "phase.changed", "attempt.changed", "resume.changed", "question.opened", "question.answered", "consent.opened", "consent.updated", "consent.closed",
-  "verification.recorded", "decision.recorded", "decision.applied", "decision.rejected", "answer.recorded",
+  "verification.recorded", "graph.changed", "decision.recorded", "decision.applied", "decision.rejected", "answer.recorded",
   "handover.requested", "handover.stopping", "handover.stopped", "handover.transferred", "handover.accepted", "handover.aborted",
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

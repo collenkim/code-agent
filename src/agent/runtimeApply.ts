@@ -66,6 +66,7 @@ export function busyReasons(root: string, consentId?: string): string[] {
   if (existsSync(join(root, STATE_DIR, "request-session.json"))) reasons.push("요구사항 접수 중");
   if (existsSync(join(root, STATE_DIR, "docs-session.json"))) reasons.push("공통 문서 준비 세션");
   if (existsSync(join(root, STATE_DIR, "log", "triage", "active.json"))) reasons.push("사전 판별 중");
+  if (existsSync(join(root, STATE_DIR, "graph", "run.lock"))) reasons.push("LangGraph 실행 중");
   const index = readConsentIndex(root);
   for (const [id, entry] of Object.entries(index?.open ?? {})) {
     if (id === consentId || !OPEN_STATUSES.includes(entry.status)) continue;

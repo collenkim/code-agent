@@ -20,7 +20,7 @@ const GITIGNORE_END = "# code-agent:end";
  * 번들 내용. 두 호스트 설치가 같은 블록을 쓴다
  */
 const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*", "runtime.json", "runtime.lock",
-  "template-conflicts/"].map((line) => `${STATE_DIR}/${line}`).join("\n");
+  "template-conflicts/", "graph/"].map((line) => `${STATE_DIR}/${line}`).join("\n");
 
 /**
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —

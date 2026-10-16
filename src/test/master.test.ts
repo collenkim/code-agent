@@ -23,6 +23,8 @@ import { MASTER_RUN_ENV, masterRunGuard } from "../agent/master/runGuard";
 import { emit, readBinding, readOwner, writeBinding, writeOwner, writeRunRecord, writeWorkBinding, type RunRecord } from "../agent/master/store";
 import { parseQuestions } from "../agent/questions";
 import { stateView } from "../agent/stateView";
+import { withGraphRun } from "../agent/graph/runtime";
+import { observeProgress } from "../agent/master/observe";
 import { withInteraction } from "../agent/tty";
 import { approvalOf, loadWork } from "../agent/work";
 import { readLedger } from "../core/approval";
@@ -68,6 +70,22 @@ afterEach(() => {
 });
 
 describe("기능 협상·인증·연동 조건", () => {
+  test("그래프 실행 위치를 snapshot·이벤트로 관찰하고 실행 기록만으로 업무 상태 해시는 바꾸지 않는다", async () => {
+    const token = enable();
+    const before = send(token, "snapshot").result.state.stateVersion;
+    await withGraphRun(root, "test", "master-view", async run => { run.event("inspect", "running"); });
+    const snapshot = send(token, "snapshot");
+    assert.equal(snapshot.ok, true);
+    assert.equal(snapshot.result.state.graph.latest.node, "inspect");
+    assert.equal(snapshot.result.state.graph.latest.status, "completed");
+    assert.equal(snapshot.result.state.stateVersion, before);
+    observeProgress(root);
+    const events = send(token, "events").result.events;
+    assert.ok(events.some((event: { type: string }) => event.type === "graph.changed"));
+    const hello = call(root, JSON.stringify({ protocol: "code-agent.master", version: 1, type: "hello" })) as Res;
+    assert.equal(hello.result.execution.framework, "langgraph");
+    assert.equal(hello.result.execution.arbitraryCheckpointResume, false);
+  });
   test("연동하지 않은 프로젝트: hello 는 enabled false, 나머지 요청은 not-enabled, 상태 조회(status --json)는 그대로", () => {
     const before = stateView(root);
     const hello = call(root, JSON.stringify({ protocol: "code-agent.master", version: 1, type: "hello" })) as Res;

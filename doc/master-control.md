@@ -38,6 +38,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 ## 3. 기능 협상 — `hello`
 
+`execution`은 LangGraph 프레임워크·그래프 형식 버전·SQLite 체크포인트·재개 명령·권한 원천을 알린다. 무인 호스트도 `code-agent flow advance --json`의 [인계 계약](langgraph.md#호스트의-실행-계약)을 따른다.
+
 인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude` 지원, `codex` 미지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `host:codex`, `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유.
 
 ## 4. 명령
@@ -99,6 +101,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 ## 6. 이벤트·heartbeat·재동기화
 
+`snapshot.state.graph`와 실행 결과의 `state.graph`는 최신 실행 ID·thread·그래프·노드·상태·이벤트 순번을 제공한다. 관찰 시 달라진 값은 `graph.changed` 이벤트에 남는다. 그래프 관찰만 바뀌면 업무 `stateVersion`은 바뀌지 않는다.
+
 `events.jsonl`은 순번(`seq`, 1씩 증가) 기록이고 `events-meta.json`의 `logId`가 기록 하나를 가린다. 모든 응답에 `events: {logId, latestSeq}`가 붙는다.
 
 - `events {after, logId}` → `after` 다음부터 `limit`개와 `latestSeq`·`hasMore`. 기록 ID 가 다르거나(기록이 새로 만들어짐) `after`가 최신보다 크거나 이미 지난 구간이면 `gap: true` — master 는 `snapshot`으로 다시 맞추고 그 위치부터 읽는다.
@@ -115,6 +119,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 연결 끊김은 실패·재배정 근거가 아니다. 정책 `onMasterDisconnect`가 `continue`(기본)면 실행을 그대로 두고, `pause`면 협력 정지를 건다. heartbeat 가 늦은 것만으로 실행을 끝난 것으로 보거나 다시 배정하지 않는다 — 실행 중인 실행이 있는 동안 새 `submit`은 `busy`다.
 
 ## 7. 실행 상태와 정지·취소·재개
+
+그래프 진입과 실행 노드 시작에서 제어자·소유 세대·정지 요청을 확인한다. `pause`·`cancel`·인계 뒤 이전 실행은 다음 노드를 진행하지 못한다. 이미 실행 중인 자식 프로세스의 정지는 아래 감독 규약을 따른다.
 
 ```text
 accepted → starting → running → stopping → completed | blocked | failed | cancelled | paused

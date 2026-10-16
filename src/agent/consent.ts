@@ -105,7 +105,7 @@ export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
  * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
  * master 연동 기록(master — 실행 heartbeat·이벤트·명령 기록)도 응답을 기다리는 동안 감독 프로세스가 쓰므로 뺀다.
  */
-const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`];
+const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`];
 
 function canonicalRoot(root: string): string {
   return realpathSync.native(resolve(root));

@@ -549,7 +549,7 @@ export function deliveryPaths(work: Work, knowledge: string[] = []): string[] {
  */
 export function deliveryExcludes(work: Work): { dirs: string[]; lockDir: string } {
   return {
-    dirs: [handoffDir(work.active.id), `${workDocsDir(work.active.id)}/.staging`, draftFile(work.active.id, "experience"), draftFile(work.active.id, "finding")],
+    dirs: [`${STATE_DIR}/graph`, handoffDir(work.active.id), `${workDocsDir(work.active.id)}/.staging`, draftFile(work.active.id, "experience"), draftFile(work.active.id, "finding")],
     lockDir: `${STATE_DIR}/work/${work.active.id}`,
   };
 }
@@ -568,7 +568,9 @@ function globLiteral(path: string): string {
  * `:(exclude,glob)`. `--literal-pathspecs` 전역 옵션은 모든 magic 을 끄므로 쓰지 않는다.
  */
 function pathspecs(include: string[], excludes: { dirs: string[]; lockDir: string }): string[] {
-  return [...include.map((path) => `:(literal)${path}`), ...excludes.dirs.map((path) => `:(exclude,literal)${path}`),
+  // 포함 범위와 무관한 제외 경로는 넘기지 않는다. Git의 공통 접두어 계산이 문자 그대로인 작업 ID에 영향을 줄 수 있다.
+  const relevant = excludes.dirs.filter(dir => include.some(path => path === dir || path.startsWith(`${dir}/`) || dir.startsWith(`${path}/`)));
+  return [...include.map((path) => `:(literal)${path}`), ...relevant.map((path) => `:(exclude,literal)${path}`),
     `:(exclude,glob)${globLiteral(excludes.lockDir)}/*.lock`];
 }
 /** 반영 커밋이 쓰는 pathspec 그대로(포함 경로 + 이 작업의 제외 규칙) — 글롭 문자가 든 작업 ID 의 대조에 쓴다 */

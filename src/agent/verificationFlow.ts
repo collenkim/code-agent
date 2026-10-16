@@ -28,6 +28,7 @@ import { writeRepairHandoff } from "./repairHandoff";
 import { check, runTests, verifyGuidance } from "./validate";
 import { loadWork } from "./work";
 import type { Work } from "./work";
+import { withGraphRun, type GraphRun } from "./graph/runtime";
 
 interface FlowContext {
   repoRoot: string;
@@ -205,6 +206,12 @@ function taskOf(node: string, fallback: string, context: FlowContext, work: Work
 
 /** 저장된 커서는 증거가 아니다. 매 호출마다 실제 상태·승인·증거로 진입 노드를 다시 계산한다. */
 export async function verify(repoRoot: string, options: { retry?: boolean } = {}): Promise<VerificationResult> {
+  const work = loadWork(repoRoot);
+  if (!work) throw new Stop("진행 중인 작업이 없습니다.");
+  return withGraphRun(repoRoot, "verification", `${work.active.id}:${work.active.target}`, run => verifyLocked(repoRoot, options, run));
+}
+
+async function verifyLocked(repoRoot: string, options: { retry?: boolean }, run: GraphRun): Promise<VerificationResult> {
   const initial = loadWork(repoRoot);
   if (!initial || !["check", "test", "review", "integrate", "deliver"].includes(initial.active.phase)) {
     throw new Stop("code-agent verify는 check·test 또는 review·integrate·deliver의 수정 후 재검증에서 실행합니다.");
@@ -245,7 +252,7 @@ export async function verify(repoRoot: string, options: { retry?: boolean } = {}
   const handoff = await runWorkflow(VERIFICATION_NODES, entry, context, (event) => {
     attempt.events.push(event);
     persist();
-  });
+  }, run);
   const result: VerificationResult = {
     ...handoff,
     task: taskOf(handoff.node, handoff.task, context, work),

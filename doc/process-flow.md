@@ -16,6 +16,7 @@
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `graph/` 실행기·전체 흐름·계획·전이, `core/workflow.ts`, `cliMain.ts` 실행 경계 | §3.3, §6, §8, §9 | `doc/langgraph.md`, `ca-next` 재개 절차, Claude·Codex 공통 블록, `stateView.ts` 그래프 관찰, master `hello.execution`·`graph.changed`, `runtimeSelect.ts` 상태 세대·실행 잠금, 동의 스냅샷·반영 제외 경로 |
 | `package.json` `engines.node`·`doctor.ts` 런타임 검사·`scripts/build-bin.js` 빌드 전제 | §7 | `package-lock.json` 루트 engines, `assets.ts` 자원 오류 안내, `AGENTS.md`, `README.md`, `doc/install.md`·`doc/usage.md`·`doc/design.md`의 Node 범위. npm 실행·SEA 내장 Node·SEA 빌드는 같은 범위를 쓴다 |
 | `layout.ts` `PHASES`·`AFTER_IMPLEMENT`·`STOP_PHASES` (20-43) | §2, §3 | `phaseInfo.ts` `PHASE_LABEL`·`reentry.ts` `PHASE_SKILL`, `template/claude/skills/ca-next/SKILL.md:14-25` 표, §3.2 표의 단계 칸(`docSync.test.ts`가 `PHASES`와 순서까지 대조) |
 | `commands.ts` `start`·`next`(implement 의 Task 완료 판정 `untouchedTaskFiles` 포함)·`back`·`requireValidatable`·`abort`·`advancePassedIntegrate`(통과한 `integrate` 뒤 deliver 로), `handoff.ts` `stageHandoff`(`next`·`review`·계획 동의 적용이 쓰는 context 파일) | §2, §3, §3.3 | 각 단계 스킬의 "자리 확인" 문장(직전 `code-agent` 출력에 스테이지가 있으면 status 를 다시 부르지 않는다), `ca-implement` 1·5항, `ca-review` 2항, `ca-integrate` 2절, `ca-plan` 끝 |
@@ -54,7 +55,7 @@
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:216`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:218`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 변경당 한 줄(바뀐 것의 요지와 커밋 — 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -152,6 +153,8 @@ flowchart TD
 **차단 복구 선택** — CLI·hook 거부 시 메인은 `ca-answer/reference.md`의 차단 복구에 따라 원문 사유·현재 상태·기존 지시를 확인한다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 실제 질문 도구로 묻는다. Claude는 AskUserQuestion, Codex는 MCP 선택 UI를 호출한다. Codex의 UI 부재·거부는 설치·호스트 지원을 점검하며 번호 나열을 UI 완료로 보고하지 않는다. 담당은 거부를 메인에 보고한다. 문서 누락은 작성·기존 문서 연결·보류, 미확정은 문서 동의·보류다. 이미 시작한 작업의 문서 보완은 작업 ID·지시서·대상·기준 브랜치·단계를 작업 폴더에 보존하고 abort 동의 후 커서만 닫아 준비한다. 같은 지시서로 다시 시작하여 필요한 분석·계획·승인을 검증하며 원래 단계로 건너뛰지 않는다. 접수 중 준비는 원문과 ID를 유지한다. 권한·외부 hook 차단은 원인 점검이나 사용자 환경 조치로 연결하고 자체 동의로 해제하지 않는다. 거부 동작을 우회하거나 재시도 한도를 늘리지 않는다. 사용자 취소·보류는 반복 질문 없이 존중한다.
 
 ### 3.3 커서 이동
+
+`next`는 전이 그래프에서 현재 단계 게이트를 검사하고 기록 직전에 다시 검사한 뒤 커서를 옮긴다. 전체 재개는 §6.0을 따른다.
 
 | 명령 | 방향 | 조건 | `stages.jsonl`의 `by` |
 |---|---|---|---|
@@ -342,7 +345,13 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 
 ## 6. 오케스트레이션
 
+### 6.0 전체 실행 그래프
+
+`flow advance --json`은 준비·문서·접수·사전 판별과 모든 `PHASES`의 재개 위치를 결정한다. 호스트 인계·SQLite·잠금·중단 후 재개는 [LangGraph 실행 구조](langgraph.md), master 통신·정지·제어권은 [master 연동](master-control.md)이 정본이다. 단계별 게이트는 §3, 계획·검증 내부 흐름은 아래 절을 따른다.
+
 ### 6.1 계획 작업 (analysis·impact·design·plan, `planningVersion=1`)
+
+`advancePlanning`은 `graph/planning.ts`의 준비 → 작업 선택 → 개별 배정 → 판정 → 대기 그래프를 실행한다. 각 배정은 최신 계획을 파일 잠금 안에서 다시 검사한다. 자동 되감기 허용은 준비 노드에서 한 번만 소비한다. 배정 이후 중단되면 다음 호출이 기록된 배정을 관찰하므로 같은 효과 노드를 체크포인트에서 재생하지 않는다.
 
 | 역할 | 단계 | 담당(Claude / Codex) | 출력 | 선행(dependsOn) |
 |---|---|---|---|---|
@@ -396,6 +405,8 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 - `reviewedPlanProblems`(`planningValidation.ts:13-21`): 제출된 계획이 작업 폴더의 `plan.json`(관찰된 plan 담당이 쓴 초안)과 같은 해시여야 한다. plan 게이트와 승인(`commands.ts:549,1317`)이 본다.
 
 ### 6.2 검증 노드 — `verify` (`verificationFlow.ts` `verify`·`assess`)
+
+`core/workflow.ts`는 각 검증 노드와 조건부 간선을 LangGraph로 구성한다. `verify`는 진입 판정부터 프로젝트 그래프 잠금 안에서 실행하고 SQLite에 체크포인트·노드 이벤트를 남긴다. 담당·사람 노드에서는 실행하지 않고 인계와 interrupt를 반환한다.
 
 ```mermaid
 stateDiagram-v2
@@ -663,6 +674,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
+`.code-agent/graph/`에는 체크포인트·실행 기록 `state.sqlite`, 읽기 전용 조회용 사본 `view.json`, 실행 잠금 `run.lock`을 둔다. 보존·제외·형식 규칙은 [SQLite와 기록의 역할](langgraph.md#sqlite와-기록의-역할)을 따른다.
+
 사전 판별은 `.code-agent/log/triage/active.json`에 현재 조사 ID를 두고, 같은 폴더의 `<출처 해시>/` 아래 `draft.json`(모델 초안), `record.json`(정본), `report-<회차>.json`(제출본), `jira.md`(수동 생성용 본문)를 둔다. 출처는 로그 접수 UUID 또는 Sentry 조직/프로젝트/이슈ID다. 로그 특징·최초 원문·접수 횟수·접수 시각·후보·작업 상태를 보존하고 반복 원문은 occurrence-N.json으로 남긴다. 기존 `log/` 무시 규칙을 쓰며 close는 active만 지운다. handoff는 원본 로그·보고서와 Jira 연결을 `doc/work/<Jira 키>/triage.json`·`triage.md`·`request.json`에 보존한다. 로컬 중복 연결은 보존된 조사 기록에 의존하므로 다른 체크아웃·PC에서는 Sentry/Jira의 추적 표지로 중복을 확인한다.
 
 `.code-agent/`는 코드만 쓴다. 모델의 도구 쓰기는 모드와 관계없이 hook이 막는다(`stateGuard` `hook.ts:337-345`). 세션이 없을 때는 셸 명령의 `.code-agent` 경로 언급도 막고(276-283), 세션·작업 중에는 셸 허용 목록(§5.4)이 쓰기 명령을 막는다.
@@ -722,6 +735,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 | 단계·기능 | 파일 (`src/agent/` 기준) |
 |---|---|
+| LangGraph 실행·관찰 | `graph/lifecycle.ts`(전체 재개), `graph/planning.ts`(계획 배정), `graph/transition.ts`(단계 게이트·이동), `graph/operation.ts`(명령 적용), `graph/runtime.ts`(SQLite·잠금·master 가드), `graph/view.ts`(조회 사본), `graph/types.ts`(hook 공용 순수 계약), `../core/workflow.ts`(검증 노드 실행) |
 | CLI 진입·hook 하위 명령 분기 | `cli.ts`(진입점 — hook 하위 명령 지연 로드 `HOOKS`·모듈 로드 실패 `hookFailureExit`), `cliMain.ts`(명령 `runCommand` — consent 티켓 소비·소스 update 확인·다음 작업을 여는 명령의 관문 `opening`), `runtimeSelect.ts`(프로젝트 적용 버전 선택 `selectRuntime`·위임 계약 — 명령·hook 마다 가장 먼저), `runtimeGate.ts`(다음 작업 관문 `atNextWork`·여는 명령 직전 hook 의 적용 `applyBeforeOpening`·`version`·update 갈래 `runUpdate`) |
 | 설치·갱신·점검 | `init.ts`(Codex Windows 명령 `codexWindowsCommand`·`codexWindowsProblem`), `codexTrust.ts`(Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만), `hosts.ts`(교차 실행 파일 `hostCommand`·`hostCommandConfigError`·`.js` 진입점의 node `scriptRunner`·실행 파일 변수 안내 `binHint`, 교차 안내 `crossNotice`·`crossHostProblems`·게이트 줄 괄호 `crossRunNote`), `assets.ts`, `update.ts`, `../core/atomic.ts` `writeIfChanged`(바뀐 설치 파일만 쓴다), `sourceUpdate.ts`(소스 update 미리보기·설치 뒤 적용 `updateFromSource`·릴리스 적용 호출 `runReleaseApply`), `releaseStore.ts`(릴리스 저장소 — Git 소스 설치 `installGitRelease`·npm 패키지 사본 `installPackageRelease`·검증 `verifyRelease`·설치 잠금), `runtimeApply.ts`(적용·예약 `applyHere`·진행 중인 일 `busyReasons`·템플릿 반영과 사본 보존 `applyTemplates`·다시 열기 안내 `hostGuidance`), `doctor.ts`, `models.ts`(역할 모델 변경 `setModel`·`validateModelChange`, 작업 중 변경 거부 `workInProgress`·`requireNoWorkInProgress`), `modelPolicy.ts`(역할 모델·추론 강도 정책 `ROLE_POLICY`·`TIER_DEFAULTS`) |
 | 준비·공통 문서 | `docsCommands.ts`, `docs.ts`, `schemas.ts`, `setup.ts`, `bootstrap.ts`, `survey.ts` |
@@ -803,3 +817,4 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 2026-10-15 | 다음 작업을 여는 셸 명령 직전의 PreToolUse hook 이 예약된 새 버전을 적용해 Codex 샌드박스 셸에서도 새 버전으로 열고, 적용은 내용이 바뀐 설치 파일만 쓴다 | `d01b4d1` | §1.1, §3.1, §5.1, §5.3, §7, §8, §9 |
 | 2026-10-15 | master 연동(선택) — 사람이 켠 프로젝트에서 상위 조정자가 로컬 CLI 계약(`code-agent.master` v1)으로 실행을 원자적으로 접수·관찰·정지·재개·인계하고, 사람이 준 권한 범위의 routine 판단만 사람 응답과 구분해 같은 동의 적용 함수로 받는다. 승인·답 기록 형식이 늘어 상태 형식 세대를 2로 올린다 | `e5f136a` | §1.1, §3.2, §4.2, §4.3, §5.1, §5.3, §5.4, §8, §9 |
 | 2026-10-16 | Node 실행·빌드 지원 범위를 master-agent 와 같은 24.19.0 이상 24.x 로 통일하고 런타임 점검과 설치 안내에 반영한다 | `c2ccccb` | §1.1, §7 |
+| 2026-10-16 | 전체 작업 재개·계획 배정·단계 전이·검증·명령 적용을 LangGraph로 구성하고 SQLite 실행 기록과 master 관제·정지 검사를 연결한다 | 작업 트리 | §1.1, §3.3, §6, §8, §9 |

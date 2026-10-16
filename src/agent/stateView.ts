@@ -29,6 +29,8 @@ import { loadTriage } from "./triageState";
 import { approvalOf, loadWork } from "./work";
 import type { Work } from "./work";
 import { currentAttempt } from "./workAttempt";
+import { graphView } from "./graph/view";
+import type { GraphView } from "./graph/types";
 
 /**
  * 기계 판독용 상태 조회 — `code-agent status --json`. 사람용 `status` 문장을 파싱하지 않게 같은 판정을 고정 코드로 낸다.
@@ -77,6 +79,7 @@ export interface StateJson {
   expect?: { state?: string; work?: string; attempt?: string; matches: boolean; mismatches: string[] };
   correlation?: { runId: string };
   unknown: string[];
+  graph?: GraphView;
 }
 
 /**
@@ -423,6 +426,8 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     resume: { code, reasons, next: { action, by, ...(hint ? { hint } : {}) } },
     unknown,
   };
+  try { result.graph = graphView(repoRoot); }
+  catch (error) { result.unknown.push(`그래프 실행 기록을 읽지 못했습니다: ${errorText(error)}`); }
   if (options.runId) result.correlation = { runId: options.runId };
   if (options.expectState !== undefined || options.expectWork !== undefined || options.expectAttempt !== undefined) {
     const mismatches: string[] = [];

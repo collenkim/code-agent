@@ -403,7 +403,8 @@ describe("템플릿 적용", () => {
 
 describe("npm 패키지 진입점 — 사람이 패키지 관리자로 설치한 패키지를 릴리스로 들인다", () => {
   const PKG_MARK = "\n<!-- package reinstalled -->\n";
-  let pkgRoot: string, hoisted: string;
+  let pkgRoot: string;
+  const hoisted: string[] = [];
   const pkgCli = (root: string, args: string[], input = "", extra: Record<string, string> = {}) => {
     const result = spawnSync(process.execPath, [join(pkgRoot, "dist", "agent", "cli.js"), ...args], { cwd: root, input, encoding: "utf8", env: env(extra), timeout: 120_000 });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -418,11 +419,16 @@ describe("npm 패키지 진입점 — 사람이 패키지 관리자로 설치한
     cpSync(join(REPO, "template"), join(pkgRoot, "template"), { recursive: true });
     cpSync(join(REPO, "package.json"), join(pkgRoot, "package.json"));
     // 의존성은 위 폴더에 끌어올려져 있다(npm 의 평탄한 설치). 링크라서 복사는 실제 내용을 따라가야 한다
-    hoisted = join(global, "zod");
-    symlinkSync(join(REPO, "node_modules", "zod"), hoisted, "junction");
+    const dependencies = Object.keys(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).dependencies);
+    for (const name of dependencies) {
+      const target = join(global, name);
+      mkdirSync(join(target, ".."), { recursive: true });
+      symlinkSync(join(REPO, "node_modules", name), target, "junction");
+      hoisted.push(target);
+    }
   });
   after(() => {
-    unlinkSync(hoisted);
+    for (const path of hoisted) unlinkSync(path);
     // 복사본이 링크를 그대로 옮겼다면 바깥 정리가 이 저장소의 의존성을 따라 지우지 않게 먼저 끊는다
     for (const name of readdirSync(store)) {
       const dep = join(store, name, "node_modules", "zod");

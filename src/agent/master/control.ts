@@ -18,6 +18,7 @@ import { consentReceipts } from "../consentReceipts";
 import { readLease, releaseLease } from "../lease";
 import { loadRequestSession } from "../request";
 import { STATE_SCHEMA } from "../runtimeSelect";
+import { GRAPH_VERSION } from "../graph/types";
 import { stateView, type StateJson } from "../stateView";
 import { consentsView, decideConsent, answerQuestions, questionsView } from "./delegation";
 import { acceptHandover, abortHandover, advanceHandover, requestHandover } from "./handover";
@@ -104,6 +105,7 @@ function hello(root: string, binding: Binding | undefined): unknown {
   try { strict = (require("../work") as typeof import("../work")).loadManifestIfAny(root)?.workOrder.requireVerifiedApproval ?? false; } catch { strict = true; }
   return {
     protocol: PROTOCOL, versions: SUPPORTED_VERSIONS, codeAgent: { version: packageVersion(), stateSchema: STATE_SCHEMA, stateView: "code-agent.state v1" },
+    execution: { framework: "langgraph", graphVersion: GRAPH_VERSION, checkpoint: "sqlite", resume: "code-agent flow advance --json", authority: "domain-records", arbitraryCheckpointResume: false },
     project: { root, projectId: binding?.projectId ?? null, enabled: !!binding },
     controllers: binding ? Object.keys(binding.controllers) : [],
     ownership: owner ? { controller: owner.controller, generation: owner.generation, handover: owner.handover ? { id: owner.handover.id, state: owner.handover.state, to: owner.handover.to } : null } : null,

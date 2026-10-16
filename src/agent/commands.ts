@@ -754,6 +754,13 @@ function requireNoAidlc(repoRoot: string): void {
 }
 
 export function next(repoRoot: string): string {
+  return applyNextTransition(repoRoot, nextTransition(repoRoot));
+}
+
+export interface PhaseTransition { from: ActiveWork; phase: Phase; stage?: string; task?: string }
+
+/** 게이트는 이동할 커서를 계산한다. 실제 기록은 그래프의 commit 노드에서 한다. */
+export function nextTransition(repoRoot: string): PhaseTransition {
   requireNoAidlc(repoRoot);
   const work = requireWork(repoRoot);
   const { active } = work;
@@ -768,10 +775,7 @@ export function next(repoRoot: string): string {
     const approval = approvalOf(work);
     if (approval.status !== "approved") throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`);
   }
-  const advance = (phase: Phase, stage?: string, task?: string): string => {
-    saveActive(repoRoot, { ...active, phase, stage, task }, "next");
-    return movedStatus(repoRoot);
-  };
+  const advance = (phase: Phase, stage?: string, task?: string): PhaseTransition => ({ from: active, phase, stage, task });
 
   switch (active.phase) {
     case "analysis":
@@ -871,6 +875,14 @@ export function next(repoRoot: string): string {
           `${prDocFile(active.id)} 의 요약·확인 방법·위험·되돌리기를 먼저 쓰세요 — 추적표·검증·변경 요약은 코드가 렌더합니다.`,
       );
   }
+}
+
+/** 도메인 API도 같은 게이트·커서 대조를 쓴다. 체크포인트에 든 커서로 덮어쓰지 않는다. */
+export function applyNextTransition(repoRoot: string, transition: PhaseTransition): string {
+  if (JSON.stringify(loadActive(repoRoot)) !== JSON.stringify(transition.from)) throw new Stop("게이트 검사 뒤 작업 커서가 바뀌었습니다. 현재 상태에서 다시 진행하세요.");
+  const { from, phase, stage, task } = transition;
+  saveActive(repoRoot, { ...from, phase, stage, task }, "next");
+  return movedStatus(repoRoot);
 }
 
 /**

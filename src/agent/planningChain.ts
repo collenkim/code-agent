@@ -11,7 +11,7 @@
  */
 import { advancePlanning } from "./planning";
 import { handoffPlanning } from "./handoff";
-import { next, OpenQuestionsStop } from "./commands";
+import { OpenQuestionsStop } from "./commands";
 import { loadActive, workDocsDir } from "./layout";
 import { FAILURE_CLASSES, guidance, recordedVariant, type FailureClass } from "./retryPolicy";
 import { Stop } from "./stop";
@@ -140,13 +140,13 @@ export function planningJson(value: Record<string, unknown>): string {
  * CLI `planning advance [--chain]`. 출력은 advance JSON(기존 키·problems 그대로)에 `next`(와 연쇄면 `chain`)를 더한 것이다.
  * 게이트 거부면 exit 1 이다(`code-agent next` 의 Stop 과 같다) — JSON 은 그대로 낸다.
  */
-export function planningAdvanceCli(root: string, options: { chain: boolean }): { text: string; exit: 0 | 1 } {
-  const view = JSON.parse(handoffPlanning(root, advancePlanning(root))) as AdvanceView & Record<string, unknown>;
+export async function planningAdvanceCli(root: string, options: { chain: boolean }): Promise<{ text: string; exit: 0 | 1 }> {
+  const view = JSON.parse(handoffPlanning(root, await advancePlanning(root))) as AdvanceView & Record<string, unknown>;
   const active = loadActive(root);
   let gate: GateStep | undefined;
   if (options.chain && view.action === "ready-for-gate" && GATE_PHASES.includes(view.phase)) {
     try {
-      next(root); // status 전문은 버린다 — 메인 컨텍스트에 넣지 않는다. 커서 이동은 next 가 by:"next" 로 기록한다
+      await (require("./graph/transition") as typeof import("./graph/transition")).advancePhase(root);
       gate = { from: view.phase, gate: "passed", to: loadActive(root)?.phase };
     } catch (error) {
       if (!(error instanceof Stop)) throw error;

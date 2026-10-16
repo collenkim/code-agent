@@ -32,9 +32,11 @@ CLI와 템플릿(스킬·에이전트 정의)은 한 릴리스로 함께 적용�
 |---|---|---|
 | 치는 것 | `npm install -g <사내 저장소>/code-agent` | 파일 하나를 PATH 에 둔다 |
 | 전제 | Node 24.19.0 이상 24.x (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.19.0 이상 24.x ([2절](#2-단일-실행-파일-만들기)) |
-| 크기 | 수 MB | **~90 MB** (Node 실행 파일 그대로 + 자원 1 MB) |
+| 구성 | CLI·템플릿·npm 의존성 | Node 런타임·번들 CLI·템플릿을 포함한 파일 하나 |
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | 로컬 Git 소스 연결은 `code-agent update`(릴리스 저장소에 설치한 뒤 적용). npm 패키지는 패키지 관리자로 설치 — 다음 작업을 열 때 그 사본을 적용한다 | 새 파일로 교체한 뒤 `update --templates-only` |
+
+LangGraph 실행 기록은 Node 내장 SQLite를 사용하므로 별도 DB 서버나 실행용 네이티브 SQLite 모듈이 필요 없다. 공식 saver의 전이 의존성에는 `better-sqlite3`가 포함되어 npm 기본 설치 시 설치 스크립트가 실행될 수 있다. 소스에서 이를 생략하려면 `npm ci --ignore-scripts` 후 `npm run build`를 실행한다. Node 범위와 LangGraph 패키지 버전은 master-agent와 맞추며 정확한 의존성은 `package.json`·`package-lock.json`을 따른다.
 
 어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 14개 포함), 서브에이전트 8개와 hook 9개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
@@ -263,6 +265,8 @@ code-agent 의 hook 명령과 MCP 설정은 고정 진입점을 가리키므로 
 **되돌리기와 고정 풀기.** `code-agent update --release <ID>`는 저장소에 설치된 릴리스 하나를 골라 적용한다(터미널 확인, 진행 중인 일이 있으면 예약). 상태 형식 세대(`stateSchema`)가 프로젝트보다 낮은 릴리스는 적용하지 않는다 — 새 버전이 승인·증거·작업 기록의 형식을 올렸으면 그 이전 버전으로는 되돌릴 수 없다. 실패했다고 적용 버전을 자동으로 되돌리지 않는다. 설치·검증·템플릿 반영이 실패하면 적용 버전은 처음부터 바뀌지 않는다. npm 패키지 진입점에서 `--release`로 고른 버전은 새 패키지를 설치할 때까지 그대로 둔다. `code-agent update --bundled`는 고정을 풀고 진입점의 번들로 돈다(진행 중인 일이 없을 때).
 
 **조회.** `code-agent version`은 이 명령을 돌린 코드, 이 프로젝트의 적용 버전·적용 대기·진행 중인 일, 진입점 npm 패키지, 저장소에 설치된 릴리스(식별값·상태 세대), 실행 중인 선택 UI MCP 를 보인다(`--json`은 스키마 `code-agent.version v1`). `status`·`doctor`도 적용 버전 한 줄을 낸다. 적용 버전이 저장소에서 사라졌는데 진행 중인 일이 있으면 hook 은 다른 버전으로 잇지 않는다(PreToolUse 는 거부, Stop 은 막지 않는다) — `version`·`status`·`doctor`·`update`·도움말만 진입점 번들로 돈다. 진행 중인 일이 없으면 진입점 번들로 돈다.
+
+실행 중인 그래프도 릴리스 적용을 막는다(`.code-agent/graph/run.lock`). 상태 형식과 잠금·재개 규약은 [LangGraph 실행 구조](langgraph.md#재개와-중단)를 따른다.
 
 **이행.** 이 구조 전에 설치한 프로젝트는 처음 한 번 이전 버전의 갱신(설치 폴더에서 pull·빌드)으로 이 버전을 받는다. 그 뒤로는 위 방식이다. 직접 절대 경로로 등록한 hook·MCP(`--cli`)는 설정을 바꾸지 않는다 — 그 경로의 `cli.js`가 고정 진입점이 되어 적용 버전을 고른다. 공유 설정에 릴리스 폴더 경로를 쓰지 않는다. 처음 이행 때 이미 떠 있던 Codex 선택 UI MCP 는 이전 코드라 한 번 다시 열어야 버전을 고르는 연결부로 바뀐다. 이 첫 회의 결과 판정도 이전 갱신기가 하므로, 마지막 `doctor`에 ✗ 가 있으면(공통 문서가 아직 없는 프로젝트 등) 템플릿 적용이 끝났어도 중단으로 보고한다 — `code-agent version`으로 적용 버전을, `doctor`로 남은 항목을 확인한다.
 

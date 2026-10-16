@@ -109,6 +109,7 @@ const MODEL_SUBCOMMANDS = [
   "triage",
   "start",
   "next",
+  "flow advance",
   // 되감기는 열어 둔다 — 앞으로는 못 가고 지우는 것도 없어 건너뛸 수 있는 것이 없다.
   // 승인·증거가 전부 해시에 묶여 있어, 되감아도 통과가 되살아나거나 회차가 줄지 않는다.
   "back",

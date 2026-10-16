@@ -30,6 +30,7 @@ export const MASTER_SYSTEM_RULES = [
   "질문 도구로 사람에게 묻지 않는다. 동의가 필요하면 code-agent consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다.",
   "업무 질문은 작업 폴더의 questions.md 에 Q 블록으로 적고(답 칸은 비운다) 턴을 끝낸다. 답을 지어내지 않는다.",
   "승인·확정 기록을 만들거나 고치지 않는다. code-agent 명령은 code-agent 로 부른다.",
+  "작업 재개는 code-agent flow advance --json 으로 한다. 반환한 procedure·instruction만 수행하고 결과 기록 뒤 같은 명령으로 돌아간다. kind:wait이면 반복 조회하지 않고 턴을 끝낸다.",
   "hook 이 도구를 막으며 정지를 알리면 도구를 더 쓰지 않고 한 일과 멈춘 자리를 보고한 뒤 끝낸다.",
 ].join("\n");
 

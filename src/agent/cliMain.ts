@@ -14,7 +14,6 @@ import {
   BACK_PHASES,
   context,
   decide,
-  next,
   requireReproable,
   requireValidatable,
   start,
@@ -41,13 +40,12 @@ import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
-import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
+import { applyConsent, consentStatus, finishConsent, loadConsent, prepareConsent, renderConsentOutput } from "./consent";
 import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
 import { contextHandoff, handoffPlanning, stageHandoff } from "./handoff";
 import { planningAdvanceCli, planningAssignmentCli, planningJson } from "./planningChain";
 import { crossCritic, crossReview } from "./crossCheck";
 import { atNextWork, renderVersion, runUpdate, versionView } from "./runtimeGate";
-import { renderVerification, verificationJson, verify } from "./verificationFlow";
 import { notationFor, useNotation } from "./hostText";
 import { releaseLease } from "./lease";
 
@@ -62,6 +60,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent help [<명령>]            이 사용법 — 명령을 주면 그 명령의 줄만
   code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 실행 절차·에이전트·훅 설치
   code-agent status                   문서·작업·스테이지·질문·승인 상태
+  code-agent flow advance [--json]     LangGraph 전체 흐름 재개 — 반환한 담당·사람 작업을 수행하고 결과 기록 뒤 같은 명령으로 잇는다
   code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]
                                       기계 판독용 상태(스키마 code-agent.state v1) — 읽기 전용. 재개 코드·근거·stateVersion, 기대와 다르면 stale-request(종료 코드 3)
   code-agent setup                    기존 설정·실행 환경·Git 준비 확인 (테스트 실행 없음)
@@ -251,35 +250,43 @@ const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --co
   "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | call (stdin 요청 → stdout 응답)";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
 
-/** 검증 명령은 자식 프로세스를 기다린다 — runCommand 가 async 인 유일한 이유다 */
+/** 실행 명령은 LangGraph·검증 자식 프로세스를 기다리고, 조회 명령은 기록을 바꾸지 않는다. */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
   const repoRoot = findRepoRoot(process.cwd());
   // 출력 문구의 실행 절차·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
   useNotation(notationFor(repoRoot));
   const print = (text: string) => process.stdout.write(`${text}\n`);
   // 다음 작업을 여는 명령 — 예약된 새 버전을 먼저 적용하고 세션은 실행 잠금 안에서 연다(runtimeGate.atNextWork)
-  const opening = (open: () => string): number => {
-    const out = atNextWork(repoRoot, [command!, ...args], open, print);
+  const operation = <T>(action: string, apply: () => T | Promise<T>) =>
+    (require("./graph/operation") as typeof import("./graph/operation")).runOperation(repoRoot, command!, action, apply);
+  const opening = async (open: () => string): Promise<number> => {
+    const out = await atNextWork(repoRoot, [command!, ...args], () => operation("open", open), print);
     if (typeof out === "number") return out;
     print(out);
     return 0;
   };
   switch (command) {
+    case "flow": {
+      if (args[0] !== "advance" || args.slice(1).some(arg => arg !== "--json")) throw new Stop("사용법: code-agent flow advance [--json]");
+      const result = await (require("./graph/lifecycle") as typeof import("./graph/lifecycle")).advanceFlow(repoRoot);
+      print(args.includes("--json") ? JSON.stringify(result, null, 2) : [result.instruction, ...(result.procedure ? [`절차: ${result.procedure}`] : []), `재개: ${result.resume}`].join("\n"));
+      return 0;
+    }
     case "triage": {
       const [action, ...rest] = args;
       if (action === "begin" && rest.length === 1) return opening(() => triageBegin(repoRoot, rest[0]));
       else if (action === "begin" && rest.length === 3 && rest[1] === "--base") return opening(() => triageBegin(repoRoot, rest[0], rest[2]));
-      else if (action === "link" && rest.length === 2) print(triageLink(repoRoot, rest[0], rest[1]));
+      else if (action === "link" && rest.length === 2) print(await operation("link", () => triageLink(repoRoot, rest[0], rest[1])));
       else if (action === "ingest" && rest.length === 1) return opening(() => triageIngest(repoRoot, rest[0]));
       else if (action === "status" && rest.length === 1) print(triageStatus(repoRoot, rest[0]));
       else if (action === "reassess" && rest.length === 2) return opening(() => triageReassess(repoRoot, rest[0], rest[1]));
-      else if (action === "attach" && rest.length === 2) print(triageAttach(repoRoot, rest[0], rest[1]));
-      else if (action === "deployed" && rest.length === 3) print(triageDeployed(repoRoot, rest[0], rest[1], rest[2]));
+      else if (action === "attach" && rest.length === 2) print(await operation("attach", () => triageAttach(repoRoot, rest[0], rest[1])));
+      else if (action === "deployed" && rest.length === 3) print(await operation("deployed", () => triageDeployed(repoRoot, rest[0], rest[1], rest[2])));
       else if (rest.length === 0 && action === "status") print(triageStatus(repoRoot));
-      else if (rest.length === 0 && action === "submit") print(triageSubmit(repoRoot));
+      else if (rest.length === 0 && action === "submit") print(await operation("submit", () => triageSubmit(repoRoot)));
       else if (rest.length === 0 && action === "jira") print(triageJira(repoRoot));
-      else if (rest.length === 0 && action === "handoff") print(triageHandoff(repoRoot));
-      else if (rest.length === 0 && action === "close") print(triageClose(repoRoot));
+      else if (rest.length === 0 && action === "handoff") print(await operation("handoff", () => triageHandoff(repoRoot)));
+      else if (rest.length === 0 && action === "close") print(await operation("close", () => triageClose(repoRoot)));
       else throw new Stop("사용법: code-agent triage ingest <입력JSON> | begin <출처> [--base <브랜치>] | status [조사ID] | submit | jira | link <Jira티켓키> <URL> | handoff | close | attach <조사ID> <근거> | reassess <조사ID> <사유> | deployed <조사ID> <버전> <근거>");
       return 0;
     }
@@ -288,17 +295,17 @@ export async function runCommand(command: string | undefined, args: string[]): P
         // --chain: analysis·impact·design 결과가 모두 준비됐으면 같은 호출에서 게이트(next)까지 — 거부면 exit 1(JSON 은 그대로)
         const rest = args.slice(1);
         if (rest.length > 1 || (rest.length === 1 && rest[0] !== "--chain")) throw new Stop("사용법: code-agent planning advance [--chain]");
-        const out = planningAdvanceCli(repoRoot, { chain: rest[0] === "--chain" });
+        const out = await planningAdvanceCli(repoRoot, { chain: rest[0] === "--chain" });
         print(out.text);
         return out.exit;
       }
-      if (args[0] === "prepare") print(preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined));
+      if (args[0] === "prepare") print(await operation("prepare", () => preparePlanning(repoRoot, args[1] ? JSON.parse(readFileSync(args[1], "utf8")) : undefined)));
       else if (args[0] === "status") print(planningJson(JSON.parse(planningStatus(repoRoot))));
       else if (args[0] === "result" && args[1]) print(planningJson(JSON.parse(planningResult(repoRoot, args[1]))));
-      else if (args[0] === "repair" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1]))));
-      else if (args[0] === "dispatch" && args[1]) print(planningAssignmentCli(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1]))));
-      else if (args[0] === "cancel" && args[1]) print(cancelPlanning(repoRoot, args[1]));
-      else if (args[0] === "cross") print(crossCritic(repoRoot, option(args, "by")));
+      else if (args[0] === "repair" && args[1]) print(await operation("repair", () => planningAssignmentCli(handoffPlanning(repoRoot, repairPlanning(repoRoot, args[1])))));
+      else if (args[0] === "dispatch" && args[1]) print(await operation("dispatch", () => planningAssignmentCli(handoffPlanning(repoRoot, dispatchPlanning(repoRoot, args[1])))));
+      else if (args[0] === "cancel" && args[1]) print(await operation("cancel", () => cancelPlanning(repoRoot, args[1])));
+      else if (args[0] === "cross") print(await operation("cross", () => crossCritic(repoRoot, option(args, "by"))));
       else throw new Stop("planning advance [--chain] | prepare [작업.json] | status | result <ID> | dispatch <ID> | repair <ID> | cancel <ID> | cross --by <claude|codex>");
       return 0;
     case "consent":
@@ -313,20 +320,22 @@ export async function runCommand(command: string | undefined, args: string[]): P
         }
         const raw = parsed.file !== undefined ? JSON.parse(readFileSync(parsed.file, "utf8"))
           : { action: parsed.action, ...(parsed.id ? { id: parsed.id } : {}), ...(parsed.kind ? { kind: parsed.kind } : {}), ...(parsed.spec ? { spec: parsed.spec } : {}) };
-        print(renderConsentOutput(repoRoot, prepareConsent(repoRoot, raw, { binding: { id: ticket.sessionId, host: ticket.host }, form: parsed.form })));
+        print(await operation("prepare", () => renderConsentOutput(repoRoot, prepareConsent(repoRoot, raw, { binding: { id: ticket.sessionId, host: ticket.host }, form: parsed.form }))));
       } else if ((args[0] === "apply" || args[0] === "finish") && args[1]) {
         // 사람의 터미널(TTY, 호스트 표지 없음)이거나 hook 이 이 적용 명령을 본 세션만 — 적용 함수가 응답을 관찰한 세션과 대조한다
         const tty = terminalCaller(process.stdin.isTTY, process.env);
         const ticket = tty ? undefined : takeTicket(repoRoot, "apply", args[1]);
         if (!tty && !ticket) throw new Stop(APPLY_UNOBSERVED);
         const caller = tty ?? { sessionId: ticket!.sessionId };
-        print(args[0] === "apply" ? applyConsent(repoRoot, args[1], caller) : renderConsentOutput(repoRoot, finishConsent(repoRoot, args[1], caller)));
+        const apply = () => args[0] === "apply" ? applyConsent(repoRoot, args[1], caller) : renderConsentOutput(repoRoot, finishConsent(repoRoot, args[1], caller));
+        // 릴리스 교체는 실행 중인 그래프 바깥에서 수행한다. 업데이트 자체의 잠금·동의 검사는 유지한다.
+        print(loadConsent(repoRoot, args[1]).action.action === "update" ? apply() : await operation(args[0], apply));
       } else if (args[0] === "status" && args[1]) print(renderConsentOutput(repoRoot, consentStatus(repoRoot, args[1])));
       else throw new Stop("사용법: code-agent consent prepare <작업.json> | --action <동작> … [--for claude|codex] | status <ID> | apply <ID> | finish <ID>");
       return 0;
     case "setup":
       if (args[0] && args[0] !== "baseline") throw new Stop("사용법: code-agent setup [baseline]");
-      print(args[0] === "baseline" ? setupBaseline(repoRoot) : setupStatus(repoRoot));
+      print(args[0] === "baseline" ? await operation("baseline", () => setupBaseline(repoRoot)) : setupStatus(repoRoot));
       return 0;
     case "init":
       if (optionsOnly(args, ["host", "cli"], [], INIT_USAGE)) { print(INIT_USAGE); return 0; }
@@ -378,10 +387,10 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(knowledge(repoRoot, args));
       return 0;
     case "experience":
-      print(experience(repoRoot, args));
+      print(args[0] === "add" ? await operation("add", () => experience(repoRoot, args)) : experience(repoRoot, args));
       return 0;
     case "finding":
-      print(finding(repoRoot, args));
+      print(args[0] === "report" ? await operation("report", () => finding(repoRoot, args)) : finding(repoRoot, args));
       return 0;
     case "start":
       if (!args[0] || args[0].startsWith("--")) {
@@ -390,10 +399,10 @@ export async function runCommand(command: string | undefined, args: string[]): P
       return opening(() => start(repoRoot, args[0], { target: option(args, "target"), base: option(args, "base") }));
     case "next":
       // 구현 Task 로 옮겼으면 그 Task 의 context 파일도 쓴다 — context --file 왕복을 줄인다
-      print([next(repoRoot), ...(stageHandoff(repoRoot, "implement")?.lines ?? [])].join("\n"));
+      print([await (require("./graph/transition") as typeof import("./graph/transition")).advancePhase(repoRoot), ...(stageHandoff(repoRoot, "implement")?.lines ?? [])].join("\n"));
       return 0;
     case "back":
-      print(back(repoRoot, args[0] ?? ""));
+      print(await operation("rewind", () => back(repoRoot, args[0] ?? "")));
       return 0;
     case "context":
       print(args.includes("--file") ? contextHandoff(repoRoot) : context(repoRoot));
@@ -403,56 +412,59 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(readProjectFile(repoRoot, args[0], args[1] === undefined ? 1 : Number(args[1]), args[2] === undefined ? 200 : Number(args[2])));
       return 0;
     case "repro":
-      print(await repro(requireReproable(repoRoot)));
+      print(await operation("reproduce", () => repro(requireReproable(repoRoot))));
       return 0;
     case "check":
-      print(await check(requireValidatable(repoRoot, "check")));
+      print(await operation("check", () => check(requireValidatable(repoRoot, "check"))));
       return 0;
     case "test":
-      print(await runTests(requireValidatable(repoRoot, "test")));
+      print(await operation("test", () => runTests(requireValidatable(repoRoot, "test"))));
       return 0;
     case "verify": {
       if (args.some((arg) => arg !== "--json" && arg !== "--retry")) throw new Stop("사용법: code-agent verify [--json] [--retry]");
+      const { renderVerification, verificationJson, verify } = require("./verificationFlow") as typeof import("./verificationFlow");
       const result = await verify(repoRoot, { retry: args.includes("--retry") });
       print(args.includes("--json") ? verificationJson(result) : renderVerification(result));
       return result.node === "review" ? 0 : 1;
     }
     case "review":
       // 회차를 열면 리뷰어에게 넘길 context 파일도 쓴다
-      print(args[0] === "cross" ? crossReview(repoRoot, option(args, "by")) : [openRound(requireValidatable(repoRoot, "review")), "", ...(stageHandoff(repoRoot, "review")?.lines ?? [])].join("\n"));
+      print(await operation(args[0] === "cross" ? "cross" : "open-round", () => args[0] === "cross" ? crossReview(repoRoot, option(args, "by")) : [openRound(requireValidatable(repoRoot, "review")), "", ...(stageHandoff(repoRoot, "review")?.lines ?? [])].join("\n")));
       return 0;
     case "integrate": {
-      const result = await integrate(requireValidatable(repoRoot, "integrate"));
-      const moved = advancePassedIntegrate(repoRoot);
-      print(moved ? `${result}\n\n${moved}` : result);
+      print(await operation("integrate", async () => {
+        const result = await integrate(requireValidatable(repoRoot, "integrate"));
+        const moved = advancePassedIntegrate(repoRoot);
+        return moved ? `${result}\n\n${moved}` : result;
+      }));
       return 0;
     }
     case "deliver":
-      print(deliver(requireValidatable(repoRoot, "deliver")));
+      print(await operation("commit", () => deliver(requireValidatable(repoRoot, "deliver"))));
       return 0;
     case "plan":
       if (args[0] !== "submit" || !args[1]) {
         throw new Stop("사용법: code-agent plan submit <초안.json>");
       }
-      print(submitPlan(repoRoot, args[1]));
+      print(await operation("submit", () => submitPlan(repoRoot, args[1])));
       return 0;
     case "approve": {
       // 남는 인자는 사용법 오류다 — `approve request X` 를 요구사항 확정으로 오해해 계획 승인 화면으로 가지 않게
       const extra = positional(args, ["comment"]);
       if (extra[0] === "request") throw new Stop("요구사항 확정은 code-agent confirm request <ID> [<지시서>] 입니다 — approve 는 제출된 계획을 승인합니다.");
       if (extra.length) throw new Stop(`사용법: code-agent approve [--comment <메모>] — 받지 않는 인자: ${extra.join(" ")}`);
-      print(decide(repoRoot, "approved", option(args, "comment")));
+      print(await operation("approve", () => decide(repoRoot, "approved", option(args, "comment"))));
       return 0;
     }
     case "reject":
       if (args[0] === "request") {
         const [id, spec, ...rest] = positional(args.slice(1), ["comment"]);
         if (rest.length) throw new Stop(`사용법: code-agent reject request <ID> [<지시서>] --comment <사유> — 받지 않는 인자: ${rest.join(" ")}`);
-        print(decideRequest(repoRoot, id, "rejected", option(args, "comment"), spec));
+        print(await operation("reject-request", () => decideRequest(repoRoot, id, "rejected", option(args, "comment"), spec)));
         return 0;
       }
       if (positional(args, ["comment"]).length) throw new Stop("사용법: code-agent reject --comment <사유> | code-agent reject request <ID> [<지시서>] --comment <사유>");
-      print(decide(repoRoot, "rejected", option(args, "comment")));
+      print(await operation("reject", () => decide(repoRoot, "rejected", option(args, "comment"))));
       return 0;
     case "takeover":
       if (args.length) throw new Stop("사용법: code-agent takeover");
@@ -491,13 +503,13 @@ export async function runCommand(command: string | undefined, args: string[]): P
             }),
           );
         case "submit":
-          print(requestSubmit(repoRoot, args[1]));
+          print(await operation("submit", () => requestSubmit(repoRoot, args[1])));
           return 0;
         default:
           throw new Stop("사용법: code-agent request [begin [ID] --kind <feature|fix|refactor> | submit <request.json>]");
       }
     case "abort":
-      print(abort(repoRoot));
+      print(await operation("abort", () => abort(repoRoot)));
       return 0;
     case "docs":
       switch (args[0]) {
@@ -505,7 +517,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
           print(recommendSetup(repoRoot));
           return 0;
         case "setup":
-          print(setupProject(repoRoot, args[1]));
+          print(await operation("setup", () => setupProject(repoRoot, args[1])));
           return 0;
         case undefined:
           print(docsStatus(repoRoot));
@@ -513,7 +525,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
         case "begin":
           return opening(() => docsBegin(repoRoot));
         case "end":
-          print(docsEnd(repoRoot));
+          print(await operation("end", () => docsEnd(repoRoot)));
           return 0;
         case "skeleton":
           print(docsSkeleton(args[1]));
@@ -522,7 +534,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
           print(docsInterview(args[1], option(args, "sections")));
           return 0;
         case "link":
-          print(docsLink(repoRoot, args[1], args.slice(2)));
+          print(await operation("link", () => docsLink(repoRoot, args[1], args.slice(2))));
           return 0;
         default:
           throw new Stop("사용법: code-agent docs [recommend | setup <node|python> | begin | end | skeleton <종류> | interview <종류> | link <종류> <경로...>]");
@@ -531,7 +543,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (args[0] === "request") {
         const [id, spec, ...rest] = positional(args.slice(1), []);
         if (rest.length) throw new Stop(`사용법: code-agent confirm request <ID> [<지시서>] — 받지 않는 인자: ${rest.join(" ")}`);
-        print(decideRequest(repoRoot, id, "confirmed", undefined, spec));
+        print(await operation("confirm-request", () => decideRequest(repoRoot, id, "confirmed", undefined, spec)));
         return 0;
       }
       if (args[0] !== "doc") {
@@ -539,7 +551,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
           "사용법: code-agent confirm doc <all | architecture | conventions | test-strategy | quality> | code-agent confirm request <ID> [<지시서>]",
         );
       }
-      print(confirmDoc(repoRoot, args[1]));
+      print(await operation("confirm-doc", () => confirmDoc(repoRoot, args[1])));
       return 0;
     case "model": {
       const host = parseHost(option(args, "host"));

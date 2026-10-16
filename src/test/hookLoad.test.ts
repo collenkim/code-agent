@@ -19,7 +19,7 @@ const CLI = join(AGENT, "cli.js");
 const PROBE = "const M=require('module');const s=new Set();const o=M._load;M._load=function(r,p,i){const x=o.apply(this,arguments);try{s.add(M._resolveFilename(r,p,i))}catch{}return x};require(process.argv[1]);process.stdout.write(JSON.stringify([...s]))";
 /** hook 경로가 읽으면 안 되는 명령 모듈 */
 const HEAVY = ["consent.js", "cliMain.js", "commands.js", "deliver.js", "sourceUpdate.js", "validate.js", "verificationFlow.js", "crossCheck.js",
-  "plugins/commands.js", "usage.js", "doctor.js", "init.js", "update.js"];
+  "plugins/commands.js", "usage.js", "doctor.js", "init.js", "update.js", "graph/runtime.js", "graph/lifecycle.js", "graph/planning.js"];
 /**
  * SessionStart 는 빠진 hook 설정을 알리려고 init 의 hookInstallProblems 를 읽는다(대화를 열 때 한 번이라 허용한다).
  * 도구 호출마다 도는 PreToolUse·Codex 이벤트 경로는 init 도 읽지 않는다

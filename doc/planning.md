@@ -6,6 +6,8 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 ## 역할과 게이트
 
+`planning advance`·`--chain`은 [LangGraph 계획 그래프](langgraph.md#실행-계층)를 실행한다. 아래는 배정·결과·게이트와 명령 출력의 계약이다.
+
 | 단계 | 담당 | 입력 | 출력 | 다음으로 넘어가는 조건 |
 |---|---|---|---|---|
 | 요구 구체화 | ca-analyst | 확정 지시서·공통 정책 | 01-requirements.md | 원문 대조·관찰된 완료·미결 없음 |

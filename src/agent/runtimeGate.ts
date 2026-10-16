@@ -94,21 +94,27 @@ function takeApplyNote(root: string): string | undefined {
  *  2. 실행 잠금을 쥐고 적용 버전을 다시 읽는다 — 이 프로세스를 고른 뒤 바뀌었으면 다시 실행한다.
  *  3. 잠금 안에서 open() — 세션 파일을 만든다.
  */
-export function atNextWork(root: string, argv: string[], open: () => string, print: (text: string) => void): number | string {
+export function atNextWork<T extends string | Promise<string>>(root: string, argv: string[], open: () => T, print: (text: string) => void): number | T {
   const own = ownRelease()?.id;
   const again = process.env[RERUN_ENV] === "1";
   const note = takeApplyNote(root);
   if (note) print(`${note}\n`);
   if (!again && applyPending(root, runtimeOf(root), print)) return rerun(argv);
   const release = lockRuntime(root);
+  let asynchronous = false;
   try {
     const current = runtimeOf(root), now = current?.applied;
     if (!again && now !== own && (now === undefined || installedRelease(now, appliedStore(current)))) {
       release();
       return rerun(argv);
     }
-    return open();
-  } finally { release(); }
+    const result = open();
+    if (result instanceof Promise) {
+      asynchronous = true;
+      return result.finally(release) as T;
+    }
+    return result;
+  } finally { if (!asynchronous) release(); }
 }
 
 /**

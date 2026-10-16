@@ -505,7 +505,13 @@ type Blocked = { id: string; reasons: string[]; class?: FailureClass; counter?: 
 type RunItem = { id: string; dispatchId: string; observedStart: boolean; elapsedMin: number };
 
 /** 준비·캐시·선행 조건·동시 한도 판정은 코드에서 하고, 실제 호스트 호출만 넘긴다. 단계 전환·승인은 하지 않는다. */
-export function advancePlanning(root: string): string {
+export async function advancePlanning(root: string): Promise<string> {
+  // hook의 계획 결과 관찰 경로에는 LangGraph를 로드하지 않는다.
+  return (require("./graph/planning") as typeof import("./graph/planning")).advancePlanningGraph(root);
+}
+
+/** 그래프의 한 배정 트랜잭션. 매번 최신 계획을 잠금 안에서 검사한다. 빈 목록은 관찰·준비만 한다. */
+export function planningAdvanceStep(root: string, taskIds: readonly string[], observeRewind = false): string {
   const work = planningWork(root);
   if (!(PLANNING_PHASES as readonly string[]).includes(work.active.phase)) throw new Stop("계획 단계에서만 진행할 수 있습니다.");
   const phase = work.active.phase as typeof PLANNING_PHASES[number];
@@ -525,11 +531,11 @@ export function advancePlanning(root: string): string {
         const view = sweep.views.get(record.task.id);
         if (view?.state === "running") running.push({ id: record.task.id, dispatchId: view.dispatchId, observedStart: view.observedStart, elapsedMin: view.elapsedMin });
       }
-      const rewind = rewindOf(work, state);
+      const rewind = observeRewind ? rewindOf(work, state) : undefined;
       if (rewind) return { phase, assignments: [] as unknown[], reused: [] as string[], waiting: [] as string[], blocked: [] as Blocked[], rewind, running, orphaned, stale: [] as unknown[], feedback: [] as unknown[] };
       const assignments: unknown[] = [], blocked: Blocked[] = [], reused: string[] = [], waiting: string[] = [];
       const stale: (RunItem & { reason: string })[] = [];
-      for (const record of mine) {
+      for (const record of mine.filter(record => taskIds.includes(record.task.id))) {
         if (taskCurrent(work, state, record)) { reused.push(record.task.id); continue; }
         const last = record.attempts.at(-1);
         if (last?.status === "running") {
