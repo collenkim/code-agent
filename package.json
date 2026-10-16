@@ -21,13 +21,13 @@
   "license": "ISC",
   "type": "commonjs",
   "engines": {
-    "node": ">=22"
+    "node": ">=24.19.0 <25"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "24.19.2",
     "esbuild": "^0.28.2",
     "postject": "^1.0.0-alpha.6",
     "typescript": "^7.0.2"

@@ -45,10 +45,13 @@ function walk(dir, out = []) {
  *
  * `node:sea.getAssetKeys` 는 **24.8** 에 들어왔다. 그것이 없는 Node 로 묶으면 빌드는 조용히 끝나지만,
  * 나온 바이너리는 자기가 단일 실행 파일인 줄 모르고 실행 파일 두 단계 위의 패키지 폴더를 읽으려다
- * 맨 ENOENT 로 죽는다 (init 도 doctor 도). doctor 는 Node 22 이상을 받고 install.md §1 도 그렇게
- * 적어 두므로, 22 로 빌드하는 사람이 실제로 있을 수 있다 — 여기서 선다.
+ * 맨 ENOENT 로 죽는다 (init 도 doctor 도). 지원하는 Node 범위와 자원 API 를 산출물 정리 전에 확인한다.
  */
 {
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major !== 24 || minor < 19 || process.versions.node.includes("-")) {
+    throw new Error(`단일 실행 파일은 Node 24.19.0 이상 24.x 에서만 만듭니다 (>=24.19.0 <25) — 지금 ${process.version}`);
+  }
   let hasAssetKeys = false;
   try {
     hasAssetKeys = typeof require("node:sea").getAssetKeys === "function";
@@ -57,7 +60,7 @@ function walk(dir, out = []) {
   }
   if (!hasAssetKeys) {
     throw new Error(
-      `단일 실행 파일은 Node 24.8 이상에서만 만듭니다 — 지금 ${process.version} 에는 node:sea.getAssetKeys 가 없어, ` +
+      `단일 실행 파일은 Node 24.19.0 이상 24.x 에서만 만듭니다 — 지금 ${process.version} 에는 node:sea.getAssetKeys 가 없어, ` +
         "만들어도 안에 든 템플릿을 읽지 못하는 바이너리가 나옵니다.",
     );
   }

@@ -184,13 +184,13 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   const win = process.platform === "win32";
 
   // 1. 런타임
-  const major = Number(process.versions.node.split(".")[0]);
-  if (isPackaged()) {
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major !== 24 || minor < 19 || process.versions.node.includes("-")) {
+    add("✗", "런타임", `Node ${process.version} 은 지원 범위 밖입니다 (>=24.19.0 <25)`, "Node 24.19.0 이상 24.x 를 설치하거나 그 버전으로 만든 단일 실행 파일을 쓰세요");
+  } else if (isPackaged()) {
     add("✓", "런타임", `단일 실행 파일 (Node ${process.version} 내장)`);
-  } else if (major >= 22) {
-    add("✓", "런타임", `Node ${process.version}`);
   } else {
-    add("✗", "런타임", `Node ${process.version} 은 지원 범위 밖입니다 (22 이상)`, "nodejs.org 에서 Node 를 올리거나 단일 실행 파일을 쓰세요");
+    add("✓", "런타임", `Node ${process.version}`);
   }
 
   // 2. git
@@ -308,7 +308,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       "✗",
       "번들 자원",
       error instanceof Error ? error.message : String(error),
-      "단일 실행 파일이라면 Node 24.8 이상에서 npm run build:bin 을 다시 돌리세요",
+      "단일 실행 파일이라면 Node 24.19.0 이상 24.x 에서 npm run build:bin 을 다시 돌리세요",
     );
   }
 

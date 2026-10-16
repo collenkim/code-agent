@@ -31,7 +31,7 @@ CLI와 템플릿(스킬·에이전트 정의)은 한 릴리스로 함께 적용�
 | | npm 전역 | 단일 실행 파일 |
 |---|---|---|
 | 치는 것 | `npm install -g <사내 저장소>/code-agent` | 파일 하나를 PATH 에 둔다 |
-| 전제 | Node 22 이상 (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.8 이상 ([2절](#2-단일-실행-파일-만들기)) |
+| 전제 | Node 24.19.0 이상 24.x (`package.json` 의 `engines` 에 적혀 있어 npm 이 미리 경고한다) | code-agent용 별도 Node 설치는 **불필요** — 실행 파일 안에 들어 있다. Claude Code·Git·프로젝트 실행 환경은 필요하다. 단, **만드는** PC 는 Node 24.19.0 이상 24.x ([2절](#2-단일-실행-파일-만들기)) |
 | 크기 | 수 MB | **~90 MB** (Node 실행 파일 그대로 + 자원 1 MB) |
 | OS | 하나로 전부 | **OS 별로 따로 만든다** ([2절](#2-단일-실행-파일-만들기)) |
 | 갱신 | 로컬 Git 소스 연결은 `code-agent update`(릴리스 저장소에 설치한 뒤 적용). npm 패키지는 패키지 관리자로 설치 — 다음 작업을 열 때 그 사본을 적용한다 | 새 파일로 교체한 뒤 `update --templates-only` |
@@ -55,7 +55,7 @@ CLI와 템플릿(스킬·에이전트 정의)은 한 릴리스로 함께 적용�
 npm run build:bin
 ```
 
-**만드는 Node 는 24.8 이상이어야 한다** — `node:sea.getAssetKeys` 가 그 버전에 들어왔고, 그것이 없으면
+**만드는 Node 는 24.19.0 이상 24.x 이어야 한다** — npm 실행과 같은 지원 범위다. `node:sea.getAssetKeys` 가 없으면
 안에 든 템플릿을 읽지 못하는 바이너리가 나온다(자기가 단일 실행 파일인 줄 모르고 없는 패키지 폴더를 읽으려 한다).
 빌드 스크립트가 0단계에서 막는다. *쓰는* Node 는 필요 없다 — 실행 파일 안에 들어 있다.
 
@@ -66,7 +66,7 @@ npm run build:bin
 
 | # | 무엇 | 왜 |
 |---|---|---|
-| 0 | `node:sea.getAssetKeys` 가 있는가 | 없으면 **선다**. 24.8 미만으로 묶으면 빌드는 조용히 끝나고 바이너리가 실행 시점에 맨 ENOENT 로 죽는다 |
+| 0 | Node 가 `>=24.19.0 <25` 이고 `node:sea.getAssetKeys` 가 있는가 | 지원 범위 밖이거나 자원 API 가 없으면 산출물을 지우기 전에 멈춘다 |
 | 1 | `tsc` | 타입이 깨진 채로 바이너리를 내지 않는다 |
 | 2 | esbuild 로 `src/agent/cli.ts` 를 CommonJS 한 파일로 (zod 포함, `--external:node:sea`) | SEA 안에서는 상대경로 `require()` 가 되지 않는다 — 빌트인만 풀린다 |
 | 3 | `dist-bin/sea-config.json` — `template/` 아래 전 파일 + `package.json` 을 **자원(assets)** 으로 | 실행 파일 안에 스킬·에이전트·CLAUDE 블록이 함께 들어간다 |
@@ -169,7 +169,7 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 | 이름 | ✓ 는 | ✗ 면 |
 |---|---|---|
-| 런타임 | 단일 실행 파일이거나 Node 22 이상 | Node 를 올리거나 단일 실행 파일을 쓴다 |
+| 런타임 | Node 24.19.0 이상 24.x (단일 실행 파일의 내장 Node 도 검사) | 지원 범위의 Node 를 설치하거나 그 버전으로 만든 단일 실행 파일을 쓴다 |
 | git | `git --version` 이 답한다 | PATH 에 git 을 넣는다 — 브랜치·기준 커밋·반영이 git 을 쓴다 |
 | PATH 의 code-agent | PATH 에서 찾았다. 단일 실행 파일인지 npm 설치/링크인지(그 경우 푼 `cli.js` 경로까지) 함께 찍는다 | hook 명령이 풀리지 않는다. `npm i -g <저장소>` 또는 바이너리를 PATH 에 둔다 |
 | 지금 도는 것 | (`·`) PATH 의 것과 지금 도는 진입점이 다를 때만 나온다 | — 막지 않는다. 고친 코드가 왜 반영되지 않는지 볼 때 이 줄을 본다 |
@@ -185,7 +185,7 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 | 스킬·에이전트 | 설치된 `ca-*` 전부가 지금 버전의 번들과 같다 (줄바꿈과 머리말의 `model:`·`effort:` 줄은 빼고 본다 — 모델·강도는 '에이전트 모델' 줄이 본다) | **하나도 없으면** `설치되지 않았습니다` → `code-agent init`. 일부가 없거나 다르면 각각 최대 5개까지 → `code-agent update` |
 | 에이전트 모델 | 설치된 정의 파일 머리말의 `model`·`effort`가 설정(`.code-agent/models.json`, 없으면 역할 기본값)과 같다. 판단·실행 기본값과 바꾼 역할을 함께 찍고, 일부만 설치되어 있으면 일치한 파일 수를 붙인다. 정의 파일이 하나도 없으면 대조하지 않고 `·`로 알린다(설치 여부는 `스킬·에이전트` 줄이 본다). 두 호스트 설치면 `Codex 에이전트 모델` 줄도 찍는다(TOML 어긋남은 `Codex 스킬·에이전트`가 본다) | 다르면 역할별로 최대 5개 → `code-agent update --templates-only`. `models.json`이 깨졌으면 그 사유 → 고치거나 지운 뒤 `update --templates-only`. **고치기 전에는 `init`·`update`가 파일을 하나도 쓰지 않고 멈춘다** |
 | 이 버전에 없는 스킬·에이전트 | (`·`) 남아 있는 `ca-*` 가 없으면 이 줄은 나오지 않는다 | — 막지 않는다. 이름이 바뀌었거나 빠진 것이라 손으로 지운다 (사람이 만든 `ca-` 스킬과 가릴 수 없어 자동 삭제하지 않는다) |
-| 번들 자원 | 번들을 읽지 못할 때만 나온다 (24.8 미만으로 만든 바이너리) | `npm run build:bin` 을 Node 24.8 이상에서 다시 돌린다. **이 검사가 서도 doctor 는 끝까지 찍는다** — 깨진 설치를 설명할 유일한 명령이 doctor 다 |
+| 번들 자원 | 번들을 읽지 못할 때만 나온다 (24.8 미만으로 만든 바이너리) | `npm run build:bin` 을 Node 24.19.0 이상 24.x에서 다시 돌린다. **이 검사가 서도 doctor 는 끝까지 찍는다** — 깨진 설치를 설명할 유일한 명령이 doctor 다 |
 | 매니페스트 | `code-agent.json` 이 참조 파일을 실제로 찾는다. 파일이 없으면 `·` (도입 전) | 형식 오류면 어느 키가 왜 틀렸는지까지 그대로 (머리말만 남기지 않는다) → `code-agent manifest check` |
 | 아키텍처 · 코드 컨벤션 · 테스트 전략 · 품질·보안 기준 | 넷 다 확정됐다 | `missing-file` · `missing-sections`는 문서를 보완한다. `unconfirmed` · `stale`는 같은 세션의 `setup` 또는 `docs` 확인으로 확정한다 |
 | 사용자 키 파일 | POSIX: `~/.code-agent/credentials.json` 의 권한이 좁다. Windows: (`·`) 자리와 ACL 안내 | `chmod 700 ~/.code-agent && chmod 600 ~/.code-agent/credentials.json` |

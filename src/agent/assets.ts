@@ -51,7 +51,7 @@ function loadSea(): SeaLike | undefined {
   if (typeof module.getAssetKeys !== "function" || typeof module.getAsset !== "function") {
     seaProblem =
       `이 단일 실행 파일은 node:sea.getAssetKeys 가 없는 Node ${process.version} 로 만들어졌습니다 (24.8 미만) — ` +
-      "안에 든 템플릿을 읽을 수 없습니다. Node 24.8 이상에서 npm run build:bin 을 다시 돌리세요.";
+      "안에 든 템플릿을 읽을 수 없습니다. Node 24.19.0 이상 24.x 에서 npm run build:bin 을 다시 돌리세요.";
     return undefined;
   }
   return module as SeaLike;

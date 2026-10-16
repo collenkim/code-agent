@@ -96,7 +96,7 @@ Jira는 **사람이 생성·조회**한다. 현재 사전 판별의 연결은 Ji
 ## 1. 설치
 
 ```
-npm install -g <code-agent 저장소 경로>   # 한 번 — Node 22 이상
+npm install -g <code-agent 저장소 경로>   # 한 번 — Node 24.19.0 이상 24.x
 cd <개발할 프로젝트>
 code-agent init                          # 프로젝트마다 설치
 claude                                   # 이 안에서 /ca-request 입력

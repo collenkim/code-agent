@@ -16,6 +16,7 @@
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `package.json` `engines.node`·`doctor.ts` 런타임 검사·`scripts/build-bin.js` 빌드 전제 | §7 | `package-lock.json` 루트 engines, `assets.ts` 자원 오류 안내, `AGENTS.md`, `README.md`, `doc/install.md`·`doc/usage.md`·`doc/design.md`의 Node 범위. npm 실행·SEA 내장 Node·SEA 빌드는 같은 범위를 쓴다 |
 | `layout.ts` `PHASES`·`AFTER_IMPLEMENT`·`STOP_PHASES` (20-43) | §2, §3 | `phaseInfo.ts` `PHASE_LABEL`·`reentry.ts` `PHASE_SKILL`, `template/claude/skills/ca-next/SKILL.md:14-25` 표, §3.2 표의 단계 칸(`docSync.test.ts`가 `PHASES`와 순서까지 대조) |
 | `commands.ts` `start`·`next`(implement 의 Task 완료 판정 `untouchedTaskFiles` 포함)·`back`·`requireValidatable`·`abort`·`advancePassedIntegrate`(통과한 `integrate` 뒤 deliver 로), `handoff.ts` `stageHandoff`(`next`·`review`·계획 동의 적용이 쓰는 context 파일) | §2, §3, §3.3 | 각 단계 스킬의 "자리 확인" 문장(직전 `code-agent` 출력에 스테이지가 있으면 status 를 다시 부르지 않는다), `ca-implement` 1·5항, `ca-review` 2항, `ca-integrate` 2절, `ca-plan` 끝 |
 | `commands.ts` `nextHint`(판정 순서 — AI-DLC → 요구 → 질문 → 승인 무효 `reentryHint` → 검증 한도 `verifyLimitHint` → `failureHint` → 스테이지)·`status` | §3, §3.2 `다음:` 의 원천 | `ca-next/SKILL.md` '멈춘 자리별 재개' 표, `ca-status/SKILL.md` 원인별 안내 줄, `stateView.ts` 재개 판정 순서(§3.2 기계 판독용 재개 판정). 원인별 안내의 원천은 원인을 판정한 모듈이다(검증 — 이 함수의 check·test 갈래, 리뷰·교차 — `reviewProblems`·`crossCriticProblems`, 계획 배정 — `planning advance`) |
@@ -617,6 +618,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+code-agent 의 실행·빌드 Node 는 `>=24.19.0 <25`다. npm 설치는 `package.json`의 `engines.node`로 범위를 알리고, `doctor`는 npm 실행과 단일 실행 파일의 내장 Node 를 같은 범위로 검사한다. 단일 실행 파일 빌드는 이 범위와 자원 API 를 산출물 정리 전에 확인한다. 대상 프로젝트 자체의 언어·런타임은 해당 프로젝트 설정을 따른다.
+
 Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. npm의 `.ps1` 실행 정책 거부를 피하며 실행 정책은 변경하지 않는다. `hosts.ts`의 Codex 변환본(역할 포함), 별도 ca-answer, 설치 공통 블록과 `hostText.ts`의 파일 도구 안내가 이 규칙을 싣는다. Bash·macOS·Linux 명령, 파일 경로, 사용자가 보내는 대화 응답 `code-agent consent respond …`는 바꾸지 않는다.
 
 | 설치 | `hosts.json` | 교차 검증 |
@@ -799,3 +802,4 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 2026-10-15 | `update`는 code-agent 가 설치되지 않은 폴더(프로젝트 밖·설치하지 않은 저장소)에서 아무것도 쓰지 않고 멈추고, 다음 작업을 여는 명령도 그런 폴더에는 npm 패키지를 들이지 않는다 | `d01b4d1` | §1.1, §3.1, §4.1 |
 | 2026-10-15 | 다음 작업을 여는 셸 명령 직전의 PreToolUse hook 이 예약된 새 버전을 적용해 Codex 샌드박스 셸에서도 새 버전으로 열고, 적용은 내용이 바뀐 설치 파일만 쓴다 | `d01b4d1` | §1.1, §3.1, §5.1, §5.3, §7, §8, §9 |
 | 2026-10-15 | master 연동(선택) — 사람이 켠 프로젝트에서 상위 조정자가 로컬 CLI 계약(`code-agent.master` v1)으로 실행을 원자적으로 접수·관찰·정지·재개·인계하고, 사람이 준 권한 범위의 routine 판단만 사람 응답과 구분해 같은 동의 적용 함수로 받는다. 승인·답 기록 형식이 늘어 상태 형식 세대를 2로 올린다 | `e5f136a` | §1.1, §3.2, §4.2, §4.3, §5.1, §5.3, §5.4, §8, §9 |
+| 2026-10-16 | Node 실행·빌드 지원 범위를 master-agent 와 같은 24.19.0 이상 24.x 로 통일하고 런타임 점검과 설치 안내에 반영한다 | 미커밋 | §1.1, §7 |
