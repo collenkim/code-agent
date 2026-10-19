@@ -11,6 +11,7 @@ argument-hint: "[ID] <요구사항 서술 · 붙여넣은 티켓 · 파일 경�
 ## 0. 접수
 
 Bash: `code-agent status` 로 자리를 본다.
+후속 수정도 최초 ID·종류로 잇는다. feature를 fix로 재접수하지 않는다.
 - 사용자가 요구사항 대신 **손으로 써 둔 지시서**를 쓰라고 하면 접수하지 않는다 — 그 경로로 `/ca-analyze <지시서>` 의 시작을 따른다 (`request submit` 은 사람이 쓴 지시서를 덮지 않는다).
 - 작업도 접수도 없으면 `.claude/skills/ca-request/SKILL.md` 의 절차를 **종류 `feature`** 로 그대로 따른다 —
   인자의 ID 와 요구사항 서술을 넘긴다 (ID 가 없으면 생략하고 CLI가 발급한 ID를 쓴다). 인자에 `--base` · `--target` 이 있으면 `request begin` 에 함께 넘긴다.

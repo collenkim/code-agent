@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-19",
+  "node": "24.19.0",
+  "launchGapProbe": { "tests": 1, "pass": 1, "firstHttpStatus": 500, "retryHttpStatus": 202, "requestState": "queued", "launchCalls": 1 },
+  "masterIdentityFull": { "tests": 214, "pass": 212, "fail": 0, "skipped": 2, "environment": "temporary snapshot with shared dependencies", "skipReason": "temporary snapshot has no sibling code-agent build; both integration cases were rerun below" },
+  "masterCodeAgentIntegration": { "tests": 1, "pass": 1, "fail": 0, "skipped": 0, "environment": "temporary snapshot with CODE_AGENT_DIST pointing to the real build" },
+  "masterHandoffIntegration": { "tests": 7, "pass": 7, "fail": 0, "skipped": 0, "environment": "real master-agent workspace after applying the four reviewed files" },
+  "masterStaticChecks": { "syntaxFiles": 84, "linkedDocuments": 18, "pass": true },
+  "codeAgentFinalFull": { "command": "npm.cmd test", "tests": 1613, "suites": 218, "pass": 1609, "fail": 0, "skipped": 4, "durationMs": 392808.5189, "environment": "Windows, unrestricted", "includes": ["TypeScript build", "regression tests", "documentation synchronization", "template conversion and budget"] },
+  "limitations": ["실제 유료 모델 E2E 실행 제외", "부하·장기 운영 비용 미측정", "식별 기록은 checkout, master 업무 번호는 해당 master DB 범위"]
+}

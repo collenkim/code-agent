@@ -9,6 +9,7 @@ import { branchCursorFile } from "../agent/branchCursor";
 import { next, start } from "../agent/commands";
 import { consentSnapshot } from "../agent/consent";
 import { stateView } from "../agent/stateView";
+import { requestBegin, loadRequestSession } from "../agent/request";
 const ABORT = { action: "abort", decision: "accept", sendsCode: false } as const;
 
 beforeEach(() => createStageRepo("ca-branch-resume-"));
@@ -50,6 +51,16 @@ test("다른 브랜치에서 start로 기존 작업의 진행 단계를 초기�
   toCheck(); const active = loadActive(repo)!;
   git("switch", "-c", "feature/other");
   assert.throws(() => start(repo, join(repo, active.spec)), /보관되어 있습니다/);
+  assert.equal(git("branch", "--show-current"), "feature/other");
+  git("switch", active.branch!);
+  assert.deepEqual(loadActive(repo), active);
+});
+
+test("다른 브랜치에 보관한 ID는 같은 종류와 fix 어느 쪽으로도 중복 접수하지 않는다", () => {
+  toCheck(); const active = loadActive(repo)!;
+  git("switch", "-c", "feature/other");
+  for (const kind of ["feature", "fix"]) assert.throws(() => requestBegin(repo, active.id, kind), /보관되어 있습니다/);
+  assert.equal(loadRequestSession(repo), undefined);
   assert.equal(git("branch", "--show-current"), "feature/other");
   git("switch", active.branch!);
   assert.deepEqual(loadActive(repo), active);

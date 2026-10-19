@@ -26,7 +26,7 @@
 | `reentry.ts`(`reentryHint`·`staleEarliest`·`PHASE_SKILL`)·`failureHint.ts` | §3.2 실패 시, §3.3 | 승인 무효 문장(`nextHint`·`next`(implement 이후 모든 스테이지 — 스테이지 게이트보다 먼저)·`requireValidatable`·`requireReproable`·`hook.ts` `decideWrite`가 같은 문장), 단계 스킬 9개의 되감기 예외 문장(승인 무효), `failureHint`가 읽는 기록 꼴(`planning.json` 시도의 `failure`, `consents/<UUID>.json` `failure`)과 `GUIDE_KEYS`의 동의 원인 키(`detail`) |
 | `hostText.ts`(표기 함수 `skill`·`skillFile`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`, 판정 `notationFor`) | §7 CLI 출력 표기 | `SKILL_NAMES` ↔ `template/claude/skills` 디렉터리, `ROLE_NAMES` ↔ `template/claude/agents`(`hostText.test.ts`), 호출 지점 — `cliMain.ts` `useNotation`, hook 진입 `withNotation`(Claude 하위 명령은 claude, `codexHook`은 codex). CLI·hook 의 사용자 문구는 스킬·도구 이름을 리터럴로 쓰지 않고 이 함수들을 부른다 — 파일·확인 화면에 기록되는 문자열(⑧·⑨·⑩, 원장, 동의 `confirmations`, `setupStatus`)은 리터럴을 유지한다 |
 | `lease.ts`(`leaseDecision`·`leaseGuard`·`sessionStartLease`·`releaseLease`·`leaseLine`) | §5.3, §7, §8 | `hook.ts` `LEASE_FREE`(임대를 보지 않는 읽기 전용 명령)·`decideTool`의 임대 자리(동의 티켓 발급 전), `consent.ts` `SNAPSHOT_EXCLUDED`(`lease.json*`), `init.ts` `GITIGNORE_LINES`, `sessionHook.ts` `progress`, `codexHook.ts` SessionStart 분기(같은 `sessionStartLease`), `ca-next` 재개표의 다른 세션·넘겨받기 행 |
-| `request.ts` 접수·확정, `docsCommands.ts`·`bootstrap.ts` 준비 | §3.1, §4 | `ca-request`·`ca-adopt`·`ca-docs` SKILL.md |
+| `request.ts` 접수·확정, `workIdentity.ts` 최초 ID·종류 보존, `docsCommands.ts`·`bootstrap.ts` 준비 | §3.1, §4, §8, §9 | `ca-request`·`ca-feature`·`ca-fix`·`ca-refactor`·`ca-adopt`·`ca-docs` SKILL.md, `doc/usage.md`, `commands.ts` 시작·`work.ts` 종류 대조, `init.ts` 무시 경로·상태 형식 세대 |
 | `triage.ts`·`triageState.ts`·`errorFingerprint.ts` 사전 판별·Jira 수동 연결·fix 인계 | §2, §3.1, §5.3, §8, §9 | `ca-fix/SKILL.md`·`triage.md`, `ca-request`·`ca-next` 진입, `hook.ts` 조사 쓰기 범위, `request.ts`·`commands.ts`·`docsCommands.ts` 동시 시작 거부 |
 | `init.ts` hook 등록(`initClaude`·`initCodex` — Codex PreToolUse 의 `|| exit 2`, Windows 명령 `codexWindowsCommand`·옛 꼴 점검 `codexWindowsProblem`)·`HOOK_MATCHER`(`mcp__.*` 포함)·`CLAUDE_HOOKS`·`CODEX_EVENTS`·`hookInstallProblems`·`requireStartHooks` | §5, §7 | §5.1·§5.2 등록표(`docSync.test.ts`가 임시 저장소에 `init --host both` 한 `.claude/settings.json`·`.codex/hooks.json`과 대조), `doctor.ts` hook 목록(같은 `CLAUDE_HOOKS`·`CODEX_EVENTS`를 읽는다), `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`, `doc/usage.md` hook 수·init 표 |
 | `codexHook.ts`(알려진 비파일 도구 `KNOWN_NON_FILE_TOOL`, SessionStart 의 진행 상태·임대 넘겨받기) | §4.2, §5.2, §7 | `template/CODEX.block.md`, `template/codex/ca-answer.md` |
@@ -57,7 +57,7 @@
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:224`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:226`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 변경당 한 줄(바뀐 것의 요지와 커밋 — 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -108,6 +108,8 @@ flowchart TD
 **공통 전제** (`commands.ts:516-524`) — `next`는 매번 AI-DLC 미진행, 유효한 커서와 `baseCommit`(`requireWork` 158-171), 공통 문서 확정, 요구 확정(`request.ts:350-378`), 답 없는 질문 0(`requireAnswers` 184-193)을 확인한다. analysis~plan에서는 `planningProblems`와 `planningDocumentProblems`도 본다. 게이트에 걸린 `next`는 `Stop`을 던지고 커서는 그대로 둔다.
 
 ### 3.1 커서가 생기기 전
+
+**접수 식별 유지** — 작업 ID·feature/fix/refactor 종류는 최초 접수 요구로 정하고 `.code-agent/identities/`에 보존한다. 후속 수정·검증 실패·접수 종료로 종류를 바꾸지 않는다. 같은 ID의 접수 재개는 기록을 재사용하고, 다른 브랜치에 보관된 ID는 그 브랜치에서 재개하도록 거부한다. 자동 발급도 보존된 ID를 건너뛴다. 기록이 없는 설치는 기존 세션·지시서·초안·작업 커서·종류별 로컬 브랜치를 대조하며 종류가 충돌하면 중단한다. 지시서 읽기·시작·재제출도 같은 종류 대조를 사용하며 계획 파일을 읽지 못했다는 이유로 종류 검사를 생략하지 않는다.
 
 **브랜치별 재개** — 이름 있는 Git 작업은 현재 HEAD의 브랜치와 일치할 때만 활성으로 읽는다. 다른 브랜치의 작업은 보존하고 현재 브랜치의 도입·접수를 허용한다. `init --host codex`는 설치만 하며 설정을 만들거나 기존 커서를 지우지 않는다. `code-agent.json`은 도입 절차에서 준비한다. 기존 브랜치로 돌아오면 그 커서와 승인·검증 기록을 다시 사용한다. 같은 브랜치의 설정 누락·손상은 복구 제한을 유지한다. 접수·문서 준비 세션은 checkout 단위이므로 끝낸 뒤 브랜치를 전환하며, 동시 실행은 별도 worktree를 사용한다. 버전·모델 변경은 다른 브랜치에 보관한 작업도 진행 중으로 본다.
 
@@ -688,7 +690,9 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
-`active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다. 상태 형식 세대는 5다.
+`active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다. 상태 형식 세대는 6이다.
+
+`identities/<소문자 ID>.json`은 checkout 안에서 최초 접수의 ID·종류를 보존한다. 접수 시작과 직접 작업 시작이 `identities/identity.lock` 안에서 기록하며 abort·deliver는 지우지 않는다. Git·반영 대상에서는 제외하고 동의 스냅샷에는 포함한다. 별도 checkout의 전역 ID 예약을 대신하지 않는다.
 
 외부 의존 계약 사본 `work/<ID>/dependency-contracts.json`은 `planning contracts`가 기록하고 계획 담당 입력·입력 해시·승인 문서 해시·동의 스냅샷·답 출처 판정이 읽는다. 반영 커밋에 포함된다. `answers.jsonl`의 `contract` 행은 `planning reuse-answer`가 질문·답·계약 묶음의 해시를 결속해 기록한다.
 
@@ -759,7 +763,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | CLI 진입·hook 하위 명령 분기 | `cli.ts`(진입점 — hook 하위 명령 지연 로드 `HOOKS`·모듈 로드 실패 `hookFailureExit`), `cliMain.ts`(명령 `runCommand` — consent 티켓 소비·소스 update 확인·다음 작업을 여는 명령의 관문 `opening`), `runtimeSelect.ts`(프로젝트 적용 버전 선택 `selectRuntime`·위임 계약 — 명령·hook 마다 가장 먼저), `runtimeGate.ts`(다음 작업 관문 `atNextWork`·여는 명령 직전 hook 의 적용 `applyBeforeOpening`·`version`·update 갈래 `runUpdate`) |
 | 설치·갱신·점검 | `init.ts`(Codex Windows 명령 `codexWindowsCommand`·`codexWindowsProblem`), `codexTrust.ts`(Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만), `hosts.ts`(교차 실행 파일 `hostCommand`·`hostCommandConfigError`·`.js` 진입점의 node `scriptRunner`·실행 파일 변수 안내 `binHint`, 교차 안내 `crossNotice`·`crossHostProblems`·게이트 줄 괄호 `crossRunNote`), `assets.ts`, `update.ts`, `../core/atomic.ts` `writeIfChanged`(바뀐 설치 파일만 쓴다), `sourceUpdate.ts`(소스 update 미리보기·설치 뒤 적용 `updateFromSource`·릴리스 적용 호출 `runReleaseApply`), `releaseStore.ts`(릴리스 저장소 — Git 소스 설치 `installGitRelease`·npm 패키지 사본 `installPackageRelease`·검증 `verifyRelease`·설치 잠금), `runtimeApply.ts`(적용·예약 `applyHere`·진행 중인 일 `busyReasons`·템플릿 반영과 사본 보존 `applyTemplates`·다시 열기 안내 `hostGuidance`), `doctor.ts`, `models.ts`(역할 모델 변경 `setModel`·`validateModelChange`, 작업 중 변경 거부 `workInProgress`·`requireNoWorkInProgress`), `modelPolicy.ts`(역할 모델·추론 강도 정책 `ROLE_POLICY`·`TIER_DEFAULTS`) |
 | 준비·공통 문서 | `docsCommands.ts`, `docs.ts`, `schemas.ts`, `setup.ts`, `bootstrap.ts`, `survey.ts` |
-| 접수 | `request.ts`, `intakeTrace.ts` |
+| 접수 | `request.ts`, `intakeTrace.ts`, `workIdentity.ts`(최초 ID·종류 보존, 기존 기록 대조, 다른 브랜치 중복 접수 차단) |
 | Sentry 사전 판별·Jira 수동 연결 | `triageState.ts`(형식·조회·재개 안내), `errorFingerprint.ts`(보수적 로그 특징 추출), `triage.ts`(중복·후보 비교·배포·재판별·조사 시작·제출·코드 근거 대조·Jira 본문·연결·fix 인계), `ca-fix/triage.md`(호스트 조사 절차) |
 | 커서·게이트·context | `commands.ts`(`nextHint`·`status`·`start`·`next`, `context`는 작업·요구 키를 확인하고 렌더러를 부른다), `contextRender.ts`(`renderContext` — 스테이지·종류별 절 렌더러, 후보 파일·참고 문서 절, 구현 Task 의 03·04 근거 줄 `taskSourceLines`과 절 위치 `docSectionIndex`), `handoff.ts`(`contextHandoff`·`stageHandoff` — context 파일), `phaseInfo.ts`(`PHASE_LABEL`·`codeStages`), `reentry.ts`(승인 무효 재진입 `reentryHint`·`PHASE_SKILL`), `failureHint.ts`(원천이 `다음:`에 닿지 않는 실패 한 줄), `work.ts`, `layout.ts`, `git.ts`, `tree.ts` |
 | 작업 문서 검사 | `workDocs.ts`, `sourceTrace.ts`, `requirementFields.ts`(01 의 근거·출처 줄 파서 — 형식 검사와 원문 추적이 같이 쓴다), `questions.ts`, `planningValidation.ts`(`planRuleProblems` — 제출 규칙, plan submit 과 완료 hook 공통), `stagedChecks.ts`(완료 hook의 게이트 검사), `planningRules.ts`(규칙 식별자 `RULES`·`ruled`·배정의 `## 제출 전 점검` `submitChecklist` — import 없는 순수 모듈) |
@@ -794,6 +798,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 | 날짜 | 변경 | 커밋 | 대상 섹션 |
 |---|---|---|---|
+| 2026-10-19 | 최초 접수의 작업 ID·종류를 보존하고 다른 브랜치의 동일 ID 중복 접수와 후속 수정의 종류 변경을 차단한다 | 미커밋 | §1.1, §3.1, §8, §9 |
 | 2026-10-19 | 브랜치별 작업 커서와 임대를 보존하여 다른 브랜치의 설정 누락이 현재 도입·접수를 막지 않게 한다 | `99da682` | §1.1, §3.1, §5.3, §8, §9 |
 | 2026-10-16 | 외부 계약의 Git 근거 전달과 사람 답과 구분한 재인용을 지원하고 결과 포인터·구조화 리뷰·요구와 테스트 연결 점검을 보완한다 | `8085647` | §1.1, §4.3, §6.1, §6.3, §8, §9 |
 | 2026-10-07 | 최초 작성 — 코드 판독과 sandbox 확인으로 만든 현재 동작 지도(줄 인용 기준 `2c97a43`) | `0807d32` | 전체 |

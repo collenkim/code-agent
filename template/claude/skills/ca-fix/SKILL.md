@@ -6,7 +6,7 @@ argument-hint: "[작업ID] [--triage] <오류 로그 · 결함 티켓 · 파일 
 
 **질문·동의** — `.claude/skills/ca-answer/SKILL.md`를 따른다. 이 대화에서 아직 읽지 않았거나 대화가 압축·비워진 뒤라면 그 직전에 읽는다. `AskUserQuestion`을 실제 호출하며 일반 답은 승인이 아니다. 질문·대기는 `.claude/skills/ca-answer/reference.md`의 단계별 선택·차단 복구를 따른다. 적용 뒤 이어간다.
 
-**진입** — Bash: `code-agent status`. 사전 판별 중이거나 `--triage`를 받았거나, 기존 Jira 없이 오류 로그만 받았으면 `.claude/skills/ca-fix/triage.md`를 먼저 따른다. 판별 전에는 `request begin`을 부르지 않는다. 기존 결함 티켓·직접 신고·진행 중 fix는 아래 절차를 유지한다.
+**진입** — Bash: `code-agent status`. 기존 접수·작업의 후속 수정이면 그 ID·종류로 이어간다. feature를 fix로 바꾸거나 새 ID를 만들지 않는다. 새 결함의 사전 판별 중이거나 `--triage`를 받았거나, 기존 Jira 없이 오류 로그만 받았으면 `.claude/skills/ca-fix/triage.md`를 먼저 따른다. 판별 전에는 `request begin`을 부르지 않는다.
 
 `.claude/skills/ca-feature/SKILL.md` 의 절차를 그대로 따른다 — 접수는 **종류 `fix`** 로 하고, 같은 단계 스킬을 같은 순서로 돈다. 사전 판별에서 인계받은 접수는 `triage.md`·`triage.json`의 조사 근거와 제안을 활용하되 요구 확인·계획 승인·재현을 생략하지 않는다.
 접수에서 `target` 은 결함이 있는 **저장소 경로**, `scope`(건드려도 되는 경로)와 `preserve`(바뀌면 안 되는 것)는 필수다 — 원문으로 정할 수 없으면 묻는다.

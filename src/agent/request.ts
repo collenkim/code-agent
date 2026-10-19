@@ -23,6 +23,7 @@ import { loadTriage, requireNoTriage } from "./triageState";
 import { isGitRepo } from "./git";
 import { changedPaths, commitOf, type Change } from "./tree";
 import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
+import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, workIdentity } from "./workIdentity";
 
 /**
  * 요구사항 접수 — 13단계의 1.
@@ -444,10 +445,10 @@ export function requestBegin(
   const aidlc = aidlcBlock(repoRoot);
   if (aidlc) throw new Stop(aidlc);
   if (!id) {
-    id = loadRequestSession(repoRoot)?.id;
+    id = loadRequestSession(repoRoot)?.id ?? loadActive(repoRoot)?.id;
     for (let n = 1; !id; n++) {
       const candidate = `WORK-${String(n).padStart(4, "0")}`;
-      if (!existsSync(join(repoRoot, workDocsDir(candidate))) && !existsSync(requestLedgerFile(repoRoot, candidate))) id = candidate;
+      if (!existsSync(join(repoRoot, workDocsDir(candidate))) && !existsSync(requestLedgerFile(repoRoot, candidate)) && !workIdentity(repoRoot, candidate)) id = candidate;
     }
   }
   if (!ID_PATTERN.test(id)) {
@@ -476,8 +477,11 @@ export function requestBegin(
     );
   }
   if (current && current.kind !== kind) {
-    throw new Stop(`${id} 는 ${current.kind} 로 접수 중입니다 — 종류를 바꾸려면 현재 호스트 세션에서 ca-answer의 abort 동의 절차로 종료하고 다시 접수합니다.`);
+    throw new Stop(`${id} 는 ${current.kind} 로 접수 중입니다 — 후속 수정도 기존 종류와 ID를 유지합니다. 종료 후 다른 종류로 다시 접수하지 않습니다.`);
   }
+  requireWorkOnCurrentBranch(repoRoot, id);
+  requireWorkKind(repoRoot, id, kind as WorkKind);
+  rememberWorkIdentity(repoRoot, id, kind as WorkKind);
   const session: RequestSession = {
     ...(current ?? { id, kind: kind as WorkKind, startedAt: new Date().toISOString() }),
     ...(options.base ? { base: options.base } : {}),
@@ -714,12 +718,8 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
   // 접수 중이거나, 이미 시작한 작업의 요구사항을 고칠 때만 — 고치면 사람이 다시 확정한다
   let owner: { id: string; kind?: WorkKind } | undefined = session;
   if (active) {
-    let kind: WorkKind | undefined;
-    try {
-      kind = loadWork(repoRoot)?.order.kind;
-    } catch {
-      kind = undefined;
-    }
+    const kind = workIdentity(repoRoot, active.id)?.kind ?? loadWork(repoRoot)?.order.kind;
+    if (!kind) throw new Stop(`기존 작업 ${active.id}의 접수 종류를 확인할 수 없습니다. 지시서를 복구한 뒤 다시 제출하세요.`);
     owner = { id: active.id, kind };
   }
   if (!owner) {
@@ -758,6 +758,8 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
   if (owner.kind && request.kind !== owner.kind) {
     throw new Stop(`초안의 kind(${request.kind}) 가 접수한 종류(${owner.kind}) 와 다릅니다 — 종류는 사람이 명령으로 고른 것입니다.`);
   }
+  requireWorkOnCurrentBranch(repoRoot, request.id);
+  requireWorkKind(repoRoot, request.id, request.kind);
   const spec = requirementFile(request.id);
   if (active && active.spec !== spec) {
     throw new Stop(`이 작업은 ${active.spec} 로 시작됐습니다 — 그 지시서는 사람이 직접 고치고 다시 확정합니다.`);

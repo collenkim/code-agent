@@ -270,7 +270,7 @@ test("기존 작업 폴더를 덮어쓰지 않는다", () => {
 
 test("직접 fix·feature·refactor 접수는 사전 판별을 요구하지 않는다", () => {
   for (const kind of ["fix", "feature", "refactor"]) {
-    requestBegin(root, "DIRECT-1", kind);
+    requestBegin(root, `DIRECT-${kind}`, kind);
     assert.equal(loadRequestSession(root)?.kind, kind);
     assert.equal(loadTriage(root), undefined);
     rmSync(join(root, ".code-agent/request-session.json"));

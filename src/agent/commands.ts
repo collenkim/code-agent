@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { actorName } from "./actor";
 import { allCursors, checkoutBranch, cursorOnBranch } from "./branchCursor";
+import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch } from "./workIdentity";
 
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { ApprovalState, Decision } from "../core/approval";
@@ -277,6 +278,8 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
 
   const specPath = toRepoPath(repoRoot, spec);
   const order = readOrder(repoRoot, specPath, manifest);
+  requireWorkOnCurrentBranch(repoRoot, order.id);
+  requireWorkKind(repoRoot, order.id, order.kind);
   const intake = loadRequestSession(repoRoot);
   if (intake && intake.id !== order.id) {
     throw new Stop(
@@ -316,6 +319,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   // fix 는 오류 로그로 고친다 — 새로 시작할 때만 건다(이미 진행 중인 예전 작업은 그대로 잇는다)
   const missingLog = errorLogProblems(order.kind, readFileSync(join(repoRoot, specPath), "utf-8"));
   if (missingLog.length > 0) throw new Stop(`${specPath}: ${missingLog.map((problem) => problem.detail).join("\n")}`);
+  rememberWorkIdentity(repoRoot, order.id, order.kind);
 
   // 작업 브랜치 — 기준은 사용자 입력(--base) > code-agent.json 의 git.base > master
   let branch: string | undefined;

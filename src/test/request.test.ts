@@ -124,6 +124,25 @@ afterEach(() => {
 });
 
 describe("접수 — begin", () => {
+  test("초안을 쓰기 전 접수를 닫아도 최초 종류를 유지하고 같은 ID로만 이어간다", () => {
+    requestBegin(repo, ID, "feature");
+    abort(repo);
+    assert.throws(() => requestBegin(repo, ID, "fix"), /feature 로 접수한 작업/);
+    assert.equal(loadRequestSession(repo), undefined);
+    assert.match(requestBegin(repo, ID, "feature"), /ORD-7 \(feature\)/);
+    assert.equal(loadRequestSession(repo)?.kind, "feature");
+  });
+
+  test("자동 ID는 닫힌 접수의 폴더가 없어도 이미 발급한 ID를 재사용하지 않는다", () => {
+    requestBegin(repo, undefined, "feature");
+    const first = loadRequestSession(repo)!.id;
+    abort(repo);
+    const folder = join(repo, "doc/work", first);
+    assert.equal(dirname(folder), join(repo, "doc/work"));
+    rmSync(folder, { recursive: true, force: true });
+    requestBegin(repo, undefined, "fix");
+    assert.notEqual(loadRequestSession(repo)!.id, first);
+  });
   test("잘못된 ID와 종류는 거부한다 — 생략한 ID는 별도 자동 발급 테스트에서 확인", () => {
     assert.throws(() => requestBegin(repo, "주문 1", "feature"), /작업 ID 가 필요합니다: 주문 1/);
     assert.throws(() => requestBegin(repo, ID, undefined), /작업 종류가 필요합니다/);
@@ -225,11 +244,8 @@ describe("접수 — hook", () => {
 });
 
 describe("접수 — submit", () => {
-  beforeEach(() => {
-    requestBegin(repo, ID, "feature");
-  });
-
   test("초안을 지시서로 렌더한다 — 원문은 그대로, 지시서 규칙으로 다시 읽힌다", () => {
+    requestBegin(repo, ID, "feature");
     draft();
     const out = requestSubmit(repo, join(repo, DRAFT));
     assert.match(out, /요구사항을 렌더했습니다: doc\/work\/ORD-7\/requirement\.md \(feature · 주문 취소\)/);
@@ -247,6 +263,7 @@ describe("접수 — submit", () => {
   });
 
   test("originalFile 이면 코드가 그 파일을 그대로 옮긴다", () => {
+    requestBegin(repo, ID, "feature");
     write("doc/work/ORD-7/ticket.txt", "티켓 ORD-7\n주문 취소 버튼을 만든다\n");
     draft({ original: undefined, originalFile: "doc/work/ORD-7/ticket.txt" });
     requestSubmit(repo, DRAFT);
@@ -254,6 +271,7 @@ describe("접수 — submit", () => {
   });
 
   test("형식 · 지시서 규칙에 안 맞으면 렌더하지 않는다", () => {
+    requestBegin(repo, ID, "feature");
     draft({ requirements: [] });
     assert.throws(() => requestSubmit(repo, DRAFT), /접수 초안의 형식이 맞지 않습니다:[\s\S]*requirements/);
     draft({ original: undefined });
@@ -272,7 +290,6 @@ describe("접수 — submit", () => {
   });
 
   test("fix 는 저장소 경로 · scope · preserve 가 있어야 한다 — 손으로 쓴 지시서와 같은 규칙", () => {
-    abort(repo);
     requestBegin(repo, ID, "fix");
     const LOG = "2026-10-06 ERROR ```boom``` OrderService\njava.lang.NullPointerException: items is null\n    at app.order.Order.total(Order.java:12)";
     draft({ kind: "fix", target: ["src/main/app/nowhere"], errorLog: LOG });
@@ -288,7 +305,6 @@ describe("접수 — submit", () => {
   });
 
   test("fix 는 오류 로그 · 로그 파일 · 없는 사유와 재현 절차 중 하나가 있어야 접수된다", () => {
-    abort(repo);
     requestBegin(repo, ID, "fix");
     const fix = { kind: "fix", target: ["src/main/app/order"], scope: ["src/main/app/order"], preserve: ["주문 API 응답 형식"] };
     draft(fix);
@@ -365,6 +381,16 @@ describe("접수 — 확정 · 시작", () => {
     draft({ requirements: ["결제 뒤 24시간 안의 주문을 취소한다", "취소 사유를 남긴다"] });
     assert.match(requestSubmit(repo, DRAFT), /확정 뒤 내용이 바뀌었습니다 — 사람이 다시 확정해야 진행합니다/);
     assert.throws(() => next(repo), /요구사항이 확정 뒤 바뀌었습니다/);
+  });
+
+  test("계획 파일이 손상돼도 최초 feature를 fix 초안으로 덮어쓰지 않는다", () => {
+    confirm(); start(repo, join(repo, SPEC));
+    write(`.code-agent/work/${ID}/order.plan.json`, "broken");
+    const before = read(SPEC);
+    draft({ kind: "fix", target: ["src/main/app/order"], scope: ["src/main/app/order"], preserve: ["기존 동작"], noErrorLog: { reason: "로그 없음", steps: ["화면 확인"] } });
+    assert.throws(() => requestSubmit(repo, DRAFT), /접수한 종류\(feature\)/);
+    assert.equal(read(SPEC), before);
+    assert.equal(loadActive(repo)?.id, ID);
   });
 
   test("손으로 쓴 지시서도 확정을 거쳐야 시작한다", () => {

@@ -15,6 +15,7 @@ import { loadActive, planFile, workDocsDir } from "./layout";
 import type { ActiveWork } from "./layout";
 import { Stop } from "./stop";
 import { loadPlanning } from "./planningState";
+import { requireWorkKind } from "./workIdentity";
 
 /** 진행 중인 작업 하나를 판정에 필요한 만큼 전부 읽은 것 */
 export interface Work {
@@ -35,10 +36,12 @@ export function loadManifestIfAny(repoRoot: string): Manifest | undefined {
 }
 
 export function readOrder(repoRoot: string, spec: string, manifest: Manifest): WorkOrder {
-  return loadWorkOrder(repoRoot, join(repoRoot, spec), {
+  const order = loadWorkOrder(repoRoot, join(repoRoot, spec), {
     attributes: manifest.workOrder.attributes,
     requireApprover: manifest.workOrder.requireApprover,
   });
+  requireWorkKind(repoRoot, order.id, order.kind);
+  return order;
 }
 
 /**
