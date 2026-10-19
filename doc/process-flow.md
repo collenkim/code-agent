@@ -823,7 +823,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 10. 변경 이력
 
-- Codex 관리 실행과 확인된 동일 세션 재개를 지원하고, 사람 확인을 거친 호스트 전환에서 기존 작업과 응답·승인 경계를 보존한다 — 이 커밋, [검증 기록](reviews/2026-10-20-managed-hosts.md).
+- Codex 관리 실행과 확인된 동일 세션 재개를 지원하고, 사람 확인을 거친 호스트 전환에서 기존 작업과 응답·승인 경계를 보존한다 — `a4986c7`, [검증 기록](reviews/2026-10-20-managed-hosts.md).
 
 - 대시보드 질문·선택·사람 동의를 영속화하고 서명 응답의 중복 없는 적용·재개를 연결한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
 - init에서 두 호스트를 준비하고 단독·교차 실행 선택을 설치와 분리한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).

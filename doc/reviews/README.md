@@ -6,7 +6,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-20 | [Codex 관리 실행과 명시적 호스트 인계](2026-10-20-managed-hosts.md) — 이 커밋 | [감독·재개·인계·전체 회귀](evidence/2026-10-20-managed-hosts.json) |
+| 2026-10-20 | [Codex 관리 실행과 명시적 호스트 인계](2026-10-20-managed-hosts.md) — `a4986c7` | [감독·재개·인계·전체 회귀](evidence/2026-10-20-managed-hosts.json) |
 | 2026-10-19 | [대시보드 사람 응답과 실행 호스트 선택](2026-10-19-dashboard-interactions.md) — `91105a1` | [전체 회귀·실제 프로세스 통합](evidence/2026-10-19-dashboard-interactions.json) |
 | 2026-10-19 | [실행 구조 검토와 접수 ID·종류 보존](2026-10-19-architecture-identity.md) — `54f443c` | [회귀·장애 주입](evidence/2026-10-19-architecture-identity.json) |
 | 2026-10-19 | [브랜치별 작업 커서·임대 보존과 설정 준비](2026-10-19-branch-resume.md) — `99da682` | [자동 회귀·대상 조회](evidence/2026-10-19-branch-resume.json) |

@@ -1,7 +1,7 @@
 {
   "date": "2026-10-20",
   "repository": "code-agent",
-  "implementationCommit": "this-commit",
+  "implementationCommit": "a4986c7",
   "environment": { "platform": "win32", "node": "24.19.0" },
   "build": { "install": "npm.cmd ci", "command": "npm.cmd run build", "exitCode": 0, "entry": "dist/agent/cli.js", "stateSchema": 8 },
   "fullRegression": {
