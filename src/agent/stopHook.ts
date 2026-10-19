@@ -1,7 +1,7 @@
 import { outsideChanges } from "./evidence";
 import { existsSync } from "fs";
 import { join } from "path";
-import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
+import { loadActive, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, findRepoRoot, questionsFile, STOP_PHASES, workDocsDir } from "./layout";
 import { openQuestions } from "./answers";
 import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
@@ -41,7 +41,7 @@ export function decideStop(input: StopHookInput, projectDir?: string): string | 
   // 하위 폴더에서 연 세션도 저장소 루트로 본다(PreToolUse hook·CLI 와 같은 루트)
   const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
   // 준비·접수·전체 단계에 공통 적용한다. 작업 로딩 전에 검사하여 문서·계획 미완성도 포함한다.
-  if ([ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE].some(file => existsSync(join(repoRoot, file)))) {
+  if (loadActive(repoRoot) || [DOCS_SESSION_FILE, REQUEST_SESSION_FILE].some(file => existsSync(join(repoRoot, file)))) {
     const presentation = questionPresentationProblem(input.last_assistant_message);
     if (presentation) return presentation;
   }

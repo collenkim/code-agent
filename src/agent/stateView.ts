@@ -14,7 +14,8 @@ import type { Evidence, VerifyPhase } from "./evidence";
 import { failureHint } from "./failureHint";
 import { findingSummary, loadFindings } from "./findings";
 import type { FindingsLog } from "./findings";
-import { ACTIVE_FILE, experienceFile, findingsFile, loadActive, PHASES, planFile, questionsFile, reviewFile, verifyFile, workDocsDir } from "./layout";
+import { ACTIVE_FILE, experienceFile, findingsFile, PHASES, planFile, questionsFile, reviewFile, verifyFile, workDocsDir } from "./layout";
+import { currentCursor, currentLeaseFile } from "./branchCursor";
 import type { ActiveWork } from "./layout";
 import { LEASE_FILE, LEASE_IDLE_MS, readLease } from "./lease";
 import { loadPlanning, planningFile, PLANNING_PHASES, ROLE_PHASE, runView } from "./planningState";
@@ -126,10 +127,11 @@ function repoFacts(repoRoot: string): StateJson["repo"] {
 
 function ownershipOf(repoRoot: string, active: ActiveWork | undefined, now: number, session: string | undefined, unknown: string[]): StateJson["ownership"] {
   const process = "unverified" as const;
-  if (!existsSync(join(repoRoot, LEASE_FILE))) return { lease: { state: "none" }, process };
+  const file = active ? currentLeaseFile(repoRoot) : LEASE_FILE;
+  if (!existsSync(join(repoRoot, file))) return { lease: { state: "none" }, process };
   const lease = readLease(repoRoot);
   if (!lease) {
-    unknown.push(`작업 임대(${LEASE_FILE})를 읽을 수 없습니다 — 누가 진행 중인지 모릅니다`);
+    unknown.push(`작업 임대(${file})를 읽을 수 없습니다 — 누가 진행 중인지 모릅니다`);
     return { lease: { state: "unreadable" }, process };
   }
   const idleMs = Math.max(0, now - Date.parse(lease.seenAt));
@@ -194,7 +196,9 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
 
   let active: ActiveWork | undefined;
   try {
-    active = loadActive(repoRoot);
+    const cursor = currentCursor(repoRoot);
+    active = cursor?.active;
+    if (cursor) files.active = cursor.file;
   } catch (error) {
     blockers.push({ code: "active-unreadable", detail: `${ACTIVE_FILE} 를 읽을 수 없습니다: ${errorText(error)}` });
   }
@@ -202,7 +206,6 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     blockers.push({ code: "unsupported-version", detail: `${ACTIVE_FILE} 의 버전(planningVersion ${String(active.planningVersion)}, knowledgeVersion ${String(active.knowledgeVersion)})을 이 code-agent 가 지원하지 않습니다` });
   }
   if (active && !(PHASES as readonly string[]).includes(active.phase)) blockers.push({ code: "unknown-phase", detail: `알 수 없는 스테이지: ${String(active.phase)}` });
-  if (existsSync(join(repoRoot, ACTIVE_FILE))) files.active = ACTIVE_FILE;
 
   let work: Work | undefined;
   if (active && blockers.length === 0) {

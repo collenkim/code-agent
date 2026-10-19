@@ -1,5 +1,7 @@
 # 설치 — npm 전역 · 단일 실행 파일
 
+`init`은 진행 중인 작업을 유지하면서 호스트 파일만 설치한다. `code-agent.json`은 도입 절차에서 준비하며 설치 명령이 임의로 생성하지 않는다. 다른 브랜치에 남은 작업은 현재 브랜치의 도입을 막지 않는다. [브랜치별 재개](usage.md#브랜치를-바꾸어-작업하기)를 따른다.
+
 Claude와 Codex를 선택하거나 함께 설치할 수 있다. `init --host claude|codex|both`를 사용한다. Codex의 설치 경로·사용자 응답·훅 신뢰·갱신·제거는 [Codex 연동](codex.md)에 정리했다. 아래 Claude 전용 경로와 훅 수는 Claude 설치 기준이다. 두 호스트의 기준 커밋에는 `.code-agent/hosts.json`도 포함된다.
 
 > 흐름과 무엇을 치는가는 [usage.md](usage.md), 설계와 근거는 [design.md](design.md).

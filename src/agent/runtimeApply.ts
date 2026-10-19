@@ -18,7 +18,8 @@ import { packageVersion, templateHash } from "./assets";
 import { consentLockHeld, CONSENT_TITLES, OPEN_STATUSES, readConsentIndex } from "./consentState";
 import { hostAssets, selectedHosts, type Host, type HostSelection } from "./hosts";
 import { installedHook } from "./init";
-import { loadActive, STATE_DIR } from "./layout";
+import { STATE_DIR } from "./layout";
+import { allCursors } from "./branchCursor";
 import { acquireLock } from "./lock";
 import { TIMING } from "./retryPolicy";
 import { ownRelease, ownStore, readRuntime, RUNTIME_FILE, STATE_SCHEMA, type RuntimeState } from "./runtimeSelect";
@@ -60,9 +61,9 @@ export function requireInstalled(root: string): void {
 /** 진행 중인 일 — 하나라도 있으면 버전을 바꾸지 않는다. consentId 는 지금 적용 중인 갱신 동의(자기 자신)다 */
 export function busyReasons(root: string, consentId?: string): string[] {
   const reasons: string[] = [];
-  let active: ReturnType<typeof loadActive>;
-  try { active = loadActive(root); } catch { reasons.push("작업 상태(.code-agent/active.json)를 읽지 못함"); }
-  if (active) reasons.push(`진행 중인 작업 ${active.id} (${active.phase}${active.stage ? `/${active.stage}` : ""})`);
+  try {
+    for (const active of allCursors(root)) reasons.push(`진행 중인 작업 ${active.id} (${active.phase}${active.stage ? `/${active.stage}` : ""}${active.branch ? `, ${active.branch}` : ""})`);
+  } catch { reasons.push("브랜치 작업 상태를 읽지 못함"); }
   if (existsSync(join(root, STATE_DIR, "request-session.json"))) reasons.push("요구사항 접수 중");
   if (existsSync(join(root, STATE_DIR, "docs-session.json"))) reasons.push("공통 문서 준비 세션");
   if (existsSync(join(root, STATE_DIR, "log", "triage", "active.json"))) reasons.push("사전 판별 중");

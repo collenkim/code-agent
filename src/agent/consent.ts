@@ -230,6 +230,7 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
   const skipped = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", ".idea", "__pycache__", ".pytest_cache"]);
   const excluded = (file: string) => {
     const key = process.platform === "win32" ? file.toLowerCase() : file;
+    if (/^\.code-agent\/branches\/(?:[a-f0-9]{64}\.lease\.json(?:\.lock)?|cursor\.lock)$/.test(key)) return true;
     return SNAPSHOT_EXCLUDED.some((path) => key === path || key.startsWith(`${path}/`));
   };
   /**

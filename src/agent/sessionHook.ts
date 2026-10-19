@@ -2,6 +2,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { canonical, DOCS_SESSION_FILE, findRepoRoot, workDocsDir } from "./layout";
+import { allCursors } from "./branchCursor";
 import { loadPlanning, runView, TASK_AGENTS } from "./planningState";
 import { loadRequestSession } from "./request";
 import { approvalOf, loadWork, type Work } from "./work";
@@ -125,7 +126,8 @@ function progress(repoRoot: string, source: string | undefined, sessionId: strin
       `- 공통 문서 준비 세션이 열려 있다. 사용자가 이어가자고 하면 \`${skill("ca-docs")}\` 또는 \`${skill("ca-adopt")}\` 절차로 이어간다.`,
     ].join("\n");
   }
-  return "";
+  const retained = allCursors(repoRoot);
+  return retained.length ? [heading(), ...retained.map(active => `- 다른 브랜치에 보관: ${active.id} · ${active.branch ?? "브랜치 없음"} · ${active.phase}. 현재 브랜치의 준비·접수는 별도로 진행한다.`)].join("\n") : "";
 }
 
 /** 막지 않는다 — 실패해도 대화 시작을 방해하지 않고 사유만 stderr로 남긴다 */

@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-19",
+  "baseCommit": "8085647",
+  "scope": "code-agent",
+  "node": "24.19.0",
+  "platform": "win32",
+  "stateSchema": 5,
+  "verification": {
+    "command": "npm.cmd test",
+    "includesBuild": true,
+    "execution": "샌드박스 밖",
+    "exitCode": 0,
+    "tests": 1609,
+    "suites": 218,
+    "passed": 1605,
+    "failed": 0,
+    "skipped": 4,
+    "cancelled": 0,
+    "durationMs": 216824.8113,
+    "logSha256": "5720a85a011c98c4117e0f62ce20bf30a8e4f2c47338d15906631b3e6fba5447"
+  },
+  "addedCases": {
+    "src/test/branchCursor.test.ts": 11,
+    "src/test/branchResume.test.ts": 3
+  },
+  "targetReadOnlyCheck": {
+    "root": "C:/IdeaProjects/simmons",
+    "branch": "feature/UZRF-394",
+    "currentWork": null,
+    "retainedWork": { "id": "UZRF-392", "branch": "fix/UZRF-392", "phase": "implement" },
+    "hookCommand": "git status --short",
+    "hookBlocked": false,
+    "cursorUnchanged": true,
+    "installedNpmJunction": "C:/IdeaProjects/code-agent",
+    "targetModified": false,
+    "interactiveCodexRerun": false
+  },
+  "preservedGates": [
+    "동일 브랜치의 설정 누락 및 손상 차단",
+    "기존 계획 승인 유지 및 검증 없는 단계 전이 거부",
+    "브랜치와 보관 커서 변경에 따른 동의 스냅샷 무효화",
+    "보관 작업의 세션 임대와 버전 및 모델 변경 제한",
+    "start의 보관 작업 초기화 거부 및 현재 브랜치만 종료"
+  ],
+  "limitations": [
+    "접수와 문서 준비 세션은 checkout 단위이며 종료 후 브랜치를 전환한다",
+    "실행 중인 에이전트 및 검증과 동시에 브랜치를 바꾸지 않으며 병렬 작업은 worktree로 분리한다",
+    "브랜치 이름 변경은 자동 추적하지 않는다",
+    "브랜치 없는 이전 커서는 기존 저장소 단위 규약으로 유지한다"
+  ]
+}

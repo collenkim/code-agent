@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { actorName } from "./actor";
+import { allCursors, checkoutBranch, cursorOnBranch } from "./branchCursor";
 
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { ApprovalState, Decision } from "../core/approval";
@@ -146,6 +147,8 @@ function requireWork(repoRoot: string): Work {
   const work = loadWork(repoRoot);
   if (!work) {
     const session = loadRequestSession(repoRoot);
+    const retained = allCursors(repoRoot);
+    if (!session && retained.length) throw new Stop(`작업 브랜치가 아닙니다 (지금 ${checkoutBranch(repoRoot) || "detached HEAD"}). 보관된 작업: ${retained.map(active => `${active.id} · ${active.branch}`).join(", ")}. 기존 작업은 해당 브랜치에서 재개하고, 현재 브랜치의 새 작업은 ${skill("ca-request")}로 접수하세요.`);
     throw new Stop(
       session
         ? `아직 작업이 시작되지 않았습니다 — ${session.id} 요구사항을 접수 중입니다.\n다음: ${requestStatusLines(repoRoot, session).hint}`
@@ -322,6 +325,8 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (isGitRepo(repoRoot)) {
     base = options.base ?? manifest.git.base;
     branch = `${order.kind}/${order.id}`;
+    const retained = cursorOnBranch(repoRoot, branch);
+    if (retained) throw new Stop(`브랜치 ${branch}에 진행 중인 작업 ${retained.active.id}가 보관되어 있습니다. 해당 브랜치로 돌아가 code-agent status 로 확인한 뒤 재개하세요. 기존 커서는 덮어쓰지 않았습니다.`);
     requirePreparedBranch(repoRoot, branch, base);
     // 새 작업 브랜치를 딸 때만 미커밋 변경을 본다(FLOW-07) — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
     // 반영 커밋에 섞인다. 이미 있는 브랜치는 중단 뒤 재시작이라 그 작업의 변경이 남아 있을 수 있다
@@ -605,7 +610,7 @@ export function status(repoRoot: string): string {
       lines.push(`다음: ${intake.hint}`);
       return lines.join("\n");
     }
-    lines.push("", "작업: 없음", `다음: ${idleHint(repoRoot, manifest)}`);
+    lines.push("", "작업: 없음", ...allCursors(repoRoot).map(active => `다른 브랜치에 보관: ${active.id} · ${active.branch ?? "브랜치 없음"} · ${active.phase}`), `다음: ${idleHint(repoRoot, manifest)}`);
     return lines.join("\n");
   }
 

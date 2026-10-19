@@ -1,5 +1,7 @@
 # code-agent 설계 — Claude Code·Codex에서 실행하는 코드 작성 에이전트
 
+작업 커서는 Git 브랜치 이름에 결속한다. `branchCursor.ts`는 현재 HEAD와 일치하는 커서만 반환하고, 다른 작업을 저장할 때 이전 커서·세션 임대를 별도 보관한다. 조회는 기록을 바꾸지 않으며 승인·검증은 기존 근거를 그대로 대조한다. 접수·문서 준비는 checkout 단위이고 동시 실행은 worktree로 분리한다. 브랜치 없는 이전 커서는 저장소 단위로 유지한다.
+
 호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md)을 따른다. 아래 Claude 경로·도구·9개 훅 설명은 Claude 어댑터 기준이다.
 
 전용 Read 도구가 없는 호스트에는 `read.ts`의 `code-agent read`가 줄 번호 기반 파일 읽기를 제공한다. 실제 경로가 저장소 안인지 확인하고 기존 Read 보호를 적용하며 셸 표현식은 실행하지 않는다. Windows 신뢰 키·부모 실행 기록·실제 훅 호출의 검증 절차는 [Codex 연동](codex.md#동작과-검증)을 따른다.

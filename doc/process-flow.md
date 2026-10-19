@@ -14,6 +14,8 @@
 
 ### 1.1 변경 → 갱신 대응표
 
+브랜치 진행 커서(`branchCursor.ts`·`layout.ts`)를 바꾸면 §3.1·§5.3·§8·§9, `doc/usage.md`·`doc/install.md`·`doc/codex.md`·`doc/design.md`를 맞춘다. 커서 선택은 CLI·hook 공통이며 임대 경로·동의 스냅샷·버전 적용 표지·모델 변경 제한·상태 형식 세대도 함께 검사한다.
+
 외부 의존 계약(`dependencyContracts.ts`·계획 등록/입력·`answers.ts`·`work.ts`)을 바꾸면 §4.3·§6.1·§8·§9, `doc/dependency-contracts.md`·`doc/planning.md`·`doc/master-control.md`, Claude·Codex 답 지침과 상태 형식 세대를 함께 맞춘다. 등록·재인용 명령은 hook 허용 목록에 있고 읽기 전용 임대 예외에는 없다.
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
@@ -57,7 +59,7 @@
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:218`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:224`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 변경당 한 줄(바뀐 것의 요지와 커밋 — 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -108,6 +110,8 @@ flowchart TD
 **공통 전제** (`commands.ts:516-524`) — `next`는 매번 AI-DLC 미진행, 유효한 커서와 `baseCommit`(`requireWork` 158-171), 공통 문서 확정, 요구 확정(`request.ts:350-378`), 답 없는 질문 0(`requireAnswers` 184-193)을 확인한다. analysis~plan에서는 `planningProblems`와 `planningDocumentProblems`도 본다. 게이트에 걸린 `next`는 `Stop`을 던지고 커서는 그대로 둔다.
 
 ### 3.1 커서가 생기기 전
+
+**브랜치별 재개** — 이름 있는 Git 작업은 현재 HEAD의 브랜치와 일치할 때만 활성으로 읽는다. 다른 브랜치의 작업은 보존하고 현재 브랜치의 도입·접수를 허용한다. `init --host codex`는 설치만 하며 설정을 만들거나 기존 커서를 지우지 않는다. `code-agent.json`은 도입 절차에서 준비한다. 기존 브랜치로 돌아오면 그 커서와 승인·검증 기록을 다시 사용한다. 같은 브랜치의 설정 누락·손상은 복구 제한을 유지한다. 접수·문서 준비 세션은 checkout 단위이므로 끝낸 뒤 브랜치를 전환하며, 동시 실행은 별도 worktree를 사용한다. 버전·모델 변경은 다른 브랜치에 보관한 작업도 진행 중으로 본다.
 
 **미응답 준비 질문의 재개** — 같은 ID의 새 요청·오류 원문은 초안에 보존한 뒤 ca-docs의 미응답 업무 질문을 실제 질문 도구로 제시한다. 테스트 기준과 품질 기준은 각각 제안 내용·근거와 `제안 기준 사용 / 항목 수정 / 보류`를 받는다. 특정 문구를 입력하라는 보고만으로 끝내지 않는다. 이미 준 답·선택과 대기 중인 질문은 중복해서 묻지 않는다. 업무 답 후 문서 확정·준비 커밋 동의는 별도다.
 
@@ -315,6 +319,8 @@ hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드
 **질문 제시 교정의 범위** — 두 호스트의 Stop은 활성 작업·접수·문서 세션이 있고 `last_assistant_message`가 들어올 때, 따옴표로 감싼 특정 문구로 답·입력하라는 요청에 목록 항목이 둘 미만이면 한 번 교정을 요청한다. 인용 로그·코드 블록·동의 응답 안내 줄은 제외한다. `stop_hook_active`이면 재차 막지 않는다. 이는 특정 누락 형태의 보조 검사이며 모든 질문의 의미·후보 적합성·UI 호출 여부를 증명하지 않는다. 실제 질문 도구가 없으면 사유와 번호 선택지를 대화로 제시해야 한다.
 
 ### 5.3 PreToolUse 판정 순서 (`decide`, `hook.ts:178-223`)
+
+작업 모드는 현재 브랜치의 커서만 적용한다. 보관 중인 다른 브랜치의 설정·계획을 읽지 않으며, 일반 모드에서도 상태·원장·hook 설정 보호는 유지한다. detached HEAD에는 이름 있는 브랜치의 커서를 적용하지 않는다. 브랜치 없는 이전 커서는 저장소 단위로 유지하고, HEAD·커서가 손상되어 구분할 수 없으면 통과시키지 않는다.
 
 CLI·hook 거부의 판정은 유지한다. 호스트의 메인은 차단된 동작을 중지하고 §3.2의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향의 진행은 재확인 없이 수행하고 새 결정만 질문한다. 선택 도구는 메인이 호출하며 CLI·hook이 사용자 대신 복구를 선택하거나 승인하지 않는다.
 
@@ -684,7 +690,9 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
-외부 의존 계약 사본 `work/<ID>/dependency-contracts.json`은 `planning contracts`가 기록하고 계획 담당 입력·입력 해시·승인 문서 해시·동의 스냅샷·답 출처 판정이 읽는다. 반영 커밋에 포함된다. `answers.jsonl`의 `contract` 행은 `planning reuse-answer`가 질문·답·계약 묶음의 해시를 결속해 기록한다. 상태 형식 세대는 4다.
+`active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다. 상태 형식 세대는 5다.
+
+외부 의존 계약 사본 `work/<ID>/dependency-contracts.json`은 `planning contracts`가 기록하고 계획 담당 입력·입력 해시·승인 문서 해시·동의 스냅샷·답 출처 판정이 읽는다. 반영 커밋에 포함된다. `answers.jsonl`의 `contract` 행은 `planning reuse-answer`가 질문·답·계약 묶음의 해시를 결속해 기록한다.
 
 `.code-agent/graph/`에는 체크포인트·실행 기록 `state.sqlite`, 읽기 전용 조회용 사본 `view.json`, 실행 잠금 `run.lock`을 둔다. 보존·제외·형식 규칙은 [SQLite와 기록의 역할](langgraph.md#sqlite와-기록의-역할)을 따른다.
 
@@ -745,6 +753,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+`branchCursor.ts`는 HEAD·worktree의 gitdir 판독, 브랜치별 커서·임대 보관과 현재 작업 선택을 맡는다. `layout.ts`의 조회·저장·종료가 이 규칙을 사용하고, `stateView.ts`는 실제 선택한 커서 경로를 내보낸다. 버전 적용·모델 변경은 모든 보관 커서를 확인한다.
+
 외부 의존 계약은 `dependencyContracts.ts`(Git 근거·현재 바이트·사본·항목 충돌 검사·등록), `planning.ts`(등록·재인용 명령·배정), `planningState.ts`(입력·변경 감지), `answers.ts`(질문·답 결속·출처), `work.ts`(승인 해시)에 연결된다.
 
 | 단계·기능 | 파일 (`src/agent/` 기준) |
@@ -788,7 +798,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 | 날짜 | 변경 | 커밋 | 대상 섹션 |
 |---|---|---|---|
-| 2026-10-16 | 외부 계약의 Git 근거 전달과 사람 답과 구분한 재인용을 지원하고 결과 포인터·구조화 리뷰·요구와 테스트 연결 점검을 보완한다 | 이 변경 커밋 | §1.1, §4.3, §6.1, §6.3, §8, §9 |
+| 2026-10-19 | 브랜치별 작업 커서와 임대를 보존하여 다른 브랜치의 설정 누락이 현재 도입·접수를 막지 않게 한다 | 이 변경 커밋 | §1.1, §3.1, §5.3, §8, §9 |
+| 2026-10-16 | 외부 계약의 Git 근거 전달과 사람 답과 구분한 재인용을 지원하고 결과 포인터·구조화 리뷰·요구와 테스트 연결 점검을 보완한다 | `8085647` | §1.1, §4.3, §6.1, §6.3, §8, §9 |
 | 2026-10-07 | 최초 작성 — 코드 판독과 sandbox 확인으로 만든 현재 동작 지도(줄 인용 기준 `2c97a43`) | `0807d32` | 전체 |
 | 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록 | `7b698d8`·`c38f1e2` | §1.1, §6.4, §9 |
 | 2026-10-07 | 계획 오케스트레이션을 재시도 규약에 연결 — 질문 출처·자동 되감기·고아 배정 정리·같은 입력 실패와 작업 총 배정 한도·공통 잠금 | `99628c5`·`c38c5bf` | 머리말, §1.1, §3.2, §3.3, §4.2, §5.1, §5.2, §6.1, §6.3, §6.4, §7, §8, §9 |

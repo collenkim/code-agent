@@ -14,7 +14,7 @@
  *
  * 이 모듈은 fs·path·os 와 layout 만 읽는다 — hook 경로에서 도구 호출마다 돈다.
  */
-import { existsSync, readFileSync, realpathSync } from "fs";
+import { existsSync, readFileSync, realpathSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
 
@@ -24,7 +24,7 @@ export const RUNTIME_KEY = Symbol.for("code-agent.runtime");
 export const RUNTIME_FILE = `${STATE_DIR}/runtime.json`;
 export const SELF_ENV = "CODE_AGENT_RUNTIME_SELF";
 /** 이 코드가 읽고 쓰는 프로젝트 상태(승인 원장·증거·작업 기록)의 형식 세대 — 낮은 세대의 릴리스는 높은 세대가 쓴 프로젝트에 적용하지 않는다 */
-export const STATE_SCHEMA = 4;
+export const STATE_SCHEMA = 5;
 /** 릴리스 ID — `<패키지 버전>-<식별값 12자>`. 경로 조각으로 쓰므로 이 꼴만 받는다 */
 export const RELEASE_ID = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}-[0-9a-f]{12}$/;
 
@@ -140,6 +140,11 @@ export function pendingSwitch(root: string): boolean {
 export const BUSY_FILES = ["active.json", "request-session.json", "docs-session.json", "log/triage/active.json", "graph/run.lock"] as const;
 export function busyMarker(root: string): string | undefined {
   for (const file of BUSY_FILES) if (existsSync(join(root, STATE_DIR, file))) return `${STATE_DIR}/${file}`;
+  const branches = join(root, STATE_DIR, "branches");
+  if (existsSync(branches)) {
+    const file = readdirSync(branches).find(name => /^[a-f0-9]{64}\.json$/.test(name));
+    if (file) return `${STATE_DIR}/branches/${file}`;
+  }
   return undefined;
 }
 

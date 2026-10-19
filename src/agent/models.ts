@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeAtomic } from "../core/atomic";
 import { requireTerminal } from "./tty";
 import { selectedHosts, type Host } from "./hosts";
-import { loadActive } from "./layout";
+import { allCursors } from "./branchCursor";
 import { loadRequestSession } from "./request";
 import { guidance } from "./retryPolicy";
 import { Stop } from "./stop";
@@ -117,7 +117,7 @@ export function modelsTable(repoRoot: string, host?: Host): string {
  * 정의 파일은 커밋되지 않은 변경이라 그 접수의 start 가 거부한다(startBlockers, FLOW-07). 상태 파일을 읽지 못하면 던진다(변경을 막는 쪽).
  */
 export function workInProgress(repoRoot: string): { id: string; phase: string } | undefined {
-  const active = loadActive(repoRoot);
+  const active = allCursors(repoRoot)[0];
   if (active) return { id: active.id, phase: active.phase };
   const intake = loadRequestSession(repoRoot);
   return intake ? { id: intake.id, phase: "접수" } : undefined;

@@ -25,6 +25,7 @@ import { STATE_DIR } from "./layout";
 import { acquireLock } from "./lock";
 import { TIMING } from "./retryPolicy";
 import type { Work } from "./work";
+import { currentLeaseFile, currentCursor } from "./branchCursor";
 
 export const LEASE_FILE = `${STATE_DIR}/lease.json`;
 /** 마지막 활동 뒤 이만큼 지나면 다른 세션이 이어받는다 */
@@ -49,9 +50,9 @@ const text = (value: unknown): value is string => typeof value === "string" && v
 
 /** 없거나 형식이 틀리면 undefined — 틀린 파일은 다음 claim 이 덮는다 */
 export function readLease(root: string): Lease | undefined {
-  const path = join(root, LEASE_FILE);
-  if (!existsSync(path)) return undefined;
   try {
+    const path = join(root, currentLeaseFile(root));
+    if (!existsSync(path)) return undefined;
     const value = JSON.parse(readFileSync(path, "utf8")) as Partial<Lease>;
     if (!value || value.version !== 1 || !text(value.id) || typeof value.target !== "string" || !host(value.host) || !text(value.session) ||
       !text(value.claimedAt) || !text(value.seenAt) || Number.isNaN(Date.parse(value.seenAt))) return undefined;
@@ -112,13 +113,14 @@ function record(work: Work, me: { host: HostName; session: string; sessionStart?
   { written?: Lease; before?: Lease; denied?: { holder: Lease; idleMs: number } } | undefined {
   const root = work.repoRoot, ids = { id: work.active.id, target: work.active.target };
   try {
-    const release = acquireLock(join(root, `${LEASE_FILE}.lock`), { waitMs, ageReclaim: true, label: "작업 임대", display: `${LEASE_FILE}.lock` });
+    const file = currentLeaseFile(root);
+    const release = acquireLock(join(root, `${file}.lock`), { waitMs, ageReclaim: true, label: "작업 임대", display: `${file}.lock` });
     try {
       const before = readLease(root);
       const again = leaseDecision({ lease: before, ...ids, ...me, now });
       if (again.action === "deny") return { denied: { holder: again.holder, idleMs: again.idleMs } };
       const written = nextLease(again, before, { ...ids, ...me }, now);
-      if (written) writeAtomic(join(root, LEASE_FILE), `${JSON.stringify(written, null, 2)}\n`);
+      if (written) writeAtomic(join(root, file), `${JSON.stringify(written, null, 2)}\n`);
       return { written, before };
     } finally {
       release();
@@ -180,11 +182,13 @@ export function sessionStartLease(work: Work, session: string, source?: string, 
  */
 export function releaseLease(root: string, now: number = Date.now()): string {
   if (!existsSync(join(root, STATE_DIR))) return "진행 세션 기록이 없습니다 — 다음 진행 명령을 실행하는 세션이 이어받습니다.";
-  const release = acquireLock(join(root, `${LEASE_FILE}.lock`), { waitMs: TIMING.lockWaitMs, ageReclaim: true, label: "작업 임대", display: `${LEASE_FILE}.lock` });
+  if (!currentCursor(root)) return "현재 브랜치에 진행 중인 작업이 없습니다 — 다른 브랜치의 임대는 유지합니다.";
+  const file = currentLeaseFile(root);
+  const release = acquireLock(join(root, `${file}.lock`), { waitMs: TIMING.lockWaitMs, ageReclaim: true, label: "작업 임대", display: `${file}.lock` });
   try {
     const lease = readLease(root);
     if (!lease || lease.released) return "진행 세션 기록이 없습니다 — 다음 진행 명령을 실행하는 세션이 이어받습니다.";
-    writeAtomic(join(root, LEASE_FILE), `${JSON.stringify({ ...lease, released: { at: new Date(now).toISOString() } }, null, 2)}\n`);
+    writeAtomic(join(root, file), `${JSON.stringify({ ...lease, released: { at: new Date(now).toISOString() } }, null, 2)}\n`);
     return `진행 세션 기록을 풀었습니다: ${who(lease)} (마지막 활동 ${minutes(now - Date.parse(lease.seenAt))}분 전). ` +
       "다음 진행 명령을 실행하는 세션이 이어받습니다. 저쪽 세션이 아직 진행 중이면 그쪽 명령이 거부됩니다 — 같은 작업을 두 세션에서 동시에 진행하지 않습니다.";
   } finally {

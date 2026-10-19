@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSy
 import { hostname, networkInterfaces } from "os";
 import { basename, dirname, join, posix, resolve } from "path";
 
-import { writeAtomic } from "../core/atomic";
+import { currentCursor, writeCursor, removeCursor } from "./branchCursor";
 
 /**
  * 대상 저장소 안의 자리.
@@ -250,23 +250,18 @@ export function findRepoRoot(start: string): string {
 }
 
 export function loadActive(repoRoot: string): ActiveWork | undefined {
-  const path = join(repoRoot, ACTIVE_FILE);
-  if (!existsSync(path)) {
-    return undefined;
-  }
-  return JSON.parse(readFileSync(path, "utf-8")) as ActiveWork;
+  return currentCursor(repoRoot)?.active;
 }
 
 export function saveActive(repoRoot: string, active: ActiveWork, by?: StageMove): void {
-  mkdirSync(join(repoRoot, STATE_DIR), { recursive: true });
-  writeAtomic(join(repoRoot, ACTIVE_FILE), `${JSON.stringify(active, null, 2)}\n`);
+  writeCursor(repoRoot, active);
   if (by) {
     logStage(repoRoot, active, by);
   }
 }
 
 export function clearActive(repoRoot: string): void {
-  rmSync(join(repoRoot, ACTIVE_FILE), { force: true });
+  removeCursor(repoRoot);
 }
 
 // ---- 스테이지 전이 기록 ----
