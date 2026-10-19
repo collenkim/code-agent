@@ -69,7 +69,8 @@ export interface ConsentRecord {
   result?: string;
   sourceSnapshot?: string;
   snapshotEntries?: SnapshotEntries;
-  channel?: "claude-question" | "codex-prompt" | "codex-elicitation" | "master-delegation";
+  channel?: "claude-question" | "codex-prompt" | "codex-elicitation" | "master-delegation" | "dashboard-human";
+  dashboardHuman?: DashboardConsentReceipt;
   /** 새 prepare 가 쓴다 — 없으면 이전 형식(확인 코드 없이 Codex 응답을 받는다) */
   format?: 2;
   /** 확인 내용 전문 파일(저장소 기준 경로). 있으면 선택 화면 질문에는 앞부분과 이 경로만 싣는다 — 없는 이전 기록은 전문을 질문에 싣는다 */
@@ -92,6 +93,10 @@ export interface ConsentDelegation {
   choices?: Record<string, string>;
 }
 const DIR = CONSENT_DIR;
+export interface DashboardConsentReceipt {
+  receiptId: string; channelId: string; sessionId: string; shownHash: string;
+  verdict: "approve" | "request-changes"; choices: Record<string, string>; at: string;
+}
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const ACCEPT = "확인하고 진행";
 const CHANGE = "수정 요청";
@@ -105,7 +110,7 @@ export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
  * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
  * master 연동 기록(master — 실행 heartbeat·이벤트·명령 기록)도 응답을 기다리는 동안 감독 프로세스가 쓰므로 뺀다.
  */
-const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`];
+const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`, `${STATE_DIR}/interactions`];
 
 function canonicalRoot(root: string): string {
   return realpathSync.native(resolve(root));
@@ -174,7 +179,7 @@ const CONSENT_LOCK_MESSAGES: LockMessages = {
  * 같은 호출 안에서 되찾는다 — Bash 시간 제한에 죽은 apply 의 잠금이 이후의 모든 확인을 막지 않게. 나이로는 회수하지 않는다(적용이
  * 길 수 있다). 살아 있는 주인은 CLI 2초·hook 10초 기다린 뒤 멈추고, 주인을 모르는 잠금은 훔치지 않고 경로를 알린다.
  */
-function withConsentLock<T>(root: string, run: () => T, waitMs: number = TIMING.lockWaitMs): T {
+export function withConsentLock<T>(root: string, run: () => T, waitMs: number = TIMING.lockWaitMs): T {
   mkdirSync(localPath(root, DIR), { recursive: true });
   const release = acquireLock(localPath(root, CONSENT_LOCK), { waitMs, ageReclaim: false, label: "확인·적용", display: CONSENT_LOCK, messages: CONSENT_LOCK_MESSAGES });
   try { return run(); } finally { release(); }
@@ -559,7 +564,7 @@ export function consentStatus(root: string, id: string, extra: { warning?: strin
 export function prepareConsent(root: string, raw: unknown, options: { binding?: { id: string; host: "claude" | "codex" }; form?: "claude" | "codex" } = {}): string {
   root = canonicalRoot(root);
   const action = ActionSchema.parse(raw);
-  return withConsentLock(root, () => {
+  const output = withConsentLock(root, () => {
     // 미리보기가 문서·설정을 읽기 전에 링크 경로를 차단한다. 확인 지점에서 실행을 끊으므로
     // 도메인 변경은 하지 않는다. deliver의 보고서 렌더만 의도한 준비 산출물이다.
     const before = inspectConsentSnapshot(root, action);
@@ -583,6 +588,8 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
       : undefined;
     return consentStatus(root,record.id,{ warning });
   });
+  (require("./interactionSources") as typeof import("./interactionSources")).publishConsentInteraction(root, loadConsent(root, JSON.parse(output).id));
+  return output;
 }
 function currentWorkId(root: string): string | undefined {
   try { return loadActive(root)?.id ?? loadRequestSession(root)?.id; } catch { return undefined; }
@@ -615,6 +622,7 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
   const sessionId = input.session_id, toolId = input.tool_use_id;
   withConsentLock(root, () => {
   const record = loadConsent(root,id);
+  assertInteractionUnanswered(root, id);
   // 1~5 의 거부는 기록을 폐기하지 않는다 — 다른 세션·다른 codex exec 의 이벤트가 남의 동의를 깨뜨리지 못하게,
   // 세션·채널 검사를 스냅샷 대조보다 먼저 한다(스냅샷 해시도 계산하지 않는다)
   if (record.channel && record.channel !== channel) throw new Stop("동의를 시작한 호스트와 다릅니다. 새로 준비하세요.");
@@ -782,6 +790,64 @@ export function applyConsent(root: string, id: string, caller?: ConsentCaller): 
   if (cached.status === "applied") return cachedResult(cached);
   return withConsentLock(root, () => applyLocked(root, id, caller));
 }
+
+/** 사람 채널 전용 검사. 호출자는 별도 채널 서명과 interaction 버전·문맥을 먼저 검증한다. */
+export function validateDashboardConsent(root: string, id: string, sessionId: string, shownHash: string): void {
+  // 호출자는 withConsentLock 안에서 질문 원장의 응답 저장까지 마친다.
+    const record = loadConsent(root, id);
+    if (record.status !== "pending" || record.delegation || record.observed?.length || record.binding || record.dashboardHuman) throw new Stop("이미 응답했거나 다른 채널에서 처리한 동의입니다.");
+    if (!record.preparedSession || record.preparedSession.id !== sessionId) throw new Stop("동의를 준비한 세션과 다릅니다.");
+    if (delegationView(root, id).shownHash !== shownHash) throw new Stop("확인한 전문·변경 후보가 다릅니다.");
+    discardIfChanged(root, record, "동의 준비 뒤 대상이 바뀌었습니다. 다시 확인하세요.");
+}
+
+function assertInteractionUnanswered(root: string, id: string): void {
+  const { currentInteractions } = require("./interactions") as typeof import("./interactions");
+  const request = currentInteractions(root).requests.find(r => r.origin.type === "consent" && r.origin.id === id);
+  if (request && (request.response || ["deferred", "cancelled", "expired", "superseded", "failed"].includes(request.status))) throw new Stop("대시보드에서 응답했거나 닫힌 확인 요청입니다. 저장된 결과부터 확인하세요.");
+}
+
+/** 영속 취소를 원래 동의 색인에 투영한다. 승인을 만들거나 도메인 처리를 실행하지 않는다. */
+export function closeCancelledDashboardConsent(root: string, id: string): void {
+  withConsentLock(root, () => {
+    const record = loadConsent(root, id);
+    if (record.status !== "pending" || record.binding || record.observed?.length || record.delegation) return;
+    record.status = "deferred";
+    fail(record, "response-defer", "대시보드 사람이 확인 요청을 취소했습니다. 필요한 경우 새로 준비하세요.");
+    save(root, record);
+  });
+}
+
+export function applyDashboardConsent(root: string, id: string, receipt: DashboardConsentReceipt): { status: string; result?: string; after?: ReturnType<typeof afterApply> } {
+  const done = withConsentLock(root, () => {
+    const record = loadConsent(root, id);
+    if (record.dashboardHuman) {
+      if (record.dashboardHuman.receiptId !== receipt.receiptId) throw new Stop("다른 사람 응답으로 이미 처리한 동의입니다.");
+      if (record.status === "applied") return { status: record.status, result: cachedResult(record) };
+      if (record.status === "changes-requested") return { status: record.status };
+      return { status: "applied", result: applyLocked(root, id, undefined, undefined, receipt) };
+    }
+    // 중첩 잠금을 잡지 않고 같은 전제를 적용 직전에 다시 검사한다.
+    if (record.status !== "pending" || record.delegation || record.observed?.length || record.preparedSession?.id !== receipt.sessionId) throw new Stop("동의를 준비한 세션의 미응답 요청이 아닙니다.");
+    if (delegationView(root, id).shownHash !== receipt.shownHash) throw new Stop("확인한 동의 전문이 바뀌었습니다.");
+    discardIfChanged(root, record, "응답 수신 뒤 동의 대상이 바뀌었습니다.");
+    if (receipt.verdict === "approve") {
+      if (Object.keys(receipt.choices).length !== record.choices.length) throw new Stop("모든 변경 후보에 명시적 선택이 필요합니다.");
+      for (const [index, choice] of record.choices.entries()) {
+        const answer = receipt.choices[String(index + 1)];
+        if (answer !== APPLY && answer !== KEEP) throw new Stop("변경 후보 선택이 유효하지 않습니다.");
+        choice.answer = answer;
+      }
+    }
+    record.channel = "dashboard-human"; record.dashboardHuman = receipt; record.binding = undefined;
+    record.sessionId = receipt.sessionId;
+    record.status = receipt.verdict === "approve" ? "approved" : "changes-requested";
+    if (record.status === "changes-requested") fail(record, "response-change", "대시보드 사람 응답: 수정 요청");
+    save(root, record);
+    return record.status === "approved" ? { status: "applied", result: applyLocked(root, id, undefined, undefined, receipt) } : { status: record.status };
+  });
+  return done.status === "applied" ? { ...done, after: afterApply(root, loadConsent(root, id).action) } : done;
+}
 /**
  * master 위임 판단으로 동의에 답하고(승인이면) 같은 적용 함수로 적용한다. 사람이 응답하기 시작한 동의(질문 호출 관찰·응답)는 받지 않는다.
  * `guard` 는 동의 잠금 안에서 기록을 보고 권한 범위·준비 세션·보여 준 내용의 해시를 확인한다(던지면 아무것도 바꾸지 않는다).
@@ -791,6 +857,7 @@ export function decideDelegatedConsent(root: string, id: string, delegation: Con
   root = canonicalRoot(root);
   const decided = withConsentLock(root, () => {
     const record = loadConsent(root, id);
+    assertInteractionUnanswered(root, id);
     if (record.delegation) throw new Stop(`이미 위임 판단(${record.delegation.decisionId})을 받은 확인 요청입니다.`);
     if (record.status !== "pending") throw new Stop(`응답을 기다리는 확인 요청이 아닙니다(${record.status}).`);
     if (record.observed?.length || record.binding || record.seenToolIds?.length) throw new Stop("사람의 응답이 시작된 확인 요청입니다 — 위임으로 답하지 않습니다.");
@@ -830,7 +897,7 @@ function cachedResult(record: ConsentRecord): string {
 }
 /** 적용 때 확인 화면·문서 선택이 준비 때와 다르다 — 앞선 확인을 지났는지로 대상 변경과 적용 실패를 가른다 */
 class ScreenMismatch extends Stop {}
-function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated?: ConsentDelegation): string {
+function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated?: ConsentDelegation, dashboard?: DashboardConsentReceipt): string {
   // 잠금을 얻기 전에 읽은 승인 상태를 재사용하지 않는다.
   const record = loadConsent(root, id);
   if (record.status === "applied") return cachedResult(record);
@@ -842,6 +909,8 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
   if (delegated) {
     // 위임 판단은 그 판단을 남긴 호출만 적용한다 — 사람의 응답(observed)이 섞인 기록은 위임으로 적용하지 않는다
     if (record.status !== "approved" || record.delegation?.decisionId !== delegated.decisionId || record.observed?.length) throw new Stop("이 위임 판단으로 승인된 확인 요청이 아닙니다.");
+  } else if (record.dashboardHuman) {
+    if (!dashboard || record.dashboardHuman.receiptId !== dashboard.receiptId || record.status !== "approved" || record.observed?.length || record.delegation) throw new Stop("검증한 대시보드 사람 응답의 적용 호출이 아닙니다.");
   } else {
     if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
     // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
@@ -871,7 +940,9 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
   }
   record.status="applying";save(root,record);
   // 위임 판단은 사람의 존재 증거가 아니다(verified false) — 원장에 통로·판단 ID·권한·제어자를 남겨 사람의 응답과 가른다
-  const presence:Presence=delegated
+  const presence:Presence=dashboard
+    ? { channel: "dashboard-human", verified: true, detail: `대시보드 사람 제출 ${dashboard.receiptId} · 동의 ${id} · 채널 ${dashboard.channelId} · 세션 ${dashboard.sessionId} · 전문 ${dashboard.shownHash}` }
+    : delegated
     ? {channel:"master-delegation",verified:false,detail:`master 위임 판단 ${delegated.decisionId} · 권한 ${delegated.grantId} · 제어자 ${delegated.controller} 세대 ${delegated.generation} · 동의 ${id} · 분류 ${delegated.category} · 사람 응답 아님`}
     : {channel:record.channel ?? "claude-question",verified:true,detail:`${record.channel === "codex-elicitation" ? "Codex 선택 UI" : record.channel === "codex-prompt" ? "Codex 사용자 메시지" : "Claude Code 질문"} ${id} · 세션 ${record.sessionId} · ${record.preparedSession ? "준비 세션 일치" : "준비 세션 기록 없음(이전 형식)"} · 명시적 선택`};
   let passed = 0;
@@ -978,6 +1049,9 @@ function consentEvent(stdin:string):number {
   // 업무 질문도 선택 화면에 다 보여야 답할 수 있다 — 화면을 넘는 질문은 표시하기 전에 돌려보낸다(Codex ask 와 같은 기준)
   const problem = input?.hook_event_name === "PreToolUse" && input.tool_name === "AskUserQuestion" ? askScreenProblem(input.tool_input?.questions) : undefined;
   if (problem) return block(`code-agent consent-event: ${problem}\n`);
+  const { observeNativeQuestion } = require("./interactionNative") as typeof import("./interactionNative");
+  try { if (input.cwd) observeNativeQuestion(findRepoRoot(process.env.CLAUDE_PROJECT_DIR ?? input.cwd), input); }
+  catch (error) { return block(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); }
   try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
   catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
   return 0;

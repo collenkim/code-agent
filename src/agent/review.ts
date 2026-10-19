@@ -24,7 +24,7 @@ import {
 import type { Budget, RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
-import { crossRunNote, selectedHosts } from "./hosts";
+import { crossRunNote, crossEnabled } from "./hosts";
 import { agentName } from "./hostText";
 
 export { CROSS_ID, crossHintText, FINDING_CLOSED, FINDING_OPEN, reviewResultProblems } from "./crossRecord";
@@ -260,7 +260,7 @@ export function staleWaiver(log: ReviewLog | undefined, finding: Finding, round:
  * 그 지점을 중지로 기록하고 게이트는 통과시킨다 — 두 호스트를 모두 쓸 수 있을 때만 교차 검증이 실제로 돈다.
  */
 export function crossRequired(repoRoot: string): boolean {
-  return selectedHosts(repoRoot).length > 1;
+  return crossEnabled(repoRoot);
 }
 
 /**
@@ -637,8 +637,8 @@ export function reviewProblems(work: Work): string[] {
       // 명령 뒤 괄호(실행하면 어떻게 되는지)는 crossRunNote — 직전 실패가 있으면 그 원인 안내가 싣고, 실행 파일 설정 오류면 그 갈래다
       const handoff = crossGateHandoff(hint, attempts);
       let line = handoff
-        ? "두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다"
-        : `두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"}${crossRunNote(host, hint)}`;
+        ? "교차 검증을 선택한 프로젝트라 교차 리뷰가 필요합니다"
+        : `교차 검증을 선택한 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by ${host ?? "<다른 호스트>"}${crossRunNote(host, hint)}`;
       if (hint) {
         line += crossLastRun(pointLabel(attempts), point.lastFailure?.detail ?? hint.detail,
           crossHintText(hint, { host: host ?? "다른 호스트", point: `리뷰 ${last.round}회차`, attempts }));

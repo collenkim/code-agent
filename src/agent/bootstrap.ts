@@ -49,7 +49,7 @@ export function baselineFiles(root: string): string[] {
     try { return readdirSync(join(root, dir)).filter(name => name.startsWith("ca-")).map(name => `${dir}/${name}`); } catch { return []; }
   });
   const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", ".claude/settings.json", ".codex/hooks.json", "doc/code-agent",
-    ".code-agent/version", ".code-agent/hosts.json", ".code-agent/models.json", ".code-agent/codex-models.json", ".code-agent/templates.json", ...owned,
+    ".code-agent/version", ".code-agent/hosts.json", ".code-agent/execution.json", ".code-agent/models.json", ".code-agent/codex-models.json", ".code-agent/templates.json", ...owned,
     ...(hasBaseline(root) ? [] : ["README.md", ".codex/config.toml"]),
     ...(choiceConfigProblem(root) === undefined ? [".codex/config.toml"] : []),
     ...(manifest?.stages.map(stage => stage.template) ?? []),

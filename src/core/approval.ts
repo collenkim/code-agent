@@ -46,6 +46,8 @@ export type PresenceChannel =
   | "claude-question"
   | "codex-prompt"
   | "codex-elicitation"
+  /** TTY로 신뢰한 화면의 서명된 명시적 제출·전문·세션 결속을 검증한 사람 채널 */
+  | "dashboard-human"
   /**
    * master 의 위임 판단 — 사람이 TTY 에서 준 권한 범위 안의 판단이다. 사람의 존재 증거가 아니므로 언제나 verified false 다
    * (`requireVerifiedApproval` 프로젝트는 이 통로를 받지 않는다)

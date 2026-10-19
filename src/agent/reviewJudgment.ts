@@ -163,7 +163,7 @@ function stopSummary(point: string, host: string, view: readonly (CrossAttempt |
 const NOT_STOPPABLE = (label: string) => `교차 실행이 막힌 지점만 사람이 중지를 결정합니다(완료·중지된 지점이나 아직 실행하지 않은 지점은 대상이 아닙니다) — 상태: ${label}.`;
 
 function requireStopPoint(work: Work, point: StopPoint): void {
-  if (!crossRequired(work.repoRoot)) throw new Stop("두 호스트가 설치된 프로젝트에서만 교차 검증 중지를 기록합니다.");
+  if (!crossRequired(work.repoRoot)) throw new Stop("교차 검증을 선택한 프로젝트에서만 교차 검증 중지를 기록합니다.");
   const phase = point === "review" ? "review" : "plan";
   if (work.active.phase !== phase) throw new Stop(`${point} 교차 지점은 ${phase} 단계에서 기록합니다.`);
 }

@@ -50,7 +50,7 @@ test("막힘 — 원인이 기록된 항목은 원인의 안내, 사유 둘은 �
 });
 
 test("막힘 — 막힌 작업 없이 교차 계획 검토만 남았으면 그 줄(명령)이 next 다(E5 — '그대로 전하고 멈춘다' 가 아니다)", () => {
-  const cross = "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by codex (실행할 수 없으면 중지로 기록되고 진행합니다)";
+  const cross = "교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by codex (실행할 수 없으면 중지로 기록되고 진행합니다)";
   const next = line({ action: "blocked", phase: "plan", blocked: [], problems: [cross] });
   assert.equal(next, `${cross} — 그다음 code-agent planning advance`);
   assert.doesNotMatch(next, /그대로 전하고 멈춘다/);

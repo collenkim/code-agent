@@ -143,7 +143,7 @@ test("설정 오류는 중지가 아니라 게이트를 막고, 첫 오류 뒤 1
   // 게이트·status 의 교차 줄도 거부될 명령을 앞세우지 않고 사람 판단만 낸다(E4)
   const line = reviewProblems(loadWork(root)!).find((problem) => /교차 리뷰가 필요합니다/.test(problem))!;
   assert.doesNotMatch(line, /review cross --by codex \(실행할 수 없으면/);
-  assert.match(line, /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*사람 판단/);
+  assert.match(line, /^교차 검증을 선택한 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*사람 판단/);
   assert.doesNotMatch(status(root), /review cross --by codex \(실행할 수 없으면/);
   const cli = spawnSync(process.execPath, [join(__dirname, "../agent/cli.js"), "review", "cross", "--by", "codex"],
     { cwd: root, encoding: "utf8", env: { ...process.env, CLAUDECODE: "1", CODEX_CI: "" } });
@@ -778,10 +778,10 @@ test("D2(E16) 반박 검증: 사전 판정 거부(샌드박스 표지) 뒤 표�
 test("D2(E16) 반박 검증: 사람에게 넘긴 네트워크 지점의 게이트 줄과 status 다음: 은 실행 명령을 앞세우지 않고, 사용자 확인 뒤의 재실행 명령을 안내 뒤에 싣는다", async () => {
   await crossRepo(); failingClaude(NETWORK_ERROR);
   assert.throws(byClaude, RetryRefused);
-  assert.match(crossGate(), /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
+  assert.match(crossGate(), /^교차 검증을 선택한 프로젝트라 교차 리뷰가 필요합니다 — code-agent review cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
   assert.throws(byClaude, RetryRefused);
   const gate = crossGate();
-  assert.match(gate, /^두 호스트가 설치된 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
+  assert.match(gate, /^교차 검증을 선택한 프로젝트라 교차 리뷰가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
   assert.match(gate, /사용자에게 알리고 지시를 받으세요[\s\S]*사용자 확인 없이 중지를 기록하지 않습니다\. \(사용자가 네트워크를 확인한 뒤 다시 실행할 명령: code-agent review cross --by claude\)$/);
   const line = withCaller("codex", () => status(root)).split("\n").find((row) => row.startsWith("다음: ")) ?? "";
   assert.doesNotMatch(line, /교차 리뷰가 필요합니다 — code-agent review cross/);

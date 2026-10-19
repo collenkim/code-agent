@@ -29,6 +29,7 @@ export interface Binding {
   controllers: Record<string, { tokenHash: string; label?: string; addedAt: string }>;
   policy: Policy;
   host: HostProfile;
+  humanChannel?: import("../interactionHuman").HumanChannel;
 }
 export interface Handover {
   id: string; from: string; to: string; mode: "cooperative" | "forced"; by: "controller" | "human";

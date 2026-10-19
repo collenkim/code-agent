@@ -11,7 +11,7 @@
 | 항목 | 동작 |
 |---|---|
 | 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 연 작업(`works/<작업 ID>.json`)만이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
-| 연동하지 않은 작업 | 켠 프로젝트라도 사람이 연 작업은 master 가 이어 실행하지 않고(`not-enabled`) 위임 판단도 받지 않는다 |
+| 연동하지 않은 작업 | 켠 프로젝트라도 사람이 연 작업은 master가 임무로 이어 실행하지 않고(`not-enabled`) AI 위임 판단도 받지 않는다. 대시보드 사람 채널은 별도이며 독립 작업의 질문·동의도 조회·응답할 수 있다([계약](dashboard-interactions.md)) |
 | 연결과 권한 | 토큰은 요청자를 확인할 뿐 승인 권한이 아니다. 승인·답 위임은 사람이 `code-agent master grant` 로 준 권한 범위 안에서만 받는다 |
 | 역할 | master — 요구 분석·프로젝트별 배분·의존성·재계획·전체 완료와 독립 검증. code-agent — 프로젝트 안의 실행과 로컬 검증·승인 조건. 실행 감독(`master supervise`) — 호스트 세션과 프로세스의 실행·정지·생존 확인 |
 
@@ -57,6 +57,10 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | read | `questions` | `workId?` | 질문 문서와 `questionsHash`·답 출처 |
 | read | `consents` | `ids?` | 열린 동의와 `shownHash`·`humanOnly`·`preparedByMasterRun` |
 | read | `grants` | — | 이 제어자의 권한과 사용 수 |
+| read | `interactions` | `after?`, `limit?` | 영속 요청 변경 커서·상세 목록 |
+| read | `interaction` | `requestId` | 질문·추천·동의 전문·응답 가능 여부 |
+| read | `interaction.result` | `requestId` | 수신·소비·적용·재개 결과 |
+| mutating | `interaction.respond` | `requestId`, `expectedRevision`, `contentHash`, `challenge`, `channelId`, `signature`, `submission` | 별도 사람 채널. [계약·예제](dashboard-interactions.md) |
 | mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `links`, `timeoutMs` | §5 |
 | mutating | `resume` | `runId`, `prompt?`, `links?` | 끝난 실행(`paused`·`blocked`·`completed`·`failed`·`unknown`·`cancelled`)의 세션을 잇는다 |
 | mutating | `pause`·`cancel` | `runId`, `reason?`, `graceMs?`, `force?`, `waitMs?` | §7 |
@@ -68,6 +72,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | mutating | `revoke` | `grantId`, `reason?` | 자기 권한만 회수한다. 권한을 주는 명령은 없다 |
 
 `links`(`missionId`·`taskId`·`attemptId`·`planVersion`·`invocationId`)는 실행 기록과 작업 연결에 남아 master 의 임무·작업·시도·계획과 code-agent 의 작업·시도·세션을 잇는다.
+
+`hello.interactions`는 스키마·단계·지원 동의·소비자·독립 세션·재개 범위를 공개한다. 사람 채널은 `master human enable|disable --controller <ID>`로 TTY에서 따로 등록·폐기한다. `interaction.*`는 master 목표·작업 연결이나 AI grant 없이도 설정·운영·독립 호스트의 요청에 사용할 수 있다. 일반 `answer`·`decide`의 위임 범위는 그대로다. `interaction.changed` 이벤트의 `cursor`로 요청 목록을 다시 조회한다. 영속 질문은 다음 버전 적용을 막는 진행 상태다.
 
 ### 오류 코드
 

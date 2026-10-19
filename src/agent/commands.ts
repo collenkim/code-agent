@@ -68,6 +68,7 @@ import { loadReview, reviewDocFile, reviewProblems, reviewStatusTail } from "./r
 import { crossStopStreak } from "./crossRecord";
 import { Stop } from "./stop";
 import { runtimeLine } from "./runtimeSelect";
+import { interactionSummary } from "./interactionSummary";
 import { confirmOnTerminal } from "./tty";
 import { approvalDocsState, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
@@ -448,6 +449,9 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
  */
 function nextHint(work: Work): string {
   const { repoRoot, active } = work;
+  const interaction = interactionSummary(repoRoot);
+  if (interaction.pending.length || interaction.deferred.length) return `사람 응답 대기 — ${skill("ca-answer")} · code-agent interaction list`;
+  if (interaction.responded.length) return `받은 답 소비 — code-agent interaction consume ${interaction.responded[0]}`;
   if (aidlcBlock(repoRoot)) return AIDLC_HINT;
   if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
     return requestHint(repoRoot, active.id, active.spec);
@@ -763,6 +767,8 @@ function requireNoAidlc(repoRoot: string): void {
 }
 
 export function next(repoRoot: string): string {
+  const interaction = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot);
+  if (interaction.pending.length || interaction.deferred.length || interaction.responded.length) throw new Stop("사람 질문의 응답·처리가 남았습니다. interaction list로 조회하고 원래 세션에서 consume·complete한 뒤 이어가세요.");
   return applyNextTransition(repoRoot, nextTransition(repoRoot));
 }
 

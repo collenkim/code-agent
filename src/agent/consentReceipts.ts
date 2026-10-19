@@ -26,6 +26,7 @@ export interface Receipt {
   failure?: { class: string; kind?: string; detail: string };
   /** master 위임 판단으로 답한 동의 — 사람의 응답(observed)이 아니다 */
   delegation?: { decisionId: string; grantId: string; controller: string; generation: number; verdict: string; category: string; at: string };
+  dashboardHuman?: { receiptId: string; channelId: string; sessionId: string; shownHash: string; verdict: string; at: string };
 }
 interface StoredConsent {
   id?: string; workId?: string; createdAt?: string; status?: string; channel?: string; sessionId?: string;
@@ -34,6 +35,7 @@ interface StoredConsent {
   observed?: { at?: string; toolId?: string; answers?: Record<string, unknown> }[];
   failure?: { class?: string; kind?: string; detail?: string };
   delegation?: { decisionId?: string; grantId?: string; controller?: string; generation?: number; verdict?: string; category?: string; at?: string };
+  dashboardHuman?: Receipt["dashboardHuman"];
 }
 
 function storedConsents(root: string, workId: string): StoredConsent[] {
@@ -59,6 +61,7 @@ export function consentReceipts(root: string, workId: string): Receipt[] {
     createdAt: record.createdAt!,
     status: record.status === "applying" ? "this-commit" : record.status ?? "?",
     ...(record.channel ? { channel: record.channel } : {}),
+    ...(record.dashboardHuman ? { dashboardHuman: record.dashboardHuman } : {}),
     ...(record.preparedSession?.id ? { preparedSession: { host: record.preparedSession.host ?? "?", id: record.preparedSession.id } } : {}),
     ...(record.sessionId ? { sessionId: record.sessionId } : {}),
     observed: (record.observed ?? []).map((row) => ({ at: row.at ?? "", toolId: row.toolId ?? "",

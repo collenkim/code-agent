@@ -31,7 +31,9 @@ import { approvalOf, loadManifestIfAny, loadWork } from "./work";
 import type { Work } from "./work";
 import { planDocFile } from "./workDocs";
 import { CONSENT_LOCK, consentLockHeld, openConsent } from "./consentState";
-import { consentCommandOf, issueTicket } from "./consentTicket";
+import { consentCommandOf, issueTicket, splitCommandArgs } from "./consentTicket";
+import { issueInteractionTicket } from "./interactionTicket";
+import { executionMode } from "./executionMode";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
@@ -106,6 +108,7 @@ const READS_OUTSIDE = /(^|\s)--no-index(=|\s|$)/;
  * 독립 CLI에서는 TTY 확인을 유지하고, init의 임의 CLI 교체로 hook을 바꾸는 길도 막는다.
  */
 const MODEL_SUBCOMMANDS = [
+  "interaction publish", "interaction consume", "interaction complete", "interaction list",
   "triage",
   "start",
   "next",
@@ -147,7 +150,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|execution|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -161,6 +164,7 @@ function isModelCommand(command: string): boolean {
     return false;
   }
   const rest = command.slice("code-agent ".length);
+  if (rest === "execution") return true;
   if (rest === "--help" || /^help(?: [a-z][a-z-]*)?$/.test(rest)) return true; // help <명령> 은 그 명령의 사용법 줄만
   if (/^model(?: --host (?:claude|codex))?$/.test(rest)) return true; // 조회만 허용한다. 변경은 관찰된 동의로 적용한다.
   if (/^consent (prepare\s+\S.*|(?:status|apply|finish) [a-f0-9-]+)$/.test(rest)) return true;
@@ -446,6 +450,12 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
     const text = (input.tool_input.command ?? "").trim();
     const powershell = input.tool_name === "PowerShell" || input.shell === "powershell";
     const command = SHELL_META.test(text) || (powershell && powershellMeta(text)) ? undefined : consentCommandOf(text);
+    if (!input.agent_id && !SHELL_META.test(text) && !(powershell && powershellMeta(text))) {
+      const parts = splitCommandArgs(text);
+      if (parts?.[0] === "code-agent" && parts[1] === "interaction" && ["publish", "consume", "complete"].includes(parts[2])) {
+        issueInteractionTicket(findRepoRoot(projectDir ?? input.cwd), { command: JSON.stringify(parts.slice(2)), sessionId: input.session_id, host: input.host ?? "claude", ...(process.env.CODE_AGENT_MASTER_RUN ? { runId: process.env.CODE_AGENT_MASTER_RUN } : {}) });
+      }
+    }
     if (command) {
       try {
         // CLI 의 findRepoRoot(process.cwd()) 와 같은 루트 — 하위 폴더에서 연 세션도 저장소 루트에 낸다
@@ -505,6 +515,11 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   if (master) return master;
   const child = crossChildGuard(input) ?? readOnlyRoleGuard(input, projectDir);
   if (child) return child;
+  const mode = executionMode(findRepoRoot(projectDir ?? input.cwd));
+  if ((mode === "claude" || mode === "codex") && mode !== (input.host ?? "claude") && !crossChild() &&
+      !READ_TOOLS.includes(input.tool_name) && !(["Bash", "PowerShell"].includes(input.tool_name) && LEASE_FREE.test(input.tool_input.command?.trim() ?? ""))) {
+    return `현재 실행 방식은 ${mode} 단독입니다. 호스트 밖 터미널에서 code-agent execution으로 확인하고 변경하세요.`;
+  }
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
   if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);
   // 모드·상태 경로는 저장소 루트(findRepoRoot)에서 본다 — Claude 를 하위 폴더에서 열면 CLAUDE_PROJECT_DIR 가 그 폴더라, 그대로 쓰면
@@ -648,6 +663,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     if (SOURCE_UPDATE.test(command) && (!/(^|\s)--templates-only(\s|$)/.test(command) || /(^|\s)--(?:bundled|release|apply-release|trigger|consent)(\s|=|$)/.test(command))) return SOURCE_UPDATE_DENIED;
     // master 제어(연동 설정·위임 판단·실행 제어)는 러너와 사람의 터미널이 부른다 — 세션 안에서는 허용 목록(MODEL_SUBCOMMANDS)에 없어 이미 막힌다
     if (MASTER_CONTROL_COMMAND.test(command)) return MASTER_CONTROL_DENIED;
+    if (/\b(?:code-agent(?:\.cmd)?|cli\.js)\s+interaction\s+drain\b/.test(command)) return "질문 적용 실행기는 대시보드 연결 프로세스가 호출합니다.";
     return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {

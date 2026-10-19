@@ -573,6 +573,7 @@ describe("선택 UI MCP — 장시간 실행", () => {
       assert.match(switched.stdout, /\.codex\/config\.toml 선택 UI: 그대로/);
       assert.match(switched.stdout, /호스트를 다시 열 필요가 없습니다\./);
       assert.doesNotMatch(switched.stdout, /Codex를 다시 열고 프로젝트 훅을 검토/);
+      (require("../agent/interactionTicket") as typeof import("../agent/interactionTicket")).issueInteractionTicket(root, { command: "mcp-ask", sessionId: "release-choice", host: "codex" });
       send({ id: 2, method: "tools/call", params: { name: "ask", arguments: { questions: [{ title: "버전 확인", options: ["예", "아니오"] }] } } });
       const form = await next();
       assert.equal(form.method, "elicitation/create");

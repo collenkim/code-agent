@@ -8,11 +8,13 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 
 오류 로그만 있으면 `/ca-fix --triage <오류 로그>`로 읽기 전용 조사를 시작합니다. 로그 특징으로 중복을 조회하고 진행 중인 동일 오류는 기존 작업을 안내합니다. 코드 수정이 필요한 신규 건만 중복 확인과 Jira 수동 생성·연결을 거쳐 fix로 접수합니다. 데이터·환경 조치는 별도로 보고하고, 근거가 부족하면 추가 증거를 요청합니다. 기존 Jira·직접 결함 신고와 신규 개발·리팩토링은 기존 접수 절차를 사용합니다. 필수 문서 누락이나 CLI·hook 차단 시에는 가능한 복구 방법과 보류를 선택지로 안내하며, 필요한 동의를 거쳐 같은 작업을 이어갑니다. [사전 판별 사용법](doc/usage.md#sentry-오류의-사전-판별) · [차단 후 계속하기](doc/usage.md#차단-후-계속하기)
 
-| 환경 | 설치 | 대화에서 시작 |
+`code-agent init` 한 번으로 두 호스트를 모두 준비합니다. 기본은 현재 호스트 단독 실행이며, 실행 방식 변경은 호스트 밖 터미널에서 확인합니다.
+
+| 실행 방식 | 실행 전 선택 | 대화에서 시작 |
 |---|---|---|
-| Claude Code | `code-agent init --host claude` | `/ca-request <요구사항>` |
-| Codex | `code-agent init --host codex` | `$ca-request <요구사항>` |
-| 두 환경 함께 | `code-agent init --host both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
+| Claude Code 단독 | `code-agent execution claude` | `/ca-request <요구사항>` |
+| Codex 단독 | `code-agent execution codex` | `$ca-request <요구사항>` |
+| 교차 검증 | `code-agent execution both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
 
 Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. 업무 질문과 동의는 자동 등록된 로컬 MCP의 방향키·Enter 선택 UI로 받습니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
 
@@ -345,7 +347,7 @@ code-agent verify --json
 
 | 명령 | 용도 |
 |---|---|
-| `code-agent init` | 현재 프로젝트에 실행 절차·서브에이전트·hook 설치(`--host claude\|codex\|both`). 모르는 인자를 받으면 설치하지 않고 사용법을 보입니다 |
+| `code-agent init` | 현재 프로젝트에 두 호스트의 실행 절차·서브에이전트·hook 설치. 실행 방식은 `execution`으로 선택한다. 모르는 인자를 받으면 설치하지 않고 사용법을 보입니다 |
 | `code-agent update` | 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스의 upstream 커밋을 릴리스 저장소의 새 폴더에 설치·검증하고 이 프로젝트에 적용한 뒤 doctor 실행 — 진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용(호스트 종료 불필요) |
 | `code-agent update --templates-only` | 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영(npm 패키지 진입점이면 설치된 패키지를 들인다) |
 | `code-agent update --release <ID>` · `--bundled` | 설치된 릴리스로 되돌리거나 다시 앞으로(TTY 확인) · 고정을 풀고 진입점 번들로 |
@@ -423,6 +425,7 @@ npm test
 | [설치 문서](doc/install.md) | npm·실행 파일 설치, 빌드, 갱신, 제거 |
 | [Codex 연동](doc/codex.md) | Codex 설치·신뢰, 훅 이벤트, 선택 UI, 역할별 모델 기본값 |
 | [master 연동](doc/master-control.md) | (선택) 상위 조정자의 실행 접수·관찰·정지·재개·인계 통신 계약, 위임 권한과 판단 기록 |
+| [대시보드 질문·동의 연동](doc/dashboard-interactions.md) | 전체 단계 영속 질문, 추천·직접 입력, 별도 사람 채널 API와 같은 세션 재개 |
 | [요구사항 규격](doc/requirement.md) | 원문 대조, 접수 데이터, 확정·반려 |
 | [설계](doc/design.md) | 단계 전환, 변경 경계, 승인·증거 모델, 문서 모델, 외부 실행기와의 경계 |
 | [플러그인](doc/plugins.md) | 선택적으로 연결하는 외부 도구 |

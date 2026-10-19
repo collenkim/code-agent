@@ -16,6 +16,7 @@
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `interaction*.ts`, `master/control.ts`·`observe.ts`, `choiceServer.ts`, `consent.ts`·`answers.ts`의 대시보드 사람 채널 | §3.2, §4.2, §4.3, §5.4, §6.0, §8, §9 | `doc/dashboard-interactions.md` 계약·지원표, `master/protocol.ts` 명령·이벤트 ↔ `doc/master-control.md`, `ca-answer/dashboard.md`·Claude/Codex 스킬 진입 문장, `STATE_SCHEMA`, `runtimeSelect.pendingInteractionMarker` ↔ `runtimeApply.busyReasons` |
 | `branchCursor.ts`·`layout.ts`의 브랜치 진행 커서 | §3.1, §5.3, §8, §9 | `doc/usage.md`·`doc/install.md`·`doc/codex.md`·`doc/design.md`, CLI·hook의 커서 선택, 임대 경로·동의 스냅샷·버전 적용 표지·모델 변경 제한·상태 형식 세대 |
 | `dependencyContracts.ts`·계획 등록/입력·`answers.ts`·`work.ts`의 외부 계약 | §4.3, §6.1, §8, §9 | `doc/dependency-contracts.md`·`doc/planning.md`·`doc/master-control.md`, Claude·Codex 답 지침, 상태 형식 세대. 등록·재인용 명령은 hook 허용 목록에 있고 읽기 전용 임대 예외에는 없다 |
 | `graph/` 실행기·전체 흐름·계획·전이, `core/workflow.ts`, `cliMain.ts` 실행 경계 | §3.3, §6, §8, §9 | `doc/langgraph.md`, `ca-next` 재개 절차, Claude·Codex 공통 블록, `stateView.ts` 그래프 관찰, master `hello.execution`·`graph.changed`, `runtimeSelect.ts` 상태 세대·실행 잠금, 동의 스냅샷·반영 제외 경로 |
@@ -38,7 +39,7 @@
 | `cli.ts`(hook 하위 명령 지연 로드·`hookFailureExit`)·`cliMain.ts`(명령 — `init`·`doctor`·`update`는 받는 인자 밖이면 사용법과 함께 멈추고 `--help`·`-h`는 사용법만 낸다, `optionsOnly`. 모르는 명령은 사용법 전문 대신 가까운 명령과 `help <명령>`을 안내하고(`unknownCommand`), `help <명령>`은 `USAGE`에서 그 명령의 줄만 낸다(`commandUsage`)), `hook.ts`·`codexHook.ts`·`request.ts`의 지연 로드(`consent.ts`·이벤트별 모듈·`init.ts`) | §5, §6.4 hook 종료 코드, §9 | 새 hook 하위 명령은 `HOOKS`와 `retryPolicy.ts` `hookFailureExit` 표에 함께 더한다. 분기 안의 지연 `require` 실패도 같은 표로 끝나야 한다 — 가드를 `try`로 감싸 통과시키지 않는다(`hookLoad.test.ts` 지연 로드 실패 행). hook 경로 모듈(`hook`·`codexHook`·`stopHook`·`sessionHook`과 그 import)에서 명령 모듈을 정적으로 import 하지 않는다 — `hookLoad.test.ts`의 금지 목록(`HEAVY`)·실행 경로·로드 실패 표가 대조한다 |
 | `runtimeSelect.ts`(적용 버전 선택 `selectRuntime`·위임 계약 `RUNTIME_KEY`·`SELF_ENV`·`RELEASE_ID`·상태 형식 세대 `STATE_SCHEMA`·`BUSY_FILES`·`releaseHome`·`entryScript`·npm 패키지 진입점 `entryPackage`·여는 셸 명령 `OPENING_COMMAND`·적용 대기 `pendingSwitch`)·`cli.ts`(위임·복구 명령 `RECOVERY`), `releaseStore.ts`(릴리스 설치 — Git 소스 `installGitRelease`·npm 패키지 사본 `installPackageRelease`·`packageRelease`, 검증 `verifyRelease`·설치 잠금 `lockStore`·중단된 설치 정리 `sweepStaging`), `runtimeApply.ts`(적용 `applyHere`·예약 `reserve`·진행 중인 일 `busyReasons`·템플릿 반영 `applyTemplates`·다시 열기 안내 `hostGuidance`·설치 확인 `requireInstalled`), `runtimeGate.ts`(다음 작업 관문 `atNextWork`·hook 의 적용 `applyBeforeOpening`·적용 보고 `APPLY_NOTE`·패키지 들이기 `adoptAtNextWork`·`version`·update 갈래 `runUpdate`), `hook.ts` `decide`의 여는 명령 적용, `sourceUpdate.ts`(미리보기·`updateFromSource`·`runReleaseApply`·샌드박스 안내 `SANDBOX_BLOCKED`), `core/atomic.ts` `writeIfChanged`(`init.ts`·`choiceConfig.ts`의 설치 파일), `choiceServer.ts` `handlersFor`(호출마다 적용 버전의 처리기) | §3.1 버전 적용 관문, §4.1 update 행, §5.1 PreToolUse 행, §5.3 3단계·티켓 항목, §5.4, §7 실행 중인 세션 행, §8, §9 | 위임 계약(`runtimeSelect.ts` 머리말 — 이미 설치된 진입점이 새 릴리스를 부르는 규약이라 그대로 둔다. 승인·증거·작업 기록의 형식을 바꾸면 `STATE_SCHEMA`를 올린다), `busyReasons` ↔ `BUSY_FILES`, `requireInstalled` ↔ `init.ts`가 쓰는 설치 기록(`.code-agent/version`·`hosts.json`)과 hook 등록(`installedHook`), 관문을 지나는 명령(`cliMain.ts` `opening` — `request begin`·`docs begin`·`triage begin·ingest·reassess`·`start`) ↔ `runtimeSelect.ts` `OPENING_COMMAND` ↔ `reserve`·`version`의 적용 시점 문장, `hostGuidance` ↔ `doc/install.md` 5절 '호스트를 종료하지 않는다' 표·`doc/codex.md` 갱신 절·§7 '새 버전 적용 뒤의 실행 중인 세션' 행, `hook.ts` `SOURCE_UPDATE`와 막는 깃발·`MODEL_SUBCOMMANDS`·`LEASE_FREE`의 `version`, `init.ts` `GITIGNORE_LINES`(`runtime.json`·`runtime.lock`·`template-conflicts/`), `bootstrap.ts` `baselineFiles`·`deliver.ts` `deliveryPaths`(`templates.json`), `consent.ts` `AFTER_APPLY.update`, `ca-next`·`ca-status`·`ca-answer`(Claude 7항·`template/codex/ca-answer.md`)의 update 문장, `cliMain.ts` `USAGE`·`UPDATE_USAGE`, `doctor.ts` 3b·3c, `doc/install.md`·`doc/usage.md` 업데이트 절 |
 | `hook.ts` `decide`(티켓 발급)·`decideTool`·`decideMcp`·`readDenied`·`aliasGuard`·`decideOutside`(열린 동의 창·소스 업데이트·hook 설정)·`decideDocWrite`·`MODEL_SUBCOMMANDS`·`readOnlyRoleGuard`(`READ_ONLY_ROLES`) | §5.3, §5.4 | `template/CLAUDE.block.md`, `decideBash` 거부 문구, 읽기 전용 담당의 정의 파일 `tools`(`ca-critic`·`ca-reviewer` — `hookPaths.test.ts`가 대조). `ca-surveyor`는 `Write`가 있지만 초안 자리(`layout.ts` `SURVEY_DRAFTS` — 문서 세션이 만들고 지운다) 바로 아래 `.md`만 쓴다 — `ca-docs` 2절·`ca-surveyor.md`·`ca-writer.md` 입력 문장과 맞춘다. `help <명령>`을 여는 `isModelCommand`·`LEASE_FREE` |
-| `planning.ts`·`planningState.ts`·`planningHook.ts`·`planningChain.ts`·`planningRules.ts`(규칙 식별자 `RULES`·`ruled`·`submitChecklist`) | §6.1 | `doc/planning.md` 역할·action 표, 규칙 식별자 — 검사 문구의 `ruled("…")`와 `RULES`가 서로 빠짐없이 같다(`planningRetry.test.ts`), 결과 상태별 계약(`statusContract`)과 완료 hook 의 `RES-*` 검사, 계획 스킬 2항의 `## 직전 시도` 문장, 결과 파일 이름(`planningState.ts` `RESULT_FILE` — `hook.ts` `decidePlanner`가 여는 staging 이름)과 계획 담당 소개 문장(`ca-analyst`·`ca-explorer`·`ca-writer`·`ca-critic`), `planningChain.ts` `planningNextLine` 표(action별 다음 행동의 원천 — `planningChain.test.ts`), 연쇄 거부의 `questions`(`commands.ts` `OpenQuestionsStop` — `requireAnswers`가 던질 때만), 연쇄 출력의 지금 스테이지(`chain.to` — `ca-analyze`·`ca-impact`·`ca-design` 5항, `ca-next` 3항), 단계 스킬 2·3·4항(네 스킬이 같은 글자 — `templateText.test.ts`, advance `action`을 바꾸면 4항의 요지도), `ca-plan/contract.md:10,16`(질문 출처·수정 피드백), `ca-plan/SKILL.md` 4-1항·반려 절차와 `crossCriticProblems` 문구(고칠 작업은 지적 내용으로 정한다), `ca-next/SKILL.md:31`(재개 때 실행 중 배정 확인 — 시작 hook 출력이 없을 때도 잡는다)·`:72`(되감기 예외 셋)·'멈춘 자리별 재개' 표의 `stale`·`rewind-required` 행, `sessionHook.ts`(실행 중 배정 요약), `handoff.ts` `handoffPlanning`(배정 요약의 `previous`). 연쇄(`--chain`)는 program 게이트(analysis·impact·design)만 잇는다 — 사람 확인(계획 제출·승인)을 잇지 않고 실패·거부에서 자동으로 다시 시도하지 않는다 |
+| `planning.ts`·`planningState.ts`·`planningHook.ts`·`planningChain.ts`·`planningRules.ts`(규칙 식별자 `RULES`·`ruled`·`submitChecklist`) | §6.1 | `doc/planning.md` 역할·action 표, 규칙 식별자 — 검사 문구의 `ruled("…")`와 `RULES`가 서로 빠짐없이 같다(`planningRetry.test.ts`), 결과 상태별 계약(`statusContract`)과 완료 hook 의 `RES-*` 검사, 계획 스킬 2항의 `## 직전 시도` 문장, 결과 파일 이름(`planningState.ts` `RESULT_FILE` — `hook.ts` `decidePlanner`가 여는 staging 이름)과 계획 담당 소개 문장(`ca-analyst`·`ca-explorer`·`ca-writer`·`ca-critic`), `planningChain.ts` `planningNextLine` 표(action별 다음 행동의 원천 — `planningChain.test.ts`), 연쇄 거부의 `questions`(`commands.ts` `OpenQuestionsStop` — `requireAnswers`가 던질 때만), 연쇄 출력의 지금 스테이지(`chain.to` — `ca-analyze`·`ca-impact`·`ca-design` 5항, `ca-next` 3항), 단계 스킬 2·3·4항(네 스킬이 같은 글자 — `templateText.test.ts`, advance `action`을 바꾸면 4항의 요지도), `ca-plan/contract.md:10,16`(질문 출처·수정 피드백), `ca-plan/SKILL.md` 4-1항·반려 절차와 `crossCriticProblems` 문구(고칠 작업은 지적 내용으로 정한다), `ca-next/SKILL.md:31`(재개 때 실행 중 배정 확인 — 시작 hook 출력이 없을 때도 잡는다)·`:73`(되감기 예외 셋)·'멈춘 자리별 재개' 표의 `stale`·`rewind-required` 행, `sessionHook.ts`(실행 중 배정 요약), `handoff.ts` `handoffPlanning`(배정 요약의 `previous`). 연쇄(`--chain`)는 program 게이트(analysis·impact·design)만 잇는다 — 사람 확인(계획 제출·승인)을 잇지 않고 실패·거부에서 자동으로 다시 시도하지 않는다 |
 | `lock.ts` | §6.1, §8 | 리뷰 기록·동의 적용·작업 임대가 같은 잠금을 쓴다 — 호출자별 `ageReclaim`·`display`·문구 |
 | `stagedChecks.ts`, `planningValidation.ts`(`planRuleProblems` 포함)·`workDocs.ts`의 게이트 함수, `sourceTrace.ts`·`requirementFields.ts`(근거·출처 줄 파서) | §6.1 관찰 6단계·게이트 | 게이트 함수를 바꾸면 계획 담당 완료 hook의 문서 검사도 함께 바뀐다(같은 함수). 제출 규칙은 `plan submit`과 plan 완료 hook 이 `planRuleProblems` 하나를 쓴다. 01 형식 검사(`parseRequirements`)와 원문 추적(`sourceTrace`)은 `requirementFields.ts` 하나로 근거·출처 줄을 읽는다. 문구의 규칙 식별자는 `planningRules.ts` `RULES`에 있어야 하고, 담당 지침의 같은 규칙(`ca-analyze`·`ca-impact`·`ca-design`·`ca-plan`의 `criteria.md`, `ca-writer.md`)과 맞춘다 |
 | `verificationFlow.ts`·`validate.ts`·`evidence.ts`·`repairHandoff.ts`·`testFiles.ts`, `core/build.ts` `CommandResult`, `tree.ts` `partialTreeHash`, `testResults.ts`·`testReports.ts`, `retryPolicy.ts` 검증 절 | §3.2 check~integrate, §6.2, §6.3 리뷰 회차, §8 | `ca-check/SKILL.md` 노드 처리 목록·↺ 수정 루프 2항과 `ca-implementer.md` 수정 루프(`repairFile`), TC 인식 규칙(`testResults.ts` `TC_ID`·`tcToken`, 보고서 이름 `reportSnapshot`)과 `ca-tester.md` TC 표기 문장·`ca-test/tc-names.md` 러너 표, `ca-check`·`ca-test`·`ca-integrate`·`ca-implement`·`ca-fix` 재시도 문장과 `ca-review` 5항, `ca-tester.md` 동결 문장, 장시간 실행 정본 문장(`ca-check`·`ca-test`·`ca-integrate`·`ca-implement` 4곳 글자 그대로) |
@@ -55,9 +56,10 @@
 | `hookLog.ts`(hook 출력 기록 `noteHookOutput`·`noteSubagentReturn`·같은 사유 확인 `blockedBefore`)와 그것을 부르는 hook 진입(PreToolUse 거부·Stop 차단·질문 도구 exit 2·담당 되돌림·SessionStart 주입·Codex 출력), `stopHook.ts` `STOP_LIST_LIMIT` | §5.1 hook 출력 기록·Stop 행, §5.2 Stop 행, §8 | `usage.ts` hook 출력 절, `doc/usage.md` 사용량 절 |
 | `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`·`CLAUDE_EFFORTS`·`CLAUDE_NO_EFFORT`, `models.ts`, `prices.ts` | §4.1 model 행, §6.3 다른 호스트 실행, §7 모델 기본값 행(`docSync.test.ts`가 `ROLE_POLICY`·`TIER_DEFAULTS`와 대조), §8 `models.json` 행 | `template/claude/agents/ca-*.md` 머리말 `model`·`effort`(`modelPolicy.test.ts`가 대조), `doc/codex.md` 역할별 모델 표(같은 테스트가 대조), `doc/design.md` 모델 문단, `ca-answer/reference.md`·`template/codex/ca-answer.md` 모델 예시, `retryPolicy.ts` `CROSS_PATTERNS.config`·`crossFailureText`(모델·강도 오류 문구, Codex 배너 라벨), `doc/usage.md` 단가표. 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다 |
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
+| `executionMode.ts`·`executionCommands.ts`, `init.ts` 공개 초기화 | §5.4, §7, §8, §9 | CLI 사용법, README 실행 표, install·usage·codex, 계획·리뷰 교차 게이트, bootstrap·deliver 설정 경로, `executionMode.test.ts` |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
-| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:226`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
+| 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:228`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
 
 **갱신 절차** — 코드 변경과 같은 커밋에서 해당 행과 `file:line`을 고치고, §10에 변경당 한 줄(바뀐 것의 요지와 커밋 — 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다. 확인하지 못한 동작은 쓰지 않거나 "미확인"으로 표시한다.
 
@@ -65,7 +67,7 @@
 
 ```mermaid
 flowchart TD
-  INIT["init --host claude|codex|both<br/>hosts.json · hook · 스킬"] --> RB["request begin<br/>request-session.json"]
+  INIT["init (두 호스트 준비)<br/>execution 단독·교차 선택"] --> RB["request begin<br/>request-session.json"]
   INIT -- "Sentry 오류 / ca-fix --triage" --> DUP{"triage ingest · 로그 중복 조회"}
   DUP -- "동일·진행 중" --> EXIST["기존 작업 안내 · 발생 기록 추가"]
   DUP -- "신규·재판별" --> TR["읽기 전용 조사 → submit"]
@@ -142,7 +144,7 @@ flowchart TD
 | analysis | `/ca-analyze` / `ca-analyst`(role analysis) | `planning advance [--chain]` 외, `next` | `01-requirements.md`, `questions.md` | `requireRequirements`: 01 형식과 원문 대조(`commands.ts:531-533`, 196-212) | advance 출력의 `next` 줄(action별 한 줄, 실패는 원인의 `guidance()`)을 따른다 — `blocked`이면 질문에 답하거나 입력을 고친다. 형식 오류는 `repair`(1회) |
 | impact | `/ca-impact` / 기본은 `ca-explorer`(explore)와 `ca-writer`(synthesis). `planning advance`가 impact 작업을 처음 등록할 때 요구 R이 1~3개, 조사 파일이 12개 이하, 합계 96,000바이트 이하면 `ca-explorer` 단독(impact)(`planning.ts:78-85`) | 같음 | `02-analysis.md` | 조사 결과가 current이고 사실 충돌이 없다(`planningState.ts:474-479`). `analysisProblems`(534-538), 새 작업(`knowledgeVersion`)은 `docImpactProblems` — 02 `## 문서 영향` 표(판단·근거)와 영향 범위의 파일을 근거로 든 지식 항목의 판단 | 같음. 사실 충돌은 조사를 다시 돌린다 |
 | design | `/ca-design` / `ca-analyst`(design) | 같음 | `03-design.md`, `04-functional.md` | `designProblems`와 `functionalProblems`(539-546) | 같음 |
-| plan | `/ca-plan` / `ca-analyst`(plan)와 `ca-critic`(critic). 두 호스트 설치 시 `planning cross` | `planning advance·cross`, `plan submit`, 동의 `plan`(`finish`가 승인을 적용하면 커서를 구현으로 옮기고 첫 Task 의 context 파일을 쓴다) | `plan.json`, `07-test-spec.md`, `<target>.plan.json`, `05-plan.md`(렌더 1286-1289), 승인 원장 | `reviewedPlanProblems`(critic이 본 plan.json과 제출본이 같다), 계획 존재, 승인 `approved`(547-558) | 반려되면 `ca-plan`의 반려 절차로 원인 작업을 다시 배정하고 재제출한다 |
+| plan | `/ca-plan` / `ca-analyst`(plan)와 `ca-critic`(critic). 교차 실행 선택 시 `planning cross` | `planning advance·cross`, `plan submit`, 동의 `plan`(`finish`가 승인을 적용하면 커서를 구현으로 옮기고 첫 Task 의 context 파일을 쓴다) | `plan.json`, `07-test-spec.md`, `<target>.plan.json`, `05-plan.md`(렌더 1286-1289), 승인 원장 | `reviewedPlanProblems`(critic이 본 plan.json과 제출본이 같다), 계획 존재, 승인 `approved`(547-558) | 반려되면 `ca-plan`의 반려 절차로 원인 작업을 다시 배정하고 재제출한다 |
 | implement | `/ca-implement` / `ca-implementer`, 테스트 단계는 `ca-tester`(`handoff.ts:43-44`) | `next`(구현 Task 로 옮기면 그 Task 의 context 파일도 쓴다), 없을 때 `context --file`, `repro`(fix) | 계획 파일 | 승인 유지, 현재 Task 파일 존재, Task 의 계획 파일이 **모두** 기준 커밋과 같으면 거부(`untouchedTaskFiles` — 새 파일·일부만 그대로는 막지 않는다, `precondition`·카운터 없음), 같은 단계의 다음 Task로 이동. 단계가 끝나면 `missingPlannedFiles`, fix의 test 단계는 `reproMissing`을 본 뒤 다음 단계나 check로 간다(559-598) | `Stop`이면 빠진 파일을 다시 맡긴다. 승인이 stale이면 재제출·재승인한다 |
 | check | `/ca-check` / 수정은 `ca-implementer` | `verify --json [--retry]`(단계만 돌릴 때는 `check`) | `<target>.verify.json`, `08-validation.md`, `.code-agent/log/` | `stageProblems(check)`(`evidence.ts` `stageProblemEntries`) | verify 노드 `repair`·`diagnose`·`decision` — 원인별 카운터(§6.2, 규약 §6.4) |
 | test | `/ca-test` / TC 코드가 없을 때 `ca-tester` | `verify --json`(또는 `test`) | 같은 증거, `testCases`, `testFreeze` | `stageProblems(test)`: ⑦의 모든 TC가 `passed` + 동결 뒤 바뀐 kind:test 파일 없음(`testFreezeProblems`) | 같음. 수정 뒤 `verify`로 check부터 다시 |
@@ -204,6 +206,8 @@ flowchart TD
 
 ### 4.2 응답 관찰 — 호스트별
 
+**대시보드 사람 채널** — 기존 로컬 `master call`의 `interaction.*` API로 일반 답과 동의를 구분한다. TTY에서 등록한 별도 Ed25519 사람 채널·소유 세대·명시적 제출·요청 버전·문맥·만료를 검사한다. 동의는 준비 세션과 전문 해시·변경 후보를 추가 대조하고 같은 `applyLocked` 도메인 검사를 거쳐 `dashboard-human` presence를 남긴다. 일반 답은 승인으로 올리지 않고 hook `observed` 기록을 만들지 않는다. 수신과 적용은 별도 영수증이며 첫 응답만 수락한다. [대시보드 계약](dashboard-interactions.md)이 정본이다.
+
 Codex의 `init`·`update --templates-only`는 `.codex/config.toml` 관리 블록에 로컬 MCP 선택 서버를 등록한다. 사용자 설정과 전역 설정은 유지한다. 선택 UI 관리 블록이 있는 설정 파일은 기존 저장소의 준비 커밋에도 포함하며 확인 화면에 파일 경로를 표시한다. Windows 샌드박스에서 원장의 표시 이름을 OS로 조회하지 못하면 환경값 또는 미확인 표기를 사용한다. 이 이름은 승인 여부·신원 증명에 쓰지 않는다. Git 커밋이 포함된 적용은 `.git` 쓰기 권한을 갖춘 셸에서 시작한다.
 
 ```mermaid
@@ -252,7 +256,7 @@ sequenceDiagram
 - 동의 잠금 `consents/apply.lock`은 공통 `acquireLock`(나이 회수 없음 — 같은 PC 의 죽은 pid 만 회수, 살아 있는 주인은 CLI 2초·hook 10초 대기)이다. 잠금을 살아 있는 프로세스가 쥔 동안 hook 은 모든 모드에서 저장소 안을 가리키는 쓰기 도구를 거부한다(`consentLockHeld` — 저장소 밖 쓰기는 동의 스냅샷과 무관해 막지 않는다. 거부 문구에 잠금 경로와, 실행 중인 code-agent 가 없으면 사람이 지운다는 안내가 있다).
 - 세션 밖에서 응답·적용을 기다리는 동의(색인 `consents/index.json`의 `open`, 30분 `TIMING.consentOpenWindowMs`)가 있으면 그 동의를 준비·응답한 세션(색인 항목의 `session` — 응답 뒤 `sessionId`, 그 전 준비 세션)의 셸을 code-agent 명령과 읽기용 git 으로 좁힌다. 다른 세션은 좁히지 않는다 — 그 세션의 쓰기는 스냅샷 대조가 폐기로 잡는다(세션이 기록되지 않은 옛 동의는 모든 세션을 좁힌다). 유효기간으로 동의를 무효화하지는 않는다(스냅샷·세션 결속이 대신한다). 그래서 창이 풀린 뒤에도 답하지 않은 동의는 `pending`으로 남고, 프로세스 안에서 동의 함수를 직접 부르는 조작(`node -e`)은 그때와 열린 동의가 없을 때 막지 못한다 — 오래 둔 동의는 쓰지 말고 새로 준비한다.
 - **master 위임 판단** (`consent.ts` `decideDelegatedConsent`·`delegationView`, `master/delegation.ts` `decideConsent`) — 사람이 TTY 에서 준 권한(`master grant`) 범위의 routine 판단만, master 실행 세션이 준비했고 그 실행이 끝난 `pending` 동의에, master 가 본 내용 해시(`shownHash` — 요약·선택지)가 지금과 같을 때 받는다. 사람의 응답이 시작된 동의·사람만 하는 동작(`HUMAN_ONLY_ACTIONS`)·`requireVerifiedApproval` 프로젝트는 받지 않는다. 판단을 `.code-agent/master/decisions.jsonl`에 먼저 남기고, 승인은 같은 `applyLocked`(스냅샷 재대조·확인 화면·도메인 함수)로 적용한다 — 원장 presence 는 `master-delegation`·`verified: false`(문구에 '사람 응답 아님'), 동의 기록의 `channel`·`delegation`과 반영 영수증의 `delegation`에 판단 ID 가 남는다. 수정 요청·보류는 사람 응답과 같은 `response-change`·`response-defer`이고 실패 기록에 판단 이유 전문이 남는다. 위임 수정 요청으로 닫힌 동의는 그 동의를 준비한 master 실행 세션의 이어 실행만 다시 준비하러 시작할 수 있다(사람의 수정 요청은 사람 경로). 관찰 기록(`observed`)·TTY 확인은 만들지 않는다([master 연동](master-control.md) §8).
-- 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`·`master/`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI·master 감독이 쓰는 자체 기록이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다 — 값은 캐시 없이 구한 것과 같다.
+- 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`·`master/`·`interactions/`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI·master 감독이 쓰는 자체 기록이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다 — 값은 캐시 없이 구한 것과 같다.
 
 **실패 기록** — 대상 변경·응답 거부·적용 실패는 `ConsentRecord.failure{class, kind, at, detail}`로 남고(`status` 값은 늘지 않는다), 출력 `failure.guide`(`consentGuide`)는 갈래마다 다르고 문구 원천은 재시도 규약이다(대상 변경은 `consent-target-changed` 기본 문구, 승인이 아닌 응답은 그 원인의 `response-*` 변형, 적용 실패는 `consent-apply-failed` — `status` 의 `다음:`(`failureHint`)도 같은 문구). 같은 동의로 다시 묻거나 적용하지 않는다. 같은 동작의 최근 종료 기록 둘이 모두 대상 변경이면 다음 준비 결과에 `warning`(외부 hook·편집기·빌드 확인)을 붙인다 — 준비를 막지 않는다.
 
@@ -266,6 +270,8 @@ sequenceDiagram
 | `apply` | consent-apply-failed | failed | `applying` 잔존, 앞선 확인을 하나 이상 통과한 뒤의 화면 불일치, 도메인 함수 실패 | 상태 확인 뒤 새로 준비 |
 
 ### 4.3 업무 질문 답 관찰 (`answers.ts`)
+
+- 영속 질문은 모든 단계에서 `interaction publish`로 발행한다. 추천·이유·근거·입력 조건을 구조화하고 실제 답이 없으면 기본값으로 진행하지 않는다. `source: questions`의 답은 질문 원문 해시를 검사한 뒤 `dashboard-human` 답 원장과 Source를 함께 쓴다. 이 답은 호스트 관찰·승인과 구별하며 질문이나 답을 바꾸면 출처 검증에 실패한다. 살아 있는 호스트는 같은 세션에서 `consume`·`complete`로 처리 결과를 기록한다.
 
 - 기존 계약 재인용은 `planning reuse-answer <Q번호> <계약ID> <항목키>`가 기록한다. `contract` 행은 질문 본문·답·검증된 계약 묶음 해시에 묶이고 출처는 `contract`(사람 응답 아님)다. `[Source]: 기존 계약 …` 문자열만으로 인증하지 않으며 답·질문·원문·사본 변경과 상충은 `unverified`다. 기록 이후 Source를 대화로 바꾸어 우회하지 못한다. 실제 관찰 답과 권한 있는 master 답의 경로는 유지한다. [계약 인계](dependency-contracts.md)를 따른다.
 
@@ -288,7 +294,7 @@ sequenceDiagram
 | Stop | 없음 | `stop` | `decideStop`(`stopHook.ts`) | 준비·접수·전체 단계에서 마지막 응답의 선택지 없는 특정 문구 입력 요구를 검사한다(`questionPresentation.ts`). implement~deliver에서는 계획 밖 변경·미응답도 검사한다(`STOP_PHASES`). 문제가 있으면 `{decision:block}`을 1회 낸다. 목록은 10줄(`STOP_LIST_LIMIT`)까지 싣고 나머지는 개수만 적는다. 같은 세션에서 글이 같은 사유로 이미 막았으면(hook 출력 기록) 다시 막지 않는다 — 목록이 바뀌면 다시 막는다 | 언제나 exit 0 |
 | SubagentStart·Stop | `ca-reviewer` | `review-event` | `observeReviewer`(`reviewHook.ts`) | review 단계가 아니면 아무것도 하지 않는다. 회차마다 append-only 실행 기록 — Start: 완료된 회차는 무시 기록(`completed-round`), 받아들인 실행이 끝나지 않았으면 동시 호출로 무시(15분 넘으면 고아로 보고 새 실행), 같은 agent 의 끝난 실행 재개는 새 실행, 호출 한도(회차당 2) 초과는 무시. Stop: 표 규칙(`reviewResultProblems`) 검사 후 `## 지적` 재작성 — 걸리면 한 번 되돌림 → 기록(§6.3). 기록 전 판정 실패(리뷰 도중 트리·계획 변경, transcript 문제 등 — 담당이 고칠 수 없다)는 그 실행에 `failure: hook-failure`로 기록한다(`recordHookFailure` — 게이트가 고아 기한까지 "실행 중"에 갇히지 않고 새 호출을 받는다) | `subagentExit`(`runReviewHook`): SubagentStop에서 기록 전의 형식 되돌림(`ReturnToReviewer`)과 기록하지 못한 판정 실패는 `stop_hook_active`가 아니면 2, 기록된 실패(무시된 실행·hook 판정 실패 기록 포함)·`stop_hook_active`면 0. Start 실패와 이벤트를 알 수 없는 입력(깨진·읽지 못한 stdin)은 2 |
 | SubagentStart·Stop | `ca-analyst\|ca-explorer\|ca-writer\|ca-critic` | `planning-event` | `observePlanner`(`planningHook.ts:335-357`) | §6.1 | `subagentExit`(§6.4, `runPlanningHook` 358-366): SubagentStop에서 기록 전의 되돌릴 수 있는 실패(형식·식별·내용)와 기록하지 못한 판정 실패는 `stop_hook_active`가 아니면 2, 기록된 실패·`stop_hook_active`면 0. Start 실패와 이벤트를 알 수 없는 입력(깨진·읽지 못한 stdin)은 2 |
-| SessionStart | 없음 | `session-event` | `sessionAnchor`(`sessionHook.ts`, `progress` — Codex SessionStart 도 같은 함수를 Codex 표기로 부른다, §5.2) | 머리 줄(이어갈 때의 `ca-next` 스킬 이름 포함)과 작업 1줄·접수 2줄·문서 세션 1줄의 상태를 stdout에 낸다 — 이어가는 방법은 설치 지침 블록에도 있어 되풀이하지 않는다. 작업 중 응답·적용을 기다리는 동의가 있으면 그 제목과 '준비한 세션에서만 적용' 줄을 더한다(`openConsentLine`). 입력 `source`가 `compact`·`clear`이고 진행 중인 것이 있으면 ca-answer 절차를 다시 읽으라는 한 줄을 붙인다(`withReread` — 스킬 공통 문단은 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 읽는다"). 진행 중인 것이 없어도 응답·적용을 기다리는 동의(색인의 열린 창 — `consentState.ts` `openConsent`, 도입 뒤 setup·update·model·플러그인 등)가 있으면 머리 줄·동의 제목 줄과 함께 그 한 줄을 낸다. 설치 호스트의 hook 이 빠졌으면 진행 상태와 무관하게 경고 한 줄을 붙인다(`hookInstallWarning`). 계획 배정이 running으로 기록돼 있으면 그 목록과 안내 한 줄을 더한다(`runningPlanning` — 입력 `source`가 startup·resume·clear·fork면 `planning cancel <ID>` 뒤 advance, 그 밖은 advance의 stale·cancel 안내). AI-DLC 경고가 있으면 1줄을 더한다. 입력 `session_id`가 있으면 작업 임대를 이 세션으로 넘겨받고(`source`가 `compact`면 넘겨받지 않는다 — 압축은 세션 ID 가 그대로인 같은 대화라, 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾지 않게 한다), 같은 작업의 다른 세션이었으면 작업 줄 뒤에 `이 세션이 작업 진행 기록을 넘겨받았습니다` 한 줄을 붙인다 — 넘겨받은 그 호출에서만이다. 이미 이 세션이 쥔 임대를 압축·재개 뒤 갱신할 때는 남아 있는 `previous`를 다시 알리지 않는다. 다른 호스트(Codex)가 쥔 신선한 임대, 또는 압축 때 다른 세션이 쥔 신선한 임대면 넘겨받지 않고 이 세션의 진행 명령이 거부된다는 `takeover` 안내 줄(`sessionStartLease`). 진행 중인 것·기다리는 동의·hook 누락이 모두 없으면 출력 없음. master 실행 세션(`CODE_AGENT_MASTER_RUN`)이면 그 실행의 규칙 줄(사람이 보지 않음·질문 도구 대신 동의 준비까지·승인 기록을 만들지 않음·정지 요청 뒤 보고)을 붙인다(`masterRunNote`). 루트는 `findRepoRoot`(하위 폴더에서 연 세션도 저장소 루트 — Stop hook 도 같다) | 언제나 exit 0 |
+| SessionStart | 없음 | `session-event` | `sessionAnchor`(`sessionHook.ts`, `progress` — Codex SessionStart 도 같은 함수를 Codex 표기로 부른다, §5.2) | 머리 줄(이어갈 때의 `ca-next` 스킬 이름 포함)과 작업 1줄·접수 2줄·문서 세션 1줄의 상태를 stdout에 낸다 — 이어가는 방법은 설치 지침 블록에도 있어 되풀이하지 않는다. 작업 중 응답·적용을 기다리는 동의가 있으면 그 제목과 '준비한 세션에서만 적용' 줄을 더한다(`openConsentLine`). 입력 `source`가 `compact`·`clear`이고 진행 중인 것이 있으면 ca-answer 절차를 다시 읽으라는 한 줄을 붙인다(`withReread` — 스킬 공통 문단은 "이 대화에서 아직 읽지 않았거나 압축·비워진 뒤라면 읽는다"). 진행 중인 것이 없어도 응답·적용을 기다리는 동의(색인의 열린 창 — `consentState.ts` `openConsent`, 도입 뒤 setup·update·model·플러그인 등)가 있으면 머리 줄·동의 제목 줄과 함께 그 한 줄을 낸다. 설치 호스트의 hook 이 빠졌으면 진행 상태와 무관하게 경고 한 줄을 붙인다(`hookInstallWarning`). 계획 배정이 running으로 기록돼 있으면 그 목록과 안내 한 줄을 더한다(`runningPlanning` — 입력 `source`가 startup·resume·clear·fork면 `planning cancel <ID>` 뒤 advance, 그 밖은 advance의 stale·cancel 안내). AI-DLC 경고가 있으면 1줄을 더한다. 입력 `session_id`가 있으면 작업 임대를 이 세션으로 넘겨받고(`source`가 `compact`면 넘겨받지 않는다 — 압축은 세션 ID 가 그대로인 같은 대화라, 새로 연 세션에 넘어간 임대를 아직 열린 이전 세션이 압축만으로 되찾지 않게 한다), 같은 작업의 다른 세션이었으면 작업 줄 뒤에 `이 세션이 작업 진행 기록을 넘겨받았습니다` 한 줄을 붙인다 — 넘겨받은 그 호출에서만이다. 이미 이 세션이 쥔 임대를 압축·재개 뒤 갱신할 때는 남아 있는 `previous`를 다시 알리지 않는다. 다른 호스트(Codex)가 쥔 신선한 임대, 또는 압축 때 다른 세션이 쥔 신선한 임대면 넘겨받지 않고 이 세션의 진행 명령이 거부된다는 `takeover` 안내 줄(`sessionStartLease`). 진행 중인 것·기다리는 동의·hook 누락이 모두 없으면 출력 없음. master 실행 세션(`CODE_AGENT_MASTER_RUN`)이면 그 실행의 규칙 줄(사람이 보지 않음·일반 질문 영속화·동의 준비까지·승인 기록을 만들지 않음·정지 요청 뒤 보고)을 붙인다(`masterRunNote`). 루트는 `findRepoRoot`(하위 폴더에서 연 세션도 저장소 루트 — Stop hook 도 같다) | 언제나 exit 0 |
 
 hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드한다(`HOOKS`). `hook`(`hook.ts`)은 `consent.ts`(commands·deliver·validate·sourceUpdate 그래프)를 셸 명령이 `code-agent consent apply|finish ` 꼴일 때만 읽고(세션 결속 가드), `request.ts`는 `init.ts`를 접수 시작 때만, `runtimeGate.ts`(적용 그래프)는 다음 작업을 여는 명령에 적용할 것이 있을 때만 읽는다 — 도구 호출마다 도는 PreToolUse 경로는 명령 모듈을 읽지 않는다(`hookLoad.test.ts`가 hook·codexHook·stopHook·sessionHook 그래프의 금지 목록과 실행 경로를 본다. SessionStart(`session-event`·`codex-event`의 SessionStart 분기)만 hook 누락 경고 때문에 `init.ts`를 읽는다). `consent-event`가 읽는 `consent.ts`는 judgment 소유 모듈(`retryGrant.ts`·`reviewJudgment.ts`)을 그 동작의 준비·적용 때만 읽는다(`judgmentModules`). 모듈 로드·stdin 읽기 실패는 `hookFailureExit(hookFailureInput(...))` 표로 끝낸다 — `hook`과 동의 질문(`metadata.source`가 `code-agent:`, 또는 stdin 을 못 읽음)은 exit 2, 업무 질문·Stop·SessionStart·SubagentStop 은 0, 담당 hook(`planning-event`·`review-event`)은 SubagentStop 만 0 이고 SubagentStart 와 이벤트를 알 수 없는 입력(읽지 못함·깨진 JSON·필드 없음)은 2(진입 함수가 깨진 stdin 을 `subagentExit`로 끝내는 것과 같다). 분기 안의 지연 로드(`consent apply|finish` 가드의 `consent.ts`, Codex 의 이벤트별 모듈)가 실패해도 같은 표다 — 적용 가드는 막고(Claude exit 2·Codex deny), Codex 동의 응답은 2, Codex Stop·담당 이벤트는 0. Claude 설정에는 셸 `|| exit 2` 래핑을 하지 않는다(Windows PowerShell 5.1 에서 `||`가 구문 오류라 hook 이 매번 비차단 실패가 된다) — 설정 누락·hook 미실행은 SessionStart·`status`·시작 게이트(`requireStartHooks`)·doctor 가 드러낸다.
 
@@ -346,16 +352,20 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 
 ### 5.4 모델이 셸로 부를 수 있는 `code-agent` 명령 (세션·작업 중)
 
+영속 질문 명령 `interaction publish <파일>`·`consume <ID>`·`complete <ID> <파일>`·`list`를 허용한다. 앞의 셋은 메인 PreToolUse의 일회성 세션 티켓이 필요하다. `master human`·외부 적용 실행기 `interaction drain`은 모델 명령이 아니다. Codex MCP ask도 PreToolUse 티켓으로 발행 세션을 묶는다. Claude 일반 단일 선택은 Pre/Post 호출 ID로 첫 응답을 관찰한다. 구조화된 추천·다중 선택은 공통 발행 경로를 사용한다.
+
 - 허용(`hook.ts:106-139`, 접두어 일치)
   - `start`·`next`·`back`·`context`·`read`·`status`·`plan submit`·`planning prepare·advance [--chain]·status·result·dispatch·repair·cancel·cross`·`docs *`·`survey`·`manifest check`·`request *`
   - `plugin list`·`knowledge find <낱말|키|경로...>`(읽기 전용 — 작업 임대를 보지 않는다)·`repro`·`check`·`test`·`verify`·`review *`·`integrate`
   - `status --json [--expect-state|--expect-work|--expect-attempt|--session|--run-id <값>]`(읽기 전용), `experience add <초안>·list [--all]·show <EXP-ID>`·`finding report <초안>·list [--json] [--work <ID>]`(add·report 는 이 작업의 기록 파일만 쓰고 쓰기 경계·승인·한도를 바꾸지 않는다. `experience.md` 는 도구 쓰기를 `decideWrite`가, `findings.json` 은 상태 폴더라 `stateGuard`가 막는다)
-  - `consent prepare <파일> | --action <동작> …`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help [<명령>]`(명령 하나의 사용법 줄), `version [--json]`(이 명령을 돌린 코드·프로젝트 적용·적용 대기 버전·설치된 릴리스·실행 중인 선택 UI MCP 조회 — 읽기 전용, 작업 임대를 보지 않는다), 인자 없는 `code-agent`
+  - `consent prepare <파일> | --action <동작> …`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`·`execution`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help [<명령>]`(명령 하나의 사용법 줄), `version [--json]`(이 명령을 돌린 코드·프로젝트 적용·적용 대기 버전·설치된 릴리스·실행 중인 선택 UI MCP 조회 — 읽기 전용, 작업 임대를 보지 않는다), 인자 없는 `code-agent`
 - 그 밖은 모두 거부한다. 그중 `abort`·`approve`·`reject`·`confirm`·`model` 변경·`deliver`·`plugin add·remove`·`update`(설치·적용 버전 고르기 — 세션 밖의 `--templates-only`는 §5.3 3단계)·`knowledge prune`·`setup baseline`은 §4.1 동의로 실행한다. `init`·`usage`·`knowledge`(목록 — `find`는 위 허용)·`plugin example`은 동의 동작이 없고 사람이 직접 실행한다. `master`(연동 설정·위임 권한·인계는 사람의 터미널, `call`·`supervise`는 master 러너)는 세션 안팎 모두 거부한다(세션 밖은 §5.3 3단계). 거부 문구의 셸·파일 도구 이름은 호스트 표기다(`viaShell`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`).
 
 ## 6. 오케스트레이션
 
 ### 6.0 전체 실행 그래프
+
+영속 질문의 미응답·보류는 `human-input`, 수신한 일반 답은 `consume-interaction` 인계로 이어진다. 작업 ID 없는 설정·운영도 같은 판정을 쓴다. 응답 적용 실행기는 종료가 확인된 기존 Claude 비대화형 세션만 한 번 이어 실행하도록 예약하며, 정지·취소·인계·종료 미확인 상태에서는 재시작하지 않는다. 기존 작업 ID·종류·재시도 한도·승인 게이트는 유지한다.
 
 `flow advance --json`은 준비·문서·접수·사전 판별과 모든 `PHASES`의 재개 위치를 결정한다. 호스트 인계·SQLite·잠금·중단 후 재개는 [LangGraph 실행 구조](langgraph.md), master 통신·정지·제어권은 [master 연동](master-control.md)이 정본이다. 단계별 게이트는 §3, 계획·검증 내부 흐름은 아래 절을 따른다.
 
@@ -553,7 +563,7 @@ stateDiagram-v2
 - `waive-finding`: review 단계는 F(유효한 리뷰어 결과)·X(완료된 교차 결과) 번호, plan 단계는 현재 critic 지점의 교차 계획 검토 차단 지적. 게이트를 막는 지적(열림·계획 밖·상태 값 오류·범위 칸 불일치)만 기각한다(`waiveVerdict`). 표의 줄은 남고 `review.json` `waivers`(계획은 `planning.json` `crossWaivers`)에 기록한다. 리뷰 기각은 기록한 회차에만 적용되고, 다음 회차에는 출처·id·경로가 같고 범위 칸과 지적 칸(공백 차이 제외, `detailHash`)까지 같을 때만 이어진다. 다르면 게이트가 `(n회차 사람 판단과 지적 내용이 다릅니다 — 다시 판단)`을 붙여 막는다. 교차 리뷰 프롬프트에는 앞 회차의 교차 기각을 참고로만 싣는다.
 - `cross-stop`: 두 호스트 설치에서 열린 지점에 막힌 시도(설정 오류·형식 오류·샌드박스·시간 초과·끊긴 실행)가 있을 때만(계획은 질문을 다 답한 needs-input, 차단 지적 없는 실패 완료도). 사람 중지 시도(`mode: human`, `class: cross-stop`)를 더하고 ⑨ `## 교차 지적`을 중지 줄로 쓴다. 사람 중지 지점은 다시 실행하지 않는다.
 
-**교차 검증 (both 설치 전용, `crossRequired` = `hosts.json`에 호스트 2개)**
+**교차 검증 (`execution.json`의 `mode: both`, 정책 파일이 없으면 `hosts.json`에 호스트 2개)**
 
 | 지점 | 명령 | 전제 | 실행 | 기록 | 게이트 |
 |---|---|---|---|---|---|
@@ -649,13 +659,15 @@ code-agent 의 실행·빌드 Node 는 `>=24.19.0 <25`다. npm 설치는 `packag
 
 Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. npm의 `.ps1` 실행 정책 거부를 피하며 실행 정책은 변경하지 않는다. `hosts.ts`의 Codex 변환본(역할 포함), 별도 ca-answer, 설치 공통 블록과 `hostText.ts`의 파일 도구 안내가 이 규칙을 싣는다. Bash·macOS·Linux 명령, 파일 경로, 사용자가 보내는 대화 응답 `code-agent consent respond …`는 바꾸지 않는다.
 
-| 설치 | `hosts.json` | 교차 검증 |
+| 실행 방식 | 선택 | 교차 검증 |
 |---|---|---|
-| `--host claude` | `["claude"]` | 요구하지 않는다(`crossCriticProblems`·`reviewProblems`가 건너뛴다) |
-| `--host codex` | `["codex"]` | 요구하지 않는다 |
-| `--host both`, 또는 기존 설치에 다른 호스트 추가 | `claude`·`codex` 둘 다(순서는 이전 기록이 먼저) | `planning cross`·`review cross`를 요구한다. 실행할 수 없으면 중지로 기록하고 통과한다. 설정 오류·형식 오류·샌드박스 거부·끊긴 실행은 막는다(§6.3) |
+| 현재 호스트 단독(초기값) | `init` 후 현재 호스트에서 실행 | 없음 |
+| Claude 단독 | `execution claude` | 없음 |
+| Codex 단독 | `execution codex` | 없음 |
+| 교차 검증 | `execution both` | 현재 호스트가 개발하고 상대 호스트가 계획·코드 리뷰 |
 
-`init`은 `hosts.json`에 이전 기록과 이번 호스트의 합집합을 쓴다(`init.ts:163-167`). 이전 기록이 없으면 Claude PreToolUse hook이 있는지로 이전 호스트를 판정한다. 그래서 Claude 프로젝트에 `--host codex`를 더하면 both가 된다(`hosts.json`이 있을 때와 지운 뒤 모두 sandbox 확인). 반대로 both 설치에 `init --host claude`를 다시 실행해도 `hosts.json`은 둘 다로 남는다(sandbox 확인). 호스트를 줄이려면 `hosts.json`을 사람이 고친다(`doc/codex.md` 제거 문단). init·status·doctor 의 교차 안내(`crossNotice`)도 그 길을 가리킨다. 그 안내는 못 쓰는 이유를 교차 실패 분류와 같이 가른다(원인 이름은 `POLICIES` label, 갈래 문장은 `GUIDE_VARIANTS`의 `notice` 변형) — PATH·npm 어디에도 없는 미설치는 `cross-unavailable`(그 지점을 중지로 기록하고 진행), 없는 파일을 가리키는 실행 파일 변수(`CODE_AGENT_*_BIN`)·PATH 의 셸 스크립트는 `cross-config-error`(`hostCommandConfigError` — 중지로 기록하지 않고 그 지점의 게이트가 막힌다. 사람이 고친 뒤 다시 실행하고, 고칠 수 없으면 사람이 `judgment cross-stop`)다. 두 갈래의 판정은 `crossHostProblems` 하나이고, 리뷰·계획 게이트 줄의 실행 명령 뒤 괄호(`crossRunNote`, §6.3)와 doctor 의 표시(설정 오류는 `✗`)도 같은 판정을 쓴다.
+공개 `init`은 두 호스트를 준비하고 설치 목록과 실행 정책을 분리한다. 호환 `--host` 인자도 설치 범위를 줄이지 않는다. 내부 갱신은 기존 설치 범위를 유지한다. 정책 파일이 없는 설치는 설치 목록이 둘 다이면 교차 검증을 유지하고, 새 설치는 `auto`(현재 호스트 단독)로 시작한다. `execution` 조회는 모델도 가능하지만 변경은 호스트 밖 TTY 확인을 요구한다. 관리 실행 중에는 변경을 막고, 단독 선택과 다른 호스트의 쓰기·진행은 hook이 막는다. 임대·승인·작업 ID·접수 유형은 바꾸지 않는다. 교차 검증의 실행 불가·설정 오류·재시도 규칙은 §6.3을 따른다.
+
 
 두 호스트를 같은 작업에 동시에 쓰지 않는 것은 작업 임대가 막는다(`lease.ts`, §5.3 7) — 진행 명령·쓰기를 처음 한 세션이 잡고 다른 세션은 거부된다. 두 호스트 모두 호스트와 세션을 비교하고, SessionStart(Claude `session-event`·Codex `codex-event`)가 압축(`compact`)을 빼고 같은 호스트 임대를 넘겨받는다(재시작·`/clear`가 막히지 않고, 아직 열린 이전 세션은 다음 진행 명령이 거부된다 — 그 세션이 압축돼도 되찾지 않는다). 하위 에이전트의 hook 은 부모 `session_id`를 싣고 재개도 같은 `session_id`라(claude 2.1.293·codex-cli 0.161.0 실측), 두 터미널이 같은 세션을 이어 열면 임대 보유자가 하나로 보인다. 다른 호스트가 쥔 신선한 임대는 `takeover`나 30분 무활동으로만 넘어간다. `takeover`는 모델이 부를 수 있어 사용자 확인을 코드가 강제하지 않는다 — 임대는 모르는 사이의 동시 진행을 막는 사고 방지 장치이지 권한 경계가 아니고, 넘겨받기 전 확인은 스킬 규칙(`ca-next` 재개표)이다. 분류는 `precondition`이다. 동의는 준비 때 그 명령을 본 hook 의 세션·호스트(준비 티켓)에, 첫 응답 관찰(Pre) 때 채널·세션·작업 경로에 묶이므로(`observeConsent`), 준비한 뒤 호스트를 바꾸면 동의를 다시 준비해야 한다.
 
@@ -690,6 +702,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
+`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 사용자 홈 `.code-agent/dashboard-channels/`에 둔다. 상태 형식 세대는 7이다.
+
 `active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다. 상태 형식 세대는 6이다.
 
 `identities/<소문자 ID>.json`은 checkout 안에서 최초 접수의 ID·종류를 보존한다. 접수 시작과 직접 작업 시작이 `identities/identity.lock` 안에서 기록하며 abort·deliver는 지우지 않는다. Git·반영 대상에서는 제외하고 동의 스냅샷에는 포함한다. 별도 checkout의 전역 ID 예약을 대신하지 않는다.
@@ -708,6 +722,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | `lease.json` · `branches/<브랜치 SHA256>.lease.json`(선택된 작업의 임대 `{version, id, target, host, session, claimedAt, seenAt, previous?, released?}`) · `lease.json.lock` | PreToolUse hook(`leaseGuard` — 진행 명령·쓰기에서 claim·1분마다 touch), Claude SessionStart(`sessionStartLease`), `code-agent takeover`(`releaseLease` — `released`만 남기고 지우지 않는다. 해제 기록은 다음 claim 의 `previous.why: takeover`). 잠금은 쓰는 순간만 있다 | hook·`status`(`진행 세션:` 줄 `leaseLine`) | 무시. 동의 스냅샷에서 뺀다(`SNAPSHOT_EXCLUDED`) — 응답을 기다리는 동안의 touch·해제가 동의를 깨지 않는다. 형식이 틀리면 없는 것으로 보고 다음 claim 이 덮는다 |
 | `request-session.json` · `docs-session.json`(`version: 2`·`writable` — 문서 세션 쓰기 범위, `docs link`가 더한다) | `request begin` · `docs begin/end/link` | hook 모드 판정, start | 무시 |
 | `doc/.survey/<영역>.md`(뼈대 역공학 초안, 안쪽 `.gitignore *`) | `docs begin`이 폴더를 열고 `ca-surveyor`가 쓴다 | `ca-writer`(`ca-docs` 2절) — `docs end`가 지운다 | 무시(폴더 안 `.gitignore`) |
+| `execution.json` | init·TTY execution | hook·계획·리뷰 | 설치 목록과 별개인 단독·교차 정책. 준비·반영 커밋에 포함 |
 | `hosts.json` · `version` | init | `selectedHosts`, update·doctor | 준비 커밋(`bootstrap.ts:45-46`). `version`은 반영 커밋에도 들어간다(`deliver.ts:321`) |
 | `runtime.json`(이 PC 의 적용 버전 `{schema, applied, appliedAt, home, stateSchema, pending?: {id, since, reason, home}, adopted?}` — `adopted`는 npm 패키지 진입점에서 마지막으로 들인 릴리스 — `home`은 `applied`가 든 릴리스 저장소다. 호스트가 환경 변수를 넘기지 않는 MCP 서버도 같은 릴리스를 찾는다) · `runtime.lock` | 버전 적용(`applyHere` — 실행 잠금 안에서 진행 중인 일을 다시 보고 적용하거나 `pending`으로 예약), 고정 해제(`update --bundled`) | 진입점의 버전 선택(`selectRuntime` — 명령·hook 마다), 다음 작업 관문(`atNextWork` — 세션 파일도 이 잠금 안에서 만든다), `version`·`status`·doctor 3c, 선택 UI MCP(`handlersFor`) | 무시(`GITIGNORE_LINES` — PC 별 경로가 든다) |
 | `templates.json`(마지막으로 적용한 스킬·에이전트 사본의 소유 해시 `{schema, release, files}` — 모델·추론 강도 줄과 줄바꿈은 빼고 센다) | 템플릿 반영(`applyTemplates`) | 다음 적용의 사람이 고친 사본 판정(`conflicts`) | 준비 커밋(`baselineFiles`)·반영 커밋(`deliveryPaths`) |
@@ -755,6 +770,10 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+- `executionMode.ts`·`executionCommands.ts`: 설치와 분리된 실행 정책·TTY 선택. 계획·리뷰 교차 게이트와 hook이 같은 정책을 읽는다.
+
+대시보드 연동은 `interactionSchema.ts`(구조 검증), `interactions.ts`(원장), `interactionSources.ts`(동의·문서 연결), `interactionHuman.ts`(사람 채널), `interactionService.ts`(API·적용·재개), `interactionNative.ts`(호스트 질문), `interactionTicket.ts`(hook 세션 결속), `interactionSummary.ts`(읽기 전용 상태)로 나뉜다.
+
 | 단계·기능 | 파일 (`src/agent/` 기준) |
 |---|---|
 | 브랜치별 작업·임대 | `branchCursor.ts`(HEAD·worktree gitdir 판독, 커서·임대 보관, 현재 작업 선택), `layout.ts`(조회·저장·종료), `stateView.ts`(선택된 커서 경로), `runtimeSelect.ts`·`runtimeApply.ts`·`models.ts`(모든 보관 작업 보호) |
@@ -793,6 +812,9 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 - `ca-reviewer`: review
 
 ## 10. 변경 이력
+
+- 대시보드 질문·선택·사람 동의를 영속화하고 서명 응답의 중복 없는 적용·재개를 연결한다 — 이 변경 커밋, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
+- init에서 두 호스트를 준비하고 단독·교차 실행 선택을 설치와 분리한다 — 이 변경 커밋, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
 
 변경마다 한 줄이다 — 무엇이 바뀌었는지의 요지와 커밋만 적는다. 경위·지적별 처리·검증 결과는 [문서·검증 이력](reviews/README.md)에서 찾는다.
 

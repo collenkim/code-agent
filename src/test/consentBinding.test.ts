@@ -514,5 +514,5 @@ test("T-J-3 동작 목록·judgment 문구 동기화 — ca-answer 세 곳과 �
 test("judgment waive-finding·cross-stop 은 C1 함수로 이어진다 — 단계·지점 전제는 소유 함수가 본다", () => {
   startWork();
   assert.throws(() => prepareConsent(root, { action: "judgment", kind: "waive-finding", id: "F1", comment: "사용자 판단" }), /review 단계\(F·X 번호\)나 plan 단계/);
-  assert.throws(() => prepareConsent(root, { action: "judgment", kind: "cross-stop", name: "review", comment: "사용자 판단" }), /두 호스트가 설치된 프로젝트에서만/);
+  assert.throws(() => prepareConsent(root, { action: "judgment", kind: "cross-stop", name: "review", comment: "사용자 판단" }), /교차 검증을 선택한 프로젝트에서만/);
 });

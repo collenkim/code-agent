@@ -214,7 +214,7 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     assert.match(working.hint, /^→ 진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only --host codex — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다$/);
     // 우리 이벤트가 하나도 없으면 옛 설치가 아니라 설치가 빠진 것이다
     write(".codex/hooks.json", JSON.stringify({ hooks: {} }, null, 2));
-    assert.equal(rowOf(doctor(repo).text).hint, "→ code-agent init --host codex");
+    assert.equal(rowOf(doctor(repo).text).hint, "→ code-agent init");
   }));
 
   test("D1 모델 표(반박 검증) — 작업 중에도 표는 열리고, 변경 줄은 작업 중 거부와 작업이 끝난 뒤의 방법을 싣는다", () => {

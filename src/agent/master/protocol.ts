@@ -14,9 +14,9 @@ export const SUPPORTED_VERSIONS = [1] as const;
 /** 인증 없이 받는 요청 — 기능 협상 */
 export const OPEN_TYPES = ["hello"] as const;
 /** 읽기 전용 요청 — commandId 가 없어도 되고 기록하지 않는다 */
-export const READ_TYPES = ["snapshot", "events", "heartbeat", "command", "questions", "consents", "result", "grants"] as const;
+export const READ_TYPES = ["snapshot", "events", "heartbeat", "command", "questions", "consents", "result", "grants", "interactions", "interaction", "interaction.result"] as const;
 /** 상태를 바꾸는 요청 — commandId 가 필요하고 같은 ID 의 재전송은 기록된 응답을 그대로 돌려준다 */
-export const MUTATING_TYPES = ["submit", "pause", "cancel", "resume", "decide", "answer", "handover", "reconcile", "policy", "revoke"] as const;
+export const MUTATING_TYPES = ["submit", "pause", "cancel", "resume", "decide", "answer", "handover", "reconcile", "policy", "revoke", "interaction.respond"] as const;
 export const COMMAND_TYPES = [...OPEN_TYPES, ...READ_TYPES, ...MUTATING_TYPES] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 export type MutatingType = (typeof MUTATING_TYPES)[number];
@@ -241,7 +241,7 @@ export const EVENT_TYPES = [
   "run.accepted", "run.starting", "run.started", "run.stop-requested", "run.finished", "run.abandoned", "run.orphaned", "run.unknown",
   "master.disconnected", "master.reconnected",
   "work.bound", "phase.changed", "attempt.changed", "resume.changed", "question.opened", "question.answered", "consent.opened", "consent.updated", "consent.closed",
-  "verification.recorded", "graph.changed", "decision.recorded", "decision.applied", "decision.rejected", "answer.recorded",
+  "verification.recorded", "graph.changed", "interaction.changed", "decision.recorded", "decision.applied", "decision.rejected", "answer.recorded",
   "handover.requested", "handover.stopping", "handover.stopped", "handover.transferred", "handover.accepted", "handover.aborted",
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

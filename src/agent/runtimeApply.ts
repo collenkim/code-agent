@@ -22,7 +22,7 @@ import { STATE_DIR } from "./layout";
 import { allCursors } from "./branchCursor";
 import { acquireLock } from "./lock";
 import { TIMING } from "./retryPolicy";
-import { ownRelease, ownStore, readRuntime, RUNTIME_FILE, STATE_SCHEMA, type RuntimeState } from "./runtimeSelect";
+import { ownRelease, ownStore, pendingInteractionMarker, readRuntime, RUNTIME_FILE, STATE_SCHEMA, type RuntimeState } from "./runtimeSelect";
 import { Stop } from "./stop";
 import { update } from "./update";
 
@@ -61,6 +61,7 @@ export function requireInstalled(root: string): void {
 /** 진행 중인 일 — 하나라도 있으면 버전을 바꾸지 않는다. consentId 는 지금 적용 중인 갱신 동의(자기 자신)다 */
 export function busyReasons(root: string, consentId?: string): string[] {
   const reasons: string[] = [];
+  if (pendingInteractionMarker(root)) reasons.push("응답·소비를 기다리는 영속 질문");
   try {
     for (const active of allCursors(root)) reasons.push(`진행 중인 작업 ${active.id} (${active.phase}${active.stage ? `/${active.stage}` : ""}${active.branch ? `, ${active.branch}` : ""})`);
   } catch { reasons.push("브랜치 작업 상태를 읽지 못함"); }

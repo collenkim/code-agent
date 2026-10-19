@@ -183,7 +183,7 @@ test("planningCrossBudgets — 현재 critic 지점(scope critic:<배정>)의 �
   // 한도를 다 쓴 지점의 게이트 줄은 거부될 명령을 앞세우지 않고 사람 판단만 낸다(E4 — 리뷰 게이트와 같다)
   const line = crossProblems().find((problem) => /계획 검토가 필요합니다/.test(problem))!;
   assert.doesNotMatch(line, /planning cross --by claude \(실행할 수 없으면/);
-  assert.match(line, /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*retry-grant crossError/);
+  assert.match(line, /^교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: [\s\S]*한도 1회를 썼습니다[\s\S]*retry-grant crossError/);
 });
 
 test("critic 이 차단 지적을 낸 계획은 교차 계획 검토를 먼저 요구하지 않고 수정 재배정을 안내한다 — 고친 계획의 교차에는 직전 교차 지적을 싣는다", async () => {
@@ -258,12 +258,12 @@ test("D2(E16) 반박 검증: 계획 교차 검토도 Codex 에서 부른 적이 
   try {
     const line = () => crossProblems().find((problem) => /계획 검토가 필요합니다/.test(problem)) ?? "";
     assert.throws(() => withCaller("codex", () => crossCritic(root, "claude")), RetryRefused);
-    assert.match(line(), /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
+    assert.match(line(), /^교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross --by claude — 직전 실행: /, "첫 번째(권한 상승 안내)는 명령을 앞세운다");
     assert.throws(() => withCaller(undefined, () => crossCritic(root, "claude")),
       (error: Error) => error instanceof RetryRefused && /다시 네트워크 오류로 끝났습니다[\s\S]*Codex 에서 부른 claude 지점의 네트워크 오류라[\s\S]*남은 지점 시도 1회/.test(error.message) && !/교차 검증 중지/.test(error.message));
     assert.deepEqual(loadPlanning(loadWork(root)!).crossAttempts!.map((attempt) => [attempt.class, attempt.kind, attempt.caller ?? "-"]),
       [["host-sandbox-denied", "sandbox-network", "codex"], ["host-sandbox-denied", "sandbox-network", "-"]]);
-    assert.match(line(), /^교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
+    assert.match(line(), /^교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — 직전 실행: 막힘\(샌드박스\)/);
     assert.match(line(), /\(사용자가 네트워크를 확인한 뒤 다시 실행할 명령: code-agent planning cross --by claude\)$/);
     assert.throws(() => submitPlan(root, join(root, DIR, "plan.json")), /교차 검토/, "사람 판단 없이 중지를 기록하지 않는다 — 게이트가 막혀 있다");
   } finally {

@@ -48,7 +48,7 @@ export function masterRunGuard(input: GuardInput, root: string, env: Readonly<Re
   }
   if (input.tool_name === "AskUserQuestion") {
     return `이 세션은 master 실행이라 ${askVia()} 사람에게 묻지 않습니다 — 동의는 code-agent consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝냅니다. ` +
-      "업무 질문은 작업 폴더의 questions.md 에 Q 블록으로 적고(답 칸은 비운다) 턴을 끝냅니다. 판단은 master 가 위임 범위에서 하거나 사람에게 넘깁니다.";
+      "업무 질문은 code-agent interaction publish <질문.json>으로 영속화하고 human-input 대기를 보고한 뒤 턴을 끝냅니다. 작업 ID가 없는 설정·운영 질문도 같은 경로입니다. 추천으로 대신 답하지 않습니다.";
   }
   if (["Bash", "PowerShell"].includes(input.tool_name) && MASTER_COMMAND.test(String(input.tool_input.command ?? ""))) {
     return "master 실행 세션은 작업 임대(takeover)·master 제어 명령을 부르지 않습니다 — 제어는 master 와 사람이 합니다.";
@@ -62,7 +62,7 @@ export function masterRunNote(root: string, env: Readonly<Record<string, string 
   if (!run) return undefined;
   return [
     `- 이 세션은 master 실행(${run.runId})이다. 사람이 이 대화를 보지 않는다.`,
-    `- 질문·동의를 ${askVia()} 묻지 않는다: 동의는 ${skill("ca-answer")} 의 consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다. 업무 질문은 questions.md 에 적고 턴을 끝낸다.`,
+    `- 질문·동의를 ${askVia()} 묻지 않는다: 동의는 ${skill("ca-answer")} 의 consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다. 일반 질문은 interaction publish로 저장하고 human-input 대기한다.`,
     "- 승인·확정 기록을 만들거나 고치지 않는다. 판단은 master 가 사람이 준 위임 범위에서 하거나 사람에게 넘긴다.",
     "- code-agent 명령은 code-agent 로 부른다(node 경로로 부르지 않는다). 정지 요청을 받으면 도구를 더 쓰지 않고 보고 뒤 끝낸다.",
   ].join("\n");

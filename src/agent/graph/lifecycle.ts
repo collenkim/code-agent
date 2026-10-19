@@ -65,6 +65,8 @@ export async function advanceFlow(root: string, options: StateOptions = {}): Pro
         const controlled = masterRun(root);
         view = stateView(root, { ...options, session: options.session ?? controlled?.sessionId });
         const work = loadWork(root);
+        if (view.resume.next.action === "human-input") return handoff("interaction", "human", "human-input", "영속 질문의 실제 사용자 응답을 기다립니다. 기본값으로 진행하지 않습니다.");
+        if (view.resume.next.action === "consume-interaction") return handoff("interaction", "agent", "consume-interaction", `code-agent interaction consume ${view.interactions?.responded[0]}로 받은 답을 처리하고 complete로 결과를 기록하세요.`, "ca-answer");
         if (view.resume.code === "unobservable" || view.resume.code === "stale-request") return handoff("inspect", "human", "inspect", view.resume.reasons.map(r => r.detail).join("\n"));
         // 셸 명령의 임대는 PreToolUse가 검사한다. 세션을 명시한 외부 호출은 여기서도 대조한다.
         if (view.resume.code === "ownership-conflict" && (options.session || controlled)) return handoff("ownership", "wait", "wait", view.resume.reasons.map(r => r.detail).join("\n"));

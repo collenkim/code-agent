@@ -341,7 +341,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     const choiceProblem = choiceConfigProblem(repoRoot);
     add(choiceProblem ? "✗" : "✓", "Codex 선택 UI", choiceProblem ?? "MCP 폼 입력 설정 확인 — 방향키·Enter 선택은 대화형 세션에서 확인", choiceProblem ? "code-agent update --templates-only --host codex 후 Codex 재시작" : undefined);
     const problem = settingsProblem(repoRoot, "codex");
-    if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init --host codex");
+    if (problem) add("✗", "Codex 훅 설정", problem, "code-agent init");
     else {
       const installed = new Map(CODEX_EVENTS.map((event) => [event, installedHook(repoRoot, event, "codex-event", "codex")]));
       // 다른 이벤트는 있는데 일부만 없으면 이벤트가 늘기 전의 옛 설치다(SessionStart 없는 설치 등) — 옛 Windows 명령과 같이 번들을 다시
@@ -355,7 +355,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
         const windows = command ? codexWindowsProblem(repoRoot, event) : undefined;
         const error = command ? hookProblem(command, onPath) ?? codexMatcherProblem(repoRoot, event) ?? windows : "설치되지 않았습니다";
         const old = error !== undefined && (command ? error === windows : partial);
-        add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, old ? reapply : "code-agent init --host codex");
+        add(error ? "✗" : "✓", `Codex ${event}`, error ?? command!, old ? reapply : "code-agent init");
       }
     }
     try {
@@ -367,7 +367,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       add("✓", "Codex 에이전트 모델", policySummary(repoRoot, "codex"));
       const instructions = join(repoRoot, "AGENTS.md");
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
-      add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init --host codex");
+      add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init");
     } catch (error) { add("✗", "Codex 번들", String(error)); }
     // 프로젝트 hook 은 프로젝트 신뢰와 hook 검토·신뢰가 둘 다 있어야 돈다 — codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다(0.161.0 실측)
     const trust = codexTrust(repoRoot);
@@ -448,7 +448,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   if (cross) {
     const config = (crossHostProblems(repoRoot)?.config.length ?? 0) > 0;
     add(cross.includes("켜짐") ? "✓" : config ? "✗" : "·", "교차 검증", cross.replace(/^교차 검증: /, ""),
-      config ? `셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 ${binHint()}로 고치거나 지우세요(PATH 에 셸 스크립트뿐이면 실행 파일을 지정) — 한쪽 호스트만 쓸 거면 .code-agent/hosts.json 에서 빼세요` : undefined);
+      config ? `셸에서 CODE_AGENT_CLAUDE_BIN·CODE_AGENT_CODEX_BIN 을 있는 ${binHint()}로 고치거나 지우세요(PATH 에 셸 스크립트뿐이면 실행 파일을 지정) — 단독 실행은 호스트 밖 터미널에서 code-agent execution claude 또는 codex로 선택하세요` : undefined);
   }
   crossChecks(repoRoot, add, options.cross === true);
 

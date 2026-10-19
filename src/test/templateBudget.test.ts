@@ -25,6 +25,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-analyze/legacy.md": 700,
   "template/claude/skills/ca-analyze/SKILL.md": 2900,
   "template/claude/skills/ca-answer/appendix.md": 5400,
+  "template/claude/skills/ca-answer/dashboard.md": 2600,
   "template/claude/skills/ca-answer/reference.md": 4600,
   "template/claude/skills/ca-answer/SKILL.md": 9100,
   "template/claude/skills/ca-check/SKILL.md": 5200,

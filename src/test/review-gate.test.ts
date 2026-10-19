@@ -378,7 +378,7 @@ describe("교차 리뷰 — 두 호스트 설치", () => {
     write(".code-agent/hosts.json", JSON.stringify(["claude", "codex"]));
     process.env.CODE_AGENT_CODEX_BIN = join(repo, "no-such-codex.cjs");
     try {
-      assert.match(status(repo), /교차 검증: 교차 호출 설정 오류 — CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다[\s\S]*중지로 기록하지 않고 그 지점의 게이트가 막힌다[\s\S]*\.code-agent\/hosts\.json 에서 쓰지 않는 호스트를 빼세요/);
+      assert.match(status(repo), /교차 검증: 교차 호출 설정 오류 — CODE_AGENT_CODEX_BIN 가 가리키는 파일이 없습니다[\s\S]*중지로 기록하지 않고 그 지점의 게이트가 막힌다[\s\S]*code-agent execution claude/);
       assert.doesNotMatch(status(repo), /중지로 기록하고 진행한다/, "설정 오류는 실행 불가가 아니다(E20·R3)");
       assert.doesNotMatch(status(repo), /init --host <호스트> 로 하나만/, "init 은 호스트를 줄이지 않는다(E40)");
       assert.match(doctor(repo).text, /교차 검증/);

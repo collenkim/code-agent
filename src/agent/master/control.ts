@@ -52,6 +52,7 @@ function envelope(type: string, fields: Partial<ResponseEnvelope>, root?: string
 }
 function safeOwner(root: string): Owner | undefined { try { return readOwner(root); } catch { return undefined; } }
 function errorOf(error: unknown): { code: (typeof ERROR_CODES)[number]; message: string; detail?: unknown } {
+  if (error instanceof Error && error.name === "ZodError") return { code: "invalid-request", message: "요청 스키마·입력 조건이 올바르지 않습니다", detail: JSON.parse(error.message) };
   if (error instanceof ControlError) return { code: error.code, message: error.message, ...(error.detail !== undefined ? { detail: error.detail } : {}) };
   return { code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] };
 }
@@ -106,6 +107,7 @@ function hello(root: string, binding: Binding | undefined): unknown {
   return {
     protocol: PROTOCOL, versions: SUPPORTED_VERSIONS, codeAgent: { version: packageVersion(), stateSchema: STATE_SCHEMA, stateView: "code-agent.state v1" },
     execution: { framework: "langgraph", graphVersion: GRAPH_VERSION, checkpoint: "sqlite", resume: "code-agent flow advance --json", authority: "domain-records", arbitraryCheckpointResume: false },
+    interactions: (require("../interactionService") as typeof import("../interactionService")).INTERACTION_CAPABILITIES,
     project: { root, projectId: binding?.projectId ?? null, enabled: !!binding },
     controllers: binding ? Object.keys(binding.controllers) : [],
     ownership: owner ? { controller: owner.controller, generation: owner.generation, handover: owner.handover ? { id: owner.handover.id, state: owner.handover.state, to: owner.handover.to } : null } : null,
@@ -113,7 +115,7 @@ function hello(root: string, binding: Binding | undefined): unknown {
     hosts: [{ kind: "claude", supported: true, modes: ["start", "continue"], output: "stream-json", profile: binding ? { permissionMode: binding.host.permissionMode, allowedTools: binding.host.allowedTools, disallowedTools: binding.host.disallowedTools } : null },
       { kind: "codex", supported: false }],
     approvals: {
-      human: ["tty", "claude-question", "codex-prompt", "codex-elicitation"],
+      human: ["tty", "claude-question", "codex-prompt", "codex-elicitation", "dashboard-human"],
       delegated: { channel: "master-delegation", verified: false, actions: DELEGABLE_ACTIONS, humanOnly: HUMAN_ONLY_ACTIONS, categories: DECISION_CATEGORIES, requires: "사람이 TTY 에서 준 grant(code-agent master grant)" },
       requireVerifiedApproval: strict, delegationAvailable: !!binding && !strict,
     },
@@ -350,6 +352,17 @@ export function call(root: string, text: string): ResponseEnvelope {
     if (type === "hello") return envelope(type, { result: hello(root, binding) }, binding ? root : undefined);
     if (!binding) throw new ControlError("not-enabled", "이 프로젝트는 master 연동이 켜져 있지 않습니다 — 사람이 터미널에서 code-agent master enable 로 켭니다");
     const controller = authenticate(binding, request);
+    if (type === "interactions" || type === "interaction" || type === "interaction.result") {
+      return envelope(type, { result: (require("../interactionService") as typeof import("../interactionService")).queryInteractions(root, binding, type, request.payload ?? {}) }, root);
+    }
+    if (type === "interaction.respond") {
+      return withLock(root, CONTROL_LOCK, () => {
+        const current = readBinding(root), owner = readOwner(root);
+        if (!current || !owner) throw new ControlError("not-enabled", "연동이 해제됐습니다");
+        authenticate(current, request); fence(owner, request);
+        return envelope(type, { commandId: request.commandId, result: (require("../interactionService") as typeof import("../interactionService")).respondInteraction(root, current, request) }, root);
+      });
+    }
     if (!(MUTATING_TYPES as readonly string[]).includes(type)) {
       const owner = readOwner(root);
       if (owner && controller === owner.controller && request.generation === owner.generation && !owner.handover) touchOwner(root);

@@ -12,7 +12,7 @@ import { answerSources, unverifiedAnswerHint } from "./answers";
 import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
 import type { Work } from "./work";
-import { crossRunNote, selectedHosts } from "./hosts";
+import { crossRunNote, crossEnabled } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import { collectExemplars } from "../core/exemplar";
 import { trackedTestFiles } from "./testFiles";
@@ -538,11 +538,11 @@ export function criticCrossPoint(work: Work, state: PlanningState, now = Date.no
   return { dispatchId: critic.dispatchId, attempts, view, awaiting, point: crossPointState(view) };
 }
 /**
- * 현재 critic 결과에 대한 교차 검토가 끝났는지 — 두 호스트가 설치된 프로젝트의 계획 제출 조건. 중지 지점은 통과하고,
+ * 현재 critic 결과에 대한 교차 검토가 끝났는지 — 교차 검증을 선택한 프로젝트의 계획 제출 조건. 중지 지점은 통과하고,
  * 완료 지점은 질문 대기·실패·기각되지 않은 차단 지적이 없어야 한다. 열린 지점은 직전 실행의 원인을 붙인다.
  */
 export function crossCriticProblems(work: Work, state: PlanningState): string[] {
-  if (selectedHosts(work.repoRoot).length < 2) return [];
+  if (!crossEnabled(work.repoRoot)) return [];
   const current = criticCrossPoint(work, state);
   if (!current) return [];
   const { dispatchId, view, awaiting, point } = current;
@@ -581,10 +581,10 @@ export function crossCriticProblems(work: Work, state: PlanningState): string[] 
       // 네트워크 오류가 되풀이돼 사람에게 넘긴 지점은 명령을 안내 뒤에 싣는다(crossGateHandoff — D2)
       const handoff = crossGateHandoff(hint, view);
       let line = handoff
-        ? "교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다"
+        ? "교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다"
         : view.some(attempt => attempt.class === "answered-input")
           ? `교차 검토: 질문에 답했습니다 — 같은 critic 결과로 교차 검토를 한 번 더 실행하세요: code-agent planning cross ${by}`
-          : `교차 검토: 두 호스트가 설치된 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by}${crossRunNote(host, hint)}`;
+          : `교차 검토: 교차 검증을 선택한 프로젝트라 다른 호스트의 계획 검토가 필요합니다 — code-agent planning cross ${by}${crossRunNote(host, hint)}`;
       if (hint) {
         line += crossLastRun(pointLabel(view), point.lastFailure?.detail ?? hint.detail,
           crossHintText(hint, { host: host ?? "다른 호스트", point: `계획 검토 critic ${dispatchId.slice(0, 8)}`, attempts: view }));

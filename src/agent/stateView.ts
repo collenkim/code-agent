@@ -58,6 +58,7 @@ export interface Reason { code: string; detail: string }
 export interface StateOptions { expectState?: string; expectWork?: string; expectAttempt?: string; session?: string; runId?: string; now?: number }
 
 export interface StateJson {
+  interactions?: import("./interactionSummary").InteractionSummary;
   schema: typeof STATE_SCHEMA;
   schemaVersion: typeof STATE_SCHEMA_VERSION;
   observedAt: string;
@@ -389,6 +390,15 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     }
   }
   let hint: string | undefined;
+  let interactions: import("./interactionSummary").InteractionSummary | undefined;
+  try {
+    interactions = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot, options.session);
+    if (["ready", "no-work", "needs-human"].includes(code) && (interactions.pending.length || interactions.deferred.length || interactions.responded.length)) {
+      const awaiting = interactions.pending.length + interactions.deferred.length;
+      code = awaiting ? "needs-human" : "ready"; by = awaiting ? "human" : "model"; action = awaiting ? "human-input" : "consume-interaction";
+      reasons.push({ code: "interaction-open", detail: `질문 대기 ${awaiting} · 받은 답 ${interactions.responded.length} — interaction list로 조회합니다` });
+    }
+  } catch (error) { code = "unobservable"; action = "inspect"; by = "human"; unknown.push(errorText(error)); }
   if (code !== "unobservable") {
     try { hint = nextStep(repoRoot).next; } catch (error) { unknown.push(`다음 할 일 안내를 만들지 못했습니다: ${errorText(error)}`); }
   }
@@ -414,7 +424,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     consents: consents.open.map((entry) => [entry.id, entry.status]),
     lease: { state: ownership.lease.state, session: ownership.lease.session ?? null },
     findings: summary ? summary.blockingHuman.map((record) => [record.id, record.version]) : null,
-    blockers: blockers.map((item) => item.code),
+    blockers: blockers.map((item) => item.code), interactions,
   };
   const stateVersion = `sha256:${sha(canonical(basis)).slice(0, 32)}`;
 
@@ -426,7 +436,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     findings: work ? (summary ? { total: summary.total, open: summary.open, blocking: summary.blocking, humanDecision: summary.humanDecision, readable: true }
       : { total: 0, open: 0, blocking: 0, humanDecision: 0, readable: findingsReadable }) : null,
     files,
-    resume: { code, reasons, next: { action, by, ...(hint ? { hint } : {}) } },
+    resume: { code, reasons, next: { action, by, ...(hint ? { hint } : {}) } }, interactions,
     unknown,
   };
   try { result.graph = graphView(repoRoot); }

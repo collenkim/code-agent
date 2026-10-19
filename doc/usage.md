@@ -1,6 +1,8 @@
 # 사용 가이드 — 설치부터 승인까지
 
-Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init --host codex` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
+`code-agent init`은 두 호스트를 준비한다. 실행 전 호스트 밖 터미널에서 `code-agent execution claude`, `code-agent execution codex`, `code-agent execution both`를 선택한다. 기본은 현재 호스트 단독이며 both는 상대 호스트의 계획·코드 리뷰를 추가한다. 사용 한도 소진 시 이전 실행을 중지하고 다른 호스트에서 같은 브랜치·작업을 재개한다. 임대·승인 규칙은 유지하며 자동 호스트 전환은 하지 않는다.
+
+Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
 
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.
@@ -38,7 +40,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 실
 
 진행 중인 작업은 기록된 브랜치에서만 활성으로 읽는다. 다른 브랜치에서는 기존 작업을 종료하지 않고 준비·접수를 진행하며, 원래 브랜치로 돌아오면 Task와 단계가 복원된다. `code-agent status`는 현재 작업과 다른 브랜치에 보관된 작업을 구분한다. `abort`는 현재 브랜치의 작업만 종료한다.
 
-`init --host codex`는 설치만 하며 `code-agent.json`을 만들지 않는다. 설정이 없는 브랜치에서는 `$ca-request`로 접수하고 `$ca-adopt`·`$ca-docs`로 준비한다. 같은 브랜치의 진행 작업에서 설정이 없어졌다면 기존 파일을 복구해야 한다. 접수·문서 준비 세션은 checkout 단위이므로 끝낸 뒤 브랜치를 바꾸고, 동시에 실행할 작업은 별도 worktree를 사용한다. 브랜치 이름 변경은 자동 추적하지 않는다.
+`init`는 설치만 하며 `code-agent.json`을 만들지 않는다. 설정이 없는 브랜치에서는 `$ca-request`로 접수하고 `$ca-adopt`·`$ca-docs`로 준비한다. 같은 브랜치의 진행 작업에서 설정이 없어졌다면 기존 파일을 복구해야 한다. 접수·문서 준비 세션은 checkout 단위이므로 끝낸 뒤 브랜치를 바꾸고, 동시에 실행할 작업은 별도 worktree를 사용한다. 브랜치 이름 변경은 자동 추적하지 않는다.
 
 ## Sentry 오류의 사전 판별
 
@@ -870,7 +872,7 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `no-work` | 진행 중인 작업이 없다(열린 조사가 있으면 `triage-open`) | `none` |
 | `ownership-conflict` | 다른 세션이 30분 안에 쓴 임대가 있다 — 그 실행이 끝났는지는 러너가 확인한다. 30분 넘게 쉰 임대는 이유(`lease-idle`)로만 적고 기존 규칙대로 다음 명령이 넘겨받는다 | `runner` |
 | `wait` | 같은 PC 에서 동의를 적용하는 중이거나, 계획 배정이 기한 안에서 실행 중으로 기록돼 있다 | `runner` |
-| `needs-human` | AI-DLC 진행 중, 요구사항 미확정, 답 없는 질문, 응답을 기다리는 동의, 계획 승인 대기, 차단으로 보고된 발견(b·c), 반영 확인 | `human` |
+| `needs-human` | AI-DLC 진행 중, 요구사항 미확정, 답 없는 질문, 응답을 기다리는 동의, 계획 승인 대기, 차단으로 보고된 발견(b·c), 반영 확인, 영속 질문 미응답·보류(`human-input`) | `human` |
 | `replan-required` | 승인이 무효가 됐고 낡은 계획 작업이 있다 — `staleFrom` 단계로 되감아 다시 계획한다 | `model` |
 | `reapproval-required` | 승인이 무효가 됐다(계획·근거 문서·매니페스트 변경) — 다시 승인받는다 | `human` |
 | `limit-reached` | check·test 의 재시도 한도에 닿았다 — 사람 판단 | `human` |
@@ -892,6 +894,8 @@ $ code-agent status --json --expect-state sha256:4f2e… --expect-work ORD-1 --e
 2. `resume.code` 가 `ready` 일 때만 모델 세션을 띄워 기존 재개 경로(`/ca-next`·`$ca-next`)를 따르게 한다. 그 경로의 명령이 승인·임대·한도를 다시 확인한다 — 조회와 실행 사이에 상태가 바뀌어도 명령이 막는다.
 3. `ownership-conflict`·`wait` 는 그 실행이 정말 살아 있는지 러너가 확인한다(이 출력은 프로세스를 보지 않는다). 끝난 것이 확인되면 사람의 확인을 받아 `takeover` 한다.
 4. `needs-human`·`reapproval-required`·`limit-reached`·`unobservable` 은 사람에게 넘긴다. 상태·승인 파일을 고쳐 잇지 않는다.
+
+영속 질문의 받은 답은 `ready`·`consume-interaction`으로 같은 세션의 소비자에게 넘긴다. 작업 ID 없는 설정·운영도 이 경로를 사용한다. 수신은 적용·작업 완료가 아니며 [대시보드 질문·동의 API](dashboard-interactions.md)로 결과를 대조한다.
 
 `--run-id` 는 결과에 `correlation` 으로 되돌려 줄 뿐 판정에 쓰지 않는다. 외부에서 받은 ID·승인 문자열은 권한이 아니다. 대조·식별 옵션을 `--json` 없이 주면 사용법과 함께 멈춘다(종료 코드 1).
 
@@ -1375,7 +1379,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `호스트 hook 설정(.claude/settings.json · …)은 셸로 다루지 않습니다` | 세션 밖 셸이 hook 설정 파일을 가리켰다(`.claude./`·`CLAUDE~1\SETTIN~1.JSO` 같은 Windows 별칭 포함) | 읽기는 Read 도구로 한다(Codex 는 `code-agent read <파일>` — 연결자 없이 쓰면 열린다). 설치·갱신은 사람이 `code-agent init` 또는 `code-agent update --templates-only` 로 한다 |
 | `Windows 에서 이름 끝의 점·공백은 다른 이름의 같은 파일이 됩니다` | 쓰기 경로의 이름 끝에 점·공백이 있다(`.code-agent./`·`requirement.md `) — 경로 대조를 비켜 가는 길이라 모든 모드에서 막는다 | 이름 끝의 점·공백을 빼고 쓴다 |
 | `등록된 플러그인 키가 들어 있는 상위 폴더(…)는 검색하지 않습니다` | Grep·Glob 이 키 저장소의 상위 폴더(예: 홈 `~`)를 통째로 검색하려 했다 | 저장소 안에서 검색한다. 키 저장소를 프로젝트 안에 두었다면(`CODE_AGENT_HOME`) 밖으로 옮긴다 |
-| `이 호스트(…)의 hook 설정이 빠져 있어 시작하지 않습니다` | 실행 중인 호스트의 hook 설정이 빠졌다 — 쓰기 판정·동의 관찰이 꺼진 상태라 `start`·`request begin`·`docs begin` 을 거부한다 | 사람이 `code-agent init --host <호스트>` 로 복구하고 `code-agent doctor` 로 확인한 뒤 호스트를 다시 연다. 더 쓰지 않는 호스트는 `hosts.json` 에서 뺀다 |
+| `이 호스트(…)의 hook 설정이 빠져 있어 시작하지 않습니다` | 실행 중인 호스트의 hook 설정이 빠졌다 — 쓰기 판정·동의 관찰이 꺼진 상태라 `start`·`request begin`·`docs begin` 을 거부한다 | 사람이 `code-agent init` 로 복구하고 `code-agent doctor` 로 확인한 뒤 호스트를 다시 연다. 더 쓰지 않는 호스트는 `hosts.json` 에서 뺀다 |
 
 **공통 모듈이 경계에 걸릴 때** — 새 오류 코드처럼 도메인 밖 공통 파일을 고쳐야 하는 계획은 경계 검사에서 거부된다.
 `code-agent.json` 에 `"scope": "project"` 인 공통 단계를 두면 풀린다 (순서는 도메인 단계보다 앞).

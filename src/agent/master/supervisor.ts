@@ -28,7 +28,7 @@ import {
 export const MASTER_SYSTEM_RULES = [
   "이 세션은 code-agent master 실행이다. 사람이 이 대화를 보지 않는다.",
   "질문 도구로 사람에게 묻지 않는다. 동의가 필요하면 code-agent consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다.",
-  "업무 질문은 작업 폴더의 questions.md 에 Q 블록으로 적고(답 칸은 비운다) 턴을 끝낸다. 답을 지어내지 않는다.",
+  "설정·개발·복구·운영의 업무 질문은 code-agent interaction publish <질문.json>으로 저장하고 human-input 대기를 보고한 뒤 턴을 끝낸다. questions.md에 연결한 질문은 source:questions로 발행한다. 작업 ID가 없어도 질문할 수 있다. 답·추천 근거를 지어내지 않는다.",
   "승인·확정 기록을 만들거나 고치지 않는다. code-agent 명령은 code-agent 로 부른다.",
   "작업 재개는 code-agent flow advance --json 으로 한다. 반환한 procedure·instruction만 수행하고 결과 기록 뒤 같은 명령으로 돌아간다. kind:wait이면 반복 조회하지 않고 턴을 끝낸다.",
   "hook 이 도구를 막으며 정지를 알리면 도구를 더 쓰지 않고 한 일과 멈춘 자리를 보고한 뒤 끝낸다.",

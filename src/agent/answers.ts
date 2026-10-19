@@ -33,7 +33,8 @@ export type AnswerRow =
    * 권한(grant) 범위에서만 master/delegation.ts 가 쓴다. hash 는 questions.md 에 쓴 답(sha16)이다 — 답을 고치면 출처가 사라진다
    */
   | { type: "delegated"; at: string; q: string; hash: string; actor: "ai" | "human"; decisionId: string; grantId: string; controller: string; generation: number; category: string }
-  | { type: "contract"; at: string; q: string; hash: string; questionHash: string; contractId: string; claimKey: string; bundleHash: string };
+  | { type: "contract"; at: string; q: string; hash: string; questionHash: string; contractId: string; claimKey: string; bundleHash: string }
+  | { type: "dashboard-human"; at: string; q: string; hash: string; questionHash: string; receiptId: string; requestId: string };
 
 /** consent.ts ConsentHookInput 과 같은 꼴(순환을 피하려고 따로 둔다) */
 interface QuestionHookInput {
@@ -78,13 +79,16 @@ export function readAnswerRows(root: string, id: string): AnswerRow[] {
     if (!line.trim()) continue;
     try {
       const row = JSON.parse(line) as AnswerRow;
-      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer" || row.type === "delegated" || row.type === "contract")) rows.push(row);
+      if (row && (row.type === "start" || row.type === "ask" || row.type === "answer" || row.type === "delegated" || row.type === "contract" || row.type === "dashboard-human")) rows.push(row);
     } catch { /* 반쯤 쓰인 줄 */ }
   }
   return rows;
 }
 /** master 가 넣은 답의 기록 — master/delegation.ts 만 부른다 */
 export function appendDelegatedAnswer(root: string, id: string, row: Extract<AnswerRow, { type: "delegated" }>): void { appendRow(root, id, row); }
+export function appendDashboardAnswer(root: string, id: string, row: Extract<AnswerRow, { type: "dashboard-human" }>): void {
+  if (!readAnswerRows(root, id).some(r => r.type === "dashboard-human" && r.receiptId === row.receiptId && r.q === row.q)) appendRow(root, id, row);
+}
 /** 답 해시 — 기록의 hash 와 같은 계산 */
 export function answerHash(answer: string): string { return sha16(answer); }
 function appendRow(root: string, id: string, row: AnswerRow): void {
@@ -188,9 +192,9 @@ export function writeAnswerBaseline(root: string, id: string, specPath: string):
   appendRow(root, id, { type: "start", at: new Date().toISOString(), version: 1, intake });
 }
 
-export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "contract" | "conversation" | "legacy" | "unverified";
+export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "dashboard-human" | "contract" | "conversation" | "legacy" | "unverified";
 /** 질문 원문도 결속한다. Q 번호만 같은 다른 질문으로 답을 옮길 수 없다. */
-function questionHash(root: string, id: string, q: string): string {
+export function questionHash(root: string, id: string, q: string): string {
   const text = readFileSync(join(root, questionsFile(id)), "utf8");
   const block = text.split(/^## /m).slice(1).find(block => block.split(/\s/)[0] === q);
   return sha16((block ?? "").split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "").trim());
@@ -232,6 +236,21 @@ export function answerSources(root: string, id: string, questions: Question[]): 
   const sources = new Map<string, AnswerSource>();
   for (const question of questions) {
     if (!question.answer) continue;
+    if (question.source?.startsWith("dashboard-human")) {
+      const row = rows.filter((r): r is Extract<AnswerRow, { type: "dashboard-human" }> => r.type === "dashboard-human" && r.q === question.id).at(-1);
+      sources.set(question.id, row && question.source === `dashboard-human ${row.receiptId}` && row.hash === sha16(question.answer) && row.questionHash === questionHash(root, id, question.id) ? "dashboard-human" : "unverified");
+      continue;
+    }
+    const dashboardIndex = rows.reduce((last, row, index) => row.type === "dashboard-human" && row.q === question.id ? index : last, -1);
+    if (dashboardIndex >= 0) {
+      const subsequent = rows.slice(dashboardIndex + 1);
+      const contractIndex = subsequent.reduce((last, row, index) => row.type === "contract" && row.q === question.id ? index : last, -1);
+      const fresh = contractIndex < 0 ? subsequent : subsequent.slice(contractIndex + 1);
+      const delegated = delegatedMatch(question, fresh);
+      sources.set(question.id, question.source?.startsWith("기존 계약") ? (contractMatch(root, id, question, subsequent) ? "contract" : "unverified")
+        : observedMatch(question, fresh) ? "observed" : delegated?.actor === "ai" ? "delegated" : delegated?.actor === "human" ? "relayed" : "unverified");
+      continue;
+    }
     const lastContract = rows.reduce((last, row, index) => row.type === "contract" && row.q === question.id ? index : last, -1);
     const later = lastContract < 0 ? [] : rows.slice(lastContract + 1);
     if (question.source?.startsWith("기존 계약")) sources.set(question.id, contractMatch(root, id, question, rows) ? "contract" : "unverified");
@@ -275,7 +294,7 @@ export function formatAnswerSources(root: string, id: string): string | undefine
   if (sources.size === 0) return undefined;
   const count = (source: AnswerSource) => [...sources.values()].filter((value) => value === source).length;
   if (count("legacy") === sources.size) return `질문 답 출처: 이전 형식(관찰 기록 없음) ${sources.size}`;
-  const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["delegated", "master 위임 판단(사람 응답 아님)"], ["relayed", "master 경유 사람 답(관찰 안 됨)"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
+  const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["delegated", "master 위임 판단(사람 응답 아님)"], ["relayed", "master 경유 사람 답(관찰 안 됨)"], ["dashboard-human", "대시보드 사람 답"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
     ["contract", "기존 계약 재인용(사람 응답 아님)"], ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
     .filter(([source]) => count(source) > 0).map(([source, label]) => `${label} ${count(source)}`);
   const conversation = questions.filter((question) => ["conversation", "delegated", "relayed", "contract"].includes(sources.get(question.id) ?? ""));

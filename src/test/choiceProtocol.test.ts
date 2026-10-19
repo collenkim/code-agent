@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
+import { codexHook } from "../agent/codexHook";
 
 test("MCP stdio: 폼 응답 ID·취소 ID·동시 호출을 구분하고 실제 답만 돌려준다", async () => {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-choice-wire-")));
@@ -26,6 +27,7 @@ test("MCP stdio: 폼 응답 ID·취소 ID·동시 호출을 구분하고 실제 
     assert.ok((await wait(r => r.id === 1)).result.capabilities.tools);
     send({ id: 2, method: "tools/list" });
     assert.deepEqual((await wait(r => r.id === 2)).result.tools.map((t: any) => t.name), ["ask", "confirm"]);
+    codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "wire", tool_name: "mcp__code_agent__ask", tool_input: {} });
     send({ id: 3, method: "tools/call", params: { name: "ask", arguments: { questions: [{ title: "표시", options: ["간단", "상세"] }] } } });
     const form = await wait(r => r.method === "elicitation/create");
     assert.equal(form.params.mode, "form");
@@ -36,6 +38,7 @@ test("MCP stdio: 폼 응답 ID·취소 ID·동시 호출을 구분하고 실제 
     send({ id: form.id, result: { action: "accept", content: { q1: "상세" } } });
     const output = (await wait(r => r.id === 3)).result;
     assert.equal(JSON.parse(output.content[0].text).answers[0].answer, "상세");
+    codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: "wire", tool_name: "mcp__code_agent__ask", tool_input: {} });
     send({ id: 5, method: "tools/call", params: { name: "ask", arguments: { questions: [{ title: "취소", options: ["진행", "보류"] }] } } });
     await wait(r => r.method === "elicitation/create" && r.id !== form.id);
     send({ method: "notifications/cancelled", params: { requestId: 5 } });

@@ -24,7 +24,8 @@ import {
 import { deliver } from "./deliver";
 import { doctor } from "./doctor";
 import { confirmDoc, docsBegin, docsEnd, docsInterview, docsLink, docsSkeleton, docsStatus } from "./docsCommands";
-import { init } from "./init";
+import { initialize } from "./init";
+import { execution } from "./executionCommands";
 import { knowledge } from "./knowledgeCommands";
 import { experience } from "./experienceCommands";
 import { finding } from "./findings";
@@ -51,14 +52,15 @@ import { releaseLease } from "./lease";
 
 const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 CLI
 
-실행: code-agent init --host claude|codex|both → 호스트를 다시 열고 → ca-request 실행 명령으로 접수 (Claude Code: /ca-request, Codex: $ca-request)
+실행: code-agent init → 호스트를 다시 열고 → ca-request 실행 명령으로 접수 (Claude Code: /ca-request, Codex: $ca-request)
   init은 실행 절차·서브에이전트·hook 설치만 합니다. 별도 서버나 수동 에이전트 등록은 필요 없습니다.
   ca-request는 모든 요구사항 접수, ca-feature는 신규·기능 변경, ca-fix는 결함 수정, ca-refactor는 동작 보존 구조 개선 실행 절차입니다.
   질문·확정·승인은 현재 호스트 세션의 ca-answer 확인 절차로 받고 자동으로 이어갑니다 (Claude Code: 선택 도구, Codex: 로컬 MCP 선택 UI). 중단한 작업은 ca-next 실행 명령으로 재개합니다.
 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
   code-agent help [<명령>]            이 사용법 — 명령을 주면 그 명령의 줄만
-  code-agent init [--host claude|codex|both] [--cli <path>]  이 저장소에 호스트별 실행 절차·에이전트·훅 설치
+  code-agent init [--cli <path>]  이 저장소에 두 호스트의 실행 절차·에이전트·훅 설치
+  code-agent execution [claude|codex|both]  실행 방식 조회 · 변경은 호스트 밖 TTY 확인
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent flow advance [--json]     LangGraph 전체 흐름 재개 — 반환한 담당·사람 작업을 수행하고 결과 기록 뒤 같은 명령으로 잇는다
   code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]
@@ -99,6 +101,9 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent master handover --to <제어자 ID> [--force-stop]   사람의 강제 인계 (TTY 에서만 — 실행이 멈춘 것을 확인한 뒤 넘긴다)
   code-agent master disable           master 연동 끄기 (TTY 에서만, 실행 중인 실행이 없을 때)
   code-agent master call              master 러너의 요청 한 건(stdin JSON, code-agent.master v1) → 응답 한 건(stdout JSON) — doc/master-control.md
+  code-agent master human enable|disable --controller <ID>   대시보드 사람 채널 등록·폐기(TTY)
+  code-agent interaction publish <질문.json> | consume <ID> | complete <ID> <결과.json> | list
+                                      영속 질문 발행·같은 세션 답 소비·처리 결과 기록 — doc/dashboard-interactions.md
 
 실행 절차가 부른다 (호스트 세션 안):
   code-agent triage begin <조직/프로젝트/이슈ID> [--base <브랜치>]  Sentry 오류 사전 판별 (제품 코드 읽기 전용)
@@ -246,7 +251,7 @@ function unknownCommand(command: string): string {
   return `모르는 명령입니다: ${command}${near ? ` — ${near} 이면 code-agent help ${near}` : ""}\n사용법: code-agent help <명령> · 전체: code-agent help`;
 }
 
-const INIT_USAGE = "사용법: code-agent init [--host claude|codex|both] [--cli <path>]";
+const INIT_USAGE = "사용법: code-agent init [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
 const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>] | " +
   "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | call (stdin 요청 → stdout 응답)";
@@ -272,6 +277,19 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (args[0] !== "advance" || args.slice(1).some(arg => arg !== "--json")) throw new Stop("사용법: code-agent flow advance [--json]");
       const result = await (require("./graph/lifecycle") as typeof import("./graph/lifecycle")).advanceFlow(repoRoot);
       print(args.includes("--json") ? JSON.stringify(result, null, 2) : [result.instruction, ...(result.procedure ? [`절차: ${result.procedure}`] : []), `재개: ${result.resume}`].join("\n"));
+      return 0;
+    }
+    case "interaction": {
+      const service = require("./interactionService") as typeof import("./interactionService");
+      if (args[0] === "drain" && args.length === 2 && /^[a-f0-9-]{36}$/.test(args[1])) { print(JSON.stringify(service.drainInteraction(repoRoot, args[1]))); return 0; }
+      if (args[0] === "list" && args.length === 1) {
+        (require("./interactionSources") as typeof import("./interactionSources")).synchronizeInteractions(repoRoot);
+        print(JSON.stringify((require("./interactions") as typeof import("./interactions")).currentInteractions(repoRoot))); return 0;
+      }
+      if (!((args[0] === "publish" || args[0] === "consume") && args.length === 2 || args[0] === "complete" && args.length === 3)) throw new Stop("사용법: code-agent interaction publish <질문.json> | consume <ID> | complete <ID> <결과.json> | list");
+      const ticket = (require("./interactionTicket") as typeof import("./interactionTicket")).takeInteractionTicket(repoRoot, JSON.stringify(args));
+      if (args[0] === "publish") print(JSON.stringify((require("./interactionSources") as typeof import("./interactionSources")).publishHostInteraction(repoRoot, JSON.parse(readFileSync(args[1], "utf8")), ticket)));
+      else print(JSON.stringify(service.consumeInteraction(repoRoot, args[1], ticket.sessionId, args[0] === "complete" ? JSON.parse(readFileSync(args[2], "utf8")) : undefined)));
       return 0;
     }
     case "triage": {
@@ -343,7 +361,11 @@ export async function runCommand(command: string | undefined, args: string[]): P
       return 0;
     case "init":
       if (optionsOnly(args, ["host", "cli"], [], INIT_USAGE)) { print(INIT_USAGE); return 0; }
-      print(init(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
+      print(initialize(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
+      return 0;
+    case "execution":
+      if (args.length > 1) throw new Stop("사용법: code-agent execution [claude|codex|both]");
+      print(execution(repoRoot, args[0]));
       return 0;
     case "status": {
       if (args.length === 0) { print(status(repoRoot)); return 0; }
@@ -484,6 +506,11 @@ export async function runCommand(command: string | undefined, args: string[]): P
         return response.ok ? 0 : 1;
       }
       if (sub === "supervise" && args.length === 2) return (require("./master/supervisor") as typeof import("./master/supervisor")).supervise(repoRoot, args[1]);
+      if (sub === "human" && ["enable", "disable"].includes(args[1])) {
+        const controller = option(args, "controller");
+        if (!controller || args.length !== 4) throw new Stop("사용법: code-agent master human enable|disable --controller <ID>");
+        print((require("./interactionHuman") as typeof import("./interactionHuman")).configureHumanChannel(repoRoot, controller, args[1] === "enable")); return 0;
+      }
       const admin = require("./master/admin") as typeof import("./master/admin");
       if (sub === "enable") print(admin.masterEnable(repoRoot, { controller: option(args, "controller"), label: option(args, "label"), tokenOut: option(args, "token-out"), policy: option(args, "policy"), host: option(args, "host") }));
       else if (sub === "disable" && args.length === 1) print(admin.masterDisable(repoRoot));

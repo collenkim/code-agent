@@ -20,7 +20,7 @@ const GITIGNORE_END = "# code-agent:end";
  * 번들 내용. 두 호스트 설치가 같은 블록을 쓴다
  */
 const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*", "runtime.json", "runtime.lock",
-  "template-conflicts/", "graph/", "branches/", "identities/"].map((line) => `${STATE_DIR}/${line}`).join("\n");
+  "template-conflicts/", "graph/", "branches/", "identities/", "interactions/"].map((line) => `${STATE_DIR}/${line}`).join("\n");
 
 /**
  * PreToolUse hook 이 받을 도구. 읽기 셋은 키 파일(`~/.code-agent/`) 하나를 닫으려고 넣는다 —
@@ -219,6 +219,17 @@ export function requireInstallSettings(repoRoot: string, hosts: readonly Host[])
   }
 }
 
+/** 공개 init은 두 호스트를 준비한다. 내부 init은 갱신 시 설치 범위를 보존한다. */
+export function initialize(repoRoot: string, options: InitOptions = {}): string {
+  requireInstallSettings(repoRoot, ["claude", "codex"]);
+  const { executionMode, EXECUTION_FILE } = require("./executionMode") as typeof import("./executionMode");
+  if (executionMode(repoRoot) === undefined) {
+    const legacyBoth = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) && selectedHosts(repoRoot).length > 1;
+    writeIfChanged(join(repoRoot, EXECUTION_FILE), JSON.stringify({ version: 1, mode: legacyBoth ? "both" : "auto" }, null, 2) + "\n");
+  }
+  return init(repoRoot, { ...options, host: "both" }) + "\n\n두 호스트 준비 완료. 실행할 호스트를 열어 사용하세요. 교차 검증은 호스트 밖 터미널에서 code-agent execution both로 선택합니다.";
+}
+
 export function init(repoRoot: string, options: InitOptions = {}): string {
   const hosts = selectedHosts(repoRoot, options.host);
   // 검증을 먼저 끝내어 깨진 사용자 설정을 덮어쓰지 않는다.
@@ -320,7 +331,7 @@ export function requireStartHooks(repoRoot: string, env: NodeJS.ProcessEnv = pro
   const running = runtimeHost(env);
   const own = running ? problems.find((entry) => entry.host === running) : undefined;
   if (own) {
-    throw new Stop(`이 호스트(${HOST_LABEL[own.host]})의 hook 설정이 빠져 있어 시작하지 않습니다 — ${own.problems.join(" · ")}. hook 이 없으면 쓰기 판정·동의 관찰이 꺼집니다. 사람이 code-agent init --host ${own.host}(또는 doctor)로 복구한 뒤 다시 시작하세요.`);
+    throw new Stop(`이 호스트(${HOST_LABEL[own.host]})의 hook 설정이 빠져 있어 시작하지 않습니다 — ${own.problems.join(" · ")}. hook 이 없으면 쓰기 판정·동의 관찰이 꺼집니다. 사람이 code-agent init(또는 doctor)로 복구한 뒤 다시 시작하세요.`);
   }
   return `경고: ${hookInstallWarning(repoRoot, problems)}`;
 }

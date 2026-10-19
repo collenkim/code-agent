@@ -14,6 +14,7 @@ interface Observed {
   resume: string; action: string; unanswered: string[]; unverified: string[]; consents: Record<string, string>;
   verification: string | null;
   graph?: string;
+  interactions?: number;
 }
 
 function summarize(view: StateJson, requestId: string | null): Observed {
@@ -21,6 +22,7 @@ function summarize(view: StateJson, requestId: string | null): Observed {
     at: view.observedAt, stateVersion: view.stateVersion, workId: view.work?.id ?? null, requestId, phase: view.work?.phase ?? null,
     attempt: view.attempt?.id ?? null, resume: view.resume.code, action: view.resume.next.action,
     graph: view.graph ? JSON.stringify(view.graph) : undefined,
+    interactions: view.interactions?.cursor,
     unanswered: view.questions?.unanswered ?? [], unverified: view.questions?.unverified ?? [],
     consents: Object.fromEntries(view.consents.open.map((entry) => [entry.id, `${entry.action}:${entry.status}`])),
     verification: view.verification ? JSON.stringify(view.verification.phases) : null,
@@ -40,6 +42,9 @@ export function observeProgress(root: string, run?: RunRecord): { view: StateJso
     const base = { ...(runId ? { runId } : {}), stateVersion: now.stateVersion };
     if (run) bindWork(root, run, now.workId ?? now.requestId);
     let changed = false;
+    if (now.interactions !== undefined && now.interactions !== before?.interactions) {
+      emit(root, "interaction.changed", { ...base, data: { cursor: now.interactions } }); changed = true;
+    }
     if (now.graph && now.graph !== before?.graph) {
       emit(root, "graph.changed", { ...base, data: view.graph });
       changed = true;
