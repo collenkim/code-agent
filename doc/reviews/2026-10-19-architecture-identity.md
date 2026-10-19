@@ -4,6 +4,8 @@
 
 code-agent와 master-agent의 실행 그래프, 저장소, 접수, 제어 계약, 호스트 실행, 대시보드 접수 경로를 확인했다. 코드 변경은 최초 접수 종류·작업 ID 보존과 프로젝트별 업무 번호 중복 방지다. 현재 CLI·호스트 실행 방식을 유지하며 API 전환은 범위에 포함하지 않는다.
 
+변경 커밋은 code-agent `54f443c`, master-agent `9495916`이다.
+
 ## 구조 판정
 
 두 저장소 모두 LangGraph JS 1.5.0과 공식 SqliteSaver 1.1.0을 실제 실행 경로에서 사용한다. master는 Mission·Task·Attempt와 프로젝트 간 의존성을, code-agent는 프로젝트 내부 접수·계획·구현·검증·반영을 담당한다. `code-agent.master` v1의 JSON CLI 계약이 두 실행기를 연결한다.

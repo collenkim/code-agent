@@ -1,6 +1,7 @@
 {
   "date": "2026-10-19",
   "node": "24.19.0",
+  "commits": { "codeAgent": "54f443c", "masterAgent": "9495916" },
   "launchGapProbe": { "tests": 1, "pass": 1, "firstHttpStatus": 500, "retryHttpStatus": 202, "requestState": "queued", "launchCalls": 1 },
   "masterIdentityFull": { "tests": 214, "pass": 212, "fail": 0, "skipped": 2, "environment": "temporary snapshot with shared dependencies", "skipReason": "temporary snapshot has no sibling code-agent build; both integration cases were rerun below" },
   "masterCodeAgentIntegration": { "tests": 1, "pass": 1, "fail": 0, "skipped": 0, "environment": "temporary snapshot with CODE_AGENT_DIST pointing to the real build" },
