@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-20",
+  "repository": "code-agent",
+  "implementationCommit": "this-commit",
+  "environment": { "platform": "win32", "node": "24.19.0" },
+  "build": { "install": "npm.cmd ci", "command": "npm.cmd run build", "exitCode": 0, "entry": "dist/agent/cli.js", "stateSchema": 8 },
+  "fullRegression": {
+    "command": "npm.cmd test -- --test-concurrency=4",
+    "tests": 1652, "suites": 218, "passed": 1648, "failed": 0, "skipped": 4, "durationMs": 658277.4727,
+    "log": "dist/managed-host-full-tests.log"
+  },
+  "focusedRegression": {
+    "command": "node --test dist/test/masterCodex.test.js dist/test/dashboardCodexResume.test.js dist/test/executionHandoff.test.js dist/test/executionMode.test.js",
+    "tests": 17, "passed": 17, "failed": 0, "skipped": 0, "durationMs": 12803.1463,
+    "log": "dist/managed-host-focused.log",
+    "windowsProcessInspection": "sandbox restriction reproduced; marker-verified test process cleaned up; unrestricted rerun passed"
+  },
+  "masterIntegration": {
+    "command": "node C:/IdeaProjects/master-agent/scripts/smoke-interactions-live.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js",
+    "cwd": "isolated temporary directory",
+    "scenarios": 22, "passed": true,
+    "log": "dist/master-contract-managed-hosts.log",
+    "syntheticCredentialsAndProducers": true,
+    "realModelLifecycle": false,
+    "browserExecuted": false,
+    "masterWorkingTree": "read-only; pre-existing concurrent changes preserved",
+    "checks": ["actual-cli", "all-stage-question-contracts", "same-command-replay", "multi-input", "defer-reopen", "branch-stale", "missing-key", "separate-consent", "actual-docs-apply", "no-secret-projection", "durable-restart-retry"]
+  },
+  "integration": [
+    "actual supervisor with synthetic Codex JSONL child and confirmed thread resume",
+    "thread mismatch, missing thread, failed turn and cooperative or forced stop",
+    "signed dashboard response schedules the same confirmed session once",
+    "explicit TTY handoff retains work, intake kind, plan and approvals",
+    "open consent, unapplied response and changed preview block handoff",
+    "released lease and unconfirmed thread cannot capture Markdown questions",
+    "both mode retains cross review with explicit managed main host",
+    "local Codex start/resume argv accepted with --help; no model invocation"
+  ],
+  "checks": ["TypeScript build", "documentation and template synchronization", "hook import boundaries", "template budget", "existing Claude and LangGraph regression", "git diff --check"],
+  "notVerified": ["real model end-to-end workflow", "browser human clicks", "production delivery/update/plugin execution", "standalone binary external supervisor"],
+  "unsupported": ["restoring ended independent sessions without run records", "automatic host switching on quota exhaustion", "externally closing a Claude question dialog"],
+  "otherRepositoriesModified": false,
+  "managedProjectsModified": false,
+  "pushed": false
+}

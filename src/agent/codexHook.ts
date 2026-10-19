@@ -117,6 +117,11 @@ export function codexHook(input: CodexHookInput): object {
 function codexEvent(input: CodexHookInput): object {
   // 교차 실행이 띄운 Codex 안에서는 진행 기록(Stop·담당 관찰·동의 응답·세션 시작)을 하지 않는다 — PreToolUse 판정은 그대로 한다
   if (crossChild() && (CROSS_CHILD_PASS_EVENTS as readonly string[]).includes(input.hook_event_name ?? "")) return {};
+  if (input.hook_event_name === "PreToolUse" && typeof input.cwd === "string" && isAbsolute(input.cwd)) {
+    const { masterRunGuard } = require("./master/runGuard") as typeof import("./master/runGuard");
+    const reason = masterRunGuard({ tool_name: input.tool_name ?? "", session_id: input.session_id, tool_input: input.tool_input ?? {} }, findRepoRoot(input.cwd));
+    if (reason) return deny(reason);
+  }
   // Codex 훅에는 matcher가 없다. 판정 대상이 아닌 도구가 상태 오류로 막히지 않게 먼저 통과시킨다(이름만 남긴다)
   if (input.hook_event_name === "PreToolUse" && !GATED_TOOLS.includes(input.tool_name ?? "") && !(input.tool_name ?? "").startsWith("mcp__")) {
     if (input.tool_name && typeof input.cwd === "string" && isAbsolute(input.cwd)) noteUnknownCodexTool(findRepoRoot(input.cwd), input.tool_name);

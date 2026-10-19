@@ -29,6 +29,7 @@ export interface Binding {
   controllers: Record<string, { tokenHash: string; label?: string; addedAt: string }>;
   policy: Policy;
   host: HostProfile;
+  hostProfiles?: Partial<Record<"claude" | "codex", HostProfile>>;
   humanChannel?: import("../interactionHuman").HumanChannel;
 }
 export interface Handover {
@@ -72,6 +73,11 @@ export interface RunRecord {
   version: 1; runId: string; commandId: string; controller: string; generation: number; mode: "start" | "continue";
   links: Links; state: RunState; acceptedAt: string; updatedAt: string;
   sessionId: string; resumeOf?: string; promptHash: string; timeoutMs: number;
+  /** Codex가 thread.started로 확정하기 전 접수 시 반환한 세션 별칭. */
+  sessionAlias?: string;
+  sessionConfirmed?: boolean;
+  hostProfile?: HostProfile;
+  handoffId?: string;
   workId: string | null; baseHead: string | null; baseStateVersion: string;
   supervisor?: ProcessRef & { heartbeatAt?: string };
   host?: ProcessRef;

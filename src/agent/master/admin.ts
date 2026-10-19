@@ -54,7 +54,8 @@ export function masterEnable(root: string, options: EnableOptions): string {
       : `이 프로젝트의 master 연동을 켭니다 — 제어자 ${controller} 가 소유합니다.`,
     `프로젝트: ${root}`,
     `정책: ${JSON.stringify(policy)}`,
-    `호스트: ${host.command.join(" ")} · 권한 모드 ${host.permissionMode} · 허용 도구 ${host.allowedTools.join(", ")} · 금지 도구 ${host.disallowedTools.join(", ")}`,
+    host.kind === "codex" ? `호스트: ${host.command.join(" ")} · sandbox ${host.sandbox} · 자동 권한 상승 없음`
+      : `호스트: ${host.command.join(" ")} · 권한 모드 ${host.permissionMode} · 허용 도구 ${host.allowedTools.join(", ")} · 금지 도구 ${host.disallowedTools.join(", ")}`,
     "연결만으로는 승인·답 권한이 생기지 않습니다 — 위임은 code-agent master grant 로 따로 줍니다.",
   ].join("\n");
   confirmOnTerminal(shown, "enable");
@@ -63,6 +64,7 @@ export function masterEnable(root: string, options: EnableOptions): string {
   const binding: Binding = existing ? { ...existing, policy, host, controllers: { ...existing.controllers, [controller]: { tokenHash: tokenHash(token), ...(options.label ? { label: options.label } : {}), addedAt: at } } }
     : { version: 1, projectId: randomUUID(), enabledAt: at, enabledBy: { actor: actorName(), channel: "tty" }, policy, host,
       controllers: { [controller]: { tokenHash: tokenHash(token), ...(options.label ? { label: options.label } : {}), addedAt: at } } };
+  binding.hostProfiles = { ...existing?.hostProfiles, ...(existing ? { [existing.host.kind]: existing.host } : {}), [host.kind]: host };
   ensureMasterDir(root);
   writeBinding(root, binding);
   // 다시 켤 때도 세대는 이어서 올린다 — 이전 연동의 늦은 요청이 같은 세대 번호로 받아들여지지 않게

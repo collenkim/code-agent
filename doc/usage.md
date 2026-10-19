@@ -1,6 +1,6 @@
 # 사용 가이드 — 설치부터 승인까지
 
-`code-agent init`은 두 호스트를 준비한다. 실행 전 호스트 밖 터미널에서 `code-agent execution claude`, `code-agent execution codex`, `code-agent execution both`를 선택한다. 기본은 현재 호스트 단독이며 both는 상대 호스트의 계획·코드 리뷰를 추가한다. 사용 한도 소진 시 이전 실행을 중지하고 다른 호스트에서 같은 브랜치·작업을 재개한다. 임대·승인 규칙은 유지하며 자동 호스트 전환은 하지 않는다.
+`code-agent init`은 두 호스트를 준비한다. 실행 전 호스트 밖 터미널에서 `code-agent execution claude`, `code-agent execution codex`, `code-agent execution both`를 선택한다. 신규 설치는 현재 호스트 단독이며 both는 상대 호스트의 계획·코드 리뷰를 추가한다. 관리 실행의 주 호스트는 `both --main claude|codex`로 지정한다. 사용 한도 소진 시 이전 실행 중지 → `execution --json` 조회 → `execution codex --handoff`(또는 claude·both) 확인 → 같은 브랜치·기존 작업 재개 순서다. 미소비 답·열린 동의·관리 실행이 있으면 전환을 막고, 확인한 인계만 미응답 취소와 임대 해제를 처리한다. 작업·승인 기록은 유지하며 자동 호스트 전환은 하지 않는다. [관리 실행·인계 계약](master-control.md#호스트-전환-인계)
 
 Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
 
@@ -1512,7 +1512,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 - **push · MR/PR 생성 · 병합** — 지금 완주할 수 있는 것은 **작업 브랜치의 로컬 커밋까지**다. 그 뒤는 사람이 손으로 한다 —
   git 호스트가 붙을 때까지 보류한 자리이고, 붙으면 그때 정한다.
 - **fix·refactor·신규 저장소의 전 과정 완주 실측** — 코드는 갖췄고, 실제 작업으로 끝까지 돌려 잰 기록은 아직 없다.
-- **상위 조정자(master)의 전체 조정** — 이 저장소는 사람이 켠 프로젝트의 실행 접수·관찰·정지·재개·인계와 권한 범위의 위임 판단까지 맡는다([master 연동](master-control.md)). 여러 프로젝트의 배정·전체 DAG·예산·서비스 간 승인·전체 복구는 master 가 맡고 이 저장소에 없다. Codex 실행 호스트는 연동 계약에서 지원하지 않는다(`hello`의 `unsupported`).
+- **상위 조정자(master)의 전체 조정** — 이 저장소는 사람이 켠 프로젝트의 Claude·Codex 실행 접수·관찰·정지·재개·인계와 권한 범위의 위임 판단까지 맡는다([master 연동](master-control.md)). 여러 프로젝트의 배정·전체 DAG·예산·서비스 간 승인·전체 복구는 master 가 맡고 이 저장소에 없다. 관리 호스트의 지원·설치 조건은 `hello`와 `doctor`로 확인한다.
 - **Jev A/B 실측** — 플러그인 코드([10. 플러그인](#10-플러그인-선택))는 갖췄고, 효과는 실제 Jev 가 붙어야 잰다([plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면)).
 
 ## 관찰된 계획 작업

@@ -150,7 +150,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|execution|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|execution(?: --json)?|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -164,7 +164,7 @@ function isModelCommand(command: string): boolean {
     return false;
   }
   const rest = command.slice("code-agent ".length);
-  if (rest === "execution") return true;
+  if (rest === "execution" || rest === "execution --json") return true;
   if (rest === "--help" || /^help(?: [a-z][a-z-]*)?$/.test(rest)) return true; // help <명령> 은 그 명령의 사용법 줄만
   if (/^model(?: --host (?:claude|codex))?$/.test(rest)) return true; // 조회만 허용한다. 변경은 관찰된 동의로 적용한다.
   if (/^consent (prepare\s+\S.*|(?:status|apply|finish) [a-f0-9-]+)$/.test(rest)) return true;

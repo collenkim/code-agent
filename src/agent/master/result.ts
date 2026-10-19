@@ -37,6 +37,13 @@ export function readHostOutput(root: string, runId: string, exitCode: number | n
     let row: Record<string, unknown>;
     try { row = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
     if (row.type === "system" && row.subtype === "init" && typeof row.session_id === "string") outcome.sessionId = row.session_id;
+    if (row.type === "thread.started" && typeof row.thread_id === "string") outcome.sessionId = row.thread_id;
+    if (row.type === "turn.completed") { outcome.subtype = "success"; outcome.isError ??= false; }
+    if (row.type === "turn.failed" || row.type === "error") { outcome.subtype = "error_during_execution"; outcome.isError = true; }
+    if (row.type === "item.completed" && row.item && typeof row.item === "object") {
+      const item = row.item as { type?: string; text?: string };
+      if (item.type === "agent_message" && typeof item.text === "string") { outcome.finalMessage = item.text.slice(0, 4000); outcome.finalMessageHash = `sha256:${sha256(item.text)}`; }
+    }
     if (row.type === "result") {
       if (typeof row.session_id === "string") outcome.sessionId = row.session_id;
       if (typeof row.subtype === "string") outcome.subtype = row.subtype;

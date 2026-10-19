@@ -69,12 +69,15 @@ export function synchronizeInteractions(root: string): void {
     const missing = qs.filter(q => !covered.some(r => r.questions.some(item => item.questionId === q.id)));
     if (missing.length) {
       const run = listRuns(root).filter(r => r.workId === workId).at(-1), lease = readLease(root);
-      const sessionId = lease?.session ?? run?.sessionId;
+      const sessionId = lease && !lease.released ? lease.session : run?.sessionId;
+      const host = lease && !lease.released ? lease.host : run?.hostProfile?.kind ?? "claude";
+      const waitingForSession = (lease?.released && (!run || run.sessionId === lease.session)) ||
+        (run?.hostProfile?.kind === "codex" && !run.sessionConfirmed && (!lease || lease.released));
       const questions: InteractionQuestion[] = missing.slice(0, 16).map(q => ({ questionId: q.id, title: q.title, background: "기존 questions.md에서 발행한 질문입니다.", mode: "text", required: true,
         options: [], minSelections: 0, maxSelections: 0, input: { required: true, minLength: 1, maxLength: 2000, description: "업무 답을 직접 입력하세요. 구조 줄이나 보류 문구는 답으로 사용하지 않습니다." },
         recommendedOptionIds: [], defaultOptionIds: [], recommendationReason: "기존 문서에는 구조화된 추천 근거가 없습니다.", evidence: [{ path: questionsFile(workId), summary: "미응답 질문 원문" }] }));
-      publishInteraction(root, { key: `questions:${workId}`, stage: stageOf(root), kind: "question", title: `${workId} 업무 질문`, questions, source: "questions", expiresInMs: 86400000 },
-        interactionContext(root, sessionId ?? "unbound", lease?.host ?? "claude", run && run.sessionId === sessionId ? run.runId : undefined), { type: "questions", id: workId, hash: interactionHash(text) }, undefined, sessionId ? undefined : "원래 세션을 확인할 수 없습니다. 호스트에서 interaction publish로 발행하세요.");
+      if (!waitingForSession) publishInteraction(root, { key: `questions:${workId}`, stage: stageOf(root), kind: "question", title: `${workId} 업무 질문`, questions, source: "questions", expiresInMs: 86400000 },
+        interactionContext(root, sessionId ?? "unbound", host, run && run.sessionId === sessionId ? run.runId : undefined), { type: "questions", id: workId, hash: interactionHash(text) }, undefined, sessionId ? undefined : "원래 세션을 확인할 수 없습니다. 호스트에서 interaction publish로 발행하세요.");
     }
   }
   if (!currentInteractions(root).requests.length) return;

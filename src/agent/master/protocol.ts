@@ -23,7 +23,6 @@ export type MutatingType = (typeof MUTATING_TYPES)[number];
 
 /** 이 버전이 지원하지 않는다고 명시하는 기능 — hello 가 그대로 돌려준다 */
 export const UNSUPPORTED = [
-  { feature: "host:codex", reason: "master 실행 러너는 Claude Code 비대화형 실행(claude -p)만 지원한다 — Codex 세션은 기존 독립 실행으로만 쓴다" },
   { feature: "transport:network", reason: "통신은 같은 PC 의 CLI 호출뿐이다(원격 서버·포트 없음)" },
   { feature: "delegate:human-only-actions", reason: "setup·docs·baseline·model·plugin·update·knowledge-prune·abort·repro-log·judgment 동의는 위임하지 않는다" },
   { feature: "events:push", reason: "이벤트는 순번 기반 조회(events after)다 — 연결을 유지하는 밀어넣기는 없다" },
@@ -110,7 +109,7 @@ export function mergePolicy(base: Policy, patch: unknown): Policy {
 }
 
 /** 호스트 실행 설정 — 사람이 enable 때 정한다(허용 도구는 권한에 닿으므로 master 가 바꾸지 못한다) */
-export interface HostProfile {
+export interface ClaudeHostProfile {
   kind: "claude";
   /** 실행 파일과 앞 인자. 기본 ["claude"] */
   command: string[];
@@ -119,12 +118,19 @@ export interface HostProfile {
   disallowedTools: string[];
   model?: string;
 }
+export interface CodexHostProfile {
+  kind: "codex";
+  command: string[];
+  sandbox: "read-only" | "workspace-write";
+  model?: string;
+}
+export type HostProfile = ClaudeHostProfile | CodexHostProfile;
 export const DEFAULT_ALLOWED_TOOLS = [
   "Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "TodoWrite", "Task",
   "Bash(code-agent *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)",
   "PowerShell(code-agent *)", "PowerShell(git status*)", "PowerShell(git diff*)", "PowerShell(git log*)",
 ];
-export const DEFAULT_HOST_PROFILE: HostProfile = {
+export const DEFAULT_HOST_PROFILE: ClaudeHostProfile = {
   kind: "claude", command: ["claude"], permissionMode: "acceptEdits", allowedTools: DEFAULT_ALLOWED_TOOLS,
   // 질문 도구는 사람이 없는 실행에서 답을 받을 수 없다 — 동의·질문은 master 의 위임 또는 사람의 응답으로 받는다
   disallowedTools: ["AskUserQuestion"],
@@ -133,7 +139,7 @@ export const DEFAULT_HOST_PROFILE: HostProfile = {
 export function hostProfileOf(raw: unknown): HostProfile {
   if (raw === undefined) return { ...DEFAULT_HOST_PROFILE };
   if (!plain(raw)) throw new ControlError("invalid-request", "host 설정은 객체여야 합니다");
-  const allowedKeys = ["kind", "command", "permissionMode", "allowedTools", "disallowedTools", "model"];
+  const allowedKeys = raw.kind === "codex" ? ["kind", "command", "sandbox", "model"] : ["kind", "command", "permissionMode", "allowedTools", "disallowedTools", "model"];
   const extra = Object.keys(raw).filter((key) => !allowedKeys.includes(key));
   if (extra.length) throw new ControlError("invalid-request", `모르는 host 설정 키: ${extra.join(", ")}`);
   const strings = (value: unknown, name: string): string[] | undefined => {
@@ -141,7 +147,14 @@ export function hostProfileOf(raw: unknown): HostProfile {
     if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item)) throw new ControlError("invalid-request", `${name} 는 문자열 배열입니다`);
     return value as string[];
   };
-  if (raw.kind !== undefined && raw.kind !== "claude") throw new ControlError("unsupported", "host.kind 는 claude 만 지원합니다");
+  if (raw.kind === "codex") {
+    const sandbox = raw.sandbox ?? "workspace-write";
+    if (sandbox !== "read-only" && sandbox !== "workspace-write") throw new ControlError("policy-forbids", "Codex sandbox는 read-only·workspace-write만 지원합니다");
+    const command = strings(raw.command, "host.command") ?? ["codex"];
+    if (!command.length || command.some(arg => arg.startsWith("-"))) throw new ControlError("policy-forbids", "Codex command는 실행 파일과 진입점만 지정합니다. 실행·권한 옵션은 감독이 구성합니다");
+    return { kind: "codex", command, sandbox, ...(typeof raw.model === "string" && raw.model ? { model: raw.model } : {}) };
+  }
+  if (raw.kind !== undefined && raw.kind !== "claude") throw new ControlError("unsupported", "host.kind 는 claude·codex를 지원합니다");
   const mode = raw.permissionMode ?? DEFAULT_HOST_PROFILE.permissionMode;
   if (!["acceptEdits", "dontAsk", "manual", "auto"].includes(String(mode))) {
     throw new ControlError("policy-forbids", "permissionMode 는 acceptEdits·dontAsk·manual·auto 중 하나입니다(bypassPermissions·plan 은 받지 않는다)");
@@ -151,7 +164,7 @@ export function hostProfileOf(raw: unknown): HostProfile {
   const allowed = strings(raw.allowedTools, "host.allowedTools") ?? DEFAULT_HOST_PROFILE.allowedTools;
   if (allowed.some((tool) => /^(?:Bash|PowerShell)(?:\(\*\))?$/.test(tool))) throw new ControlError("policy-forbids", "셸 전체 허용(Bash·PowerShell·Bash(*))은 받지 않습니다 — 명령 접두어로 좁혀 주세요");
   const disallowed = [...new Set([...(strings(raw.disallowedTools, "host.disallowedTools") ?? []), "AskUserQuestion"])];
-  return { kind: "claude", command, permissionMode: mode as HostProfile["permissionMode"], allowedTools: allowed, disallowedTools: disallowed,
+  return { kind: "claude", command, permissionMode: mode as ClaudeHostProfile["permissionMode"], allowedTools: allowed, disallowedTools: disallowed,
     ...(typeof raw.model === "string" && raw.model ? { model: raw.model } : {}) };
 }
 

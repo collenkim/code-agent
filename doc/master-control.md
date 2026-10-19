@@ -42,7 +42,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 `execution`은 LangGraph 프레임워크·그래프 형식 버전·SQLite 체크포인트·재개 명령·권한 원천을 알린다. 무인 호스트도 `code-agent flow advance --json`의 [인계 계약](langgraph.md#호스트의-실행-계약)을 따른다.
 
-인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude` 지원, `codex` 미지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `host:codex`, `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유.
+인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude`·`codex`의 start·continue 지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유.
 
 ## 4. 명령
 
@@ -107,6 +107,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 응답을 잃은 master 는 같은 `commandId`로 다시 보내거나 `command`로 처리 상태를 묻는다. 둘 다 실행을 두 번 만들지 않는다.
 
+사람이 확인한 호스트 전환 인계 기록이 있으면 `needs-human`의 질문·요구 확정·계획·반영 확인 준비 자리에서 같은 작업의 새 호스트 실행을 한 번 받을 수 있다. 기존 작업 연결·브랜치·HEAD·소유 세대·대상 호스트를 대조하며 인계 ID를 실행에 묶는다. 이는 답·승인의 대체가 아니고 미응답 질문 재발행과 동의 준비를 위한 예외다([호스트 전환 인계](#호스트-전환-인계)).
+
 ## 6. 이벤트·heartbeat·재동기화
 
 `snapshot.state.graph`와 실행 결과의 `state.graph`는 최신 실행 ID·thread·그래프·노드·상태·이벤트 순번을 제공한다. 관찰 시 달라진 값은 `graph.changed` 이벤트에 남는다. 그래프 관찰만 바뀌면 업무 `stateVersion`은 바뀌지 않는다.
@@ -141,7 +143,7 @@ starting|running|stopping ─(감독·호스트 모두 사라짐)→ cancelled |
 
 - 끝 상태 판정(감독): 시간 상한 초과 → `failed`, 정지 요청 → `cancelled`·`paused`, 호스트 실패(종료 코드·`is_error`) → `failed`, code-agent 재개 판정이 사람 판단·한도·관측 불가·소유 충돌·오래된 요청 → `blocked`, 그 밖 → `completed`. `completed`는 호스트 턴이 정상으로 끝났다는 뜻이고 작업 성공이 아니다(§9).
 - `pause`·`cancel`: 접수만 된 실행은 바로 끝 상태가 된다. 실행 중이면 기록에 정지 요청을 남기고(요청 접수) hook 이 그 실행 세션의 모든 도구를 막아 모델이 턴을 끝내게 한다(협력 정지). `graceMs`(상한 `stopGraceMs`)가 지나거나 `force: true`면 감독이 확인된 호스트 프로세스 트리를 끝낸다(강제 종료). 결과의 `outcome`이 `cooperative`·`forced`를 가른다. 실제 정지 완료는 `run.finished` 이벤트나 `snapshot`의 끝 상태로 확인한다(`waitMs`로 응답 안에서 기다릴 수도 있다). `cancel`은 진행 중인 `pause`를 덮는다.
-- 대상: 요청한 `runId`의 호스트만 끝낸다. 프로세스는 pid 와 명령줄 표지(`master supervise <runId>`·실행 세션 ID)가 맞을 때만 끝내고, 확인할 수 없으면 끝내지 않는다(`unknown`).
+- 대상: 요청한 `runId`의 호스트만 끝낸다. 프로세스는 pid 와 명령줄 표지(`master supervise <runId>`·Claude 실행 세션 ID·Codex 실행 runId)가 맞을 때만 끝내고, 확인할 수 없으면 끝내지 않는다(`unknown`).
 - 보존: 정지·취소는 작업 트리·작업 문서·검증 기록을 되돌리지 않는다. 결과에 변경 파일·검증·재개 지점이 남는다.
 - `orphaned`(감독이 사라졌는데 호스트가 살아 있음)는 활성으로 남아 새 실행을 막는다. `cancel {force: true}`가 확인된 호스트를 끝내고 닫는다. Windows 에서는 감독이 끝나면 Node 가 호스트를 같은 작업 개체로 함께 끝내므로 보통 `unknown`(호스트 종료 확인, 결과 복구)으로 닫힌다.
 
@@ -207,7 +209,13 @@ request·stopping·stopped 에서만 abort(지금 제어자) — 멈춘 실행�
 
 ## 11. master 실행 세션의 규칙
 
-감독은 사람이 enable 때 정한 호스트 설정으로 `claude -p --output-format stream-json --permission-mode <모드> --permission-prompts none --session-id|--resume <ID> --append-system-prompt <규칙> --allowedTools … --disallowedTools …`를 띄운다. 기본 허용 도구는 읽기·편집 도구와 `code-agent`·읽기용 git 셸 명령이고, 질문 도구(`AskUserQuestion`)는 늘 금지에 들어간다. `bypassPermissions`·`plan` 모드와 셸 전체 허용(`Bash`·`Bash(*)`)은 받지 않는다. 호스트 환경에서는 부른 쪽 Claude 세션의 표지를 지우고 `CODE_AGENT_MASTER_RUN=<runId>`를 넣는다.
+관리 실행의 호스트는 `execution claude|codex` 선택을 따른다. `execution both --main claude|codex`는 관리 실행의 주 호스트를 정하고 상대 호스트의 계획·코드 리뷰를 유지한다. `both`에서 main을 생략하면 기존 단독 선택·main을 유지하며, 정한 값이 없으면 연동의 기본 호스트를 쓴다. `auto`도 연동의 기본 호스트를 사용한다. 각 실행은 호스트·권한 설정을 `hostProfile`에 고정한다. 재개할 때 실행 방식이나 등록된 설정이 달라졌으면 이전 권한으로 자동 재개하지 않는다.
+
+Codex는 `codex exec --json`으로 시작하고 `thread.started.thread_id`를 저장한다. 접수 때 반환한 `sessionId`는 최초 실행 동안의 별칭(`sessionAlias`)이고, snapshot·결과에는 확정된 thread ID와 `sessionConfirmed`가 나온다. continue는 별칭 또는 확정 ID를 받아 `codex exec resume <thread ID> --json`으로 같은 세션만 잇는다. `--last`·새 세션 대체는 쓰지 않는다. thread 누락·불일치·턴 종료 이벤트 누락·`turn.failed`는 성공으로 처리하지 않는다. `completed`는 작업 완료가 아니라 호스트 턴 종료다. JSONL·재개 형식은 [공식 비대화형 실행 문서](https://learn.chatgpt.com/docs/non-interactive-mode)를 따른다.
+
+Codex는 `approval_policy=never`, `sandbox_mode=workspace-write`(설정으로 read-only 선택 가능), 샌드박스 네트워크 차단으로 실행한다. 권한 상승·hook 신뢰 우회 옵션을 넣지 않는다. 프로젝트 PreToolUse 설치와 사용자 설정의 프로젝트·hook 신뢰 기록이 없으면 접수·감독 시작을 막는다. `doctor` 후 Codex에서 현재 hook을 직접 검토·신뢰해야 한다. 샌드박스 밖 작업·교차 호출이 필요하면 기존 차단과 사람의 조치 절차를 따르며 자동으로 권한을 넓히지 않는다. 부모 Claude·Codex 세션 표지는 제거하고 실행별 표지를 넣는다. Codex의 기본 질문·MCP ask·confirm도 관리 실행에서는 열지 않고 영속 질문 또는 동의 prepare 후 대기한다.
+
+Claude 감독은 사람이 enable 때 정한 호스트 설정으로 `claude -p --output-format stream-json --permission-mode <모드> --permission-prompts none --session-id|--resume <ID> --append-system-prompt <규칙> --allowedTools … --disallowedTools …`를 띄운다. 기본 허용 도구는 읽기·편집 도구와 `code-agent`·읽기용 git 셸 명령이고, 질문 도구(`AskUserQuestion`)는 늘 금지에 들어간다. `bypassPermissions`·`plan` 모드와 셸 전체 허용(`Bash`·`Bash(*)`)은 받지 않는다. 호스트 환경에서는 부른 쪽 Claude·Codex 세션의 표지를 지우고 `CODE_AGENT_MASTER_RUN=<runId>`를 넣는다.
 
 hook 은 이 표지가 있는 세션에서 기존 판정보다 먼저 본다(`masterRunGuard`): 정지 요청이 있거나 끝난 실행이면 모든 도구를 막고 멈춘 자리를 보고하게 하며, 질문 도구는 동의 준비까지만 하고 끝내라고 돌려보내고, `code-agent master`·`code-agent takeover`를 막는다. 표지가 없는 세션(사람의 대화형 세션)은 이 판정을 지나지 않는다. 세션 밖 셸에서도 `code-agent master`는 막힌다(`decideOutside`) — 연동 설정은 사람이 터미널에서 직접 한다. SessionStart 는 실행 세션에 같은 규칙을 덧붙인다.
 
@@ -242,7 +250,22 @@ master 가 쓰는 명령은 `code-agent master call`이고, 감독은 `code-agen
 | `startTimeoutMs` | 60000 | 1000~3600000 | 접수 뒤 감독 시작 상한 |
 | `eventPageLimit` | 200 | 1~5000 | `events` 한 번의 최대 수 |
 
-호스트 설정(`--host` 파일)은 `command`(예 `["claude"]`)·`permissionMode`(`acceptEdits`·`dontAsk`·`manual`·`auto`)·`allowedTools`·`disallowedTools`·`model`이다. 허용 도구는 권한에 닿으므로 master 가 바꾸지 못한다.
+호스트 설정(`--host` 파일)은 Claude와 Codex를 구분한다. Claude는 `kind: claude`(생략 가능)·`command`·`permissionMode`(`acceptEdits`·`dontAsk`·`manual`·`auto`)·`allowedTools`·`disallowedTools`·`model`이다. Codex는 `kind: codex`·`command`(기본 `["codex"]`)·`sandbox`(`workspace-write`·`read-only`)·`model`이다. Codex command에는 실행 파일과 진입점만 지정하고 옵션은 감독이 구성한다. 예시는 `{"kind":"codex","sandbox":"workspace-write"}`다. 권한 설정은 사람이 `master enable --host <파일>`에서 확인하며, 같은 제어자를 다시 등록하면 토큰도 교체되므로 master의 연결 토큰을 갱신한다. 등록한 각 호스트 설정은 보존한다. 해당 호스트 설정이 없으면 제한된 기본값을 사용한다.
+
+### 호스트 전환 인계
+
+사용 한도가 소진되었거나 실행 호스트를 바꾸려면 이전 실행을 중지하고 호스트 밖 터미널에서 다음 순서로 진행한다.
+
+```powershell
+code-agent execution --json
+code-agent execution codex --handoff
+# 교차 검증을 유지하고 Codex를 관리 실행의 주 호스트로 쓰는 경우:
+# code-agent execution both --main codex --handoff
+```
+
+조회에는 브랜치·작업 ID·종류·단계·임대·질문·열린 동의·차단 사유가 나온다. 변경 화면에서 이전 실행 중지와 인계 내용을 함께 확인한다. 관리 실행·제어권 인계가 진행 중이거나 미소비/미적용 응답·열린 동의가 있으면 인계하지 않는다. 받은 답은 원래 세션에서 처리하고 동의는 원래 채널에서 마치거나 취소한다. 인계 확인 중 문맥이 바뀌면 다시 조회해야 한다.
+
+인계는 현재 브랜치의 미응답 일반 질문에 취소 이력을 남기고 임대를 해제하며, 기존 작업 ID·종류·계획·승인 기록은 보존한다. 새 호스트는 미응답을 재발행하고 승인 필요 시 새 동의를 준비한다. 독립 대화는 같은 브랜치에서 `/ca-next`·`$ca-next`로 재개한다. 관리 실행은 같은 작업·links를 유지한 `submit mode:start`를 사용하며 다른 호스트의 sessionId를 resume하지 않는다. 명시적 인계 기록이 현재 브랜치·HEAD·작업·소유 세대·대상 호스트와 맞으면 사람 대기 중에도 질문·동의 준비를 위한 새 세션을 한 번 시작할 수 있다. 질문에 답하거나 승인 게이트를 통과한 것으로 간주하지 않는다. 실행 기록에 인계 ID를 묶어 재사용을 막고, 관리 연동하지 않은 작업을 자동 편입하지 않는다.
 
 ## 13. 기록 파일 — `.code-agent/master/`
 
@@ -251,6 +274,7 @@ master 가 쓰는 명령은 `code-agent master call`이고, 감독은 `code-agen
 | 경로 | 내용 |
 |---|---|
 | `binding.json` | 프로젝트 ID·켠 사람·제어자 토큰 해시·정책·호스트 설정 |
+| `host-handoff.json` | 사람이 확인한 호스트 인계의 대상·브랜치·HEAD·작업·소유 세대·재발행할 미응답. 실행 기록의 handoffId로 한 번만 사용 |
 | `owner.json` | 제어자·세대·마지막 연락·인계 진행·이력 |
 | `grants.jsonl` · `decisions.jsonl` | 권한·회수, 판단과 적용 결과(append 만) |
 | `commands/<commandId>.json` | 처리 상태(`received`·`accepted`·`rejected`)와 기록된 응답 |
@@ -261,7 +285,7 @@ master 가 쓰는 명령은 `code-agent master call`이고, 감독은 `code-agen
 
 ## 14. 한계
 
-- 호스트는 Claude Code 비대화형 실행만이다. Codex 세션은 기존 독립 실행으로 쓴다.
+- Claude·Codex 관리 실행의 기록된 세션을 재개한다. 기록 없는 종료 세션의 자동 복원·토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
 - 통신은 같은 PC 의 CLI 호출이다. 원격 연결·밀어넣기 이벤트는 없다.
 - 한 프로젝트에 실행은 한 번에 하나다. 여러 프로젝트는 master 가 프로젝트마다 따로 부른다.
 - 다른 저장소의 산출물을 가져다 쓰는 작업은 통합 검증(`code-agent integrate`)이 기준 커밋을 뜬 깨끗한 worktree 에서 돌므로, 형제 저장소의 상대 경로가 풀리지 않는다. 프로젝트 사이 의존은 사람이 도입 설정에서 `code-agent.json`의 `prepare`로 깨끗한 트리에 잇는다. master 연동은 이 설정을 만들거나 바꾸지 않는다 — 매니페스트는 계획 승인이 묶는다.

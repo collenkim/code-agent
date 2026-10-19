@@ -90,6 +90,7 @@ function runSummary(run: RunRecord, deep = false): Record<string, unknown> {
   const beat = run.supervisor?.heartbeatAt ? now - Date.parse(run.supervisor.heartbeatAt) : null;
   return {
     runId: run.runId, commandId: run.commandId, state: run.state, mode: run.mode, sessionId: run.sessionId, links: run.links, workId: run.workId,
+    hostKind: run.hostProfile?.kind ?? "claude", sessionConfirmed: run.sessionConfirmed ?? true, sessionAlias: run.sessionAlias ?? null,
     acceptedAt: run.acceptedAt, ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}), ...(run.outcome ? { outcome: run.outcome } : {}),
     ...(run.stop ? { stop: run.stop } : {}),
     liveness: {
@@ -112,8 +113,8 @@ function hello(root: string, binding: Binding | undefined): unknown {
     controllers: binding ? Object.keys(binding.controllers) : [],
     ownership: owner ? { controller: owner.controller, generation: owner.generation, handover: owner.handover ? { id: owner.handover.id, state: owner.handover.state, to: owner.handover.to } : null } : null,
     commands: { open: OPEN_TYPES, read: READ_TYPES, mutating: MUTATING_TYPES, all: COMMAND_TYPES },
-    hosts: [{ kind: "claude", supported: true, modes: ["start", "continue"], output: "stream-json", profile: binding ? { permissionMode: binding.host.permissionMode, allowedTools: binding.host.allowedTools, disallowedTools: binding.host.disallowedTools } : null },
-      { kind: "codex", supported: false }],
+    hosts: [{ kind: "claude", supported: true, modes: ["start", "continue"], output: "stream-json", profile: binding?.host.kind === "claude" ? { permissionMode: binding.host.permissionMode, allowedTools: binding.host.allowedTools, disallowedTools: binding.host.disallowedTools } : null },
+      { kind: "codex", supported: true, modes: ["start", "continue"], output: "jsonl", session: "thread.started", approvalPolicy: "never" }],
     approvals: {
       human: ["tty", "claude-question", "codex-prompt", "codex-elicitation", "dashboard-human"],
       delegated: { channel: "master-delegation", verified: false, actions: DELEGABLE_ACTIONS, humanOnly: HUMAN_ONLY_ACTIONS, categories: DECISION_CATEGORIES, requires: "사람이 TTY 에서 준 grant(code-agent master grant)" },
@@ -170,13 +171,18 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     : typeof payload.timeoutMs === "number" && Number.isInteger(payload.timeoutMs) && payload.timeoutMs >= 1_000 && payload.timeoutMs <= binding.policy.runTimeoutMs ? payload.timeoutMs
       : (() => { throw new ControlError("invalid-request", `timeoutMs 는 1000~${binding.policy.runTimeoutMs} 입니다`); })();
   const runs = listRuns(root);
+  const { selectedProfile, requireResumeProfile, requireManagedHost } = require("./hostProfile") as typeof import("./hostProfile");
+  let profile = selectedProfile(root, binding);
   let sessionId: string;
   if (mode === "continue") {
     if (typeof payload.sessionId !== "string") throw new ControlError("invalid-request", "이어 실행에는 sessionId 가 필요합니다");
-    const previous = runs.filter((run) => run.sessionId === payload.sessionId);
+    const previous = runs.filter((run) => run.sessionId === payload.sessionId || run.sessionAlias === payload.sessionId);
     if (!previous.length) throw new ControlError("not-found", "이 프로젝트의 master 실행 세션이 아닙니다");
-    sessionId = payload.sessionId;
+    const last = previous.at(-1)!;
+    profile = requireResumeProfile(root, binding, last);
+    sessionId = last.sessionId;
   } else sessionId = randomUUID();
+  requireManagedHost(root, profile);
   const expect = request.expect ?? {};
   let view = stateView(root, { session: sessionId, expectState: expect.stateVersion, expectWork: expect.work === null ? "" : expect.work ?? undefined, expectAttempt: expect.attempt === null ? "" : expect.attempt ?? undefined });
   if (view.resume.code === "stale-request") throw new ControlError("stale-state", "조회한 뒤 상태가 바뀌었습니다 — 다시 조회해 판단하세요", { stateVersion: view.stateVersion, mismatches: view.expect?.mismatches });
@@ -201,7 +207,9 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     // 작업 없이 이어 실행 — 이전 실행이 작업을 열지 않았거나 반영으로 닫았다. 같은 세션의 대화를 잇는 것이라 받는다
   }
   const waitingOnOwnAttempt = view.resume.code === "wait" && mode === "continue" && view.resume.reasons.every((reason) => reason.code === "attempt-running");
-  if (!STARTABLE.has(view.resume.code) && !waitingOnOwnAttempt && !(mode === "continue" && delegatedRevision(root, view, bound, sessionId))) {
+  const hostHandoff = mode === "start" ? (require("./hostHandoff") as typeof import("./hostHandoff")).pendingHostHandoff(root, profile) : undefined;
+  const prepareAfterHandoff = hostHandoff && view.resume.code === "needs-human" && ["answer-questions", "confirm-request", "plan-consent", "deliver-consent", "human-input"].includes(view.resume.next.action);
+  if (!STARTABLE.has(view.resume.code) && !waitingOnOwnAttempt && !prepareAfterHandoff && !(mode === "continue" && delegatedRevision(root, view, bound, sessionId))) {
     const code = view.resume.code === "wait" ? "busy" : "invalid-state";
     throw new ControlError(code, `지금 code-agent 재개 판정(${view.resume.code}: ${view.resume.next.action})에서는 실행을 시작하지 않습니다 — ${view.resume.next.by === "human" ? "판단(decide·answer)이나 사람의 조치가 먼저입니다" : "기다린 뒤 다시 조회하세요"}`,
       { resume: view.resume, stateVersion: view.stateVersion });
@@ -209,11 +217,13 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   if (mode === "start" && workId && view.resume.code === "no-work") throw new ControlError("invalid-state", "작업 상태를 다시 조회하세요");
   const runId = newRunId();
   const at = new Date().toISOString();
-  const text = [`[code-agent master 실행 ${runId}${links.missionId ? ` · 임무 ${links.missionId}` : ""}${links.taskId ? ` · 작업 ${links.taskId}` : ""}${links.attemptId ? ` · 시도 ${links.attemptId}` : ""}]`, "", prompt, ""].join("\n");
+  const text = [`[code-agent master 실행 ${runId}${links.missionId ? ` · 임무 ${links.missionId}` : ""}${links.taskId ? ` · 작업 ${links.taskId}` : ""}${links.attemptId ? ` · 시도 ${links.attemptId}` : ""}]`, "", prompt,
+    ...(hostHandoff ? [`호스트 인계 ${hostHandoff.id}: 기존 작업 ${bound ?? "준비"}의 ID·종류·승인을 유지하세요. 새 작업을 접수하지 않습니다. 인계는 답이나 승인이 아닙니다. 미응답 질문을 현재 세션으로 재발행하고 필요한 동의는 prepare까지만 한 뒤 사람 응답을 기다리세요.`, JSON.stringify(hostHandoff.questions)] : []), ""].join("\n");
   writeFileSync(runPrompt(root, runId), text, "utf8");
   const run: RunRecord = {
     version: 1, runId, commandId: request.commandId!, controller: owner.controller, generation: owner.generation, mode, links, state: "accepted", acceptedAt: at, updatedAt: at,
-    sessionId, ...(mode === "continue" ? { resumeOf: sessionId } : {}), promptHash: `sha256:${sha256(text)}`, timeoutMs,
+    sessionId, hostProfile: profile, ...(hostHandoff ? { handoffId: hostHandoff.id } : {}), ...(profile.kind === "codex" ? { sessionAlias: sessionId, sessionConfirmed: mode === "continue" } : {}),
+    ...(mode === "continue" ? { resumeOf: sessionId } : {}), promptHash: `sha256:${sha256(text)}`, timeoutMs,
     workId: bound, baseHead: view.repo.head, baseStateVersion: view.stateVersion, history: [{ at, state: "accepted" }],
   };
   createRun(root, run);

@@ -56,7 +56,7 @@
 | `hookLog.ts`(hook 출력 기록 `noteHookOutput`·`noteSubagentReturn`·같은 사유 확인 `blockedBefore`)와 그것을 부르는 hook 진입(PreToolUse 거부·Stop 차단·질문 도구 exit 2·담당 되돌림·SessionStart 주입·Codex 출력), `stopHook.ts` `STOP_LIST_LIMIT` | §5.1 hook 출력 기록·Stop 행, §5.2 Stop 행, §8 | `usage.ts` hook 출력 절, `doc/usage.md` 사용량 절 |
 | `modelPolicy.ts` `ROLE_POLICY`·`TIER_DEFAULTS`·`CLAUDE_EFFORTS`·`CLAUDE_NO_EFFORT`, `models.ts`, `prices.ts` | §4.1 model 행, §6.3 다른 호스트 실행, §7 모델 기본값 행(`docSync.test.ts`가 `ROLE_POLICY`·`TIER_DEFAULTS`와 대조), §8 `models.json` 행 | `template/claude/agents/ca-*.md` 머리말 `model`·`effort`(`modelPolicy.test.ts`가 대조), `doc/codex.md` 역할별 모델 표(같은 테스트가 대조), `doc/design.md` 모델 문단, `ca-answer/reference.md`·`template/codex/ca-answer.md` 모델 예시, `retryPolicy.ts` `CROSS_PATTERNS.config`·`crossFailureText`(모델·강도 오류 문구, Codex 배너 라벨), `doc/usage.md` 단가표. 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다 |
 | 상태·산출물 경로(`layout.ts`, `handoff.ts`, `deliveryPaths`) | §8 | `.gitignore` 블록(`init.ts` `GITIGNORE_LINES`), `baselineFiles`(`bootstrap.ts:40-62`) |
-| `executionMode.ts`·`executionCommands.ts`, `init.ts` 공개 초기화 | §5.4, §7, §8, §9 | CLI 사용법, README 실행 표, install·usage·codex, 계획·리뷰 교차 게이트, bootstrap·deliver 설정 경로, `executionMode.test.ts` |
+| `executionMode.ts`·`executionCommands.ts`·`executionHandoff.ts`, `master/hostProfile.ts`·`hostHandoff.ts`, `init.ts` 공개 초기화 | §5.4, §7, §8, §9 | CLI 사용법, README 실행 표, install·usage·codex, 계획·리뷰 교차 게이트, bootstrap·deliver 설정 경로, `executionMode.test.ts` |
 | 새 파일·모듈 이동 | §9 | — |
 | `template/**` 문장(늘리거나 옮김) | §9 절차 템플릿 | `src/test/templateBudget.test.ts` 파일별·흐름 합계(Claude·Codex) 예산 — 넘기면 필요할 때만 읽는 보조 문서로 옮기거나 근거를 `doc/reviews`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`) |
 | 스킬·서브에이전트 추가·삭제 | §7, §9 | 설치 수(`README.md` 동작 구조 표, `doc/codex.md` 설치 대상 표, `doc/install.md`, `doc/usage.md:228`), `ca-next/SKILL.md` 표, `init.ts`의 Codex 설치 안내 문구. 서브에이전트는 `hostText.ts` `ROLE_NAMES`(정본 — `hosts.ts`가 다시 내보내고 `codexText` 역할 정규식도 이것으로 만든다)와 `modelPolicy.ts` `AGENTS`·`ROLE_POLICY`도 고치고, 계획·리뷰 담당이면 `init.ts:228-231`·`doctor.ts:181`의 SubagentStart·Stop matcher도 고친다 |
@@ -336,6 +336,8 @@ CLI·hook 거부의 판정은 유지한다. 호스트의 메인은 차단된 동
 
 master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN=<runId>`의 실행 기록이 있고 세션 ID 가 같을 때)이면 `decideTool`이 가장 먼저 `masterRunGuard`(`master/runGuard.ts`)를 본다 — 정지·취소 요청이 있거나 끝난 실행이면 모든 도구를 막아 보고 뒤 턴을 끝내게 하고(협력 정지), 질문 도구는 동의 준비까지만 하라고 돌려보내며, `code-agent master`·`takeover`를 막는다. 표지가 없는 세션은 이 판정을 지나지 않는다. 허용이면 아래 판정을 그대로 탄다([master 연동](master-control.md) §11).
 
+Codex 관리 실행은 `codexHook`의 도구 분류 전에 같은 가드를 적용한다. 기록된 실행과 도구 이벤트의 세션 ID가 다르면 거부하며, 기본 질문 도구·MCP ask·confirm은 영속 질문 또는 동의 준비 후 대기로 안내한다.
+
 0. 교차 실행 자식(`CODE_AGENT_CROSS`)이면 쓰기 도구와, 읽기 전용 목록(`read <파일>`·`status`·`survey`·`planning status`·`help`, 인자 없는 `code-agent` — 연결·리다이렉트·치환 문자 없이) 밖의 `code-agent` 명령을 `CROSS_CHILD_DENY`로 거부한다(`crossChildGuard`). 작업 임대를 읽거나 쓰지 않는다. 다른 호스트의 읽기 전용 실행(Claude `--allowedTools Read,Grep,Glob`, Codex `-s read-only`)과 별개다.
    - 읽기 전용 담당(`ca-critic`·`ca-reviewer` — `READ_ONLY_ROLES`)의 쓰기 도구와 상태를 바꾸는 `code-agent` 명령(임대가 보는 진행 명령 — `leaseGated`)도 같은 자리에서 거부한다(`readOnlyRoleGuard`). `ca-surveyor`도 같지만 초안 자리(`doc/.survey/` 바로 아래 `.md` — `SURVEY_DRAFTS`) 쓰기만 연다 — 초안 본문이 메인 대화를 거쳐 writer 프롬프트로 다시 출력되지 않게 경로만 넘긴다. 그 쓰기도 뒤의 모드 판정(문서 세션 `decideDocWrite`)을 그대로 지난다. 담당은 입력 `agent_type`으로 가린다 — 두 호스트 모두 하위 에이전트 안의 호출에 `agent_id`·`agent_type`을 싣는다(claude 2.1.293·codex-cli 0.161.0 실측, Codex 는 `ca_x`를 `commonAgentName`으로 바꾼다). 정의 파일의 `tools`와 별개로 hook 이 막는다.
    - `mcp__*` 도구는 상태를 읽기 전에 `decideMcp`로 간다 — 경로 키(`path`·`file_path`·`uri`·`relative_path`·`pathInProject` 등, 한 단계 아래 객체까지)의 값을 도구 이름의 쓰기 동사(write·edit·create·…)에 따라 `Write`·`Read` 입력으로 이 판정 전체를 다시 탄다. 동사는 도구 이름을 `_`·`-`·camelCase 경계로 나눈 낱말로 맞춘다(`compute`·`read_output_file`의 `put` 같은 부분 문자열은 쓰기가 아니다 — `mcpWrites`). 로컬 파일 서버(`fs`·`filesystem`·`files`·`file-system`·`local-file(s)`)는 모든 경로를, 프로젝트 상대 경로 키(`relative_path`·`pathInProject`·`project_path` — `MCP_PROJECT_KEYS`)는 서버 이름과 무관하게 저장소 기준 상대 경로도, 그 밖의 서버는 저장소·키 저장소 안과 사용자 수준 호스트 설정 파일(`userHostConfig` — 다른 이름 포함)을 가리키는 절대 경로·`file://`만 판정한다(원격 서비스의 경로 인자를 막지 않으면서, 이름이 파일 서버가 아닌 로컬 쓰기 서버도 그 설정 파일을 쓰지 못한다). 경로 인자가 없는 도구는 판정하지 않는다.
@@ -352,20 +354,22 @@ master 실행 세션(감독이 호스트 환경에 넣은 `CODE_AGENT_MASTER_RUN
 
 ### 5.4 모델이 셸로 부를 수 있는 `code-agent` 명령 (세션·작업 중)
 
+`execution --json`은 인계 상태의 읽기 전용 조회다. 실행 방식·주 호스트 변경과 `--handoff`는 호스트 밖 TTY에서만 확인한다. 관리 Codex의 PreToolUse는 일반 판정 대상이 아닌 도구와 MCP confirm도 먼저 실행 가드로 검사하며, thread ID 미확정·불일치 상태에서 진행하지 않는다.
+
 영속 질문 명령 `interaction publish <파일>`·`consume <ID>`·`complete <ID> <파일>`·`list`를 허용한다. 앞의 셋은 메인 PreToolUse의 일회성 세션 티켓이 필요하다. `master human`·외부 적용 실행기 `interaction drain`은 모델 명령이 아니다. Codex MCP ask도 PreToolUse 티켓으로 발행 세션을 묶는다. Claude 일반 단일 선택은 Pre/Post 호출 ID로 첫 응답을 관찰한다. 구조화된 추천·다중 선택은 공통 발행 경로를 사용한다.
 
 - 허용(`hook.ts:106-139`, 접두어 일치)
   - `start`·`next`·`back`·`context`·`read`·`status`·`plan submit`·`planning prepare·advance [--chain]·status·result·dispatch·repair·cancel·cross`·`docs *`·`survey`·`manifest check`·`request *`
   - `plugin list`·`knowledge find <낱말|키|경로...>`(읽기 전용 — 작업 임대를 보지 않는다)·`repro`·`check`·`test`·`verify`·`review *`·`integrate`
   - `status --json [--expect-state|--expect-work|--expect-attempt|--session|--run-id <값>]`(읽기 전용), `experience add <초안>·list [--all]·show <EXP-ID>`·`finding report <초안>·list [--json] [--work <ID>]`(add·report 는 이 작업의 기록 파일만 쓰고 쓰기 경계·승인·한도를 바꾸지 않는다. `experience.md` 는 도구 쓰기를 `decideWrite`가, `findings.json` 은 상태 폴더라 `stateGuard`가 막는다)
-  - `consent prepare <파일> | --action <동작> …`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`·`execution`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help [<명령>]`(명령 하나의 사용법 줄), `version [--json]`(이 명령을 돌린 코드·프로젝트 적용·적용 대기 버전·설치된 릴리스·실행 중인 선택 UI MCP 조회 — 읽기 전용, 작업 임대를 보지 않는다), 인자 없는 `code-agent`
+  - `consent prepare <파일> | --action <동작> …`·`consent status·apply·finish <id>`, `model`·`model --host <호스트>`(조회만), `setup`·`execution [--json]`(조회만), `doctor [--host <claude|codex|both>] [--cross]`(읽기 전용 조회 — 순서 무관), `takeover`(작업 임대 해제 — 사용자 확인은 스킬 규칙), `help [<명령>]`(명령 하나의 사용법 줄), `version [--json]`(이 명령을 돌린 코드·프로젝트 적용·적용 대기 버전·설치된 릴리스·실행 중인 선택 UI MCP 조회 — 읽기 전용, 작업 임대를 보지 않는다), 인자 없는 `code-agent`
 - 그 밖은 모두 거부한다. 그중 `abort`·`approve`·`reject`·`confirm`·`model` 변경·`deliver`·`plugin add·remove`·`update`(설치·적용 버전 고르기 — 세션 밖의 `--templates-only`는 §5.3 3단계)·`knowledge prune`·`setup baseline`은 §4.1 동의로 실행한다. `init`·`usage`·`knowledge`(목록 — `find`는 위 허용)·`plugin example`은 동의 동작이 없고 사람이 직접 실행한다. `master`(연동 설정·위임 권한·인계는 사람의 터미널, `call`·`supervise`는 master 러너)는 세션 안팎 모두 거부한다(세션 밖은 §5.3 3단계). 거부 문구의 셸·파일 도구 이름은 호스트 표기다(`viaShell`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`).
 
 ## 6. 오케스트레이션
 
 ### 6.0 전체 실행 그래프
 
-영속 질문의 미응답·보류는 `human-input`, 수신한 일반 답은 `consume-interaction` 인계로 이어진다. 작업 ID 없는 설정·운영도 같은 판정을 쓴다. 응답 적용 실행기는 종료가 확인된 기존 Claude 비대화형 세션만 한 번 이어 실행하도록 예약하며, 정지·취소·인계·종료 미확인 상태에서는 재시작하지 않는다. 기존 작업 ID·종류·재시도 한도·승인 게이트는 유지한다.
+영속 질문의 미응답·보류는 `human-input`, 수신한 일반 답은 `consume-interaction` 인계로 이어진다. 작업 ID 없는 설정·운영도 같은 판정을 쓴다. 응답 적용 실행기는 종료가 확인된 기존 Claude·Codex 관리 세션만 한 번 이어 실행하도록 예약하며, 정지·취소·인계·종료 미확인 상태에서는 재시작하지 않는다. 기존 작업 ID·종류·재시도 한도·승인 게이트는 유지한다.
 
 `flow advance --json`은 준비·문서·접수·사전 판별과 모든 `PHASES`의 재개 위치를 결정한다. 호스트 인계·SQLite·잠금·중단 후 재개는 [LangGraph 실행 구조](langgraph.md), master 통신·정지·제어권은 [master 연동](master-control.md)이 정본이다. 단계별 게이트는 §3, 계획·검증 내부 흐름은 아래 절을 따른다.
 
@@ -666,10 +670,14 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | Codex 단독 | `execution codex` | 없음 |
 | 교차 검증 | `execution both` | 현재 호스트가 개발하고 상대 호스트가 계획·코드 리뷰 |
 
-공개 `init`은 두 호스트를 준비하고 설치 목록과 실행 정책을 분리한다. 호환 `--host` 인자도 설치 범위를 줄이지 않는다. 내부 갱신은 기존 설치 범위를 유지한다. 정책 파일이 없는 설치는 설치 목록이 둘 다이면 교차 검증을 유지하고, 새 설치는 `auto`(현재 호스트 단독)로 시작한다. `execution` 조회는 모델도 가능하지만 변경은 호스트 밖 TTY 확인을 요구한다. 관리 실행 중에는 변경을 막고, 단독 선택과 다른 호스트의 쓰기·진행은 hook이 막는다. 임대·승인·작업 ID·접수 유형은 바꾸지 않는다. 교차 검증의 실행 불가·설정 오류·재시도 규칙은 §6.3을 따른다.
+관리 실행은 단독 선택을 그대로 따르고 `both --main claude|codex`로 주 호스트를 정한다. 지정하지 않으면 기존 단독 선택·main, 그 값도 없으면 연동의 기본 호스트를 사용한다. 실행 기록에 호스트·권한 설정을 고정하고 재개 때 현재 선택·설정과 다시 대조한다. Codex는 프로젝트 hook 설치·프로젝트/훅 신뢰 기록을 확인한 뒤 workspace-write 또는 read-only와 approval_policy=never로 실행하며 자동 권한 상승·신뢰 우회는 하지 않는다. 최초 thread.started를 확인해 세션 ID를 저장하고, 접수 별칭도 조회·재개 입력으로 받는다. 재개는 확인한 thread ID를 사용하고 누락·불일치·실패 이벤트를 성공으로 보지 않는다.
+
+호스트 인계는 이전 실행을 중지한 뒤 `execution --json`으로 브랜치·작업·임대·질문·동의를 조회하고 `execution codex --handoff`처럼 확인한다. 관리 실행·소유권 인계·미소비/미적용 답·열린 동의가 있으면 막는다. 확인한 문맥이 그대로일 때만 미응답 일반 질문을 취소 이력으로 남기고 임대를 해제한다. 작업 ID·최초 접수 유형·계획·승인 기록은 유지한다. 새 세션은 질문을 재발행하고 필요한 동의를 준비하며 받은 답·승인을 복사하지 않는다. 관리 실행은 같은 작업·links의 start로 이어가되, 인계의 브랜치·HEAD·작업·세대·호스트를 대조하고 실행 기록에 인계 ID를 묶어 한 번만 사용한다. 사람 대기 중 허용하는 시작도 질문·동의 준비만 가능하며 기존 단계 게이트는 유지한다.
+
+공개 `init`은 두 호스트를 준비하고 설치 목록과 실행 정책을 분리한다. 호환 `--host` 인자도 설치 범위를 줄이지 않는다. 내부 갱신은 기존 설치 범위를 유지한다. 정책 파일이 없는 설치는 설치 목록이 둘 다이면 교차 검증을 유지하고, 새 설치는 `auto`(현재 호스트 단독)로 시작한다. `execution` 조회는 모델도 가능하지만 변경은 호스트 밖 TTY 확인을 요구한다. 관리 실행 중에는 변경을 막고, 단독 선택과 다른 호스트의 쓰기·진행은 hook이 막는다. 일반 선택은 임대를 바꾸지 않으며 명시적 인계는 아래 절차로 해제한다. 승인·작업 ID·접수 유형은 보존한다. 교차 검증의 실행 불가·설정 오류·재시도 규칙은 §6.3을 따른다.
 
 
-두 호스트를 같은 작업에 동시에 쓰지 않는 것은 작업 임대가 막는다(`lease.ts`, §5.3 7) — 진행 명령·쓰기를 처음 한 세션이 잡고 다른 세션은 거부된다. 두 호스트 모두 호스트와 세션을 비교하고, SessionStart(Claude `session-event`·Codex `codex-event`)가 압축(`compact`)을 빼고 같은 호스트 임대를 넘겨받는다(재시작·`/clear`가 막히지 않고, 아직 열린 이전 세션은 다음 진행 명령이 거부된다 — 그 세션이 압축돼도 되찾지 않는다). 하위 에이전트의 hook 은 부모 `session_id`를 싣고 재개도 같은 `session_id`라(claude 2.1.293·codex-cli 0.161.0 실측), 두 터미널이 같은 세션을 이어 열면 임대 보유자가 하나로 보인다. 다른 호스트가 쥔 신선한 임대는 `takeover`나 30분 무활동으로만 넘어간다. `takeover`는 모델이 부를 수 있어 사용자 확인을 코드가 강제하지 않는다 — 임대는 모르는 사이의 동시 진행을 막는 사고 방지 장치이지 권한 경계가 아니고, 넘겨받기 전 확인은 스킬 규칙(`ca-next` 재개표)이다. 분류는 `precondition`이다. 동의는 준비 때 그 명령을 본 hook 의 세션·호스트(준비 티켓)에, 첫 응답 관찰(Pre) 때 채널·세션·작업 경로에 묶이므로(`observeConsent`), 준비한 뒤 호스트를 바꾸면 동의를 다시 준비해야 한다.
+두 호스트를 같은 작업에 동시에 쓰지 않는 것은 작업 임대가 막는다(`lease.ts`, §5.3 7) — 진행 명령·쓰기를 처음 한 세션이 잡고 다른 세션은 거부된다. 두 호스트 모두 호스트와 세션을 비교하고, SessionStart(Claude `session-event`·Codex `codex-event`)가 압축(`compact`)을 빼고 같은 호스트 임대를 넘겨받는다(재시작·`/clear`가 막히지 않고, 아직 열린 이전 세션은 다음 진행 명령이 거부된다 — 그 세션이 압축돼도 되찾지 않는다). 하위 에이전트의 hook 은 부모 `session_id`를 싣고 재개도 같은 `session_id`라(claude 2.1.293·codex-cli 0.161.0 실측), 두 터미널이 같은 세션을 이어 열면 임대 보유자가 하나로 보인다. 다른 호스트가 쥔 신선한 임대는 TTY 인계(`execution --handoff`)·`takeover`·30분 무활동으로 넘어간다. `takeover`는 모델이 부를 수 있어 사용자 확인을 코드가 강제하지 않는다 — 임대는 모르는 사이의 동시 진행을 막는 사고 방지 장치이지 권한 경계가 아니고, 넘겨받기 전 확인은 스킬 규칙(`ca-next` 재개표)이다. 분류는 `precondition`이다. 동의는 준비 때 그 명령을 본 hook 의 세션·호스트(준비 티켓)에, 첫 응답 관찰(Pre) 때 채널·세션·작업 경로에 묶이므로(`observeConsent`), 준비한 뒤 호스트를 바꾸면 동의를 다시 준비해야 한다.
 
 | 항목 | Claude | Codex | 근거 |
 |---|---|---|---|
@@ -702,9 +710,11 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 8. 상태·산출물 파일 지도
 
-`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 사용자 홈 `.code-agent/dashboard-channels/`에 둔다. 상태 형식 세대는 7이다.
+관리 실행의 `runs/<runId>.json`에는 호스트 권한 설정(`hostProfile`), Codex 접수 별칭(`sessionAlias`)·thread 확인 여부(`sessionConfirmed`), 사용한 호스트 인계 ID(`handoffId`)가 있다. `master/host-handoff.json`은 TTY로 확인한 대상 호스트·브랜치·HEAD·작업·소유 세대·미응답을 보존하며 master 폴더와 함께 Git·동의 스냅샷에서 제외한다. 등록한 호스트별 설정은 master binding의 `hostProfiles`, 선택한 교차 주 호스트는 execution 정책의 `main`에 둔다. 해제한 임대의 옛 세션이나 아직 thread를 확인하지 않은 관리 Codex에는 질문 문서를 자동 결속하지 않는다.
 
-`active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다. 상태 형식 세대는 6이다.
+`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 사용자 홈 `.code-agent/dashboard-channels/`에 둔다. 현재 상태 형식 세대는 8이다.
+
+`active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다.
 
 `identities/<소문자 ID>.json`은 checkout 안에서 최초 접수의 ID·종류를 보존한다. 접수 시작과 직접 작업 시작이 `identities/identity.lock` 안에서 기록하며 abort·deliver는 지우지 않는다. Git·반영 대상에서는 제외하고 동의 스냅샷에는 포함한다. 별도 checkout의 전역 ID 예약을 대신하지 않는다.
 
@@ -770,7 +780,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
-- `executionMode.ts`·`executionCommands.ts`: 설치와 분리된 실행 정책·TTY 선택. 계획·리뷰 교차 게이트와 hook이 같은 정책을 읽는다.
+- `executionMode.ts`·`executionCommands.ts`·`executionHandoff.ts`: 설치와 분리된 실행 정책·TTY 선택·인계 상태와 차단 검사. 계획·리뷰 교차 게이트와 hook이 같은 정책을 읽는다. `master/hostProfile.ts`는 관리 실행 호스트·권한·Codex 설치/신뢰를 대조하고, `master/hostHandoff.ts`는 확인한 인계를 한 번의 실행에 결속한다.
 
 대시보드 연동은 `interactionSchema.ts`(구조 검증), `interactions.ts`(원장), `interactionSources.ts`(동의·문서 연결), `interactionHuman.ts`(사람 채널), `interactionService.ts`(API·적용·재개), `interactionNative.ts`(호스트 질문), `interactionTicket.ts`(hook 세션 결속), `interactionSummary.ts`(읽기 전용 상태)로 나뉜다.
 
@@ -812,6 +822,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 - `ca-reviewer`: review
 
 ## 10. 변경 이력
+
+- Codex 관리 실행과 확인된 동일 세션 재개를 지원하고, 사람 확인을 거친 호스트 전환에서 기존 작업과 응답·승인 경계를 보존한다 — 이 커밋, [검증 기록](reviews/2026-10-20-managed-hosts.md).
 
 - 대시보드 질문·선택·사람 동의를 영속화하고 서명 응답의 중복 없는 적용·재개를 연결한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
 - init에서 두 호스트를 준비하고 단독·교차 실행 선택을 설치와 분리한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).

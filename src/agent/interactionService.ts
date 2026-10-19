@@ -24,7 +24,7 @@ export const INTERACTION_CAPABILITIES = {
   commands: ["interactions", "interaction", "interaction.respond", "interaction.result"],
   humanChannel: "dashboard-human", signature: "Ed25519", independentSessions: true, beforeDocumentConfirmation: true,
   questionConsumer: ["host", "questions"], consentActions: ["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log", "judgment"],
-  continuation: { live: "동일 세션의 interaction consume·complete", detached: "기록된 Claude 실행 세션만 자동 재개", codexDetached: false },
+  continuation: { live: "동일 세션의 interaction consume·complete", detached: "기록된 Claude·Codex 실행의 확인된 동일 세션 자동 재개", codexDetached: true },
 };
 const ResponsePayload = z.object({ requestId: z.string().uuid(), expectedRevision: z.number().int().positive(), contentHash: z.string(), challenge: z.string().uuid(), channelId: z.string().uuid(), signature: z.string().max(1000), submission: InteractionSubmission }).strict();
 function validateContext(root: string, record: InteractionRecord): void {
@@ -214,6 +214,13 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
       catch (error) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return; }
     }
     if (!previous || !["completed", "blocked"].includes(previous.state) || previous.stop || owner.handover || previous.generation !== owner.generation) return;
+    let profile: import("./master/protocol").HostProfile;
+    try {
+      const { requireResumeProfile, requireManagedHost } = require("./master/hostProfile") as typeof import("./master/hostProfile");
+      profile = requireResumeProfile(root, binding, previous); requireManagedHost(root, profile);
+    } catch (error) {
+      mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return;
+    }
     const commandId = `interaction:${r.requestId}`, existing = listRuns(root).find(run => run.commandId === commandId);
     if (existing) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "started", runId: existing.runId }; bumpInteraction(state, saved); }); return; }
     if (activeRuns(root).length) return;
@@ -221,7 +228,8 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     const prompt = `대시보드 사람이 요청 ${r.requestId}에 명시적으로 응답했습니다. 기존 세션과 작업 ID·종류를 유지하세요. code-agent interaction consume ${r.requestId}로 답 또는 적용 결과를 조회하고 기존 단계의 검증·승인 규칙으로 이어가세요. 새로운 작업을 접수하거나 승인·hook 기록을 만들지 마세요.`;
     writeFileSync(runPrompt(root, runId), prompt, "utf8");
     const run: RunRecord = { version: 1, runId, commandId, controller: owner.controller, generation: owner.generation, mode: "continue", links: previous.links,
-      state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, promptHash: interactionHash(prompt), timeoutMs: binding.policy.runTimeoutMs,
+      state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile,
+      ...(profile.kind === "codex" ? { sessionAlias: previous.sessionId, sessionConfirmed: true } : {}), promptHash: interactionHash(prompt), timeoutMs: binding.policy.runTimeoutMs,
       workId: previous.workId, baseHead: r.context.head, baseStateVersion: previous.baseStateVersion, history: [{ at, state: "accepted", note: `사람 응답 ${r.response!.receiptId}` }] };
     createRun(root, run);
     // 실행 예약이 먼저다. 중단 뒤에는 같은 run을 조회하며 새 실행을 예약하지 않는다.

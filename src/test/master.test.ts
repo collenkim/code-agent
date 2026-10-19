@@ -91,8 +91,8 @@ describe("기능 협상·인증·연동 조건", () => {
     const hello = call(root, JSON.stringify({ protocol: "code-agent.master", version: 1, type: "hello" })) as Res;
     assert.equal(hello.ok, true);
     assert.equal(hello.result.project.enabled, false);
-    assert.equal(hello.result.hosts.find((host: { kind: string }) => host.kind === "codex").supported, false);
-    assert.ok(hello.result.unsupported.some((item: { feature: string }) => item.feature === "host:codex"));
+    assert.equal(hello.result.hosts.find((host: { kind: string }) => host.kind === "codex").supported, true);
+    assert.ok(!hello.result.unsupported.some((item: { feature: string }) => item.feature === "host:codex"));
     const snap = call(root, JSON.stringify({ protocol: "code-agent.master", version: 1, type: "snapshot", controller: "m1", token: "x" })) as Res;
     assert.equal(snap.error?.code, "not-enabled");
     assert.equal(stateView(root).stateVersion, before.stateVersion);

@@ -20,7 +20,7 @@ const RUN_ID = /^run-[A-Za-z0-9-]+$/;
 const TERMINAL: readonly string[] = TERMINAL_RUN_STATES;
 
 interface GuardInput { tool_name: string; session_id?: string; tool_input: { command?: string; [key: string]: unknown } }
-interface RunView { runId: string; state: string; sessionId?: string; stop?: { mode: "pause" | "cancel"; reason?: string } }
+interface RunView { runId: string; state: string; sessionId?: string; hostProfile?: { kind: string }; sessionConfirmed?: boolean; stop?: { mode: "pause" | "cancel"; reason?: string } }
 
 /** 이 세션이 master 실행이면 그 기록 — 아니면 undefined */
 export function masterRun(root: string, env: Readonly<Record<string, string | undefined>> = process.env): RunView | undefined {
@@ -40,13 +40,16 @@ export function masterRunGuard(input: GuardInput, root: string, env: Readonly<Re
   const run = masterRun(root, env);
   if (!run) return undefined;
   // 세션이 기록과 다르면(감독이 세션 ID 를 정해 넘긴다) 이 실행의 도구 호출이 아니다 — 판단하지 않는다
-  if (run.sessionId && input.session_id && run.sessionId !== input.session_id) return undefined;
+  if (run.sessionId && input.session_id && run.sessionId !== input.session_id) {
+    if (run.hostProfile?.kind === "codex") return "관리 실행의 Codex thread ID를 아직 확인하지 못했거나 다른 세션입니다. 도구 실행을 멈추고 감독 상태를 확인하세요.";
+    return undefined;
+  }
   if (run.stop || TERMINAL.includes(run.state)) {
     const why = run.stop ? `master 가 이 실행(${run.runId})의 ${run.stop.mode === "cancel" ? "취소" : "일시 정지"}를 요청했습니다${run.stop.reason ? ` — ${run.stop.reason}` : ""}`
       : `이 실행(${run.runId})은 ${run.state} 로 끝난 것으로 기록됐습니다`;
     return `${why}. 도구를 더 쓰지 말고, 지금까지 한 일과 멈춘 자리를 짧게 보고한 뒤 턴을 끝내세요. 파일을 되돌리지 않습니다.`;
   }
-  if (input.tool_name === "AskUserQuestion") {
+  if (["AskUserQuestion", "request_user_input", "mcp__code_agent__ask", "mcp__code_agent__confirm"].includes(input.tool_name)) {
     return `이 세션은 master 실행이라 ${askVia()} 사람에게 묻지 않습니다 — 동의는 code-agent consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝냅니다. ` +
       "업무 질문은 code-agent interaction publish <질문.json>으로 영속화하고 human-input 대기를 보고한 뒤 턴을 끝냅니다. 작업 ID가 없는 설정·운영 질문도 같은 경로입니다. 추천으로 대신 답하지 않습니다.";
   }

@@ -60,7 +60,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
 설치·조회 및 선택 사항인 직접 CLI (일반 개발에서는 같은 세션의 확인 도구 사용):
   code-agent help [<명령>]            이 사용법 — 명령을 주면 그 명령의 줄만
   code-agent init [--cli <path>]  이 저장소에 두 호스트의 실행 절차·에이전트·훅 설치
-  code-agent execution [claude|codex|both]  실행 방식 조회 · 변경은 호스트 밖 TTY 확인
+  code-agent execution [claude|codex|both] [--main claude|codex] [--handoff]  실행 선택·인계(호스트 밖 TTY) · --json은 인계 상태 조회
   code-agent status                   문서·작업·스테이지·질문·승인 상태
   code-agent flow advance [--json]     LangGraph 전체 흐름 재개 — 반환한 담당·사람 작업을 수행하고 결과 기록 뒤 같은 명령으로 잇는다
   code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]
@@ -364,8 +364,13 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(initialize(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
       return 0;
     case "execution":
-      if (args.length > 1) throw new Stop("사용법: code-agent execution [claude|codex|both]");
-      print(execution(repoRoot, args[0]));
+      {
+        const mode = args[0] && !args[0].startsWith("--") ? args[0] : undefined;
+        const flags = mode ? args.slice(1) : args;
+        const usage = "사용법: code-agent execution [claude|codex|both] [--main claude|codex] [--handoff] | --json";
+        if (optionsOnly(flags, ["main"], ["--handoff", "--json"], usage)) { print(usage); return 0; }
+        print(execution(repoRoot, mode, { main: option(flags, "main"), handoff: flags.includes("--handoff"), json: flags.includes("--json") }));
+      }
       return 0;
     case "status": {
       if (args.length === 0) { print(status(repoRoot)); return 0; }

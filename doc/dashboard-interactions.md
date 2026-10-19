@@ -121,15 +121,15 @@ const result = call({...auth, type:'interaction.result', payload:{requestId:item
 
 살아 있는 호스트는 같은 세션에서 consume/complete한다. Codex의 열린 MCP 일반 질문은 대시보드 답을 감지하여 폼 대기를 끝낸다. Claude의 이미 열린 선택창을 외부에서 강제로 닫는 기능은 없으므로 원래 창을 종료하고 저장된 답을 소비한다. 이미 호스트 응답을 시작한 **동의**는 그 채널에서 마친다. 대시보드 동의는 prepare 후 별도 호스트 confirm을 열지 않는다.
 
-끝난 비대화형 Claude 실행은 저장된 runId·sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
+끝난 비대화형 Claude·Codex 관리 실행은 저장된 runId·확정된 sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. Codex는 thread.started로 확인한 thread ID가 있어야 하며 다른 세션으로 대체하지 않는다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 호스트 선택·등록 권한 설정이 달라졌거나 Codex 설치·신뢰 조건을 충족하지 못해도 차단 사유를 기록한다. 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
 
 ## 제한과 인계 항목
 
-설치는 `code-agent init` 한 번으로 두 호스트를 준비한다. 호스트 밖 터미널에서 `code-agent execution claude|codex|both`로 실행을 선택하며, both는 현재 호스트를 메인으로 상대 호스트의 계획·코드 리뷰를 추가한다. 호스트 한도 소진에 따른 자동 전환은 하지 않는다. 독립 호스트 전환은 이전 실행 중지 → 단독 실행 선택 → 같은 브랜치에서 기존 작업 재개 순서다. 이전 세션의 미응답 질문은 취소하고 새 세션에서 재발행하며, 이미 받은 답은 원래 소비자가 처리한다. 미완료 동의는 원래 세션에서 마치거나 새로 준비한다. master 감독의 Claude 실행 프로필과 Codex 자동 재개 지원 범위는 이 선택으로 바뀌지 않는다.
+설치는 `code-agent init` 한 번으로 두 호스트를 준비한다. `execution claude|codex`는 독립·관리 실행의 호스트를 선택하고, `execution both --main claude|codex`는 관리 실행의 주 호스트와 상대 호스트 교차 검증을 선택한다. 전환은 이전 실행 중지 → `execution --json`으로 인계 상태 조회 → `execution codex --handoff`(또는 claude·both) 확인 → 같은 브랜치의 기존 작업 재개 순서다. 인계는 미응답 일반 질문을 취소 이력으로 남기고 임대를 풀며, 미소비 답·미완료 동의가 있으면 먼저 원래 채널에서 처리하도록 막는다. 작업·승인·답을 다른 세션으로 복사하지 않는다. 자세한 명령·관리 실행 계약은 [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다.
 
 - 기존 메모리에만 있는 질문, 세션 기록 없는 질문·동의는 복원하지 않는다. 원래 채널에서 처리하거나 명시적으로 재발행한다. 이미 받은 답은 재질문하지 않는다.
-- 독립 Claude/Codex의 **살아 있는** 세션 응답은 지원한다. 저장된 master 실행이 없는 종료 세션을 자동 실행하거나 Codex 비대화형 세션을 자동 재개하지 않는다(`codexDetached:false`).
-- master-agent의 브라우저 요청함·서버 키 보관·명시적 제출 검증·전송함·프로젝트 수집·master 자체 질문은 별도 구현·계약 검증 대상이다. code-agent 파일을 직접 쓰지 말고 이 API를 사용한다.
-- 실제 브라우저 클릭, 두 실제 모델의 프로젝트별 완주, 운영 환경의 Git 반영·업데이트·플러그인 실행까지 이번 변경의 모의 시험으로 검증했다고 보지 않는다. 자동 시험과 실측 범위는 [검증 기록](reviews/2026-10-19-dashboard-interactions.md)을 따른다.
+- 독립 Claude/Codex의 **살아 있는** 세션 응답과 기록된 관리 실행의 같은 세션 재개를 지원한다(`codexDetached:true`). Codex 관리 실행 지원 여부는 `hello.codeAgent.stateSchema >= 8`, `hosts`와 `interactions.continuation`으로 확인한다. 저장된 관리 실행이 없는 종료 세션 복원과 토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
+- master-agent는 브라우저 요청함·서버 키 보관·명시적 제출 검증·전송함·프로젝트 수집·master 자체 질문을 담당한다. code-agent 파일을 직접 쓰지 말고 이 API를 사용한다. 관리 호스트·인계의 code-agent 검증 범위는 [기록](reviews/2026-10-20-managed-hosts.md)을 따른다.
+- 실제 브라우저 클릭, 두 실제 모델의 프로젝트별 완주, 운영 환경의 Git 반영·업데이트·플러그인 실행은 별도 검증 대상이다. 최초 질문·동의 구현의 근거는 [기초 검증](reviews/2026-10-19-dashboard-interactions.md), 현재 관리 실행·인계와 전체 회귀 결과는 위 관리 호스트 기록에 모은다.
 
 빌드 진입점은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`다. `npm.cmd run build`, `npm.cmd test`로 재현한다. 공개 CLI·서명·중복 응답·적용 검사는 `src/test/dashboardInteractions.test.ts`·`dashboardApproval.test.ts`·`dashboardConsent.test.ts`, MCP 통신은 `choiceProtocol.test.ts`, 기존 동의 도메인 검사와 감독·중단 검사는 `consent*.test.ts`·`masterRuns.test.ts`에 있다. 검증 결과는 위 기록에 남긴다.
