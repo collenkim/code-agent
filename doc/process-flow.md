@@ -813,8 +813,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 10. 변경 이력
 
-- 대시보드 질문·선택·사람 동의를 영속화하고 서명 응답의 중복 없는 적용·재개를 연결한다 — 이 변경 커밋, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
-- init에서 두 호스트를 준비하고 단독·교차 실행 선택을 설치와 분리한다 — 이 변경 커밋, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
+- 대시보드 질문·선택·사람 동의를 영속화하고 서명 응답의 중복 없는 적용·재개를 연결한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
+- init에서 두 호스트를 준비하고 단독·교차 실행 선택을 설치와 분리한다 — `91105a1`, [검증 기록](reviews/2026-10-19-dashboard-interactions.md).
 
 변경마다 한 줄이다 — 무엇이 바뀌었는지의 요지와 커밋만 적는다. 경위·지적별 처리·검증 결과는 [문서·검증 이력](reviews/README.md)에서 찾는다.
 

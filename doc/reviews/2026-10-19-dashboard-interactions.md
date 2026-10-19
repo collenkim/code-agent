@@ -1,6 +1,6 @@
 # 대시보드 사람 응답과 실행 호스트 선택 검증
 
-변경 커밋: 이 기록과 같은 커밋. 인계 계약은 [대시보드 상호작용](../dashboard-interactions.md), 실행 정책은 [Codex 연동](../codex.md)을 따른다.
+변경 커밋: `91105a1`. 인계 계약은 [대시보드 상호작용](../dashboard-interactions.md), 실행 정책은 [Codex 연동](../codex.md)을 따른다.
 
 ## 변경 범위
 
