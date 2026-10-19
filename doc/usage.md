@@ -147,7 +147,7 @@ code-agent init --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 `status` 는 번호 없이 스테이지 이름(`스테이지: 정적 분석·컴파일 — …`)을 쓴다 (재현은 따로 칸이 없다 — `implement` 안에서 돈다).
 **요구사항 접수(1)에는 스테이지 번호가 없다** — 작업 커서가 생기기 전이라, 문서 작성처럼 **세션**으로 돈다.
 
-| # | 목표 흐름 | 스테이지 (`active.json` 의 `phase`) | 산출물 |
+| # | 목표 흐름 | 스테이지 (현재 브랜치 커서의 `phase`) | 산출물 |
 |---|---|---|---|
 | — | 공통 POLICY 4종 · KNOWLEDGE 5종 | (스테이지 밖 게이트) | `doc/architecture.md` · 컨벤션 · `doc/test-strategy.md` · `doc/quality.md` · `doc/knowledge/*.md` |
 | 1 | 요구사항 접수 | (스테이지 밖 — 접수 세션) | `request.json` → 코드가 지시서 `requirement.md` 렌더 + 사람의 확정 원장 |
@@ -630,9 +630,9 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent approve [--comment <메모>]` | 제출된 계획 승인 — 남는 인자는 사용법 오류(`approve request …` 는 `confirm request` 를 안내한다) | **O** |
 | `code-agent reject --comment "<사유>"` | 제출된 계획 반려 (사유 필수) | **O** |
 | `code-agent deliver` | 반영 — 추적표·검증 증거·변경 파일을 보여 주고 확인을 받은 뒤 작업 브랜치에 **로컬 커밋**. push·MR/PR 생성은 하지 않는다 | **O** |
-| `code-agent abort` | 진행 커서(`.code-agent/active.json`)만 지운다. 진행 중인 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
-| `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록(`.code-agent/lease.json`)을 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 실행 절차 규칙이다 | — |
-| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY. 진행 중인 작업이 있으면 거부한다 — 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾼다. 조회는 작업 중에도 된다 |
+| `code-agent abort` | 현재 브랜치의 진행 커서만 지우고 다른 브랜치의 작업은 보존한다. 현재 작업이 없으면 **접수 세션**(`request-session.json`)을 닫는다 | — |
+| `code-agent takeover` | 다른 세션(호스트)이 쥔 현재 브랜치 작업의 임대를 풀어 다음 진행 명령을 실행하는 세션이 이어받게 한다. 저쪽 세션을 끝냈거나 멈춘 것을 사용자가 확인한 뒤 쓴다 — 모델도 부를 수 있지만 확인은 실행 절차 규칙이다 | — |
+| `code-agent model [<역할\|all> <모델\|default>] [--host claude\|codex] [--reasoning\|--effort 강도]` | 호스트별 역할 모델·추론 강도 조회·변경·복원. Claude는 정의 파일 머리말의 `model`·`effort`, Codex는 TOML의 `model`·`model_reasoning_effort`에 다시 쓴다. 변경값은 `.code-agent/models.json`·`.code-agent/codex-models.json`에 저장하며 설치·갱신 때 다시 적용한다 | 변경은 같은 세션의 model 동의 또는 직접 TTY. 다른 브랜치에 보관된 작업을 포함하여 진행 중인 작업이 있으면 거부한다 — 각 작업 브랜치에서 반영(deliver)하거나 종료(abort)한 뒤 바꾼다. 조회는 작업 중에도 된다 |
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 5종의 항목, 그것을 마지막으로 넣은 작업 ID, 최신성 (아래) | — |
 | `code-agent knowledge find <낱말\|키\|경로...>` | 지식 항목·POLICY 절을 키·코드 경로·별칭·본문으로 찾아 줄 범위·상태·연결과 반드시 적용하는 업무 정책을 보여 준다 (아래). 읽기 전용 — 작업 중 담당도 부른다 | — |
@@ -1035,7 +1035,9 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `.code-agent/templates.json` | 마지막으로 적용한 스킬·에이전트 사본의 해시 — 다음 적용이 사람이 고친 사본을 가린다 | 버전 적용 | O |
 | `.code-agent/template-conflicts/` | 사람이 고친 사본 대신 둔 새 번들 내용(같은 경로) — 병합한 뒤 `update --templates-only` | 버전 적용 | X |
 | `.code-agent/log/choice-server/<pid>.json` | 실행 중인 선택 UI MCP 의 연결부 버전·마지막 호출 — `version`이 읽는다 | 선택 UI MCP | X |
-| `.code-agent/active.json` | 진행 커서 (id·지시서·대상·스테이지·단계·브랜치) | `start` · `next` · `back` · `check`(수정 루프의 되감기) 가 쓰고, `abort` · `deliver` 가 지운다 | X |
+| `.code-agent/active.json` · `.code-agent/branches/<브랜치 SHA256>.json` | 마지막 저장 커서·다른 브랜치의 보관 커서 (id·지시서·대상·스테이지·단계·브랜치). 현재 브랜치에 맞는 커서를 선택한다 | `start` · `next` · `back` · `check`가 저장하며, `abort` · `deliver`는 현재 브랜치 커서만 지운다 | X |
+| `.code-agent/lease.json` · `.code-agent/branches/<브랜치 SHA256>.lease.json` | 해당 작업을 진행하는 세션의 임대. 커서와 함께 보관·복원한다 | hook의 claim·touch, `takeover`의 해제 | X |
+| `.code-agent/branches/cursor.lock` | 커서 저장·종료 잠금 | 커서 변경 시에만 사용한다 | X |
 | `.code-agent/docs-session.json` | 문서 작성 세션 표시 | `docs begin` · `end` | X |
 | `.code-agent/request-session.json` | 요구사항 접수 세션 표시 (id·종류·연 시각 · 접수 때 준 `base`·`target`) | `request begin` 이 쓰고 `start` · `abort` 가 지운다 | X |
 | `.code-agent/log/` | 검증 명령의 전체 로그 (`<스테이지>-<회차>-<종류>.log` — 재현은 `repro-0-<종류>.log`) — ⑧ 에는 꼬리만 남는다 | `repro` · `check` · `test` · `integrate` | X |

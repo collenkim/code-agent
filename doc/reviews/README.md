@@ -1,39 +1,27 @@
 # 문서·검증 이력
 
-현재 동작은 [프로세스 흐름도](../process-flow.md), [README](../../README.md), [사용 가이드](../usage.md), [설계](../design.md), [계획 작업](../planning.md), [요구사항](../requirement.md), [설치](../install.md), [플러그인](../plugins.md), [Codex 연동](../codex.md)을 기준으로 읽는다. 아래 기록은 변경 경위와 검증 결과이며, 기록의 시험 수를 현재 결과와 합산하지 않는다.
+현재 동작은 [프로세스 흐름도](../process-flow.md), [사용 가이드](../usage.md), [설계](../design.md)를 기준으로 읽는다. 아래 기록은 변경 당시의 근거·검증 결과·한계다. 서로 다른 시점의 시험 수를 합산하지 않는다.
 
-| 날짜 | 기록 | 범위 |
+최근 전체 회귀는 `99da682`의 브랜치별 작업 보존 변경에 대한 2026-10-19 검증이다. Windows·Node 24.19.0에서 빌드를 포함한 `npm.cmd test` 1609개 중 1605개 통과, 실패 0개, 플랫폼 조건 생략 4개다. 실제 대상의 읽기 전용 hook 판정도 확인했으며, Codex 대화형 재실행 여부는 별도로 기록했다.
+
+| 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-19 | [브랜치별 작업 복귀와 설정 준비](2026-10-19-branch-resume.md) | 이전 작업 보존, 현재 브랜치의 hook·도입·접수, 임대·승인·검증 보호와 실제 대상의 읽기 전용 확인 |
-| 2026-10-16 | [외부 계약 인계·답 출처·응답 형식·계획 점검](2026-10-16-dependency-contracts.md) | Git 근거 인계·계약 재인용, 결과 포인터·구조화 리뷰, 요구·AC·TC 사전 점검과 정상·거부 회귀 |
-| 2026-10-16 | [LangGraph 전체 실행 전환](2026-10-16-langgraph.md) | `cb0c466` — 전체 재개·계획 배정·단계 전이·검증·명령 적용 그래프, SQLite 체크포인트·관찰 사본, master 관제·정지·세대 검사, 상태 형식 세대 3, 자동 회귀·단일 실행 파일 검증 |
-| 2026-10-16 | [Node 실행·빌드 버전 통일](2026-10-16-node-runtime.md) | `c2ccccb` — master-agent 와 같은 `>=24.19.0 <25` 지원 범위, Node 24 타입, doctor·SEA 빌드 검사와 설치 문서 동기화 |
-| 2026-10-15 | [master 연동(선택) — 통신·실행 제어와 위임 판단](2026-10-15-master-control.md) | `e5f136a` — 사람이 켠 프로젝트의 원자적 접수·감독(생존·협력 정지·확인된 프로세스 강제 종료)·순번 이벤트·위임 판단(사람 응답과 구분)·제어권 인계, 상태 형식 세대 2. 모의 시험, 실제 CLI 연동 시험, 실제 Claude 다중 프로젝트 사이클(run6 에서 두 프로젝트 구현 → 검증 → 인계 → 통합 완료)을 나눠 기록 |
-| 2026-10-14 | [릴리스 업데이트 — 설치와 적용 분리](2026-10-14-release-update.md) | `d01b4d1` — 새 버전을 릴리스 저장소의 새 폴더에 설치·검증한 뒤 등록(Git 소스는 upstream 커밋 빌드, npm 패키지는 설치된 패키지 복사), 고정 진입점의 프로젝트별 버전 선택, 진행 중인 일이 있으면 예약하고 다음 작업을 열 때 적용, 템플릿은 적용 때만·사람이 고친 사본 보존, 선택 UI MCP 의 연결부·처리기 분리, 바뀐 종류별 재시작 안내, `version` 조회. 후속(2026-10-15) — 설치되지 않은 폴더의 update 거절, 다음 작업을 여는 명령 직전 hook 의 적용과 바뀐 설치 파일만 쓰기(Codex 샌드박스 안에서도 적용), README 업데이트 가이드. 실제 빌드(실제 git·npm)와 실제 호스트 확인(Claude Code 2.1.299·codex-cli 0.162.1 — 한 세션 안 전환, 스킬 다시 읽기 지연, 여는 명령 직전 hook 의 적용, Codex 샌드박스 두 모드의 제약) |
-| 2026-10-12~14 | [오류 사전 판별·질문 UI·맥락·토큰·지식·외부 연결·재시도 결과 요약](2026-10-13-result-summary.md) | `5815323`..`ea23577` 열일곱 커밋 — Sentry·로그 사전 판별과 중복·재발, 차단 복구·단계별 선택, Windows `.cmd`, 동의 Git 설정 오탐, Codex MCP 선택 UI, 선택 화면 크기, Codex 세션 시작 상태 주입·계획 담당 staging·계획 상세 조회 축약, 토큰 사용 측정 보완과 출력·리뷰·템플릿 축약, `init` 인자 검사·스킬 머리말 YAML·토큰 검토 중간 항목 열 가지(계획 결과 파일·재배정 문서 미리 넣기·왕복 감소 등), 요구 확정 적용의 작업 시작, 토큰 검토 낮음(계획 담당 되돌림·계획 CLI 출력·긴 선언 명령·`help <명령>`·리뷰 표 칸 정규화와 교차 형식 교정 모델·surveyor 초안 파일·세션 시작 요약)과 개발 지침·흐름도 축약, 문서·지식 관리(기능·흐름 KNOWLEDGE, 업무 정책 구분·상태, 02 문서 영향과 반영 제안 범위, 요청 시 검색·최신성, `knowledge find`·usage 문서 탐색), 상위 조정자·러너 연결 준비(선택적 작업 경험 기록·진행 중 발견 보고·읽기 전용 `status --json`과 러너·상위 조정자가 구현할 계약), 재시도·토큰 낭비 줄이기(plan 완료 hook 의 제출 규칙 공유, 01 근거·출처 파서 통일과 문서 검사 오탐 제거, 규칙 식별자·역할별 제출 전 점검, 결과 상태별 계약·초안 보존·재배정 문맥, `contextVersion` 4 입력, 02·03 가정의 승인 묶음, 검증 수정 배정 파일·TC 표기 안내, usage 계획 담당 측정 — 검토 항목별 판정). 실제 호스트 확인(Codex 0.162.1 폼 조작·적용, 두 호스트 PTY 화면, Codex 세션 시작·staging), 출력·템플릿·context 글자 수 측정, 예산 근거, 최종 `npm test` 1,500개 중 1,496개 통과·실패 0·생략 4. 재시도 줄이기의 실제 모델 평가는 하지 않았다 |
-| 2026-10-08 | [절차 보완·재시도 규약·최적화 결과 요약](2026-10-08-procedure-fix-summary.md) | 감사와 그 뒤 구현·검토·후속 수정 전체(`2c97a43..HEAD`)의 사용자 결정, 커밋, 실패 원인 21종, 묶음별 변경, 역할별 모델, 최적화 실측, 감사 160건 처리 현황, 실제 호스트 확인(claude 2.1.293·codex-cli 0.161.0)과 그 불일치 H1~H12 반영, 반영 뒤 재확인과 검증 지적·재검증 지적 반영, 남은 일. 최종 `npm test`는 1,357개 중 1,353개 통과·실패 0·생략 4다 |
-| 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | 코드 수정 없는 감사 — 두 호스트 동등성·절차·동의·검증·자기학습·최적화·하네스 원칙을 대조한 지적 160건(high 7). 프로세스 흐름도와 개발 에이전트 진입점(`AGENTS.md`·`CLAUDE.md`)을 만들었다 |
+| 2026-10-19 | [브랜치별 작업 커서·임대 보존과 설정 준비](2026-10-19-branch-resume.md) — `99da682` | [자동 회귀·대상 조회](evidence/2026-10-19-branch-resume.json) |
+| 2026-10-16 | [외부 계약 인계·답 출처·응답 형식·요구와 테스트 연결](2026-10-16-dependency-contracts.md) — `8085647` | [정상·거부 사례](evidence/2026-10-16-dependency-contracts.json) |
+| 2026-10-16 | [LangGraph 전체 실행 전환](2026-10-16-langgraph.md) — `cb0c466` | [그래프·회귀 검증](evidence/2026-10-16-langgraph.json) |
+| 2026-10-16 | [Node 실행·빌드 버전 통일](2026-10-16-node-runtime.md) — `c2ccccb` | [런타임·빌드 검증](evidence/2026-10-16-node-runtime.json) |
+| 2026-10-15 | [master 연동·실행 감독·위임 판단](2026-10-15-master-control.md) | [자동 시험·실제 CLI·Claude 실행](evidence/2026-10-15-master-control.json) |
+| 2026-10-14 | [릴리스 설치·프로젝트별 적용·템플릿 보존](2026-10-14-release-update.md) | [실제 빌드·호스트 확인](evidence/2026-10-14-release-update.json) |
+| 2026-10-12~14 | [오류 사전 판별·질문 UI·토큰·지식·외부 연결·재시도](2026-10-13-result-summary.md) | [회귀·호스트·측정 결과](evidence/2026-10-13-result-summary.json) |
+| 2026-10-08 | [절차 보완·재시도 규약·최적화](2026-10-08-procedure-fix-summary.md) | [감사 처리·시험·실측 결과](evidence/procedure-fix-2026-10-08.json) |
+| 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | [감사 지적 원자료](evidence/process-audit-2026-10-07.json) |
 
-원자료는 `evidence/`에 있다 — 감사는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json), 결과 요약은 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)(처리 현황 160건·커밋·시험·실측)이고, 2026-10-12~14 는 [2026-10-13-result-summary.json](evidence/2026-10-13-result-summary.json)(커밋별 시험·실제 호스트 화면·실제 CLI·hook 판정·출력 크기와 템플릿·context 측정), 릴리스 업데이트는 [2026-10-14-release-update.json](evidence/2026-10-14-release-update.json)(실행 기록·실제 빌드·실제 호스트 출력), master 연동은 [2026-10-15-master-control.json](evidence/2026-10-15-master-control.json)(시험 수·실제 AI 실행·위임·이관·검증·커밋 기록)이다.
+작업이 끝나면 중간 기록을 최종 요약에 합치되 실패·생략·미확인 범위와 템플릿 예산 근거는 남긴다. 자동 회귀, 실제 모델 완주, 사용자 실측은 구분한다. `dist/`의 재생성 가능한 빌드·실행 로그는 커밋하지 않는다.
 
-**지운 기록은 git 이력에서 본다.** `2c97a43` 이전 기록(2026-10-01~06 기록 15개와 그 evidence)과 결과 요약으로 합친 2026-10-07~08 단계 기록 10개·evidence 의 마지막 판은 `0a77595`의 트리에 있다. 결과 요약으로 합친 2026-10-12~13 기록 11개와 evidence 12개의 마지막 판은 `b2fd2b7`의 트리에, 그 요약과 빈곳 보완·토큰 최적화 기록(3개)·evidence 2개의 마지막 판은 `1ededc0`의 트리에, 결과 요약으로 합친 문서·지식 관리 기록과 evidence 의 마지막 판은 `17bd089`의, 상위 조정자·러너 연결 준비 기록과 evidence 의 마지막 판은 `10d6a52`의, 재시도·토큰 낭비 줄이기 기록과 evidence 의 마지막 판은 `0555096`의 트리에 있다. 옛 기록의 색인은 `2c97a43`의 것이다. 문서 정리(`eefd4e9`)가 현행 문서에서 지운 상태 표·실측(설계 §11 의 구현 순서 P1~P8 표와 P3 실측 기준치 등)도 `0a77595`의 그 문서에 있다.
+정리된 중간 기록은 Git 이력에서 찾는다. 삭제된 파일은 삭제 직전 커밋의 경로로 읽는다.
 
 ```sh
-git show 2c97a43:doc/reviews/README.md                         # 2c97a43 이전 기록의 색인
-git ls-tree --name-only 2c97a43 doc/reviews/ doc/reviews/evidence/
-git show 2c97a43:doc/reviews/2026-10-06-token-efficiency.md     # 옛 기록 하나
-git show 0a77595:doc/reviews/2026-10-08-full-review.md          # 합친 단계 기록 하나
-git show 0a77595:doc/design.md                                  # 지운 상태 표·실측이 있던 설계 문서
-git ls-tree --name-only b2fd2b7 doc/reviews/ doc/reviews/evidence/  # 합친 2026-10-12~13 기록
-git ls-tree --name-only 1ededc0 doc/reviews/ doc/reviews/evidence/  # 결과 요약으로 합친 2026-10-13 기록 3개
-git show 17bd089:doc/reviews/2026-10-14-knowledge-docs.md      # 결과 요약으로 합친 문서·지식 관리 기록
-git show 10d6a52:doc/reviews/2026-10-14-master-readiness.md    # 결과 요약으로 합친 상위 조정자·러너 연결 준비 기록
-git show 0555096:doc/reviews/2026-10-14-retry-reduction.md     # 결과 요약으로 합친 재시도·토큰 낭비 줄이기 기록
+git log --all --oneline -- doc/reviews/
+git log --all --diff-filter=D --summary -- doc/reviews/
+git show <커밋>:<파일경로>
 ```
-
-정리 원칙:
-
-- 변경된 현재 동작은 정본 문서와 설치 템플릿에 함께 반영한다. 현행 문서에는 경위를 쓰지 않는다.
-- 기록은 그 시점의 실패·생략·한계를 포함해 쓴다. 단계마다 남긴 기록은 작업이 끝나면 결과 요약으로 합치고, 지운 기록은 위처럼 그 커밋에서 찾는다.
-- 최신 회귀와 모델 완주·사용성 실측은 분리해 기록한다.
-- `dist/`의 빌드·실행 로그는 재생성 가능한 로컬 산출물이다. 커밋에는 소스·정본·요약 근거를 포함한다.

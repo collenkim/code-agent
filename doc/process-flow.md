@@ -14,12 +14,10 @@
 
 ### 1.1 변경 → 갱신 대응표
 
-브랜치 진행 커서(`branchCursor.ts`·`layout.ts`)를 바꾸면 §3.1·§5.3·§8·§9, `doc/usage.md`·`doc/install.md`·`doc/codex.md`·`doc/design.md`를 맞춘다. 커서 선택은 CLI·hook 공통이며 임대 경로·동의 스냅샷·버전 적용 표지·모델 변경 제한·상태 형식 세대도 함께 검사한다.
-
-외부 의존 계약(`dependencyContracts.ts`·계획 등록/입력·`answers.ts`·`work.ts`)을 바꾸면 §4.3·§6.1·§8·§9, `doc/dependency-contracts.md`·`doc/planning.md`·`doc/master-control.md`, Claude·Codex 답 지침과 상태 형식 세대를 함께 맞춘다. 등록·재인용 명령은 hook 허용 목록에 있고 읽기 전용 임대 예외에는 없다.
-
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `branchCursor.ts`·`layout.ts`의 브랜치 진행 커서 | §3.1, §5.3, §8, §9 | `doc/usage.md`·`doc/install.md`·`doc/codex.md`·`doc/design.md`, CLI·hook의 커서 선택, 임대 경로·동의 스냅샷·버전 적용 표지·모델 변경 제한·상태 형식 세대 |
+| `dependencyContracts.ts`·계획 등록/입력·`answers.ts`·`work.ts`의 외부 계약 | §4.3, §6.1, §8, §9 | `doc/dependency-contracts.md`·`doc/planning.md`·`doc/master-control.md`, Claude·Codex 답 지침, 상태 형식 세대. 등록·재인용 명령은 hook 허용 목록에 있고 읽기 전용 임대 예외에는 없다 |
 | `graph/` 실행기·전체 흐름·계획·전이, `core/workflow.ts`, `cliMain.ts` 실행 경계 | §3.3, §6, §8, §9 | `doc/langgraph.md`, `ca-next` 재개 절차, Claude·Codex 공통 블록, `stateView.ts` 그래프 관찰, master `hello.execution`·`graph.changed`, `runtimeSelect.ts` 상태 세대·실행 잠금, 동의 스냅샷·반영 제외 경로 |
 | `package.json` `engines.node`·`doctor.ts` 런타임 검사·`scripts/build-bin.js` 빌드 전제 | §7 | `package-lock.json` 루트 engines, `assets.ts` 자원 오류 안내, `AGENTS.md`, `README.md`, `doc/install.md`·`doc/usage.md`·`doc/design.md`의 Node 범위. npm 실행·SEA 내장 Node·SEA 빌드는 같은 범위를 쓴다 |
 | `layout.ts` `PHASES`·`AFTER_IMPLEMENT`·`STOP_PHASES` (20-43) | §2, §3 | `phaseInfo.ts` `PHASE_LABEL`·`reentry.ts` `PHASE_SKILL`, `template/claude/skills/ca-next/SKILL.md:14-25` 표, §3.2 표의 단계 칸(`docSync.test.ts`가 `PHASES`와 순서까지 대조) |
@@ -129,7 +127,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | 준비 | 매니페스트가 없거나, 공통 문서가 미확정이거나, 문서 세션이 열려 있거나, 준비 커밋이 없다(`preparationHint` — 매니페스트 없이 문서 세션이 열려 있으면(`ca-adopt` 도중) `/ca-adopt` 로 설정·문서를 마저 쓰고 `docs end`(작업·접수 없는 `status` 도 이것을 접수 안내보다 먼저 낸다 — 문서 세션 중에는 `request begin` 이 거부된다). 확정이 필요하면 기준 커밋을 보고 `setup`(문서 확정 + 준비 커밋)·`docs`(문서만)·`baseline`(준비 커밋만) 동의 하나를 고른다. git 저장소가 아니거나 작업 중이면 준비 커밋은 보지 않는다) | 메인 `/ca-adopt`·`/ca-docs`, 서브 `ca-surveyor`·`ca-writer` | `docs recommend·begin·setup·link·end` 등, `survey`, `manifest check`, 동의 `setup`. 문서 세션의 쓰기 범위는 `docs begin` 때의 매니페스트로 `docs-session.json` `writable`에 고정한다(`doc/` 밖은 `.md`만, `docs link`로 연결한 문서만 더해진다) | `code-agent.json`, POLICY 4종(`doc/*.md`), KNOWLEDGE 빈 뼈대(`doc/knowledge/*`, `docs begin`이 만든다 `docsCommands.ts:151,167-177`), `approvals/docs.jsonl`, 준비 커밋. `approvals/docs.jsonl`은 준비 커밋 대상(`baselineFiles` `bootstrap.ts:45-49`)에 없고 첫 반영 커밋에 들어간다(`deliver.ts:324`) | `request submit`의 매니페스트 검사(`request.ts:417-426,645`), `start`의 `requireDocs`(`commands.ts:276`)와 `requirePreparedBranch`(`bootstrap.ts:75-94`) |
 | 접수 | `request begin`(`request.ts:428-489`). 문서 세션 열림·AI-DLC·진행 중 작업(같은 ID 포함)·다른 ID 접수·종류 변경이면 거부한다. ID를 생략하면 진행 중인 접수의 ID를 쓰고, 없으면 작업 폴더·확정 원장이 없는 첫 `WORK-0001` 형식(4자리) ID를 발급한다(437-443). 새 접수이고 작업 브랜치가 아직 없는데 미커밋 변경(`startBlockers`)이 있으면 `시작 전 정리 필요:` 경고 줄을 붙인다(거부하지 않는다 — 접수 중 `status`도 같은 줄). `request.json`의 `target`은 하나다(초안 스키마 `.max(1)`) | 메인 `/ca-request`(서브 없음) | `request begin`·`request`·`request submit`, 동의 `request` | `doc/work/<ID>/request.json`(모델), `requirement.md`(코드 렌더 785), `approvals/<slug>/request.jsonl` | `decideRequest`가 보여 준 바이트 해시로 `confirmed`를 기록한다(`request.ts:811-893`) |
-| start | 실행 중인 호스트의 hook 설치(`requireStartHooks` — 다른 설치 호스트의 누락·판별 불가는 경고만), 요구 확정, 문서 세션 없음, AI-DLC 없음, 매니페스트 있음, 공통 문서 확정, 다른 ID 접수 없음(`commands.ts:266-295`). 진행 중 확인 뒤·브랜치 전환 앞에서 대상이 여럿인 지시서를 거부하고(이미 시작한 작업은 그대로 잇는다), 새 작업 브랜치면 미커밋·미추적 변경을 거부한다(`startBlockers` — 작업 폴더·`.code-agent`·지시서·준비 커밋에 담을 도입 파일 제외, 이미 있는 브랜치는 보지 않는다) | 동의 `request` 적용(`finish`)이 이어서 부른다(§3.3). TTY 확정 뒤·시작이 막힌 뒤에는 메인(스킬이 호출) | `start <지시서>` | 브랜치 `<kind>/<ID>`, `baseCommit`(새 브랜치는 기준 끝, 기존 브랜치는 merge-base, 333-341), `questions.md`, 업무 답 시작 행(`writeAnswerBaseline`, §4.3), `active.json`(phase=analysis, planningVersion=1, 354), 접수 세션 삭제(356) | 같은 작업이면 상태만 출력한다. 다른 작업이 진행 중이면 거부한다(297-306). fix는 오류 로그 절이 필요하다(308) |
+| start | 실행 중인 호스트의 hook 설치(`requireStartHooks` — 다른 설치 호스트의 누락·판별 불가는 경고만), 요구 확정, 문서 세션 없음, AI-DLC 없음, 매니페스트 있음, 공통 문서 확정, 다른 ID 접수 없음(`commands.ts:266-295`). 진행 중 확인 뒤·브랜치 전환 앞에서 대상이 여럿인 지시서를 거부하고(이미 시작한 작업은 그대로 잇는다), 새 작업 브랜치면 미커밋·미추적 변경을 거부한다(`startBlockers` — 작업 폴더·`.code-agent`·지시서·준비 커밋에 담을 도입 파일 제외, 이미 있는 브랜치는 보지 않는다) | 동의 `request` 적용(`finish`)이 이어서 부른다(§3.3). TTY 확정 뒤·시작이 막힌 뒤에는 메인(스킬이 호출) | `start <지시서>` | 브랜치 `<kind>/<ID>`, `baseCommit`(새 브랜치는 기준 끝, 기존 브랜치는 merge-base, 333-341), `questions.md`, 업무 답 시작 행(`writeAnswerBaseline`, §4.3), `active.json`(phase=analysis, planningVersion=1, 354), 접수 세션 삭제(356) | 현재 브랜치에서 같은 작업이면 상태만 출력하고 다른 작업이면 거부한다. 시작할 브랜치에 보관된 작업이 있어도 덮어쓰지 않고 재개를 안내한다. fix는 오류 로그 절이 필요하다 |
 
 접수 세션 동안 모델은 `doc/work/<ID>/` 안에만 쓸 수 있고, `requirement.md`는 코드만 쓴다(`hook.ts:307-322`).
 
@@ -702,8 +700,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 | 경로 | 쓰는 곳 | 읽는 곳 | git |
 |---|---|---|---|
-| `active.json` | `saveActive`(`layout.ts:144-150`): start·next·back·check 되감기. 삭제는 deliver·abort | 모든 명령·hook | 무시(`init.ts` `GITIGNORE_LINES`) |
-| `lease.json`(작업 임대 `{version, id, target, host, session, claimedAt, seenAt, previous?, released?}`) · `lease.json.lock` | PreToolUse hook(`leaseGuard` — 진행 명령·쓰기에서 claim·1분마다 touch), Claude SessionStart(`sessionStartLease`), `code-agent takeover`(`releaseLease` — `released`만 남기고 지우지 않는다. 해제 기록은 다음 claim 의 `previous.why: takeover`). 잠금은 쓰는 순간만 있다 | hook·`status`(`진행 세션:` 줄 `leaseLine`) | 무시. 동의 스냅샷에서 뺀다(`SNAPSHOT_EXCLUDED`) — 응답을 기다리는 동안의 touch·해제가 동의를 깨지 않는다. 형식이 틀리면 없는 것으로 보고 다음 claim 이 덮는다 |
+| `active.json` · `branches/<브랜치 SHA256>.json` | `saveActive` → `writeCursor`: start·next·back·check 되감기. 다른 브랜치의 커서·임대를 보관한 뒤 현재 커서를 저장한다. deliver·abort는 현재 브랜치 커서만 삭제한다 | 모든 명령·hook. `stateView.ts`는 선택된 파일 경로를 내보낸다 | 무시. 커서는 동의 스냅샷에 포함한다 |
+| `lease.json` · `branches/<브랜치 SHA256>.lease.json`(선택된 작업의 임대 `{version, id, target, host, session, claimedAt, seenAt, previous?, released?}`) · `lease.json.lock` | PreToolUse hook(`leaseGuard` — 진행 명령·쓰기에서 claim·1분마다 touch), Claude SessionStart(`sessionStartLease`), `code-agent takeover`(`releaseLease` — `released`만 남기고 지우지 않는다. 해제 기록은 다음 claim 의 `previous.why: takeover`). 잠금은 쓰는 순간만 있다 | hook·`status`(`진행 세션:` 줄 `leaseLine`) | 무시. 동의 스냅샷에서 뺀다(`SNAPSHOT_EXCLUDED`) — 응답을 기다리는 동안의 touch·해제가 동의를 깨지 않는다. 형식이 틀리면 없는 것으로 보고 다음 claim 이 덮는다 |
 | `request-session.json` · `docs-session.json`(`version: 2`·`writable` — 문서 세션 쓰기 범위, `docs link`가 더한다) | `request begin` · `docs begin/end/link` | hook 모드 판정, start | 무시 |
 | `doc/.survey/<영역>.md`(뼈대 역공학 초안, 안쪽 `.gitignore *`) | `docs begin`이 폴더를 열고 `ca-surveyor`가 쓴다 | `ca-writer`(`ca-docs` 2절) — `docs end`가 지운다 | 무시(폴더 안 `.gitignore`) |
 | `hosts.json` · `version` | init | `selectedHosts`, update·doctor | 준비 커밋(`bootstrap.ts:45-46`). `version`은 반영 커밋에도 들어간다(`deliver.ts:321`) |
@@ -753,12 +751,10 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
-`branchCursor.ts`는 HEAD·worktree의 gitdir 판독, 브랜치별 커서·임대 보관과 현재 작업 선택을 맡는다. `layout.ts`의 조회·저장·종료가 이 규칙을 사용하고, `stateView.ts`는 실제 선택한 커서 경로를 내보낸다. 버전 적용·모델 변경은 모든 보관 커서를 확인한다.
-
-외부 의존 계약은 `dependencyContracts.ts`(Git 근거·현재 바이트·사본·항목 충돌 검사·등록), `planning.ts`(등록·재인용 명령·배정), `planningState.ts`(입력·변경 감지), `answers.ts`(질문·답 결속·출처), `work.ts`(승인 해시)에 연결된다.
-
 | 단계·기능 | 파일 (`src/agent/` 기준) |
 |---|---|
+| 브랜치별 작업·임대 | `branchCursor.ts`(HEAD·worktree gitdir 판독, 커서·임대 보관, 현재 작업 선택), `layout.ts`(조회·저장·종료), `stateView.ts`(선택된 커서 경로), `runtimeSelect.ts`·`runtimeApply.ts`·`models.ts`(모든 보관 작업 보호) |
+| 외부 의존 계약 | `dependencyContracts.ts`(Git 근거·현재 바이트·사본·항목 충돌 검사·등록), `planning.ts`(등록·재인용·배정), `planningState.ts`(입력·변경 감지), `answers.ts`(질문·답 결속·출처), `work.ts`(승인 해시) |
 | LangGraph 실행·관찰 | `graph/lifecycle.ts`(전체 재개), `graph/planning.ts`(계획 배정), `graph/transition.ts`(단계 게이트·이동), `graph/operation.ts`(명령 적용), `graph/runtime.ts`(SQLite·잠금·master 가드), `graph/view.ts`(조회 사본), `graph/types.ts`(hook 공용 순수 계약), `../core/workflow.ts`(검증 노드 실행) |
 | CLI 진입·hook 하위 명령 분기 | `cli.ts`(진입점 — hook 하위 명령 지연 로드 `HOOKS`·모듈 로드 실패 `hookFailureExit`), `cliMain.ts`(명령 `runCommand` — consent 티켓 소비·소스 update 확인·다음 작업을 여는 명령의 관문 `opening`), `runtimeSelect.ts`(프로젝트 적용 버전 선택 `selectRuntime`·위임 계약 — 명령·hook 마다 가장 먼저), `runtimeGate.ts`(다음 작업 관문 `atNextWork`·여는 명령 직전 hook 의 적용 `applyBeforeOpening`·`version`·update 갈래 `runUpdate`) |
 | 설치·갱신·점검 | `init.ts`(Codex Windows 명령 `codexWindowsCommand`·`codexWindowsProblem`), `codexTrust.ts`(Codex 프로젝트·hook 신뢰 — `config.toml` 읽기만), `hosts.ts`(교차 실행 파일 `hostCommand`·`hostCommandConfigError`·`.js` 진입점의 node `scriptRunner`·실행 파일 변수 안내 `binHint`, 교차 안내 `crossNotice`·`crossHostProblems`·게이트 줄 괄호 `crossRunNote`), `assets.ts`, `update.ts`, `../core/atomic.ts` `writeIfChanged`(바뀐 설치 파일만 쓴다), `sourceUpdate.ts`(소스 update 미리보기·설치 뒤 적용 `updateFromSource`·릴리스 적용 호출 `runReleaseApply`), `releaseStore.ts`(릴리스 저장소 — Git 소스 설치 `installGitRelease`·npm 패키지 사본 `installPackageRelease`·검증 `verifyRelease`·설치 잠금), `runtimeApply.ts`(적용·예약 `applyHere`·진행 중인 일 `busyReasons`·템플릿 반영과 사본 보존 `applyTemplates`·다시 열기 안내 `hostGuidance`), `doctor.ts`, `models.ts`(역할 모델 변경 `setModel`·`validateModelChange`, 작업 중 변경 거부 `workInProgress`·`requireNoWorkInProgress`), `modelPolicy.ts`(역할 모델·추론 강도 정책 `ROLE_POLICY`·`TIER_DEFAULTS`) |
@@ -794,11 +790,11 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 10. 변경 이력
 
-변경마다 한 줄이다 — 무엇이 바뀌었는지의 요지와 커밋만 적는다. 경위·지적별 처리·검증 결과는 [결과 요약](reviews/2026-10-08-procedure-fix-summary.md)과 [문서·검증 이력](reviews/README.md)에 있다.
+변경마다 한 줄이다 — 무엇이 바뀌었는지의 요지와 커밋만 적는다. 경위·지적별 처리·검증 결과는 [문서·검증 이력](reviews/README.md)에서 찾는다.
 
 | 날짜 | 변경 | 커밋 | 대상 섹션 |
 |---|---|---|---|
-| 2026-10-19 | 브랜치별 작업 커서와 임대를 보존하여 다른 브랜치의 설정 누락이 현재 도입·접수를 막지 않게 한다 | 이 변경 커밋 | §1.1, §3.1, §5.3, §8, §9 |
+| 2026-10-19 | 브랜치별 작업 커서와 임대를 보존하여 다른 브랜치의 설정 누락이 현재 도입·접수를 막지 않게 한다 | `99da682` | §1.1, §3.1, §5.3, §8, §9 |
 | 2026-10-16 | 외부 계약의 Git 근거 전달과 사람 답과 구분한 재인용을 지원하고 결과 포인터·구조화 리뷰·요구와 테스트 연결 점검을 보완한다 | `8085647` | §1.1, §4.3, §6.1, §6.3, §8, §9 |
 | 2026-10-07 | 최초 작성 — 코드 판독과 sandbox 확인으로 만든 현재 동작 지도(줄 인용 기준 `2c97a43`) | `0807d32` | 전체 |
 | 2026-10-07 | 실패 원인별 재시도 규약 공통 모듈(`retryPolicy.ts`·`lock.ts`·`crossEnv.ts`·`hostText.ts`)과 §6.4 생성 블록 | `7b698d8`·`c38f1e2` | §1.1, §6.4, §9 |

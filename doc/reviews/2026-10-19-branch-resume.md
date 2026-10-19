@@ -1,6 +1,6 @@
 # 브랜치별 작업 복귀와 설정 준비
 
-기준 커밋은 `8085647`이며 시작 시 미커밋 변경은 없었다. `simmons`의 현재 브랜치는 `feature/UZRF-394`이고 `code-agent.json`은 없었지만, 로컬 `active.json`은 `fix/UZRF-392`의 implement·test·T2를 가리켰다. 저장소 단위로 커서를 읽는 경로가 다른 브랜치의 설정을 요구해 Codex 도구 호출을 차단했다.
+기준 커밋은 `8085647`, 구현 커밋은 `99da682`다. `simmons`의 현재 브랜치는 `feature/UZRF-394`이고 `code-agent.json`은 없었지만, 로컬 `active.json`은 `fix/UZRF-392`의 implement·test·T2를 가리켰다. 저장소 단위로 커서를 읽는 경로가 다른 브랜치의 설정을 요구해 Codex 도구 호출을 차단했다.
 
 ## 최종 동작
 

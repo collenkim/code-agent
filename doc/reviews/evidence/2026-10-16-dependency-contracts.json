@@ -1,6 +1,7 @@
 {
   "date": "2026-10-16",
   "baseCommit": "2552d3a",
+  "implementationCommit": "8085647",
   "scope": "code-agent",
   "node": "24.19.0",
   "platform": "win32",
