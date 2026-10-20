@@ -20,8 +20,8 @@ test("Codex 권한 옵션을 제한하고 부모 호스트 표지를 제거한�
   assert.throws(() => hostProfileOf({ kind: "codex", command: ["codex", "--dangerously-bypass-hook-trust"] }));
   const profile = hostProfileOf({ kind: "codex", command: ["fixture"] });
   const args = hostArgs(profile, { mode: "continue", sessionId: "thread-id", runId: "run-marker" }).args;
-  assert.ok(args.includes('approval_policy="never"')); assert.ok(args.includes('sandbox_mode="workspace-write"'));
-  assert.equal(args[args.indexOf("resume") + 1], "thread-id"); assert.ok(args.some(a => a.includes("run-marker")));
+  assert.ok(args.includes('approval_policy="on-request"')); assert.ok(args.includes('sandbox_mode="workspace-write"'));
+  assert.ok(args.includes("app-server")); assert.ok(args.includes('approvals_reviewer="user"')); assert.ok(args.some(a => a.includes("run-marker")));
   assert.ok(!args.includes("--last"));
   const env = hostEnv({ CLAUDECODE: "1", CODEX_THREAD_ID: "parent", CODEX_CI: "1" }, "run-marker", "codex");
   assert.equal(env.CLAUDECODE, undefined); assert.equal(env.CODEX_THREAD_ID, undefined); assert.equal(env.CODEX_CI, undefined);
@@ -45,14 +45,14 @@ test("실제 감독이 Codex thread를 확정하고 접수 별칭으로 같은 �
 test("Codex 실패·thread 누락은 성공 처리하지 않고 신뢰 없는 실행은 접수하지 않는다", async () => {
   const f = codexProject();
   try {
-    for (const mode of ["fail", "missing", "changed-thread"]) {
+    for (const mode of ["fail", "missing", "changed-thread", "untrusted-hooks"]) {
       const result = f.send("submit", { prompt: `MODE=${mode}` }); assert.equal(result.ok, true, JSON.stringify(result));
       assert.equal((await f.wait(result.result.runId)).state, "failed");
     }
     const missing = listRuns(f.root).find(r => !r.sessionConfirmed)!;
     assert.equal(f.send("submit", { mode: "continue", sessionId: missing.sessionId, prompt: "resume" }).ok, false);
     writeFileSync(join(f.home, "config.toml"), "");
-    assert.equal(f.send("submit", { prompt: "start" }).ok, false); assert.equal(listRuns(f.root).length, 3);
+    assert.equal(f.send("submit", { prompt: "start" }).ok, false); assert.equal(listRuns(f.root).length, 4);
   } finally { f.close(); }
 });
 test("다른 thread로 재개되면 실패하고 Codex 프로세스 표지로 강제 취소한다", async () => {

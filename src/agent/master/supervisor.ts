@@ -15,6 +15,7 @@ import { appendFileSync, createWriteStream, readFileSync } from "fs";
 import { CLAUDE_SESSION_ENV, CODEX_MARKERS, CROSS_CHILD_ENV } from "../crossEnv";
 import { hostCommand } from "../hosts";
 import { requireManagedHost } from "./hostProfile";
+import { CodexTransport } from "./codexTransport";
 import { acquireLock } from "../lock";
 import { hideGitWindowInThisProcess, stateView } from "../stateView";
 import { killVerified, liveness } from "./processes";
@@ -44,10 +45,10 @@ export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "se
     command = resolved.file; prefix = resolved.prefix;
   }
   if (profile.kind === "codex") {
-    const rules = `${MASTER_SYSTEM_RULES}\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
-    return { command, args: [...prefix, "exec", "-c", 'approval_policy="never"', "-c", `sandbox_mode=${JSON.stringify(profile.sandbox)}`,
+    const rules = `${MASTER_SYSTEM_RULES}\nGit 쓰기가 필요한 code-agent start·verify·repro가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
+    return { command, args: [...prefix, "app-server", "--listen", "stdio://", "-c", 'approval_policy="on-request"', "-c", 'approvals_reviewer="user"', "-c", `sandbox_mode=${JSON.stringify(profile.sandbox)}`,
       "-c", "sandbox_workspace_write.network_access=false", "-c", `developer_instructions=${JSON.stringify(rules)}`,
-      ...(profile.model ? ["--model", profile.model] : []), ...(run.mode === "continue" ? ["resume", run.sessionId] : []), "--json", "-"] };
+      ...(profile.model ? ["-c", `model=${JSON.stringify(profile.model)}`] : [])] };
   }
   const args = [...prefix, "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", profile.permissionMode, "--permission-prompts", "none",
     ...(run.mode === "continue" ? ["--resume", run.sessionId] : ["--session-id", run.sessionId]),
@@ -68,10 +69,11 @@ export function hostEnv(base: NodeJS.ProcessEnv, runId: string, kind: "claude" |
   return env;
 }
 
-function finalState(run: RunRecord, host: { exitCode: number | null; isError?: boolean; subtype?: string }, resume: string, timedOut: boolean): { state: RunState; reason: string } {
+function finalState(run: RunRecord, host: { exitCode: number | null; isError?: boolean; subtype?: string; permissionDenials?: unknown[] }, resume: string, timedOut: boolean): { state: RunState; reason: string } {
   if (timedOut) return { state: "failed", reason: "실행 시간 상한을 넘었습니다" };
   if (run.stop) return { state: run.stop.mode === "cancel" ? "cancelled" : "paused", reason: run.stop.reason };
   if (host.exitCode !== 0 || host.isError) return { state: "failed", reason: `호스트가 실패로 끝났습니다(exit ${host.exitCode}, ${host.subtype ?? "결과 없음"})` };
+  if (host.permissionDenials?.length) return { state: "blocked", reason: "호스트 실행 권한이 거절·취소되었습니다" };
   if (["needs-human", "limit-reached", "unobservable", "ownership-conflict", "stale-request"].includes(resume)) return { state: "blocked", reason: `code-agent 재개 판정 ${resume}` };
   return { state: "completed", reason: `호스트 턴이 끝났습니다 — code-agent 재개 판정 ${resume}` };
 }
@@ -111,12 +113,14 @@ export function supervise(root: string, runId: string): Promise<number> {
     let buffer = "";
     let sessionSeen: string | undefined;
     let sessionError: string | undefined;
+    let codex: CodexTransport | undefined;
 
     const finish = async (exitCode: number | null, signal: string | null): Promise<void> => {
       if (finished) return;
       finished = true;
       clearInterval(timer);
       try {
+        codex?.close();
         await Promise.all([new Promise<void>(done => out.end(done)), new Promise<void>(done => err.end(done))]);
         const host = readHostOutput(root, runId, exitCode, signal);
         let progressed: ReturnType<typeof observeProgress> | undefined;
@@ -193,11 +197,16 @@ export function supervise(root: string, runId: string): Promise<number> {
         }
         // 기록이 바뀌었을 수 있다(정지 요청) — 다음 주기를 위해 다시 읽는다
         run = readRun(root, runId) ?? run;
+        try { codex?.poll(); } catch (error) { failCodex(error instanceof Error ? error.message : String(error)); }
       } catch (error) {
         try { appendFileSync(runErrors(root, runId), `감독 주기 오류: ${error instanceof Error ? error.message : String(error)}\n`); } catch { /* 기록 실패 */ }
       }
     };
     const timer = setInterval(tick, Math.max(100, Math.min(policy.heartbeatMs, policy.progressMs, 1000)));
+    const failCodex = (message: string): void => {
+      sessionError ??= message;
+      if (!finished) run = updateRun(root, runId, current => { current.stop ??= { mode: "pause", requestedAt: new Date().toISOString(), reason: message, by: "supervisor", graceMs: 0, forceRequested: true }; });
+    };
 
     try {
       requireManagedHost(root, profile);
@@ -217,7 +226,7 @@ export function supervise(root: string, runId: string): Promise<number> {
       });
       emit(root, "run.started", { runId, commandId: run.commandId, data: { pid: child.pid, sessionId: run.sessionId, mode: run.mode } });
     }
-    child.stdout?.on("data", (chunk: Buffer) => {
+    const consumeOutput = (chunk: Buffer): void => {
       out.write(chunk);
       buffer += chunk.toString("utf8");
       let index: number;
@@ -243,11 +252,14 @@ export function supervise(root: string, runId: string): Promise<number> {
           }
         } catch { /* stream-json 이 아닌 줄 */ }
       }
-    });
+    };
+    if (profile.kind === "codex") codex = new CodexTransport(root, run, profile, child, row => consumeOutput(Buffer.from(JSON.stringify(row) + "\n")), failCodex);
+    else child.stdout?.on("data", consumeOutput);
     child.stderr?.on("data", (chunk: Buffer) => { err.write(chunk); });
     child.on("close", (code, signal) => finish(code, signal));
     try {
-      child.stdin?.end(readFileSync(runPrompt(root, runId), "utf8"));
+      const prompt = readFileSync(runPrompt(root, runId), "utf8");
+      if (codex) void codex.start(prompt); else child.stdin?.end(prompt);
     } catch (error) {
       err.write(`프롬프트를 넘기지 못했습니다: ${error instanceof Error ? error.message : String(error)}\n`);
     }

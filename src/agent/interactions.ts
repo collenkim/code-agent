@@ -16,11 +16,12 @@ export interface InteractionContext { root: string; branch: string | null; head:
 export interface InteractionRecord {
   schemaVersion: 1; source: "code-agent"; sourceInstanceId: string; requestId: string; revision: number; contentHash: string; key: string;
   createdAt: string; updatedAt: string; expiresAt: string; challenge: string;
-  stage: PublishInteraction["stage"]; kind: "question" | "consent" | "recovery-decision"; title: string; questions: InteractionQuestion[];
+  stage: PublishInteraction["stage"]; kind: "question" | "consent" | "recovery-decision" | "host-permission"; title: string; questions: InteractionQuestion[];
   context: InteractionContext;
   /** 원래 서명 문맥은 유지하고 TTY로 확인한 독립 세션 복원만 따로 연결한다. */
   recoveredRunId?: string;
-  origin: { type: "host" | "questions" | "consent"; id: string; hash?: string };
+  origin: { type: "host" | "questions" | "consent" | "codex-command"; id: string; hash?: string };
+  permission?: { command: string; cwd: string; reason: string; threadId: string; turnId: string; itemId: string; rpcId: string | number; connectionId: string; generation: number; controller: string; scope: "once" };
   consent?: { consentId: string; action: string; summary: string; shownHash: string; choices: { index: number; shown: string; target?: string; key?: string }[]; allowedResponses: string[]; humanOnly: boolean };
   status: "pending" | "responded" | "applied" | "deferred" | "expired" | "cancelled" | "superseded" | "failed";
   response?: { receiptId: string; commandId: string; at: string; channel: "dashboard-human" | "claude-question" | "codex-elicitation"; submission: InteractionSubmission; channelId?: string; generation?: number };

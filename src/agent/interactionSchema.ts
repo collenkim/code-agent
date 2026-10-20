@@ -39,10 +39,12 @@ export const InteractionSubmission = z.object({
   intent: z.enum(["submit", "defer", "cancel", "reopen"]), explicit: z.literal(true),
   answers: z.array(InteractionAnswer).max(16).optional(),
   verdict: z.enum(["approve", "request-changes"]).optional(), shownHash: z.string().optional(),
+  permissionDecision: z.enum(["accept", "decline"]).optional(),
   choices: z.record(z.string(), z.enum(["적용", "유지"])).optional(),
 }).strict();
 export type InteractionSubmission = z.infer<typeof InteractionSubmission>;
 export function validateInteractionAnswers(questions: InteractionQuestion[], submission: InteractionSubmission): void {
+  if (submission.permissionDecision) throw new ControlError("invalid-request", "실행 권한 응답은 일반 답·업무 동의로 사용할 수 없습니다");
   if (submission.intent !== "submit") {
     if (submission.answers || submission.verdict || submission.choices) throw new ControlError("invalid-request", "보류·취소·다시 열기는 답이나 승인을 포함하지 않습니다");
     return;

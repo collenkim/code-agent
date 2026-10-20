@@ -123,7 +123,7 @@ questions.md의 원래 질문 모두에 기존 출처 검사를 통과한 답이
 
 살아 있는 호스트는 같은 세션에서 consume/complete한다. Codex의 열린 MCP 일반 질문은 대시보드 답을 감지하여 폼 대기를 끝낸다. Claude의 이미 열린 선택창을 외부에서 강제로 닫는 기능은 없으므로 원래 창을 종료하고 저장된 답을 소비한다. 이미 호스트 응답을 시작한 **동의**는 그 채널에서 마친다. 대시보드 동의는 prepare 후 별도 호스트 confirm을 열지 않는다.
 
-끝난 비대화형 Claude·Codex 관리 실행은 저장된 runId·확정된 sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. Codex는 thread.started로 확인한 thread ID가 있어야 하며 다른 세션으로 대체하지 않는다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 호스트 선택·등록 권한 설정이 달라졌거나 Codex 설치·신뢰 조건을 충족하지 못해도 차단 사유를 기록한다. 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
+끝난 비대화형 Claude·Codex 관리 실행은 저장된 runId·확정된 sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. Codex는 app-server가 돌려준 thread ID를 확정한 기록(`sessionConfirmed`)이 있어야 하며 다른 세션으로 대체하지 않는다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 호스트 선택·등록 권한 설정이 달라졌거나 Codex 설치·신뢰 조건을 충족하지 못해도 차단 사유를 기록한다. 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
 
 ## 관리 기록 없는 종료 세션 복원
 
@@ -144,12 +144,46 @@ Claude는 `CLAUDE_CONFIG_DIR/projects`(기본 `~/.claude/projects`), Codex는 `C
 
 미응답이면 실제 제출을 기다린다. 이미 답을 받았다면 기존 `interaction`/`interaction.result` 조회 또는 `code-agent interaction drain <requestId>`로 적용·재개한다. 같은 복원 명령과 응답 재전송은 실행을 중복 생성하지 않는다. 일부 기록만 저장된 중단도 동일 복원 ID로 연결을 마친다. 원래 호스트 선택·권한·Codex 신뢰·소유 세대·문맥·임대·미응답 게이트는 재개 전에 다시 검사한다. 원래 채널에서 응답을 시작한 미완료 동의는 그 채널에서 먼저 마친다.
 
+## Codex Git 실행 권한
+
+Codex 관리 실행은 로컬 `app-server`의 표준 입출력으로 권한 요청을 받는다. 외부 서버·HTTP 포트를 열지 않는다. `workspace-write` 샌드박스와 네트워크 차단을 유지하며, `approval_policy=on-request`·`approvals_reviewer=user`로 단건 요청을 사람 채널에 연결한다. 시작 전 `hooks/list`로 실제 로드된 code-agent PreToolUse가 활성·동기 실행·신뢰 상태인지 확인한다. 해당 프로토콜을 지원하지 않거나 hook을 로드하지 않으면 모델 턴을 시작하지 않는다. 기능 협상은 `hello.codeAgent.stateSchema >= 10`과 `interactions.hostPermissions.kind === "host-permission"`으로 한다.
+
+지원 대상은 저장소 루트에서 실행하는 `code-agent start …`, `code-agent verify …`, `code-agent repro …`의 명령 실행 승인이다. PowerShell·bash의 단순 실행 래퍼도 받는다. 이 명령들은 원래 hook·작업 단계·승인·검증 검사를 그대로 거친다. 직접 Git 변경, 복합 셸·인라인 코드, 네트워크 승인, 파일 변경 승인, 다른 프로젝트·원격 환경, 읽기 전용 실행의 쓰기 권한은 이 경로에서 받지 않는다. 준비·반영 동의의 Git 작업은 기존 외부 동의 적용 처리기가 수행한다.
+
+`interactions` 또는 `interaction` 응답의 `kind: "host-permission"`, `consumer: "codex-command"`를 일반 질문·업무 동의와 구분한다. `permission`에는 전체 `command`, `cwd`, 호스트가 제공한 `reason`, `threadId`, `turnId`, `itemId`, `rpcId`, `connectionId`, 소유 세대와 `scope: "once"`가 있다. 화면에는 **명령 전문·작업 디렉터리·사유·일회 실행 범위**를 보여 준다. 샌드박스 밖 실행을 승인하면 해당 명령과 자식 프로세스가 그 권한으로 실행될 수 있다는 영향도 함께 표시한다. 추천·기본 선택을 실제 승인으로 제출하지 않는다.
+
+조회와 서명 방법은 위의 일반 API와 같고, 제출 본문만 다르다.
+
+```json
+{
+  "protocol": "code-agent.master", "version": 1,
+  "type": "interaction.respond", "controller": "dashboard", "generation": 1,
+  "token": "<연결 토큰>", "commandId": "git-permission-submit-1",
+  "payload": {
+    "requestId": "<조회한 UUID>", "expectedRevision": 12,
+    "contentHash": "<조회한 전문 해시>", "challenge": "<조회한 challenge>",
+    "channelId": "<사람 채널 UUID>", "signature": "<사람의 명시적 제출 후 서버가 생성한 Ed25519 서명>",
+    "submission": { "intent": "submit", "explicit": true, "permissionDecision": "accept" }
+  }
+}
+```
+
+이 요청을 기존 `node C:/IdeaProjects/code-agent/dist/agent/cli.js master call`의 표준 입력으로 전달한다(작업 디렉터리는 대상 프로젝트). 거절은 `permissionDecision: "decline"`, 보류·취소는 `permissionDecision` 없이 `intent: "defer"`·`"cancel"`로 보낸다. 보류는 같은 요청을 `reopen` 후 응답한다. 일반 `answers`나 업무 동의 `verdict: "approve"`로 실행 권한을 승인할 수 없다. 제어 토큰이나 위임 권한만으로 승인할 수도 없다.
+
+감독은 응답 직전에 프로젝트·브랜치·HEAD·작업·세션·실행·소유 세대·사람 채널·만료를 다시 검사한다. 유효한 응답만 원래 살아 있는 RPC에 `accept` 또는 `decline`으로 한 번 전달한다. 세션 전체 허용·영구 실행 규칙·네트워크 규칙을 저장하지 않는다. 대기 중인 동일 run·thread·turn에서 이어가므로 새 작업 ID나 재개 실행을 생성하지 않는다.
+
+응답 수신과 실행 성공은 별개다. `interaction.result`의 `application.result.forwarded: true`는 Codex에 결정을 전달했다는 뜻이다. `executionConfirmed: true`, `status`, `exitCode`는 해당 명령의 완료 알림을 받았다는 뜻이며, 프로젝트 개발 완료나 테스트 통과를 대신하지 않는다. 명령 성공 여부는 `exitCode`와 기존 검증 결과로 판단한다.
+
+요청은 최대 15분과 원래 실행 시간 상한 중 먼저 도달하는 시각에 만료된다. 정지·취소·문맥 변경·권한 회수에는 허용을 전달하지 않는다. 원래 호스트가 종료되면 미완료 요청을 닫는다. 승인 전달 직후 통신이 끊겨 실행 여부를 확인하지 못하면 재전송하지 않는다. `unknown` 실행은 기존 재조정·상태 확인 절차로 처리하고, 같은 세션을 다시 시작해도 새 호스트 요청에 새 사람 응답이 필요하다.
+
+master-agent의 화면은 이 종류를 표시하고 `permissionDecision`을 서명해 보내야 한다. code-agent는 이 문서의 로컬 API를 제공하며 다른 저장소의 화면을 수정하지 않는다. 공식 연결 규약은 [Codex App Server 승인](https://learn.chatgpt.com/docs/app-server#approvals), 샌드박스의 Git 보호는 [보호 경로](https://learn.chatgpt.com/docs/agent-approvals-security#protected-paths-in-writable-roots)를 따른다.
+
 ## 제한과 인계 항목
 
 설치는 `code-agent init` 한 번으로 두 호스트를 준비한다. `execution claude|codex`는 독립·관리 실행의 호스트를 선택하고, `execution both --main claude|codex`는 관리 실행의 주 호스트와 상대 호스트 교차 검증을 선택한다. 전환은 이전 실행 중지 → `execution --json`으로 인계 상태 조회 → `execution codex --handoff`(또는 claude·both) 확인 → 같은 브랜치의 기존 작업 재개 순서다. 인계는 미응답 일반 질문을 취소 이력으로 남기고 임대를 풀며, 미소비 답·미완료 동의가 있으면 먼저 원래 채널에서 처리하도록 막는다. 작업·승인·답을 다른 세션으로 복사하지 않는다. 자세한 명령·관리 실행 계약은 [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다.
 
 - 영속화하지 않은 질문·동의나 원본 대화까지 없는 세션은 복원하지 않는다. 원래 채널에서 처리하거나 명시적으로 재발행하며 이미 받은 답은 재질문하지 않는다. 토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
-- Windows Codex의 workspace-write 실행에서 `.git` 쓰기가 제한되면 작업 시작·검증 등 해당 Git 작업이 막힐 수 있다. 자동 권한 상승이나 샌드박스 해제는 하지 않는다. 관리 실행 예약 지원과 프로젝트 전체 완주 검증은 구분한다.
+- Codex 관리 실행의 Git 쓰기 차단은 위 단건 권한 응답으로 처리한다. 사람 채널·지원 화면이 없으면 승인 없이 대기하며, 일반 터미널·IDE의 독립 Codex는 해당 호스트의 승인 화면을 사용한다. 프로젝트 전체 완주 검증은 Git 권한 연결 검증과 구분한다.
 - master-agent는 브라우저 요청함·서버 키 보관·명시적 제출 검증·전송함·프로젝트 수집·master 자체 질문을 담당한다. code-agent 파일을 직접 쓰지 말고 이 API를 사용한다.
 
 빌드 진입점은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`다. `npm.cmd run build`, `npm.cmd test`로 재현한다. 공개 CLI·서명·중복 응답·적용 검사는 `src/test/dashboardInteractions.test.ts`·`dashboardApproval.test.ts`·`dashboardConsent.test.ts`, 복원은 `sessionRecovery.test.ts`, MCP 통신은 `choiceProtocol.test.ts`, 기존 동의 도메인 검사와 감독·중단 검사는 `consent*.test.ts`·`masterRuns.test.ts`에 있다. 실제 모델·회귀 결과와 남은 검증 범위는 [복원·모델 검증 기록](reviews/2026-10-20-session-recovery-live.md)에 모은다. 실제 브라우저 클릭·운영 환경 반영·업데이트·플러그인 실행은 별도 검증 대상이다.

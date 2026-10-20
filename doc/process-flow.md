@@ -14,6 +14,8 @@
 
 ### 1.1 변경 → 갱신 대응표
 
+Codex 관리 실행의 `master/codexTransport.ts`·`codexPermissions.ts`는 §4.2·§5.4·§8·§9와 `doc/dashboard-interactions.md`의 host-permission 계약·지원 범위, `doc/master-control.md`의 실행 인자, README·codex, interaction 스키마·소비 경로, STATE_SCHEMA를 함께 맞춘다.
+
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
 | `interaction*.ts`, `master/control.ts`·`observe.ts`·`recovery.ts`·`nativeSession.ts`, `choiceServer.ts`, `consent.ts`·`answers.ts`의 대시보드 사람 채널 | §3.2, §4.2, §4.3, §5.4, §6.0, §8, §9 | `doc/dashboard-interactions.md` 계약·지원표, `master/protocol.ts` 명령·이벤트 ↔ `doc/master-control.md`, `ca-answer/dashboard.md`·Claude/Codex 스킬 진입 문장, `STATE_SCHEMA`, `runtimeSelect.pendingInteractionMarker` ↔ `runtimeApply.busyReasons` |
@@ -206,7 +208,7 @@ flowchart TD
 
 ### 4.2 응답 관찰 — 호스트별
 
-**대시보드 사람 채널** — 기존 로컬 `master call`의 `interaction.*` API로 일반 답과 동의를 구분한다. TTY에서 등록한 별도 Ed25519 사람 채널·소유 세대·명시적 제출·요청 버전·문맥·만료를 검사한다. 동의는 준비 세션과 전문 해시·변경 후보를 추가 대조하고 같은 `applyLocked` 도메인 검사를 거쳐 `dashboard-human` presence를 남긴다. 일반 답은 승인으로 올리지 않고 hook `observed` 기록을 만들지 않는다. 수신과 적용은 별도 영수증이며 첫 응답만 수락한다. [대시보드 계약](dashboard-interactions.md)이 정본이다.
+**대시보드 사람 채널** — 기존 로컬 `master call`의 `interaction.*` API로 일반 답과 동의를 구분한다. TTY에서 등록한 별도 Ed25519 사람 채널·소유 세대·명시적 제출·요청 버전·문맥·만료를 검사한다. 동의는 준비 세션과 전문 해시·변경 후보를 추가 대조하고 같은 `applyLocked` 도메인 검사를 거쳐 `dashboard-human` presence를 남긴다. 일반 답은 승인으로 올리지 않고 hook `observed` 기록을 만들지 않는다. 수신과 적용은 별도 영수증이며 첫 응답만 수락한다. Codex 관리 실행의 Git 명령 권한은 별도 `host-permission`으로 저장하고, 서명된 단건 응답만 원래 살아 있는 thread·turn·RPC에 전달한다. 권한 전달과 실제 명령 완료는 따로 기록하며 업무 동의로 대신하지 않는다. [대시보드 계약](dashboard-interactions.md)이 정본이다.
 
 관리 실행 기록 없는 종료 세션은 `master recover <요청ID>`가 원래 호스트 대화 파일의 UUID·프로젝트·주 세션을 확인하고 호스트 밖 TTY에서 종료 확인을 받는다(`--json`은 조회만). 원래 질문의 서명 대상·실제 응답은 유지하고 별도 복원 연결로 같은 세션의 재개를 한 번만 예약한다. 기존 작업 ID·접수 종류·승인·권한·검증 게이트는 보존한다. 원본이 없거나 다른 임대·실행·소유 세대·미완료 동의가 있으면 복원하지 않는다. 복원 기록은 과거 실행 성공이나 새로운 승인 증거가 아니다. 상세 계약은 대시보드 문서의 복원 절차를 따른다.
 
@@ -357,6 +359,8 @@ Codex 관리 실행은 `codexHook`의 도구 분류 전에 같은 가드를 적�
 7. **작업 임대**(`lease.ts`, 작업 모드에서 4·6의 기존 판정이 허용일 때만 — 기존 거부가 언제나 먼저다) — 진행 명령(모델 명령 중 `LEASE_FREE` 읽기 전용 목록 밖: `status`(`--json`·대조·식별 옵션 포함)·`context`·`read`·`survey`·`planning status·result`·`model` 조회·`setup`·`doctor`·`consent status`·`takeover`·`docs` 조회·`request` 형식·`knowledge find`·`experience list·show`·`finding list` 등은 보지 않는다 — `experience add`·`finding report`는 기록을 쓰므로 본다)과 쓰기에서 임대를 본다. 세션이 없으면 보지 않는다. 임대가 없거나 다른 작업이면 이 세션이 잡고, 같은 주인(호스트와 세션이 모두 같다 — 두 호스트 모두 하위 에이전트의 hook 이 부모 `session_id`를 싣는다, 실측)이면 1분마다 마지막 활동을 갱신한다. 재개(Claude `--resume`·`--continue`·압축, Codex `resume`)도 같은 `session_id`라(실측) 두 터미널이 같은 세션을 이어 열면 임대 보유자가 하나로 보인다 — 임대는 그 둘을 가르지 못한다. 다른 세션이 쥔 신선한 임대(마지막 활동 30분 안)는 거부한다(`precondition` — 같은 명령을 다시 실행해도 같고, 사용자 확인 뒤 `code-agent takeover`). 30분이 지났거나 `takeover`로 풀린 임대는 이 세션이 넘겨받는다(`previous`). 기록(잠금 `lease.json.lock` — `acquireLock` hook 대기·쓰기)이 실패해도 막지 않고 처음 읽은 값으로 판정한다. 예외 하나: 동의 주인 세션(1단계 `consentCommandGuard`가 확인한 `consent apply|finish <id>`)의 적용은 다른 세션이 쥔 임대로 거부하지 않는다 — 사람이 그 세션에서 승인했고, 다른 창을 연 것만으로 확인 지점이 늘지 않게 한다(임대가 비었거나 자기 것이면 평소처럼 잡거나 touch 한다). 교차 실행 자식은 0단계가 먼저 막고, 임대를 읽거나 쓰지 않는다.
 
 ### 5.4 모델이 셸로 부를 수 있는 `code-agent` 명령 (세션·작업 중)
+
+Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 로컬 app-server의 단건 승인 요청으로 연결한다. `on-request`·`user` 승인 경로를 쓰며 기존 hook·업무 단계·검증 게이트를 유지한다. 직접 Git 변경·복합 셸·네트워크·다른 프로젝트의 권한 요청은 이 경로에서 허용하지 않는다. 승인 전에는 실행하지 않고 거절·만료·정지·문맥 변경·연결 종료에는 허용을 재사용하지 않는다.
 
 `execution --json`은 인계 상태의 읽기 전용 조회다. 실행 방식·주 호스트 변경과 `--handoff`는 호스트 밖 TTY에서만 확인한다. 관리 Codex의 PreToolUse는 일반 판정 대상이 아닌 도구와 MCP confirm도 먼저 실행 가드로 검사하며, thread ID 미확정·불일치 상태에서 진행하지 않는다.
 
@@ -674,7 +678,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | Codex 단독 | `execution codex` | 없음 |
 | 교차 검증 | `execution both` | 현재 호스트가 개발하고 상대 호스트가 계획·코드 리뷰 |
 
-관리 실행은 단독 선택을 그대로 따르고 `both --main claude|codex`로 주 호스트를 정한다. 지정하지 않으면 기존 단독 선택·main, 그 값도 없으면 연동의 기본 호스트를 사용한다. 실행 기록에 호스트·권한 설정을 고정하고 재개 때 현재 선택·설정과 다시 대조한다. Codex는 프로젝트 hook 설치·프로젝트/훅 신뢰 기록을 확인한 뒤 workspace-write 또는 read-only와 approval_policy=never로 실행하며 자동 권한 상승·신뢰 우회는 하지 않는다. 최초 thread.started를 확인해 세션 ID를 저장하고, 접수 별칭도 조회·재개 입력으로 받는다. 재개는 확인한 thread ID를 사용하고 누락·불일치·실패 이벤트를 성공으로 보지 않는다.
+관리 실행은 단독 선택을 그대로 따르고 `both --main claude|codex`로 주 호스트를 정한다. 지정하지 않으면 기존 단독 선택·main, 그 값도 없으면 연동의 기본 호스트를 사용한다. 실행 기록에 호스트·권한 설정을 고정하고 재개 때 현재 선택·설정과 다시 대조한다. Codex는 프로젝트 hook 설치·프로젝트/훅 신뢰 기록을 확인한 뒤 로컬 app-server(표준 입출력)를 workspace-write 또는 read-only, `approval_policy=on-request`·`approvals_reviewer=user`로 띄우고, `hooks/list`로 신뢰된 PreToolUse 로드를 확인한 뒤에만 턴을 시작한다(`codexTransport.ts`). 단건 명령 권한 요청만 사람 채널로 보내고 그 밖의 권한 요청은 거절하며, 신뢰 우회는 하지 않는다. `thread/start` 결과의 thread ID를 저장한 뒤 턴을 시작하고, 접수 별칭도 조회·재개 입력으로 받는다. 재개는 확인한 thread ID의 `thread/resume`을 사용하고 누락·불일치·실패 턴을 성공으로 보지 않는다.
 
 호스트 인계는 이전 실행을 중지한 뒤 `execution --json`으로 브랜치·작업·임대·질문·동의를 조회하고 `execution codex --handoff`처럼 확인한다. 관리 실행·소유권 인계·미소비/미적용 답·열린 동의가 있으면 막는다. 확인한 문맥이 그대로일 때만 미응답 일반 질문을 취소 이력으로 남기고 임대를 해제한다. 작업 ID·최초 접수 유형·계획·승인 기록은 유지한다. 새 세션은 질문을 재발행하고 필요한 동의를 준비하며 받은 답·승인을 복사하지 않는다. 관리 실행은 같은 작업·links의 start로 이어가되, 인계의 브랜치·HEAD·작업·세대·호스트를 대조하고 실행 기록에 인계 ID를 묶어 한 번만 사용한다. 사람 대기 중 허용하는 시작도 질문·동의 준비만 가능하며 기존 단계 게이트는 유지한다.
 
@@ -716,7 +720,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 관리 실행의 `runs/<runId>.json`에는 호스트 권한 설정(`hostProfile`), Codex 접수 별칭(`sessionAlias`)·thread 확인 여부(`sessionConfirmed`), 사용한 호스트 인계 ID(`handoffId`)가 있다. `master/host-handoff.json`은 TTY로 확인한 대상 호스트·브랜치·HEAD·작업·소유 세대·미응답을 보존하며 master 폴더와 함께 Git·동의 스냅샷에서 제외한다. 등록한 호스트별 설정은 master binding의 `hostProfiles`, 선택한 교차 주 호스트는 execution 정책의 `main`에 둔다. 해제한 임대의 옛 세션이나 아직 thread를 확인하지 않은 관리 Codex에는 질문 문서를 자동 결속하지 않는다.
 
-`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 사용자 홈 `.code-agent/dashboard-channels/`에 둔다. 현재 상태 형식 세대는 9이다. 종료 독립 세션은 원래 context를 바꾸지 않고 `recoveredRunId`로 연결하며 실행의 `recovery`에 확인자·원본 메타데이터·문맥·질문 목록을 보존한다.
+`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 사용자 홈 `.code-agent/dashboard-channels/`에 둔다. 현재 상태 형식 세대는 10이다. 종료 독립 세션은 원래 context를 바꾸지 않고 `recoveredRunId`로 연결하며 실행의 `recovery`에 확인자·원본 메타데이터·문맥·질문 목록을 보존한다.
 
 `active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다.
 
@@ -784,6 +788,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연결·thread 재개·단건 RPC·완료 알림을 처리한다. `master/codexPermissions.ts`는 권한 요청 영속화·사람 응답 적용·문맥 대조·중복 전달 차단·종료 처리를 담당한다. 요청과 응답은 §8의 기존 `interactions/state.json` 원장에 저장한다.
+
 - `executionMode.ts`·`executionCommands.ts`·`executionHandoff.ts`: 설치와 분리된 실행 정책·TTY 선택·인계 상태와 차단 검사. 계획·리뷰 교차 게이트와 hook이 같은 정책을 읽는다. `master/hostProfile.ts`는 관리 실행 호스트·권한·Codex 설치/신뢰를 대조하고, `master/hostHandoff.ts`는 확인한 인계를 한 번의 실행에 결속한다.
 
 대시보드 연동은 `interactionSchema.ts`(구조 검증), `interactions.ts`(원장), `interactionSources.ts`(동의·문서 연결), `interactionHuman.ts`(사람 채널), `interactionService.ts`(API·적용·재개), `interactionNative.ts`(호스트 질문), `interactionTicket.ts`(hook 세션 결속), `interactionSummary.ts`(읽기 전용 상태)로 나뉜다.
@@ -828,6 +834,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 - `ca-reviewer`: review
 
 ## 10. 변경 이력
+
+- Codex 관리 실행을 로컬 app-server로 돌리고 Git 명령 권한 요청을 별도 사람 응답에 연결해 원래 호출 한 번만 실행하며 종료·만료·중복 승인을 차단한다 — 이 커밋, [검증 기록](reviews/2026-10-20-codex-git-permission.md).
 
 - 호스트 원본과 사람의 종료 확인으로 관리 기록 없는 세션을 연결하고 서명 응답·작업 식별을 보존해 한 번만 재개한다 — `a78c51a`, [검증 기록](reviews/2026-10-20-session-recovery-live.md).
 - 원래 질문 문서의 답·내용 변경으로 낡은 미응답 화면을 닫되 이미 수신한 서명 답과 승인 경계를 보존한다 — `a78c51a`, [검증 기록](reviews/2026-10-20-session-recovery-live.md).

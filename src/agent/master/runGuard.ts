@@ -68,5 +68,6 @@ export function masterRunNote(root: string, env: Readonly<Record<string, string 
     `- 질문·동의를 ${askVia()} 묻지 않는다: 동의는 ${skill("ca-answer")} 의 consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다. 일반 질문은 interaction publish로 저장하고 human-input 대기한다.`,
     "- 승인·확정 기록을 만들거나 고치지 않는다. 판단은 master 가 사람이 준 위임 범위에서 하거나 사람에게 넘긴다.",
     "- code-agent 명령은 code-agent 로 부른다(node 경로로 부르지 않는다). 정지 요청을 받으면 도구를 더 쓰지 않고 보고 뒤 끝낸다.",
+    ...(run.hostProfile?.kind === "codex" ? ["- Git 쓰기가 필요한 start·verify·repro의 샌드박스 실패는 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. 감독이 사람 응답을 전달하며 업무 동의와 구분한다."] : []),
   ].join("\n");
 }

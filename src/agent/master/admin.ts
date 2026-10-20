@@ -54,7 +54,7 @@ export function masterEnable(root: string, options: EnableOptions): string {
       : `이 프로젝트의 master 연동을 켭니다 — 제어자 ${controller} 가 소유합니다.`,
     `프로젝트: ${root}`,
     `정책: ${JSON.stringify(policy)}`,
-    host.kind === "codex" ? `호스트: ${host.command.join(" ")} · sandbox ${host.sandbox} · 자동 권한 상승 없음`
+    host.kind === "codex" ? `호스트: ${host.command.join(" ")} · sandbox ${host.sandbox} · start·verify·repro 실행 권한은 대시보드 사람의 단건 승인 필요`
       : `호스트: ${host.command.join(" ")} · 권한 모드 ${host.permissionMode} · 허용 도구 ${host.allowedTools.join(", ")} · 금지 도구 ${host.disallowedTools.join(", ")}`,
     "연결만으로는 승인·답 권한이 생기지 않습니다 — 위임은 code-agent master grant 로 따로 줍니다.",
   ].join("\n");

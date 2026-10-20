@@ -42,6 +42,7 @@ function withoutSupervisor<T>(root: string, runId: string, run: () => T): { held
 }
 
 function finishWithoutHost(root: string, runId: string, state: RunState, reason: string, extra: Partial<RunRecord> = {}): RunRecord {
+  (require("./codexPermissions") as typeof import("./codexPermissions")).closeCodexPermissions(root, runId, reason);
   const run = updateRun(root, runId, (current) => {
     Object.assign(current, extra);
     current.state = state;

@@ -2,10 +2,11 @@
 
 현재 동작은 [프로세스 흐름도](../process-flow.md), [사용 가이드](../usage.md), [설계](../design.md)를 기준으로 읽는다. 아래 기록은 변경 당시의 근거·검증 결과·한계다. 서로 다른 시점의 시험 수를 합산하지 않는다.
 
-최근 복원·실제 모델·전체 회귀 결과는 [종료 독립 세션 복원과 실제 모델 검증](2026-10-20-session-recovery-live.md)에 모았다. master-agent 연결의 기존 검증 근거는 [관리 호스트 기록](2026-10-20-managed-hosts.md)을 따른다. 서로 다른 검사의 수치를 합산하지 않는다.
+최근 복원·실제 모델·전체 회귀 결과는 [종료 독립 세션 복원과 실제 모델 검증](2026-10-20-session-recovery-live.md)에 모았다. master-agent 연결의 기존 검증 근거는 [관리 호스트 기록](2026-10-20-managed-hosts.md), Codex 관리 실행의 Git 권한은 [Git 실행 권한 기록](2026-10-20-codex-git-permission.md)을 따른다. 서로 다른 검사의 수치를 합산하지 않는다.
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
+| 2026-10-20 | [Codex 관리 실행의 Git 실행 권한](2026-10-20-codex-git-permission.md) — 이 커밋 | [실제 Codex 평가·회귀](evidence/2026-10-20-codex-git-permission.json) |
 | 2026-10-20 | [종료 독립 세션 복원과 실제 모델 검증](2026-10-20-session-recovery-live.md) — `a78c51a` | [회귀·실제 모델 집계](evidence/2026-10-20-session-recovery-live.json) |
 | 2026-10-20 | [Codex 관리 실행과 명시적 호스트 인계](2026-10-20-managed-hosts.md) — `a4986c7` | [감독·재개·인계·전체 회귀](evidence/2026-10-20-managed-hosts.json) |
 | 2026-10-19 | [대시보드 사람 응답과 실행 호스트 선택](2026-10-19-dashboard-interactions.md) — `91105a1` | [전체 회귀·실제 프로세스 통합](evidence/2026-10-19-dashboard-interactions.json) |

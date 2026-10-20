@@ -38,6 +38,7 @@ export function readHostOutput(root: string, runId: string, exitCode: number | n
     try { row = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
     if (row.type === "system" && row.subtype === "init" && typeof row.session_id === "string") outcome.sessionId = row.session_id;
     if (row.type === "thread.started" && typeof row.thread_id === "string") outcome.sessionId = row.thread_id;
+    if (row.type === "permission.denied" && outcome.permissionDenials.length < 50) outcome.permissionDenials.push(row);
     if (row.type === "turn.completed") { outcome.subtype = "success"; outcome.isError ??= false; }
     if (row.type === "turn.failed" || row.type === "error") { outcome.subtype = "error_during_execution"; outcome.isError = true; }
     if (row.type === "item.completed" && row.item && typeof row.item === "object") {

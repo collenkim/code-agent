@@ -25,6 +25,7 @@ export const INTERACTION_CAPABILITIES = {
   humanChannel: "dashboard-human", signature: "Ed25519", independentSessions: true, beforeDocumentConfirmation: true,
   questionConsumer: ["host", "questions"], consentActions: ["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log", "judgment"],
   continuation: { live: "동일 세션의 interaction consume·complete", detached: "기록된 Claude·Codex 실행의 확인된 동일 세션 자동 재개", codexDetached: true, independentRecovery: "tty-native-transcript" },
+  hostPermissions: { host: "codex", kind: "host-permission", transport: "app-server/stdio", decisions: ["accept", "decline"], scope: "once", liveOnly: true },
 };
 const ResponsePayload = z.object({ requestId: z.string().uuid(), expectedRevision: z.number().int().positive(), contentHash: z.string(), challenge: z.string().uuid(), channelId: z.string().uuid(), signature: z.string().max(1000), submission: InteractionSubmission }).strict();
 function validateContext(root: string, record: InteractionRecord): void {
@@ -36,6 +37,7 @@ function validateContext(root: string, record: InteractionRecord): void {
 export function interactionView(root: string, record: InteractionRecord, binding?: Binding): unknown {
   const channel = binding?.humanChannel, owner = readOwner(root);
   let reason = record.unavailableReason;
+  if (!reason && record.kind === "host-permission") reason = (require("./master/codexPermissions") as typeof import("./master/codexPermissions")).permissionUnavailable(root, record);
   if (!reason && record.origin.type === "consent" && record.status === "pending") {
     const consent = (require("./consent") as typeof import("./consent")).loadConsent(root, record.origin.id);
     if (consent.status !== "pending" || consent.observed?.length || consent.binding || consent.delegation) reason = "원래 호스트에서 이미 응답을 시작한 동의입니다. 해당 채널의 결과를 확인하세요.";
@@ -73,6 +75,7 @@ export function respondInteraction(root: string, binding: Binding, request: Requ
     if (Date.parse(record.expiresAt) <= Date.now()) throw new ControlError("invalid-state", "요청이 만료됐습니다");
     validateContext(root, record);
     const submission = payload.submission;
+    if (record.kind === "host-permission") (require("./master/codexPermissions") as typeof import("./master/codexPermissions")).validatePermissionSubmission(root, record, submission);
     if (record.kind === "consent") {
       (require("./consent") as typeof import("./consent")).validateDashboardConsent(root, record.origin.id, record.context.sessionId, record.consent!.shownHash);
     }
@@ -82,16 +85,17 @@ export function respondInteraction(root: string, binding: Binding, request: Requ
     } else {
       if (record.status !== "pending" || record.response) throw new ControlError("conflict", "이미 응답했거나 대기 중이 아닌 요청입니다");
       if (record.kind === "consent" && submission.intent === "submit") {
+        if (submission.permissionDecision) throw new ControlError("invalid-request", "실행 권한 응답은 업무 동의가 아닙니다");
         if (!submission.verdict || submission.answers || submission.shownHash !== record.consent?.shownHash) throw new ControlError("invalid-request", "동의는 전문 해시와 명시적 승인·수정 요청으로 응답해야 합니다");
         const choices = record.consent!.choices;
         if (submission.verdict === "approve" && (Object.keys(submission.choices ?? {}).length !== choices.length || choices.some(c => !(String(c.index) in (submission.choices ?? {}))))) throw new ControlError("invalid-request", "모든 변경 후보를 명시적으로 선택해야 합니다");
-      } else validateInteractionAnswers(record.questions, submission);
+      } else if (record.kind !== "host-permission") validateInteractionAnswers(record.questions, submission);
       if (submission.intent === "defer") record.status = "deferred";
       else if (submission.intent === "cancel") record.status = "cancelled";
       else {
         record.status = "responded";
         record.response = { receiptId: randomUUID(), commandId: request.commandId!, at: new Date().toISOString(), channel: "dashboard-human", channelId: channel.id, generation: channel.generation, submission };
-        record.continuation = { state: interactionRunId(record) ? "queued" : "waiting-host" };
+        record.continuation = { state: record.kind === "host-permission" ? "waiting-host" : interactionRunId(record) ? "queued" : "waiting-host" };
       }
     }
     bumpInteraction(state, record);
@@ -162,6 +166,7 @@ function applyQuestionDocument(root: string, r: InteractionRecord): unknown {
 
 export function kickInteractionWorker(root: string, id: string): void {
   const r = readInteractions(root)?.requests[id];
+  if (r?.kind === "host-permission") return; // 살아 있는 app-server의 정확한 RPC에만 감독이 응답한다.
   if (!r?.response || r.response.channel !== "dashboard-human" || ["failed", "superseded", "cancelled"].includes(r.status) || r.continuation?.state === "started") return;
   if ((r.origin.type === "host" && !interactionRunId(r)) || r.continuation?.state === "blocked") return;
   if (r.status === "applied" && !interactionRunId(r)) return;
@@ -174,6 +179,7 @@ export function drainInteraction(root: string, id: string): unknown {
   catch { return { busy: true }; }
   try { return withLock(root, CONTROL_LOCK, () => {
     let r = needInteraction(readInteractions(root), id);
+    if (r.kind === "host-permission") return { status: r.status, waiting: "codex-approval-rpc" };
     if (!r.response || r.response.channel !== "dashboard-human" || !["responded", "applied"].includes(r.status)) return { status: r.status };
     const binding = readBinding(root), owner = readOwner(root);
     if (!binding?.humanChannel || !owner || owner.handover || binding.humanChannel.id !== r.response.channelId || owner.generation !== r.response.generation || binding.humanChannel.generation !== owner.generation || binding.humanChannel.controller !== owner.controller || Date.parse(binding.humanChannel.expiresAt) <= Date.now()) return { waiting: "human-channel" };

@@ -27,6 +27,7 @@ export function publishNativeInteraction(root: string, questions: { title: strin
 export function acceptNativeInteraction(root: string, id: string, sessionId: string, channel: "claude-question" | "codex-elicitation", values: string[] | undefined): InteractionRecord {
   return mutateInteractions(root, state => {
     const r = needInteraction(state, id);
+    if (r.kind === "host-permission") throw new Error("호스트 실행 권한은 대시보드의 별도 권한 응답으로 처리합니다");
     if (r.context.sessionId !== sessionId) throw new Error("질문을 발행한 세션과 다릅니다");
     if (!contextMatches(root, r.context) || Date.parse(r.expiresAt) <= Date.now()) throw new Error("질문 문맥이 바뀌었거나 만료되었습니다");
     if (r.response) {

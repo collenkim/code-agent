@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-20",
+  "repository": "code-agent",
+  "implementationCommit": null,
+  "environment": {
+    "platform": "win32",
+    "node": "24.19.0",
+    "codexCliAtCommitTime": "0.163.0",
+    "codexCliAtEvaluation": "not recorded"
+  },
+  "stateSchema": 10,
+  "workSession": {
+    "fullRegression": {
+      "command": "npm test",
+      "tests": 1673,
+      "suites": 218,
+      "passed": 1669,
+      "failed": 0,
+      "skipped": 4,
+      "durationMs": 765832.2139,
+      "log": "dist/codex-git-permission-full-tests.log (build output, not committed)"
+    },
+    "liveEvaluation": {
+      "command": "node scripts/evaluate-codex-git-permission.cjs",
+      "actualModel": true,
+      "approvalSource": "synthetic evaluation fixture, not human approval",
+      "passingReport": {
+        "at": "2026-10-20T01:23:41.964Z",
+        "file": "dist/codex-git-permission-1792459464072.json (build output, not committed)",
+        "passed": true
+      },
+      "earlierAttemptsSameDay": {
+        "count": 7,
+        "passed": false,
+        "note": "evaluation setup iterations"
+      },
+      "observed": {
+        "permissionRequest": "code-agent start after .git/index.lock denial, scope once",
+        "decision": "accept",
+        "forwarded": true,
+        "executionConfirmed": true,
+        "commandStatus": "completed",
+        "exitCode": 0,
+        "run": {
+          "state": "completed",
+          "resume": "ready"
+        },
+        "work": {
+          "id": "CONSENT-1",
+          "branch": "feature/CONSENT-1",
+          "phase": "analysis"
+        },
+        "hooksExecuted": [
+          "sessionStart",
+          "userPromptSubmit",
+          "preToolUse"
+        ]
+      }
+    }
+  },
+  "commitCleanup": {
+    "standaloneCommit": null
+  },
+  "notExecuted": [
+    "real human dashboard click",
+    "browser screen",
+    "master-agent host-permission screen"
+  ]
+}

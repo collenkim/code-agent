@@ -8,7 +8,7 @@ code-agent의 접수·분석·설계·계획·구현·검증·리뷰·통합 절
 
 호스트의 사용 한도가 소진되면 기존 실행을 중지하고 호스트 밖 터미널에서 `code-agent execution --json`으로 대기 상태를 확인한다. 열린 동의·미소비 응답을 원래 채널에서 처리한 뒤 `code-agent execution codex --handoff` 또는 `claude --handoff`로 인계한다. 작업 ID·접수 유형·계획·승인 기록은 유지하고 이전 임대를 해제한다. 미응답 일반 질문은 취소 이력을 남기며 새 호스트가 다시 발행한다. 같은 브랜치에서 기존 작업을 재개하고 응답·승인을 다른 세션의 것으로 만들지 않는다. 상세는 [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다.
 
-관리 실행은 Codex JSONL의 확정된 thread ID를 기록하고 같은 세션을 재개한다. `execution both --main codex`는 교차 검증을 유지하면서 관리 실행의 주 호스트를 Codex로 선택한다. 프로젝트·hook 신뢰 기록과 PreToolUse 설치가 필요하며 감독은 권한 상승 없이 지정된 샌드박스로 실행한다. 관리 실행의 정지·세션 가드는 미분류 도구에도 적용하며 기본 질문·MCP 확인 대신 영속 질문·동의를 준비한다. [관리 실행 계약](master-control.md#11-master-실행-세션의-규칙)과 [대시보드 응답 연결](dashboard-interactions.md)을 함께 확인한다.
+관리 실행은 로컬 `codex app-server`(표준 입출력)로 돌고, 확정된 thread ID를 기록해 같은 세션을 재개한다. `execution both --main codex`는 교차 검증을 유지하면서 관리 실행의 주 호스트를 Codex로 선택한다. 프로젝트·hook 신뢰 기록과 PreToolUse 설치가 필요하며, 감독은 시작 전에 app-server 가 그 hook 을 신뢰 상태로 로드했는지 확인한다. 지정된 샌드박스를 유지하고, Git 쓰기가 필요한 start·verify·repro 의 단건 실행 권한만 대시보드 사람 응답으로 원래 호출에 전달한다([Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)). 관리 실행의 정지·세션 가드는 미분류 도구에도 적용하며 기본 질문·MCP 확인 대신 영속 질문·동의를 준비한다. [관리 실행 계약](master-control.md#11-master-실행-세션의-규칙)과 [대시보드 응답 연결](dashboard-interactions.md)을 함께 확인한다.
 
 ```sh
 code-agent init
