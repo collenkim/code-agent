@@ -10,7 +10,7 @@
 
 | 항목 | 동작 |
 |---|---|
-| 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 열거나 사람이 `master recover`로 명시적으로 연결한 작업(`works/<작업 ID>.json`)이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
+| 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켜거나, PC 신뢰를 한 번 등록한 뒤 대시보드에서 사람이 확인해 [페어링](#pc-신뢰와-대시보드-페어링)으로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 열거나 사람이 `master recover`로 명시적으로 연결한 작업(`works/<작업 ID>.json`)이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
 | 연동하지 않은 작업 | 켠 프로젝트라도 연결하지 않은 독립 작업은 master가 임무로 이어 실행하지 않고(`not-enabled`) AI 위임 판단도 받지 않는다. 종료 세션 복원은 원래 질문·대화를 확인한 사람의 명시적 연결이며 AI grant를 주지 않는다. 대시보드 사람 채널은 독립 작업의 질문·동의도 조회·응답할 수 있다([계약](dashboard-interactions.md)) |
 | 연결과 권한 | 토큰은 요청자를 확인할 뿐 승인 권한이 아니다. 승인·답 위임은 사람이 `code-agent master grant` 로 준 권한 범위 안에서만 받는다 |
 | 역할 | master — 요구 분석·프로젝트별 배분·의존성·재계획·전체 완료와 독립 검증. code-agent — 프로젝트 안의 실행과 로컬 검증·승인 조건. 실행 감독(`master supervise`) — 호스트 세션과 프로세스의 실행·정지·생존 확인 |
@@ -24,7 +24,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 ```jsonc
 // 요청
 { "protocol": "code-agent.master", "version": 1, "type": "submit",
-  "controller": "master-a", "generation": 3, "token": "<enable 때 받은 토큰>",
+  "controller": "master-a", "generation": 3, "token": "<enable·pair 때 받은 토큰>",
   "commandId": "inv-7f2c…",                 // 상태를 바꾸는 요청에 필수
   "expect": { "stateVersion": "sha256:…", "work": null, "attempt": null },
   "payload": { … } }
@@ -42,13 +42,23 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 `execution`은 LangGraph 프레임워크·그래프 형식 버전·SQLite 체크포인트·재개 명령·권한 원천을 알린다. 무인 호스트도 `code-agent flow advance --json`의 [인계 계약](langgraph.md#호스트의-실행-계약)을 따른다.
 
-인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude`·`codex`의 start·continue 지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유.
+인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude`·`codex`의 start·continue 지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유, 페어링(`pairing`), 관리 실행 호스트(`managedHost`).
+
+```jsonc
+"pairing": { "supported": true, "version": 1, "signature": "Ed25519", "domain": "code-agent.master-pair.v1", "trustedControllers": ["dashboard"] },
+"managedHost": { "selected": "claude", "source": "installed", "installedHosts": ["claude"], "execution": null, "ready": true,
+                 "problems": [] }   // 문제마다 { "code", "message" }
+```
+
+`trustedControllers`는 이 PC 에서 신뢰한 제어자 ID 뿐이다. 키·토큰·키 경로는 넣지 않는다. `managedHost.selected`는 켠 연동이면 지금 선택될 호스트(`source`: `execution`·`execution-main`·`binding`), 켜기 전이면 켜면 선택될 호스트(`execution`·`execution-main`·`installed`·`default`, §11)다. `problems`의 `code`는 `host-not-installed`(설치 기록에 없음)·`hooks-missing`·`settings-unreadable`·`hosts-unreadable`·`execution-unreadable`, Codex 는 `codex-project-untrusted`·`codex-hooks-untrusted`다. `ready: false`면 관리 실행 접수가 `invalid-state`로 거부된다.
 
 ## 4. 명령
 
 | 종류 | 명령 | payload | 비고 |
 |---|---|---|---|
 | open | `hello` | — | 인증 없음 |
+| open | `pair.challenge` | `controller` | 토큰 없음. PC 에서 신뢰한 제어자에게 일회성 챌린지([페어링](#pc-신뢰와-대시보드-페어링)) |
+| open | `pair` | `challengeId`, `controller`, `approval{actor, approvedAt, shownHash}`, `signature` | 토큰 없음, PC 신뢰 키 서명. `commandId` 필수(같은 ID 재전송은 기록된 응답). 연동 켜기·토큰 교체와 사람 채널 등록([페어링](#pc-신뢰와-대시보드-페어링)) |
 | read | `snapshot` | — | 소유·정책·실행(활성은 프로세스 확인 포함)·`stateView`·이벤트 위치·작업 연결. 재조정 후 낸다 |
 | read | `events` | `after`, `logId`, `limit` | §6 |
 | read | `heartbeat` | — | 소유·활성 실행·이벤트 위치·`stateVersion` |
@@ -73,7 +83,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 `links`(`missionId`·`taskId`·`attemptId`·`planVersion`·`invocationId`)는 실행 기록과 작업 연결에 남아 master 의 임무·작업·시도·계획과 code-agent 의 작업·시도·세션을 잇는다.
 
-`hello.interactions`는 스키마·단계·지원 동의·소비자·독립 세션·재개 범위를 공개한다. 사람 채널은 `master human enable|disable --controller <ID>`로 TTY에서 따로 등록·폐기한다. `interaction.*`는 master 목표·작업 연결이나 AI grant 없이도 설정·운영·독립 호스트의 요청에 사용할 수 있다. 일반 `answer`·`decide`의 위임 범위는 그대로다. `interaction.changed` 이벤트의 `cursor`로 요청 목록을 다시 조회한다. 영속 질문은 다음 버전 적용을 막는 진행 상태다.
+`hello.interactions`는 스키마·단계·지원 동의·소비자·독립 세션·재개 범위를 공개한다. 사람 채널은 `master human enable|disable --controller <ID>`로 TTY에서 등록·폐기하거나 [페어링](#pc-신뢰와-대시보드-페어링)이 연동과 함께 등록한다. `interaction.*`는 master 목표·작업 연결이나 AI grant 없이도 설정·운영·독립 호스트의 요청에 사용할 수 있다. 일반 `answer`·`decide`의 위임 범위는 그대로다. `interaction.changed` 이벤트의 `cursor`로 요청 목록을 다시 조회한다. 영속 질문은 다음 버전 적용을 막는 진행 상태다.
 
 ### 오류 코드
 
@@ -82,17 +92,17 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | `invalid-request` | 꼴·값 오류 |
 | `unsupported-protocol`·`unsupported` | 모르는 프로토콜·버전·명령·호스트 |
 | `not-enabled` | 연동을 켜지 않은 프로젝트, master 실행이 열지 않은 작업 |
-| `unauthorized` | 등록되지 않은 제어자·토큰 불일치·다른 제어자의 명령 조회 |
-| `fenced` | 지금 소유자가 아니거나 세대가 다르다(이전 소유의 늦은 요청) |
+| `unauthorized` | 등록되지 않은 제어자·토큰 불일치·다른 제어자의 명령 조회, 페어링의 PC 신뢰 없음·서명 없음·서명 불일치 |
+| `fenced` | 지금 소유자가 아니거나 세대가 다르다(이전 소유의 늦은 요청), 다른 제어자가 소유한 프로젝트의 페어링 |
 | `handover-in-progress`·`handover-unaccepted` | 인계 중에 받지 않는 명령, 이전된 뒤 새 제어자가 아직 인수하지 않음 |
-| `conflict` | 같은 `commandId`의 다른 내용, 다른 임무·작업에 묶인 작업, 이미 답한 질문 |
-| `stale-state` | 기대한 `stateVersion`·동의 내용 해시·질문 문서 해시가 지금과 다르다 |
+| `conflict` | 같은 `commandId`의 다른 내용, 다른 임무·작업에 묶인 작업, 이미 답한 질문, 인계 중인 프로젝트의 페어링 |
+| `stale-state` | 기대한 `stateVersion`·동의 내용 해시·질문 문서 해시가 지금과 다르다, 페어링 챌린지 없음·만료·재사용·다른 제어자·다른 프로젝트 경로 |
 | `busy` | 실행 중인 실행이 있다·다른 세션의 작업 임대·동의를 준비한 실행이 끝나지 않았다 |
 | `not-found`·`invalid-state` | 대상이 없다·지금 재개 판정에서는 그 동작을 하지 않는다 |
 | `human-required` | 사람만 하는 동작·critical 판단·master 실행이 준비하지 않은 동의 |
 | `grant-missing`·`grant-expired`·`grant-revoked`·`grant-exhausted`·`scope-exceeded` | 권한 없음·만료·회수·한도 소진·동작·작업·경로 범위 밖 |
 | `duplicate-decision` | 같은 `decisionId`를 다시 썼다 |
-| `policy-forbids` | `requireVerifiedApproval` 프로젝트의 위임, ambiguous 승인, 위험한 호스트 설정 |
+| `policy-forbids` | `requireVerifiedApproval` 프로젝트의 위임, ambiguous 승인, 위험한 호스트 설정, 페어링 요청의 정책·호스트·위임 권한 필드, 링크인 키·토큰 자리 |
 | `host-unavailable`·`internal` | 호스트를 띄우지 못함·처리 도중 끊긴 명령 등 |
 
 ## 5. 원자적 수락과 중복 방지
@@ -116,7 +126,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 `events.jsonl`은 순번(`seq`, 1씩 증가) 기록이고 `events-meta.json`의 `logId`가 기록 하나를 가린다. 모든 응답에 `events: {logId, latestSeq}`가 붙는다.
 
 - `events {after, logId}` → `after` 다음부터 `limit`개와 `latestSeq`·`hasMore`. 기록 ID 가 다르거나(기록이 새로 만들어짐) `after`가 최신보다 크거나 이미 지난 구간이면 `gap: true` — master 는 `snapshot`으로 다시 맞추고 그 위치부터 읽는다.
-- 종류: 연동·권한·정책(`binding.*`·`controller.added`·`grant.*`·`policy.changed`), 명령(`command.*`), 실행(`run.accepted`·`starting`·`started`·`stop-requested`·`finished`·`abandoned`·`orphaned`·`unknown`), 연결(`master.disconnected`·`reconnected`), 진척(`work.bound`·`phase.changed`·`attempt.changed`·`resume.changed`·`question.*`·`consent.*`·`verification.recorded`), 판단(`decision.recorded`·`applied`·`rejected`·`answer.recorded`), 인계(`handover.*`). 진척 이벤트는 감독이 `progressMs`마다 `stateView`를 직전 관찰(`observed.json`)과 비교해 남긴다.
+- 종류: 연동·권한·정책(`binding.*`·`controller.added`·`human-channel.changed`·`grant.*`·`policy.changed` — 연동·제어자·사람 채널 이벤트의 `data.channel`은 연결 방식 `tty`·`dashboard-pairing`), 명령(`command.*`), 실행(`run.accepted`·`starting`·`started`·`stop-requested`·`finished`·`abandoned`·`orphaned`·`unknown`), 연결(`master.disconnected`·`reconnected`), 진척(`work.bound`·`phase.changed`·`attempt.changed`·`resume.changed`·`question.*`·`consent.*`·`verification.recorded`), 판단(`decision.recorded`·`applied`·`rejected`·`answer.recorded`), 인계(`handover.*`). 진척 이벤트는 감독이 `progressMs`마다 `stateView`를 직전 관찰(`observed.json`)과 비교해 남긴다.
 
 세 가지를 따로 낸다:
 
@@ -211,13 +221,17 @@ request·stopping·stopped 에서만 abort(지금 제어자) — 멈춘 실행�
 
 관리 실행의 호스트는 `execution claude|codex` 선택을 따른다. `execution both --main claude|codex`는 관리 실행의 주 호스트를 정하고 상대 호스트의 계획·코드 리뷰를 유지한다. `both`에서 main을 생략하면 기존 단독 선택·main을 유지하며, 정한 값이 없으면 연동의 기본 호스트를 쓴다. `auto`도 연동의 기본 호스트를 사용한다. 각 실행은 호스트·권한 설정을 `hostProfile`에 고정한다. 재개할 때 실행 방식이나 등록된 설정이 달라졌으면 이전 권한으로 자동 재개하지 않는다.
 
+연동의 기본 호스트는 처음 켤 때(터미널 enable·페어링 같다) 정한다 — `--host` 파일이 있으면 그 설정, 없으면 `execution claude|codex`의 호스트, `both --main`의 main, 설치 기록(`hosts.json`)의 호스트가 하나면 그 호스트, 그 밖에는 `claude` 순이다. 호스트 설정은 그 호스트의 제한된 기본값이다. 이미 켠 연동의 기본 호스트는 이 규칙으로 바뀌지 않는다.
+
+관리 실행 접수·재개·감독 시작 전에 선택된 호스트의 준비를 확인한다. `hosts.json`이 있으면 그 호스트가 기록에 있어야 하고, 프로젝트 hook(Claude 는 init 이 등록하는 hook 전부, Codex 는 PreToolUse)이 설치돼 있어야 한다. 아니면 `invalid-state`로 거부하고 `detail.missing`(빠진 항목)·`detail.problems`(문제 코드)를 담는다. hello `managedHost`가 같은 판정을 미리 보여 준다. 사람의 대화형 세션도 설치 기록에 없는 호스트에서는 `start`·`request begin`·`docs begin`이 시작하지 않는다(`hosts.json`이 없으면 이 판정은 하지 않는다).
+
 Codex 감독은 `codex app-server --listen stdio://`를 띄운다. `initialize` 뒤 `hooks/list`로 이 프로젝트의 code-agent PreToolUse 가 활성·동기 실행·신뢰 상태로 로드됐는지 확인하고, start 는 `thread/start`, continue 는 확인된 thread ID 의 `thread/resume`으로 연 다음 `turn/start`로 한 턴을 실행한다. 받은 thread ID 를 실행 기록에 남긴 뒤에 턴을 시작한다. 접수 때 반환한 `sessionId`는 최초 실행 동안의 별칭(`sessionAlias`)이고, snapshot·결과에는 확정된 thread ID와 `sessionConfirmed`가 나온다. continue는 별칭 또는 확정 ID를 받아 같은 thread 만 잇고 새 세션으로 대체하지 않는다. thread·turn ID 누락·불일치와 `completed`가 아닌 턴 종료는 성공으로 처리하지 않으며, 하위 에이전트의 알림은 주 세션의 완료로 보지 않는다. `completed`는 작업 완료가 아니라 호스트 턴 종료다.
 
 Codex는 로컬 `app-server` 표준 입출력으로 실행하며 `approval_policy=on-request`, `approvals_reviewer=user`, `sandbox_mode=workspace-write`(설정으로 read-only 선택 가능), 샌드박스 네트워크 차단을 적용한다. start·verify·repro의 단건 명령 권한 요청은 대시보드 사람 채널의 서명 응답으로만 원래 호출에 전달한다. 업무 동의·위임·일반 답으로 대신하지 않고, 세션 전체 허용이나 영구 실행 규칙을 만들지 않는다. 요청·거절·만료·결과 계약은 [Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)을 따른다. 프로젝트 PreToolUse 설치와 사용자 설정의 프로젝트·hook 신뢰 기록이 없으면 접수·감독 시작을 막는다. hook 신뢰를 자동 우회하지 않는다. 부모 Claude·Codex 세션 표지는 제거하고 실행별 표지를 넣는다. Codex의 기본 질문·MCP ask·confirm은 관리 실행에서는 열지 않고 영속 질문 또는 동의 prepare 후 대기한다.
 
 Claude 감독은 사람이 enable 때 정한 호스트 설정으로 `claude -p --output-format stream-json --permission-mode <모드> --permission-prompts none --session-id|--resume <ID> --append-system-prompt <규칙> --allowedTools … --disallowedTools …`를 띄운다. 기본 허용 도구는 읽기·편집 도구와 `code-agent`·읽기용 git 셸 명령이고, 질문 도구(`AskUserQuestion`)는 늘 금지에 들어간다. `bypassPermissions`·`plan` 모드와 셸 전체 허용(`Bash`·`Bash(*)`)은 받지 않는다. 호스트 환경에서는 부른 쪽 Claude·Codex 세션의 표지를 지우고 `CODE_AGENT_MASTER_RUN=<runId>`를 넣는다.
 
-hook 은 이 표지가 있는 세션에서 기존 판정보다 먼저 본다(`masterRunGuard`): 정지 요청이 있거나 끝난 실행이면 모든 도구를 막고 멈춘 자리를 보고하게 하며, 질문 도구는 동의 준비까지만 하고 끝내라고 돌려보내고, `code-agent master`·`code-agent takeover`를 막는다. 표지가 없는 세션(사람의 대화형 세션)은 이 판정을 지나지 않는다. 세션 밖 셸에서도 `code-agent master`는 막힌다(`decideOutside`) — 연동 설정은 사람이 터미널에서 직접 한다. SessionStart 는 실행 세션에 같은 규칙을 덧붙인다.
+hook 은 이 표지가 있는 세션에서 기존 판정보다 먼저 본다(`masterRunGuard`): 정지 요청이 있거나 끝난 실행이면 모든 도구를 막고 멈춘 자리를 보고하게 하며, 질문 도구는 동의 준비까지만 하고 끝내라고 돌려보내고, `code-agent master`·`code-agent takeover`를 막는다. 표지가 없는 세션(사람의 대화형 세션)은 이 판정을 지나지 않는다. 세션 밖 셸에서도 `code-agent master`(`trust`·`untrust`·`call` 포함)는 막힌다(`decideOutside`) — 연동 설정과 PC 신뢰는 사람이 터미널에서 직접 한다. 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent` — PC 신뢰 키·연결 토큰·사람 채널 키가 있다)는 모든 세션에서 읽기·쓰기·셸 언급이 막힌다. SessionStart 는 실행 세션에 같은 규칙을 덧붙인다.
 
 표지가 있는 세션에서 `--session` 없이 부른 `status --json`은 실행 기록의 세션으로 임대를 본다 — 실행 자신의 임대가 `self: true`로 나와 `ownership-conflict`로 읽히지 않는다. 기대 상태 대조는 접수할 때 한 번 한다(5절). 실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로, master 는 실행 프롬프트에서 세션에 기대 상태를 다시 대조시키지 않는다.
 
@@ -229,8 +243,9 @@ hook 은 사고 방지 장치다. 토큰 파일은 저장소 밖에 두고(`--to
 
 | 명령 | 동작 |
 |---|---|
-| `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` | 처음이면 연동을 켜고 프로젝트 ID 를 만들며 그 제어자가 소유한다. 이미 켰으면 제어자를 더하거나 토큰을 바꾼다. 토큰은 한 번만 보이고 해시만 남는다 |
+| `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` | 처음이면 연동을 켜고 프로젝트 ID 를 만들며 그 제어자가 소유한다(`--host`가 없으면 처음 켤 때의 기본 호스트 규칙, §11). 이미 켰으면 제어자를 더하거나 토큰을 바꾼다. 토큰은 한 번만 보이고 해시만 남는다 |
 | `code-agent master disable` | 실행 중인 실행이 없을 때만 끈다. 기록은 남고 `binding.json`은 `binding.disabled-<시각>.json`이 된다 |
+| `code-agent master trust --controller <ID>` · `untrust --controller <ID>` · `trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록(저장소 밖에서도 된다, [페어링](#pc-신뢰와-대시보드-페어링)). 확인 단어는 `trust`·`untrust`, 목록은 읽기 전용 |
 | `code-agent master grant <권한.json>` · `revoke <권한 ID> [--reason]` | §8 |
 | `code-agent master handover --to <ID> [--force-stop]` | §10 |
 | `code-agent master status [--json]` | 연동·제어자·소유·권한·최근 실행(읽기 전용) |
@@ -268,6 +283,62 @@ code-agent execution codex --handoff
 
 인계는 현재 브랜치의 미응답 일반 질문에 취소 이력을 남기고 임대를 해제하며, 기존 작업 ID·종류·계획·승인 기록은 보존한다. 새 호스트는 미응답을 재발행하고 승인 필요 시 새 동의를 준비한다. 독립 대화는 같은 브랜치에서 `/ca-next`·`$ca-next`로 재개한다. 관리 실행은 같은 작업·links를 유지한 `submit mode:start`를 사용하며 다른 호스트의 sessionId를 resume하지 않는다. 명시적 인계 기록이 현재 브랜치·HEAD·작업·소유 세대·대상 호스트와 맞으면 사람 대기 중에도 질문·동의 준비를 위한 새 세션을 한 번 시작할 수 있다. 질문에 답하거나 승인 게이트를 통과한 것으로 간주하지 않는다. 실행 기록에 인계 ID를 묶어 재사용을 막고, 관리 연동하지 않은 작업을 자동 편입하지 않는다.
 
+### PC 신뢰와 대시보드 페어링
+
+사람이 PC 마다 한 번 터미널에서 대시보드 제어자를 신뢰하면, 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하는 것으로 한다. PC 신뢰가 최종 기준이고, 연결은 승인 권한이 아니다 — 위임 권한은 `grant`로 따로 준다.
+
+```powershell
+code-agent master trust --controller dashboard     # PC당 1회, 확인 단어 trust
+code-agent master trust --list                     # 지문·등록 시각·개인 키 자리(읽기 전용)
+code-agent master untrust --controller dashboard   # 확인 단어 untrust
+```
+
+- `trust`는 새 Ed25519 키를 만든다. 개인 키는 `<storeDir>/master-trust/<ID>.pem`(pkcs8, 0600, 폴더 0700)에 두고 대시보드 서버만 읽는다. 공개 키·지문(`sha256:`+SPKI DER 해시)·등록 시각·등록한 사람은 `<storeDir>/master-trust.json`에 남는다. `storeDir`는 `CODE_AGENT_HOME` 또는 `~/.code-agent`다. 이미 신뢰하거나 키 파일이 있으면 덮어쓰지 않고, 키 폴더가 링크(접합점 포함)면 거부한다. 키 교체는 `untrust` 뒤 다시 `trust`한다.
+- `untrust`는 기록을 해제 목록으로 옮긴 뒤 개인 키를 지운다. 이후 그 제어자의 `pair.challenge`·`pair`를 받지 않는다. 이미 켠 연동·발급한 토큰·사람 채널은 그대로이고 `master status`에 '신뢰 해제된 제어자'로 나온다. 프로젝트별로 끊으려면 `master disable`을 쓴다.
+
+프로젝트마다의 연결:
+
+```text
+대시보드  hello → pairing.trustedControllers·managedHost 확인
+          pair.challenge { controller } → { challengeId, nonce, projectRoot, controller, expiresAt, project{ enabled, owner, handover } }
+          사람에게 확인 화면(프로젝트·제어자·소유·호스트 준비) → 사람이 확인
+          pair { challengeId, controller, approval{ actor, approvedAt, shownHash }, signature }   (commandId 필수)
+code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자의 토큰 교체)·사람 채널 등록·토큰 파일 기록을 한 번에 한다
+```
+
+- 챌린지는 5분 동안 한 번 쓴다. 프로젝트 경로·제어자에 묶이며 `.code-agent/master/pairing/`에 남는다. 받기만 해서는 연동을 바꾸지 않는다(연동 전이면 master 폴더만 만든다). 열린 챌린지는 프로젝트마다 32개까지다(넘으면 `busy`).
+- 서명: `signature` = base64(Ed25519(개인 키, UTF-8 `canonicalJson({ domain: "code-agent.master-pair.v1", challengeId, nonce, projectRoot, controller, commandId, approval })`)). `canonicalJson`은 객체 키를 정렬하고 공백 없이 쓴 JSON 이다. `nonce`·`projectRoot`는 챌린지 결과 그대로, `commandId`는 요청 envelope 의 값이다.
+- `approval.actor`는 확인한 사람(1~200자), `approvedAt`은 ISO 시각(챌린지를 만든 시각 2분 전부터 지금 2분 뒤까지), `shownHash`는 사람에게 보인 확인 화면의 `sha256:<hex 64>`다. 화면 내용은 대시보드가 정하고, code-agent 는 형식을 보고 approval 의 해시를 기록에 남긴다.
+- 처음 켜면 정책은 기본값, 호스트는 처음 켤 때의 기본 호스트 규칙(§11)을 따른다. 같은 제어자가 이미 소유한 프로젝트를 다시 페어링하면 토큰을 바꾸고(이전 토큰은 더 받지 않는다) 사람 채널을 새로 등록한다. 사람 채널이 만료되면(30일) 다시 페어링한다.
+
+결과:
+
+```jsonc
+{ "outcome": "enabled",   // 같은 제어자가 이미 소유하면 "rotated"
+  "projectId": "…", "controller": "dashboard", "generation": 1, "owner": true,
+  "tokenFile": "<storeDir>/master-tokens/<projectId>-dashboard.token",
+  "humanChannel": { "channelId": "…", "expiresAt": "…", "keyPath": "<storeDir>/dashboard-channels/<…>.pem", "generation": 1, "algorithm": "Ed25519" } }
+```
+
+토큰 값은 응답·명령 기록·이벤트에 넣지 않는다. 대시보드는 `tokenFile`(0600, 폴더 0700, 같은 제어자의 교체는 원자적으로 바꾼다)을 읽어 이후 요청의 `token`으로 쓴다. 같은 `commandId` 재전송은 기록된 응답(`replayed: true`)이다.
+
+거부하면 아무것도 쓰지 않는다:
+
+| 조건 | 코드 |
+|---|---|
+| 신뢰하지 않은(해제한) 제어자, 서명 없음·불일치 | `unauthorized` |
+| 챌린지 없음·만료·사용함·다른 제어자의 챌린지·다른 프로젝트 경로 | `stale-state` — `pair.challenge`부터 다시 |
+| 다른 제어자가 소유한 프로젝트 | `fenced`(`detail.controller`·`generation`) — 정식 인계(§10)를 쓴다 |
+| 인계 진행 중, 소유 기록 없음, 같은 `commandId`의 다른 내용 | `conflict` |
+| payload 의 정책·호스트·위임 필드(`policy`·`host`·`hostProfile`·`execution`·`permissionMode`·`allowedTools`·`disallowedTools`·`sandbox`·`model`·`command`·`grant`·`actions` 등), 링크인 키·토큰 자리 | `policy-forbids` |
+| 모르는 필드, `token`·`generation`·`expect`, envelope `controller`가 payload 와 다름, `approval` 꼴·`approvedAt` 범위 밖, `commandId` 없음 | `invalid-request` |
+
+페어링으로 바꿀 수 없는 것: 정책, 호스트 설정(권한 모드·허용 도구·sandbox·모델·명령), 위임 권한. 이것들은 사람이 터미널에서 `enable --policy·--host`·`policy`·`grant`로 정한다.
+
+기록: `binding.json`의 `enabledBy`(`channel: "dashboard-pairing"`·`actor`·`trustFingerprint`·`approvalHash`)와 제어자 항목의 `pairing`(시각·확인한 사람·신뢰 키 지문·approval 해시·`commandId`), `owner.json` 이력의 `how: "pair"`, 이벤트 `binding.enabled`·`controller.added`·`human-channel.changed`의 `data.channel`. `master status`는 연결 방식과 제어자별 연결 경로(페어링·터미널)를 보인다.
+
+감수하는 위험: 같은 OS 계정을 탈취한 프로세스는 신뢰 키를 읽어 페어링할 수 있다. 대시보드 사람 채널 키·토큰 파일과 같은 수준이다. hook 의 키 저장소 차단은 AI 호스트 세션이 키를 읽거나 연동을 켜지 못하게 하는 장치이고, OS 계정 안의 다른 프로세스는 막지 못한다. 개인 키는 대시보드 서버 설정에만 두고 저장소·모델 프롬프트·브라우저·로그에 넣지 않는다.
+
 ## 13. 기록 파일 — `.code-agent/master/`
 
 폴더 안 `.gitignore`(`*`)가 전부를 무시한다. 반영 커밋·작업 트리 대조에 들지 않고 동의 스냅샷에서 뺀다(`SNAPSHOT_EXCLUDED`). 모델의 도구 쓰기는 `.code-agent/` 쓰기 거부로 막힌다.
@@ -279,15 +350,25 @@ code-agent execution codex --handoff
 | `owner.json` | 제어자·세대·마지막 연락·인계 진행·이력 |
 | `grants.jsonl` · `decisions.jsonl` | 권한·회수, 판단과 적용 결과(append 만) |
 | `commands/<commandId>.json` | 처리 상태(`received`·`accepted`·`rejected`)와 기록된 응답 |
+| `pairing/<challengeId>.json` | 페어링 챌린지(제어자·프로젝트 경로·nonce·만료·사용 시각). 만료한 것은 다음 챌린지 때 지운다 |
 | `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과 |
 | `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록 |
 | `events.jsonl` · `events-meta.json` · `observed.json` | 이벤트와 기록 ID, 마지막 진척 관찰 |
 | `control.lock` · `observe.lock` | 제어·관찰 잠금 |
 
+저장소 밖 키 저장소(`<storeDir>`, hook 이 모든 세션의 읽기·쓰기·셸 언급을 막는다):
+
+| 경로 | 내용 |
+|---|---|
+| `master-trust.json` · `master-trust/<ID>.pem` | PC 신뢰 기록(공개 키·지문·해제 목록)과 개인 키 |
+| `master-tokens/<projectId>-<ID>.token` | 페어링이 발급한 연결 토큰 |
+| `dashboard-channels/<…>.pem` | 대시보드 사람 채널 개인 키(터미널 `human enable`·페어링) |
+
 ## 14. 한계
 
 - Claude·Codex 관리 실행의 기록된 세션을 재개한다. 관리 기록 없는 종료 세션은 원본 대화·영속 질문을 대조하고 사람이 종료를 확인한 경우만 같은 세션으로 연결한다. 대화 기록까지 없는 세션 복원·토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
 - 통신은 같은 PC 의 CLI 호출이다. 원격 연결·밀어넣기 이벤트는 없다.
+- PC 신뢰 키·연결 토큰·사람 채널 키는 같은 OS 계정의 다른 프로세스가 읽을 수 있다. 그 계정을 탈취한 프로세스는 페어링·사람 응답을 할 수 있다([페어링](#pc-신뢰와-대시보드-페어링)).
 - 한 프로젝트에 실행은 한 번에 하나다. 여러 프로젝트는 master 가 프로젝트마다 따로 부른다.
 - 다른 저장소의 산출물을 가져다 쓰는 작업은 통합 검증(`code-agent integrate`)이 기준 커밋을 뜬 깨끗한 worktree 에서 돌므로, 형제 저장소의 상대 경로가 풀리지 않는다. 프로젝트 사이 의존은 사람이 도입 설정에서 `code-agent.json`의 `prepare`로 깨끗한 트리에 잇는다. master 연동은 이 설정을 만들거나 바꾸지 않는다 — 매니페스트는 계획 승인이 묶는다.
 - 프로세스 확인은 Windows 에서 PowerShell `Get-CimInstance`, 그 밖에서 `/proc`·`ps`로 명령줄을 본다. 확인하지 못하면 `unknown`으로 두고 끝내지 않는다.

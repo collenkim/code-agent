@@ -1,7 +1,7 @@
 {
   "date": "2026-10-20",
   "repository": "code-agent",
-  "implementationCommit": null,
+  "implementationCommit": "1c6e403",
   "environment": {
     "platform": "win32",
     "node": "24.19.0",
@@ -59,7 +59,29 @@
     }
   },
   "commitCleanup": {
-    "standaloneCommit": null
+    "withPairingFullRegression": {
+      "tests": 1686,
+      "passed": 1682,
+      "failed": 0,
+      "skipped": 4,
+      "includes": [
+        "codexPermissions.test (8)",
+        "masterCodex.test (6)"
+      ],
+      "record": "doc/reviews/2026-10-20-dashboard-pairing.md"
+    },
+    "standaloneCommit": {
+      "commit": "1c6e403",
+      "where": "clean git worktree (node_modules linked)",
+      "command": "npm test",
+      "callerMarker": "CLAUDECODE=1",
+      "tests": 1673,
+      "suites": 218,
+      "passed": 1669,
+      "failed": 0,
+      "skipped": 4,
+      "durationMs": 472417.713
+    }
   },
   "notExecuted": [
     "real human dashboard click",

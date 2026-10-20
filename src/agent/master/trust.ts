@@ -1,0 +1,160 @@
+/**
+ * PC 신뢰 — 사람이 이 PC 의 터미널에서 한 번 등록하는 대시보드 제어자의 Ed25519 키. 프로젝트마다의 연결(`pair`)은 이 키의 서명이 있어야 받는다.
+ *
+ * - 개인 키: `<storeDir>/master-trust/<제어자>.pem`(pkcs8, 0600) — 대시보드 서버만 읽는다. 링크는 거부하고 덮어쓰지 않는다(교체는 untrust 뒤 trust).
+ * - 공개 키·지문·생성 시각: `<storeDir>/master-trust.json`. 신뢰 해제는 기록을 revoked 로 옮기고 개인 키를 지운다 — 이미 켠 연동은 그대로다.
+ *
+ * storeDir(CODE_AGENT_HOME 또는 ~/.code-agent)는 hook 이 모델의 읽기·쓰기·셸 언급을 막는 키 자리다. 같은 OS 계정의 다른 프로세스가
+ * 이 키를 읽는 것은 막지 못한다(대시보드 사람 채널 키와 같은 수준).
+ */
+import { createHash, createPublicKey, generateKeyPairSync } from "crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { join } from "path";
+
+import { actorName } from "../actor";
+import { storeDir } from "../plugins/store";
+import { Stop } from "../stop";
+import { confirmOnTerminal } from "../tty";
+import { ControlError } from "./protocol";
+
+/** 제어자 ID — 파일 이름이 되므로 Windows 에서 다른 뜻이 되는 글자(`:` 스트림)·장치 이름·끝 점은 받지 않는다 */
+const TRUST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const DEVICE_NAME = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i;
+export function validTrustId(value: unknown): value is string {
+  return typeof value === "string" && TRUST_ID.test(value) && !DEVICE_NAME.test(value) && !value.endsWith(".");
+}
+const USAGE = "사용법: code-agent master trust --controller <ID> | trust --list | untrust --controller <ID> — 제어자 ID 는 영문·숫자·._- 64자 이하(장치 이름 제외)";
+
+export interface TrustEntry { controller: string; publicKey: string; fingerprint: string; createdAt: string; createdBy: { actor: string; channel: "tty" } }
+interface RevokedEntry extends TrustEntry { revokedAt: string; revokedBy: { actor: string; channel: "tty" } }
+interface TrustFile { version: 1; controllers: Record<string, TrustEntry>; revoked: RevokedEntry[] }
+
+export const trustFile = (): string => join(storeDir(), "master-trust.json");
+export const trustKeyDir = (): string => join(storeDir(), "master-trust");
+export const trustKeyPath = (controller: string): string => join(trustKeyDir(), `${controller}.pem`);
+
+export function fingerprintOf(publicKey: string): string {
+  return `sha256:${createHash("sha256").update(createPublicKey(publicKey).export({ type: "spki", format: "der" })).digest("hex")}`;
+}
+function lexists(path: string): boolean {
+  try { lstatSync(path); return true; } catch { return false; }
+}
+export function isLink(path: string): boolean {
+  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
+}
+/** 비밀 파일 폴더 — 없으면 0700 으로 만들고, 링크(접합점 포함)면 거부한다 */
+export function privateDir(dir: string): string {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (isLink(dir)) throw new ControlError("policy-forbids", `비밀 파일 폴더가 링크입니다(${dir}) — 링크는 따라가지 않습니다`);
+  return dir;
+}
+
+function readTrustFile(): TrustFile {
+  const file = trustFile();
+  if (!existsSync(file)) return { version: 1, controllers: {}, revoked: [] };
+  let value: Partial<TrustFile>;
+  try { value = JSON.parse(readFileSync(file, "utf8")) as Partial<TrustFile>; }
+  catch (error) { throw new ControlError("internal", `PC 신뢰 기록을 읽지 못했습니다(${file}): ${error instanceof Error ? error.message : error}`); }
+  if (!value || value.version !== 1 || !value.controllers || typeof value.controllers !== "object" || Array.isArray(value.controllers)) {
+    throw new ControlError("internal", `PC 신뢰 기록의 형식이 올바르지 않습니다(${file})`);
+  }
+  return { version: 1, controllers: value.controllers, revoked: Array.isArray(value.revoked) ? value.revoked : [] };
+}
+function writeTrustFile(value: TrustFile): void {
+  mkdirSync(storeDir(), { recursive: true, mode: 0o700 });
+  const file = trustFile(), temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temp, file);
+}
+/** 기록이 스스로 맞는가 — 지문이 공개 키와 다르면(손으로 고친 기록) 신뢰하지 않는다 */
+function sound(id: string, entry: TrustEntry | undefined): entry is TrustEntry {
+  if (!entry || entry.controller !== id || typeof entry.publicKey !== "string") return false;
+  try { return fingerprintOf(entry.publicKey) === entry.fingerprint; } catch { return false; }
+}
+
+/** 지금 신뢰하는 제어자의 기록 — 없거나 손상됐으면 undefined */
+export function trustedController(controller: string): TrustEntry | undefined {
+  const entry = readTrustFile().controllers[controller];
+  return sound(controller, entry) ? entry : undefined;
+}
+/** 지금 신뢰하는 제어자 ID 목록(키·경로 없이) — 기록을 읽지 못하면 빈 목록 */
+export function trustedControllerIds(): string[] {
+  try {
+    const { controllers } = readTrustFile();
+    return Object.keys(controllers).filter((id) => sound(id, controllers[id]));
+  } catch { return []; }
+}
+
+function stop<T>(run: () => T): T {
+  try { return run(); } catch (error) {
+    if (error instanceof ControlError) throw new Stop(`${error.code}: ${error.message}`);
+    throw error;
+  }
+}
+
+/** PC 신뢰 등록(TTY) — 키를 새로 만든다. 이미 있으면 덮어쓰지 않는다 */
+export function masterTrust(controller: string | undefined): string {
+  if (!validTrustId(controller)) throw new Stop(USAGE);
+  return stop(() => {
+    const file = readTrustFile(), keyPath = trustKeyPath(controller);
+    const existing = file.controllers[controller];
+    if (existing) throw new Stop(`제어자 ${controller} 는 이미 신뢰합니다(지문 ${existing.fingerprint}). 키를 바꾸려면 untrust 뒤 다시 trust 합니다.`);
+    if (lexists(keyPath)) throw new Stop(`${keyPath} 가 이미 있습니다 — 덮어쓰지 않습니다. 쓰지 않는 파일이면 사람이 지운 뒤 다시 trust 합니다.`);
+    confirmOnTerminal([
+      `이 PC 에서 대시보드 제어자 ${controller} 를 신뢰합니다.`,
+      `- 새 Ed25519 키를 만들고 개인 키를 ${keyPath} 에 둡니다(대시보드 서버만 읽습니다).`,
+      "- 이후 대시보드에서 사람이 확인하면, 그 서버가 이 키로 서명한 연결 요청(pair)만으로 프로젝트마다 연동 켜기·사람 채널 등록·토큰 발급을 합니다.",
+      "- 연결은 승인 권한이 아닙니다. 정책·호스트 설정·위임 권한은 계속 터미널에서 정하고, 다른 제어자가 소유하거나 인계 중인 프로젝트는 가져오지 않습니다.",
+      "- 같은 OS 계정의 다른 프로세스는 이 키를 읽어 연결할 수 있습니다(대시보드 사람 채널 키와 같은 수준).",
+    ].join("\n"), "trust");
+    privateDir(trustKeyDir());
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    writeFileSync(keyPath, privateKey.export({ type: "pkcs8", format: "pem" }), { flag: "wx", mode: 0o600 });
+    const pem = publicKey.export({ type: "spki", format: "pem" }).toString();
+    const entry: TrustEntry = { controller, publicKey: pem, fingerprint: fingerprintOf(pem), createdAt: new Date().toISOString(), createdBy: { actor: actorName(), channel: "tty" } };
+    writeTrustFile({ ...file, controllers: { ...file.controllers, [controller]: entry } });
+    return [
+      `대시보드 제어자 ${controller} 를 이 PC 에서 신뢰합니다 — 지문 ${entry.fingerprint}`,
+      `개인 키: ${keyPath} (대시보드 서버 설정에만 둡니다. 저장소·모델 프롬프트·브라우저·로그에 넣지 않습니다)`,
+      "프로젝트 연결은 대시보드에서 확인합니다(pair.challenge → pair). 해제: code-agent master untrust --controller " + controller,
+    ].join("\n");
+  });
+}
+
+/** PC 신뢰 해제(TTY) — 이후의 페어링만 막는다. 이미 켠 연동·발급한 토큰은 그대로 둔다 */
+export function masterUntrust(controller: string | undefined): string {
+  if (!validTrustId(controller)) throw new Stop(USAGE);
+  return stop(() => {
+    const file = readTrustFile(), keyPath = trustKeyPath(controller);
+    const entry = file.controllers[controller];
+    if (!entry && !lexists(keyPath)) return `제어자 ${controller} 는 이 PC 에서 신뢰하지 않습니다.`;
+    confirmOnTerminal([
+      `이 PC 의 대시보드 제어자 ${controller} 신뢰를 해제합니다${entry ? `(지문 ${entry.fingerprint})` : ""}.`,
+      `- 개인 키 ${keyPath} 를 지우고, 이후 이 제어자의 페어링(pair.challenge·pair)을 받지 않습니다.`,
+      "- 이미 켠 연동·발급한 토큰·사람 채널은 그대로입니다. 프로젝트별로 끊으려면 그 프로젝트에서 code-agent master disable 을 실행합니다.",
+    ].join("\n"), "untrust");
+    const { [controller]: _removed, ...rest } = file.controllers;
+    const revoked = entry ? [...file.revoked, { ...entry, revokedAt: new Date().toISOString(), revokedBy: { actor: actorName(), channel: "tty" as const } }].slice(-50) : file.revoked;
+    // 기록을 먼저 고친다 — 키를 지우다 실패해도 신뢰는 이미 풀려 있다
+    writeTrustFile({ version: 1, controllers: rest, revoked });
+    if (lexists(keyPath)) rmSync(keyPath, { force: true });
+    return `대시보드 제어자 ${controller} 의 신뢰를 해제했습니다. 이미 켠 연동은 master status 에 '신뢰 해제된 제어자'로 표시됩니다.`;
+  });
+}
+
+/** 신뢰 목록(읽기 전용) — 공개 정보와 개인 키 자리만 보인다 */
+export function masterTrustList(): string {
+  return stop(() => {
+    const file = readTrustFile();
+    const ids = Object.keys(file.controllers);
+    if (!ids.length && !file.revoked.length) return "이 PC 에서 신뢰한 대시보드 제어자가 없습니다 — code-agent master trust --controller <ID>";
+    return [
+      ...ids.map((id) => {
+        const entry = file.controllers[id], keyPath = trustKeyPath(id);
+        const notes = [...(sound(id, entry) ? [] : ["기록 손상 — 신뢰하지 않음"]), ...(existsSync(keyPath) ? [] : ["개인 키 파일 없음"])];
+        return `신뢰: ${id} · 지문 ${entry.fingerprint} · 등록 ${entry.createdAt} · 개인 키 ${keyPath}${notes.length ? ` (${notes.join(", ")})` : ""}`;
+      }),
+      ...file.revoked.slice(-10).map((entry) => `해제: ${entry.controller} · 지문 ${entry.fingerprint} · 해제 ${entry.revokedAt}`),
+    ].join("\n");
+  });
+}

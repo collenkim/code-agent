@@ -322,13 +322,21 @@ export function hookInstallWarning(repoRoot: string, problems = hookInstallProbl
 }
 const HOST_LABEL: Record<Host, string> = { claude: "Claude Code", codex: "Codex" };
 /**
- * start·request begin·docs begin 의 시작 게이트 — **실행 중인 호스트**(셸 환경 표지, runtimeHost)의 hook 이 빠졌으면 시작하지 않는다.
+ * start·request begin·docs begin 의 시작 게이트 — **실행 중인 호스트**(셸 환경 표지, runtimeHost)의 hook 이 빠졌거나 그 호스트가 설치 기록
+ * (hosts.json)에 없으면(설치하지 않은 호스트라 hook 이 없다) 시작하지 않는다. hosts.json 이 없으면 감지하지 않는다(doctor 가 알린다).
  * 다른 설치 호스트의 누락과 판별 불가(사람의 터미널 등)는 막지 않고 경고 문장을 돌려준다(출력 끝에 붙인다). 진행 중인 작업은 막지 않는다.
  */
 export function requireStartHooks(repoRoot: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const running = runtimeHost(env);
+  if (running && existsSync(join(repoRoot, STATE_DIR, "hosts.json"))) {
+    let hosts: Host[] | undefined;
+    try { hosts = selectedHosts(repoRoot); } catch { hosts = undefined; }
+    if (hosts && !hosts.includes(running)) {
+      throw new Stop(`이 호스트(${HOST_LABEL[running]})는 설치 기록(.code-agent/hosts.json — ${hosts.join(", ")})에 없어 시작하지 않습니다. hook 이 없으면 쓰기 판정·동의 관찰이 꺼집니다. 사람이 code-agent init 으로 이 호스트를 설치한 뒤 다시 시작하세요.`);
+    }
+  }
   const problems = hookInstallProblems(repoRoot);
   if (!problems.length) return undefined;
-  const running = runtimeHost(env);
   const own = running ? problems.find((entry) => entry.host === running) : undefined;
   if (own) {
     throw new Stop(`이 호스트(${HOST_LABEL[own.host]})의 hook 설정이 빠져 있어 시작하지 않습니다 — ${own.problems.join(" · ")}. hook 이 없으면 쓰기 판정·동의 관찰이 꺼집니다. 사람이 code-agent init(또는 doctor)로 복구한 뒤 다시 시작하세요.`);

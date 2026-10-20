@@ -15,16 +15,25 @@ import { loadWork } from "../agent/work";
 /** 호스트 판별 표지(CLAUDECODE·Codex 표지·교차 자식 표지)를 지운 뒤 지정한 호스트의 표지만 두고 실행한다 — 테스트를 어느 호스트 안에서 돌려도 같게 */
 export const CALLER_KEYS = ["CLAUDECODE", "CODEX_CI", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID", "CODE_AGENT_CROSS"] as const;
 export function withCaller<T>(host: Host | undefined, run: () => T): T {
+  const restore = setCaller(host);
+  let result: T;
+  try { result = run(); } catch (error) { restore(); throw error; }
+  // 비동기 흐름은 끝난 뒤에 되돌린다
+  if (result instanceof Promise) return result.finally(restore) as T;
+  restore();
+  return result;
+}
+/** withCaller 의 beforeEach·afterEach 꼴 — 표지를 정하고, 되돌리는 함수를 돌려준다 */
+export function setCaller(host: Host | undefined): () => void {
   const saved = Object.fromEntries(CALLER_KEYS.map((key) => [key, process.env[key]]));
   for (const key of CALLER_KEYS) delete process.env[key];
   if (host === "claude") process.env.CLAUDECODE = "1";
   else if (host === "codex") process.env.CODEX_CI = "1";
-  try { return run(); }
-  finally {
+  return () => {
     for (const key of CALLER_KEYS) {
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
     }
-  }
+  };
 }
 
 /**

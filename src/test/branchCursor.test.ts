@@ -19,6 +19,7 @@ import { init } from "../agent/init";
 import { setupProject } from "../agent/setup";
 import { requestBegin, clearRequestSession } from "../agent/request";
 import { abort } from "../agent/commands";
+import { withCaller } from "./reviewFixture";
 
 let root: string;
 const a: ActiveWork = { id: "A", target: "src", spec: "doc/work/A/requirement.md", phase: "implement", stage: "test", task: "T2", branch: "fix/A" };
@@ -46,11 +47,14 @@ test("다른 브랜치에서는 설정 없는 기존 작업을 읽지 않고 hoo
   assert.deepEqual(codexHook({ cwd: root, hook_event_name: "PreToolUse", tool_name: "exec_command", tool_input: { cmd: "code-agent.cmd docs begin" } }), {});
   init(root, { host: "codex" });
   assert.equal(existsSync(join(root, "code-agent.json")), false);
-  docsBegin(root);
-  setupProject(root, "node");
-  docsEnd(root);
-  assert.ok(existsSync(join(root, "code-agent.json")));
-  assert.doesNotThrow(() => requestBegin(root, "B", "feature"));
+  // Codex 만 설치한 프로젝트 — 시험을 어느 호스트 안에서 돌려도 Codex 세션으로 시작한다(시작 게이트는 실행 호스트의 설치 기록을 본다)
+  withCaller("codex", () => {
+    docsBegin(root);
+    setupProject(root, "node");
+    docsEnd(root);
+    assert.ok(existsSync(join(root, "code-agent.json")));
+    assert.doesNotThrow(() => requestBegin(root, "B", "feature"));
+  });
   clearRequestSession(root);
   assert.equal(readFileSync(join(root, ".code-agent/active.json"), "utf8"), before);
   assert.equal(allCursors(root)[0].id, "A");

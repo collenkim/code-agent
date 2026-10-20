@@ -18,6 +18,7 @@ import { init } from "../agent/init";
 import { packageRelease } from "../agent/releaseStore";
 import { STATE_SCHEMA } from "../agent/runtimeSelect";
 import { setupConsentProject } from "./consentFixture";
+import { CALLER_KEYS } from "./reviewFixture";
 
 const REPO = join(__dirname, "..", "..");
 const ENTRY = join(REPO, "dist", "agent", "cli.js");
@@ -41,6 +42,8 @@ function release(id: string, change?: (dir: string) => void): void {
 function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const value: NodeJS.ProcessEnv = { ...process.env, CODE_AGENT_RELEASE_HOME: store, CODE_AGENT_RUNTIME_TRACE: trace, ...extra };
   for (const key of ["CLAUDE_PROJECT_DIR", ...(extra.CODE_AGENT_RUNTIME_SELF ? [] : ["CODE_AGENT_RUNTIME_SELF"]), ...(extra.CODE_AGENT_ENTRY ? [] : ["CODE_AGENT_ENTRY"])]) delete value[key];
+  // 사람의 터미널로 둔다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
+  for (const key of CALLER_KEYS) if (!(key in extra)) delete value[key];
   return value;
 }
 

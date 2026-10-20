@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, mock, test } from "node:test";
 import { setupConsentProject } from "./consentFixture";
+import { setCaller } from "./reviewFixture";
+import { init } from "../agent/init";
 import { masterEnable } from "../agent/master/admin";
 import { call } from "../agent/master/control";
 import { readBinding, writeBinding, type RunRecord } from "../agent/master/store";
@@ -18,10 +20,14 @@ import { drainInteraction } from "../agent/interactionService";
 import { loadConsent } from "../agent/consent";
 import type { RequestEnvelope } from "../agent/master/protocol";
 
-let root: string, token: string, key: ReturnType<typeof generateKeyPairSync>, channelId: string;
+let root: string, token: string, key: ReturnType<typeof generateKeyPairSync>, channelId: string, restoreCaller: () => void;
 beforeEach(() => {
+  // 사람의 터미널로 둔다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
+  restoreCaller = setCaller(undefined);
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-interactions-")));
   setupConsentProject(root);
+  // Claude 관리 실행(이어 실행)은 Claude 설치 기록과 hook 이 있어야 접수한다
+  init(root, { host: "claude" });
   const raw = withInteraction({ confirm: () => ({ channel: "tty", verified: true, detail: "fixture" }), ask: () => "n" }, () => masterEnable(root, { controller: "dashboard" }));
   token = /토큰\(다시 보여 주지 않습니다\): (\w+)/.exec(raw)![1];
   key = generateKeyPairSync("ed25519"); channelId = randomUUID();
@@ -30,7 +36,7 @@ beforeEach(() => {
   writeBinding(root, binding);
   mock.method(childProcess, "spawn", () => Object.assign(new EventEmitter(), { unref() {} }));
 });
-afterEach(() => { mock.restoreAll(); assert.ok(resolve(root).startsWith(realpathSync.native(tmpdir()) + sep)); assert.ok(root.includes("ca-interactions-")); rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { mock.restoreAll(); restoreCaller(); assert.ok(resolve(root).startsWith(realpathSync.native(tmpdir()) + sep)); assert.ok(root.includes("ca-interactions-")); rmSync(root, { recursive: true, force: true }); });
 const question = (id = "q1") => ({ questionId: id, title: "문서 작성 방식", mode: "single", minSelections: 1,
   options: [{ optionId: "source", label: "소스 기준 작성", description: "현재 코드를 확인합니다", consequence: "문서 초안을 작성합니다" }, { optionId: "link", label: "기존 문서 연결", description: "경로를 입력합니다", consequence: "문서 기준을 검사합니다", input: { required: true, minLength: 1, maxLength: 200, description: "기존 문서 경로" } }],
   recommendedOptionIds: ["source"], recommendationReason: "검사한 소스 구성이 있습니다", evidence: [{ path: "package.json", summary: "현재 프로젝트 구성" }] });

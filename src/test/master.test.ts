@@ -13,6 +13,7 @@ import { answerSources } from "../agent/answers";
 import { CONSENT_ACTIONS, loadConsent, observeConsent, prepareConsent } from "../agent/consent";
 import { consentReceipts } from "../agent/consentReceipts";
 import { decide as guardTool } from "../agent/hook";
+import { init } from "../agent/init";
 import { questionsFile } from "../agent/layout";
 import { LEASE_FILE } from "../agent/lease";
 import { masterEnable, masterGrant, masterRevoke, grantOf } from "../agent/master/admin";
@@ -29,6 +30,7 @@ import { withInteraction } from "../agent/tty";
 import { approvalOf, loadWork } from "../agent/work";
 import { readLedger } from "../core/approval";
 import { CONSENT_WORK_ID, gitFixture, preparePlanFixture, setupConsentProject, writeFixture } from "./consentFixture";
+import { setCaller } from "./reviewFixture";
 
 let root: string;
 let outside: string;
@@ -221,10 +223,16 @@ describe("위임 판단 — 동의(계획 승인)", () => {
   const SESSION = "11111111-2222-4333-8444-555555555555";
   let token: string;
   let consentId: string;
+  let restoreCaller: () => void;
+  // 사람의 터미널로 둔다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
+  afterEach(() => restoreCaller());
   beforeEach(() => {
+    restoreCaller = setCaller(undefined);
     rmSync(root, { recursive: true, force: true });
     root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-master-plan-")));
     setupConsentProject(root);
+    // Claude 관리 실행은 Claude 설치 기록과 hook 이 있어야 접수한다
+    init(root, { host: "claude" });
     preparePlanFixture(root);
     token = enable();
     finishedRun(SESSION, CONSENT_WORK_ID);

@@ -174,7 +174,7 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     assert.match(working, /진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only — [\s\S]*작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다/);
   });
 
-  test("D1 doctor(Codex, 반박 검증) — TOML 의 model 줄이 설정과 달라 'Codex 스킬·에이전트' 가 update --templates-only --host codex 를 안내할 때도 작업 중이면 '작업이 끝난 뒤' 실행하라고 한다", () => {
+  test("D1 doctor(Codex, 반박 검증) — TOML 의 model 줄이 설정과 달라 'Codex 스킬·에이전트' 가 update --templates-only --host codex 를 안내할 때도 작업 중이면 '작업이 끝난 뒤' 실행하라고 한다", () => withCaller(undefined, () => {
     init(repo, { host: "codex" });
     const toml = join(repo, ".codex/agents/ca-writer.toml");
     write(".codex/agents/ca-writer.toml", readFileSync(toml, "utf8").replace(/^model = .*$/m, 'model = "gpt-test-other"'));
@@ -191,7 +191,7 @@ describe("D1(E2) — 작업 중에는 역할 모델을 바꾸지 않는다: 접�
     toCheck();
     const working = rowOf(doctor(repo).text);
     assert.match(working.hint, /^→ 진행 중인 작업 ORD-1\(check\)이 끝난 뒤\(반영 deliver 또는 종료 abort\) code-agent update --templates-only --host codex — 작업 중에 다시 쓰면 그 작업의 계획 밖 변경이 됩니다$/);
-  });
+  }));
 
   test("D1 doctor(Codex 옛 설치) — 다른 이벤트는 있는데 SessionStart 만 없으면 update --templates-only --host codex 를(작업 중이면 끝난 뒤) 안내하고, 하나도 없으면 init 이다", () => withCaller(undefined, () => {
     init(repo, { host: "codex" });

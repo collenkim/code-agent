@@ -7,7 +7,7 @@
 > 흐름과 무엇을 치는가는 [usage.md](usage.md), 설계와 근거는 [design.md](design.md).
 > 이 문서는 **어디에 깔고 · 무엇이 생기고 · 어떻게 점검하고 · 어떻게 지우는가**다.
 
-설치 후 관리 실행의 주 호스트는 `execution both --main claude|codex`로 선택할 수 있다. 토큰 소진 등으로 기존 작업을 다른 호스트에 넘길 때는 실행을 먼저 중지하고 `execution --json` 조회 후 `execution <호스트> --handoff`를 사용한다. 열린 동의·미소비 응답은 원래 채널에서 처리해야 한다. [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다.
+설치 후 관리 실행의 주 호스트는 `execution both --main claude|codex`로 선택할 수 있다. 토큰 소진 등으로 기존 작업을 다른 호스트에 넘길 때는 실행을 먼저 중지하고 `execution --json` 조회 후 `execution <호스트> --handoff`를 사용한다. 열린 동의·미소비 응답은 원래 채널에서 처리해야 한다. [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다. 대시보드(master-agent) 연결은 PC마다 한 번 호스트 밖 터미널에서 `code-agent master trust --controller dashboard`로 신뢰를 등록한 뒤, 프로젝트마다 대시보드에서 사람이 확인해 연다([페어링](master-control.md#pc-신뢰와-대시보드-페어링)).
 
 `code-agent init`은 프로젝트에 절차 파일과 hook을 설치하고 종료한다. 실제 실행은 같은 프로젝트에서 Claude의 `/ca-request <요구사항>` 또는 Codex의 `$ca-request <요구사항>`으로 시작한다. 호스트가 프로젝트 스킬·서브에이전트를 읽으므로 별도 에이전트 등록이나 상주 서버는 필요 없다. 사용할 호스트의 설치·인증, Git, 개발할 프로젝트의 실행 환경은 별도로 준비한다.
 

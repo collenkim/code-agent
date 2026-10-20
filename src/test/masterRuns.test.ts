@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
+import { init } from "../agent/init";
 import { masterEnable } from "../agent/master/admin";
 import { call } from "../agent/master/control";
 import { killVerified, liveness } from "../agent/master/processes";
@@ -32,6 +33,8 @@ function project(policy: Record<string, unknown> = POLICY): Project {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
   git("init", "-q", "-b", "master"); git("config", "user.name", "t"); git("config", "user.email", "t@t");
   writeFileSync(join(root, "README.md"), "x\n");
+  // Claude 관리 실행은 Claude 설치 기록과 hook 이 있어야 접수한다
+  init(root, { host: "claude" });
   git("add", "-A"); git("commit", "-qm", "init");
   const hostFile = join(outside, `host-${seq}.json`), policyFile = join(outside, `policy-${seq}.json`), tokenFile = join(outside, `token-${++seq}`);
   writeFileSync(hostFile, JSON.stringify({ command: [process.execPath, FAKE] }));

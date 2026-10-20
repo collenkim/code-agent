@@ -353,6 +353,14 @@ test("T-17-2 hook 누락 감지 — 실행 중인 호스트의 누락은 시작�
   assert.match(docsBegin(root), /경고: code-agent hook 설정이 빠져 있습니다: Codex PreToolUse/, "다른 설치 호스트의 누락은 경고만 한다");
 }));
 
+test("작업 중인 세션도 code-agent master trust·untrust·call 은 부르지 못한다 — 세션 밖 판정은 masterPairing.test 가 본다", () => {
+  startWork();
+  for (const command of ["code-agent master trust --controller dashboard", "code-agent master untrust --controller dashboard", "code-agent master trust --list", "code-agent master call"]) {
+    assert.ok(bash(command), command);
+    assert.ok(tool("PowerShell", { command: command.replace("code-agent", "code-agent.cmd") }), `PowerShell ${command}`);
+  }
+});
+
 // ---- LRN-5 · CON-15 ----
 
 test("T-L5-1 세션 밖에서도 소스 업데이트는 사람의 확인이 필요하다 — 템플릿 적용은 연다", () => {

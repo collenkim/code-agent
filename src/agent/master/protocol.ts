@@ -11,8 +11,8 @@ export const PROTOCOL = "code-agent.master";
 export const PROTOCOL_VERSION = 1;
 export const SUPPORTED_VERSIONS = [1] as const;
 
-/** 인증 없이 받는 요청 — 기능 협상 */
-export const OPEN_TYPES = ["hello"] as const;
+/** 토큰 없이 받는 요청 — 기능 협상과 대시보드 페어링(pair 는 PC 신뢰 키 서명으로 인증하고 commandId 가 필요하다) */
+export const OPEN_TYPES = ["hello", "pair.challenge", "pair"] as const;
 /** 읽기 전용 요청 — commandId 가 없어도 되고 기록하지 않는다 */
 export const READ_TYPES = ["snapshot", "events", "heartbeat", "command", "questions", "consents", "result", "grants", "interactions", "interaction", "interaction.result"] as const;
 /** 상태를 바꾸는 요청 — commandId 가 필요하고 같은 ID 의 재전송은 기록된 응답을 그대로 돌려준다 */
@@ -225,7 +225,7 @@ export function parseRequest(text: string): RequestEnvelope {
   if (raw.commandId !== undefined && !validId(raw.commandId)) throw new ControlError("invalid-request", "commandId 는 영문·숫자·._:- 128자 이하입니다");
   if (raw.expect !== undefined && !plain(raw.expect)) throw new ControlError("invalid-request", "expect 는 객체입니다");
   if (raw.payload !== undefined && !plain(raw.payload)) throw new ControlError("invalid-request", "payload 는 객체입니다");
-  if ((MUTATING_TYPES as readonly string[]).includes(raw.type) && raw.commandId === undefined) {
+  if (((MUTATING_TYPES as readonly string[]).includes(raw.type) || raw.type === "pair") && raw.commandId === undefined) {
     throw new ControlError("invalid-request", `${raw.type} 에는 commandId 가 필요합니다(같은 ID 의 재전송은 한 번만 실행된다)`);
   }
   return raw as unknown as RequestEnvelope;
@@ -247,9 +247,20 @@ export function requestHash(request: RequestEnvelope): string {
   return `sha256:${sha256(canonicalJson({ type: request.type, controller: request.controller ?? null, expect: request.expect ?? null, payload: request.payload ?? null }))}`;
 }
 
+/** 대시보드 페어링(pair) 계약 — 버전·서명 도메인·챌린지 수명 */
+export const PAIRING_VERSION = 1;
+export const PAIR_DOMAIN = "code-agent.master-pair.v1";
+export const PAIR_CHALLENGE_TTL_MS = 5 * 60_000;
+export interface PairApproval { actor: string; approvedAt: string; shownHash: string }
+/** pair 서명 대상 — 챌린지의 nonce·프로젝트 경로와 요청의 commandId·사람의 확인을 묶는다(Ed25519, base64) */
+export function pairSigningMessage(fields: { challengeId: string; nonce: string; projectRoot: string; controller: string; commandId: string; approval: PairApproval }): string {
+  return canonicalJson({ domain: PAIR_DOMAIN, challengeId: fields.challengeId, nonce: fields.nonce, projectRoot: fields.projectRoot, controller: fields.controller,
+    commandId: fields.commandId, approval: fields.approval });
+}
+
 /** 이벤트 종류 — events 응답의 type */
 export const EVENT_TYPES = [
-  "binding.enabled", "binding.disabled", "controller.added", "grant.added", "grant.revoked", "policy.changed",
+  "binding.enabled", "binding.disabled", "controller.added", "human-channel.changed", "grant.added", "grant.revoked", "policy.changed",
   "command.accepted", "command.rejected",
   "run.accepted", "run.starting", "run.started", "run.stop-requested", "run.finished", "run.abandoned", "run.orphaned", "run.unknown",
   "master.disconnected", "master.reconnected",

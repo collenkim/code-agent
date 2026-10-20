@@ -1,6 +1,7 @@
 /**
  * 사람이 터미널(TTY)에서만 하는 master 연동 설정 — 켜기·끄기·제어자 추가·위임 권한 주기·회수·강제 인계. 모두 확인 단어를 입력받는다
- * (confirmOnTerminal — stdin 이 TTY 가 아니면 거부). hook 은 호스트 세션의 셸에서 `code-agent master` 를 막는다.
+ * (confirmOnTerminal — stdin 이 TTY 가 아니면 거부). hook 은 호스트 세션의 셸에서 `code-agent master` 를 막는다. 켜기의 적용(applyEnable)은
+ * 대시보드 페어링(pairing.ts — 사람의 대시보드 확인 + PC 신뢰 키 서명)도 같이 쓴다. 정책·호스트 설정·위임 권한은 터미널에서만 정한다.
  *
  * 위임 권한(grant)은 넓게 줄 수 없다: 작업 ID 또는 master 임무 ID 를 하나 이상, 위임 가능한 동작만, 저장소 전체가 아닌 경로 범위,
  * 만료(최대 7일)와 사용 한도(최대 100)가 필요하다.
@@ -13,10 +14,13 @@ import { actorName } from "../actor";
 import { Stop } from "../stop";
 import { confirmOnTerminal } from "../tty";
 import { forceHandover } from "./handover";
-import { ControlError, DEFAULT_POLICY, DELEGABLE_ACTIONS, HUMAN_ONLY_ACTIONS, hostProfileOf, mergePolicy, validId } from "./protocol";
+import { defaultManagedHost } from "./hostProfile";
+import { trustedController } from "./trust";
+import { ControlError, DEFAULT_POLICY, DELEGABLE_ACTIONS, HUMAN_ONLY_ACTIONS, hostProfileOf, mergePolicy, validId, type HostProfile, type Policy } from "./protocol";
 import { activeRuns, reconcileRuns } from "./runs";
 import {
-  appendGrantRow, emit, ensureMasterDir, grantViews, listRuns, masterPath, readBinding, readOwner, tokenHash, writeBinding, writeOwner, type Binding, type Grant,
+  appendGrantRow, emit, ensureMasterDir, grantViews, listRuns, masterPath, readBinding, readOwner, tokenHash, writeBinding, writeOwner, type Binding, type EnabledBy, type Grant,
+  type PairingRecord,
 } from "./store";
 
 const MAX_GRANT_DAYS = 7;
@@ -36,20 +40,22 @@ function inside(root: string, path: string): boolean {
 
 export interface EnableOptions { controller?: string; label?: string; tokenOut?: string; policy?: string; host?: string }
 
-/** 연동 켜기 또는 제어자 추가·토큰 교체 — 토큰은 이때 한 번만 보이고 code-agent 는 해시만 둔다 */
-export function masterEnable(root: string, options: EnableOptions): string {
-  const controller = options.controller;
-  if (!validId(controller)) throw new Stop("사용법: code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]");
-  if (options.tokenOut && inside(root, options.tokenOut)) throw new Stop("토큰 파일은 저장소 밖에 둡니다 — 저장소 안이면 실행 세션의 모델이 읽을 수 있습니다");
-  const existing = readBinding(root);
-  let policy = existing?.policy ?? DEFAULT_POLICY;
-  let host = existing?.host ?? hostProfileOf(undefined);
-  try {
-    if (options.policy) policy = mergePolicy(policy, readJsonFile(options.policy, "정책"));
-    if (options.host) host = hostProfileOf(readJsonFile(options.host, "호스트 설정"));
-  } catch (error) { stop(error); }
-  const rotating = !!existing?.controllers[controller];
-  const shown = [
+/** 켜기·제어자 추가·토큰 교체의 적용 내용 — 터미널 확인(masterEnable)과 대시보드 페어링(pairing.ts)이 같은 적용 함수(applyEnable)를 쓴다 */
+export interface EnablePlan { controller: string; label?: string; policy: Policy; host: HostProfile; existing?: Binding; rotating: boolean; projectId: string }
+export type EnableVia = { channel: "tty"; actor: string } | { channel: "dashboard-pairing"; actor: string; pairing: PairingRecord };
+
+/** 정책은 지금 값(없으면 기본), 호스트는 지금 값(없으면 처음 켤 때의 기본 호스트 규칙 — defaultManagedHost) 위에 사람이 고른 것을 얹는다 */
+export function planEnable(root: string, controller: string, existing: Binding | undefined, choice: { label?: string; policy?: Policy; host?: HostProfile } = {}): EnablePlan {
+  const host = choice.host ?? existing?.host ?? (() => {
+    const kind = defaultManagedHost(root).kind;
+    return kind === "claude" ? hostProfileOf(undefined) : hostProfileOf({ kind });
+  })();
+  return { controller, ...(choice.label ? { label: choice.label } : {}), policy: choice.policy ?? existing?.policy ?? DEFAULT_POLICY, host, ...(existing ? { existing } : {}),
+    rotating: !!existing?.controllers[controller], projectId: existing?.projectId ?? randomUUID() };
+}
+export function enableShown(root: string, plan: EnablePlan): string {
+  const { controller, existing, rotating, policy, host } = plan;
+  return [
     existing ? (rotating ? `master 제어자 ${controller} 의 토큰을 새로 만듭니다(이전 토큰은 더 받지 않습니다).` : `master 제어자 ${controller} 를 더합니다(지금 소유: ${readOwner(root)?.controller ?? "없음"}).`)
       : `이 프로젝트의 master 연동을 켭니다 — 제어자 ${controller} 가 소유합니다.`,
     `프로젝트: ${root}`,
@@ -58,12 +64,16 @@ export function masterEnable(root: string, options: EnableOptions): string {
       : `호스트: ${host.command.join(" ")} · 권한 모드 ${host.permissionMode} · 허용 도구 ${host.allowedTools.join(", ")} · 금지 도구 ${host.disallowedTools.join(", ")}`,
     "연결만으로는 승인·답 권한이 생기지 않습니다 — 위임은 code-agent master grant 로 따로 줍니다.",
   ].join("\n");
-  confirmOnTerminal(shown, "enable");
-  const token = randomBytes(32).toString("hex");
+}
+/** 확인을 마친 켜기 적용 — binding·owner·이벤트. 토큰은 해시만 남긴다. 페어링은 제어 잠금 안에서 부른다 */
+export function applyEnable(root: string, plan: EnablePlan, token: string, via: EnableVia): Binding {
+  const { controller, existing, policy, host } = plan;
   const at = new Date().toISOString();
-  const binding: Binding = existing ? { ...existing, policy, host, controllers: { ...existing.controllers, [controller]: { tokenHash: tokenHash(token), ...(options.label ? { label: options.label } : {}), addedAt: at } } }
-    : { version: 1, projectId: randomUUID(), enabledAt: at, enabledBy: { actor: actorName(), channel: "tty" }, policy, host,
-      controllers: { [controller]: { tokenHash: tokenHash(token), ...(options.label ? { label: options.label } : {}), addedAt: at } } };
+  const entry: Binding["controllers"][string] = { tokenHash: tokenHash(token), ...(plan.label ? { label: plan.label } : {}), addedAt: at, ...(via.channel === "dashboard-pairing" ? { pairing: via.pairing } : {}) };
+  const enabledBy: EnabledBy = via.channel === "tty" ? { actor: via.actor, channel: "tty" }
+    : { actor: via.actor, channel: "dashboard-pairing", trustFingerprint: via.pairing.trustFingerprint, approvalHash: via.pairing.approvalHash };
+  const binding: Binding = existing ? { ...existing, policy, host, controllers: { ...existing.controllers, [controller]: entry } }
+    : { version: 1, projectId: plan.projectId, enabledAt: at, enabledBy, policy, host, controllers: { [controller]: entry } };
   binding.hostProfiles = { ...existing?.hostProfiles, ...(existing ? { [existing.host.kind]: existing.host } : {}), [host.kind]: host };
   ensureMasterDir(root);
   writeBinding(root, binding);
@@ -71,9 +81,29 @@ export function masterEnable(root: string, options: EnableOptions): string {
   const previous = readOwner(root);
   if (!existing || !previous) {
     const generation = (previous?.generation ?? 0) + 1;
-    writeOwner(root, { controller, generation, since: at, history: [...(previous?.history ?? []), { at, controller, generation, how: "enable" }] });
+    writeOwner(root, { controller, generation, since: at, history: [...(previous?.history ?? []), { at, controller, generation, how: via.channel === "tty" ? "enable" : "pair" }] });
   }
-  emit(root, existing ? "controller.added" : "binding.enabled", { data: { controller, projectId: binding.projectId, rotated: rotating } });
+  emit(root, existing ? "controller.added" : "binding.enabled", { data: { controller, projectId: binding.projectId, rotated: plan.rotating, channel: via.channel } });
+  return binding;
+}
+
+/** 연동 켜기 또는 제어자 추가·토큰 교체 — 토큰은 이때 한 번만 보이고 code-agent 는 해시만 둔다 */
+export function masterEnable(root: string, options: EnableOptions): string {
+  const controller = options.controller;
+  if (!validId(controller)) throw new Stop("사용법: code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]");
+  if (options.tokenOut && inside(root, options.tokenOut)) throw new Stop("토큰 파일은 저장소 밖에 둡니다 — 저장소 안이면 실행 세션의 모델이 읽을 수 있습니다");
+  const existing = readBinding(root);
+  let policy = existing?.policy ?? DEFAULT_POLICY;
+  let host: HostProfile | undefined;
+  try {
+    if (options.policy) policy = mergePolicy(policy, readJsonFile(options.policy, "정책"));
+    if (options.host) host = hostProfileOf(readJsonFile(options.host, "호스트 설정"));
+  } catch (error) { stop(error); }
+  const plan = planEnable(root, controller, existing, { label: options.label, policy, host });
+  const { rotating } = plan;
+  confirmOnTerminal(enableShown(root, plan), "enable");
+  const token = randomBytes(32).toString("hex");
+  const binding = applyEnable(root, plan, token, { channel: "tty", actor: actorName() });
   if (options.tokenOut) writeFileSync(options.tokenOut, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return [
     existing ? `제어자 ${controller} 를 ${rotating ? "새 토큰으로 바꿨습니다" : "더했습니다"}.` : `master 연동을 켰습니다 — 프로젝트 ID ${binding.projectId}, 소유 ${controller}(세대 ${readOwner(root)?.generation}).`,
@@ -184,8 +214,12 @@ export function masterStatus(root: string, json: boolean): string {
   const binding = readBinding(root);
   const owner = readOwner(root);
   const runs = listRuns(root);
+  // 페어링으로 받은 연결은 지금도 같은 지문의 PC 신뢰가 있는가 — 해제했으면 이후 페어링만 막고 지금 연결은 그대로 둔다
+  const trusted = (id: string, fingerprint: string): boolean => { try { return trustedController(id)?.fingerprint === fingerprint; } catch { return false; } };
   const view = {
-    enabled: !!binding, projectId: binding?.projectId ?? null, controllers: binding ? Object.entries(binding.controllers).map(([id, entry]) => ({ id, label: entry.label ?? null, addedAt: entry.addedAt })) : [],
+    enabled: !!binding, projectId: binding?.projectId ?? null, enabledBy: binding?.enabledBy ?? null,
+    controllers: binding ? Object.entries(binding.controllers).map(([id, entry]) => ({ id, label: entry.label ?? null, addedAt: entry.addedAt, via: entry.pairing ? "dashboard-pairing" : "tty",
+      pairing: entry.pairing ? { at: entry.pairing.at, actor: entry.pairing.actor, trustFingerprint: entry.pairing.trustFingerprint, trusted: trusted(id, entry.pairing.trustFingerprint) } : null })) : [],
     owner: owner ? { controller: owner.controller, generation: owner.generation, lastSeenAt: owner.lastSeenAt ?? null, handover: owner.handover ?? null } : null,
     policy: binding?.policy ?? null,
     grants: binding ? grantViews(root).map((grant) => ({ id: grant.id, controller: grant.controller, actions: grant.actions, works: grant.works, missions: grant.missions, paths: grant.paths,
@@ -194,9 +228,11 @@ export function masterStatus(root: string, json: boolean): string {
   };
   if (json) return JSON.stringify(view, null, 2);
   if (!binding) return existsSync(masterPath(root)) ? "master 연동: 꺼짐(이전 기록 있음)" : "master 연동: 꺼짐";
+  const untrusted = view.controllers.filter((item) => item.pairing && !item.pairing.trusted);
   return [
-    `master 연동: 켜짐 · 프로젝트 ID ${binding.projectId}`,
-    `제어자: ${view.controllers.map((item) => item.id).join(", ")} · 소유 ${owner?.controller ?? "없음"}(세대 ${owner?.generation ?? 0})${owner?.handover ? ` · 인계 ${owner.handover.id} ${owner.handover.state} → ${owner.handover.to}` : ""}`,
+    `master 연동: 켜짐 · 프로젝트 ID ${binding.projectId} · 연결 방식 ${binding.enabledBy.channel === "dashboard-pairing" ? `대시보드 페어링(확인 ${binding.enabledBy.actor})` : `터미널(${binding.enabledBy.actor})`}`,
+    `제어자: ${view.controllers.map((item) => `${item.id}(${item.pairing ? "페어링" : "터미널"})`).join(", ")} · 소유 ${owner?.controller ?? "없음"}(세대 ${owner?.generation ?? 0})${owner?.handover ? ` · 인계 ${owner.handover.id} ${owner.handover.state} → ${owner.handover.to}` : ""}`,
+    ...(untrusted.length ? [`신뢰 해제된 제어자: ${untrusted.map((item) => item.id).join(", ")} — 이후 페어링은 받지 않고 지금 연결은 그대로입니다(끊으려면 master disable)`] : []),
     `위임 권한: ${view.grants.length ? view.grants.map((grant) => `${grant.id}(${grant.actions.join("/")}, ${grant.used}/${grant.maxUses}${grant.revoked ? ", 회수" : grant.expired ? ", 만료" : ""})`).join(" · ") : "없음"}`,
     `최근 실행: ${view.runs.length ? view.runs.map((run) => `${run.runId} ${run.state}`).join(" · ") : "없음"}`,
   ].join("\n");

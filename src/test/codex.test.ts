@@ -21,6 +21,7 @@ import { defaultCodexModel } from "../agent/modelPolicy";
 import { usage } from "../agent/usage";
 import { start } from "../agent/commands";
 import { approveAndApplyFixture, CONSENT_SPEC, CONSENT_WORK_ID, prepareDeliveryFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
+import { withCaller } from "./reviewFixture";
 
 let root: string;
 const cli = join(__dirname, "../agent/cli.js");
@@ -188,7 +189,8 @@ test("패치의 모든 파일과 이동 목적지를 검사하며 상태·훅 �
   assert.match(pre("Bash","code-agent codex-event").hookSpecificOutput!.permissionDecisionReason,/hook|허용|명령/);
 });
 
-test("Codex는 작업 중 전용 파일 읽기를 제공하고 일반 셸 쓰기·연결은 계속 거부한다", () => {
+// Codex 만 설치한 프로젝트의 흐름은 Codex 세션으로 시작한다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
+test("Codex는 작업 중 전용 파일 읽기를 제공하고 일반 셸 쓰기·연결은 계속 거부한다", () => withCaller("codex", () => {
   setupConsentProject(root); init(root,{host:"codex",cli});
   approveAndApplyFixture(root,{action:"setup"},"codex");
   submitConsentRequest(root);
@@ -203,7 +205,7 @@ test("Codex는 작업 중 전용 파일 읽기를 제공하고 일반 셸 쓰기
   assert.match(result.stdout,new RegExp(`^${CONSENT_SPEC.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")} · 1-2 / 전체 \\d+줄\\n`));
   assert.match(read(".codex/agents/ca-analyst.toml"),/code-agent read/);
   assert.match(read(".agents/skills/ca-analyze/SKILL.md"),/^---/);
-});
+}));
 
 test("Codex 실제 사용자 이벤트의 동의만 적용되고 원장에 Codex 출처가 남는다", () => {
   setupConsentProject(root);
@@ -253,12 +255,12 @@ test("Codex 계획 결과는 실제 배정에 묶이고 입력 변경 결과는 
   assert.equal(loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)?.status,"cancelled");
 });
 
-test("Codex 접수·계획·승인·Task·검증·리뷰·통합 흐름이 같은 게이트를 통과한다", async () => {
+test("Codex 접수·계획·승인·Task·검증·리뷰·통합 흐름이 같은 게이트를 통과한다", () => withCaller("codex", async () => {
   setupConsentProject(root); init(root,{host:"codex",cli});
   await prepareDeliveryFixture(root,"codex");
   assert.equal(loadActive(root)?.phase,"deliver");
   assert.ok(loadPlanning(loadWork(root)!).tasks.every(task=>task.attempts.at(-1)?.status==="completed"));
-});
+}));
 
 test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결과로 반환한다", () => {
   const run = (event: object) => spawnSync(process.execPath,[cli,"codex-event"],{cwd:root,input:JSON.stringify(event),encoding:"utf8"});

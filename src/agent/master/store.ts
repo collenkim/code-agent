@@ -2,7 +2,9 @@
  * master 연동 기록 — `.code-agent/master/`. 모두 code-agent 코드만 쓴다(hook 이 모델의 `.code-agent/` 쓰기를 막는다). 폴더 안의
  * `.gitignore`(`*`)가 전부를 무시하므로 반영 커밋·작업 트리 대조·동의 스냅샷에 들지 않는다.
  *
- * - binding.json: 사람이 TTY 에서 켠 연동(프로젝트 ID·제어자 토큰 해시·정책·호스트 설정). 없으면 연동하지 않은 프로젝트다.
+ * - binding.json: 사람이 TTY 에서 켜거나 대시보드 페어링(사람의 확인 + PC 신뢰 키 서명)으로 켠 연동(프로젝트 ID·제어자 토큰 해시·정책·호스트
+ *   설정). 없으면 연동하지 않은 프로젝트다.
+ * - pairing/<challengeId>.json: 페어링 일회성 챌린지(만료 5분, 쓰면 usedAt).
  * - owner.json: 지금 제어자와 세대(generation), 인계 진행 상태. 세대가 낮은 요청은 거부한다(fencing).
  * - grants.jsonl·decisions.jsonl: 사람이 준 위임 권한·회수, master 의 판단과 그 적용 결과(append 만).
  * - commands/<ID>.json: 상태를 바꾸는 요청의 처리 결과 — 같은 commandId 재전송은 이 응답을 돌려준다.
@@ -21,12 +23,16 @@ import { ControlError, EVENT_TYPES, sha256, type DecisionCategory, type EventTyp
 
 export const MASTER_DIR = `${STATE_DIR}/master`;
 
+/** 대시보드 페어링으로 받은 연결 — 사람의 확인(approvalHash)과 서명한 PC 신뢰 키의 지문 */
+export interface PairingRecord { at: string; actor: string; trustFingerprint: string; approvalHash: string; commandId: string }
+export type EnabledBy = { actor: string; channel: "tty" } | { actor: string; channel: "dashboard-pairing"; trustFingerprint: string; approvalHash: string };
 export interface Binding {
   version: 1;
   projectId: string;
   enabledAt: string;
-  enabledBy: { actor: string; channel: "tty" };
-  controllers: Record<string, { tokenHash: string; label?: string; addedAt: string }>;
+  enabledBy: EnabledBy;
+  /** pairing — 이 제어자의 지금 토큰을 페어링이 발급했다(터미널에서 다시 발급하면 빠진다) */
+  controllers: Record<string, { tokenHash: string; label?: string; addedAt: string; pairing?: PairingRecord }>;
   policy: Policy;
   host: HostProfile;
   hostProfiles?: Partial<Record<"claude" | "codex", HostProfile>>;

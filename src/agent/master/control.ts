@@ -1,8 +1,9 @@
 /**
  * `code-agent master call` — 요청 한 건을 받아 응답 한 건을 낸다. 판단 순서(모든 요청이 같다):
  *
- * 1. 꼴 검사(protocol.parseRequest) → hello 는 인증 없이 기능을 알린다.
- * 2. 연동 확인(binding.json — 사람이 TTY 에서 켠 프로젝트만) → 제어자 토큰 대조(unauthorized).
+ * 1. 꼴 검사(protocol.parseRequest) → hello 는 인증 없이 기능을 알린다. 페어링(pair.challenge·pair)은 토큰 없이, pair 는 PC 신뢰 키 서명으로
+ *    인증해 연동 전에도 받는다(pairing.ts — 확인을 모두 통과하기 전에는 쓰지 않는다).
+ * 2. 연동 확인(binding.json — 사람이 TTY 에서 켜거나 페어링한 프로젝트만) → 제어자 토큰 대조(unauthorized).
  * 3. 상태를 바꾸는 요청은 제어 잠금 안에서: commandId 기록 대조(같은 내용이면 기록된 응답, 다른 내용이면 conflict) → 소유·세대 대조
  *    (fenced·handover-in-progress·handover-unaccepted) → 실행·인계 재조정 → 처리 → 응답을 commandId 로 기록.
  * 4. 읽기 요청은 기록하지 않고, 지금 제어자의 요청이면 마지막 연락 시각만 고친다.
@@ -12,7 +13,7 @@
  */
 import { randomUUID } from "crypto";
 import { timingSafeEqual } from "crypto";
-import { writeFileSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
 
 import { consentReceipts } from "../consentReceipts";
 import { readLease, releaseLease } from "../lease";
@@ -25,12 +26,12 @@ import { acceptHandover, abortHandover, advanceHandover, requestHandover } from 
 import { liveness } from "./processes";
 import {
   ACTIVE_RUN_STATES, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, HUMAN_ONLY_ACTIONS, mergePolicy,
-  MUTATING_TYPES, OPEN_TYPES, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES, requestHash, sha256, SUPPORTED_VERSIONS, TERMINAL_RUN_STATES,
-  UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
+  MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES, requestHash, sha256, SUPPORTED_VERSIONS,
+  TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
 } from "./protocol";
 import { activeRuns, createRun, newRunId, reconcileRuns, requestStop, spawnSupervisor } from "./runs";
 import {
-  CONTROL_LOCK, type CommandRecord, emit, eventPosition, grantViews, listRuns, readBinding, readCommand, readEvents, readOwner, readRun, readWorkBinding, runPrompt,
+  CONTROL_LOCK, type CommandRecord, emit, eventPosition, grantViews, listRuns, masterPath, readBinding, readCommand, readEvents, readOwner, readRun, readWorkBinding, runPrompt,
   tokenHash, withLock, writeBinding, writeCommand, writeOwner, appendGrantRow, type Binding, type Links, type Owner, type RunRecord,
 } from "./store";
 
@@ -125,7 +126,53 @@ function hello(root: string, binding: Binding | undefined): unknown {
     errors: ERROR_CODES,
     policy: binding?.policy ?? null,
     unsupported: UNSUPPORTED,
+    // 키·토큰·키 경로는 넣지 않는다 — 신뢰한 제어자 ID 와 관리 실행 호스트의 준비 상태만
+    pairing: { supported: true, version: PAIRING_VERSION, signature: "Ed25519", domain: PAIR_DOMAIN, trustedControllers: (require("./trust") as typeof import("./trust")).trustedControllerIds() },
+    managedHost: managedHost(root, binding),
   };
+}
+function managedHost(root: string, binding: Binding | undefined): unknown {
+  try { return (require("./hostProfile") as typeof import("./hostProfile")).managedHostView(root, binding); }
+  catch (error) {
+    return { selected: null, source: null, installedHosts: [], execution: null, ready: false, problems: [{ code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] }] };
+  }
+}
+
+/**
+ * pair — 꼴 검사 → (제어 잠금 안) commandId 기록 대조(같은 내용이면 기록된 응답) → 챌린지·신뢰·서명·소유 확인 → 적용. 확인에서 거부하면 아무것도
+ * 쓰지 않는다(commandId 기록·챌린지 사용 표시도). 챌린지가 있을 수 없는 프로젝트(master 폴더 없음)에는 잠금 파일도 만들지 않는다.
+ */
+function pairCommand(root: string, request: RequestEnvelope): ResponseEnvelope {
+  const pairing = require("./pairing") as typeof import("./pairing");
+  const check = pairing.checkPair(request);
+  if (!existsSync(masterPath(root))) throw new ControlError("stale-state", "이 프로젝트에 페어링 챌린지가 없습니다 — pair.challenge 부터 받습니다");
+  return withLock(root, CONTROL_LOCK, () => {
+    const commandId = request.commandId!, type = request.type;
+    const existing = readCommand(root, commandId);
+    const hash = requestHash(request);
+    if (existing) {
+      if (existing.requestHash !== hash) {
+        return envelope(type, { ok: false, commandId, error: { code: "conflict", message: `commandId ${commandId} 는 다른 내용으로 이미 받았습니다 — 실행하지 않습니다`, detail: { type: existing.type, status: existing.status } } }, root);
+      }
+      if (existing.status === "received") return interrupted(root, existing);
+      return { ...(existing.response as ResponseEnvelope), replayed: true };
+    }
+    const verified = pairing.verifyPair(root, check, commandId);
+    const record = { commandId, type, controller: check.controller, requestHash: hash };
+    writeCommand(root, { ...record, receivedAt: new Date().toISOString(), status: "received", response: null });
+    let response: ResponseEnvelope;
+    try {
+      const result = pairing.applyPair(root, verified, commandId);
+      emit(root, "command.accepted", { commandId, data: { type } });
+      response = envelope(type, { commandId, result }, root);
+      writeCommand(root, { ...record, receivedAt: response.at, status: "accepted", response });
+    } catch (error) {
+      response = envelope(type, { ok: false, commandId, error: errorOf(error) }, root);
+      writeCommand(root, { ...record, receivedAt: response.at, status: "rejected", response });
+      emit(root, "command.rejected", { commandId, data: { type, code: response.error!.code } });
+    }
+    return response;
+  });
 }
 
 function requireActiveSlot(root: string): void {
@@ -360,7 +407,12 @@ export function call(root: string, text: string): ResponseEnvelope {
   try {
     const binding = readBinding(root);
     if (type === "hello") return envelope(type, { result: hello(root, binding) }, binding ? root : undefined);
-    if (!binding) throw new ControlError("not-enabled", "이 프로젝트는 master 연동이 켜져 있지 않습니다 — 사람이 터미널에서 code-agent master enable 로 켭니다");
+    if (type === "pair.challenge") {
+      const result = (require("./pairing") as typeof import("./pairing")).pairChallenge(root, request);
+      return envelope(type, { result }, binding ? root : undefined);
+    }
+    if (type === "pair") return pairCommand(root, request);
+    if (!binding) throw new ControlError("not-enabled", "이 프로젝트는 master 연동이 켜져 있지 않습니다 — 사람이 터미널에서 code-agent master enable 로 켜거나 PC 신뢰 뒤 대시보드에서 페어링합니다");
     const controller = authenticate(binding, request);
     if (type === "interactions" || type === "interaction" || type === "interaction.result") {
       return envelope(type, { result: (require("../interactionService") as typeof import("../interactionService")).queryInteractions(root, binding, type, request.payload ?? {}) }, root);

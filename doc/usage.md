@@ -648,6 +648,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 `./echo-adapter.js`, 있는 파일은 덮지 않는다) | — |
 | `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` · `master disable` | 상위 조정자(master) 연동 켜기·제어자 추가·끄기 (선택, [master 연동](master-control.md)). 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다 | **O** |
+| `code-agent master trust --controller <ID>` · `master untrust --controller <ID>` · `master trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록 (PC당 1회, 저장소 밖에서도 된다). 신뢰한 제어자는 프로젝트마다 대시보드의 사람 확인으로 연동을 켠다([페어링](master-control.md#pc-신뢰와-대시보드-페어링)). 정책·호스트 설정·위임 권한은 바꾸지 못한다 | **O** |
 | `code-agent master grant <권한.json>` · `master revoke <권한 ID> [--reason <사유>]` | master 위임 권한 주기·회수 — 작업·임무·동작(요구 확정·계획 승인·반영·업무 질문)·경로·만료(최대 7일)·사용 한도로 좁힌다. 범위 안의 routine 판단만 받고 원장에 '사람 응답 아님'으로 남는다 | **O** |
 | `code-agent master handover --to <제어자 ID> [--force-stop]` | 사람의 강제 인계 — 실행이 멈춘 것을 확인한 뒤 넘긴다 | **O** |
 | `code-agent master status [--json]` | 연동·제어자·소유 세대·인계·위임 권한·최근 실행. 읽기 전용 | — |
@@ -1350,7 +1351,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `검증 회차가 총 N회에 닿아…` | 고쳐 쓰기·리뷰·수집 회차를 합친 총 회차를 다 썼다 | 위와 같이 보고한다 |
 | `작업 상태·제출된 계획·승인과 확정 기록은 도구로 고칠 수 없습니다` | `.code-agent/` 쓰기 (작업·세션이 없을 때도 막힌다) | `next` · `plan submit` · `confirm` 으로만 바뀐다 |
 | `` `.code-agent/` 는 code-agent 명령으로만 바뀝니다 `` | Bash 가 `.code-agent` 경로를 가리켰다 (세션 밖에서도) | 상태는 `code-agent status` 로 본다. CLI 이름 `code-agent` 를 부르는 것은 막지 않는다 |
-| `등록된 플러그인 키가 있는 자리는 읽을 수 없습니다` | `~/.code-agent/` 를 읽거나 쓰거나 Bash 로 가리켰다 | 무엇이 등록돼 있는지는 `code-agent plugin list` 가 값을 빼고 보여 준다. 키가 필요하면 사람에게 묻는다 |
+| `등록된 플러그인 키가 있는 자리는 읽을 수 없습니다` | `~/.code-agent/`(또는 `CODE_AGENT_HOME` — 플러그인 키, master PC 신뢰 키·연결 토큰·대시보드 사람 채널 키가 있다)를 읽거나 쓰거나 Bash 로 가리켰다 | 무엇이 등록돼 있는지는 `code-agent plugin list` 가 값을 빼고 보여 준다. 키가 필요하면 사람에게 묻는다 |
 | `경로에 ':' 가 든 파일은 쓸 수 없습니다` | Windows 의 대체 데이터 스트림 표기(`requirement.md::$DATA`)다 — 이름 대조를 비껴가는 길이라 모든 모드에서 막는다 | 보통의 경로로 쓴다 |
 | `문서 작성 중에는 문서 자리(...) 밖은 쓸 수 없습니다` | 문서 세션 중 코드 쓰기 | 문서에 적고 사람에게 알린다. 세션은 `docs end` |
 | `작업 중에는 Bash 로 code-agent 명령(…), 선언된 명령, 읽기용 git 만` | 허용 밖 명령 | 파일은 Write/Edit, 읽기는 Read/Grep/Glob. `init`·`abort`·`approve`·`reject`·`confirm`·`deliver`·`model`·`plugin add`·`plugin remove` 는 직접 호출 대신 같은 세션 consent를 사용한다 (`plugin list`는 열려 있다) |

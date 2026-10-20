@@ -4,16 +4,24 @@ code-agent는 초기 설정부터 운영까지의 질문을 `.code-agent/interac
 
 ## 연결과 신뢰
 
-Node 24.19.0 이상 24.x, 이 기능을 포함한 빌드와 해당 프로젝트의 hook 설치·신뢰가 필요하다. 최초 연결은 프로젝트 폴더에서 **사용자가 직접 TTY**로 실행한다. 문서 확정·작업 ID·master 목표는 없어도 된다.
+Node 24.19.0 이상 24.x, 이 기능을 포함한 빌드와 해당 프로젝트의 hook 설치·신뢰가 필요하다. 문서 확정·작업 ID·master 목표는 없어도 된다.
+
+PC 마다 한 번 **사용자가 직접 TTY**로 대시보드 제어자를 신뢰한다. 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하면 서버가 `pair.challenge`·`pair`로 연동 켜기·사람 채널 등록·토큰 발급을 한 번에 한다([페어링 계약](master-control.md#pc-신뢰와-대시보드-페어링)). 사람 채널이 만료되면(30일) 다시 페어링한다.
+
+```powershell
+code-agent master trust --controller dashboard
+```
+
+페어링 결과는 `tokenFile`(토큰 파일 경로)과 `humanChannel`(`channelId`, `generation`, `keyPath`, `expiresAt`, `algorithm: Ed25519`)이다. 토큰 값은 응답에 없다. 페어링 대신 프로젝트 폴더에서 터미널로 연결할 수도 있다.
 
 ```powershell
 code-agent master enable --controller dashboard --token-out C:/Users/<사용자>/.code-agent/dashboard-controller.token
 code-agent master human enable --controller dashboard
 ```
 
-두 번째 명령은 `channelId`, `generation`, `keyPath`, `expiresAt`, `algorithm: Ed25519`를 반환한다. 토큰과 개인 키 파일은 대시보드 **서버만** 읽는다. 저장소·모델 프롬프트·브라우저·로그에 넣지 않는다. binding에는 공개 키만 저장한다. 서버는 로그인·Host/Origin·CSRF 검사와 명시적 사용자 제출을 확인한 다음 서명해야 한다. 서명은 등록한 서버의 제출을 증명한다. 서버가 사람 대신 자동 제출하면 사람이라는 사실을 독립적으로 증명할 수 없으므로 AI 실행 경로에 서명 기능을 노출하면 안 된다. OS 계정 자체를 격리하는 보안 경계는 아니다.
+두 번째 명령은 페어링 결과의 `humanChannel`과 같은 값을 반환한다. PC 신뢰 키·토큰과 사람 채널 개인 키 파일은 대시보드 **서버만** 읽는다. 저장소·모델 프롬프트·브라우저·로그에 넣지 않는다. binding에는 공개 키만 저장한다. 서버는 로그인·Host/Origin·CSRF 검사와 명시적 사용자 제출을 확인한 다음 서명해야 한다. 서명은 등록한 서버의 제출을 증명한다. 서버가 사람 대신 자동 제출하면 사람이라는 사실을 독립적으로 증명할 수 없으므로 AI 실행 경로에 서명 기능을 노출하면 안 된다. 페어링 서명도 같다 — 사람이 확인 화면을 본 뒤에만 서명한다. OS 계정 자체를 격리하는 보안 경계는 아니다. 같은 OS 계정을 탈취한 프로세스는 이 키들을 읽어 페어링·응답할 수 있다.
 
-`code-agent master human disable --controller dashboard`는 별도 사람 채널을 폐기한다. 소유 세대 변경·인계 중·연동 해제·채널 만료(30일)는 이전 응답과 적용을 막는다. 재등록은 새 키·채널을 만든다. 이전 개인 키 파일은 자동 삭제하지 않지만 이전 서명은 받지 않는다. 네트워크 일시 단절은 답·승인·취소가 아니다. `master disable`과 UI 등록 해제는 서로 다른 동작이다.
+`code-agent master human disable --controller dashboard`는 별도 사람 채널을 폐기한다. 소유 세대 변경·인계 중·연동 해제·채널 만료(30일)는 이전 응답과 적용을 막는다. 재등록(터미널·재페어링)은 새 키·채널을 만든다. 이전 개인 키 파일은 자동 삭제하지 않지만 이전 서명은 받지 않는다. 네트워크 일시 단절은 답·승인·취소가 아니다. `master disable`과 UI 등록 해제는 서로 다른 동작이다.
 
 최소 지원 여부는 패키지 버전 문자열 대신 `hello.result.codeAgent.stateSchema >= 7`과 `hello.result.interactions.schemaVersion === 1` 및 명령 목록으로 확인한다. 기존 연결 토큰·`answer actor:human`·AI grant만으로 `interaction.respond`를 호출할 수 없다.
 

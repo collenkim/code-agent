@@ -28,7 +28,10 @@ code-agent만 수정했다. master-agent 화면이 이 요청 종류를 보여 �
   - Codex 가 `code-agent start`의 `.git/index.lock` 쓰기 거부 뒤 같은 명령의 단건 실행 권한을 요청했다.
   - 평가 fixture 의 대시보드 응답(`accept` — 사람의 실제 승인이 아니다)을 원래 RPC 에 전달하자 같은 명령이 종료 코드 0으로 끝났다. 작업 `CONSENT-1`이 `feature/CONSENT-1`에서 analysis 단계로 열렸고, 실제 PreToolUse 등 hook 실행이 기록됐다.
   - 같은 날 앞선 7회는 평가 조건을 맞추는 과정에서 실패했다.
-- 커밋 정리 때의 재확인(이 변경만 담은 커밋의 단독 빌드·회귀)은 [기계 판독 근거](evidence/2026-10-20-codex-git-permission.json)에 남긴다.
+- 커밋 정리 때의 재확인:
+  - 이 변경만 담은 커밋(`1c6e403`)을 깨끗한 worktree 에서 `npm test`했다. 1,673개 중 1,669개 통과, 실패 0개, 생략 4개, 약 472초다.
+  - 대시보드 페어링 변경과 함께 돌린 최종 전체 회귀에도 `codexPermissions.test`(8개)와 `masterCodex.test`(6개)가 들어 있고 모두 통과했다([페어링 기록](2026-10-20-dashboard-pairing.md)).
+  - 수치는 [기계 판독 근거](evidence/2026-10-20-codex-git-permission.json)에 남긴다.
 
 정리 시점 이 PC의 Codex CLI 는 `codex-cli 0.163.0`이다. 평가 보고서에는 당시 버전이 남아 있지 않다.
 
