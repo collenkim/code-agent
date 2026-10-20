@@ -1,7 +1,7 @@
 {
   "date": "2026-10-20",
   "repository": "code-agent",
-  "implementationCommit": null,
+  "implementationCommit": "1841a89",
   "environment": { "platform": "win32", "os": "Windows 11 Pro 10.0.26200", "node": "24.19.0" },
   "build": { "command": "npm run build", "exitCode": 0, "entry": "dist/agent/cli.js", "stateSchemaChanged": false },
   "focused": {
