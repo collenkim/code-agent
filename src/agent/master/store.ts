@@ -78,6 +78,7 @@ export interface RunRecord {
   sessionConfirmed?: boolean;
   hostProfile?: HostProfile;
   handoffId?: string;
+  recovery?: { at: string; actor: string; source: { file: string; hash: string; size: number; modifiedAt: string }; context: import("../interactions").InteractionContext; requestIds: string[] };
   workId: string | null; baseHead: string | null; baseStateVersion: string;
   supervisor?: ProcessRef & { heartbeatAt?: string };
   host?: ProcessRef;

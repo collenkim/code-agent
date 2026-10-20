@@ -1,7 +1,7 @@
 /* Opt-in live evaluation from intake through local delivery in disposable repositories.
  * Only TTY interaction is mocked by this driver; every such decision is labelled as a fixture.
  * Never claims to measure a real beginner or human approval. No push or external publication.
- * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--agents policy|exec-opus|opus|sonnet] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both]
+ * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--agents policy|exec-opus|opus|sonnet] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both] [--main codex --vetted-hooks]
  * --hosts both 는 Codex 도 설치해 계획 검토·코드 리뷰의 교차 검증을 실제 Codex 로 돈다(로그인된 codex 필요).
  * 기본은 2026-10-01 기록과 같은 sonnet·$5 한도다. --model 은 메인 세션 모델이다. 담당(서브에이전트) 모델은 --agents 가 정한다 —
  * policy = 설치 정책 그대로(판단 opus/high · 실행 sonnet/medium, --model opus 의 기본), exec-opus = 실행 역할만 model: opus(강도 줄 유지),
@@ -37,10 +37,14 @@ const { AGENTS, ROLE_POLICY, claudeFrontmatter, frontmatterModel } = use('agent/
 const scenario = process.argv[3], resume = process.argv[2] === 'resume';
 if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'refactor'].includes(scenario)) throw Error('Use run|resume <new|enhance|fix|refactor>');
 const option = name => { const at = process.argv.indexOf(`--${name}`); return at > 0 ? process.argv[at + 1] : undefined; };
+const mainHost = option('main') ?? 'claude';
+if (!['claude', 'codex'].includes(mainHost) || mainHost === 'codex' && !process.argv.includes('--vetted-hooks')) throw Error('Codex main requires --main codex --hosts both --vetted-hooks');
 const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ?? 'sonnet', label = option('label') ?? '2026-10-01', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
 if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
 const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
+if (previous && (previous.mainHost ?? 'claude') !== mainHost) throw Error('Resume must keep the original main host');
+if (mainHost === 'codex' && installHosts !== 'both') throw Error('Codex evaluation requires --hosts both');
 // resume 은 기록된 담당 모델 모드를 잇는다 — 도중에 바꾸면 A/B 기록이 틀어진다. agentsMode 가 없는 이전 기록(C6 전)은
 // 설치본이 전부 그 기록의 --model 값(강도 줄 없음)이었으므로 opus·sonnet 모드로 본다
 const recordedAgents = previous && (previous.agentsMode ?? (['opus', 'sonnet'].includes(previous.model) ? previous.model : undefined));
@@ -86,6 +90,11 @@ const approvals = previous?.approvals || [], turns = previous?.turns || [], ques
 let cumulative = previous?.turns?.at(-1)?.reportedCostUSD || 0;
 tty.confirmOnTerminal = (_shown, word) => { approvals.push({ word, kind: 'automated TTY fixture; not human', at: new Date().toISOString() }); return { channel: 'tty', verified: true, detail: 'AUTOMATED EVALUATION FIXTURE — not a human approval' }; };
 tty.askOnTerminal = () => 'n'; // Optional knowledge promotion is not part of this small scenario.
+if (!resume && mainHost === 'codex') {
+  const env = { ...process.env };
+  for (const key of [...use('agent/crossEnv').CODEX_MARKERS, 'CLAUDECODE']) delete process.env[key];
+  try { use('agent/executionCommands').execution(repo, 'codex'); } finally { process.env = env; }
+}
 const claude = process.env.CLAUDE_EVALUATION_BIN || path.join(os.homedir(), '.local/bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
 const requests = {
   new: '신규: Node.js와 기존 추천의 node:test로 src/value.js를 만들어 주세요. CommonJS로 value(n) 함수 하나를 export합니다. 숫자 n이 0 이상이면 1을 반환하고, 음수면 Error("negative")를 던져야 합니다. 외부 패키지·웹서버·DB는 필요 없습니다. tests/value.test.js와 실행 안내도 작성해 주세요.',
@@ -94,6 +103,8 @@ const requests = {
   refactor: '리팩토링: src/value.js에서 value(n)의 중복 반환 분기만 제거해 주세요. 동작은 0 이상이면 1, 음수면 Error("negative")입니다. CommonJS export와 함수 시그니처, tests/value.test.js의 기존 테스트를 그대로 보존합니다. 변경 범위는 src/value.js뿐입니다. 기존 Node.js·node:test를 유지합니다.',
 };
 let finished = false, lastWork, blocked, cost = previous?.reportedCostUSD || 0;
+let nativeSession = previous?.sessionId;
+if (resume && !nativeSession) throw Error('Resume requires the recorded explicit native sessionId; never use the latest session');
 const startingTurn = turns.length, costLimit = cost + budget, perTurn = option('budget') ? budget : 1.5;
 function answerQuestions(id) {
   const file = id && path.join(repo, `doc/work/${id}/questions.md`);
@@ -131,17 +142,29 @@ for (let turn = startingTurn; turn < startingTurn + 8 && !finished && cost < cos
     ? `이 저장소는 실제 모델 프로세스 평가용 임시 저장소입니다. 사용자 요청: ${requests[scenario]}\n/ca-request부터 원문 접수·공통 문서 준비·분석·계획·구현·검증·독립 리뷰·반영 대기까지 ca-next 절차대로 진행하세요. 단계별로 멈추지 말고 사람 판정 또는 필수 미답 질문에서만 멈추세요. 승인·최초 커밋·deliver는 호출하지 마세요. 평가 드라이버가 별도로 명시적인 테스트용 TTY fixture로 처리하며 실제 사람의 승인으로 보고하지 않습니다. 원문 내용은 임의로 줄이지 말고 sourceMap을 완성하세요. 내부 기술 선택은 기존 구성으로 정하고 업무 질문만 남기세요. Bash는 code-agent 명령만 사용합니다.`
     : '평가 드라이버가 가능한 문서·요구사항·계획 확인을 테스트용 TTY fixture로 처리했습니다. 실제 사람 승인으로 보고하지 마세요. code-agent status로 현재 상태를 읽고 ca-next 절차를 이어가세요. 독립 ca-reviewer 호출과 실제 검증을 수행하고 deliver 대기에서 멈추세요. 원문 미연결·문서 형식 문제는 기존 요청에 근거해 보완하세요.';
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-  const argv = ['-p', prompt, ...(turn ? ['--continue'] : []), '--model', hostModel, '--max-budget-usd', String(Math.min(perTurn, costLimit - cost)), '--output-format', 'json', '--setting-sources', 'project', '--permission-prompts', 'none', '--allowedTools', 'Read,Edit,Write,Grep,Glob,Agent,Skill,Bash(code-agent *)'];
-  const result = cp.spawnSync(claude, argv, { cwd: repo, env, encoding: 'utf8', windowsHide: true, timeout:timeoutMin*60000, maxBuffer:12*1024*1024 });
-  fs.writeFileSync(path.join(root, 'dist', `full-${scenario}-${turn}.json`), result.stdout || '');
+  const argv = ['-p', prompt, ...(nativeSession ? ['--resume', nativeSession] : []), '--model', hostModel, '--max-budget-usd', String(Math.min(perTurn, costLimit - cost)), '--output-format', 'json', '--setting-sources', 'project', '--permission-prompts', 'none', '--allowedTools', 'Read,Edit,Write,Grep,Glob,Agent,Skill,Bash(code-agent *)'];
+  const codex = mainHost === 'codex' ? require('./live-codex.cjs')(root, repo, path.join(root, 'dist/agent/cli.js'), nativeSession) : undefined;
+  const result = cp.spawnSync(codex?.command ?? claude, codex?.args ?? argv, { cwd: repo, env, ...(codex ? { input: prompt.replaceAll('/ca-', 'ca_') } : {}), encoding: 'utf8', windowsHide: true, timeout:timeoutMin*60000, maxBuffer:12*1024*1024 });
+  fs.writeFileSync(path.join(root, 'dist', `full-${scenario}-${label}-${turn}.json`), result.stdout || '');
+  fs.writeFileSync(path.join(root, 'dist', `full-${scenario}-${label}-${turn}.stderr.log`), result.stderr || '');
   let model;
-  try { model = JSON.parse(result.stdout); } catch { blocked = result.error?.message || result.stderr || 'Model returned no JSON'; break; }
+  try {
+    if (codex) {
+      const events = result.stdout.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+      const thread = events.find(e => e.type === 'thread.started')?.thread_id;
+      if (!thread || nativeSession && nativeSession !== thread) throw Error('Codex did not confirm the same thread');
+      nativeSession = thread;
+      model = { session_id: thread, is_error: !events.some(e => e.type === 'turn.completed'), result: events.filter(e => e.type === 'item.completed' && e.item.type === 'agent_message').map(e => e.item.text).join('\n') };
+    } else model = JSON.parse(result.stdout);
+    nativeSession = model.session_id ?? nativeSession;
+  } catch (error) { blocked = result.error?.message || result.stderr || error.message; break; }
   const reported = model.total_cost_usd || 0, turnCost = reported >= cumulative ? reported - cumulative : reported;
   cumulative = reported; cost += turnCost;
   const record = { turn:turn + 1, exitCode:result.status, durationMs:model.duration_ms, ...(typeof model.num_turns === 'number' ? { numTurns:model.num_turns } : {}), reportedCostUSD:reported, turnCostUSD:+turnCost.toFixed(4), modelError:!!model.is_error, phase:loadActive(repo)?.phase || 'request', result:model.result };
   turns.push(record);
   try { fixtureActions(); blocked = undefined; } catch (error) { record.fixtureBlocked = error.message; blocked = error.message; }
   console.log(JSON.stringify({ scenario, turn:turn + 1, phase:loadActive(repo)?.phase, finished, cost, blocked }));
+  if (mainHost === 'codex' && /\.git\/index\.lock.{0,12}Permission denied/i.test(model.result)) { blocked = 'Codex workspace-write sandbox denied .git/index.lock; permissions were not widened.'; break; }
   if (model.is_error) break;
 }
 const work = lastWork || loadWork(repo);
@@ -151,8 +174,8 @@ const questionFile = id && path.join(repo, `doc/work/${id}/questions.md`);
 const questions = questionFile && fs.existsSync(questionFile) ? parseQuestions(fs.readFileSync(questionFile, 'utf8')) : [];
 const evidence = work && loadEvidence(repo, id, work.active.target);
 const review = work && loadReview(repo, id, work.active.target);
-const report = { scenario, model:hostModel, agentsMode, agents:agentsReport(), hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval. Consent questions and the consent prepare/finish round trip are replaced by TTY fixtures, so usageData does not contain them', repo, finished, blocked,
-  durationMs:(previous?.durationMs || 0)+Date.now()-started, reportedCostUSD:cost, costNote:'turn cost = delta of cumulative total_cost_usd; usage is transcript-based', approvals, questionFixtures, questionCount:questions.length, questionCountScope:'questions.md entries only; conversational questions are preserved in turns but not counted here', unanswered:questions.filter(q=>!q.answer).map(q=>q.title), turns,
+const report = { scenario, mainHost, sessionId: nativeSession, model:mainHost === 'codex' ? 'host default' : hostModel, agentsMode, agents:agentsReport(), hosts:installHosts, at:new Date().toISOString(), scope:'Live model from intake; automated TTY fixtures, not a real novice or human approval. Consent questions and the consent prepare/finish round trip are replaced by TTY fixtures, so usageData does not contain them', repo, finished, blocked,
+  durationMs:(previous?.durationMs || 0)+Date.now()-started, reportedCostUSD:mainHost === 'codex' ? null : cost, costNote:mainHost === 'codex' ? 'Codex cost is unavailable; zero is not asserted.' : 'turn cost = delta of reported total_cost_usd; interrupted turns may have unreported cost; usage is transcript-based', interruptedAttempts:previous?.interruptedAttempts, approvals, questionFixtures, questionCount:questions.length, questionCountScope:'questions.md entries only; conversational questions are preserved in turns but not counted here', unanswered:questions.filter(q=>!q.answer).map(q=>q.title), turns,
   taskSequence:work?.plan?.sequence, tests:evidence?.testCases, integrationTests:evidence?.integrationTestCases, reproduction:evidence?.repro,
   reviews:review?.rounds.map(r=>({round:r.round,observed:!!r.reviewer?.completedAt,result:r.reviewer?.result,cross:r.cross&&{host:r.cross.host,model:r.cross.model,completed:!!r.cross.completedAt,result:r.cross.result,error:r.cross.error}})),
   planningCross:(()=>{try{const s=use('agent/planningState').loadPlanning(work);return s.cross&&{host:s.cross.host,model:s.cross.model,status:s.cross.status,findings:s.cross.findings.length,questions:s.cross.questions};}catch{return undefined;}})(),

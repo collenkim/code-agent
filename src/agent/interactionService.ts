@@ -11,7 +11,7 @@ import { questionsFile } from "./layout";
 import { parseQuestions, structuralLine, usableAnswer } from "./questions";
 import { appendDashboardAnswer, answerHash, readAnswerRows, questionHash } from "./answers";
 import { InteractionSubmission, validateInteractionAnswers, INTERACTION_STAGES } from "./interactionSchema";
-import { bumpInteraction, contextMatches, currentInteractions, interactionContext, interactionHash, INTERACTIONS_DIR, mutateInteractions, needInteraction, readInteractions, type InteractionRecord } from "./interactions";
+import { bumpInteraction, contextMatches, currentInteractions, interactionContext, interactionHash, interactionRunId, INTERACTIONS_DIR, mutateInteractions, needInteraction, readInteractions, type InteractionRecord } from "./interactions";
 import { synchronizeInteractions } from "./interactionSources";
 import { verifyHumanSubmission } from "./interactionHuman";
 import { entryScript } from "./runtimeSelect";
@@ -24,7 +24,7 @@ export const INTERACTION_CAPABILITIES = {
   commands: ["interactions", "interaction", "interaction.respond", "interaction.result"],
   humanChannel: "dashboard-human", signature: "Ed25519", independentSessions: true, beforeDocumentConfirmation: true,
   questionConsumer: ["host", "questions"], consentActions: ["setup", "docs", "baseline", "request", "plan", "deliver", "knowledge-prune", "model", "abort", "plugin-add", "plugin-remove", "update", "repro-log", "judgment"],
-  continuation: { live: "동일 세션의 interaction consume·complete", detached: "기록된 Claude·Codex 실행의 확인된 동일 세션 자동 재개", codexDetached: true },
+  continuation: { live: "동일 세션의 interaction consume·complete", detached: "기록된 Claude·Codex 실행의 확인된 동일 세션 자동 재개", codexDetached: true, independentRecovery: "tty-native-transcript" },
 };
 const ResponsePayload = z.object({ requestId: z.string().uuid(), expectedRevision: z.number().int().positive(), contentHash: z.string(), challenge: z.string().uuid(), channelId: z.string().uuid(), signature: z.string().max(1000), submission: InteractionSubmission }).strict();
 function validateContext(root: string, record: InteractionRecord): void {
@@ -44,7 +44,7 @@ export function interactionView(root: string, record: InteractionRecord, binding
   if (!reason && (!channel || channel.generation !== owner?.generation || channel.controller !== owner?.controller || owner.handover || Date.parse(channel.expiresAt) <= Date.now())) reason = "대시보드 사람 채널을 현재 소유권에 연결해야 합니다.";
   return { ...record, canRespond: !reason && ["pending", "deferred"].includes(record.status), unavailableReason: reason ?? null,
     humanChannel: channel ? { channelId: channel.id, generation: channel.generation, algorithm: "Ed25519" } : null,
-    consumer: record.origin.type, blocking: { workId: record.context.workId, sessionId: record.context.sessionId, runId: record.context.runId ?? null } };
+    consumer: record.origin.type, blocking: { workId: record.context.workId, sessionId: record.context.sessionId, runId: interactionRunId(record) ?? null } };
 }
 export function queryInteractions(root: string, binding: Binding, type: string, payload: Record<string, unknown>): unknown {
   synchronizeInteractions(root);
@@ -91,7 +91,7 @@ export function respondInteraction(root: string, binding: Binding, request: Requ
       else {
         record.status = "responded";
         record.response = { receiptId: randomUUID(), commandId: request.commandId!, at: new Date().toISOString(), channel: "dashboard-human", channelId: channel.id, generation: channel.generation, submission };
-        record.continuation = { state: record.context.runId ? "queued" : "waiting-host" };
+        record.continuation = { state: interactionRunId(record) ? "queued" : "waiting-host" };
       }
     }
     bumpInteraction(state, record);
@@ -163,8 +163,8 @@ function applyQuestionDocument(root: string, r: InteractionRecord): unknown {
 export function kickInteractionWorker(root: string, id: string): void {
   const r = readInteractions(root)?.requests[id];
   if (!r?.response || r.response.channel !== "dashboard-human" || ["failed", "superseded", "cancelled"].includes(r.status) || r.continuation?.state === "started") return;
-  if ((r.origin.type === "host" && !r.context.runId) || r.continuation?.state === "blocked") return;
-  if (r.status === "applied" && !r.context.runId) return;
+  if ((r.origin.type === "host" && !interactionRunId(r)) || r.continuation?.state === "blocked") return;
+  if (r.status === "applied" && !interactionRunId(r)) return;
   const child = spawn(process.execPath, [entryScript(), "interaction", "drain", id], { cwd: root, detached: true, windowsHide: true, stdio: "ignore", env: { ...process.env, CODE_AGENT_MASTER_RUN: "" } });
   child.on("error", () => { /* 영속 응답은 남는다. 다음 조회가 재시도한다. */ }); child.unref();
 }
@@ -204,11 +204,11 @@ export function drainInteraction(root: string, id: string): unknown {
   }); } finally { release(); }
 }
 function resumeInteraction(root: string, r: InteractionRecord): void {
-  if (!r.context.runId || r.continuation?.state === "started" || r.continuation?.state === "blocked") return;
+  if (!interactionRunId(r) || r.continuation?.state === "started" || r.continuation?.state === "blocked") return;
   if (currentInteractions(root).requests.some(other => other.requestId !== r.requestId && other.context.sessionId === r.context.sessionId && ["pending", "deferred"].includes(other.status))) return;
   // 호출자가 소유권 잠금을 보유한다. 적용과 재개 사이에 권한을 바꾸지 못한다.
   {
-    const binding = readBinding(root)!, owner = readOwner(root)!, previous = readRun(root, r.context.runId!);
+    const binding = readBinding(root)!, owner = readOwner(root)!, previous = readRun(root, interactionRunId(r)!);
     if (r.origin.type === "host") {
       try { validateContext(root, r); }
       catch (error) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return; }

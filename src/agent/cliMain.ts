@@ -102,6 +102,7 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent master disable           master 연동 끄기 (TTY 에서만, 실행 중인 실행이 없을 때)
   code-agent master call              master 러너의 요청 한 건(stdin JSON, code-agent.master v1) → 응답 한 건(stdout JSON) — doc/master-control.md
   code-agent master human enable|disable --controller <ID>   대시보드 사람 채널 등록·폐기(TTY)
+  code-agent master recover <요청ID> [--transcript <원본.jsonl>] [--json]   종료 독립 세션 조회·복원(TTY)
   code-agent interaction publish <질문.json> | consume <ID> | complete <ID> <결과.json> | list
                                       영속 질문 발행·같은 세션 답 소비·처리 결과 기록 — doc/dashboard-interactions.md
 
@@ -254,7 +255,7 @@ function unknownCommand(command: string): string {
 const INIT_USAGE = "사용법: code-agent init [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
 const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>] | " +
-  "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | call (stdin 요청 → stdout 응답)";
+  "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | recover <요청ID> [--transcript <원본.jsonl>] [--json] | call (stdin 요청 → stdout 응답)";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
 
 /** 실행 명령은 LangGraph·검증 자식 프로세스를 기다리고, 조회 명령은 기록을 바꾸지 않는다. */
@@ -511,6 +512,12 @@ export async function runCommand(command: string | undefined, args: string[]): P
         return response.ok ? 0 : 1;
       }
       if (sub === "supervise" && args.length === 2) return (require("./master/supervisor") as typeof import("./master/supervisor")).supervise(repoRoot, args[1]);
+      if (sub === "recover") {
+        const usage = "사용법: code-agent master recover <요청ID> [--transcript <원본.jsonl>] [--json]";
+        if (!args[1] || args[1].startsWith("--")) throw new Stop(usage);
+        if (optionsOnly(args.slice(2), ["transcript"], ["--json"], usage)) { print(usage); return 0; }
+        print((require("./master/recovery") as typeof import("./master/recovery")).recoverSession(repoRoot, args[1], { transcript: option(args, "transcript"), json: args.includes("--json") })); return 0;
+      }
       if (sub === "human" && ["enable", "disable"].includes(args[1])) {
         const controller = option(args, "controller");
         if (!controller || args.length !== 4) throw new Stop("사용법: code-agent master human enable|disable --controller <ID>");

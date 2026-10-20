@@ -1,0 +1,144 @@
+{
+  "at": "2026-10-20T00:00:34.175Z",
+  "scope": "code-agent only; disposable repositories; no push; synthetic approvals and answers are not real human approvals",
+  "runtime": {
+    "node": "v24.19.0",
+    "claude": "2.1.303",
+    "codex": "0.163.0",
+    "stateSchema": 9
+  },
+  "checks": {
+    "install": "npm.cmd ci --offline --no-audit --no-fund: passed",
+    "build": "npm.cmd run build: passed",
+    "types": "tsc --noEmit: passed",
+    "whitespace": "git diff --check: passed",
+    "scriptSyntax": "node --check: passed"
+  },
+  "buildEntry": "C:/IdeaProjects/code-agent/dist/agent/cli.js",
+  "handoff": "doc/dashboard-interactions.md",
+  "fullSuite": {
+    "command": "npm.cmd test -- --test-concurrency=4",
+    "scope": "복원·질문 동기화 전체 회귀 스냅샷. 이후 강화한 질문 삭제·출처 미확인 차단과 복원 이벤트 커서는 최종 빌드의 finalFocused 28개로 재검증했다.",
+    "commandLog": "dist/session-recovery-final-tests.log",
+    "tests": 1664,
+    "suites": 218,
+    "passed": 1660,
+    "failed": 0,
+    "skipped": 4,
+    "durationMs": 721707.416
+  },
+  "finalFocused": {
+    "commandLog": "dist/session-recovery-final-focused.log",
+    "tests": 28,
+    "suites": 0,
+    "passed": 28,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 14559.397
+  },
+  "realModels": {
+    "claudeFullFlow": {
+      "evidence": "doc/reviews/evidence/full-flow-new-2026-10-20-live-claude.json",
+      "finished": true,
+      "blocked": null,
+      "finalCommit": "a07af9d2a2516330a8c3fb84f1fe36747765f47c",
+      "activeAfterDelivery": null,
+      "reviews": [
+        {
+          "round": 1,
+          "observed": true,
+          "result": "- 없음"
+        }
+      ],
+      "tests": [
+        {
+          "id": "TC-1",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-2",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-3",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-4",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-5",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-6",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-7",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-8",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-9",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-10",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        },
+        {
+          "id": "TC-11",
+          "status": "passed",
+          "source": "출력",
+          "where": "테스트 실행 결과 (TAP)"
+        }
+      ]
+    },
+    "claudeRecovery": {
+      "evidence": "doc/reviews/evidence/2026-10-20-live-session-recovery.json",
+      "passed": true,
+      "memoryPreserved": true,
+      "originalSession": "c296ee76-5c84-41e5-bb6b-92384537d391",
+      "resumedSession": "c296ee76-5c84-41e5-bb6b-92384537d391",
+      "status": "applied",
+      "resumedRunCount": 1
+    },
+    "codexFullFlow": {
+      "evidence": "doc/reviews/evidence/full-flow-new-2026-10-20-live-codex.json",
+      "finished": false,
+      "blocked": "Codex workspace-write sandbox denied .git/index.lock; permissions were not widened.",
+      "nativeSessionValidated": true
+    }
+  },
+  "limits": [
+    "Codex Windows workspace-write .git protection blocks full delivery; no permission widening",
+    "Codex dashboard recovery continuation remains to be measured with actual native trust",
+    "No recovery without original conversation and durable request; no automatic quota-based host switch",
+    "Browser clicks and production delivery/update/plugin execution not tested"
+  ]
+}

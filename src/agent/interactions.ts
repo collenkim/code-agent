@@ -18,6 +18,8 @@ export interface InteractionRecord {
   createdAt: string; updatedAt: string; expiresAt: string; challenge: string;
   stage: PublishInteraction["stage"]; kind: "question" | "consent" | "recovery-decision"; title: string; questions: InteractionQuestion[];
   context: InteractionContext;
+  /** 원래 서명 문맥은 유지하고 TTY로 확인한 독립 세션 복원만 따로 연결한다. */
+  recoveredRunId?: string;
   origin: { type: "host" | "questions" | "consent"; id: string; hash?: string };
   consent?: { consentId: string; action: string; summary: string; shownHash: string; choices: { index: number; shown: string; target?: string; key?: string }[]; allowedResponses: string[]; humanOnly: boolean };
   status: "pending" | "responded" | "applied" | "deferred" | "expired" | "cancelled" | "superseded" | "failed";
@@ -30,6 +32,7 @@ export interface InteractionRecord {
 }
 interface Ledger { version: 1; instanceId: string; seq: number; requests: Record<string, InteractionRecord>; commands: Record<string, { hash: string; requestId: string; response: unknown }> }
 export const interactionHash = (value: unknown) => `sha256:${sha256(canonicalJson(value))}`;
+export const interactionRunId = (record: InteractionRecord): string | undefined => record.context.runId ?? record.recoveredRunId;
 const file = (root: string) => join(root, INTERACTIONS_DIR, "state.json");
 export function readInteractions(root: string): Ledger | undefined {
   if (!existsSync(file(root))) return undefined;

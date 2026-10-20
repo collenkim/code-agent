@@ -5,7 +5,7 @@ import { DOCS_SESSION_FILE, loadActive, questionsFile, REQUEST_SESSION_FILE } fr
 import { readLease } from "./lease";
 import { parseQuestions } from "./questions";
 import { PublishInteraction, type InteractionQuestion } from "./interactionSchema";
-import { currentInteractions, interactionContext, interactionHash, publishInteraction, mutateInteractions, bumpInteraction, type InteractionRecord } from "./interactions";
+import { contextMatches, currentInteractions, interactionContext, interactionHash, publishInteraction, mutateInteractions, bumpInteraction, type InteractionRecord } from "./interactions";
 import { listRuns } from "./master/store";
 import type { ConsentRecord } from "./consent";
 import type { InteractionTicket } from "./interactionTicket";
@@ -62,8 +62,15 @@ export function synchronizeInteractions(root: string): void {
   const active = loadActive(root);
   const workId = active?.id ?? (existsSync(join(root, REQUEST_SESSION_FILE)) ? JSON.parse(readFileSync(join(root, REQUEST_SESSION_FILE), "utf8")).id : undefined);
   const path = workId ? join(root, questionsFile(workId)) : undefined;
+  let questionDocumentHash: string | undefined;
+  const answeredQuestions = new Set<string>();
   if (path && existsSync(path)) {
-    const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n"), qs = parseQuestions(text).filter(q => !q.answer && q.status !== "deferred");
+    const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n"), parsed = parseQuestions(text), qs = parsed.filter(q => !q.answer && q.status !== "deferred");
+    questionDocumentHash = interactionHash(text);
+    if (parsed.some(q => q.answer)) {
+      const sources = (require("./answers") as typeof import("./answers")).answerSources(root, workId!, parsed);
+      for (const q of parsed) if (q.answer && sources.get(q.id) && sources.get(q.id) !== "unverified") answeredQuestions.add(q.id);
+    }
     const covered = currentInteractions(root).requests.filter(r => !["superseded", "expired", "cancelled"].includes(r.status) &&
       (r.origin.type === "questions" && r.origin.id === workId && r.origin.hash === interactionHash(text) || r.origin.type === "host" && r.context.workId === workId && ["pending", "responded", "deferred"].includes(r.status)));
     const missing = qs.filter(q => !covered.some(r => r.questions.some(item => item.questionId === q.id)));
@@ -84,6 +91,11 @@ export function synchronizeInteractions(root: string): void {
   mutateInteractions(root, state => {
     for (const r of Object.values(state.requests)) {
       if (!["pending", "deferred", "responded"].includes(r.status)) continue;
+      // 원래 질문 모두에 기존 출처 검사를 통과한 답이 있어야 닫는다. 삭제·출처 미확인 답으로 대기를 풀지 않는다.
+      if (r.origin.type === "questions" && r.origin.id === workId && questionDocumentHash && r.origin.hash !== questionDocumentHash &&
+          !r.response && r.questions.every(q => answeredQuestions.has(q.questionId)) && contextMatches(root, r.context)) {
+        r.status = "superseded"; r.unavailableReason = "원래 질문 문서가 바뀌었습니다. 최신 문서·요청에서 확인하세요."; bumpInteraction(state, r); continue;
+      }
       if (r.origin.type === "consent") {
         const c = loadConsent(root, r.origin.id);
         if (c.status === "applied" && r.response?.channel !== "dashboard-human") { r.status = "applied"; r.application = { state: "applied", at: new Date().toISOString(), result: c.result }; bumpInteraction(state, r); }

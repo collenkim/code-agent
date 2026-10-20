@@ -10,8 +10,8 @@
 
 | 항목 | 동작 |
 |---|---|
-| 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 연 작업(`works/<작업 ID>.json`)만이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
-| 연동하지 않은 작업 | 켠 프로젝트라도 사람이 연 작업은 master가 임무로 이어 실행하지 않고(`not-enabled`) AI 위임 판단도 받지 않는다. 대시보드 사람 채널은 별도이며 독립 작업의 질문·동의도 조회·응답할 수 있다([계약](dashboard-interactions.md)) |
+| 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 열거나 사람이 `master recover`로 명시적으로 연결한 작업(`works/<작업 ID>.json`)이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
+| 연동하지 않은 작업 | 켠 프로젝트라도 연결하지 않은 독립 작업은 master가 임무로 이어 실행하지 않고(`not-enabled`) AI 위임 판단도 받지 않는다. 종료 세션 복원은 원래 질문·대화를 확인한 사람의 명시적 연결이며 AI grant를 주지 않는다. 대시보드 사람 채널은 독립 작업의 질문·동의도 조회·응답할 수 있다([계약](dashboard-interactions.md)) |
 | 연결과 권한 | 토큰은 요청자를 확인할 뿐 승인 권한이 아니다. 승인·답 위임은 사람이 `code-agent master grant` 로 준 권한 범위 안에서만 받는다 |
 | 역할 | master — 요구 분석·프로젝트별 배분·의존성·재계획·전체 완료와 독립 검증. code-agent — 프로젝트 안의 실행과 로컬 검증·승인 조건. 실행 감독(`master supervise`) — 호스트 세션과 프로세스의 실행·정지·생존 확인 |
 
@@ -234,6 +234,7 @@ hook 은 사고 방지 장치다. 토큰 파일은 저장소 밖에 두고(`--to
 | `code-agent master grant <권한.json>` · `revoke <권한 ID> [--reason]` | §8 |
 | `code-agent master handover --to <ID> [--force-stop]` | §10 |
 | `code-agent master status [--json]` | 연동·제어자·소유·권한·최근 실행(읽기 전용) |
+| `code-agent master recover <요청ID> [--transcript <원본.jsonl>] [--json]` | 관리 기록 없는 종료 세션의 원본·질문 대조와 TTY 복원. `--json`은 읽기 전용이며 상세 조건은 [복원 절차](dashboard-interactions.md#관리-기록-없는-종료-세션-복원)를 따른다 |
 
 master 가 쓰는 명령은 `code-agent master call`이고, 감독은 `code-agent master supervise <runId>`(제어 명령이 띄운다)다.
 
@@ -285,7 +286,7 @@ code-agent execution codex --handoff
 
 ## 14. 한계
 
-- Claude·Codex 관리 실행의 기록된 세션을 재개한다. 기록 없는 종료 세션의 자동 복원·토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
+- Claude·Codex 관리 실행의 기록된 세션을 재개한다. 관리 기록 없는 종료 세션은 원본 대화·영속 질문을 대조하고 사람이 종료를 확인한 경우만 같은 세션으로 연결한다. 대화 기록까지 없는 세션 복원·토큰 소진 시 자동 호스트 전환은 지원하지 않는다.
 - 통신은 같은 PC 의 CLI 호출이다. 원격 연결·밀어넣기 이벤트는 없다.
 - 한 프로젝트에 실행은 한 번에 하나다. 여러 프로젝트는 master 가 프로젝트마다 따로 부른다.
 - 다른 저장소의 산출물을 가져다 쓰는 작업은 통합 검증(`code-agent integrate`)이 기준 커밋을 뜬 깨끗한 worktree 에서 돌므로, 형제 저장소의 상대 경로가 풀리지 않는다. 프로젝트 사이 의존은 사람이 도입 설정에서 `code-agent.json`의 `prepare`로 깨끗한 트리에 잇는다. master 연동은 이 설정을 만들거나 바꾸지 않는다 — 매니페스트는 계획 승인이 묶는다.
