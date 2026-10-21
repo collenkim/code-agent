@@ -4,7 +4,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-21 | [대시보드 확인 PC 신뢰](2026-10-21-dashboard-trust.md) | [회귀·master-agent 상호 운용·브라우저](evidence/2026-10-21-dashboard-trust.json) |
+| 2026-10-21 | [대시보드 확인 PC 신뢰](2026-10-21-dashboard-trust.md) — `4e81965` | [회귀·master-agent 상호 운용·브라우저](evidence/2026-10-21-dashboard-trust.json) |
 | 2026-10-21 | [YSIJ-255 질문 UI·응답 관찰·낡은 대기](2026-10-21-question-ui.md) — `8ab6cba` | [프로젝트 대조·회귀](evidence/2026-10-21-question-ui.json) |
 | 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — `5adbb97` | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |
 | 2026-10-20 | [PC 신뢰와 대시보드 페어링](2026-10-20-dashboard-pairing.md) — `1841a89` | [회귀·master-agent 상호 운용](evidence/2026-10-20-dashboard-pairing.json) |

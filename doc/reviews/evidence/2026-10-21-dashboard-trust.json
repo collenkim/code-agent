@@ -1,7 +1,7 @@
 {
   "date": "2026-10-21",
   "repository": "code-agent",
-  "implementationCommit": null,
+  "implementationCommit": "4e81965",
   "baseCommit": "76328fe",
   "environment": {
     "platform": "win32",
@@ -59,6 +59,7 @@
     "hashOf": "sorted relative path + NUL + bytes + NUL"
   },
   "masterAgentInterop": {
+    "masterCommit": "e0a3c62",
     "codeAgentHome": "isolated",
     "serverEnv": "CLAUDECODE=1 kept in the dashboard process; not passed to code-agent",
     "tests": [

@@ -846,7 +846,7 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- PC 신뢰를 대시보드 확인 화면에서도 등록한다 — code-agent 가 정한 문구의 해시가 같을 때만 키를 만들고, 호스트 셸에서는 받지 않으며 기록에 대시보드 확인으로 남긴다 — [검증](reviews/2026-10-21-dashboard-trust.md)
+- PC 신뢰를 대시보드 확인 화면에서도 등록한다 — code-agent 가 정한 문구의 해시가 같을 때만 키를 만들고, 호스트 셸에서는 받지 않으며 기록에 대시보드 확인으로 남긴다 — `4e81965`, [검증](reviews/2026-10-21-dashboard-trust.md)
 
 - 호스트 질문 응답 누락을 고치고 선택 UI 복구·관찰 근거에 따른 대기 정리·질문 묶음 보존을 지원한다 — `8ab6cba`, [검증 기록](reviews/2026-10-21-question-ui.md).
 

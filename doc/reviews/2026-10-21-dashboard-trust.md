@@ -31,7 +31,7 @@ Windows 11·Node 24.19.0. `npm run build` 통과.
 
 최종 전체 회귀: `npm test`(Claude Code 세션 안, `CLAUDECODE=1`) 1,701개 중 1,697개 통과, 실패 0개, 플랫폼 생략 4개, 약 954초.
 
-master-agent 상호 운용은 master-agent 의 화면 신뢰 변경(`packages/runner/control-trust.mjs`·대시보드 확인 화면)을 이 빌드의 `dist/agent/cli.js`에 연결해 확인했다. 키 저장소는 격리 `CODE_AGENT_HOME`이고, 서버 환경에 `CLAUDECODE=1`을 둔 채 실행했다.
+master-agent 상호 운용은 master-agent `e0a3c62`의 화면 신뢰 변경(`packages/runner/control-trust.mjs`·대시보드 확인 화면)을 이 빌드의 `dist/agent/cli.js`에 연결해 확인했다. 키 저장소는 격리 `CODE_AGENT_HOME`이고, 서버 환경에 `CLAUDECODE=1`을 둔 채 실행했다.
 
 - 연동 시험(`tests/code-agent-control.test.mjs`): 실제 문구·미리보기 무기록, 보지 않은 해시 `stale-state`, 확인한 해시로 등록·기록·같은 키 저장소의 키 탐색, 재등록 거부, 신뢰 직후 제어 연결.
 - 실제 브라우저(`scripts/smoke-dashboard-trust.mjs`): 카드의 PC 신뢰 → code-agent 문구 → 확인 단어 → 등록 → `제어 연결 가능` → 제어 연결 → `제어 연결됨`, 1440/390/320px.
