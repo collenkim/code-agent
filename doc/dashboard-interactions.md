@@ -10,7 +10,7 @@ Codex 폼 호출 실패는 `presentation.state: failed`로 기록한다(상태 �
 
 Node 24.19.0 이상 24.x, 이 기능을 포함한 빌드와 해당 프로젝트의 hook 설치·신뢰가 필요하다. 문서 확정·작업 ID·master 목표는 없어도 된다.
 
-PC 마다 한 번 **사용자가 직접 TTY**로 대시보드 제어자를 신뢰한다. 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하면 서버가 `pair.challenge`·`pair`로 연동 켜기·사람 채널 등록·토큰 발급을 한 번에 한다([페어링 계약](master-control.md#pc-신뢰와-대시보드-페어링)). 사람 채널이 만료되면(30일) 다시 페어링한다.
+PC 마다 한 번 사용자가 대시보드의 PC 신뢰 확인 화면(code-agent 문구와 확인 단어 `trust`) 또는 직접 TTY로 대시보드 제어자를 신뢰한다. 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하면 서버가 `pair.challenge`·`pair`로 연동 켜기·사람 채널 등록·토큰 발급을 한 번에 한다([페어링 계약](master-control.md#pc-신뢰와-대시보드-페어링)). 사람 채널이 만료되면(30일) 다시 페어링한다.
 
 ```powershell
 code-agent master trust --controller dashboard

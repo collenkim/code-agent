@@ -102,8 +102,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent master disable           master 연동 끄기 (TTY 에서만, 실행 중인 실행이 없을 때)
   code-agent master call              master 러너의 요청 한 건(stdin JSON, code-agent.master v1) → 응답 한 건(stdout JSON) — doc/master-control.md
   code-agent master human enable|disable --controller <ID>   대시보드 사람 채널 등록·폐기(TTY)
-  code-agent master trust --controller <ID> | trust --list | untrust --controller <ID>
-                                      대시보드 제어자의 PC 신뢰 등록·해제(TTY, PC 당 1회)·목록 — 저장소 밖에서도 실행. 이후 프로젝트 연결은 대시보드 확인(pair)
+  code-agent master trust --controller <ID> [--preview | --shown-hash <해시>] | trust --list | untrust --controller <ID>
+                                      대시보드 제어자의 PC 신뢰 등록(TTY 또는 대시보드 확인 화면, PC 당 1회)·해제(TTY)·목록 — 저장소 밖에서도 실행. 이후 프로젝트 연결은 대시보드 확인(pair)
   code-agent master recover <요청ID> [--transcript <원본.jsonl>] [--json]   종료 독립 세션 조회·복원(TTY)
   code-agent interaction publish <질문.json> | consume <ID> | complete <ID> <결과.json> | list
                                       영속 질문 발행·같은 세션 답 소비·처리 결과 기록 — doc/dashboard-interactions.md
@@ -258,7 +258,7 @@ const INIT_USAGE = "사용법: code-agent init [--cli <path>]";
 const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [--cross]";
 const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>] | " +
   "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | recover <요청ID> [--transcript <원본.jsonl>] [--json] | " +
-  "trust --controller <ID> | trust --list | untrust --controller <ID> | call (stdin 요청 → stdout 응답)";
+  "trust --controller <ID> [--preview | --shown-hash <해시>] | trust --list | untrust --controller <ID> | call (stdin 요청 → stdout 응답)";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
 
 /** 실행 명령은 LangGraph·검증 자식 프로세스를 기다리고, 조회 명령은 기록을 바꾸지 않는다. */
@@ -525,7 +525,10 @@ export async function runCommand(command: string | undefined, args: string[]): P
       if (sub === "trust" || sub === "untrust") {
         const trust = require("./master/trust") as typeof import("./master/trust");
         if (sub === "trust" && args.length === 2 && args[1] === "--list") { print(trust.masterTrustList()); return 0; }
-        if (args.length !== 3 || args[1] !== "--controller") throw new Stop("사용법: code-agent master trust --controller <ID> | trust --list | untrust --controller <ID>");
+        // 대시보드 확인 화면 — 문구·해시를 읽고(--preview), 사람이 확인한 해시로 등록한다(--shown-hash). 둘 다 JSON 한 줄을 낸다
+        if (sub === "trust" && args.length === 4 && args[1] === "--controller" && args[3] === "--preview") { print(trust.masterTrustPreview(args[2])); return 0; }
+        if (sub === "trust" && args.length === 5 && args[1] === "--controller" && args[3] === "--shown-hash") { print(trust.masterTrustConfirmed(args[2], args[4])); return 0; }
+        if (args.length !== 3 || args[1] !== "--controller") throw new Stop(trust.TRUST_USAGE);
         print(sub === "trust" ? trust.masterTrust(args[2]) : trust.masterUntrust(args[2])); return 0;
       }
       if (sub === "human" && ["enable", "disable"].includes(args[1])) {

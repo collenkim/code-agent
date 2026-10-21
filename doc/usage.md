@@ -648,7 +648,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 `./echo-adapter.js`, 있는 파일은 덮지 않는다) | — |
 | `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` · `master disable` | 상위 조정자(master) 연동 켜기·제어자 추가·끄기 (선택, [master 연동](master-control.md)). 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다 | **O** |
-| `code-agent master trust --controller <ID>` · `master untrust --controller <ID>` · `master trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록 (PC당 1회, 저장소 밖에서도 된다). 신뢰한 제어자는 프로젝트마다 대시보드의 사람 확인으로 연동을 켠다([페어링](master-control.md#pc-신뢰와-대시보드-페어링)). 정책·호스트 설정·위임 권한은 바꾸지 못한다 | **O** |
+| `code-agent master trust --controller <ID>` · `master untrust --controller <ID>` · `master trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록 (PC당 1회, 저장소 밖에서도 된다). 등록은 대시보드 확인 화면(`--preview`·`--shown-hash`)으로도 한다. 신뢰한 제어자는 프로젝트마다 대시보드의 사람 확인으로 연동을 켠다([페어링](master-control.md#pc-신뢰와-대시보드-페어링)). 정책·호스트 설정·위임 권한은 바꾸지 못한다 | **O** |
 | `code-agent master grant <권한.json>` · `master revoke <권한 ID> [--reason <사유>]` | master 위임 권한 주기·회수 — 작업·임무·동작(요구 확정·계획 승인·반영·업무 질문)·경로·만료(최대 7일)·사용 한도로 좁힌다. 범위 안의 routine 판단만 받고 원장에 '사람 응답 아님'으로 남는다 | **O** |
 | `code-agent master handover --to <제어자 ID> [--force-stop]` | 사람의 강제 인계 — 실행이 멈춘 것을 확인한 뒤 넘긴다 | **O** |
 | `code-agent master status [--json]` | 연동·제어자·소유 세대·인계·위임 권한·최근 실행. 읽기 전용 | — |

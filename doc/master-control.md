@@ -251,7 +251,7 @@ hook 은 사고 방지 장치다. 토큰 파일은 저장소 밖에 두고(`--to
 |---|---|
 | `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` | 처음이면 연동을 켜고 프로젝트 ID 를 만들며 그 제어자가 소유한다(`--host`가 없으면 처음 켤 때의 기본 호스트 규칙, §11). 이미 켰으면 제어자를 더하거나 토큰을 바꾼다. 토큰은 한 번만 보이고 해시만 남는다 |
 | `code-agent master disable` | 실행 중인 실행이 없을 때만 끈다. 기록은 남고 `binding.json`은 `binding.disabled-<시각>.json`이 된다 |
-| `code-agent master trust --controller <ID>` · `untrust --controller <ID>` · `trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록(저장소 밖에서도 된다, [페어링](#pc-신뢰와-대시보드-페어링)). 확인 단어는 `trust`·`untrust`, 목록은 읽기 전용 |
+| `code-agent master trust --controller <ID> [--preview \| --shown-hash <해시>]` · `untrust --controller <ID>` · `trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록(저장소 밖에서도 된다, [페어링](#pc-신뢰와-대시보드-페어링)). 등록은 터미널 확인 단어 `trust` 또는 대시보드 확인 화면(`--preview` 문구의 해시를 `--shown-hash`로 돌려받는다), 해제는 확인 단어 `untrust`, 목록은 읽기 전용 |
 | `code-agent master grant <권한.json>` · `revoke <권한 ID> [--reason]` | §8 |
 | `code-agent master handover --to <ID> [--force-stop]` | §10 |
 | `code-agent master status [--json]` | 연동·제어자·소유·권한·최근 실행(읽기 전용) |
@@ -291,15 +291,19 @@ code-agent execution codex --handoff
 
 ### PC 신뢰와 대시보드 페어링
 
-사람이 PC 마다 한 번 터미널에서 대시보드 제어자를 신뢰하면, 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하는 것으로 한다. PC 신뢰가 최종 기준이고, 연결은 승인 권한이 아니다 — 위임 권한은 `grant`로 따로 준다.
+사람이 PC 마다 한 번 대시보드 제어자를 신뢰하면, 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하는 것으로 한다. 신뢰는 터미널(확인 단어 `trust`) 또는 대시보드 확인 화면으로 등록한다. PC 신뢰가 최종 기준이고, 연결은 승인 권한이 아니다 — 위임 권한은 `grant`로 따로 준다.
 
 ```powershell
 code-agent master trust --controller dashboard     # PC당 1회, 확인 단어 trust
+code-agent master trust --controller dashboard --preview                    # 대시보드 확인 화면의 문구·해시(읽기 전용, JSON)
+code-agent master trust --controller dashboard --shown-hash sha256:<hex 64>  # 대시보드 확인으로 등록(TTY 없음, JSON)
 code-agent master trust --list                     # 지문·등록 시각·개인 키 자리(읽기 전용)
 code-agent master untrust --controller dashboard   # 확인 단어 untrust
 ```
 
 - `trust`는 새 Ed25519 키를 만든다. 개인 키는 `<storeDir>/master-trust/<ID>.pem`(pkcs8, 0600, 폴더 0700)에 두고 대시보드 서버만 읽는다. 공개 키·지문(`sha256:`+SPKI DER 해시)·등록 시각·등록한 사람은 `<storeDir>/master-trust.json`에 남는다. `storeDir`는 `CODE_AGENT_HOME` 또는 `~/.code-agent`다. 이미 신뢰하거나 키 파일이 있으면 덮어쓰지 않고, 키 폴더가 링크(접합점 포함)면 거부한다. 키 교체는 `untrust` 뒤 다시 `trust`한다.
+- 대시보드 확인 등록: `--preview`는 아무것도 쓰지 않고 `{ controller, trusted, fingerprint, canTrust, reason, keyPath, lines, shownHash, word: "trust" }`를 낸다. `lines`는 터미널 확인과 같은 문구에 화면 등록의 한계 한 줄을 더한 것이고, `shownHash`는 `sha256(JSON{ domain: "code-agent.master-trust.v1", controller, keyPath, lines })`다. 대시보드가 이 문구를 그대로 보이고 사람이 확인 단어를 입력하면 `--shown-hash <shownHash>`로 등록한다. 지금 문구의 해시와 다르면 `stale-state`, 이미 신뢰하거나 키 파일이 있으면 `conflict`, 호스트 표지(`CLAUDECODE`·Codex 표지)가 있는 셸이면 `policy-forbids`로 거부하고 아무것도 쓰지 않는다. 오류는 stderr 의 `코드: 사유`와 종료 코드 1이다. 결과는 `{ controller, fingerprint, keyPath, createdAt, channel: "dashboard" }`다. 기록의 `createdBy`에 `channel: "dashboard"`와 `shownHash`를 남겨 터미널 등록(`tty`)과 구분하고, `trust --list`는 `(대시보드 확인)`으로 보인다.
+- 화면 등록의 한계: code-agent 는 화면 앞에 사람이 있었는지 확인하지 못한다. 같은 OS 계정에서 대시보드를 부를 수 있는 프로세스도 등록을 요청할 수 있다. 호스트 셸 거부와 hook 의 `master trust` 차단은 모델의 직접 호출만 막는다. 이 한계를 받아들이지 않으면 터미널로만 등록한다.
 - `untrust`는 기록을 해제 목록으로 옮긴 뒤 개인 키를 지운다. 이후 그 제어자의 `pair.challenge`·`pair`를 받지 않는다. 이미 켠 연동·발급한 토큰·사람 채널은 그대로이고 `master status`에 '신뢰 해제된 제어자'로 나온다. 프로젝트별로 끊으려면 `master disable`을 쓴다.
 
 프로젝트마다의 연결:

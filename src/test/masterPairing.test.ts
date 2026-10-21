@@ -20,7 +20,7 @@ import { sameRoot } from "../agent/master/pairing";
 import { DEFAULT_POLICY, pairSigningMessage, type PairApproval } from "../agent/master/protocol";
 import { MASTER_RUN_ENV, masterRunGuard } from "../agent/master/runGuard";
 import { listRuns, readBinding, readOwner, writeOwner, writeRunRecord, type RunRecord } from "../agent/master/store";
-import { masterTrust, masterTrustList, masterUntrust, trustKeyDir, trustKeyPath } from "../agent/master/trust";
+import { masterTrust, masterTrustConfirmed, masterTrustList, masterUntrust, trustKeyDir, trustKeyPath, trustPreview } from "../agent/master/trust";
 import { storeDir } from "../agent/plugins/store";
 import { withInteraction } from "../agent/tty";
 import { gitFixture, writeFixture } from "./consentFixture";
@@ -317,6 +317,108 @@ describe("PC 신뢰 명령", () => {
     try { symlinkSync(linked, trustKeyDir(), "junction"); } catch { return; /* 링크를 만들 수 없는 환경 */ }
     assert.throws(() => tty(() => masterTrust("linked")), /링크/);
     assert.deepEqual(readdirSync(linked), [], "링크를 따라가 키를 쓰지 않는다");
+  });
+});
+
+/** 사람의 터미널·대시보드 서버처럼 호스트 표지가 없는 셸 — 시험은 Claude Code 세션 안에서도 돈다 */
+const HOST_MARKERS = ["CLAUDECODE", "CODEX_CI", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID"];
+function unmarked<T>(run: () => T, extra: Record<string, string> = {}): T {
+  const kept = Object.fromEntries([...HOST_MARKERS, ...Object.keys(extra)].map((key) => [key, process.env[key]]));
+  for (const key of HOST_MARKERS) delete process.env[key];
+  Object.assign(process.env, extra);
+  try { return run(); } finally {
+    for (const [key, value] of Object.entries(kept)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+}
+const trustFileOf = (): any => JSON.parse(readFileSync(join(storeDir(), "master-trust.json"), "utf8"));
+
+describe("대시보드 확인 PC 신뢰", () => {
+  test("미리보기는 아무것도 쓰지 않고 문구·해시를 내며, 그 해시로 TTY 없이 등록하면 dashboard 경로로 기록되고 바로 페어링할 수 있다", () => {
+    const before = state();
+    const preview = trustPreview("dashboard");
+    assert.equal(state(), before, "미리보기는 읽기 전용");
+    assert.equal(preview.canTrust, true);
+    assert.equal(preview.trusted, false);
+    assert.equal(preview.keyPath, trustKeyPath("dashboard"));
+    assert.match(preview.shownHash, /^sha256:[0-9a-f]{64}$/);
+    assert.ok(preview.lines.some((line) => line.includes(trustKeyPath("dashboard"))), "개인 키 자리를 보인다");
+    assert.ok(preview.lines.some((line) => /대시보드를 부를 수 있는 프로세스도/.test(line)), "대시보드 경로의 한계를 보인다");
+    assert.equal(trustPreview("dashboard").shownHash, preview.shownHash, "같은 내용은 같은 해시");
+
+    const result = JSON.parse(unmarked(() => masterTrustConfirmed("dashboard", preview.shownHash)));
+    assert.equal(result.channel, "dashboard");
+    assert.equal(result.fingerprint, fingerprint("dashboard"));
+    const entry = trustFileOf().controllers.dashboard;
+    assert.equal(entry.createdBy.channel, "dashboard");
+    assert.equal(entry.createdBy.shownHash, preview.shownHash);
+    assert.ok(existsSync(trustKeyPath("dashboard")));
+    assert.match(masterTrustList(), /신뢰: dashboard · 지문 sha256:[0-9a-f]{64} · 등록 \S+\(대시보드 확인\)/);
+    assert.deepEqual(req({ type: "hello" }).result.pairing.trustedControllers, ["dashboard"]);
+    const paired = pair(challenge().result);
+    assert.equal(paired.ok, true, JSON.stringify(paired.error));
+    assert.equal(paired.result.outcome, "enabled");
+
+    const after = trustPreview("dashboard");
+    assert.deepEqual([after.canTrust, after.trusted, after.fingerprint], [false, true, result.fingerprint]);
+    assert.match(after.reason ?? "", /이미 신뢰합니다/);
+  });
+
+  test("호스트 셸·다른 해시·이미 신뢰·남은 키 파일·꼴이 틀린 해시는 거부하고 아무것도 쓰지 않는다", () => {
+    const shown = trustPreview("dashboard").shownHash;
+    const refuses = (pattern: RegExp, run: () => unknown, what: string) => {
+      const before = state();
+      assert.throws(run, pattern, what);
+      assert.equal(state(), before, `${what}: 거부는 아무것도 쓰지 않는다`);
+    };
+    for (const marker of [{ CLAUDECODE: "1" }, { CODEX_THREAD_ID: "t" }, { CODEX_CI: "1" }] as Record<string, string>[]) {
+      refuses(/policy-forbids: 호스트 세션의 셸/, () => unmarked(() => masterTrustConfirmed("dashboard", shown), marker), JSON.stringify(marker));
+    }
+    refuses(/stale-state/, () => unmarked(() => masterTrustConfirmed("dashboard", `sha256:${"b".repeat(64)}`)), "보지 않은 내용의 해시");
+    refuses(/stale-state/, () => unmarked(() => masterTrustConfirmed("other", shown)), "다른 제어자의 확인 해시");
+    for (const bad of ["", "sha256:xyz", `sha1:${"a".repeat(64)}`, `sha256:${"A".repeat(64)}`]) {
+      refuses(/사용법/, () => unmarked(() => masterTrustConfirmed("dashboard", bad)), `해시 꼴 ${bad}`);
+    }
+    refuses(/사용법/, () => unmarked(() => masterTrustConfirmed("con", shown)), "장치 이름");
+
+    mkdirSync(trustKeyDir(), { recursive: true });
+    writeFileSync(trustKeyPath("stray"), "keep");
+    const stray = trustPreview("stray");
+    assert.equal(stray.canTrust, false);
+    refuses(/conflict: .*덮어쓰지 않습니다/, () => unmarked(() => masterTrustConfirmed("stray", stray.shownHash)), "남은 키 파일");
+    assert.equal(readFileSync(trustKeyPath("stray"), "utf8"), "keep");
+
+    tty(() => masterTrust("dashboard"));
+    assert.equal(trustFileOf().controllers.dashboard.createdBy.channel, "tty", "터미널 등록은 tty 로 남는다");
+    refuses(/conflict: .*이미 신뢰합니다/, () => unmarked(() => masterTrustConfirmed("dashboard", trustPreview("dashboard").shownHash)), "이미 신뢰");
+  });
+
+  test("CLI — --preview·--shown-hash 는 저장소 밖에서 JSON 한 줄을 내고, 호스트 표지가 있는 셸에서는 등록하지 않는다", () => {
+    const outside = temp("ca-pair-norepo-");
+    const env = (marked: boolean) => {
+      const base: Record<string, string | undefined> = { ...process.env, CODE_AGENT_HOME: storeDir() };
+      for (const key of HOST_MARKERS) delete base[key];
+      return marked ? { ...base, CLAUDECODE: "1" } : base;
+    };
+    const run = (marked: boolean, ...args: string[]) => spawnSync(process.execPath, [CLI, "master", "trust", "--controller", "dashboard", ...args], { cwd: outside, encoding: "utf8", env: env(marked) });
+    const preview = run(false, "--preview");
+    assert.equal(preview.status, 0, preview.stderr);
+    const shown = JSON.parse(preview.stdout).shownHash;
+    assert.equal(shown, trustPreview("dashboard").shownHash, "CLI 와 모듈이 같은 해시");
+
+    const denied = run(true, "--shown-hash", shown);
+    assert.equal(denied.status, 1);
+    assert.match(denied.stderr, /^policy-forbids: /);
+    assert.ok(!existsSync(trustKeyPath("dashboard")));
+
+    const done = run(false, "--shown-hash", shown);
+    assert.equal(done.status, 0, done.stderr);
+    assert.deepEqual(Object.keys(JSON.parse(done.stdout)).sort(), ["channel", "controller", "createdAt", "fingerprint", "keyPath"]);
+    assert.ok(!existsSync(join(outside, ".code-agent")), "저장소 밖 실행은 그 폴더에 아무것도 쓰지 않는다");
+
+    const again = run(false, "--shown-hash", shown);
+    assert.equal(again.status, 1);
+    assert.match(again.stderr, /^conflict: /);
+    assert.match(run(false, "--shown-hash").stderr, /사용법/);
   });
 });
 

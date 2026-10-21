@@ -55,7 +55,7 @@ function controllerOf(request: RequestEnvelope, payload: Record<string, unknown>
   return payload.controller;
 }
 function untrusted(controller: string): ControlError {
-  return new ControlError("unauthorized", `이 PC 에서 신뢰하지 않은 제어자입니다(${controller}) — 사람이 터미널에서 code-agent master trust --controller ${controller} 로 한 번 등록합니다`);
+  return new ControlError("unauthorized", `이 PC 에서 신뢰하지 않은 제어자입니다(${controller}) — 사람이 대시보드의 PC 신뢰 확인 또는 터미널의 code-agent master trust --controller ${controller} 로 한 번 등록합니다`);
 }
 
 /** 만료한 챌린지를 지우고 열린 수를 센다(제어 잠금 안) */

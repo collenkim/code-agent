@@ -191,7 +191,7 @@ Claude 대화형 실행의 `/ca-*` 명령은 확인할 내용이 생기면 **선
 
 선택적으로 연결한 대시보드는 초기 설정·접수·계획·개발·검증·리뷰·반영·복구·운영의 질문과 선택·승인 요청을 조회하고 응답할 수 있습니다. code-agent는 요청·실제 응답·처리 결과를 `.code-agent/interactions/`에 저장합니다. 추천안·이유·근거·직접 입력 조건을 구조화하며, 추천 표시나 기본 선택만으로 응답을 제출하지 않습니다.
 
-연결은 PC마다 한 번 터미널에서 대시보드를 신뢰(`code-agent master trust --controller dashboard`, 확인 단어 `trust`)한 뒤, 프로젝트마다 대시보드에서 사람이 확인하면 연동 켜기·사람 채널 등록·토큰 발급이 한 번에 이뤄집니다(페어링). 정책·호스트 권한 설정·위임 권한은 페어링으로 바꾸지 않고 계속 터미널에서 정하며, 다른 제어자가 소유하거나 인계 중인 프로젝트는 가져오지 않습니다. 같은 OS 계정을 탈취한 프로세스는 신뢰 키를 읽어 페어링할 수 있으며, 이는 기존 대시보드 사람 채널 키와 같은 수준입니다.
+연결은 PC마다 한 번 대시보드를 신뢰(대시보드의 PC 신뢰 확인 화면 또는 터미널의 `code-agent master trust --controller dashboard`, 확인 단어 `trust`)한 뒤, 프로젝트마다 대시보드에서 사람이 확인하면 연동 켜기·사람 채널 등록·토큰 발급이 한 번에 이뤄집니다(페어링). 정책·호스트 권한 설정·위임 권한은 페어링으로 바꾸지 않고 계속 터미널에서 정하며, 다른 제어자가 소유하거나 인계 중인 프로젝트는 가져오지 않습니다. 같은 OS 계정을 탈취한 프로세스는 신뢰 키를 읽어 페어링할 수 있으며, 이는 기존 대시보드 사람 채널 키와 같은 수준입니다. 화면 신뢰는 같은 OS 계정에서 대시보드를 부를 수 있는 프로세스도 요청할 수 있어 기록에 대시보드 확인으로 남기며, 이를 받아들이지 않으면 터미널로만 신뢰합니다.
 
 요청·응답은 기존 로컬 CLI JSON API인 `code-agent master call`을 사용합니다. `interactions`·`interaction`으로 조회하고, `interaction.respond`로 제출한 뒤 `interaction.result`로 원래 처리기의 적용 결과를 확인합니다. 일반 업무 답과 사람 승인은 구분하며, 별도로 등록한 사람 채널과 명시적 사용자 제출을 확인합니다. AI 제어 토큰만으로 사람 응답을 대신할 수 없고 기존 검증·권한·승인 규칙을 그대로 적용합니다. HTTP 서버와 화면은 master-agent에서 연결합니다.
 
@@ -379,7 +379,7 @@ code-agent verify --json
 |---|---|
 | `code-agent init` | 현재 프로젝트에 두 호스트의 실행 절차·서브에이전트·hook 설치. 실행 방식은 `execution`으로 선택한다. 모르는 인자를 받으면 설치하지 않고 사용법을 보입니다 |
 | `code-agent execution [claude\|codex\|both] [--main claude\|codex] [--handoff]` | 실행 방식 선택·인계. `--json`은 상태 조회, `--handoff`는 미소비 답·열린 동의 검사 후 인계, `both --main`은 관리 실행의 주 호스트와 교차 검증 선택입니다 |
-| `code-agent master trust --controller <ID>` · `untrust --controller <ID>` · `trust --list` | 이 PC에서 대시보드 제어자 신뢰 등록·해제·목록(PC당 1회, TTY 확인). 이후 프로젝트 연결은 대시보드의 사람 확인(페어링)으로 합니다 — [페어링 계약](doc/master-control.md#pc-신뢰와-대시보드-페어링) |
+| `code-agent master trust --controller <ID>` · `untrust --controller <ID>` · `trust --list` | 이 PC에서 대시보드 제어자 신뢰 등록·해제·목록(PC당 1회, TTY 확인 또는 대시보드 확인 화면의 `--preview`·`--shown-hash`). 이후 프로젝트 연결은 대시보드의 사람 확인(페어링)으로 합니다 — [페어링 계약](doc/master-control.md#pc-신뢰와-대시보드-페어링) |
 | `code-agent master call` | 대시보드·상위 조정자의 로컬 JSON 요청·응답 API. 연결·사람 채널 등록과 호출 예제는 [대시보드 인계 문서](doc/dashboard-interactions.md)를 따릅니다 |
 | `code-agent update` | 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스의 upstream 커밋을 릴리스 저장소의 새 폴더에 설치·검증하고 이 프로젝트에 적용한 뒤 doctor 실행 — 진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용(호스트 종료 불필요) |
 | `code-agent update --templates-only` | 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영(npm 패키지 진입점이면 설치된 패키지를 들인다) |
