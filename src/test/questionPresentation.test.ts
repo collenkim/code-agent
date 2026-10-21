@@ -15,6 +15,9 @@ test("선택지 없는 문구 입력 요구를 감지하고 독립 질문·도�
   assert.match(reason, /선택지 없이/);
   assert.match(reason, /각각 제안 기준 사용 \/ 항목 수정 \/ 보류/);
   assert.match(reason, /도구가 없거나 거부되면/);
+  assert.match(reason, /연결을 복구한 뒤 같은 질문을 선택 UI에 표시/);
+  assert.match(reason, /번호 입력으로 대체하지/);
+  assert.match(reason, /사용자 취소·보류는 반복하지/);
   assert.match(reason, /이미 제시한 질문은 다시 호출하지/);
   for (const reply of ['"기본안 적용"이라고 입력하세요', '“기본안”으로 응답해 주세요']) {
     assert.ok(questionPresentationProblem(reply), reply);

@@ -45,6 +45,7 @@ function planningHint(work: Work, now: number): string | undefined {
     if (ROLE_PHASE[record.task.role] !== active.phase) continue;
     const attempt = record.attempts.at(-1);
     if (!attempt) continue;
+    if (attempt.status === "running" && attempt.returnPending) return `[완료 hook 되돌림 대기] ${record.task.id}: 수정 요청 뒤 재개가 아직 관찰되지 않았습니다. 담당 종료를 확인했다면 code-agent planning cancel ${record.task.id} 후 planning advance로 지적·초안에서 재배정하세요.`;
     if (attempt.status === "running") {
       // advance 와 같은 판정(orphanState — runView 가 부른다)
       const view = runView(state, record, attempt, now);

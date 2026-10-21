@@ -255,7 +255,11 @@ describe("적용 버전 선택 — 고정 진입점", () => {
     const early = cli(root, ["update", "--templates-only"]);
     assert.equal(early.status, 3, early.stderr);
     assert.equal(runtime(root)?.applied, A);
-    assert.match(cli(root, ["version"]).stdout, new RegExp(`적용 대기: ${B}[\\s\\S]*적용 시점: 진행 중인 일이 끝난 뒤 다음 작업을 시작할 때 자동으로`));
+    const versionText = cli(root, ["version"]).stdout;
+    assert.match(versionText, new RegExp(`설치 완료·적용 대기: ${B}[\\s\\S]*예약 당시 사유:`));
+    assert.match(versionText, /실행 버전 전환은 아직 완료되지 않았습니다/);
+    assert.match(versionText, new RegExp(`호스트 밖 터미널에서 code-agent update --release ${B}`));
+    assert.doesNotMatch(versionText, /지금 할 일 없음/);
 
     rmSync(join(root, ".code-agent", "docs-session.json"));   // 지금 일이 끝났다
     const next = cli(root, ["docs", "begin"]);

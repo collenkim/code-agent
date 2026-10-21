@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { fileOutcomeProblems } from "../core/fileOperations";
 import { createHash } from "crypto";
 import {
   closeSync,
@@ -28,7 +29,6 @@ import {
   checkCommands,
   integrateCommands,
   loadEvidence,
-  missingPlanFiles,
   outsideChanges,
   planPaths,
   prepareCommand,
@@ -151,7 +151,7 @@ function requireEvidenceBase(work: Work): string {
 /** 실행 전 대조 — 계획 밖 변경과 사라진 계획 파일, refactor 면 기존 테스트까지. 하나라도 있으면 명령을 돌리지 않는다 */
 function requireCleanPlan(work: Work): void {
   const outside = outsideChanges(work);
-  const missing = missingPlanFiles(work);
+  const missing = fileOutcomeProblems(work.plan?.files ?? [], path => existsSync(join(work.repoRoot, path)));
   // 기존 테스트 수정은 `계획 밖 변경` 으로도 잡히지만, 여기서 따로 말해야 무엇이 규칙인지가 보인다
   const preserved = preservedTestProblems(work);
   if (outside.length === 0 && missing.length === 0 && preserved.length === 0) {
@@ -161,7 +161,7 @@ function requireCleanPlan(work: Work): void {
     "계획과 실제 변경이 어긋나 검증을 돌리지 않았습니다 — 계획 밖 변경 위에서 나온 통과는 증거가 아닙니다:\n" +
       [
         ...outside.map((change) => `  - 계획 밖 변경 [${change.status}] ${change.path}`),
-        ...missing.map((path) => `  - 계획에 있는데 없는 파일 ${path}`),
+        ...missing.map((problem) => `  - ${problem}`),
         ...preserved.map((problem) => `  - ${problem}`),
       ].join("\n") +
       `\n되돌리거나, 계획을 넓혀야 하면 ${workDocsDir(work.active.id)}/questions.md 에 질문으로 남기고 사람에게 알리세요.`,

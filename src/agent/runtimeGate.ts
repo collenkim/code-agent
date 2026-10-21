@@ -198,7 +198,7 @@ export function renderVersion(view: ReturnType<typeof versionView>): string {
       : "다음 작업을 열 때 이 패키지의 사본을 적용합니다(지금 적용하려면 update --templates-only)"}`] : []),
     `  이 프로젝트 적용 버전: ${project.applied ?? "진입점 번들(고정 없음)"}${project.appliedAt ? ` · ${project.appliedAt} 적용` : ""}`,
     ...(project.problem ? [`  !! ${project.problem} — 진행 중인 일이 없으면 진입점 번들로 돕니다`] : []),
-    project.pending ? `  적용 대기: ${project.pending.id} (${project.pending.since} 예약) — 사유: ${project.pending.reason}\n    적용 시점: 진행 중인 일이 끝난 뒤 다음 작업을 시작할 때 자동으로. 지금 할 일 없음`
+    project.pending ? `  설치 완료·적용 대기: ${project.pending.id} (${project.pending.since} 예약) — 예약 당시 사유: ${project.pending.reason}\n    실행 버전 전환은 아직 완료되지 않았습니다. 질문은 interaction list로 정리합니다. 진행 중 작업이 끝나면 다음 작업을 열 때 자동 적용하거나 호스트 밖 터미널에서 code-agent update --release ${project.pending.id}로 적용하세요. 현재 차단 사유는 아래 진행 중인 일입니다.`
       : "  적용 대기: 없음",
     `  진행 중인 일: ${project.busy.length ? project.busy.join(" · ") : "없음"}`,
     `  릴리스 저장소: ${store.home} — 설치된 릴리스 ${store.releases.length}개${latest ? ` (가장 최근 ${latest})` : ""}`,

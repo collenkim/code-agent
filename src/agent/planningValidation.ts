@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { filePaths } from "../core/fileOperations";
 import { join } from "path";
 import { buildIndex } from "./knowledgeIndex";
 import { questionsFile, workDocsDir } from "./layout";
@@ -146,7 +147,8 @@ export function formatPlanIssues(issues: readonly { path: readonly PropertyKey[]
 
 /** 계획 초안의 자기 완결 검사(스키마 다음 — tasks·AC·요구 커버리지·남은 질문). 제출 규칙은 planRuleProblems 다. plan submit 과 완료 hook 이 같이 쓴다 */
 export function planShapeProblems(work: Work, plan: BuildPlan, acceptance: string[], keys: string[]): string[] {
-  const problems: string[] = [];
+  const { preflightFiles } = require("./fileOperations") as typeof import("./fileOperations");
+  const problems: string[] = plan.files.some(f => f.operation) ? preflightFiles(work, plan.files, plan) : [];
   if (work.active.planningVersion && !plan.tasks) problems.push("신규 계획에는 파일 소유·의존성·AC를 갖춘 tasks가 필요합니다.");
   for (const task of plan.tasks ?? []) if (task.acceptance.some(ac => !acceptance.includes(ac))) problems.push(`${task.id}: 기능 명세에 없는 완료 기준입니다.`);
   problems.push(...coverageProblems(keys, plan.files));
@@ -168,7 +170,7 @@ export function planRuleProblems(work: Work, plan: BuildPlan, overlay?: DocOverl
   // 검증 명령이 이 계획이 쓰는 파일을 가리키면 모델이 제 검증기를 쓰게 된다 — 그래도 묶임은
   // 전부 들어맞는다(가짜 검증기까지 함께 굳으므로). 코드가 판별할 수 있는 것이 아니라 사람이
   // 판단할 것이라, 조용히 지나가지 않게 제출을 세우고 무엇이 걸렸는지 그대로 보여 준다.
-  const planned = new Set(plan.files.map((file) => file.path));
+  const planned = new Set(plan.files.flatMap(filePaths));
   const declared = [manifest.build, manifest.test, manifest.prepare, ...Object.values(manifest.commands)]
     .filter((argv): argv is string[] => Array.isArray(argv))
     .flat()
@@ -226,7 +228,7 @@ export function planRuleProblems(work: Work, plan: BuildPlan, overlay?: DocOverl
         problems.push(ruled("PLN-REFACTOR", `기존 테스트에 없는 ${entry.id}를 실행할 계획이 없습니다 — refactor는 기존 TC ID를 재사용하세요. 도구·파일 보존 같은 절차 확인을 실행하지 않는 TC로 만들지 않습니다`));
       }
     }
-    const hit = plan.files.map((file) => file.path).filter((path) => tracked.has(path));
+    const hit = plan.files.flatMap(filePaths).filter((path) => tracked.has(path));
     if (hit.length > 0) {
       problems.push(ruled("PLN-REFACTOR",
         `리팩토링은 기존 테스트를 고치지 않습니다 — 계획에서 빼세요: ${hit.join(", ")}. ` +
@@ -241,7 +243,7 @@ export function planRuleProblems(work: Work, plan: BuildPlan, overlay?: DocOverl
       problems.push(ruled("PLN-PATH", `${file.path}: 알 수 없는 단계 ${file.stage} (단계: ${stages.map((s) => s.key).join(", ")})`));
       continue;
     }
-    for (const violation of checkPaths({ repoRoot, order, manifest, plan, stage, files: [{ path: file.path, content: "" }] })) {
+    for (const violation of checkPaths({ repoRoot, order, manifest, plan, stage, files: filePaths(file).map(path => ({ path, content: "" })) })) {
       problems.push(ruled("PLN-PATH", `[${violation.item}] ${violation.file}: ${violation.detail}`));
     }
   }

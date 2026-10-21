@@ -529,7 +529,7 @@ describe("next — 질문과 승인", () => {
 
   test("단계의 계획 파일이 모두 있어야 다음 단계로, 마지막 뒤에는 check 로", () => {
     toImplement();
-    assert.throws(() => next(repo), /단계 entity 의 계획 파일이 아직 없습니다/);
+    assert.throws(() => next(repo), /단계 entity 의 파일 작업이 끝나지 않았습니다/);
     write(`${ORDER}/domain/Order.java`, "class Order {}\n");
     next(repo);
     assert.equal(loadActive(repo)!.stage, "repository");

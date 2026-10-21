@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 
 import { writeAtomic } from "../core/atomic";
+import { filePaths } from "../core/fileOperations";
 import { hashManifest, hashPlan } from "../core/approval";
 import { runWorkflow } from "../core/workflow";
 import type { NodeEvent, WorkflowHandoff, WorkflowNode } from "../core/workflow";
@@ -258,7 +259,7 @@ async function verifyLocked(repoRoot: string, options: { retry?: boolean }, run:
     task: taskOf(handoff.node, handoff.task, context, work),
     problems: context.problems, summaries: context.summaries,
     evidence: verifyFile(repoRoot, work.active.id, work.active.target),
-    plannedFiles: work.plan!.files.map((file) => file.path),
+    plannedFiles: work.plan!.files.flatMap(filePaths),
     resume: handoff.node === "diagnose" ? "code-agent verify --retry" : handoff.node === "review" ? skill("ca-review") : handoff.node === "decision" ? skill("ca-answer") : "code-agent verify",
     ...(context.failure ? { failure: context.failure } : {}),
     ...(context.budget ? { budget: context.budget } : {}),

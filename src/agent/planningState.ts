@@ -82,6 +82,10 @@ export interface TaskAttempt {
   drafts?: { path: string; staged: string; chars: number }[];
   /** 실패로 기록한 결과의 질문(형식·요구 범위가 맞는 것) — questions.md 에 쓰지 않고 다음 배정의 previous 로만 넘긴다 */
   pendingQuestions?: { question: string; requirements: string[] }[];
+  /** 완료 hook의 되돌림 요청. 다음 완료가 관찰되면 제거한다. */
+  returnPending?: { at: string; detail: string };
+  /** 메인이 되돌림 후 종료된 담당을 취소하여 회수했다. 입력별 1회만 전달 실패로 분리한다. */
+  returnDeliveryFailed?: boolean;
 }
 export interface TaskRecord { task: PlanningTask; attempts: TaskAttempt[] }
 export interface PlanningAgent {
@@ -256,8 +260,8 @@ function supportFiles(work: Work, task: PlanningTask): string[] {
   }
   if (task.role === "critic") {
     try {
-      const plan = JSON.parse(readFileSync(join(repoRoot, workDocsDir(work.active.id), "plan.json"), "utf8")) as { files?: { path?: unknown }[] };
-      files.push(...(plan.files ?? []).map(file => file.path).filter((path): path is string => typeof path === "string"));
+      const plan = JSON.parse(readFileSync(join(repoRoot, workDocsDir(work.active.id), "plan.json"), "utf8")) as { files?: { path?: unknown; from?: unknown; operation?: unknown }[] };
+      files.push(...(plan.files ?? []).flatMap(file => file.operation === "move" ? [file.from, file.path] : [file.path]).filter((path): path is string => typeof path === "string"));
     } catch { /* 계획 초안이 없거나 깨졌으면 critic 의 준비 검사가 먼저 막는다 */ }
   }
   if ((task.role === "plan" || task.role === "critic") && work.order.kind === "refactor") {

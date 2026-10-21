@@ -31,7 +31,7 @@ export interface AdvanceView {
   assignments?: { taskId?: string; mode?: string; assignmentFile?: string }[];
   waiting?: string[];
   blocked?: Blocked[];
-  stale?: { id: string; reason: string }[];
+  stale?: { id: string; reason: string; returnPending?: boolean }[];
   cancel?: string[];
   rewind?: Rewind;
   feedback?: unknown[];
@@ -92,12 +92,13 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
       }
       case "dispatch": {
         const assignments = view.assignments ?? [];
-        const cancel = view.cancel?.length ? `먼저 cancel 목록 — ${keep(guidance("dispatch-orphan", orphanValues(view)))} 그다음 ` : "";
+        const cancel = view.cancel?.length ? `먼저 cancel 목록 — ${view.stale?.some(item => item.returnPending) ? keep(view.stale.map(item => `${item.id}: ${item.reason}`).join(" · ")) : keep(guidance("dispatch-orphan", orphanValues(view)))} 그다음 ` : "";
         const together = assignments.length > 1 ? " — 한 메시지에서 함께 호출한다" : "";
         const correction = assignments.some((item) => item.mode === "correction") ? " (mode:correction 배정은 형식만 고친다)" : "";
         return `${cancel}배정 ${assignments.length}개를 담당에게 맡긴다${together}${correction}. 프롬프트에는 assignmentFile 경로만 넘기고, 완료 알림을 받으면 ${adv}`;
       }
       case "stale":
+        if (view.stale?.some(item => item.returnPending)) return keep(view.stale.map(item => `${item.id}: ${item.reason}`).join(" · "));
         return keep(guidance("dispatch-orphan", orphanValues(view)));
       case "wait":
         return `실행 중: ${(view.waiting ?? []).join(", ")} — 완료 알림을 기다린다. 상태를 반복 조회하지 않는다. 그 담당 호출이 이미 끝났는데도 wait 이면 결과가 기록되지 않은 것이다 — code-agent planning cancel <ID> 뒤 ${adv}`;

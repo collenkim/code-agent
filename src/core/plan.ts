@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { WorkKind, WorkOrder } from "./workOrder";
 import type { BuildPlan } from "./types";
 import type { StageDef } from "./manifest";
+import { fileOperationProblems, fileLabel } from "./fileOperations";
 
 /** 종류가 무엇이든 계획에 들어가는 것 */
 const COMMON_PLAN_FIELDS = {
@@ -69,6 +70,8 @@ export const PlanSchema = z.object({
       z.object({
         stage: z.string().describe("이 파일을 만들 단계 키"),
         path: z.string().describe("저장소 루트 기준 상대경로"),
+        operation: z.enum(["create", "modify", "delete", "move"]).optional(),
+        from: z.string().optional().describe("move의 원본 상대경로 — path는 이동 대상"),
         purpose: z.string().describe("이 파일이 담당하는 것 한 줄"),
         requirements: z
           .array(z.string())
@@ -93,6 +96,8 @@ export const RefactorPlanSchema = z.object({
       z.object({
         stage: z.string().describe("이 파일을 만들거나 고칠 단계 키"),
         path: z.string().describe("저장소 루트 기준 상대경로"),
+        operation: z.enum(["create", "modify", "delete", "move"]).optional(),
+        from: z.string().optional().describe("move의 원본 상대경로 — path는 이동 대상"),
         purpose: z.string().describe("무엇을 어떻게 하는지 한 줄"),
         requirements: z
           .array(z.string())
@@ -208,7 +213,7 @@ export function missingPreserve(order: WorkOrder, plan: BuildPlan): string[] {
 export function sequenceProblems(plan: BuildPlan, stages: StageDef[], kind: WorkKind): string[] {
   const used = new Set(plan.files.map((file) => file.stage));
   const keys = plan.sequence.map((entry) => entry.step);
-  const problems: string[] = [];
+  const problems: string[] = fileOperationProblems(plan.files);
   for (const entry of plan.sequence) if (!entry.why.trim()) problems.push(`sequence 의 ${entry.step} 에 순서의 이유가 없습니다`);
   for (const key of keys) {
     if (!used.has(key) || !stages.some((stage) => stage.key === key && stage.kind !== "verify")) {
@@ -269,8 +274,8 @@ export function formatPlan(plan: BuildPlan): string {
   const lines = [
     `## 작업 명세서`,
     ...heading,
-    `### ${plan.preserve ? "고칠" : "생성할"} 파일 (${plan.files.length}개)`,
-    ...plan.files.map((file) => `- [${file.stage}] ${file.path} — ${file.purpose}`),
+    `### 계획 파일 작업 (${plan.files.length}개)`,
+    ...plan.files.map((file) => `- [${file.stage}] ${fileLabel(file)} — ${file.purpose}`),
     "",
     ...(plan.preserve
       ? [

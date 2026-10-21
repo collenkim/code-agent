@@ -78,7 +78,7 @@ export function pathList(value: string | undefined): string[] {
 /** 다른 항목을 가리키는 키 — 백틱 안의 키와 `BR-`·`FEAT-`·`FLOW-` 낱말 */
 export function keyRefs(text: string): string[] {
   const found = new Set<string>();
-  for (const match of text.matchAll(/`([^`\s]+)`/g)) found.add(match[1]);
+  for (const match of text.matchAll(/`([^`\r\n]+)`/g)) if (match[1].trim()) found.add(match[1]);
   for (const match of text.matchAll(/\b(?:BR|FEAT|FLOW)-[A-Za-z0-9_-]*[A-Za-z0-9]/g)) found.add(match[0]);
   return [...found];
 }

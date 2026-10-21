@@ -15,7 +15,7 @@ import {
   crossFailureText, crossPointDecision, crossPointHint, crossPointState, crossPreflight, deriveLegacyCauses, environmentMatch, failure,
   FAILURE_CLASSES, grantFor, grantScope, GRANT_STEP, guidance, GUIDE_KEYS, GUIDE_VARIANT_KEYS, GUIDE_VARIANTS, hookFailureExit, hookFailureInput,
   isFailureClass, LIMITS, limitExceededText, limitOf, lockDecision, nextRoundDecision, nodeCounter, orphanState, placeholdersOf,
-  planningDispatchDecision, POLICIES, recordedVariant, refuse, renderRetryPolicyTable, retrySummary, RetryRefused, roundStateOf, runCauseOf,
+  chargedPlanningAttempts, planningDispatchDecision, POLICIES, recordedVariant, refuse, renderRetryPolicyTable, retrySummary, RetryRefused, roundStateOf, runCauseOf,
   runClass, sameRoundDecision, subagentExit, TIMING, UNRENDERED_GUIDES, verifyBudget, verifyNode, verifyRetryOf, verifyState, writeBlockReason,
   type AgentView, type Budget, type CrossAttemptView, type CrossProbe, type RetryGrant, type RunView,
   type VerifyBudget, type VerifyState,
@@ -23,6 +23,18 @@ import {
 
 const HOST_SPECIFIC = [/(?<![\w/])\/ca-[a-z]/, /\$ca-/, /AskUserQuestion/, /\bBash\b/, /run_in_background/, /600000ms/];
 const filled = (keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, "v"]));
+
+test("완료 hook 전달 복구는 입력별 첫 회만 배정 한도에서 분리하고 반복 전달 실패는 멈춘다", () => {
+  const at = "2026-10-21T00:00:00Z";
+  const previous = Array.from({ length: LIMITS.taskTotal - 1 }, (_, i) => ({ at, dispatchId: String(i), inputHash: `old-${i}`, status: "cancelled" }));
+  const delivery = { at, dispatchId: "delivery", inputHash: "current", status: "cancelled", returnDeliveryFailed: true };
+  const attempts = [...previous, delivery];
+  assert.equal(chargedPlanningAttempts(attempts).length, LIMITS.taskTotal - 1);
+  assert.deepEqual(planningDispatchDecision({ attempts, inputHash: "current", since: at, taskId: "analysis" }), { allow: true });
+  const repeated = planningDispatchDecision({ attempts: [...attempts, { ...delivery, dispatchId: "second" }], inputHash: "current", since: at, taskId: "analysis" });
+  assert.equal(repeated.allow, false);
+  if (!repeated.allow) assert.equal(repeated.failure.class, "hook-failure");
+});
 
 describe("원인 정책 표는 21개 원인을 빠짐없이 같은 꼴로 정한다", () => {
   test("모든 원인에 정책이 있고 이름표가 겹치지 않는다", () => {

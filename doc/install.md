@@ -216,6 +216,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 ## 5. `code-agent update` — 갱신
 
+설치 완료·적용 대기는 실행 버전 전환 완료와 다르다. `version`은 예약 당시 사유와 현재 차단 사유를 따로 보인다. 답변이 확인된 낡은 질문은 `interaction list`로 정리하며, 실제 작업이 끝나면 다음 작업 시작 때 자동 적용하거나 호스트 밖 터미널에서 `code-agent update --release <ID>`로 적용한다.
+
 ```
 code-agent update [--cli <경로>]
 code-agent update --templates-only [--host claude|codex|both] [--cli <경로>]

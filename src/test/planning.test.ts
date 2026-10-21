@@ -337,7 +337,7 @@ test("관찰된 전체 계획 → 승인 → 같은 단계의 독립 Task 구현
   next(root); assert.equal(loadActive(root)?.task, "T1");
   assert.match(hook({ cwd: root, tool_name: "Write", tool_input: { file_path: join(root, "src/b.ts") } })!, /현재 Task/);
   assert.equal(hook({ cwd: root, tool_name: "Write", tool_input: { file_path: join(root, "src/a.ts") } }), undefined);
-  assert.throws(() => next(root), /아직 없습니다/);
+  assert.throws(() => next(root), /Task T1: 계획에 있는데 없는 파일: src\/a\.ts/);
   write("src/a.ts", "export const a = 1;"); next(root); assert.equal(loadActive(root)?.task, "T2");
   write("src/b.ts", "export const b = 1;"); next(root); assert.equal(loadActive(root)?.task, "T3");
   write("test/value.test.ts", "// TC-1\n"); next(root); assert.equal(loadActive(root)?.phase, "check");

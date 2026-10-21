@@ -10,12 +10,13 @@ import { next } from "../agent/commands";
 import { handoffPlanning } from "../agent/handoff";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { codexHook } from "../agent/codexHook";
-import { dispatchPlanning, latestDrafts, preparePlanning } from "../agent/planning";
+import { advancePlanning, cancelPlanning, dispatchPlanning, latestDrafts, preparePlanning } from "../agent/planning";
 import { observePlanner, runPlanningHook } from "../agent/planningHook";
 import { inputFiles, loadPlanning, type PlanningResult, type TaskRecord } from "../agent/planningState";
 import { RULES, rulesFor, submitChecklist, type ChecklistContext } from "../agent/planningRules";
 import { loadManifest } from "../core/manifest";
 import { loadWork } from "../agent/work";
+import { stateView } from "../agent/stateView";
 
 const ID = "RETRY-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`, OUT = `${DIR}/01-requirements.md`;
 const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n출처: REQ-1\n근거: "값을 반환한다."\n## 가정\n- 없음';
@@ -30,7 +31,7 @@ type Item = ReturnType<typeof dispatch>;
 /** 담당 한 번 — 시작(staging 준비) → 완료. artifacts 는 결과 JSON 그대로 */
 function run(item: Item, result: Partial<PlanningResult>, host: "claude" | "codex" = "codex", between?: () => void) {
   const event = { cwd: root, session_id: "s", agent_id: `agent-${++serial}`, agent_type: item.hostAgents[host] };
-  const observe = host === "codex" ? codexHook : observePlanner;
+  const observe = host === "codex" ? codexHook : (input: Parameters<typeof observePlanner>[0]) => observePlanner(input, root, { host: "claude" });
   observe({ ...event, hook_event_name: "SubagentStart" });
   between?.();
   const full: PlanningResult = { taskId: item.task.id, dispatchId: item.resultShape.dispatchId, inputHash: item.resultShape.inputHash, status: "completed", summary: "확인", evidence: [{ path: SPEC, line: 1 }], facts: [], questions: [], findings: [], artifacts: [], ...result };
@@ -139,6 +140,31 @@ test("Claude 완료 hook — 미리 채운 artifacts 를 둔 needs-input 은 되
   const last = loadPlanning(loadWork(root)!).tasks[0].attempts.at(-1)!;
   assert.equal(last.status, "needs-input");
   assert.equal(last.drafts, undefined, "쓰지 않은 자리는 초안이 아니다");
+});
+
+test("종료된 담당에게 닿지 않은 되돌림은 지적·초안을 보존해 메인에게 회수와 재배정을 안내한다", async () => {
+  preparePlanning(root);
+  const item = dispatch("analysis");
+  const broken = "# 요구 정의\n## R1 · 값 반환\n근거가 빠진 초안\n";
+  run(item, { artifacts: [{ path: OUT, staged: item.staging[OUT] }] }, "claude", () => write(item.staging[OUT], broken));
+  const pending = attempts("analysis").at(-1)!;
+  assert.ok(pending.returnPending?.detail.includes("REQ-FORMAT"));
+  assert.ok(pending.drafts?.length);
+  const view = stateView(root);
+  assert.notEqual(view.resume.code, "wait");
+  assert.ok(view.resume.reasons.some(reason => reason.code === "attempt-return-pending"));
+  assert.match(await advancePlanning(root), /담당이 이미 종료됐다면/);
+  cancelPlanning(root, "analysis");
+  assert.equal(attempts("analysis").at(-1)!.returnDeliveryFailed, true);
+  const summary = JSON.parse(handoffPlanning(root, dispatchPlanning(root, "analysis")));
+  const assignment = readFileSync(join(root, summary.assignmentFile), "utf8");
+  assert.match(assignment, /REQ-FORMAT/);
+  const again = JSON.parse(assignment.split("```json\n")[1].split("\n```")[0]);
+  run(again, { artifacts: [{ path: OUT, staged: again.staging[OUT] }] }, "codex", () => {
+    assert.equal(readFileSync(join(root, again.staging[OUT]), "utf8"), broken);
+    write(again.staging[OUT], REQUIREMENTS);
+  });
+  assert.equal(attempts("analysis").at(-1)!.status, "completed");
 });
 
 test("완료된 정식 문서보다 오래된 초안은 다시 놓지 않는다", () => {

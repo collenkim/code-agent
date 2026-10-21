@@ -24,7 +24,7 @@ export const RUNTIME_KEY = Symbol.for("code-agent.runtime");
 export const RUNTIME_FILE = `${STATE_DIR}/runtime.json`;
 export const SELF_ENV = "CODE_AGENT_RUNTIME_SELF";
 /** 이 코드가 읽고 쓰는 프로젝트 상태(승인 원장·증거·작업 기록)의 형식 세대 — 낮은 세대의 릴리스는 높은 세대가 쓴 프로젝트에 적용하지 않는다 */
-export const STATE_SCHEMA = 12;
+export const STATE_SCHEMA = 13;
 /** 릴리스 ID — `<패키지 버전>-<식별값 12자>`. 경로 조각으로 쓰므로 이 꼴만 받는다 */
 export const RELEASE_ID = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}-[0-9a-f]{12}$/;
 
@@ -141,9 +141,12 @@ export const BUSY_FILES = ["active.json", "request-session.json", "docs-session.
 export function pendingInteractionMarker(root: string): string | undefined {
   const file = join(root, STATE_DIR, "interactions/state.json");
   if (!existsSync(file)) return undefined;
+  const { nativeEvidenceReader } = require("./nativeQuestionEvidence") as typeof import("./nativeQuestionEvidence");
+  const observed = nativeEvidenceReader(root);
   try {
     const state = JSON.parse(readFileSync(file, "utf8"));
-    if (state.version !== 1 || !state.requests || Object.values(state.requests).some((r: any) => r.kind !== "consent" && ["pending", "responded", "deferred"].includes(r.status))) return file;
+    if (state.version !== 1 || !state.requests) return file;
+    if (Object.values(state.requests).some((r: any) => r.kind !== "consent" && ["pending", "responded", "deferred"].includes(r.status) && !observed(r))) return file;
   } catch { return file; }
   return undefined;
 }

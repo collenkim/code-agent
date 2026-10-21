@@ -11,6 +11,7 @@ import { domainDirOf } from "./exemplar";
 import type { WorkOrder } from "./workOrder";
 import type { Manifest, StageDef } from "./manifest";
 import type { BuildPlan, GateViolation, GeneratedFile } from "./types";
+import { filePaths, fileOutcomeProblems } from "./fileOperations";
 
 /** 경로 하나가 어떤 경로(파일 또는 디렉토리) 안에 드는가. */
 function under(path: string, root: string): boolean {
@@ -160,7 +161,7 @@ function plannedFor(plan: BuildPlan, stage: StageDef): Set<string> {
   return new Set(
     plan.files
       .filter((file) => file.stage === stage.key)
-      .map((file) => file.path.replace(/\\/g, "/")),
+      .flatMap(filePaths).map(path => path.replace(/\\/g, "/")),
   );
 }
 
@@ -171,7 +172,7 @@ function plannedFor(plan: BuildPlan, stage: StageDef): Set<string> {
  * 없으면 사람의 승인은 경계 안에서만 유효하다 — 승인한 목록과 다른 것이 같은 디렉토리에
  * 생기는 것을 아무도 막지 않는다.
  *
- * 쓰기 **전에** 거부한다. 쓴 뒤에 알리면 되돌릴 수단이 없어(모델은 파일을 지울 수 없다)
+ * 쓰기 **전에** 거부한다. 계획 밖 파일은 삭제 권한도 없으므로 쓴 뒤에 알리면
  * 위반이 저장소 작업트리에 남은 채 경고만 반복된다.
  */
 export function unplannedFiles(
@@ -206,17 +207,8 @@ export function missingPlannedFiles(
   stage: StageDef,
   present: string[],
 ): GateViolation[] {
-  const planned = plannedFor(plan, stage);
-  if (planned.size === 0) {
-    return [];
-  }
   const have = new Set(present.map((path) => path.replace(/\\/g, "/")));
-  return [...planned]
-    .filter((path) => !have.has(path))
-    .map((path) => ({
-      item: "계획 준수",
-      file: path,
-      detail: "승인된 계획에 있는데 만들어지지 않았습니다.",
-    }));
+  return plan.files.filter(file => file.stage === stage.key).flatMap(file =>
+    fileOutcomeProblems([file], path => have.has(path)).map(detail => ({ item: "계획 준수", file: file.path, detail })));
 }
 

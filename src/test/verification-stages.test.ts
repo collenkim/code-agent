@@ -151,7 +151,7 @@ describe("code-agent check", () => {
     rmSync(join(repo, TEST_FILE));
     await assert.rejects(
       () => check(requireValidatable(repo, "check")),
-      (error: Error) => error instanceof Stop && /계획에 있는데 없는 파일 .*OrderTest\.java/.test(error.message),
+      (error: Error) => error instanceof Stop && /계획에 있는데 없는 파일: .*OrderTest\.java/.test(error.message),
     );
   });
 

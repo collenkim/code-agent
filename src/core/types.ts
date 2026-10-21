@@ -28,6 +28,8 @@ export interface JobRefs {
 /** 계획 단계가 정한, 이 단계에서 만들 파일 하나 */
 export interface PlannedFile {
   stage: string;
+  operation?: "create" | "modify" | "delete" | "move";
+  from?: string;
   /** 저장소 루트 기준 상대경로 */
   path: string;
   purpose: string;

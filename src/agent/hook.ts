@@ -1,4 +1,5 @@
 import { basename, dirname, isAbsolute, relative, resolve } from "path";
+import { filePaths, taskPaths } from "../core/fileOperations";
 
 import { existsSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
@@ -120,7 +121,7 @@ const MODEL_SUBCOMMANDS = [
   "context",
   "read",
   "status",
-  "plan submit",
+  "plan submit", "plan preflight", "plan apply-files",
   "planning prepare", "planning advance", "planning status", "planning result", "planning dispatch", "planning repair", "planning cancel", "planning cross", "planning contracts", "planning reuse-answer",
   "docs",
   "survey",
@@ -151,7 +152,7 @@ const MODEL_SUBCOMMANDS = [
  * 작업 임대를 보지 않는 읽기 전용 code-agent 명령 — 상태를 바꾸지 않으므로 다른 세션이 진행 중이어도 연다.
  * 연결·리다이렉트는 decideBash 가 먼저 거부한다.
  */
-const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|execution(?: --json)?|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
+const LEASE_FREE = /^code-agent(?:$| (?:help(?: [a-z][a-z-]*)?|--help|status|triage status(?: [a-f0-9]{24})?|context(?: --file)?|read .+|survey|manifest check|plugin list|plan preflight .+|planning (?:status|result \S+)|model(?: --host (?:claude|codex))?|setup|execution(?: --json)?|doctor(?: --host (?:claude|codex|both)| --cross){0,2}|consent status \S+|takeover|docs(?: skeleton \S+| interview .+| recommend)?|request|knowledge find .+|status(?: --json| --(?:expect-state|expect-work|expect-attempt|session|run-id) \S+)+|experience(?: list(?: --all)?| show \S+)?|finding(?: list(?: --json| --work \S+)*)?|version(?: --json)?)$)/;
 /** 작업 임대를 보는 셸 명령 — 모델이 부를 수 있는 code-agent 명령 중 읽기 전용이 아닌 것 */
 function leaseGated(command: string): boolean {
   return isModelCommand(command) && !LEASE_FREE.test(command);
@@ -1017,11 +1018,11 @@ function decideWrite(work: Work, path: string): string | undefined {
     // 재진입 순서(되감기는 낡은 계획 작업·계획 변경이 필요할 때만, 아니면 그 자리에서 plan 동의)는 status 의 `다음:` 과 같은 문장이다
     return `계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`;
   }
-  if (active.phase === "implement" && plan.tasks && !plan.tasks.find(task => task.id === active.task)?.files.includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;
+  if (active.phase === "implement" && plan.tasks && !taskPaths(plan, plan.tasks.find(task => task.id === active.task)?.files ?? []).includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;
 
   // 계획이 이 파일에 배정한 단계. 검증·리뷰는 고쳐 쓰는 자리라 커서가 아니라 이 단계의 규칙으로 본다.
   const planStage = work.stages.find((candidate) =>
-    plan.files.some((file) => file.stage === candidate.key && file.path === path),
+    plan.files.some((file) => file.stage === candidate.key && filePaths(file).includes(path)),
   );
   // implement 는 지금 단계의 파일만 — 경계·계획 대조는 커서 단계로 한다.
   const stage = active.phase === "implement" ? work.stage : planStage;
@@ -1063,7 +1064,7 @@ function reproReason(work: Work, path: string): string | undefined {
   // 커서 단계가 아니라 **그 파일이 속한 단계**로 본다 — 재현 테스트는 어느 커서에서도 열려 있어야 하고,
   // 고칠 파일은 어느 커서에서도 닫혀 있어야 한다. 계획에 없는 파일은 다른 검사가 막는다.
   const testKeys = new Set(work.stages.filter((candidate) => candidate.kind === "test").map((candidate) => candidate.key));
-  const planned = work.plan.files.find((file) => file.path === path);
+  const planned = work.plan.files.find((file) => filePaths(file).includes(path));
   if (!planned || testKeys.has(planned.stage)) {
     return undefined;
   }

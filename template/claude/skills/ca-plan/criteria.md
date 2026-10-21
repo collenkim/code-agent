@@ -5,6 +5,7 @@
 참조 도메인의 파일 구조를 따르고, 없는 파일을 발명하지 않는다.
 
 - `files[]` — 파일마다 `requirements` 에 담당 R 번호. 어느 파일에도 닿지 않는 항목이 있으면 제출이 거부된다.
+- 파일 작업은 `operation: "create" | "modify" | "delete" | "move"`로 명시한다. 생략하면 생성·수정이다. 이동은 `from`에 원본, `path`에 대상 경로를 쓰고 Task에는 대상 `path`를 넣는다. 삭제는 `path`가 사라져야, 이동은 원본이 사라지고 대상이 있어야 완료다. 원본·대상 모두 승인 범위 안이어야 한다. 분석 중 후보 파일 배열로 `code-agent plan preflight <JSON>`을 실행한다. 승인 뒤 구현에서는 `code-agent plan apply-files`로 현재 Task의 삭제·이동을 수행한다.
 - `sequence[]` — 실행할 단계 key를 순서대로, 파일이 있는 단계를 정확히 한 번씩 쓴다. **이 순서대로 실제 실행된다.**
   의존 관계를 지키고 02의 Risk가 큰 것을 먼저 배치한다. 파일 묶음의 임의 이름은 받지 않는다.
 - `tasks[]` — `{ "id":"T1", "stage":"단계 키", "title":"구체적 작업", "requirements":["R1"], "files":["src/a.ts"], "dependsOn":[], "acceptance":["AC-R1-1"] }`.

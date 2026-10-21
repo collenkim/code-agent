@@ -574,11 +574,11 @@ export function diffPlans(before: BuildPlan, after: BuildPlan): PlanDiffEntry[] 
     before.files,
     after.files,
     (file) => file.path,
-    (file) => `${file.path} [${file.stage}] — ${file.purpose}`,
+    (file) => `${file.path} [${file.stage}] — ${file.operation ?? "생성·수정"}${file.from ? ` (${file.from} → ${file.path})` : ""} · ${file.purpose}`,
     (old, now) =>
-      old.stage === now.stage && old.purpose === now.purpose
+      old.stage === now.stage && old.purpose === now.purpose && old.operation === now.operation && old.from === now.from
         ? undefined
-        : `${old.path}: [${old.stage}] ${old.purpose} → [${now.stage}] ${now.purpose}`,
+        : `${old.path}: [${old.stage}] ${old.operation ?? "생성·수정"}${old.from ? ` (${old.from})` : ""} ${old.purpose} → [${now.stage}] ${now.operation ?? "생성·수정"}${now.from ? ` (${now.from})` : ""} ${now.purpose}`,
   );
 
   // 보존 조건은 고치는 작업의 본체다. 한 줄이 바뀌면 승인이 무효가 되고, 그 줄이 보여야 한다.

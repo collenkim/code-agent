@@ -7,6 +7,7 @@ import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch } fro
 import { formatBoundary, formatDiff, hashPlan, manifestBoundary, recordDecision } from "../core/approval";
 import type { ApprovalState, Decision } from "../core/approval";
 import { missingPlannedFiles } from "../core/gate";
+import { filePaths, fileOutcomeProblems, taskPaths } from "../core/fileOperations";
 import { stagesFor } from "../core/manifest";
 import { errorLogProblems } from "../core/workOrder";
 import type { Manifest, StageDef } from "../core/manifest";
@@ -447,11 +448,17 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
  * 계획 배정은 planning advance. 같은 상태에서 직전 명령과 무관하게 같은 줄이다(증거·기록만 본다).
  * 이 순서를 바꾸면 ca-next 의 '멈춘 자리별 재개' 표도 함께 고친다.
  */
-function nextHint(work: Work): string {
-  const { repoRoot, active } = work;
+function interactionHint(repoRoot: string): string | undefined {
   const interaction = interactionSummary(repoRoot);
+  if (interaction.recoverable?.length && !interaction.pending.length && !interaction.deferred.length && !interaction.responded.length) return `이미 답변한 낡은 질문 ${interaction.recoverable.length}건 — code-agent interaction list로 정리 후 계속합니다. 다시 답할 필요가 없습니다.`;
   if (interaction.pending.length || interaction.deferred.length) return `사람 응답 대기 — ${skill("ca-answer")} · code-agent interaction list`;
   if (interaction.responded.length) return `받은 답 소비 — code-agent interaction consume ${interaction.responded[0]}`;
+  return undefined;
+}
+function nextHint(work: Work): string {
+  const { repoRoot, active } = work;
+  const questionHint = interactionHint(repoRoot);
+  if (questionHint) return questionHint;
   if (aidlcBlock(repoRoot)) return AIDLC_HINT;
   if (requestState(repoRoot, active.id, active.spec).status !== "confirmed") {
     return requestHint(repoRoot, active.id, active.spec);
@@ -592,6 +599,9 @@ export function status(repoRoot: string): string {
   const manifest = loadManifestIfAny(repoRoot);
   const checks = checkProjectDocs(repoRoot, manifest);
   const lines = [`code-agent — ${repoRoot}`, "", "프로젝트 문서:", formatDocChecks(checks)];
+  const interactions = interactionSummary(repoRoot);
+  lines.push(`선택창 질문: 응답 대기 ${interactions.pending.length} · 보류 ${interactions.deferred.length} · 받은 답 처리 대기 ${interactions.responded.length} · 답변 확인된 낡은 기록 ${interactions.recoverable?.length ?? 0}`);
+  const questionHint = interactionHint(repoRoot);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   if (aidlc) lines.push("", aidlc);
   const cross = crossNotice(repoRoot);
@@ -615,10 +625,10 @@ export function status(repoRoot: string): string {
     if (session) {
       const intake = requestStatusLines(repoRoot, session);
       lines.push("", "작업: 아직 시작 전", ...intake.lines);
-      lines.push(`다음: ${intake.hint}`);
+      lines.push(`다음: ${questionHint ?? intake.hint}`);
       return lines.join("\n");
     }
-    lines.push("", "작업: 없음", ...allCursors(repoRoot).map(active => `다른 브랜치에 보관: ${active.id} · ${active.branch ?? "브랜치 없음"} · ${active.phase}`), `다음: ${idleHint(repoRoot, manifest)}`);
+    lines.push("", "작업: 없음", ...allCursors(repoRoot).map(active => `다른 브랜치에 보관: ${active.id} · ${active.branch ?? "브랜치 없음"} · ${active.phase}`), `다음: ${questionHint ?? idleHint(repoRoot, manifest)}`);
     return lines.join("\n");
   }
 
@@ -643,7 +653,7 @@ export function status(repoRoot: string): string {
     const keys = plannedStages(work).map((stage) => (stage.key === active.stage ? `[${stage.key}]` : stage.key));
     lines.push(`단계: ${keys.join(" → ")}`);
   }
-  lines.push(`질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}${unverified.length ? ` · ${unverified.map((q) => q.id).join(", ")} 답 출처 미확인` : ""}`);
+  lines.push(`문서 질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}${unverified.length ? ` · ${unverified.map((q) => q.id).join(", ")} 답 출처 미확인` : ""}`);
   if (work.plan) {
     const approval = approvalOf(work).status;
     lines.push(`계획: 제출됨 · 승인 ${approval}`);
@@ -733,6 +743,8 @@ function idleHint(repoRoot: string, manifest: Manifest | undefined): string {
 export function nextStep(repoRoot: string): { phase?: Phase; next: string } {
   const work = loadWork(repoRoot);
   if (!work) {
+    const questionHint = interactionHint(repoRoot);
+    if (questionHint) return { next: questionHint };
     const session = loadRequestSession(repoRoot);
     if (session) return { next: requestStatusLines(repoRoot, session).hint };
     return { next: idleHint(repoRoot, loadManifestIfAny(repoRoot)) };
@@ -767,7 +779,11 @@ function requireNoAidlc(repoRoot: string): void {
 }
 
 export function next(repoRoot: string): string {
-  const interaction = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot);
+  let interaction = interactionSummary(repoRoot);
+  if (interaction.recoverable?.length) {
+    (require("./interactionSources") as typeof import("./interactionSources")).synchronizeInteractions(repoRoot);
+    interaction = interactionSummary(repoRoot);
+  }
   if (interaction.pending.length || interaction.deferred.length || interaction.responded.length) throw new Stop("사람 질문의 응답·처리가 남았습니다. interaction list로 조회하세요. 미응답은 원래 질문의 선택 UI로 받고, 표시 실패는 같은 질문을 다시 표시합니다. 이미 받은 답만 원래 세션에서 consume·complete한 뒤 이어가세요.");
   return applyNextTransition(repoRoot, nextTransition(repoRoot));
 }
@@ -831,9 +847,9 @@ export function nextTransition(repoRoot: string): PhaseTransition {
         const taskIndex = work.plan.tasks.findIndex(task => task.id === active.task);
         const task = work.plan.tasks[taskIndex];
         if (!task || task.stage !== active.stage) throw new Stop("현재 구현 Task가 승인된 계획에 없습니다. back plan으로 돌아가세요.");
-        const missing = task.files.filter(file => !existsSync(join(repoRoot, file)));
-        if (missing.length) throw new Stop(`Task ${task.id}의 계획 파일이 아직 없습니다: ${missing.join(", ")}`);
-        const untouched = untouchedTaskFiles(repoRoot, active.baseCommit, task.files);
+        const missing = fileOutcomeProblems(work.plan.files.filter(file => task.files.includes(file.path)), path => existsSync(join(repoRoot, path)));
+        if (missing.length) throw new Stop(`Task ${task.id}: ${missing.join(" · ")}`);
+        const untouched = untouchedTaskFiles(repoRoot, active.baseCommit, taskPaths(work.plan, task.files));
         if (untouched) {
           // 파일이 있다는 것만으로 Task 를 넘기지 않는다 — 옮긴 뒤에는 hook 이 새 Task 의 파일만 허용해 고칠 수단이 없다(precondition, 카운터 없음)
           throw new Stop(`Task ${task.id}의 계획 파일이 기준 커밋과 같습니다(바뀐 파일 없음): ${untouched.join(", ")} — 파일이 있다는 것만으로 Task를 마치지 않습니다. 이 Task를 맡은 서브에이전트에게 다시 맡기고, 바꿀 것이 없다는 판단이면 사용자에게 알린 뒤 계획을 고칩니다(code-agent back plan → 다시 승인).`);
@@ -843,13 +859,12 @@ export function nextTransition(repoRoot: string): PhaseTransition {
       }
       if (stage && work.plan) {
         const present = work.plan.files
-          .filter((file) => file.stage === stage.key && existsSync(join(repoRoot, file.path)))
-          .map((file) => file.path);
+          .filter((file) => file.stage === stage.key).flatMap(filePaths).filter(path => existsSync(join(repoRoot, path)));
         const missing = missingPlannedFiles(work.plan, stage, present);
         if (missing.length > 0) {
           throw new Stop(
-            `단계 ${stage.key} 의 계획 파일이 아직 없습니다:\n` +
-              missing.map((violation) => `  - ${violation.file}`).join("\n"),
+            `단계 ${stage.key} 의 파일 작업이 끝나지 않았습니다:\n` +
+              missing.map((violation) => `  - ${violation.detail}`).join("\n"),
           );
         }
       }

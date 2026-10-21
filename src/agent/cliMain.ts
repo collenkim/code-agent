@@ -142,6 +142,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent context [--file]         지금 스테이지에 필요한 것 (참조 코드·계획·규칙). --file은 전문을 파일로 두고 경로만 출력
   code-agent read <파일> [시작 줄] [줄 수]  저장소 텍스트를 줄 번호와 함께 읽기 (기본 200줄, 최대 400줄)
   code-agent plan submit <초안.json>  계획 검사 후 제출
+  code-agent plan preflight <파일작업.json>  분석부터 파일 작업의 형식·기준 파일·경계 검사 (읽기 전용)
+  code-agent plan apply-files        승인된 현재 구현 Task의 파일 삭제·이동
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
   code-agent planning contracts <계약.json>  지정 Git 근거의 경로·커밋·해시를 검증해 담당 입력으로 등록 (계획 단계)
   code-agent planning reuse-answer <Q번호> <계약ID> <항목키>  검증된 계약 원문 재인용 (사람 답·승인 아님)
@@ -478,8 +480,14 @@ export async function runCommand(command: string | undefined, args: string[]): P
       print(await operation("commit", () => deliver(requireValidatable(repoRoot, "deliver"))));
       return 0;
     case "plan":
+      if (args[0] === "preflight" && args.length === 2) {
+        print((require("./fileOperations") as typeof import("./fileOperations")).inspectFiles(repoRoot, args[1])); return 0;
+      }
+      if (args[0] === "apply-files" && args.length === 1) {
+        print(await operation("apply-files", () => (require("./fileOperations") as typeof import("./fileOperations")).applyFileOperations(repoRoot))); return 0;
+      }
       if (args[0] !== "submit" || !args[1]) {
-        throw new Stop("사용법: code-agent plan submit <초안.json>");
+        throw new Stop("사용법: code-agent plan submit <초안.json> | plan preflight <파일작업.json> | plan apply-files");
       }
       print(await operation("submit", () => submitPlan(repoRoot, args[1])));
       return 0;

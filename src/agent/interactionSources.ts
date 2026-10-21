@@ -7,8 +7,9 @@ import { parseQuestions } from "./questions";
 import { PublishInteraction, type InteractionQuestion } from "./interactionSchema";
 import { contextMatches, currentInteractions, interactionContext, interactionHash, publishInteraction, mutateInteractions, bumpInteraction, type InteractionRecord } from "./interactions";
 import { listRuns, readBinding, readOwner } from "./master/store";
-import { answerHash, readAnswerRows, type AnswerRow } from "./answers";
+import type { AnswerRow } from "./answers";
 import { askVia } from "./hostText";
+import { nativeEvidenceReader } from "./nativeQuestionEvidence";
 import { Stop } from "./stop";
 import type { ConsentRecord } from "./consent";
 import type { InteractionTicket } from "./interactionTicket";
@@ -42,17 +43,7 @@ export function publishHostInteraction(root: string, raw: unknown, ticket: Inter
 
 /** 옛 호스트 질문의 대기를 닫는 근거. 새 응답·승인을 합성하거나 현재 문맥에 과거 답을 적용하지 않는다. */
 export function nativeAnswerWasObserved(root: string, r: InteractionRecord, rows?: AnswerRow[]): boolean {
-  if (r.response || r.origin.type !== "host" || !r.key.startsWith("native:") || r.context.host !== "claude" ||
-      !r.context.workId || r.context.root !== realpathSync(root) || !r.nativeCallIds?.length || !r.questions.length) return false;
-  const evidence = rows ?? readAnswerRows(root, r.context.workId);
-  return r.nativeCallIds.some(toolId => {
-    const index = evidence.findIndex(row => row.type === "ask" && row.session === r.context.sessionId && row.toolId === toolId);
-    const ask = evidence[index];
-    if (!ask || ask.type !== "ask" || ask.prefilled !== false || ask.items.length !== r.questions.length || !r.questions.every((q, i) =>
-      ask.items[i].questionHash === answerHash(q.title) && JSON.stringify(ask.items[i].options) === JSON.stringify(q.options.map(o => o.label)))) return false;
-    return evidence.slice(index + 1).some(row => row.type === "answer" && row.session === r.context.sessionId && row.toolId === toolId &&
-      row.items.length === r.questions.length && r.questions.every(q => row.items.some(item => item.questionHash === answerHash(q.title) && item.answer.trim())));
-  });
+  return nativeEvidenceReader(root)(r, rows);
 }
 export function publishConsentInteraction(root: string, record: ConsentRecord): InteractionRecord {
   const { delegationView } = require("./consent") as typeof import("./consent");
@@ -112,7 +103,7 @@ export function synchronizeInteractions(root: string): void {
     }
   }
   if (!currentInteractions(root).requests.length) return;
-  const nativeEvidence = new Map<string, AnswerRow[]>();
+  const observed = nativeEvidenceReader(root);
   mutateInteractions(root, state => {
     const replacements = new Map<string, Set<string>>();
     for (const next of Object.values(state.requests)) {
@@ -123,10 +114,9 @@ export function synchronizeInteractions(root: string): void {
       replacements.set(next.context.sessionId, ids);
     }
     for (const r of Object.values(state.requests)) {
-      if (["pending", "deferred", "expired"].includes(r.status) && r.context.workId && r.key.startsWith("native:")) {
-        if (!nativeEvidence.has(r.context.workId)) nativeEvidence.set(r.context.workId, readAnswerRows(root, r.context.workId));
-        if (nativeAnswerWasObserved(root, r, nativeEvidence.get(r.context.workId))) {
-          r.status = "superseded"; r.unavailableReason = "같은 세션·호출·질문의 실제 호스트 응답이 업무 답 원장에 있어 낡은 대기를 닫았습니다.";
+      if (["pending", "deferred", "expired"].includes(r.status) && r.key.startsWith("native:")) {
+        if (observed(r)) {
+          r.status = "superseded"; r.unavailableReason = "같은 세션·호출·질문의 실제 호스트 응답을 답 원장 또는 호스트 원본에서 확인해 낡은 대기를 닫았습니다.";
           bumpInteraction(state, r); continue;
         }
       }

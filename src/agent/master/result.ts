@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { loadWork } from "../work";
+import { filePaths } from "../../core/fileOperations";
 import type { StateJson } from "../stateView";
 import { sha256 } from "./protocol";
 import { runOutput, type RunRecord } from "./store";
@@ -82,7 +83,7 @@ export function buildResult(root: string, run: RunRecord, host: HostOutcome, vie
   let planFiles: string[] = [];
   try {
     const work = loadWork(root);
-    planFiles = (work?.plan?.files ?? []).map((file) => file.path);
+    planFiles = (work?.plan?.files ?? []).flatMap(filePaths);
     planned = new Set(planFiles);
   } catch { /* 작업이 없거나(반영 뒤) 읽지 못하면 계획 표시 없이 변경만 낸다 */ }
   const commits = run.baseHead && head && run.baseHead !== head

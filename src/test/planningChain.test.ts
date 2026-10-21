@@ -27,6 +27,8 @@ test("대기·고아(stale) — 반복 조회 금지와 cancel, 고아 문구는
   assert.match(line(stale, true), /planning cancel design 뒤 code-agent planning advance --chain 로 다시 배정합니다/);
   const both = line({ assignments: [{ taskId: "plan" }], stale: [{ id: "a", reason: "r1" }, { id: "b", reason: "r2" }], cancel: ["a", "b"] });
   assert.match(both, /^먼저 cancel 목록 — 배정 a, b의 결과가 기록되지 않았습니다 — a r1; b r2\./);
+  const pending = line({ action: "stale", stale: [{ id: "analysis", returnPending: true, reason: "담당 종료를 확인한 뒤 회수합니다." }], cancel: ["analysis"] });
+  assert.equal(pending, "analysis: 담당 종료를 확인한 뒤 회수합니다.");
 });
 
 test("되감기 — auto 면 알림 한 줄 뒤 사용자 지시 없이 되감고, auto 가 아니면 보고하고 지시를 받는다", () => {

@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-21",
+  "scope": "code-agent source; target project ledgers were only read",
+  "stateSchema": 13,
+  "priorQuestionUi": {
+    "commit": "8ab6cba",
+    "project": "service-api",
+    "workId": "YSIJ-255",
+    "sources": ["work questions and restart documents", ".code-agent/interactions/state.json", ".code-agent/work/YSIJ-255/answers.jsonl", "original Claude session tool calls and results"],
+    "answeredButPending": 8,
+    "focused": {
+      "command": "node --test --test-concurrency=4 dist/test/interactionRouting.test.js dist/test/interactionSourceChanges.test.js dist/test/templateText.test.js dist/test/templateBudget.test.js dist/test/docSync.test.js dist/test/hostNotation.test.js",
+      "passed": 42,
+      "failed": 0,
+      "durationMs": 186838.5863
+    },
+    "full": "interrupted-not-passed",
+    "recovery": { "superseded": 8, "pending": 0, "responded": 0, "deferred": 0, "syntheticAnswersOrApprovals": 0 },
+    "limitations": ["No live UI click tested", "Historical counts are not added to current validation", "Project templates required official application after ongoing work"]
+  },
+  "validation": {
+    "status": "passed-after-targeted-recheck",
+    "build": { "command": "npm.cmd run build", "status": "passed" },
+    "fullCommand": "node --test --test-concurrency=4 dist/test/**/*.test.js",
+    "environment": {
+      "platform": "Windows",
+      "node": "24.19.0",
+      "sandbox": "outside",
+      "gitConsole": "Temporary NODE_OPTIONS preload adds windowsHide:true to real Git execFileSync/spawnSync calls; arguments, stdout/stderr, exit codes and repository operations are unchanged. The preload and logs under dist are not committed."
+    },
+    "fullLog": "dist/workflow-recovery-final.log",
+    "full": {
+      "tests": 1708, "passed": 1701, "failed": 3, "skipped": 4, "cancelled": 0,
+      "durationMs": 3245454.0461,
+      "logSha256": "6862350a1408a421f8d91564d6aa13c2bc2d32ec520c1aa6b15b3191acd093cb",
+      "resolvedFailures": [
+        "Flow citation and CITED_LINES pointed at ca-next line 73 after the text moved to line 75.",
+        "Planning flow expected the old missing Task file message; updated to assert the Task and missing path.",
+        "Verification stage expected the old missing file separator; updated to assert the current message."
+      ]
+    },
+    "focusedLog": "dist/workflow-recovery-supplemental.log",
+    "supplemental": {
+      "command": "node --test --test-concurrency=4 --test-name-pattern=\"R5 흐름도|관찰된 전체 계획|계획 파일이 사라졌으면|선택지 없는 문구|번호·글자|양쪽 Stop\" dist/test/finalReverify.test.js dist/test/planning.test.js dist/test/verification-stages.test.js dist/test/questionPresentation.test.js",
+      "tests": 6, "passed": 6, "failed": 0, "skipped": 0, "cancelled": 0,
+      "durationMs": 13241.1215,
+      "scope": "After rebuilding: all three failed cases and the three question presentation tests. The only production edit after the full build was the question UI recovery guidance, covered here."
+    },
+    "unresolvedFailures": 0,
+    "cases": [
+      "approved file move/delete; stage and Task boundaries; overwrite rejection; next/check; approval hash and diff",
+      "returned planning result; preserved draft; cancellation and reassignment; independent delivery recovery budget",
+      "knowledge key containing whitespace in definition, reference and impact table",
+      "unbound native question; verified session transcript; mismatch/prefill/error/sidechain rejection; read-only status; synchronization"
+    ]
+  },
+  "readonlyProjectCheck": {
+    "at": "2026-10-21",
+    "method": "current source interactionSummary; no runtime application or ledger mutation",
+    "projects": [
+      { "project": "authorization-api", "pendingWithoutVerifiedAnswer": 1, "recoverable": 12, "deferred": 0, "responded": 0 },
+      { "project": "users-api", "pendingWithoutVerifiedAnswer": 0, "recoverable": 0, "deferred": 0, "responded": 0 },
+      { "project": "platform-gateway", "pendingWithoutVerifiedAnswer": 1, "recoverable": 4, "deferred": 0, "responded": 0 },
+      { "project": "service-api", "pendingWithoutVerifiedAnswer": 0, "recoverable": 0, "deferred": 0, "responded": 0 }
+    ]
+  },
+  "limits": [
+    "No live host UI click or terminated real subagent resume was tested in this change.",
+    "New source must be released and applied to target projects to change their execution."
+  ]
+}

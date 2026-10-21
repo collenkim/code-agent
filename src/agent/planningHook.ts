@@ -217,10 +217,19 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
     const rules = ruleIdsIn(message);
     if (rules.length) agent.returnedRules = [...(agent.returnedRules ?? []), ...rules];
     if (prepared.received.sourceError === undefined) agent.judgedHandbacks = prepared.received.handbacks;
+    if (linked && linkedRecord) {
+      linked.returnPending = { at: new Date().toISOString(), detail: message };
+      linked.error = message;
+      if (prepared.reported) {
+        const drafts = keepDrafts(work, linkedRecord, linked.dispatchId, prepared.reported.artifacts);
+        if (drafts.length) linked.drafts = drafts;
+      }
+    }
     return { kind: "return", message, cls };
   };
   const linkedRecord = agent.dispatchId ? state.tasks.find(item => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === agent.dispatchId) : undefined;
   const linked = linkedRecord?.attempts.at(-1);
+  if (linked?.returnPending) delete linked.returnPending;
   /**
    * 취소·교체된 배정의 늦은 결과 — 되돌리지 않고 담당 기록만 남기며 시도는 건드리지 않는다. 보고한 시도가 이미 실행 중이 아니면
    * 담당의 연결을 그 시도로 옮긴다 — 재배정 뒤 늦게 시작해 후보가 하나라 새 배정에 연결됐던 담당의 종료가 새 배정을 고아로 만들지 않게.

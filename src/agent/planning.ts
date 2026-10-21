@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, join, posix, relative } from "path";
 import { randomUUID } from "crypto";
+import { chargedPlanningAttempts } from "./retryPolicy";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { planFormatFor } from "../core/plan";
@@ -238,7 +239,7 @@ function taskBudgets(work: Work, state: PlanningState, record: TaskRecord): { ta
   const inputHash = hashInput(work, state, record.task).hash, grants = state.retry?.grants ?? [], taskId = record.task.id;
   const same = record.attempts.filter(attempt => attempt.inputHash === inputHash && attempt.status === "failed").length;
   const since = state.retry ? Date.parse(state.retry.since) : undefined;
-  const total = since === undefined ? 0 : record.attempts.filter(attempt => Date.parse(attempt.at) >= since).length;
+  const total = since === undefined ? 0 : chargedPlanningAttempts(record.attempts).filter(attempt => Date.parse(attempt.at) >= since).length;
   return {
     taskTotal: budgetOf("taskTotal", total, undefined, grants, grantScope({ file: "planning", key: "taskTotal", taskId })),
     sameInput: { ...budgetOf("sameInput", same, undefined, grants, grantScope({ file: "planning", key: "sameInput", taskId, inputHash })), inputHash },
@@ -283,6 +284,7 @@ export function planningStatus(root: string): string {
       const run = last?.status === "running" ? runView(state, record, last, now) : undefined;
       const budgets = taskBudgets(work, state, record);
       return { id: record.task.id, role: record.task.role, title: record.task.title, state: name, attempts: record.attempts.length, problems: readyProblems(work, state, record),
+        ...(last?.returnPending ? { returnPending: last.returnPending, recovery: `담당이 종료됐으면 code-agent planning cancel ${record.task.id} 후 planning advance로 재배정합니다. 지적·초안은 보존됩니다.` } : {}),
         ...(run ? { run: { observedStart: run.observedStart, ...(run.agentSession ? { agentSession: run.agentSession } : {}), elapsedMin: run.elapsedMin, orphan: run.state, reason: run.reason } } : {}),
         ...(name === "stale" ? { staleBecause: staleReasons(work, state, record) } : {}),
         budget: { sameInput: { used: budgets.sameInput.used, limit: budgets.sameInput.limit }, taskTotal: { used: budgets.taskTotal.used, limit: budgets.taskTotal.limit } },
@@ -421,6 +423,12 @@ export function cancelPlanning(root: string, id: string): string {
   return withPlanningCache(() => mutatePlanning(work, state => {
     const last = state.tasks.find(record => record.task.id === id)?.attempts.at(-1);
     if (!last || !["running", "needs-correction"].includes(last.status)) throw new Stop("실행 중인 작업이 아닙니다.");
+    if (last.returnPending) {
+      last.returnDeliveryFailed = true;
+      last.error = last.returnPending.detail;
+      last.failure = failure("hook-failure", "완료 hook의 되돌림 뒤 담당 종료를 확인한 메인이 배정을 회수했습니다. 직전 지적·초안에서 재개하세요.", { kind: "return-delivery" });
+      delete last.returnPending;
+    }
     last.status = "cancelled";
     return `${id} 배정을 취소했습니다. 이전 실행의 늦은 결과는 받지 않습니다.`;
   }));
@@ -554,13 +562,14 @@ export function planningAdvanceStep(root: string, taskIds: readonly string[], ob
       const rewind = observeRewind ? rewindOf(work, state) : undefined;
       if (rewind) return { phase, assignments: [] as unknown[], reused: [] as string[], waiting: [] as string[], blocked: [] as Blocked[], rewind, running, orphaned, stale: [] as unknown[], feedback: [] as unknown[] };
       const assignments: unknown[] = [], blocked: Blocked[] = [], reused: string[] = [], waiting: string[] = [];
-      const stale: (RunItem & { reason: string })[] = [];
+      const stale: (RunItem & { reason: string; returnPending?: boolean })[] = [];
       for (const record of mine.filter(record => taskIds.includes(record.task.id))) {
         if (taskCurrent(work, state, record)) { reused.push(record.task.id); continue; }
         const last = record.attempts.at(-1);
         if (last?.status === "running") {
           const view = sweep.views.get(record.task.id)!;
-          if (view.state === "suspect") stale.push({ id: record.task.id, dispatchId: view.dispatchId, observedStart: view.observedStart, elapsedMin: view.elapsedMin, reason: view.reason });
+          if (last.returnPending || view.state === "suspect") stale.push({ id: record.task.id, dispatchId: view.dispatchId, observedStart: view.observedStart, elapsedMin: view.elapsedMin, ...(last.returnPending ? { returnPending: true } : {}),
+            reason: last.returnPending ? `담당에게 수정 요청을 보냈으나 재개는 아직 관찰되지 않았습니다. 담당이 이미 종료됐다면 code-agent planning cancel ${record.task.id} 후 다시 배정하세요. 직전 지적·초안은 보존합니다. ${last.returnPending.detail}` : view.reason });
           else waiting.push(record.task.id);
           continue;
         }

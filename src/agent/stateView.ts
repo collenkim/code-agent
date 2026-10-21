@@ -308,7 +308,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     if (!last) return [];
     const view = last.status === "running" ? runView(planning!, record, last, now) : undefined;
     return [{ task: record.task.id, role: record.task.role, phase: ROLE_PHASE[record.task.role], dispatchId: last.dispatchId, status: last.status, at: last.at,
-      ...(view ? { run: { state: view.state, observedStart: view.observedStart, elapsedMin: view.elapsedMin, ...(view.agentSession ? { agentSession: view.agentSession } : {}) } } : {}) }];
+      ...(view ? { run: { state: last.returnPending ? "return-pending" : view.state, observedStart: view.observedStart, elapsedMin: view.elapsedMin, ...(view.agentSession ? { agentSession: view.agentSession } : {}) } } : {}) }];
   }) : [];
   const summary = findings ? findingSummary(findings) : undefined;
 
@@ -376,7 +376,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
         reasons.push({ code: "deliver-consent", detail: "반영은 사람이 확인합니다" });
       }
       for (const item of attempts.filter((entry) => entry.run && entry.run.state !== "running")) {
-        reasons.push({ code: `attempt-${item.run!.state}`, detail: `${item.task} 배정(${item.dispatchId}) — 결과 없이 ${item.run!.elapsedMin}분, 기존 흐름(planning advance)이 한도 안에서 다시 배정하거나 사람에게 넘깁니다` });
+        reasons.push({ code: `attempt-${item.run!.state}`, detail: item.run!.state === "return-pending" ? `${item.task} — 완료 hook 되돌림 뒤 재개 미관찰. 담당 종료를 확인했으면 planning cancel ${item.task} 후 planning advance로 지적·초안에서 재배정합니다` : `${item.task} 배정(${item.dispatchId}) — 결과 없이 ${item.run!.elapsedMin}분, 기존 흐름(planning advance)이 한도 안에서 다시 배정하거나 사람에게 넘깁니다` });
       }
       for (const item of attempts.filter((entry) => entry.status === "failed" || entry.status === "orphaned")) {
         if (PLANNING_PHASES.includes(phase as (typeof PLANNING_PHASES)[number]) && item.phase === phase) reasons.push({ code: `attempt-${item.status}`, detail: `${item.task} 배정(${item.dispatchId})이 ${item.status} 로 끝났습니다` });
@@ -393,6 +393,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
   let interactions: import("./interactionSummary").InteractionSummary | undefined;
   try {
     interactions = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot, options.session);
+    if (interactions.recoverable?.length) reasons.push({ code: "interaction-recoverable", detail: `이미 답변한 낡은 기록 ${interactions.recoverable.length}건 — interaction list로 정리합니다. 사용자 재응답은 필요하지 않습니다.` });
     if (["ready", "no-work", "needs-human"].includes(code) && (interactions.pending.length || interactions.deferred.length || interactions.responded.length)) {
       const awaiting = interactions.pending.length + interactions.deferred.length;
       code = awaiting ? "needs-human" : "ready"; by = awaiting ? "human" : "model"; action = awaiting ? "human-input" : "consume-interaction";

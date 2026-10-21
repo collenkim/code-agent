@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { context, next, requireValidatable, status, submitPlan } from "../agent/commands";
 import { deliver, prDocFile } from "../agent/deliver";
 import { decide } from "../agent/hook";
-import { applyProposal, parseProposal, proposalCheck, proposalFile } from "../agent/knowledge";
+import { applyProposal, documentEntries, keyRefs, parseProposal, proposalCheck, proposalFile } from "../agent/knowledge";
 import { knowledgeFind, knowledgeList } from "../agent/knowledgeCommands";
-import { buildIndex, freshness } from "../agent/knowledgeIndex";
+import { buildIndex, docImpactRows, freshness } from "../agent/knowledgeIndex";
 import { loadActive, saveActive, STAGES_LOG } from "../agent/layout";
 import { openRound } from "../agent/review";
 import { withInteraction } from "../agent/tty";
@@ -42,6 +42,13 @@ function commit(message: string): void {
 
 const FEATURES = "doc/knowledge/features.md";
 const RULES = "doc/knowledge/business-rules.md";
+
+test("공백을 포함한 지식 키는 정의·참조·문서 영향 표가 같은 식별자로 읽는다", () => {
+  const text = "### `공통 규약` 오류 응답\n- 정책: `다른 규약`\n";
+  assert.equal(documentEntries(text)[0].key, "공통 규약");
+  assert.deepEqual(keyRefs("`공통 규약`, `ERROR-RESPONSE`"), ["공통 규약", "ERROR-RESPONSE"]);
+  assert.deepEqual(docImpactRows("| doc/rules.md | `공통 규약` | 갱신 | 응답 변경 |")[0].keys, ["공통 규약"]);
+});
 
 function entry(key: string, title: string, fields: string[]): string {
   return [`### \`${key}\` ${title}`, ...fields.map((field) => `- ${field}`), ""].join("\n");

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -11,6 +11,8 @@ import { nativeAnswerWasObserved, publishHostInteraction, synchronizeInteraction
 import { askChoice } from "../agent/choiceServer";
 import { issueInteractionTicket } from "../agent/interactionTicket";
 import { interactionSummary } from "../agent/interactionSummary";
+import { next, status } from "../agent/commands";
+import { busyReasons } from "../agent/runtimeApply";
 
 let root: string;
 beforeEach(() => {
@@ -35,6 +37,49 @@ function observedLegacy() {
   observeAnswerEvent({ ...event(), hook_event_name: "PostToolUse", tool_input: { questions, answers }, tool_response: { questions, answers } });
   return currentInteractions(root).requests[0];
 }
+
+test("작업 ID 없는 낡은 대기는 검증된 호스트 원본으로 구별하고 조회는 원장을 바꾸지 않는다", () => {
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, "host-fixture");
+  try {
+    const session = "11111111-1111-4111-8111-111111111111";
+    observeNativeQuestion(root, { ...event(), session_id: session, hook_event_name: "PreToolUse" });
+    const before = currentInteractions(root).requests[0];
+    assert.equal(before.context.workId, null);
+    const original = readFileSync(join(root, ".code-agent/interactions/state.json"), "utf8");
+    const rows = [
+      { type: "assistant", sessionId: session, cwd: root, message: { content: [{ type: "tool_use", id: "tool-14", name: "AskUserQuestion", input: { questions } }] } },
+      { type: "user", sessionId: session, cwd: root, message: { content: [{ type: "tool_result", tool_use_id: "tool-14", content: "answered" }] }, toolUseResult: { questions, answers } },
+    ];
+    const transcript = `host-fixture/projects/project/${session}.jsonl`;
+    writeFixture(root, transcript, rows.map(r => JSON.stringify(r)).join("\n"));
+    assert.equal(nativeAnswerWasObserved(root, before), true);
+    assert.deepEqual(interactionSummary(root).recoverable, [before.requestId]);
+    assert.deepEqual(interactionSummary(root).pending, []);
+    assert.match(status(root), /답변 확인된 낡은 기록 1/);
+    assert.match(status(root), /다시 답할 필요가 없습니다/);
+    assert.equal(busyReasons(root).some(r => r.includes("interactions/state.json")), false);
+    assert.equal(readFileSync(join(root, ".code-agent/interactions/state.json"), "utf8"), original);
+    for (const change of [
+      (r: any[]) => { r[1].sessionId = "other"; },
+      (r: any[]) => { r[0].message.content[0].input.answers = answers; },
+      (r: any[]) => { r[0].message.content[0].input.questions[0].options[0].label = "別"; },
+      (r: any[]) => { r[1].toolUseResult.afkTimeoutMs = 10; },
+      (r: any[]) => { r[1].message.content[0].is_error = true; },
+      (r: any[]) => { r[0].isSidechain = true; },
+    ]) {
+      const altered = structuredClone(rows); change(altered);
+      writeFixture(root, transcript, altered.map(r => JSON.stringify(r)).join("\n"));
+      assert.equal(nativeAnswerWasObserved(root, before), false);
+      assert.deepEqual(interactionSummary(root).pending, [before.requestId]);
+    }
+    writeFixture(root, transcript, rows.map(r => JSON.stringify(r)).join("\n"));
+    assert.throws(() => next(root), /진행 중인 작업이 없습니다/);
+    const after = currentInteractions(root).requests[0];
+    assert.equal(after.status, "superseded");
+    assert.equal(after.response, undefined); assert.equal(after.application, undefined);
+  } finally { if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved; }
+});
 
 test("Claude가 Post input에 채운 답도 같은 Pre 호출의 실제 응답으로 기록한다", () => {
   observeNativeQuestion(root, { ...event(), hook_event_name: "PreToolUse" });

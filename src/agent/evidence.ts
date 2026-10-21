@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
+import { filePaths, fileOutcomeProblems } from "../core/fileOperations";
 import { dirname, join, posix } from "path";
 
 import { hashManifest, hashPlan } from "../core/approval";
@@ -211,7 +212,7 @@ export function validationDocFile(id: string): string {
 // ---- 지금 값 ----
 
 export function planPaths(work: Work): string[] {
-  return (work.plan?.files ?? []).map((file) => file.path);
+  return (work.plan?.files ?? []).flatMap(filePaths);
 }
 
 /** 이 작업의 계획 파일들을 지금 해시한 값 — 증거의 treeHash 와 대조한다 */
@@ -335,7 +336,7 @@ export function outsideChanges(work: Work): Change[] {
 
 /** 계획에 있는데 사라진 파일 — 지워서 통과시키는 길 */
 export function missingPlanFiles(work: Work): string[] {
-  return planPaths(work).filter((path) => !existsSync(join(work.repoRoot, path)));
+  return (work.plan?.files ?? []).filter(file => file.operation !== "delete").map(file => file.path).filter(path => !existsSync(join(work.repoRoot, path)));
 }
 
 // ---- 무엇을 돌릴 것인가 ----
@@ -690,9 +691,7 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
   for (const change of outsideChanges(work)) {
     add("stop", `계획 밖 변경: [${change.status}] ${change.path}`);
   }
-  for (const path of missingPlanFiles(work)) {
-    add("stop", `계획에 있는데 없는 파일: ${path}`);
-  }
+  for (const problem of fileOutcomeProblems(work.plan?.files ?? [], path => existsSync(join(work.repoRoot, path)))) add("stop", problem);
   for (const problem of preservedTestProblems(work)) add("stop", problem);
   // 동결 뒤 바뀐 테스트 파일 — 게이트가 증거(testFreeze)로 다시 대조한다. 되돌리거나 ⑨ 지적으로 연 뒤 다시 돌아야 한다
   if (phase === "test" || phase === "integrate") {
@@ -922,5 +921,5 @@ export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[]
 /** `kind: "test"` 단계에 속한 계획 파일 — 동결과 ⑦ 대조가 같은 선언을 딛는다 */
 export function testStageFiles(work: Work): string[] {
   const keys = new Set(work.stages.filter((stage) => stage.kind === "test").map((stage) => stage.key));
-  return (work.plan?.files ?? []).filter((file) => keys.has(file.stage)).map((file) => file.path);
+  return (work.plan?.files ?? []).filter((file) => keys.has(file.stage)).flatMap(filePaths);
 }

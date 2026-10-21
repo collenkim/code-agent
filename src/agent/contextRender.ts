@@ -4,6 +4,7 @@
  */
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { filePaths, fileLabel } from "../core/fileOperations";
 
 import { collectExemplars, formatExemplars } from "../core/exemplar";
 import type { Manifest } from "../core/manifest";
@@ -488,7 +489,8 @@ export function implementSection({ repoRoot, work }: RenderInput, out: string[])
   const planned = work.plan.files.filter((file) => currentTask ? currentTask.files.includes(file.path) : file.stage === stage.key);
   if (currentTask) out.push(`현재 Task: ${currentTask.id} · ${currentTask.title}`, `선행: ${currentTask.dependsOn.join(", ") || "없음"} · 완료 기준: ${currentTask.acceptance.join(", ")}`);
   out.push("", `## 단계 ${stage.key} — ${stage.title}`, "", "만들 파일 (승인된 계획 — 이 밖은 hook 이 거부한다):");
-  out.push(...planned.map((file) => `- ${file.path} — ${file.purpose}`));
+  out.push(...planned.map((file) => `- ${fileLabel(file)} — ${file.purpose}`));
+  if (planned.some(f => ["delete", "move"].includes(f.operation ?? ""))) out.push("삭제·이동은 code-agent plan apply-files로 수행합니다. 승인된 현재 Task의 경로만 처리하며 이동 대상은 덮어쓰지 않습니다.");
   {
     const unit = currentTask ?? { acceptance: [], requirements: [...new Set(planned.flatMap((file) => file.requirements ?? []))], files: planned.map((file) => file.path) };
     const sources = taskSourceLines(repoRoot, active.id, unit), index = docSectionIndex(repoRoot, active.id);
@@ -505,7 +507,7 @@ export function implementSection({ repoRoot, work }: RenderInput, out: string[])
     out.push("", "## 이번 계획이 적용하기로 한 규칙");
     out.push(...work.plan.conventions.map((rule) => `- ${rule.rule} (${rule.source})`));
   }
-  out.push(...fileKnowledgeLines(repoRoot, manifest, planned.map((file) => file.path), "## 이 Task 의 파일에 걸린 지식 항목 (지금 동작의 요약 — 동작을 바꾸면 반영 때 제안한다)"));
+  out.push(...fileKnowledgeLines(repoRoot, manifest, planned.flatMap(filePaths), "## 이 Task 의 파일에 걸린 지식 항목 (지금 동작의 요약 — 동작을 바꾸면 반영 때 제안한다)"));
   if (stage.exemplars.length > 0 && manifest.referenceDomain) {
     const exemplars = collectExemplars(repoRoot, manifest, manifest.referenceDomain, stage);
     out.push("", `## 참조 표준 — ${manifest.referenceDomain} (이 구조를 그대로 따른다)`, formatExemplars(exemplars.files, manifest.language));
@@ -535,7 +537,7 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
     "## 계획 파일",
     ...work.plan.files.map(
       (file) =>
-        `- [${file.stage}] ${file.path} — ${file.purpose} · 요구 ${(file.requirements ?? []).join(", ") || "없음"}` +
+        `- [${file.stage}] ${fileLabel(file)} — ${file.purpose} · 요구 ${(file.requirements ?? []).join(", ") || "없음"}` +
         (frozen.includes(file.path) ? frozenNote : ""),
     ),
   );

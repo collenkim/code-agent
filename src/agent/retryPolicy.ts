@@ -313,7 +313,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "reassign-total": {
     id: "reassign-total", label: "입력 변경 재배정 총 상한", group: "planning", auxiliary: false,
-    detect: "작업별 배정 수(이행 시각 이후, 취소·고아 포함)",
+    detect: "작업별 배정 수(이행 시각 이후, 취소·고아 포함, 입력별 첫 되돌림 전달 실패 제외)",
     retry: "no-retry", retryText: "없음 — 자동 재배정을 멈춘다",
     counters: ["taskTotal"],
     limitText: `작업 총 배정 ${LIMITS.taskTotal}(+${GRANT_STEP.taskTotal}/사람)`,
@@ -432,7 +432,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "hook-failure": {
     id: "hook-failure", label: "hook 판정 실패", group: "infra", auxiliary: true,
-    detect: "hook 판정 함수 예외, hook 모듈 로드 실패",
+    detect: "hook 판정 함수 예외, hook 모듈 로드 실패, 계획 담당 되돌림 전달 실패",
     retry: "no-retry", retryText: "같은 호출을 반복하지 않는다. 리뷰어 완료 판정 실패는 그 실행에 기록하고(새 호출을 받는다) 기록하지 못한 판정 실패만 Claude 담당에게 한 번 되돌린다. 종료 코드는 이벤트별(hookFailureExit·subagentExit)",
     counters: ["agentReturn"],
     limitText: `기록하지 못한 판정 실패의 담당 되돌림 ${LIMITS.agentReturn}`,
@@ -947,7 +947,15 @@ export function environmentMatch(log: string, patterns: readonly string[] | unde
 
 // ---- 계획 배정 ----
 
-export interface AttemptView { dispatchId: string; inputHash: string; at: string; status: string; correction?: { used: boolean } }
+export interface AttemptView { dispatchId: string; inputHash: string; at: string; status: string; correction?: { used: boolean }; returnDeliveryFailed?: boolean }
+/** 입력별 첫 전달 실패만 총 배정에서 분리한다. 반복 전달 실패는 자동 재배정하지 않는다. */
+export function chargedPlanningAttempts(attempts: readonly AttemptView[]): AttemptView[] {
+  const recovered = new Set<string>();
+  return attempts.filter(attempt => {
+    if (!attempt.returnDeliveryFailed || recovered.has(attempt.inputHash)) return true;
+    recovered.add(attempt.inputHash); return false;
+  });
+}
 export interface AgentView { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string; returns?: number; endedAt?: string }
 
 /**
@@ -956,6 +964,8 @@ export interface AgentView { id: string; session: string; type: string; startedA
  */
 export function planningDispatchDecision(input: { attempts: readonly AttemptView[]; inputHash: string; since?: string;
   grants?: readonly RetryGrant[]; taskId: string; repair?: boolean }): { allow: true } | { allow: false; failure: FailureRecord } {
+  if (input.attempts.filter(a => a.inputHash === input.inputHash && a.returnDeliveryFailed).length > 1) return {
+    allow: false, failure: failure("hook-failure", "같은 입력에서 완료 hook 되돌림 전달 실패가 반복됐습니다. 호스트 재개 경로를 복구하거나 입력을 고친 뒤 다시 배정하세요.") };
   const sameScope = grantScope({ file: "planning", key: "sameInput", taskId: input.taskId, inputHash: input.inputHash });
   const same = input.attempts.filter((attempt) => attempt.inputHash === input.inputHash && attempt.status === "failed").length;
   const sameLimit = limitOf("sameInput", LIMITS.sameInput, input.grants, sameScope);
@@ -965,7 +975,7 @@ export function planningDispatchDecision(input: { attempts: readonly AttemptView
   }
   if (input.repair) return { allow: true };
   const since = input.since === undefined ? Infinity : Date.parse(input.since);
-  const total = input.attempts.filter((attempt) => Date.parse(attempt.at) >= since).length;
+  const total = chargedPlanningAttempts(input.attempts).filter((attempt) => Date.parse(attempt.at) >= since).length;
   const totalLimit = limitOf("taskTotal", LIMITS.taskTotal, input.grants, grantScope({ file: "planning", key: "taskTotal", taskId: input.taskId }));
   if (total >= totalLimit) {
     return { allow: false, failure: failure("reassign-total", guidance("reassign-total", { id: input.taskId, limit: totalLimit }),

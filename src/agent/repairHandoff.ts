@@ -1,4 +1,5 @@
 import { failedRuns, loadEvidence, runsOf, testFrozen, testStageFiles, type Evidence } from "./evidence";
+import { filePaths } from "../core/fileOperations";
 import { writeHandoff } from "./handoff";
 import { budgetText, type VerifyBudget } from "./retryPolicy";
 import { shortCommand } from "./screenText";
@@ -20,7 +21,7 @@ export function writeRepairHandoff(work: Work, problems: string[], budget?: Veri
 
 function repairText(work: Work, evidence: Evidence, problems: string[], budget?: VerifyBudget): string {
   const plan = work.plan!;
-  const planned = plan.files.map((file) => file.path);
+  const planned = plan.files.flatMap(filePaths);
   const runs = (["check", "test", "integrate"] as const).flatMap((phase) => failedRuns(runsOf(evidence, phase)));
   const lines = [
     `# 검증 수정 — ${work.active.id} · ${work.active.target} · 회차 ${evidence.rounds}`,

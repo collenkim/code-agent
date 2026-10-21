@@ -27,6 +27,10 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 ## 기본 진행과 결과 전달
 
+완료 hook이 되돌린 결과에는 사유·초안과 재개 관찰 대기가 남는다. `planning advance`가 이 상태를 안내하면 메인은 담당이 종료됐는지 확인하고, 종료됐으면 `planning cancel <ID>` 뒤 재배정한다. 새 담당은 보존된 지적·초안에서 이어 쓴다. 입력별 첫 전달 실패는 총 배정에서 분리하지만 같은 입력의 전달 실패가 반복되면 호스트 복구를 요구한다. 내용을 고치지 않은 반복 실패와 일반 취소는 기존 한도를 따른다.
+
+파일 생성·수정·삭제·이동은 `plan.json`의 `files[].operation`에 `create`·`modify`·`delete`·`move`로 표시한다. 생략하면 생성·수정이다. 이동의 `from`은 원본, `path`는 대상이고 Task의 `files`에는 대상 경로를 넣는다. 분석 단계부터 후보 파일 배열을 JSON으로 저장하고 `code-agent plan preflight <JSON>`으로 기준 커밋·scope·preserve·단계를 확인한다. 원본과 대상이 같은 경우, 중복 경로, 기준에 없는 원본, 기존 대상 덮어쓰기는 거부된다. 승인 뒤 `code-agent plan apply-files`가 현재 Task의 삭제·이동을 수행한다. 삭제할 파일이 남거나 이동 원본이 남으면 다음 단계로 진행하지 않는다.
+
 외부 의존 계약은 [계약 인계](dependency-contracts.md)의 `planning contracts`로 등록한다. 모든 세부 담당의 `inputs`에는 검증된 사본이, `externalContracts`에는 원문 경로·커밋·해시·항목이 실린다. 원문이나 사본 변경은 입력 해시와 승인 문서 해시에 반영된다. 근거가 없거나 계약 항목이 상충하면 배정하지 않으며, 의미상 불명확한 조건은 담당이 질문한다. 등록은 전체 저장소 탐색이나 외부 파일 수정 권한을 주지 않는다.
 
 결과 JSON은 배정된 `resultFile`에 쓰고 `결과: <resultFile>` 한 줄을 반환한다. 응답 앞뒤의 설명은 허용하지만 결과 포인터는 정확히 하나여야 한다. 다른 경로·복수 포인터·손상된 JSON·크기 초과·소유권·스키마·입력 해시 불일치는 거부한다. 판단·질문·지적은 설명 대신 결과 JSON의 해당 필드에 모두 담는다.
@@ -37,7 +41,7 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 |---|---|
 | `rewind-required` | 앞 단계 계획 작업이 지금 입력과 맞지 않는다(배정하지 않는다). `rewind.auto`가 true면 사용자 지시 없이 `rewind.command`(`code-agent back <단계>`)를 실행하고 그 단계 스킬로 잇는다. `rewind.notice`가 있으면 그 한 줄을 먼저 사용자에게 알린다. false면 되감지 않고 `rewind.reason`과 `rewind.tasks[].staleBecause`를 사용자에게 보고해 지시를 받는다. |
 | `dispatch` | 배정마다 지정된 담당을 호출한다. 반환한 작업은 이미 배정 상태이므로 dispatch를 다시 호출하지 않는다. |
-| `stale` | 담당 시작이 관찰되지 않았거나 너무 오래 끝나지 않은 배정이 있다(`stale`·`cancel`). 기다리지 않는다 — 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 `planning cancel <ID>` 뒤 advance 한다. |
+| `stale` | `returnPending`이면 담당 종료를 확인한 경우에만 cancel 뒤 재배정한다. 그 밖의 시작 미관찰·장기 대기는 이 대화에서 아직 호출하지 않은 배정이면 지금 호출하고, 호출했던 배정이면 `planning cancel <ID>` 뒤 advance 한다. |
 | `wait` | 실제 완료 이벤트를 기다린다. 상태를 반복 조회하지 않는다. 담당 호출이 이미 끝났는데도 `wait`이면 `planning cancel <ID>` 뒤 advance 한다. |
 | `blocked` | 질문·충돌·입력 변경·한도 등 사유를 해결한다. 항목의 `class`가 `same-input-repeat`·`reassign-total`이면 다시 배정하지 말고 사유와 한도(`counter`)를 사용자에게 보고한다. `hook-failure`(담당 결과의 출처 확인이 두 번 이어서 실패)면 사유를 사용자에게 알리고, 원인을 고친 뒤 `planning dispatch <ID>`로 명시적으로 배정한다. 막힌 작업 없이 critic 뒤 교차 계획 검토만 남았으면(두 호스트 설치) `next` 줄이 그 줄 — `code-agent planning cross --by <호스트>` 또는 사람 판단 — 뒤 advance 를 안내한다. 답은 있는데 출처를 확인할 수 없는 질문은 `미결 질문`이 아니라 `답 출처 미확인 Q<n>`과 받는 길로 적힌다. |
 | `ready-for-gate` | 기존 문서 검사·계획 제출·승인 절차로 이어간다. 단계 전환이나 승인 완료를 뜻하지 않는다. |
@@ -160,7 +164,7 @@ code-agent planning dispatch common
 }
 ```
 
-각 계획 파일의 소유자는 정확히 하나다. 의존성은 앞 Task를 가리키고 순서는 `sequence`의 단계 순서를 따른다. 같은 단계 안에 여러 Task를 둘 수 있다. `context`와 `status`는 현재 Task를 표시하며 hook은 그 Task에 배정된 파일만 구현하도록 제한한다. `next`는 현재 Task 파일 존재를 확인하고 다음 Task로 이동한다. 파일 존재는 검증 완료를 뜻하지 않는다. 최종 완료는 check·test·독립 리뷰·통합 검증으로 판정한다. fix는 테스트 단계의 마지막 Task를 넘기기 전에 재현 증거가 필요하다.
+각 계획 파일의 소유자는 정확히 하나다. 의존성은 앞 Task를 가리키고 순서는 `sequence`의 단계 순서를 따른다. 같은 단계 안에 여러 Task를 둘 수 있다. `context`와 `status`는 현재 Task를 표시하며 hook은 그 Task에 배정된 파일만 구현하도록 제한한다. `next`는 현재 Task의 파일 작업 결과(생성·수정 대상 존재, 삭제 대상 부재, 이동 대상 존재와 원본 부재)와 기준 대비 변경을 확인하고 다음 Task로 이동한다. 이 확인은 검증 완료를 뜻하지 않는다. 최종 완료는 check·test·독립 리뷰·통합 검증으로 판정한다. fix는 테스트 단계의 마지막 Task를 넘기기 전에 재현 증거가 필요하다.
 
 계획 승인은 관찰된 계획 작업 기록에도 묶인다. 검토·작업 정의를 바꾸면 다시 승인받아야 한다. 승인 전에 소스 입력이 바뀌면 조사·검토를 다시 해야 하며, 승인 후 계획에 따른 정상 구현은 조사 당시 소스와 다르다는 이유만으로 승인을 무효화하지 않는다.
 

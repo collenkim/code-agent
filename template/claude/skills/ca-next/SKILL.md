@@ -52,6 +52,8 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
 | 상태 | 처리 |
 |---|---|
 | 질문(`interaction-open`) | `ca-answer/dashboard.md` — 같은 세션에서 list·consume·complete. 보류는 재개하지 않는다 |
+| 답변 확인된 낡은 질문(`interaction-recoverable`) | `code-agent interaction list`로 증거가 있는 대기 기록을 정리하고 계속한다. 사용자에게 다시 답하게 하지 않는다 |
+| 완료 hook 되돌림 대기 | 담당 종료를 확인했으면 `planning cancel <ID>` 뒤 `planning advance`로 지적·초안에서 재배정한다. 아직 실행 중이면 그 담당의 결과를 기다린다 |
 | 작업·접수 없음 | `/ca-request` — 공통 문서가 없거나 미확정이면 `다음:` 이 가리키는 준비(`setup`·`docs`·`baseline` 동의)부터 |
 | 접수 없이 문서 세션만 열림 | `/ca-docs`(설정 `code-agent.json` 이 아직 없으면 `/ca-adopt`)로 마저 쓰고 Bash: `code-agent docs end` — 그 뒤 `다음:` 의 `setup`·`docs`·`baseline` 동의. 문서 세션 중에는 접수(`request begin`)가 거부된다 |
 | AI-DLC 차단 줄이 있음 | 진행하지 않고 차단 복구로 기존 절차 계속·종료 확인 후 재개·보류를 묻는다 |

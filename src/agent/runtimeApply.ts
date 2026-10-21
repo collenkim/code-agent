@@ -247,16 +247,15 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
     catch (error) { throw new Stop(`${RUNTIME_FILE} 을 읽지 못했습니다 — ${error instanceof Error ? error.message : String(error)}. 사람이 파일을 확인하세요(지우면 진입점 번들로 돕니다).`); }
     const from = state?.applied ?? `번들`;
     const target = options.trigger === "bundled" ? undefined : own?.id;
+    const projectSchema = state?.stateSchema ?? 1, mine = own?.stateSchema ?? STATE_SCHEMA;
+    if (projectSchema > mine) throw new Stop(`이 프로젝트의 상태는 더 새 형식(세대 ${projectSchema})으로 기록됐습니다 — ${ownLabel()}(세대 ${mine})은 그 상태를 읽지 못해 적용하지 않습니다. 세대 ${projectSchema} 이상의 릴리스를 쓰세요.`);
+    (require("./interactionSources") as typeof import("./interactionSources")).synchronizeInteractions(root);
     const busy = busyReasons(root, options.consentId);
     if (busy.length) {
       if (options.trigger === "templates-only") return { status: "unchanged", text: `진행 중인 일이 있어 템플릿을 반영하지 않았습니다 — ${busy.join(" · ")}. 지금 버전(${ownLabel()})으로 계속하고, 작업을 반영하거나 끝낸 뒤 다시 실행하세요.` };
       if (options.trigger === "bundled" || !target) throw new Stop(`진행 중인 일이 있어 진입점 번들로 바꾸지 않았습니다 — ${busy.join(" · ")}`);
       if (state?.applied === target) return { status: "unchanged", text: `${target} 이 이미 적용되어 있습니다.` };
       return reserve(root, target, busy.join(" · "), state);
-    }
-    const projectSchema = state?.stateSchema ?? 1, mine = own?.stateSchema ?? STATE_SCHEMA;
-    if (projectSchema > mine) {
-      throw new Stop(`이 프로젝트의 상태는 더 새 형식(세대 ${projectSchema})으로 기록됐습니다 — ${ownLabel()}(세대 ${mine})은 그 상태를 읽지 못해 적용하지 않습니다. 세대 ${projectSchema} 이상의 릴리스를 쓰세요.`);
     }
     const { report, changes, kept, unknown } = applyTemplates(root, { host: options.host, cli: options.cli });
     // 사람이 고른 버전(--release·--bundled, 사람이 설치한 npm 패키지)이면 남은 예약을 지운다 — 다음 작업에서 그 선택을 되돌리지 않게
@@ -286,6 +285,6 @@ function reserve(root: string, id: string, reason: string, state = (() => { try 
     `새 버전 ${id} 설치 완료. 현재 작업은 기존 버전(${state?.applied ?? "번들"})으로 계속 진행하며, 작업 완료 후 다음 작업부터 새 버전을 적용합니다.`,
     `  대기 사유: ${reason}`,
     "  적용 시점: 진행 중인 일이 끝난 뒤 다음 작업을 시작할 때(요구사항 접수·문서 준비·사전 판별 시작) 자동으로 — 호스트를 종료할 필요가 없습니다.",
-    "  지금 할 일: 없습니다. 바로 적용하려면 작업을 반영하거나 끝낸 뒤 code-agent update --templates-only 를 실행합니다.",
+    `  다음 조치: 질문 기록은 code-agent interaction list로 실제 미답변·받은 답·낡은 대기를 구분해 정리합니다. 진행 중 작업이 끝나면 다음 작업을 열 때 자동 적용하거나 호스트 밖 터미널에서 code-agent update --release ${id}로 적용하세요. 설치 완료는 실행 버전 전환 완료가 아닙니다.`,
   ].join("\n") };
 }
