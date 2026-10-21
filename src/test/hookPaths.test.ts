@@ -366,6 +366,11 @@ test("작업 중인 세션도 code-agent master trust·untrust·call 은 부르�
 test("T-L5-1 세션 밖에서도 소스 업데이트는 사람의 확인이 필요하다 — 템플릿 적용은 연다", () => {
   for (const command of ["code-agent update", "code-agent update --host both"]) assert.match(bash(command) ?? "", /사람의 확인이 필요합니다/, command);
   assert.equal(bash("code-agent update --templates-only"), undefined);
+  for (const flags of ["--install-only --preview --json", "--install-only --shown-hash sha256:abc --json", "--release release-id --preview --json", "--release release-id --shown-hash sha256:abc --json", "--preview", "--shown-hash=sha256:abc", "--install-only"]) {
+    for (const prefix of ["code-agent update", "code-agent update --templates-only", "node dist/agent/cli.js update"]) {
+      assert.match(bash(`${prefix} ${flags}`) ?? "", /사람의 확인이 필요합니다/, `${prefix} ${flags}`);
+    }
+  }
 });
 
 test("세션 밖에서도 사용자 수준 hook 설정은 쓰기 도구로 쓰지 않는다 — 셸 언급 거부와 같은 파일(E29)", () => {

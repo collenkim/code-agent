@@ -19,8 +19,9 @@ import { pidAlive } from "./lock";
 import { installPackageRelease, listReleases, packageRelease } from "./releaseStore";
 import { applyHere, busyReasons, lockRuntime, ownLabel, requireInstalled, type ApplyTrigger } from "./runtimeApply";
 import { appliedStore, entryPackage, entryScript, installedRelease, ownRelease, readRuntime, releaseHome, RUNTIME_FILE, type RuntimeState } from "./runtimeSelect";
-import { runReleaseApply, SANDBOX_BLOCKED, updateFromSourceConfirmed, updateToReleaseConfirmed } from "./sourceUpdate";
+import { runReleaseApply, SANDBOX_BLOCKED, updateFromSourceConfirmed, updateToReleaseConfirmed, previewInstallOnly, installOnlyConfirmed, previewReleaseApply, releaseApplyConfirmed } from "./sourceUpdate";
 import { Stop } from "./stop";
+import { hostMarked } from "./crossEnv";
 
 /** 같은 명령을 다시 실행한 자식 — 한 번만 다시 실행한다(선택이 끝내 맞지 않아도 되풀이하지 않는다) */
 const RERUN_ENV = "CODE_AGENT_RUNTIME_RERUN";
@@ -213,16 +214,31 @@ export function renderVersion(view: ReturnType<typeof versionView>): string {
 export interface UpdateRequest {
   templatesOnly: boolean; bundled: boolean; release?: string; applyRelease?: string; trigger?: string; consent?: string;
   host?: HostSelection; cli?: string;
+  installOnly?: boolean; preview?: boolean; shownHash?: string; json?: boolean;
 }
 
 /** update 의 갈래 — 돌려주는 코드: 0 적용·설치, 3 예약·보류(바뀐 것 없음) */
 export function runUpdate(root: string, request: UpdateRequest): { code: number; text: string } {
-  const modes = [request.templatesOnly, request.bundled, request.release !== undefined, request.applyRelease !== undefined].filter(Boolean).length;
-  if (modes > 1) throw new Stop("update 의 --templates-only · --bundled · --release · --apply-release 는 하나만 씁니다.");
+  const modes = [request.templatesOnly, request.bundled, request.release !== undefined, request.applyRelease !== undefined, request.installOnly].filter(Boolean).length;
+  if (modes > 1) throw new Stop("update 의 --templates-only · --bundled · --release · --apply-release · --install-only 는 하나만 씁니다.");
   if ((request.trigger !== undefined || request.consent !== undefined) && request.applyRelease === undefined) throw new Stop("--trigger · --consent 는 --apply-release 와만 씁니다(갱신이 내부에서 부른다).");
+  const options = { host: request.host, cli: request.cli };
+  if (request.installOnly || request.preview || request.shownHash !== undefined || request.json) {
+    if (modes !== 1 || (!request.installOnly && request.release === undefined) || !request.json ||
+        Number(!!request.preview) + Number(request.shownHash !== undefined) !== 1 ||
+        (request.installOnly && (request.host !== undefined || request.cli !== undefined))) {
+      throw new Stop("update --install-only 또는 --release <ID>와 --json, --preview 또는 --shown-hash <해시> 하나를 함께 씁니다. 설치 전용에는 --host·--cli를 쓰지 않습니다.");
+    }
+    if (hostMarked()) throw new Stop("policy-forbids: 호스트 셸에서는 설치·릴리스 선택의 화면 확인 경로를 실행할 수 없습니다.");
+    // 설치 전용은 프로젝트를 읽거나 바꾸는 적용 경로에 들어가지 않는다.
+    if (request.installOnly) return { code: 0, text: JSON.stringify(request.preview ? previewInstallOnly() : installOnlyConfirmed(request.shownHash!)) };
+    requireInstalled(root);
+    if (request.preview) return { code: 0, text: JSON.stringify(previewReleaseApply(root, request.release!, options)) };
+    const result = releaseApplyConfirmed(root, request.release!, request.shownHash!, options);
+    return { code: result.code, text: JSON.stringify(result) };
+  }
   // 어느 갈래든 설치되지 않은 폴더(프로젝트 밖 등)는 바꾸지 않는다 — 릴리스 설치·템플릿·적용 버전 기록 모두 쓰기 전에 멈춘다
   requireInstalled(root);
-  const options = { host: request.host, cli: request.cli };
   if (request.applyRelease !== undefined) {
     const own = ownRelease();
     if (own?.id !== request.applyRelease) throw new Stop(`이 코드(${ownLabel()})는 ${request.applyRelease} 가 아닙니다 — 적용은 그 릴리스의 CLI 가 스스로 합니다.`);

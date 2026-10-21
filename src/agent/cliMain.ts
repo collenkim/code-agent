@@ -73,6 +73,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent update --templates-only [--host claude|codex|both] [--cli <path>]  원격 조회 없이 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영
                                       (npm 패키지 진입점이면 설치된 패키지를 릴리스로 들인다. 진행 중인 일이 있으면 바꾸지 않고 종료 코드 3)
   code-agent update --release <ID> | --bundled   설치된 릴리스로 되돌리거나 다시 앞으로(TTY 확인) · 고정을 풀고 진입점 번들로 (진행 중인 일이 없을 때)
+  code-agent update --install-only (--preview | --shown-hash <해시>) --json   프로젝트 없이 설치 미리보기·화면 확인 후 릴리스 설치만(호스트 밖)
+  code-agent update --release <ID> (--preview | --shown-hash <해시>) --json  프로젝트의 릴리스 적용 미리보기·화면 확인 후 적용 또는 예약(호스트 밖)
   code-agent version [--json]         이 명령을 돌린 코드 · 이 프로젝트의 적용 버전 · 적용 대기 · 설치된 릴리스 · 실행 중인 선택 UI MCP (읽기 전용)
   code-agent usage [--work <ID>] [--since <날짜>] [--json]   이 저장소에 쓴 토큰·비용(추정)·요청·도구 호출·재시도 기록을 스테이지별·에이전트별로
   code-agent knowledge                공통 KNOWLEDGE 항목 · 그 키를 마지막으로 쓴 작업 · 최신성(재검토 필요·참조 없음·보류)
@@ -261,7 +263,7 @@ const DOCTOR_USAGE = "사용법: code-agent doctor [--host claude|codex|both] [-
 const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>] | " +
   "disable | grant <권한.json> | revoke <권한 ID> [--reason <사유>] | handover --to <제어자 ID> [--force-stop] | recover <요청ID> [--transcript <원본.jsonl>] [--json] | " +
   "trust --controller <ID> [--preview | --shown-hash <해시>] | trust --list | untrust --controller <ID> | call (stdin 요청 → stdout 응답)";
-const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled";
+const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled | code-agent update --install-only (--preview | --shown-hash <해시>) --json | code-agent update --release <ID> (--preview | --shown-hash <해시>) --json";
 
 /** 실행 명령은 LangGraph·검증 자식 프로세스를 기다리고, 조회 명령은 기록을 바꾸지 않는다. */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
@@ -399,11 +401,12 @@ export async function runCommand(command: string | undefined, args: string[]): P
     case "update": {
       // 새 버전 설치(fetch·npm ci·build)와 버전 선택은 미리보기를 보여 주고 터미널에서 확인받는다 — 동의 적용은 이미 확인을 받았다.
       // --apply-release 는 갱신·다음 작업 관문이 새 릴리스의 CLI 로 부르는 내부 갈래다
-      if (optionsOnly(args, ["host", "cli", "release", "apply-release", "trigger", "consent"], ["--templates-only", "--bundled"], UPDATE_USAGE)) { print(UPDATE_USAGE); return 0; }
+      if (optionsOnly(args, ["host", "cli", "release", "apply-release", "trigger", "consent", "shown-hash"], ["--templates-only", "--bundled", "--install-only", "--preview", "--json"], UPDATE_USAGE)) { print(UPDATE_USAGE); return 0; }
       const result = runUpdate(repoRoot, {
         templatesOnly: args.includes("--templates-only"), bundled: args.includes("--bundled"), release: option(args, "release"),
         applyRelease: option(args, "apply-release"), trigger: option(args, "trigger"), consent: option(args, "consent"),
         cli: option(args, "cli"), host: parseHost(option(args, "host")),
+        installOnly: args.includes("--install-only"), preview: args.includes("--preview"), shownHash: option(args, "shown-hash"), json: args.includes("--json"),
       });
       print(result.text);
       return result.code;

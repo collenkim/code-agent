@@ -4,6 +4,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
+| 2026-10-21 | [대시보드 확인 설치·프로젝트별 적용](2026-10-21-dashboard-update.md) | [설치·적용·거부·확인 기록 회귀](evidence/2026-10-21-dashboard-update.json) |
 | 2026-10-21 | [계획 파일 작업·담당 되돌림·낡은 질문 대기 복구](2026-10-21-workflow-recovery.md) — `d6ca2d9` | [회귀 시험](evidence/2026-10-21-workflow-recovery.json) |
 | 2026-10-21 | [대시보드 확인 PC 신뢰](2026-10-21-dashboard-trust.md) — `4e81965` | [회귀·master-agent 상호 운용·브라우저](evidence/2026-10-21-dashboard-trust.json) |
 | 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — `5adbb97` | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |

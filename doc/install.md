@@ -222,6 +222,10 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 code-agent update [--cli <경로>]
 code-agent update --templates-only [--host claude|codex|both] [--cli <경로>]
 code-agent update --release <ID>
+code-agent update --install-only --preview --json
+code-agent update --install-only --shown-hash <해시> --json
+code-agent update --release <ID> --preview --json
+code-agent update --release <ID> --shown-hash <해시> --json
 code-agent update --bundled
 code-agent version [--json]
 ```
@@ -266,7 +270,13 @@ code-agent 의 hook 명령과 MCP 설정은 고정 진입점을 가리키므로 
 
 **`--templates-only`는 받지 않는다.** 적용 대기 버전이 있으면 그것을 적용하고, 없으면 지금 적용 버전의 템플릿을 다시 반영한다. npm 패키지 진입점이면 설치된 패키지를 릴리스로 들인다. 진행 중인 일이 있으면 바꾸지 않고 종료 코드 3으로 알린다.
 
-**설치된 프로젝트 안에서 실행한다.** `update`(모든 갈래)의 대상은 실행 위치가 속한 git 저장소의 루트다 — 하위 폴더에서 실행해도 된다. 적용 버전은 프로젝트마다 따로라 적용할 프로젝트마다 실행한다. code-agent 가 설치되지 않은 폴더(설치 기록 `.code-agent/version`·`hosts.json`도, 두 호스트의 hook 등록도 없다 — 프로젝트 밖·설치하지 않은 저장소)에서는 릴리스 설치·템플릿·적용 버전 기록을 하나도 쓰지 않고 종료 코드 1로 멈춘다. 처음 설치는 `code-agent init`이다.
+**프로젝트 적용은 설치된 프로젝트 안에서 실행한다.** `--install-only`를 제외한 `update`의 대상은 실행 위치가 속한 git 저장소의 루트다 — 하위 폴더에서 실행해도 된다. 적용 버전은 프로젝트마다 따로라 적용할 프로젝트마다 실행한다. code-agent 가 설치되지 않은 폴더(설치 기록 `.code-agent/version`·`hosts.json`도, 두 호스트의 hook 등록도 없다 — 프로젝트 밖·설치하지 않은 저장소)에서는 프로젝트 적용을 아무것도 쓰지 않고 종료 코드 1로 멈춘다. 처음 설치는 `code-agent init`이다.
+
+**대시보드 화면 확인.** 호스트 밖의 대시보드 실행기는 `--install-only --preview --json`으로 프로젝트 없이 소스·브랜치·upstream·릴리스 저장소의 문구(`lines`)와 `shownHash`를 읽는다. 미리보기는 네트워크·잠금·확인 기록을 쓰지 않는다. 화면에 문구를 보이고 사람이 확인하면 같은 해시를 `--install-only --shown-hash <해시> --json`으로 넘긴다. 현재 상태와 일치할 때만 설치하고 `{id, commit, created, log}` 한 줄을 돌려준다. 같은 커밋은 다시 빌드하지 않으며 `created: false`다. 프로젝트 파일이나 적용 버전은 바꾸지 않는다.
+
+프로젝트별 적용은 `--release <ID> --preview --json`으로 현재 버전·고를 릴리스·상태 세대 문구와 해시를 확인하고 `--release <ID> --shown-hash <해시> --json`으로 실행한다. 기존 적용 실행기가 처리하며 `{code, text}` 한 줄을 돌려준다. 즉시 적용은 종료 코드 0, 작업 중 예약은 3이다. 해시가 다르면 `stale-state`, 호스트 셸 표지가 있으면 `policy-forbids`로 쓰기 전에 거부한다(종료 코드 1·stderr). 두 경로 모두 `--json`과 미리보기 또는 확인 해시 하나가 필요하다. 모델의 셸 호출은 `--templates-only`와 섞어도 hook이 막는다.
+
+확인 기록은 PC 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)의 `update-confirmations.jsonl`에 남는다. PC 신뢰와 같은 `createdBy: {actor, channel, shownHash}` 형식이며 일반 터미널 확인은 `tty`, 화면 확인은 `dashboard`다. 확인이 유효한 뒤 설치·적용을 시작하기 전에 기록하므로 성공 증거와는 다르다. 확인자 이름과 해시는 같은 OS 계정에서 호출한 사실의 기록이며 별도의 신원 증명은 아니다.
 
 **되돌리기와 고정 풀기.** `code-agent update --release <ID>`는 저장소에 설치된 릴리스 하나를 골라 적용한다(터미널 확인, 진행 중인 일이 있으면 예약). 상태 형식 세대(`stateSchema`)가 프로젝트보다 낮은 릴리스는 적용하지 않는다 — 새 버전이 승인·증거·작업 기록의 형식을 올렸으면 그 이전 버전으로는 되돌릴 수 없다. 실패했다고 적용 버전을 자동으로 되돌리지 않는다. 설치·검증·템플릿 반영이 실패하면 적용 버전은 처음부터 바뀌지 않는다. npm 패키지 진입점에서 `--release`로 고른 버전은 새 패키지를 설치할 때까지 그대로 둔다. `code-agent update --bundled`는 고정을 풀고 진입점의 번들로 돈다(진행 중인 일이 없을 때).
 
@@ -274,7 +284,7 @@ code-agent 의 hook 명령과 MCP 설정은 고정 진입점을 가리키므로 
 
 실행 중인 그래프도 릴리스 적용을 막는다(`.code-agent/graph/run.lock`). 상태 형식과 잠금·재개 규약은 [LangGraph 실행 구조](langgraph.md#재개와-중단)를 따른다.
 
-**이행.** 이 구조 전에 설치한 프로젝트는 처음 한 번 이전 버전의 갱신(설치 폴더에서 pull·빌드)으로 이 버전을 받는다. 그 뒤로는 위 방식이다. 직접 절대 경로로 등록한 hook·MCP(`--cli`)는 설정을 바꾸지 않는다 — 그 경로의 `cli.js`가 고정 진입점이 되어 적용 버전을 고른다. 공유 설정에 릴리스 폴더 경로를 쓰지 않는다. 처음 이행 때 이미 떠 있던 Codex 선택 UI MCP 는 이전 코드라 한 번 다시 열어야 버전을 고르는 연결부로 바뀐다. 이 첫 회의 결과 판정도 이전 갱신기가 하므로, 마지막 `doctor`에 ✗ 가 있으면(공통 문서가 아직 없는 프로젝트 등) 템플릿 적용이 끝났어도 중단으로 보고한다 — `code-agent version`으로 적용 버전을, `doctor`로 남은 항목을 확인한다.
+**진입점 경로.** 직접 절대 경로로 등록한 hook·MCP(`--cli`)는 그 경로의 `cli.js`가 고정 진입점이 되어 적용 버전을 고른다. 공유 설정에 릴리스 폴더 경로를 쓰지 않는다. `code-agent version`으로 적용 버전을, `doctor`로 설치·환경 점검 결과를 확인한다.
 
 **PreToolUse matcher 가 좁은 설치본은 `update` 로 넓힌다.** matcher 에 `Read`·`Grep`·`Glob` 이 들어 있어야
 hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 — 넘어오지 않는 도구가 있으면 `doctor` 가 그 줄을 `✗` 로 짚는다([4절](#4-code-agent-doctor--점검)).

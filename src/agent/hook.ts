@@ -663,7 +663,7 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     if (mentionsHostConfig(command) && !readCommand(command, input.tool_name === "PowerShell" || input.shell === "powershell")) return hostConfigBashDenied();
     // 소스 업데이트는 네트워크·npm 스크립트를 돌린다 — 사람의 확인(동의 update 또는 터미널 직접 실행)으로만 한다
     // --templates-only 는 지금 적용 버전(또는 이미 설치된 적용 대기 버전)의 템플릿 반영뿐이다 — 버전 선택 깃발과 함께면 막는다
-    if (SOURCE_UPDATE.test(command) && (!/(^|\s)--templates-only(\s|$)/.test(command) || /(^|\s)--(?:bundled|release|apply-release|trigger|consent)(\s|=|$)/.test(command))) return SOURCE_UPDATE_DENIED;
+    if (SOURCE_UPDATE.test(command) && (!/(^|\s)--templates-only(\s|$)/.test(command) || /(^|\s)--(?:bundled|release|apply-release|trigger|consent|install-only|shown-hash|preview)(\s|=|$)/.test(command))) return SOURCE_UPDATE_DENIED;
     // master 제어(연동 설정·위임 판단·실행 제어)는 러너와 사람의 터미널이 부른다 — 세션 안에서는 허용 목록(MODEL_SUBCOMMANDS)에 없어 이미 막힌다
     if (MASTER_CONTROL_COMMAND.test(command)) return MASTER_CONTROL_DENIED;
     if (/\b(?:code-agent(?:\.cmd)?|cli\.js)\s+interaction\s+drain\b/.test(command)) return "질문 적용 실행기는 대시보드 연결 프로세스가 호출합니다.";

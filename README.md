@@ -234,6 +234,18 @@ code-agent update
 
 **여러 프로젝트에 설치했다면** 프로젝트마다 실행합니다. 이미 설치한 커밋이면 다시 빌드하지 않고 적용만 합니다.
 
+**대시보드에서 설치와 적용을 나누기** — 호스트 밖 실행기가 다음 미리보기의 `lines`를 화면에 보이고, 사람이 확인한 `shownHash`를 두 번째 명령에 넘깁니다. 설치 전용 명령은 프로젝트 없이 실행하며 프로젝트 파일을 바꾸지 않습니다.
+
+```sh
+code-agent update --install-only --preview --json
+code-agent update --install-only --shown-hash <해시> --json
+# 적용할 프로젝트에서
+code-agent update --release <ID> --preview --json
+code-agent update --release <ID> --shown-hash <해시> --json
+```
+
+미리보기는 읽기 전용입니다. 설치는 `{id, commit, created, log}`, 적용은 `{code, text}` JSON 한 줄을 반환합니다. 같은 커밋은 재설치를 생략하고, 작업 중인 프로젝트는 적용을 예약합니다(종료 코드 3). 상태가 바뀌면 `stale-state`, 호스트 셸 표지가 있으면 `policy-forbids`로 쓰기 전에 거부합니다. 터미널·대시보드 확인자와 해시는 PC 저장소의 `update-confirmations.jsonl`에 기록합니다. 자세한 형식은 [설치 문서 5절](doc/install.md#5-code-agent-update--갱신)을 따릅니다.
+
 ### 3. npm 패키지·단일 실행 파일의 업데이트
 
 - **npm 패키지** — 기존 설치에 쓴 패키지 관리자로 새 패키지를 설치합니다. code-agent 는 패키지를 직접 받지 않으므로 배포 경로·신뢰 기준은 그 패키지 관리자의 것 그대로입니다. 각 프로젝트는 다음 작업을 시작할 때 설치된 패키지를 릴리스 저장소에 복사해 적용하고, 진행 중인 작업은 복사해 둔 이전 버전으로 끝까지 진행합니다. 바로 적용하려면 진행 중인 일이 없을 때 프로젝트에서 `code-agent update --templates-only`를 실행합니다.
@@ -289,7 +301,7 @@ code-agent version
 
 업데이트는 다른 hook, `CLAUDE.md`·`AGENTS.md`의 code-agent 블록 밖 내용, 역할별 모델·추론 강도 변경값을 보존합니다. 사람이 고친 실행 절차·에이전트 사본은 덮어쓰지 않고 새 내용을 `.code-agent/template-conflicts/`에 둔 뒤 `!!`로 알립니다 — 병합한 뒤 `code-agent update --templates-only`를 실행합니다. 번들에 없는 과거 `ca-*` 파일은 사용자 파일일 수 있어 지우지 않고 보고합니다. 바뀐 설치 파일은 커밋해 팀과 공유합니다.
 
-릴리스 저장소 구조 이전 버전의 code-agent 에서 처음 업데이트할 때는 한 번만 이전 방식(설치 폴더에서 받기·빌드)으로 받습니다. 그때 떠 있던 Codex 선택 UI MCP 는 한 번 다시 열고, 마지막 `doctor`의 ✗ 때문에 '중단'으로 보고되면 `code-agent version`으로 적용 버전을 확인합니다. 자세한 동작은 [설치 문서 5절](doc/install.md#5-code-agent-update--갱신)에 있습니다.
+업데이트의 설치·확인·적용 규약은 [설치 문서 5절](doc/install.md#5-code-agent-update--갱신)에 있습니다.
 
 ## 요구사항부터 완료까지
 
@@ -384,6 +396,8 @@ code-agent verify --json
 | `code-agent update` | 미리보기를 보고 `update`를 입력하면(TTY에서만) 로컬 Git 소스의 upstream 커밋을 릴리스 저장소의 새 폴더에 설치·검증하고 이 프로젝트에 적용한 뒤 doctor 실행 — 진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용(호스트 종료 불필요) |
 | `code-agent update --templates-only` | 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영(npm 패키지 진입점이면 설치된 패키지를 들인다) |
 | `code-agent update --release <ID>` · `--bundled` | 설치된 릴리스로 되돌리거나 다시 앞으로(TTY 확인) · 고정을 풀고 진입점 번들로 |
+| `code-agent update --install-only (--preview \| --shown-hash <해시>) --json` | 프로젝트 없이 설치 미리보기·화면 확인 후 릴리스 설치만 |
+| `code-agent update --release <ID> (--preview \| --shown-hash <해시>) --json` | 프로젝트별 적용 미리보기·화면 확인 후 적용 또는 예약 |
 | `code-agent version` | 이 명령을 돌린 코드 · 이 프로젝트의 적용 버전·적용 대기와 사유 · 설치된 릴리스 · 실행 중인 선택 UI MCP 의 버전 |
 | `code-agent doctor` | 설치 경로·실행 절차·hook·문서 상태 점검과 조치 안내 (읽기 전용 — 작업 중에도 조회할 수 있다) |
 | `code-agent setup` | 기존 명령·실행 환경·Git 준비 확인. 테스트 실행 없음 |

@@ -1,6 +1,6 @@
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { existsSync, realpathSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, realpathSync } from "fs";
 import { dirname, join, resolve } from "path";
 
 import { isPackaged } from "./assets";
@@ -10,6 +10,8 @@ import { confirmOnTerminal } from "./tty";
 import { hostMarked } from "./crossEnv";
 import { installGitRelease, listReleases, npm, type RunNpm } from "./releaseStore";
 import { entryScript, installedRelease, readRuntime, releaseHome, SELF_ENV } from "./runtimeSelect";
+import { actorName } from "./actor";
+import { storeDir } from "./plugins/store";
 
 export interface SourceUpdateOptions {
   /** Hook CLI override, as in update(). The installed hook form is inherited otherwise. */
@@ -29,7 +31,7 @@ export interface SourceUpdateOptions {
 interface Audit {
   installType: "git-source" | "npm-package" | "non-git" | "binary";
   source?: string;
-  target: string;
+  target?: string;
   branch?: string;
   remote?: string;
   remoteRef?: string;
@@ -62,11 +64,8 @@ function localGit(source: string, args: string[]): string | undefined {
   return !result.error && result.status === 0 ? result.stdout.trim() : undefined;
 }
 
-function audit(repoRoot: string, options: SourceUpdateOptions): Audit {
-  const target = canonical(repoRoot);
-  let runtime: ReturnType<typeof readRuntime>;
-  try { runtime = readRuntime(target); } catch { runtime = undefined; }
-  const base = { target, store: releaseHome(), ...(runtime?.applied ? { applied: runtime.applied } : {}), ...(runtime?.pending ? { pending: runtime.pending.id } : {}) };
+function sourceAudit(options: SourceUpdateOptions): Audit {
+  const base = { store: releaseHome() };
   if (options.packaged ?? isPackaged()) return {
     ...base, installType: "binary", source: process.execPath,
     blocked: "단일 실행 파일은 여기서 새 버전을 받을 수 없습니다. 기존 배포 경로에서 새 실행 파일을 받아 교체한 뒤 update --templates-only 를 실행하세요(진행 중인 작업이 있으면 끝난 뒤에 교체합니다).",
@@ -103,21 +102,30 @@ function audit(repoRoot: string, options: SourceUpdateOptions): Audit {
   return result;
 }
 
+function audit(repoRoot: string, options: SourceUpdateOptions): Audit & { target: string } {
+  const target = canonical(repoRoot);
+  let runtime: ReturnType<typeof readRuntime>;
+  try { runtime = readRuntime(target); } catch { runtime = undefined; }
+  const { store, ...source } = sourceAudit(options);
+  // 기존 동의 스냅샷의 직렬화 순서를 유지한다.
+  return { target, store, ...(runtime?.applied ? { applied: runtime.applied } : {}), ...(runtime?.pending ? { pending: runtime.pending.id } : {}), ...source };
+}
+
 function summary(value: Audit): string {
   const releases = listReleases(value.store);
   return [
     `설치 유형: ${value.installType}`,
     `소스: ${value.source ?? "단일 실행 파일"}`,
-    `대상: ${value.target}`,
+    ...(value.target ? [`대상: ${value.target}`] : []),
     ...(value.branch ? [`브랜치: ${value.branch}`] : []),
     ...(value.remote ? [`remote: ${value.remote}`] : []),
     ...(value.upstream ? [`upstream: ${value.upstream}`] : []),
     ...(value.head ? [`소스 폴더 커밋: ${value.head} (그대로 둡니다)`] : []),
-    `이 프로젝트 적용 버전: ${value.applied ?? "진입점 번들"}${value.pending ? ` · 적용 대기 ${value.pending}` : ""}`,
+    ...(value.target ? [`이 프로젝트 적용 버전: ${value.applied ?? "진입점 번들"}${value.pending ? ` · 적용 대기 ${value.pending}` : ""}`] : []),
     `릴리스 저장소: ${value.store} (설치된 릴리스 ${releases.length}개)`,
     `소스 확인값: ${fingerprint(value)}`,
     value.blocked ? `업데이트 중단: ${value.blocked}`
-      : "실행: upstream fetch → 별도 폴더에 그 커밋을 꺼내 npm ci --include=dev → npm run build → 검증 → 릴리스 등록 → 이 프로젝트에 적용(진행 중인 일이 있으면 다음 작업부터) → doctor",
+      : "실행: upstream fetch → 별도 폴더에 그 커밋을 꺼내 npm ci --include=dev → npm run build → 검증 → 릴리스 등록" + (value.target ? " → 이 프로젝트에 적용(진행 중인 일이 있으면 다음 작업부터) → doctor" : " (설치만 수행하며 프로젝트에는 적용하지 않습니다)"),
     "설치하는 동안 지금 버전은 그대로 돕니다 — 실행 중인 설치 폴더·소스 폴더·다른 프로젝트를 바꾸지 않습니다. 미리보기는 로컬 검사만 수행합니다. 동의 후 fetch 와 필요 시 npm 다운로드, 받은 커밋의 설치·빌드 스크립트(prepare 포함)가 실행됩니다.",
   ].join("\n");
 }
@@ -134,6 +142,45 @@ function fingerprint(value: Audit): string {
 /** Include this in the consent snapshot even when target and source differ. */
 export function sourceUpdateSnapshot(repoRoot: string, options: SourceUpdateOptions = {}): string {
   return fingerprint(audit(repoRoot, options));
+}
+
+/** PC 신뢰와 같은 확인자 형식. 프로젝트 승인 원장과 별개인 PC 공용 실행 확인 기록이다. */
+export const updateConfirmationFile = (): string => join(storeDir(), "update-confirmations.jsonl");
+function recordConfirmation(action: "install" | "release" | "update", channel: "tty" | "dashboard", shownHash: string, context: { source?: string; target?: string; release?: string }): void {
+  const file = updateConfirmationFile();
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, `${JSON.stringify({ version: 1, action, ...context, createdAt: new Date().toISOString(), createdBy: { actor: actorName(), channel, shownHash } })}\n`, { mode: 0o600 });
+}
+function shownFingerprint(domain: string, state: unknown, lines: string[]): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify({ domain, state, lines })).digest("hex")}`;
+}
+function dashboardCaller(): void {
+  if (hostMarked()) throw new Stop(`policy-forbids: ${HOST_SHELL_UPDATE}`);
+}
+function requireShown(shownHash: string, current: string): void {
+  if (shownHash !== current) throw new Stop("stale-state: 확인한 뒤 업데이트 대상이 바뀌었습니다. 최신 미리보기를 다시 확인하세요. 설치·적용은 실행하지 않았습니다.");
+}
+function installPreview(options: SourceUpdateOptions) {
+  const state = sourceAudit(options), lines = summary(state).split("\n");
+  const shownHash = shownFingerprint("code-agent.install-only.v1", state, lines);
+  return { state, preview: { source: state.source ?? null, branch: state.branch ?? null, upstream: state.upstream ?? null,
+    store: state.store, lines, shownHash, canInstall: !state.blocked, reason: state.blocked ?? null } };
+}
+/** 프로젝트 없이 읽는 설치 전용 미리보기 — fetch·잠금·확인 기록을 만들지 않는다. */
+export function previewInstallOnly(options: SourceUpdateOptions = {}) {
+  dashboardCaller();
+  return installPreview(options).preview;
+}
+export function installOnlyConfirmed(shownHash: string, options: SourceUpdateOptions = {}) {
+  dashboardCaller();
+  const { state, preview } = installPreview(options);
+  requireShown(shownHash, preview.shownHash);
+  if (state.blocked) throw new Stop(preview.lines.join("\n"));
+  recordConfirmation("install", "dashboard", shownHash, { source: state.source });
+  const outcome = installGitRelease({ source: state.source!, remote: state.remote!, ref: state.remoteRef! }, options.runNpm ?? npm, state.store);
+  const release = installedRelease(outcome.id, state.store)!;
+  if (release.info.source.kind !== "git") throw new Stop("설치 결과가 Git 릴리스가 아닙니다.");
+  return { id: outcome.id, commit: release.info.source.commit, created: outcome.created, log: outcome.log };
 }
 
 /** 새 릴리스 적용의 결과 — 0 적용, 3 예약·그대로 */
@@ -222,10 +269,12 @@ export function updateFromSourceConfirmed(repoRoot: string, options: SourceUpdat
   // 호스트 셸(CLAUDECODE·Codex 표지)에서는 터미널 확인을 받지 않는다 — 모델 명령을 PTY 로 돌리고 입력을 넣을 수 있는 호스트에서는
   // TTY 가 사람의 입력을 뜻하지 않는다(consent apply 의 TTY 경로와 같은 규칙, consentTicket.terminalCaller)
   if (hostMarked(process.env)) throw new Stop(HOST_SHELL_UPDATE);
-  const shown = previewSourceUpdate(repoRoot, options);
-  if (shown.includes("업데이트 중단:")) throw new Stop(shown);
-  const expectedSourceSnapshot = sourceUpdateSnapshot(repoRoot, options);
+  const initial = audit(repoRoot, options), shown = summary(initial);
+  if (initial.blocked) throw new Stop(shown);
+  const expectedSourceSnapshot = fingerprint(initial);
   confirmOnTerminal(`${shown}\n\n위 순서로 code-agent 새 버전을 설치하고 이 프로젝트에 적용합니다(네트워크 접근·npm 스크립트 실행 포함).`, "update");
+  requireShown(expectedSourceSnapshot, sourceUpdateSnapshot(repoRoot, options));
+  recordConfirmation("update", "tty", `sha256:${expectedSourceSnapshot}`, { source: initial.source, target: initial.target });
   return updateFromSource(repoRoot, { ...options, expectedSourceSnapshot });
 }
 
@@ -233,8 +282,7 @@ export function updateFromSourceConfirmed(repoRoot: string, options: SourceUpdat
  * 설치된 릴리스 하나를 골라 적용한다(되돌리기·다시 앞으로) — 사람의 터미널 확인 뒤. 상태 형식 세대가 낮은 릴리스는 새 릴리스 자신이 거부한다.
  * 진행 중인 일이 있으면 예약한다(다음 작업부터).
  */
-export function updateToReleaseConfirmed(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string } = {}): string {
-  if (hostMarked(process.env)) throw new Stop(HOST_SHELL_UPDATE);
+function releasePreview(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string }) {
   const root = canonical(repoRoot);
   const release = installedRelease(id);
   if (!release) {
@@ -243,10 +291,31 @@ export function updateToReleaseConfirmed(repoRoot: string, id: string, options: 
   }
   let runtime: ReturnType<typeof readRuntime>;
   try { runtime = readRuntime(root); } catch (error) { throw new Stop(`${error instanceof Error ? error.message : String(error)}`); }
-  const shown = [`대상: ${root}`, `이 프로젝트 적용 버전: ${runtime?.applied ?? "진입점 번들(고정 없음)"}`,
+  const lines = [`대상: ${root}`, `이 프로젝트 적용 버전: ${runtime?.applied ?? "진입점 번들(고정 없음)"}`,
     `고를 릴리스: ${id} (${release.info.source.kind === "git" ? `커밋 ${release.info.source.commit}` : `내용 ${release.info.contentHash.slice(0, 12)}`} · 상태 세대 ${release.info.stateSchema} · ${release.info.installedAt} 설치)`,
     `이 프로젝트의 상태 세대: ${runtime?.stateSchema ?? 1} — 그보다 낮은 세대의 릴리스는 적용하지 않습니다`,
-    "진행 중인 일이 있으면 다음 작업부터 적용합니다. 템플릿은 그 릴리스의 것으로 다시 반영합니다(사람이 고친 사본은 보존)."].join("\n");
-  confirmOnTerminal(`${shown}\n\n위 릴리스로 이 프로젝트의 적용 버전을 바꿉니다.`, "update");
+    ...(options.host ? [`적용 호스트: ${options.host}`] : []), ...(options.cli ? [`hook 실행 경로: ${options.cli}`] : []),
+    "진행 중인 일이 있으면 다음 작업부터 적용합니다. 템플릿은 그 릴리스의 것으로 다시 반영합니다(사람이 고친 사본은 보존)."];
+  const store = releaseHome();
+  const shownHash = shownFingerprint("code-agent.release-apply.v1", { root, store, runtime: runtime ?? null, release: release.info, options }, lines);
+  return { target: root, current: runtime?.applied ?? null, release: id, stateSchema: runtime?.stateSchema ?? 1, releaseStateSchema: release.info.stateSchema, store, lines, shownHash };
+}
+export function previewReleaseApply(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string } = {}) {
+  dashboardCaller();
+  return releasePreview(repoRoot, id, options);
+}
+export function releaseApplyConfirmed(repoRoot: string, id: string, shownHash: string, options: { host?: HostSelection; cli?: string } = {}): ReleaseApply {
+  dashboardCaller();
+  const preview = releasePreview(repoRoot, id, options);
+  requireShown(shownHash, preview.shownHash);
+  recordConfirmation("release", "dashboard", shownHash, { target: preview.target, release: id });
+  return runReleaseApply(preview.target, id, { trigger: "release", ...options });
+}
+export function updateToReleaseConfirmed(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string } = {}): string {
+  if (hostMarked(process.env)) throw new Stop(HOST_SHELL_UPDATE);
+  const preview = releasePreview(repoRoot, id, options), root = preview.target;
+  confirmOnTerminal(`${preview.lines.join("\n")}\n\n위 릴리스로 이 프로젝트의 적용 버전을 바꿉니다.`, "update");
+  requireShown(preview.shownHash, releasePreview(root, id, options).shownHash);
+  recordConfirmation("release", "tty", preview.shownHash, { target: root, release: id });
   return runReleaseApply(root, id, { trigger: "release", host: options.host, cli: options.cli }).text;
 }

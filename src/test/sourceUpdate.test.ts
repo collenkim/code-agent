@@ -13,6 +13,8 @@ import { afterEach, beforeEach, test } from "node:test";
 import { installGitRelease, listReleases, lockStore } from "../agent/releaseStore";
 import { entryScript, installedRelease } from "../agent/runtimeSelect";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource, type SourceUpdateOptions } from "../agent/update";
+import { installOnlyConfirmed, previewInstallOnly, updateConfirmationFile } from "../agent/sourceUpdate";
+import { CODEX_MARKERS } from "../agent/crossEnv";
 
 let root: string;
 let remote: string;
@@ -22,6 +24,7 @@ let target: string;
 let home: string;
 let calls: { args: string[]; cwd: string }[];
 let savedHome: string | undefined;
+let savedCaller: Record<string, string | undefined>;
 
 function write(base: string, file: string, value: string): void {
   mkdirSync(dirname(join(base, file)), { recursive: true });
@@ -104,6 +107,9 @@ beforeEach(() => {
   home = join(root, "release store");
   savedHome = process.env.CODE_AGENT_RELEASE_HOME;
   process.env.CODE_AGENT_RELEASE_HOME = home;
+  savedCaller = Object.fromEntries(["CODE_AGENT_HOME", "CLAUDECODE", ...CODEX_MARKERS].map(key => [key, process.env[key]]));
+  for (const key of Object.keys(savedCaller)) delete process.env[key];
+  process.env.CODE_AGENT_HOME = join(root, "pc store");
   calls = [];
   git(root, "init", "--bare", "--initial-branch=main", remote);
   git(root, "clone", remote, seed);
@@ -125,8 +131,70 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const [key, value] of Object.entries(savedCaller)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   if (savedHome === undefined) delete process.env.CODE_AGENT_RELEASE_HOME; else process.env.CODE_AGENT_RELEASE_HOME = savedHome;
   rmSync(root, { recursive: true, force: true });
+});
+
+test("설치 전용 화면 확인 — 프로젝트 없이 읽고 확인한 upstream만 설치, 같은 커밋은 재사용한다", () => {
+  const commit = publish("dashboard");
+  const before = readdirSync(target).sort();
+  const preview = previewInstallOnly(options());
+  assert.deepEqual(previewInstallOnly(options()), preview);
+  assert.equal(preview.source, source);
+  assert.equal(preview.branch, "main");
+  assert.equal(preview.upstream, "refs/remotes/origin/main");
+  assert.equal(preview.store, home);
+  assert.match(preview.shownHash, /^sha256:[a-f0-9]{64}$/);
+  assert.match(preview.lines.join("\n"), /설치만 수행하며 프로젝트에는 적용하지 않습니다/);
+  assert.ok(!preview.lines.some(line => line.startsWith("대상:")));
+  assert.equal(existsSync(home), false);
+  assert.equal(existsSync(updateConfirmationFile()), false);
+  assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false);
+  const result = installOnlyConfirmed(preview.shownHash, options());
+  assert.deepEqual(Object.keys(result).sort(), ["commit", "created", "id", "log"]);
+  assert.equal(result.id, releaseId(commit));
+  assert.equal(result.commit, commit);
+  assert.equal(result.created, true);
+  assert.ok(result.log.length);
+  assert.deepEqual(readdirSync(target).sort(), before);
+  assert.deepEqual(invocations(), []);
+  const count = calls.length;
+  const again = installOnlyConfirmed(previewInstallOnly(options()).shownHash, options());
+  assert.equal(again.created, false);
+  assert.equal(again.commit, commit);
+  assert.equal(calls.length, count, "같은 커밋은 npm을 다시 실행하지 않는다");
+  const records = readFileSync(updateConfirmationFile(), "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(records.length, 2);
+  assert.equal(records[0].createdBy.channel, "dashboard");
+  assert.equal(records[0].createdBy.shownHash, preview.shownHash);
+  assert.equal(typeof records[0].createdBy.actor, "string");
+});
+
+test("설치 전용 확인 거부 — 다른 해시·변경된 upstream·호스트 표지는 fetch와 기록보다 먼저 막는다", () => {
+  const preview = previewInstallOnly(options());
+  assert.throws(() => installOnlyConfirmed("wrong", options()), /stale-state/);
+  process.env.CODE_AGENT_RELEASE_HOME = join(root, "different store");
+  assert.throws(() => installOnlyConfirmed(preview.shownHash, options()), /stale-state/);
+  assert.equal(existsSync(process.env.CODE_AGENT_RELEASE_HOME), false);
+  process.env.CODE_AGENT_RELEASE_HOME = home;
+  git(source, "checkout", "-b", "different");
+  assert.throws(() => installOnlyConfirmed(preview.shownHash, options()), /stale-state/);
+  git(source, "checkout", "main");
+  git(source, "remote", "set-url", "origin", join(root, "changed.git"));
+  assert.throws(() => installOnlyConfirmed(preview.shownHash, options()), /stale-state/);
+  for (const marker of ["CLAUDECODE", ...CODEX_MARKERS]) {
+    process.env[marker] = "1";
+    try {
+      assert.throws(() => previewInstallOnly(options()), /policy-forbids/);
+      assert.throws(() => installOnlyConfirmed(preview.shownHash, options()), /policy-forbids/);
+    } finally { delete process.env[marker]; }
+  }
+  assert.equal(existsSync(home), false);
+  assert.equal(existsSync(updateConfirmationFile()), false);
+  assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(invocations(), []);
 });
 
 test("미리보기는 설치된 소스만 로컬로 본다 — fetch·쓰기·npm 없음, 소스 폴더는 그대로 둔다고 알린다", () => {
