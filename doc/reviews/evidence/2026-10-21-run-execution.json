@@ -57,7 +57,7 @@
     "hashOf": "sorted relative path + NUL + bytes + NUL"
   },
   "masterAgentInterop": {
-    "masterWorkingTree": "uncommitted request-host changes (same session)",
+    "masterCommit": "db39d97 (request-host changes)",
     "tests": [
       "tests/managed-host.test.mjs: actual code-agent runs the request host for new runs only and keeps the project execution setting",
       "tests/managed-host.test.mjs, tests/code-agent-control.test.mjs, tests/handoff-contracts.test.mjs, tests/pairing.test.mjs, tests/request-host.test.mjs: 30 passed against this build"

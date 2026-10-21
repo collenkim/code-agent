@@ -37,7 +37,7 @@ Windows 11·Node 24.19.0. `npm run build` 통과.
 
 최종 전체 회귀: `npm test`(Claude Code 세션 안, `CLAUDECODE=1`) 1,690개 중 1,686개 통과, 실패 0개, 플랫폼 생략 4개, 약 885초.
 
-master-agent 상호 운용은 master-agent 작업 트리(같은 세션의 미커밋 요청 host 변경)의 `ControlHost`·페어링 어댑터를 이 빌드의 `dist/agent/cli.js`에 연결해 확인했다. 실제 감독과 모의 Codex 모델을 쓰고, 프로젝트 실행 방식은 Claude 단독으로 두었다. 결과는 다음과 같다.
+master-agent 상호 운용은 master-agent 요청 host 변경(`db39d97`)의 `ControlHost`·페어링 어댑터를 이 빌드의 `dist/agent/cli.js`에 연결해 확인했다. 실제 감독과 모의 Codex 모델을 쓰고, 프로젝트 실행 방식은 Claude 단독으로 두었다. 결과는 다음과 같다.
 
 - hello 의 `runSelection`은 `claude`·`codex`·`both`였다.
 - 요청의 Codex 로 실행했고(`hostKind: codex`), `execution.json`은 그대로였다.
