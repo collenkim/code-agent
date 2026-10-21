@@ -6,7 +6,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — 이 커밋 | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |
+| 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — `5adbb97` | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |
 | 2026-10-20 | [PC 신뢰와 대시보드 페어링](2026-10-20-dashboard-pairing.md) — `1841a89` | [회귀·master-agent 상호 운용](evidence/2026-10-20-dashboard-pairing.json) |
 | 2026-10-20 | [Codex 관리 실행의 Git 실행 권한](2026-10-20-codex-git-permission.md) — `1c6e403` | [실제 Codex 평가·회귀](evidence/2026-10-20-codex-git-permission.json) |
 | 2026-10-20 | [종료 독립 세션 복원과 실제 모델 검증](2026-10-20-session-recovery-live.md) — `a78c51a` | [회귀·실제 모델 집계](evidence/2026-10-20-session-recovery-live.json) |
