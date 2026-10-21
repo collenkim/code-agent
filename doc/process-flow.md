@@ -859,7 +859,7 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 파일 삭제·이동의 사전 검사와 승인 실행, 완료 hook 전달 복구, 공백 지식 키, 답변한 낡은 질문 정리와 상태·버전 안내를 보완한다 — 이 변경 커밋, [검증 기록](reviews/2026-10-21-workflow-recovery.md).
+- 파일 삭제·이동의 사전 검사와 승인 실행, 완료 hook 전달 복구, 공백 지식 키, 답변한 낡은 질문 정리와 상태·버전 안내를 보완한다 — `d6ca2d9`, [검증 기록](reviews/2026-10-21-workflow-recovery.md).
 
 - PC 신뢰를 대시보드 확인 화면에서도 등록한다 — code-agent 가 정한 문구의 해시가 같을 때만 키를 만들고, 호스트 셸에서는 받지 않으며 기록에 대시보드 확인으로 남긴다 — `4e81965`, [검증](reviews/2026-10-21-dashboard-trust.md)
 
