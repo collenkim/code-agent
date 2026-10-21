@@ -85,7 +85,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 `links`(`missionId`·`taskId`·`attemptId`·`planVersion`·`invocationId`)는 실행 기록과 작업 연결에 남아 master 의 임무·작업·시도·계획과 code-agent 의 작업·시도·세션을 잇는다.
 
-`hello.interactions`는 스키마·단계·지원 동의·소비자·독립 세션·재개 범위를 공개한다. 사람 채널은 `master human enable|disable --controller <ID>`로 TTY에서 등록·폐기하거나 [페어링](#pc-신뢰와-대시보드-페어링)이 연동과 함께 등록한다. `interaction.*`는 master 목표·작업 연결이나 AI grant 없이도 설정·운영·독립 호스트의 요청에 사용할 수 있다. 일반 `answer`·`decide`의 위임 범위는 그대로다. `interaction.changed` 이벤트의 `cursor`로 요청 목록을 다시 조회한다. 영속 질문은 다음 버전 적용을 막는 진행 상태다.
+`hello.interactions`는 스키마·단계·지원 동의·소비자·독립 세션·재개 범위를 공개한다. 사람 채널은 `master human enable|disable --controller <ID>`로 TTY에서 등록·폐기하거나 [페어링](#pc-신뢰와-대시보드-페어링)이 연동과 함께 등록한다. `interaction.*`는 master 목표·작업 연결이나 AI grant 없이도 설정·운영·독립 호스트의 요청에 사용할 수 있다. 호스트의 `interaction publish`는 유효한 대시보드 사람 채널을 먼저 확인한다. 연결이 없는 단독 대화는 호스트 선택 UI를 사용하며, 질문 저장을 UI 표시로 취급하지 않는다. 일반 `answer`·`decide`의 위임 범위는 그대로다. `interaction.changed` 이벤트의 `cursor`로 요청 목록을 다시 조회한다. 영속 질문은 다음 버전 적용을 막는 진행 상태다.
 
 ### 오류 코드
 

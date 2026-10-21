@@ -2,10 +2,9 @@
 
 현재 동작은 [프로세스 흐름도](../process-flow.md), [사용 가이드](../usage.md), [설계](../design.md)를 기준으로 읽는다. 아래 기록은 변경 당시의 근거·검증 결과·한계다. 서로 다른 시점의 시험 수를 합산하지 않는다.
 
-최근 복원·실제 모델 결과는 [종료 독립 세션 복원과 실제 모델 검증](2026-10-20-session-recovery-live.md)에 모았다. master-agent 연결(PC 신뢰·페어링)은 [대시보드 페어링 기록](2026-10-20-dashboard-pairing.md), master 요청의 실행 방식 선택과 최신 전체 회귀는 [실행 방식 선택 기록](2026-10-21-run-execution.md), Codex 관리 실행의 Git 권한은 [Git 실행 권한 기록](2026-10-20-codex-git-permission.md)을 따른다. 서로 다른 검사의 수치를 합산하지 않는다.
-
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
+| 2026-10-21 | [YSIJ-255 질문 UI·응답 관찰·낡은 대기](2026-10-21-question-ui.md) | [프로젝트 대조·회귀](evidence/2026-10-21-question-ui.json) |
 | 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — `5adbb97` | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |
 | 2026-10-20 | [PC 신뢰와 대시보드 페어링](2026-10-20-dashboard-pairing.md) — `1841a89` | [회귀·master-agent 상호 운용](evidence/2026-10-20-dashboard-pairing.json) |
 | 2026-10-20 | [Codex 관리 실행의 Git 실행 권한](2026-10-20-codex-git-permission.md) — `1c6e403` | [실제 Codex 평가·회귀](evidence/2026-10-20-codex-git-permission.json) |

@@ -145,8 +145,8 @@ export function hookFile(root: string, host: Host): string {
  * `templateText.test.ts` 가 원문마다 Claude 템플릿 하나 이상에 있고 Codex 사본 어디에도 남지 않는지 대조한다. 모든 등장을 바꾼다($ 패턴 해석 없음).
  */
 export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
-  ["도구가 없거나 거부되면 이유와 번호·선택지·결과를 대화에 제시하고 실제 답을 기다린다.",
-    "MCP 선택 UI가 없거나 거부되면 doctor로 설치·호스트 지원을 확인한다. 번호 나열을 선택 UI의 대체 완료로 보고하지 않는다."],
+  ["도구가 없거나 표시가 실패하면 설치·hook·호스트 지원을 확인하고 복구 후 같은 질문을 UI로 표시한다.",
+    "MCP 선택 UI가 없거나 표시가 실패하면 doctor로 설치·호스트 지원을 확인하고 복구 후 같은 질문을 UI로 표시한다."],
   // 장시간 실행 정본 문장(ca-check·ca-test·ca-integrate·ca-implement 에 글자 그대로). Codex 셸 도구의 제한 시간
   // 인자 이름·상한은 미확인이라 숫자를 옮기지 않는다. 정본이 바뀌면 이 치환이 걸리지 않고 Codex 사본 점검(Bash·600000ms 0건)이 잡는다
   ["Bash 도구의 timeout 을 최대(600000ms)로 주고, 그보다 긴 저장소는 백그라운드 실행(`run_in_background`) 뒤 완료 알림을 기다린다.",

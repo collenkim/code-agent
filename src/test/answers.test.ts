@@ -53,7 +53,11 @@ function ask(text: string, labels: string[], answer: string, extra: { agent?: st
   const questions = [question(text, labels)];
   const base = { cwd: root, session_id: "main", tool_use_id: extra.tool ?? `tool-${Math.random()}`, tool_name: "AskUserQuestion",
     ...(extra.agent ? { agent_id: extra.agent } : {}) };
-  if (!extra.skipPre) assert.equal(hook({ ...base, hook_event_name: "PreToolUse", tool_input: { questions, ...(extra.prefilled ? { answers: { [text]: answer } } : {}) } }).code, 0);
+  if (!extra.skipPre) {
+    const result = hook({ ...base, hook_event_name: "PreToolUse", tool_input: { questions, ...(extra.prefilled ? { answers: { [text]: answer } } : {}) } });
+    assert.equal(result.code, extra.prefilled ? 2 : 0);
+    if (extra.prefilled) assert.match(result.stderr, /답을 미리 넣을 수 없습니다/);
+  }
   assert.equal(hook({ ...base, hook_event_name: "PostToolUse", tool_input: { questions }, tool_response: { questions, answers: { [text]: answer } } }).code, 0);
 }
 const writeQuestions = (body: string) => writeFixture(root, QUESTIONS, `# ${CONSENT_WORK_ID} 질문\n\n${body}`);

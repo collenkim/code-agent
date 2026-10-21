@@ -30,6 +30,8 @@ export interface InteractionRecord {
   continuation?: { state: "waiting-host" | "queued" | "started" | "blocked"; runId?: string; detail?: string };
   unavailableReason?: string;
   nativeCallIds?: string[];
+  /** 표시 실패는 사용자 응답 대기·보류와 구분하며 실제 재표시 때 지운다. */
+  presentation?: { state: "failed"; at: string };
 }
 interface Ledger { version: 1; instanceId: string; seq: number; requests: Record<string, InteractionRecord>; commands: Record<string, { hash: string; requestId: string; response: unknown }> }
 export const interactionHash = (value: unknown) => `sha256:${sha256(canonicalJson(value))}`;

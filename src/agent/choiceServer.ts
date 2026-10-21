@@ -21,7 +21,7 @@ import { QUESTION_ROWS, questionScreenProblem } from "./screenText";
 import { Stop } from "./stop";
 import { PublishInteraction } from "./interactionSchema";
 import { takeInteractionTicket } from "./interactionTicket";
-import { publishNativeInteraction, acceptNativeInteraction } from "./interactionNative";
+import { publishNativeInteraction, acceptNativeInteraction, nativePresentationFailed } from "./interactionNative";
 import { publishHostInteraction } from "./interactionSources";
 import { readInteractions } from "./interactions";
 
@@ -55,9 +55,9 @@ export async function askChoice(args: unknown, elicit: Elicit, root?: string): P
   const durable = root && ticket ? interaction ? publishHostInteraction(root, interaction, ticket) : publishNativeInteraction(root, questions, ticket) : undefined;
   if (durable && (durable.response || interaction)) return { status: durable.status, requestId: durable.requestId, next: `code-agent interaction consume ${durable.requestId}`, message: "저장한 요청의 실제 답을 기다립니다. 추천·기본 선택은 응답이 아닙니다." };
   let timer: ReturnType<typeof setInterval> | undefined;
-  const formResponse = elicit(formOf("각 질문의 선택지를 방향키로 이동하고 Enter로 확정하세요. Esc는 취소입니다.", questions));
   let response: unknown;
   try {
+    const formResponse = elicit(formOf("각 질문의 선택지를 방향키로 이동하고 Enter로 확정하세요. Esc는 취소입니다.", questions));
     response = await Promise.race([formResponse, new Promise((resolve, reject) => {
       if (durable && root) timer = setInterval(() => {
         try {
@@ -66,6 +66,9 @@ export async function askChoice(args: unknown, elicit: Elicit, root?: string): P
         } catch (error) { reject(error); }
       }, 200);
     })]);
+  } catch (error) {
+    if (durable && root) nativePresentationFailed(root, durable.requestId);
+    throw new Stop(`선택 UI를 표시하거나 응답을 받지 못했습니다. 사용자 미응답·보류로 처리하지 않습니다. 연결을 확인한 뒤 같은 질문을 선택 UI로 다시 표시하세요. (${error instanceof Error ? error.message : String(error)})`);
   } finally { if (timer) clearInterval(timer); }
   if (response && typeof response === "object" && "dashboard" in response && durable && root && ticket) {
     const r = readInteractions(root)!.requests[durable.requestId];
@@ -73,7 +76,12 @@ export async function askChoice(args: unknown, elicit: Elicit, root?: string): P
     return { status: "answered", source: "dashboard-human", requestId: r.requestId, answers: r.response!.submission.answers,
       next: `답을 적용한 뒤 code-agent interaction complete ${r.requestId} <결과.json>으로 소비 결과를 남깁니다.` };
   }
-  const parsed = readResponse(response, questions.map(q => q.options));
+  let parsed: string[] | undefined;
+  try { parsed = readResponse(response, questions.map(q => q.options)); }
+  catch (error) {
+    if (durable && root) nativePresentationFailed(root, durable.requestId);
+    throw error;
+  }
   if (durable && root && ticket) acceptNativeInteraction(root, durable.requestId, ticket.sessionId, "codex-elicitation", parsed);
   return parsed ? { status: "answered", answers: questions.map((q, i) => ({ question: q.title, answer: parsed[i] })) }
     : { status: "cancelled", message: "사용자가 선택을 취소했습니다. 기본값으로 진행하지 마세요." };

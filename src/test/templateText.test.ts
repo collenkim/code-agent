@@ -125,7 +125,9 @@ test("단계별 선택 표는 전체 단계와 접수·준비·재개를 다루�
       assert.ok(reference.includes(name), `${host}: ${name}`);
     }
     assert.match(reference, /이미 준 지시·답·설정.*계속한다/);
-    assert.match(reference, host === "claude" ? /도구가 없거나 거부되면 이유와 번호·선택지·결과/ : /MCP 선택 UI가 없거나 거부되면 doctor/);
+    assert.match(reference, host === "claude" ? /도구가 없거나 표시가 실패하면 설치·hook·호스트 지원/ : /MCP 선택 UI가 없거나 표시가 실패하면 doctor/);
+    assert.match(reference, /복구 후 같은 질문을 UI로 표시한다/);
+    assert.doesNotMatch(reference, /번호·선택지·결과를 대화에 제시하고 실제 답을 기다린다/);
     assert.match(reference, /업무 답으로 동의를 대체하지 않는다/);
     assert.match(reference, /선택지 없이 특정 문구 입력만 요청한 안내는 질문 제시 완료로 보지 않는다/);
     assert.match(get("ca-request"), /초안 저장 보고만 하고 끝내지 않는다/);

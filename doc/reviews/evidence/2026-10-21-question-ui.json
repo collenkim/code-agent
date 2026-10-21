@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-21",
+  "project": "service-api",
+  "workId": "YSIJ-255",
+  "sources": [
+    "doc/work/YSIJ-255/blocker-interactions.md",
+    "doc/work/YSIJ-255/questions.md",
+    "doc/work/YSIJ-255/restart-notes.md",
+    ".code-agent/interactions/state.json",
+    ".code-agent/work/YSIJ-255/answers.jsonl",
+    "원래 Claude 세션의 질문 호출·결과"
+  ],
+  "finding": {
+    "execution": "master 관리 실행이 아닌 독립 Claude 세션",
+    "answeredButPending": 8,
+    "blockingQuestions": ["Q14", "Q15", "Q16", "Q17"],
+    "unansweredDocumentQuestions": 0,
+    "unverifiedDocumentQuestions": 0,
+    "oldHead": "f00ab66d05c495f050b47744801ad1df7225f916",
+    "restartedHead": "13df4908be81357fbb273f6da394dd3eb87fb600"
+  },
+  "validation": {
+    "focused": {
+      "command": "node --test --test-concurrency=4 dist/test/interactionRouting.test.js dist/test/interactionSourceChanges.test.js dist/test/templateText.test.js dist/test/templateBudget.test.js dist/test/docSync.test.js dist/test/hostNotation.test.js",
+      "status": "passed",
+      "passed": 42,
+      "failed": 0,
+      "durationMs": 186838.5863,
+      "log": "dist/ysij-commit-tests.log"
+    },
+    "dashboardAndChoice": {
+      "command": "node --test dist/test/interactionRouting.test.js dist/test/dashboardInteractions.test.js dist/test/choiceServer.test.js dist/test/interactionSourceChanges.test.js",
+      "passed": 34,
+      "failed": 0,
+      "log": "dist/ysij-focused-tests.log"
+    },
+    "prefilledHook": {
+      "command": "node --test --test-name-pattern=T-6-5 dist/test/answers.test.js",
+      "passed": 1,
+      "failed": 0
+    },
+    "timeout": {
+      "command": "node --test --test-name-pattern=\"시간을 넘기면 출력\" dist/test/build.test.js",
+      "passed": 1,
+      "failed": 0,
+      "environment": "샌드박스 밖",
+      "log": "dist/ysij-timeout-recheck.log"
+    },
+    "full": {
+      "status": "interrupted-not-passed",
+      "reason": "동의·검증 시험의 장시간 실행으로 중단했다. 샌드박스 밖 재실행도 미완료다.",
+      "resolvedFailures": ["사전 입력 거부의 기존 기대값 수정 후 개별 회귀 통과", "Windows 프로세스 종료 검사 재검증 통과"]
+    },
+    "limitations": ["직접 사용자 선택창을 클릭하는 시험은 수행하지 않았다.", "서로 다른 실행의 시험 수를 합산하지 않는다."]
+  },
+  "recovery": {
+    "command": "code-agent interaction list",
+    "oldRequestsSuperseded": 8,
+    "newQuestions": ["Q14", "Q15", "Q16", "Q17"],
+    "newResponseChannel": "claude-question",
+    "newResponseStatus": "applied",
+    "pendingAtCheck": 0,
+    "respondedAtCheck": 0,
+    "deferredAtCheck": 0,
+    "syntheticAnswersOrApprovals": 0,
+    "templates": "진행 중 작업 제한에 따라 기존 프로젝트 스킬 사본은 작업 종료 후 공식 갱신이 필요하다."
+  }
+}

@@ -1,12 +1,15 @@
 /** 기존 질문 문서·동의와 공통 요청의 연결. 추천은 Markdown 문구에서 추측하지 않는다. */
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "fs";
 import { join } from "path";
 import { DOCS_SESSION_FILE, loadActive, questionsFile, REQUEST_SESSION_FILE } from "./layout";
 import { readLease } from "./lease";
 import { parseQuestions } from "./questions";
 import { PublishInteraction, type InteractionQuestion } from "./interactionSchema";
 import { contextMatches, currentInteractions, interactionContext, interactionHash, publishInteraction, mutateInteractions, bumpInteraction, type InteractionRecord } from "./interactions";
-import { listRuns } from "./master/store";
+import { listRuns, readBinding, readOwner } from "./master/store";
+import { answerHash, readAnswerRows, type AnswerRow } from "./answers";
+import { askVia } from "./hostText";
+import { Stop } from "./stop";
 import type { ConsentRecord } from "./consent";
 import type { InteractionTicket } from "./interactionTicket";
 
@@ -20,6 +23,10 @@ export function stageOf(root: string): PublishInteraction["stage"] {
   return "verification";
 }
 export function publishHostInteraction(root: string, raw: unknown, ticket: InteractionTicket): InteractionRecord {
+  const binding = readBinding(root), owner = readOwner(root), channel = binding?.humanChannel;
+  if (!channel || !owner || owner.handover || channel.generation !== owner.generation || channel.controller !== owner.controller || Date.parse(channel.expiresAt) <= Date.now()) {
+    throw new Stop(`질문을 표시할 대시보드 사람 채널이 연결되지 않았습니다. 대화형 세션은 ${askVia(ticket.host)} 질문하세요. 관리 실행은 사람이 대시보드를 연결한 뒤 질문을 발행하세요. 질문을 표시하지 않은 채 응답 대기로 보고하지 마세요.`);
+  }
   const input = PublishInteraction.parse(raw);
   const context = interactionContext(root, ticket.sessionId, ticket.host, ticket.runId);
   let origin: InteractionRecord["origin"] = { type: "host", id: input.key };
@@ -31,6 +38,21 @@ export function publishHostInteraction(root: string, raw: unknown, ticket: Inter
     origin = { type: "questions", id: context.workId, hash: interactionHash(text) };
   }
   return publishInteraction(root, input, context, origin);
+}
+
+/** 옛 호스트 질문의 대기를 닫는 근거. 새 응답·승인을 합성하거나 현재 문맥에 과거 답을 적용하지 않는다. */
+export function nativeAnswerWasObserved(root: string, r: InteractionRecord, rows?: AnswerRow[]): boolean {
+  if (r.response || r.origin.type !== "host" || !r.key.startsWith("native:") || r.context.host !== "claude" ||
+      !r.context.workId || r.context.root !== realpathSync(root) || !r.nativeCallIds?.length || !r.questions.length) return false;
+  const evidence = rows ?? readAnswerRows(root, r.context.workId);
+  return r.nativeCallIds.some(toolId => {
+    const index = evidence.findIndex(row => row.type === "ask" && row.session === r.context.sessionId && row.toolId === toolId);
+    const ask = evidence[index];
+    if (!ask || ask.type !== "ask" || ask.prefilled !== false || ask.items.length !== r.questions.length || !r.questions.every((q, i) =>
+      ask.items[i].questionHash === answerHash(q.title) && JSON.stringify(ask.items[i].options) === JSON.stringify(q.options.map(o => o.label)))) return false;
+    return evidence.slice(index + 1).some(row => row.type === "answer" && row.session === r.context.sessionId && row.toolId === toolId &&
+      row.items.length === r.questions.length && r.questions.every(q => row.items.some(item => item.questionHash === answerHash(q.title) && item.answer.trim())));
+  });
 }
 export function publishConsentInteraction(root: string, record: ConsentRecord): InteractionRecord {
   const { delegationView } = require("./consent") as typeof import("./consent");
@@ -80,20 +102,39 @@ export function synchronizeInteractions(root: string): void {
       const host = lease && !lease.released ? lease.host : run?.hostProfile?.kind ?? "claude";
       const waitingForSession = (lease?.released && (!run || run.sessionId === lease.session)) ||
         (run?.hostProfile?.kind === "codex" && !run.sessionConfirmed && (!lease || lease.released));
-      const questions: InteractionQuestion[] = missing.slice(0, 16).map(q => ({ questionId: q.id, title: q.title, background: "기존 questions.md에서 발행한 질문입니다.", mode: "text", required: true,
-        options: [], minSelections: 0, maxSelections: 0, input: { required: true, minLength: 1, maxLength: 2000, description: "업무 답을 직접 입력하세요. 구조 줄이나 보류 문구는 답으로 사용하지 않습니다." },
-        recommendedOptionIds: [], defaultOptionIds: [], recommendationReason: "기존 문서에는 구조화된 추천 근거가 없습니다.", evidence: [{ path: questionsFile(workId), summary: "미응답 질문 원문" }] }));
-      if (!waitingForSession) publishInteraction(root, { key: `questions:${workId}`, stage: stageOf(root), kind: "question", title: `${workId} 업무 질문`, questions, source: "questions", expiresInMs: 86400000 },
-        interactionContext(root, sessionId ?? "unbound", host, run && run.sessionId === sessionId ? run.runId : undefined), { type: "questions", id: workId, hash: interactionHash(text) }, undefined, sessionId ? undefined : "원래 세션을 확인할 수 없습니다. 호스트에서 interaction publish로 발행하세요.");
+      for (let offset = 0; offset < missing.length; offset += 16) {
+        const questions: InteractionQuestion[] = missing.slice(offset, offset + 16).map(q => ({ questionId: q.id, title: q.title, background: "기존 questions.md에서 발행한 질문입니다.", mode: "text", required: true,
+          options: [], minSelections: 0, maxSelections: 0, input: { required: true, minLength: 1, maxLength: 2000, description: "업무 답을 직접 입력하세요. 구조 줄이나 보류 문구는 답으로 사용하지 않습니다." },
+          recommendedOptionIds: [], defaultOptionIds: [], recommendationReason: "기존 문서에는 구조화된 추천 근거가 없습니다.", evidence: [{ path: questionsFile(workId), summary: "미응답 질문 원문" }] }));
+        if (!waitingForSession) publishInteraction(root, { key: `questions:${interactionHash({ workId, ids: questions.map(q => q.questionId) }).slice(7, 47)}`, stage: stageOf(root), kind: "question", title: `${workId} 업무 질문`, questions, source: "questions", expiresInMs: 86400000 },
+          interactionContext(root, sessionId ?? "unbound", host, run && run.sessionId === sessionId ? run.runId : undefined), { type: "questions", id: workId, hash: interactionHash(text) }, undefined, sessionId ? undefined : "원래 세션을 확인할 수 없습니다. 호스트에서 interaction publish로 발행하세요.");
+      }
     }
   }
   if (!currentInteractions(root).requests.length) return;
+  const nativeEvidence = new Map<string, AnswerRow[]>();
   mutateInteractions(root, state => {
+    const replacements = new Map<string, Set<string>>();
+    for (const next of Object.values(state.requests)) {
+      if (!questionDocumentHash || next.origin.type !== "questions" || next.origin.id !== workId || next.origin.hash !== questionDocumentHash ||
+          !["pending", "responded", "deferred"].includes(next.status) || !contextMatches(root, next.context)) continue;
+      const ids = replacements.get(next.context.sessionId) ?? new Set<string>();
+      for (const q of next.questions) ids.add(q.questionId);
+      replacements.set(next.context.sessionId, ids);
+    }
     for (const r of Object.values(state.requests)) {
+      if (["pending", "deferred", "expired"].includes(r.status) && r.context.workId && r.key.startsWith("native:")) {
+        if (!nativeEvidence.has(r.context.workId)) nativeEvidence.set(r.context.workId, readAnswerRows(root, r.context.workId));
+        if (nativeAnswerWasObserved(root, r, nativeEvidence.get(r.context.workId))) {
+          r.status = "superseded"; r.unavailableReason = "같은 세션·호출·질문의 실제 호스트 응답이 업무 답 원장에 있어 낡은 대기를 닫았습니다.";
+          bumpInteraction(state, r); continue;
+        }
+      }
       if (!["pending", "deferred", "responded"].includes(r.status)) continue;
-      // 원래 질문 모두에 기존 출처 검사를 통과한 답이 있어야 닫는다. 삭제·출처 미확인 답으로 대기를 풀지 않는다.
+      // 원래 질문의 답 또는 같은 문맥·최신 문서에 발행된 대체 질문이 모두 있어야 닫는다.
       if (r.origin.type === "questions" && r.origin.id === workId && questionDocumentHash && r.origin.hash !== questionDocumentHash &&
-          !r.response && r.questions.every(q => answeredQuestions.has(q.questionId)) && contextMatches(root, r.context)) {
+          !r.response && r.questions.every(q => answeredQuestions.has(q.questionId) ||
+            (r.key.startsWith("questions:") && replacements.get(r.context.sessionId)?.has(q.questionId))) && contextMatches(root, r.context)) {
         r.status = "superseded"; r.unavailableReason = "원래 질문 문서가 바뀌었습니다. 최신 문서·요청에서 확인하세요."; bumpInteraction(state, r); continue;
       }
       if (r.origin.type === "consent") {

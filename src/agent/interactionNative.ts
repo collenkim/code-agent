@@ -4,6 +4,7 @@ import { PublishInteraction, type InteractionQuestion, type InteractionSubmissio
 import { bumpInteraction, contextMatches, currentInteractions, interactionContext, interactionHash, mutateInteractions, needInteraction, publishInteraction, type InteractionRecord } from "./interactions";
 import { stageOf } from "./interactionSources";
 import type { InteractionTicket } from "./interactionTicket";
+import { askVia } from "./hostText";
 
 export function publishNativeInteraction(root: string, questions: { title: string; options: string[] }[], ticket: Pick<InteractionTicket, "sessionId" | "host" | "runId">): InteractionRecord {
   const items: InteractionQuestion[] = questions.map((q, i) => ({ questionId: /^Q\d+\b/.exec(q.title)?.[0] ?? `q${i + 1}`, title: q.title, background: "호스트가 표시한 질문입니다.", mode: "single", required: true,
@@ -13,12 +14,13 @@ export function publishNativeInteraction(root: string, questions: { title: strin
   const input = PublishInteraction.parse({ key: `native:${interactionHash(questions).slice(7, 47)}`, stage: stageOf(root), title: questions[0].title, questions: items });
   const record = publishInteraction(root, input, interactionContext(root, ticket.sessionId, ticket.host, ticket.runId));
   // 새 호스트 질문 호출은 보류·만료한 화면을 다시 열 수 있다. 이미 받은 답과 취소는 되살리지 않는다.
-  if (!record.response && (["deferred", "expired"].includes(record.status) || (record.status === "pending" && Date.parse(record.expiresAt) <= Date.now()))) {
+  if (!record.response && (["deferred", "expired"].includes(record.status) || (record.status === "pending" && (record.presentation?.state === "failed" || Date.parse(record.expiresAt) <= Date.now())))) {
     return mutateInteractions(root, state => {
       const saved = needInteraction(state, record.requestId);
       if (saved.response || !["pending", "deferred", "expired"].includes(saved.status)) return saved;
       saved.status = "pending"; saved.expiresAt = new Date(Date.now() + input.expiresInMs).toISOString(); saved.challenge = randomUUID();
       saved.nativeCallIds = [];
+      delete saved.presentation;
       bumpInteraction(state, saved); return saved;
     });
   }
@@ -51,12 +53,14 @@ export function acceptNativeInteraction(root: string, id: string, sessionId: str
 
 export function observeNativeQuestion(root: string, input: { tool_name?: string; tool_use_id?: string; hook_event_name?: string; session_id?: string; agent_id?: string; tool_input?: Record<string, unknown>; tool_response?: unknown }): void {
   if (input.tool_name !== "AskUserQuestion" || input.agent_id || !input.session_id || !["PreToolUse", "PostToolUse"].includes(input.hook_event_name ?? "")) return;
-  if (!Array.isArray(input.tool_input?.questions) || input.tool_input?.answers) return;
+  if (!Array.isArray(input.tool_input?.questions)) return;
   const raw = input.tool_input.questions as { question: string; options: { label: string }[]; multiSelect?: boolean }[];
   if (!input.tool_use_id || !raw.length || raw.some(q => typeof q.question !== "string" || !Array.isArray(q.options) || q.multiSelect)) return;
   const questions = raw.map(q => ({ title: q.question, options: q.options.map(o => o.label) }));
   let r: InteractionRecord;
   if (input.hook_event_name === "PreToolUse") {
+    // PostToolUse의 input에는 호스트가 채운 answers가 있을 수 있다. 사전 입력 거부는 Pre에서만 한다.
+    if (input.tool_input.answers && Object.keys(input.tool_input.answers as object).length) throw new Error(`${askVia("claude")} 실제 답을 받으세요. 질문에 답을 미리 넣을 수 없습니다.`);
     r = publishNativeInteraction(root, questions, { sessionId: input.session_id, host: "claude", runId: process.env.CODE_AGENT_MASTER_RUN });
     if (r.response) throw new Error(`이미 받은 답이 있습니다. code-agent interaction consume ${r.requestId}로 확인하고 재질문하지 마세요.`);
     mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.nativeCallIds = [...new Set([...(saved.nativeCallIds ?? []), input.tool_use_id!])]; bumpInteraction(state, saved); });
@@ -69,4 +73,14 @@ export function observeNativeQuestion(root: string, input: { tool_name?: string;
   const answers = result?.answers;
   const values = answers && !Object.hasOwn(result!, "afkTimeoutMs") && !result?.followUp && questions.every(q => typeof answers[q.title] === "string" && (answers[q.title] as string).trim()) ? questions.map(q => answers[q.title] as string) : undefined;
   acceptNativeInteraction(root, r.requestId, input.session_id, "claude-question", values);
+}
+
+/** 폼 오류는 사용자 보류가 아니다. 답은 만들지 않고 같은 질문을 다시 표시할 수 있게 남긴다. */
+export function nativePresentationFailed(root: string, id: string): void {
+  mutateInteractions(root, state => {
+    const r = needInteraction(state, id);
+    if (r.status !== "pending" || r.response) return;
+    r.presentation = { state: "failed", at: new Date().toISOString() };
+    bumpInteraction(state, r);
+  });
 }

@@ -768,7 +768,7 @@ function requireNoAidlc(repoRoot: string): void {
 
 export function next(repoRoot: string): string {
   const interaction = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot);
-  if (interaction.pending.length || interaction.deferred.length || interaction.responded.length) throw new Stop("사람 질문의 응답·처리가 남았습니다. interaction list로 조회하고 원래 세션에서 consume·complete한 뒤 이어가세요.");
+  if (interaction.pending.length || interaction.deferred.length || interaction.responded.length) throw new Stop("사람 질문의 응답·처리가 남았습니다. interaction list로 조회하세요. 미응답은 원래 질문의 선택 UI로 받고, 표시 실패는 같은 질문을 다시 표시합니다. 이미 받은 답만 원래 세션에서 consume·complete한 뒤 이어가세요.");
   return applyNextTransition(repoRoot, nextTransition(repoRoot));
 }
 
