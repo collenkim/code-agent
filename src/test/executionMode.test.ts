@@ -12,6 +12,9 @@ import { crossRequired } from "../agent/review";
 import { decide as decideTool } from "../agent/hook";
 import { withInteraction } from "../agent/tty";
 import { CODEX_MARKERS } from "../agent/crossEnv";
+import { saveActive, type ActiveWork } from "../agent/layout";
+import { readWorkBinding, writeRunRecord, writeWorkBinding, type RunRecord } from "../agent/master/store";
+import { managedExecution } from "../agent/master/workExecution";
 
 const roots: string[] = [];
 function fixture(): string {
@@ -57,4 +60,33 @@ test("선택하지 않은 호스트의 쓰기를 막고 상태 조회는 허용�
   const base = { cwd: root, session_id: "session", host: "codex" as const };
   assert.match(decideTool({ ...base, tool_name: "Write", tool_input: { file_path: join(root, "product.ts"), content: "x" } })!, /claude 단독/);
   assert.equal(decideTool({ ...base, tool_name: "Bash", tool_input: { command: "code-agent execution" } }), undefined);
+});
+test("master 가 고른 실행 방식이 그 실행·작업의 교차 검증과 단독 호스트 판정을 정하고 프로젝트 실행 방식은 그대로다", () => {
+  const root = fixture(); initialize(root);
+  const saved = { ...process.env };
+  const run = (execution: RunRecord["execution"]) => writeRunRecord(root, { version: 1, runId: "run-chosen", commandId: "c", controller: "m", generation: 1, mode: "start", links: {},
+    state: "running", acceptedAt: "2026-10-21T00:00:00Z", updatedAt: "2026-10-21T00:00:00Z", sessionId: "s", promptHash: "h", timeoutMs: 1000, workId: null, baseHead: null,
+    baseStateVersion: "v", history: [], ...(execution ? { execution } : {}) });
+  const write = (host: "claude" | "codex") => decideTool({ cwd: root, session_id: "s", host, tool_name: "Write", tool_input: { file_path: join(root, "product.ts"), content: "x" } });
+  try {
+    delete process.env.CLAUDECODE; for (const key of CODEX_MARKERS) delete process.env[key];
+    assert.equal(executionMode(root), "auto"); assert.equal(crossEnabled(root), false);
+    // 작업을 열기 전 — 이 세션의 master 실행이 받은 선택
+    process.env.CODE_AGENT_MASTER_RUN = "run-chosen";
+    run({ mode: "both", main: "codex" });
+    assert.deepEqual(managedExecution(root), { mode: "both", main: "codex" }); assert.equal(crossEnabled(root), true); assert.equal(crossRequired(root), true);
+    run({ mode: "claude" });
+    assert.equal(crossEnabled(root), false);
+    assert.match(write("codex")!, /master 요청에서 고른 실행 방식\(claude 단독\)/); assert.doesNotMatch(write("claude") ?? "", /단독/);
+    // 작업이 열리면 작업에 고정한 선택이 정본이다 — 실행 표지가 없는 세션(사람·제어 프로세스)도 같은 판정을 본다
+    delete process.env.CODE_AGENT_MASTER_RUN;
+    saveActive(root, { id: "W-1", spec: "doc/W-1.md", target: "all" } as ActiveWork);
+    assert.equal(managedExecution(root), undefined);
+    writeWorkBinding(root, { workId: "W-1", links: {}, boundAt: "2026-10-21T00:00:00Z", runId: "run-chosen", controller: "m", runs: ["run-chosen"], execution: { mode: "both", main: "claude" } });
+    assert.equal(crossEnabled(root), true); assert.doesNotMatch(write("codex") ?? "", /단독/);
+    assert.match(withInteraction({ confirm: () => ({ channel: "tty", verified: true, detail: "fixture" }), ask: () => "" }, () => execution(root)), /master 요청에서 고른 실행 방식을 따릅니다: both · 주 호스트 claude/);
+    writeWorkBinding(root, { ...readWorkBinding(root, "W-1")!, execution: undefined });
+    assert.equal(crossEnabled(root), false); assert.doesNotMatch(write("codex") ?? "", /단독/);
+    assert.equal(executionMode(root), "auto");
+  } finally { process.env = saved; }
 });

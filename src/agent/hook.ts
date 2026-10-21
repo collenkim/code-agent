@@ -33,6 +33,7 @@ import { planDocFile } from "./workDocs";
 import { CONSENT_LOCK, consentLockHeld, openConsent } from "./consentState";
 import { consentCommandOf, issueTicket, splitCommandArgs } from "./consentTicket";
 import { issueInteractionTicket } from "./interactionTicket";
+import { managedExecution } from "./master/workExecution";
 import { executionMode } from "./executionMode";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
@@ -515,10 +516,11 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   if (master) return master;
   const child = crossChildGuard(input) ?? readOnlyRoleGuard(input, projectDir);
   if (child) return child;
-  const mode = executionMode(findRepoRoot(projectDir ?? input.cwd));
+  const root = findRepoRoot(projectDir ?? input.cwd), managed = managedExecution(root), mode = managed?.mode ?? executionMode(root);
   if ((mode === "claude" || mode === "codex") && mode !== (input.host ?? "claude") && !crossChild() &&
       !READ_TOOLS.includes(input.tool_name) && !(["Bash", "PowerShell"].includes(input.tool_name) && LEASE_FREE.test(input.tool_input.command?.trim() ?? ""))) {
-    return `현재 실행 방식은 ${mode} 단독입니다. 호스트 밖 터미널에서 code-agent execution으로 확인하고 변경하세요.`;
+    return managed ? `이 작업은 master 요청에서 고른 실행 방식(${mode} 단독)으로 진행합니다. 다른 호스트로 이어 가려면 실행을 멈추고 호스트 밖 터미널에서 code-agent execution <호스트> --handoff 로 인계하세요.`
+      : `현재 실행 방식은 ${mode} 단독입니다. 호스트 밖 터미널에서 code-agent execution으로 확인하고 변경하세요.`;
   }
   // 다른 이름의 도구 — 경로 인자를 Write·Read 로 다시 판정한다(상태를 읽기 전에, 모든 모드가 같은 규칙)
   if (input.tool_name.startsWith("mcp__")) return decideMcp(input, projectDir);

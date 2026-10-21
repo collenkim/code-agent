@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { beforeEach, afterEach, test } from "node:test";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createStageRepo, removeStageRepo, repo, toCheck } from "./stageFixture";
 import { initialize } from "../agent/init";
@@ -14,8 +16,11 @@ import { loadWork } from "../agent/work";
 import { leaseGuard, readLease, releaseLease } from "../agent/lease";
 import { questionsFile } from "../agent/layout";
 import { synchronizeInteractions } from "../agent/interactionSources";
-import { writeRunRecord } from "../agent/master/store";
-import { hostProfileOf } from "../agent/master/protocol";
+import { listRuns, readRun, readWorkBinding, writeRunRecord, writeWorkBinding } from "../agent/master/store";
+import { hostProfileOf, TERMINAL_RUN_STATES } from "../agent/master/protocol";
+import { masterEnable } from "../agent/master/admin";
+import { call } from "../agent/master/control";
+import { liveness, killVerified } from "../agent/master/processes";
 import { PublishInteraction } from "../agent/interactionSchema";
 import { publishInteraction, interactionContext, currentInteractions, mutateInteractions, bumpInteraction } from "../agent/interactions";
 import { prepareConsent } from "../agent/consent";
@@ -73,4 +78,38 @@ test("인계 뒤 질문 문서는 해제된 임대나 미확인 thread에 묶이
   writeRunRecord(repo, { ...run, sessionId: "confirmed-thread", sessionConfirmed: true }); synchronizeInteractions(repo);
   const questions = currentInteractions(repo).requests; assert.equal(questions.length, 1);
   assert.equal(questions[0].context.host, "codex"); assert.equal(questions[0].context.sessionId, "confirmed-thread"); assert.equal(questions[0].context.runId, run.runId);
+});
+test("master 가 실행 방식을 고른 작업은 사람의 인계가 그 작업의 선택을 바꾼다", () => {
+  toCheck();
+  const work = loadWork(repo)!;
+  writeWorkBinding(repo, { workId: work.active.id, links: {}, boundAt: "2026-10-21T00:00:00Z", runId: "run-chosen", controller: "m", runs: ["run-chosen"], execution: { mode: "both", main: "claude" } });
+  assert.equal(crossEnabled(repo), true);
+  tty(() => execution(repo, "codex", { handoff: true }));
+  assert.deepEqual(readWorkBinding(repo, work.active.id)?.execution, { mode: "codex" }); assert.equal(crossEnabled(repo), false);
+  assert.match(tty(() => execution(repo)), /master 요청에서 고른 실행 방식을 따릅니다: codex/);
+});
+test("이미 연 작업의 새 실행은 요청의 실행 방식 대신 작업에 고정된 방식으로 돌고 쓰지 않을 호스트의 준비는 보지 않는다", async () => {
+  toCheck();
+  const work = loadWork(repo)!, dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-handoff-master-")));
+  // Codex 는 신뢰 기록이 없는 빈 CODEX_HOME — 이 작업이 Codex 준비를 보면 접수가 막힌다
+  process.env.CODEX_HOME = dir;
+  try {
+    const hostFile = join(dir, "host.json"), tokenFile = join(dir, "token");
+    writeFileSync(hostFile, JSON.stringify({ kind: "claude", command: [process.execPath, join(__dirname, "masterFakeHost.js")] }));
+    tty(() => masterEnable(repo, { controller: "m", host: hostFile, tokenOut: tokenFile }));
+    writeWorkBinding(repo, { workId: work.active.id, links: {}, boundAt: "2026-10-21T00:00:00Z", runId: "run-chosen", controller: "m", runs: ["run-chosen"], execution: { mode: "claude" } });
+    const token = readFileSync(tokenFile, "utf8").trim();
+    const accepted = call(repo, JSON.stringify({ protocol: "code-agent.master", version: 1, type: "submit", controller: "m", generation: 1, token, commandId: randomUUID(),
+      payload: { prompt: "MODE=complete", execution: { mode: "codex" } } })) as { ok: boolean; result?: { runId: string; hostKind: string; execution: unknown; workId: string } };
+    assert.equal(accepted.ok, true, JSON.stringify(accepted));
+    assert.equal(accepted.result!.hostKind, "claude"); assert.deepEqual(accepted.result!.execution, { mode: "claude" }); assert.equal(accepted.result!.workId, work.active.id);
+    const until = Date.now() + 30000;
+    while (Date.now() < until && !(TERMINAL_RUN_STATES as readonly string[]).includes(readRun(repo, accepted.result!.runId)?.state ?? "accepted")) await new Promise(r => setTimeout(r, 100));
+    const run = readRun(repo, accepted.result!.runId)!;
+    assert.equal(run.state, "completed", JSON.stringify(run.outcome)); assert.equal(run.hostProfile?.kind, "claude"); assert.deepEqual(run.execution, { mode: "claude" });
+    assert.deepEqual(readWorkBinding(repo, work.active.id)?.execution, { mode: "claude" }); assert.equal(executionPolicy(repo)?.mode, "auto");
+  } finally {
+    for (const run of listRuns(repo)) for (const p of [run.host, run.supervisor]) if (p && liveness(p.pid, p.marker) === "alive") killVerified(p.pid, p.marker);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

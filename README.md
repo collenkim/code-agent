@@ -157,7 +157,7 @@ code-agent init
 
 토큰 한도 등으로 호스트를 바꾸려면 이전 실행을 중지하고 `code-agent execution --json`으로 인계 상태를 확인한 뒤 `code-agent execution codex --handoff`(또는 claude)로 전환합니다. 미소비 답·열린 동의·관리 실행이 있으면 먼저 처리하도록 막습니다. 확인한 인계는 미응답 일반 질문을 취소 이력으로 남기고 임대를 풀며, 같은 브랜치에서 `/ca-next`·`$ca-next`로 기존 작업을 이어갑니다. 작업 ID·접수 유형·계획·승인은 유지하며 질문은 새 세션에서 재발행합니다. 자동 전환은 하지 않습니다. [전환과 재개 범위](doc/master-control.md#호스트-전환-인계)
 
-master 관리 실행도 이 선택을 따릅니다. `code-agent execution both --main codex`는 Codex가 개발하고 Claude가 교차 검증하는 관리 경로입니다. Codex 관리 실행은 프로젝트·hook 신뢰가 필요하며, 확인된 thread ID로 같은 세션을 재개합니다. Git 쓰기가 필요한 start·verify·repro의 실행 권한은 대시보드에서 별도로 승인하며, 승인한 명령 한 번만 원래 세션에서 이어갑니다. 일반 답·업무 승인은 실행 권한을 대신하지 않습니다. 연결 방법은 [Git 실행 권한](doc/dashboard-interactions.md#codex-git-실행-권한), 실행 권한·샌드박스 제한은 [관리 실행 계약](doc/master-control.md#11-master-실행-세션의-규칙)을 따릅니다.
+master 관리 실행도 이 선택을 따르지만, master 요청이 실행 방식을 고르면 그 실행과 그 실행이 연 작업에는 요청의 선택을 씁니다. 이때 프로젝트의 선택은 바뀌지 않습니다. `code-agent execution both --main codex`는 Codex가 개발하고 Claude가 교차 검증하는 관리 경로입니다. Codex 관리 실행은 프로젝트·hook 신뢰가 필요하며, 확인된 thread ID로 같은 세션을 재개합니다. Git 쓰기가 필요한 start·verify·repro의 실행 권한은 대시보드에서 별도로 승인하며, 승인한 명령 한 번만 원래 세션에서 이어갑니다. 일반 답·업무 승인은 실행 권한을 대신하지 않습니다. 연결 방법은 [Git 실행 권한](doc/dashboard-interactions.md#codex-git-실행-권한), 실행 권한·샌드박스 제한은 [관리 실행 계약](doc/master-control.md#11-master-실행-세션의-규칙)을 따릅니다.
 
 ### 4. 요구사항 입력
 

@@ -234,7 +234,7 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     const prompt = `대시보드 사람이 요청 ${r.requestId}에 명시적으로 응답했습니다. 기존 세션과 작업 ID·종류를 유지하세요. code-agent interaction consume ${r.requestId}로 답 또는 적용 결과를 조회하고 기존 단계의 검증·승인 규칙으로 이어가세요. 새로운 작업을 접수하거나 승인·hook 기록을 만들지 마세요.`;
     writeFileSync(runPrompt(root, runId), prompt, "utf8");
     const run: RunRecord = { version: 1, runId, commandId, controller: owner.controller, generation: owner.generation, mode: "continue", links: previous.links,
-      state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile,
+      state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile, ...(previous.execution ? { execution: previous.execution } : {}),
       ...(profile.kind === "codex" ? { sessionAlias: previous.sessionId, sessionConfirmed: true } : {}), promptHash: interactionHash(prompt), timeoutMs: binding.policy.runTimeoutMs,
       workId: previous.workId, baseHead: r.context.head, baseStateVersion: previous.baseStateVersion, history: [{ at, state: "accepted", note: `사람 응답 ${r.response!.receiptId}` }] };
     createRun(root, run);

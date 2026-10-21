@@ -25,9 +25,9 @@ import { consentsView, decideConsent, answerQuestions, questionsView } from "./d
 import { acceptHandover, abortHandover, advanceHandover, requestHandover } from "./handover";
 import { liveness } from "./processes";
 import {
-  ACTIVE_RUN_STATES, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, HUMAN_ONLY_ACTIONS, mergePolicy,
+  ACTIVE_RUN_STATES, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, executionMain, HUMAN_ONLY_ACTIONS, mergePolicy,
   MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES, requestHash, sha256, SUPPORTED_VERSIONS,
-  TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
+  runExecutionOf, TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
 } from "./protocol";
 import { activeRuns, createRun, newRunId, reconcileRuns, requestStop, spawnSupervisor } from "./runs";
 import {
@@ -91,7 +91,7 @@ function runSummary(run: RunRecord, deep = false): Record<string, unknown> {
   const beat = run.supervisor?.heartbeatAt ? now - Date.parse(run.supervisor.heartbeatAt) : null;
   return {
     runId: run.runId, commandId: run.commandId, state: run.state, mode: run.mode, sessionId: run.sessionId, links: run.links, workId: run.workId,
-    hostKind: run.hostProfile?.kind ?? "claude", sessionConfirmed: run.sessionConfirmed ?? true, sessionAlias: run.sessionAlias ?? null,
+    hostKind: run.hostProfile?.kind ?? "claude", execution: run.execution ?? null, sessionConfirmed: run.sessionConfirmed ?? true, sessionAlias: run.sessionAlias ?? null,
     acceptedAt: run.acceptedAt, ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}), ...(run.outcome ? { outcome: run.outcome } : {}),
     ...(run.stop ? { stop: run.stop } : {}),
     liveness: {
@@ -134,7 +134,8 @@ function hello(root: string, binding: Binding | undefined): unknown {
 function managedHost(root: string, binding: Binding | undefined): unknown {
   try { return (require("./hostProfile") as typeof import("./hostProfile")).managedHostView(root, binding); }
   catch (error) {
-    return { selected: null, source: null, installedHosts: [], execution: null, ready: false, problems: [{ code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] }] };
+    return { selected: null, source: null, installedHosts: [], execution: null, ready: false, problems: [{ code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] }],
+      runSelection: { supported: true, modes: [] }, hosts: {} };
   }
 }
 
@@ -218,8 +219,13 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     : typeof payload.timeoutMs === "number" && Number.isInteger(payload.timeoutMs) && payload.timeoutMs >= 1_000 && payload.timeoutMs <= binding.policy.runTimeoutMs ? payload.timeoutMs
       : (() => { throw new ControlError("invalid-request", `timeoutMs 는 1000~${binding.policy.runTimeoutMs} 입니다`); })();
   const runs = listRuns(root);
-  const { selectedProfile, requireResumeProfile, requireManagedHost } = require("./hostProfile") as typeof import("./hostProfile");
-  let profile = selectedProfile(root, binding);
+  const { profileFor, selectedProfile, requireResumeProfile, requireManagedHost, requireExecutionHosts } = require("./hostProfile") as typeof import("./hostProfile");
+  // 새 실행만 실행 방식을 고른다 — 이어 실행은 이전 실행(그 작업에 고정된 선택)을 그대로 쓴다
+  const requested = runExecutionOf(payload.execution);
+  if (requested && mode === "continue") throw new ControlError("invalid-request", "이어 실행은 이전 실행의 실행 방식을 씁니다 — execution 은 start 에만 보냅니다");
+  if (requested) requireExecutionHosts(root, requested);
+  let execution = requested;
+  let profile = requested ? profileFor(binding, executionMain(requested)) : selectedProfile(root, binding);
   let sessionId: string;
   if (mode === "continue") {
     if (typeof payload.sessionId !== "string") throw new ControlError("invalid-request", "이어 실행에는 sessionId 가 필요합니다");
@@ -227,9 +233,9 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     if (!previous.length) throw new ControlError("not-found", "이 프로젝트의 master 실행 세션이 아닙니다");
     const last = previous.at(-1)!;
     profile = requireResumeProfile(root, binding, last);
+    execution = last.execution;
     sessionId = last.sessionId;
   } else sessionId = randomUUID();
-  requireManagedHost(root, profile);
   const expect = request.expect ?? {};
   let view = stateView(root, { session: sessionId, expectState: expect.stateVersion, expectWork: expect.work === null ? "" : expect.work ?? undefined, expectAttempt: expect.attempt === null ? "" : expect.attempt ?? undefined });
   if (view.resume.code === "stale-request") throw new ControlError("stale-state", "조회한 뒤 상태가 바뀌었습니다 — 다시 조회해 판단하세요", { stateVersion: view.stateVersion, mismatches: view.expect?.mismatches });
@@ -246,13 +252,21 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   try { requestId = workId ? null : loadRequestSession(root)?.id ?? null; } catch { requestId = null; }
   const bound = workId ?? requestId;
   if (bound) {
-    const binding = readWorkBinding(root, bound);
-    if (!binding) throw new ControlError("not-enabled", `작업 ${bound} 는 master 실행이 연 작업이 아닙니다 — 연동하지 않은 작업은 이어 실행하지 않습니다`);
-    if (binding.links.missionId && links.missionId && binding.links.missionId !== links.missionId) throw new ControlError("conflict", `작업 ${bound} 는 임무 ${binding.links.missionId} 에 묶여 있습니다`);
-    if (binding.links.taskId && links.taskId && binding.links.taskId !== links.taskId) throw new ControlError("conflict", `작업 ${bound} 는 master 작업 ${binding.links.taskId} 에 묶여 있습니다`);
+    const work = readWorkBinding(root, bound);
+    if (!work) throw new ControlError("not-enabled", `작업 ${bound} 는 master 실행이 연 작업이 아닙니다 — 연동하지 않은 작업은 이어 실행하지 않습니다`);
+    if (work.links.missionId && links.missionId && work.links.missionId !== links.missionId) throw new ControlError("conflict", `작업 ${bound} 는 임무 ${work.links.missionId} 에 묶여 있습니다`);
+    if (work.links.taskId && links.taskId && work.links.taskId !== links.taskId) throw new ControlError("conflict", `작업 ${bound} 는 master 작업 ${work.links.taskId} 에 묶여 있습니다`);
+    // 이미 연 작업은 처음 고정한 실행 방식을 따른다(없으면 프로젝트 실행 방식) — 요청의 선택으로 진행 중인 작업의 호스트를 바꾸지 않는다.
+    // 호스트를 바꾸는 것은 사람의 execution --handoff 뿐이고, 그 인계가 작업의 선택도 바꾼다
+    if (mode === "start" && (requested || work.execution)) {
+      execution = work.execution;
+      profile = execution ? profileFor(binding, executionMain(execution)) : selectedProfile(root, binding);
+    }
   } else if (mode === "continue") {
     // 작업 없이 이어 실행 — 이전 실행이 작업을 열지 않았거나 반영으로 닫았다. 같은 세션의 대화를 잇는 것이라 받는다
   }
+  // 실제로 쓸 호스트의 준비만 본다 — 작업에 고정된 방식으로 바뀐 요청의 호스트는 실행하지 않으므로 보지 않는다
+  requireManagedHost(root, profile);
   const waitingOnOwnAttempt = view.resume.code === "wait" && mode === "continue" && view.resume.reasons.every((reason) => reason.code === "attempt-running");
   const hostHandoff = mode === "start" ? (require("./hostHandoff") as typeof import("./hostHandoff")).pendingHostHandoff(root, profile) : undefined;
   const prepareAfterHandoff = hostHandoff && view.resume.code === "needs-human" && ["answer-questions", "confirm-request", "plan-consent", "deliver-consent", "human-input"].includes(view.resume.next.action);
@@ -269,14 +283,14 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   writeFileSync(runPrompt(root, runId), text, "utf8");
   const run: RunRecord = {
     version: 1, runId, commandId: request.commandId!, controller: owner.controller, generation: owner.generation, mode, links, state: "accepted", acceptedAt: at, updatedAt: at,
-    sessionId, hostProfile: profile, ...(hostHandoff ? { handoffId: hostHandoff.id } : {}), ...(profile.kind === "codex" ? { sessionAlias: sessionId, sessionConfirmed: mode === "continue" } : {}),
+    sessionId, hostProfile: profile, ...(execution ? { execution } : {}), ...(hostHandoff ? { handoffId: hostHandoff.id } : {}), ...(profile.kind === "codex" ? { sessionAlias: sessionId, sessionConfirmed: mode === "continue" } : {}),
     ...(mode === "continue" ? { resumeOf: sessionId } : {}), promptHash: `sha256:${sha256(text)}`, timeoutMs,
     workId: bound, baseHead: view.repo.head, baseStateVersion: view.stateVersion, history: [{ at, state: "accepted" }],
   };
   createRun(root, run);
   emit(root, "run.accepted", { runId, commandId: request.commandId, stateVersion: view.stateVersion, data: { mode, sessionId, links, workId: bound } });
   spawnSupervisor(root, runId);
-  return { runId, sessionId, state: "accepted", mode, workId: bound, stateVersion: view.stateVersion, resume: view.resume.code };
+  return { runId, sessionId, state: "accepted", mode, workId: bound, stateVersion: view.stateVersion, resume: view.resume.code, hostKind: profile.kind, execution: execution ?? null };
 }
 
 function dispatch(root: string, binding: Binding, owner: Owner, request: RequestEnvelope): unknown {

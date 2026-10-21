@@ -7,6 +7,7 @@ import { codexModelOf, codexModelText, type AgentName } from "./modelPolicy";
 import { codexAgentName, commonAgentName, POWERSHELL_COMMAND_GUIDE, ROLE_NAMES } from "./hostText";
 import { guidance, POLICIES } from "./retryPolicy";
 import { executionMode } from "./executionMode";
+import { managedExecution } from "./master/workExecution";
 
 export type Host = "claude" | "codex";
 export type HostSelection = Host | "both";
@@ -100,6 +101,9 @@ export function crossHostProblems(root: string): { config: string[]; missing: st
  * 그 밖(실행할 수 있거나 미설치)은 실행 불가 갈래다. 갈래와 문장은 crossNotice 와 같다(재시도 규약의 GUIDE_VARIANTS — notice·gate).
  */
 export function crossEnabled(root: string): boolean {
+  // master 가 지금 작업(또는 이 실행)에 고른 실행 방식이 있으면 그 선택이 정한다 — both 만 교차 검증
+  const managed = managedExecution(root);
+  if (managed) return managed.mode === "both";
   const mode = executionMode(root);
   return mode === "both" || (mode === undefined && selectedHosts(root).length > 1);
 }

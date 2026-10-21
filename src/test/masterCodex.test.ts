@@ -14,6 +14,7 @@ import { CODEX_MARKERS } from "../agent/crossEnv";
 import { PublishInteraction } from "../agent/interactionSchema";
 import { publishInteraction, interactionContext, currentInteractions } from "../agent/interactions";
 import { pendingHostHandoff } from "../agent/master/hostHandoff";
+import { executionPolicy } from "../agent/executionMode";
 
 test("Codex 권한 옵션을 제한하고 부모 호스트 표지를 제거한다", () => {
   assert.throws(() => hostProfileOf({ kind: "codex", sandbox: "danger-full-access" }));
@@ -97,4 +98,37 @@ test("TTY 인계 뒤 새 호스트가 같은 연결에서 시작하고 이전 th
     assert.notEqual(fresh.sessionId, old.sessionId); assert.equal(pendingHostHandoff(f.root, claude), undefined);
     assert.equal(f.send("submit", { prompt: "MODE=complete", links: old.links }, id).result.runId, fresh.runId); assert.equal(listRuns(f.root).length, 2);
   } finally { process.env = saved; f.close(); }
+});
+test("submit 의 execution 이 그 실행의 호스트를 정하고 프로젝트 실행 방식은 바꾸지 않는다", async () => {
+  const f = codexProject();
+  try {
+    const binding = readBinding(f.root)!;
+    binding.hostProfiles = { ...binding.hostProfiles, claude: hostProfileOf({ kind: "claude", command: [process.execPath, join(__dirname, "masterFakeHost.js")] }) }; writeBinding(f.root, binding);
+    const hello = f.send("hello").result;
+    assert.deepEqual(hello.managedHost.runSelection, { supported: true, modes: ["claude", "codex", "both"] });
+    assert.deepEqual(Object.keys(hello.managedHost.hosts).sort(), ["claude", "codex"]); assert.equal(hello.managedHost.hosts.codex.ready, true);
+    assert.equal(hello.managedHost.selected, "codex"); assert.equal(executionPolicy(f.root)?.mode, "auto");
+    // 고르지 않으면 프로젝트 실행 방식(연동 기본 호스트), 고르면 그 호스트 — 실행 기록과 결과에 남는다
+    const chosen = f.send("submit", { prompt: "MODE=complete", execution: { mode: "claude" } });
+    assert.equal(chosen.ok, true, JSON.stringify(chosen)); assert.equal(chosen.result.hostKind, "claude"); assert.deepEqual(chosen.result.execution, { mode: "claude" });
+    const run = await f.wait(chosen.result.runId); assert.equal(run.state, "completed"); assert.equal(run.hostProfile?.kind, "claude"); assert.deepEqual(run.execution, { mode: "claude" });
+    assert.deepEqual(f.send("result", { runId: run.runId }).result.run.execution, { mode: "claude" });
+    assert.equal(executionPolicy(f.root)?.mode, "auto");
+    // 이어 실행은 이전 실행의 선택을 쓴다 — execution 을 다시 보내지 않는다
+    const again = f.send("submit", { mode: "continue", sessionId: run.sessionId, prompt: "MODE=complete", execution: { mode: "codex" } });
+    assert.equal(again.ok, false); assert.equal(again.error?.code, "invalid-request");
+    const resumed = f.send("submit", { mode: "continue", sessionId: run.sessionId, prompt: "MODE=complete" }); assert.equal(resumed.ok, true, JSON.stringify(resumed));
+    const next = await f.wait(resumed.result.runId); assert.equal(next.hostProfile?.kind, "claude"); assert.deepEqual(next.execution, { mode: "claude" });
+    for (const execution of [{ mode: "both" }, { mode: "claude", main: "codex" }, { mode: "auto" }, { mode: "both", main: "codex", extra: 1 }]) {
+      const rejected = f.send("submit", { prompt: "MODE=complete", execution }); assert.equal(rejected.error?.code, "invalid-request", JSON.stringify(execution));
+    }
+    const cross = f.send("submit", { prompt: "MODE=complete", execution: { mode: "both", main: "codex" } });
+    assert.equal(cross.result.hostKind, "codex"); const crossRun = await f.wait(cross.result.runId); assert.deepEqual(crossRun.execution, { mode: "both", main: "codex" });
+    // 설치 기록에 없는 호스트가 필요한 방식은 받지 않는다 — 설치는 사람이 init 으로 한다
+    writeFileSync(join(f.root, ".code-agent/hosts.json"), JSON.stringify(["codex"]));
+    assert.deepEqual(f.send("hello").result.managedHost.runSelection, { supported: true, modes: ["codex"] });
+    const missing = f.send("submit", { prompt: "MODE=complete", execution: { mode: "both", main: "codex" } });
+    assert.equal(missing.error?.code, "invalid-state"); assert.deepEqual((missing.error?.detail as { problems?: string[] } | undefined)?.problems, ["host-not-installed"]);
+    assert.equal(listRuns(f.root).length, 3);
+  } finally { f.close(); }
 });

@@ -4,7 +4,9 @@ import { crossNotice, selectedHosts } from "./hosts";
 import { hostMarked } from "./crossEnv";
 import { confirmOnTerminal } from "./tty";
 import { Stop } from "./stop";
-import { CONTROL_LOCK, withLock, writeJson, readBinding } from "./master/store";
+import { CONTROL_LOCK, withLock, writeJson, readBinding, readWorkBinding, writeWorkBinding } from "./master/store";
+import { loadActive } from "./layout";
+import { managedExecution } from "./master/workExecution";
 import { recordHostHandoff } from "./master/hostHandoff";
 import { activeRuns } from "./master/runs";
 import { handoffView, handoffSummary, requireHandoffUnchanged, applyHandoff } from "./executionHandoff";
@@ -30,13 +32,19 @@ export function execution(root: string, mode?: string, options: { handoff?: bool
       if (activeRuns(root).length) throw new Stop("관리 실행을 중지한 뒤 실행 방식을 바꾸세요.");
       if (options.handoff) {
         applyHandoff(root, requireHandoffUnchanged(root, preview));
-        recordHostHandoff(root, (main ?? (mode === "both" ? readBinding(root)?.host.kind ?? "claude" : mode)) as "claude" | "codex", preview.questions.map(q => q.requestId));
+        const target = (main ?? (mode === "both" ? readBinding(root)?.host.kind ?? "claude" : mode)) as "claude" | "codex";
+        recordHostHandoff(root, target, preview.questions.map(q => q.requestId));
+        // master 가 실행 방식을 정해 연 작업이면 인계한 실행 방식이 그 작업의 선택이 된다 — 다음 master 실행도 인계한 호스트로 잇는다
+        const workId = loadActive(root)?.id, work = workId ? readWorkBinding(root, workId) : undefined;
+        if (work?.execution) writeWorkBinding(root, { ...work, execution: mode === "both" ? { mode: "both", main: target } : { mode: mode as "claude" | "codex" } });
       }
       writeJson(join(root, EXECUTION_FILE), { version: 1, mode, ...(main ? { main } : {}) });
     });
   }
   const current = executionMode(root) ?? (selectedHosts(root).length > 1 ? "both" : selectedHosts(root)[0]);
+  const managed = managedExecution(root);
   return `실행 방식: ${current === "auto" ? "현재 호스트 단독 (미선택)" : current}\n` +
+    (managed ? `지금 작업은 master 요청에서 고른 실행 방식을 따릅니다: ${managed.mode}${managed.main ? ` · 주 호스트 ${managed.main}` : ""} (바꾸려면 --handoff 로 인계)\n` : "") +
     (crossNotice(root) ?? "교차 검증 꺼짐 — code-agent execution both로 선택할 수 있습니다.") +
     (executionPolicy(root)?.main ? `\n관리 실행 주 호스트: ${executionPolicy(root)!.main}` : "") +
     (options.handoff ? `\n인계 완료. 같은 브랜치에서 ${skill("ca-next")}로 기존 작업을 재개하세요. 관리 실행은 기존 작업·links로 start하고 다른 호스트의 sessionId를 resume하지 않습니다.` : "");

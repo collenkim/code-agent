@@ -7,17 +7,32 @@ import { codexTrust } from "../codexTrust";
 import { selectedHosts, type Host } from "../hosts";
 import { CLAUDE_HOOKS, installedHook, settingsProblem } from "../init";
 import { STATE_DIR } from "../layout";
-import { canonicalJson, ControlError, hostProfileOf, type HostProfile } from "./protocol";
-import type { Binding, RunRecord } from "./store";
+import { canonicalJson, ControlError, executionMain, hostProfileOf, type HostProfile, type RunExecution } from "./protocol";
+import { readWorkBinding, type Binding, type RunRecord } from "./store";
 
-export function selectedProfile(root: string, binding: Binding): HostProfile {
-  const policy = executionPolicy(root);
-  const kind = policy?.mode === "codex" || policy?.mode === "claude" ? policy.mode : policy?.main ?? binding.host.kind;
+/** 그 호스트로 등록된 설정 — 없으면 그 호스트의 제한된 기본값 */
+export function profileFor(binding: Binding, kind: Host): HostProfile {
   return hostProfileOf(binding.host.kind === kind ? binding.host : binding.hostProfiles?.[kind] ?? { kind });
 }
+export function selectedProfile(root: string, binding: Binding): HostProfile {
+  const policy = executionPolicy(root);
+  return profileFor(binding, policy?.mode === "codex" || policy?.mode === "claude" ? policy.mode : policy?.main ?? binding.host.kind);
+}
+/** master 가 고른 실행 방식의 호스트가 설치 기록에 있어야 한다 — both 는 두 호스트 모두 */
+export function requireExecutionHosts(root: string, execution: RunExecution): void {
+  const installed = installedHosts(root), needed: Host[] = execution.mode === "both" ? ["claude", "codex"] : [execution.mode];
+  const missing = needed.filter((kind) => !installed.includes(kind));
+  if (missing.length) throw new ControlError("invalid-state", `실행 방식 ${execution.mode} 에 필요한 호스트가 설치 기록에 없습니다(${missing.join(", ")}) — code-agent init 으로 두 호스트를 준비합니다`,
+    { missing: missing.map((kind) => `hosts.json: ${kind}`), problems: ["host-not-installed"] });
+}
+/**
+ * 이어 실행의 호스트 설정 — 이전 실행이 master 가 고른 실행 방식으로 돌았으면 그 작업에 지금 고정된 선택(사람의 handoff 가 바꿨으면 바뀐 선택)과,
+ * 아니면 프로젝트 실행 방식과 맞아야 한다. 다른 호스트의 세션은 잇지 않는다.
+ */
 export function requireResumeProfile(root: string, binding: Binding, previous: RunRecord): HostProfile {
   const profile = previous.hostProfile ?? hostProfileOf(binding.host.kind === "claude" ? binding.host : binding.hostProfiles?.claude);
-  const selected = selectedProfile(root, binding);
+  const chosen = previous.execution ? (previous.workId ? readWorkBinding(root, previous.workId)?.execution : undefined) ?? previous.execution : undefined;
+  const selected = chosen ? profileFor(binding, executionMain(chosen)) : selectedProfile(root, binding);
   if (selected.kind !== profile.kind) throw new ControlError("invalid-state", "다른 호스트의 세션을 재개할 수 없습니다. execution --handoff로 인계한 뒤 같은 작업에 새 호스트 실행을 시작하세요");
   if (canonicalJson(selected) !== canonicalJson(profile)) throw new ControlError("invalid-state", "등록된 호스트 권한·실행 설정이 바뀌었습니다. 이전 설정으로 자동 재개하지 않습니다");
   if (profile.kind === "codex" && !previous.sessionConfirmed) throw new ControlError("invalid-state", "확인된 Codex thread ID가 없습니다. 새 실행을 자동 생성하지 않습니다");
@@ -79,9 +94,13 @@ export function requireManagedHost(root: string, profile: HostProfile): void {
     { missing, problems: problems.map((problem) => problem.code) });
 }
 
-/** hello.managedHost — 켠 연동은 지금 선택될 호스트, 켜기 전이면 켜면 선택될 호스트와 그 준비 상태(비밀값 없음) */
+/**
+ * hello.managedHost — 켠 연동은 지금 선택될 호스트, 켜기 전이면 켜면 선택될 호스트와 그 준비 상태(비밀값 없음).
+ * runSelection 은 submit 의 execution 으로 고를 수 있는 실행 방식(설치 기록의 호스트), hosts 는 설치된 호스트마다의 관리 실행 준비다.
+ */
 export function managedHostView(root: string, binding: Binding | undefined): {
   selected: Host | null; source: HostSource | null; installedHosts: Host[]; execution: { mode: string; main?: string } | null; ready: boolean; problems: HostProblem[];
+  runSelection: { supported: true; modes: string[] }; hosts: Partial<Record<Host, { ready: boolean; problems: HostProblem[] }>>;
 } {
   const problems: HostProblem[] = [];
   let installed: Host[] = [];
@@ -99,6 +118,8 @@ export function managedHostView(root: string, binding: Binding | undefined): {
     } catch (error) { problems.push({ code: "hosts-unreadable", message: error instanceof Error ? error.message : String(error) }); }
   }
   if (selected) problems.push(...managedHostProblems(root, selected.kind).problems);
+  const hosts = Object.fromEntries(installed.map((kind) => { const own = managedHostProblems(root, kind).problems; return [kind, { ready: !own.length, problems: own }]; }));
   return { selected: selected?.kind ?? null, source: selected?.source ?? null, installedHosts: installed,
-    execution: execution ? { mode: execution.mode, ...(execution.main ? { main: execution.main } : {}) } : null, ready: !!selected && !problems.length, problems };
+    execution: execution ? { mode: execution.mode, ...(execution.main ? { main: execution.main } : {}) } : null, ready: !!selected && !problems.length, problems,
+    runSelection: { supported: true, modes: [...installed, ...(installed.length === 2 ? ["both"] : [])] }, hosts };
 }

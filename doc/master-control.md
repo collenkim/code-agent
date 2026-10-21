@@ -46,11 +46,13 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 ```jsonc
 "pairing": { "supported": true, "version": 1, "signature": "Ed25519", "domain": "code-agent.master-pair.v1", "trustedControllers": ["dashboard"] },
-"managedHost": { "selected": "claude", "source": "installed", "installedHosts": ["claude"], "execution": null, "ready": true,
-                 "problems": [] }   // 문제마다 { "code", "message" }
+"managedHost": { "selected": "claude", "source": "default", "installedHosts": ["claude", "codex"], "execution": null, "ready": true,
+                 "problems": [],   // 문제마다 { "code", "message" }
+                 "runSelection": { "supported": true, "modes": ["claude", "codex", "both"] },
+                 "hosts": { "claude": { "ready": true, "problems": [] }, "codex": { "ready": true, "problems": [] } } }
 ```
 
-`trustedControllers`는 이 PC 에서 신뢰한 제어자 ID 뿐이다. 키·토큰·키 경로는 넣지 않는다. `managedHost.selected`는 켠 연동이면 지금 선택될 호스트(`source`: `execution`·`execution-main`·`binding`), 켜기 전이면 켜면 선택될 호스트(`execution`·`execution-main`·`installed`·`default`, §11)다. `problems`의 `code`는 `host-not-installed`(설치 기록에 없음)·`hooks-missing`·`settings-unreadable`·`hosts-unreadable`·`execution-unreadable`, Codex 는 `codex-project-untrusted`·`codex-hooks-untrusted`다. `ready: false`면 관리 실행 접수가 `invalid-state`로 거부된다.
+`trustedControllers`는 이 PC 에서 신뢰한 제어자 ID 뿐이다. 키·토큰·키 경로는 넣지 않는다. `managedHost.selected`는 켠 연동이면 지금 선택될 호스트(`source`: `execution`·`execution-main`·`binding`), 켜기 전이면 켜면 선택될 호스트(`execution`·`execution-main`·`installed`·`default`, §11)다. `problems`의 `code`는 `host-not-installed`(설치 기록에 없음)·`hooks-missing`·`settings-unreadable`·`hosts-unreadable`·`execution-unreadable`, Codex 는 `codex-project-untrusted`·`codex-hooks-untrusted`다. `ready: false`면 관리 실행 접수가 `invalid-state`로 거부된다. `selected`·`ready`·`problems`는 실행 방식을 고르지 않은 실행에 쓰는 호스트의 판정이다. `runSelection.modes`는 `submit`의 `execution`으로 고를 수 있는 실행 방식이다(설치 기록의 호스트, 둘 다 있으면 `both`도 — §11). `hosts`는 설치된 호스트마다의 관리 실행 준비(`ready`·`problems`, 코드는 위와 같다)다. master 는 `runSelection`이 없는 code-agent 에는 `execution`을 보내지 않는다.
 
 ## 4. 명령
 
@@ -71,7 +73,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | read | `interaction` | `requestId` | 질문·추천·동의 전문·응답 가능 여부 |
 | read | `interaction.result` | `requestId` | 수신·소비·적용·재개 결과 |
 | mutating | `interaction.respond` | `requestId`, `expectedRevision`, `contentHash`, `challenge`, `channelId`, `signature`, `submission` | 별도 사람 채널. [계약·예제](dashboard-interactions.md) |
-| mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `links`, `timeoutMs` | §5 |
+| mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `execution`(start — §11), `links`, `timeoutMs` | §5 |
 | mutating | `resume` | `runId`, `prompt?`, `links?` | 끝난 실행(`paused`·`blocked`·`completed`·`failed`·`unknown`·`cancelled`)의 세션을 잇는다 |
 | mutating | `pause`·`cancel` | `runId`, `reason?`, `graceMs?`, `force?`, `waitMs?` | §7 |
 | mutating | `decide` | `consentId`, `verdict`, `decisionId`, `grantId`, `category`, `reason`, `evidence[]`, `shownHash`, `choices?` | §8 |
@@ -221,6 +223,10 @@ request·stopping·stopped 에서만 abort(지금 제어자) — 멈춘 실행�
 
 관리 실행의 호스트는 `execution claude|codex` 선택을 따른다. `execution both --main claude|codex`는 관리 실행의 주 호스트를 정하고 상대 호스트의 계획·코드 리뷰를 유지한다. `both`에서 main을 생략하면 기존 단독 선택·main을 유지하며, 정한 값이 없으면 연동의 기본 호스트를 쓴다. `auto`도 연동의 기본 호스트를 사용한다. 각 실행은 호스트·권한 설정을 `hostProfile`에 고정한다. 재개할 때 실행 방식이나 등록된 설정이 달라졌으면 이전 권한으로 자동 재개하지 않는다.
 
+master 는 새 실행(`submit mode:start`)의 `execution: { mode, main? }`으로 그 실행의 실행 방식을 고를 수 있다. `claude`·`codex`는 그 호스트 단독(교차 검증 없음), `both`는 `main`(필수)이 실행하고 상대 호스트가 계획·코드 리뷰를 맡는다. 프로젝트의 `execution.json`은 바꾸지 않는다. 고르는 것은 실행 방식뿐이다. 실행 파일·모델·권한은 사람이 enable 에 등록한 그 호스트의 설정(없으면 제한된 기본값)을 쓴다. 필요한 호스트가 설치 기록에 없으면 `invalid-state`(`detail.problems: ["host-not-installed"]`), 꼴이 틀리면(모르는 키, 단독에 다른 `main`, `main` 없는 `both`) `invalid-request`다. 접수 결과의 `hostKind`·`execution`과 실행 요약의 `execution`이 실제로 쓴 선택을 보여 준다(고르지 않은 실행은 `null`).
+
+선택은 작업 단위로 고정한다. 실행이 작업을 열면 `works/<작업 ID>.json`에 그 선택을 남긴다. 그 작업이 지금 작업인 동안에는 이 기록이 교차 검증 여부와 hook 의 단독 호스트 판정을 정한다. 실행 표지가 없는 사람 세션과 감독 밖 명령도 같은 판정을 본다. 작업을 열기 전에는 그 세션의 실행 기록(`CODE_AGENT_MASTER_RUN`)을 본다. 이미 연 작업에 새 실행을 시작하면 요청의 `execution` 대신 그 작업에 고정된 선택(없으면 프로젝트 실행 방식)을 쓴다. 실행 준비(hook·신뢰) 검사도 실제로 쓸 그 호스트로 한다. 진행 중인 작업의 호스트를 요청이 바꾸지 않는다. `continue`와 사람 응답으로 잇는 실행은 이전 실행의 선택을 이어 쓰며, `continue`에 `execution`을 함께 보내면 `invalid-request`다. 작업의 선택을 바꾸는 것은 사람의 `execution <방식> --handoff`뿐이다(§12).
+
 연동의 기본 호스트는 처음 켤 때(터미널 enable·페어링 같다) 정한다 — `--host` 파일이 있으면 그 설정, 없으면 `execution claude|codex`의 호스트, `both --main`의 main, 설치 기록(`hosts.json`)의 호스트가 하나면 그 호스트, 그 밖에는 `claude` 순이다. 호스트 설정은 그 호스트의 제한된 기본값이다. 이미 켠 연동의 기본 호스트는 이 규칙으로 바뀌지 않는다.
 
 관리 실행 접수·재개·감독 시작 전에 선택된 호스트의 준비를 확인한다. `hosts.json`이 있으면 그 호스트가 기록에 있어야 하고, 프로젝트 hook(Claude 는 init 이 등록하는 hook 전부, Codex 는 PreToolUse)이 설치돼 있어야 한다. 아니면 `invalid-state`로 거부하고 `detail.missing`(빠진 항목)·`detail.problems`(문제 코드)를 담는다. hello `managedHost`가 같은 판정을 미리 보여 준다. 사람의 대화형 세션도 설치 기록에 없는 호스트에서는 `start`·`request begin`·`docs begin`이 시작하지 않는다(`hosts.json`이 없으면 이 판정은 하지 않는다).
@@ -281,7 +287,7 @@ code-agent execution codex --handoff
 
 조회에는 브랜치·작업 ID·종류·단계·임대·질문·열린 동의·차단 사유가 나온다. 변경 화면에서 이전 실행 중지와 인계 내용을 함께 확인한다. 관리 실행·제어권 인계가 진행 중이거나 미소비/미적용 응답·열린 동의가 있으면 인계하지 않는다. 받은 답은 원래 세션에서 처리하고 동의는 원래 채널에서 마치거나 취소한다. 인계 확인 중 문맥이 바뀌면 다시 조회해야 한다.
 
-인계는 현재 브랜치의 미응답 일반 질문에 취소 이력을 남기고 임대를 해제하며, 기존 작업 ID·종류·계획·승인 기록은 보존한다. 새 호스트는 미응답을 재발행하고 승인 필요 시 새 동의를 준비한다. 독립 대화는 같은 브랜치에서 `/ca-next`·`$ca-next`로 재개한다. 관리 실행은 같은 작업·links를 유지한 `submit mode:start`를 사용하며 다른 호스트의 sessionId를 resume하지 않는다. 명시적 인계 기록이 현재 브랜치·HEAD·작업·소유 세대·대상 호스트와 맞으면 사람 대기 중에도 질문·동의 준비를 위한 새 세션을 한 번 시작할 수 있다. 질문에 답하거나 승인 게이트를 통과한 것으로 간주하지 않는다. 실행 기록에 인계 ID를 묶어 재사용을 막고, 관리 연동하지 않은 작업을 자동 편입하지 않는다.
+인계는 현재 브랜치의 미응답 일반 질문에 취소 이력을 남기고 임대를 해제하며, 기존 작업 ID·종류·계획·승인 기록은 보존한다. 새 호스트는 미응답을 재발행하고 승인 필요 시 새 동의를 준비한다. 독립 대화는 같은 브랜치에서 `/ca-next`·`$ca-next`로 재개한다. 관리 실행은 같은 작업·links를 유지한 `submit mode:start`를 사용하며 다른 호스트의 sessionId를 resume하지 않는다. 명시적 인계 기록이 현재 브랜치·HEAD·작업·소유 세대·대상 호스트와 맞으면 사람 대기 중에도 질문·동의 준비를 위한 새 세션을 한 번 시작할 수 있다. 질문에 답하거나 승인 게이트를 통과한 것으로 간주하지 않는다. 실행 기록에 인계 ID를 묶어 재사용을 막고, 관리 연동하지 않은 작업을 자동 편입하지 않는다. master 가 실행 방식을 고른 작업(§11)에서는 인계한 실행 방식이 그 작업의 선택도 된다. 다음 관리 실행은 인계한 호스트로 잇는다. `code-agent execution` 조회는 지금 작업이 따르는 선택을 함께 보여 준다.
 
 ### PC 신뢰와 대시보드 페어링
 
@@ -351,8 +357,8 @@ code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자�
 | `grants.jsonl` · `decisions.jsonl` | 권한·회수, 판단과 적용 결과(append 만) |
 | `commands/<commandId>.json` | 처리 상태(`received`·`accepted`·`rejected`)와 기록된 응답 |
 | `pairing/<challengeId>.json` | 페어링 챌린지(제어자·프로젝트 경로·nonce·만료·사용 시각). 만료한 것은 다음 챌린지 때 지운다 |
-| `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과 |
-| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록 |
+| `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과, master 가 고른 실행 방식(`execution`) |
+| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록, 그 작업에 고정한 실행 방식(`execution`) |
 | `events.jsonl` · `events-meta.json` · `observed.json` | 이벤트와 기록 ID, 마지막 진척 관찰 |
 | `control.lock` · `observe.lock` | 제어·관찰 잠금 |
 

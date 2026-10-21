@@ -125,6 +125,22 @@ export interface CodexHostProfile {
   model?: string;
 }
 export type HostProfile = ClaudeHostProfile | CodexHostProfile;
+/** master 가 새 실행(start)에 고른 실행 방식 — 단독이면 그 호스트, both 면 main 이 개발하고 상대 호스트가 계획·코드 리뷰를 교차 검증한다 */
+export interface RunExecution { mode: "claude" | "codex" | "both"; main?: "claude" | "codex" }
+export function runExecutionOf(raw: unknown): RunExecution | undefined {
+  if (raw === undefined) return undefined;
+  if (!plain(raw)) throw new ControlError("invalid-request", "execution 은 { mode, main } 객체입니다");
+  const extra = Object.keys(raw).filter((key) => key !== "mode" && key !== "main");
+  if (extra.length) throw new ControlError("invalid-request", `모르는 execution 키: ${extra.join(", ")}`);
+  if (raw.mode === "claude" || raw.mode === "codex") {
+    if (raw.main !== undefined && raw.main !== raw.mode) throw new ControlError("invalid-request", "단독 실행에는 다른 main 을 지정하지 않습니다");
+    return { mode: raw.mode };
+  }
+  if (raw.mode !== "both") throw new ControlError("invalid-request", "execution.mode 는 claude·codex·both 입니다");
+  if (raw.main !== "claude" && raw.main !== "codex") throw new ControlError("invalid-request", "execution both 에는 main(claude·codex)이 필요합니다");
+  return { mode: "both", main: raw.main };
+}
+export const executionMain = (execution: RunExecution): "claude" | "codex" => execution.mode === "both" ? execution.main! : execution.mode;
 export const DEFAULT_ALLOWED_TOOLS = [
   "Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "TodoWrite", "Task",
   "Bash(code-agent *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)",

@@ -20,7 +20,8 @@ const RUN_ID = /^run-[A-Za-z0-9-]+$/;
 const TERMINAL: readonly string[] = TERMINAL_RUN_STATES;
 
 interface GuardInput { tool_name: string; session_id?: string; tool_input: { command?: string; [key: string]: unknown } }
-interface RunView { runId: string; state: string; sessionId?: string; hostProfile?: { kind: string }; sessionConfirmed?: boolean; stop?: { mode: "pause" | "cancel"; reason?: string } }
+interface RunView { runId: string; state: string; sessionId?: string; hostProfile?: { kind: string }; sessionConfirmed?: boolean; stop?: { mode: "pause" | "cancel"; reason?: string };
+  execution?: { mode: "claude" | "codex" | "both"; main?: "claude" | "codex" } }
 
 /** 이 세션이 master 실행이면 그 기록 — 아니면 undefined */
 export function masterRun(root: string, env: Readonly<Record<string, string | undefined>> = process.env): RunView | undefined {
