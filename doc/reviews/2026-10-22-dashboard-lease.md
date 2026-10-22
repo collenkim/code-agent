@@ -1,5 +1,7 @@
 # 대시보드 요청의 작업 임대 판정 통일
 
+구현 커밋: `c75f7a8`.
+
 ## 문제
 
 master-agent 의 재현(`master-agent/.master-agent/consent-lease-repro.cjs`)에서 작업이 없는 프로젝트에 끝난 작업의 `lease.json`이 남아 있으면 준비 요청이 조회에서는 `canRespond:true`인데 서명된 제출은 `busy`로 거절되고 원래 요청은 `pending`으로 남았다.
