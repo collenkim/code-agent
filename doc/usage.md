@@ -2,7 +2,7 @@
 
 `code-agent init`은 두 호스트를 준비한다. 실행 전 호스트 밖 터미널에서 `code-agent execution claude`, `code-agent execution codex`, `code-agent execution both`를 선택한다. 신규 설치는 현재 호스트 단독이며 both는 상대 호스트의 계획·코드 리뷰를 추가한다. 관리 실행의 주 호스트는 `both --main claude|codex`로 지정한다. 사용 한도 소진 시 이전 실행 중지 → `execution --json` 조회 → `execution codex --handoff`(또는 claude·both) 확인 → 같은 브랜치·기존 작업 재개 순서다. 미소비 답·열린 동의·관리 실행이 있으면 전환을 막고, 확인한 인계만 미응답 취소와 임대 해제를 처리한다. 작업·승인 기록은 유지하며 자동 호스트 전환은 하지 않는다. [관리 실행·인계 계약](master-control.md#호스트-전환-인계)
 
-Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
+Claude의 `/ca-*`와 Codex의 `$ca-*`가 같은 단계와 게이트를 사용한다. Codex는 `init` 후 Codex 대화형 세션에서 프로젝트와 훅을 신뢰하고 시작한다(신뢰되지 않은 훅은 돌지 않는다). `init`이 알린 Codex 실행 준비가 '신뢰 확인 필요'·'hook 검토 필요'면 신뢰·검토 뒤 `code-agent doctor --host codex`로 다시 확인한다. 승인 응답은 [Codex 연동의 사용자 확인](codex.md#사용자-확인)을 따른다. Codex 업무 질문은 `code_agent.ask`, 동의는 `code_agent.confirm`의 방향키·Enter 선택 UI를 사용한다. 아래 AskUserQuestion 예시는 Claude 기준이다.
 
 > 설계와 근거는 [design.md](design.md), 지시서 규격은 [requirement.md](requirement.md).
 > 이 문서는 **무엇을 치고 어디서 멈추는가**다.

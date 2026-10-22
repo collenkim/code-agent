@@ -265,10 +265,12 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     if (!previous || !["completed", "blocked"].includes(previous.state) || previous.stop || owner.handover || previous.generation !== owner.generation) return;
     let profile: import("./master/protocol").HostProfile;
     try {
-      const { requireResumeProfile, requireManagedHost } = require("./master/hostProfile") as typeof import("./master/hostProfile");
-      profile = requireResumeProfile(root, binding, previous); requireManagedHost(root, profile);
+      const { requireResumeProfile, requireRunHosts } = require("./master/hostProfile") as typeof import("./master/hostProfile");
+      profile = requireResumeProfile(root, binding, previous); requireRunHosts(root, profile, previous.execution);
     } catch (error) {
-      mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return;
+      // 조회 실패·확인 중은 지나가는 상태다 — 막힘으로 굳히지 않고 대기로 두어 다음 조회의 재시도가 다시 판정한다
+      const passing = error instanceof ControlError && ["query-failed", "checking"].includes(String((error.detail as { state?: unknown } | undefined)?.state));
+      mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: passing ? "queued" : "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return;
     }
     const commandId = `interaction:${r.requestId}`, existing = listRuns(root).find(run => run.commandId === commandId);
     if (existing) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "started", runId: existing.runId }; bumpInteraction(state, saved); }); return; }

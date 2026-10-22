@@ -23,6 +23,8 @@ beforeEach(() => {
   for (const key of [...CODEX_MARKERS, "CLAUDECODE"]) delete process.env[key];
   process.env.CLAUDE_CONFIG_DIR = join(root, "native-claude");
   process.env.CODEX_HOME = join(root, "native-codex");
+  // Codex 준비 판정 기록은 사용자 홈이 아니라 시험 폴더에 남긴다
+  process.env.CODE_AGENT_HOME = join(root, "code-agent-home");
   session = randomUUID();
   const dir = join(process.env.CLAUDE_CONFIG_DIR, "projects", "project"); mkdirSync(dir, { recursive: true });
   file = join(dir, `${session}.jsonl`);
@@ -94,7 +96,7 @@ test("Codex는 최초 session_meta의 명시적 thread와 프로젝트를 대조
 });
 test("Codex 원본 복원도 설치·신뢰와 동일 thread를 요구하고 실제 서명 답을 한 번만 재개한다", () => {
   initialize(root);
-  const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: ["fixture"] }); writeBinding(root, binding);
+  const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: [process.execPath, join(__dirname, "masterCodexFakeHost.js")] }); writeBinding(root, binding);
   const dir = join(process.env.CODEX_HOME!, "sessions"); mkdirSync(dir, { recursive: true });
   const native = join(dir, `rollout-2026-10-20-${session}.jsonl`);
   writeFileSync(native, JSON.stringify({ type: "session_meta", payload: { id: session, cwd: root, source: "exec" } }) + "\n" + JSON.stringify({ type: "event_msg" }));

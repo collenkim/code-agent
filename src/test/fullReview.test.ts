@@ -32,12 +32,15 @@ import { observeConsentFixture } from "./consentFixture";
 import { randomUUID } from "node:crypto";
 import { deadPid } from "./deadPid";
 import { withCaller } from "./reviewFixture";
+import { stubCodexProbe } from "./codexProbeFixture";
 
 const PRESENCE = { channel: "tty" as const, verified: true, detail: "테스트" };
 const nextLine = (text: string): string => text.split("\n").find((line) => line.startsWith("다음: ")) ?? "";
 
-beforeEach(() => createStageRepo("ca-full-review-"));
-afterEach(() => removeStageRepo());
+// doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다
+let probe: { restore(): void };
+beforeEach(() => { createStageRepo("ca-full-review-"); probe = stubCodexProbe("project-untrusted", { bin: false }); });
+afterEach(() => { probe.restore(); removeStageRepo(); });
 
 describe("E1 — 진단 노드의 다음: 은 verify 결과의 재개 명령과 같다", () => {
   test("test 커서에서 환경 오류로 진단이면 다음: 은 verify --retry 이고, 그 명령이 test 를 다시 돌린다", async () => {

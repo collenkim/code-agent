@@ -17,7 +17,7 @@ test("대시보드 실제 서명 응답은 확인된 Codex thread를 중복 없�
   writeFileSync(join(home, "config.toml"), `[projects.${JSON.stringify(root)}]\ntrust_level = "trusted"\n[hooks.state.${JSON.stringify(root + "/.codex/hooks.json")} ]\ntrusted_hash = "synthetic"\n`);
   const saved = process.env.CODEX_HOME; process.env.CODEX_HOME = home;
   try {
-    const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: ["fixture"] }); writeBinding(root, binding);
+    const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: [process.execPath, join(__dirname, "masterCodexFakeHost.js")] }); writeBinding(root, binding);
     const run = { ...previousRun(), hostProfile: binding.host, sessionId: randomUUID(), sessionConfirmed: true }; writeRunRecord(root, run);
     const q = publishInteraction(root, PublishInteraction.parse({ key: "codex-restart", stage: "setup", title: "구성", questions: [question()] }), interactionContext(root, run.sessionId, "codex", run.runId));
     assert.equal(send(request(q, choose())).ok, true); drainInteraction(root, q.requestId); drainInteraction(root, q.requestId);
@@ -26,9 +26,36 @@ test("대시보드 실제 서명 응답은 확인된 Codex thread를 중복 없�
   } finally { if (saved === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = saved; }
 });
 test("호스트가 바뀌었거나 thread가 미확인인 응답은 다른 호스트로 자동 재개하지 않는다", () => {
-  const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: ["fixture"] }); writeBinding(root, binding);
+  const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: [process.execPath, join(__dirname, "masterCodexFakeHost.js")] }); writeBinding(root, binding);
   const run = { ...previousRun(), hostProfile: binding.host, sessionConfirmed: false }; writeRunRecord(root, run);
   const q = publishInteraction(root, PublishInteraction.parse({ key: "unconfirmed", stage: "setup", title: "구성", questions: [question()] }), interactionContext(root, run.sessionId, "codex", run.runId));
   assert.equal(send(request(q, choose())).ok, true); drainInteraction(root, q.requestId);
   assert.equal(listRuns(root).length, 1); assert.equal(currentInteractions(root).requests[0].continuation?.state, "blocked");
+});
+test("Codex 준비 조회 실패는 막힘으로 굳히지 않고 다음 적용이 다시 판정한다 — 미신뢰는 막힘이다", () => {
+  initialize(root);
+  const home = join(root, "test-home"); mkdirSync(home);
+  const config = (text: string) => writeFileSync(join(home, "config.toml"), text);
+  const saved = process.env.CODEX_HOME; process.env.CODEX_HOME = home;
+  try {
+    const binding = readBinding(root)!; binding.host = hostProfileOf({ kind: "codex", command: [process.execPath, join(__dirname, "masterCodexFakeHost.js")] }); writeBinding(root, binding);
+    const answer = (key: string) => {
+      const run = { ...previousRun(), hostProfile: binding.host, sessionId: randomUUID(), sessionConfirmed: true }; writeRunRecord(root, run);
+      const q = publishInteraction(root, PublishInteraction.parse({ key, stage: "setup", title: "구성", questions: [question()] }), interactionContext(root, run.sessionId, "codex", run.runId));
+      assert.equal(send(request(q, choose())).ok, true);
+      return q.requestId;
+    };
+    const continuation = (id: string) => currentInteractions(root).requests.find(r => r.requestId === id)?.continuation;
+    config("# fixture: config-error\n");
+    const failing = answer("query-failed"); drainInteraction(root, failing);
+    assert.equal(continuation(failing)?.state, "queued");
+    assert.match(continuation(failing)?.detail ?? "", /Codex 준비 상태를 조회하지 못했습니다/);
+    config(`[projects.${JSON.stringify(root)}]\ntrust_level = "trusted"\n[hooks.state.${JSON.stringify(root + "/.codex/hooks.json")} ]\ntrusted_hash = "synthetic"\n`);
+    drainInteraction(root, failing);
+    assert.equal(continuation(failing)?.state, "started");
+    config("");
+    const untrusted = answer("untrusted"); drainInteraction(root, untrusted);
+    assert.equal(continuation(untrusted)?.state, "blocked");
+    assert.match(continuation(untrusted)?.detail ?? "", /Codex 가 이 저장소를 신뢰하지 않아/);
+  } finally { if (saved === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = saved; }
 });

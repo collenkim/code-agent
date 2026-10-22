@@ -53,6 +53,16 @@ export function runtimeHost(env: Env = process.env): HostName | undefined {
 export function otherHost(host: HostName): HostName { return host === "claude" ? "codex" : "claude"; }
 
 /**
+ * 관리 실행 감독과 Codex 준비 조회가 띄우는 호스트의 환경 — 부른 쪽 Claude·Codex 세션의 표지·통로와 교차 자식 표지를 지운다.
+ * CODEX_HOME 같은 계정 설정은 그대로라 같은 계정으로 돈다. 원본은 바꾸지 않는다.
+ */
+export function hostBaseEnv(base: Env): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...base };
+  for (const key of [...CLAUDE_SESSION_ENV, ...CODEX_MARKERS, "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", CROSS_CHILD_ENV]) delete env[key];
+  return env;
+}
+
+/**
  * 교차 실행 자식에게 넘길 환경 — 부른 쪽 호스트의 표지(CLAUDECODE 등)와 테스트 문맥을 지우고 교차 자식 표지를 넣는다.
  * 원본은 바꾸지 않는다.
  */

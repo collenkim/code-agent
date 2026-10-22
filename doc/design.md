@@ -844,7 +844,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | 명령 | 하는 일 |
 |---|---|
 | `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정. `--help`나 받지 않는 인자면 아무것도 쓰지 않는다 |
-| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · (Codex) 이벤트별 hook·Windows 명령·프로젝트·hook 신뢰 · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
+| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · (Codex) 이벤트별 hook·Windows 명령·프로젝트 신뢰·hook 검토(관리 실행과 같은 실행 파일로 app-server 에 조회) · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
 | `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 |
 | `code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]` | 기계 판독용 상태(`code-agent.state` v1) — 읽기 전용. 재개 코드·근거·`stateVersion`, 기대와 다르면 `stale-request`(종료 코드 3). 상위 조정자·러너의 연결 지점(§1 외부 실행기와의 경계) |
 | `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) |

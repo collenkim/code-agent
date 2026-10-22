@@ -10,7 +10,7 @@ Codex 폼 호출 실패는 `presentation.state: failed`로 기록한다(상태 �
 
 낡은 Claude 질문은 동일 세션·호출·질문·선택지의 실제 응답을 업무 답 원장과 대조한다. 작업 ID가 없으면 프로젝트 경로와 세션 UUID를 확인한 호스트 주 세션 원본의 구조화된 도구 결과를 대조한다. 상태 조회는 이를 `recoverable`로 구분하며 새 답·승인을 만들지 않는다. `interaction list`·`next`·버전 적용 때 동기화해 닫고, 확인된 낡은 기록만으로 사람 응답이나 버전 전환을 기다리지 않는다. 증거가 없으면 대기는 유지한다.
 
-Node 24.19.0 이상 24.x, 이 기능을 포함한 빌드와 해당 프로젝트의 hook 설치·신뢰가 필요하다. 문서 확정·작업 ID·master 목표는 없어도 된다.
+Node 24.19.0 이상 24.x, 이 기능을 포함한 빌드와 해당 프로젝트의 hook 설치·신뢰가 필요하다(Codex 는 `hello`의 `managedHost.runReadiness`가 실행 방식마다 준비와 차단 이유를 알린다 — [master 연동](master-control.md)). 문서 확정·작업 ID·master 목표는 없어도 된다.
 
 PC 마다 한 번 사용자가 대시보드의 PC 신뢰 확인 화면(code-agent 문구와 확인 단어 `trust`) 또는 직접 TTY로 대시보드 제어자를 신뢰한다. 그 뒤 프로젝트마다의 연결은 대시보드에서 사람이 확인하면 서버가 `pair.challenge`·`pair`로 연동 켜기·사람 채널 등록·토큰 발급을 한 번에 한다([페어링 계약](master-control.md#pc-신뢰와-대시보드-페어링)). 사람 채널이 만료되면(30일) 다시 페어링한다.
 
@@ -166,7 +166,7 @@ Claude는 `CLAUDE_CONFIG_DIR/projects`(기본 `~/.claude/projects`), Codex는 `C
 
 ## Codex Git 실행 권한
 
-Codex 관리 실행은 로컬 `app-server`의 표준 입출력으로 권한 요청을 받는다. 외부 서버·HTTP 포트를 열지 않는다. `workspace-write` 샌드박스와 네트워크 차단을 유지하며, `approval_policy=on-request`·`approvals_reviewer=user`로 단건 요청을 사람 채널에 연결한다. 시작 전 `hooks/list`로 실제 로드된 code-agent PreToolUse가 활성·동기 실행·신뢰 상태인지 확인한다. 해당 프로토콜을 지원하지 않거나 hook을 로드하지 않으면 모델 턴을 시작하지 않는다. 기능 협상은 `hello.codeAgent.stateSchema >= 10`과 `interactions.hostPermissions.kind === "host-permission"`으로 한다.
+Codex 관리 실행은 로컬 `app-server`의 표준 입출력으로 권한 요청을 받는다. 외부 서버·HTTP 포트를 열지 않는다. `workspace-write` 샌드박스와 네트워크 차단을 유지하며, `approval_policy=on-request`·`approvals_reviewer=user`로 단건 요청을 사람 채널에 연결한다. 시작 전 그 app-server에 `config/read`·`hooks/list`를 물어 사전 진단(`hello`의 `managedHost`)과 같은 기준으로 프로젝트 신뢰와 code-agent hook 6개의 로드·신뢰를 확인한다. 해당 프로토콜을 지원하지 않거나 준비 완료가 아니면 모델 턴을 시작하지 않는다. 기능 협상은 `hello.codeAgent.stateSchema >= 10`과 `interactions.hostPermissions.kind === "host-permission"`으로 한다.
 
 지원 대상은 저장소 루트에서 실행하는 `code-agent start …`, `code-agent verify …`, `code-agent repro …`의 명령 실행 승인이다. PowerShell·bash의 단순 실행 래퍼도 받는다. 이 명령들은 원래 hook·작업 단계·승인·검증 검사를 그대로 거친다. 직접 Git 변경, 복합 셸·인라인 코드, 네트워크 승인, 파일 변경 승인, 다른 프로젝트·원격 환경, 읽기 전용 실행의 쓰기 권한은 이 경로에서 받지 않는다. 준비·반영 동의의 Git 작업은 기존 외부 동의 적용 처리기가 수행한다.
 

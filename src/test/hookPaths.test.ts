@@ -20,11 +20,15 @@ import { storePath } from "../agent/plugins/store";
 import { CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
 import { deadPid } from "./deadPid";
 import { withCaller } from "./reviewFixture";
+import { stubCodexProbe } from "./codexProbeFixture";
 
 let root: string, home: string;
+// doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다(판정 기록은 아래 CODE_AGENT_HOME 에)
+let probe: { restore(): void };
 const saved = { home: process.env.CODE_AGENT_HOME, claude: process.env.CLAUDECODE };
 const cli = join(__dirname, "../agent/cli.js");
 beforeEach(() => {
+  probe = stubCodexProbe("project-untrusted", { bin: false });
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-hookpaths-")));
   home = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-hookhome-")));
   process.env.CODE_AGENT_HOME = join(home, ".code-agent");
@@ -33,6 +37,7 @@ beforeEach(() => {
   setupConsentProject(root);
 });
 afterEach(() => {
+  probe.restore();
   for (const [key, value] of [["CODE_AGENT_HOME", saved.home], ["CLAUDECODE", saved.claude]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }

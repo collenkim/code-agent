@@ -83,6 +83,14 @@ export function hostCommand(host: Host): { file: string; prefix: string[] } | st
   if (isBatchScript(found)) return `${found} ${CONFIG_SCRIPT} — ${key} 에 ${binHint()}을 지정하세요`;
   return { file: found, prefix: [] };
 }
+/**
+ * master 호스트 설정의 command 를 실행 파일·앞 인자로 — 호스트 이름 하나(기본값)면 hostCommand 로 찾고 아니면 그대로 쓴다.
+ * 관리 실행 감독(hostArgs)과 Codex 준비 조회(codexReadiness)가 같은 해석을 써서 같은 실행 파일을 띄운다.
+ */
+export function hostLaunch(host: Host, command: readonly string[]): { file: string; prefix: string[] } | string {
+  const [file, ...prefix] = command;
+  return command.length === 1 && file === host ? hostCommand(host) : { file, prefix };
+}
 
 /**
  * 교차 검증을 선택한 프로젝트에서 교차 실행 명령을 못 쓰는 이유 — 설정 오류(hostCommandConfigError)와 실행 불가(미설치)로 나눈다.

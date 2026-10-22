@@ -16,7 +16,7 @@ code-agent는 **Claude Code와 Codex에서 실행하는 개발 절차**입니다
 | Codex 단독 | `code-agent execution codex` | `$ca-request <요구사항>` |
 | 교차 검증 | `code-agent execution both` | 사용할 호스트에서 시작 — 계획 검토·코드 리뷰를 다른 호스트가 교차 검증(두 호스트를 모두 실행할 수 있을 때만, 못 쓰면 중지로 기록하고 진행 — 설정 오류·형식 오류는 막는다) |
 
-Codex는 설치 후 다시 열고 프로젝트 훅을 검토·신뢰해야 합니다. 업무 질문과 동의는 자동 등록된 로컬 MCP의 방향키·Enter 선택 UI로 받습니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
+Codex는 설치 후 다시 열고 프로젝트와 훅을 검토·신뢰해야 합니다. `init`은 끝에 Codex 실행 준비(준비 완료 · 설치 완료 · 신뢰 확인 필요 · hook 검토 필요 · 신뢰 확인 실패)를 알리고, 신뢰·검토 뒤에는 `code-agent doctor --host codex`로 다시 확인합니다. 업무 질문과 동의는 자동 등록된 로컬 MCP의 방향키·Enter 선택 UI로 받습니다. `code-agent doctor`와 `update`는 설치된 호스트를 인식합니다. Codex의 사용자 확인 방식과 지원 범위는 [Codex 연동](doc/codex.md)을 참고하세요. 아래 `/ca-*` 예시는 Claude 기준이며 Codex에서는 같은 이름의 `$ca-*` 실행 절차를 사용합니다. CLI 출력은 설치·실행 호스트에 맞춰 표기합니다. `/ca-fix`는 실행 명령이며 티켓 번호가 아닙니다. **작업 ID**는 code-agent의 작업 식별자, **외부 업무 식별자**는 Jira 티켓 키나 Notion 페이지 ID, **조사 ID**는 오류 사전 판별 기록의 식별자입니다. 사전 판별의 외부 연결은 현재 Jira만 지원합니다.
 
 ## 목차
 

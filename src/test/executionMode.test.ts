@@ -25,12 +25,15 @@ afterEach(() => { for (const root of roots.splice(0)) { assert.ok(resolve(root).
 test("공개 init은 옵션 없이 두 호스트와 MCP를 준비하고 실행 방식은 선택하지 않는다", () => {
   const root = fixture();
   const cli = resolve(__dirname, "../agent/cli.js");
-  execFileSync(process.execPath, [cli, "init", "--cli", cli], { cwd: root });
+  // CLI init 은 Codex 준비를 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 모의 app-server 와 임시 홈으로
+  const home = mkdtempSync(join(tmpdir(), "ca-execution-home-")); roots.push(home);
+  const env = { ...process.env, CODEX_HOME: join(home, "codex"), CODE_AGENT_HOME: join(home, "code-agent"), CODE_AGENT_CODEX_BIN: join(__dirname, "masterCodexFakeHost.js") };
+  execFileSync(process.execPath, [cli, "init", "--cli", cli], { cwd: root, env });
   assert.deepEqual(selectedHosts(root), ["claude", "codex"]);
   for (const file of [".claude/settings.json", ".codex/hooks.json", ".codex/config.toml", "CLAUDE.md", "AGENTS.md"]) assert.ok(existsSync(join(root, file)), file);
   assert.equal(executionMode(root), "auto"); assert.equal(crossRequired(root), false);
   assert.match(readFileSync(join(root, ".codex/config.toml"), "utf8"), /code_agent/);
-  execFileSync(process.execPath, [cli, "init", "--host", "claude", "--cli", cli], { cwd: root });
+  execFileSync(process.execPath, [cli, "init", "--host", "claude", "--cli", cli], { cwd: root, env });
   assert.equal(selectedHosts(root).length, 2);
 });
 test("세 실행 경로와 재설치가 같은 설정을 보존하고 모델은 교차 검증을 끄지 못한다", () => {

@@ -12,8 +12,8 @@
 import { spawn } from "child_process";
 import { appendFileSync, createWriteStream, readFileSync } from "fs";
 
-import { CLAUDE_SESSION_ENV, CODEX_MARKERS, CROSS_CHILD_ENV } from "../crossEnv";
-import { hostCommand } from "../hosts";
+import { hostBaseEnv } from "../crossEnv";
+import { hostLaunch } from "../hosts";
 import { requireManagedHost } from "./hostProfile";
 import { CodexTransport } from "./codexTransport";
 import { acquireLock } from "../lock";
@@ -38,12 +38,9 @@ export const MASTER_SYSTEM_RULES = [
 ].join("\n");
 
 export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "sessionId"> & Partial<Pick<RunRecord, "runId">>): { command: string; args: string[] } {
-  let [command, ...prefix] = profile.command;
-  if (profile.command.length === 1 && command === profile.kind) {
-    const resolved = hostCommand(profile.kind);
-    if (typeof resolved === "string") throw new Error(resolved);
-    command = resolved.file; prefix = resolved.prefix;
-  }
+  const resolved = hostLaunch(profile.kind, profile.command);
+  if (typeof resolved === "string") throw new Error(resolved);
+  const { file: command, prefix } = resolved;
   if (profile.kind === "codex") {
     const rules = `${MASTER_SYSTEM_RULES}\nGit 쓰기가 필요한 code-agent start·verify·repro가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
     return { command, args: [...prefix, "app-server", "--listen", "stdio://", "-c", 'approval_policy="on-request"', "-c", 'approvals_reviewer="user"', "-c", `sandbox_mode=${JSON.stringify(profile.sandbox)}`,
@@ -62,8 +59,7 @@ export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "se
 
 /** 호스트 환경 — 부른 쪽 Claude·Codex 세션의 표지·통로를 지우고 실행 표지를 넣는다 */
 export function hostEnv(base: NodeJS.ProcessEnv, runId: string, kind: "claude" | "codex" = "claude"): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base };
-  for (const key of [...CLAUDE_SESSION_ENV, ...CODEX_MARKERS, "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", CROSS_CHILD_ENV]) delete env[key];
+  const env = hostBaseEnv(base) as NodeJS.ProcessEnv;
   env[MASTER_RUN_ENV] = runId;
   env.CODE_AGENT_HOST = kind;
   return env;
@@ -209,7 +205,8 @@ export function supervise(root: string, runId: string): Promise<number> {
     };
 
     try {
-      requireManagedHost(root, profile);
+      // 설치만 본다 — Codex 의 프로젝트·hook 신뢰는 CodexTransport 가 실제로 쓸 app-server 에 같은 판정(classifyCodexReadiness)으로 묻는다
+      requireManagedHost(root, profile, { codex: "static" });
       const { command, args } = hostArgs(profile, run);
       child = spawn(command, args, { cwd: root, env: hostEnv(process.env, runId, profile.kind), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
     } catch (error) {

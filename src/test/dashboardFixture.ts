@@ -21,11 +21,14 @@ import { drainInteraction } from "../agent/interactionService";
 import { loadConsent } from "../agent/consent";
 import type { RequestEnvelope } from "../agent/master/protocol";
 
+let savedStore: string | undefined;
 let root: string, token: string, key: ReturnType<typeof generateKeyPairSync>, channelId: string, restoreCaller: () => void;
 beforeEach(() => {
   // 사람의 터미널로 둔다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
   restoreCaller = setCaller(undefined);
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-interactions-")));
+  // Codex 준비 판정 기록은 사용자 홈이 아니라 시험 폴더에 남긴다
+  savedStore = process.env.CODE_AGENT_HOME; process.env.CODE_AGENT_HOME = join(root, "code-agent-home");
   setupConsentProject(root);
   // Claude 관리 실행(이어 실행)은 Claude 설치 기록과 hook 이 있어야 접수한다
   init(root, { host: "claude" });
@@ -37,7 +40,7 @@ beforeEach(() => {
   writeBinding(root, binding);
   mock.method(childProcess, "spawn", () => Object.assign(new EventEmitter(), { unref() {} }));
 });
-afterEach(() => { mock.restoreAll(); restoreCaller(); assert.ok(resolve(root).startsWith(realpathSync.native(tmpdir()) + sep)); assert.ok(root.includes("ca-interactions-")); rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { mock.restoreAll(); restoreCaller(); if (savedStore === undefined) delete process.env.CODE_AGENT_HOME; else process.env.CODE_AGENT_HOME = savedStore; assert.ok(resolve(root).startsWith(realpathSync.native(tmpdir()) + sep)); assert.ok(root.includes("ca-interactions-")); rmSync(root, { recursive: true, force: true }); });
 const question = (id = "q1") => ({ questionId: id, title: "문서 작성 방식", mode: "single", minSelections: 1,
   options: [{ optionId: "source", label: "소스 기준 작성", description: "현재 코드를 확인합니다", consequence: "문서 초안을 작성합니다" }, { optionId: "link", label: "기존 문서 연결", description: "경로를 입력합니다", consequence: "문서 기준을 검사합니다", input: { required: true, minLength: 1, maxLength: 200, description: "기존 문서 경로" } }],
   recommendedOptionIds: ["source"], recommendationReason: "검사한 소스 구성이 있습니다", evidence: [{ path: "package.json", summary: "현재 프로젝트 구성" }] });

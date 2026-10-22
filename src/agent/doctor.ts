@@ -17,7 +17,7 @@ import {
 } from "./assets";
 import { checkProjectDocs } from "./docs";
 import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
-import { codexTrust } from "./codexTrust";
+import { hostReadiness } from "./master/hostProfile";
 import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
 import { STATE_DIR } from "./layout";
@@ -369,11 +369,29 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       const ok = existsSync(instructions) && readFileSync(instructions, "utf8").includes(assetText("template/CODEX.block.md").trim());
       add(ok ? "✓" : "✗", "Codex 프로젝트 지침", ok ? "AGENTS.md 블록 확인" : "블록 누락 또는 변경", "code-agent init");
     } catch (error) { add("✗", "Codex 번들", String(error)); }
-    // 프로젝트 hook 은 프로젝트 신뢰와 hook 검토·신뢰가 둘 다 있어야 돈다 — codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다(0.161.0 실측)
-    const trust = codexTrust(repoRoot);
-    add(trust.project === "trusted" ? "✓" : "·", "Codex 프로젝트 신뢰", trust.projectText,
-      trust.project === "trusted" ? undefined : "Codex 대화형 세션에서 이 저장소를 열고 프로젝트를 신뢰하세요(신뢰 전에는 프로젝트 설정·hook 이 꺼집니다)");
-    add("·", "Codex 훅 신뢰", trust.hooksText);
+    // 프로젝트 hook 은 프로젝트 신뢰와 hook 검토·신뢰가 둘 다 있어야 돈다 — codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다.
+    // 관리 실행과 같은 실행 파일·계정으로 Codex app-server 에 지금 묻는다(codexReadiness — 접수·감독과 같은 판정). 이 PC·계정의 상태라
+    // doctor 를 막지 않는다(·) — 막는 것은 master 접수·감독이다. 앞 단계가 막히면 뒤 줄은 경고하지 않고 '그 뒤 확인'으로 둔다
+    const codex = hostReadiness(repoRoot, "codex", { codex: "fresh" });
+    const codexText = codex.problems.map((problem) => problem.message).join(" · ");
+    const codes = new Set(codex.problems.map((problem) => problem.code));
+    // 어느 실행 파일·계정에 물었는지 — 관리 실행(같은 master 호스트 설정)과 다른 환경에서 돌린 doctor 를 사람이 가려낸다
+    const target = codex.target ? ` (조회: Codex${codex.target.version ? ` ${codex.target.version}` : ""} · ${codex.target.executable} · CODEX_HOME ${codex.target.codexHome})` : "";
+    const trusted = `신뢰됨 — Codex app-server(config/read)가 이 저장소의 프로젝트 설정·hook 을 켭니다${target}`;
+    const [projectLine, hookLine]: [Mark, string, string?][] =
+      codex.state === "ready" ? [["✓", trusted], ["✓", `신뢰됨 — code-agent hook ${CODEX_EVENTS.length}종이 신뢰·켜짐 상태로 로드됩니다(hooks/list)`]]
+      : codex.state === "project-untrusted" ? [["·", `${codes.has("codex-project-disabled") ? "프로젝트 설정 꺼짐" : "신뢰 필요"} — ${codexText}${target}`],
+        ["·", "프로젝트 신뢰 뒤 확인 — Codex 가 프로젝트 hook 을 읽지 않는 동안에는 검토할 hook 을 알 수 없습니다"]]
+      : codex.state === "hooks-review" ? [["✓", trusted], ["·", `검토 필요 — ${codexText}`]]
+      : codes.has("codex-sandboxed") ? [["·", `터미널에서 확인 — ${codexText}`], ["·", "터미널에서 확인합니다"]]
+      : codex.state === "query-failed" || codex.state === "checking" ? [["·", `조회 실패 — ${codexText}${target}`], ["·", "조회가 되면 확인합니다"]]
+      : codes.has("codex-not-found") ? [["·", `Codex 실행 파일 없음 — ${codexText}`], ["·", "Codex 를 실행할 수 있게 된 뒤 확인합니다"]]
+      : codes.has("codex-unsupported") ? [["·", `Codex 갱신 필요 — ${codexText}${target}`], ["·", "Codex 를 갱신한 뒤 확인합니다"]]
+      : codes.has("codex-hooks-disabled") ? [["✓", trusted], ["·", `hook 기능 꺼짐 — ${codexText}`]]
+      : codes.has("codex-hooks-invalid") || codes.has("codex-hooks-not-loaded") ? [["✓", trusted], ["✗", codexText, "code-agent init"]]
+      : [["·", "설치 복구 뒤 확인 — 위의 Codex 설치 줄을 먼저 고칩니다"], ["·", "설치 복구 뒤 확인합니다"]];
+    add(projectLine[0], "Codex 프로젝트 신뢰", projectLine[1], projectLine[2]);
+    add(hookLine[0], "Codex 훅 신뢰", hookLine[1], hookLine[2]);
     // PreToolUse 가 판정하지 않은 Codex 도구 이름(작업·세션 중에만 기록) — 파일을 쓰는 도구라면 hook 판정 밖이다
     const unknown = unknownCodexTools(repoRoot);
     if (unknown.length) {

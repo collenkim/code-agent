@@ -134,8 +134,11 @@ function hello(root: string, binding: Binding | undefined): unknown {
 function managedHost(root: string, binding: Binding | undefined): unknown {
   try { return (require("./hostProfile") as typeof import("./hostProfile")).managedHostView(root, binding); }
   catch (error) {
-    return { selected: null, source: null, installedHosts: [], execution: null, ready: false, problems: [{ code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] }],
-      runSelection: { supported: true, modes: [] }, hosts: {} };
+    const problem = { code: "internal", message: (error instanceof Error ? error.message : String(error)).split("\n")[0] };
+    const blocked = (hosts: ("claude" | "codex")[]) => ({ ready: false, state: "query-failed", blocking: hosts.map((host) => ({ host, ...problem })) });
+    return { selected: null, source: null, installedHosts: [], execution: null, ready: false, state: "query-failed", problems: [problem],
+      runSelection: { supported: true, modes: [] },
+      runReadiness: { claude: blocked(["claude"]), codex: blocked(["codex"]), both: { claude: blocked(["claude", "codex"]), codex: blocked(["codex", "claude"]) } }, hosts: {} };
   }
 }
 
@@ -219,7 +222,7 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     : typeof payload.timeoutMs === "number" && Number.isInteger(payload.timeoutMs) && payload.timeoutMs >= 1_000 && payload.timeoutMs <= binding.policy.runTimeoutMs ? payload.timeoutMs
       : (() => { throw new ControlError("invalid-request", `timeoutMs 는 1000~${binding.policy.runTimeoutMs} 입니다`); })();
   const runs = listRuns(root);
-  const { profileFor, selectedProfile, requireResumeProfile, requireManagedHost, requireExecutionHosts } = require("./hostProfile") as typeof import("./hostProfile");
+  const { profileFor, selectedProfile, requireResumeProfile, requireRunHosts, requireExecutionHosts } = require("./hostProfile") as typeof import("./hostProfile");
   // 새 실행만 실행 방식을 고른다 — 이어 실행은 이전 실행(그 작업에 고정된 선택)을 그대로 쓴다
   const requested = runExecutionOf(payload.execution);
   if (requested && mode === "continue") throw new ControlError("invalid-request", "이어 실행은 이전 실행의 실행 방식을 씁니다 — execution 은 start 에만 보냅니다");
@@ -265,8 +268,8 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   } else if (mode === "continue") {
     // 작업 없이 이어 실행 — 이전 실행이 작업을 열지 않았거나 반영으로 닫았다. 같은 세션의 대화를 잇는 것이라 받는다
   }
-  // 실제로 쓸 호스트의 준비만 본다 — 작업에 고정된 방식으로 바뀐 요청의 호스트는 실행하지 않으므로 보지 않는다
-  requireManagedHost(root, profile);
+  // 실제로 쓸 호스트의 준비만 본다(주 호스트와, both 면 교차 검증 호스트) — 작업에 고정된 방식으로 바뀐 요청의 호스트는 실행하지 않으므로 보지 않는다
+  requireRunHosts(root, profile, execution);
   const waitingOnOwnAttempt = view.resume.code === "wait" && mode === "continue" && view.resume.reasons.every((reason) => reason.code === "attempt-running");
   const hostHandoff = mode === "start" ? (require("./hostHandoff") as typeof import("./hostHandoff")).pendingHostHandoff(root, profile) : undefined;
   const prepareAfterHandoff = hostHandoff && view.resume.code === "needs-human" && ["answer-questions", "confirm-request", "plan-consent", "deliver-consent", "human-input"].includes(view.resume.next.action);

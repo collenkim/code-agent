@@ -7,7 +7,7 @@ import { contextMatches, currentInteractions, interactionHash, mutateInteraction
 import { stateView } from "../stateView";
 import { ControlError } from "./protocol";
 import { activeRuns } from "./runs";
-import { selectedProfile, requireManagedHost } from "./hostProfile";
+import { selectedProfile, requireRunHosts } from "./hostProfile";
 import { nativeSession } from "./nativeSession";
 import { CONTROL_LOCK, readBinding, readOwner, listRuns, readRun, readWorkBinding, writeWorkBinding, writeRunRecord, withLock, emit, type RunRecord } from "./store";
 
@@ -19,7 +19,7 @@ function preview(root: string, requestId: string, transcript?: string) {
   if (request.context.runId) throw new ControlError("invalid-state", "이미 관리 실행에 연결된 질문입니다. 기존 실행을 조회·재개하세요");
   const profile = selectedProfile(root, binding);
   if (profile.kind !== request.context.host) throw new ControlError("invalid-state", "복원은 원래 호스트로만 가능합니다. execution에서 같은 호스트를 선택하세요");
-  requireManagedHost(root, profile);
+  requireRunHosts(root, profile, undefined);
   const previous = listRuns(root).filter(r => r.sessionId === request.context.sessionId);
   const imported = previous.find(r => r.recovery);
   if (imported && (imported.generation !== owner.generation || imported.controller !== owner.controller)) throw new ControlError("fenced", "다른 소유 세대에서 복원한 세션입니다");

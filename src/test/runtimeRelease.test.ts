@@ -41,7 +41,9 @@ function release(id: string, change?: (dir: string) => void): void {
 }
 
 function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const value: NodeJS.ProcessEnv = { ...process.env, CODE_AGENT_HOME: join(scratch, "pc-store"), CODE_AGENT_RELEASE_HOME: store, CODE_AGENT_RUNTIME_TRACE: trace, ...extra };
+  // doctor·init 은 Codex 준비를 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 모의 app-server 와 임시 CODEX_HOME 으로
+  const value: NodeJS.ProcessEnv = { ...process.env, CODE_AGENT_HOME: join(scratch, "pc-store"), CODE_AGENT_RELEASE_HOME: store, CODE_AGENT_RUNTIME_TRACE: trace,
+    CODEX_HOME: join(scratch, "codex-home"), CODE_AGENT_CODEX_BIN: join(__dirname, "masterCodexFakeHost.js"), ...extra };
   for (const key of ["CLAUDE_PROJECT_DIR", ...(extra.CODE_AGENT_RUNTIME_SELF ? [] : ["CODE_AGENT_RUNTIME_SELF"]), ...(extra.CODE_AGENT_ENTRY ? [] : ["CODE_AGENT_ENTRY"])]) delete value[key];
   // 사람의 터미널로 둔다 — 시험을 어느 호스트 안에서 돌려도 같게(시작 게이트는 실행 호스트의 설치 기록을 본다)
   for (const key of CALLER_KEYS) if (!(key in extra)) delete value[key];

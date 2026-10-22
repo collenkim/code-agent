@@ -13,8 +13,11 @@ import { decide } from "../agent/hook";
 import { init } from "../agent/init";
 import { requestBegin } from "../agent/request";
 import { gitFixture, setupConsentProject } from "./consentFixture";
+import { stubCodexProbe } from "./codexProbeFixture";
 
 let root: string;
+// doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다
+let probe: { restore(): void };
 const SPACE = "aidlc/spaces/default/intents";
 function write(file: string, text: string): void { mkdirSync(dirname(join(root, file)), { recursive: true }); writeFileSync(join(root, file), text); }
 function intent(record: string, state: string, registry?: string): void {
@@ -32,8 +35,10 @@ beforeEach(() => {
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-coexist-")));
   setupConsentProject(root);
   init(root, { host: "both" });
+  probe = stubCodexProbe("project-untrusted", { bin: false });
 });
 afterEach(() => {
+  probe.restore();
   const target = resolve(root), temporary = realpathSync.native(tmpdir());
   assert.ok(target.startsWith(temporary + sep) && target.slice(temporary.length + 1).startsWith("ca-coexist-"));
   rmSync(target, { recursive: true, force: true });

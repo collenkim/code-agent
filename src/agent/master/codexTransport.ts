@@ -2,8 +2,7 @@
 import type { ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { StringDecoder } from "string_decoder";
-import { realpathSync } from "fs";
-import { join } from "path";
+import { classifyCodexReadiness, unknownCodexMethod, type CodexProbeRaw } from "../codexReadiness";
 import type { CodexHostProfile } from "./protocol";
 import { readRun, type RunRecord } from "./store";
 import { closeCodexPermissions, forwardCodexPermission, publishCodexPermission, recordCodexCommandResult, type CodexApproval } from "./codexPermissions";
@@ -52,14 +51,24 @@ export class CodexTransport {
   }
   async start(prompt: string): Promise<void> {
     try {
-      await this.request("initialize", { clientInfo: { name: "code_agent", title: "code-agent", version: "1.0.0" } });
+      const server = await this.request("initialize", { clientInfo: { name: "code_agent", title: "code-agent", version: "1.0.0" } });
       this.send({ method: "initialized", params: {} });
-      const hooks = await this.request("hooks/list", { cwds: [this.root] });
-      const expectedSource = realpathSync(join(this.root, ".codex/hooks.json"));
-      const activeGuard = hooks.data?.some((entry: Row) => realpathSync(entry.cwd) === realpathSync(this.root) && !entry.errors?.length &&
-        entry.hooks?.some((hook: Row) => hook.eventName === "preToolUse" && hook.handlerType === "command" && hook.enabled && !hook.async &&
-          ["trusted", "managed"].includes(hook.trustStatus) && realpathSync(hook.sourcePath) === expectedSource && /\bcodex-event\b/.test(hook.command)));
-      if (!activeGuard) throw new Error("Codex app-server가 신뢰된 code-agent PreToolUse hook을 로드하지 않았습니다. 현재 hook을 검토·신뢰하세요");
+      // 실행에 쓸 이 app-server 에 사전 진단(doctor·hello·접수)과 같은 두 요청을 보내 같은 분류로 판정한다 — 준비가 아니면 모델 턴을 시작하지 않는다
+      const raw: CodexProbeRaw = { server: { userAgent: server.userAgent, codexHome: server.codexHome } };
+      const ask = async (method: string, params: Row): Promise<Row | undefined> => {
+        try { return await this.request(method, params); }
+        catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!unknownCodexMethod(message)) raw.error ??= `${method} 실패: ${message}`;
+          else if (method === "config/read") raw.configUnsupported = true;
+          else { raw.error ??= `${method} 를 지원하지 않습니다`; raw.code = "unsupported"; }
+          return undefined;
+        }
+      };
+      raw.config = await ask("config/read", { includeLayers: true, cwd: this.root });
+      if (raw.error === undefined) raw.hooks = await ask("hooks/list", { cwds: [this.root] });
+      const readiness = classifyCodexReadiness(this.root, raw);
+      if (readiness.state !== "ready") throw new Error(readiness.problems.map((problem) => problem.message).join(" · "));
       const result = await this.request(this.run.mode === "continue" ? "thread/resume" : "thread/start", {
         ...(this.run.mode === "continue" ? { threadId: this.run.sessionId } : {}), cwd: this.root, sandbox: this.profile.sandbox,
         approvalPolicy: "on-request", approvalsReviewer: "user", ...(this.profile.model ? { model: this.profile.model } : {}),

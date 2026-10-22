@@ -436,7 +436,9 @@ describe("관리 실행 호스트", () => {
     view = req({ type: "hello" }).result.managedHost;
     assert.deepEqual([view.selected, view.source, view.ready], ["codex", "execution-main", false]);
     assert.ok(view.problems.some((problem: { code: string }) => problem.code === "host-not-installed"));
-    assert.ok(view.problems.some((problem: { code: string }) => problem.code.startsWith("codex-")), "Codex 신뢰 상태를 problems 에 넣는다");
+    // 설치가 막히면 Codex 신뢰는 묻지도 알리지도 않는다 — 설치를 복구한 뒤 다시 조회해 알린다
+    assert.ok(!view.problems.some((problem: { code: string }) => problem.code.startsWith("codex-")), JSON.stringify(view.problems));
+    assert.deepEqual([view.state, view.runReadiness.codex.state, view.runReadiness.claude.ready], ["not-installed", "not-installed", true]);
     assert.ok(!JSON.stringify(view).includes(home));
 
     // 터미널 enable 도 같은 규칙 — execution both·main codex

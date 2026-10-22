@@ -45,6 +45,8 @@ export interface InitOptions {
   preserve?: ReadonlySet<string>;
   /** 다시 설치(update) — 처음 설치의 '다시 열고 훅을 신뢰' 안내를 빼고, 다시 열지는 바뀐 종류대로 따로 말한다(runtimeApply.hostGuidance) */
   refresh?: boolean;
+  /** 공개 initialize(CLI init)만 — 설치 뒤 Codex 실행 준비를 관리 실행과 같은 판정으로 지금 묻고 알린다(codexReadiness) */
+  readiness?: boolean;
 }
 
 /** 표시된 블록만 넣거나 바꾼다. 블록 밖은 사람의 것이라 건드리지 않는다 */
@@ -227,7 +229,22 @@ export function initialize(repoRoot: string, options: InitOptions = {}): string 
     const legacyBoth = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) && selectedHosts(repoRoot).length > 1;
     writeIfChanged(join(repoRoot, EXECUTION_FILE), JSON.stringify({ version: 1, mode: legacyBoth ? "both" : "auto" }, null, 2) + "\n");
   }
-  return init(repoRoot, { ...options, host: "both" }) + "\n\n두 호스트 준비 완료. 실행할 호스트를 열어 사용하세요. 교차 검증은 호스트 밖 터미널에서 code-agent execution both로 선택합니다.";
+  const installed = init(repoRoot, { ...options, host: "both" }) + "\n\n두 호스트 설치 완료. 실행할 호스트를 열어 사용하세요. 교차 검증은 호스트 밖 터미널에서 code-agent execution both로 선택합니다.";
+  return `${installed}\n${codexReadinessLine(repoRoot, options.readiness === true)}`;
+}
+
+/**
+ * 설치 뒤 Codex 실행 준비 한 줄 — 설치 완료와 신뢰 확인 필요를 가른다. 묻지 않았으면(내부 호출) '확인 전'이고, 물었으면 관리 실행 접수·감독과
+ * 같은 판정(hostReadiness — Codex app-server 의 config/read·hooks/list)의 상태와 조치다. 재검사는 doctor 가 같은 조회를 한다.
+ */
+function codexReadinessLine(repoRoot: string, probe: boolean): string {
+  const { CODEX_RECHECK } = require("./codexReadiness") as typeof import("./codexReadiness");
+  if (!probe) return `Codex 실행 준비: 확인 전 — Codex 를 열어 이 저장소와 code-agent hook 을 신뢰한 뒤 ${CODEX_RECHECK}.`;
+  const readiness = (require("./master/hostProfile") as typeof import("./master/hostProfile")).hostReadiness(repoRoot, "codex", { codex: "fresh" });
+  const detail = readiness.problems.map((problem) => problem.message).join(" · ");
+  const label: Record<typeof readiness.state, string> = { ready: "준비 완료", "project-untrusted": "설치 완료 · 신뢰 확인 필요", "hooks-review": "설치 완료 · hook 검토 필요",
+    "query-failed": "설치 완료 · 신뢰 확인 실패", checking: "설치 완료 · 신뢰 확인 중", "not-installed": "설치 확인 필요" };
+  return `Codex 실행 준비: ${label[readiness.state]} — ${readiness.state === "ready" ? `Codex 가 이 저장소와 code-agent hook ${CODEX_EVENTS.length}종을 신뢰합니다` : detail}`;
 }
 
 export function init(repoRoot: string, options: InitOptions = {}): string {
@@ -292,7 +309,7 @@ function initCodex(repoRoot: string, options: InitOptions): string {
     "  code-agent model --host codex로 역할별 설정을 확인하고 변경할 수 있습니다.",
     ...(options.refresh ? [] : ["  Codex를 다시 열고 프로젝트 훅을 검토·신뢰한 뒤 $ca-request로 시작하세요."]),
     "  선택 UI: .codex/config.toml의 code_agent MCP — 업무 질문과 동의를 방향키·Enter로 선택합니다.",
-    "  설치는 Codex를 실행하거나 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex로 파일을 점검하세요.",
+    "  설치는 훅을 자동 신뢰하지 않습니다. code-agent doctor --host codex가 Codex에 직접 물어 파일과 프로젝트·훅 신뢰를 점검합니다.",
   ].join("\n");
 }
 

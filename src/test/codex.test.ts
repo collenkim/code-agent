@@ -7,7 +7,6 @@ import { afterEach, beforeEach, test } from "node:test";
 import { codexHook, patchPaths } from "../agent/codexHook";
 import { applyConsent, codexReplyCode, consentCommandGuard, loadConsent, prepareConsent } from "../agent/consent";
 import { readDocLedger } from "../agent/docs";
-import { codexTrust } from "../agent/codexTrust";
 import { doctor } from "../agent/doctor";
 import { hostAssets, parseHost, selectedHosts } from "../agent/hosts";
 import { init, installedHook } from "../agent/init";
@@ -22,11 +21,15 @@ import { usage } from "../agent/usage";
 import { start } from "../agent/commands";
 import { approveAndApplyFixture, CONSENT_SPEC, CONSENT_WORK_ID, prepareDeliveryFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
 import { withCaller } from "./reviewFixture";
+import { probeResponse, stubCodexProbe, type ProbeState } from "./codexProbeFixture";
 
 let root: string;
+// doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다(H5 는 따로 바꿔 끼운다)
+let probe: { restore(): void };
 const cli = join(__dirname, "../agent/cli.js");
-beforeEach(() => { root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-codex-"))); });
+beforeEach(() => { root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-codex-"))); probe = stubCodexProbe("project-untrusted", { bin: false }); });
 afterEach(() => {
+  probe.restore();
   const target = resolve(root), temporary = realpathSync.native(tmpdir());
   assert.ok(target.startsWith(temporary + sep) && target.slice(temporary.length + 1).startsWith("ca-codex-"));
   rmSync(target, {recursive:true, force:true});
@@ -285,52 +288,67 @@ test("실제 CLI 훅 프로세스는 판정 실패를 Claude 훅과 같은 결�
   assert.match(subagent.stderr,/code-agent codex-event: /);
 });
 
-test("H5 doctor 의 Codex 프로젝트 신뢰 — CODEX_HOME 의 config.toml 을 읽기만 하고 저장소의 trust_level(상위 폴더 항목만이면 확인 필요)과 hook 신뢰 기록을 알린다", () => {
+test("H5 doctor 의 Codex 신뢰 — 같은 실행 파일·계정으로 app-server 에 묻고, 프로젝트 미신뢰면 hook 은 경고하지 않으며 실제로 검토할 hook 만 알린다", () => {
   init(root,{host:"codex",cli});
-  const home = join(root, "codex-home"), config = join(home, "config.toml");
   const saved = process.env.CODEX_HOME;
-  process.env.CODEX_HOME = home;
-  const line = (name: string) => doctor(root,"codex").text.split("\n").find((row) => row.includes(` ${name}:`)) ?? "";
-  // Codex 가 Windows 경로를 적는 꼴(소문자·역슬래시) — 비교는 구분자·대소문자를 접는다
-  const key = (path: string) => process.platform === "win32" ? path.toLowerCase() : path;
+  process.env.CODEX_HOME = join(root, "codex-home");
+  const lines = () => { const text = doctor(root,"codex").text.split("\n"); return (name: string) => text.find((row) => row.includes(` ${name}:`)) ?? ""; };
+  let state: ProbeState = "project-untrusted";
+  const probe = stubCodexProbe(() => probeResponse(root, state));
   try {
-    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: .*config\.toml 가 없습니다/);
-    assert.equal(codexTrust(root).project,"no-config");
-    writeFixture(home,"config.toml",`model_reasoning_effort = "medium"\n\n[projects.'${key(join(tmpdir(),"다른-폴더"))}']\ntrust_level = "trusted"\n`);
-    const before = readFileSync(config);
-    assert.equal(codexTrust(root).project,"missing");
-    assert.match(line("Codex 프로젝트 신뢰"),/· .*신뢰 항목이 없습니다/);
-    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "untrusted"\n`);
-    assert.equal(codexTrust(root).project,"untrusted");
-    assert.match(line("Codex 프로젝트 신뢰"),/· .*trust_level = "untrusted"/);
-    writeFixture(home,"config.toml",`[projects."${key(root).replace(/\\/g,"\\\\")}"]\ntrust_level = "trusted"\n`);
-    assert.equal(codexTrust(root).project,"trusted");
-    assert.match(line("Codex 프로젝트 신뢰"),/✓ Codex 프로젝트 신뢰: .*trust_level = "trusted"/);
-    // 상위 폴더 항목만 있으면 확인 필요(·) — Codex 가 상위 폴더 신뢰를 그 안의 저장소에 적용하는지 확인하지 못했다
-    writeFixture(home,"config.toml",`[projects.'${key(resolve(root,".."))}']\ntrust_level = "trusted"\n`);
-    assert.equal(codexTrust(root).project,"parent");
-    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 확인 필요 — 상위 폴더 항목 .*trust_level = "trusted" 만 있습니다/);
-    // 저장소 자체 항목이 있으면 상위 폴더 항목보다 먼저 본다
-    writeFixture(home,"config.toml",`[projects.'${key(resolve(root,".."))}']\ntrust_level = "untrusted"\n\n[projects.'${key(root)}']\ntrust_level = "trusted"\n`);
-    assert.equal(codexTrust(root).project,"trusted");
-    // hook 신뢰 기록은 키 꼴을 확인하지 못했다 — 찾으면 알리고, 못 찾으면 '확인 필요'(없다고 단정하지 않는다)
-    assert.equal(codexTrust(root).hooks,"unknown");
-    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 확인 필요 — .*Hooks need review.*codex exec 는 신뢰되지 않은 hook 을 알리지 않고 건너뜁니다/);
-    // 앞부분이 같은 형제 저장소(<저장소>-old)의 기록은 이 저장소의 것이 아니다
-    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "trusted"\n\n[hooks.state."${join(`${root}-old`,".codex","hooks.json").replace(/\\/g,"\\\\")}:pre_tool_use:0:0"]\ntrusted_hash = "abc"\n`);
-    assert.equal(codexTrust(root).hooks,"unknown");
-    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 확인 필요/);
-    writeFixture(home,"config.toml",`[projects.'${key(root)}']\ntrust_level = "trusted"\n\n[hooks.state."${join(root,".codex","hooks.json").replace(/\\/g,"\\\\")}:pre_tool_use:0:0"]\ntrusted_hash = "abc"\n`);
-    assert.equal(codexTrust(root).hooks,"recorded");
-    assert.match(line("Codex 훅 신뢰"),/hook 신뢰 기록\(hooks\.state\)이 있습니다/);
-    // 읽기만 한다 — 점검 뒤에도 파일이 바이트 단위로 같다
-    const after = readFileSync(config);
-    doctor(root,"codex");
-    assert.deepEqual(readFileSync(config),after);
-    assert.notDeepEqual(before,after);
-    // 신뢰 줄은 ✗ 가 아니다 — doctor 의 성공 여부를 바꾸지 않는다
+    // 프로젝트 미신뢰 — Codex 의 사유를 싣고, 그동안 hook 은 판정하지 않는다(검토 대상을 알 수 없으므로 경고하지 않는다)
+    let line = lines();
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 신뢰 필요 — Codex 가 이 저장소를 신뢰하지 않아 .*Codex: To load project-local config.*code-agent doctor --host codex 로 다시 확인합니다/);
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 프로젝트 신뢰 뒤 확인 — /);
+    assert.doesNotMatch(line("Codex 훅 신뢰"),/검토 필요|PreToolUse/);
+    // 신뢰한 뒤 다시 조회 — 실제로 검토가 필요한 hook 만(검토 전·바뀜)
+    state = "hooks-review"; line = lines();
+    assert.match(line("Codex 프로젝트 신뢰"),/✓ Codex 프로젝트 신뢰: 신뢰됨/);
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 검토 필요 — 검토·신뢰가 필요한 code-agent hook: PreToolUse\(검토 전\) · UserPromptSubmit\(검토 전\)/);
+    state = "modified"; line = lines();
+    assert.match(line("Codex 훅 신뢰"),/검토 필요 — 검토·신뢰가 필요한 code-agent hook: PreToolUse\(바뀌어 다시 검토\) — /);
+    assert.doesNotMatch(line("Codex 훅 신뢰"),/UserPromptSubmit/);
+    state = "ready"; line = lines();
+    // 물은 실행 파일·계정과 Codex 버전을 함께 보인다 — 관리 실행과 다른 환경의 doctor 를 가려낸다
+    assert.match(line("Codex 프로젝트 신뢰"),/✓ Codex 프로젝트 신뢰: 신뢰됨 — .*\(조회: Codex 0\.163\.0 · .* · CODEX_HOME .*codex-home\)/);
+    assert.match(line("Codex 훅 신뢰"),/✓ Codex 훅 신뢰: 신뢰됨 — code-agent hook 6종이 신뢰·켜짐 상태로 로드됩니다/);
+    // 조회 실패는 미신뢰와 다르게 알리고 준비로 보지 않는다 — hook 은 조회가 되면 확인한다
+    state = "query-failed"; line = lines();
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 조회 실패 — Codex 준비 상태를 조회하지 못했습니다 — config\/read 실패: internal error\. 확인되기 전에는 Codex 로 실행하지 않습니다/);
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: 조회가 되면 확인합니다/);
+    state = "spawn-missing"; line = lines();
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: Codex 실행 파일 없음 — /);
+    // 사용자 설정에서 hook 기능을 끈 것은 이 PC 의 설정이다 — 설치(init) 문제로 알리지 않는다
+    state = "hooks-disabled"; line = lines();
+    assert.match(line("Codex 훅 신뢰"),/· Codex 훅 신뢰: hook 기능 꺼짐 — Codex 설정에서 hook 기능이 꺼져 있습니다\(\[features\] hooks = false\)/);
+    // config/read 가 없는 옛 Codex — hook 이 모두 신뢰돼 로드되면 준비, 하나도 없으면 미신뢰·누락을 가르지 못해 갱신을 안내한다
+    state = "legacy"; line = lines();
+    assert.match(line("Codex 훅 신뢰"),/✓ Codex 훅 신뢰: 신뢰됨/);
+    state = "legacy-untrusted"; line = lines();
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: Codex 갱신 필요 — 이 Codex\(0\.163\.0\)는 프로젝트 신뢰 조회\(config\/read\)를 지원하지 않습니다/);
+    // Codex 샌드박스 안에서는 묻지 않는다 — 기록이 있으면 그것을, 없으면 터미널 확인을 안내한다
+    state = "ready"; process.env.CODEX_SANDBOX = "seatbelt";
+    try {
+      let calls = probe.calls(); line = lines();
+      assert.equal(probe.calls(),calls);
+      assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: Codex 갱신 필요/);
+      writeFixture(root,"codex-home/config.toml","# 지문 바꿈\n");
+      calls = probe.calls(); line = lines();
+      assert.equal(probe.calls(),calls);
+      assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 터미널에서 확인 — Codex 샌드박스 안에서는 Codex 준비를 조회하지 않습니다/);
+    } finally { delete process.env.CODEX_SANDBOX; }
+    // 이 PC·계정의 신뢰 상태는 doctor 를 막지 않는다 — Codex 가 저장소 hook 을 로드하지 못한 것은 설치 문제다(✗)
     assert.doesNotMatch(doctor(root,"codex").text,/✗ Codex (프로젝트|훅) 신뢰/);
+    state = "not-loaded"; line = lines();
+    assert.match(line("Codex 훅 신뢰"),/✗ Codex 훅 신뢰: Codex 가 code-agent hook\(Stop\)을 로드하지 않았습니다/);
+    // 앞 단계(설치)가 막히면 조회하지 않는다
+    const calls = probe.calls();
+    writeFixture(root,".codex/hooks.json",JSON.stringify({hooks:{}}));
+    line = lines();
+    assert.equal(probe.calls(),calls);
+    assert.match(line("Codex 프로젝트 신뢰"),/· Codex 프로젝트 신뢰: 설치 복구 뒤 확인/);
   } finally {
+    probe.restore();
     if (saved === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = saved;
   }
 });

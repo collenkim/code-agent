@@ -56,6 +56,47 @@ test("Codex 실패·thread 누락은 성공 처리하지 않고 신뢰 없는 �
     assert.equal(f.send("submit", { prompt: "start" }).ok, false); assert.equal(listRuns(f.root).length, 4);
   } finally { f.close(); }
 });
+test("사전 진단(hello·접수)과 실행 직전 검사(CodexTransport)가 같은 판정을 쓰고, 미신뢰·검토 필요·조회 실패를 가른다", async () => {
+  const f = codexProject();
+  try {
+    const managed = () => f.send("hello").result.managedHost;
+    let view = managed();
+    assert.deepEqual([view.runReadiness.codex.ready, view.runReadiness.codex.state, view.hosts.codex.state], [true, "ready", "ready"]);
+    assert.equal(view.hosts.codex.target.executable.includes("masterCodexFakeHost"), true);
+    // 접수 뒤 실행할 app-server 가 hook 을 신뢰하지 않으면 실행 직전 검사가 같은 문구로 막는다
+    const run = f.send("submit", { prompt: "MODE=untrusted-hooks" });
+    const failed = await f.wait(run.result.runId);
+    assert.equal(failed.state, "failed");
+    assert.match(failed.outcome!.reason, /검토·신뢰가 필요한 code-agent hook: PreToolUse\(검토 전\)/);
+    const rejected = (state: string, problems: string[]) => {
+      const result = f.send("submit", { prompt: "MODE=complete" });
+      assert.equal(result.error?.code, "invalid-state", JSON.stringify(result));
+      const detail = result.error!.detail as { state: string; problems: string[] };
+      assert.deepEqual([detail.state, detail.problems], [state, problems], result.error!.message);
+      return result.error!.message;
+    };
+    // 프로젝트 미신뢰 — hook 은 알리지 않는다. hello 는 묻지 않고, 기록이 낡으면 분리 갱신이 다시 묻는 동안 '확인 중'이다
+    writeFileSync(join(f.home, "config.toml"), "");
+    assert.doesNotMatch(rejected("project-untrusted", ["codex-project-untrusted"]), /검토·신뢰가 필요한 code-agent hook/);
+    writeFileSync(join(f.home, "config.toml"), "# 사람이 다시 고침\n");
+    view = managed();
+    assert.deepEqual([view.runReadiness.codex.state, view.runReadiness.codex.blocking[0]?.code], ["checking", "codex-checking"]);
+    for (let i = 0; i < 150 && view.runReadiness.codex.state === "checking"; i++) { await new Promise((done) => setTimeout(done, 100)); view = managed(); }
+    assert.deepEqual([view.runReadiness.codex.state, view.runReadiness.codex.blocking.map((item: { host: string; code: string }) => `${item.host}:${item.code}`)],
+      ["project-untrusted", ["codex:codex-project-untrusted"]]);
+    // 교차 검증의 Codex 는 신뢰가 필요 없다 — Claude 주 실행의 both 는 준비, Codex 주 실행의 both 는 막힌다
+    assert.deepEqual([view.runReadiness.claude.ready, view.runReadiness.both.claude.ready, view.runReadiness.both.codex.ready], [true, true, false]);
+    // 프로젝트를 신뢰한 뒤 다시 조회 — 실제로 검토가 필요한 hook 만
+    writeFileSync(join(f.home, "config.toml"), `[projects.${JSON.stringify(f.root)}]\ntrust_level = "trusted"\n`);
+    assert.match(rejected("hooks-review", ["codex-hooks-untrusted"]), /PreToolUse\(검토 전\) · UserPromptSubmit\(검토 전\)/);
+    f.recheck();
+    assert.equal(managed().runReadiness.codex.state, "hooks-review");
+    // 조회 실패는 미신뢰와 다르게 알리고 실행하지 않는다
+    writeFileSync(join(f.home, "config.toml"), "# fixture: config-error\n");
+    assert.match(rejected("query-failed", ["codex-query-failed"]), /config\/read 실패: internal error/);
+    assert.equal(listRuns(f.root).length, 1);
+  } finally { f.close(); }
+});
 test("다른 thread로 재개되면 실패하고 Codex 프로세스 표지로 강제 취소한다", async () => {
   const f = codexProject();
   try {

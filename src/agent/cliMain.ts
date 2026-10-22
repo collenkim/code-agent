@@ -369,7 +369,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
       return 0;
     case "init":
       if (optionsOnly(args, ["host", "cli"], [], INIT_USAGE)) { print(INIT_USAGE); return 0; }
-      print(initialize(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")) }));
+      print(initialize(repoRoot, { cli: option(args, "cli"), host: parseHost(option(args, "host")), readiness: true }));
       return 0;
     case "execution":
       {
@@ -526,6 +526,12 @@ export async function runCommand(command: string | undefined, args: string[]): P
         return response.ok ? 0 : 1;
       }
       if (sub === "supervise" && args.length === 2) return (require("./master/supervisor") as typeof import("./master/supervisor")).supervise(repoRoot, args[1]);
+      // hello 가 띄우는 Codex 준비 분리 갱신 — 실행 파일은 인자로 받지 않고 master 연동 설정에서 다시 읽는다(hello 와 같은 명령)
+      if (sub === "codex-check" && args.length === 1) {
+        const { codexCommandOf } = require("./master/hostProfile") as typeof import("./master/hostProfile");
+        (require("./codexReadiness") as typeof import("./codexReadiness")).refreshCodexReadiness(repoRoot, { command: codexCommandOf(repoRoot) });
+        return 0;
+      }
       if (sub === "recover") {
         const usage = "사용법: code-agent master recover <요청ID> [--transcript <원본.jsonl>] [--json]";
         if (!args[1] || args[1].startsWith("--")) throw new Stop(usage);
