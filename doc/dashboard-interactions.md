@@ -106,8 +106,8 @@ const result = call({...auth, type:'interaction.result', payload:{requestId:item
 |---|---|---|
 | `hello` | 없음, 인증 불필요 | `interactions`: 스키마·단계·소비자·지원 동의·재개 범위 |
 | `interactions` | `after`(revision 커서, 기본 0), `limit`(1~200) | `sourceInstanceId`, `cursor`, `latestCursor`, 변경된 요청 전체 상세 `requests` |
-| `interaction` | `requestId` | 상세·문맥·추천·응답·결과·`canRespond`·불가 사유 |
-| `interaction.respond` | 버전·본문 해시·challenge·사람 채널·서명·submission. envelope에 commandId | 수신 영수증, `applied:false`; 같은 명령 재전송은 캐시 결과 |
+| `interaction` | `requestId` | 상세·문맥·추천·응답·결과·`canRespond`·불가 사유·임대 충돌 `leaseConflict`(없으면 `null`) |
+| `interaction.respond` | 버전·본문 해시·challenge·사람 채널·서명·submission. envelope에 commandId | 수신 영수증, `applied:false`; 같은 명령 재전송은 캐시 결과. 거절은 `error.detail`에 `received:false`·`requestId`·현재 `status` |
 | `interaction.result` | `requestId` | 원래 요청의 `response`, `consumed`, `application`, `continuation` |
 
 목록은 해결된 요청도 포함하는 변경 피드다. 마지막 페이지 `cursor`를 저장하고 `cursor < latestCursor`면 다음 페이지를 읽는다. 원장이 바뀌어 `sourceInstanceId`가 달라지면 캐시를 다시 만든다. 원본 키는 프로젝트 ID·sourceInstanceId·requestId이며 업무 번호만으로 합치지 않는다. 다른 프로젝트에 같은 업무 번호가 있어도 답을 복사하지 않는다. 후속 요청은 목록의 다음 변경으로 조회한다. `interaction.result` 자체가 후속 질문을 생성하지 않는다. `status --json`은 읽기 전용 요약을 싣고 master 관찰 이벤트 `interaction.changed`는 변경 커서를 싣는다.
@@ -116,7 +116,9 @@ const result = call({...auth, type:'interaction.result', payload:{requestId:item
 
 `pending → responded → applied`는 수신 후 원래 소비자의 처리 결과까지 구분한다. `response.receiptId`는 실제 제출, `consumed`는 같은 세션의 소비, `application`은 처리 결과다. 일반 host 질문의 `complete`는 호스트가 답의 반영을 보고한 기록이며 작업 전체 완료나 승인 증거가 아니다. 기존 호스트 UI 답의 `application.result.deliveredToHost`는 살아 있는 호스트로 전달됐다는 의미다. 보류·만료 질문을 호스트에서 명시적으로 다시 열면 같은 요청 ID와 새 revision·challenge를 사용하며, 이미 받은 답과 취소는 되살리지 않는다. 업무 완료는 기존 검증·반영 결과로 확인한다. `failed`는 보존한 답과 오류를 먼저 조사하며 무조건 재전송·재적용하지 않는다.
 
-버전·본문·브랜치·HEAD·worktree·작업·준비 세션·채널이 다르면 거부한다. 동일 key·세션·원문의 발행은 동일 요청을 반환한다. 미응답 질문 변경은 기존 요청을 superseded로 남긴다. 이미 수신한 답은 먼저 소비해야 같은 key로 질문을 바꿀 수 있다. 기본 만료는 하루, 발행 시 최대 7일이다. 응답을 수신한 뒤의 적용은 만료 때문에 재질문하지 않지만 문맥·권한을 다시 확인한다. 일반 답을 소비한 뒤 정당한 작업 진행으로 HEAD·작업이 바뀐 경우 complete는 같은 프로젝트·브랜치·소유 세션을 확인해 결과를 받는다.
+버전·본문·브랜치·HEAD·worktree·작업·준비 세션·채널이 다르면 거부한다. 수신 전 거절은 질문 원장을 쓰지 않는다 — 응답·commandId 를 남기지 않고 요청의 revision·challenge 도 그대로라, 화면은 `error.detail`의 `received:false`를 처리 실패가 아닌 응답 미접수로 표시하고 원인을 해결한 뒤 최신 요청을 다시 조회해 제출한다. 동의 수신이 확인 대상 변경을 찾으면(`invalid-state`) 그 동의는 대상 변경으로 닫히고 요청은 다음 조회에서 `superseded`가 된다. 동일 key·세션·원문의 발행은 동일 요청을 반환한다. 미응답 질문 변경은 기존 요청을 superseded로 남긴다. 이미 수신한 답은 먼저 소비해야 같은 key로 질문을 바꿀 수 있다. 기본 만료는 하루, 발행 시 최대 7일이다. 응답을 수신한 뒤의 적용은 만료 때문에 재질문하지 않지만 문맥·권한을 다시 확인한다. 일반 답을 소비한 뒤 정당한 작업 진행으로 HEAD·작업이 바뀐 경우 complete는 같은 프로젝트·브랜치·소유 세션을 확인해 결과를 받는다.
+
+작업 임대는 요청의 조회·수신·소비·적용·재개와 Codex 권한 전달·종료 세션 복원에서 진행 명령의 hook 과 같은 판정으로 본다. 지금 브랜치에 작업이 없으면(준비·기준 커밋·접수 단계) 임대를 보지 않고, 작업이 있어도 다른 작업·대상의 임대, `takeover`로 푼 임대, 30분 무활동 임대는 막지 않는다. 요청을 발행한 호스트·세션이 아닌 주인이 지금 작업의 임대를 신선하게 쥐고 있을 때만 조회가 `canRespond:false`와 사유·`leaseConflict`(`code:"lease-held"`, `currentWork`, `lease`의 `workId`·`target`·`host`·`session`·`seenAt`·`idleMs`)를 내고 수신은 같은 사유·detail 로 `busy` 거절한다. 저쪽 세션이 끝났는지 확인한 뒤 원래 프로젝트에서 `code-agent takeover`로 임대를 풀거나 30분 무활동 뒤 최신 요청을 다시 조회한다.
 
 문서 질문은 최대 16개씩 묶음별 키로 발행한다. questions.md의 해시가 바뀌면 수신한 답이 없는 이전 요청은 원래 질문 모두의 확인된 답을 대조해 superseded로 닫는다. 자동 묶음은 같은 세션·현재 문맥의 최신 요청으로 이어진 질문도 대조한다. 질문 삭제·출처 미확인 답으로 대기를 풀지 않는다. 대시보드 답·승인·적용 증거는 만들지 않는다. 이미 받은 서명 답은 보존하고, 바뀐 문서에 덮어쓰려는 적용은 기존 문맥 검사로 막는다.
 
@@ -133,13 +135,15 @@ Claude 질문의 PostToolUse 입력에 호스트가 채운 answers가 있어도,
 | recovery | 근거·한도를 포함한 recovery-decision. 답만으로 횟수를 늘리거나 중지를 실행하지 않음 | judgment, repro-log, abort |
 | maintenance | 업데이트·모델·플러그인·지식 정리의 선택, 기존 운영 처리기 | update, model, plugin-add, plugin-remove, knowledge-prune |
 
+버전 적용(다음 작업 관문·`update --release` 등)과 템플릿 반영은 동의 스냅샷 대상인 `runtime.json`·템플릿 사본을 바꾼다. 열린 창(30분) 안의 미응답 동의가 있으면 적용을 미루고(버전 적용의 예약 기록도 스냅샷 대상이라 그 동의는 응답 때 대상 변경으로 닫힌다), 창 밖이면 적용 직후 확인 대상이 바뀐 미응답 동의를 대상 변경으로 닫는다. 응답을 시작했거나 대시보드 답을 수신한 동의는 그 채널의 적용이 대조한다. 대시보드 답을 받기 전에 대상 변경이나 다른 채널의 응답으로 닫힌 동의의 요청은 `superseded`와 사유로 남는다(적용 실패는 `failed`). 동의·요청 기록은 지우지 않는다. 대상 변경으로 닫힌 동작은 원래 세션이 다시 준비한다 — master 실행이면 원래 실행을 `resume`해 같은 세션·`links`로 이어 간 실행이 새 요청을 발행한다.
+
 모든 14개 동의는 공통 서명 검증과 기존 `applyLocked` 처리기를 사용한다. `judgment`의 retry-grant/waive-finding/cross-stop 조건, 검증·권한·동의 스냅샷·Git 검사 등 기존 조건이 그대로 적용된다. 수행 중 원장이 `applying`으로 남으면 실패로 닫는 기존 규칙을 따른다. 독립 설정에 개발 작업을 만들어 붙이지 않는다.
 
 일반 질문은 메인이 `interaction publish <질문.json>`으로 발행하며 세션 티켓이 필요하다. Claude 일반 단일 선택 Pre/Post와 Codex MCP ask도 영속화한다. 구조화된 추천·다중 선택·직접 입력은 publish 또는 MCP ask의 `interaction` 필드를 사용한다. 기존 Markdown 질문은 실제 미응답 Q번호·원문·세션을 확인할 수 있을 때 연결하되, 문구에서 추천을 추정하지 않고 텍스트 입력으로 제공한다. 같은 문서에 명시적으로 발행한 Q번호는 중복 수집하지 않는다.
 
 살아 있는 호스트는 같은 세션에서 consume/complete한다. Codex의 열린 MCP 일반 질문은 대시보드 답을 감지하여 폼 대기를 끝낸다. Claude의 이미 열린 선택창을 외부에서 강제로 닫는 기능은 없으므로 원래 창을 종료하고 저장된 답을 소비한다. 이미 호스트 응답을 시작한 **동의**는 그 채널에서 마친다. 대시보드 동의는 prepare 후 별도 호스트 confirm을 열지 않는다.
 
-끝난 비대화형 Claude·Codex 관리 실행은 저장된 runId·확정된 sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. Codex는 app-server가 돌려준 thread ID를 확정한 기록(`sessionConfirmed`)이 있어야 하며 다른 세션으로 대체하지 않는다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 호스트 선택·등록 권한 설정이 달라졌거나 Codex 설치·신뢰 조건을 충족하지 못해도 차단 사유를 기록한다. 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
+끝난 비대화형 Claude·Codex 관리 실행은 저장된 runId·확정된 sessionId로 한 번만 예약하고 기존 supervisor를 사용한다. Codex는 app-server가 돌려준 thread ID를 확정한 기록(`sessionConfirmed`)이 있어야 하며 다른 세션으로 대체하지 않는다. master 목표나 workId는 없어도 된다. 같은 요청에 실행 기록이 있으면 새 실행을 만들지 않는다. 살아 있는 실행·orphaned·unknown·paused·cancelled·정지 요청·인계·권한 회수·남은 보류에서는 자동 재개하지 않는다. 호스트 선택·등록 권한 설정이 달라졌거나 Codex 설치·신뢰 조건을 충족하지 못해도 차단 사유를 기록한다. 재개 실행은 이전 실행의 master 연결(`links`)·세션·`workId`를 그대로 싣고, 작업 ID와 feature/fix 종류는 최초 접수 그대로다. 재개 지시는 작업이 열려 있으면 그 작업을 잇고 새 접수를 금지하며, 작업을 열기 전(접수·문서 세션 중이거나 준비·문서·기준 커밋·요구사항 동의)의 응답이면 원래 실행의 지시서로 최초 접수를 잇게 한다 — 접수 중이면 그 접수 ID를 그대로 쓴다. 그 밖에 작업이 없는 응답(반영 뒤 갱신·모델 동의 등)은 접수를 지시하지 않는다. 예약 후 감독 시작 전 중단되어 abandoned가 되면 중복 위험 때문에 자동 재시작하지 않고 실행 결과를 확인한 뒤 기존 수동 복구를 따른다.
 
 ## 관리 기록 없는 종료 세션 복원
 
@@ -202,4 +206,4 @@ master-agent의 화면은 이 종류를 표시하고 `permissionDecision`을 서
 - Codex 관리 실행의 Git 쓰기 차단은 위 단건 권한 응답으로 처리한다. 사람 채널·지원 화면이 없으면 승인 없이 대기하며, 일반 터미널·IDE의 독립 Codex는 해당 호스트의 승인 화면을 사용한다. 프로젝트 전체 완주 검증은 Git 권한 연결 검증과 구분한다.
 - master-agent는 브라우저 요청함·서버 키 보관·명시적 제출 검증·전송함·프로젝트 수집·master 자체 질문을 담당한다. code-agent 파일을 직접 쓰지 말고 이 API를 사용한다.
 
-빌드 진입점은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`다. `npm.cmd run build`, `npm.cmd test`로 재현한다. 공개 CLI·서명·중복 응답·적용 검사는 `src/test/dashboardInteractions.test.ts`·`dashboardApproval.test.ts`·`dashboardConsent.test.ts`, 복원은 `sessionRecovery.test.ts`, MCP 통신은 `choiceProtocol.test.ts`, 기존 동의 도메인 검사와 감독·중단 검사는 `consent*.test.ts`·`masterRuns.test.ts`에 있다. 실제 모델·회귀 결과와 남은 검증 범위는 [복원·모델 검증 기록](reviews/2026-10-20-session-recovery-live.md)에 모은다. 실제 브라우저 클릭·운영 환경 반영·업데이트·플러그인 실행은 별도 검증 대상이다.
+빌드 진입점은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`다. `npm.cmd run build`, `npm.cmd test`로 재현한다. 공개 CLI·서명·중복 응답·적용 검사는 `src/test/dashboardInteractions.test.ts`·`dashboardApproval.test.ts`·`dashboardConsent.test.ts`, 작업 임대 판정은 `dashboardLease.test.ts`, 재개 지시와 적용 뒤 동의 정리는 `dashboardContinuation.test.ts`, 복원은 `sessionRecovery.test.ts`, MCP 통신은 `choiceProtocol.test.ts`, 기존 동의 도메인 검사와 감독·중단 검사는 `consent*.test.ts`·`masterRuns.test.ts`에 있다. 실제 모델·회귀 결과와 남은 검증 범위는 [복원·모델 검증 기록](reviews/2026-10-20-session-recovery-live.md)에 모은다. 실제 브라우저 클릭·운영 환경 반영·업데이트·플러그인 실행은 별도 검증 대상이다.

@@ -64,7 +64,7 @@ export function synchronizeInteractions(root: string): void {
   for (const r of currentInteractions(root).requests) if (r.origin.type === "consent" && r.status === "cancelled") {
     (require("./consent") as typeof import("./consent")).closeCancelledDashboardConsent(root, r.origin.id);
   }
-  const { loadConsent } = require("./consent") as typeof import("./consent");
+  const { loadConsent, consentGuide } = require("./consent") as typeof import("./consent");
   const consents = join(root, ".code-agent/consents");
   const known = currentInteractions(root).requests;
   if (existsSync(consents)) for (const name of readdirSync(consents)) {
@@ -88,7 +88,9 @@ export function synchronizeInteractions(root: string): void {
       (r.origin.type === "questions" && r.origin.id === workId && r.origin.hash === interactionHash(text) || r.origin.type === "host" && r.context.workId === workId && ["pending", "responded", "deferred"].includes(r.status)));
     const missing = qs.filter(q => !covered.some(r => r.questions.some(item => item.questionId === q.id)));
     if (missing.length) {
-      const run = listRuns(root).filter(r => r.workId === workId).at(-1), lease = readLease(root);
+      // 지금 작업의 임대만 원래 세션의 근거다 — 끝난 작업의 남은 임대로 접수 중 질문을 이전 세션에 묶지 않는다
+      const held = readLease(root), lease = held && active && held.id === active.id && held.target === active.target ? held : undefined;
+      const run = listRuns(root).filter(r => r.workId === workId).at(-1);
       const sessionId = lease && !lease.released ? lease.session : run?.sessionId;
       const host = lease && !lease.released ? lease.host : run?.hostProfile?.kind ?? "claude";
       const waitingForSession = (lease?.released && (!run || run.sessionId === lease.session)) ||
@@ -130,6 +132,15 @@ export function synchronizeInteractions(root: string): void {
       if (r.origin.type === "consent") {
         const c = loadConsent(root, r.origin.id);
         if (c.status === "applied" && r.response?.channel !== "dashboard-human") { r.status = "applied"; r.application = { state: "applied", at: new Date().toISOString(), result: c.result }; bumpInteraction(state, r); }
+        // 대시보드 응답 전에 대상 변경·다른 채널의 응답으로 닫힌 동의는 처리 실패가 아니다 — 닫고 다음 행동을 알린다. 적용 실패는 failed 로 남긴다
+        else if (!r.response && (c.status === "deferred" || c.status === "failed" && c.failure?.kind !== "apply" && c.failure?.class !== "consent-apply-failed")) {
+          const failure = c.failure ?? { class: "consent-target-changed" as const, kind: c.status === "deferred" ? "response-defer" : "target", detail: c.status };
+          r.status = "superseded";
+          r.unavailableReason = failure.kind === "target"
+            ? `응답을 받기 전에 원래 동의가 대상 변경으로 닫혔습니다(${failure.detail}). 원래 세션이 다시 준비한 요청에 응답합니다 — master 실행이면 원래 실행을 이어 실행(resume)합니다.`
+            : `다른 채널의 응답으로 원래 동의가 닫혔습니다. ${consentGuide(failure)}`;
+          bumpInteraction(state, r); continue;
+        }
         else if (["failed", "changes-requested"].includes(c.status)) { r.status = c.status === "failed" ? "failed" : "applied"; bumpInteraction(state, r); }
       }
       if (["pending", "deferred"].includes(r.status) && Date.parse(r.expiresAt) <= Date.now()) { r.status = "expired"; bumpInteraction(state, r); }

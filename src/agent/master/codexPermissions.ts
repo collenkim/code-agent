@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { realpathSync } from "fs";
 import { basename } from "path";
 import { splitCommandArgs } from "../consentTicket";
-import { readLease } from "../lease";
+import { leaseConflict } from "../lease";
 import { stageOf } from "../interactionSources";
 import { bumpInteraction, contextMatches, interactionContext, interactionHash, mutateInteractions, needInteraction, readInteractions, type InteractionRecord } from "../interactions";
 import type { InteractionSubmission } from "../interactionSchema";
@@ -79,8 +79,9 @@ export function forwardCodexPermission(root: string, id: string, connectionId: s
       const r = needInteraction(state, id);
       if (r.permission?.connectionId !== connectionId || r.application) throw new ControlError("conflict", "종료되었거나 이미 전달한 Codex 권한 요청입니다");
       const invalid = permissionUnavailable(root, r) || (!contextMatches(root, r.context) ? "명령의 작업 문맥이 바뀌었습니다" : undefined);
-      const lease = readLease(root);
-      if (invalid || (lease && !lease.released && lease.session !== r.context.sessionId) || Date.parse(r.expiresAt) <= Date.now() || ["cancelled", "expired", "superseded", "failed"].includes(r.status)) {
+      // 응답 수신(interactionService validateContext)과 같은 임대 판정 — 다른 작업의 남은 임대·푼 임대로 전달을 취소하지 않는다
+      const lease = leaseConflict(root, { host: r.context.host, session: r.context.sessionId });
+      if (invalid || lease || Date.parse(r.expiresAt) <= Date.now() || ["cancelled", "expired", "superseded", "failed"].includes(r.status)) {
         decision = "cancel"; r.status = "cancelled"; r.unavailableReason = invalid ?? "권한 요청 취소·만료 또는 다른 세션의 소유";
       } else if (r.status === "responded" && r.response) {
         const channel = readBinding(root)?.humanChannel, owner = readOwner(root);

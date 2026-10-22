@@ -1,7 +1,7 @@
 /** 독립 세션의 영속 질문과 호스트 원본을 사람이 대조해 관리 재개에 연결한다. 실행·승인을 합성하지 않는다. */
 import { actorName } from "../actor";
 import { hostMarked } from "../crossEnv";
-import { readLease } from "../lease";
+import { leaseConflict, leaseConflictText, leaseConflictView } from "../lease";
 import { confirmOnTerminal } from "../tty";
 import { contextMatches, currentInteractions, interactionHash, mutateInteractions, bumpInteraction, needInteraction, readInteractions } from "../interactions";
 import { stateView } from "../stateView";
@@ -26,8 +26,8 @@ function preview(root: string, requestId: string, transcript?: string) {
   if (request.recoveredRunId && imported?.runId === request.recoveredRunId) return { alreadyRecovered: true as const, runId: imported.runId };
   if (previous.some(r => !r.recovery)) throw new ControlError("invalid-state", "이미 관리 실행 기록이 있는 세션입니다. 기존 실행을 확인하세요");
   if (activeRuns(root).length) throw new ControlError("busy", "관리 실행이 끝난 뒤 복원하세요");
-  const lease = readLease(root);
-  if (lease && !lease.released && (lease.session !== request.context.sessionId || lease.host !== profile.kind)) throw new ControlError("busy", "다른 세션의 작업 임대가 있습니다");
+  const lease = leaseConflict(root, { host: profile.kind, session: request.context.sessionId });
+  if (lease) throw new ControlError("busy", leaseConflictText(lease), { leaseConflict: leaseConflictView(lease) });
   const requests = currentInteractions(root).requests.filter(r => r.context.sessionId === request.context.sessionId && r.context.host === profile.kind && !r.context.runId && contextMatches(root, r.context) && ["pending", "deferred", "responded", "applied"].includes(r.status) && (r.response || Date.parse(r.expiresAt) > Date.now()));
   for (const r of requests.filter(r => r.origin.type === "consent")) {
     const c = (require("../consent") as typeof import("../consent")).loadConsent(root, r.origin.id);

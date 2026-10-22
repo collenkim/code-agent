@@ -6,7 +6,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, mock, test } from "node:test";
-import { setupConsentProject } from "./consentFixture";
+import { setupConsentProject, writeFixture } from "./consentFixture";
 import { setCaller } from "./reviewFixture";
 import { init } from "../agent/init";
 import { masterEnable } from "../agent/master/admin";
@@ -15,7 +15,8 @@ import { readBinding, writeBinding, type RunRecord } from "../agent/master/store
 import { withInteraction } from "../agent/tty";
 import { humanSigningMessage } from "../agent/interactionHuman";
 import { PublishInteraction, INTERACTION_STAGES } from "../agent/interactionSchema";
-import { currentInteractions, interactionContext, publishInteraction } from "../agent/interactions";
+import { currentInteractions, interactionContext, publishInteraction, type InteractionRecord } from "../agent/interactions";
+import type { Lease } from "../agent/lease";
 import { drainInteraction } from "../agent/interactionService";
 import { loadConsent } from "../agent/consent";
 import type { RequestEnvelope } from "../agent/master/protocol";
@@ -52,12 +53,27 @@ function request(r: ReturnType<typeof publish>, submission: object, commandId: s
 const choose = (optionId = "source", optionInputs: Record<string, string> = {}) => ({ intent: "submit", explicit: true, answers: [{ questionId: "q1", optionIds: [optionId], optionInputs }] });
 const send = (req: RequestEnvelope) => call(root, JSON.stringify(req)) as ReturnType<typeof call> & { result?: any };
 const read = (type: "interactions" | "interaction" | "interaction.result", payload = {}) => send({ protocol: "code-agent.master", version: 1, type, controller: "dashboard", generation: 1, token, payload });
+const approval = (r: InteractionRecord) => ({ intent: "submit", explicit: true, verdict: "approve", shownHash: r.consent!.shownHash,
+  choices: Object.fromEntries(r.consent!.choices.map(c => [String(c.index), "유지"])) });
 function approveDashboard(id: string): void {
   const r = currentInteractions(root).requests.find(r => r.origin.id === id)!;
-  assert.equal(send(request(r, { intent: "submit", explicit: true, verdict: "approve", shownHash: r.consent!.shownHash, choices: Object.fromEntries(r.consent!.choices.map(c => [String(c.index), "유지"])) })).ok, true);
+  assert.equal(send(request(r, approval(r))).ok, true);
   drainInteraction(root, r.requestId);
   assert.equal(loadConsent(root, id).status, "applied");
 }
+const consentRequest = (id: string) => currentInteractions(root).requests.find(r => r.origin.type === "consent" && r.origin.id === id)!;
+/** 수신 거절 — detail 은 interactionService 의 received·requestId·status 와 원래 오류의 detail */
+function reject(req: RequestEnvelope): { code: string; message: string; detail: { received: boolean; requestId: string; status: string; leaseConflict?: any } } {
+  const response = send(req);
+  assert.equal(response.ok, false);
+  return response.error as ReturnType<typeof reject>;
+}
+function writeLease(lease: Partial<Lease> & Pick<Lease, "id" | "target" | "session">): void {
+  const at = new Date().toISOString();
+  writeFixture(root, ".code-agent/lease.json", JSON.stringify({ version: 1, host: "claude", claimedAt: at, seenAt: at, ...lease }));
+}
+/** 끝난 작업이 남긴 임대 — 커서는 지웠고 lease.json 만 남는다 */
+const orphanLease = () => writeLease({ id: "OLD-WORK", target: "gateway", session: "old-session" });
 
 function previousRun(state: RunRecord["state"] = "blocked"): RunRecord {
   const at = new Date().toISOString();
@@ -66,4 +82,4 @@ function previousRun(state: RunRecord["state"] = "blocked"): RunRecord {
 }
 
 
-export { root, token, key, channelId, question, publish, request, choose, send, read, approveDashboard, previousRun };
+export { root, token, key, channelId, question, publish, request, choose, send, read, approval, approveDashboard, consentRequest, reject, writeLease, orphanLease, previousRun };

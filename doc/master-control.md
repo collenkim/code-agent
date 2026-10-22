@@ -70,7 +70,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | read | `consents` | `ids?` | 열린 동의와 `shownHash`·`humanOnly`·`preparedByMasterRun` |
 | read | `grants` | — | 이 제어자의 권한과 사용 수 |
 | read | `interactions` | `after?`, `limit?` | 영속 요청 변경 커서·상세 목록 |
-| read | `interaction` | `requestId` | 질문·추천·동의 전문·응답 가능 여부 |
+| read | `interaction` | `requestId` | 질문·추천·동의 전문·응답 가능 여부·임대 충돌 |
 | read | `interaction.result` | `requestId` | 수신·소비·적용·재개 결과 |
 | mutating | `interaction.respond` | `requestId`, `expectedRevision`, `contentHash`, `challenge`, `channelId`, `signature`, `submission` | 별도 사람 채널. [계약·예제](dashboard-interactions.md) |
 | mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `execution`(start — §11), `links`, `timeoutMs` | §5 |
@@ -99,8 +99,8 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 | `handover-in-progress`·`handover-unaccepted` | 인계 중에 받지 않는 명령, 이전된 뒤 새 제어자가 아직 인수하지 않음 |
 | `conflict` | 같은 `commandId`의 다른 내용, 다른 임무·작업에 묶인 작업, 이미 답한 질문, 인계 중인 프로젝트의 페어링 |
 | `stale-state` | 기대한 `stateVersion`·동의 내용 해시·질문 문서 해시가 지금과 다르다, 페어링 챌린지 없음·만료·재사용·다른 제어자·다른 프로젝트 경로 |
-| `busy` | 실행 중인 실행이 있다·다른 세션의 작업 임대·동의를 준비한 실행이 끝나지 않았다 |
-| `not-found`·`invalid-state` | 대상이 없다·지금 재개 판정에서는 그 동작을 하지 않는다 |
+| `busy` | 실행 중인 실행이 있다·지금 작업을 다른 세션이 쥔 신선한 작업 임대(작업이 없을 때 남은 임대, 다른 작업의 임대, 푼 임대, 30분 무활동 임대는 해당하지 않는다)·동의를 준비한 실행이 끝나지 않았다 |
+| `not-found`·`invalid-state` | 대상이 없다·지금 재개 판정이나 상태에서는 그 동작을 하지 않는다(만료된 요청, 처리기가 거절한 판단·응답 포함) |
 | `human-required` | 사람만 하는 동작·critical 판단·master 실행이 준비하지 않은 동의 |
 | `grant-missing`·`grant-expired`·`grant-revoked`·`grant-exhausted`·`scope-exceeded` | 권한 없음·만료·회수·한도 소진·동작·작업·경로 범위 밖 |
 | `duplicate-decision` | 같은 `decisionId`를 다시 썼다 |

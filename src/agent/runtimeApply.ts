@@ -265,6 +265,7 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
     writeRuntime(root, { schema: 1, ...(target ? { applied: target, appliedAt: new Date().toISOString(), home: ownStore() } : {}),
       stateSchema: Math.max(projectSchema, mine), ...(pending ? { pending } : {}), ...(adopted ? { adopted } : {}) });
     const versionChanged = (state?.applied ?? undefined) !== target;
+    const { closed, problem } = closeChangedConsents(root, `버전 적용(${from} → ${target ?? `번들 ${packageVersion()}`})`, options.consentId);
     return { status: "applied", text: [
       versionChanged ? `적용 버전: ${from} → ${target ?? `번들 ${packageVersion()}`}` : `적용 버전: ${ownLabel()} (그대로 — 템플릿 다시 반영)`,
       report,
@@ -272,11 +273,28 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
         `     새 번들 내용은 ${CONFLICT_DIR}/ 아래 같은 경로에 있습니다 — 사람이 병합한 뒤 code-agent update --templates-only 로 다시 반영하세요.`] : []),
       ...(unknown.length ? [`  !! 마지막 적용 기록(${TEMPLATES_FILE})이 없어 사람이 고친 사본인지 가리지 못했습니다 — 번들과 달랐던 사본 ${unknown.length}개를 새 번들로 바꿨습니다: ${unknown.slice(0, 5).join(" · ")}${unknown.length > 5 ? ` (+${unknown.length - 5})` : ""}`,
         "     이전 내용은 git 으로 확인하세요. 이제 기록이 생겨 다음 적용부터는 사람이 고친 사본을 보존합니다."] : []),
+      ...(closed.length ? [`  응답을 기다리던 확인 ${closed.length}개는 이번 적용으로 확인 대상이 바뀌어 대상 변경으로 닫았습니다(기록 보존): ${closed.join(" · ")}`,
+        "     원래 세션이 같은 동작을 다시 준비합니다 — master 실행이면 그 실행을 이어 실행(resume)합니다."] : []),
+      ...(problem ? [`  응답을 기다리던 확인은 이번 적용에서 정리하지 못했습니다(${problem}) — 확인 대상이 바뀐 확인은 응답 때 대상 변경으로 닫힙니다.`] : []),
       "",
       ...hostGuidance(changes, selectedHosts(root, options.host), versionChanged),
       "  바뀐 설치 파일은 다음 작업을 시작하기 전에 준비 커밋(setup/baseline 확인)으로 반영됩니다 — 작업의 계획 밖 변경이 되지 않습니다.",
     ].join("\n") };
   } finally { release(); }
+}
+
+/**
+ * 적용이 쓴 runtime.json·템플릿은 미응답 동의의 확인 대상이다 — 응답 때 폐기되기 전에 대상 변경으로 닫는다(consent.ts discardChangedConsents).
+ * 갱신 동의의 적용이면 부모 프로세스가 쥔 동의 잠금 아래에서 닫고, 다른 프로세스가 쥔 잠금은 기다리지 않는다. 적용은 이미 끝났으므로
+ * 정리가 실패해도 적용을 실패로 돌리지 않고 보고만 한다 — 남은 동의는 응답 때의 스냅샷 대조가 닫는다.
+ */
+function closeChangedConsents(root: string, reason: string, consentId?: string): { closed: string[]; problem?: string } {
+  const { discardChangedConsents } = require("./consent") as typeof import("./consent");
+  let closed: string[];
+  try { closed = discardChangedConsents(root, reason, consentId, consentId ? 0 : undefined); }
+  catch (error) { return { closed: [], problem: (error instanceof Error ? error.message : String(error)).split("\n")[0] }; }
+  if (closed.length) (require("./interactionSources") as typeof import("./interactionSources")).synchronizeInteractions(root);
+  return { closed };
 }
 
 function reserve(root: string, id: string, reason: string, state = (() => { try { return readRuntime(root); } catch { return undefined; } })()): ApplyResult {

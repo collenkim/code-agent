@@ -11,6 +11,7 @@
  *   넘겨받는다 — 재시작·`/clear`·update 뒤 다시 열기가 막히지 않고, 아직 살아 있는 이전 세션은 다음 진행 명령이 거부되어 드러난다.
  * - 다른 호스트가 쥔 신선한 임대는 `takeover`(사용자 확인 뒤 — 스킬 규칙)나 30분 무활동으로만 넘어간다.
  * - 교차 실행 자식(CODE_AGENT_CROSS)은 임대를 읽지도 쓰지도 않고 진행 명령·쓰기를 거부한다.
+ * - 원래 세션 밖 경로(대시보드 요청·Codex 권한 전달·종료 세션 복원)는 같은 leaseDecision 으로 지금 작업을 쥔 다른 주인만 충돌로 본다(leaseConflict).
  *
  * 임대는 사고 방지 장치이지 권한 경계가 아니다 — `takeover` 는 모델이 부를 수 있는 명령이고, 넘겨받기 전 사용자 확인은
  * 스킬 규칙(ca-next 재개표)이다. 기록(잠금·쓰기) 실패는 삼키고 처음 읽은 값으로 판정한다 — 임대 기록 때문에 도구가 막히지 않는다.
@@ -194,6 +195,32 @@ export function releaseLease(root: string, now: number = Date.now()): string {
   } finally {
     release();
   }
+}
+
+/** 원래 세션 밖 경로의 충돌 — 지금 브랜치 작업과 그 작업을 쥔 다른 주인 */
+export interface LeaseConflict { work: { id: string; target: string }; holder: Lease; idleMs: number }
+
+/**
+ * 원래 세션 밖 경로(대시보드 요청의 조회·수신·소비·적용·재개, Codex 권한 전달, 종료 세션 복원)의 임대 판정 — 진행 명령(leaseGuard)과 같은
+ * leaseDecision 이다. 지금 브랜치에 작업이 없으면(준비·접수 중에는 hook 도 임대를 보지 않는다) 남은 임대를 근거로 삼지 않는다. 다른 작업의 임대·
+ * 푼 임대·무활동 임대는 다음 진행 명령이 넘겨받으므로 충돌이 아니다. 지금 작업을 쥔 다른 호스트·세션의 신선한 임대만 충돌이다.
+ */
+export function leaseConflict(root: string, owner: { host: HostName; session: string }, now: number = Date.now()): LeaseConflict | undefined {
+  const active = currentCursor(root)?.active;
+  if (!active) return undefined;
+  const verdict = leaseDecision({ lease: readLease(root), id: active.id, target: active.target, host: owner.host, session: owner.session, now });
+  return verdict.action === "deny" ? { work: { id: active.id, target: active.target }, holder: verdict.holder, idleMs: verdict.idleMs } : undefined;
+}
+
+export function leaseConflictText(conflict: LeaseConflict): string {
+  return `현재 작업 ${conflict.work.id}(${conflict.work.target})을 다른 세션(${who(conflict.holder)})이 ${minutes(conflict.idleMs)}분 전까지 진행했습니다 — 요청을 발행한 세션이 작업 임대를 쥐고 있지 않습니다. ` +
+    `저쪽 세션을 끝냈는지 확인한 뒤 원래 프로젝트에서 code-agent takeover 로 임대를 풀거나 ${LEASE_IDLE_MS / 60_000}분 무활동 뒤 요청을 다시 조회합니다.`;
+}
+
+/** 조회의 leaseConflict·거절 detail 에 싣는 값 */
+export function leaseConflictView(conflict: LeaseConflict): { code: "lease-held"; currentWork: { id: string; target: string }; lease: { workId: string; target: string; host: HostName; session: string; seenAt: string; idleMs: number } } {
+  const { holder } = conflict;
+  return { code: "lease-held", currentWork: conflict.work, lease: { workId: holder.id, target: holder.target, host: holder.host, session: holder.session, seenAt: holder.seenAt, idleMs: conflict.idleMs } };
 }
 
 /** status 한 줄 — 임대가 지금 작업 것이 아니면 undefined */

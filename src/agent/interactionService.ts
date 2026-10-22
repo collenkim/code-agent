@@ -6,8 +6,8 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { acquireLock } from "./lock";
-import { readLease } from "./lease";
-import { questionsFile } from "./layout";
+import { leaseConflict, leaseConflictText, leaseConflictView, type LeaseConflict } from "./lease";
+import { loadActive, loadDocsSession, questionsFile } from "./layout";
 import { parseQuestions, structuralLine, usableAnswer } from "./questions";
 import { appendDashboardAnswer, answerHash, readAnswerRows, questionHash } from "./answers";
 import { InteractionSubmission, validateInteractionAnswers, INTERACTION_STAGES } from "./interactionSchema";
@@ -15,6 +15,7 @@ import { bumpInteraction, contextMatches, currentInteractions, interactionContex
 import { synchronizeInteractions } from "./interactionSources";
 import { verifyHumanSubmission } from "./interactionHuman";
 import { entryScript } from "./runtimeSelect";
+import { Stop } from "./stop";
 import { ControlError, type RequestEnvelope } from "./master/protocol";
 import { activeRuns, createRun, reconcileRuns, spawnSupervisor } from "./master/runs";
 import { CONTROL_LOCK, listRuns, readBinding, readOwner, readRun, runPrompt, withLock, type Binding, type RunRecord } from "./master/store";
@@ -28,11 +29,28 @@ export const INTERACTION_CAPABILITIES = {
   hostPermissions: { host: "codex", kind: "host-permission", transport: "app-server/stdio", decisions: ["accept", "decline"], scope: "once", liveOnly: true },
 };
 const ResponsePayload = z.object({ requestId: z.string().uuid(), expectedRevision: z.number().int().positive(), contentHash: z.string(), challenge: z.string().uuid(), channelId: z.string().uuid(), signature: z.string().max(1000), submission: InteractionSubmission }).strict();
+/** 조회·수신·소비·적용·재개가 함께 쓰는 임대 판정 — 요청을 발행한 호스트·세션 기준(lease.ts leaseConflict) */
+function interactionLease(root: string, record: InteractionRecord, session: string = record.context.sessionId): LeaseConflict | undefined {
+  return leaseConflict(root, { host: record.context.host, session });
+}
+function leaseBusy(conflict: LeaseConflict): ControlError {
+  return new ControlError("busy", leaseConflictText(conflict), { leaseConflict: leaseConflictView(conflict) });
+}
 function validateContext(root: string, record: InteractionRecord): void {
   if (!contextMatches(root, record.context)) throw new ControlError("stale-state", "프로젝트·브랜치·HEAD·작업 문맥이 바뀌었습니다. 원래 작업에서 요청을 다시 확인하세요");
-  const lease = readLease(root);
-  if (lease && lease.session !== record.context.sessionId) throw new ControlError("busy", "다른 세션이 작업을 소유하고 있습니다");
+  const conflict = interactionLease(root, record);
+  if (conflict) throw leaseBusy(conflict);
   if (record.unavailableReason) throw new ControlError("unsupported", record.unavailableReason);
+}
+/**
+ * 수신 전 거절 — 질문 원장을 쓰지 않았으므로(응답·commandId 없음, revision·challenge 그대로) 원래 요청은 그대로 대기다. detail 의 received:false 로 처리 실패와 구분한다.
+ * 원인을 해결한 뒤 최신 요청을 다시 조회해 그 revision 으로 제출한다. 처리기의 Stop 은 internal 이 아니라 invalid-state 다.
+ */
+function notReceived(root: string, requestId: string, error: unknown): unknown {
+  if (!(error instanceof ControlError) && !(error instanceof Stop)) return error;
+  const status = readInteractions(root)?.requests[requestId]?.status ?? null;
+  const detail = { ...(error instanceof ControlError && error.detail && typeof error.detail === "object" ? error.detail : {}), received: false, requestId, status };
+  return new ControlError(error instanceof ControlError ? error.code : "invalid-state", error instanceof Stop ? error.message.split("\n")[0] : error.message, detail);
 }
 export function interactionView(root: string, record: InteractionRecord, binding?: Binding): unknown {
   const channel = binding?.humanChannel, owner = readOwner(root);
@@ -43,8 +61,11 @@ export function interactionView(root: string, record: InteractionRecord, binding
     if (consent.status !== "pending" || consent.observed?.length || consent.binding || consent.delegation) reason = "원래 호스트에서 이미 응답을 시작한 동의입니다. 해당 채널의 결과를 확인하세요.";
   }
   if (!reason && !contextMatches(root, record.context)) reason = "원래 브랜치·HEAD·작업에서 조회하세요.";
+  // 수신(validateContext)과 같은 판정이다 — 조회가 응답 가능으로 보인 요청을 수신이 임대로 거절하지 않는다
+  const conflict = !reason && ["pending", "deferred", "responded"].includes(record.status) ? interactionLease(root, record) : undefined;
+  if (conflict) reason = leaseConflictText(conflict);
   if (!reason && (!channel || channel.generation !== owner?.generation || channel.controller !== owner?.controller || owner.handover || Date.parse(channel.expiresAt) <= Date.now())) reason = "대시보드 사람 채널을 현재 소유권에 연결해야 합니다.";
-  return { ...record, canRespond: !reason && ["pending", "deferred"].includes(record.status), unavailableReason: reason ?? null,
+  return { ...record, canRespond: !reason && ["pending", "deferred"].includes(record.status), unavailableReason: reason ?? null, leaseConflict: conflict ? leaseConflictView(conflict) : null,
     humanChannel: channel ? { channelId: channel.id, generation: channel.generation, algorithm: "Ed25519" } : null,
     consumer: record.origin.type, blocking: { workId: record.context.workId, sessionId: record.context.sessionId, runId: interactionRunId(record) ?? null } };
 }
@@ -65,7 +86,8 @@ export function queryInteractions(root: string, binding: Binding, type: string, 
 export function respondInteraction(root: string, binding: Binding, request: RequestEnvelope): unknown {
   const payload = ResponsePayload.parse(request.payload);
   const { withConsentLock } = require("./consent") as typeof import("./consent");
-  const response = withConsentLock(root, () => mutateInteractions(root, state => {
+  let response: unknown;
+  try { response = withConsentLock(root, () => mutateInteractions(root, state => {
     const record = needInteraction(state, payload.requestId);
     const channel = verifyHumanSubmission(root, binding, request, record);
     const hash = interactionHash({ controller: request.controller, generation: request.generation, ...payload });
@@ -102,7 +124,7 @@ export function respondInteraction(root: string, binding: Binding, request: Requ
     const result = { requestId: record.requestId, revision: record.revision, status: record.status, receiptId: record.response?.receiptId ?? null, applied: false };
     state.commands[request.commandId!] = { hash, requestId: record.requestId, response: result };
     return result;
-  }));
+  })); } catch (error) { throw notReceived(root, payload.requestId, error); }
   if (payload.submission.intent === "cancel") {
     const record = needInteraction(readInteractions(root), payload.requestId);
     if (record.origin.type === "consent") (require("./consent") as typeof import("./consent")).closeCancelledDashboardConsent(root, record.origin.id);
@@ -120,7 +142,9 @@ export function consumeInteraction(root: string, id: string, sessionId: string, 
     if (r.status !== "applied") {
       if (complete !== undefined && r.consumed) {
         const now = interactionContext(root, sessionId, r.context.host);
-        if (now.root !== r.context.root || now.branch !== r.context.branch || (readLease(root) && readLease(root)!.session !== sessionId)) throw new ControlError("stale-state", "소비한 세션의 프로젝트·브랜치·소유가 달라졌습니다");
+        if (now.root !== r.context.root || now.branch !== r.context.branch) throw new ControlError("stale-state", "소비한 세션의 프로젝트·브랜치가 달라졌습니다");
+        const conflict = interactionLease(root, r, sessionId);
+        if (conflict) throw leaseBusy(conflict);
       } else validateContext(root, r);
       if (r.response?.channel === "dashboard-human") {
         const channel = readBinding(root)?.humanChannel, owner = readOwner(root);
@@ -209,6 +233,25 @@ export function drainInteraction(root: string, id: string): unknown {
     return { status: r.status };
   }); } finally { release(); }
 }
+/** 작업을 열기 전의 동의 — 이 응답 뒤에는 접수가 이어진다(요구사항 동의가 적용되면 작업이 열린다) */
+const BEFORE_WORK: readonly string[] = ["setup", "docs", "baseline", "request"];
+/**
+ * 재개 지시 — 작업이 열렸으면 그 작업을 잇고, 작업을 열기 전(접수·문서 세션, 접수 앞 동의)이면 원래 실행의 지시서로 최초 접수를 잇는다.
+ * 그 밖에 작업이 없는 응답(반영 뒤 갱신·모델 동의 등)은 접수를 지시하지 않는다. 어느 쪽도 작업 ID를 새로 만들지 않는다.
+ */
+function continuationPrompt(root: string, r: InteractionRecord): string {
+  const head = `대시보드 사람이 요청 ${r.requestId}에 명시적으로 응답했습니다. 기존 세션을 유지하고 code-agent interaction consume ${r.requestId}로 답 또는 적용 결과를 조회하세요.`;
+  const guard = "승인·hook 기록을 직접 만들지 마세요.";
+  const active = loadActive(root);
+  if (active) return `${head} 기존 작업 ${active.id}의 ID·종류를 유지하고 기존 단계의 검증·승인 규칙으로 이어가세요. 새로운 작업을 접수하거나 승인·hook 기록을 만들지 마세요.`;
+  const { loadRequestSession } = require("./request") as typeof import("./request");
+  const intake = loadRequestSession(root)?.id;
+  if (!intake && !loadDocsSession(root) && !(r.origin.type === "consent" && BEFORE_WORK.includes(r.consent?.action ?? ""))) {
+    return `${head} 지금 열린 작업이 없습니다. 원래 실행이 하던 일만 마치고, 새로운 작업을 접수하거나 작업 ID를 만들지 마세요. ${guard}`;
+  }
+  return `${head} 아직 작업이 열리기 전입니다. 이 세션이 받은 원래 실행의 지시서로 최초 접수를 이어가세요${intake ? ` — 접수 ID ${intake}를 그대로 씁니다` : " — 작업 ID는 지시서·접수 규칙이 정한 값을 씁니다"}. ` +
+    `code-agent status 의 다음 할 일을 따르고, 작업 ID를 임의로 만들거나 다른 ID로 접수하지 마세요. ${guard}`;
+}
 function resumeInteraction(root: string, r: InteractionRecord): void {
   if (!interactionRunId(r) || r.continuation?.state === "started" || r.continuation?.state === "blocked") return;
   if (currentInteractions(root).requests.some(other => other.requestId !== r.requestId && other.context.sessionId === r.context.sessionId && ["pending", "deferred"].includes(other.status))) return;
@@ -231,7 +274,7 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     if (existing) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "started", runId: existing.runId }; bumpInteraction(state, saved); }); return; }
     if (activeRuns(root).length) return;
     const runId = `run-${randomUUID()}`, at = new Date().toISOString();
-    const prompt = `대시보드 사람이 요청 ${r.requestId}에 명시적으로 응답했습니다. 기존 세션과 작업 ID·종류를 유지하세요. code-agent interaction consume ${r.requestId}로 답 또는 적용 결과를 조회하고 기존 단계의 검증·승인 규칙으로 이어가세요. 새로운 작업을 접수하거나 승인·hook 기록을 만들지 마세요.`;
+    const prompt = continuationPrompt(root, r);
     writeFileSync(runPrompt(root, runId), prompt, "utf8");
     const run: RunRecord = { version: 1, runId, commandId, controller: owner.controller, generation: owner.generation, mode: "continue", links: previous.links,
       state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile, ...(previous.execution ? { execution: previous.execution } : {}),

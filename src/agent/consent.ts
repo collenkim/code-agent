@@ -1,6 +1,7 @@
 import { execFileSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, type Stats } from "fs";
+import { hostname } from "os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { isDeepStrictEqual } from "util";
 import { z } from "zod";
@@ -30,7 +31,7 @@ import { Stop } from "./stop";
 import { withInteraction } from "./tty";
 import { loadManifestIfAny } from "./work";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
-import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, repeatedTargetChange, updateConsentIndex } from "./consentState";
+import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, readConsentIndex, repeatedTargetChange, updateConsentIndex } from "./consentState";
 import { observeAnswerEvent } from "./answers";
 import { withNotation } from "./hostText";
 import { clipLine, excerpt, questionScreenProblem } from "./screenText";
@@ -109,8 +110,10 @@ export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
  * 동의 기록·티켓·색인·캐시(consents), 단계 이동·검증·플러그인 로그와 Codex 미판정 도구 기록(log), 작업 임대(lease.json*).
  * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
  * master 연동 기록(master — 실행 heartbeat·이벤트·명령 기록)도 응답을 기다리는 동안 감독 프로세스가 쓰므로 뺀다.
+ * 버전 적용 잠금(runtime.lock*)은 적용·세션을 여는 명령이 잠깐 쥐는 파일이다 — 적용 직후 동의 정리가 그 잠금 안에서 스냅샷을 비교한다.
  */
-const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`, `${STATE_DIR}/interactions`];
+const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`, `${STATE_DIR}/interactions`,
+  `${STATE_DIR}/runtime.lock`, `${STATE_DIR}/runtime.lock.reclaim`];
 
 function canonicalRoot(root: string): string {
   return realpathSync.native(resolve(root));
@@ -816,6 +819,42 @@ export function closeCancelledDashboardConsent(root: string, id: string): void {
     fail(record, "response-defer", "대시보드 사람이 확인 요청을 취소했습니다. 필요한 경우 새로 준비하세요.");
     save(root, record);
   });
+}
+
+/**
+ * 버전·템플릿 적용 뒤 — 적용이 바꾼 상태(runtime.json·템플릿 사본·적용 기록)로 확인 대상이 달라진 미응답 동의를 대상 변경으로 닫는다. 그대로 두면
+ * 조회는 응답 가능으로 보이고 응답 때 폐기된다. 응답을 시작한 동의(호스트 관찰·위임·대시보드 수신)는 건드리지 않는다 — 그 채널의 적용이 대조한다.
+ * 기록은 지우지 않는다. 대시보드 요청은 동기화가 superseded 로 닫고, 같은 세션이 다시 준비한다.
+ * 갱신 동의의 적용(update --apply-release --consent)은 부모가 동의 잠금을 쥔 채 이 프로세스를 기다린다 — 그때는 잠금을 다시 잡지 않는다.
+ */
+export function discardChangedConsents(root: string, reason: string, keep?: string, waitMs?: number): string[] {
+  root = canonicalRoot(root);
+  // 열린 동의가 없으면 잠그지 않는다
+  if (!Object.keys(readConsentIndex(root)?.open ?? {}).some(id => id !== keep)) return [];
+  const { currentInteractions } = require("./interactions") as typeof import("./interactions");
+  const close = (): string[] => {
+    const index = readConsentIndex(root);
+    const received = new Set(currentInteractions(root).requests.filter(r => r.origin.type === "consent" && r.response).map(r => r.origin.id));
+    const closed: string[] = [];
+    for (const id of Object.keys(index?.open ?? {})) {
+      if (id === keep || received.has(id)) continue;
+      const record = loadConsent(root, id);
+      if (record.status !== "pending" || record.binding || record.observed?.length || record.delegation || record.dashboardHuman) continue;
+      const changes = snapshotChanges(record, inspectConsentSnapshot(root, record.action));
+      if (!changes) continue;
+      discard(root, record, "target", `${reason} — 확인 대상 변경: ${changes.text}`);
+      closed.push(id);
+    }
+    return closed;
+  };
+  return keep && parentApplying(root, keep) ? close() : withConsentLock(root, close, waitMs);
+}
+/** 동의 잠금의 주인이 이 프로세스를 띄운 같은 PC 의 부모이고 그 동의를 적용하는 중인가 */
+function parentApplying(root: string, id: string): boolean {
+  try {
+    const owner = JSON.parse(readFileSync(localPath(root, CONSENT_LOCK), "utf8")) as { pid?: unknown; host?: unknown };
+    return owner.pid === process.ppid && owner.host === hostname() && loadConsent(root, id).status === "applying";
+  } catch { return false; }
 }
 
 export function applyDashboardConsent(root: string, id: string, receipt: DashboardConsentReceipt): { status: string; result?: string; after?: ReturnType<typeof afterApply> } {
