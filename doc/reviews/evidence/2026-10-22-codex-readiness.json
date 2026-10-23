@@ -60,16 +60,19 @@
   },
   "masterAgent": {
     "repository": "master-agent",
-    "committed": false,
+    "commit": "a639cec",
+    "method": "그 커밋의 변경만 담은 임시 worktree, CODE_AGENT_DIST=이 빌드의 dist",
     "tests": [
       {
-        "command": "node --test tests/managed-host.test.mjs tests/request-host.test.mjs tests/pairing.test.mjs tests/preparation.test.mjs tests/dashboard.test.mjs",
-        "tests": 44,
-        "passed": 44,
-        "failed": 0
+        "command": "node --test tests/*.test.mjs",
+        "tests": 295,
+        "passed": 295,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 387021.9175
       }
     ],
-    "syntaxCheck": "node --check apps/dashboard/app.mjs 통과"
+    "check": "node scripts/check.mjs — 구문 118개·문서 링크 19개 통과"
   },
   "verified": [
     "실제 Codex 조회로 설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패·준비 완료를 구분",
@@ -105,10 +108,10 @@
       ]
     },
     {
-      "command": "node scripts/smoke-dashboard-request-host.mjs (master-agent 기존 점검, 옛 형식 code-agent)",
-      "checks": 12,
+      "command": "node scripts/smoke-dashboard-request-host.mjs (master-agent a639cec)",
+      "checks": 16,
       "passed": true,
-      "note": "runReadiness 가 없는 옛 형식 code-agent 는 기존 요청 창 문구를 그대로 씀"
+      "note": "옛 형식 code-agent(기존 문구 유지)와 runReadiness 형식(카드의 방식별 준비, 신뢰 필요·확인 중 차단, 교차 검증 host 신뢰 불요)"
     }
   ],
   "testIsolation": "doctor·CLI init 을 부르는 시험은 조회 대역·모의 app-server 로 답한다(실제 Codex 조회 직후 시험 폴더 삭제 EPERM 을 막음)"

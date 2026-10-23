@@ -4,7 +4,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-22 | [Codex 실행 준비 판정 — 실제 조회·상태 구분·실행 방식별 준비](2026-10-22-codex-readiness.md) — 이 커밋 | [실제 Codex 실측·회귀·master-agent 상호 운용](evidence/2026-10-22-codex-readiness.json) |
+| 2026-10-22 | [Codex 실행 준비 판정 — 실제 조회·상태 구분·실행 방식별 준비](2026-10-22-codex-readiness.md) — `6aaa6de` | [실제 Codex 실측·회귀·master-agent 상호 운용](evidence/2026-10-22-codex-readiness.json) |
 | 2026-10-22 | [대시보드 요청의 작업 임대 판정 통일](2026-10-22-dashboard-lease.md) — `c75f7a8` | [임대·재개·적용 뒤 동의 정리 회귀](evidence/2026-10-22-dashboard-lease.json) |
 | 2026-10-21 | [대시보드 확인 설치·프로젝트별 적용](2026-10-21-dashboard-update.md) — `e193ad2` | [설치·적용·거부·확인 기록 회귀](evidence/2026-10-21-dashboard-update.json) |
 | 2026-10-21 | [계획 파일 작업·담당 되돌림·낡은 질문 대기 복구](2026-10-21-workflow-recovery.md) — `d6ca2d9` | [회귀 시험](evidence/2026-10-21-workflow-recovery.json) |

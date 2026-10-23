@@ -1,5 +1,7 @@
 # Codex 실행 준비 판정 — 실제 조회·상태 구분·실행 방식별 준비
 
+구현 커밋: `6aaa6de`.
+
 ## 문제
 
 - `codexTrust.ts`는 사용자 `config.toml`을 정규식으로 읽어 프로젝트·hook 신뢰를 추정했다. 상위 폴더 신뢰는 언제나 '확인 불가'였고, 관리 실행이 띄우는 실행 파일·계정·작업 경로와 무관한 근거였다.
@@ -21,7 +23,7 @@
 - `master/codexTransport.ts`: 감독이 실행할 app-server 에 `config/read`·`hooks/list`를 물어 사전 진단과 같은 분류(`classifyCodexReadiness`)가 준비 완료일 때만 턴을 연다.
 - `interactionService.ts`: 사람 응답 뒤 재개가 조회 실패·확인 중으로 거부되면 `blocked` 대신 `queued`로 남긴다. 미신뢰는 `blocked`다.
 - `doctor.ts`: `Codex 프로젝트 신뢰`·`Codex 훅 신뢰` 두 줄을 상태별로 쓰고 물은 대상(Codex 버전·실행 파일·`CODEX_HOME`)을 붙인다. `init.ts`: CLI init 끝에 `Codex 실행 준비` 줄(준비 완료·설치 완료 · 신뢰 확인 필요·hook 검토 필요·신뢰 확인 실패·신뢰 확인 중·설치 확인 필요)과 재검사 경로.
-- master-agent(별도 저장소): `pairing.mjs`가 `state`·`runReadiness`를 정규화하고 고른 실행 방식이 확정 준비(`ready === true`)일 때만 요청을 통과시킨다. `runReadiness`가 없는 옛 code-agent 는 기존 판정을 쓴다. 대시보드 카드·요청 창이 실행 방식별 준비와 차단 이유를 보여 준다.
+- master-agent(별도 저장소, `a639cec`): `pairing.mjs`가 `state`·`runReadiness`를 정규화하고 고른 실행 방식이 확정 준비(`ready === true`)일 때만 요청을 통과시킨다. `runReadiness`가 없는 옛 code-agent 는 기존 판정을 쓴다. 대시보드 카드·요청 창이 실행 방식별 준비와 차단 이유를 보여 준다.
 
 ## 설계 판단
 
@@ -79,9 +81,9 @@ Windows 11·Node 24.19.0·codex-cli 0.163.0, 기준 커밋 `111793d`. `npm run b
 
 실제 Codex 로 감독이 턴을 시작하는 경로(`scripts/evaluate-codex-git-permission.cjs`, 실제 모델 호출, Claude 세션 환경 변수를 뺀 터미널 실행): 접수의 준비 검사와 감독의 실행 직전 검사가 실제 app-server 에 물어 통과했고, thread 를 열어 턴을 실행했으며 hook(`sessionStart`·`userPromptSubmit`·`preToolUse` 3회·`stop`)이 실제로 돌았다. 평가의 뒷부분(Git 쓰기 단건 승인)은 모델이 PowerShell 실행 정책에 막힌 뒤 `cmd.exe /c '…'`로 다시 시도해, 승인 대상 셸에 cmd 가 없는 기존 Git 권한 판정(`codexPermissions.ts` `gitOperationCommand`, 이번에 바꾸지 않음)이 거부했고 실행은 `blocked`로 끝났다.
 
-대시보드 화면(실제 headless Chrome·대시보드 API, 격리 카탈로그, 요청 실행·모델 호출 없음): 실제 Codex 로 조회한 code-agent `hello`(미신뢰·hook 검토 필요·준비 완료)와 확인 전 `hello`로 카드와 요청 창을 확인했다 — 실행 방식마다 준비와 막힌 이유, 미신뢰 동안 hook 검토 경고 없음, 확정 준비만 '선택 가능', `both`(주 Claude)는 Codex 미신뢰여도 선택 가능, 확인 전은 막힘, 390·320px 너비. `runReadiness`가 없는 옛 형식 code-agent 는 기존 문구를 그대로 쓴다(master-agent `smoke-dashboard-request-host.mjs`).
+대시보드 화면(실제 headless Chrome·대시보드 API, 격리 카탈로그, 요청 실행·모델 호출 없음): 실제 Codex 로 조회한 code-agent `hello`(미신뢰·hook 검토 필요·준비 완료)와 확인 전 `hello`로 카드와 요청 창을 확인했다 — 실행 방식마다 준비와 막힌 이유, 미신뢰 동안 hook 검토 경고 없음, 확정 준비만 '선택 가능', `both`(주 Claude)는 Codex 미신뢰여도 선택 가능, 확인 전은 막힘, 390·320px 너비. master-agent 의 요청 host 점검(`smoke-dashboard-request-host.mjs`)에 같은 시나리오를 더해 16개 항목이 통과했다 — `runReadiness`가 없는 옛 형식 code-agent 는 기존 문구를 그대로 쓴다.
 
-master-agent: `request-host`·`pairing`·`preparation`·`managed-host`·`dashboard` 44개 통과.
+master-agent `a639cec`(그 커밋의 변경만 담은 임시 worktree, 이 빌드의 `dist` 사용): 전체 295개 통과, 구문·문서 링크 검사 통과.
 
 수치와 범위는 [근거 JSON](evidence/2026-10-22-codex-readiness.json)에 남긴다.
 

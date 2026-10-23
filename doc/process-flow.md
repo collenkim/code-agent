@@ -864,7 +864,7 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- Codex 실행 준비를 설정 파일 추정 대신 관리 실행과 같은 실행 파일·계정의 app-server(`config/read`·`hooks/list`)로 판정해 설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패·준비 완료를 나누고, doctor·init·hello(실행 방식별 준비)·접수·실행 직전 검사가 같은 기준을 쓴다 — 이 커밋, [검증 기록](reviews/2026-10-22-codex-readiness.md).
+- Codex 실행 준비를 설정 파일 추정 대신 관리 실행과 같은 실행 파일·계정의 app-server(`config/read`·`hooks/list`)로 판정해 설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패·준비 완료를 나누고, doctor·init·hello(실행 방식별 준비)·접수·실행 직전 검사가 같은 기준을 쓴다 — `6aaa6de`, [검증 기록](reviews/2026-10-22-codex-readiness.md).
 
 - 대시보드 요청의 조회·수신·소비·적용·재개가 진행 명령과 같은 임대 판정으로 지금 작업을 쥔 다른 세션만 막고, 작업을 열기 전 응답은 최초 접수로 재개하며, 버전·템플릿 적용으로 확인 대상이 바뀐 미응답 동의는 대상 변경으로 닫는다 — `c75f7a8`, [검증 기록](reviews/2026-10-22-dashboard-lease.md).
 
