@@ -4,11 +4,11 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
-| 2026-10-23 | [Codex 단건 Git 권한 — 셸 꼴 안내·cmd 래퍼·현재 폴더 가림 차단](2026-10-23-codex-git-wrapper.md) — 이 커밋 | [실험·실제 Codex 평가·회귀](evidence/2026-10-23-codex-git-wrapper.json) |
+| 2026-10-23 | [Codex 단건 Git 권한 — 셸 꼴 안내·cmd 래퍼·현재 폴더 가림 차단](2026-10-23-codex-git-wrapper.md) — `4dd40da` | [실험·실제 Codex 평가·회귀](evidence/2026-10-23-codex-git-wrapper.json) |
 | 2026-10-22 | [Codex 실행 준비 판정 — 실제 조회·상태 구분·실행 방식별 준비](2026-10-22-codex-readiness.md) — `6aaa6de` | [실제 Codex 실측·회귀·master-agent 상호 운용](evidence/2026-10-22-codex-readiness.json) |
 | 2026-10-22 | [대시보드 요청의 작업 임대 판정 통일](2026-10-22-dashboard-lease.md) — `c75f7a8` | [임대·재개·적용 뒤 동의 정리 회귀](evidence/2026-10-22-dashboard-lease.json) |
 | 2026-10-21 | [대시보드 확인 설치·프로젝트별 적용](2026-10-21-dashboard-update.md) — `e193ad2` | [설치·적용·거부·확인 기록 회귀](evidence/2026-10-21-dashboard-update.json) |
-| 2026-10-21 | [계획 파일 작업·담당 되돌림·낡은 질문 대기 복구](2026-10-21-workflow-recovery.md) — `d6ca2d9` | [회귀 시험](evidence/2026-10-21-workflow-recovery.json) |
+| 2026-10-21 | [질문 응답 누락·계획 파일 작업·담당 되돌림·낡은 질문 대기 복구](2026-10-21-workflow-recovery.md) — `8ab6cba`·`d6ca2d9` | [회귀 시험](evidence/2026-10-21-workflow-recovery.json) |
 | 2026-10-21 | [대시보드 확인 PC 신뢰](2026-10-21-dashboard-trust.md) — `4e81965` | [회귀·master-agent 상호 운용·브라우저](evidence/2026-10-21-dashboard-trust.json) |
 | 2026-10-21 | [master 요청의 실행 방식 선택](2026-10-21-run-execution.md) — `5adbb97` | [회귀·master-agent 상호 운용](evidence/2026-10-21-run-execution.json) |
 | 2026-10-20 | [PC 신뢰와 대시보드 페어링](2026-10-20-dashboard-pairing.md) — `1841a89` | [회귀·master-agent 상호 운용](evidence/2026-10-20-dashboard-pairing.json) |
@@ -21,8 +21,8 @@
 | 2026-10-16 | [외부 계약 인계·답 출처·응답 형식·요구와 테스트 연결](2026-10-16-dependency-contracts.md) — `8085647` | [정상·거부 사례](evidence/2026-10-16-dependency-contracts.json) |
 | 2026-10-16 | [LangGraph 전체 실행 전환](2026-10-16-langgraph.md) — `cb0c466` | [그래프·회귀 검증](evidence/2026-10-16-langgraph.json) |
 | 2026-10-16 | [Node 실행·빌드 버전 통일](2026-10-16-node-runtime.md) — `c2ccccb` | [런타임·빌드 검증](evidence/2026-10-16-node-runtime.json) |
-| 2026-10-15 | [master 연동·실행 감독·위임 판단](2026-10-15-master-control.md) | [자동 시험·실제 CLI·Claude 실행](evidence/2026-10-15-master-control.json) |
-| 2026-10-14 | [릴리스 설치·프로젝트별 적용·템플릿 보존](2026-10-14-release-update.md) | [실제 빌드·호스트 확인](evidence/2026-10-14-release-update.json) |
+| 2026-10-15 | [master 연동·실행 감독·위임 판단](2026-10-15-master-control.md) — `e5f136a` | [자동 시험·실제 CLI·Claude 실행](evidence/2026-10-15-master-control.json) |
+| 2026-10-14 | [릴리스 설치·프로젝트별 적용·템플릿 보존](2026-10-14-release-update.md) — `d01b4d1` | [실제 빌드·호스트 확인](evidence/2026-10-14-release-update.json) |
 | 2026-10-12~14 | [오류 사전 판별·질문 UI·토큰·지식·외부 연결·재시도](2026-10-13-result-summary.md) | [회귀·호스트·측정 결과](evidence/2026-10-13-result-summary.json) |
 | 2026-10-08 | [절차 보완·재시도 규약·최적화](2026-10-08-procedure-fix-summary.md) | [감사 처리·시험·실측 결과](evidence/procedure-fix-2026-10-08.json) |
 | 2026-10-07 | [Claude·Codex 이중 호스트 프로세스 감사](2026-10-07-dual-host-process-audit.md) | [감사 지적 원자료](evidence/process-audit-2026-10-07.json) |

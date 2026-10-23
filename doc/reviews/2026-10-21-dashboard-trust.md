@@ -4,9 +4,7 @@
 
 PC 신뢰를 대시보드 확인 화면에서도 등록한다. 터미널의 `master trust`(확인 단어 `trust`)는 그대로 두고, TTY 없이 대시보드가 부르는 두 형태를 더했다.
 
-- `master trust --controller <ID> --preview`는 아무것도 쓰지 않고 확인 화면 내용을 JSON 한 줄로 낸다(`trustPreview`). 문구는 터미널 확인과 같은 내용에 화면 등록의 한계 한 줄을 더한다. `shownHash`는 domain·제어자·개인 키 자리·문구의 해시다. 이미 신뢰하거나 키 파일이 있으면 `canTrust: false`와 사유를 낸다.
-- `master trust --controller <ID> --shown-hash <해시>`는 그 해시가 지금 문구의 해시와 같을 때만 키를 만든다(`masterTrustConfirmed`). 호스트 표지가 있는 셸은 `policy-forbids`, 이미 신뢰·키 파일은 `conflict`, 해시 불일치는 `stale-state`로 거부하고 아무것도 쓰지 않는다.
-- 기록의 `createdBy`에 `channel: "dashboard"`와 `shownHash`를 남겨 터미널 등록(`tty`)과 구분한다. `trust --list`는 `(대시보드 확인)`으로 보인다.
+- `master trust --controller <ID> --preview`(`trustPreview`)는 아무것도 쓰지 않고 확인 화면의 문구와 `shownHash`를 JSON 한 줄로 낸다. `--shown-hash <해시>`(`masterTrustConfirmed`)는 그 해시가 지금 문구의 해시와 같을 때만 키를 만들고, 기록의 `createdBy`에 `channel: "dashboard"`와 `shownHash`를 남겨 터미널 등록(`tty`)과 구분한다. 출력 꼴·해시 구성·거부 코드·목록 표시는 [master 연동](../master-control.md#pc-신뢰와-대시보드-페어링)에 있다.
 - 신뢰하지 않은 제어자의 페어링 거부 안내와 도움말에 대시보드 확인 등록을 더했다.
 
 master-agent 쪽(별도 저장소)은 프로젝트 카드의 PC 신뢰 버튼과 확인 화면(code-agent 문구, 확인 단어 `trust`)으로 이 두 형태를 부른다. 호출 환경에서는 호스트 표지를 지운다.

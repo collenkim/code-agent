@@ -50,74 +50,7 @@
           "result": "- 없음"
         }
       ],
-      "tests": [
-        {
-          "id": "TC-1",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-2",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-3",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-4",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-5",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-6",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-7",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-8",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-9",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-10",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        },
-        {
-          "id": "TC-11",
-          "status": "passed",
-          "source": "출력",
-          "where": "테스트 실행 결과 (TAP)"
-        }
-      ]
+      "tests": "TC-1~TC-11 11개 모두 passed(source 출력, 테스트 실행 결과 (TAP)) — 항목별 기록은 evidence 파일의 tests"
     },
     "claudeRecovery": {
       "evidence": "doc/reviews/evidence/2026-10-20-live-session-recovery.json",

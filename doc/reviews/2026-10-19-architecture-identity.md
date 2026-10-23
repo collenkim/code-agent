@@ -11,7 +11,7 @@ code-agent와 master-agent의 실행 그래프, 저장소, 접수, 제어 계약
 두 저장소 모두 LangGraph JS 1.5.0과 공식 SqliteSaver 1.1.0을 실제 실행 경로에서 사용한다. master는 Mission·Task·Attempt와 프로젝트 간 의존성을, code-agent는 프로젝트 내부 접수·계획·구현·검증·반영을 담당한다. `code-agent.master` v1의 JSON CLI 계약이 두 실행기를 연결한다.
 
 - master `packages/orchestrator/drive.mjs`: 작업 선택, 접수, 관측, 위임 판단, 검증, 복구, 재계획을 별도 노드로 분리한다. 독립 프로젝트의 외부 호스트 실행은 겹치며 같은 프로젝트는 도메인 잠금으로 보호한다.
-- code-agent `src/agent/graph/`: lifecycle·planning·transition·operation 그래프가 도메인 서비스를 호출한다. `src/core/workflow.ts`는 검증의 program·agent·human 분기를 구성한다.
+- code-agent: 그래프 구성과 도메인 서비스의 역할은 [LangGraph 실행 구조](../langgraph.md#실행-계층)와 같다.
 - 양쪽 모두 도메인 기록이 권한·완료의 근거다. 체크포인트 자체나 단순 resume 신호로 승인하지 않는다. master의 요청 ID·소유 세대, 기대 상태, 독립 검증과 code-agent 승인·증거 대조를 유지하는 점이 적절하다.
 - 정상 wait는 master에서 Command.resume으로 깨운다. code-agent 운영 흐름과 비정상 종료 복구는 START에서 최신 도메인 상태를 다시 관측한다. 이는 의도적인 재관측 설계다. 체크포인트가 중간 모델 호출·외부 실행의 정확히 한 번 수행을 보장하는 구조는 아니다.
 
@@ -41,6 +41,6 @@ code-agent와 master-agent의 실행 그래프, 저장소, 접수, 제어 계약
 
 - code-agent: 빌드 포함 전체 회귀 1,613개 중 1,609개 통과, 플랫폼 조건 생략 4개, 실패 0개. 문서 대응·템플릿 변환·분량 검사도 포함한다.
 - master-agent: 수정본 전체 회귀 214개 중 212개 통과, 실패 0개. 임시 검증 위치 때문에 생략된 code-agent 제어·문서 인계 연동 2건은 실제 빌드를 연결한 별도 실행에서 통과했다. 문법 84파일과 문서 링크 18건 검사도 통과했다.
-- 실제 대상 프로젝트 업데이트와 유료 모델의 장시간 실행은 수행하지 않았다.
+- 실제 대상 프로젝트 업데이트는 수행하지 않았다. 유료 모델의 장시간 실행도 이 변경에서는 수행하지 않았다 → 실제 Claude 완주에서 최초 ID·종류의 식별 기록이 하나임을 [복원·실제 모델 기록](2026-10-20-session-recovery-live.md)에서 확인했다.
 
 검증 수치와 실행 범위는 [근거 JSON](evidence/2026-10-19-architecture-identity.json)에 기록한다.

@@ -37,26 +37,15 @@ hello 는 묻지 않는다. 대시보드의 hello 상한(5초) 안에 app-server
 
 `STATE_SCHEMA`는 유지한다. 승인·증거·작업 기록의 형식은 그대로이고, 판정 기록은 사용자 키 자리의 캐시(자체 `version`)이며 `hello` 출력은 필드만 더했다.
 
-설계 비평(하위 에이전트) 16개의 처리:
+설계 비평(하위 에이전트) 16개 가운데 15개를 반영·확인했고, 대부분은 위 변경 범위·설계 판단에 들어 있다(hello 는 기록만 읽고 분리 갱신, 제어 잠금 안의 조회 상한 8초와 재개의 `queued`, `both` 상대 호스트는 실행 파일만, 조회 앞뒤 지문과 키의 code-agent 버전, 연동한 프로젝트·절대 경로 실행 파일 한정, 시간 초과 시 프로세스 트리 종료와 app-server 종료 대기, 결과의 물은 대상, 감독의 같은 분류). 그 밖의 반영:
 
-| 지적 | 처리 |
-|---|---|
-| 1 hello 안의 조회가 대시보드 상한을 위협 | 반영 — hello 는 기록만 읽고 분리 갱신 |
-| 2 분리 갱신의 잠금 폴더 미생성 | 반영 — 잠금 전에 폴더(0700) 생성 |
-| 3 제어 잠금 안의 20초 조회, 재개의 일시 상태 고착 | 반영 — 잠금 안 상한 8초, 재개는 `queued` |
-| 4 `both` 상대 호스트 검사가 실제 교차와 다름 | 반영 — 실행 파일만(`crossHostReadiness`) |
-| 5 `config/read` 없는 옛 Codex | 반영 — `hooks/list`만 묻고, 하나도 로드되지 않으면 `codex-unsupported`. 버전은 `target.version` |
-| 6 지문을 조회 뒤에 찍음, 키에 버전 없음 | 반영 — 조회 앞뒤 비교, 키에 code-agent 버전 |
-| 7 공유 임시 폴더 | 반영 — 사용자 키 자리 0700, 임시 파일 `wx`·0600 |
-| 8 인증 없는 hello 가 실행을 일으킴 | 반영 — 연동한 프로젝트·절대 경로 실행 파일만 |
-| 9 옛 master-agent 호환을 위해 일시 상태에서 `ready: null` | 반영하지 않음 — `ready`는 `false`로 둔다. 옛 master-agent 는 `false`를 막힘으로 보므로 '조회 실패를 실행 가능으로 보지 않는다'와 맞고, `null`은 옛 소비자가 판정 없음(허용)으로 읽을 수 있다. 새 master-agent 는 `state`로 일시 상태를 가린다 |
-| 10 doctor `✗` 범위, 샌드박스 | 반영 — 조회 실패·확인 전은 `·`, 샌드박스 안은 '터미널에서 확인' |
-| 11 Windows 고아 프로세스 | 반영 — 시간 초과 시 프로세스 트리 종료. 정상 종료도 app-server 가 끝난 뒤 돌려준다 |
-| 12 hook 기능 꺼짐, 신뢰 외 비활성화 사유 | 반영 — `codex-hooks-disabled`(실측), 신뢰 외 사유는 `codex-project-disabled` |
-| 13 doctor 와 hello 의 환경 차이 | 반영 — 결과에 Codex 버전·실행 파일·`CODEX_HOME` |
-| 14 감독을 같은 분류로 | 이미 반영돼 있었다 |
-| 15 hook 경로 import·교차 안내에서 조회하지 않기 | 확인 — 문제 없음. `crossNotice`·`crossEnabled`는 조회하지 않는다 |
-| 16 hello 는 기록만 읽는 대안 | 1과 합쳐 반영 |
+- 분리 갱신의 잠금 전에 폴더(0700)를 만들고, 판정 기록은 공유 임시 폴더 대신 사용자 키 자리(0700)에 임시 파일 `wx`·0600 으로 쓴다.
+- `config/read` 없는 옛 Codex 는 `hooks/list`만 묻고, 하나도 로드되지 않으면 `codex-unsupported`다. 버전은 `target.version`에 싣는다.
+- doctor 는 조회 실패·확인 전을 `✗` 대신 `·`로 쓰고, 샌드박스 안에서는 '터미널에서 확인'을 안내한다.
+- hook 기능이 꺼지면 `codex-hooks-disabled`(실측), 신뢰 밖의 비활성화 사유는 `codex-project-disabled`다.
+- hook 경로 import·교차 안내는 조회하지 않음을 확인했다(`crossNotice`·`crossEnabled`).
+
+반영하지 않은 것 — 옛 master-agent 호환을 위해 일시 상태에서 `ready: null`로 두는 안: `ready`는 `false`로 둔다. 옛 master-agent 는 `false`를 막힘으로 보므로 '조회 실패를 실행 가능으로 보지 않는다'와 맞고, `null`은 옛 소비자가 판정 없음(허용)으로 읽을 수 있다. 새 master-agent 는 `state`로 일시 상태를 가린다.
 
 ## 검증
 
@@ -73,13 +62,13 @@ Windows 11·Node 24.19.0·codex-cli 0.163.0, 기준 커밋 `111793d`. `npm run b
 집중 시험: `codexReadiness`·`masterCodex`·`masterPairing`·`dashboardCodexResume`·`sessionRecovery`·`master` 64개, `codex`·`fullReview`·`coexistence`·`executionMode`·`hookPaths`·`codexReadiness` 86개 통과.
 
 - 분류·조회 방식·기록·분리 갱신(`codexReadiness.test`), doctor 의 상태별 두 줄과 앞 단계 막힘(`codex.test` H5), hello·접수와 감독 직전 검사의 일치(`masterCodex.test`), 재개의 `queued`·`blocked`(`dashboardCodexResume.test`), 설치가 막히면 Codex 신뢰를 묻지 않음(`masterPairing.test`).
-- doctor·CLI init 을 부르는 시험(`codex`·`fullReview`·`coexistence`·`hookPaths`·`executionMode`·`runtimeRelease`)은 실제 Codex·사용자 `CODEX_HOME` 대신 조회 대역이나 모의 app-server 로 답한다. 실제 Codex 로 조회한 직후 시험 폴더를 지우지 못하던 실패(`EPERM`)는 이 대역과 app-server 종료 대기(설계 판단 11)로 막았다.
+- doctor·CLI init 을 부르는 시험(`codex`·`fullReview`·`coexistence`·`hookPaths`·`executionMode`·`runtimeRelease`)은 실제 Codex·사용자 `CODEX_HOME` 대신 조회 대역이나 모의 app-server 로 답한다. 실제 Codex 로 조회한 직후 시험 폴더를 지우지 못하던 실패(`EPERM`)는 이 대역과 조회 worker 의 app-server 종료 대기로 막았다.
 
 새 시험은 새 모듈(`codexReadiness.ts`)에 의존해 기준 커밋 빌드에서 '수정 전 실패'를 확인하지 않았다.
 
 전체 회귀(마지막 빌드, `npm test`와 같은 단계를 동시 실행 6·격리 `CODE_AGENT_HOME`으로): 1,736개 중 1,729개 통과, 실패 3개, 플랫폼 생략 4개, 약 2,806초. 실패 3개(`codex`·`consentBinding`·`consentScreens` 각 1개)는 모두 동의 확인 사이 'Git 설정'이 바뀌었다는 거부였다. 동의 스냅샷은 전역 설정을 포함하는데, 사용자 `~/.gitconfig`가 시험 도중 이 저장소 밖에서 다시 쓰였다. code-agent 에는 전역 Git 설정을 쓰는 코드가 없고, 세 시험을 다시 돌려 모두 통과했다.
 
-실제 Codex 로 감독이 턴을 시작하는 경로(`scripts/evaluate-codex-git-permission.cjs`, 실제 모델 호출, Claude 세션 환경 변수를 뺀 터미널 실행): 접수의 준비 검사와 감독의 실행 직전 검사가 실제 app-server 에 물어 통과했고, thread 를 열어 턴을 실행했으며 hook(`sessionStart`·`userPromptSubmit`·`preToolUse` 3회·`stop`)이 실제로 돌았다. 평가의 뒷부분(Git 쓰기 단건 승인)은 모델이 PowerShell 실행 정책에 막힌 뒤 `cmd.exe /c '…'`로 다시 시도해, 승인 대상 셸에 cmd 가 없는 기존 Git 권한 판정(`codexPermissions.ts` `gitOperationCommand`, 이번에 바꾸지 않음)이 거부했고 실행은 `blocked`로 끝났다.
+실제 Codex 로 감독이 턴을 시작하는 경로(`scripts/evaluate-codex-git-permission.cjs`, 실제 모델 호출, Claude 세션 환경 변수를 뺀 터미널 실행): 접수의 준비 검사와 감독의 실행 직전 검사가 실제 app-server 에 물어 통과했고, thread 를 열어 턴을 실행했으며 hook(`sessionStart`·`userPromptSubmit`·`preToolUse` 3회·`stop`)이 실제로 돌았다. 평가의 뒷부분(Git 쓰기 단건 승인)은 모델의 `cmd.exe /c '…'` 재시도를 기존 Git 권한 판정이 받지 않아 `blocked`로 끝났다(경위와 수정은 [Codex 단건 Git 권한](2026-10-23-codex-git-wrapper.md)).
 
 대시보드 화면(실제 headless Chrome·대시보드 API, 격리 카탈로그, 요청 실행·모델 호출 없음): 실제 Codex 로 조회한 code-agent `hello`(미신뢰·hook 검토 필요·준비 완료)와 확인 전 `hello`로 카드와 요청 창을 확인했다 — 실행 방식마다 준비와 막힌 이유, 미신뢰 동안 hook 검토 경고 없음, 확정 준비만 '선택 가능', `both`(주 Claude)는 Codex 미신뢰여도 선택 가능, 확인 전은 막힘, 390·320px 너비. master-agent 의 요청 host 점검(`smoke-dashboard-request-host.mjs`)에 같은 시나리오를 더해 16개 항목이 통과했다 — `runReadiness`가 없는 옛 형식 code-agent 는 기존 문구를 그대로 쓴다.
 
@@ -90,4 +79,4 @@ master-agent `a639cec`(그 커밋의 변경만 담은 임시 worktree, 이 빌�
 ## 확인하지 않은 범위
 
 - 관리 정책·Codex 갱신처럼 지문 밖의 변화는 기한(10분)으로만 반영한다.
-- 실제 Codex 평가의 Git 쓰기 단건 승인은 이번 범위 밖의 거부(`cmd.exe` 재시도)로 끝까지 확인하지 못했다.
+- 실제 Codex 평가의 Git 쓰기 단건 승인은 `cmd.exe` 재시도 거부로 끝까지 확인하지 못했다 → [Codex 단건 Git 권한](2026-10-23-codex-git-wrapper.md)에서 수정 뒤 실제 평가 3회(합성 승인) 통과로 확인했다. cmd 꼴 수용은 시험으로만 확인했다.

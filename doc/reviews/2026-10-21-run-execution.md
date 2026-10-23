@@ -6,13 +6,10 @@ master-agent 요청이 host(Claude·Codex 단독 또는 둘 다)를 고르면 �
 
 code-agent 쪽 변경은 다음과 같다.
 
-- `submit mode:start`가 `execution: { mode: claude|codex|both, main? }`을 받는다(`runExecutionOf`). 모르는 키, 단독에 다른 `main`, `main` 없는 `both`, 그 밖의 mode 는 `invalid-request`다. 필요한 호스트가 `hosts.json`에 없으면 `invalid-state`(`host-not-installed`)다. `continue`에 `execution`이 오면 `invalid-request`다.
-- 고른 방식의 주 호스트로 등록된 호스트 설정(`hostProfiles`, 없으면 제한된 기본값)을 쓴다(`profileFor`). 실행 파일·모델·권한은 계속 사람이 enable 에서 정한다.
-- 실행 기록(`RunRecord.execution`)에 남기고, 실행이 작업을 열면 작업 연결(`WorkBinding.execution`)에 고정한다(`bindWork`).
-- 판정 순서: 지금 작업의 연결 기록 → 작업을 열기 전이면 이 세션의 master 실행 기록 → `execution.json`(`master/workExecution.ts` `managedExecution`). `crossEnabled`(계획·리뷰 교차 의무)와 hook 의 단독 호스트 가드가 이 순서를 따른다. 가드 문구는 master 가 고른 방식일 때 인계 명령을 안내한다.
-- 이미 연 작업에 새 실행이 오면 요청의 방식 대신 작업에 고정된 방식(없으면 프로젝트 방식)을 쓴다. 진행 중인 작업의 호스트를 다음 요청이 바꾸지 않게 하기 위해서다. `continue`·사람 응답 재개는 이전 실행의 방식을 이어 쓰고, 재개 판정(`requireResumeProfile`)도 그 방식으로 대조한다.
-- 사람의 `execution <방식> --handoff`는 지금 작업에 고정된 방식도 인계한 방식으로 바꾼다. `execution` 조회는 지금 작업이 따르는 선택을 보여 준다.
-- hello `managedHost`에 `runSelection`(고를 수 있는 방식)과 `hosts`(설치된 호스트마다의 준비)를 더했다. 접수 결과와 실행 요약에 `execution`, 접수 결과에 `hostKind`를 더했다.
+- `submit mode:start`가 `execution: { mode, main? }`을 받는다(`runExecutionOf`). 고른 방식의 주 호스트에 사람이 등록한 설정(`profileFor`, 없으면 제한된 기본값)으로 돈다.
+- 선택을 실행 기록(`RunRecord.execution`)에 남기고, 실행이 연 작업의 연결(`WorkBinding.execution`, `bindWork`)에 고정한다. `crossEnabled`와 hook 의 단독 호스트 가드는 지금 작업의 연결 → 작업을 열기 전이면 이 세션의 master 실행 기록 → `execution.json` 순(`master/workExecution.ts` `managedExecution`)으로 판정한다.
+- 이미 연 작업·`continue`·사람 응답 재개는 고정된 방식을 이어 쓰고(`requireResumeProfile`도 그 방식으로 대조), 작업의 선택은 사람의 `execution <방식> --handoff`만 바꾼다.
+- hello `managedHost`에 `runSelection`·`hosts`, 접수 결과·실행 요약에 `execution`(접수 결과에 `hostKind`)을 더했다. 꼴·설치 검사의 오류 코드와 계약 세부는 [master 연동](../master-control.md) §3·§11에 있다.
 
 master-agent 쪽(별도 저장소)은 요청의 host 를 받아 새 실행 접수에만 `execution`으로 보내고, 같은 선택으로 계획·판단 AI를 정한다(단독은 그 CLI, both 는 주 host 생성·다른 host 승인). code-agent 가 `runSelection`을 알리지 않으면 프로젝트 방식으로 대신 실행하지 않고 준비 점검에서 막는다.
 

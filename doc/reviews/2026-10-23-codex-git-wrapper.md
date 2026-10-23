@@ -1,6 +1,6 @@
 # Codex 단건 Git 권한 — 셸 꼴 안내·cmd 래퍼·현재 폴더 가림 차단
 
-구현 커밋: 이 커밋.
+구현 커밋: `4dd40da`.
 
 ## 문제
 
@@ -13,7 +13,7 @@
 
 현재 계약은 [흐름도](../process-flow.md) §5.4·§7, [대시보드 응답](../dashboard-interactions.md#codex-git-실행-권한), [master 연동](../master-control.md) §11, [Codex 연동](../codex.md)에 있다. 여기에는 바뀐 자리만 적는다.
 
-- `master/codexPermissions.ts` `gitOperationCommand`: 래퍼 표(`WRAPPERS`)에 `cmd.exe`·`cmd`(깃발 `/d`·`/s`·`/q`, 명령 깃발 `/c`)를 더했다. 래퍼 셸은 맨 이름이거나 알려진 설치 경로(`SystemRoot\System32|SysWOW64`의 `cmd.exe`·`WindowsPowerShell\v1.0\powershell.exe`, `Program Files\PowerShell\<버전>\pwsh.exe`, `Program Files\Git\{bin,usr\bin}`의 `bash.exe`·`sh.exe`)와 대소문자 무시로 같아야 한다 — 하위 폴더 전체를 받지 않는다(`C:\WINDOWS\Tasks`처럼 사용자가 쓸 수 있는 시스템 하위 폴더가 있다). Codex 가 큰따옴표 안 역슬래시를 겹쳐 보내므로 `resolve`로 접어 대조한다. UNC 경로는 받지 않는다. 공백·탭 밖의 공백 문자와 제어 문자, cmd 이스케이프 `^`도 받지 않는다.
+- `master/codexPermissions.ts` `gitOperationCommand`: 래퍼 표(`WRAPPERS`)에 `cmd.exe`·`cmd`(깃발 `/d`·`/s`·`/q`, 명령 깃발 `/c`)를 더했다. 래퍼 셸은 맨 이름이거나 알려진 설치 경로(목록은 [대시보드 응답](../dashboard-interactions.md#codex-git-실행-권한))와 대소문자 무시로 같아야 한다 — 하위 폴더 전체를 받지 않는다(아래 설계 판단). Codex 가 큰따옴표 안 역슬래시를 겹쳐 보내므로 `resolve`로 접어 대조한다. UNC 경로는 받지 않는다. 공백·탭 밖의 공백 문자와 제어 문자, cmd 이스케이프 `^`도 받지 않는다.
 - 같은 파일 `shadowingExecutable`: Windows 에서 저장소 루트에 `code-agent`·`node`·`git` 이름의 실행 파일(PATHEXT·`.com`·`.exe`·`.bat`·`.cmd`)이 있으면 `permissionUnavailable`이 요청 발행과 전달 직전 모두 거부하고 파일 이름과 지울 것을 알린다.
 - `master/supervisor.ts`: Windows 의 Codex 실행 환경(`hostEnv`)에 `NoDefaultCurrentDirectoryInExePath=1`을 넣고 PATH 의 빈·상대·`\\?\`·`\\.\`·저장소 안 항목을 지운다. app-server 인자에 `shell_environment_policy.set.NoDefaultCurrentDirectoryInExePath="1"`을 더해 사용자 설정의 `shell_environment_policy`가 상속 변수를 줄여도 셸 명령 환경에 남게 한다. Codex 갈래 지침에 `POWERSHELL_COMMAND_GUIDE`(`hostText.ts`)와 `CODEX_PERMISSION_FORM`(`runGuard.ts`)을 넣고, 공용 규칙은 '(node 경로로 부르지 않는다)'로 한정했다. Claude 갈래 프롬프트는 바뀌지 않는다.
 - `master/runGuard.ts` `CODEX_PERMISSION_FORM`: 받는 꼴 한 문장. 감독 지침과 세션 안내(`masterRunNote`)가 함께 쓴다. `gitOperationCommand`와 함께 맞출 중복 정의로 §1.1 master 행에 올렸다.
@@ -30,22 +30,7 @@ cmd 래퍼를 받는 이유: 지침은 모델이 따르지 않을 수 있다. �
 
 cmd 의 `/d`(AutoRun 끄기)는 요구하지 않는다. 실제 요청에 `/d`가 없었고, AutoRun 은 사용자 레지스트리 설정이라 샌드박스 안의 모델이 바꿀 수 없다.
 
-반박 검토(하위 에이전트 3개 — cmd 수용 안·지침 안내 안·기존 결함)의 처리:
-
-| 지적 | 처리 |
-|---|---|
-| cmd 수용만으로는 현재 폴더 가림 위험이 남는다 | 반영 — 환경 변수·Codex 셸 정책·PATH 정리·루트 가림 파일 검사 |
-| 이미 받던 PowerShell `code-agent.cmd` 꼴도 shim 의 `node` 검색으로 같은 위험 | 반영 — 같은 환경 조치가 모든 꼴에 적용된다 |
-| `code-agent`가 부르는 `git`도 Node 자식 실행이 현재 폴더를 먼저 찾는다 | 반영 — 가림 검사 이름에 `git`, 환경 변수로 Node 검색도 바뀜(실험) |
-| U+3000·NBSP·VT 등 공백을 판정과 cmd 가 다르게 읽는다 | 반영 — 모든 꼴에서 거부 |
-| 셸을 이름으로만 판정 | 반영 — 정확한 설치 경로 목록 |
-| `SystemRoot` 하위 전체 허용 초안 | 반영 — 쓰기 가능한 하위 폴더 때문에 정확한 목록으로 좁힘 |
-| 공용 규칙 '`code-agent` 로 부른다'가 `.cmd` 안내와 충돌 | 반영 — '(node 경로로 부르지 않는다)'로 한정, 안내는 Codex 갈래에만 |
-| 자동 거절이 명령 없이 남는다 | 반영 — `automatic`·`command`, 실행 사유에 받는 꼴 |
-| 평가를 반복해 비율로 본다 | 반영 — 수정 뒤 3회 실행(아래) |
-| `/d` 필수화 | 반영하지 않음 — 설계 판단 참조 |
-| 평가에 미끼 `node.cmd`를 둔다 | 반영하지 않음 — 루트 가림 검사가 요청을 거부하므로 승인 실행까지 가지 않는다. 시험(`codexPermissions.test`)으로 거부를 확인했다 |
-| 실패 실행에서 cmd 꼴이 hook 판정을 어떻게 지났는지 | 확인하지 않음 — 아래 범위 |
+반박 검토(하위 에이전트 3개 — cmd 수용 안·지침 안내 안·기존 결함)의 지적 가운데 현재 폴더 가림(cmd 수용, 이미 받던 `code-agent.cmd` 꼴의 shim `node` 검색, `code-agent`가 부르는 `git`), 공백 문자, 셸 이름 판정과 `SystemRoot` 하위 전체 허용 초안, 공용 규칙 충돌, 자동 거절 기록은 위 문제·변경 범위·설계 판단대로 반영했고, 평가는 수정 뒤 3회 돌렸다(아래). 반영하지 않은 것은 `/d` 필수화(위 설계 판단)와 평가에 미끼 `node.cmd`를 두는 안이다 — 루트 가림 검사가 요청을 거부하므로 승인 실행까지 가지 않고, 시험(`codexPermissions.test`)으로 거부를 확인했다. 실패 실행에서 cmd 꼴이 hook 판정을 어떻게 지났는지는 확인하지 않았다(아래 범위).
 
 ## 검증
 

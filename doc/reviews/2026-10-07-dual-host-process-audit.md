@@ -2,7 +2,7 @@
 
 기준일: 2026-10-07. 기준 커밋: `2c97a43`. 이 감사는 코드를 수정하지 않았다. 현재 동작 지도는 [프로세스 흐름도](../process-flow.md)를 따른다. 원자료는 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)이다. 근거의 줄 인용(이 기록과 원자료)은 `2c97a43` 트리 기준이다 — 그 뒤 지운 기록·evidence(`doc/reviews/2026-10-01~06` 기록 등)는 `git show 2c97a43:<경로>`로 본다.
 
-처리 현황(지적별 상태·보류 항목의 다음 배정)은 [결과 요약](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있다.
+처리 현황(지적별 상태·보류 항목의 다음 배정)은 [결과 요약](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있고, 행별 원자료는 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)의 `disposition`이다.
 
 ## 범위와 방법
 
@@ -57,7 +57,7 @@
 | 상태 손상 시 원인 확인 불가 | HP-2 | `active.json`·`code-agent.json`이 깨지면 Codex는 원인 파일을 읽을 수 없어, 내용을 보지 못한 채 `apply_patch`로 다시 쓰거나 사람에게 넘겨야 한다. 거부 사유도 Claude 도구(Read·Write)를 안내한다 |
 | Stop·SubagentStop 규칙 차이 | CON-11, HP-15 | Codex hook의 차단 해제 규칙이 Claude와 다르다. 질문 대기마다 턴이 강제로 연장되고, `stop_hook_active`가 없으면 반복 차단될 수 있다 |
 | CLI 출력·README가 Claude 문법 | HP-5, FLOW-11, OPT-8, DOC-8, DOC-M3 | `status`·`next`·`doctor`·`--help`가 호스트와 무관하게 `/ca-*`·`AskUserQuestion`을 출력한다. README의 핵심 사용 흐름 절도 Claude 전용으로 쓰여 있다 |
-| 세션 시작 상태 주입 없음 | HP-6, CON-10, HX-6 | Codex에는 SessionStart를 등록하지 않는다. 그런데 2026-10-02 기록은 실제 Codex 세션에서 SessionStart 호출을 관찰했고, Codex 공식 hook 문서도 지원을 명시한다. 그런데도 `doc/codex.md`는 "확인하지 않았다"로 남아 있다. 출력이 실제 컨텍스트로 주입되는지는 미확인이다 |
+| 세션 시작 상태 주입 없음 | HP-6, CON-10, HX-6 | Codex에는 SessionStart를 등록하지 않는다. 그런데 2026-10-02 기록은 실제 Codex 세션에서 SessionStart 호출을 관찰했고, Codex 공식 hook 문서도 지원을 명시한다. 그런데도 `doc/codex.md`는 "확인하지 않았다"로 남아 있다. 출력이 실제 컨텍스트로 주입되는지는 미확인이었다 → 등록은 실제 호스트 반영 `e14dbf9`(H4), 주입은 [결과 요약](2026-10-13-result-summary.md)의 '맥락·상태 빈곳'에서 확인 |
 | 역할 읽기 전용 미설정 | HP-7, HOST-M2 | Codex 역할 TOML에 `sandbox_mode`가 없어 reviewer·critic도 `apply_patch`로 파일을 고칠 수 있다. Codex 계획 담당은 작업 폴더 전체에 쓸 수 있다 |
 | AGENTS.md 한도 | GAP-2 | 블록을 기존 `AGENTS.md` 끝에 붙인다. 40KB짜리 팀 `AGENTS.md`에서는 블록이 Codex 기본 읽기 한도(32KiB) 밖으로 밀리는데, `doctor`는 ✓로 보고한다 |
 | 손으로 관리하는 Codex 동의 절차의 표류 | HP-3, DOC-3, CON-12, OPT-10, FLOW-18, DOC-M2, OPT-M1 | Codex `ca-answer`의 동작 목록에 `repro-log`가 없다. 변환된 `reference.md`는 어디서도 참조하지 않는 고아 파일이고, 과잉 치환된 필드명이 남아 있다 |
@@ -271,171 +271,4 @@ learn 영역의 sandbox 실험이 `code-agent update`(소스 업데이트)를 �
 
 ## 부록: 전체 지적 목록
 
-등급은 검증 후 값이다. 탐색 때와 다르면 괄호에 원래 등급을 적는다. 판정 '확인'은 검증자가 그대로 확인한 것, '부분'은 범위·심각도를 조정한 것이다. '검증자 발견'은 검증자가 추가로 찾은 것, '비평가 확인'은 완결성 비평가가 직접 확인한 것이다. 각 항목의 권고 전문은 증거 JSON의 `recommendation`에 있다.
-
-| ID | 등급 | 판정 | 영역 | 호스트 | 제목 | 위치 |
-|---|---|---|---|---|---|---|
-| DOC-2 | high | 확인 | 문서 | both | 접수→반영 전 과정을 한 장으로 보여 주는 흐름 문서가 없고, 부분 흐름은 4곳에 따로 있다 | `README.md:51-58`<br>`README.md:136-144` 외 4 |
-| FLOW-01 | high | 확인 | 절차 | both | design·plan 단계에서 나온 질문에 답하면 앞 단계 계획 작업이 낡아져 자동 흐름이 멈춤 (스킬 지시와 CLI 거부가 충돌) | `src/agent/planningState.ts:137-153`<br>`src/agent/planning.ts:58-60` 외 7 |
-| HX-1 | high | 확인 | 하네스 | both | 절차(스킬·에이전트) 자체를 학습하는 루프가 없다. 학습은 도메인 KNOWLEDGE 3종에만 있다 | `src/agent/update.ts:83-85`<br>`src/agent/update.ts:120-125` 외 5 |
-| HP-1 | high | 확인 | 호스트 | codex | Codex는 작업·세션 중 코드 검색 수단이 없음 (Claude는 Grep/Glob 사용 가능) | `src/agent/hook.ts:73`<br>`src/agent/hook.ts:404-408` 외 3 |
-| LRN-1 | high | 확인 | 자기학습 | both | 절차 기억(스킬·교훈) 학습 루프 부재 — 헤르메스·하네스의 피드백 루프에 해당하는 장치가 없다 | `doc/reviews/2026-10-06-token-efficiency.md:7`<br>`src/agent/verificationFlow.ts:45-47` 외 7 |
-| PVR-1 | high | 확인 | 검증·리뷰 | both | 교차 검증의 열린 지적이 같은 지점 재실행(또는 실행 실패)으로 지워지고, 인자 오류 같은 설정 결함도 '사용 불가'로 분류돼 게이트가 열린다 | `src/agent/crossCheck.ts:81-87`<br>`src/agent/crossCheck.ts:139-148` 외 7 |
-| PVR-2 | high | 확인 | 검증·리뷰 | both | 같은 리뷰 회차에서 ca-reviewer 를 다시 호출하면 이전 결과(열린 지적)가 흔적 없이 덮여 게이트가 열린다 | `src/agent/reviewHook.ts:50-53`<br>`src/agent/reviewHook.ts:84-91` 외 2 |
-| CON-1 | medium (원 high) | 부분 | 동의·hook | codex | Codex 동의 응답은 사람 입력과 프로그램 입력(codex exec 프롬프트 등)을 구분하지 못하고, 처음 응답한 세션이 그대로 바인딩된다 | `src/agent/codexHook.ts:33-52`<br>`src/agent/consent.ts:385` 외 8 |
-| CON-2 | medium | 확인 | 동의·hook | both | 세션 밖 모드에서는 동의 위조 한 줄과 세션 검사 우회 적용이 hook 을 통과한다 — 적용 함수 자체에는 세션 검사가 없다 | `src/agent/consent.ts:456-509`<br>`src/agent/consent.ts:510-515` 외 5 |
-| CON-3 | medium | 확인 | 동의·hook | both | 문서 세션의 쓰기 범위를 모델이 code-agent.json 의 문서 경로로 스스로 넓힐 수 있다 | `src/agent/hook.ts:352-364`<br>`src/agent/docs.ts:47-61` 외 2 |
-| CON-4 | medium | 확인 | 동의·hook | both | 승인 해시는 매니페스트 경계·명령을 묶지만 사람이 보는 확인 화면에는 그 내용이 없다 (stale-manifest 재승인에도 diff 없음) | `src/agent/commands.ts:1331-1337`<br>`src/core/approval.ts:182-211` 외 4 |
-| CON-5 | medium | 확인 | 동의·hook | codex | Codex 동의는 사람이 본 요약과 승인 대상이 결속되지 않는다 (요약을 모델이 옮겨 적는다) | `template/codex/ca-answer.md:19-20`<br>`src/agent/codexHook.ts:33-52` 외 2 |
-| CON-6 | medium | 확인 | 동의·hook | both | 일반 업무 질문의 답([Answer])은 관찰되지 않는다 — 진행 게이트가 모델이 쓴 답으로 열린다 | `src/agent/consent.ts:365-366`<br>`src/agent/questions.ts:33-67` 외 2 |
-| CON-8 | medium | 확인 | 동의·hook | claude | Grep 의 glob 인자로 키 저장소(~/.code-agent/credentials.json) 내용을 읽을 수 있다 | `src/agent/hook.ts:205-207`<br>`src/agent/hook.ts:47` 외 1 |
-| GAP-1 | medium | 비평가 확인 | 비평 | both | 영향도·설계 단계의 '관련 후보 파일 순위'가 소스 파일 3,000개에서 조용히 잘리고, 역순 깊이 우선 순회 탓에 src/test가 src/main보다 먼저 채워진다 | `src/agent/plugins/defaults.ts:99`<br>`src/agent/plugins/protocol.ts:21` 외 5 |
-| GAP-2 | medium | 비평가 확인 | 비평 | codex | Codex 지침 블록을 AGENTS.md 끝에 덧붙인다. 기존 AGENTS.md가 크면 블록이 Codex 기본 읽기 한도(32KiB) 밖으로 밀리는데, doctor는 ✓로 보고한다 | `src/agent/init.ts:28-41`<br>`src/agent/init.ts:190` 외 2 |
-| GAP-3 | medium | 비평가 확인 | 비평 | both | 두 호스트의 자체 기억 기능(Claude 자동 메모리, Codex memories)이 code-agent 절차 밖의 학습 통로로 방치돼 있다. 세션 중에는 hook이 '저장소 밖'으로 거부하고, 세션 밖에서는 검토 없이 쌓인다 | `src/agent/hook.ts:264-272`<br>`src/agent/hook.ts:213-216` 외 5 |
-| DOC-1 | medium (원 high) | 부분 | 문서 | both | code-agent 저장소 자체에는 개발 에이전트 지침(CLAUDE.md·AGENTS.md·.claude/)이 없다 | `.gitignore:1-5`<br>`README.md:265-277` 외 1 |
-| DOC-3 | medium | 확인 | 문서 | both | consent action `repro-log`가 action 목록 사본 3곳에서 빠졌다. Codex ca-answer에는 아예 언급이 없다 | `src/agent/consent.ts:29`<br>`template/claude/skills/ca-answer/reference.md:18` 외 4 |
-| DOC-4 | medium | 확인 | 문서 | claude | Claude hook 수·등록표가 문서마다 다르다. usage.md는 8개(이벤트 5종)로 적고, init 표에서 5개가 빠졌으며 matcher에 PowerShell이 없다 | `doc/usage.md:12`<br>`doc/usage.md:82-90` 외 3 |
-| DOC-6 | medium | 확인 | 문서 | both | 영향도·설계 담당 에이전트 서술이 코드와 다르다. usage.md 안에서도 design 담당이 writer와 analyst로 엇갈리고, 소규모 통합 impact는 빠졌다 | `doc/usage.md:210-211`<br>`doc/usage.md:471` 외 6 |
-| DOC-10 | medium | 확인 | 문서 | both | 같은 사실이 문서와 코드에 여러 번 기재된다. 커밋마다 현행 문서 4~8개를 손으로 고치고 있고, 코드도 hook 표를 5곳에 중복한다 | `README.md:63-68`<br>`doc/install.md:37` 외 9 |
-| DOC-11 | medium | 확인 | 문서 | both | 문서-코드 대조 테스트가 없어 드리프트가 기계적으로 잡히지 않는다 | `src/test/docs.test.ts:1-20`<br>`src/test/p8.test.ts:143` 외 3 |
-| FLOW-02 | medium | 확인 | 절차 | both | deliver 단계에서 계획 파일을 고치면 되돌아갈 길이 없음 (abort 외 막다른 상태) | `src/agent/hook.ts:492-540`<br>`src/agent/commands.ts:633` 외 5 |
-| FLOW-03 | medium | 확인 | 절차 | both | 작업 도중 요구사항 재확정 등으로 승인이 무효(stale-*)가 되면 재진입 경로를 CLI와 스킬 어디에서도 안내하지 않음 | `src/agent/commands.ts:393-423`<br>`src/agent/commands.ts:1317` 외 5 |
-| FLOW-04 | medium | 확인 | 절차 | both | 배정 직후 세션이 끊기면 planning advance가 영구히 'wait'를 반환하고, 스킬은 기다리라고만 지시함 | `src/agent/planning.ts:236`<br>`src/agent/planning.ts:250` 외 2 |
-| FLOW-05 | medium | 확인 | 절차 | both | 테스트가 TC와 연결되지 않은 채 처음 돌면 테스트 파일이 동결돼 test 단계에서 고칠 길이 없음 | `src/agent/hook.ts:602-614`<br>`src/agent/review.ts:332-336` 외 4 |
-| FLOW-07 | medium | 확인 | 절차 | both | start가 작업 트리의 기존 미커밋·미추적 변경을 검사하지 않아, 계획 승인 이후에야 '계획 밖 변경'으로 막힘 | `src/agent/commands.ts:316-343`<br>`src/agent/git.ts:27-40` 외 4 |
-| FLOW-08 | medium | 확인 | 절차 | both | 다중 대상(target) 지시서를 대상별로 이어서 진행하면 같은 브랜치·작업 폴더를 공유해 두 번째 대상이 막힐 가능성 | `src/agent/commands.ts:318`<br>`src/agent/commands.ts:333-336` 외 3 |
-| FLOW-11 | medium | 확인 | 절차 | codex | CLI 출력의 다음 단계 안내가 Claude 문법(/ca-*, AskUserQuestion, ca-tester, 'Claude 세션')으로 고정돼 Codex 안내와 어긋남 | `src/agent/commands.ts:111-127`<br>`src/agent/commands.ts:190` 외 5 |
-| FLOW-14 | medium | 확인 | 절차 | both | 질문 해시가 계획 작업 전체로 퍼져 재실행 비용이 커짐 (범위 없는 질문은 모든 작업을 무효화) | `src/agent/planningState.ts:147-152`<br>`src/agent/planning.ts:68` 외 2 |
-| FLOW-15 | medium | 확인 | 절차 | both | 흐름도 단일 정본과 템플릿·CLI·hook 정합 자동 검사가 없음 (변경마다 분석 비용과 drift 발생) | `doc/design.md:209-247`<br>`doc/usage.md:108-182` 외 6 |
-| HAR-M1 | medium | 검증자 발견 | 하네스 | codex | Codex를 메인 호스트로 쓰는 전체 개발 흐름(설계→구현→검증→반영)을 실제 모델로 돌려 보는 평가 하네스와 비용 집계가 없다 | `scripts/evaluate-full-flow.cjs:4`<br>`scripts/evaluate-full-flow.cjs:105` 외 4 |
-| HX-2 | medium (원 high) | 부분 | 하네스 | both | code-agent 저장소에 에이전트가 먼저 읽을 지도가 없다(루트 AGENTS.md/CLAUDE.md, 한 장짜리 흐름도 모두 없음) | `README.md:17-19`<br>`doc/design.md:7` 외 3 |
-| HX-3 | medium | 확인 | 하네스 | none | 문서와 코드가 이미 어긋났지만 이를 잡는 기계적 검증이나 doc-gardening이 없다 | `doc/design.md:3`<br>`doc/usage.md:12` 외 5 |
-| HX-4 | medium | 확인 | 하네스 | both | 대상 프로젝트의 흐름·구조 지식이 작업이 끝나도 쌓이지 않는다(KNOWLEDGE에 흐름 종류가 없고, architecture 갱신·낡은 항목 탐지가 약하다) | `src/agent/schemas.ts:10-14`<br>`doc/design.md:76` 외 4 |
-| HX-5 | medium | 확인 | 하네스 | both | 작업 크기와 상관없이 항상 같은 무거운 경로를 탄다(작은 변경용 경량 경로가 없다) | `doc/usage.md:133`<br>`doc/reviews/2026-10-06-token-efficiency.md:42` 외 2 |
-| HX-6 | medium | 확인 | 하네스 | codex | Codex 호스트에는 세션 시작·압축 뒤 진행 상태를 주입하는 SessionStart hook이 없다 | `src/agent/init.ts:187-189`<br>`src/agent/codexHook.ts:85-96` 외 2 |
-| HX-7 | medium | 확인 | 하네스 | both | 버전이 1.0.0에 고정돼 있어 설치본의 절차 개정 이력을 추적할 수 없다. update는 상류 템플릿 변경을 '손으로 고친 파일'로 잘못 알린다 | `package.json:3`<br>`src/agent/update.ts:83-85` 외 3 |
-| HP-2 | medium | 확인 | 호스트 | codex | 상태 파일을 읽지 못하면 Codex는 원인 파일을 읽을 수도 없고, 거부 사유는 Claude 도구를 안내함 | `src/agent/hook.ts:230-244`<br>`src/agent/codexHook.ts:82` |
-| HP-5 | medium | 확인 | 호스트 | codex | CLI 출력이 호스트와 무관하게 Claude 문법(/ca-*, AskUserQuestion)을 씀 | `src/agent/commands.ts:126`<br>`src/agent/commands.ts:165` 외 5 |
-| HP-6 | medium | 확인 | 호스트 | codex | Codex에는 SessionStart(진행 상태 앵커) 훅을 등록하지 않음 — 지원 증거가 있는데 문서는 '미확인'이라고 함 | `src/agent/init.ts:187`<br>`doc/codex.md:80` 외 2 |
-| HP-7 | medium | 확인 | 호스트 | codex | Codex 역할 TOML에 읽기 전용 제한이 없고 설명은 변환되지 않음 | `src/agent/hosts.ts:94-101`<br>`template/claude/agents/ca-reviewer.md:4` 외 1 |
-| HP-8 | medium | 부분 | 호스트 | both | Codex 세션에서 실행한 교차 검증(--by claude)이 Codex 샌드박스에 막혀 '실행 불가'로 조용히 건너뛰어질 위험 | `src/agent/crossCheck.ts:81-83`<br>`template/claude/skills/ca-review/SKILL.md:28` 외 1 |
-| HP-9 | medium | 확인 | 호스트 | both | '실행 불가' 분류가 지나치게 넓어 설정 오류도 게이트 통과로 이어짐 | `src/agent/crossCheck.ts:82-90`<br>`src/agent/review.ts:413-416` 외 2 |
-| HP-21 | medium | 확인 | 호스트 | codex | Codex 실제 호스트 검증이 분석·영향도까지만 이뤄짐 | `doc/reviews/2026-10-06-token-efficiency.md:48-50`<br>`src/test/codex.test.ts:221-226` 외 1 |
-| LRN-2 | medium | 확인 | 자기학습 | both | 관찰된 계획 흐름의 analysis 배정에 business-rules.md 가 없다 — '이미 답한 업무 규칙을 다시 묻지 않는다' 재사용 경로가 끊김 | `src/agent/planning.ts:84`<br>`src/agent/planning.ts:186` 외 5 |
-| LRN-5 | medium | 확인 | 자기학습 | both | 직접 CLI `code-agent update`(소스 업데이트)가 확인 없이 fetch·pull·npm ci·build 를 실행하고, 작업 밖에서는 모델 Bash 도 hook 이 허용한다 | `src/agent/cli.ts:216-218`<br>`src/agent/sourceUpdate.ts:210-246` 외 2 |
-| OPT-1 | medium (원 high) | 부분 | 최적화 | both | 메인 왕복 수가 비용의 최대 요인인데, 단계 경계에 줄일 수 있는 왕복이 남아 있다 | `doc/reviews/evidence/token-efficiency-2026-10-06.json (claudeRuns.optimizedV3.main)`<br>`src/agent/commands.ts:525-528` 외 8 |
-| OPT-2 | medium | 확인 | 최적화 | both | consent prepare·status 출력이 summary를 4번 싣고 두 호스트 형식을 모두 내보낸다 | `src/agent/consent.ts:324`<br>`src/agent/consent.ts:327-335` 외 2 |
-| OPT-5 | medium | 확인 | 최적화 | both | 게이트의 결정적 문서 검사가 next에서만 돌아, 형식 오류가 서브에이전트 전체 재배정으로 이어진다 | `src/agent/commands.ts:524`<br>`src/agent/commands.ts:538-546` 외 3 |
-| OPT-6 | medium | 확인 | 최적화 | both | 측정이 토큰 합계만 남겨 왕복·재시도 병목을 증거로 볼 수 없다 | `src/agent/usage.ts:37-50`<br>`src/agent/usage.ts:320` 외 2 |
-| OPT-8 | medium | 확인 | 최적화 | codex | CLI 출력이 Claude 전용 표기(/ca-*, AskUserQuestion, Bash:)로 Codex에도 그대로 나간다 | `src/agent/commands.ts:111-128`<br>`src/agent/commands.ts:362-425` 외 5 |
-| OPT-9 | medium | 부분 | 최적화 | codex | 정규식 기반 Codex 템플릿 변환이 깨지기 쉽고, 이미 잔재와 어색한 문장이 있다 | `src/agent/hosts.ts:64-82`<br>`src/test/codex.test.ts:51-54` 외 3 |
-| OPT-12 | medium | 확인 | 최적화 | claude | 역할별 모델이 전부 opus로 고정되고 추론 강도가 지정되지 않는다(Codex와 비대칭) | `src/agent/models.ts:24-28`<br>`template/claude/agents/ca-implementer.md:5` 외 4 |
-| OPT-17 | medium | 부분 | 최적화 | both | 코드에서 검증되는 전체 프로세스 흐름도 문서가 없다 | `doc/design.md (879줄, 140,055바이트)`<br>`doc/usage.md (1,207줄, 131,627바이트)` 외 5 |
-| PVR-3 | medium | 확인 | 검증·리뷰 | both | 고쳐 쓰기 한도가 진입점마다 다르다 — verify 는 통과한 회차도 한도로 세어 막고, check 직접 호출은 통과 중이면 무제한(리뷰→수정 루프 상한 없음) | `src/agent/verificationFlow.ts:315-322`<br>`src/agent/evidence.ts:420-427` 외 5 |
-| PVR-4 | medium | 확인 | 검증·리뷰 | both | 환경 오류 분류가 전체 로그의 부분 문자열 일치라 실제 TC 실패가 '환경 오류' 로 바뀌고, 같은 코드 재실행은 회차를 쓰지 않아 무제한 반복된다 | `src/agent/validate.ts:173-178`<br>`src/agent/evidence.ts:404-408` 외 3 |
-| PVR-5 | medium | 부분 | 검증·리뷰 | both | 계획 담당 결과가 배정과 맞지 않으면 attempt 가 영구히 running 으로 남고 planning advance 는 계속 wait 만 반환한다 | `src/agent/planningHook.ts:136-137`<br>`src/agent/reviewHook.ts:31-33` 외 4 |
-| PVR-6 | medium | 확인 | 검증·리뷰 | both | 리뷰 지적에 대한 사람 판단(기각·범위 밖 확인)을 기록할 코드 경로가 없고, 안내된 '그 줄을 지우고 새 회차' 탈출구는 동작하지 않는다 | `src/agent/review.ts:447-453`<br>`src/agent/review.ts:253-258` 외 4 |
-| PVR-7 | medium | 확인 | 검증·리뷰 | both | deliver 의 `git add -f` 가 .gitignore 로 뺀 handoff 사본과 실패 배정의 staging 초안까지 반영 커밋에 넣는다 | `src/agent/deliver.ts:314-329`<br>`src/agent/deliver.ts:348` 외 3 |
-| PVR-8 | medium | 확인 | 검증·리뷰 | both | 통합 검증·격리 재현이 중단되면 임시 worktree 가 등록·디렉터리째 남고, ca-integrate 스킬에는 장시간 실행 안내가 없다 | `src/agent/validate.ts:555-582`<br>`src/agent/validate.ts:588-605` 외 2 |
-| PVR-9 | medium | 확인 | 검증·리뷰 | both | 첫 test 실행이 결과 미확인(TC id 미출력)이어도 테스트 파일을 얼려, TC 이름 수정조차 재계획 없이는 불가능한 교착이 생긴다 | `src/agent/hook.ts:587-615`<br>`src/agent/review.ts:332-336` 외 2 |
-| VER-M1 | medium | 검증자 발견 | 검증·리뷰 | both | review cross 가 실행 시작 때 읽은 review.json 스냅샷을 몇 분 뒤 그대로 저장해, 그 사이 기록된 독립 리뷰어 결과와 동결 해제 기록(used)을 지운다 | `src/agent/crossCheck.ts:120-121`<br>`src/agent/crossCheck.ts:140` 외 5 |
-| VER-M2 | medium | 검증자 발견 | 검증·리뷰 | codex | Codex 메인에서 `review/planning cross --by claude` 가 샌드박스(자식 프로세스·네트워크·홈 쓰기 제한) 때문에 실패하면 '중지' 로 분류돼, Codex 쪽 교차 검증이 조용히 꺼질 수 있다 | `src/agent/crossCheck.ts:62-63`<br>`src/agent/crossCheck.ts:82-83` 외 2 |
-| CON-7 | low | 확인 | 동의·hook | both | 계획 담당 결과의 질문 본문에 전각 공백 + '[Answer]:' 를 넣으면 스키마 검사를 지나 질문이 '답변됨'으로 파싱된다 | `src/agent/planningState.ts:36`<br>`src/agent/questions.ts:39` 외 1 |
-| CON-9 | low (원 medium) | 부분 | 동의·hook | both | Windows 경로 별칭(끝 점·공백, UNC 관리 공유)을 hook 이 같은 파일로 보지 못한다 | `src/agent/hook.ts:289-293`<br>`src/agent/hook.ts:324-327` 외 4 |
-| CON-10 | low | 확인 | 동의·hook | codex | Codex 에 SessionStart hook 이 없다 — 지원 증거가 있는데도 '확인하지 않았다'로 남아 있다 | `src/agent/init.ts:187`<br>`doc/codex.md:80` 외 3 |
-| CON-11 | low | 부분 | 동의·hook | codex | Codex Stop·SubagentStop 의 차단 해제 규칙이 Claude 와 다르다 — 질문 대기마다 강제 연장 턴, stop_hook_active 부재 시 반복 차단 가능 | `src/agent/codexHook.ts:91-93`<br>`src/agent/stopHook.ts:22-54` 외 5 |
-| CON-12 | low | 확인 | 동의·hook | codex | Codex 로 변환된 스킬에 Claude 전용 동의 지시('toolInput 전체를 그대로 호출')가 남고, Codex 동작 목록에 repro-log 가 빠졌다 | `src/agent/hosts.ts:64-82`<br>`template/claude/skills/ca-integrate/SKILL.md:36` 외 3 |
-| CON-13 | low | 부분 | 동의·hook | both | 판정 대상 도구가 이름 목록이라 새·다른 이름의 쓰기 도구와 hook 프로세스 실패는 통과(fail-open)된다 | `src/agent/init.ts:19`<br>`src/agent/codexHook.ts:55` 외 3 |
-| CON-14 | low | 확인 | 동의·hook | both | 제어 경로(.claude·doc 등) 아래 심볼릭 링크·접합점 하나가 모든 동의 준비를 막는다 | `src/agent/consent.ts:87-100`<br>`src/agent/consent.ts:171-183` 외 1 |
-| CON-15 | low | 부분 | 동의·hook | both | 동의 1건에 저장소 전체 내용 해시가 약 7회 반복된다 — 대형 저장소에서 hook 타임아웃 위험 | `src/agent/consent.ts:163-220`<br>`src/agent/consent.ts:342-344` 외 5 |
-| CON-16 | low | 확인 | 동의·hook | both | 관찰된 동의 응답은 커밋되지 않고, 원장 사슬은 끝줄 삭제를 드러내지 못한다(주석보다 약함) | `src/agent/init.ts:191-192`<br>`src/core/approval.ts:109-115` 외 2 |
-| CON-17 | low | 확인 | 동의·hook | both | 세션 밖 Bash 는 호스트 설정(.claude·.codex·.agents)을 보호하지 않는다 — Write 판정과 비대칭 | `src/agent/hook.ts:255-260`<br>`src/agent/hook.ts:281-283` 외 1 |
-| CONS-M1 | low | 검증자 발견 | 동의·hook | both | KNOWLEDGE 문서 경로를 임의 소스 파일로 지정하면 그 파일의 변경이 계획 밖 변경 탐지(Stop·check·next)에서 빠진다 | `src/agent/evidence.ts:298-311`<br>`src/agent/knowledge.ts:174-176` 외 3 |
-| GAP-4 | low | 비평가 확인 | 비평 | both | 품질 평가 스크립트가 출하 구성과 다른 모델로 Claude만 측정하고, 날짜 고정 파일명이라 과거 증거를 덮어쓴다 | `scripts/evaluate-review.cjs:7-9`<br>`scripts/evaluate-review.cjs:18` 외 5 |
-| GAP-5 | low | 비평가 확인 | 비평 | both | 테스트·증거가 Windows 한 대에서만 돌고 CI가 없다. POSIX 전용 경로는 기록된 어떤 회귀에서도 실행된 적이 없다 | `package.json:16`<br>`doc/reviews/README.md:23` 외 7 |
-| DOC-5 | low (원 medium) | 부분 | 문서 | both | 스테이지 번호 체계가 세 가지로 충돌한다(CLI --help 8/9/11/12/13, design 7~11, usage 1~13). usage.md는 'CLI가 7~11을 찍는다'고 잘못 쓴다 | `src/agent/cli.ts:70`<br>`src/agent/cli.ts:76` 외 8 |
-| DOC-7 | low | 확인 | 문서 | both | 명령 참조표가 CLI와 어긋난다. --host와 verify/read/planning/cross 명령이 표에서 빠지고, --help에는 실제 플래그가 일부 없다 | `doc/usage.md:567-569`<br>`doc/usage.md:689-720` 외 5 |
-| DOC-8 | low | 확인 | 문서 | codex | CLI --help가 Claude 전용으로 서술돼 Codex 메인에게 잘못된 확인 경로를 안내한다 | `src/agent/cli.ts:49`<br>`src/agent/cli.ts:55` 외 3 |
-| DOC-9 | low | 확인 | 문서 | claude | install.md의 수치·예시 출력이 낡았다(자원 29개→실제 41개, gitignore에 consents/ 누락, update 예시에 hook 4종만 표시) | `doc/install.md:37`<br>`doc/install.md:70` 외 4 |
-| DOC-12 | low | 확인 | 문서 | both | 현행 동작 문서에 변경 이력이 섞이고, 새 절이 목차 밖에 덧붙여지고 있다 | `README.md:17-19`<br>`README.md:21-31` 외 8 |
-| DOC-13 | low (원 medium) | 부분 | 문서 | both | 흐름 생성의 원천이 될 상수가 export되지 않았거나 상수가 아닌 인라인 호출이다 | `src/agent/consent.ts:28-29`<br>`src/agent/commands.ts:94-121` 외 5 |
-| DOC-14 | low | 확인 | 문서 | codex | Codex init 메시지에 스킬·에이전트 수가 하드코딩돼 있고 커밋 안내가 없다 | `src/agent/init.ts:196`<br>`src/agent/init.ts:218` 외 1 |
-| DOC-M1 | low | 검증자 발견 | 문서 | both | usage.md 안의 '로그 근거' 링크가 존재하지 않는 제목 앵커를 가리킨다(2c97a43에서 추가) | `doc/usage.md:826`<br>`doc/usage.md:508` |
-| DOC-M2 | low | 검증자 발견 | 문서 | codex | Codex 설치물의 ca-answer/reference.md는 설치되지만 어떤 Codex 지침도 참조하지 않는 고아 자원이다 | `src/agent/hosts.ts:89`<br>`template/codex/ca-answer.md:16` 외 1 |
-| DOC-M3 | low | 검증자 발견 | 문서 | codex | README의 핵심 사용 흐름 절이 Claude 전용으로 쓰여 Codex 사용자 경로와 어긋난다 | `README.md:122`<br>`README.md:134` 외 3 |
-| FLOW-06 | low (원 medium) | 부분 | 절차 | both | 고쳐 쓰기 한도는 '실패한 채 넘긴' 회차만 막아서, 통과 상태의 리뷰 수정 루프에는 상한이 없음 (문서와 불일치) | `src/agent/evidence.ts:420-427`<br>`src/agent/validate.ts:494-503` 외 4 |
-| FLOW-09 | low (원 medium) | 부분 | 절차 | both | 준비 단계 '다음:' 안내가 기준 커밋 유무를 보지 않고 docs 동의를 안내해, 스킬이 정한 setup 동의(한 번에 묶기)와 어긋남 | `src/agent/request.ts:603-612`<br>`src/agent/commands.ts:173-181` 외 3 |
-| FLOW-10 | low | 확인 | 절차 | both | 스킬이 시키는 code-agent doctor를 작업·접수 중에 hook이 거부함 | `src/agent/hook.ts:89-114`<br>`src/agent/hook.ts:116-129` 외 2 |
-| FLOW-12 | low | 확인 | 절차 | both | 관찰 흐름 작업에서 '다음:'이 메인에게 plan.json을 직접 쓰라고 안내하지만 hook이 거부함. check·test 안내도 스킬의 verify와 다름 | `src/agent/commands.ts:376-379`<br>`src/agent/hook.ts:474` 외 2 |
-| FLOW-13 | low | 부분 | 절차 | both | ca-next 재개표에 처리 주체가 없는 상태가 있음 (작업·접수 없음, 접수 없이 열린 문서 세션, AI-DLC 차단 등) | `template/claude/skills/ca-next/SKILL.md:14-31`<br>`src/agent/commands.ts:444-449` 외 1 |
-| FLOW-16 | low | 확인 | 절차 | both | '한 번에 하나' 제약은 저장소 단위 커서로만 강제되고, 호스트·세션 간 동시 진행 금지는 문서에만 있음 | `src/agent/commands.ts:297-303`<br>`src/agent/request.ts:453-466` 외 2 |
-| FLOW-17 | low | 확인 | 절차 | none | approve/reject가 여분 인자를 무시해 'code-agent approve request &lt;ID>'가 계획 승인으로 동작 | `src/agent/cli.ts:274-284`<br>`src/agent/cli.ts:336-348` |
-| FLOW-18 | low | 부분 | 절차 | both | 동의 동작 목록 문서가 ActionSchema와 다름 (repro-log·host·reasoning 누락) | `src/agent/consent.ts:28-36`<br>`template/claude/skills/ca-answer/reference.md:18` 외 1 |
-| FLOW-M1 | low | 검증자 발견 | 절차 | both | 계획 기록 잠금(.planning.json.lock)에 비정상 종료 복구가 없어, 남은 잠금 하나로 모든 planning 명령이 막히고 모델은 풀 수 없음 | `src/agent/planning.ts:38-56`<br>`src/agent/consent.ts:125-147` 외 1 |
-| HX-8 | low | 확인 | 하네스 | both | 작업 시작 전 기준선 상태 확인과 Task별 증분 빌드가 없다. 첫 빌드는 모든 Task가 끝난 뒤에 돈다 | `src/agent/commands.ts:559-596`<br>`template/claude/skills/ca-implement/SKILL.md:19-28` 외 2 |
-| HX-9 | low | 부분 | 하네스 | claude | Claude 역할 모델이 업무 성격과 무관하게 전부 opus이고, 선택 근거가 역할별로 기록돼 있지 않다 | `template/claude/agents/ca-surveyor.md:5`<br>`template/claude/agents/ca-writer.md:5` 외 3 |
-| HX-10 | low | 확인 | 하네스 | both | 과거 작업 기록을 검색하는 기능과 작업을 넘어 쌓이는 후속 과제 목록이 없다 | `template/claude/agents/ca-explorer.md:12-17`<br>`src/agent/planning.ts:226` 외 1 |
-| HX-11 | low | 부분 | 하네스 | both | KNOWLEDGE에 용량 상한과 통합 절차가 없어 계속 커지고, 그만큼 서브에이전트 입력도 커진다 | `doc/design.md:117`<br>`src/agent/knowledge.ts:10-20` 외 2 |
-| HX-12 | low | 확인 | 하네스 | codex | Codex 변환이 문장 그대로 일치할 때만 치환하는데, 이를 지키는 테스트가 없다 | `src/agent/hosts.ts:78-80`<br>`src/test/codex.test.ts:51-54` 외 2 |
-| HX-13 | low | 부분 | 하네스 | both | 스킬 description에 언제 써야 하는지와 쓰지 말아야 하는 경계가 없고, 호출 조건 검증도 없다 | `template/claude/skills/ca-analyze/SKILL.md:3`<br>`template/claude/skills/ca-request/SKILL.md:3` 외 1 |
-| HOST-M1 | low | 검증자 발견 | 호스트 | both | 교차 검증이 '다른 호스트'인지 확인하지 않아 같은 호스트의 결과도 교차 검증으로 기록됨 | `src/agent/crossCheck.ts:30-33`<br>`src/agent/crossCheck.ts:116-118` 외 3 |
-| HOST-M2 | low | 검증자 발견 | 호스트 | codex | Codex 계획 담당은 작업 폴더 전체를 쓸 수 있음 (Claude 담당은 staging 만 씀) | `src/agent/hook.ts:428-436`<br>`src/agent/hook.ts:473-476` 외 2 |
-| HP-3 | low (원 medium) | 부분 | 호스트 | codex | Codex ca-answer 보조 문서의 과잉 치환과 동작 목록 표류(drift) | `src/agent/hosts.ts:66`<br>`template/claude/skills/ca-answer/reference.md:24` 외 3 |
-| HP-4 | low (원 medium) | 부분 | 호스트 | codex | codexText 고정 문장 치환이 조용히 무치환으로 바뀌는 것을 막는 테스트가 없음 | `src/agent/hosts.ts:78-80`<br>`src/agent/hosts.ts:100` 외 2 |
-| HP-10 | low (원 medium) | 부분 | 호스트 | both | 교차 실행 시간 제한(기본 20분)이 Claude Bash 최대 10분과 어긋남 | `src/agent/crossCheck.ts:54-57`<br>`src/agent/crossCheck.ts:81` 외 2 |
-| HP-11 | low (원 medium) | 부분 | 호스트 | both | 두 호스트·두 세션의 동시 사용을 막는 장치가 없고, 리뷰 기록은 잠금 없이 덮어씀 | `doc/codex.md:55`<br>`doc/design.md:50` 외 3 |
-| HP-12 | low | 확인 | 호스트 | both | 교차 실행 자식이 프로젝트 훅(Stop 등)을 그대로 실행함 | `src/agent/crossCheck.ts:70-71`<br>`src/agent/layout.ts:43` 외 1 |
-| HP-13 | low | 확인 | 호스트 | both | 교차 리뷰 프롬프트(X id)와 리뷰어 역할 지침(F id)이 충돌하고, 형식이 틀리면 전체를 재실행함 | `src/agent/crossCheck.ts:133-134`<br>`src/agent/crossCheck.ts:153-158` 외 1 |
-| HP-14 | low | 확인 | 호스트 | both | hostCommand의 Windows 경로 해석이 npm 기본 prefix(%APPDATA%\npm)에만 의존 | `src/agent/hosts.ts:29-45`<br>`src/agent/doctor.ts:74-93` |
-| HP-15 | low | 부분 | 호스트 | codex | Codex 하위 에이전트 완료 훅의 실패 처리가 Claude 경로와 다름 | `src/agent/codexHook.ts:110-121`<br>`src/agent/reviewHook.ts:190-192` |
-| HP-17 | low | 확인 | 호스트 | codex | code-agent read의 JSON 출력이 Codex 읽기 토큰을 2배 이상으로 늘림 | `src/agent/read.ts:20-22` |
-| HP-18 | low | 확인 | 호스트 | codex | Codex 단독 설치의 doctor·update에는 버전 차이·잔존 ca-* 검사가 없음 | `src/agent/doctor.ts:169-243`<br>`src/agent/assets.ts:136-169` 외 2 |
-| HP-19 | low | 부분 | 호스트 | codex | 상시 지침 블록(CLAUDE.block과 CODEX.block)의 내용 표류 | `template/CLAUDE.block.md:5-10`<br>`template/CODEX.block.md:1-11` |
-| HP-20 | low | 확인 | 호스트 | both | 교차 검증이 '설치된 호스트 수'에 묶여 끌 수 없고, 비용은 기록되지 않음 | `src/agent/review.ts:167-169`<br>`src/agent/planningState.ts:183` 외 3 |
-| LEARN-M1 | low | 검증자 발견 | 자기학습 | both | KNOWLEDGE 문서가 256KB를 넘으면 그 뒤 항목이 context.docs 검색에서 조용히 사라진다 — 새 키는 끝에 붙으므로 가장 최근 지식부터 안 보인다 | `src/agent/plugins/defaults.ts:21`<br>`src/agent/plugins/defaults.ts:74-87` 외 3 |
-| LRN-3 | low (원 medium) | 부분 | 자기학습 | both | KNOWLEDGE 같은 키 upsert 가 항목 전체를 교체 — 부분(차이만) 제안을 고르면 기존 필드가 지워진다 | `src/agent/knowledge.ts:119-127`<br>`src/agent/deliver.ts:248-259` 외 4 |
-| LRN-4 | low (원 medium) | 부분 | 자기학습 | both | update 가 프로젝트 국소 스킬 개선을 덮어쓰고, 배정은 설치본이 아니라 번들 criteria 를 읽어 국소 개선이 애초에 반영되지 않는다 | `src/agent/update.ts:52-60`<br>`src/agent/update.ts:83-85` 외 4 |
-| LRN-6 | low (원 medium) | 부분 | 자기학습 | both | '업무 규칙은 질문의 답으로 쌓인다'는 문서 주장과 달리 답→제안 경로·nudge 가 코드에 없다 | `doc/usage.md:278`<br>`template/claude/skills/ca-docs/SKILL.md:23` 외 5 |
-| LRN-8 | low (원 medium) | 부분 | 자기학습 | both | [설계] 교훈 수집 — 언제: 코드가 실패·재시도·교정 신호에서 후보를 결정론적으로 만든다 | `src/agent/verificationFlow.ts:157-177`<br>`src/agent/evidence.ts:40-56` 외 5 |
-| LRN-9 | low (원 medium) | 부분 | 자기학습 | both | [설계] 교훈·지식 게이트 — 같은 동의, 증거 실존 검사, 상한·린트·중복 키 (현재 KNOWLEDGE 도 상한·린트 없음) | `src/agent/knowledge.ts:55-101`<br>`src/agent/consent.ts:270-281` 외 2 |
-| LRN-12 | low (원 medium) | 부분 | 자기학습 | both | [설계] 과거 작업 검색 — LLM 없는 결정론적 recall (헤르메스 FTS5 대응) | `src/agent/planningState.ts:106-110`<br>`src/agent/survey.ts:126-128` 외 3 |
-| LRN-13 | low (원 medium) | 부분 | 자기학습 | both | [설계] 효과 측정 — 커밋된 작업 기록에서 재시도·재발률을 집계 (Codex 포함) | `src/agent/usage.ts:319-338`<br>`src/agent/review.ts:97-106` 외 2 |
-| LRN-14 | low | 확인 | 자기학습 | both | [설계] 사용자 교정·선호 기억 — '수정 요청' 사유가 어디에도 구조적으로 남지 않는다 | `src/agent/consent.ts:57-61`<br>`src/agent/consent.ts:404-411` 외 3 |
-| LRN-15 | low | 부분 | 자기학습 | both | KNOWLEDGE 'R 번호 근거'가 작업 식별이 아니고 출처(작업 ID)가 항목에 기록되지 않는다 | `src/agent/knowledge.ts:67-74`<br>`src/agent/knowledgeCommands.ts:29-69` 외 1 |
-| LRN-16 | low | 확인 | 자기학습 | both | 근거 부족으로 걸러진 KNOWLEDGE 제안 사유가 stderr 로만 나가 동의 요약·반영 결과에 없다 | `src/agent/deliver.ts:243-246`<br>`src/agent/consent.ts:276-280` 외 1 |
-| LRN-17 | low | 확인 | 자기학습 | both | knowledge prune 결과는 커밋되지 않아, 다음 deliver 가 같은 파일 항목을 고르면 무관한 작업 커밋에 삭제가 섞인다 | `src/agent/knowledgeCommands.ts:240-253`<br>`src/agent/deliver.ts:262-275` 외 2 |
-| LRN-18 | low | 확인 | 자기학습 | both | 같은 제안 파일 안의 중복 키를 거르지 않아 두 번째가 첫 선택을 조용히 덮는다 | `src/agent/knowledge.ts:55-101`<br>`src/agent/deliver.ts:248-259` 외 1 |
-| OPT-3 | low (원 medium) | 부분 | 최적화 | claude | ca-answer(7,128자)를 질문·동의 '직전마다' 다시 읽게 하는데, 평가는 이 비용을 재지 않았다 | `template/claude/skills/ca-analyze/SKILL.md:6 (17개 스킬 공통 문단)`<br>`template/CLAUDE.block.md:6` 외 2 |
-| OPT-4 | low (원 medium) | 확인 | 최적화 | both | 측정 뒤 지침이 다시 늘었지만 크기 예산을 지키는 장치가 없다 | `doc/reviews/2026-10-06-token-efficiency.md (flowTotal 38,882)`<br>`template/claude/skills/ca-request/SKILL.md` 외 4 |
-| OPT-7 | low (원 medium) | 부분 | 최적화 | both | 교차 검증이 critic 뒤에 순차로 돌고, 두 호스트 실측은 비용 2배·미완주였다 | `src/agent/crossCheck.ts:56-59`<br>`src/agent/crossCheck.ts:177-185` 외 3 |
-| OPT-10 | low (원 medium) | 부분 | 최적화 | codex | 손으로 따로 관리하는 Codex ca-answer가 동작 목록에서 repro-log를 빠뜨렸다 | `template/codex/ca-answer.md:16`<br>`src/agent/consent.ts:29` 외 3 |
-| OPT-11 | low (원 medium) | 확인 | 최적화 | none | p5.test.ts가 전체 테스트 실행 시간의 임계 경로이고, 단계 번호식 파일 이름이 탐색을 어렵게 한다 | `src/test/p5.test.ts:304-1821`<br>`src/test/p6.test.ts` 외 3 |
-| OPT-13 | low | 확인 | 최적화 | claude | 단가표에 claude-sonnet-5-5가 없어 모델 정책 최적화를 측정할 수 없다 | `src/agent/prices.ts:23-29`<br>`doc/reviews/2026-10-06-token-efficiency.md (마지막 문단)` 외 1 |
-| OPT-14 | low | 확인 | 최적화 | both | 4개 계획 단계 스킬에 같은 계획 작업 루프 문단이 반복되고, CLI 출력도 스킬 규칙을 다시 싣는다 | `template/claude/skills/ca-analyze/SKILL.md:22-34`<br>`template/claude/skills/ca-impact/SKILL.md:18-30` 외 3 |
-| OPT-15 | low | 확인 | 최적화 | both | hook 1회가 Node 기동과 모듈 128개 로드로 약 100ms를 쓴다 | `src/agent/init.ts:19`<br>`src/agent/init.ts:187-189` 외 3 |
-| OPT-16 | low | 확인 | 최적화 | both | 거대 함수와 코드 안 프롬프트 문장이 이중 원천을 만든다 | `src/agent/commands.ts:840-1148`<br>`src/agent/commands.ts:1149-1301` 외 2 |
-| OPT-M1 | low | 검증자 발견 | 최적화 | codex | Codex 설치의 ca-answer/reference.md는 어디서도 참조하지 않는 고아 파일이고, Codex 스킬이 가리키는 '페이지 규칙'을 찾아갈 경로가 없다 | `src/agent/hosts.ts:88-90`<br>`template/codex/ca-answer.md:1-28` 외 4 |
-| PVR-10 | low (원 medium) | 부분 | 검증·리뷰 | both | 교차 실행의 비용·시간 상한이 없다 — 예산·턴 제한 미사용, 기본 20분 timeout 이 호스트 도구 최대 10분보다 길고, 재실행 횟수 무제한 | `src/agent/crossCheck.ts:54-57`<br>`src/agent/crossCheck.ts:68-81` 외 4 |
-| PVR-11 | low | 확인 | 검증·리뷰 | both | `--by` 가 현재 호스트와 같아도 받아들여 '같은 호스트의 재검토' 가 교차 검증으로 기록된다 | `src/agent/crossCheck.ts:30-33`<br>`src/agent/crossCheck.ts:116-118` 외 1 |
-| PVR-12 | low | 부분 | 검증·리뷰 | both | 교차 실행이 프로젝트 hook 을 그대로 로드한다 — Stop·SessionStart hook 이 비대화형 리뷰어의 마지막 응답을 바꿀 수 있다 | `src/agent/crossCheck.ts:70-71`<br>`src/agent/crossCheck.ts:77-78` 외 3 |
-| PVR-13 | low | 부분 | 검증·리뷰 | both | 계획 파일 부분 트리 해시가 파일을 UTF-8 로 읽어 바이너리 변경을 놓친다 | `src/agent/tree.ts:109-118` |
-| PVR-14 | low | 확인 | 검증·리뷰 | both | TC 결과를 출력의 아무 줄에서나 읽는다 — 앱 로그의 'ok N - TC-x' 나 로그 속 XML 조각도 통과 결과가 된다. 보고서 탐색도 2만 항목에서 끊긴다 | `src/agent/testResults.ts:5-34`<br>`src/agent/testResults.ts:62-67` 외 2 |
-| PVR-15 | low | 확인 | 검증·리뷰 | both | feature 의 테스트 동결은 PreToolUse hook 에만 있고, 증거 단계에는 '첫 test 이후 테스트 트리 불변' 대조가 없다 | `src/agent/hook.ts:587-615`<br>`src/agent/evidence.ts:452-519` 외 1 |
-| PVR-16 | low | 부분 | 검증·리뷰 | both | 반영 재개·부분 실패 경계 — pre-commit hook 의 내용 변경 미검증, 커밋 실패 뒤 KNOWLEDGE 잔여, 교차 중지 사실이 PR 본문에 없음 | `src/agent/deliver.ts:335-340`<br>`src/agent/deliver.ts:352-362` 외 2 |
-| PVR-17 | low | 확인 | 검증·리뷰 | both | 재시도 상한이 '같은 입력' 기준이라 입력만 바꾸면 계획 배정이 무한히 늘고, 미선언 환경 문제(시간 초과)의 --retry 는 수정 회차를 소모한다 | `src/agent/planning.ts:170-171`<br>`src/agent/planning.ts:94-114` 외 2 |
-| PVR-18 | low (원 medium) | 부분 | 검증·리뷰 | both | 계획 상태 판정마다 전체 범위 파일을 반복 해시한다 — taskHash·taskCurrent 에 캐시가 없다 | `src/agent/planningState.ts:329-332`<br>`src/agent/planningState.ts:388-397` 외 3 |
-| PVR-19 | low | 확인 | 검증·리뷰 | both | 구현 Task 의 dependsOn·파일 소유는 검증만 되고 실행은 커서 하나로 직렬이다 — 독립 Task 병렬화 여지 | `src/core/plan.ts:227-246`<br>`src/agent/hook.ts:509` 외 2 |
-| VER-M3 | low | 검증자 발견 | 검증·리뷰 | codex | Codex 설치본 스킬에 Claude Bash 도구 전용 안내(timeout 600000ms·run_in_background)가 변환되지 않고 남는다 | `src/agent/hosts.ts:64-83`<br>`template/claude/skills/ca-check/SKILL.md:25` 외 2 |
-| CON-18 | info | 확인 | 동의·hook | both | hook 우회 판정 회귀 말뭉치와 '모드×호스트×도구' 판정표가 없어 흐름 문서가 코드와 어긋나기 쉽다 | `doc/design.md:481-541`<br>`src/test/codex.test.ts:189-204` 외 1 |
-| HP-16 | info (원 low) | 부분 | 호스트 | codex | 배정 계약(instructions·resultShape)이 호스트를 구분하지 않고 staging 쓰기를 지시함 | `src/agent/planning.ts:186-187`<br>`src/agent/planningHook.ts:31-34` 외 1 |
-| HP-22 | info | 부분 | 호스트 | codex | Codex 변환 문구 품질 — Claude 도구 잔재와 조사 오류 | `src/agent/hosts.ts:71`<br>`template/claude/skills/ca-check/SKILL.md:25` 외 1 |
-| LEARN-M2 | info | 검증자 발견 | 자기학습 | none | 검토 도중 실제로 공용 소스 저장소에서 fetch·npm ci·dist 재빌드가 일어났다 — 같은 시각 기준 테스트 결과의 신뢰성 점검 필요 | `src/agent/cli.ts:216-218`<br>`src/agent/sourceUpdate.ts:223-244` |
-| LRN-7 | info (원 medium) | 부분 | 자기학습 | both | [설계] 교훈 저장소 — 무엇을·어디에 (프로젝트 소유 lessons 문서와 항목 형식) | `src/agent/commands.ts:1048-1051`<br>`src/agent/consent.ts:192` 외 2 |
-| LRN-10 | info (원 medium) | 부분 | 자기학습 | both | [설계] 교훈 주입 — 두 호스트 공통 경로(배정 파일·context --file)에 색인만, 본문은 필요할 때 | `src/agent/handoff.ts:30-34`<br>`src/agent/handoff.ts:60-83` 외 4 |
-| LRN-11 | info (원 medium) | 부분 | 자기학습 | both | [설계] update 와의 공존 — 설치본은 번들 그대로, 프로젝트 개선은 코드가 읽는 오버레이로 | `src/agent/hosts.ts:63-105`<br>`src/agent/update.ts:63-141` 외 2 |
-| PVR-20 | info | 확인 | 검증·리뷰 | both | 검증·리뷰·교차·반영의 상태 기계가 코드에만 정확히 있고 문서는 흩어져 있으며 이미 어긋난 곳이 있다 — 코드에서 흐름도를 생성할 수 있는 구조 | `src/agent/verificationFlow.ts:310-356`<br>`src/agent/planning.ts:14` 외 7 |
-| PVR-21 | info | 확인 | 검증·리뷰 | both | 자기 학습 루프가 없다 — KNOWLEDGE 는 도메인 사실·R 근거·사람 선택만 받고, 실패·지적·재시도에서 나온 절차 교훈은 다음 작업으로 환류되지 않는다 | `src/agent/knowledge.ts:55-75`<br>`src/agent/deliver.ts:236-275` 외 2 |
-
-## 처리 현황
-
-이 감사의 지적 160건이 뒤 묶음(C1~C7)과 전체 검토에서 어떻게 처리됐는지는 [결과 요약의 감사 160건 처리 현황](2026-10-08-procedure-fix-summary.md#감사-160건-처리-현황)에 있다(원자료 [procedure-fix-2026-10-08.json](evidence/procedure-fix-2026-10-08.json)의 `disposition`).
+160건의 등급(검증 후 값 `severity`, 탐색 때 값 `reportedSeverity`)·판정·영역·호스트·종류·제목·위치·권고 전문은 원자료 [process-audit-2026-10-07.json](evidence/process-audit-2026-10-07.json)의 `findings`에 있다. 판정 `confirmed`(확인)는 검증자가 그대로 확인한 것, `partially`(부분)는 범위·심각도를 조정한 것, `verifier-found`(검증자 발견)는 검증자가 추가로 찾은 것, `critic-checked`(비평가 확인)는 완결성 비평가가 직접 확인한 것이다.

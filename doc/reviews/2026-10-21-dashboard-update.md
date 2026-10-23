@@ -6,11 +6,8 @@
 
 프로젝트 없이 릴리스를 설치하는 경로와 프로젝트별로 설치된 릴리스를 적용하는 화면 확인 경로를 추가했다.
 
-- `update --install-only --preview --json`은 기존 소스 미리보기의 로컬 검사·문구를 공유하되 프로젝트 정보 없이 `lines`·`shownHash`를 반환한다. 확인 실행은 `--shown-hash <해시> --json`이며 `installGitRelease` 결과를 `{id, commit, created, log}`로 반환한다.
-- `update --release <ID> --preview --json`은 현재 버전·대상 릴리스·상태 세대와 문구를 묶는다. 확인 실행은 기존 `runReleaseApply(trigger: release)`를 사용하므로 작업 중이면 예약하고 종료 코드 3을 반환한다.
-- 호스트 표지는 `policy-forbids`, 해시 불일치는 `stale-state`로 확인 기록·fetch·적용보다 먼저 거부한다. 모델의 소스 업데이트 차단 깃발에도 세 가지 새 깃발을 추가했다.
-- PC 저장소의 `update-confirmations.jsonl`에 PC 신뢰와 같은 `createdBy: {actor, channel, shownHash}`를 기록한다. `tty`와 `dashboard`를 구분하며 확인 뒤 실행 전에 기록한다.
-- README·설치·사용법·흐름도를 현재 계약에 맞추고, 업데이트 절의 과거 릴리스 저장소 이행 경위는 제거했다. 최종 검토와 근거는 이 기록과 JSON으로 모았다.
+- 설치 전용(`--install-only`)과 프로젝트별 적용(`--release <ID>`)에 화면 확인 경로(`--preview --json` → `--shown-hash <해시> --json`), 쓰기 전 거부(`policy-forbids`·`stale-state`), 확인 기록(`update-confirmations.jsonl`의 `tty`·`dashboard`)을 더하고, 모델의 소스 업데이트 차단 깃발에 세 깃발을 더했다. 적용 확인 실행은 기존 `runReleaseApply(trigger: release)`를 쓴다. 계약은 [설치 §5](../install.md#5-code-agent-update--갱신)의 '대시보드 화면 확인'이 정본이다.
+- README·설치·사용법·흐름도를 현재 계약에 맞추고, 업데이트 절의 과거 릴리스 저장소 이행 경위는 제거했다.
 
 ## 설계 판단
 
