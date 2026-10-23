@@ -51,7 +51,9 @@ input.on("line", text => {
     if (prompt.includes("MODE=changed-thread")) { notify("thread/started", { thread: { id: randomUUID() } }); return; }
     if (prompt.includes("MODE=hang")) return;
     if (prompt.includes("MODE=permission")) {
-      line({ id: 700, method: "item/commandExecution/requestApproval", params: { threadId: session, turnId, itemId: "git-start", kind: "command", cwd: process.cwd(), command: "code-agent start doc/work/WORK-0001/requirement.md", reason: ".git/index.lock: Permission denied" } });
+      // MODE=permission-unsupported 는 감독이 받지 않는 복합 명령을 요청한다
+      const command = prompt.includes("MODE=permission-unsupported") ? 'cmd.exe /c "code-agent start doc/work/WORK-0001/requirement.md & whoami"' : "code-agent start doc/work/WORK-0001/requirement.md";
+      line({ id: 700, method: "item/commandExecution/requestApproval", params: { threadId: session, turnId, itemId: "git-start", kind: "command", cwd: process.cwd(), command, reason:".git/index.lock: Permission denied" } });
       return;
     }
     if (prompt.includes("MODE=loop")) {

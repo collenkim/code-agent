@@ -8,7 +8,7 @@ code-agent의 접수·분석·설계·계획·구현·검증·리뷰·통합 절
 
 호스트의 사용 한도가 소진되면 기존 실행을 중지하고 호스트 밖 터미널에서 `code-agent execution --json`으로 대기 상태를 확인한다. 열린 동의·미소비 응답을 원래 채널에서 처리한 뒤 `code-agent execution codex --handoff` 또는 `claude --handoff`로 인계한다. 작업 ID·접수 유형·계획·승인 기록은 유지하고 이전 임대를 해제한다. 미응답 일반 질문은 취소 이력을 남기며 새 호스트가 다시 발행한다. 같은 브랜치에서 기존 작업을 재개하고 응답·승인을 다른 세션의 것으로 만들지 않는다. 상세는 [호스트 전환 인계](master-control.md#호스트-전환-인계)를 따른다.
 
-관리 실행은 로컬 `codex app-server`(표준 입출력)로 돌고, 확정된 thread ID를 기록해 같은 세션을 재개한다. `execution both --main codex`는 교차 검증을 유지하면서 관리 실행의 주 호스트를 Codex로 선택한다. hook 설치와 프로젝트·hook 신뢰가 필요하다. 접수·재개는 관리 실행과 같은 실행 파일·`CODEX_HOME`으로 Codex app-server 에 실행 준비를 묻고(설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패면 받지 않는다), 감독은 턴을 시작하기 전에 실행할 app-server 에 같은 판정을 다시 한다. 지정된 샌드박스를 유지하고, Git 쓰기가 필요한 start·verify·repro 의 단건 실행 권한만 대시보드 사람 응답으로 원래 호출에 전달한다([Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)). 관리 실행의 정지·세션 가드는 미분류 도구에도 적용하며 기본 질문·MCP 확인 대신 영속 질문·동의를 준비한다. [관리 실행 계약](master-control.md#11-master-실행-세션의-규칙)과 [대시보드 응답 연결](dashboard-interactions.md)을 함께 확인한다.
+관리 실행은 로컬 `codex app-server`(표준 입출력)로 돌고, 확정된 thread ID를 기록해 같은 세션을 재개한다. `execution both --main codex`는 교차 검증을 유지하면서 관리 실행의 주 호스트를 Codex로 선택한다. hook 설치와 프로젝트·hook 신뢰가 필요하다. 접수·재개는 관리 실행과 같은 실행 파일·`CODEX_HOME`으로 Codex app-server 에 실행 준비를 묻고(설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패면 받지 않는다), 감독은 턴을 시작하기 전에 실행할 app-server 에 같은 판정을 다시 한다. 지정된 샌드박스를 유지하고, Git 쓰기가 필요한 start·verify·repro 의 단건 실행 권한만 대시보드 사람 응답으로 원래 호출에 전달한다([Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)). Windows 에서는 세션 지침이 PowerShell 의 `code-agent.cmd …` 한 줄 꼴을 안내하고, 실행 환경은 현재 폴더를 실행 파일 검색에서 뺀다. 관리 실행의 정지·세션 가드는 미분류 도구에도 적용하며 기본 질문·MCP 확인 대신 영속 질문·동의를 준비한다. [관리 실행 계약](master-control.md#11-master-실행-세션의-규칙)과 [대시보드 응답 연결](dashboard-interactions.md)을 함께 확인한다.
 
 ```sh
 code-agent init
@@ -153,6 +153,6 @@ Codex 변경값은 `.code-agent/codex-models.json`, Claude 변경값은 `.code-a
 
 ## 차단 시 복구 선택
 
-Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 이 안내와 `code-agent read` 안내는 메인에게는 AGENTS.md 블록으로 늘 실리고, 하위 에이전트에게는 `.codex/agents/*.toml` 지침 끝에 붙는다(스킬 사본에는 붙이지 않는다). 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
+Windows PowerShell에서는 지침과 CLI 출력의 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. 예: `code-agent.cmd read .agents/skills/ca-adopt/SKILL.md 1 300`. 이 안내와 `code-agent read` 안내는 메인에게는 AGENTS.md 블록으로 늘 실리고, 하위 에이전트에게는 `.codex/agents/*.toml` 지침 끝에 붙는다(스킬 사본에는 붙이지 않는다). master 관리 실행에서는 감독이 Codex 세션 지침에도 싣는다. 확장자 없는 호출이 npm의 `.ps1`을 선택하여 실행 정책 오류가 나더라도 정책을 완화하지 않는다. 사용자 대화 응답 `code-agent consent respond …`는 원래 형식을 유지한다. Bash·macOS·Linux에는 `.cmd`를 붙이지 않는다.
 
 Codex 메인은 CLI·hook 차단 시 `.agents/skills/ca-answer/reference.md`의 차단 복구를 따른다. 허용된 도움말·상태 조회와 이미 선택한 방향은 재확인 없이 이어가고 새 결정만 질문한다. `code_agent.ask`의 MCP 선택 UI를 실제로 호출한다. 도구가 없거나 거부되면 설치·클라이언트 지원을 점검하고 번호 나열을 UI 완료로 보고하지 않는다. 도구를 호출할 수 있는데 글머리표만 출력하고 끝내지 않는다. 동의가 필요한 실행은 ca-answer의 Codex 동의 절차를 별도로 거친다. 외부 권한·hook 차단은 진단과 사용자 환경 확인으로 연결하며, 사용자의 거절·보류를 다른 도구로 우회하지 않는다. 작업 중 공통 문서 보완은 중단 동의 후 같은 작업 ID로 재개하고 필요한 계획·승인을 다시 검증한다.

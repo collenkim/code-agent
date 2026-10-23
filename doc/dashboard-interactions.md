@@ -168,7 +168,7 @@ Claude는 `CLAUDE_CONFIG_DIR/projects`(기본 `~/.claude/projects`), Codex는 `C
 
 Codex 관리 실행은 로컬 `app-server`의 표준 입출력으로 권한 요청을 받는다. 외부 서버·HTTP 포트를 열지 않는다. `workspace-write` 샌드박스와 네트워크 차단을 유지하며, `approval_policy=on-request`·`approvals_reviewer=user`로 단건 요청을 사람 채널에 연결한다. 시작 전 그 app-server에 `config/read`·`hooks/list`를 물어 사전 진단(`hello`의 `managedHost`)과 같은 기준으로 프로젝트 신뢰와 code-agent hook 6개의 로드·신뢰를 확인한다. 해당 프로토콜을 지원하지 않거나 준비 완료가 아니면 모델 턴을 시작하지 않는다. 기능 협상은 `hello.codeAgent.stateSchema >= 10`과 `interactions.hostPermissions.kind === "host-permission"`으로 한다.
 
-지원 대상은 저장소 루트에서 실행하는 `code-agent start …`, `code-agent verify …`, `code-agent repro …`의 명령 실행 승인이다. PowerShell·bash의 단순 실행 래퍼도 받는다. 이 명령들은 원래 hook·작업 단계·승인·검증 검사를 그대로 거친다. 직접 Git 변경, 복합 셸·인라인 코드, 네트워크 승인, 파일 변경 승인, 다른 프로젝트·원격 환경, 읽기 전용 실행의 쓰기 권한은 이 경로에서 받지 않는다. 준비·반영 동의의 Git 작업은 기존 외부 동의 적용 처리기가 수행한다.
+지원 대상은 저장소 루트에서 실행하는 `code-agent start …`, `code-agent verify …`, `code-agent repro …`의 명령 실행 승인이다. PowerShell·bash·cmd의 단순 실행 래퍼(`-Command`·`-c`·`-lc`·`/c` 뒤 명령 하나)도 받는다. 래퍼 셸은 맨 이름이거나 알려진 설치 경로여야 한다 — Windows는 `SystemRoot`의 `System32`·`SysWOW64` 아래 `cmd.exe`·`WindowsPowerShell\v1.0\powershell.exe`, `Program Files`의 `PowerShell\<버전>\pwsh.exe`·`Git\bin`·`Git\usr\bin`의 `bash.exe`·`sh.exe`, 그 밖은 `/bin`·`/usr/bin`·`/usr/local/bin`·`/opt/homebrew/bin`이다. 명령에 공백·탭 밖의 공백 문자(U+3000·NBSP 등)나 제어 문자, cmd 이스케이프(`^`)가 있으면 받지 않는다. Windows의 cmd(npm의 `code-agent.cmd`가 `node`를 찾을 때 포함)와 Node의 자식 실행(code-agent가 부르는 `git`)은 PATH보다 현재 폴더를 먼저 찾는다. 그래서 관리 Codex 실행 환경과 Codex 셸 환경 설정에 `NoDefaultCurrentDirectoryInExePath=1`을 넣고 PATH의 상대·저장소 안 항목을 지운다. 저장소 루트에 `code-agent`·`node`·`git` 이름의 실행 파일(`PATHEXT` 확장자)이 있으면 요청을 받지 않고, 이미 받은 응답도 전달하지 않는다. 권장 꼴은 Windows PowerShell의 `code-agent.cmd start|verify|repro …` 한 줄이며 감독 지침이 이 꼴을 안내한다. 이 명령들은 원래 hook·작업 단계·승인·검증 검사를 그대로 거친다. 직접 Git 변경, 복합 셸·인라인 코드, 네트워크 승인, 파일 변경 승인, 다른 프로젝트·원격 환경, 읽기 전용 실행의 쓰기 권한은 이 경로에서 받지 않는다. 준비·반영 동의의 Git 작업은 기존 외부 동의 적용 처리기가 수행한다.
 
 `interactions` 또는 `interaction` 응답의 `kind: "host-permission"`, `consumer: "codex-command"`를 일반 질문·업무 동의와 구분한다. `permission`에는 전체 `command`, `cwd`, 호스트가 제공한 `reason`, `threadId`, `turnId`, `itemId`, `rpcId`, `connectionId`, 소유 세대와 `scope: "once"`가 있다. 화면에는 **명령 전문·작업 디렉터리·사유·일회 실행 범위**를 보여 준다. 샌드박스 밖 실행을 승인하면 해당 명령과 자식 프로세스가 그 권한으로 실행될 수 있다는 영향도 함께 표시한다. 추천·기본 선택을 실제 승인으로 제출하지 않는다.
 
@@ -193,6 +193,8 @@ Codex 관리 실행은 로컬 `app-server`의 표준 입출력으로 권한 요�
 감독은 응답 직전에 프로젝트·브랜치·HEAD·작업·세션·실행·소유 세대·사람 채널·만료를 다시 검사한다. 유효한 응답만 원래 살아 있는 RPC에 `accept` 또는 `decline`으로 한 번 전달한다. 세션 전체 허용·영구 실행 규칙·네트워크 규칙을 저장하지 않는다. 대기 중인 동일 run·thread·turn에서 이어가므로 새 작업 ID나 재개 실행을 생성하지 않는다.
 
 응답 수신과 실행 성공은 별개다. `interaction.result`의 `application.result.forwarded: true`는 Codex에 결정을 전달했다는 뜻이다. `executionConfirmed: true`, `status`, `exitCode`는 해당 명령의 완료 알림을 받았다는 뜻이며, 프로젝트 개발 완료나 테스트 통과를 대신하지 않는다. 명령 성공 여부는 `exitCode`와 기존 검증 결과로 판단한다.
+
+지원 범위 밖 요청은 사람에게 올리지 않고 감독이 바로 `decline`한다. 이때 실행 결과의 권한 거부 행에 `automatic: true`·거절한 `command`(앞 500자)·사유(받는 꼴 안내 포함)를 남기고, 실행은 `blocked`로 끝나며 사유를 `감독이 호스트 권한 요청을 받지 않았습니다: …`로 남겨 사람의 거절과 구분한다.
 
 요청은 최대 15분과 원래 실행 시간 상한 중 먼저 도달하는 시각에 만료된다. 정지·취소·문맥 변경·권한 회수에는 허용을 전달하지 않는다. 원래 호스트가 종료되면 미완료 요청을 닫는다. 승인 전달 직후 통신이 끊겨 실행 여부를 확인하지 못하면 재전송하지 않는다. `unknown` 실행은 기존 재조정·상태 확인 절차로 처리하고, 같은 세션을 다시 시작해도 새 호스트 요청에 새 사람 응답이 필요하다.
 

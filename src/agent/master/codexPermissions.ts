@@ -1,7 +1,7 @@
 /** Codex가 실제 요청한 단건 실행 권한. 업무 동의·일반 답·위임으로 대신하지 않는다. */
 import { randomUUID } from "crypto";
-import { realpathSync } from "fs";
-import { basename } from "path";
+import { readdirSync, realpathSync } from "fs";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "path";
 import { splitCommandArgs } from "../consentTicket";
 import { leaseConflict } from "../lease";
 import { stageOf } from "../interactionSources";
@@ -14,20 +14,59 @@ export interface CodexApproval {
   threadId: string; turnId: string; itemId: string; command: string; cwd: string; reason?: string | null;
   kind?: string; environmentId?: string | null; networkApprovalContext?: unknown;
 }
+/** 단순 실행 래퍼로 받는 셸 — 명령 인자 앞에 올 수 있는 깃발과 명령 인자 깃발 */
+const WRAPPERS: { names: string[]; flags: RegExp; run: RegExp }[] = [
+  { names: ["powershell.exe", "pwsh.exe", "powershell", "pwsh", "bash", "sh", "zsh"], flags: /^(?:-noprofile|-noninteractive|-nologo)$/i, run: /^(?:-command|-c|-lc)$/i },
+  { names: ["cmd.exe", "cmd"], flags: /^\/[dsq]$/i, run: /^\/c$/i },
+];
+/**
+ * 래퍼 셸은 맨 이름(Codex 가 시스템 검색 경로로 찾는다)이거나 알려진 셸 설치 경로여야 한다 — 저장소나 사용자가 쓸 수 있는
+ * 시스템 하위 폴더(Windows\Tasks 등)에 둔 같은 이름 파일을 승인하지 않는다. Codex 는 큰따옴표 안 역슬래시를 겹쳐 보내므로 resolve 로 접는다
+ */
+function systemShell(file: string): boolean {
+  if (!/[\\/]/.test(file)) return true;
+  if (!isAbsolute(file) || /^[\\/]{2}/.test(file)) return false;
+  const target = resolve(file);
+  if (process.platform !== "win32") return ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"].includes(dirname(target));
+  const key = (p: string) => resolve(p).toLowerCase();
+  const system = process.env.SystemRoot, programs = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.ProgramW6432].filter((p): p is string => !!p);
+  const exact = [
+    ...(system ? ["System32", "SysWOW64"].flatMap(d => [join(system, d, "cmd.exe"), join(system, d, "WindowsPowerShell", "v1.0", "powershell.exe")]) : []),
+    ...programs.flatMap(p => [join(p, "Git", "bin"), join(p, "Git", "usr", "bin")].flatMap(d => [join(d, "bash.exe"), join(d, "sh.exe")])),
+  ].map(key);
+  // PowerShell 7 은 Program Files\PowerShell\<버전>\pwsh.exe
+  return exact.includes(key(target)) || (basename(target).toLowerCase() === "pwsh.exe" && programs.some(p => key(dirname(dirname(target))) === key(join(p, "PowerShell"))));
+}
 /** 복합 셸·인라인 코드·직접 git 변경은 받지 않는다. 기존 hook/CLI 게이트를 거치는 명령만 지원한다. */
 export function gitOperationCommand(command: string): boolean {
+  // 공백·탭 밖의 공백 문자(U+3000·NBSP·VT 등)와 제어 문자 — 이 검사는 토큰으로 나누지만 cmd 는 명령 이름의 일부로 읽는다
+  if (/[^\S \t]|[\x00-\x08\x0e-\x1f\x7f]/.test(command)) return false;
   let words = splitCommandArgs(command);
   if (!words?.length) return false;
   const shell = basename(words[0].replace(/\\/g, "/")).toLowerCase();
-  if (["powershell.exe", "pwsh.exe", "powershell", "pwsh", "bash", "sh", "zsh"].includes(shell)) {
-    const at = words.findIndex(w => /^(?:-command|-c|-lc)$/i.test(w));
-    if (at < 1 || at !== words.length - 2 || words.slice(1, at).some(w => !/^(?:-noprofile|-noninteractive|-nologo)$/i.test(w))) return false;
+  const wrapper = WRAPPERS.find(w => w.names.includes(shell));
+  if (wrapper) {
+    if (!systemShell(words[0])) return false;
+    const at = words.findIndex(w => wrapper.run.test(w));
+    if (at < 1 || at !== words.length - 2 || words.slice(1, at).some(w => !wrapper.flags.test(w))) return false;
     command = words[at + 1];
     words = splitCommandArgs(command);
   }
-  // 셸 확장·경로 바꿔치기·환경 변수 대입은 승인 대상이 아니다.
-  if (/[;&|<>`$\r\n(){}\[\]*?!%]/.test(command) || !words || !/^(?:code-agent|code-agent\.cmd)$/.test(words[0])) return false;
+  // 셸 확장·경로 바꿔치기·환경 변수 대입·cmd 이스케이프는 승인 대상이 아니다.
+  if (/[;&|<>`$\r\n(){}\[\]*?!%^]/.test(command) || !words || !/^(?:code-agent|code-agent\.cmd)$/.test(words[0])) return false;
   return ["start", "verify", "repro"].includes(words[1]) && words.length > 2;
+}
+/**
+ * Windows 의 cmd(npm 의 code-agent.cmd 가 node 를 찾을 때 포함)와 node 의 자식 실행(code-agent 가 부르는 git)은 PATH 보다
+ * 현재 폴더를 먼저 찾는다. 감독은 그 검색을 끄지만(supervisor hostEnv), 저장소 루트에 그 이름의 실행 파일(PATHEXT 확장자)이 있으면
+ * 승인한 명령이 그 파일로 바뀔 수 있으므로 요청을 받지도 전달하지도 않는다
+ */
+export function shadowingExecutable(root: string): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const exts = new Set([".com", ".exe", ".bat", ".cmd", ...(process.env.PATHEXT ?? "").split(";").map(e => e.trim().toLowerCase()).filter(Boolean)]);
+  let names: string[];
+  try { names = readdirSync(root); } catch { return undefined; }
+  return names.find(name => ["code-agent", "node", "git"].includes(basename(name, extname(name)).toLowerCase()) && exts.has(extname(name).toLowerCase()));
 }
 export function permissionUnavailable(root: string, record: InteractionRecord): string | undefined {
   const p = record.permission, run = record.context.runId ? readRun(root, record.context.runId) : undefined;
@@ -35,6 +74,8 @@ export function permissionUnavailable(root: string, record: InteractionRecord): 
   if (!p || !run || run.state !== "running" || run.stop || !run.sessionConfirmed || run.sessionId !== p.threadId || run.hostProfile?.kind !== "codex") return "원래 Codex 실행의 권한 요청이 더 이상 유효하지 않습니다.";
   if (!owner || owner.handover || owner.generation !== p.generation || owner.controller !== p.controller || run.generation !== p.generation) return "권한 요청의 소유 세대가 바뀌었습니다.";
   if (run.hostProfile.sandbox !== "workspace-write") return "읽기 전용 실행은 Git 쓰기 권한을 요청할 수 없습니다.";
+  const shadow = shadowingExecutable(root);
+  if (shadow) return `저장소 루트의 ${shadow} 가 승인할 명령이 찾는 실행 파일을 가릴 수 있습니다 — 그 파일을 지운 뒤 다시 요청하세요.`;
   return undefined;
 }
 export function validatePermissionSubmission(root: string, record: InteractionRecord, submission: InteractionSubmission): void {
@@ -47,7 +88,9 @@ export function publishCodexPermission(root: string, run: RunRecord, connectionI
   if (run.hostProfile?.kind !== "codex" || run.hostProfile.sandbox !== "workspace-write" || params.threadId !== run.sessionId || !run.sessionConfirmed ||
       (params.kind && params.kind !== "command") || (params.environmentId && params.environmentId !== "local") || params.networkApprovalContext || !params.turnId || !params.itemId ||
       typeof params.command !== "string" || params.command.length > 12000 || !gitOperationCommand(params.command) ||
-      typeof params.cwd !== "string" || realpathSync(params.cwd) !== realpathSync(root)) throw new ControlError("policy-forbids", "지원 범위 밖 Codex 권한 요청입니다");
+      typeof params.cwd !== "string" || realpathSync(params.cwd) !== realpathSync(root)) {
+    throw new ControlError("policy-forbids", "지원 범위 밖 Codex 권한 요청입니다 — 저장소 루트의 code-agent start·verify·repro 한 줄(Windows PowerShell 은 code-agent.cmd …)만 받습니다");
+  }
   const context = interactionContext(root, run.sessionId, "codex", run.runId);
   const permission: NonNullable<InteractionRecord["permission"]> = { command: params.command, cwd: params.cwd, reason: (params.reason ?? "Git 작업에 필요한 실행 권한").slice(0, 4000),
     threadId: params.threadId, turnId: params.turnId, itemId: params.itemId, rpcId, connectionId, controller: run.controller, generation: run.generation, scope: "once" };

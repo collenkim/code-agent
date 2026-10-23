@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-23",
+  "repository": "code-agent",
+  "baseCommit": "53aca6a",
+  "environment": {
+    "platform": "win32",
+    "os": "Windows 11 Pro 10.0.26200",
+    "node": "24.19.0",
+    "codexCli": "0.163.0"
+  },
+  "stateSchemaChanged": false,
+  "experiments": {
+    "method": "스크래치 저장소에서 실제 cmd·PowerShell·Node 로 실행 파일 검색 순서 확인",
+    "results": [
+      "현재 폴더 code-agent.cmd + cmd /c code-agent: 변수 없음 → 현재 폴더 파일, NoDefaultCurrentDirectoryInExePath=1 → PATH 의 실제 shim",
+      "npm shim 사본(node.exe 가 shim 옆에 없음)을 cmd·PowerShell 로 호출: 변수 없음 → 현재 폴더 node.bat, 변수=1 → 실제 Node",
+      "Node spawn('git'): 변수 없음 → 현재 폴더 git.exe(다른 실행 파일 사본), 변수=1 → 실제 Git",
+      "PowerShell -Command 로 부른 명령 이름은 변수 없이도 현재 폴더에서 찾지 않음",
+      "splitCommandArgs 는 U+3000·NBSP·VT 를 나누지만 cmd 는 명령 이름·인자의 일부로 읽음",
+      "app-server config/read 가 -c shell_environment_policy.set.NoDefaultCurrentDirectoryInExePath=\"1\" 을 set 에 반영"
+    ]
+  },
+  "live": {
+    "method": "scripts/evaluate-codex-git-permission.cjs — 실제 Codex 모델 호출, 합성 대시보드 승인(사람 승인 아님), Claude 세션 변수와 NoDefaultCurrentDirectoryInExePath 를 뺀 터미널",
+    "evaluations": [
+      {
+        "at": "2026-10-23T00:47:40.300Z",
+        "runId": "run-mvk9436n-0ac04309",
+        "state": "completed",
+        "passed": true,
+        "commands": [
+          "\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'code-agent.cmd start doc/work/CONSENT-1/requirement.md' => exit 1(샌드박스)",
+          "같은 명령(단건 승인 전달) => exit 0",
+          "\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'code-agent.cmd status --json' => exit 0"
+        ],
+        "permission": "requested 1, applied(accept, forwarded, exit 0), automatic denial 0",
+        "branch": "feature/CONSENT-1",
+        "hooks": ["sessionStart", "userPromptSubmit", "preToolUse", "preToolUse", "preToolUse", "stop"]
+      },
+      {
+        "at": "2026-10-23T00:53:21.113Z",
+        "runId": "run-mvk9by00-744dc8eb",
+        "state": "completed",
+        "passed": true,
+        "commands": "첫 실행과 같은 세 명령·종료 코드",
+        "permission": "requested 1, applied(accept, forwarded, exit 0), automatic denial 0",
+        "branch": "feature/CONSENT-1",
+        "hooks": ["sessionStart", "userPromptSubmit", "preToolUse", "preToolUse", "preToolUse", "stop"]
+      },
+      {
+        "at": "2026-10-23T00:55:31.819Z",
+        "runId": "run-mvk9ea6j-9b25ba37",
+        "state": "completed",
+        "passed": true,
+        "commands": "첫 실행과 같은 세 명령·종료 코드",
+        "permission": "requested 1, applied(accept, forwarded, exit 0), automatic denial 0",
+        "branch": "feature/CONSENT-1",
+        "hooks": ["sessionStart", "userPromptSubmit", "preToolUse", "preToolUse", "preToolUse", "stop"]
+      }
+    ],
+    "excluded": "모델 호출 전 접수 준비에서 멈춘 2회 — 실행한 터미널의 Claude 세션 변수로 접수가 '이 호스트(Claude Code)는 설치 기록에 없다'로 거부. 변수를 빼고 다시 실행",
+    "environmentProbe": {
+      "at": "2026-10-23T00:51:42.940Z",
+      "runId": "run-mvk999gd-3c0e48c8",
+      "method": "같은 감독 경로로 Codex 에 cmd.exe /d /c set NoDefaultCurrentDirectoryInExePath 실행 지시(권한 상승 없음), 실행한 터미널에는 변수 없음",
+      "command": "\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'cmd.exe /d /c set NoDefaultCurrentDirectoryInExePath'",
+      "output": "NoDefaultCurrentDirectoryInExePath=1",
+      "exitCode": 0
+    }
+  },
+  "focused": {
+    "command": "node --test dist/test/codexPermissions.test.js dist/test/masterCodex.test.js",
+    "tests": 21,
+    "passed": 21,
+    "failed": 0
+  },
+  "failBeforeFix": "확인하지 않음 — 기준 커밋 빌드로 새 시험을 돌리지 않았다(masterCodex 시험은 새 상수 CODEX_PERMISSION_FORM 을 import 한다)",
+  "regression": {
+    "command": "npx tsc && node scripts/prune-dist-tests.cjs && node --test --test-concurrency=3 \"dist/test/**/*.test.js\"",
+    "note": "npm test 와 같은 단계, CODE_AGENT_HOME 격리. 동시 실행 6으로 돌린 첫 실행은 시스템 메모리 부족으로 Claude Code 가 중단해 동시 실행 3으로 다시 돌렸다",
+    "tests": 1741,
+    "passed": 1737,
+    "failed": 0,
+    "skipped": 4,
+    "cancelled": 0,
+    "durationMs": 1609699.9667
+  },
+  "unverified": [
+    "승인받아 샌드박스 밖에서 도는 실행의 자식 환경 변수(샌드박스 안 셸 명령만 확인)",
+    "루트 가림 검사와 실제 실행 사이의 파일 생성",
+    "맨 이름 셸의 Codex 내부 해석",
+    "실행 준비 판정 검증 때 실패한 cmd 재시도의 PreToolUse 판정 경위와 .ps1 실행 정책 차단의 실제 원인(모델 보고, 이 PC 정책 RemoteSigned)",
+    "수정 뒤 실제 평가에서 cmd 꼴을 고른 실행이 없음 — cmd 래퍼 수용은 시험으로만 확인"
+  ]
+}

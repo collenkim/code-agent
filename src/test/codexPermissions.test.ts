@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { codexProject } from "./masterCodexFixture";
 import { readBinding, writeBinding, listRuns, writeRunRecord, updateRun, type RunRecord } from "../agent/master/store";
@@ -36,6 +36,24 @@ const accept = { intent: "submit", explicit: true, permissionDecision: "accept" 
 test("Git 승인 범위는 기존 게이트 명령 하나이며 셸 확장·복합·직접 Git 변경은 거부한다", () => {
   for (const c of ["code-agent start doc/work/WORK-0001/requirement.md", 'powershell.exe -NoProfile -Command "code-agent.cmd verify test"', "bash -lc 'code-agent repro run'"]) assert.equal(gitOperationCommand(c), true, c);
   for (const c of ["git switch -c bad", "code-agent master enable", "code-agent verify test; whoami", "code-agent verify $(whoami)", 'code-agent start "$env:SECRET"', "bash -c 'code-agent verify test && whoami'", "code-agent start ../x && git reset --hard", 'powershell.exe -EncodedCommand xxx', "node cli.js start req.md", "code-agent verify test | cat"]) assert.equal(gitOperationCommand(c), false, c);
+});
+test("cmd 단순 래퍼를 받고, 래퍼 셸은 맨 이름이나 시스템 경로만 받는다", () => {
+  for (const c of ['cmd.exe /c "code-agent verify test"', "cmd /d /s /c 'code-agent.cmd start doc/work/WORK-0001/requirement.md'"]) assert.equal(gitOperationCommand(c), true, c);
+  for (const c of ['cmd.exe /c "code-agent verify test & whoami"', 'cmd.exe /c "code-agent start x.md^"', 'cmd.exe /c "code-agent start %CD%"', 'cmd.exe /k "code-agent verify test"',
+    'cmd.exe /c "code-agent start x.md" /c "code-agent verify y"', 'cmd.exe /v:on /c "code-agent verify test"', "code-agent start x.md^",
+    String.raw`.\powershell.exe -Command "code-agent start x.md"`, 'tools/bash -lc "code-agent start x.md"', String.raw`tools\cmd.exe /c "code-agent start x.md"`]) assert.equal(gitOperationCommand(c), false, c);
+  // 이 검사는 토큰으로 나누지만 cmd 는 명령 이름의 일부로 읽는 공백·제어 문자
+  for (const c of ["code-agent\u3000start x.md", "code-agent start\u00a0x.md", "code-agent\u000bstart x.md", "code-agent start x\u0007.md", "cmd.exe /c 'code-agent\u2003start x.md'"]) assert.equal(gitOperationCommand(c), false, JSON.stringify(c));
+});
+test("Codex 가 보내는 절대 경로 래퍼는 알려진 셸 설치 경로만 받는다", { skip: process.platform !== "win32" }, () => {
+  // Codex 는 큰따옴표 안 역슬래시를 겹쳐 보낸다 — 2026-10-20·10-23 실제 Codex(0.163.0) 승인 요청의 꼴
+  const shown = (...parts: string[]) => `"${join(process.env.SystemRoot!, ...parts).replace(/\\/g, "\\\\")}"`;
+  for (const c of [`${shown("System32", "WindowsPowerShell", "v1.0", "powershell.exe")} -Command 'code-agent.cmd start doc/work/CONSENT-1/requirement.md'`,
+    `${shown("system32", "cmd.exe")} /c 'code-agent start doc/work/CONSENT-1/requirement.md'`]) assert.equal(gitOperationCommand(c), true, c);
+  // 저장소·임시 폴더, 일반 사용자가 쓸 수 있는 시스템 하위 폴더, UNC 의 같은 이름 파일
+  for (const c of [String.raw`"C:\repo\tools\cmd.exe" /c 'code-agent start x.md'`, String.raw`"C:\repo\tools\powershell.exe" -Command 'code-agent start x.md'`,
+    String.raw`"C:\Users\me\AppData\Local\Temp\pwsh.exe" -Command 'code-agent start x.md'`, `${shown("Tasks", "cmd.exe")} /c 'code-agent start x.md'`,
+    `${shown("tracing", "powershell.exe")} -Command 'code-agent start x.md'`, String.raw`"\\server\share\cmd.exe" /c 'code-agent start x.md'`]) assert.equal(gitOperationCommand(c), false, c);
 });
 test("원래 thread·프로젝트·쓰기 프로필에 결속하고 같은 RPC 내용 변경을 거부한다", () => {
   const f = fixture();
@@ -91,6 +109,25 @@ test("응답 뒤 문맥 변경·사람 채널 회수·정지·만료는 accept�
     } finally { f.close(); }
   }
 });
+test("저장소 루트의 code-agent·node·git 실행 파일이 명령을 가리면 받지도 전달하지도 않는다", { skip: process.platform !== "win32" }, () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.root, "code-agent.json"), "{}"); writeFileSync(join(f.root, "node.md"), "");
+    const r = f.publish(); assert.equal(f.respond(r, accept).ok, true);
+    writeFileSync(join(f.root, "code-agent.cmd"), "@echo shadow\r\n");
+    const decisions: string[] = []; forwardCodexPermission(f.root, r.requestId, f.connection, d => decisions.push(d));
+    assert.deepEqual(decisions, ["cancel"]); assert.match(f.latest(r.requestId).unavailableReason ?? "", /code-agent\.cmd/);
+    assert.throws(() => f.publish({}, 102), /code-agent\.cmd/);
+    rmSync(join(f.root, "code-agent.cmd"));
+    // npm 의 code-agent.cmd 가 찾는 node, code-agent 가 부르는 git
+    let rpc = 103;
+    for (const name of ["Code-Agent.BAT", "node.cmd", "git.exe"]) {
+      writeFileSync(join(f.root, name), "");
+      assert.throws(() => f.publish({}, rpc++), new RegExp(name.replace(".", "\\.")));
+      rmSync(join(f.root, name));
+    }
+  } finally { f.close(); }
+});
 test("전달 중 연결 종료·기록 없는 종료에도 같은 승인을 재전송하지 않는다", () => {
   const f = fixture();
   try {
@@ -116,6 +153,18 @@ test("감독→대시보드 서명→실제 RPC 응답 뒤 Git 쓰기와 같은 
     assert.equal(JSON.parse(readFileSync(join(f.root, ".code-agent/fixture-permission.json"), "utf8")).decision, "accept");
     assert.equal(execFileSync("git", ["config", "--local", "code-agent.permissionFixture"], { cwd: f.root, encoding: "utf8" }).trim(), "accepted");
     assert.equal((f.latest(r.requestId).application!.result as any).executionConfirmed, true);
+  } finally { f.close(); }
+});
+test("감독이 받지 않은 권한 요청은 사람의 거절과 구분해 명령과 받는 꼴을 결과에 남긴다", async () => {
+  const f = fixture();
+  try {
+    const started = f.send("submit", { prompt: "MODE=permission-unsupported" }); assert.equal(started.ok, true, JSON.stringify(started));
+    const done = await f.wait(started.result.runId); assert.equal(done.state, "blocked");
+    assert.match(done.outcome!.reason, /^감독이 호스트 권한 요청을 받지 않았습니다: 지원 범위 밖 .*code-agent\.cmd/);
+    const denial = (done.result as any).host.permissionDenials[0];
+    assert.equal(denial.automatic, true); assert.match(denial.command, /& whoami/);
+    assert.equal(JSON.parse(readFileSync(join(f.root, ".code-agent/fixture-permission.json"), "utf8")).decision, "decline");
+    assert.equal(currentInteractions(f.root).requests.length, 0);
   } finally { f.close(); }
 });
 test("대기 중 정지는 원래 RPC를 취소하며 새 작업·재개 실행을 만들지 않는다", async () => {

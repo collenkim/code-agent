@@ -11,9 +11,11 @@
  */
 import { spawn } from "child_process";
 import { appendFileSync, createWriteStream, readFileSync } from "fs";
+import { isAbsolute, relative, resolve } from "path";
 
 import { hostBaseEnv } from "../crossEnv";
 import { hostLaunch } from "../hosts";
+import { POWERSHELL_COMMAND_GUIDE } from "../hostText";
 import { requireManagedHost } from "./hostProfile";
 import { CodexTransport } from "./codexTransport";
 import { acquireLock } from "../lock";
@@ -22,7 +24,7 @@ import { killVerified, liveness } from "./processes";
 import { ACTIVE_RUN_STATES, type HostProfile, type Policy, type RunState } from "./protocol";
 import { buildResult, readHostOutput } from "./result";
 import { observeProgress } from "./observe";
-import { MASTER_RUN_ENV } from "./runGuard";
+import { CODEX_PERMISSION_FORM, MASTER_RUN_ENV } from "./runGuard";
 import {
   emit, masterPath, readBinding, readOwner, readRun, RUN_LOCK, runErrors, runOutput, runPrompt, updateRun, type RunRecord,
 } from "./store";
@@ -32,7 +34,7 @@ export const MASTER_SYSTEM_RULES = [
   "이 세션은 code-agent master 실행이다. 사람이 이 대화를 보지 않는다.",
   "질문 도구로 사람에게 묻지 않는다. 동의가 필요하면 code-agent consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다.",
   "설정·개발·복구·운영의 업무 질문은 code-agent interaction publish <질문.json>으로 저장하고 human-input 대기를 보고한 뒤 턴을 끝낸다. questions.md에 연결한 질문은 source:questions로 발행한다. 작업 ID가 없어도 질문할 수 있다. 답·추천 근거를 지어내지 않는다.",
-  "승인·확정 기록을 만들거나 고치지 않는다. code-agent 명령은 code-agent 로 부른다.",
+  "승인·확정 기록을 만들거나 고치지 않는다. code-agent 명령은 code-agent 로 부른다(node 경로로 부르지 않는다).",
   "작업 재개는 code-agent flow advance --json 으로 한다. 반환한 procedure·instruction만 수행하고 결과 기록 뒤 같은 명령으로 돌아간다. kind:wait이면 반복 조회하지 않고 턴을 끝낸다.",
   "hook 이 도구를 막으며 정지를 알리면 도구를 더 쓰지 않고 한 일과 멈춘 자리를 보고한 뒤 끝낸다.",
 ].join("\n");
@@ -42,9 +44,11 @@ export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "se
   if (typeof resolved === "string") throw new Error(resolved);
   const { file: command, prefix } = resolved;
   if (profile.kind === "codex") {
-    const rules = `${MASTER_SYSTEM_RULES}\nGit 쓰기가 필요한 code-agent start·verify·repro가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
+    const rules = `${MASTER_SYSTEM_RULES}\n${POWERSHELL_COMMAND_GUIDE}\nGit 쓰기가 필요한 code-agent start·verify·repro가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. ${CODEX_PERMISSION_FORM} 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
     return { command, args: [...prefix, "app-server", "--listen", "stdio://", "-c", 'approval_policy="on-request"', "-c", 'approvals_reviewer="user"', "-c", `sandbox_mode=${JSON.stringify(profile.sandbox)}`,
       "-c", "sandbox_workspace_write.network_access=false", "-c", `developer_instructions=${JSON.stringify(rules)}`,
+      // 셸 명령(승인받은 단건 실행 포함)의 환경에도 현재 폴더 검색 끄기를 명시한다 — 사용자 설정의 shell_environment_policy 가 상속 변수를 줄여도 남는다
+      ...(process.platform === "win32" ? ["-c", `shell_environment_policy.set.${NO_CWD_SEARCH}="1"`] : []),
       ...(profile.model ? ["-c", `model=${JSON.stringify(profile.model)}`] : [])] };
   }
   const args = [...prefix, "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", profile.permissionMode, "--permission-prompts", "none",
@@ -57,11 +61,28 @@ export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "se
   return { command, args };
 }
 
-/** 호스트 환경 — 부른 쪽 Claude·Codex 세션의 표지·통로를 지우고 실행 표지를 넣는다 */
-export function hostEnv(base: NodeJS.ProcessEnv, runId: string, kind: "claude" | "codex" = "claude"): NodeJS.ProcessEnv {
+/** Windows 에서 cmd·npm 의 .cmd shim·node 의 자식 실행이 PATH 보다 현재 폴더를 먼저 찾지 않게 하는 변수 */
+const NO_CWD_SEARCH = "NoDefaultCurrentDirectoryInExePath";
+
+/**
+ * 호스트 환경 — 부른 쪽 Claude·Codex 세션의 표지·통로를 지우고 실행 표지를 넣는다.
+ * Windows 의 Codex 는 현재 폴더(저장소 루트)를 실행 파일 검색에서 빼고 PATH 의 상대·저장소 안 항목을 지운다 — 승인받아 샌드박스 밖에서 도는
+ * 명령(code-agent.cmd 가 찾는 node, code-agent 가 부르는 git 포함)이 모델이 저장소에 둔 같은 이름 파일로 바뀌지 않게 한다
+ */
+export function hostEnv(base: NodeJS.ProcessEnv, runId: string, kind: "claude" | "codex" = "claude", root?: string): NodeJS.ProcessEnv {
   const env = hostBaseEnv(base) as NodeJS.ProcessEnv;
   env[MASTER_RUN_ENV] = runId;
   env.CODE_AGENT_HOST = kind;
+  if (kind === "codex" && process.platform === "win32") {
+    env[NO_CWD_SEARCH] = "1";
+    const key = Object.keys(env).find(k => k.toUpperCase() === "PATH"), repo = root && resolve(root);
+    if (key) env[key] = (env[key] ?? "").split(";").filter(entry => {
+      const dir = entry.trim().replace(/^"(.*)"$/, "$1");
+      if (!dir || !isAbsolute(dir) || /^[\\/]{2}[.?]/.test(dir)) return false;
+      const rel = repo ? relative(repo, resolve(dir)) : "..";
+      return rel.startsWith("..") || isAbsolute(rel);
+    }).join(";");
+  }
   return env;
 }
 
@@ -69,6 +90,9 @@ function finalState(run: RunRecord, host: { exitCode: number | null; isError?: b
   if (timedOut) return { state: "failed", reason: "실행 시간 상한을 넘었습니다" };
   if (run.stop) return { state: run.stop.mode === "cancel" ? "cancelled" : "paused", reason: run.stop.reason };
   if (host.exitCode !== 0 || host.isError) return { state: "failed", reason: `호스트가 실패로 끝났습니다(exit ${host.exitCode}, ${host.subtype ?? "결과 없음"})` };
+  // 감독이 받지 않은 권한 요청은 사람의 거절과 구분해 그 사유(받는 꼴)를 남긴다
+  const automatic = host.permissionDenials?.find((d): d is { automatic: true; reason?: string } => !!d && typeof d === "object" && (d as { automatic?: unknown }).automatic === true);
+  if (automatic) return { state: "blocked", reason: `감독이 호스트 권한 요청을 받지 않았습니다: ${automatic.reason ?? "지원 범위 밖"}` };
   if (host.permissionDenials?.length) return { state: "blocked", reason: "호스트 실행 권한이 거절·취소되었습니다" };
   if (["needs-human", "limit-reached", "unobservable", "ownership-conflict", "stale-request"].includes(resume)) return { state: "blocked", reason: `code-agent 재개 판정 ${resume}` };
   return { state: "completed", reason: `호스트 턴이 끝났습니다 — code-agent 재개 판정 ${resume}` };
@@ -208,7 +232,7 @@ export function supervise(root: string, runId: string): Promise<number> {
       // 설치만 본다 — Codex 의 프로젝트·hook 신뢰는 CodexTransport 가 실제로 쓸 app-server 에 같은 판정(classifyCodexReadiness)으로 묻는다
       requireManagedHost(root, profile, { codex: "static" });
       const { command, args } = hostArgs(profile, run);
-      child = spawn(command, args, { cwd: root, env: hostEnv(process.env, runId, profile.kind), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
+      child = spawn(command, args, { cwd: root, env: hostEnv(process.env, runId, profile.kind, root), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
     } catch (error) {
       spawnError = error instanceof Error ? error.message : String(error);
       finish(null, null);

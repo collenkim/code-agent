@@ -112,7 +112,8 @@ export class CodexTransport {
         this.approvals.set(key, { requestId: record.requestId, rpcId: row.id });
       } catch (error) {
         this.send({ id: row.id, result: { decision: "decline" } }); this.answered.add(key);
-        this.output({ type: "permission.denied", reason: error instanceof Error ? error.message : String(error) });
+        // 사람의 거절과 구분한다 — 감독이 받지 않은 명령을 결과에 남겨 무엇이 막혔는지 보이게 한다
+        this.output({ type: "permission.denied", automatic: true, command: typeof p.command === "string" ? p.command.slice(0, 500) : undefined, reason: error instanceof Error ? error.message : String(error) });
       }
       return;
     }

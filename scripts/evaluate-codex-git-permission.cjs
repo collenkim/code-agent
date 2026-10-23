@@ -93,6 +93,9 @@ const store = use('master/store'); let token, runId, poll;
   report.branch = cp.execFileSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
   const output = fs.readFileSync(store.runOutput(repo, runId), 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse);
   report.hookEvents = output.filter(r => r.type === 'hook.completed');
+  // 실패한 실행에서도 모델이 고른 셸 꼴과 감독이 받지 않은 요청을 남긴다
+  report.commands = output.filter(r => r.type === 'item.completed' && r.item?.type === 'command_execution').map(r => ({ command: r.item.command, status: r.item.status, exitCode: r.item.exitCode ?? r.item.exit_code }));
+  report.permissionRows = output.filter(r => r.type === 'permission.requested' || r.type === 'permission.denied');
   assert.equal(run.state, 'completed'); assert.equal(store.listRuns(repo).length, 1);
   assert.equal(report.work.id, fixtures.CONSENT_WORK_ID); assert.equal(report.branch, `feature/${fixtures.CONSENT_WORK_ID}`);
   assert.ok(report.permissions.length > 0 && report.permissions.every(p => p.status === 'applied' && p.application.result.decision === 'accept' && p.application.result.executionConfirmed && p.application.result.exitCode === 0));

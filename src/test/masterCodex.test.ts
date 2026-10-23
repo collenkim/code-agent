@@ -5,6 +5,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { codexProject } from "./masterCodexFixture";
 import { hostArgs, hostEnv } from "../agent/master/supervisor";
+import { POWERSHELL_COMMAND_GUIDE } from "../agent/hostText";
+import { CODEX_PERMISSION_FORM } from "../agent/master/runGuard";
 import { hostProfileOf } from "../agent/master/protocol";
 import { listRuns, readBinding, writeBinding } from "../agent/master/store";
 import { codexHook } from "../agent/codexHook";
@@ -24,8 +26,22 @@ test("Codex 권한 옵션을 제한하고 부모 호스트 표지를 제거한�
   assert.ok(args.includes('approval_policy="on-request"')); assert.ok(args.includes('sandbox_mode="workspace-write"'));
   assert.ok(args.includes("app-server")); assert.ok(args.includes('approvals_reviewer="user"')); assert.ok(args.some(a => a.includes("run-marker")));
   assert.ok(!args.includes("--last"));
+  // PowerShell 이 npm 의 code-agent.ps1 을 골라 실행 정책에 막히지 않게 — 승인 래퍼로 받는 code-agent.cmd 꼴을 부르게 한다
+  const rules = JSON.parse(args.find(a => a.startsWith("developer_instructions="))!.slice("developer_instructions=".length)) as string;
+  assert.ok(rules.includes(POWERSHELL_COMMAND_GUIDE) && rules.includes(CODEX_PERMISSION_FORM));
+  const claude = hostArgs(hostProfileOf({ kind: "claude" }), { mode: "start", sessionId: "s" }).args;
+  assert.ok(!claude[claude.indexOf("--append-system-prompt") + 1].includes("code-agent.cmd"), "Claude 관리 실행 지침에는 넣지 않는다");
+  assert.equal(args.includes('shell_environment_policy.set.NoDefaultCurrentDirectoryInExePath="1"'), process.platform === "win32");
   const env = hostEnv({ CLAUDECODE: "1", CODEX_THREAD_ID: "parent", CODEX_CI: "1" }, "run-marker", "codex");
   assert.equal(env.CLAUDECODE, undefined); assert.equal(env.CODEX_THREAD_ID, undefined); assert.equal(env.CODEX_CI, undefined);
+  assert.equal(env.NoDefaultCurrentDirectoryInExePath, process.platform === "win32" ? "1" : undefined);
+  assert.equal(hostEnv({}, "run-marker", "claude").NoDefaultCurrentDirectoryInExePath, undefined);
+});
+test("Windows 의 관리 Codex 는 PATH 의 상대·저장소 안 항목을 지운다", { skip: process.platform !== "win32" }, () => {
+  const root = String.raw`C:\work\repo`, keep = [String.raw`C:\Windows\system32`, String.raw`"C:\Program Files\Git\cmd"`, String.raw`C:\work\repo-other\bin`];
+  const env = hostEnv({ Path: [keep[0], ".", String.raw`tools\bin`, "", String.raw`C:\work\repo\node_modules\.bin`, keep[1], String.raw`C:\WORK\REPO`, keep[2]].join(";") }, "run", "codex", root);
+  assert.equal(env.Path, keep.join(";"));
+  assert.equal(hostEnv({ Path: `.;${root}` }, "run", "claude", root).Path, `.;${root}`, "Claude 관리 실행의 PATH 는 그대로");
 });
 test("실제 감독이 Codex thread를 확정하고 접수 별칭으로 같은 세션을 한 번 재개한다", async () => {
   const f = codexProject();

@@ -36,6 +36,8 @@ const MASTER_COMMAND = /(?:^|[\s&;|("'\\/])(?:code-agent(?:\.cmd|\.ps1)?|cli\.js
 /** master 제어 명령 — 어느 호스트 세션의 셸에서도 부르지 않는다(러너와 사람의 터미널이 부른다). hook.decideOutside 가 쓴다 */
 export const MASTER_CONTROL_COMMAND = /(?:^|[\s&;|("'\\/])(?:code-agent(?:\.cmd|\.ps1)?|cli\.js)["']?\s+master(?=\s|$)/i;
 export const MASTER_CONTROL_DENIED = "master 제어 명령(code-agent master …)은 master 러너와 사람의 터미널이 부릅니다 — 호스트 세션의 셸에서 부르지 않습니다. 연동 상태는 code-agent status 로 봅니다.";
+/** 관리 Codex 의 단건 권한 요청 꼴 — 감독(codexPermissions)이 받는 꼴과 같아야 한다. 감독 지침(supervisor hostArgs)과 이 세션 안내가 함께 쓴다 */
+export const CODEX_PERMISSION_FORM = "Windows 에서는 PowerShell 의 code-agent.cmd start|verify|repro … 한 줄로 실행·요청한다(실행 정책 옵션·& 호출·복합 명령은 감독이 받지 않는다).";
 
 export function masterRunGuard(input: GuardInput, root: string, env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
   const run = masterRun(root, env);
@@ -69,6 +71,6 @@ export function masterRunNote(root: string, env: Readonly<Record<string, string 
     `- 질문·동의를 ${askVia()} 묻지 않는다: 동의는 ${skill("ca-answer")} 의 consent prepare 까지만 하고 동의 ID·요약을 보고한 뒤 턴을 끝낸다. 일반 질문은 interaction publish로 저장하고 human-input 대기한다.`,
     "- 승인·확정 기록을 만들거나 고치지 않는다. 판단은 master 가 사람이 준 위임 범위에서 하거나 사람에게 넘긴다.",
     "- code-agent 명령은 code-agent 로 부른다(node 경로로 부르지 않는다). 정지 요청을 받으면 도구를 더 쓰지 않고 보고 뒤 끝낸다.",
-    ...(run.hostProfile?.kind === "codex" ? ["- Git 쓰기가 필요한 start·verify·repro의 샌드박스 실패는 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. 감독이 사람 응답을 전달하며 업무 동의와 구분한다."] : []),
+    ...(run.hostProfile?.kind === "codex" ? [`- Git 쓰기가 필요한 start·verify·repro의 샌드박스 실패는 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. ${CODEX_PERMISSION_FORM} 감독이 사람 응답을 전달하며 업무 동의와 구분한다.`] : []),
   ].join("\n");
 }
