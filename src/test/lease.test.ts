@@ -102,14 +102,15 @@ describe("작업 임대 — hook·SessionStart·takeover", () => {
     assert.match(out.hookSpecificOutput?.permissionDecisionReason ?? "", /다른 세션이 이 작업을 진행 중입니다: Claude Code 세션 AAAAAAAA/);
   });
 
-  test("H4 Codex 두 세션 — 다른 Codex 세션의 진행은 막고, 하위 에이전트(부모 session_id)는 막지 않으며, 새 세션의 SessionStart 가 넘겨받는다", () => {
+  test("H4 Codex 두 세션 — 다른 세션과 하위 에이전트의 진행은 막고, 새 메인 세션의 SessionStart 가 넘겨받는다", () => {
     const D = "DDDDDDDD-codex";
     const codexBash = (session: string, extra: Record<string, string> = {}) => ((codexHook({ cwd: repo, hook_event_name: "PreToolUse", session_id: session,
       tool_name: "Bash", tool_input: { command: "code-agent next" }, ...extra }) as { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput?.permissionDecisionReason ?? "");
     assert.equal(codexBash(C), "");
     assert.deepEqual([readLease(repo)!.host, readLease(repo)!.session], ["codex", C]);
     assert.match(codexBash(D), /다른 세션이 이 작업을 진행 중입니다: Codex 세션 CCCCCCCC/);
-    assert.equal(codexBash(C, { agent_id: "sub-1", agent_type: "ca_explorer" }), "", "하위 에이전트는 부모 세션과 같다");
+    assert.match(codexBash(C, { agent_id: "sub-1", agent_type: "ca_explorer" }), /하위 에이전트는 진행·동의·임대 변경 명령을 실행하지 않습니다/);
+    assert.equal(readLease(repo)!.session, C, "하위 담당의 거부는 부모 임대를 바꾸지 않는다");
     // resume 은 같은 session_id 라 그대로, 새 세션의 SessionStart 는 넘겨받는다(압축 compact 은 넘겨받지 않는다).
     // 진행 상태와 임대 줄은 Claude 와 같은 sessionAnchor 를 additionalContext 로 붙인다
     const started = (session: string, source: string): string => {
