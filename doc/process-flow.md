@@ -169,6 +169,8 @@ flowchart TD
 
 ### 3.3 커서 이동
 
+승인은 답변된 질문의 제목·본문 해시와 답에도 묶인다. 승인 뒤 답이나 질문을 고치거나 답을 지우면 무효가 된다. 미응답 질문 추가는 승인 해시를 바꾸지 않으며 기존 질문 게이트로 막는다.
+
 `next`는 전이 그래프에서 현재 단계 게이트를 검사하고 기록 직전에 다시 검사한 뒤 커서를 옮긴다. 전체 재개는 §6.0을 따른다.
 
 | 명령 | 방향 | 조건 | `stages.jsonl`의 `by` |
@@ -287,6 +289,8 @@ sequenceDiagram
 | `apply` | consent-apply-failed | failed | `applying` 잔존, 앞선 확인을 하나 이상 통과한 뒤의 화면 불일치, 도메인 함수 실패 | 상태 확인 뒤 새로 준비 |
 
 ### 4.3 업무 질문 답 관찰 (`answers.ts`)
+
+관찰된 답은 같은 세션·호출의 ask/answer와 질문 UI 해시(`questionHash`), 질문 당시 문서 해시(`documentHash`)가 현재 제목·본문과 모두 맞아야 한다. UI 첫 줄은 문서 제목 그대로이며 제목이 다르면 문서 해시를 결속하지 않는다. 승인 문서 해시의 parts에는 답변된 질문의 고정 투영(`questions.md#답`: 질문 해시·답)이 들어간다.
 
 작업 ID가 없는 접수 전·완료 후 Claude 질문은 해당 프로젝트의 검증된 주 세션 원본에서 동일 세션·호출·질문·선택지와 구조화된 답을 대조한다. 사전 입력·보류·오류·다른 세션·하위 담당의 결과는 증거로 쓰지 않는다. 읽기 전용 상태 조회는 확인된 낡은 기록을 `recoverable`로 구분하고, `interaction list`·`next`·버전 적용은 동기화해 `superseded`로 닫는다. 새 답·승인·업무 문서를 합성하지 않으며, 원본이 없거나 불명확하면 대기를 유지한다. 확인된 낡은 기록만으로 버전 적용을 막지 않는다.
 
@@ -755,7 +759,7 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 관리 실행의 `runs/<runId>.json`에는 호스트 권한 설정(`hostProfile`), Codex 접수 별칭(`sessionAlias`)·thread 확인 여부(`sessionConfirmed`), 사용한 호스트 인계 ID(`handoffId`), master 가 고른 실행 방식(`execution`)이 있다. `works/<작업 ID>.json`의 `execution`은 그 작업에 고정한 실행 방식이다. 교차 검증·단독 호스트 판정이 `execution.json`보다 먼저 보고, 사람의 `execution --handoff`만 바꾼다. `master/host-handoff.json`은 TTY로 확인한 대상 호스트·브랜치·HEAD·작업·소유 세대·미응답을 보존하며 master 폴더와 함께 Git·동의 스냅샷에서 제외한다. 등록한 호스트별 설정은 master binding의 `hostProfiles`, 선택한 교차 주 호스트는 execution 정책의 `main`에 둔다. 해제한 임대의 옛 세션이나 아직 thread를 확인하지 않은 관리 Codex에는 질문 문서를 자동 결속하지 않는다.
 
-`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 키 저장소(`storeDir` — `CODE_AGENT_HOME` 또는 사용자 홈 `.code-agent`)의 `dashboard-channels/`에 둔다. 같은 키 저장소에 PC 신뢰(`master-trust.json`·`master-trust/<제어자>.pem`)와 페어링이 발급한 토큰(`master-tokens/<projectId>-<제어자>.token`)이 있다 — 모두 hook 의 키 자리 차단 안이다. 현재 상태 형식 세대는 13이다. 폼 표시 실패는 요청의 presentation에 기록한다. 종료 독립 세션은 원래 context를 바꾸지 않고 `recoveredRunId`로 연결하며 실행의 `recovery`에 확인자·원본 메타데이터·문맥·질문 목록을 보존한다.
+`.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 키 저장소(`storeDir` — `CODE_AGENT_HOME` 또는 사용자 홈 `.code-agent`)의 `dashboard-channels/`에 둔다. 같은 키 저장소에 PC 신뢰(`master-trust.json`·`master-trust/<제어자>.pem`)와 페어링이 발급한 토큰(`master-tokens/<projectId>-<제어자>.token`)이 있다 — 모두 hook 의 키 자리 차단 안이다. 현재 상태 형식 세대는 14이다. 폼 표시 실패는 요청의 presentation에 기록한다. 종료 독립 세션은 원래 context를 바꾸지 않고 `recoveredRunId`로 연결하며 실행의 `recovery`에 확인자·원본 메타데이터·문맥·질문 목록을 보존한다.
 
 `active.json`은 마지막으로 저장한 커서이며 브랜치가 다르면 조회 대상에서 제외한다. 다른 작업을 저장하기 전에 기존 커서와 임대를 `branches/<브랜치 SHA256>.json`·`<브랜치 SHA256>.lease.json`에 보관한다. 읽기만으로 파일을 옮기지 않는다. 저장·종료는 `branches/cursor.lock` 안에서 처리하고 종료는 현재 브랜치의 커서만 지운다. `branches/`는 Git에서 제외하되 커서는 동의 스냅샷에 포함한다. 임대와 잠금은 스냅샷에서 제외한다.
 
@@ -873,7 +877,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 테스트 파일에 없는 TC 통과 출력을 미확인으로 남기고 검증 명령의 승인 원장 변경을 복원한다 — `fix(1-5,1-6)`.
+- 승인에 답변된 질문을 묶고 관찰된 답은 질문 당시의 제목·본문을 재대조하며 상태 세대를 14로 올린다 — `fix(1-7)`.
+
+- 테스트 파일에 없는 TC 통과 출력을 미확인으로 남기고 검증 명령의 승인 원장 변경을 복원한다 — `d1ccd98`.
 
 - MCP 실행 인자도 셸 검사를 받고 하위 에이전트는 진행·동의·임대를 변경하지 못한다 — `c5a35fd`.
 

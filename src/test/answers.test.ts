@@ -49,7 +49,12 @@ function hook(event: object): { code: number; stderr: string } {
 }
 const question = (text: string, labels: string[], header = "범위") =>
   ({ question: text, header, options: labels.map((label) => ({ label, description: label })), multiSelect: false });
-function ask(text: string, labels: string[], answer: string, extra: { agent?: string; prefilled?: boolean; skipPre?: boolean; tool?: string } = {}) {
+function ask(text: string, labels: string[], answer: string, extra: { agent?: string; prefilled?: boolean; skipPre?: boolean; tool?: string; rawTitle?: boolean } = {}) {
+  const q = /^Q\d+/.exec(text)?.[0];
+  if (q && !extra.rawTitle) {
+    const source = parseQuestions(readFileSync(join(root, QUESTIONS), "utf8")).find(question => question.id === q);
+    if (source) text = `${source.title}\n${text}`;
+  }
   const questions = [question(text, labels)];
   const base = { cwd: root, session_id: "main", tool_use_id: extra.tool ?? `tool-${Math.random()}`, tool_name: "AskUserQuestion",
     ...(extra.agent ? { agent_id: extra.agent } : {}) };
@@ -62,6 +67,22 @@ function ask(text: string, labels: string[], answer: string, extra: { agent?: st
 }
 const writeQuestions = (body: string) => writeFixture(root, QUESTIONS, `# ${CONSENT_WORK_ID} 질문\n\n${body}`);
 const sources = () => answerSources(root, CONSENT_WORK_ID, parseQuestions(readFileSync(join(root, QUESTIONS), "utf8")));
+
+test("1-7 같은 Q와 답이어도 제목·본문을 바꾸거나 다른 제목으로 물으면 관찰된 답이 아니다", () => {
+  startWork();
+  const original = "## Q1 · 범위\n어디까지?\n[Answer]: 모듈 하나\n";
+  writeQuestions(original);
+  ask("Q1. 다른 질문?", ["모듈 하나", "전체"], "모듈 하나", { rawTitle: true });
+  assert.equal(sources().get("Q1"), "unverified");
+  ask("Q1. 어디까지?", ["모듈 하나", "전체"], "모듈 하나");
+  assert.equal(sources().get("Q1"), "observed");
+  for (const edited of [original.replace("범위", "승인"), original.replace("어디까지?", "삭제할까요?")]) {
+    writeQuestions(edited);
+    assert.equal(sources().get("Q1"), "unverified");
+  }
+  writeQuestions(original);
+  assert.equal(sources().get("Q1"), "observed");
+});
 
 test("T-6-1·T-6-2 Claude 질문 도구의 답은 관찰되고, 관찰 없이 적은 답은 출처 미확인으로 막힌다", () => {
   startWork();

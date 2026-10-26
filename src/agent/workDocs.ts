@@ -6,7 +6,8 @@ import { formatPlan } from "../core/plan";
 import type { BuildPlan } from "../core/types";
 import { errorLogOf, type WorkKind } from "../core/workOrder";
 import { checkSections, docPaths, normalizeHeading, sectionBody, sha } from "./docs";
-import { workDocsDir } from "./layout";
+import { questionsFile, workDocsDir } from "./layout";
+import { parseQuestions, questionContent } from "./questions";
 import { SCHEMAS, WORK_SCHEMAS } from "./schemas";
 import type { WorkDocKind } from "./schemas";
 import { ruled } from "./planningRules";
@@ -515,7 +516,7 @@ export function orderBody(text: string): string {
 
 /**
  * 계획과 한 묶음으로 승인되는 것의 해시 — **고정 목록**이다.
- * 지시서 본문 · 01 · 02 · 03 · 04 · 07. 모델이 쓴 문서 목록에 기대면 목록에서 빼는 것이 곧 검사를 끄는 것이 된다.
+ * 지시서 본문 · 01 · 02 · 03 · 04 · 07 · 답변된 질문의 제목·본문·답. 모델이 쓴 문서 목록에 기대면 목록에서 빼는 것이 곧 검사를 끄는 것이 된다.
  * 줄바꿈(CRLF/LF)만 바뀐 것은 바뀐 것으로 보지 않는다 (프로젝트 문서 확정과 같은 이유 — autocrlf).
  */
 export function workDocsHash(repoRoot: string, id: string, spec: string): string {
@@ -523,8 +524,13 @@ export function workDocsHash(repoRoot: string, id: string, spec: string): string
 }
 /** workDocsHash 의 항목(`<경로>:<해시>`) — 재승인 화면이 바뀐 문서를 고른다 */
 export function workDocsEntries(repoRoot: string, id: string, spec: string): string[] {
+  const path = questionsFile(id), text = normalized(repoRoot, path);
+  const answers = parseQuestions(text).filter(question => question.answer).map(question => ({
+    id: question.id, question: sha(questionContent(text, question.id)), answer: question.answer,
+  })).sort((a, b) => a.id.localeCompare(b.id, "en"));
   return [
     `${spec}#본문:${sha(orderBody(normalized(repoRoot, spec)))}`,
+    `${path}#답:${sha(JSON.stringify(answers))}`,
     ...HASHED_KINDS.map((kind) => {
       const path = workDocPath(id, kind);
       return `${path}:${sha(normalized(repoRoot, path))}`;

@@ -33,6 +33,7 @@ import type { Manifest } from "../core/manifest";
 import type { BuildPlan } from "../core/types";
 import { validateWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
+import { workDocsHash } from "../agent/workDocs";
 
 const MANIFEST: Manifest = {
   language: "python",
@@ -146,6 +147,24 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
+});
+
+test("1-7 승인된 질문의 제목·본문·답 변경은 승인을 무효화하고 미응답 추가는 유지한다", () => {
+  const path = join(repo, "doc/work/TEST-1/questions.md");
+  mkdirSync(join(repo, "doc/work/TEST-1"), { recursive: true });
+  const original = "## Q1 · 범위\n어디까지?\n[Answer]: 모듈 하나\n[Source]: 대화\n";
+  writeFileSync(path, original);
+  const hash = () => workDocsHash(repo, "TEST-1", "doc/work/TEST-1.md");
+  recordDecision(repo, { order: ORDER, target: TARGET, plan: PLAN, manifest: MANIFEST,
+    decision: "approved", approver: "팀장", presence: AT_TERMINAL, docsHash: hash() });
+  const status = () => checkApproval(repo, ORDER, PLAN, TARGET, { docsHash: hash() }).status;
+  assert.equal(status(), "approved");
+  writeFileSync(path, original + "\n## Q2 · 다음 질문\n어느 쪽?\n[Answer]:\n");
+  assert.equal(status(), "approved");
+  for (const changed of [original.replace("범위", "승인"), original.replace("어디까지?", "삭제할까요?"), original.replace("모듈 하나", "서비스 전체"), original.replace("모듈 하나", "")]) {
+    writeFileSync(path, changed);
+    assert.equal(status(), "stale-docs");
+  }
 });
 
 describe("없는 저장소에는 판정을 남기지 않는다", () => {

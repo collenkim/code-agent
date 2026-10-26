@@ -13,6 +13,7 @@ import { parseQuestions } from "../agent/questions";
 import { approvalDocsHash, loadWork } from "../agent/work";
 import { hashInput, loadPlanning, readyProblems, taskCurrent } from "../agent/planningState";
 import { next } from "../agent/commands";
+import { observeAnswerFixture } from "./consentFixture";
 
 const statement = "amount는 0 이상이고 percent는 0부터 100까지이며 범위 밖이면 RangeError";
 let repository: string | undefined;
@@ -116,7 +117,7 @@ test("옛 관찰 답은 계약 출처 변경의 우회가 아니며 이후 실�
   questions(statement, "대화");
   assert.equal(sources().get("Q1"), "unverified");
   const original = readFileSync(file, "utf8");
-  appendFileSync(file, JSON.stringify(observed) + "\n");
+  observeAnswerFixture(root, ID, "Q1", statement);
   assert.equal(sources().get("Q1"), "observed");
   for (const actor of ["ai", "human"]) {
     writeFileSync(file, original + JSON.stringify({ type: "delegated", q: "Q1", actor, hash: createHash("sha256").update(statement).digest("hex").slice(0, 16) }) + "\n");

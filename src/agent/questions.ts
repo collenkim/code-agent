@@ -39,6 +39,12 @@ export function structuralLine(text: string): boolean { return QUESTION_FIELD_LI
 /** `[Origin]:` 값 — 계획 작업 ID 형식(TaskSchema.id)과 같다 */
 export const ORIGIN_ID = /^[a-z][a-z0-9-]{0,63}$/;
 
+/** 답·진행 표시를 제외한 질문 제목과 본문. 승인 투영과 답 관찰이 같은 원문을 묶는다. */
+export function questionContent(text: string, id: string): string {
+  const block = text.replace(/\r\n/g, "\n").split(/^## /m).slice(1).find(part => part.split(/\s/)[0] === id);
+  return (block ?? "").split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "").trim();
+}
+
 /** 상태 설명과 보류는 업무 결정이 아니다. 기존 문서도 같은 규칙으로 읽는다. */
 export function usableAnswer(answer: string): boolean {
   const value = answer.trim().replace(/^(?:[A-Z0-9]+[.)]|[-*])\s+/, "");

@@ -14,7 +14,7 @@ import { createHash } from "crypto";
 import { dirname, join } from "path";
 
 import { findRepoRoot, loadActive, questionsFile, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
-import { parseQuestions, type Question } from "./questions";
+import { parseQuestions, questionContent, type Question } from "./questions";
 import { dependencyContracts } from "./dependencyContracts";
 import { writeAtomic } from "../core/atomic";
 import { skill } from "./hostText";
@@ -22,7 +22,7 @@ import { skill } from "./hostText";
 export const ANSWERS_FILE = "answers.jsonl";
 export function answersFile(id: string): string { return `${STATE_DIR}/work/${id}/${ANSWERS_FILE}`; }
 
-interface AskItem { q?: string; header: string; questionHash: string; options: string[] }
+interface AskItem { q?: string; header: string; questionHash: string; documentHash?: string; options: string[] }
 interface AnswerItem { q?: string; questionHash: string; answer: string; free: boolean; note?: string }
 export type AnswerRow =
   | { type: "start"; at: string; version: 1; intake: { q: string; hash: string }[] }
@@ -126,9 +126,16 @@ export function observeAnswerEvent(input: QuestionHookInput, projectDir?: string
   });
   if (input.hook_event_name === "PreToolUse") {
     const answers = record(input.tool_input?.answers);
+    const path = join(root, questionsFile(id));
+    const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+    const documented = parseQuestions(text);
     appendRow(root, id, { type: "ask", at, host: "claude", session: input.session_id, toolId: input.tool_use_id,
       prefilled: !!answers && Object.keys(answers).length > 0,
-      items: items.map(({ q, header, questionHash, options }) => ({ ...(q ? { q } : {}), header, questionHash, options })) });
+      items: items.map(({ q, header, questionHash, options, question }) => {
+        const source = documented.find(entry => entry.id === q);
+        const documentHash = source && question.split(/\r?\n/)[0].trim() === source.title ? sha16(questionContent(text, source.id)) : undefined;
+        return { ...(q ? { q } : {}), header, questionHash, options, ...(documentHash ? { documentHash } : {}) };
+      }) });
     return;
   }
   const hashes = items.map((item) => item.questionHash);
@@ -171,10 +178,13 @@ function candidates(question: Question): string[] {
  * 관찰된 응답이 이 질문의 답인가 — 같은 Q 번호의 응답만 본다. Q 번호 없는 질문 호출(예: "다음으로 넘어갈까요?" → "예")의 응답은
  * 어느 질문에도 맞추지 않는다 — 맞추면 같은 답(예·A)을 가진 다른 질문이 사람이 받은 적 없이 '관찰됨'이 된다(ca-answer 1-5: 질문은 Q 번호로 시작한다).
  */
-function observedMatch(question: Question, rows: AnswerRow[]): boolean {
+function observedMatch(root: string, id: string, question: Question, rows: AnswerRow[]): boolean {
   const wanted = candidates(question);
+  const current = questionHash(root, id, question.id);
   return rows.some((row) => row.type === "answer" && row.items.some((item) =>
-    item.q === question.id && wanted.includes(normalizeAnswer(item.answer))));
+    item.q === question.id && wanted.includes(normalizeAnswer(item.answer)) && rows.some(ask =>
+      ask.type === "ask" && !ask.prefilled && ask.session === row.session && ask.toolId === row.toolId &&
+      ask.items.some(entry => entry.q === question.id && entry.questionHash === item.questionHash && entry.documentHash === current))));
 }
 
 /**
@@ -187,7 +197,7 @@ export function writeAnswerBaseline(root: string, id: string, specPath: string):
   const path = join(root, questionsFile(id));
   const answered = existsSync(path) ? parseQuestions(readFileSync(path, "utf8")).filter((question) => question.answer) : [];
   const confirmed = intakeAnswers(root, specPath);
-  const intake = answered.filter((question) => !observedMatch(question, rows) && candidates(question).some((value) => confirmed.includes(value)))
+  const intake = answered.filter((question) => !observedMatch(root, id, question, rows) && candidates(question).some((value) => confirmed.includes(value)))
     .map((question) => ({ q: question.id, hash: sha16(question.answer) }));
   appendRow(root, id, { type: "start", at: new Date().toISOString(), version: 1, intake });
 }
@@ -196,8 +206,7 @@ export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "da
 /** 질문 원문도 결속한다. Q 번호만 같은 다른 질문으로 답을 옮길 수 없다. */
 export function questionHash(root: string, id: string, q: string): string {
   const text = readFileSync(join(root, questionsFile(id)), "utf8");
-  const block = text.split(/^## /m).slice(1).find(block => block.split(/\s/)[0] === q);
-  return sha16((block ?? "").split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "").trim());
+  return sha16(questionContent(text, q));
 }
 export function reuseContractAnswer(root: string, id: string, q: string, contractId: string, claimKey: string): string {
   const bundle = dependencyContracts(root, id);
@@ -248,16 +257,16 @@ export function answerSources(root: string, id: string, questions: Question[]): 
       const fresh = contractIndex < 0 ? subsequent : subsequent.slice(contractIndex + 1);
       const delegated = delegatedMatch(question, fresh);
       sources.set(question.id, question.source?.startsWith("기존 계약") ? (contractMatch(root, id, question, subsequent) ? "contract" : "unverified")
-        : observedMatch(question, fresh) ? "observed" : delegated?.actor === "ai" ? "delegated" : delegated?.actor === "human" ? "relayed" : "unverified");
+        : observedMatch(root, id, question, fresh) ? "observed" : delegated?.actor === "ai" ? "delegated" : delegated?.actor === "human" ? "relayed" : "unverified");
       continue;
     }
     const lastContract = rows.reduce((last, row, index) => row.type === "contract" && row.q === question.id ? index : last, -1);
     const later = lastContract < 0 ? [] : rows.slice(lastContract + 1);
     if (question.source?.startsWith("기존 계약")) sources.set(question.id, contractMatch(root, id, question, rows) ? "contract" : "unverified");
-    else if (lastContract >= 0) sources.set(question.id, observedMatch(question, later) ? "observed" : delegatedMatch(question, later)?.actor === "ai" ? "delegated" : delegatedMatch(question, later)?.actor === "human" ? "relayed" : "unverified");
+    else if (lastContract >= 0) sources.set(question.id, observedMatch(root, id, question, later) ? "observed" : delegatedMatch(question, later)?.actor === "ai" ? "delegated" : delegatedMatch(question, later)?.actor === "human" ? "relayed" : "unverified");
     else if (!start) sources.set(question.id, "legacy");
     else if (start.intake.some((entry) => entry.q === question.id && entry.hash === sha16(question.answer))) sources.set(question.id, "intake");
-    else if (observedMatch(question, rows)) sources.set(question.id, "observed");
+    else if (observedMatch(root, id, question, rows)) sources.set(question.id, "observed");
     else if (delegatedMatch(question, rows)) sources.set(question.id, delegatedMatch(question, rows)!.actor === "ai" ? "delegated" : "relayed");
     else if (question.source?.startsWith("대화")) sources.set(question.id, "conversation");
     else sources.set(question.id, "unverified");

@@ -218,7 +218,9 @@ function prefixPr(): string { return `doc/work/${CONSENT_WORK_ID}/10-pr.md`; }
 export function observeAnswerFixture(root: string, id: string, qid: string, answer: string, session = "answer-fixture"): void {
   const active = loadActive(root);
   assert.equal(active?.id, id, "진행 중인 작업의 질문만 관찰한다");
-  const question = `${qid}. 질문(테스트 fixture)`;
+  const source = parseQuestions(readFileSync(join(root, `doc/work/${id}/questions.md`), "utf8")).find(question => question.id === qid);
+  assert.ok(source, "질문은 호출 전에 문서에 있어야 한다");
+  const question = `${source.title}\n질문(테스트 fixture)`;
   const questions = [{ question, header: qid, options: [{ label: answer, description: "fixture" }, { label: "다른 답", description: "fixture" }], multiSelect: false }];
   const event = { cwd: root, session_id: session, tool_use_id: `answer-${randomUUID()}`, tool_name: "AskUserQuestion", tool_input: { questions } };
   observeAnswerEvent({ ...event, hook_event_name: "PreToolUse" });
