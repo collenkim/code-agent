@@ -57,8 +57,10 @@ export function interactionView(root: string, record: InteractionRecord, binding
   let reason = record.unavailableReason;
   if (!reason && record.kind === "host-permission") reason = (require("./master/codexPermissions") as typeof import("./master/codexPermissions")).permissionUnavailable(root, record);
   if (!reason && record.origin.type === "consent" && record.status === "pending") {
-    const consent = (require("./consent") as typeof import("./consent")).loadConsent(root, record.origin.id);
-    if (consent.status !== "pending" || consent.observed?.length || consent.binding || consent.delegation) reason = "원래 호스트에서 이미 응답을 시작한 동의입니다. 해당 채널의 결과를 확인하세요.";
+    try {
+      const consent = (require("./consent") as typeof import("./consent")).loadConsent(root, record.origin.id);
+      if (consent.status !== "pending" || consent.observed?.length || consent.binding || consent.delegation) reason = "원래 호스트에서 이미 응답을 시작한 동의입니다. 해당 채널의 결과를 확인하세요.";
+    } catch (error) { reason = `동의 기록을 읽지 못했습니다(${record.origin.id}): ${error instanceof Error ? error.message.split(/\r?\n/)[0] : String(error)}`; }
   }
   if (!reason && !contextMatches(root, record.context)) reason = "원래 브랜치·HEAD·작업에서 조회하세요.";
   // 수신(validateContext)과 같은 판정이다 — 조회가 응답 가능으로 보인 요청을 수신이 임대로 거절하지 않는다

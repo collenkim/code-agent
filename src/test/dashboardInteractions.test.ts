@@ -18,9 +18,31 @@ import { askChoice } from "../agent/choiceServer";
 import { answerSources, appendDelegatedAnswer, answerHash } from "../agent/answers";
 import { parseQuestions } from "../agent/questions";
 import type { RequestEnvelope } from "../agent/master/protocol";
+import { prepareConsent } from "../agent/consent";
 
 
 import { root, token, key, question, publish, request, choose, send, read, previousRun } from "./dashboardFixture";
+
+test("2-2 깨진 동의와 옮긴 프로젝트의 동의가 다른 질문의 조회·동기화를 막지 않는다", () => {
+  const question = publish();
+  const id = JSON.parse(prepareConsent(root, { action: "docs" }, { binding: { id: "owner", host: "claude" } })).id;
+  const path = join(root, `.code-agent/consents/${id}.json`), original = readFileSync(path, "utf8");
+  const stray = ".code-agent/consents/00000000-0000-0000-0000-000000000001.json";
+  writeFixture(root, stray, "{broken");
+  for (const damaged of ["{broken", JSON.stringify({ ...JSON.parse(original), root: join(root, "removed-project") })]) {
+    writeFileSync(path, damaged);
+    const view = read("interactions");
+    assert.equal(view.ok, true, JSON.stringify(view.error));
+    assert.ok(view.result.requests.some((r: any) => r.requestId === question.requestId));
+    const unavailable = view.result.requests.find((r: any) => r.origin.id === id);
+    assert.equal(unavailable.canRespond, false);
+    assert.match(unavailable.unavailableReason, /동의 기록을 읽지 못했습니다/);
+  }
+  writeFileSync(path, original);
+  const restored = read("interactions");
+  assert.equal(restored.ok, true);
+  assert.doesNotMatch(restored.result.requests.find((r: any) => r.origin.id === id).unavailableReason ?? "", /동의 기록을 읽지 못했습니다/);
+});
 
 test("모든 단계의 작업 ID 없는 질문이 영속화되고 기본 추천은 응답이 아니다", () => {
   for (const stage of INTERACTION_STAGES) {

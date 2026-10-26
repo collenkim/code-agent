@@ -372,7 +372,7 @@ Codex 관리 실행은 `codexHook`의 도구 분류 전에 같은 가드를 적�
    - 판정이 허용이고 메인 세션의 셸 명령이 정확한 꼴의 동의 준비·적용이면 티켓을 낸다(`decide` — §4.2). 작업 임대로 거부된 명령에는 티켓이 없다(아래 7).
    - 판정이 허용이고 하위 에이전트 밖의 셸 명령이 다음 작업을 여는 명령(`OPENING_COMMAND` — 연결자·리디렉션·치환 없이)이며 적용 대기(`pendingSwitch`)나 npm 패키지 진입점이 있으면 그 직전에 적용한다(`applyBeforeOpening`, §3.1). 진행 중인 일이 있으면 적용하지 않고, 실패해도 판정은 바꾸지 않는다 — 그 명령의 관문이 다시 시도하고 사유를 알린다.
 1. 셸 명령 검사(182-184): 관찰 명령(`consent-event`·`planning-event`·`review-event`·`codex-event`)을 부르면 거부한다. `consent apply·finish`는 세션 결속을 확인한다(`consentCommandGuard` — 그 꼴의 명령일 때만 `consent.ts`를 읽는다).
-2. 모드 결정(186-198): 작업 > 문서 세션 > 접수 세션 > 없음. 상태 경로의 루트는 `findRepoRoot(CLAUDE_PROJECT_DIR ?? cwd)`다 — 하위 폴더에서 연 세션도 저장소 루트의 작업·세션·열린 동의·적용 잠금을 본다(CLI·티켓·Codex 와 같은 루트). 상태를 읽지 못하면 `decideUnreadable` — 읽기, `code-agent.json` 쓰기, 셸의 `code-agent manifest check`·`status`·`help`와 `code-agent read <파일>`(연결자 없이 — Codex 의 읽기 길)만 연다. 거부 문구의 읽기·쓰기 도구는 호스트 표기다(`readVia`·`editVia`).
+2. 모드 결정(`decideTool`): 작업 > 문서 세션 > 접수 세션 > 없음. 상태 경로의 루트는 `findRepoRoot(CLAUDE_PROJECT_DIR ?? cwd)`다 — 하위 폴더에서 연 세션도 저장소 루트의 작업·세션·열린 동의·적용 잠금을 본다(CLI·티켓·Codex 와 같은 루트). 실행 방식·관리 실행·사전 판별을 포함해 상태를 읽지 못하면 `decideUnreadable` — 표준 읽기 도구, `code-agent.json` 쓰기, 셸의 `code-agent manifest check`·`status`·`help`와 `code-agent read <파일>`(연결자 없이 — Codex 의 읽기 길)만 연다. MCP는 상태를 읽을 수 있을 때 판정하며, 손상된 사전 판별 상태에서 경로 없는 외부 쓰기도 거부한다. 거부 문구는 문제 파일을 알리고 읽기·쓰기 도구를 호스트 표기로 낸다(`readVia`·`editVia`).
 3. 모드가 없으면 `decideOutside`: 셸은 키 자리 언급, 이 세션이 준비·응답한 동의가 응답·적용을 기다릴 때 code-agent 명령·읽기용 git 밖의 명령(30분, `openConsent` — 다른 세션의 동의는 좁히지 않는다), `.code-agent` 경로(`mentionsState`), hook 설정 파일(`.claude/settings(.local).json`·`.codex/hooks.json`·`.codex/config.toml` — `mentionsHostConfig`(`HOST_CONFIG`), 연결자 없는 `code-agent read <파일>`은 연다 — 문구의 읽기 도구는 `readToolVia`), 소스 update·적용 버전 고르기(`code-agent  update`·`npx code-agent update`·`cli.js update` 같은 꼴도 — `SOURCE_UPDATE`, 버전을 고르는 깃발 없는 `--templates-only`만 제외), master 제어 명령(`code-agent master …` — `trust`·`untrust`·`call` 포함, `MASTER_CONTROL_COMMAND`, 러너와 사람의 터미널이 부른다)을 거부한다. 앞의 둘은 Windows 의 글자 그대로의 별칭(대소문자, 이름 끝의 점·공백 `.code-agent./`, 8.3 짧은 이름 `CODE-A~1`·`CLAUDE~1\SETTIN~1.JSO`, `./`, 폴더 이름 뒤의 NTFS 스트림 표기 `.claude::$INDEX_ALLOCATION\`·`.code-agent:$I30:$INDEX_ALLOCATION/`, `<이름>\..\` — hook 설정 파일은 겹친 `a\b\..\..\` 까지 되풀이해 접은 꼴도)도 본다 — 와일드카드·변수로 조립한 이름은 잡지 못한다. 읽기는 키 자리만(`readDenied`), 쓰기는 키 자리·사용자 수준 hook 설정(`~/.claude/settings(.local).json`·`~/.codex`(또는 `CODEX_HOME`)`/hooks.json`·`config.toml` — 셸 언급 거부와 같은 파일, `userHostConfig`. 같은 파일의 다른 이름 — NTFS 스트림 표기(`settings.json::$DATA`·`:$DATA`·`:<이름>`, 폴더의 `::$INDEX_ALLOCATION`), 긴 경로 접두, 로컬 관리 공유, 이름 끝 점·공백, 대소문자, 8.3 짧은 이름, `..`, 세션 작업 경로·저장소 루트 기준 상대 경로 — 는 이름을 접고(`foldStreams`·`foldWindowsAlias`) 실제 경로로 풀어 견주며, 이름으로 접지 못한 별칭(하드 링크·이름으로 모르는 UNC)은 파일이 있으면 (dev, ino), 없으면 부모 폴더의 (dev, ino)와 파일 이름으로 견준다. Codex `apply_patch` 는 패치 경로마다 같은 판정을 받는다)·`:` 경로·`.code-agent`·`.claude`·`.codex`·`.agents`·`doc/work/*/requirement.md`만 거부한다. 그 밖의 저장소 밖 쓰기는 관여하지 않는다. `rm -rf .claude` 같은 폴더 단위 명령은 막지 않는다(시작 게이트·SessionStart·doctor 가 드러낸다).
 4. 셸이면 `decideBash`(387-421): 키 자리 언급과 AI-DLC 실행 언급을 먼저 거부한다(388-394). 연결·리다이렉트·줄바꿈·`$(`(56)를 거부하고, PowerShell이면 작은따옴표 밖의 `(){}@$`와 큰따옴표 안의 `$`도 거부한다(62-71). 모델 명령(§5.4), 선언된 build·test·commands(문서·접수 세션 제외), 읽기 전용 git(`status·diff·log·show`, 목록 보기 `git branch`, `-o`·`--output`·`--no-index` 제외)만 허용한다. 거부 문구는 허용 범위 한 줄에 원인이 맞는 갈래만 덧붙인다(`bashDenied` — 연결·리다이렉트 문자면 그 규칙, 머리가 `code-agent`면 받는 하위 명령 목록과 동의 문장, git 이면 읽기 규칙, 선언 명령의 첫 낱말이면 같은 실행 파일의 선언만 — 120자가 넘는 선언은 앞부분과 글자 수로 줄인다(`screenText.ts` `shortCommand`, 검증 요약·⑧ 단계 문제 줄도 같다. 전문은 `code-agent.json`과 실행 로그에 있다)).
    PowerShell 명령과 동의 티켓 인자에는 스마트 따옴표(U+2018~U+201E)를 허용하지 않는다. 따옴표를 접거나 ASCII와 짝을 추측하지 않는다.
@@ -761,6 +761,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 `runtime.json`의 `stateSchema`는 고정을 푼 뒤에도 남긴다. `applied`·`pending`이 없다는 이유로 상태 세대 기록을 지우지 않으며 낮은 세대 릴리스 적용을 계속 막는다.
 
+상태 JSON의 읽기와 구조 검증은 `stateJson.ts`의 `readJson(path, schema)`로 묶는다. 실행 방식·설치 호스트·런타임·사전 판별 기록은 손상 시 파일 경로를 포함한 Stop으로 알린다. 런타임의 저장소 경로와 적용 대기 ID도 형식을 검사한다. 동의 디렉터리 동기화는 손상되거나 옮긴 프로젝트의 기록만 건너뛰고 사유를 남긴다. 이미 표시한 요청에는 응답 불가 사유를 붙이며, 원본 기록을 복구하면 다시 대조한다.
+
 관리 실행의 `runs/<runId>.json`에는 호스트 권한 설정(`hostProfile`), Codex 접수 별칭(`sessionAlias`)·thread 확인 여부(`sessionConfirmed`), 사용한 호스트 인계 ID(`handoffId`), master 가 고른 실행 방식(`execution`)이 있다. `works/<작업 ID>.json`의 `execution`은 그 작업에 고정한 실행 방식이다. 교차 검증·단독 호스트 판정이 `execution.json`보다 먼저 보고, 사람의 `execution --handoff`만 바꾼다. `master/host-handoff.json`은 TTY로 확인한 대상 호스트·브랜치·HEAD·작업·소유 세대·미응답을 보존하며 master 폴더와 함께 Git·동의 스냅샷에서 제외한다. 등록한 호스트별 설정은 master binding의 `hostProfiles`, 선택한 교차 주 호스트는 execution 정책의 `main`에 둔다. 해제한 임대의 옛 세션이나 아직 thread를 확인하지 않은 관리 Codex에는 질문 문서를 자동 결속하지 않는다.
 
 `.code-agent/interactions/state.json`은 요청·수신·소비·적용·명령 멱등·재개 예약의 원장이다. 같은 폴더의 잠금·티켓과 함께 Git·동의 스냅샷에서 제외한다. `sourceInstanceId`와 `requestId`를 함께 식별자로 사용한다. 사람 채널 공개 키만 master binding에 두고 개인 키는 키 저장소(`storeDir` — `CODE_AGENT_HOME` 또는 사용자 홈 `.code-agent`)의 `dashboard-channels/`에 둔다. 같은 키 저장소에 PC 신뢰(`master-trust.json`·`master-trust/<제어자>.pem`)와 페어링이 발급한 토큰(`master-tokens/<projectId>-<제어자>.token`)이 있다 — 모두 hook 의 키 자리 차단 안이다. 현재 상태 형식 세대는 14이다. 폼 표시 실패는 요청의 presentation에 기록한다. 종료 독립 세션은 원래 context를 바꾸지 않고 `recoveredRunId`로 연결하며 실행의 `recovery`에 확인자·원본 메타데이터·문맥·질문 목록을 보존한다.
@@ -881,7 +883,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 없어진 고정 릴리스의 새 작업 시작을 막고 템플릿 복구의 고정 및 번들 복구의 상태 세대 기록을 보존한다 — `fix(2-1)`.
+- 손상된 실행 상태에도 읽기와 상태 조회를 유지하고 동의 기록 한 건의 손상을 격리하며 상태 JSON의 구조 검증 오류를 통일한다 — `fix(2-2)`.
+
+- 없어진 고정 릴리스의 새 작업 시작을 막고 템플릿 복구의 고정 및 번들 복구의 상태 세대 기록을 보존한다 — `32afa67`.
 
 - 승인에 답변된 질문을 묶고 관찰된 답은 질문 당시의 제목·본문을 재대조하며 상태 세대를 14로 올린다 — `1323371`.
 

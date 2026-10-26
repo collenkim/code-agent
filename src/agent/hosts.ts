@@ -8,6 +8,7 @@ import { codexAgentName, commonAgentName, POWERSHELL_COMMAND_GUIDE, ROLE_NAMES }
 import { guidance, POLICIES } from "./retryPolicy";
 import { executionMode } from "./executionMode";
 import { managedExecution } from "./master/workExecution";
+import { readJson } from "./stateJson";
 
 export type Host = "claude" | "codex";
 export type HostSelection = Host | "both";
@@ -23,9 +24,10 @@ export function selectedHosts(root: string, selected?: HostSelection): Host[] {
   if (selected) return selected === "both" ? ["claude", "codex"] : [selected];
   const file = join(root, ".code-agent", "hosts.json");
   if (!existsSync(file)) return ["claude"];
-  const value: unknown = JSON.parse(readFileSync(file, "utf8"));
-  if (!Array.isArray(value) || !value.length || value.some(host => host !== "claude" && host !== "codex")) throw new Stop("설치 호스트 기록이 잘못되었습니다: .code-agent/hosts.json");
-  return [...new Set(value)] as Host[];
+  return readJson(file, { parse(value) {
+    if (!Array.isArray(value) || !value.length || value.some(host => host !== "claude" && host !== "codex")) throw new Stop("설치 호스트 기록이 잘못되었습니다");
+    return [...new Set(value)] as Host[];
+  } }, ".code-agent/hosts.json");
 }
 /**
  * 교차 검증이 다른 호스트를 실행할 명령. 테스트·사내 배포는 `CODE_AGENT_CLAUDE_BIN` · `CODE_AGENT_CODEX_BIN` 으로 바꾼다

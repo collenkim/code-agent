@@ -22,6 +22,7 @@ import { assignmentLabels, retryReports } from "../agent/retryReport";
 import { codexTokensUsed } from "../agent/crossCheck";
 import { HOOK_LOG } from "../agent/hookLog";
 import { loadManifestIfAny } from "../agent/work";
+import { readRuntime } from "../agent/runtimeSelect";
 
 /**
  * P8 — 단일 실행 파일(자원 해석) · doctor · update.
@@ -53,6 +54,17 @@ afterEach(() => {
 });
 
 // ---- 자원 해석 ----
+
+test("2-2 손상된 호스트·런타임 필드는 경로를 알리는 Stop으로 보고한다", () => {
+  write(".code-agent/hosts.json", "{broken");
+  assert.throws(() => doctor(repo), (error: unknown) => error instanceof Stop && /hosts\.json/.test(error.message));
+  for (const value of [{ schema: 1, home: {} }, { schema: 1, home: "relative" },
+    { schema: 1, pending: { id: 42, since: "now", reason: "busy" } },
+    { schema: 1, pending: { id: "1.0.0-aaaaaaaaaaaa", home: [], since: "now", reason: "busy" } }]) {
+    write(".code-agent/runtime.json", JSON.stringify(value));
+    assert.throws(() => readRuntime(repo), (error: unknown) => error instanceof Stop && /runtime\.json/.test(error.message));
+  }
+});
 
 /** 번들이 담는 것과 같은 자원 묶음 — scripts/build-bin.js 의 assets 와 같은 키다 */
 function bundleAssets(): Record<string, string> {

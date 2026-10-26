@@ -72,6 +72,19 @@ const PLAN: BuildPlan = {
 let repo: string;
 let ORDER: WorkOrder;
 
+test("2-2 손상된 실행 방식·사전 판별 상태는 읽기와 상태 조회를 남기고 쓰기·MCP 실행을 막는다", () => {
+  for (const file of [".code-agent/execution.json", ".code-agent/log/triage/active.json"]) {
+    write(file, "{broken");
+    const run = (tool_name: string, tool_input: Record<string, unknown>) => decide({ cwd: repo, tool_name, tool_input });
+    assert.equal(run("Read", { file_path: join(repo, file) }), undefined, file);
+    assert.equal(run("Bash", { command: "code-agent status" }), undefined, file);
+    assert.match(run("Write", { file_path: join(repo, "app/x.py") }) ?? "", /상태·설정을 읽지 못했습니다/, file);
+    assert.match(run("mcp__serena__execute_shell_command", { command: "node change.js" }) ?? "", /상태·설정을 읽지 못했습니다/, file);
+    assert.match(run("mcp__jira__create_issue", { title: "새 작업" }) ?? "", /상태·설정을 읽지 못했습니다/, file);
+    rmSync(join(repo, file));
+  }
+});
+
 test("1-3 문서 세션의 MCP 셸은 명령 키와 모르는 인자 꼴 모두 셸 허용 목록을 지난다", () => {
   docsBegin(repo);
   const run = (tool_input: Record<string, unknown>) => decide({ cwd: repo, tool_name: "mcp__serena__execute_shell_command", tool_input });

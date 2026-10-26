@@ -371,7 +371,10 @@ function decideMcp(input: HookInput, projectDir?: string): string | undefined {
     if (reason) return `MCP 도구 ${input.tool_name}: ${reason}`;
   }
   const paths = mcpPaths(input.tool_input as Record<string, unknown>, LOCAL_FS_SERVERS.test(server), repoRoot);
-  if (!paths.length && mcpWrites(tool) && loadTriage(repoRoot)) return "사전 판별 중에는 외부 서비스·데이터를 변경하지 않습니다. Jira 생성은 준비된 본문으로 사람이 수행합니다.";
+  if (!paths.length && mcpWrites(tool)) {
+    try { if (loadTriage(repoRoot)) return "사전 판별 중에는 외부 서비스·데이터를 변경하지 않습니다. Jira 생성은 준비된 본문으로 사람이 수행합니다."; }
+    catch (error) { return decideUnreadable({ ...input, tool_name: "Write" }, repoRoot, error); }
+  }
   if (!paths.length) return undefined;
   const write = mcpWrites(tool);
   for (const path of paths) {
@@ -549,7 +552,10 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
       return "하위 에이전트는 진행·동의·임대 변경 명령을 실행하지 않습니다. 결과를 메인 세션에 돌려주세요.";
     }
   }
-  const root = findRepoRoot(projectDir ?? input.cwd), managed = managedExecution(root), mode = managed?.mode ?? executionMode(root);
+  const root = findRepoRoot(projectDir ?? input.cwd);
+  let managed: ReturnType<typeof managedExecution>, mode: ReturnType<typeof executionMode>;
+  try { managed = managedExecution(root); mode = managed?.mode ?? executionMode(root); }
+  catch (error) { return decideUnreadable(input, root, error); }
   if ((mode === "claude" || mode === "codex") && mode !== (input.host ?? "claude") && !crossChild() &&
       !READ_TOOLS.includes(input.tool_name) && !(["Bash", "PowerShell"].includes(input.tool_name) && LEASE_FREE.test(input.tool_input.command?.trim() ?? ""))) {
     return managed ? `이 작업은 master 요청에서 고른 실행 방식(${mode} 단독)으로 진행합니다. 다른 호스트로 이어 가려면 실행을 멈추고 호스트 밖 터미널에서 code-agent execution <호스트> --handoff 로 인계하세요.`
@@ -654,7 +660,8 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
  */
 function decideUnreadable(input: HookInput, repoRoot: string, error: unknown): string | undefined {
   const reason = `code-agent 상태·설정을 읽지 못했습니다: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}` +
-    ` — ${readVia()} 원인을 확인하고 ${editVia()} ${MANIFEST_FILE} 을 고친 뒤 code-agent manifest check 로 확인하세요.`;
+    ` — ${readVia()} 표시된 파일을 확인하세요. ${MANIFEST_FILE} 오류는 ${editVia()} 고친 뒤 code-agent manifest check 로 확인하고, 상태 기록 오류는 사람이 복구합니다.`;
+  if (input.tool_name.startsWith("mcp__")) return reason;
   if (READ_TOOLS.includes(input.tool_name)) {
     return readDenied(input);
   }

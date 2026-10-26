@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import { Stop } from "./stop";
 import { skill } from "./hostText";
+import { readJson } from "./stateJson";
 
 // 접수 전 조사 자료는 기존 log/ 제외 규칙을 쓴다. 인계할 때 작업 문서로 복사한다.
 export const TRIAGE_DIR = ".code-agent/log/triage";
@@ -55,14 +56,14 @@ export const triageRecordFile = (id: string): string => `${triageFolder(id)}/rec
 
 export function readTriageRecord(root: string, id: string): TriageRecord {
   if (!/^[a-f0-9]{24}$/.test(id)) throw new Stop("사전 판별 ID 형식이 잘못됐습니다");
-  const record = RecordSchema.parse(JSON.parse(readFileSync(join(root, triageRecordFile(id)), "utf8")));
+  const record = readJson(join(root, triageRecordFile(id)), RecordSchema, triageRecordFile(id));
   if (record.id !== id) throw new Stop("사전 판별 기록의 ID가 경로와 다릅니다");
   return record;
 }
 export function loadTriage(root: string): TriageRecord | undefined {
   const path = join(root, TRIAGE_ACTIVE);
   if (!existsSync(path)) return undefined;
-  const active = z.object({ id: z.string().regex(/^[a-f0-9]{24}$/) }).parse(JSON.parse(readFileSync(path, "utf8")));
+  const active = readJson(path, z.object({ id: z.string().regex(/^[a-f0-9]{24}$/) }), TRIAGE_ACTIVE);
   return readTriageRecord(root, active.id);
 }
 export function triageSummary(record: TriageRecord): string {

@@ -60,17 +60,27 @@ export function publishConsentInteraction(root: string, record: ConsentRecord): 
 }
 /** 조회도 현재 질문·동의를 대조하므로 hook이 없는 이전 버전의 빈 선택창을 복원하지 않는다. */
 export function synchronizeInteractions(root: string): void {
+  const unreadable = new Map<string, string>();
+  const failed = (id: string, error: unknown): void => {
+    const reason = `동의 기록을 읽지 못했습니다(${id}): ${error instanceof Error ? error.message.split(/\r?\n/)[0] : String(error)}`;
+    unreadable.set(id, reason);
+    process.stderr.write(`code-agent: ${reason}\n`);
+  };
   // 응답 저장 뒤 프로세스가 종료됐어도 취소한 동의가 열린 승인창으로 남지 않게 한다.
   for (const r of currentInteractions(root).requests) if (r.origin.type === "consent" && r.status === "cancelled") {
-    (require("./consent") as typeof import("./consent")).closeCancelledDashboardConsent(root, r.origin.id);
+    try { (require("./consent") as typeof import("./consent")).closeCancelledDashboardConsent(root, r.origin.id); }
+    catch (error) { failed(r.origin.id, error); }
   }
   const { loadConsent, consentGuide } = require("./consent") as typeof import("./consent");
   const consents = join(root, ".code-agent/consents");
   const known = currentInteractions(root).requests;
   if (existsSync(consents)) for (const name of readdirSync(consents)) {
     if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
-    const record = loadConsent(root, name.slice(0, -5));
-    if (record.status === "pending" && !known.some(r => r.origin.type === "consent" && r.origin.id === record.id)) publishConsentInteraction(root, record);
+    const id = name.slice(0, -5);
+    try {
+      const record = loadConsent(root, id);
+      if (record.status === "pending" && !known.some(r => r.origin.type === "consent" && r.origin.id === record.id)) publishConsentInteraction(root, record);
+    } catch (error) { failed(id, error); }
   }
   const active = loadActive(root);
   const workId = active?.id ?? (existsSync(join(root, REQUEST_SESSION_FILE)) ? JSON.parse(readFileSync(join(root, REQUEST_SESSION_FILE), "utf8")).id : undefined);
@@ -130,7 +140,16 @@ export function synchronizeInteractions(root: string): void {
         r.status = "superseded"; r.unavailableReason = "원래 질문 문서가 바뀌었습니다. 최신 문서·요청에서 확인하세요."; bumpInteraction(state, r); continue;
       }
       if (r.origin.type === "consent") {
-        const c = loadConsent(root, r.origin.id);
+        let c: ConsentRecord | undefined;
+        if (!unreadable.has(r.origin.id)) {
+          try { c = loadConsent(root, r.origin.id); } catch (error) { failed(r.origin.id, error); }
+        }
+        if (!c) {
+          const reason = unreadable.get(r.origin.id)!;
+          if (r.unavailableReason !== reason) { r.unavailableReason = reason; bumpInteraction(state, r); }
+          continue;
+        }
+        if (r.unavailableReason?.startsWith("동의 기록을 읽지 못했습니다(")) { delete r.unavailableReason; bumpInteraction(state, r); }
         if (c.status === "applied" && r.response?.channel !== "dashboard-human") { r.status = "applied"; r.application = { state: "applied", at: new Date().toISOString(), result: c.result }; bumpInteraction(state, r); }
         // 대시보드 응답 전에 대상 변경·다른 채널의 응답으로 닫힌 동의는 처리 실패가 아니다 — 닫고 다음 행동을 알린다. 적용 실패는 failed 로 남긴다
         else if (!r.response && (c.status === "deferred" || c.status === "failed" && c.failure?.kind !== "apply" && c.failure?.class !== "consent-apply-failed")) {

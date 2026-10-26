@@ -12,13 +12,14 @@
  *  - 환경 변수 `CODE_AGENT_RUNTIME_SELF=1` 은 "고르지 말고 이 릴리스로 돌아라" 다(갱신이 새 릴리스의 적용 명령을 직접 부를 때).
  *    읽은 뒤 지운다 — 자식 프로세스(교차 실행이 띄운 호스트의 hook 등)로 새지 않게.
  *
- * 이 모듈은 fs·path·os 와 layout 만 읽는다 — hook 경로에서 도구 호출마다 돈다.
+ * 이 모듈은 fs·path·os 와 layout·stateJson 만 읽는다 — hook 경로에서 도구 호출마다 돈다.
  */
 import { existsSync, readFileSync, realpathSync, readdirSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { isAbsolute, join, resolve } from "path";
 
 import { findRepoRoot, STATE_DIR } from "./layout";
+import { readJson } from "./stateJson";
 
 export const RUNTIME_KEY = Symbol.for("code-agent.runtime");
 export const RUNTIME_FILE = `${STATE_DIR}/runtime.json`;
@@ -112,9 +113,17 @@ export function installedRelease(id: string, home = releaseHome()): { dir: strin
 export function readRuntime(root: string): RuntimeState | undefined {
   const path = join(root, RUNTIME_FILE);
   if (!existsSync(path)) return undefined;
-  const value = JSON.parse(readFileSync(path, "utf8")) as RuntimeState;
-  if (value?.schema !== 1 || (value.applied !== undefined && !RELEASE_ID.test(value.applied))) throw new Error(`${RUNTIME_FILE} 형식이 아닙니다`);
-  return value;
+  return readJson(path, { parse(raw) {
+    const value = raw as RuntimeState | null;
+    const id = (v: unknown) => typeof v === "string" && RELEASE_ID.test(v);
+    const home = (v: unknown) => v === undefined || typeof v === "string" && isAbsolute(v) && !v.includes("\0");
+    if (value?.schema !== 1 || (value.applied !== undefined && !id(value.applied)) || !home(value.home) ||
+        (value.adopted !== undefined && !id(value.adopted)) ||
+        (value.stateSchema !== undefined && (!Number.isInteger(value.stateSchema) || value.stateSchema < 1)) ||
+        (value.pending !== undefined && (!value.pending || !id(value.pending.id) || !home(value.pending.home) ||
+          typeof value.pending.since !== "string" || typeof value.pending.reason !== "string"))) throw new Error("적용 버전 기록의 필드 형식이 아닙니다");
+    return value;
+  } }, RUNTIME_FILE);
 }
 
 /** status·doctor 의 한 줄 — 적용 버전·적용 대기·없어진 적용 버전. 고정한 적이 없으면 undefined */
