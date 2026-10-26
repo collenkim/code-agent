@@ -420,7 +420,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "lock-stale": {
     id: "lock-stale", label: "잠금 고착", group: "infra", auxiliary: false,
-    detect: `같은 PC 의 죽은 pid, 주인 기록 없는 ${MIN_LOCK}분 잠금`,
+    detect: `같은 PC 의 죽은 pid·시작 식별 불일치, 주인 기록 없는 ${MIN_LOCK}분 잠금`,
     retry: "auto", retryText: `같은 호출에서 회수. 살아 있으면 대기(${SEC_WAIT}초·hook ${SEC_HOOK_WAIT}초) 뒤 같은 명령 1회`,
     counters: ["lockBusy"],
     // lockBusy 는 안내 문구의 값이다 — 세거나 판정하는 코드가 없다(같은 명령을 한 번만 다시 실행하라는 안내)
@@ -1346,15 +1346,15 @@ export function consecutiveCrossStops(points: readonly { state: string; by?: str
 
 // ---- 잠금 ----
 
-export interface LockOwner { pid?: number; host?: string; at?: string }
+export interface LockOwner { pid?: number; host?: string; at?: string; started?: string }
 /**
- * 잠금 판정. 같은 PC 의 주인이 살아 있으면 wait(busy), 죽었으면 reclaim. 다른 PC 는 살았는지 알 수 없어 stop(사람).
+ * 잠금 판정. 같은 PC 의 주인이 살아 있고 시작 식별이 맞거나 미확인이면 wait(busy), 죽었거나 식별이 다르면 reclaim. 다른 PC 는 stop(사람).
  * 주인 기록이 없으면(옛 빈 잠금·쓰는 중·손상) 나이 회수를 허용한 잠금만 10분 뒤 reclaim, 그 밖은 stop.
  */
-export function lockDecision(input: { owner?: LockOwner; sameHost: boolean; alive?: boolean; ageMs: number; ageReclaim: boolean }): "reclaim" | "wait" | "stop" {
+export function lockDecision(input: { owner?: LockOwner; sameHost: boolean; alive?: boolean; identity?: boolean; ageMs: number; ageReclaim: boolean }): "reclaim" | "wait" | "stop" {
   if (typeof input.owner?.pid === "number" && typeof input.owner.host === "string") {
     if (!input.sameHost) return "stop";
-    return input.alive ? "wait" : "reclaim";
+    return input.alive && input.identity !== false ? "wait" : "reclaim";
   }
   return input.ageReclaim && input.ageMs > TIMING.lockStaleMs ? "reclaim" : "stop";
 }

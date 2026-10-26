@@ -60,6 +60,37 @@ describe("acquireLock", () => {
     release();
   });
 
+  test("2-3 살아 있는 PID라도 시작 식별값이 다르면 회수하고 같은 실행이면 막는다", () => {
+    const path = join(dir, "reused.lock");
+    const first = acquireLock(path, { waitMs: 0, ageReclaim: false, label: "그래프" });
+    const owner = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(typeof owner.started, "string", "OS 시작 식별값을 기록한다");
+    assert.throws(() => acquireLock(path, { waitMs: 0, ageReclaim: false, label: "그래프" }), /다른 code-agent 프로세스/);
+    first();
+    writeFileSync(path, JSON.stringify({ ...owner, started: `${owner.started}-old` }));
+    const { value: release } = captureStderr(() => acquireLock(path, { waitMs: 0, ageReclaim: false, label: "그래프" }));
+    assert.equal(JSON.parse(readFileSync(path, "utf8")).started, owner.started);
+    release();
+  });
+
+  test("2-3 waitMs 0도 주인 기록이 비어 있는 짧은 생성·해제 경합을 기다린다", () => {
+    const path = join(dir, "opening.lock");
+    writeFileSync(path, "");
+    const original = fsModule.readFileSync;
+    let seenAt: number | undefined, cleared = false;
+    fsModule.readFileSync = ((file: Parameters<typeof original>[0], ...args: unknown[]) => {
+      if (String(file) === path && !cleared) {
+        seenAt ??= Date.now();
+        if (Date.now() - seenAt >= 60) { cleared = true; rmSync(path); }
+      }
+      return (original as (...values: unknown[]) => unknown)(file, ...args);
+    }) as typeof original;
+    try {
+      const release = acquireLock(path, { waitMs: 0, ageReclaim: false, label: "그래프" });
+      assert.equal(cleared, true); release();
+    } finally { fsModule.readFileSync = original; }
+  });
+
   test("주인 기록 없는 잠금은 나이 회수를 허용할 때만 10분 뒤 회수한다", () => {
     const path = join(dir, "old.lock");
     writeFileSync(path, "");

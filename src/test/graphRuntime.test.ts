@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, rmSync, readdirSync, statSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, rmSync, readdirSync, readFileSync, statSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
@@ -7,6 +7,22 @@ import { DatabaseSync } from "node:sqlite";
 import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import { withGraphRun } from "../agent/graph/runtime";
 import { graphView } from "../agent/graph/view";
+import { acquireLock } from "../agent/lock";
+
+test("2-3 그래프 실행은 PID가 재사용된 run.lock을 회수한다", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ca-graph-pid-"));
+  const dir = join(root, ".code-agent/graph"), path = join(dir, "run.lock");
+  mkdirSync(dir, { recursive: true });
+  try {
+    const release = acquireLock(path, { waitMs: 0, ageReclaim: false, label: "그래프" });
+    const owner = JSON.parse(readFileSync(path, "utf8")); release();
+    writeFileSync(path, JSON.stringify({ ...owner, started: "previous-process" }));
+    let executed = false;
+    await withGraphRun(root, "test", "reused", async () => { executed = true; });
+    assert.equal(executed, true);
+    assert.equal(existsSync(path), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test("SQLite 재개: wait 뒤 최신 외부 상태를 관찰하고 실행 잠금을 해제한다", async () => {
   const root = mkdtempSync(join(tmpdir(), "ca-graph-"));

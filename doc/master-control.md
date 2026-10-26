@@ -118,6 +118,8 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 
 상태를 바꾸는 요청은 제어 잠금(`.code-agent/master/control.lock`) 안에서 한 번에 처리한다.
 
+읽기 요청의 `owner.lastSeenAt` 갱신도 같은 잠금을 짧게 기다려 얻은 뒤 현재 소유자·세대를 다시 확인한다. 잠금이 바쁘면 갱신을 생략하고 조회는 계속하므로 인계가 기록한 세대·상태를 낡은 owner로 덮지 않는다. 실행 잠금은 PID 생존뿐 아니라 OS 시작 식별값과 `supervisor.marker` 명령줄 표지를 대조해 PID 재사용을 구분한다. 시작 식별값을 알 수 없는 경우는 살아 있는 주인을 회수하지 않으며, 빈 잠금 파일은 주인 기록 유예를 지난 뒤 판단한다.
+
 1. `commandId` 기록(`commands/<ID>.json`)을 본다. 같은 내용(요청 해시 — `type`·`controller`·`expect`·`payload`)이면 기록된 응답을 `replayed: true`로 그대로 돌려주고 다시 실행하지 않는다. 다른 내용이면 `conflict`.
 2. 처리 전에 `received`를 먼저 쓴다. 처리 도중 끊겨 `received`로 남은 명령의 재전송은 다시 실행하지 않는다 — 그 명령으로 접수된 실행이 있으면 그 실행을 `recovered: true`로 돌려주고, 없으면 `internal`(결과를 확인할 수 없음)로 답한다. master 는 `snapshot`으로 대조한 뒤 새 `commandId`를 쓴다.
 3. 소유·세대 대조(§10) → 실행·인계 재조정 → 처리 → `accepted`(응답 포함) 또는 `rejected`로 기록하고 `command.accepted`·`command.rejected` 이벤트를 남긴다.

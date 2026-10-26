@@ -34,7 +34,9 @@ export function spawnSupervisor(root: string, runId: string): void {
 function withoutSupervisor<T>(root: string, runId: string, run: () => T): { held: true; value: T } | { held: false } {
   let release: () => void;
   try {
-    release = acquireLock(masterPath(root, RUN_LOCK(runId)), { waitMs: 0, ageReclaim: false, label: "master 실행", display: RUN_LOCK(runId) });
+    const marker = readRun(root, runId)?.supervisor?.marker ?? runId;
+    release = acquireLock(masterPath(root, RUN_LOCK(runId)), { waitMs: 0, ageReclaim: false, label: "master 실행", display: RUN_LOCK(runId),
+      identity: owner => { const state = liveness(owner.pid, marker); return state === "unknown" ? undefined : state === "alive"; } });
   } catch {
     return { held: false };
   }

@@ -443,8 +443,12 @@ export function call(root: string, text: string): ResponseEnvelope {
       });
     }
     if (!(MUTATING_TYPES as readonly string[]).includes(type)) {
-      const owner = readOwner(root);
-      if (owner && controller === owner.controller && request.generation === owner.generation && !owner.handover) touchOwner(root);
+      try {
+        withLock(root, CONTROL_LOCK, () => {
+          const owner = readOwner(root);
+          if (owner && controller === owner.controller && request.generation === owner.generation && !owner.handover) touchOwner(root);
+        }, 200);
+      } catch (error) { if (!(error instanceof ControlError) || error.code !== "busy") throw error; }
       return envelope(type, { result: read(root, binding, request) }, root);
     }
     return withLock(root, CONTROL_LOCK, () => {
@@ -503,6 +507,7 @@ function interrupted(root: string, record: CommandRecord): ResponseEnvelope {
     message: "이 명령은 처리 도중 끊겼고 결과를 확인할 수 없습니다 — 다시 실행하지 않습니다. snapshot 으로 상태를 대조한 뒤 새 commandId 로 요청하세요" } }, root);
 }
 
+/** CONTROL_LOCK 안에서만 부른다 — 인계 세대와 마지막 연락 시각을 함께 보존한다. */
 function touchOwner(root: string): void {
   const owner = readOwner(root);
   if (!owner) return;

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
@@ -16,12 +16,14 @@ import { decide as guardTool } from "../agent/hook";
 import { init } from "../agent/init";
 import { questionsFile } from "../agent/layout";
 import { LEASE_FILE } from "../agent/lease";
+import { acquireLock } from "../agent/lock";
 import { masterEnable, masterGrant, masterRevoke, grantOf } from "../agent/master/admin";
 import { call } from "../agent/master/control";
 import { advanceHandover } from "../agent/master/handover";
 import { COMMAND_TYPES, DEFAULT_POLICY, DELEGABLE_ACTIONS, ERROR_CODES, HUMAN_ONLY_ACTIONS, RUN_STATES } from "../agent/master/protocol";
 import { MASTER_RUN_ENV, masterRunGuard } from "../agent/master/runGuard";
-import { emit, readBinding, readOwner, writeBinding, writeOwner, writeRunRecord, writeWorkBinding, type RunRecord } from "../agent/master/store";
+import { CONTROL_LOCK, RUN_LOCK, masterPath, emit, readBinding, readOwner, readRun, writeBinding, writeOwner, writeRunRecord, writeWorkBinding, type RunRecord } from "../agent/master/store";
+import { reconcileRuns } from "../agent/master/runs";
 import { parseQuestions } from "../agent/questions";
 import { stateView } from "../agent/stateView";
 import { withGraphRun } from "../agent/graph/runtime";
@@ -72,6 +74,28 @@ afterEach(() => {
 });
 
 describe("기능 협상·인증·연동 조건", () => {
+  test("2-3 읽기 요청은 제어 잠금을 쥔 인계와 owner 기록을 덮어쓰지 않는다", () => {
+    const token = enable(), before = { ...readOwner(root)!, lastSeenAt: "2000-01-01T00:00:00.000Z" };
+    writeOwner(root, before);
+    const release = acquireLock(masterPath(root, CONTROL_LOCK), { waitMs: 0, ageReclaim: false, label: "인계" });
+    try {
+      assert.equal(send(token, "snapshot").ok, true, "연락 시각을 못 고쳐도 조회는 계속한다");
+      assert.deepEqual(readOwner(root), before);
+    } finally { release(); }
+    assert.equal(send(token, "snapshot").ok, true);
+    assert.notEqual(readOwner(root)!.lastSeenAt, before.lastSeenAt);
+  });
+
+  test("2-3 master 실행 잠금의 살아 있는 무관한 PID는 감독 표지로 구분해 회수한다", () => {
+    enable();
+    const policy = readBinding(root)!.policy, at = new Date(Date.now() - policy.startTimeoutMs * 2).toISOString(), runId = "run-reused-pid";
+    writeRunRecord(root, { version: 1, runId, commandId: "old", controller: "m1", generation: 1, mode: "start", links: {}, state: "accepted", acceptedAt: at, updatedAt: at,
+      sessionId: "old-session", promptHash: "x", timeoutMs: 1000, workId: null, baseHead: null, baseStateVersion: "x", history: [],
+      supervisor: { pid: process.pid, startedAt: at, marker: "unrelated-supervisor-marker", heartbeatAt: at } });
+    writeFileSync(masterPath(root, RUN_LOCK(runId)), JSON.stringify({ pid: process.pid, host: hostname(), at }));
+    reconcileRuns(root, policy);
+    assert.equal(readRun(root, runId)!.state, "abandoned");
+  });
   test("그래프 실행 위치를 snapshot·이벤트로 관찰하고 실행 기록만으로 업무 상태 해시는 바꾸지 않는다", async () => {
     const token = enable();
     const before = send(token, "snapshot").result.state.stateVersion;

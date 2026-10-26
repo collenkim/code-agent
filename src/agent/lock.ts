@@ -1,7 +1,7 @@
 /**
  * 공통 파일 잠금 — 계획 기록·리뷰 기록·작업 임대·동의 적용이 같이 쓴다.
  *
- * 잠금 파일을 `wx` 로 만들고 주인 `{pid, host, at, nonce}` 을 적는다. 이미 있으면 retryPolicy.lockDecision 으로 판정한다:
+ * 잠금 파일을 `wx` 로 만들고 주인 `{pid, host, at, started?, nonce}` 을 적는다. 이미 있으면 retryPolicy.lockDecision 으로 판정한다:
  * 같은 PC 의 죽은 주인은 같은 호출 안에서 회수하고(stderr 한 줄), 살아 있는 주인은 waitMs 까지 기다린 뒤 멈추며,
  * 다른 PC·주인 기록 없음은 사람에게 넘긴다(나이 회수를 허용한 잠금만 주인 없는 잠금을 10분 뒤 회수한다).
  * CLI 는 스스로 다시 실행하지 않는다 — 기다림이 끝나면 Stop 의 안내대로 메인이 같은 명령을 한 번 다시 부른다.
@@ -15,6 +15,7 @@ import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } fr
 import { hostname } from "os";
 import { lockDecision, TIMING, type LockOwner } from "./retryPolicy";
 import { Stop } from "./stop";
+import { ownProcessIdentity, processIdentity } from "./processIdentity";
 
 /** Stop 문구에 넘기는 값 */
 export interface LockView { label: string; display: string; pid?: number; host?: string; at?: string; ageSec: number; ageReclaim: boolean }
@@ -34,6 +35,8 @@ export interface LockOptions {
   display?: string;
   /** 호출자별 Stop 문구. 없는 항목은 기본 문구 */
   messages?: LockMessages;
+  /** 같은 PC의 살아 있는 PID에 대해 호출자가 아는 실행 표지까지 대조한다. 확인 실패는 undefined. */
+  identity?: (owner: LockOwner) => boolean | undefined;
 }
 
 /** 대기 간격 */
@@ -135,11 +138,18 @@ export function acquireLock(path: string, options: LockOptions): () => void {
   const messages = { ...DEFAULT_LOCK_MESSAGES, ...options.messages };
   const deadline = Date.now() + options.waitMs;
   const me = hostname();
+  const started = ownProcessIdentity();
+  const identity = (owner: LockOwner): boolean | undefined => {
+    if (options.identity?.(owner) === false) return false;
+    if (typeof owner.started !== "string") return undefined;
+    const actual = owner.pid === process.pid ? started : processIdentity(owner.pid!);
+    return actual === undefined ? undefined : actual === owner.started;
+  };
   const unseen = (): LockView => ({ label: options.label, display, ageSec: 0, ageReclaim: options.ageReclaim });
   let reclaimed = 0;
   let stopSince: number | undefined;
   for (;;) {
-    const record = JSON.stringify({ pid: process.pid, host: me, at: new Date().toISOString(), nonce: randomUUID() });
+    const record = JSON.stringify({ pid: process.pid, host: me, at: new Date().toISOString(), ...(started ? { started } : {}), nonce: randomUUID() });
     let fd: number | undefined;
     try { fd = create(path, record); }
     catch (error) {
@@ -166,7 +176,8 @@ export function acquireLock(path: string, options: LockOptions): () => void {
     const known = typeof owner?.pid === "number" && typeof owner.host === "string";
     const sameHost = known && owner!.host === me;
     const ageMs = Math.max(0, now - mtimeMs);
-    const decision = lockDecision({ owner, sameHost, alive: sameHost ? pidAlive(owner!.pid!) : undefined, ageMs, ageReclaim: options.ageReclaim });
+    const alive = sameHost ? pidAlive(owner!.pid!) : undefined;
+    const decision = lockDecision({ owner, sameHost, alive, identity: sameHost && alive ? identity(owner!) : undefined, ageMs, ageReclaim: options.ageReclaim });
     const view: LockView = { label: options.label, display, ...(known ? { pid: owner!.pid, host: owner!.host } : {}),
       ...(typeof owner?.at === "string" ? { at: owner.at } : {}), ageSec: Math.round(ageMs / 1000), ageReclaim: options.ageReclaim };
     if (decision === "reclaim" && reclaimed < MAX_RECLAIM) {
@@ -180,11 +191,12 @@ export function acquireLock(path: string, options: LockOptions): () => void {
         // 가드 안에서 다시 보고 다시 판정한다 — 그 사이 다른 프로세스가 회수하고 새로 잡았으면 건드리지 않는다
         const again = observe(path, Date.now());
         const still = !again.gone && !again.busy && again.text === text && lockDecision({ owner, sameHost,
-          alive: sameHost ? pidAlive(owner!.pid!) : undefined, ageMs: Math.max(0, Date.now() - again.mtimeMs), ageReclaim: options.ageReclaim }) === "reclaim";
+          alive: sameHost ? pidAlive(owner!.pid!) : undefined, identity: sameHost ? identity(owner!) : undefined,
+          ageMs: Math.max(0, Date.now() - again.mtimeMs), ageReclaim: options.ageReclaim }) === "reclaim";
         if (still) {
           unlinkSync(path);
           reclaimed++;
-          const why = known ? `pid ${owner!.pid} 종료` : `주인 기록 없음, ${Math.floor(ageMs / 60_000)}분 경과`;
+          const why = known ? `pid ${owner!.pid} 종료 또는 재사용` : `주인 기록 없음, ${Math.floor(ageMs / 60_000)}분 경과`;
           process.stderr.write(`code-agent: ${options.label} 잠금을 회수했습니다 — ${why}\n`);
         }
       } catch { /* 이미 치워졌다 */ }
@@ -194,7 +206,7 @@ export function acquireLock(path: string, options: LockOptions): () => void {
     if (decision === "wait" && now < deadline) { sleep(POLL_MS); continue; }
     if (decision === "wait") throw new Stop(messages.busy(view));
     stopSince ??= now;
-    if (now - stopSince < OWNER_WRITE_GRACE_MS && now < deadline) { sleep(POLL_MS); continue; }
+    if (now - stopSince < OWNER_WRITE_GRACE_MS) { sleep(POLL_MS); continue; }
     throw new Stop(known && !sameHost ? messages.foreign(view) : messages.unknown(view));
   }
 }
