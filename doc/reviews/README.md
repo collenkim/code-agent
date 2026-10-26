@@ -4,6 +4,7 @@
 
 | 날짜 | 변경·검증 기록 | 최종 근거 |
 |---|---|---|
+| 2026-10-26 | [전면 재검토 — 보안 울타리·복구 불가·템플릿 흐름·정리 대상 (작업 지시)](2026-10-26-full-review.md) — 구현 커밋은 작업 뒤 연결 | 검토 보고·PowerShell 재현(문서 안 「검증」) |
 | 2026-10-23 | [Codex 단건 Git 권한 — 셸 꼴 안내·cmd 래퍼·현재 폴더 가림 차단](2026-10-23-codex-git-wrapper.md) — `4dd40da` | [실험·실제 Codex 평가·회귀](evidence/2026-10-23-codex-git-wrapper.json) |
 | 2026-10-22 | [Codex 실행 준비 판정 — 실제 조회·상태 구분·실행 방식별 준비](2026-10-22-codex-readiness.md) — `6aaa6de` | [실제 Codex 실측·회귀·master-agent 상호 운용](evidence/2026-10-22-codex-readiness.json) |
 | 2026-10-22 | [대시보드 요청의 작업 임대 판정 통일](2026-10-22-dashboard-lease.md) — `c75f7a8` | [임대·재개·적용 뒤 동의 정리 회귀](evidence/2026-10-22-dashboard-lease.json) |

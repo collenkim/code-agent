@@ -50,6 +50,8 @@ export interface PrepareArgs { file?: string; action?: string; id?: string; kind
  * (; & | < > ` $( 줄바꿈)이나 짝 없는 따옴표가 있으면 undefined
  */
 export function splitCommandArgs(text: string): string[] | undefined {
+  // 셸마다 구분자 해석이 다른 스마트 따옴표에는 티켓을 발급하지 않는다.
+  if (/[\u2018-\u201e]/.test(text)) return undefined;
   const tokens: string[] = [];
   let current = "", started = false, quote: string | undefined;
   for (let index = 0; index < text.length; index += 1) {

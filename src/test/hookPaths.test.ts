@@ -59,6 +59,22 @@ function startWork(): void {
 }
 const store = () => dirname(storePath());
 
+test("1-1 스마트 따옴표의 괄호 평가를 PowerShell과 Codex 경로에서 거부한다", () => {
+  startWork();
+  for (const quote of "‘’‚‛“”„") {
+    const command = `git status ${quote}\"${quote} (Write-Output injected)`;
+    assert.ok(tool("PowerShell", { command }), command);
+    assert.ok(tool("Bash", { command }, { shell: "powershell" }), command);
+    assert.ok(bash(`git status ${quote}$(echo injected)${quote}`), "Bash 치환도 거부한다");
+    if (process.platform === "win32") {
+      const result = codexHook({ cwd: root, session_id: "s", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
+      assert.match(JSON.stringify(result), /deny/, command);
+    }
+  }
+  assert.equal(tool("PowerShell", { command: "git status 'plain'" }), undefined);
+  assert.equal(bash("git status ‘plain’"), undefined, "Bash의 일반 글자는 그대로 받는다");
+});
+
 test("Windows .cmd 명령은 조회·임대·읽기 전용 역할·셸 제한을 같은 순서로 판정한다", () => {
   startWork();
   for (const toolName of ["Bash", "PowerShell"]) {

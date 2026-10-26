@@ -20,6 +20,7 @@ import type { BuildPlan } from "../core/types";
 import { validateWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
 import { planFormatFor } from "../core/plan";
+import { consentCommandOf, splitCommandArgs } from "../agent/consentTicket";
 
 const STAGE: StageDef = {
   key: "restructure",
@@ -68,6 +69,16 @@ const PLAN: BuildPlan = {
 
 let repo: string;
 let ORDER: WorkOrder;
+
+test("1-1 스마트 따옴표와 ASCII 혼합 인자는 동의 준비 티켓으로 해석하지 않는다", () => {
+  for (const quote of "‘’‚‛“”„") {
+    for (const arg of [`${quote}\"${quote} (Write-Output injected)`, `'${quote}'`, `\"${quote}\"`]) {
+      assert.equal(splitCommandArgs(arg), undefined, arg);
+      assert.equal(consentCommandOf(`code-agent consent prepare ${arg}`), undefined, arg);
+    }
+  }
+  assert.deepEqual(splitCommandArgs("'doc/my plan.json' --for claude"), ["doc/my plan.json", "--for", "claude"]);
+});
 
 function write(relative: string, content = "x = 1\n"): void {
   const path = join(repo, relative);

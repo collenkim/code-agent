@@ -83,6 +83,8 @@ const SHELL_META = /[;&|<>`\r\n]|\$\(/;
  * 괄호 안이 실행된다. 작은따옴표 안만 글자 그대로이고, 큰따옴표 안에서는 $ 가 여전히 펼쳐진다.
  */
 function powershellMeta(command: string): boolean {
+  // PowerShell 은 스마트 따옴표도 ASCII 구분자와 섞어 닫는다. 접거나 짝을 추측하지 않는다.
+  if (/[\u2018-\u201e]/.test(command)) return true;
   let quote: string | undefined;
   for (const ch of command) {
     if (quote === "'") { if (ch === "'") quote = undefined; continue; }
