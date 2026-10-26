@@ -323,6 +323,18 @@ describe("문서 영향 — impact 게이트와 반영", () => {
     assert.equal(loadActive(stage.repo)!.phase, "design");
   });
 
+  test("2-8 영수증 기록 실패는 선택한 KNOWLEDGE를 원본으로 되돌린다", async () => {
+    await toDeliver();
+    stage.write(proposalFile("ORD-1"), PROPOSAL()); stage.writePr();
+    const file = join(stage.repo, "doc/knowledge/features.md"), before = readFileSync(file, "utf8");
+    const receipts = require("../agent/consentReceipts") as typeof import("../agent/consentReceipts"), original = receipts.writeConsentReceipts;
+    receipts.writeConsentReceipts = () => { assert.notEqual(readFileSync(file, "utf8"), before); throw new Error("receipt fixture failure"); };
+    try {
+      assert.throws(() => withInteraction({ confirm: () => PRESENCE, ask: () => "y" }, () => deliver(requireValidatable(stage.repo, "deliver"))), /receipt fixture failure/);
+      assert.equal(readFileSync(file, "utf8"), before);
+    } finally { receipts.writeConsentReceipts = original; }
+  });
+
   test("반영은 선언한 키만 제안받고, 구현되지 않은 기능·관찰을 확정으로 올린 정책은 거른 뒤 고른 것만 적용한다", async () => {
     await toDeliver();
     assert.match(status(stage.repo), /^지식 제안: `FEAT-ORDER-REGISTER`\(신규\) — doc\/work\/ORD-1\/knowledge\.proposal\.md 에, 형식은 /m);

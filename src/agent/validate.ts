@@ -240,8 +240,8 @@ const STARTED_LABEL: Record<"test" | "integrate", string> = { test: "테스트",
 
 /** 시작 표지의 실행이 아직 도는가 — 같은 PC 면 pid 로, 다른 PC 면 나이로 본다 */
 function startedRunning(work: Work, started?: VerifyRetryState["started"]): boolean {
-  if (!started || !(Date.now() - Date.parse(started.at) < runStaleMs(work))) return false;
-  return started.host === hostname() ? started.pid !== process.pid && pidAlive(started.pid) : true;
+  if (!started) return false;
+  return started.host === hostname() ? started.pid !== process.pid && pidAlive(started.pid) : Date.now() - Date.parse(started.at) < runStaleMs(work);
 }
 
 /** 실행 중인 test·통합 검증 위에 check·test 를 돌리지 않는다 — 서로의 증거를 덮는다 */
@@ -889,12 +889,12 @@ function rebaseTestFreeze(work: Work, evidence: Evidence, by: "collect" | "findi
 
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
 export async function check(work: Work, options: { retry?: boolean; note?: boolean } = {}): Promise<string> {
+  const disk = loadEvidence(work.repoRoot, work.active.id, work.active.target);
+  if (disk) requireNotRunning(work, verifyRetryOf(disk));
   const baseCommit = requireEvidenceBase(work);
   requireCleanPlan(work);
 
   const bound = boundEvidence(work);
-  // 실행 중인 test·통합 검증 위에 돌지 않는다 — 서로의 증거를 덮는다
-  if (bound) requireNotRunning(work, verifyRetryOf(bound));
 
   // 1) 회차 판정 — 실행 전에, 아무것도 쓰기 전에. 진입점(check 직접·verify·--retry)과 무관하게 이 한 곳이다
   const view = bound ? verifyView(work, bound) : undefined;
@@ -1172,7 +1172,7 @@ function claimWorktree(work: Work, mark: { phase: "integrate" | "repro"; round: 
     const found = readMarker(file);
     const staleMs = runStaleMs(work);
     const owner = found?.owner;
-    if (found && owner && owner.host === hostname() && owner.pid !== process.pid && pidAlive(owner.pid) && found.ageMs < staleMs) {
+    if (found && owner && owner.host === hostname() && owner.pid !== process.pid && pidAlive(owner.pid)) {
       throw new Stop(`다른 ${label(owner)}이 이 체크아웃에서 실행 중입니다 ${running(owner)}`);
     }
     if (found && owner && owner.host !== hostname() && found.ageMs < staleMs) {

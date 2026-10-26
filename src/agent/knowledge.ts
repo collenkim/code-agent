@@ -94,14 +94,14 @@ function entryOp(body: string): { op: EntryOp; replaces?: string } {
 const ENTRY_KEY = /^###\s+`([^`]+)`/;
 
 /**
- * 항목이 끝나는 자리 — `#`~`###` 제목뿐이다.
+ * 항목이 끝나는 자리 — `#`·`##` 제목과 백틱 키가 있는 `###` 제목이다.
  *
  * `####` 이상은 **항목 안의 소제목**이라 경계가 아니다. `##+` 로 보면 두 군데가 같이 깨진다:
  * `documentEntries` 가 본문을 소제목에서 잘라 그 아래의 살아 있는 근거 경로를 보지 못하고
  * (`prune` 이 멀쩡한 항목을 지우자고 묻는다), `removeEntry`·`applyEntry` 는 소제목 덩어리를
  * 문서에 고아로 남긴다.
  */
-const ENTRY_END = /^#{1,3}\s/;
+const ENTRY_END = /^(?:#{1,2}\s|###\s+`[^`]+`)/;
 
 /**
  * 제안 파일을 항목으로 가른다. `## <종류>` 아래의 `### \`키\` 이름` 이 항목 하나다.
@@ -171,14 +171,19 @@ export function existingEntry(text: string, key: string): string | undefined {
   return range ? text.split("\n").slice(range.from, range.to).join("\n").trimEnd() : undefined;
 }
 
-/** 같은 키가 있으면 그 자리에서 갈아 끼우고, 없으면 끝에 붙인다. 지우는 일은 없다 */
+/** 같은 키는 그 자리에서 갈아 끼우고 새 키는 해당 종류 절의 끝에 넣는다. */
 export function applyEntry(text: string, entry: KnowledgeEntry): string {
   const range = entryRange(text, entry.key);
   const lines = text.split("\n");
   if (range) {
     return [...lines.slice(0, range.from), ...entry.text.split("\n"), "", ...lines.slice(range.to)].join("\n").replace(/\n{3,}/g, "\n\n");
   }
-  return `${text.replace(/\s*$/, "")}\n\n${entry.text}\n`;
+  const section = lines.findIndex(line => /^##\s+(\S+)/.exec(line)?.[1] === entry.kind);
+  const next = lines.findIndex((line, index) => index > section && /^#{1,2}\s/.test(line));
+  const at = section >= 0 ? (next < 0 ? lines.length : next) : lines.findIndex(line => /^##\s+변경 이력/.test(line));
+  const index = at < 0 ? lines.length : at;
+  const insert = `${section < 0 ? `## ${entry.kind}\n\n` : ""}${entry.text}`;
+  return [...lines.slice(0, index), "", insert, "", ...lines.slice(index)].join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 /** 반영이 지운 적은 없지만 **사람은 지운다** — `knowledge prune` 이 고른 항목 하나를 잘라 낸다 */

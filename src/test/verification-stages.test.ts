@@ -33,6 +33,23 @@ beforeEach(() => createStageRepo());
 
 afterEach(() => removeStageRepo());
 
+test("2-8 코드 결함으로 테스트를 동결한 뒤에는 수집 수정 예산이 없다", async () => {
+  useManifest({ test: FAIL }); toCheck();
+  await verify(repo);
+  const evidence = loadEvidence(repo, "ORD-1", "order")!;
+  assert.ok(evidence.testFreeze);
+  assert.equal(verifyView(loadWork(repo)!, evidence).budget.collect.limit, 0);
+});
+
+test("2-8 묶임이 달라지고 오래된 표지도 같은 PC의 실행이 살아 있으면 check를 막는다", async () => {
+  toCheck(); await check(requireValidatable(repo, "check"));
+  const evidence = loadEvidence(repo, "ORD-1", "order")!;
+  evidence.planHash = "different-plan";
+  evidence.retry = { ...evidence.retry!, started: { phase: "test", round: evidence.rounds, pid: process.ppid, host: hostname(), at: "2000-01-01T00:00:00.000Z" } };
+  saveEvidence(repo, evidence);
+  await assert.rejects(() => check(loadWork(repo)!), /실행 중/);
+});
+
 test("1-5 구현 파일이 찍은 TC 통과 출력은 테스트 파일에 토큰이 없으면 unknown이다", () => {
   toCheck();
   write(TEST_FILE, "// TC-1\nclass OrderTest {}\n");

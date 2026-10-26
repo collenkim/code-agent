@@ -710,9 +710,15 @@ export function deliver(work: Work): string {
   }
 
   const { targets: knowledge, originals, applied } = selectKnowledge(work);
-  const impact = deliverImpact(work, applied);
-  // 동의 영수증(선택 label·시각·세션·실패 원인) — 동의 기록 자체는 커밋하지 않으므로 이 작업의 확인 이력을 커밋에 남긴다
-  writeConsentReceipts(work);
+  let impact: ReturnType<typeof deliverImpact>;
+  try {
+    impact = deliverImpact(work, applied);
+    // 동의 영수증(선택 label·시각·세션·실패 원인)을 반영 커밋에 남긴다.
+    writeConsentReceipts(work);
+  } catch (error) {
+    restoreKnowledge(repoRoot, originals);
+    throw error;
+  }
   const { commit, outside } = commitDelivery(work, evidence!, knowledge, originals);
   // 커밋 중 계획 파일이 바뀌었는가(pre-commit hook 등) — 검증한 부분 트리와 지금, 커밋본과 작업 트리를 대조한다. 되돌리지 않는다
   const planned = planPaths(work);

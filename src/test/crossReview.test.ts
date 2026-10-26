@@ -104,7 +104,11 @@ function fakeCodex(body = "fs.writeFileSync(out, process.env.FAKE_CROSS);"): voi
   process.env.FAKE_PROMPT = join(fakeDir, "prompt.txt");
 }
 const calls = () => existsSync(join(fakeDir, "calls.txt")) ? readFileSync(join(fakeDir, "calls.txt"), "utf8").length : 0;
-const prompt = () => readFileSync(join(fakeDir, "prompt.txt"), "utf8");
+const prompt = () => {
+  const argv = readFileSync(join(fakeDir, "prompt.txt"), "utf8");
+  const handoff = /([^\s]+cross-review-r\d+-\d+-prompt\.md) 를 읽고/.exec(argv)?.[1];
+  return handoff ? readFileSync(join(root, handoff), "utf8") : argv;
+};
 const cross = (result?: string) => { if (result !== undefined) process.env.FAKE_CROSS = result; return withCaller("claude", () => crossReview(root, "codex")); };
 const refusal = (pattern: RegExp) => (error: Error) => error instanceof RetryRefused && pattern.test(error.message);
 const X1_OPEN = `| X1 | ${CODE} | 계획 안 | 열림 | 경계값 누락 |`;
@@ -120,6 +124,16 @@ async function nextRound(code: string): Promise<void> {
 }
 
 // ---- 완료 지점·원인별 실패 ----
+
+test("2-8 긴 직전 교차 지적은 인자 대신 handoff 파일로 전달한다", async () => {
+  await crossRepo();
+  fakeCodex(`fs.writeFileSync(out, ${JSON.stringify(X1_OPEN.replace("경계값 누락", "경계값 누락 " + "x".repeat(40000)))});`);
+  cross();
+  await nextRound("module.exports=n=>{if(n<0)throw Error('negative!');return 1;};\n");
+  fakeCodex(); cross("- 없음");
+  assert.ok(readFileSync(join(fakeDir, "prompt.txt"), "utf8").length < 20000);
+  assert.ok(prompt().length > 40000);
+});
 
 test("PVR-1: 완료된 교차 지점은 다시 실행하지 않는다 — 다른 결과로 지적을 지우는 길이 없다", async () => {
   await crossRepo(); fakeCodex();

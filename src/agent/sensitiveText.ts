@@ -10,13 +10,18 @@ const SECRET_PATTERNS: readonly [string, RegExp][] = [
   ["개인 키", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["AWS 접근 키", /\bAKIA[0-9A-Z]{16}\b/],
   ["GitHub 토큰", /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
+  ["GitLab 토큰", /\bglpat-[A-Za-z0-9_-]{20,}/],
+  ["Google API 키", /\bAIza[A-Za-z0-9_-]{30,}/],
+  ["Stripe 키", /\b[rs]k_live_[A-Za-z0-9]{16,}/],
+  ["npm 토큰", /\bnpm_[A-Za-z0-9]{20,}/],
+  ["Slack 앱 토큰", /\bxapp-[A-Za-z0-9-]{10,}/],
   ["Slack 토큰", /\bxox[abprs]-[A-Za-z0-9-]{10,}/],
   ["API 키", /\bsk-[A-Za-z0-9_-]{20,}/],
   ["JWT", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
   ["인증 헤더", /\bAuthorization\s*:\s*(?:Bearer|Basic|Token)\s+\S{8,}/i],
   ["URL 의 계정 정보", /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i],
   // 앞은 경계를 보지 않는다 — `DB_PASSWORD=`·`csrftoken=` 처럼 이름 끝에 붙은 것도 잡는다(바로 뒤가 `:`·`=` 일 때만)
-  ["비밀 값 대입", /(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)\s*[:=]\s*["']?[^\s"'`,;]{6,}/i],
+  ["비밀 값 대입", /(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|AccountKey|SharedAccessSignature)\s*[:=]\s*["']?[^\s"'`,;]{6,}/i],
 ];
 
 /** 한 칸의 줄 수 상한 — 넘으면 로그·출력 전문으로 본다 */

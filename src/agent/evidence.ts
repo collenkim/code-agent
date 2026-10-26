@@ -545,8 +545,8 @@ export function verifyView(work: Work, evidence: Evidence): VerifyView {
   const reviewRounds = reviewRoundBudget(work, evidence);
   const budget = verifyBudget({
     retry, round: evidence.rounds, fixRounds: fixLimit(work, evidence),
-    // fix 는 재현부터 테스트가 얼어 있다 — 수집 수정 창이 재현 동결을 열지 않게 0 이다
-    collectLimit: evidence.repro ? 0 : LIMITS.collect,
+    // 재현·코드 결함으로 얼린 테스트는 수집 수정으로 다시 열지 않는다.
+    collectLimit: evidence.repro || evidence.runs.some(run => run.phase === "test" && runClass(run) === "defect") ? 0 : LIMITS.collect,
     reviewRounds,
   });
   const { state, emptyRound } = roundState(evidence);

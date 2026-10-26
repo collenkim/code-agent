@@ -20,8 +20,8 @@ function scanLines(output: string, onResult: (name: string, status: CaseStatus, 
       onResult(m[2], /#\s*(SKIP|TODO)\b/i.test(m[2]) ? "skipped" : m[1] === "ok" ? "passed" : "failed", "TAP");
       continue;
     }
-    m = /^([✔✓✖×﹣↓])\s+(.+)$/.exec(line);
-    if (m) { onResult(m[2], /[﹣↓]/.test(m[1]) || /#\s*(SKIP|TODO)\b/i.test(m[2]) ? "skipped" : /[✔✓]/.test(m[1]) ? "passed" : "failed", "node-spec"); continue; }
+    m = /^([✔✓✖✕×﹣↓○])\s+(.+)$/.exec(line);
+    if (m) { onResult(m[2], /[﹣↓○]/.test(m[1]) || /#\s*(SKIP|TODO)\b/i.test(m[2]) ? "skipped" : /[✔✓]/.test(m[1]) ? "passed" : "failed", "node-spec"); continue; }
     m = /^(.*?)\s+\.\.\.\s+(ok|FAIL|ERROR|skipped\b.*|expected failure|unexpected success)$/.exec(line);
     if (m) { onResult(m[1], m[2] === "ok" ? "passed" : /^(skipped|expected failure)/.test(m[2]) ? "skipped" : "failed", "unittest"); continue; }
     m = /^(\S+::.+?)\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)(?:\s+.*)?$/.exec(line);

@@ -179,6 +179,16 @@ describe("code-agent integrate", () => {
     assert.equal(after.retry!.integrateReruns[String(after.rounds)] ?? 0, 0);
   });
 
+  test("2-8 같은 PC의 실행 중 통합 표지는 나이로 회수하지 않는다", async () => {
+    await toIntegrate();
+    const file = worktreeMarkerFile(repo);
+    mkdirSync(dirname(file), { recursive: true });
+    const marker = JSON.stringify({ pid: process.ppid, host: hostname(), at: "2000-01-01T00:00:00.000Z", id: "ORD-1", target: "order", phase: "integrate", round: 1, worktree: join(tmpdir(), "active-worktree") });
+    writeFileSync(file, marker);
+    await assert.rejects(() => integrate(requireValidatable(repo, "integrate")), /실행 중/);
+    assert.equal(readFileSync(file, "utf8"), marker);
+  });
+
   test("낡은 표지의 worktree 가 이미 없으면 정리했다고 보고하지 않는다 (PVR-8)", async () => {
     await toIntegrate();
     const dead = deadPid();
@@ -361,10 +371,10 @@ describe("KNOWLEDGE 갱신 제안", () => {
     assert.match(after, /### `ITEM` 항목\n- 그대로/);
   });
 
-  test("새 키는 끝에 붙는다", () => {
+  test("새 키는 해당 종류 절에 붙는다", () => {
     const { entries } = parseProposal("## api-catalog\n### `GET:/api/orders` 조회\n- 근거: R2\n", ["R2"]);
     const after = applyEntry("# API 목록\n", entries[0]);
-    assert.match(after, /# API 목록\n\n### `GET:\/api\/orders` 조회/);
+    assert.match(after, /# API 목록\n\n## api-catalog\n\n### `GET:\/api\/orders` 조회/);
   });
 });
 

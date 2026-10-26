@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { runCrossProcess } from "./crossProcess";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { hostname, tmpdir } from "os";
 import { join, posix } from "path";
@@ -236,8 +236,7 @@ function runCrossOnce(root: string, host: Host, agent: Agent, prompt: string, sa
   const { model } = invocation;
   const started = Date.now();
   try {
-    const result = spawnSync(invocation.file, [...invocation.prefix, ...invocation.args], { cwd: root, env: invocation.env, encoding: "utf8",
-      windowsHide: true, timeout: crossTimeoutMs(), maxBuffer: 16 * 1024 * 1024 });
+    const result = runCrossProcess(invocation.file, [...invocation.prefix, ...invocation.args], root, invocation.env, crossTimeoutMs());
     const usage: CrossUsage = { durationMs: Date.now() - started };
     if (host === "codex") {
       const tokens = codexTokensUsed(result.stderr ?? "");
@@ -516,7 +515,8 @@ export function crossReview(root: string, by: string | undefined): string {
     "질문·설명문은 확정 지시서와 같은 언어로 쓴다.",
   ].join("\n");
 
-  const outcome = runCross(root, host, "ca-reviewer", prompt, { sandboxSuspect: !!start.suspect, format: start.mode === "correct" });
+  const promptFile = writeHandoff(root, id, `cross-review-r${start.round}-${start.n}-prompt.md`, prompt);
+  const outcome = runCross(root, host, "ca-reviewer", `${promptFile} 를 읽고 그 지시대로 교차 리뷰 결과 표 하나만 반환하라.`, { sandboxSuspect: !!start.suspect, format: start.mode === "correct" });
   let body: string | undefined, renamed = 0, fixedCells = 0, raw: string | undefined;
   let failed: Partial<CrossAttempt> | undefined;
   if (outcome.ok) {
