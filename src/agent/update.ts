@@ -98,7 +98,7 @@ export function update(repoRoot: string, options: InitOptions = {}): string {
     const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "codex-event", "codex"));
     const hooksBefore = readIfAny(join(repoRoot, ".codex", "hooks.json"));
     const choicesBefore = readIfAny(join(repoRoot, ".codex", "config.toml"));
-    const result = init(repoRoot, {host, cli, preserve: options.preserve, refresh: true});
+    const result = init(repoRoot, {host, cli, preserve: options.preserve ?? new Set(), refresh: true});
     // hook 은 이벤트마다 command(비Windows)와 commandWindows(Windows PowerShell)를 다시 쓴다 — 옛 설치의 Windows 명령도 여기서 고쳐진다
     const hooks = `  .codex/hooks.json: ${hooksBefore === readIfAny(join(repoRoot, ".codex", "hooks.json")) ? "그대로" : "갱신"} (${CODEX_EVENTS.join(" · ")} — PreToolUse ${installedHook(repoRoot, "PreToolUse", "codex-event", "codex")})`;
     // 다시 열지는 바뀌었을 때만 — 실행 중인 Codex 는 시작 때 띄운 MCP 를 쓴다(안내는 runtimeApply.hostGuidance)
@@ -121,7 +121,7 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
   // `upsertHook` 은 우리 항목을 걷어내고 새로 넣으므로, 승계하지 않으면 개발용 설치가
   // 조용히 `code-agent hook` 으로 갈아 끼워진다.
   const cli = options.cli ?? inheritedCli(installedHook(repoRoot, "PreToolUse", "hook"));
-  init(repoRoot, {cli, host: "claude", preserve: options.preserve});
+  init(repoRoot, {cli, host: "claude", preserve: options.preserve ?? new Set()});
 
   const shown = (key: string) => `.claude/${key.slice(CLAUDE_ASSETS.length + 1)}`;
   const added = keys.filter((key) => before.get(key) === undefined);

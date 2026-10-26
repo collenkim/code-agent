@@ -246,12 +246,12 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     for (const [event, subcommand] of CLAUDE_HOOKS) {
       const command = installedHook(repoRoot, event, subcommand);
       if (!command) {
-        add("✗", `${event} hook`, "없습니다", "code-agent init");
+        add("✗", `${event} hook`, "없습니다", "code-agent init — 수동 스킬·에이전트 사본은 보존합니다");
         continue;
       }
       const problem = hookProblem(command, onPath);
       const unmatched = subcommand === "planning-event" ? unmatchedTools(repoRoot, event, "ca-analyst|ca-explorer|ca-writer|ca-critic", subcommand) : subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
-      if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>]");
+      if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>] — 수동 스킬·에이전트 사본은 보존합니다");
       else if (unmatched.length > 0) {
         add("✗", `${event} hook`, `${command} — matcher 가 ${unmatched.join(" · ")} 를 넘기지 않습니다`, "code-agent update");
       } else add("✓", `${event} hook`, command);

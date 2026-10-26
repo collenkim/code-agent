@@ -251,10 +251,17 @@ export function init(repoRoot: string, options: InitOptions = {}): string {
   const hosts = selectedHosts(repoRoot, options.host);
   // 검증을 먼저 끝내어 깨진 사용자 설정을 덮어쓰지 않는다.
   requireInstallSettings(repoRoot, hosts);
+  if (options.preserve === undefined && ["version", "hosts.json"].some(file => existsSync(join(repoRoot, STATE_DIR, file)))) {
+    const { applyTemplates, CONFLICT_DIR } = require("./runtimeApply") as typeof import("./runtimeApply");
+    const result = applyTemplates(repoRoot, { host: options.host, cli: options.cli, preserveUnrecorded: true });
+    return [result.report, ...(result.kept.length ? [`사람이 고친 사본 ${result.kept.length}개를 보존했습니다: ${result.kept.join(" · ")}`,
+      `새 번들은 ${CONFLICT_DIR}/ 아래에 있습니다. 내용을 확인해 병합하세요.`] : [])].join("\n");
+  }
   const previous = existsSync(join(repoRoot, STATE_DIR, "hosts.json")) ? selectedHosts(repoRoot) :
     installedHook(repoRoot, "PreToolUse", "hook") ? ["claude" as Host] : [];
   const results = hosts.map(host => host === "claude" ? initClaude(repoRoot, options) : initCodex(repoRoot, options));
   writeIfChanged(join(repoRoot, STATE_DIR, "hosts.json"), JSON.stringify([...new Set([...previous, ...hosts])]) + "\n");
+  if (options.preserve === undefined) (require("./runtimeApply") as typeof import("./runtimeApply")).recordInstalledTemplates(repoRoot, hosts);
   // 두 호스트를 함께 깔면 교차 검증이 붙는다 — 둘 다 실행할 수 있을 때만 쓰도록 지금 상태를 알린다
   const cross = crossNotice(repoRoot);
   return [...results, ...(cross ? [cross] : [])].join("\n\n");

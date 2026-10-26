@@ -370,6 +370,29 @@ describe("P8 · PreToolUse matcher 는 읽기 도구도 넘긴다", () => {
 
 // ---- update ----
 
+test("2-4 init 재실행은 두 호스트의 수동 사본을 보존하고 빠진 hook을 복구한다", () => {
+  gitInit(); init(repo, { cli: CLI, host: "both" });
+  const paths = [".claude/skills/ca-check/SKILL.md", ".agents/skills/ca-check/SKILL.md"];
+  const originals = paths.map(read);
+  const manifest = ".code-agent/templates.json";
+  assert.ok(existsSync(join(repo, manifest)), "첫 설치부터 기준을 기록한다");
+  for (const recorded of [true, false]) {
+    if (!recorded) rmSync(join(repo, manifest));
+    paths.forEach((path, i) => write(path, `${originals[i]}\n팀의 수동 지침 ${recorded}\n`));
+    for (const path of [".claude/settings.json", ".codex/hooks.json"]) {
+      const settings = JSON.parse(read(path)); delete settings.hooks.Stop; write(path, JSON.stringify(settings));
+    }
+    const report = init(repo, { cli: CLI, host: "both" });
+    assert.match(report, /사람이 고친 사본 2개를 보존했습니다/);
+    paths.forEach((path, i) => {
+      assert.match(read(path), new RegExp(`팀의 수동 지침 ${recorded}`));
+      assert.equal(read(`.code-agent/template-conflicts/${path}`), originals[i]);
+    });
+    for (const path of [".claude/settings.json", ".codex/hooks.json"]) assert.ok(JSON.parse(read(path)).hooks.Stop.length);
+    assert.ok(existsSync(join(repo, manifest)));
+  }
+});
+
 describe("P8 · update", () => {
   test("사람이 바꾼 것을 보존하고 템플릿만 되돌린다", () => {
     gitInit();

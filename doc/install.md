@@ -108,6 +108,8 @@ npm 설치도 같지만, 이 바이너리에서 더 중요한 이유가 있다: 
 
 ## 3. `code-agent init` — 저장소에 생기는 것
 
+첫 설치는 스킬·에이전트 사본의 기준 해시도 `.code-agent/templates.json`에 남긴다. 설치한 저장소에서 `init`을 다시 실행하면 사람이 고친 사본을 보존하고 빠진 hook을 복구한다. 기준 기록이 없는 이전 설치에서도 번들과 다른 사본은 유지한다. 보존한 파일의 새 번들은 `.code-agent/template-conflicts/` 아래 같은 경로에서 확인해 병합한다.
+
 ```
 cd <프로젝트>
 code-agent init

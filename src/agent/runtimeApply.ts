@@ -181,14 +181,36 @@ function conflicts(root: string, bundle: Map<string, string>, manifest: Template
   return keep;
 }
 
+function recordTemplates(root: string, hosts: Host[], bundle: Map<string, string>, keep: ReadonlySet<string>, manifest?: TemplateManifest): void {
+  const files: Record<string, string> = { ...(manifest?.files ?? {}) };
+  for (const path of bundle.keys()) {
+    if (keep.has(path)) continue;
+    const text = readText(root, path);
+    if (text !== undefined) files[path] = ownedHash(text);
+  }
+  const ownedBy = (path: string) => hosts.some(host => host === "claude" ? path.startsWith(".claude/") : path.startsWith(".agents/") || path.startsWith(".codex/"));
+  for (const path of Object.keys(files)) if (!bundle.has(path) && ownedBy(path)) delete files[path];
+  writeAtomic(join(root, TEMPLATES_FILE), `${JSON.stringify({ schema: 1, release: ownLabel(), files: Object.fromEntries(Object.entries(files).sort()) }, null, 2)}\n`);
+}
+
+/** 처음 설치한 사본도 기준 해시를 남겨 다음 init이 사람이 고친 내용을 가릴 수 있게 한다. */
+export function recordInstalledTemplates(root: string, hosts: Host[]): void {
+  const bundle = new Map(hosts.flatMap(host => [...hostAssets(host, root)]));
+  recordTemplates(root, hosts, bundle, new Set(), readManifest(root));
+}
+
 /** 템플릿 반영 — 실패하면 전부 되돌리고 Stop. 돌려주는 것은 update() 보고·바뀐 종류·보존한 사본 */
-export function applyTemplates(root: string, options: { host?: HostSelection; cli?: string }): { report: string; changes: Changes; kept: string[]; unknown: string[] } {
+export function applyTemplates(root: string, options: { host?: HostSelection; cli?: string; preserveUnrecorded?: boolean }): { report: string; changes: Changes; kept: string[]; unknown: string[] } {
   const hosts = selectedHosts(root, options.host);
   const bundle = new Map<string, string>(hosts.flatMap((host) => [...hostAssets(host, root)]));
   const manifest = readManifest(root);
   const keep = conflicts(root, bundle, manifest);
+  if (options.preserveUnrecorded) for (const [path, text] of bundle) {
+    const current = readText(root, path);
+    if (manifest?.files[path] === undefined && current !== undefined && ownedHash(current) !== ownedHash(text)) keep.add(path);
+  }
   // 기록이 없으면(처음 적용) 사람이 고친 사본인지 가리지 못한다 — 새 번들과 다른 사본은 바꾸되 그렇다고 알린다
-  const unknown = manifest ? [] : [...bundle].filter(([path, text]) => { const now = readText(root, path); return now !== undefined && ownedHash(now) !== ownedHash(text); }).map(([path]) => path).sort();
+  const unknown = manifest || options.preserveUnrecorded ? [] : [...bundle].filter(([path, text]) => { const now = readText(root, path); return now !== undefined && ownedHash(now) !== ownedHash(text); }).map(([path]) => path).sort();
   const before = snapshot(root, [...bundle.keys(), ...INSTALL_FILES]);
   let report: string;
   try {
@@ -198,16 +220,7 @@ export function applyTemplates(root: string, options: { host?: HostSelection; cl
       mkdirSync(dirname(copy), { recursive: true });
       writeFileSync(copy, bundle.get(path)!);
     }
-    const files: Record<string, string> = { ...(manifest?.files ?? {}) };
-    for (const path of bundle.keys()) {
-      if (keep.has(path)) continue;
-      const text = readText(root, path);
-      if (text !== undefined) files[path] = ownedHash(text);
-    }
-    // 이번에 반영한 호스트의 사본인데 번들에 없는 기록(이름이 바뀌었거나 빠진 파일)은 지운다 — 다른 호스트의 기록은 그대로 둔다
-    const ownedBy = (path: string) => hosts.some((host) => host === "claude" ? path.startsWith(".claude/") : path.startsWith(".agents/") || path.startsWith(".codex/"));
-    for (const path of Object.keys(files)) if (!bundle.has(path) && ownedBy(path)) delete files[path];
-    writeAtomic(join(root, TEMPLATES_FILE), `${JSON.stringify({ schema: 1, release: ownLabel(), files: Object.fromEntries(Object.entries(files).sort()) }, null, 2)}\n`);
+    recordTemplates(root, hosts, bundle, keep, manifest);
   } catch (error) {
     const failed = restore(root, before);
     throw new Stop([`템플릿 적용 중 실패했습니다 — ${error instanceof Error ? error.message : String(error)}`,
