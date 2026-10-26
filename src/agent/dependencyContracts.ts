@@ -8,6 +8,10 @@ import { writeAtomic } from "../core/atomic";
 import { STATE_DIR } from "./layout";
 
 const LIMIT = 131072;
+// 한 명령의 동기 판정 구간에서 같은 원문·계약을 다시 읽을 때 Git 자식을 반복하지 않는다.
+// await·다음 명령으로 넘어가기 전에 버리며 stat이나 계약 내용이 바뀌면 즉시 다시 검증한다.
+const sourceMemo = new Map<string, string>();
+let clearScheduled = false;
 const digest = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const Key = z.string().regex(/^[a-z][a-z0-9.-]{0,95}$/);
 const Claim = z.object({ key: Key, text: z.string().trim().min(1).max(8000).regex(/^[^\r\n\u2028\u2029]+$/) }).strict();
@@ -32,6 +36,10 @@ function source(ref: z.infer<typeof Reference>): string {
   const file = realpathSync(resolve(root, ref.path));
   const inside = relative(root, file);
   if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) throw new Error("계약 근거가 지정 저장소 밖입니다");
+  const stat = statSync(file, { bigint: true });
+  const key = JSON.stringify([ref, root, file, stat.dev.toString(), stat.ino.toString(), stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString()]);
+  const cached = sourceMemo.get(key);
+  if (cached !== undefined) return cached;
   const git = (args: string[]) => execFileSync("git", ["-C", root, ...args], { maxBuffer: LIMIT, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   if (realpathSync(git(["rev-parse", "--show-toplevel"]).toString().trim()) !== root) throw new Error("계약 repository는 Git 저장소 루트여야 합니다");
   const entry = git(["ls-tree", ref.commit, "--", ref.path]).toString();
@@ -42,6 +50,11 @@ function source(ref: z.infer<typeof Reference>): string {
   const content = blob.toString("utf8");
   if (digest(content) !== ref.sha256 || content.includes("\0")) throw new Error("계약 근거는 UTF8 텍스트여야 합니다");
   for (const claim of ref.claims) if (!content.split(/\r?\n/).some(line => line.trim() === claim.text)) throw new Error(`계약 ${ref.id}의 ${claim.key}가 원문 한 줄과 다릅니다`);
+  sourceMemo.set(key, content);
+  if (!clearScheduled) {
+    clearScheduled = true;
+    queueMicrotask(() => { sourceMemo.clear(); clearScheduled = false; });
+  }
   return content;
 }
 function conflicts(contracts: DependencyContract[]): void {

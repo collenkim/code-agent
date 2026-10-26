@@ -41,7 +41,7 @@ import { usage, usageReport } from "./usage";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
-import { applyConsent, consentStatus, finishConsent, loadConsent, prepareConsent, renderConsentOutput } from "./consent";
+import { applyConsent, consentStatus, finishConsent, prepareConsent, renderConsentOutput } from "./consent";
 import { APPLY_UNOBSERVED, parsePrepareArgs, PREPARE_UNOBSERVED, takeTicket, terminalCaller } from "./consentTicket";
 import { contextHandoff, handoffPlanning, stageHandoff } from "./handoff";
 import { planningAdvanceCli, planningAssignmentCli, planningJson } from "./planningChain";
@@ -358,8 +358,8 @@ export async function runCommand(command: string | undefined, args: string[]): P
         if (!tty && !ticket) throw new Stop(APPLY_UNOBSERVED);
         const caller = tty ?? { sessionId: ticket!.sessionId };
         const apply = () => args[0] === "apply" ? applyConsent(repoRoot, args[1], caller) : renderConsentOutput(repoRoot, finishConsent(repoRoot, args[1], caller));
-        // 릴리스 교체는 실행 중인 그래프 바깥에서 수행한다. 업데이트 자체의 잠금·동의 검사는 유지한다.
-        print(loadConsent(repoRoot, args[1]).action.action === "update" ? apply() : await operation(args[0], apply));
+        // 응답 적용은 동의 잠금과 스냅샷으로 직렬화한다. 긴 검증의 그래프 잠금이 사람 응답을 막지 않는다.
+        print(apply());
       } else if (args[0] === "status" && args[1]) print(renderConsentOutput(repoRoot, consentStatus(repoRoot, args[1])));
       else throw new Stop("사용법: code-agent consent prepare <작업.json> | --action <동작> … [--for claude|codex] | status <ID> | apply <ID> | finish <ID>");
       return 0;

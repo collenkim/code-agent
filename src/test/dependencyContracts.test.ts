@@ -39,6 +39,27 @@ function questions(answer = "", source = "") {
 }
 const sources = () => answerSources(root, ID, parseQuestions(readFileSync(join(root, DIR, "questions.md"), "utf8")));
 
+test("2-9 같은 판정 구간의 계약은 Git 검사를 재사용하고 원문 변경과 다음 구간은 다시 검사한다", async () => {
+  register(); await Promise.resolve();
+  const child = require("node:child_process") as typeof import("node:child_process"), original = child.execFileSync;
+  let calls = 0;
+  child.execFileSync = ((file: string, args: string[], options: object) => {
+    if (file === "git") calls += 1;
+    return Reflect.apply(original, child, [file, args, options]);
+  }) as typeof original;
+  try {
+    assert.equal(dependencyContracts(root, ID).problems.length, 0);
+    assert.equal(dependencyContracts(root, ID).problems.length, 0);
+    assert.equal(calls, 3);
+    await Promise.resolve();
+    assert.equal(dependencyContracts(root, ID).problems.length, 0);
+    assert.equal(calls, 6);
+    appendFileSync(join(repository!, "contract.md"), "changed\n");
+    assert.ok(dependencyContracts(root, ID).problems.length > 0);
+    assert.equal(calls, 9);
+  } finally { child.execFileSync = original; }
+});
+
 test("계약 사본이 explore와 design 입력에 연결되고 사본을 근거로 반환한 결과가 완료된다", () => {
   register(); analysis(); preparePlanning(root);
   const explore = dispatch("explore");

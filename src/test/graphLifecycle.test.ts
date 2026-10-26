@@ -6,7 +6,9 @@ import { afterEach, beforeEach, test } from "node:test";
 import { advanceFlow } from "../agent/graph/lifecycle";
 import { advancePhase } from "../agent/graph/transition";
 import { graphView } from "../agent/graph/view";
-import { loadActive, saveActive } from "../agent/layout";
+import { loadActive, saveActive, planFile, questionsFile } from "../agent/layout";
+import { rmSync } from "node:fs";
+import { Stop } from "../agent/stop";
 import { loadEvidence } from "../agent/evidence";
 import { stateView } from "../agent/stateView";
 import { useNotation } from "../agent/hostText";
@@ -16,6 +18,31 @@ import { ORDER, createStageRepo, removeStageRepo, repo, toCheck, toIntegrate, us
 
 beforeEach(() => createStageRepo("ca-graph-flow-"));
 afterEach(() => { useNotation("claude"); removeStageRepo(); });
+
+test("2-9 plan 초안이 없어도 미응답 질문은 사람 판단으로 인계한다", async () => {
+  toCheck();
+  saveActive(repo, { ...loadActive(repo)!, phase: "plan" });
+  rmSync(planFile(repo, "ORD-1", "order"));
+  write(questionsFile("ORD-1"), "## Q1 · 범위 결정\n어느 범위까지 적용합니까?\n[Answer]:\n");
+  const result = await advanceFlow(repo);
+  assert.equal(result.kind, "human");
+  assert.equal(result.node, "decision");
+});
+
+test("2-9 모르는 단계는 그래프 라우팅 전에 Stop으로 안내한다", async () => {
+  toCheck(); saveActive(repo, { ...loadActive(repo)!, phase: "obsolete" as never });
+  await assert.rejects(() => advancePhase(repo), (error: Error) => error instanceof Stop && /알 수 없는 스테이지/.test(error.message));
+});
+
+test("2-9 승인 뒤 게이트가 바뀌면 failed 대신 사람에게 인계한다", async () => {
+  toCheck(); saveActive(repo, { ...loadActive(repo)!, phase: "plan" });
+  const transition = require("../agent/graph/transition") as typeof import("../agent/graph/transition"), original = transition.advancePhase;
+  transition.advancePhase = async () => { throw new Stop("승인 뒤 게이트 변경"); };
+  try {
+    const result = await advanceFlow(repo);
+    assert.equal(result.kind, "human"); assert.match(result.instruction, /승인 뒤 게이트 변경/);
+  } finally { transition.advancePhase = original; }
+});
 
 for (const host of ["claude", "codex"] as const) test(`${host}: 같은 그래프로 검증을 실행하고 리뷰에 인계하며 재개 시 통과 증거를 재사용한다`, async () => {
   toCheck(); useNotation(host);

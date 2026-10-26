@@ -15,6 +15,7 @@ import { start } from "../agent/commands";
 import { readDocLedger } from "../agent/docs";
 import { decide } from "../agent/hook";
 import { findRepoRoot } from "../agent/layout";
+import { acquireLock } from "../agent/lock";
 import { cancelPlanning, dispatchPlanning, planningBudget, preparePlanning } from "../agent/planning";
 import { loadPlanning } from "../agent/planningState";
 import { GRANT_STEP, GUIDE_VARIANTS, POLICIES } from "../agent/retryPolicy";
@@ -61,6 +62,20 @@ const codexReply = (id: string, session: string, choice = "1", code = codexReply
 const prepared = (action: ConsentAction, binding?: { id: string; host: "claude" | "codex" }) =>
   JSON.parse(prepareConsent(root, action, binding ? { binding } : {})) as { id: string; status: string; warning?: string; codexReply?: { format: string; questions: { question: string }[] }; toolInput: { questions: { question: string }[] } };
 const touchDoc = () => writeFixture(root, "doc/architecture.md", readFileSync(join(root, "doc/architecture.md"), "utf8") + "\n바뀜\n");
+
+test("2-9 실행 중인 그래프 잠금이 실제 응답의 동의 적용을 막지 않는다", () => {
+  touchDoc();
+  const { id } = prepared({ action: "docs" }, { id: "MAIN", host: "claude" });
+  answerAs(id, "MAIN");
+  assert.equal(bash(`code-agent consent finish ${id}`, "MAIN"), undefined);
+  const dir = join(root, ".code-agent/graph"); mkdirSync(dir, { recursive: true });
+  const release = acquireLock(join(dir, "run.lock"), { waitMs: 0, ageReclaim: false, label: "검증" });
+  try {
+    const result = runCli(["consent", "finish", id]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(loadConsent(root, id).status, "applied");
+  } finally { release(); }
+});
 
 // ---- CON-1 준비 티켓 ----
 

@@ -1,5 +1,5 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { applyNextTransition, nextTransition, type PhaseTransition } from "../commands";
+import { applyNextTransition, nextTransition, requirePhase, type PhaseTransition } from "../commands";
 import { loadActive, PHASES } from "../layout";
 import { Stop } from "../stop";
 import { withGraphRun } from "./runtime";
@@ -8,6 +8,7 @@ import { withGraphRun } from "./runtime";
 export async function advancePhase(root: string): Promise<string> {
   const active = loadActive(root);
   if (!active) throw new Stop("진행 중인 작업이 없습니다.");
+  requirePhase(active);
   return withGraphRun(root, "transition", `${active.id}:${active.target}`, async run => {
     const State = Annotation.Root({ phase: Annotation<string>() });
     let transition!: PhaseTransition, output = "";

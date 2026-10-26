@@ -121,7 +121,7 @@ const AIDLC_HINT = "AI-DLC 작업이 진행 중이라 code-agent 를 진행하�
  * 모르는 스테이지는 옛 버전이 남긴 커서다 (P3 의 `research`). 조용히 다른 칸으로 옮겨 이어 가면
  * 그 작업의 문서가 어느 게이트를 지났는지 아무도 모른다 — 지우고 다시 시작하게 한다.
  */
-function requirePhase(active: ActiveWork): void {
+export function requirePhase(active: ActiveWork): void {
   if (!(PHASES as readonly string[]).includes(active.phase)) {
     throw new Stop(
       `알 수 없는 스테이지입니다: ${active.phase} (스테이지: ${PHASES.join(" → ")}).\n` +

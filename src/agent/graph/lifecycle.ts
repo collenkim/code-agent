@@ -78,7 +78,7 @@ export async function advanceFlow(root: string, options: StateOptions = {}): Pro
         }
         if (view.resume.code === "wait") return handoff("external", "wait", "wait", view.resume.next.hint ?? "진행 중인 담당의 결과를 기다립니다.");
         const pending = view.consents.open.some(item => item.status === "pending" || item.status === "approved");
-        const planDraft = work.active.phase === "plan" && !work.plan && !pending;
+        const planDraft = work.active.phase === "plan" && !work.plan && !pending && view.resume.next.action === "plan-consent";
         if (!planDraft && ["needs-human", "reapproval-required", "limit-reached"].includes(view.resume.code)) {
           // 반영 준비도 승인 계약에 포함된다. 반영 단계 절차가 준비한 동의만 적용한다.
           if (work.active.phase === "deliver" && view.resume.next.action === "deliver-consent" && !pending) return { route: "deliver" };
@@ -97,7 +97,13 @@ export async function advanceFlow(root: string, options: StateOptions = {}): Pro
       .addNode("docs", () => handoff("docs", "agent", "prepare-docs", nextStep(root).next, "ca-docs"))
       .addNode("request", () => handoff("request", "agent", "prepare-request", nextStep(root).next, "ca-request"))
       .addNode("triage", () => handoff("triage", "agent", "triage", nextStep(root).next, "ca-fix"))
-      .addNode("approved", async () => { await advancePhase(root); return { route: "observe" }; })
+      .addNode("approved", async () => {
+        try { await advancePhase(root); return { route: "observe" }; }
+        catch (error) {
+          if (!(error instanceof Stop)) throw error;
+          return handoff("decision", "human", "inspect", error.message, "ca-answer");
+        }
+      })
       .addNode("check", async () => {
         const result = await verify(root);
         if (result.node === "review") return { route: "observe" };
