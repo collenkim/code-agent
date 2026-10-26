@@ -224,7 +224,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
     catch (error) { problem = error instanceof Error ? error.message : String(error); }
     const own = ownRelease()?.id;
     if (problem) add("✗", "적용 버전", `${RUNTIME_FILE}: ${problem}`, "사람이 파일을 확인하세요 — 지우면 진입점 번들로 돕니다(진행 중인 일이 없을 때)");
-    else if (applied && !installedRelease(applied, appliedStore(state))) add("✗", "적용 버전", `${applied} 가 릴리스 저장소(${appliedStore(state)})에 없습니다`, "code-agent version 으로 확인하고 code-agent update 로 다시 설치하거나 update --bundled 로 고정을 푸세요");
+    else if (applied && !installedRelease(applied, appliedStore(state))) add("✗", "적용 버전", `${applied} 가 릴리스 저장소(${appliedStore(state)})에 없습니다`, "code-agent version 으로 확인하고 해당 릴리스를 다시 설치하세요. 새 작업은 열지 않습니다. 진행 중인 작업은 abort 로 정리할 수 있고, 진행 중인 일이 없으면 update --bundled 로 고정을 풉니다(상태 세대는 유지).");
     else add("✓", "적용 버전", `${applied ?? "진입점 번들(고정 없음)"}${own ? ` · 이 점검은 ${own}` : ""}${pending ? ` · 적용 대기 ${pending}(다음 작업부터)` : ""}`);
   }
 

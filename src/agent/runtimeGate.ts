@@ -105,6 +105,9 @@ export function atNextWork<T extends string | Promise<string>>(root: string, arg
   let asynchronous = false;
   try {
     const current = runtimeOf(root), now = current?.applied;
+    if (now && !installedRelease(now, appliedStore(current))) {
+      throw new Stop(`적용 버전 ${now} 가 릴리스 저장소에 없어 새 작업을 열지 않았습니다. code-agent version 으로 확인하고 해당 릴리스를 다시 설치하거나, 진행 중인 일이 없을 때 code-agent update --bundled 로 고정을 푸세요.`);
+    }
     if (!again && now !== own && (now === undefined || installedRelease(now, appliedStore(current)))) {
       release();
       return rerun(argv);

@@ -362,6 +362,32 @@ describe("적용 버전 선택 — 고정 진입점", () => {
     assert.ok(readFileSync(join(root, ".claude", "skills", "ca-status", "SKILL.md"), "utf8").includes(B_MARK.trim()));
   });
 
+  test("2-1 없어진 고정 릴리스로 새 작업·템플릿 적용을 시작하지 않고 번들 복구 뒤에도 상태 세대를 지킨다", () => {
+    const root = project(), file = join(root, ".code-agent", "runtime.json");
+    const pinned = { schema: 1, applied: GONE, home: store, stateSchema: STATE_SCHEMA };
+    writeFileSync(file, JSON.stringify(pinned));
+    const opened = cli(root, ["docs", "begin"]);
+    assert.equal(opened.status, 1, opened.stdout + opened.stderr);
+    assert.match(opened.stderr, /새 작업을 열지 않았습니다.*update --bundled/s);
+    assert.equal(existsSync(join(root, ".code-agent", "docs-session.json")), false);
+    const templates = cli(root, ["update", "--templates-only"]);
+    assert.equal(templates.status, 1, templates.stdout + templates.stderr);
+    assert.match(templates.stderr, /템플릿을 반영하지 않았습니다/);
+    assert.deepEqual(runtime(root), pinned, "템플릿 복구가 고정을 지우지 않는다");
+    const bundled = cli(root, ["update", "--bundled"]);
+    assert.equal(bundled.status, 0, bundled.stderr);
+    assert.equal(runtime(root)?.applied, undefined);
+    assert.equal(runtime(root)?.stateSchema, STATE_SCHEMA);
+    const releaseFile = join(store, A, "release.json"), original = readFileSync(releaseFile, "utf8");
+    try {
+      writeFileSync(releaseFile, JSON.stringify({ ...JSON.parse(original), stateSchema: STATE_SCHEMA - 1 }));
+      const older = applyAs(root, A);
+      assert.equal(older.status, 1);
+      assert.match(older.stderr, /더 새 형식/);
+      assert.equal(runtime(root)?.stateSchema, STATE_SCHEMA);
+    } finally { writeFileSync(releaseFile, original); }
+  });
+
   test("적용 버전이 없어지면 진행 중인 일은 다른 버전으로 잇지 않는다 — PreToolUse 는 막고 Stop 은 막지 않으며 조회·복구 명령만 번들로 돈다", () => {
     const root = project();
     mkdirSync(join(root, ".code-agent"), { recursive: true });
@@ -380,6 +406,9 @@ describe("적용 버전 선택 — 고정 진입점", () => {
     assert.equal(version.status, 0);
     assert.match(version.stderr, /상태 확인·복구 명령만 이 진입점의 번들로 실행합니다/);
     assert.match(cli(root, ["doctor"]).stdout, new RegExp(`✗ 적용 버전: ${GONE} 가 릴리스 저장소\\(.+\\)에 없습니다`));
+    const aborted = cli(root, ["abort"]);
+    assert.equal(lastRun("abort"), "bundle", "고정 릴리스가 없어도 abort 구현에 도달한다");
+    assert.match(aborted.stderr, /진행 중인 작업도 접수 중인 요구사항도 없습니다/);
   });
 
   test("기존 절대 경로 설치(--cli 의 hook·MCP)는 설정을 바꾸지 않고 그대로 이행한다 — 그 경로의 cli.js 가 고정 진입점이다", () => {

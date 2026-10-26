@@ -705,6 +705,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+고정한 적용 릴리스가 저장소에 없으면 새 작업을 열지 않는다. 해당 릴리스를 다시 설치하거나 진행 중인 일이 없을 때 `update --bundled`로 고정을 푼다. `abort`는 번들 복구 명령으로 열려 있다. `update --templates-only`는 고정을 보존하며 적용 릴리스의 코드로 돌고 있지 않으면 템플릿을 반영하지 않는다.
+
 code-agent 의 실행·빌드 Node 는 `>=24.19.0 <25`다. npm 설치는 `package.json`의 `engines.node`로 범위를 알리고, `doctor`는 npm 실행과 단일 실행 파일의 내장 Node 를 같은 범위로 검사한다. 단일 실행 파일 빌드는 이 범위와 자원 API 를 산출물 정리 전에 확인한다. 대상 프로젝트 자체의 언어·런타임은 해당 프로젝트 설정을 따른다.
 
 Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출을 `code-agent.cmd`로 실행한다. npm의 `.ps1` 실행 정책 거부를 피하며 실행 정책은 변경하지 않는다. `hosts.ts`의 Codex 변환본(역할 포함), 별도 ca-answer, 설치 공통 블록, `hostText.ts`의 파일 도구 안내와 Codex 관리 실행의 세션 지침(`master/supervisor.ts` `hostArgs`)이 이 규칙을 싣는다. Bash·macOS·Linux 명령, 파일 경로, 사용자가 보내는 대화 응답 `code-agent consent respond …`는 바꾸지 않는다.
@@ -756,6 +758,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 새 버전 적용 뒤의 실행 중인 세션(§4.1 update) | CLI·hook 은 다음 호출부터 적용 버전으로 돈다(호출마다 새 프로세스 — 2.1.299 실측: 한 `claude -p` 세션의 hook·`version`이 적용 전 A, 적용 뒤 B). `.claude/settings.json` hook 설정 변경은 설정 파일 감시가 반영한다(공식 문서 — 실측하지 않았다. 몇 초 안에 반영되지 않으면 다시 연다). 스킬 본문은 감시가 늦게 반영해(2.1.299 실측: 바꾼 지 2초 뒤 호출은 이전 본문, 20초 뒤는 새 본문) 적용 보고가 바뀐 `SKILL.md`·`CLAUDE.md`를 파일로 다시 읽힌다. 바뀐 에이전트 정의는 다음 서브에이전트 호출부터 쓴다. 모델이 셸로 부른 `docs begin` 직전의 PreToolUse hook 이 예약된 B 를 적용하고 그 명령이 B 로 열렸다(2.1.299 실측 — 보고 첫 줄 `적용 버전: A → B`) | hook 은 호출마다 새 프로세스라 다음 호출부터 적용 버전으로 돈다(0.162.1 실측: 한 `codex exec` 세션의 `codex-event`·`version`이 A → B). `.codex/hooks.json`(세션을 만들 때만 읽는다)·`.codex/config.toml`의 MCP 설정(세션 시작 때 띄운다)·새 에이전트 파일(역할 목록은 세션 시작 때 만든다)은 다시 열어야 반영된다(codex-rs 0.162.1 소스 근거) — 적용이 이 셋을 바꾸지 않으면 다시 열 필요가 없다. 선택 UI MCP 연결부는 시작 때의 코드로 계속 돌고 도구 호출마다 프로젝트 적용 버전의 처리기를 부른다(`handlersFor` — 연결부 기록은 0.162.1 실측, 처리기 전환은 프로토콜 시험). Windows workspace-write 샌드박스의 셸은 unelevated 면 node 의 자식 프로세스(`node -e`·git 포함)를, elevated 면 `.codex/`·`.agents/` 쓰기를 `EPERM`으로 막는다(0.162.1 실측). 신뢰한 프로젝트의 hook 은 샌드박스 밖에서 사용자 권한으로 돌아(0.162.1 실측 — `.agents/`·작업 공간 밖 쓰기 가능) 다음 작업을 여는 명령 직전의 hook 이 적용하고, 두 모드 모두 `docs begin`이 B 로 열렸다(0.162.1 실측). hook 이 돌지 않으면(프로젝트·hook 미신뢰) 명령의 관문이 셸 안에서 적용하다 물러서고 예약을 둔다(`SANDBOX_BLOCKED` 안내). update 적용도 네트워크·사용자 홈의 릴리스 저장소를 쓰므로 샌드박스 밖(권한 상승)으로 실행한다 | `runtimeApply.ts` `hostGuidance`, `choiceServer.ts` `handlersFor`, `template/codex/ca-answer.md`, [기록](reviews/2026-10-14-release-update.md) |
 
 ## 8. 상태·산출물 파일 지도
+
+`runtime.json`의 `stateSchema`는 고정을 푼 뒤에도 남긴다. `applied`·`pending`이 없다는 이유로 상태 세대 기록을 지우지 않으며 낮은 세대 릴리스 적용을 계속 막는다.
 
 관리 실행의 `runs/<runId>.json`에는 호스트 권한 설정(`hostProfile`), Codex 접수 별칭(`sessionAlias`)·thread 확인 여부(`sessionConfirmed`), 사용한 호스트 인계 ID(`handoffId`), master 가 고른 실행 방식(`execution`)이 있다. `works/<작업 ID>.json`의 `execution`은 그 작업에 고정한 실행 방식이다. 교차 검증·단독 호스트 판정이 `execution.json`보다 먼저 보고, 사람의 `execution --handoff`만 바꾼다. `master/host-handoff.json`은 TTY로 확인한 대상 호스트·브랜치·HEAD·작업·소유 세대·미응답을 보존하며 master 폴더와 함께 Git·동의 스냅샷에서 제외한다. 등록한 호스트별 설정은 master binding의 `hostProfiles`, 선택한 교차 주 호스트는 execution 정책의 `main`에 둔다. 해제한 임대의 옛 세션이나 아직 thread를 확인하지 않은 관리 Codex에는 질문 문서를 자동 결속하지 않는다.
 
@@ -877,7 +881,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 승인에 답변된 질문을 묶고 관찰된 답은 질문 당시의 제목·본문을 재대조하며 상태 세대를 14로 올린다 — `fix(1-7)`.
+- 없어진 고정 릴리스의 새 작업 시작을 막고 템플릿 복구의 고정 및 번들 복구의 상태 세대 기록을 보존한다 — `fix(2-1)`.
+
+- 승인에 답변된 질문을 묶고 관찰된 답은 질문 당시의 제목·본문을 재대조하며 상태 세대를 14로 올린다 — `1323371`.
 
 - 테스트 파일에 없는 TC 통과 출력을 미확인으로 남기고 검증 명령의 승인 원장 변경을 복원한다 — `d1ccd98`.
 

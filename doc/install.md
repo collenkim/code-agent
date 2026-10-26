@@ -216,6 +216,8 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 ## 5. `code-agent update` — 갱신
 
+고정 릴리스가 없어지면 새 작업을 열지 않는다. `version`으로 확인해 해당 릴리스를 다시 설치하거나, 진행 중인 일이 없을 때 `update --bundled`로 복구한다. `abort`는 고정 릴리스가 없어도 번들로 실행할 수 있다. `update --templates-only`는 고정을 풀지 않으며 해당 릴리스의 코드가 없으면 반영을 거부한다. 고정을 푼 뒤에도 `runtime.json`의 상태 세대는 남아 낮은 세대 릴리스 적용을 막는다.
+
 설치 완료·적용 대기는 실행 버전 전환 완료와 다르다. `version`은 예약 당시 사유와 현재 차단 사유를 따로 보인다. 답변이 확인된 낡은 질문은 `interaction list`로 정리하며, 실제 작업이 끝나면 다음 작업 시작 때 자동 적용하거나 호스트 밖 터미널에서 `code-agent update --release <ID>`로 적용한다.
 
 ```

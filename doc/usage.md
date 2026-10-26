@@ -1313,6 +1313,8 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 
 ## 11. 막히면
 
+고정한 적용 릴리스가 저장소에 없으면 새 작업을 시작할 수 없다. `code-agent version`으로 확인해 해당 릴리스를 다시 설치한다. 작업을 중단하려면 `abort`로 커서를 정리할 수 있고, 진행 중인 일이 없으면 `update --bundled`로 고정을 푼다. `update --templates-only`는 고정을 보존하므로 없어진 릴리스의 대체 수단으로 쓰지 않는다. 번들 복구 뒤에도 상태 세대 기록은 유지된다.
+
 ### 직접 CLI에서 TTY 오류가 난다
 
 현재 Claude 세션에서는 직접 `confirm`·`approve`·`deliver`를 호출하지 않고 위의 consent 절차를 사용한다. `code-agent doctor`로 질문 hook 설치를 확인하고, 갱신했다면 Claude Code를 다시 연다. 질문 도구나 hook이 없으면 미승인 상태를 유지한다.

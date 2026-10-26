@@ -98,7 +98,7 @@ function readManifest(root: string): TemplateManifest | undefined {
 
 export function writeRuntime(root: string, state: RuntimeState | undefined): void {
   const path = join(root, RUNTIME_FILE);
-  if (!state || (!state.applied && !state.pending)) { rmSync(path, { force: true }); return; }
+  if (!state || (!state.applied && !state.pending && state.stateSchema === undefined)) { rmSync(path, { force: true }); return; }
   writeAtomic(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
@@ -246,7 +246,11 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
     try { state = readRuntime(root); }
     catch (error) { throw new Stop(`${RUNTIME_FILE} 을 읽지 못했습니다 — ${error instanceof Error ? error.message : String(error)}. 사람이 파일을 확인하세요(지우면 진입점 번들로 돕니다).`); }
     const from = state?.applied ?? `번들`;
-    const target = options.trigger === "bundled" ? undefined : own?.id;
+    const templatesOnly = options.trigger === "templates-only";
+    if (templatesOnly && state?.applied && own?.id !== state.applied) {
+      throw new Stop(`적용 버전 ${state.applied} 의 코드로 실행되지 않아 템플릿을 반영하지 않았습니다. 해당 릴리스를 다시 설치하거나, 진행 중인 일이 없을 때 code-agent update --bundled 로 고정을 푸세요.`);
+    }
+    const target = options.trigger === "bundled" ? undefined : templatesOnly ? state?.applied : own?.id;
     const projectSchema = state?.stateSchema ?? 1, mine = own?.stateSchema ?? STATE_SCHEMA;
     if (projectSchema > mine) throw new Stop(`이 프로젝트의 상태는 더 새 형식(세대 ${projectSchema})으로 기록됐습니다 — ${ownLabel()}(세대 ${mine})은 그 상태를 읽지 못해 적용하지 않습니다. 세대 ${projectSchema} 이상의 릴리스를 쓰세요.`);
     (require("./interactionSources") as typeof import("./interactionSources")).synchronizeInteractions(root);
@@ -262,7 +266,9 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
     const explicit = options.trigger === "release" || options.trigger === "bundled" || options.trigger === "package";
     const pending = !explicit && state?.pending && state.pending.id !== target ? state.pending : undefined;
     const adopted = options.trigger === "package" ? target : state?.adopted;
-    writeRuntime(root, { schema: 1, ...(target ? { applied: target, appliedAt: new Date().toISOString(), home: ownStore() } : {}),
+    writeRuntime(root, { schema: 1, ...(target ? { applied: target,
+      appliedAt: templatesOnly ? state?.appliedAt ?? new Date().toISOString() : new Date().toISOString(),
+      home: templatesOnly ? state?.home ?? ownStore() : ownStore() } : {}),
       stateSchema: Math.max(projectSchema, mine), ...(pending ? { pending } : {}), ...(adopted ? { adopted } : {}) });
     const versionChanged = (state?.applied ?? undefined) !== target;
     const { closed, problem } = closeChangedConsents(root, `버전 적용(${from} → ${target ?? `번들 ${packageVersion()}`})`, options.consentId);

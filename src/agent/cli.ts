@@ -28,7 +28,7 @@ const HOOKS: Record<HookCommand, () => HookRunner> = {
   "session-event": () => (require("./sessionHook") as typeof import("./sessionHook")).runSessionHook,
 };
 /** 적용 버전을 쓸 수 없을 때도 이 진입점의 번들로 돌리는 명령 — 상태를 보거나 버전을 고치는 자리다 */
-const RECOVERY = new Set([undefined, "help", "--help", "-h", "status", "doctor", "version", "update"]);
+const RECOVERY = new Set([undefined, "help", "--help", "-h", "status", "doctor", "version", "update", "abort"]);
 
 /** stdin 읽기·모듈 로드에서 난 예외만 여기서 처리한다 — 공통 처리기(exit 2)로 보내면 Stop·SessionStart 가 막힌다 */
 function runHookCommand(command: HookCommand, read: () => string): number {
