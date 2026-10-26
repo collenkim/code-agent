@@ -36,7 +36,7 @@ export function codexProject() {
   const close = () => {
     for (const run of listRuns(root)) for (const p of [run.host, run.supervisor]) if (p && liveness(p.pid, p.marker) === "alive") killVerified(p.pid, p.marker);
     for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-    assert.ok(resolve(dir).startsWith(realpathSync.native(tmpdir()) + sep)); rmSync(dir, { recursive: true, force: true });
+    assert.ok(resolve(dir).startsWith(realpathSync.native(tmpdir()) + sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   };
   return { root, home, dir, send, wait, close, recheck };
 }

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, test } from "node:test";
 
 import { checkApproval, diffBoundary, formatBoundary, hashManifest, manifestBoundary, recordDecision } from "../core/approval";
 import type { Manifest } from "../core/manifest";
-import { consentSnapshot, observeConsent } from "../agent/consent";
+import { consentSnapshot, loadConsent, observeConsent } from "../agent/consent";
 import { prDocFile, deliverProblems } from "../agent/deliver";
 import { checkProjectDocs, projectDocsHash, sha } from "../agent/docs";
 import { docsBegin, docsLink } from "../agent/docsCommands";
@@ -14,6 +14,7 @@ import { outsideChanges } from "../agent/evidence";
 import { decide } from "../agent/hook";
 import { loadPlanning } from "../agent/planningState";
 import { manifestCheck } from "../agent/survey";
+import { SnapshotCache } from "../agent/snapshotCache";
 import { approvalDocsHash, approvalDocsState, approvalOf, loadWork } from "../agent/work";
 import { workDocsHash } from "../agent/workDocs";
 import { approvalChangeLines, start } from "../agent/commands";
@@ -185,24 +186,27 @@ test("T-14-1 제어 경로 아래 링크는 따라가지 않고 대상으로 해
 });
 
 test("T-15-1·T-15-2 내용 해시 캐시는 값을 바꾸지 않고, mtime 을 되돌린 같은 크기 변경도 잡는다", () => {
-  const action = { action: "docs", decision: "accept", sendsCode: false } as Parameters<typeof consentSnapshot>[1];
   const file = join(root, "doc/architecture.md");
   pause(2_100);
-  const fresh = consentSnapshot(root, action);
+  const prepared = loadConsent(root, prepareConsentFixture(root, { action: "docs" }).id);
+  const action = prepared.action, fresh = prepared.snapshot;
   const cacheFile = join(root, ".code-agent/consents/snapshot-cache.json");
   assert.ok(existsSync(cacheFile));
-  assert.equal(consentSnapshot(root, action), fresh, "캐시로 구해도 같다");
+  assert.equal(consentSnapshot(root, action), fresh, "준비 캐시가 있어도 전수 해시 결과가 같다");
   rmSync(cacheFile);
   assert.equal(consentSnapshot(root, action), fresh, "캐시 없이 구해도 같다");
+  assert.equal(existsSync(cacheFile), false, "재대조는 캐시를 만들지 않는다");
   const before = statSync(file);
   const text = readFileSync(file, "utf8");
   writeFileSync(file, text.slice(0, -1) + (text.endsWith("X") ? "Y" : "X"));
   utimesSync(file, before.atime, before.mtime);
   assert.equal(statSync(file).size, before.size);
-  assert.notEqual(consentSnapshot(root, action), fresh, "ctime 이 바뀌어 다시 읽는다");
+  assert.notEqual(consentSnapshot(root, action), fresh, "mtime 을 되돌려도 바이트를 다시 읽는다");
   writeFixture(root, "doc/new.md", "새 문서\n");
-  consentSnapshot(root, action);
-  assert.equal("doc/new.md" in JSON.parse(readFileSync(cacheFile, "utf8")).entries, false, "2초 안에 바뀐 파일은 캐시하지 않는다");
+  const recent = join(root, "doc/new.md"), stat = statSync(recent), cache = SnapshotCache.open(root);
+  cache.contentHash("doc/new.md", recent, stat, Math.max(stat.mtimeMs, stat.ctimeMs));
+  cache.save();
+  assert.equal(existsSync(cacheFile) && "doc/new.md" in JSON.parse(readFileSync(cacheFile, "utf8")).entries, false, "2초 안에 바뀐 파일은 캐시하지 않는다");
 });
 
 // ---- CON-16 동의 영수증·원장 대조 ----
