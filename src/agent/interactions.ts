@@ -1,11 +1,11 @@
 /** 질문·응답·소비·적용 영속 원장. 하나의 잠금과 원자적 파일 교체로 첫 응답만 수락한다. */
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
+import { existsSync, mkdirSync, realpathSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { writeAtomic, writeIfChanged } from "../core/atomic";
 import { acquireLock } from "./lock";
 import { checkoutBranch } from "./branchCursor";
-import { loadActive, REQUEST_SESSION_FILE } from "./layout";
+import { loadActive } from "./layout";
 import { commitOf } from "./tree";
 import { canonicalJson, ControlError, sha256 } from "./master/protocol";
 import type { InteractionQuestion, InteractionSubmission, PublishInteraction } from "./interactionSchema";
@@ -35,16 +35,12 @@ export interface InteractionRecord {
   /** 표시 실패는 사용자 응답 대기·보류와 구분하며 실제 재표시 때 지운다. */
   presentation?: { state: "failed"; at: string };
 }
-interface Ledger { version: 1; instanceId: string; seq: number; requests: Record<string, InteractionRecord>; commands: Record<string, { hash: string; requestId: string; response: unknown }> }
+import { readInteractions, type InteractionLedger as Ledger } from "./interactionState";
+export { readInteractions } from "./interactionState";
+import { loadRequestSession } from "./requestSession";
 export const interactionHash = (value: unknown) => `sha256:${sha256(canonicalJson(value))}`;
 export const interactionRunId = (record: InteractionRecord): string | undefined => record.context.runId ?? record.recoveredRunId;
 const file = (root: string) => join(root, INTERACTIONS_DIR, "state.json");
-export function readInteractions(root: string): Ledger | undefined {
-  if (!existsSync(file(root))) return undefined;
-  const value = JSON.parse(readFileSync(file(root), "utf8")) as Ledger;
-  if (value.version !== 1 || !value.instanceId || !value.requests || !Number.isInteger(value.seq)) throw new Error("질문 원장 형식을 확인할 수 없습니다");
-  return value;
-}
 export function mutateInteractions<T>(root: string, action: (state: Ledger) => T): T {
   mkdirSync(join(root, INTERACTIONS_DIR), { recursive: true });
   writeIfChanged(join(root, INTERACTIONS_DIR, ".gitignore"), "*\n");
@@ -60,7 +56,7 @@ export function mutateInteractions<T>(root: string, action: (state: Ledger) => T
 }
 export function interactionContext(root: string, sessionId: string, host: "claude" | "codex", runId?: string): InteractionContext {
   const active = loadActive(root);
-  const intake = existsSync(join(root, REQUEST_SESSION_FILE)) ? JSON.parse(readFileSync(join(root, REQUEST_SESSION_FILE), "utf8")) : undefined;
+  const intake = loadRequestSession(root);
   return { root: realpathSync(root), branch: checkoutBranch(root) ?? null, head: existsSync(join(root, ".git")) ? commitOf(root, "HEAD") ?? null : null,
     workId: active?.id ?? intake?.id ?? null, sessionId, host, ...(runId ? { runId } : {}) };
 }

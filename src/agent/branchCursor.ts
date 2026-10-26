@@ -6,6 +6,7 @@ import { writeAtomic } from "../core/atomic";
 import type { ActiveWork } from "./layout";
 import { acquireLock } from "./lock";
 import { TIMING } from "./retryPolicy";
+import { readJson } from "./stateJson";
 
 export const BRANCH_CURSORS = ".code-agent/branches";
 const PRIMARY = ".code-agent/active.json", LEASE = ".code-agent/lease.json";
@@ -33,10 +34,12 @@ export function branchCursorFile(branch: string): string {
 const leaseFile = (file: string) => file === PRIMARY ? LEASE : file.replace(/\.json$/, ".lease.json");
 function read(root: string, file: string): ActiveWork | undefined {
   if (!existsSync(join(root, file))) return undefined;
-  const value = JSON.parse(readFileSync(join(root, file), "utf8")) as ActiveWork;
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      (value.branch !== undefined && (typeof value.branch !== "string" || !value.branch))) throw new Error(`작업 커서 형식이 유효하지 않습니다: ${file}`);
-  return value;
+  return readJson(join(root, file), { parse(raw) {
+    const value = raw as ActiveWork;
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        (value.branch !== undefined && (typeof value.branch !== "string" || !value.branch))) throw new Error(`작업 커서 형식이 유효하지 않습니다: ${file}`);
+    return value;
+  } }, file);
 }
 export function cursorOnBranch(root: string, branch: string | undefined): { file: string; active: ActiveWork } | undefined {
   const primary = read(root, PRIMARY);

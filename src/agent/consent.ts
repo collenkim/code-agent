@@ -1,3 +1,4 @@
+import { readJson } from "./stateJson";
 import { execFileSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, type Stats } from "fs";
@@ -166,7 +167,14 @@ function save(root: string, record: ConsentRecord): void {
 }
 export function loadConsent(root: string, id: string): ConsentRecord {
   root = canonicalRoot(root);
-  const record = JSON.parse(readFileSync(recordPath(root, id), "utf8")) as ConsentRecord;
+  const record = readJson(recordPath(root, id), { parse(raw) {
+    const value = raw as ConsentRecord | null;
+    if (!value || typeof value.id !== "string" || typeof value.root !== "string" || !value.action ||
+        !CONSENT_ACTIONS.includes(value.action.action) || typeof value.snapshot !== "string" ||
+        !["pending", "approved", "changes-requested", "deferred", "applying", "applied", "failed"].includes(value.status) ||
+        !Array.isArray(value.confirmations) || !Array.isArray(value.choices)) throw new Stop("동의 기록 형식이 올바르지 않습니다");
+    return value;
+  } });
   if (record.id !== id || !samePath(record.root, root)) throw new Stop("다른 프로젝트의 확인 요청입니다.");
   return record;
 }

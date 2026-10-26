@@ -1,3 +1,4 @@
+import { readJson } from "./stateJson";
 import { existsSync, readFileSync, statSync, readdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
@@ -136,9 +137,11 @@ export function planningFile(work: Work): string {
 export function loadPlanning(work: Work): PlanningState {
   const file = planningFile(work);
   if (!existsSync(file)) return { version: 1, id: work.active.id, target: work.active.target, maxParallel: 3, tasks: [], agents: [] };
-  const state = JSON.parse(readFileSync(file, "utf8")) as PlanningState;
-  if (state.version !== 1 || state.id !== work.active.id || state.target !== work.active.target || !Array.isArray(state.tasks) || !Array.isArray(state.agents)) throw new Stop("계획 작업 기록 형식이 올바르지 않습니다.");
-  return state;
+  return readJson(file, { parse(raw) {
+    const state = raw as PlanningState | null;
+    if (!state || state.version !== 1 || state.id !== work.active.id || state.target !== work.active.target || !Array.isArray(state.tasks) || !Array.isArray(state.agents)) throw new Stop("계획 작업 기록 형식이 올바르지 않습니다.");
+    return state;
+  } });
 }
 
 // ---- 명령 1회 범위의 계산 메모 ----

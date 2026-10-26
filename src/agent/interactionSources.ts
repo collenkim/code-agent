@@ -1,3 +1,4 @@
+import { loadRequestSession } from "./requestSession";
 /** 기존 질문 문서·동의와 공통 요청의 연결. 추천은 Markdown 문구에서 추측하지 않는다. */
 import { existsSync, readFileSync, readdirSync, realpathSync } from "fs";
 import { join } from "path";
@@ -83,11 +84,11 @@ export function synchronizeInteractions(root: string): void {
     } catch (error) { failed(id, error); }
   }
   const active = loadActive(root);
-  const workId = active?.id ?? (existsSync(join(root, REQUEST_SESSION_FILE)) ? JSON.parse(readFileSync(join(root, REQUEST_SESSION_FILE), "utf8")).id : undefined);
+  const workId = active?.id ?? loadRequestSession(root)?.id;
   const path = workId ? join(root, questionsFile(workId)) : undefined;
   let questionDocumentHash: string | undefined;
   const answeredQuestions = new Set<string>();
-  if (path && existsSync(path)) {
+  if (workId && path && existsSync(path)) {
     const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n"), parsed = parseQuestions(text), qs = parsed.filter(q => !q.answer && q.status !== "deferred");
     questionDocumentHash = interactionHash(text);
     if (parsed.some(q => q.answer)) {

@@ -1,3 +1,4 @@
+import { loadRequestSession } from "./requestSession";
 /**
  * 업무 질문의 답 관찰(CON-6) — `.code-agent/work/<ID>/answers.jsonl`.
  *
@@ -13,7 +14,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { createHash } from "crypto";
 import { dirname, join } from "path";
 
-import { findRepoRoot, loadActive, questionsFile, REQUEST_SESSION_FILE, STATE_DIR } from "./layout";
+import { findRepoRoot, loadActive, questionsFile, STATE_DIR } from "./layout";
 import { parseQuestions, questionContent, type Question } from "./questions";
 import { dependencyContracts } from "./dependencyContracts";
 import { writeAtomic } from "../core/atomic";
@@ -65,10 +66,7 @@ export function normalizeAnswer(text: string): string {
 function currentId(root: string): string | undefined {
   const active = loadActive(root);
   if (active) return active.id;
-  const path = join(root, REQUEST_SESSION_FILE);
-  if (!existsSync(path)) return undefined;
-  const session = JSON.parse(readFileSync(path, "utf8")) as { id?: unknown };
-  return typeof session.id === "string" ? session.id : undefined;
+  return loadRequestSession(root)?.id;
 }
 
 export function readAnswerRows(root: string, id: string): AnswerRow[] {

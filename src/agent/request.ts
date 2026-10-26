@@ -37,17 +37,8 @@ import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, work
  * 지시서 자체에 대한 쓰기를 막는다.
  */
 
-export interface RequestSession {
-  id: string;
-  kind: WorkKind;
-  startedAt: string;
-  /**
-   * 사람이 접수 때 말한 시작 인자. 접수와 시작 사이에 사람의 확정이 끼어 명령이 끊기므로,
-   * 여기 남겨 두지 않으면 `/ca-feature … --base develop` 의 기준 브랜치가 확정 뒤 `start` 에서 사라진다.
-   */
-  base?: string;
-  target?: string;
-}
+export { loadRequestSession, type RequestSession } from "./requestSession";
+import { loadRequestSession, type RequestSession } from "./requestSession";
 
 /** 폴더 이름 · 브랜치 이름(`<kind>/<ID>`)이 되는 값이라 경로 조각으로 안전한 글자만 받는다 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -63,14 +54,6 @@ export function requirementFile(id: string): string {
 /** 확정 원장 — 이 작업의 승인 스냅샷 디렉토리 안이라 반영 커밋에 함께 들어간다 */
 export function requestLedgerFile(repoRoot: string, id: string): string {
   return join(repoRoot, APPROVALS_DIR, slug(id), "request.jsonl");
-}
-
-export function loadRequestSession(repoRoot: string): RequestSession | undefined {
-  const path = join(repoRoot, REQUEST_SESSION_FILE);
-  if (!existsSync(path)) {
-    return undefined;
-  }
-  return JSON.parse(readFileSync(path, "utf-8")) as RequestSession;
 }
 
 export function clearRequestSession(repoRoot: string): void {
