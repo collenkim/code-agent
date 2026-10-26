@@ -21,6 +21,8 @@ import { validateWorkOrder } from "../core/workOrder";
 import type { WorkOrder } from "../core/workOrder";
 import { planFormatFor } from "../core/plan";
 import { consentCommandOf, splitCommandArgs } from "../agent/consentTicket";
+import { decide } from "../agent/hook";
+import { docsBegin, docsEnd } from "../agent/docsCommands";
 
 const STAGE: StageDef = {
   key: "restructure",
@@ -69,6 +71,21 @@ const PLAN: BuildPlan = {
 
 let repo: string;
 let ORDER: WorkOrder;
+
+test("1-3 문서 세션의 MCP 셸은 명령 키와 모르는 인자 꼴 모두 셸 허용 목록을 지난다", () => {
+  docsBegin(repo);
+  const run = (tool_input: Record<string, unknown>) => decide({ cwd: repo, tool_name: "mcp__serena__execute_shell_command", tool_input });
+  for (const key of ["command", "cmd", "script", "args", "arguments"]) {
+    assert.ok(run({ [key]: "node scripts/write.js" }), key);
+    assert.equal(run({ [key]: "git status" }), undefined, key);
+  }
+  for (const input of [{}, { args: ["node", "write.js"] }, { command: { text: "git status" } }, { command: "git status", args: ["--output=x"] }]) {
+    assert.ok(run(input), JSON.stringify(input));
+  }
+  assert.ok(run({ input: { command: "node scripts/write.js" } }));
+  assert.equal(run({ command: "code-agent status" }), undefined);
+  docsEnd(repo);
+});
 
 test("1-1 스마트 따옴표와 ASCII 혼합 인자는 동의 준비 티켓으로 해석하지 않는다", () => {
   for (const quote of "‘’‚‛“”„") {

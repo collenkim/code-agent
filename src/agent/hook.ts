@@ -343,12 +343,33 @@ function mcpPaths(toolInput: Record<string, unknown>, local: boolean, repoRoot: 
   }
   return paths;
 }
-/** MCP 도구 — 경로마다 Write·Read 로 같은 판정을 다시 탄다(작업·세션·세션 밖·상태 읽기 실패 모두). 경로 인자가 없는 도구는 판정하지 않는다 */
+/** MCP 실행 인자는 셸로, 경로 인자는 Write·Read 로 같은 판정을 다시 탄다. */
 function decideMcp(input: HookInput, projectDir?: string): string | undefined {
   const [, server = "", ...rest] = input.tool_name.split("__");
   const tool = rest.join("__");
   // 하위 폴더에서 연 세션(CLAUDE_PROJECT_DIR·cwd 가 저장소 안 폴더)도 저장소 루트로 판정한다 — CLI·티켓·Codex 와 같은 루트
   const repoRoot = findRepoRoot(projectDir ?? input.cwd);
+  const commands: string[] = [];
+  let unknownCommand = false;
+  const collectCommands = (object: Record<string, unknown>, depth = 0): void => {
+    for (const [key, value] of Object.entries(object)) {
+      if (/^(?:command|cmd|script|args|arguments|command_line|commandLine)$/i.test(key)) {
+        if (typeof value === "string" && value.trim()) commands.push(value);
+        else unknownCommand = true;
+      } else if (depth === 0 && value && typeof value === "object" && !Array.isArray(value)) {
+        collectCommands(value as Record<string, unknown>, 1);
+      }
+    }
+  };
+  collectCommands(input.tool_input);
+  if (!commands.length && /(?:shell|terminal|execute.*command|run.*command)/i.test(tool)) unknownCommand = true;
+  // 모르는 실행 인자는 빈 셸 명령으로 검사한다. 작업·세션·triage 모드는 이를 허용하지 않는다.
+  for (const command of [...commands, ...(unknownCommand ? [""] : [])]) {
+    const reason = decideTool({ ...input, tool_name: "Bash",
+      shell: input.shell ?? (process.platform === "win32" ? "powershell" : undefined),
+      tool_input: { command: command.replace(/^(\s*)code-agent\.cmd(?= |$)/, "$1code-agent") } }, projectDir);
+    if (reason) return `MCP 도구 ${input.tool_name}: ${reason}`;
+  }
   const paths = mcpPaths(input.tool_input as Record<string, unknown>, LOCAL_FS_SERVERS.test(server), repoRoot);
   if (!paths.length && mcpWrites(tool) && loadTriage(repoRoot)) return "사전 판별 중에는 외부 서비스·데이터를 변경하지 않습니다. Jira 생성은 준비된 본문으로 사람이 수행합니다.";
   if (!paths.length) return undefined;
@@ -460,7 +481,7 @@ export function decide(input: HookInput, projectDir?: string): string | undefine
         issueInteractionTicket(findRepoRoot(projectDir ?? input.cwd), { command: JSON.stringify(parts.slice(2)), sessionId: input.session_id, host: input.host ?? "claude", ...(process.env.CODE_AGENT_MASTER_RUN ? { runId: process.env.CODE_AGENT_MASTER_RUN } : {}) });
       }
     }
-    if (command) {
+    if (command && !input.agent_id) {
       try {
         // CLI 의 findRepoRoot(process.cwd()) 와 같은 루트 — 하위 폴더에서 연 세션도 저장소 루트에 낸다
         const root = findRepoRoot(projectDir ?? input.cwd);
@@ -503,7 +524,10 @@ export function readOnlyRoleGuard(input: HookInput, projectDir?: string): string
     if (surveyor && surveyDraft(findRepoRoot(projectDir ?? input.cwd), input.tool_input.file_path ?? "")) return undefined;
     return reason;
   }
-  if (["Bash", "PowerShell"].includes(input.tool_name) && leaseGated((input.tool_input.command ?? "").trim())) return reason;
+  if (["Bash", "PowerShell"].includes(input.tool_name)) {
+    const command = (input.tool_input.command ?? "").trim();
+    if (leaseGated(command) || /^code-agent takeover(?:\s|$)/.test(command)) return reason;
+  }
   return undefined;
 }
 
@@ -519,6 +543,12 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   if (master) return master;
   const child = crossChildGuard(input) ?? readOnlyRoleGuard(input, projectDir);
   if (child) return child;
+  if (input.agent_id && ["Bash", "PowerShell"].includes(input.tool_name)) {
+    const command = (input.tool_input.command ?? "").trim();
+    if (leaseGated(command) || /^code-agent (?:takeover(?:\s|$)|consent (?:prepare|apply|finish)(?:\s|$))/.test(command)) {
+      return "하위 에이전트는 진행·동의·임대 변경 명령을 실행하지 않습니다. 결과를 메인 세션에 돌려주세요.";
+    }
+  }
   const root = findRepoRoot(projectDir ?? input.cwd), managed = managedExecution(root), mode = managed?.mode ?? executionMode(root);
   if ((mode === "claude" || mode === "codex") && mode !== (input.host ?? "claude") && !crossChild() &&
       !READ_TOOLS.includes(input.tool_name) && !(["Bash", "PowerShell"].includes(input.tool_name) && LEASE_FREE.test(input.tool_input.command?.trim() ?? ""))) {

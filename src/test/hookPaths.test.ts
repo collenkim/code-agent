@@ -21,6 +21,8 @@ import { CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, setupConsentProj
 import { deadPid } from "./deadPid";
 import { withCaller } from "./reviewFixture";
 import { stubCodexProbe } from "./codexProbeFixture";
+import { takeTicket } from "../agent/consentTicket";
+import { loadActive, saveActive } from "../agent/layout";
 
 let root: string, home: string;
 // doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다(판정 기록은 아래 CODE_AGENT_HOME 에)
@@ -58,6 +60,33 @@ function startWork(): void {
   start(root, join(root, CONSENT_SPEC));
 }
 const store = () => dirname(storePath());
+
+test("1-3·1-4 MCP 셸과 모든 하위 담당의 진행·동의·임대 변경을 막는다", () => {
+  startWork();
+  for (const phase of ["plan", "deliver"] as const) {
+    saveActive(root, { ...loadActive(root)!, phase });
+    const mcp = (command: string) => tool("mcp__jetbrains__execute_terminal_command", { command });
+    assert.ok(mcp("node scripts/write.js"), phase);
+    assert.equal(mcp("git status"), undefined, phase);
+  }
+  const commands = ["next", "back", "start doc/work/x.md", "plan submit plan.json", "planning advance", "planning dispatch task-1", "planning cancel task-1", "consent prepare --action plan", "consent apply 12345678-1234-1234-1234-123456789abc", "consent finish 12345678-1234-1234-1234-123456789abc", "takeover"];
+  for (const role of ["ca-implementer", "ca-tester", "ca-analyst", "ca-explorer", "ca-reviewer", undefined]) {
+    for (const command of commands) {
+      const extra = { agent_id: "child", agent_type: role };
+      for (const name of ["Bash", "PowerShell", "mcp__serena__execute_shell_command"]) {
+        assert.ok(tool(name, { command: `code-agent ${command}` }, extra), `${role} ${name} ${command}`);
+      }
+    }
+    assert.equal(tool("Bash", { command: "code-agent status" }, { agent_id: "child", agent_type: role }), undefined);
+  }
+  assert.equal(takeTicket(root, "prepare"), undefined);
+  assert.equal(takeTicket(root, "apply", "12345678-1234-1234-1234-123456789abc"), undefined);
+  assert.match(tool("Bash", { command: "code-agent takeover" }, { agent_type: "ca-reviewer" }) ?? "", /읽기 전용 담당/);
+  if (process.platform === "win32") {
+    const result = codexHook({ cwd: root, session_id: "s", agent_id: "child", agent_type: "ca-implementer", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "code-agent next" } });
+    assert.match(JSON.stringify(result), /deny/);
+  }
+});
 
 test("1-1 스마트 따옴표의 괄호 평가를 PowerShell과 Codex 경로에서 거부한다", () => {
   startWork();
