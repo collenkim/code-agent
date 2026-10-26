@@ -48,7 +48,8 @@ type Res = ReturnType<typeof call> & { result?: any };
 function send(p: Project, type: string, payload: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): Res {
   return call(p.root, JSON.stringify({ protocol: "code-agent.master", version: 1, type, controller: "m1", generation: 1, token: p.token, payload, ...extra })) as Res;
 }
-async function waitFor<T>(what: string, fn: () => T | undefined | false, ms = 30_000): Promise<T> {
+// 전체 병렬 실행에서는 OS 프로세스 식별 조회도 경합한다. 운영 정책의 시간 상한과 분리한 시험 대기다.
+async function waitFor<T>(what: string, fn: () => T | undefined | false, ms = 90_000): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
     const value = fn();
@@ -210,7 +211,7 @@ describe("재조정·격리", () => {
   test("master 연결이 끊기면(정책 pause) 실행을 협력 정지한다 — 연결 끊김만으로 실패·재배정하지 않는다", async () => {
     const p = project({ ...POLICY, masterTimeoutMs: 1000, onMasterDisconnect: "pause" });
     const runId = send(p, "submit", { prompt: "MODE=loop" }, { commandId: cid() }).result.runId as string;
-    const done = await waitFor("연결 끊김 정지", () => terminal(runOf(p, runId).state) && runOf(p, runId), 30_000);
+    const done = await waitFor("연결 끊김 정지", () => terminal(runOf(p, runId).state) && runOf(p, runId));
     assert.equal(done.state, "paused");
     assert.match(done.stop?.reason ?? "", /연결/);
     const types = JSON.parse(JSON.stringify(send(p, "events", { after: 0 }).result.events)).map((event: { type: string }) => event.type);

@@ -211,17 +211,17 @@ describe("hook·검증의 Codex 표기", () => {
     toCheck();
     write("code-agent.json", "{broken");
     const claude = decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git status" } }) ?? "";
-    assert.match(claude, / — Read 로 원인을 확인하고 Write\/Edit 로 code-agent\.json 을 고친 뒤 code-agent manifest check 로 확인하세요\.$/);
+    assert.match(claude, / — Read 로 표시된 파일을 확인하세요\. code-agent\.json 오류는 Write\/Edit 로 고친 뒤 code-agent manifest check 로 확인하고, 상태 기록 오류는 사람이 복구합니다\.$/);
     const codex = codexReason("git status") ?? "";
     assert.match(codex, /^code-agent 상태·설정을 읽지 못했습니다: /);
-    assert.match(codex, / — code-agent read 로 원인을 확인하고 apply_patch 로 code-agent\.json 을 고친 뒤 code-agent manifest check 로 확인하세요\.$/);
+    assert.match(codex, / — code-agent read 로 표시된 파일을 확인하세요\. code-agent\.json 오류는 apply_patch 로 고친 뒤 code-agent manifest check 로 확인하고, 상태 기록 오류는 사람이 복구합니다\.$/);
     assert.doesNotMatch(codex, /Read 로|Write\/Edit/);
     assert.equal(codexReason("code-agent read code-agent.json"), undefined, "Codex 의 유일한 읽기 길");
     assert.equal(codexReason("code-agent manifest check"), undefined);
     assert.match(codexReason("code-agent read code-agent.json && git add .") ?? "", /읽지 못했습니다/);
     const patched = codexHook({ cwd: repo, hook_event_name: "PreToolUse", tool_name: "apply_patch",
       tool_input: { command: "*** Begin Patch\n*** Update File: src/a.ts\n+x\n*** End Patch" } }) as { hookSpecificOutput?: { permissionDecisionReason?: string } };
-    assert.match(patched.hookSpecificOutput?.permissionDecisionReason ?? "", /code-agent read 로 원인을 확인하고 apply_patch 로/);
+    assert.match(patched.hookSpecificOutput?.permissionDecisionReason ?? "", /code-agent read 로 표시된 파일을 확인하세요\. code-agent\.json 오류는 apply_patch 로/);
   });
 
   test("Claude 바이트 — next 의 미응답 질문 문장이 배선 전 문자열과 같고, context 의 계획 밖 문장은 서브에이전트 제약이다", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { classifyCodexReadiness, codexReadiness, type CodexProbeRaw } from "../agent/codexReadiness";
@@ -25,7 +25,8 @@ afterEach(() => {
   for (const [key, value] of [["CODEX_HOME", saved.home], ["CODEX_SANDBOX", saved.sandbox]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
-  rmSync(root, { recursive: true, force: true });
+  assert.equal(dirname(root), realpathSync.native(tmpdir())); assert.ok(root.includes("ca-ready-root-"));
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 const codes = (raw: CodexProbeRaw): string[] => classifyCodexReadiness(root, raw).problems.map((problem) => problem.code);
 const userConfig = (text: string): void => { mkdirSync(join(root, "codex-home"), { recursive: true }); writeFileSync(join(root, "codex-home", "config.toml"), text); };

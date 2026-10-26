@@ -312,7 +312,7 @@ describe("문서 작성 세션", () => {
     assert.equal(decide({ cwd: repo, tool_name: "Read", tool_input: { file_path: join(repo, "code-agent.json") } }), undefined);
     assert.equal(hookWrite("code-agent.json"), undefined, "고칠 파일은 쓸 수 있다");
     assert.equal(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "code-agent manifest check" } }), undefined);
-    assert.match(hookWrite(`${APP}/deal/domain/Deal.java`) ?? "", /상태·설정을 읽지 못했습니다.*code-agent\.json 을 고친 뒤/);
+    assert.match(hookWrite(`${APP}/deal/domain/Deal.java`) ?? "", /상태·설정을 읽지 못했습니다.*code-agent\.json 오류는 .*고친 뒤/);
     assert.match(hookWrite(".code-agent/approvals/docs.jsonl") ?? "", /읽지 못했습니다/, "상태 원장은 여전히 쓰지 못한다");
     assert.ok(decide({ cwd: repo, tool_name: "Bash", tool_input: { command: "git status" } }));
     write("code-agent.json", JSON.stringify(MANIFEST));

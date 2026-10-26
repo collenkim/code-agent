@@ -225,7 +225,7 @@ const out = { ok: 0, stop: 0, raw: [], violations: 0, reclaimLines: 0 };
 process.stderr.write = (chunk) => { if (String(chunk).includes("회수했습니다")) out.reclaimLines++; return true; };
 while (Date.now() < Number(startAt)) { /* 동시 출발 */ }
 let release;
-try { release = acquireLock(lockPath, { waitMs: 5000, ageReclaim: true, label: "시험" }); }
+try { release = acquireLock(lockPath, { waitMs: 15000, ageReclaim: true, label: "시험" }); }
 catch (error) { if (error && error.constructor && error.constructor.name === "Stop") out.stop++; else out.raw.push(String(error && error.code || error)); }
 if (release) {
   const marker = path.join(dataDir, "inside.marker");

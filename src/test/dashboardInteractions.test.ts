@@ -30,14 +30,14 @@ test("2-11 반복 조회는 응답 처리기를 일정 간격 안에 중복 실�
     saved.origin = { type: "questions", id: "WORK-1" }; saved.status = "responded";
     saved.response = { receiptId: "receipt", commandId: "response", at: new Date().toISOString(), channel: "dashboard-human", submission: { intent: "submit", explicit: true } };
   });
-  const spawned = mock.method(childProcess, "spawn", () => ({ on() {}, unref() {} } as any));
-  try {
-    kickInteractionWorker(root, r.requestId); kickInteractionWorker(root, r.requestId);
-    assert.equal(spawned.mock.callCount(), 1);
-    mutateInteractions(root, state => { (state.requests[r.requestId] as any).drainRequestedAt = new Date(Date.now() - 6000).toISOString(); });
-    kickInteractionWorker(root, r.requestId);
-    assert.equal(spawned.mock.callCount(), 2);
-  } finally { spawned.mock.restore(); }
+  // fixture가 설치한 mock을 그대로 센다. 중첩 mock은 restoreAll 순서에 따라 뒤 시험에 남을 수 있다.
+  const spawned = childProcess.spawn as typeof childProcess.spawn & { mock: { callCount(): number } };
+  const before = spawned.mock.callCount();
+  kickInteractionWorker(root, r.requestId); kickInteractionWorker(root, r.requestId);
+  assert.equal(spawned.mock.callCount(), before + 1);
+  mutateInteractions(root, state => { state.requests[r.requestId].drainRequestedAt = new Date(Date.now() - 6000).toISOString(); });
+  kickInteractionWorker(root, r.requestId);
+  assert.equal(spawned.mock.callCount(), before + 2);
 });
 
 test("2-2 깨진 동의와 옮긴 프로젝트의 동의가 다른 질문의 조회·동기화를 막지 않는다", () => {
@@ -133,7 +133,11 @@ test("호스트가 보류·만료 질문을 다시 열면 같은 ID를 쓰고 �
   assert.equal(renewed.status, "pending"); assert.deepEqual(renewed.nativeCallIds, []);
   acceptNativeInteraction(root, first.requestId, "owner", "claude-question", ["조사"]);
   const answered = publishNativeInteraction(root, questions, ticket);
-  assert.equal(answered.status, "applied"); assert.equal(currentInteractions(root).requests.length, 1);
+  assert.equal(answered.status, "pending"); assert.notEqual(answered.requestId, first.requestId);
+  const records = currentInteractions(root).requests;
+  assert.equal(records.length, 2);
+  assert.equal(records.find(r => r.requestId === first.requestId)!.status, "applied");
+  assert.equal(records.find(r => r.requestId === first.requestId)!.response!.submission.answers![0].optionIds[0], "option-1");
 });
 
 test("호스트와 대시보드가 경쟁하면 첫 응답을 유지한다", () => {
