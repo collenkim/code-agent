@@ -7,6 +7,8 @@ import { scriptRunner } from "./hosts";
 import { entryScript } from "./runtimeSelect";
 
 const START = "# code-agent:choices:start", END = "# code-agent:choices:end";
+// MCP 도구 목록은 연결 때 읽는다. 입력 형식을 바꾸면 설정도 바꿔 재시작 안내가 나오게 한다.
+const SCHEMA_MARK = "# code-agent:choices:schema=2";
 function configText(root: string): string {
   const file = join(root, ".codex/config.toml");
   return existsSync(file) ? readFileSync(file, "utf8") : "";
@@ -27,7 +29,7 @@ export function installChoiceConfig(root: string, cli?: string): void {
   if (!command) throw new Stop("선택 UI의 --cli 실행에 필요한 node를 PATH에서 찾지 못했습니다.");
   // 진입점 경로 — 릴리스 폴더가 아니다. 그래야 버전을 바꿔도 이 설정이 그대로라 Codex 를 다시 열 필요가 없다(runtimeSelect.entryScript)
   const args = [...(isPackaged() && !cli ? [] : [resolve(cli ?? entryScript())]), "choice-server", "--root", resolve(root)];
-  const block = `${START}\n[mcp_servers.code_agent]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\ntool_timeout_sec = 3600\n${END}`;
+  const block = `${START}\n${SCHEMA_MARK}\n[mcp_servers.code_agent]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\ntool_timeout_sec = 3600\n${END}`;
   const start = text.indexOf(START), end = text.indexOf(END);
   const next = start < 0 ? `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${block}\n` : text.slice(0, start) + block + text.slice(end + END.length);
   writeIfChanged(file, next);
@@ -37,5 +39,6 @@ export function choiceConfigProblem(root: string): string | undefined {
     checkChoiceConfig(root);
     const text = configText(root);
     if (!text.includes(START) || !text.includes('"choice-server"') || !text.includes("[mcp_servers.code_agent]")) return "선택 UI MCP 설정이 없습니다.";
+    if (!text.includes(SCHEMA_MARK)) return "선택 UI의 질문 세션 결속 설정을 갱신하고 Codex 세션을 다시 여세요.";
   } catch (error) { return error instanceof Error ? error.message : String(error); }
 }

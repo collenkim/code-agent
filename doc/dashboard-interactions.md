@@ -139,7 +139,7 @@ Claude 질문의 PostToolUse 입력에 호스트가 채운 answers가 있어도,
 
 모든 14개 동의는 공통 서명 검증과 기존 `applyLocked` 처리기를 사용한다. `judgment`의 retry-grant/waive-finding/cross-stop 조건, 검증·권한·동의 스냅샷·Git 검사 등 기존 조건이 그대로 적용된다. 수행 중 원장이 `applying`으로 남으면 실패로 닫는 기존 규칙을 따른다. 독립 설정에 개발 작업을 만들어 붙이지 않는다.
 
-일반 질문은 메인이 `interaction publish <질문.json>`으로 발행하며 세션 티켓이 필요하다. Claude 일반 단일 선택 Pre/Post와 Codex MCP ask도 영속화한다. MCP ask의 sessionId는 실제 PreToolUse 세션과 일치해야 하며, 명령·세션별 티켓만 소비한다. 생략하거나 다르면 hook이 현재 값을 안내하고 표시 전에 멈춘다. 구조화된 추천·다중 선택·직접 입력은 publish 또는 MCP ask의 `interaction` 필드를 사용한다. 기존 Markdown 질문은 실제 미응답 Q번호·원문·세션을 확인할 수 있을 때 연결하되, 문구에서 추천을 추정하지 않고 텍스트 입력으로 제공한다. 같은 문서에 명시적으로 발행한 Q번호는 중복 수집하지 않는다.
+일반 질문은 메인이 `interaction publish <질문.json>`으로 발행하며 세션 티켓이 필요하다. Claude 일반 단일 선택 Pre/Post와 Codex MCP ask도 영속화한다. MCP ask의 sessionId는 실제 PreToolUse 세션과 일치해야 하며, 명령·세션별 티켓만 소비한다. 생략하거나 다르면 hook이 현재 값을 안내하고 표시 전에 멈춘다. 도구 입력 형식의 표지가 다른 설치는 갱신 후 Codex 세션을 다시 열어 도구 목록을 다시 읽는다. 구조화된 추천·다중 선택·직접 입력은 publish 또는 MCP ask의 `interaction` 필드를 사용한다. 기존 Markdown 질문은 실제 미응답 Q번호·원문·세션을 확인할 수 있을 때 연결하되, 문구에서 추천을 추정하지 않고 텍스트 입력으로 제공한다. 같은 문서에 명시적으로 발행한 Q번호는 중복 수집하지 않는다.
 
 Claude Post는 실제 호스트 답을 먼저 관찰한다. 영속 질문의 만료·문맥 변경·길이 제한·대시보드 선응답으로 상태 갱신이 실패해도 관찰 기록은 남고 경고를 출력한다. 소비 전 답이 있는 질문의 Pre 거부는 유지한다. 적용을 마친 호스트 질문은 같은 세션·문구로 다시 호출해도 새 요청을 만들며, 이전 요청과 답을 보존한다.
 

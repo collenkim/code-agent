@@ -262,7 +262,7 @@ sequenceDiagram
 ```
 
 **결속 규칙** (`consent.ts` `observeConsent`·`applyLocked`·`consentCommandGuard`, `consentTicket.ts`, `hook.ts` `decide`)
-- Codex 선택 UI는 프로젝트 `.codex/config.toml`에 등록한 `choice-server` MCP의 `ask`(업무 질문)·`confirm`(동의)이다. `confirm`은 ID만 받아 PreToolUse가 발급한 `question-<ID>.json` 티켓을 한 번 소비하고 준비 세션·작업 경로·질문·대상 해시를 표시 전후 검증한다. 서버가 클라이언트의 폼 응답을 직접 받아 원장에 `codex-elicitation` 출처로 기록한다. 도구 호출 인자에 답을 넣을 수 없다. 취소·거절은 보류, 전송 오류·잘못된 답은 실패다. UI 미지원·설치 누락은 doctor와 재설치·재시작으로 안내하며 번호 나열로 대체 완료를 보고하지 않는다. `codex-prompt`는 사용자가 명시적으로 요청한 대화 입력 호환 경로다.
+- 선택 UI 도구의 입력 형식 표지는 관리 설정에 포함한다. 표지가 달라지면 MCP 설정 변경으로 분류해 Codex 세션을 다시 열도록 안내하며, doctor도 낡은 형식을 짚는다. Codex 선택 UI는 프로젝트 `.codex/config.toml`에 등록한 `choice-server` MCP의 `ask`(업무 질문)·`confirm`(동의)이다. `confirm`은 ID만 받아 PreToolUse가 발급한 `question-<ID>.json` 티켓을 한 번 소비하고 준비 세션·작업 경로·질문·대상 해시를 표시 전후 검증한다. 서버가 클라이언트의 폼 응답을 직접 받아 원장에 `codex-elicitation` 출처로 기록한다. 도구 호출 인자에 답을 넣을 수 없다. 취소·거절은 보류, 전송 오류·잘못된 답은 실패다. UI 미지원·설치 누락은 doctor와 재설치·재시작으로 안내하며 번호 나열로 대체 완료를 보고하지 않는다. `codex-prompt`는 사용자가 명시적으로 요청한 대화 입력 호환 경로다.
 - **선택 화면 크기** (`screenText.ts`, `consent.ts` `questions`·`writeFullText`) — Claude 질문 창과 Codex 폼은 화면 높이를 넘는 질문을 스크롤 없이 자른다(Claude 2.1.296 은 앞뒤를 잘라 중간만, Codex 0.162.1 폼은 `message`+필드 제목을 위에서부터 그리고 넘치는 줄과 선택지를 밀어낸다 — PTY 실측). 그래서 prepare 가 요약과 문서 변경 후보 전부를 `consents/confirm-<내용 해시 12자>.md`에 쓰고 기록에 `fullText`로 남기며, 질문에는 앞부분(최종 확인은 제목 포함 6줄, 문서 변경 선택이 붙으면 3줄과 선택 2개·`… 외 N개`, 후보 질문은 4줄 — 한 줄은 76칸에서 `…`로 자른다)·`… 이하 N줄 생략`·`전문: <경로>`·질문 줄만 싣는다(내용이 다 들어가면 경로 줄을 생략). 결과는 `QUESTION_ROWS`(10줄, 80×24 터미널에 선택지 3개와 함께 들어가는 크기) 안이다. `fullText`가 없는 이전 기록은 요약 전문을 질문에 싣는다(이미 낸 질문과 deep-equal 이 유지된다). Codex `confirm` 폼의 `message`는 짧은 조작 안내 한 줄이다 — 요약은 대화와 전문 파일에 있다. 모델이 쓰는 업무 질문은 질문 본문 10줄·선택지(Claude 는 이름+설명) 3줄을 넘으면 표시 전에 돌려보낸다(Claude PreToolUse `consent-event` exit 2, Codex `ask` 오류 — 폼을 열지 않는다).
 - Git 설정 스냅샷은 브랜치 추적 설정과 명령 실행 환경에서 주입한 현재 저장소·하위 경로(`safe.directory=<root>`·`<root>/*`, 출처 `command line:`)를 제외한다. Windows 경로는 대소문자·구분자를 정규화해 비교한다. 설정 파일에 저장한 신뢰 경로, 다른 경로·전체 경로(`*`)의 신뢰, 사용자·커밋·훅 설정은 계속 비교한다. 실제 Git 실행 환경과 설정 파일은 바꾸지 않는다.
 - **준비 인자** — `consent prepare <파일> | --action <동작> [--id] [--kind] [--spec] [--for claude|codex]`(깃발 순서·따옴표 무관). 자유 문구가 없는 동작(`INLINE_ACTIONS` — setup·docs·baseline·request·plan·deliver·knowledge-prune·abort·update·repro-log)만 인라인으로 받고, 반려·model·plugin-add·plugin-remove·judgment 는 JSON 파일이다. 문법은 hook(`consentCommandOf`)과 CLI 가 같은 함수(`splitCommandArgs`·`parsePrepareArgs`)로 본다 — 문법이 틀린 명령에는 hook 이 티켓을 내지 않고 CLI 는 티켓을 꺼내기 전에 사용법으로 멈춘다. `--for`는 티켓의 호스트와 같아야 하고(다르면 거부) 기록의 `form`이 되어 그 동의의 prepare·status·finish CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(`renderConsentOutput` — Claude 는 `questions`·`codexReply`, Codex 는 `questions`·`toolInput`. 함수 반환은 전체 그대로라 Codex 응답 관찰·hook 은 바뀌지 않는다). `consent finish`가 적용하면 결과에 `phase`·`next`(status 의 `다음:`과 같은 값 `nextStep`, 흐름을 멈추는 deliver·abort·update·model·플러그인·knowledge-prune 은 고정 문구 `AFTER_APPLY`)를 더한다.
@@ -904,6 +904,8 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 - `ca-reviewer`: review
 
 ## 10. 변경 이력
+
+- 질문 세션 인자가 없는 기존 MCP 도구 목록은 설정 형식 갱신을 통해 Codex 재시작을 안내한다 — `fix(2-11 후속)`.
 
 - 접수·작업·질문·동의의 상태 읽기를 공용 검사기로 모아 손상 경로를 알리고 원본을 보존한다 — `f18900c`.
 

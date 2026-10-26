@@ -9,6 +9,7 @@ import { applyConsent, loadConsent, prepareConsent } from "../agent/consent";
 import { takeTicket } from "../agent/consentTicket";
 import { readDocLedger } from "../agent/docs";
 import { init } from "../agent/init";
+import { applyTemplates, hostGuidance } from "../agent/runtimeApply";
 import { checkChoiceConfig, choiceConfigProblem } from "../agent/choiceConfig";
 import { QUESTION_ROWS, screenRows } from "../agent/screenText";
 import { currentInteractions } from "../agent/interactions";
@@ -152,4 +153,16 @@ test("Codex 설치: MCP 블록만 갱신하고 다른 설정을 보존하며 재
   writeFixture(root, ".codex/config.toml", '[mcp_servers.code_agent]\ncommand = "user-owned"\n');
   assert.throws(() => checkChoiceConfig(root), /이름 충돌/);
   assert.throws(() => init(root, { host: "codex" }), /이름 충돌/);
+});
+
+test("2-11 이전 MCP 도구 목록의 갱신은 설정 변경으로 세션 재시작을 안내한다", () => {
+  init(root, { host: "codex" });
+  const path = join(root, ".codex/config.toml");
+  writeFixture(root, ".codex/config.toml", readFileSync(path, "utf8").replace(/^# code-agent:choices:schema=.*\r?\n/m, ""));
+  assert.match(choiceConfigProblem(root) ?? "", /세션.*다시/);
+  const changed = applyTemplates(root, { host: "codex" });
+  assert.equal(changed.changes.mcp, true);
+  assert.match(hostGuidance(changed.changes, ["codex"], true).join("\n"), /다시 열어야.*MCP/);
+  assert.equal(choiceConfigProblem(root), undefined);
+  assert.equal(applyTemplates(root, { host: "codex" }).changes.mcp, false);
 });
