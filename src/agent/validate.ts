@@ -19,7 +19,8 @@ import {
 import { hostname, tmpdir } from "os";
 import { basename, dirname, join } from "path";
 
-import { hashManifest, hashPlan } from "../core/approval";
+import { hashManifest, hashPlan, ledgerPath } from "../core/approval";
+import { DOCS_LEDGER } from "./docs";
 import { writeAtomic } from "../core/atomic";
 import { runCommand } from "../core/build";
 import { errorLogOf } from "../core/workOrder";
@@ -254,14 +255,15 @@ function requireNotRunning(work: Work, retry: VerifyRetryState): void {
 }
 
 /**
- * 검증 명령이 건드리면 안 되는 code-agent 기록 — 리뷰 회차·리뷰어 실행·교차 지점·사람 판단(review.json)과 계획 기록(planning.json).
+ * 검증 명령이 건드리면 안 되는 code-agent 기록 — 리뷰·계획 기록과 해당 작업·공통 문서의 승인 원장.
  * hook 은 모델 도구의 .code-agent 쓰기만 막는다. 검증 명령은 모델이 쓴 테스트 코드를 실행하므로 그 기록을 지우거나 고칠 수 있다 —
- * verify.json 은 끝 저장이 메모리 사본으로 다시 쓰지만 이 둘은 다시 쓰지 않는다. 검증·리뷰·계획 단계의 다른 쓰기는 이 실행 동안 없다
+ * verify.json 은 끝 저장이 메모리 사본으로 다시 쓰지만 보호 대상은 다시 쓰지 않는다. 검증·리뷰·계획 단계의 다른 쓰기는 이 실행 동안 없다
  * (review-event·교차 리뷰는 review 단계에서만, 계획 담당 hook 은 계획 단계에서만 쓴다).
  */
 function guardedStateFiles(work: Work): string[] {
   const { repoRoot, active } = work;
-  return [reviewFile(repoRoot, active.id, active.target), join(repoRoot, STATE_DIR, "work", active.id, `${active.target}.planning.json`)];
+  return [reviewFile(repoRoot, active.id, active.target), join(repoRoot, STATE_DIR, "work", active.id, `${active.target}.planning.json`),
+    ledgerPath(repoRoot, active.id), join(repoRoot, DOCS_LEDGER)];
 }
 function snapshotState(paths: readonly string[]): Map<string, Buffer | undefined> {
   return new Map(paths.map((path) => [path, existsSync(path) ? readFileSync(path) : undefined]));

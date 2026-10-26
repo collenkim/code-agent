@@ -595,11 +595,14 @@ export function tcPrecheck(work: Work): string[] {
 }
 
 /** TC id 를 찾는 파일 — kind:test 단계의 계획 파일(refactor 는 기존 테스트까지), 테스트 단계가 없으면 계획 파일 전체 */
-function tcSearchTexts(work: Work): string[] {
-  const files = work.stages.some((stage) => stage.kind === "test")
+function tcSearchFiles(work: Work): string[] {
+  const files = work.stages.some((stage) => stage.kind === "test") || work.order.kind === "refactor"
     ? [...testStageFiles(work), ...(work.order.kind === "refactor" ? trackedTestFiles(work) : [])]
     : planPaths(work);
-  return [...new Set(files)].map((path) => {
+  return [...new Set(files)];
+}
+function tcSearchTexts(work: Work): string[] {
+  return tcSearchFiles(work).map((path) => {
     const full = join(work.repoRoot, path);
     return existsSync(full) ? readFileSync(full, "utf-8") : "";
   });
@@ -891,13 +894,14 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
 /**
  * ⑦ 의 TC id 가 실제로 확인됐는가.
  *
- * 실행 결과의 상태만 통과·실패 증거다. 테스트 파일의 id는 위치 안내에만 쓰며
+ * 실행 결과의 상태만 통과·실패 증거다. 테스트 단계가 있으면 통과한 id는 테스트 파일에도 있어야 한다.
  * 실제 결과가 없으면 unknown으로 남긴다. skip·누락·미지원 출력은 통과가 아니다.
  */
 export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[] {
   const spec = readWorkDoc(work.repoRoot, work.active.id, "07-test-spec");
   const cases = spec ? parseTestCases(spec) : [];
-  const testFiles = testStageFiles(work);
+  const testFiles = tcSearchFiles(work);
+  const requireTestSource = work.stages.some(stage => stage.kind === "test") || work.order.kind === "refactor";
   const results = parseTestResults(output);
   const sources = testFiles.map((path) => {
     const full = join(work.repoRoot, path);
@@ -908,10 +912,13 @@ export function testCaseEvidence(work: Work, output: string): TestCaseEvidence[]
     // id 가 다른 id 의 앞부분이면 안 된다 — TC-1 이 TC-12 에 걸리면 덮이지 않은 것이 덮인 것으로 읽힌다
     const token = tcToken(entry.id);
     const result = resultFor(entry.id, results);
+    const found = sources.find((source) => token.test(source.text));
+    if (result.status === "passed" && requireTestSource && !found) {
+      return { id: entry.id, status: "unknown", source: "출력" as const, where: "출력에만 있음 — 테스트 파일에 같은 TC 토큰을 넣고 실제 테스트를 실행하세요" };
+    }
     if (result.status !== "unknown") {
       return { id: entry.id, status: result.status, source: "출력" as const, where: `테스트 실행 결과 (${result.format})` };
     }
-    const found = sources.find((source) => token.test(source.text));
     return found
       ? { id: entry.id, status: "unknown", source: "테스트 파일" as const, where: found.path }
       : { id: entry.id, status: "unknown", source: "없음" as const };

@@ -8,7 +8,7 @@ import { hashManifest } from "../core/approval";
 import { loadManifest } from "../core/manifest";
 import { back, context, next, requireValidatable, status, Stop, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
-import { loadEvidence, overFixLimit, saveEvidence, stageProblems, validationDocFile, verifyView } from "../agent/evidence";
+import { loadEvidence, overFixLimit, saveEvidence, stageProblems, testCaseEvidence, tcPrecheck, validationDocFile, verifyView } from "../agent/evidence";
 import { loadActive, saveActive } from "../agent/layout";
 import { loadReview, openRound, reviewDocFile } from "../agent/review";
 import { observeReviewer } from "../agent/reviewHook";
@@ -32,6 +32,30 @@ import {
 beforeEach(() => createStageRepo());
 
 afterEach(() => removeStageRepo());
+
+test("1-5 구현 파일이 찍은 TC 통과 출력은 테스트 파일에 토큰이 없으면 unknown이다", () => {
+  toCheck();
+  write(TEST_FILE, "// TC-1\nclass OrderTest {}\n");
+  write(`${ORDER}/domain/Order.java`, '// TC-2\nclass Order {}\n');
+  const work = loadWork(repo)!;
+  assert.deepEqual(tcPrecheck(work), ["TC-2"]);
+  for (const output of ['ok 1 - TC-2', JSON.stringify({ type: "code-agent-test", id: "TC-2", status: "passed" })]) {
+    const result = testCaseEvidence(work, output).find(item => item.id === "TC-2")!;
+    assert.equal(result.status, "unknown");
+    assert.match(result.where ?? "", /출력에만 있음/);
+  }
+  assert.equal(testCaseEvidence(work, "ok 1 - TC-1")[0].status, "passed");
+});
+
+test("1-6 검증 명령의 승인 원장 변경을 복원하고 실행을 guard로 남긴다", async () => {
+  const paths = [".code-agent/approvals/ORD-1.jsonl", ".code-agent/approvals/docs.jsonl"];
+  useManifest({ build: ["node", "-e", `for (const p of ${JSON.stringify(paths)}) require('fs').appendFileSync(p, '\\n')`] });
+  toCheck();
+  const before = paths.map(path => readFileSync(join(repo, path)));
+  await check(requireValidatable(repo, "check"));
+  paths.forEach((path, index) => assert.deepEqual(readFileSync(join(repo, path)), before[index], path));
+  assert.equal(loadEvidence(repo, "ORD-1", "order")!.runs[0].cause, "guard");
+});
 
 // ---- 기준 커밋 ----
 

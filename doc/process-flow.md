@@ -474,6 +474,8 @@ Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 �
 
 ### 6.2 검증 노드 — `verify` (`verificationFlow.ts` `verify`·`assess`)
 
+`kind: test` 단계가 있거나 refactor인 작업은 통과 출력의 TC 토큰이 테스트 단계 파일(refactor는 기존 테스트 포함)에도 있어야 한다. 구현 파일이나 출력에만 있는 TC는 `unknown — 출력에만 있음`으로 남긴다. 사전 점검도 같은 파일 집합을 쓴다.
+
 `core/workflow.ts`는 각 검증 노드와 조건부 간선을 LangGraph로 구성한다. `verify`는 진입 판정부터 프로젝트 그래프 잠금 안에서 실행하고 SQLite에 체크포인트·노드 이벤트를 남긴다. 담당·사람 노드에서는 실행하지 않고 인계와 interrupt를 반환한다.
 
 ```mermaid
@@ -564,7 +566,7 @@ stateDiagram-v2
 
 **hook 쓰기 차단** (`freezeReason`) — `writeBlockReason`은 고쳐도 다음 회차가 거부될 때만(`nextRoundDecision`의 트리 변경 판정과 같다) 계획 파일 쓰기를 전부 거부하고, 막은 카운터(고쳐 쓰기·리뷰 회차·총 회차)의 문구를 낸다. 그다음 동결을 본다(⑨ 지적·수집 수정 창이 열쇠). `status`의 `다음:` 한도 줄도 증거로 같은 판정을 한다(`verifyLimitHint`).
 
-**검증 명령의 기록 보호** (`runSpecs`의 `guardedStateFiles`) — 검증 명령은 모델이 쓴 테스트 코드를 실행하므로 `.code-agent`를 고칠 수 있다(hook 은 모델 도구의 쓰기만 막는다). `review.json`·`planning.json`은 명령 실행 전 바이트와 대조해 바뀌었으면(지움 포함) 실행 전 내용으로 되돌리고 그 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점·사람 판단을 지워 한도를 피하는 길을 닫는다. 그 실행은 실행마다 원인 `guard`(`outcome: error`, 되돌린 파일 `guarded`)로 남고 `runClass`가 전제 미충족(`precondition`)으로 본다 — 그 출력으로 TC 결과를 읽지 않고 테스트를 얼리지 않는다(재현이면 재현 시도로 기록하고 멈춘다) — 그래서 게이트는 그 회차·단계의 ⑦ 미확인 줄('TC id 를 남기세요')을 싣지 않는다(틀린 할 일이다. 고친 뒤 새 회차에서 다시 대조한다). 게이트(`stageProblemEntries`의 stop 문제)·`verify`(노드 없는 Stop)·`status`의 `다음:`(그 단계 게이트의 stop 문제 전부 — verify 의 Stop 과 같은 목록)·같은 코드 재실행 거부(check·test·integrate)가 같은 한 문장(`stateGuardText` — 되돌린 파일, 증거로 받지 않음, 같은 코드로는 다시 돌리지 않음, 계획 안에서 고친 뒤 `verify`)을 쓴다. 고친 뒤의 `verify`는 트리가 바뀌어 새 회차(fix)로 돈다. `verify.json`은 끝 저장이 메모리 사본으로 다시 쓴다. 그 밖의 `.code-agent` 파일(동의 기록·티켓 등)은 대조하지 않는다 — 검증 명령이 그것들을 고치는 것은 막지 못한다(`doc/design.md` 한계).
+**검증 명령의 기록 보호** (`runSpecs`의 `guardedStateFiles`) — 검증 명령은 모델이 쓴 테스트 코드를 실행하므로 `.code-agent`를 고칠 수 있다(hook 은 모델 도구의 쓰기만 막는다). `review.json`·`planning.json`·해당 작업 승인 원장(`<slug>.jsonl`)·공통 문서 원장(`docs.jsonl`)은 명령 실행 전 바이트와 대조해 바뀌었으면(지움 포함) 실행 전 내용으로 되돌리고 그 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점·사람 판단을 지워 한도를 피하는 길을 닫는다. 그 실행은 실행마다 원인 `guard`(`outcome: error`, 되돌린 파일 `guarded`)로 남고 `runClass`가 전제 미충족(`precondition`)으로 본다 — 그 출력으로 TC 결과를 읽지 않고 테스트를 얼리지 않는다(재현이면 재현 시도로 기록하고 멈춘다) — 그래서 게이트는 그 회차·단계의 ⑦ 미확인 줄('TC id 를 남기세요')을 싣지 않는다(틀린 할 일이다. 고친 뒤 새 회차에서 다시 대조한다). 게이트(`stageProblemEntries`의 stop 문제)·`verify`(노드 없는 Stop)·`status`의 `다음:`(그 단계 게이트의 stop 문제 전부 — verify 의 Stop 과 같은 목록)·같은 코드 재실행 거부(check·test·integrate)가 같은 한 문장(`stateGuardText` — 되돌린 파일, 증거로 받지 않음, 같은 코드로는 다시 돌리지 않음, 계획 안에서 고친 뒤 `verify`)을 쓴다. 고친 뒤의 `verify`는 트리가 바뀌어 새 회차(fix)로 돈다. `verify.json`은 끝 저장이 메모리 사본으로 다시 쓴다. 그 밖의 `.code-agent` 파일(동의 기록·티켓 등)은 대조하지 않는다 — 검증 명령이 그것들을 고치는 것은 막지 못한다(`doc/design.md` 한계).
 
 **시작 표지와 실행 중 보호** — test·통합 검증은 명령을 돌리기 전 저장(⑧ 렌더 포함)에 `retry.started`(phase·round·pid·host·at)를 넣고 끝 저장에서 지운다. 통합 검증은 이 저장을 임시 worktree를 만든 **뒤**에 한다 — 만들지 못해 멈추면 재실행 카운터·표지를 남기지 않는다. 남아 있으면 그 실행은 끊긴 것이다. 표지의 실행이 아직 돌면(같은 PC면 살아 있는 pid, 다른 PC면 나이가 명령 한도×3+10분 안) `check`·`test`는 멈춘다(`requireNotRunning`).
 
@@ -871,7 +873,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- MCP 실행 인자도 셸 검사를 받고 하위 에이전트는 진행·동의·임대를 변경하지 못한다 — `fix(1-3,1-4)`.
+- 테스트 파일에 없는 TC 통과 출력을 미확인으로 남기고 검증 명령의 승인 원장 변경을 복원한다 — `fix(1-5,1-6)`.
+
+- MCP 실행 인자도 셸 검사를 받고 하위 에이전트는 진행·동의·임대를 변경하지 못한다 — `c5a35fd`.
 
 - 동의 응답 관찰과 적용은 저장소 안 해시 캐시를 신뢰하지 않고 대상 파일을 전수 해시한다 — `a6a1dec`.
 - PowerShell 스마트 따옴표를 이용한 셸 평가와 동의 티켓의 다른 해석을 거부한다 — `c572537`.
