@@ -10,6 +10,7 @@ import { next, start } from "../agent/commands";
 import { loadConsent, observeConsent, runConsentHook } from "../agent/consent";
 import { loadActive, saveActive } from "../agent/layout";
 import { parseQuestions } from "../agent/questions";
+import { mutateInteractions } from "../agent/interactions";
 import { requestBegin, requestSubmit } from "../agent/request";
 import { decideStop } from "../agent/stopHook";
 import {
@@ -67,6 +68,24 @@ function ask(text: string, labels: string[], answer: string, extra: { agent?: st
 }
 const writeQuestions = (body: string) => writeFixture(root, QUESTIONS, `# ${CONSENT_WORK_ID} 질문\n\n${body}`);
 const sources = () => answerSources(root, CONSENT_WORK_ID, parseQuestions(readFileSync(join(root, QUESTIONS), "utf8")));
+
+test("2-5 Post의 만료·긴 답 저장 실패에도 실제 답 관찰은 남는다", () => {
+  startWork();
+  for (const [kind, answer] of [["expired", "모듈 하나"], ["long", "긴 답".repeat(800)]] as const) {
+    writeQuestions(`## Q9 · 범위\n어디까지?\n[Answer]: ${answer}\n`);
+    const text = "Q9 · 범위\n어디까지?", questions = [question(text, ["모듈 하나", "전체"])];
+    const base = { cwd: root, session_id: "main", tool_use_id: `post-${kind}`, tool_name: "AskUserQuestion", tool_input: { questions } };
+    assert.equal(hook({ ...base, hook_event_name: "PreToolUse" }).code, 0);
+    if (kind === "expired") mutateInteractions(root, state => {
+      for (const r of Object.values(state.requests)) if (r.nativeCallIds?.includes(base.tool_use_id)) r.expiresAt = "2000-01-01T00:00:00.000Z";
+    });
+    const result = hook({ ...base, hook_event_name: "PostToolUse", tool_response: { questions, answers: { [text]: answer } } });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /영속 질문/);
+    assert.equal(sources().get("Q9"), "observed");
+    assert.ok(readAnswerRows(root, CONSENT_WORK_ID).some(row => row.type === "answer" && row.toolId === base.tool_use_id && row.items.some(item => item.answer === answer)));
+  }
+});
 
 test("1-7 같은 Q와 답이어도 제목·본문을 바꾸거나 다른 제목으로 물으면 관찰된 답이 아니다", () => {
   startWork();

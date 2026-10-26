@@ -30,6 +30,20 @@ const event = () => ({ cwd: root, tool_name: "AskUserQuestion", session_id: "own
 function request() {
   writeFixture(root, ".code-agent/request-session.json", JSON.stringify({ id: "TASK-1", kind: "feature", startedAt: new Date().toISOString() }));
 }
+
+test("2-5 적용한 범용 질문의 다음 호출은 새 요청과 새 답을 갖는다", () => {
+  const questions = [{ question: "계속할까요?", options: [{ label: "예" }, { label: "아니요" }] }];
+  const base = { cwd: root, tool_name: "AskUserQuestion", session_id: "owner", tool_input: { questions } };
+  for (const [tool_use_id, answer] of [["generic-1", "예"], ["generic-2", "아니요"]]) {
+    observeNativeQuestion(root, { ...base, tool_use_id, hook_event_name: "PreToolUse" });
+    observeNativeQuestion(root, { ...base, tool_use_id, hook_event_name: "PostToolUse", tool_response: { answers: { "계속할까요?": answer } } });
+  }
+  const rows = currentInteractions(root).requests;
+  assert.equal(rows.length, 2);
+  assert.notEqual(rows[0].requestId, rows[1].requestId);
+  assert.deepEqual(rows.map(row => row.status), ["applied", "applied"]);
+  assert.deepEqual(rows.map(row => row.response!.submission.answers![0].optionIds), [["option-1"], ["option-2"]]);
+});
 function observedLegacy() {
   request();
   observeNativeQuestion(root, { ...event(), hook_event_name: "PreToolUse" });

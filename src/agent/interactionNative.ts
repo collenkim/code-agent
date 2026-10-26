@@ -12,8 +12,8 @@ export function publishNativeInteraction(root: string, questions: { title: strin
     minSelections: 0, maxSelections: 1, recommendedOptionIds: [], defaultOptionIds: [], recommendationReason: "호스트 질문에 구조화된 추천 근거가 없어 추천을 추측하지 않습니다.", evidence: [],
     input: ticket.host === "claude" ? { required: false, minLength: 1, maxLength: 2000, description: "실제 사용자의 직접 입력" } : undefined }));
   const input = PublishInteraction.parse({ key: `native:${interactionHash(questions).slice(7, 47)}`, stage: stageOf(root), title: questions[0].title, questions: items });
-  const record = publishInteraction(root, input, interactionContext(root, ticket.sessionId, ticket.host, ticket.runId));
-  // 새 호스트 질문 호출은 보류·만료한 화면을 다시 열 수 있다. 이미 받은 답과 취소는 되살리지 않는다.
+  const record = publishInteraction(root, input, interactionContext(root, ticket.sessionId, ticket.host, ticket.runId), undefined, undefined, undefined, true);
+  // 적용을 마친 질문의 새 호출은 새 요청이다. 소비 전 응답·취소는 재사용하고, 보류·만료한 화면은 다시 열 수 있다.
   if (!record.response && (["deferred", "expired"].includes(record.status) || (record.status === "pending" && (record.presentation?.state === "failed" || Date.parse(record.expiresAt) <= Date.now())))) {
     return mutateInteractions(root, state => {
       const saved = needInteraction(state, record.requestId);

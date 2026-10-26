@@ -69,11 +69,11 @@ export function needInteraction(state: Ledger | undefined, id: string): Interact
   if (!record) throw new ControlError("not-found", "질문 요청이 없습니다");
   return record;
 }
-export function publishInteraction(root: string, input: PublishInteraction, context: InteractionContext, origin: InteractionRecord["origin"] = { type: "host", id: input.key }, consent?: InteractionRecord["consent"], unavailableReason?: string): InteractionRecord {
+export function publishInteraction(root: string, input: PublishInteraction, context: InteractionContext, origin: InteractionRecord["origin"] = { type: "host", id: input.key }, consent?: InteractionRecord["consent"], unavailableReason?: string, renewApplied = false): InteractionRecord {
   return mutateInteractions(root, state => {
     const contentHash = interactionHash({ stage: input.stage, kind: consent ? "consent" : input.kind, title: input.title, questions: input.questions, context, origin, consent });
     const old = Object.values(state.requests).filter(r => r.key === input.key && r.context.sessionId === context.sessionId && r.origin.type === origin.type).at(-1);
-    if (old && old.contentHash === contentHash) return old;
+    if (old && old.contentHash === contentHash && !(renewApplied && old.status === "applied")) return old;
     if (old?.status === "responded") throw new ControlError("conflict", "이미 수신한 답을 먼저 소비·적용해야 질문을 바꿀 수 있습니다");
     if (old && ["pending", "deferred"].includes(old.status)) { old.status = "superseded"; bumpInteraction(state, old); }
     const at = new Date().toISOString();

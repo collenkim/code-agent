@@ -1089,10 +1089,18 @@ function consentEvent(stdin:string):number {
   // 업무 질문도 선택 화면에 다 보여야 답할 수 있다 — 화면을 넘는 질문은 표시하기 전에 돌려보낸다(Codex ask 와 같은 기준)
   const problem = input?.hook_event_name === "PreToolUse" && input.tool_name === "AskUserQuestion" ? askScreenProblem(input.tool_input?.questions) : undefined;
   if (problem) return block(`code-agent consent-event: ${problem}\n`);
+  const observeAnswer = (): void => {
+    try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
+    catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
+  };
+  const post = input.hook_event_name === "PostToolUse";
+  if (post) observeAnswer();
   const { observeNativeQuestion } = require("./interactionNative") as typeof import("./interactionNative");
   try { if (input.cwd) observeNativeQuestion(findRepoRoot(process.env.CLAUDE_PROJECT_DIR ?? input.cwd), input); }
-  catch (error) { return block(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); }
-  try { observeAnswerEvent(input, process.env.CLAUDE_PROJECT_DIR); }
-  catch (error) { process.stderr.write(`code-agent consent-event: 업무 답을 기록하지 못했습니다(질문은 막지 않았습니다): ${error instanceof Error ? error.message : error}\n`); }
+  catch (error) {
+    if (!post) return block(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`);
+    process.stderr.write(`code-agent consent-event: 실제 답 관찰 뒤 영속 질문을 갱신하지 못했습니다: ${error instanceof Error ? error.message : error}\n`);
+  }
+  if (!post) observeAnswer();
   return 0;
 }
