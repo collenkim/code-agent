@@ -11,7 +11,8 @@
  */
 import { spawn } from "child_process";
 import { appendFileSync, createWriteStream, readFileSync } from "fs";
-import { isAbsolute, relative, resolve } from "path";
+import { delimiter, isAbsolute, relative, sep } from "path";
+import { canonical } from "../layout";
 
 import { hostBaseEnv } from "../crossEnv";
 import { hostLaunch } from "../hosts";
@@ -66,22 +67,22 @@ const NO_CWD_SEARCH = "NoDefaultCurrentDirectoryInExePath";
 
 /**
  * 호스트 환경 — 부른 쪽 Claude·Codex 세션의 표지·통로를 지우고 실행 표지를 넣는다.
- * Windows 의 Codex 는 현재 폴더(저장소 루트)를 실행 파일 검색에서 빼고 PATH 의 상대·저장소 안 항목을 지운다 — 승인받아 샌드박스 밖에서 도는
+ * Codex는 PATH의 상대·저장소 안 항목을 지우고 Windows의 현재 폴더 검색도 끈다 — 승인받아 샌드박스 밖에서 도는
  * 명령(code-agent.cmd 가 찾는 node, code-agent 가 부르는 git 포함)이 모델이 저장소에 둔 같은 이름 파일로 바뀌지 않게 한다
  */
 export function hostEnv(base: NodeJS.ProcessEnv, runId: string, kind: "claude" | "codex" = "claude", root?: string): NodeJS.ProcessEnv {
   const env = hostBaseEnv(base) as NodeJS.ProcessEnv;
   env[MASTER_RUN_ENV] = runId;
   env.CODE_AGENT_HOST = kind;
-  if (kind === "codex" && process.platform === "win32") {
-    env[NO_CWD_SEARCH] = "1";
-    const key = Object.keys(env).find(k => k.toUpperCase() === "PATH"), repo = root && resolve(root);
-    if (key) env[key] = (env[key] ?? "").split(";").filter(entry => {
+  if (kind === "codex") {
+    if (process.platform === "win32") env[NO_CWD_SEARCH] = "1";
+    const key = Object.keys(env).find(k => k.toUpperCase() === "PATH"), repo = root && canonical(root);
+    if (key) env[key] = (env[key] ?? "").split(delimiter).filter(entry => {
       const dir = entry.trim().replace(/^"(.*)"$/, "$1");
       if (!dir || !isAbsolute(dir) || /^[\\/]{2}[.?]/.test(dir)) return false;
-      const rel = repo ? relative(repo, resolve(dir)) : "..";
-      return rel.startsWith("..") || isAbsolute(rel);
-    }).join(";");
+      const rel = repo ? relative(repo, canonical(dir)) : "..";
+      return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    }).join(delimiter);
   }
   return env;
 }

@@ -17,7 +17,7 @@ import { activeRuns, reconcileRuns, requestStop } from "./runs";
 import { emit, readOwner, readRun, writeOwner, type Binding, type Owner } from "./store";
 
 export function requestHandover(root: string, binding: Binding, owner: Owner, to: unknown, commandId: string): Owner {
-  if (typeof to !== "string" || !binding.controllers[to]) throw new ControlError("invalid-request", "인계 대상(to)은 사람이 등록한 제어자여야 합니다");
+  if (typeof to !== "string" || !Object.hasOwn(binding.controllers, to)) throw new ControlError("invalid-request", "인계 대상(to)은 사람이 등록한 제어자여야 합니다");
   if (to === owner.controller) throw new ControlError("invalid-request", "지금 제어자에게는 인계하지 않습니다");
   if (owner.handover) throw new ControlError("handover-in-progress", `인계 ${owner.handover.id} 가 진행 중입니다(${owner.handover.state})`);
   const runs = activeRuns(root).map((run) => run.runId);
@@ -92,7 +92,7 @@ export function abortHandover(root: string, owner: Owner, handoverId: unknown): 
 
 /** 사람의 강제 인계 — 실행이 남아 있으면 forceStop 일 때만 확인된 프로세스를 끝내고, 모두 끝난 것을 확인한 뒤 넘긴다 */
 export function forceHandover(root: string, binding: Binding, to: string, forceStop: boolean, actor: string): Owner {
-  if (!binding.controllers[to]) throw new ControlError("invalid-request", `등록되지 않은 제어자: ${to}`);
+  if (!Object.hasOwn(binding.controllers, to)) throw new ControlError("invalid-request", `등록되지 않은 제어자: ${to}`);
   let owner = readOwner(root);
   if (!owner) throw new ControlError("not-enabled", "연동 소유 기록이 없습니다");
   reconcileRuns(root, binding.policy, true);

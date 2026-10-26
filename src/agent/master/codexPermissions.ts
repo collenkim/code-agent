@@ -57,16 +57,15 @@ export function gitOperationCommand(command: string): boolean {
   return ["start", "verify", "repro"].includes(words[1]) && words.length > 2;
 }
 /**
- * Windows 의 cmd(npm 의 code-agent.cmd 가 node 를 찾을 때 포함)와 node 의 자식 실행(code-agent 가 부르는 git)은 PATH 보다
- * 현재 폴더를 먼저 찾는다. 감독은 그 검색을 끄지만(supervisor hostEnv), 저장소 루트에 그 이름의 실행 파일(PATHEXT 확장자)이 있으면
- * 승인한 명령이 그 파일로 바뀔 수 있으므로 요청을 받지도 전달하지도 않는다
+ * 저장소 루트의 명령·셸 가림은 모든 플랫폼에서 거부한다. Windows는 PATHEXT도 대조한다.
+ * 감독의 PATH 정리와 함께 승인 명령이 저장소의 같은 이름 파일로 바뀌지 않게 한다.
  */
 export function shadowingExecutable(root: string): string | undefined {
-  if (process.platform !== "win32") return undefined;
   const exts = new Set([".com", ".exe", ".bat", ".cmd", ...(process.env.PATHEXT ?? "").split(";").map(e => e.trim().toLowerCase()).filter(Boolean)]);
   let names: string[];
   try { names = readdirSync(root); } catch { return undefined; }
-  return names.find(name => ["code-agent", "node", "git"].includes(basename(name, extname(name)).toLowerCase()) && exts.has(extname(name).toLowerCase()));
+  const commands = ["code-agent", "node", "git", "bash", "sh", "zsh", "cmd", "powershell", "pwsh"];
+  return names.find(name => commands.includes(name) || (process.platform === "win32" && commands.includes(basename(name, extname(name)).toLowerCase()) && exts.has(extname(name).toLowerCase())));
 }
 export function permissionUnavailable(root: string, record: InteractionRecord): string | undefined {
   const p = record.permission, run = record.context.runId ? readRun(root, record.context.runId) : undefined;
@@ -116,7 +115,9 @@ export function publishCodexPermission(root: string, run: RunRecord, connectionI
 }
 /** 서명된 응답을 한 번만 전달한다. 적용 표지를 먼저 기록하여 중단 후에도 승인 재전송을 금지한다. */
 export function forwardCodexPermission(root: string, id: string, connectionId: string, send: (decision: "accept" | "decline" | "cancel") => void): boolean {
-  return withLock(root, CONTROL_LOCK, () => {
+  let entered = false;
+  try { return withLock(root, CONTROL_LOCK, () => {
+    entered = true;
     let decision: "accept" | "decline" | "cancel" | undefined;
     mutateInteractions(root, state => {
       const r = needInteraction(state, id);
@@ -149,7 +150,11 @@ export function forwardCodexPermission(root: string, id: string, connectionId: s
     });
     emit(root, "interaction.changed", { data: { requestId: id, decision, forwarded: true } });
     return true;
-  });
+  }, 0); } catch (error) {
+    // 정지·인계가 제어 잠금을 쥐고 있어도 호스트를 실패 처리하지 않는다. RPC는 다음 poll까지 남긴다.
+    if (!entered && error instanceof ControlError && error.code === "busy") return false;
+    throw error;
+  }
 }
 export function closeCodexPermissions(root: string, runId: string, reason: string, requestId?: string): void {
   if (!readInteractions(root)) return;

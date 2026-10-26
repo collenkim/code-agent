@@ -137,7 +137,7 @@ export function grantOf(raw: unknown, binding: Binding, now = Date.now()): Omit<
     return [...new Set(list as string[])];
   };
   const controller = value.controller;
-  if (typeof controller !== "string" || !binding.controllers[controller]) throw new Stop("controller 는 enable 로 등록한 제어자여야 합니다");
+  if (typeof controller !== "string" || !Object.hasOwn(binding.controllers, controller)) throw new Stop("controller 는 enable 로 등록한 제어자여야 합니다");
   const works = strings("works"), missions = strings("missions"), actions = strings("actions"), paths = strings("paths");
   if (!works.length && !missions.length) throw new Stop("works(작업 ID) 또는 missions(master 임무 ID)가 하나 이상 필요합니다 — 모든 작업에 주는 권한은 받지 않습니다");
   if ([...works, ...missions].some((id) => id.includes("*"))) throw new Stop("works·missions 에 와일드카드를 쓰지 않습니다");
@@ -146,7 +146,11 @@ export function grantOf(raw: unknown, binding: Binding, now = Date.now()): Omit<
   const unknown = actions.filter((action) => !(DELEGABLE_ACTIONS as readonly string[]).includes(action));
   if (!actions.length || unknown.length) throw new Stop(`actions 는 ${DELEGABLE_ACTIONS.join("·")} 중에서 고릅니다${unknown.length ? ` — 모르는 동작: ${unknown.join(", ")}` : ""}`);
   if ((actions.includes("plan") || actions.includes("deliver")) && !paths.length) throw new Stop("plan·deliver 위임에는 paths(계획 파일이 들어갈 경로 glob)가 필요합니다");
-  const broad = paths.filter((glob) => /^(?:\*\*?(?:\/\*\*?)*(?:\/\*)?|\*\*\/\*\.?\*?)$/.test(glob.trim()) || glob.startsWith("/") || glob.includes(".."));
+  const broad = paths.filter(raw => {
+    const glob = raw.trim().replace(/\\/g, "/"), first = glob.split("/")[0];
+    return glob.startsWith("/") || /^[A-Za-z]:/.test(glob) || glob.split("/").includes("..") ||
+      (/[?*\[\]{}]/.test(glob) && (!glob.includes("/") || /[?*\[\]{}]/.test(first) || first === "."));
+  });
   if (broad.length) throw new Stop(`저장소 전체·저장소 밖 경로는 받지 않습니다: ${broad.join(", ")} — 디렉토리로 좁혀 주세요`);
   let expiresAt: number;
   if (typeof value.expiresAt === "string") expiresAt = Date.parse(value.expiresAt);

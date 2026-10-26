@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { writeAtomic } from "../core/atomic";
+import { writeAtomic, writeIfChanged } from "../core/atomic";
 import { acquireLock } from "./lock";
 import { checkoutBranch } from "./branchCursor";
 import { loadActive, REQUEST_SESSION_FILE } from "./layout";
@@ -45,12 +45,14 @@ export function readInteractions(root: string): Ledger | undefined {
 }
 export function mutateInteractions<T>(root: string, action: (state: Ledger) => T): T {
   mkdirSync(join(root, INTERACTIONS_DIR), { recursive: true });
-  writeAtomic(join(root, INTERACTIONS_DIR, ".gitignore"), "*\n");
+  writeIfChanged(join(root, INTERACTIONS_DIR, ".gitignore"), "*\n");
   const release = acquireLock(join(root, INTERACTIONS_DIR, "store.lock"), { waitMs: 10000, ageReclaim: false, label: "질문 원장" });
   try {
-    const state = readInteractions(root) ?? { version: 1, instanceId: randomUUID(), seq: 0, requests: {}, commands: {} };
+    const saved = readInteractions(root), state = saved ?? { version: 1, instanceId: randomUUID(), seq: 0, requests: {}, commands: {} };
+    const before = saved && JSON.stringify(saved);
     const result = action(state);
-    writeAtomic(file(root), JSON.stringify(state) + "\n");
+    const after = JSON.stringify(state);
+    if (before !== after) writeAtomic(file(root), after + "\n");
     return result;
   } finally { release(); }
 }

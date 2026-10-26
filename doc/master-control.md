@@ -126,7 +126,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 
 `submit`은 같은 잠금 안에서 다음을 함께 확인한 뒤에만 실행을 접수한다: 실행 중인 실행 없음(`busy`), `expect`(`stateVersion`·`work`·`attempt` — 다르면 `stale-state`), 작업 임대(다른 세션이면 `busy` — 끝난 master 실행의 세션이 쥔 임대만 푼다), 작업 연결(사람이 연 작업이면 `not-enabled`, 다른 임무·작업이면 `conflict`), 재개 판정(`no-work`·`ready`·`replan-required`만 시작, continue 는 자기 시도 실행 중 대기도 받는다. master 위임 판단이 수정 요청으로 닫은 확인 요청을 다시 준비할 자리 — `needs-human`·`reapproval-required`의 요구 확정·계획·반영 확인이고 같은 동작의 마지막 동의가 위임 수정 요청이다 — 는 그 동의를 준비한 세션의 continue 만 받는다. 사람이 낸 수정 요청은 사람 경로로 남는다. 그 밖의 사람 판단 대기·한도·관측 불가는 `invalid-state`). 접수하면 프롬프트·실행 기록을 `accepted`로 쓰고 감독 프로세스를 띄운다. 감독이 시작하지 못하고 끝나도 기록은 남아 재조정이 `abandoned`로 닫는다.
 
-응답을 잃은 master 는 같은 `commandId`로 다시 보내거나 `command`로 처리 상태를 묻는다. 둘 다 실행을 두 번 만들지 않는다.
+응답을 잃은 master 는 같은 `commandId`로 다시 보내거나 `command`로 처리 상태를 묻는다. 둘 다 실행을 두 번 만들지 않는다. 명령 기록 파일은 commandId의 SHA-256 이름을 쓰고 읽을 때 원래 ID를 재대조한다.
 
 사람이 확인한 호스트 전환 인계 기록이 있으면 `needs-human`의 질문·요구 확정·계획·반영 확인 준비 자리에서 같은 작업의 새 호스트 실행을 한 번 받을 수 있다. 기존 작업 연결·브랜치·HEAD·소유 세대·대상 호스트를 대조하며 인계 ID를 실행에 묶는다. 이는 답·승인의 대체가 아니고 미응답 질문 재발행과 동의 준비를 위한 예외다([호스트 전환 인계](#호스트-전환-인계)).
 
@@ -134,7 +134,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 
 `snapshot.state.graph`와 실행 결과의 `state.graph`는 최신 실행 ID·thread·그래프·노드·상태·이벤트 순번을 제공한다. 관찰 시 달라진 값은 `graph.changed` 이벤트에 남는다. 그래프 관찰만 바뀌면 업무 `stateVersion`은 바뀌지 않는다.
 
-`events.jsonl`은 순번(`seq`, 1씩 증가) 기록이고 `events-meta.json`의 `logId`가 기록 하나를 가린다. 모든 응답에 `events: {logId, latestSeq}`가 붙는다.
+`events.jsonl`은 순번(`seq`, 1씩 증가) 기록이고 `events-meta.json`의 `logId`가 기록 하나를 가린다. 모든 응답에 `events: {logId, latestSeq}`가 붙는다. 메타와 마지막 이벤트의 큰 순번을 이어 중단 뒤에도 순번을 재사용하지 않는다. 최근 이벤트를 최대 10,000건 보관하며 1,000건 단위로 정리한다. 조회는 필요한 꼬리만 읽는다.
 
 - `events {after, logId}` → `after` 다음부터 `limit`개와 `latestSeq`·`hasMore`. 기록 ID 가 다르거나(기록이 새로 만들어짐) `after`가 최신보다 크거나 이미 지난 구간이면 `gap: true` — master 는 `snapshot`으로 다시 맞추고 그 위치부터 읽는다.
 - 종류: 연동·권한·정책(`binding.*`·`controller.added`·`human-channel.changed`·`grant.*`·`policy.changed` — 연동·제어자·사람 채널 이벤트의 `data.channel`은 연결 방식 `tty`·`dashboard-pairing`), 명령(`command.*`), 실행(`run.accepted`·`starting`·`started`·`stop-requested`·`finished`·`abandoned`·`orphaned`·`unknown`), 연결(`master.disconnected`·`reconnected`), 진척(`work.bound`·`phase.changed`·`attempt.changed`·`resume.changed`·`question.*`·`consent.*`·`verification.recorded`), 판단(`decision.recorded`·`applied`·`rejected`·`answer.recorded`), 인계(`handover.*`). 진척 이벤트는 감독이 `progressMs`마다 `stateView`를 직전 관찰(`observed.json`)과 비교해 남긴다.
@@ -190,7 +190,7 @@ starting|running|stopping ─(감독·호스트 모두 사라짐)→ cancelled |
   "ttlHours": 24, "maxUses": 10, "note": "주문 기능 임무" }
 ```
 
-넓은 권한은 받지 않는다: 작업 또는 임무 ID 하나 이상(와일드카드 없음), 위임 가능한 동작만, `plan`·`deliver`는 `paths` 필수이고 저장소 전체(`**`·`*`·`**/*`)·절대 경로·`..`는 거부, 만료 최대 7일, 사용 한도 1~100. 회수는 사람(`master revoke`)이나 그 제어자(`revoke`)가 한다. 사용 수는 적용됐거나 결과가 남지 않은 판단으로 센다.
+넓은 권한은 받지 않는다: 작업 또는 임무 ID 하나 이상(와일드카드 없음), 위임 가능한 동작만, `plan`·`deliver`는 `paths` 필수이고 glob은 와일드카드 없는 디렉토리 접두어가 필수이며(`src/**`), 저장소 전체(`**`·`*.*`·`**/*.ts`)·절대 경로·상위 경로는 거부, 만료 최대 7일, 사용 한도 1~100. 회수는 사람(`master revoke`)이나 그 제어자(`revoke`)가 한다. 사용 수는 적용됐거나 결과가 남지 않은 판단으로 센다.
 
 ### 공통 검증 조건
 
@@ -238,11 +238,11 @@ master 는 새 실행(`submit mode:start`)의 `execution: { mode, main? }`으로
 
 연동의 기본 호스트는 처음 켤 때(터미널 enable·페어링 같다) 정한다 — `--host` 파일이 있으면 그 설정, 없으면 `execution claude|codex`의 호스트, `both --main`의 main, 설치 기록(`hosts.json`)의 호스트가 하나면 그 호스트, 그 밖에는 `claude` 순이다. 호스트 설정은 그 호스트의 제한된 기본값이다. 이미 켠 연동의 기본 호스트는 이 규칙으로 바뀌지 않는다.
 
-관리 실행 접수·재개·감독 시작 전에 선택된 호스트의 준비를 확인한다. `hosts.json`이 있으면 그 호스트가 기록에 있어야 하고, 프로젝트 hook(Claude 는 init 이 등록하는 hook 전부, Codex 는 PreToolUse)이 설치돼 있어야 한다. Codex 는 이어서 그 프로젝트의 신뢰와 code-agent hook 검토를 app-server 에 물어 준비 완료여야 한다(§3 `managedHost`). `both`면 상대 호스트도 교차 검증을 실행할 수 있어야 한다(설치와 실행 파일). 아니면 `invalid-state`로 거부하고 `detail.missing`(빠진 항목)·`detail.problems`(문제 코드)·`detail.state`(준비 상태)를 담는다. 조회 실패·확인 중도 실행 가능으로 보지 않고 거부한다 — 다만 사람 응답 뒤의 재개는 막힘으로 굳히지 않고 대기(`queued`)로 남겨 다음 적용([대시보드 질문 응답](dashboard-interactions.md)의 조회·적용)이 다시 판정한다. hello `managedHost`가 같은 판정을 미리 보여 준다. 사람의 대화형 세션도 설치 기록에 없는 호스트에서는 `start`·`request begin`·`docs begin`이 시작하지 않는다(`hosts.json`이 없으면 이 판정은 하지 않는다).
+관리 실행 접수·재개·감독 시작 전에 선택된 호스트의 준비를 확인한다. `hosts.json`이 있으면 그 호스트가 기록에 있어야 하고, 프로젝트 hook(Claude 는 init 이 등록하는 hook 전부, Codex 는 code-agent hook 6개)이 설치돼 있어야 한다. Codex 는 이어서 그 프로젝트의 신뢰와 code-agent hook 검토를 app-server 에 물어 준비 완료여야 한다(§3 `managedHost`). `both`면 상대 호스트도 교차 검증을 실행할 수 있어야 한다(설치와 실행 파일). 아니면 `invalid-state`로 거부하고 `detail.missing`(빠진 항목)·`detail.problems`(문제 코드)·`detail.state`(준비 상태)를 담는다. 조회 실패·확인 중도 실행 가능으로 보지 않고 거부한다 — 다만 사람 응답 뒤의 재개는 막힘으로 굳히지 않고 대기(`queued`)로 남겨 다음 적용([대시보드 질문 응답](dashboard-interactions.md)의 조회·적용)이 다시 판정한다. hello `managedHost`가 같은 판정을 미리 보여 준다. 사람의 대화형 세션도 설치 기록에 없는 호스트에서는 `start`·`request begin`·`docs begin`이 시작하지 않는다(`hosts.json`이 없으면 이 판정은 하지 않는다).
 
 Codex 감독은 `codex app-server --listen stdio://`를 띄운다. `initialize` 뒤 그 app-server 에 `config/read`·`hooks/list`를 물어 사전 진단(`hello`의 `managedHost`)과 같은 판정이 준비 완료일 때만(프로젝트를 신뢰했고 code-agent hook 6개가 이 저장소에서 활성·동기 실행·신뢰 상태로 로드됐을 때) 이어 가고, start 는 `thread/start`, continue 는 확인된 thread ID 의 `thread/resume`으로 연 다음 `turn/start`로 한 턴을 실행한다. 받은 thread ID 를 실행 기록에 남긴 뒤에 턴을 시작한다. 접수 때 반환한 `sessionId`는 최초 실행 동안의 별칭(`sessionAlias`)이고, snapshot·결과에는 확정된 thread ID와 `sessionConfirmed`가 나온다. continue는 별칭 또는 확정 ID를 받아 같은 thread 만 잇고 새 세션으로 대체하지 않는다. thread·turn ID 누락·불일치와 `completed`가 아닌 턴 종료는 성공으로 처리하지 않으며, 하위 에이전트의 알림은 주 세션의 완료로 보지 않는다. `completed`는 작업 완료가 아니라 호스트 턴 종료다.
 
-Codex는 로컬 `app-server` 표준 입출력으로 실행하며 `approval_policy=on-request`, `approvals_reviewer=user`, `sandbox_mode=workspace-write`(설정으로 read-only 선택 가능), 샌드박스 네트워크 차단을 적용한다. start·verify·repro의 단건 명령 권한 요청은 대시보드 사람 채널의 서명 응답으로만 원래 호출에 전달한다. 업무 동의·위임·일반 답으로 대신하지 않고, 세션 전체 허용이나 영구 실행 규칙을 만들지 않는다. 요청·거절·만료·결과 계약은 [Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)을 따른다. 프로젝트 PreToolUse 설치와 사용자 설정의 프로젝트·hook 신뢰 기록이 없으면 접수·감독 시작을 막는다. hook 신뢰를 자동 우회하지 않는다. 부모 Claude·Codex 세션 표지는 제거하고 실행별 표지를 넣는다. Windows 에서는 app-server 환경과 `shell_environment_policy.set`에 `NoDefaultCurrentDirectoryInExePath=1`을 넣고 PATH 의 상대·저장소 안 항목을 지운다 — 승인받아 샌드박스 밖에서 도는 명령이 저장소 루트에 둔 같은 이름 파일(`code-agent`·`node`·`git`)로 바뀌지 않게 한다. Codex 세션 지침(`developer_instructions`)에는 이 절의 공통 규칙에 더해 PowerShell 에서 `code-agent.cmd`로 부르라는 안내와 단건 권한 요청의 꼴(`code-agent.cmd start|verify|repro …` 한 줄)을 넣는다. Codex의 기본 질문·MCP ask·confirm은 관리 실행에서는 열지 않고 영속 질문 또는 동의 prepare 후 대기한다.
+Codex는 로컬 `app-server` 표준 입출력으로 실행하며 `approval_policy=on-request`, `approvals_reviewer=user`, `sandbox_mode=workspace-write`(설정으로 read-only 선택 가능), 샌드박스 네트워크 차단을 적용한다. start·verify·repro의 단건 명령 권한 요청은 대시보드 사람 채널의 서명 응답으로만 원래 호출에 전달한다. 업무 동의·위임·일반 답으로 대신하지 않고, 세션 전체 허용이나 영구 실행 규칙을 만들지 않는다. 요청·거절·만료·결과 계약은 [Git 실행 권한](dashboard-interactions.md#codex-git-실행-권한)을 따른다. 프로젝트 PreToolUse 설치와 사용자 설정의 프로젝트·hook 신뢰 기록이 없으면 접수·감독 시작을 막는다. hook 신뢰를 자동 우회하지 않는다. 부모 Claude·Codex 세션 표지는 제거하고 실행별 표지를 넣는다. 모든 플랫폼에서 PATH의 상대·저장소 안 항목을 지우고, Windows에서는 app-server 환경과 `shell_environment_policy.set`에 `NoDefaultCurrentDirectoryInExePath=1`을 넣는다 — 승인받아 샌드박스 밖에서 도는 명령이 저장소 루트에 둔 같은 이름 파일(`code-agent`·`node`·`git`·`bash`·`sh` 등)로 바뀌지 않게 한다. Codex 세션 지침(`developer_instructions`)에는 이 절의 공통 규칙에 더해 PowerShell 에서 `code-agent.cmd`로 부르라는 안내와 단건 권한 요청의 꼴(`code-agent.cmd start|verify|repro …` 한 줄)을 넣는다. 제어 잠금 경합 시 권한 전달은 다음 조회로 미루며 호스트 실행을 실패 처리하지 않는다. 질문 원장은 내용이 달라질 때만 쓴다. Codex의 기본 질문·MCP ask·confirm은 관리 실행에서는 열지 않고 영속 질문 또는 동의 prepare 후 대기한다.
 
 Claude 감독은 사람이 enable 때 정한 호스트 설정으로 `claude -p --output-format stream-json --permission-mode <모드> --permission-prompts none --session-id|--resume <ID> --append-system-prompt <규칙> --allowedTools … --disallowedTools …`를 띄운다. 기본 허용 도구는 읽기·편집 도구와 `code-agent`·읽기용 git 셸 명령이고, 질문 도구(`AskUserQuestion`)는 늘 금지에 들어간다. `bypassPermissions`·`plan` 모드와 셸 전체 허용(`Bash`·`Bash(*)`)은 받지 않는다. 호스트 환경에서는 부른 쪽 Claude·Codex 세션의 표지를 지우고 `CODE_AGENT_MASTER_RUN=<runId>`를 넣는다.
 

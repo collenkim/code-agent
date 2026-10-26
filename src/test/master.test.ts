@@ -19,7 +19,7 @@ import { LEASE_FILE } from "../agent/lease";
 import { acquireLock } from "../agent/lock";
 import { masterEnable, masterGrant, masterRevoke, grantOf } from "../agent/master/admin";
 import { call } from "../agent/master/control";
-import { advanceHandover } from "../agent/master/handover";
+import { advanceHandover, forceHandover, requestHandover } from "../agent/master/handover";
 import { COMMAND_TYPES, DEFAULT_POLICY, DELEGABLE_ACTIONS, ERROR_CODES, HUMAN_ONLY_ACTIONS, RUN_STATES } from "../agent/master/protocol";
 import { MASTER_RUN_ENV, masterRunGuard } from "../agent/master/runGuard";
 import { CONTROL_LOCK, RUN_LOCK, masterPath, emit, readBinding, readOwner, readRun, writeBinding, writeOwner, writeRunRecord, writeWorkBinding, type RunRecord } from "../agent/master/store";
@@ -74,6 +74,18 @@ afterEach(() => {
 });
 
 describe("기능 협상·인증·연동 조건", () => {
+  test("2-7 등록하지 않은 프로토타입 이름과 디렉토리 없는 glob을 거부한다", () => {
+    const token = enable(), binding = readBinding(root)!, owner = readOwner(root)!;
+    for (const controller of ["constructor", "toString"]) {
+      assert.throws(() => requestHandover(root, binding, owner, controller, cid()), /등록/);
+      assert.throws(() => forceHandover(root, binding, controller, false, "test"), /등록/);
+      assert.throws(() => grant({ controller, works: ["W-1"], actions: ["request"], ttlHours: 1, maxUses: 1 }), /등록/);
+    }
+    for (const path of ["*.*", "**/*.ts", "*/x.ts", "./**", "C:/src/**"]) {
+      assert.throws(() => grant({ controller: "m1", works: ["W-1"], actions: ["plan"], paths: [path], ttlHours: 1, maxUses: 1 }), /디렉토리/);
+    }
+    assert.equal(send(token, "hello").result.hosts.find((host: { kind: string }) => host.kind === "codex").approvalPolicy, "on-request");
+  });
   test("2-3 읽기 요청은 제어 잠금을 쥔 인계와 owner 기록을 덮어쓰지 않는다", () => {
     const token = enable(), before = { ...readOwner(root)!, lastSeenAt: "2000-01-01T00:00:00.000Z" };
     writeOwner(root, before);

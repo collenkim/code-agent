@@ -7,14 +7,15 @@
  * - pairing/<challengeId>.json: 페어링 일회성 챌린지(만료 5분, 쓰면 usedAt).
  * - owner.json: 지금 제어자와 세대(generation), 인계 진행 상태. 세대가 낮은 요청은 거부한다(fencing).
  * - grants.jsonl·decisions.jsonl: 사람이 준 위임 권한·회수, master 의 판단과 그 적용 결과(append 만).
- * - commands/<ID>.json: 상태를 바꾸는 요청의 처리 결과 — 같은 commandId 재전송은 이 응답을 돌려준다.
+ * - commands/<ID 해시>.json: 상태를 바꾸는 요청의 처리 결과 — 같은 commandId 재전송은 이 응답을 돌려준다.
  * - runs/<runId>.json(+ .out.jsonl·.err.log·.prompt.md): 실행 한 건의 상태·프로세스·정지 요청·결과.
  * - works/<workId>.json: master 실행이 시작한 작업과 master 의 작업·시도·계획 식별자 연결.
  * - events.jsonl·events-meta.json: 순번 이벤트 기록과 기록 ID(logId).
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { randomUUID } from "crypto";
+import { writeAtomic } from "../../core/atomic";
 
 import { STATE_DIR } from "../layout";
 import { acquireLock } from "../lock";
@@ -200,8 +201,11 @@ export function grantViews(root: string, now = Date.now()): GrantView[] {
 
 // ---- 명령 ----
 
-const commandFile = (root: string, id: string): string => path(root, "commands", `${id.replace(/:/g, "_")}.json`);
-export function readCommand(root: string, id: string): CommandRecord | undefined { return readJson<CommandRecord>(commandFile(root, id)); }
+const commandFile = (root: string, id: string): string => path(root, "commands", `${sha256(id)}.json`);
+export function readCommand(root: string, id: string): CommandRecord | undefined {
+  const record = readJson<CommandRecord>(commandFile(root, id)) ?? readJson<CommandRecord>(path(root, "commands", `${id.replace(/:/g, "_")}.json`));
+  return record?.commandId === id ? record : undefined;
+}
 export function writeCommand(root: string, record: CommandRecord): void { writeJson(commandFile(root, record.commandId), record); }
 
 // ---- 실행 ----
@@ -240,13 +244,36 @@ export function writeWorkBinding(root: string, binding: WorkBinding): void { wri
 
 // ---- 이벤트 ----
 
-interface EventMeta { logId: string; seq: number }
+const EVENT_LIMIT = 10000, EVENT_PRUNE_BATCH = 1000;
+interface EventMeta { logId: string; seq: number; prunedAt?: number }
+/** 필요한 꼬리 줄만 읽는다. UTF-8 경계는 버퍼를 합친 뒤 해석한다. */
+function eventTail(root: string, count: number): EventRow[] {
+  const file = path(root, "events.jsonl");
+  if (!existsSync(file)) return [];
+  const fd = openSync(file, "r");
+  try {
+    let position = fstatSync(fd).size, lines = 0;
+    const chunks: Buffer[] = [];
+    while (position > 0 && lines <= count) {
+      const size = Math.min(position, 65536), chunk = Buffer.alloc(size);
+      position -= size;
+      const read = readSync(fd, chunk, 0, size, position), data = chunk.subarray(0, read);
+      for (const byte of data) if (byte === 10) lines += 1;
+      chunks.unshift(data);
+    }
+    let content = Buffer.concat(chunks).toString("utf8");
+    if (position > 0) content = content.slice(content.indexOf("\n") + 1);
+    return content.split("\n").filter(Boolean).slice(-count).flatMap(line => {
+      try { return [JSON.parse(line) as EventRow]; } catch { return []; }
+    });
+  } finally { closeSync(fd); }
+}
 function eventMeta(root: string): EventMeta {
   const meta = readJson<EventMeta>(path(root, "events-meta.json"));
-  if (meta) return meta;
-  // 메타가 없는데 기록이 있으면(메타만 지워진 경우) 기록의 끝 순번을 잇는다 — 순번을 되돌리지 않는다
-  const rows = readLines<EventRow>(path(root, "events.jsonl"));
-  return { logId: rows.at(-1)?.logId ?? `log-${randomUUID()}`, seq: rows.at(-1)?.seq ?? 0 };
+  const tail = eventTail(root, 1).at(-1);
+  // append 뒤 메타 쓰기 전에 끊겼어도 마지막 이벤트의 순번을 다시 쓰지 않는다.
+  if (meta && (!tail || tail.logId === meta.logId)) return { ...meta, seq: Math.max(meta.seq, tail?.seq ?? 0) };
+  return { logId: tail?.logId ?? `log-${randomUUID()}`, seq: tail?.seq ?? 0 };
 }
 export function eventPosition(root: string): { logId: string; latestSeq: number } {
   if (!existsSync(path(root))) return { logId: "", latestSeq: 0 };
@@ -260,19 +287,26 @@ export function emit(root: string, type: EventType, fields: Omit<EventRow, "seq"
     const meta = eventMeta(root);
     const row: EventRow = { seq: meta.seq + 1, logId: meta.logId, at: new Date().toISOString(), type, ...fields };
     appendFileSync(path(root, "events.jsonl"), `${JSON.stringify(row)}\n`);
-    writeJson(path(root, "events-meta.json"), { logId: meta.logId, seq: row.seq });
+    let prunedAt = meta.prunedAt;
+    if (row.seq >= EVENT_LIMIT && (!prunedAt || row.seq - prunedAt >= EVENT_PRUNE_BATCH)) {
+      const keep = eventTail(root, EVENT_LIMIT - EVENT_PRUNE_BATCH);
+      writeAtomic(path(root, "events.jsonl"), keep.map(event => JSON.stringify(event)).join("\n") + "\n");
+      prunedAt = row.seq;
+    }
+    writeJson(path(root, "events-meta.json"), { logId: meta.logId, seq: row.seq, ...(prunedAt ? { prunedAt } : {}) });
     return row;
   });
 }
 /** after 다음 순번부터. 기록 ID 가 다르거나 순번이 앞서 있으면 gap — 받는 쪽은 스냅샷으로 다시 맞춘다 */
-export function readEvents(root: string, after: number, logId: string | undefined, limit: number): { logId: string; firstSeq: number; latestSeq: number; events: EventRow[]; gap: boolean; reason?: string } {
+export function readEvents(root: string, after: number, logId: string | undefined, limit: number): { logId: string; firstSeq: number; latestSeq: number; events: EventRow[]; hasMore: boolean; gap: boolean; reason?: string } {
   const position = eventPosition(root);
-  const rows = readLines<EventRow>(path(root, "events.jsonl"));
+  const rows = eventTail(root, EVENT_LIMIT);
   const firstSeq = rows[0]?.seq ?? position.latestSeq + 1;
   let gap = false, reason: string | undefined;
   if (logId && position.logId && logId !== position.logId) { gap = true; reason = "기록 ID 가 다릅니다 — 다른 기록(초기화·다른 프로젝트)입니다"; }
   else if (after > position.latestSeq) { gap = true; reason = `받은 순번(${after})이 기록의 끝(${position.latestSeq})보다 앞섭니다`; }
   else if (after + 1 < firstSeq) { gap = true; reason = `요청한 순번 ${after + 1} 이 기록에 없습니다(첫 순번 ${firstSeq})`; }
   const events = gap ? [] : rows.filter((row) => row.seq > after).slice(0, limit);
-  return { logId: position.logId, firstSeq, latestSeq: position.latestSeq, events, gap, ...(reason ? { reason } : {}) };
+  const hasMore = !gap && (events.at(-1)?.seq ?? after) < position.latestSeq;
+  return { logId: position.logId, firstSeq, latestSeq: position.latestSeq, events, hasMore, gap, ...(reason ? { reason } : {}) };
 }

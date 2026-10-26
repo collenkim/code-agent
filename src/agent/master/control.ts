@@ -115,7 +115,7 @@ function hello(root: string, binding: Binding | undefined): unknown {
     ownership: owner ? { controller: owner.controller, generation: owner.generation, handover: owner.handover ? { id: owner.handover.id, state: owner.handover.state, to: owner.handover.to } : null } : null,
     commands: { open: OPEN_TYPES, read: READ_TYPES, mutating: MUTATING_TYPES, all: COMMAND_TYPES },
     hosts: [{ kind: "claude", supported: true, modes: ["start", "continue"], output: "stream-json", profile: binding?.host.kind === "claude" ? { permissionMode: binding.host.permissionMode, allowedTools: binding.host.allowedTools, disallowedTools: binding.host.disallowedTools } : null },
-      { kind: "codex", supported: true, modes: ["start", "continue"], output: "jsonl", session: "thread.started", approvalPolicy: "never" }],
+      { kind: "codex", supported: true, modes: ["start", "continue"], output: "jsonl", session: "thread.started", approvalPolicy: "on-request" }],
     approvals: {
       human: ["tty", "claude-question", "codex-prompt", "codex-elicitation", "dashboard-human"],
       delegated: { channel: "master-delegation", verified: false, actions: DELEGABLE_ACTIONS, humanOnly: HUMAN_ONLY_ACTIONS, categories: DECISION_CATEGORIES, requires: "사람이 TTY 에서 준 grant(code-agent master grant)" },
