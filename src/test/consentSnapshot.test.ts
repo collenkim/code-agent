@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { setTimeout } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -62,6 +64,21 @@ for (const file of ["code-agent.json", "doc/architecture.md", ".claude/settings.
     assert.equal(readDocLedger(root).length, 0);
   });
 }
+
+test("1-2 캐시에 새 stat와 옛 해시를 넣어도 동의 적용은 바뀐 내용을 거부한다", async () => {
+  const file = "existing.txt", full = join(root, file);
+  const original = createHash("sha256").update(readFileSync(full)).digest("hex");
+  const fixture = prepareConsentFixture(root, { action: "docs" });
+  observeConsentFixture(fixture);
+  writeFixture(root, file, "modified\n");
+  await setTimeout(2100); // 정상 캐시 적중의 2초 신선도 제한을 지난 stat를 위조한다.
+  const stat = statSync(full);
+  writeFixture(root, ".code-agent/consents/snapshot-cache.json", JSON.stringify({ version: 1, root,
+    entries: { [file]: [stat.size, stat.mtimeMs, stat.ctimeMs, stat.ino, original] } }));
+  assert.throws(() => applyConsent(root, fixture.id), /existing\.txt/);
+  assert.equal(loadConsent(root, fixture.id).status, "failed");
+  assert.equal(readDocLedger(root).length, 0);
+});
 
 test("snapshot: ignored custom POLICY, KNOWLEDGE, stage template and spec paths remain protected", () => {
   const manifest = JSON.parse(readFileSync(join(root, "code-agent.json"), "utf8"));

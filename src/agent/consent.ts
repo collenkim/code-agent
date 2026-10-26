@@ -230,7 +230,7 @@ function failureView(record: ConsentRecord): object | undefined {
 export function consentSnapshot(root: string, action: Action): string {
   return inspectConsentSnapshot(root, action).hash;
 }
-function inspectConsentSnapshot(root: string, action: Action): { hash: string; entries: SnapshotEntries } {
+function inspectConsentSnapshot(root: string, action: Action, prepare = false): { hash: string; entries: SnapshotEntries } {
   root = canonicalRoot(root);
   const files = new Set<string>();
   /** 따라가지 않는 링크 — Git 이 그 아래 파일을 나열해도(Windows 접합점) 링크 하나로만 해시한다 */
@@ -278,20 +278,21 @@ function inspectConsentSnapshot(root: string, action: Action): { hash: string; e
   const hash = createHash("sha256");
   const entries: SnapshotEntries = { files: Object.create(null), state: Object.create(null) };
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
-  // 내용 해시는 (size·mtime·ctime·ino) 캐시로 재사용한다 — 값과 형식은 캐시가 없을 때와 같다
-  const cache = SnapshotCache.open(root);
+  // 저장소의 캐시는 신뢰 근거가 아니다. 준비 때만 재사용하고 관찰·적용은 바이트를 다시 읽는다.
+  const cache = prepare ? SnapshotCache.open(root) : undefined;
   const verified = new Set<string>();
   const underLink = (file: string) => [...links].some((link) => file.startsWith(`${link}/`));
   for (const file of [...files].filter(f => !excluded(f) && !underLink(f)).sort()) {
     // 마지막 구성요소의 lstat 은 조상 검사가 이미 했다 — 다시 하지 않는다
     const leaf: { stat?: Stats } = {};
     const full = localPath(root, file, true, verified, leaf), stat = leaf.stat;
-    const content = !stat ? "missing" : stat.isSymbolicLink() ? `link:${readlinkSync(full)}` : stat.isFile() ? cache.contentHash(file, full, stat) : stat.isDirectory() ? "directory" : "special";
+    const content = !stat ? "missing" : stat.isSymbolicLink() ? `link:${readlinkSync(full)}` : stat.isFile()
+      ? (cache?.contentHash(file, full, stat) ?? createHash("sha256").update(readFileSync(full)).digest("hex")) : stat.isDirectory() ? "directory" : "special";
     const value = JSON.stringify([file, stat?.mode, content]);
     hash.update(value);
     entries.files[file] = digest(value);
   }
-  cache.save();
+  cache?.save();
   const state = (name: string, value: string) => { hash.update(value); entries.state[name] = digest(value); };
   if (hasGit) {
     state("Git HEAD", JSON.stringify(git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], true)));
@@ -570,9 +571,9 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
   const output = withConsentLock(root, () => {
     // 미리보기가 문서·설정을 읽기 전에 링크 경로를 차단한다. 확인 지점에서 실행을 끊으므로
     // 도메인 변경은 하지 않는다. deliver의 보고서 렌더만 의도한 준비 산출물이다.
-    const before = inspectConsentSnapshot(root, action);
+    const before = inspectConsentSnapshot(root, action, true);
     const displayed = preview(root, action);
-    const inspected = inspectConsentSnapshot(root, action);
+    const inspected = inspectConsentSnapshot(root, action, true);
     const snapshot = inspected.hash;
     if (action.action !== "deliver") requireConsentSnapshot(root, { action, snapshot: before.hash, snapshotEntries: before.entries },
       "확인 준비 중 대상이 바뀌었습니다. 현재 내용을 다시 준비하세요.", inspected);

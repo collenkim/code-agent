@@ -1,5 +1,6 @@
 /**
- * 동의 스냅샷의 파일 내용 해시 캐시(CON-15) — `.code-agent/consents/snapshot-cache.json`.
+ * 동의 준비 스냅샷의 파일 내용 해시 캐시(CON-15) — `.code-agent/consents/snapshot-cache.json`.
+ * 저장소 스크립트가 바꿀 수 있는 성능 보조다. 응답 관찰·적용 재대조는 이 캐시를 읽지 않고 전수 해시한다.
  *
  * 키는 (size, mtimeMs, ctimeMs, ino) 넷이다. 크기를 같게 두고 mtime 을 되돌리는 변경(`touch -r`, PowerShell LastWriteTime 대입)은
  * 사용자 도구로 만들 수 있지만, ctime(POSIX inode change time · NTFS ChangeTime)은 내용·속성이 바뀌면 커널이 갱신하고 되돌릴 수 없다.

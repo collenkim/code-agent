@@ -191,6 +191,8 @@ flowchart TD
 
 ### 4.1 동의 동작 (`consent.ts` `ActionSchema`·`CONSENT_ACTIONS`, 제목은 `consentState.ts` `CONSENT_TITLES`)
 
+동의 적용의 스냅샷 대조는 저장소 안 캐시를 사용하지 않는다. 준비 이후의 변경 여부는 파일 바이트를 전부 다시 읽어 확인한다.
+
 | action | 제목 | 준비(`preview`) | 적용(`applyLocked`) | 사람의 직접 CLI 대체 |
 |---|---|---|---|---|
 | setup | 초기 설정 확정 | `confirmDoc(all)`과 `setupBaseline`의 확인 문구 | 둘을 차례로 실행 | `confirm doc all` + `setup baseline` |
@@ -212,6 +214,8 @@ flowchart TD
 - 작업·접수·문서 세션 중에 모델이 셸에서 이 동작들을 직접 부르면 hook이 거부한다(§5.4). 세션이 없으면 hook은 `.code-agent`·키 자리·hook 설정 파일 언급(Windows 의 글자 그대로의 별칭 포함)과 소스 `code-agent update`·적용 버전 고르기(부르는 꼴과 무관 — `SOURCE_UPDATE`. 버전을 고르는 깃발(`--bundled`·`--release`·`--apply-release`·`--trigger`·`--consent`·`--install-only`·`--shown-hash`·`--preview`) 없는 `--templates-only`만 연다)를 막고, 응답·적용을 기다리는 동의가 있으면 30분 동안 그 동의를 준비·응답한 세션의 셸을 code-agent 명령과 읽기용 git 으로 좁힌다(§5.3 3단계). 그 밖의 `init`·`approve`·`setup baseline` 같은 명령은 hook을 지나 위의 TTY 확인과 각 명령의 전제 검사만 남는다.
 
 ### 4.2 응답 관찰 — 호스트별
+
+동의 준비의 파일 해시 캐시는 성능 보조다. 응답 관찰과 `applyLocked`·`consent finish`의 재대조는 캐시를 읽지 않고 대상 파일을 전수 해시한다.
 
 **대시보드 사람 채널** — 기존 로컬 `master call`의 `interaction.*` API로 일반 답과 동의를 구분한다. TTY에서 등록한 별도 Ed25519 사람 채널·소유 세대·명시적 제출·요청 버전·문맥·만료를 검사한다. 동의는 준비 세션과 전문 해시·변경 후보를 추가 대조하고 같은 `applyLocked` 도메인 검사를 거쳐 `dashboard-human` presence를 남긴다. 일반 답은 승인으로 올리지 않고 hook `observed` 기록을 만들지 않는다. 수신과 적용은 별도 영수증이며 첫 응답만 수락한다. Codex 관리 실행의 Git 명령 권한은 별도 `host-permission`으로 저장하고, 서명된 단건 응답만 원래 살아 있는 thread·turn·RPC에 전달한다. 권한 전달과 실제 명령 완료는 따로 기록하며 업무 동의로 대신하지 않는다. [대시보드 계약](dashboard-interactions.md)이 정본이다.
 
@@ -263,13 +267,13 @@ sequenceDiagram
 - `observeConsent` 잠금 안의 검사 순서: 채널 → 상태(`pending`) → 준비 세션(세션·채널) → 세션 → 작업 경로 → 스냅샷. 앞의 다섯 거부는 기록을 폐기하지 않는다. 서브에이전트(`agent_id`)의 질문은 거부한다.
 - 첫 Pre가 `sessionId`·`channel`·`cwd`를 정한다. Pre의 질문은 준비된 질문과 deep-equal이어야 한다.
 - Post는 결속된 toolId 하나만 한 번 소비한다. 시간 초과·추가 질문·메모가 붙은 응답은 승인으로 보지 않는다.
-- 적용은 스냅샷을 한 번 재대조한다(플러그인 동작만 설명 대조 뒤 한 번 더 — `pluginPreview`). 중단된 `applying`은 `failed`로 처리하고 다시 실행하지 않는다.
+- 적용은 캐시 없이 파일 바이트를 읽어 스냅샷을 한 번 재대조한다(플러그인 동작만 설명 대조 뒤 한 번 더 — `pluginPreview`). 중단된 `applying`은 `failed`로 처리하고 다시 실행하지 않는다.
 - `finish`는 상태가 `approved`·`applied`가 아니면 `status`와 같은 값을 `summary` 없이 돌려준다(요약은 준비 결과에서 한 번 보인다). 적용하면 `{status, result, phase, next}`이고, 요구 확정 적용은 진행 중인 작업이 없고 그 ID 를 접수 중이면 작업을 시작해 `started`(막히면 `startBlocked`)를 더하고(§3.3), 계획 승인 적용은 커서가 plan 이면 구현으로 옮기고 첫 Task 의 context 파일 경로·담당(`contextFile`·`contextAgent`)을 더한다(§3.3). `apply`는 적용 결과만 낸다.
 - Codex 대화 입력 호환 경로의 응답 형식은 `^code-agent consent respond <36자 id> [1-3](,[1-3]){0,3}( <확인 코드 6자>)?$`다(`observeCodexConsent`). 새 기록(`format: 2`)은 `codexReply` 마지막 질문 끝의 확인 코드(지금 질문 묶음 해시 앞 6자, `codexReplyCode`)를 요구한다 — 없거나 다르면 UserPromptSubmit 이 막고 사유를 보인다. 코드는 prepare·status 출력에 실려 모델도 보는 값이라, 요약을 줄이다 마지막 질문·코드 줄까지 빠뜨리는 실수를 막을 뿐 사람이 입력했다는 증명은 아니다(`codex exec resume`으로 코드를 붙여 보내도 통과한다 — 같은 한계). 이전 형식 기록은 코드 없이 받는다. 이벤트에 `turn_id`가 있어야 하고, 질문 수와 선택 수가 같아야 한다. Claude `toolInput`은 바뀌지 않는다.
 - 동의 잠금 `consents/apply.lock`은 공통 `acquireLock`(나이 회수 없음 — 같은 PC 의 죽은 pid 만 회수, 살아 있는 주인은 CLI 2초·hook 10초 대기)이다. 잠금을 살아 있는 프로세스가 쥔 동안 hook 은 모든 모드에서 저장소 안을 가리키는 쓰기 도구를 거부한다(`consentLockHeld` — 저장소 밖 쓰기는 동의 스냅샷과 무관해 막지 않는다. 거부 문구에 잠금 경로와, 실행 중인 code-agent 가 없으면 사람이 지운다는 안내가 있다).
 - 세션 밖에서 응답·적용을 기다리는 동의(색인 `consents/index.json`의 `open`, 30분 `TIMING.consentOpenWindowMs`)가 있으면 그 동의를 준비·응답한 세션(색인 항목의 `session` — 응답 뒤 `sessionId`, 그 전 준비 세션)의 셸을 code-agent 명령과 읽기용 git 으로 좁힌다. 다른 세션은 좁히지 않는다 — 그 세션의 쓰기는 스냅샷 대조가 폐기로 잡는다(세션이 기록되지 않은 옛 동의는 모든 세션을 좁힌다). 유효기간으로 동의를 무효화하지는 않는다(스냅샷·세션 결속이 대신한다). 그래서 창이 풀린 뒤에도 답하지 않은 동의는 `pending`으로 남고, 프로세스 안에서 동의 함수를 직접 부르는 조작(`node -e`)은 그때와 열린 동의가 없을 때 막지 못한다 — 오래 둔 동의는 쓰지 말고 새로 준비한다.
 - **master 위임 판단** (`consent.ts` `decideDelegatedConsent`·`delegationView`, `master/delegation.ts` `decideConsent`) — 사람이 TTY 에서 준 권한(`master grant`) 범위의 routine 판단만, master 실행 세션이 준비했고 그 실행이 끝난 `pending` 동의에, master 가 본 내용 해시(`shownHash` — 요약·선택지)가 지금과 같을 때 받는다. 사람의 응답이 시작된 동의·사람만 하는 동작(`HUMAN_ONLY_ACTIONS`)·`requireVerifiedApproval` 프로젝트는 받지 않는다. 판단을 `.code-agent/master/decisions.jsonl`에 먼저 남기고, 승인은 같은 `applyLocked`(스냅샷 재대조·확인 화면·도메인 함수)로 적용한다 — 원장 presence 는 `master-delegation`·`verified: false`(문구에 '사람 응답 아님'), 동의 기록의 `channel`·`delegation`과 반영 영수증의 `delegation`에 판단 ID 가 남는다. 수정 요청·보류는 사람 응답과 같은 `response-change`·`response-defer`이고 실패 기록에 판단 이유 전문이 남는다. 위임 수정 요청으로 닫힌 동의는 그 동의를 준비한 master 실행 세션의 이어 실행만 다시 준비하러 시작할 수 있다(사람의 수정 요청은 사람 경로). 관찰 기록(`observed`)·TTY 확인은 만들지 않는다([master 연동](master-control.md) §8).
-- 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`·`master/`·`graph/`·`interactions/`·`runtime.lock*`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI·master 감독이 쓰는 자체 기록과 버전 적용 잠금이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다 — 값은 캐시 없이 구한 것과 같다.
+- 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`·`master/`·`graph/`·`interactions/`·`runtime.lock*`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI·master 감독이 쓰는 자체 기록과 버전 적용 잠금이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 준비할 때만 파일 내용 해시를 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다. 응답 관찰·적용의 변경 판정은 캐시를 신뢰하지 않는다.
 
 **실패 기록** — 대상 변경·응답 거부·적용 실패는 `ConsentRecord.failure{class, kind, at, detail}`로 남고(`status` 값은 늘지 않는다), 출력 `failure.guide`(`consentGuide`)는 갈래마다 다르고 문구 원천은 재시도 규약이다(대상 변경은 `consent-target-changed` 기본 문구, 승인이 아닌 응답은 그 원인의 `response-*` 변형, 적용 실패는 `consent-apply-failed` — `status` 의 `다음:`(`failureHint`)도 같은 문구). 같은 동의로 다시 묻거나 적용하지 않는다. 같은 동작의 최근 종료 기록 둘이 모두 대상 변경이면 다음 준비 결과에 `warning`(외부 hook·편집기·빌드 확인)을 붙인다 — 준비를 막지 않는다.
 
@@ -865,7 +869,8 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- PowerShell 스마트 따옴표를 이용한 셸 평가와 동의 티켓의 다른 해석을 거부한다 — `fix(1-1)`.
+- 동의 응답 관찰과 적용은 저장소 안 해시 캐시를 신뢰하지 않고 대상 파일을 전수 해시한다 — `fix(1-2)`.
+- PowerShell 스마트 따옴표를 이용한 셸 평가와 동의 티켓의 다른 해석을 거부한다 — `c572537`.
 
 - Codex 관리 실행의 단건 Git 권한은 감독 지침이 PowerShell `code-agent.cmd` 한 줄 꼴을 안내하고 알려진 설치 경로의 cmd 래퍼도 받으며, Windows 에서는 현재 폴더 실행 파일 검색을 끈 환경과 저장소 루트 가림 파일 검사로 승인한 실행이 바뀌지 않게 하고, 받지 않은 요청은 명령과 함께 자동 거절로 남긴다 — `4dd40da`, [검증 기록](reviews/2026-10-23-codex-git-wrapper.md).
 
