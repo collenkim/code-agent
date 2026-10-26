@@ -953,8 +953,8 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
     if (!dashboard || record.dashboardHuman.receiptId !== dashboard.receiptId || record.status !== "approved" || record.observed?.length || record.delegation) throw new Stop("검증한 대시보드 사람 응답의 적용 호출이 아닙니다.");
   } else {
     if(record.status!=="approved" || !record.sessionId || !record.observed?.length)throw new Stop("현재 세션에서 명시적으로 확인한 응답이 없습니다.");
-    // 준비 세션이 있는 동의는 응답을 관찰한 세션의 hook 이 본 적용 명령(또는 사람의 TTY)만 받는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
-    if (record.preparedSession && !caller?.tty && caller?.sessionId !== record.sessionId) {
+    // 준비 세션이 있으면 TTY도 세션 결속을 생략하지 않는다 — 스냅샷을 보기 전에 거부해 폐기하지 않는다
+    if (record.preparedSession && caller?.sessionId !== record.sessionId) {
       throw new Stop("응답을 관찰한 세션의 셸에서 hook 이 확인한 적용 명령만 실행할 수 있습니다. 다른 경로로 적용하지 않습니다.");
     }
   }

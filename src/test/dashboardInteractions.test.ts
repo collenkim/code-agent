@@ -10,7 +10,7 @@ import { listRuns, readBinding, writeBinding, readOwner, writeOwner, writeRunRec
 import { PublishInteraction, INTERACTION_STAGES } from "../agent/interactionSchema";
 import { bumpInteraction, currentInteractions, interactionContext, mutateInteractions, needInteraction, publishInteraction } from "../agent/interactions";
 import { publishHostInteraction } from "../agent/interactionSources";
-import { consumeInteraction, drainInteraction } from "../agent/interactionService";
+import { consumeInteraction, drainInteraction, kickInteractionWorker } from "../agent/interactionService";
 import { stateView } from "../agent/stateView";
 import { acceptNativeInteraction, publishNativeInteraction, observeNativeQuestion } from "../agent/interactionNative";
 import { issueInteractionTicket } from "../agent/interactionTicket";
@@ -22,6 +22,23 @@ import { prepareConsent } from "../agent/consent";
 
 
 import { root, token, key, question, publish, request, choose, send, read, previousRun } from "./dashboardFixture";
+
+test("2-11 반복 조회는 응답 처리기를 일정 간격 안에 중복 실행하지 않는다", () => {
+  const r = publish();
+  mutateInteractions(root, state => {
+    const saved = state.requests[r.requestId];
+    saved.origin = { type: "questions", id: "WORK-1" }; saved.status = "responded";
+    saved.response = { receiptId: "receipt", commandId: "response", at: new Date().toISOString(), channel: "dashboard-human", submission: { intent: "submit", explicit: true } };
+  });
+  const spawned = mock.method(childProcess, "spawn", () => ({ on() {}, unref() {} } as any));
+  try {
+    kickInteractionWorker(root, r.requestId); kickInteractionWorker(root, r.requestId);
+    assert.equal(spawned.mock.callCount(), 1);
+    mutateInteractions(root, state => { (state.requests[r.requestId] as any).drainRequestedAt = new Date(Date.now() - 6000).toISOString(); });
+    kickInteractionWorker(root, r.requestId);
+    assert.equal(spawned.mock.callCount(), 2);
+  } finally { spawned.mock.restore(); }
+});
 
 test("2-2 깨진 동의와 옮긴 프로젝트의 동의가 다른 질문의 조회·동기화를 막지 않는다", () => {
   const question = publish();
@@ -128,7 +145,7 @@ test("호스트와 대시보드가 경쟁하면 첫 응답을 유지한다", () 
 
 test("Codex MCP 질문은 대시보드의 실제 답으로 열린 폼 대기를 끝낸다", async () => {
   issueInteractionTicket(root, { command: "mcp-ask", sessionId: "owner", host: "codex" });
-  const waiting = askChoice({ questions: [{ title: "환경", options: ["개발", "운영"] }] }, async () => new Promise(() => {}), root);
+  const waiting = askChoice({ sessionId: "owner", questions: [{ title: "환경", options: ["개발", "운영"] }] }, async () => new Promise(() => {}), root);
   const r = currentInteractions(root).requests[0];
   assert.equal(send(request(r, { intent: "submit", explicit: true, answers: [{ questionId: "q1", optionIds: ["option-2"] }] })).ok, true);
   const result: any = await waiting; assert.equal(result.source, "dashboard-human"); assert.equal(result.answers[0].optionIds[0], "option-2");

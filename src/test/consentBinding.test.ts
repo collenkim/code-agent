@@ -229,6 +229,7 @@ test("T-2-1 준비 세션이 있는 동의는 응답을 관찰한 세션의 적�
   const { id } = prepared({ action: "docs" }, { id: "S1", host: "claude" });
   answerAs(id, "S1");
   assert.throws(() => applyConsent(root, id), /hook 이 확인한 적용 명령만/);
+  assert.throws(() => applyConsent(root, id, { tty: true }), /hook 이 확인한 적용 명령만/);
   assert.equal(loadConsent(root, id).status, "approved");
   assert.match(applyConsent(root, id, { sessionId: "S1" }), /확정/);
   assert.equal(loadConsent(root, id).status, "applied");

@@ -196,6 +196,15 @@ export function kickInteractionWorker(root: string, id: string): void {
   if (!r?.response || r.response.channel !== "dashboard-human" || ["failed", "superseded", "cancelled"].includes(r.status) || r.continuation?.state === "started") return;
   if ((r.origin.type === "host" && !interactionRunId(r)) || r.continuation?.state === "blocked") return;
   if (r.status === "applied" && !interactionRunId(r)) return;
+  const reserved = mutateInteractions(root, state => {
+    const saved = state.requests[id];
+    if (!saved?.response || saved.response.receiptId !== r.response!.receiptId || saved.status !== r.status || saved.continuation?.state === "started") return false;
+    const elapsed = Date.now() - Date.parse(saved.drainRequestedAt ?? "");
+    if (elapsed >= 0 && elapsed < 5000) return false;
+    saved.drainRequestedAt = new Date().toISOString();
+    return true;
+  });
+  if (!reserved) return;
   const child = spawn(process.execPath, [entryScript(), "interaction", "drain", id], { cwd: root, detached: true, windowsHide: true, stdio: "ignore", env: { ...process.env, CODE_AGENT_MASTER_RUN: "" } });
   child.on("error", () => { /* 영속 응답은 남는다. 다음 조회가 재시도한다. */ }); child.unref();
 }

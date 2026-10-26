@@ -29,7 +29,7 @@ const Question = z.object({
   title: z.string().min(1).max(8000),
   options: z.array(z.string().min(1).max(1000)).min(2).max(8),
 }).strict();
-const Ask = z.object({ questions: z.array(Question).min(1).max(4), interaction: PublishInteraction.optional() }).strict();
+const Ask = z.object({ questions: z.array(Question).min(1).max(4), interaction: PublishInteraction.optional(), sessionId: z.string().min(1).max(256).optional().describe("현재 메인 hook의 안내에 나온 세션 ID. 생략한 첫 호출은 hook이 값을 안내하며 질문을 표시하지 않습니다.") }).strict();
 const Confirm = z.object({ id: z.string().uuid() }).strict();
 type Form = { message: string; requestedSchema: Record<string, unknown>; mode: "form" };
 const CONFIRM_MESSAGE = "확인 내용 전문을 읽은 뒤 방향키로 선택하고 Enter로 확정하세요. Esc는 보류입니다.";
@@ -44,14 +44,14 @@ function formOf(message: string, questions: { title: string; options: string[] }
 }
 
 export async function askChoice(args: unknown, elicit: Elicit, root?: string): Promise<unknown> {
-  const { questions, interaction } = Ask.parse(args);
+  const { questions, interaction, sessionId } = Ask.parse(args);
   for (const question of questions) if (new Set(question.options).size !== question.options.length) throw new Stop("선택지 이름은 서로 달라야 합니다.");
   // 폼은 화면 높이를 넘는 본문을 스크롤 없이 자른다 — 다 보이지 않는 질문은 표시하지 않고 모델에게 돌려보낸다
   for (const question of questions) {
     const problem = questionScreenProblem(question.title, question.options);
     if (problem) throw new Stop(problem);
   }
-  const ticket = root ? takeInteractionTicket(root, "mcp-ask") : undefined;
+  const ticket = root ? takeInteractionTicket(root, "mcp-ask", sessionId) : undefined;
   const durable = root && ticket ? interaction ? publishHostInteraction(root, interaction, ticket) : publishNativeInteraction(root, questions, ticket) : undefined;
   if (durable && (durable.response || interaction)) return { status: durable.status, requestId: durable.requestId, next: `code-agent interaction consume ${durable.requestId}`, message: "저장한 요청의 실제 답을 기다립니다. 추천·기본 선택은 응답이 아닙니다." };
   let timer: ReturnType<typeof setInterval> | undefined;

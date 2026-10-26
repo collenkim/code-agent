@@ -11,6 +11,7 @@ import { readDocLedger } from "../agent/docs";
 import { init } from "../agent/init";
 import { checkChoiceConfig, choiceConfigProblem } from "../agent/choiceConfig";
 import { QUESTION_ROWS, screenRows } from "../agent/screenText";
+import { currentInteractions } from "../agent/interactions";
 import { setupConsentProject, writeFixture } from "./consentFixture";
 
 let root: string;
@@ -27,6 +28,26 @@ function open(id: string, session_id = "owner", extra: object = {}) {
   return codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id, tool_name: "mcp__code_agent__confirm", tool_input: { id }, ...extra });
 }
 const selected = (label: string) => async () => ({ action: "accept", content: { q1: label } });
+
+test("2-11 동시에 열린 MCP 질문은 실제 호출 세션의 티켓만 소비한다", async () => {
+  const questions = [{ title: "환경", options: ["개발", "운영"] }];
+  const hook = (session: string, claimed?: string) => codexHook({ cwd: root, hook_event_name: "PreToolUse", session_id: session,
+    tool_name: "mcp__code_agent__ask", tool_input: { questions, ...(claimed ? { sessionId: claimed } : {}) } });
+  assert.match(JSON.stringify(hook("A")), /sessionId/);
+  assert.match(JSON.stringify(hook("A", "B")), /deny/);
+  assert.deepEqual(hook("A", "A"), {}); assert.deepEqual(hook("B", "B"), {});
+  await assert.rejects(askChoice({ questions }, selected("개발"), root), /sessionId/);
+  await assert.rejects(askChoice({ questions, sessionId: "C" }, selected("개발"), root), /hook/);
+  await askChoice({ questions, sessionId: "A" }, selected("개발"), root);
+  await askChoice({ questions, sessionId: "B" }, selected("운영"), root);
+  const requests = currentInteractions(root).requests;
+  assert.equal(requests.length, 2);
+  for (const [session, answer] of [["A", "개발"], ["B", "운영"]]) {
+    const r = requests.find(r => r.context.sessionId === session)!;
+    const selectedId = r.response!.submission.answers![0].optionIds[0];
+    assert.equal(r.questions[0].options.find(o => o.optionId === selectedId)!.label, answer);
+  }
+});
 
 test("선택 UI: 독립 질문 두 개의 실제 선택만 반환하고 취소·미응답·주입 답을 수락하지 않는다", async () => {
   const args = { questions: [{ title: "테스트", options: ["추천", "수정", "보류"] }, { title: "품질", options: ["추천", "수정", "보류"] }] };

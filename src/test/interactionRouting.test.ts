@@ -161,7 +161,7 @@ test("낡은 대기 정리는 세션·호출·질문·선택지·작업과 사�
   assert.equal(currentInteractions(root).requests[0].response!.receiptId, "preserved");
 });
 
-const ask = { questions: [{ title: "Q1. 선택", options: ["첫째", "둘째"] }] };
+const ask = { sessionId: "owner", questions: [{ title: "Q1. 선택", options: ["첫째", "둘째"] }] };
 const structured = { key: "policy", stage: "setup", title: "정책", questions: [{ questionId: "Q1", title: "선택", mode: "text", input: { required: true, minLength: 1, maxLength: 50, description: "답" }, recommendationReason: "사람 결정" }] };
 const ticket = () => issueInteractionTicket(root, { sessionId: "owner", host: "codex", command: "mcp-ask" });
 test("대시보드 없는 영속 발행은 대기 기록을 만들지 않고 호스트 선택 UI를 안내한다", async () => {

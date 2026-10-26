@@ -267,7 +267,7 @@ sequenceDiagram
 - Git 설정 스냅샷은 브랜치 추적 설정과 명령 실행 환경에서 주입한 현재 저장소·하위 경로(`safe.directory=<root>`·`<root>/*`, 출처 `command line:`)를 제외한다. Windows 경로는 대소문자·구분자를 정규화해 비교한다. 설정 파일에 저장한 신뢰 경로, 다른 경로·전체 경로(`*`)의 신뢰, 사용자·커밋·훅 설정은 계속 비교한다. 실제 Git 실행 환경과 설정 파일은 바꾸지 않는다.
 - **준비 인자** — `consent prepare <파일> | --action <동작> [--id] [--kind] [--spec] [--for claude|codex]`(깃발 순서·따옴표 무관). 자유 문구가 없는 동작(`INLINE_ACTIONS` — setup·docs·baseline·request·plan·deliver·knowledge-prune·abort·update·repro-log)만 인라인으로 받고, 반려·model·plugin-add·plugin-remove·judgment 는 JSON 파일이다. 문법은 hook(`consentCommandOf`)과 CLI 가 같은 함수(`splitCommandArgs`·`parsePrepareArgs`)로 본다 — 문법이 틀린 명령에는 hook 이 티켓을 내지 않고 CLI 는 티켓을 꺼내기 전에 사용법으로 멈춘다. `--for`는 티켓의 호스트와 같아야 하고(다르면 거부) 기록의 `form`이 되어 그 동의의 prepare·status·finish CLI 출력에서 그 호스트가 쓰지 않는 필드를 뺀다(`renderConsentOutput` — Claude 는 `questions`·`codexReply`, Codex 는 `questions`·`toolInput`. 함수 반환은 전체 그대로라 Codex 응답 관찰·hook 은 바뀌지 않는다). `consent finish`가 적용하면 결과에 `phase`·`next`(status 의 `다음:`과 같은 값 `nextStep`, 흐름을 멈추는 deliver·abort·update·model·플러그인·knowledge-prune 은 고정 문구 `AFTER_APPLY`)를 더한다.
 - **준비 티켓** — hook 이 `code-agent consent prepare …`(셸 연결자·리디렉션·치환 없는 정확한 꼴, 인자 글자와 무관 — 문법만 본다)를 허용하면 그 세션을 `.code-agent/consents/tickets/prepare.json`(저장소당 하나, 가장 최근 것만)에 적는다(`issueTicket`, 루트는 `findRepoRoot` — 하위 폴더 세션도 저장소 루트). CLI `consent prepare`는 15분(`TIMING.consentTicketTtlMs`) 안의 티켓을 rename 으로 가로채 소비해야 준비하고, 기록에 `preparedSession`(세션·호스트)과 `format: 2`·`workId`를 남긴다(`PREPARE_UNOBSERVED`). 두 세션이 동시에 준비하면 결속이 어긋나 거부된다(fail-closed). 프로세스 안에서 `binding` 없이 부른 준비(테스트 fixture)처럼 `preparedSession`이 없는 기록은 첫 Pre 가 세션을 정한다.
-- **적용 티켓** — hook 이 `code-agent consent apply|finish <UUID>`를 허용하면 `apply-<UUID>.json` 티켓을 낸다. CLI 적용은 그 티켓이나 호스트 표지(`CLAUDECODE`·`CODEX_MARKERS`)가 없는 TTY(`terminalCaller`)가 있어야 하고(`APPLY_UNOBSERVED`), 준비 세션이 있는 동의는 응답을 관찰한 세션의 티켓이나 TTY만 받는다(스냅샷 대조보다 먼저 — 남의 시도가 동의를 폐기하지 못한다). `consentCommandGuard`는 `sessionId ?? preparedSession.id`와 셸 세션을 대조한다 — 기록은 티켓·CLI 와 같은 저장소 루트(`findRepoRoot`)에서 읽어 하위 폴더에서 연 세션도 적용 티켓을 받는다.
+- **적용 티켓** — hook 이 `code-agent consent apply|finish <UUID>`를 허용하면 `apply-<UUID>.json` 티켓을 낸다. CLI 적용은 그 티켓이나 호스트 표지(`CLAUDECODE`·`CODEX_MARKERS`)가 없는 TTY(`terminalCaller`)가 있어야 하고(`APPLY_UNOBSERVED`), 준비 세션이 있는 동의는 응답을 관찰한 세션의 티켓만 받는다(TTY는 준비 세션이 없는 기록만 적용)(스냅샷 대조보다 먼저 — 남의 시도가 동의를 폐기하지 못한다). `consentCommandGuard`는 `sessionId ?? preparedSession.id`와 셸 세션을 대조한다 — 기록은 티켓·CLI 와 같은 저장소 루트(`findRepoRoot`)에서 읽어 하위 폴더에서 연 세션도 적용 티켓을 받는다.
 - `observeConsent` 잠금 안의 검사 순서: 채널 → 상태(`pending`) → 준비 세션(세션·채널) → 세션 → 작업 경로 → 스냅샷. 앞의 다섯 거부는 기록을 폐기하지 않는다. 서브에이전트(`agent_id`)의 질문은 거부한다.
 - 첫 Pre가 `sessionId`·`channel`·`cwd`를 정한다. Pre의 질문은 준비된 질문과 deep-equal이어야 한다.
 - Post는 결속된 toolId 하나만 한 번 소비한다. 시간 초과·추가 질문·메모가 붙은 응답은 승인으로 보지 않는다.
@@ -278,6 +278,8 @@ sequenceDiagram
 - 세션 밖에서 응답·적용을 기다리는 동의(색인 `consents/index.json`의 `open`, 30분 `TIMING.consentOpenWindowMs`)가 있으면 그 동의를 준비·응답한 세션(색인 항목의 `session` — 응답 뒤 `sessionId`, 그 전 준비 세션)의 셸을 code-agent 명령과 읽기용 git 으로 좁힌다. 다른 세션은 좁히지 않는다 — 그 세션의 쓰기는 스냅샷 대조가 폐기로 잡는다(세션이 기록되지 않은 옛 동의는 모든 세션을 좁힌다). 유효기간으로 동의를 무효화하지는 않는다(스냅샷·세션 결속이 대신한다). 그래서 창이 풀린 뒤에도 답하지 않은 동의는 `pending`으로 남고, 프로세스 안에서 동의 함수를 직접 부르는 조작(`node -e`)은 그때와 열린 동의가 없을 때 막지 못한다 — 오래 둔 동의는 쓰지 말고 새로 준비한다.
 - **master 위임 판단** (`consent.ts` `decideDelegatedConsent`·`delegationView`, `master/delegation.ts` `decideConsent`) — 사람이 TTY 에서 준 권한(`master grant`) 범위의 routine 판단만, master 실행 세션이 준비했고 그 실행이 끝난 `pending` 동의에, master 가 본 내용 해시(`shownHash` — 요약·선택지)가 지금과 같을 때 받는다. 사람의 응답이 시작된 동의·사람만 하는 동작(`HUMAN_ONLY_ACTIONS`)·`requireVerifiedApproval` 프로젝트는 받지 않는다. 판단을 `.code-agent/master/decisions.jsonl`에 먼저 남기고, 승인은 같은 `applyLocked`(스냅샷 재대조·확인 화면·도메인 함수)로 적용한다 — 원장 presence 는 `master-delegation`·`verified: false`(문구에 '사람 응답 아님'), 동의 기록의 `channel`·`delegation`과 반영 영수증의 `delegation`에 판단 ID 가 남는다. 수정 요청·보류는 사람 응답과 같은 `response-change`·`response-defer`이고 실패 기록에 판단 이유 전문이 남는다. 위임 수정 요청으로 닫힌 동의는 그 동의를 준비한 master 실행 세션의 이어 실행만 다시 준비하러 시작할 수 있다(사람의 수정 요청은 사람 경로). 관찰 기록(`observed`)·TTY 확인은 만들지 않는다([master 연동](master-control.md) §8).
 - 동의 스냅샷에서 `consents/`·`log/`·`lease.json*`·`master/`·`graph/`·`interactions/`·`runtime.lock*`(`SNAPSHOT_EXCLUDED`)을 뺀다 — 응답을 기다리는 동안 hook·CLI·master 감독이 쓰는 자체 기록과 버전 적용 잠금이 열린 동의를 깨지 않는다. 업무 답 기록(`work/<ID>/answers.jsonl`)은 남긴다(§4.3). 제어 경로 **아래**의 링크는 따라가지 않고 `link:<대상>`으로 해시하고(Git 이 그 아래 파일을 나열해도 링크 하나로), 제어 루트·제어 파일·문서 경로 자체나 조상이 링크면 거부한다. 준비할 때만 파일 내용 해시를 (size·mtime·ctime·ino) 캐시(`snapshot-cache.json`, 2초 안 변경·ctime 0 은 캐시하지 않는다)로 재사용한다. 응답 관찰·적용의 변경 판정은 캐시를 신뢰하지 않는다.
+
+대시보드 조회가 외부 응답 처리기를 띄울 때 요청별 마지막 실행 예약 시각을 원장 잠금 안에서 남긴다. 같은 요청은 5초 안에 다시 띄우지 않으며 실제 적용·재개는 기존 응답과 작업 잠금을 다시 검사한다.
 
 **실패 기록** — 대상 변경·응답 거부·적용 실패는 `ConsentRecord.failure{class, kind, at, detail}`로 남고(`status` 값은 늘지 않는다), 출력 `failure.guide`(`consentGuide`)는 갈래마다 다르고 문구 원천은 재시도 규약이다(대상 변경은 `consent-target-changed` 기본 문구, 승인이 아닌 응답은 그 원인의 `response-*` 변형, 적용 실패는 `consent-apply-failed` — `status` 의 `다음:`(`failureHint`)도 같은 문구). 같은 동의로 다시 묻거나 적용하지 않는다. 같은 동작의 최근 종료 기록 둘이 모두 대상 변경이면 다음 준비 결과에 `warning`(외부 hook·편집기·빌드 확인)을 붙인다 — 준비를 막지 않는다.
 
@@ -398,7 +400,7 @@ Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 �
 
 `execution --json`은 인계 상태의 읽기 전용 조회다. 실행 방식·주 호스트 변경과 `--handoff`는 호스트 밖 TTY에서만 확인한다. 단독 실행 방식의 호스트가 아닌 세션의 쓰기는 hook 이 막는다. 지금 작업에 master 가 고른 실행 방식이 있으면 `execution.json`보다 그 선택으로 판정하고, 인계(`--handoff`)를 안내한다. 관리 Codex의 PreToolUse는 일반 판정 대상이 아닌 도구와 MCP confirm도 먼저 실행 가드로 검사하며, thread ID 미확정·불일치 상태에서 진행하지 않는다.
 
-영속 질문 명령 `interaction publish <파일>`·`consume <ID>`·`complete <ID> <파일>`·`list`를 허용한다. 앞의 셋은 메인 PreToolUse의 일회성 세션 티켓이 필요하다. `master human`·`master recover`·`master trust`·`master untrust`·외부 적용 실행기 `interaction drain`은 모델 명령이 아니다. Codex MCP ask도 PreToolUse 티켓으로 발행 세션을 묶는다. Claude 일반 단일 선택은 Pre/Post 호출 ID로 첫 응답을 관찰한다. 구조화된 추천·다중 선택은 공통 발행 경로를 사용한다.
+영속 질문 명령 `interaction publish <파일>`·`consume <ID>`·`complete <ID> <파일>`·`list`를 허용한다. 앞의 셋은 메인 PreToolUse의 일회성 세션 티켓이 필요하다. `master human`·`master recover`·`master trust`·`master untrust`·외부 적용 실행기 `interaction drain`은 모델 명령이 아니다. Codex MCP ask는 입력의 sessionId를 실제 PreToolUse 세션과 대조하고 명령·세션별 티켓으로 발행 세션을 묶는다. sessionId가 없거나 다르면 hook이 실제 값을 안내하고 질문을 열지 않는다. Claude 일반 단일 선택은 Pre/Post 호출 ID로 첫 응답을 관찰한다. 구조화된 추천·다중 선택은 공통 발행 경로를 사용한다.
 
 - 허용(`hook.ts:106-139`, 접두어 일치)
   - `start`·`next`·`back`·`context`·`read`·`status`·`plan submit`·`planning prepare·advance [--chain]·status·result·dispatch·repair·cancel·cross`·`docs *`·`survey`·`manifest check`·`request *`
@@ -905,7 +907,8 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 설치 파일과 런타임을 원자적으로 반영·복원하고 npm 사본의 중첩 의존성·호출 시점 및 프로젝트별 릴리스 저장소 선택을 맞춘다 — `fix(2-10)`.
+- 대시보드 처리기 중복 실행을 제한하고 MCP 질문 티켓과 TTY 동의 적용을 호출 세션에 결속한다 — `fix(2-11)`.
+- 설치 파일과 런타임을 원자적으로 반영·복원하고 npm 사본의 중첩 의존성·호출 시점 및 프로젝트별 릴리스 저장소 선택을 맞춘다 — `82d6b0b`.
 
 - 계획의 사람 판단과 게이트 중단을 보존하고 잘못된 단계·동의 잠금 경합을 처리하며 외부 계약의 반복 검사를 줄인다 — `cf060c1`.
 

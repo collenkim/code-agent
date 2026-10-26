@@ -133,6 +133,7 @@ function codexEvent(input: CodexHookInput): object {
     if (!input.tool_name || !input.tool_input) throw new Error("Codex 도구 입력이 없습니다.");
     if (input.tool_name === "mcp__code_agent__ask") {
       if (crossChild() || input.agent_id !== undefined || !input.session_id) throw new Error("질문 선택 UI는 메인 세션에서만 열 수 있습니다.");
+      if (input.tool_input.sessionId !== input.session_id) return deny(`질문 입력의 sessionId를 현재 세션 ${JSON.stringify(input.session_id)}로 맞춰 다시 호출하세요. 이 값은 현재 hook이 확인한 세션입니다.`);
       const reason = decide({ cwd: input.cwd, session_id: input.session_id, host: "codex", tool_name: input.tool_name, tool_input: input.tool_input }, root);
       if (reason) return deny(reason);
       (require("./interactionTicket") as typeof import("./interactionTicket")).issueInteractionTicket(root, { command: "mcp-ask", sessionId: input.session_id, host: "codex" });

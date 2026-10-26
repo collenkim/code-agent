@@ -30,6 +30,8 @@ export interface InteractionRecord {
   continuation?: { state: "waiting-host" | "queued" | "started" | "blocked"; runId?: string; detail?: string };
   unavailableReason?: string;
   nativeCallIds?: string[];
+  /** 조회에 따른 외부 응답 처리기 중복 실행을 잠금 안에서 제한한다. */
+  drainRequestedAt?: string;
   /** 표시 실패는 사용자 응답 대기·보류와 구분하며 실제 재표시 때 지운다. */
   presentation?: { state: "failed"; at: string };
 }
