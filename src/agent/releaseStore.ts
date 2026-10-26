@@ -12,7 +12,7 @@
 import { spawnSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
-import { dirname, join, relative } from "path";
+import { dirname, join, relative, sep } from "path";
 
 import { acquireLock, pidAlive } from "./lock";
 import { installedRelease, RELEASE_ID, releaseHome, SELF_ENV, type ReleaseInfo } from "./runtimeSelect";
@@ -238,28 +238,49 @@ export function packageRelease(packageRoot: string): { id: string; version: stri
   return { id: `${manifest.version}-${hash.slice(0, 12)}`, version: manifest.version, hash };
 }
 
-/** 실행 의존성 — Node 의 찾기 순서대로(패키지 안 node_modules → 위 폴더들) 찾아 사본의 node_modules 에 둔다. 의존성의 의존성도 따라간다 */
+/** Node의 검색 순서와 중첩 버전을 보존한다. 위 폴더에서 찾은 같은 사본만 최상위에서 공유한다. */
 function copyDependencies(packageRoot: string, staging: string): void {
-  const seen = new Set<string>();
-  const visit = (from: string): void => {
-    const deps = (JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { dependencies?: Record<string, string> }).dependencies ?? {};
-    for (const name of Object.keys(deps)) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      let dir = from, found: string | undefined;
+  const copies = new Map<string, string>(), visited = new Set<string>();
+  const dependencies = (from: string) => Object.keys((JSON.parse(readFileSync(join(from, "package.json"), "utf8")) as { dependencies?: Record<string, string> }).dependencies ?? {});
+  const locate = (from: string, name: string): { source: string; local: boolean } => {
+      let dir = from;
       for (;;) {
         const candidate = join(dir, "node_modules", name);
-        if (existsSync(join(candidate, "package.json"))) { found = candidate; break; }
+        if (existsSync(join(candidate, "package.json"))) return { source: realpathSync.native(candidate), local: dir === from };
         const parent = dirname(dir);
         if (parent === dir) break;
         dir = parent;
       }
-      if (!found) throw new Stop(`패키지의 실행 의존성 ${name} 을 찾지 못했습니다(${packageRoot} 기준).`);
-      cpSync(found, join(staging, "node_modules", name), { recursive: true, dereference: true });
-      visit(realpathSync.native(found));   // 링크로 둔 의존성(pnpm 등)은 실제 자리에서 다시 찾는다
+      throw new Stop(`패키지의 실행 의존성 ${name} 을 찾지 못했습니다(${packageRoot} 기준).`);
+  };
+  const copy = (source: string, target: string) => {
+    copies.set(target, source);
+    cpSync(source, target, { recursive: true, dereference: true });
+  };
+  const visit = (from: string, to: string): void => {
+    if (visited.has(to)) return;
+    visited.add(to);
+    for (const name of dependencies(from)) {
+      const found = locate(from, name);
+      let ancestor = to, existing: string | undefined;
+      for (;;) {
+        const candidate = join(ancestor, "node_modules", name);
+        if (copies.has(candidate) || existsSync(join(candidate, "package.json"))) { existing = candidate; break; }
+        if (ancestor === staging) break;
+        ancestor = dirname(ancestor);
+        if (!ancestor.startsWith(staging + sep) && ancestor !== staging) break;
+      }
+      if (existing && copies.get(existing) === found.source) continue;
+      const flat = join(staging, "node_modules", name);
+      const target = found.local || existing || copies.has(flat) ? join(to, "node_modules", name) : flat;
+      copy(found.source, target);
+      visit(found.source, target);
     }
   };
-  visit(packageRoot);
+  // 최상위 직접 의존성을 먼저 고정해야 하위 패키지의 다른 버전이 그 이름을 차지하지 않는다.
+  const direct = dependencies(packageRoot).map(name => ({ ...locate(packageRoot, name), target: join(staging, "node_modules", name) }));
+  for (const item of direct) copy(item.source, item.target);
+  for (const item of direct) visit(item.source, item.target);
 }
 
 /**

@@ -95,6 +95,11 @@ export function appliedStore(state: RuntimeState | undefined, env: NodeJS.Proces
   return state?.home ?? releaseHome(env);
 }
 
+/** 버전 조회·직접 선택은 프로젝트의 저장소와 기본 저장소를 함께 본다. */
+export function releaseHomes(state: RuntimeState | undefined): string[] {
+  return [...new Set([appliedStore(state), releaseHome(), ...(state?.pending?.home ? [state.pending.home] : [])])];
+}
+
 export function readRelease(dir: string): ReleaseInfo | undefined {
   try {
     const value = JSON.parse(readFileSync(join(dir, "release.json"), "utf8")) as ReleaseInfo;

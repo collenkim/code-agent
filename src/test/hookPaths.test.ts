@@ -215,13 +215,14 @@ test("T-13-3·T-13-4·H3 설치 — Claude matcher 에 mcp__.*, Codex PreToolUse
   const codex = codexHooks();
   const [pretool] = codex.PreToolUse[0].hooks;
   const node = `node "${cli.replace(/\\/g, "/")}" codex-event`;
+  const windowsNode = `node '${cli.replace(/\\/g, "/").replace(/'/g, "''")}' codex-event`;
   assert.equal(pretool.command, `${node} || exit 2`);
-  assert.equal(pretool.commandWindows, `${node}; if ($LASTEXITCODE -ne 0) { exit 2 }`);
-  assert.equal(codex.UserPromptSubmit[0].hooks[0].commandWindows, `${node}; exit $LASTEXITCODE`);
+  assert.equal(pretool.commandWindows, `${windowsNode}; if ($LASTEXITCODE -ne 0) { exit 2 }`);
+  assert.equal(codex.UserPromptSubmit[0].hooks[0].commandWindows, `${windowsNode}; exit $LASTEXITCODE`);
   for (const event of ["UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop"]) {
     const [entry] = codex[event][0].hooks;
     assert.equal(entry.command, node, event);
-    if (event !== "UserPromptSubmit") assert.equal(entry.commandWindows, node, event);
+    if (event !== "UserPromptSubmit") assert.equal(entry.commandWindows, windowsNode, event);
   }
   assert.equal(codexWindowsCommand("Stop"), "cmd /c code-agent codex-event", "--cli 가 없으면 cmd 로 푼다(npm 의 .ps1 을 고르지 않는다)");
   assert.equal(codexWindowsCommand("PreToolUse"), "cmd /c code-agent codex-event; if ($LASTEXITCODE -ne 0) { exit 2 }");

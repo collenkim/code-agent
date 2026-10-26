@@ -33,14 +33,14 @@ export function writeIfChanged(path: string, content: string | Buffer): boolean 
     const was = textOf(current);
     if (was !== undefined && was === textOf(next)) return false;
   } else mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content);
+  writeAtomic(path, content);
   return true;
 }
 
 let counter = 0;
 
 /** 같은 디렉토리에 임시로 쓴 뒤 제자리로 옮긴다. 디렉토리는 필요하면 만든다. */
-export function writeAtomic(path: string, content: string): void {
+export function writeAtomic(path: string, content: string | Buffer): void {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
 
@@ -49,7 +49,13 @@ export function writeAtomic(path: string, content: string): void {
 
   try {
     writeFileSync(temp, content, "utf-8");
-    renameSync(temp, path);
+    for (let attempt = 0; ; attempt += 1) {
+      try { renameSync(temp, path); break; }
+      catch (error) {
+        if (attempt >= 19 || !["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+    }
   } catch (error) {
     // 임시 파일을 남기면 다음 실행이 그것을 상태 파일로 착각할 이유는 없지만,
     // 쓰레기가 쌓여 디렉토리를 읽는 쪽(list 액션)의 출력이 지저분해진다.

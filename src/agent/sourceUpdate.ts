@@ -9,7 +9,7 @@ import { HostSelection } from "./hosts";
 import { confirmOnTerminal } from "./tty";
 import { hostMarked } from "./crossEnv";
 import { installGitRelease, listReleases, npm, type RunNpm } from "./releaseStore";
-import { entryScript, installedRelease, readRuntime, releaseHome, SELF_ENV } from "./runtimeSelect";
+import { entryScript, installedRelease, readRuntime, releaseHome, releaseHomes, SELF_ENV } from "./runtimeSelect";
 import { actorName } from "./actor";
 import { storeDir } from "./plugins/store";
 
@@ -284,19 +284,19 @@ export function updateFromSourceConfirmed(repoRoot: string, options: SourceUpdat
  */
 function releasePreview(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string }) {
   const root = canonical(repoRoot);
-  const release = installedRelease(id);
-  if (!release) {
-    const known = listReleases().map((info) => info.id);
-    throw new Stop(`릴리스 ${id} 가 설치되어 있지 않습니다. 설치된 릴리스: ${known.length ? known.join(" · ") : "없음"}`);
-  }
   let runtime: ReturnType<typeof readRuntime>;
   try { runtime = readRuntime(root); } catch (error) { throw new Stop(`${error instanceof Error ? error.message : String(error)}`); }
+  const homes = releaseHomes(runtime), store = homes.find(home => installedRelease(id, home));
+  const release = store ? installedRelease(id, store) : undefined;
+  if (!release) {
+    const known = [...new Set(homes.flatMap(home => listReleases(home).map(info => info.id)))];
+    throw new Stop(`릴리스 ${id} 가 설치되어 있지 않습니다. 설치된 릴리스: ${known.length ? known.join(" · ") : "없음"}`);
+  }
   const lines = [`대상: ${root}`, `이 프로젝트 적용 버전: ${runtime?.applied ?? "진입점 번들(고정 없음)"}`,
     `고를 릴리스: ${id} (${release.info.source.kind === "git" ? `커밋 ${release.info.source.commit}` : `내용 ${release.info.contentHash.slice(0, 12)}`} · 상태 세대 ${release.info.stateSchema} · ${release.info.installedAt} 설치)`,
     `이 프로젝트의 상태 세대: ${runtime?.stateSchema ?? 1} — 그보다 낮은 세대의 릴리스는 적용하지 않습니다`,
     ...(options.host ? [`적용 호스트: ${options.host}`] : []), ...(options.cli ? [`hook 실행 경로: ${options.cli}`] : []),
     "진행 중인 일이 있으면 다음 작업부터 적용합니다. 템플릿은 그 릴리스의 것으로 다시 반영합니다(사람이 고친 사본은 보존)."];
-  const store = releaseHome();
   const shownHash = shownFingerprint("code-agent.release-apply.v1", { root, store, runtime: runtime ?? null, release: release.info, options }, lines);
   return { target: root, current: runtime?.applied ?? null, release: id, stateSchema: runtime?.stateSchema ?? 1, releaseStateSchema: release.info.stateSchema, store, lines, shownHash };
 }
@@ -309,7 +309,7 @@ export function releaseApplyConfirmed(repoRoot: string, id: string, shownHash: s
   const preview = releasePreview(repoRoot, id, options);
   requireShown(shownHash, preview.shownHash);
   recordConfirmation("release", "dashboard", shownHash, { target: preview.target, release: id });
-  return runReleaseApply(preview.target, id, { trigger: "release", ...options });
+  return runReleaseApply(preview.target, id, { trigger: "release", ...options, home: preview.store });
 }
 export function updateToReleaseConfirmed(repoRoot: string, id: string, options: { host?: HostSelection; cli?: string } = {}): string {
   if (hostMarked(process.env)) throw new Stop(HOST_SHELL_UPDATE);
@@ -317,5 +317,5 @@ export function updateToReleaseConfirmed(repoRoot: string, id: string, options: 
   confirmOnTerminal(`${preview.lines.join("\n")}\n\n위 릴리스로 이 프로젝트의 적용 버전을 바꿉니다.`, "update");
   requireShown(preview.shownHash, releasePreview(root, id, options).shownHash);
   recordConfirmation("release", "tty", preview.shownHash, { target: root, release: id });
-  return runReleaseApply(root, id, { trigger: "release", host: options.host, cli: options.cli }).text;
+  return runReleaseApply(root, id, { trigger: "release", host: options.host, cli: options.cli, home: preview.store }).text;
 }

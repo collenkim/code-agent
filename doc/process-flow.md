@@ -335,6 +335,8 @@ hook 하위 명령은 진입점 `cli.ts`가 그 hook 의 모듈만 지연 로드
 
 ### 5.2 Codex — `.codex/hooks.json` (`init.ts:236-256`, codex-cli 0.161.0 확인)
 
+Windows `--cli` hook 경로는 PowerShell 작은따옴표 리터럴로 감싸고 경로의 작은따옴표를 두 번 써 달러·백틱 확장을 막는다.
+
 여섯 이벤트가 matcher 없이 모두 `code-agent codex-event` → `runCodexHook` → `codexHook`로 들어간다. PreToolUse 항목만 비Windows 명령을 `<명령> codex-event || exit 2`로 감싸고(프로세스가 판정 전에 죽으면 막는다), 나머지 다섯은 감싸지 않는다 — UserPromptSubmit 을 감싸면 설치가 깨졌을 때 사용자가 아무 말도 못 한다.
 
 - **Windows 명령** — Windows 용 `commandWindows`는 Codex 가 `powershell.exe -NoProfile -Command`로 돌린다(0.161.0 실측). Windows PowerShell 5.1 은 마지막 네이티브 명령의 exit 2 를 1 로 바꿔 내므로 종료 코드를 직접 넘긴다(`codexWindowsCommand`) — PreToolUse 는 `cmd /c code-agent codex-event; if ($LASTEXITCODE -ne 0) { exit 2 }`(실패·node 없음을 2 로 닫는다), UserPromptSubmit 은 `cmd /c code-agent codex-event; exit $LASTEXITCODE`(동의 응답 실패 2 는 막고, 깨진 설치는 사용자 메시지를 막지 않는다), 나머지 넷은 `cmd /c code-agent codex-event`다. `--cli` 설치는 `cmd /c code-agent` 자리가 `node "<cli>"`다. `cmd /c`는 PowerShell 이 PATH 의 npm 셋 중 `code-agent.ps1`을 골라 실행 정책 Restricted 에서 막히는 것을 피한다.
@@ -374,7 +376,7 @@ Codex 관리 실행은 `codexHook`의 도구 분류 전에 같은 가드를 적�
    - `mcp__*` 도구는 상태를 읽기 전에 `decideMcp`로 간다 — 경로 키(`path`·`file_path`·`uri`·`relative_path`·`pathInProject` 등, 한 단계 아래 객체까지)의 값을 도구 이름의 쓰기 동사(write·edit·create·…)에 따라 `Write`·`Read` 입력으로 이 판정 전체를 다시 탄다. 동사는 도구 이름을 `_`·`-`·camelCase 경계로 나눈 낱말로 맞춘다(`compute`·`read_output_file`의 `put` 같은 부분 문자열은 쓰기가 아니다 — `mcpWrites`). 로컬 파일 서버(`fs`·`filesystem`·`files`·`file-system`·`local-file(s)`)는 모든 경로를, 프로젝트 상대 경로 키(`relative_path`·`pathInProject`·`project_path` — `MCP_PROJECT_KEYS`)는 서버 이름과 무관하게 저장소 기준 상대 경로도, 그 밖의 서버는 저장소·키 저장소 안과 사용자 수준 호스트 설정 파일(`userHostConfig` — 다른 이름 포함)을 가리키는 절대 경로·`file://`만 판정한다(원격 서비스의 경로 인자를 막지 않으면서, 이름이 파일 서버가 아닌 로컬 쓰기 서버도 그 설정 파일을 쓰지 못한다). 명령 키(`command`·`cmd`·`script`·`args`·`arguments` 등, 한 단계 아래 객체 포함)의 문자열은 경로 유무와 무관하게 셸 판정을 다시 탄다. 실행 인자의 꼴을 알 수 없으면 작업·세션·사전 판별 중 거부한다.
    - 쓰기 도구는 모든 모드에서 먼저 동의 적용 잠금(`consentLockHeld` — 저장소 안 대상만)과 Windows 이름 끝 점·공백(`aliasGuard`)을 본다. 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\UNC\…`·`\\.\C:`)는 드라이브 경로로 접어 판정한다(`foldWindowsAlias` — 이 PC 로 보는 이름은 `localhost`·PC 이름과 이 PC 의 네트워크 주소, IPv6 리터럴 이름 `0--1.ipv6-literal.net` 포함). 이름으로 접지 못한 UNC(FQDN·사용자 공유 등)는 쓰기 판정에서 공유 쪽 가장 가까운 기존 조상부터 (dev, ino)를 저장소 루트와 견주어 저장소 안인지 본다(`shareInside`, win32 — 공유에 닿지 못하면 저장소 밖).
    - 판정이 허용이고 메인 세션의 셸 명령이 정확한 꼴의 동의 준비·적용이면 티켓을 낸다(`decide` — §4.2). 작업 임대로 거부된 명령에는 티켓이 없다(아래 7).
-   - 판정이 허용이고 하위 에이전트 밖의 셸 명령이 다음 작업을 여는 명령(`OPENING_COMMAND` — 연결자·리디렉션·치환 없이)이며 적용 대기(`pendingSwitch`)나 npm 패키지 진입점이 있으면 그 직전에 적용한다(`applyBeforeOpening`, §3.1). 진행 중인 일이 있으면 적용하지 않고, 실패해도 판정은 바꾸지 않는다 — 그 명령의 관문이 다시 시도하고 사유를 알린다.
+   - 판정이 허용이고 하위 에이전트 밖의 셸 명령이 다음 작업을 여는 명령(`OPENING_COMMAND` — 연결자·리디렉션·치환 없이)이며 적용 대기(`pendingSwitch`)가 있으면 그 직전에 적용한다(`applyBeforeOpening`, §3.1). 진행 중인 일이 있으면 적용하지 않고, 실패해도 판정은 바꾸지 않는다 — 그 명령의 관문이 다시 시도하고 사유를 알린다.
 1. 셸 명령 검사(182-184): 관찰 명령(`consent-event`·`planning-event`·`review-event`·`codex-event`)을 부르면 거부한다. `consent apply·finish`는 세션 결속을 확인한다(`consentCommandGuard` — 그 꼴의 명령일 때만 `consent.ts`를 읽는다).
 2. 모드 결정(`decideTool`): 작업 > 문서 세션 > 접수 세션 > 없음. 상태 경로의 루트는 `findRepoRoot(CLAUDE_PROJECT_DIR ?? cwd)`다 — 하위 폴더에서 연 세션도 저장소 루트의 작업·세션·열린 동의·적용 잠금을 본다(CLI·티켓·Codex 와 같은 루트). 실행 방식·관리 실행·사전 판별을 포함해 상태를 읽지 못하면 `decideUnreadable` — 표준 읽기 도구, `code-agent.json` 쓰기, 셸의 `code-agent manifest check`·`status`·`help`와 `code-agent read <파일>`(연결자 없이 — Codex 의 읽기 길)만 연다. MCP는 상태를 읽을 수 있을 때 판정하며, 손상된 사전 판별 상태에서 경로 없는 외부 쓰기도 거부한다. 거부 문구는 문제 파일을 알리고 읽기·쓰기 도구를 호스트 표기로 낸다(`readVia`·`editVia`).
 3. 모드가 없으면 `decideOutside`: 셸은 키 자리 언급, 이 세션이 준비·응답한 동의가 응답·적용을 기다릴 때 code-agent 명령·읽기용 git 밖의 명령(30분, `openConsent` — 다른 세션의 동의는 좁히지 않는다), `.code-agent` 경로(`mentionsState`), hook 설정 파일(`.claude/settings(.local).json`·`.codex/hooks.json`·`.codex/config.toml` — `mentionsHostConfig`(`HOST_CONFIG`), 연결자 없는 `code-agent read <파일>`은 연다 — 문구의 읽기 도구는 `readToolVia`), 소스 update·적용 버전 고르기(`code-agent  update`·`npx code-agent update`·`cli.js update` 같은 꼴도 — `SOURCE_UPDATE`, 버전을 고르는 깃발 없는 `--templates-only`만 제외), master 제어 명령(`code-agent master …` — `trust`·`untrust`·`call` 포함, `MASTER_CONTROL_COMMAND`, 러너와 사람의 터미널이 부른다)을 거부한다. 앞의 둘은 Windows 의 글자 그대로의 별칭(대소문자, 이름 끝의 점·공백 `.code-agent./`, 8.3 짧은 이름 `CODE-A~1`·`CLAUDE~1\SETTIN~1.JSO`, `./`, 폴더 이름 뒤의 NTFS 스트림 표기 `.claude::$INDEX_ALLOCATION\`·`.code-agent:$I30:$INDEX_ALLOCATION/`, `<이름>\..\` — hook 설정 파일은 겹친 `a\b\..\..\` 까지 되풀이해 접은 꼴도)도 본다 — 와일드카드·변수로 조립한 이름은 잡지 못한다. 읽기는 키 자리만(`readDenied`), 쓰기는 키 자리·사용자 수준 hook 설정(`~/.claude/settings(.local).json`·`~/.codex`(또는 `CODEX_HOME`)`/hooks.json`·`config.toml` — 셸 언급 거부와 같은 파일, `userHostConfig`. 같은 파일의 다른 이름 — NTFS 스트림 표기(`settings.json::$DATA`·`:$DATA`·`:<이름>`, 폴더의 `::$INDEX_ALLOCATION`), 긴 경로 접두, 로컬 관리 공유, 이름 끝 점·공백, 대소문자, 8.3 짧은 이름, `..`, 세션 작업 경로·저장소 루트 기준 상대 경로 — 는 이름을 접고(`foldStreams`·`foldWindowsAlias`) 실제 경로로 풀어 견주며, 이름으로 접지 못한 별칭(하드 링크·이름으로 모르는 UNC)은 파일이 있으면 (dev, ino), 없으면 부모 폴더의 (dev, ino)와 파일 이름으로 견준다. Codex `apply_patch` 는 패치 경로마다 같은 판정을 받는다)·`:` 경로·`.code-agent`·`.claude`·`.codex`·`.agents`·`doc/work/*/requirement.md`만 거부한다. 그 밖의 저장소 밖 쓰기는 관여하지 않는다. `rm -rf .claude` 같은 폴더 단위 명령은 막지 않는다(시작 게이트·SessionStart·doctor 가 드러낸다).
@@ -719,6 +721,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+설정·설치 파일은 내용이 달라질 때 임시 파일을 원자 교체하며 일시적 rename 잠금은 재시도한다. 템플릿과 runtime.json을 같은 스냅샷·복원 범위에서 반영한다. npm 패키지의 전체 해시와 의존성 복사는 여는 명령의 atNextWork에서만 수행하고 hook은 예약된 릴리스만 반영한다. 사본은 Node의 검색 순서와 중첩 버전을 보존하며 같은 상위 의존성만 공유한다.
+
 첫 `init`은 설치한 스킬·에이전트 사본의 기준 해시를 `templates.json`에 남긴다. 설치 기록이 있는 프로젝트의 `init` 재실행은 템플릿 반영과 같은 보존·복원 판정을 거쳐 수동 사본을 유지하고 새 번들을 `template-conflicts/`에 둔다. 기준 해시가 없는 이전 설치도 현재 번들과 다른 사본을 보존한다. 빠진 hook은 복구하며, 보존한 경로와 병합할 사본 위치를 출력한다.
 
 고정한 적용 릴리스가 저장소에 없으면 새 작업을 열지 않는다. 해당 릴리스를 다시 설치하거나 진행 중인 일이 없을 때 `update --bundled`로 고정을 푼다. `abort`는 번들 복구 명령으로 열려 있다. `update --templates-only`는 고정을 보존하며 적용 릴리스의 코드로 돌고 있지 않으면 템플릿을 반영하지 않는다.
@@ -774,6 +778,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 | 새 버전 적용 뒤의 실행 중인 세션(§4.1 update) | CLI·hook 은 다음 호출부터 적용 버전으로 돈다(호출마다 새 프로세스 — 2.1.299 실측: 한 `claude -p` 세션의 hook·`version`이 적용 전 A, 적용 뒤 B). `.claude/settings.json` hook 설정 변경은 설정 파일 감시가 반영한다(공식 문서 — 실측하지 않았다. 몇 초 안에 반영되지 않으면 다시 연다). 스킬 본문은 감시가 늦게 반영해(2.1.299 실측: 바꾼 지 2초 뒤 호출은 이전 본문, 20초 뒤는 새 본문) 적용 보고가 바뀐 `SKILL.md`·`CLAUDE.md`를 파일로 다시 읽힌다. 바뀐 에이전트 정의는 다음 서브에이전트 호출부터 쓴다. 모델이 셸로 부른 `docs begin` 직전의 PreToolUse hook 이 예약된 B 를 적용하고 그 명령이 B 로 열렸다(2.1.299 실측 — 보고 첫 줄 `적용 버전: A → B`) | hook 은 호출마다 새 프로세스라 다음 호출부터 적용 버전으로 돈다(0.162.1 실측: 한 `codex exec` 세션의 `codex-event`·`version`이 A → B). `.codex/hooks.json`(세션을 만들 때만 읽는다)·`.codex/config.toml`의 MCP 설정(세션 시작 때 띄운다)·새 에이전트 파일(역할 목록은 세션 시작 때 만든다)은 다시 열어야 반영된다(codex-rs 0.162.1 소스 근거) — 적용이 이 셋을 바꾸지 않으면 다시 열 필요가 없다. 선택 UI MCP 연결부는 시작 때의 코드로 계속 돌고 도구 호출마다 프로젝트 적용 버전의 처리기를 부른다(`handlersFor` — 연결부 기록은 0.162.1 실측, 처리기 전환은 프로토콜 시험). Windows workspace-write 샌드박스의 셸은 unelevated 면 node 의 자식 프로세스(`node -e`·git 포함)를, elevated 면 `.codex/`·`.agents/` 쓰기를 `EPERM`으로 막는다(0.162.1 실측). 신뢰한 프로젝트의 hook 은 샌드박스 밖에서 사용자 권한으로 돌아(0.162.1 실측 — `.agents/`·작업 공간 밖 쓰기 가능) 다음 작업을 여는 명령 직전의 hook 이 적용하고, 두 모드 모두 `docs begin`이 B 로 열렸다(0.162.1 실측). hook 이 돌지 않으면(프로젝트·hook 미신뢰) 명령의 관문이 셸 안에서 적용하다 물러서고 예약을 둔다(`SANDBOX_BLOCKED` 안내). update 적용도 네트워크·사용자 홈의 릴리스 저장소를 쓰므로 샌드박스 밖(권한 상승)으로 실행한다 | `runtimeApply.ts` `hostGuidance`, `choiceServer.ts` `handlersFor`, `template/codex/ca-answer.md`, [기록](reviews/2026-10-14-release-update.md) |
 
 ## 8. 상태·산출물 파일 지도
+
+`runtime.json`의 home과 pending.home 및 기본 릴리스 저장소를 버전 조회·선택에서 함께 확인한다. 선택 화면의 확인 해시는 실제 선택한 저장소 경로도 묶는다.
 
 `runtime.json`의 `stateSchema`는 고정을 푼 뒤에도 남긴다. `applied`·`pending`이 없다는 이유로 상태 세대 기록을 지우지 않으며 낮은 세대 릴리스 적용을 계속 막는다.
 
@@ -898,6 +904,8 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 - `ca-reviewer`: review
 
 ## 10. 변경 이력
+
+- 설치 파일과 런타임을 원자적으로 반영·복원하고 npm 사본의 중첩 의존성·호출 시점 및 프로젝트별 릴리스 저장소 선택을 맞춘다 — `fix(2-10)`.
 
 - 계획의 사람 판단과 게이트 중단을 보존하고 잘못된 단계·동의 잠금 경합을 처리하며 외부 계약의 반복 검사를 줄인다 — `cf060c1`.
 

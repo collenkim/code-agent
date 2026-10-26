@@ -160,6 +160,8 @@ export function codexWindowsProblem(repoRoot: string, event: (typeof CODEX_EVENT
   const cli = /^node\s+"([^"]+)"/.exec(command)?.[1];
   const expected = codexWindowsCommand(event, cli), installed = installedCodexWindows(repoRoot, event);
   if ((installed ?? command) === expected) return undefined;
+  // 종료 코드를 넘길 필요 없는 옛 --cli 등록은 PowerShell 확장이 없는 경로일 때만 그대로 쓸 수 있다.
+  if (!installed && cli && !/[$`\u2018-\u201e]/.test(cli) && event !== "PreToolUse" && event !== "UserPromptSubmit" && command === `node "${cli}" codex-event`) return undefined;
   const reasons = [
     ...(event === "PreToolUse" || event === "UserPromptSubmit" ? ["Windows PowerShell 이 종료 코드를 바꿔 막아야 할 실패가 통과할 수 있습니다"] : []),
     ...(cli ? [] : ["PowerShell 이 npm 의 code-agent.ps1 을 골라 실행 정책(Restricted 등)에 따라 hook 이 돌지 않을 수 있습니다"]),
@@ -283,7 +285,7 @@ export function codexMatcherProblem(repoRoot: string, event: string): string | u
  * 막히지만 cmd 는 PATHEXT(.exe·.cmd)로 푼다(stdin·stdout·종료 코드는 그대로 지난다).
  */
 export function codexWindowsCommand(event: (typeof CODEX_EVENTS)[number], cli?: string): string {
-  const base = cli ? `node "${cli.replace(/\\/g, "/")}" codex-event` : "cmd /c code-agent codex-event";
+  const base = cli ? `node '${cli.replace(/\\/g, "/").replace(/'/g, "''")}' codex-event` : "cmd /c code-agent codex-event";
   if (event === "PreToolUse") return `${base}; if ($LASTEXITCODE -ne 0) { exit 2 }`;
   if (event === "UserPromptSubmit") return `${base}; exit $LASTEXITCODE`;
   return base;

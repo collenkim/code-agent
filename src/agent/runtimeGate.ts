@@ -18,7 +18,7 @@ import { STATE_DIR } from "./layout";
 import { pidAlive } from "./lock";
 import { installPackageRelease, listReleases, packageRelease } from "./releaseStore";
 import { applyHere, busyReasons, lockRuntime, ownLabel, requireInstalled, type ApplyTrigger } from "./runtimeApply";
-import { appliedStore, entryPackage, entryScript, installedRelease, ownRelease, readRuntime, releaseHome, RUNTIME_FILE, type RuntimeState } from "./runtimeSelect";
+import { appliedStore, entryPackage, entryScript, installedRelease, ownRelease, readRuntime, releaseHome, releaseHomes, RUNTIME_FILE, type RuntimeState } from "./runtimeSelect";
 import { runReleaseApply, SANDBOX_BLOCKED, updateFromSourceConfirmed, updateToReleaseConfirmed, previewInstallOnly, installOnlyConfirmed, previewReleaseApply, releaseApplyConfirmed } from "./sourceUpdate";
 import { Stop } from "./stop";
 import { hostMarked } from "./crossEnv";
@@ -47,10 +47,10 @@ export const APPLY_NOTE = `${STATE_DIR}/log/runtime-applied.json`;
  * 예약된 새 버전(npm 패키지 진입점이면 설치된 패키지)을 이 프로젝트에 적용한다 — 적용했으면 true. 진행 중인 일이 있으면 하지 않고,
  * 실패하면 사유를 print 로 알리고 지금 버전으로 둔다(예약은 그대로).
  */
-function applyPending(root: string, state: RuntimeState | undefined, print: (text: string) => void): boolean {
+function applyPending(root: string, state: RuntimeState | undefined, print: (text: string) => void, adoptPackage = true): boolean {
   const pkg = isPackaged() ? undefined : entryPackage();
   // npm 패키지 진입점 — 사람이 패키지 관리자로 설치한 그 패키지가 새 버전이다(예약 대신). 사본을 들여 적용한다
-  if (pkg) return adoptAtNextWork(root, pkg, state, print) === 0;
+  if (pkg) return adoptPackage && adoptAtNextWork(root, pkg, state, print) === 0;
   const pending = state?.pending;
   if (!pending || pending.id === ownRelease()?.id || busyReasons(root).length) return false;
   if (!installedRelease(pending.id, pending.home ?? releaseHome())) {
@@ -68,13 +68,13 @@ function applyPending(root: string, state: RuntimeState | undefined, print: (tex
 }
 
 /**
- * 다음 작업을 여는 셸 명령 직전의 PreToolUse hook 이 부른다 — 예약된 새 버전을 여기서 적용한다. 호스트는 hook 을 샌드박스 밖에서
+ * 다음 작업을 여는 셸 명령 직전의 PreToolUse hook 이 부른다 — 예약된 릴리스만 여기서 적용한다. npm 패키지 해시·복사는 atNextWork가 한다. 호스트는 hook 을 샌드박스 밖에서
  * 돌리므로 Codex 샌드박스 셸이 쓰지 못하는 사본(.agents/·.codex/)과 릴리스 저장소도 여기서는 쓴다. 보고는 그 명령이 새 버전으로 출력한다.
  * 실패하면 아무것도 남기지 않는다 — 그 명령의 관문(atNextWork)이 다시 시도하고 사유를 알린다.
  */
 export function applyBeforeOpening(root: string): void {
   const lines: string[] = [];
-  if (!applyPending(root, runtimeOf(root), (text) => lines.push(text))) return;
+  if (!applyPending(root, runtimeOf(root), (text) => lines.push(text), false)) return;
   writeAtomic(join(root, APPLY_NOTE), `${JSON.stringify({ id: runtimeOf(root)?.applied, at: new Date().toISOString(), text: lines.join("\n") })}\n`);
 }
 
@@ -166,7 +166,8 @@ export function versionView(root: string): Record<string, unknown> {
   const own = ownRelease();
   let state: RuntimeState | undefined, stateProblem: string | undefined;
   try { state = readRuntime(root); } catch (error) { stateProblem = error instanceof Error ? error.message : String(error); }
-  const releases = listReleases();
+  const homes = releaseHomes(state);
+  const releases = homes.flatMap(home => listReleases(home).map(info => ({ ...info, home }))).sort((a, b) => a.installedAt.localeCompare(b.installedAt));
   // npm 패키지 진입점이면 그 패키지의 릴리스 ID — 다음 작업을 열 때 들일 버전
   const pkg = isPackaged() ? undefined : entryPackage();
   let entryPkg: { root: string; id: string | null; problem?: string } | null = null;
@@ -181,7 +182,7 @@ export function versionView(root: string): Record<string, unknown> {
     project: { root, applied: state?.applied ?? null, appliedAt: state?.appliedAt ?? null, stateSchema: state?.stateSchema ?? null, store: state?.applied ? appliedStore(state) : null,
       adopted: state?.adopted ?? null, pending: state?.pending ?? null, ...(stateProblem ? { problem: `${RUNTIME_FILE}: ${stateProblem}` } : {}),
       busy: busyReasons(root) },
-    store: { home: releaseHome(), releases: releases.map((info) => ({ id: info.id, installedAt: info.installedAt, stateSchema: info.stateSchema,
+    store: { home: releaseHome(), homes, releases: releases.map((info) => ({ id: info.id, home: info.home, installedAt: info.installedAt, stateSchema: info.stateSchema,
       source: info.source, contentHash: info.contentHash })) },
     choiceServers: liveChoiceServers(root),
   };
@@ -191,7 +192,7 @@ export function renderVersion(view: ReturnType<typeof versionView>): string {
   const running = view.running as { kind: string; id: string | null; version: string; entry: string; entryPackage: { root: string; id: string | null; problem?: string } | null };
   const project = view.project as { root: string; applied: string | null; appliedAt: string | null; adopted: string | null; pending: { id: string; since: string; reason: string } | null; problem?: string; busy: string[] };
   const pkg = running.entryPackage;
-  const store = view.store as { home: string; releases: { id: string; installedAt: string; stateSchema: number; source: { kind: string; commit?: string } }[] };
+  const store = view.store as { home: string; homes: string[]; releases: { id: string; home: string; installedAt: string; stateSchema: number; source: { kind: string; commit?: string } }[] };
   const servers = view.choiceServers as ChoiceServerRecord[];
   const latest = store.releases.at(-1)?.id;
   return [
@@ -205,9 +206,9 @@ export function renderVersion(view: ReturnType<typeof versionView>): string {
     project.pending ? `  설치 완료·적용 대기: ${project.pending.id} (${project.pending.since} 예약) — 예약 당시 사유: ${project.pending.reason}\n    실행 버전 전환은 아직 완료되지 않았습니다. 질문은 interaction list로 정리합니다. 진행 중 작업이 끝나면 다음 작업을 열 때 자동 적용하거나 호스트 밖 터미널에서 code-agent update --release ${project.pending.id}로 적용하세요. 현재 차단 사유는 아래 진행 중인 일입니다.`
       : "  적용 대기: 없음",
     `  진행 중인 일: ${project.busy.length ? project.busy.join(" · ") : "없음"}`,
-    `  릴리스 저장소: ${store.home} — 설치된 릴리스 ${store.releases.length}개${latest ? ` (가장 최근 ${latest})` : ""}`,
+    `  릴리스 저장소: ${store.homes.join(" · ")} — 설치된 릴리스 ${store.releases.length}개${latest ? ` (가장 최근 ${latest})` : ""}`,
     ...store.releases.map((info) => `    - ${info.id} · ${info.source.kind === "git" ? `커밋 ${info.source.commit}` : "패키지 사본"} · 상태 세대 ${info.stateSchema} · ${info.installedAt} 설치` +
-      `${info.id === project.applied ? " · 적용 중" : ""}${info.id === project.pending?.id ? " · 적용 대기" : ""}`),
+      `${info.id === project.applied ? " · 적용 중" : ""}${info.id === project.pending?.id ? " · 적용 대기" : ""}${store.homes.length > 1 ? ` · ${info.home}` : ""}`),
     ...(servers.length ? servers.map((server) => `  선택 UI MCP (pid ${server.pid}): 연결부 ${server.connector} · ${server.startedAt} 시작` +
       (server.lastCall ? ` · 마지막 호출 ${server.lastCall.tool} → 처리 ${server.lastCall.handler} (${server.lastCall.at})` : " · 호출 없음") +
       " — 연결부는 시작 때 버전, 처리는 호출마다 이 프로젝트의 적용 버전") : []),

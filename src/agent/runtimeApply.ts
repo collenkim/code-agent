@@ -115,7 +115,7 @@ function restore(root: string, saved: Map<string, string | null | false>): strin
     if (text === false) continue;
     try {
       if (text === null) { if (existsSync(join(root, path)) && statSync(join(root, path)).isFile()) rmSync(join(root, path), { force: true }); }
-      else if (readText(root, path) !== text) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); }
+      else if (readText(root, path) !== text) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeAtomic(join(root, path), text); }
     } catch { failed.push(path); }
   }
   return failed;
@@ -200,7 +200,7 @@ export function recordInstalledTemplates(root: string, hosts: Host[]): void {
 }
 
 /** 템플릿 반영 — 실패하면 전부 되돌리고 Stop. 돌려주는 것은 update() 보고·바뀐 종류·보존한 사본 */
-export function applyTemplates(root: string, options: { host?: HostSelection; cli?: string; preserveUnrecorded?: boolean }): { report: string; changes: Changes; kept: string[]; unknown: string[] } {
+export function applyTemplates(root: string, options: { host?: HostSelection; cli?: string; preserveUnrecorded?: boolean; runtime?: RuntimeState }): { report: string; changes: Changes; kept: string[]; unknown: string[] } {
   const hosts = selectedHosts(root, options.host);
   const bundle = new Map<string, string>(hosts.flatMap((host) => [...hostAssets(host, root)]));
   const manifest = readManifest(root);
@@ -211,7 +211,7 @@ export function applyTemplates(root: string, options: { host?: HostSelection; cl
   }
   // 기록이 없으면(처음 적용) 사람이 고친 사본인지 가리지 못한다 — 새 번들과 다른 사본은 바꾸되 그렇다고 알린다
   const unknown = manifest || options.preserveUnrecorded ? [] : [...bundle].filter(([path, text]) => { const now = readText(root, path); return now !== undefined && ownedHash(now) !== ownedHash(text); }).map(([path]) => path).sort();
-  const before = snapshot(root, [...bundle.keys(), ...INSTALL_FILES]);
+  const before = snapshot(root, [...bundle.keys(), ...INSTALL_FILES, ...(options.runtime ? [RUNTIME_FILE] : [])]);
   let report: string;
   try {
     report = update(root, { host: options.host, cli: options.cli, preserve: keep });
@@ -221,6 +221,7 @@ export function applyTemplates(root: string, options: { host?: HostSelection; cl
       writeFileSync(copy, bundle.get(path)!);
     }
     recordTemplates(root, hosts, bundle, keep, manifest);
+    if (options.runtime) writeRuntime(root, options.runtime);
   } catch (error) {
     const failed = restore(root, before);
     throw new Stop([`템플릿 적용 중 실패했습니다 — ${error instanceof Error ? error.message : String(error)}`,
@@ -274,15 +275,15 @@ export function applyHere(root: string, options: ApplyOptions): ApplyResult {
       if (state?.applied === target) return { status: "unchanged", text: `${target} 이 이미 적용되어 있습니다.` };
       return reserve(root, target, busy.join(" · "), state);
     }
-    const { report, changes, kept, unknown } = applyTemplates(root, { host: options.host, cli: options.cli });
     // 사람이 고른 버전(--release·--bundled, 사람이 설치한 npm 패키지)이면 남은 예약을 지운다 — 다음 작업에서 그 선택을 되돌리지 않게
     const explicit = options.trigger === "release" || options.trigger === "bundled" || options.trigger === "package";
     const pending = !explicit && state?.pending && state.pending.id !== target ? state.pending : undefined;
     const adopted = options.trigger === "package" ? target : state?.adopted;
-    writeRuntime(root, { schema: 1, ...(target ? { applied: target,
+    const runtime: RuntimeState = { schema: 1, ...(target ? { applied: target,
       appliedAt: templatesOnly ? state?.appliedAt ?? new Date().toISOString() : new Date().toISOString(),
       home: templatesOnly ? state?.home ?? ownStore() : ownStore() } : {}),
-      stateSchema: Math.max(projectSchema, mine), ...(pending ? { pending } : {}), ...(adopted ? { adopted } : {}) });
+      stateSchema: Math.max(projectSchema, mine), ...(pending ? { pending } : {}), ...(adopted ? { adopted } : {}) };
+    const { report, changes, kept, unknown } = applyTemplates(root, { host: options.host, cli: options.cli, runtime });
     const versionChanged = (state?.applied ?? undefined) !== target;
     const { closed, problem } = closeChangedConsents(root, `버전 적용(${from} → ${target ?? `번들 ${packageVersion()}`})`, options.consentId);
     return { status: "applied", text: [
