@@ -1,5 +1,18 @@
 # 계획 작업 계약
 
+## 공통 진행·되감기
+
+현재 단계가 요청한 단계보다 앞이면 status의 `다음:`을 먼저 따른다. 이미 지났으면 `code-agent back <단계>`가 필요하다고 알린다. **되감기는 사용자가 되돌리라고 말했을 때만** 한다. 승인 무효로 status가 되감기를 안내하거나 `planning advance`가 `rewind-required`, `rewind.auto: true`를 낸 경우는 예외다. 뒤로 이동하는 명령이 무효화 범위를 알린다.
+
+1. 이후는 출력의 `next` 줄(action별 다음 행동)을 따르고 그 줄의 명령은 **글자 그대로** 쓴다. `action:dispatch`이면 `assignments`마다 `agent` 서브에이전트를 호출하고(형식만 고치는 교정 배정 `mode:correction`도 같다), 프롬프트에는 **`assignmentFile` 경로와 "이 파일을 읽고 그 계약대로 결과 JSON 하나를 반환하라"**만 쓴다 — 배정·문서 기준·뼈대·context·staging 경로는 그 파일에 있다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 재배정이면 직전 시도의 거부·실패 사유·초안·답은 배정 파일의 `## 직전 시도` 에 있으니 다시 쓰지 않고, 게이트 거부처럼 파일에 없는 사유만 2~3줄 덧붙인다.
+2. 담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다. 식별·해시 검사·문서 기록과 한 번의 되돌림은 시작·완료 hook이 한다 — 메인은 완료 처리하거나 번호 문서·plan.json을 직접 고치지 않고, 원문이 필요할 때만 그 파일이나 `planning result <ID>`를 읽는다. 질문의 답은 ca-answer로 받은 실제 답뿐이고 보류·상태 메모는 답이 아니다. 같은 명령을 스스로 반복하지 않는다.
+3. `next` 줄이 싣는 행동의 요지는 그 줄이 원천이다 — 대기·`cancel` 목록·되감기(`rewind.auto`)·재배정 한도·차단 지적(`feedback`)마다 그 줄의 행동만 하고 덧붙이지 않는다. 줄이 사용자 보고·지시를 요구하면 보고하고 기다린다.
+4. `ready-for-gate`는 문서 검증이나 승인이 아니다 — `next` 줄대로 끝으로 간다. `chain.gate`가 `passed`면 게이트는 이미 지났고 지금 스테이지는 `chain.to`다(최상위 `phase`는 advance 를 돌린 단계).
+
+plan은 관찰된 critic 완료와 차단 지적 해소 후에만 제출한다. 승인·교차 검토와 제출 이후 절차는 ca-plan의 해당 항목을 따른다.
+
+## 작업 등록·입력·피드백
+
 기본 흐름은 analysis(ca-analyst) → 영향도 → design(ca-analyst) → plan(ca-analyst) → critic(ca-critic)이다. 영향도는 작은 기본 조사이면 impact(ca-explorer) 한 담당이 조사와 02 작성을 함께 한다. 나머지는 explore(ca-explorer) → synthesis(ca-writer)다. 메인이 역할을 추가하거나 독립 critic을 생략하지 않고 CLI 배정에 따른다. 새 기본 작업의 contextVersion은 2이며 필요한 정책·직접 선행 문서와 역할별 필수 문서만 입력에 연결한다. 계획의 회귀 위험 입력과 critic의 전체 판단 문서는 보존한다.
 
 큰 영향 영역은 `planning prepare doc/work/<ID>/planning-tasks.json`으로 나눈다. JSON은 `{ "maxParallel": 3, "tasks": [...] }`이며 작업마다 다음 필드를 둔다:

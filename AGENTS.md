@@ -13,7 +13,7 @@
 ## 바꿀 때 지킨다
 
 - 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 변경당 한 줄(바뀐 것의 요지 한 문장과 커밋 — 함수·상수 이름을 늘어놓지 않는다. 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다.
-- **함께 맞출 중복 정의는 §1.1 셋째 칸이 정본이다** — 바꾸는 코드의 행을 찾아 그 칸을 모두 맞춘다. 다음 시험이 일부를 대조한다. 깨지면 사본(문서·템플릿·목록)을 코드에 맞춘다: `docSync`(흐름도 §3.2 단계·§4.1 동의·§5.1·§5.2 hook 등록표·§6.4 생성 블록·§7 모델 기본값), `consentBinding`·`consentOutput`(동의 동작·준비 인자 목록), `retryPolicy`(안내 자리표시·`UNRENDERED_GUIDES`), `modelPolicy`(에이전트 머리말·`doc/codex.md` 모델 표), `hostText`(`SKILL_NAMES`·`ROLE_NAMES` ↔ 템플릿 폴더), `hostNotation`·`templateText`(Codex 사본 치환·공통 문단·계획 스킬 2·3·4항), `planningChain`(`planningNextLine`), `hookLoad`(hook 경로의 import), `hookPaths`(읽기 전용 담당 ↔ 정의 파일 `tools`), `planningRetry`(`planningRules.ts` `RULES` ↔ 검사 문구의 `ruled("…")` 식별자), `templateBudget`.
+- **함께 맞출 중복 정의는 §1.1 셋째 칸이 정본이다** — 바꾸는 코드의 행을 찾아 그 칸을 모두 맞춘다. 다음 시험이 일부를 대조한다. 깨지면 사본(문서·템플릿·목록)을 코드에 맞춘다: `docSync`(흐름도 §3.2 단계·§4.1 동의·§5.1·§5.2 hook 등록표·§6.4 생성 블록·§7 모델 기본값), `consentBinding`·`consentOutput`(동의 동작·준비 인자 목록), `retryPolicy`(안내 자리표시·`UNRENDERED_GUIDES`), `modelPolicy`(에이전트 머리말·`doc/codex.md` 모델 표), `hostText`(`SKILL_NAMES`·`ROLE_NAMES` ↔ 템플릿 폴더), `hostNotation`·`templateText`(Codex 사본 치환·공통 문단·계획 스킬의 공통 계약 참조), `planningChain`(`planningNextLine`), `hookLoad`(hook 경로의 import), `hookPaths`(읽기 전용 담당 ↔ 정의 파일 `tools`), `planningRetry`(`planningRules.ts` `RULES` ↔ 검사 문구의 `ruled("…")` 식별자), `templateBudget`.
 - 시험이 없거나 일부만 보는 것 — §1.1 해당 행에 상세가 있다:
   - hook 등록(`init.ts`) → `doctor.ts` 목록, `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 흐름도 정본 링크.
   - 서브에이전트 추가·삭제 → `modelPolicy.ts` `AGENTS`, 계획·리뷰 담당이면 `init.ts`·`doctor.ts`의 SubagentStart·Stop matcher.

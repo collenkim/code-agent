@@ -58,17 +58,21 @@ test("codexText 고정 문장 치환의 원문은 Claude 템플릿 하나 이상
   }
 });
 
-test("계획 스킬 4개의 공통 항목(2·3·4항)은 글자까지 같다 — action 별 행동의 원천은 planning advance 의 next 줄이다", () => {
-  const items = (name: string) => {
-    const lines = skill(name).split("\n");
-    return ["2. 이후는 출력의 `next` 줄(action별 다음 행동)을 따르고", "3. 담당은 출력 문서를 staging에", "4. `next` 줄이 싣는 행동의 요지"].map((head) => {
-      const found = lines.filter((line) => line.startsWith(head));
-      assert.equal(found.length, 1, `${name}: '${head}' 항목이 하나여야 합니다`);
-      return found[0];
-    });
-  };
-  const reference = items("ca-analyze");
-  for (const name of ["ca-impact", "ca-design", "ca-plan"]) assert.deepEqual(items(name), reference, `계획 스킬 공통 항목이 서로 다릅니다: ${name}`);
+test("계획 스킬 넷은 두 호스트에서 공통 계약을 읽고 action별 next와 되감기 조건을 따른다", () => {
+  for (const host of ["claude", "codex"] as const) {
+    const prefix = host === "claude" ? ".claude" : ".agents", assets = hostAssets(host);
+    const contract = assets.get(`${prefix}/skills/ca-plan/contract.md`)!;
+    for (const phrase of ["assignmentFile", "run_in_background", "staging", "`cancel` 목록", "rewind.auto", "chain.gate", "사용자가 되돌리라고 말했을 때만"]) {
+      if (host === "codex" && phrase === "run_in_background") continue;
+      assert.ok(contract.includes(phrase), `${host}: ${phrase}`);
+    }
+    for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
+      const text = assets.get(`${prefix}/skills/${name}/SKILL.md`)!;
+      assert.ok(text.includes(`${prefix}/skills/ca-plan/contract.md`), name);
+      assert.match(text, /명령 전에.*공통 진행·되감기.*읽고 따른다/);
+      assert.doesNotMatch(text, /2\. 이후는 출력의 `next`/);
+    }
+  }
   // 연쇄는 program 게이트 단계만 — 계획 제출·승인(사람 확인)은 잇지 않는다
   for (const name of ["ca-analyze", "ca-impact", "ca-design"]) assert.match(skill(name), /^1\. Bash: `code-agent planning advance --chain`/m, name);
   assert.doesNotMatch(skill("ca-plan"), /--chain/);
@@ -175,7 +179,7 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
     assert.doesNotMatch(copy, /run_in_background|Agent 도구/, path);
   }
   // 계획 스킬 4개·ca-review·ca-implement 둘(2항 호출·5항 다시 맡기기)·ca-test·ca-check·ca-docs 둘·ca-adopt, 이전 버전 절차(legacy.md) — 분석·설계·계획 하나씩·영향도 둘
-  assert.equal(calls, 17);
+  assert.equal(calls, 14, "계획 네 스킬의 호출 문장은 공통 계약의 한 문장으로 모인다");
 });
 
 /**

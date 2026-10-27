@@ -618,10 +618,11 @@ test("Codex 사본 — staging 문장은 그대로(쓰기 도구만 apply_patch)
   const assets = hostAssets("codex");
   for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
     const text = assets.get(`.agents/skills/${name}/SKILL.md`)!;
-    assert.ok(text.includes("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다."), name);
-    // action 별 행동은 advance 의 next 줄(planningNextLine)이 원천이다 — 스킬 4항은 그 줄을 따르라는 요지만 둔다
-    for (const phrase of ["`next` 줄이 싣는 행동의 요지는 그 줄이 원천이다", "`cancel` 목록", "rewind.auto", "feedback"]) assert.ok(text.includes(phrase), `${name}: ${phrase}`);
+    assert.ok(text.includes(".agents/skills/ca-plan/contract.md"), name);
   }
+  const contract = assets.get(".agents/skills/ca-plan/contract.md")!;
+  assert.ok(contract.includes("담당은 출력 문서를 staging에 쓰고 결과 JSON에는 경로만 넣는다."));
+  for (const phrase of ["`next` 줄이 싣는 행동의 요지는 그 줄이 원천이다", "`cancel` 목록", "rewind.auto", "feedback"]) assert.ok(contract.includes(phrase), phrase);
   const analyst = assets.get(".codex/agents/ca-analyst.toml")!;
   // staging 쓰기 규칙은 배정 instructions(쓰기 도구는 editVia — Codex 는 apply_patch)에 있다. 에이전트 본문은 그것을 따르라고만 한다
   assert.ok(analyst.includes("입력 범위·staging·결과 파일 쓰기·근거·질문 규칙은 `instructions`에 있다"));

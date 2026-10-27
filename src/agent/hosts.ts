@@ -154,6 +154,7 @@ export function hookFile(root: string, host: Host): string {
  * Codex 사본의 문장째 치환 — 원문이 Claude 템플릿에 글자 그대로 있어야 걸린다(어긋나면 오류 없이 치환되지 않는다).
  * `templateText.test.ts` 가 원문마다 Claude 템플릿 하나 이상에 있고 Codex 사본 어디에도 남지 않는지 대조한다. 모든 등장을 바꾼다($ 패턴 해석 없음).
  */
+// 계획 담당 호출 문장은 ca-plan/contract.md 공통 절에 한 번만 둔다. 보조 문서도 같은 치환을 거친다.
 export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
   ["도구가 없거나 표시가 실패하면 설치·hook·호스트 지원을 확인하고 복구 후 같은 질문을 UI로 표시한다.",
     "MCP 선택 UI가 없거나 표시가 실패하면 doctor로 설치·호스트 지원을 확인하고 복구 후 같은 질문을 UI로 표시한다."],
