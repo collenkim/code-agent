@@ -271,10 +271,13 @@ test("계획 CLI와 호스트 허용 명령은 진행·교정·상세 조회 계
 for (const host of ["claude", "codex"] as const) test(`${host}: 설치된 절차로 형식 교정부터 독립 검토·승인 게이트까지 같은 기능을 제공한다`, async () => {
   init(root, { host });
   const skills = host === "claude" ? ".claude/skills" : ".agents/skills";
+  const contract = readFileSync(join(root, skills, "ca-plan/contract.md"), "utf8");
+  assert.match(contract, /mode:correction/);
+  assert.match(contract, /planning result/); assert.match(contract, /ready-for-gate/);
   for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
     const instructions = readFileSync(join(root, skills, name, "SKILL.md"), "utf8");
-    assert.match(instructions, /planning advance/); assert.match(instructions, /mode:correction/);
-    assert.match(instructions, /planning result/); assert.match(instructions, /ready-for-gate/);
+    assert.match(instructions, /planning advance/);
+    assert.ok(instructions.includes(`${skills}/ca-plan/contract.md`), `${name}: 공통 계약 참조`);
   }
   const initial = (await advance()).assignments[0];
   malformed(initial, { codex: host === "codex" });
