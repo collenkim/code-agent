@@ -48,7 +48,7 @@ import type { GraphView } from "./graph/types";
 export const STATE_SCHEMA = "code-agent.state";
 export const STATE_SCHEMA_VERSION = 1;
 
-/** 재개 판정 코드 — 위가 먼저다(stale-request 는 대조를 요청했을 때만) */
+/** 기본 판정 순서. 영속 질문은 unobservable 다음에 먼저 처리한다(응답 대기 needs-human·답 소비 ready). */
 export const RESUME_CODES = [
   "stale-request", "unobservable", "no-work", "ownership-conflict", "wait", "needs-human", "replan-required", "reapproval-required", "limit-reached", "ready",
 ] as const;
@@ -312,7 +312,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
   }) : [];
   const summary = findings ? findingSummary(findings) : undefined;
 
-  // ---- 재개 판정 — nextHint 의 순서(질문 → 재진입 → 한도 → 실패 안내)를 따르고 그 앞에 관측·소유·대기를 둔다 ----
+  // 기본 판정 뒤 영속 질문을 nextHint처럼 우선한다. 관측 불가와 요청 판본 대조는 질문보다 먼저다.
   let code: ResumeCode = "ready";
   let action = work ? NEXT_ACTION[work.active.phase] ?? "next" : "none";
   let by: StateJson["resume"]["next"]["by"] = "model";
@@ -394,7 +394,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
   try {
     interactions = (require("./interactionSummary") as typeof import("./interactionSummary")).interactionSummary(repoRoot, options.session);
     if (interactions.recoverable?.length) reasons.push({ code: "interaction-recoverable", detail: `이미 답변한 낡은 기록 ${interactions.recoverable.length}건 — interaction list로 정리합니다. 사용자 재응답은 필요하지 않습니다.` });
-    if (["ready", "no-work", "needs-human"].includes(code) && (interactions.pending.length || interactions.deferred.length || interactions.responded.length)) {
+    if (code !== "unobservable" && (interactions.pending.length || interactions.deferred.length || interactions.responded.length)) {
       const awaiting = interactions.pending.length + interactions.deferred.length;
       code = awaiting ? "needs-human" : "ready"; by = awaiting ? "human" : "model"; action = awaiting ? "human-input" : "consume-interaction";
       reasons.push({ code: "interaction-open", detail: `질문 대기 ${awaiting} · 받은 답 ${interactions.responded.length} — interaction list로 조회합니다` });

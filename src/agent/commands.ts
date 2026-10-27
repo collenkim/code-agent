@@ -450,6 +450,7 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
  * 이 순서를 바꾸면 ca-next 의 '멈춘 자리별 재개' 표도 함께 고친다.
  */
 function interactionHint(repoRoot: string): string | undefined {
+  // 상태 조회와 재개 표도 질문을 소유·실행 대기보다 먼저 안내한다. 적용 명령의 임대 검사는 그대로다.
   const interaction = interactionSummary(repoRoot);
   if (interaction.recoverable?.length && !interaction.pending.length && !interaction.deferred.length && !interaction.responded.length) return `이미 답변한 낡은 질문 ${interaction.recoverable.length}건 — code-agent interaction list로 정리 후 계속합니다. 다시 답할 필요가 없습니다.`;
   if (interaction.pending.length || interaction.deferred.length) return `사람 응답 대기 — ${skill("ca-answer")} · code-agent interaction list`;

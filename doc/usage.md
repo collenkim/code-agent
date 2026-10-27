@@ -15,7 +15,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 실
 
 작업 종류는 최초 접수 요구로 정한다. feature 작업의 후속 수정·검증 실패도 같은 ID·feature로 이어간다. 접수를 닫아도 ID·종류는 보존하며 다른 종류로 다시 접수할 수 없다. 다른 브랜치에 보관된 작업 ID는 그 브랜치에서 재개하고 현재 브랜치에 중복 생성하지 않는다. 요구 변경은 같은 작업의 초안을 고쳐 다시 제출·확정한다.
 
-모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 5개와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 6개와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인은 같은 세션에서 호스트별 응답 절차로 받는다.
 
@@ -865,6 +865,8 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `expect` · `correlation` · `unknown` | 대조 결과(`matches`·`mismatches`) · `--run-id` 를 되돌려 준 값 · 확인하지 못한 것(프로세스 생존은 언제나 여기에 있다) |
 
 시도 식별자(`attempt.id`)는 단계마다 이렇게 정한다 — 계획 단계 `<단계>:<작업>:<dispatchId>`(배정 전 `<단계>:none`), 구현 `implement:<Task>`, 검증 `verify:r<회차>:<실행 수>`, 리뷰 `review:r<회차>`, 반영 `deliver`. 새 배정·검증 실행·리뷰 회차가 생기면 바뀐다.
+
+영속 질문은 관측 불가 다음에 소유·실행 대기보다 먼저 안내한다. 미응답·보류는 `needs-human`, 받은 답은 `ready`의 `consume-interaction`이며 실제 소비·적용 명령이 원래 세션과 임대를 다시 검사한다. 그 밖의 기본 순서는 다음 표다.
 
 | `resume.code` | 뜻 | `next.by` |
 |---|---|---|

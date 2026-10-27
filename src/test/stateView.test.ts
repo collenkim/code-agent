@@ -18,6 +18,8 @@ import { ACTIVE_FILE, loadActive, saveActive } from "../agent/layout";
 import { LEASE_FILE, type Lease } from "../agent/lease";
 import { retrySummary } from "../agent/retryPolicy";
 import { stateView } from "../agent/stateView";
+import { publishNativeInteraction } from "../agent/interactionNative";
+import { mutateInteractions } from "../agent/interactions";
 import { check } from "../agent/validate";
 import { approvalOf, loadWork } from "../agent/work";
 import { start } from "./confirmedStart";
@@ -81,6 +83,19 @@ describe("읽기 전용 — 조회 전후로 파일·승인·커서·재시도 �
 });
 
 describe("재개 코드 — 기존 판정을 고정 코드로", () => {
+  test("3-3 영속 질문은 임대·실행 대기보다 먼저 보이고 관측 불가를 덮지 않는다", () => {
+    toCheck(); setLease({ session: A });
+    const question = publishNativeInteraction(repo, [{ title: "범위를 정할까요?", options: ["유지", "확장"] }], { sessionId: A, host: "claude" });
+    const view = stateView(repo);
+    assert.equal(view.resume.code, "needs-human");
+    assert.equal(view.resume.next.action, "human-input");
+    assert.ok(view.resume.reasons.some(reason => reason.code === "lease-held"));
+    assert.ok(view.interactions!.pending.includes(question.requestId));
+    assert.match(status(repo), /다음: 사람 응답 대기/);
+    assert.match(decide({ cwd: repo, session_id: B, tool_name: "Bash", tool_input: { command: "code-agent next" } }) ?? "", /다른 세션/);
+    writeFileSync(join(repo, LEASE_FILE), "{broken");
+    assert.equal(stateView(repo).resume.code, "unobservable");
+  });
   test("작업이 없으면 no-work, check 의 증거·한도·묶임은 사실로 낸다", async () => {
     assert.equal(stateView(repo).resume.code, "no-work");
     toCheck();
@@ -176,6 +191,11 @@ describe("재개 코드 — 기존 판정을 고정 코드로", () => {
     planning(ago(MIN));
     let view = stateView(repo);
     assert.deepEqual([view.resume.code, view.resume.reasons[0].code, view.attempt?.id], ["wait", "attempt-running", "analysis:analysis:d-1"]);
+    const pending = publishNativeInteraction(repo, [{ title: "조사 범위를 정할까요?", options: ["유지", "확장"] }], { sessionId: A, host: "claude" });
+    view = stateView(repo);
+    assert.equal(view.resume.next.action, "human-input");
+    assert.ok(view.resume.reasons.some(reason => reason.code === "attempt-running"));
+    mutateInteractions(repo, ledger => { ledger.requests[pending.requestId].status = "cancelled"; });
     planning(ago(15 * MIN));
     view = stateView(repo);
     assert.equal(view.resume.code, "ready");
