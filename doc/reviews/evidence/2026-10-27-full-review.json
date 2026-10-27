@@ -1,0 +1,276 @@
+{
+  "review": "2026-10-26-full-review.md",
+  "baseline": "a5f9206",
+  "platform": {
+    "os": "Windows 11",
+    "node": "24.19.0",
+    "shell": "PowerShell 5.1.26100"
+  },
+  "decisions": {
+    "2-6": "Codex PC별 설정을 Git과 준비 커밋에서 제외",
+    "2-9⑥": "성공한 실제 back에서 자동 허용 소비",
+    "3-1": "kind:test 단계가 없으면 구현 담당이 계획된 테스트 작성"
+  },
+  "stateSchema": 16,
+  "stageRuns": [
+    {
+      "stage": 1,
+      "label": "보정 중 1",
+      "command": "npm test",
+      "tests": 1750,
+      "pass": 1743,
+      "skip": 4,
+      "fail": 3,
+      "durationSeconds": 1480.7,
+      "failures": [
+        "캐시·하위 담당 제한의 기존 기대값 2건",
+        "Windows 종료 정리 EPERM"
+      ]
+    },
+    {
+      "stage": 1,
+      "label": "보정 중 2",
+      "command": "npm test",
+      "tests": 1750,
+      "pass": 1745,
+      "skip": 4,
+      "fail": 1,
+      "durationSeconds": 4983.8,
+      "failures": [
+        "캐시 나이의 2초 시간 가정"
+      ]
+    },
+    {
+      "stage": 1,
+      "commit": "5f0c837",
+      "command": "npm test",
+      "tests": 1750,
+      "pass": 1746,
+      "skip": 4,
+      "fail": 0,
+      "durationSeconds": 5628.7,
+      "log": "dist/full-review-stage1-complete-tests.log"
+    },
+    {
+      "stage": 2,
+      "commit": "e25a523",
+      "command": "npm test",
+      "tests": 1792,
+      "pass": 1775,
+      "skip": 4,
+      "fail": 13,
+      "durationSeconds": 3131.1,
+      "failures": [
+        "문서 배치 1건",
+        "재질문·손상 상태 기존 기대값 3건",
+        "중첩 spawn mock 누출 2건",
+        "Windows 종료 정리 EPERM 1건",
+        "master·잠금 경쟁 시간 한도 6건"
+      ]
+    },
+    {
+      "stage": 2,
+      "commit": "e2ac4a7",
+      "command": "npm test",
+      "tests": 1795,
+      "pass": 1790,
+      "skip": 4,
+      "fail": 1,
+      "durationSeconds": 3127.9,
+      "failures": [
+        "대시보드 감독 재개 시험 30초 한도"
+      ]
+    },
+    {
+      "stage": 2,
+      "commit": "7507a56",
+      "command": "npm test",
+      "tests": 1796,
+      "pass": 1791,
+      "skip": 4,
+      "fail": 1,
+      "durationSeconds": 5037.872,
+      "log": "dist/full-review-stage2-approved-tests.log",
+      "failures": [
+        "Codex 권한 시험의 종료 후 임시 폴더 정리 EPERM"
+      ],
+      "correction": "d5e2e1f"
+    },
+    {
+      "stage": 3,
+      "commit": "d89ee55",
+      "command": "npm test",
+      "tests": 1801,
+      "pass": 1795,
+      "skip": 4,
+      "fail": 2,
+      "durationSeconds": 3695.899,
+      "log": "dist/review-2026-10-27/full-review-json/full-review-stage3-tests.log",
+      "failures": [
+        "Codex 준비 분리 프로세스 후 임시 폴더 정리 EPERM",
+        "OS 시작 식별 첫 조회 실패의 영구 캐시로 그래프 잠금 회수 거부"
+      ],
+      "corrections": [
+        "d5e2e1f",
+        "ae242e6"
+      ]
+    },
+    {
+      "stage": 4,
+      "commit": "d5e2e1f",
+      "command": "npm test",
+      "tests": 1807,
+      "suites": 226,
+      "pass": 1799,
+      "skip": 4,
+      "fail": 4,
+      "cancelled": 0,
+      "durationSeconds": 5196.5481462,
+      "log": "dist/full-review-stage4-tests.log",
+      "failures": [
+        "Codex 설치 시험이 이동 전 스킬에서 공통 문단을 대조",
+        "흐름도의 계획 계약·설치 안내 줄 인용이 이전 위치를 대조",
+        "Claude 계획 흐름 시험이 이동 전 스킬에서 공통 문단을 대조",
+        "Codex 계획 흐름 시험이 이동 전 스킬에서 공통 문단을 대조"
+      ],
+      "corrections": [
+        "38ab138",
+        "e411ef5",
+        "cd8a5f8"
+      ]
+    },
+    {
+      "stage": 4,
+      "label": "최종",
+      "commit": "cd8a5f8",
+      "command": "npm test",
+      "tests": 1807,
+      "suites": 226,
+      "pass": 1803,
+      "skip": 4,
+      "fail": 0,
+      "cancelled": 0,
+      "todo": 0,
+      "exitCode": 0,
+      "durationSeconds": 6413.834065499999,
+      "log": "dist/full-review-final-tests.log"
+    }
+  ],
+  "focusedAfterStage4": {
+    "fixtureDeduplication": {
+      "commit": "d058202",
+      "tests": 10,
+      "pass": 10,
+      "skip": 0,
+      "fail": 0,
+      "durationSeconds": 61.4
+    },
+    "planningContractInstallation": {
+      "commit": "38ab138",
+      "tests": 2,
+      "pass": 2,
+      "skip": 0,
+      "fail": 0,
+      "durationSeconds": 0.554
+    },
+    "documentReferences": {
+      "commit": "e411ef5",
+      "tests": 3,
+      "pass": 3,
+      "skip": 0,
+      "fail": 0,
+      "durationSeconds": 0.933
+    },
+    "planningHostFlows": {
+      "commit": "cd8a5f8",
+      "tests": 2,
+      "pass": 2,
+      "skip": 0,
+      "fail": 0,
+      "durationSeconds": 85.9719484,
+      "log": "dist/review-2026-10-27/full-review-next/review-planning-contract-flow-tests.log"
+    }
+  },
+  "templateBudgets": {
+    "calculation": "LF 정규화 글자 수 ×1.03(파일)·×1.02(흐름)를 100자 단위 올림",
+    "claudeFlow": 49200,
+    "codexFlow": 45900,
+    "sharedPlanningContract": "template/claude/skills/ca-plan/contract.md",
+    "planningContract": {
+      "before": 2700,
+      "after": 4100,
+      "reason": "네 계획 스킬에서 반복하던 공통 진행·되감기를 필수 참조 보조 문서로 이동"
+    }
+  },
+  "packageDryRun": {
+    "files": 216,
+    "compressedBytes": 856434,
+    "unpackedBytes": 2976506,
+    "agentFiles": 156,
+    "coreFiles": 13,
+    "templateFiles": 45,
+    "testFiles": 0
+  },
+  "retained": {
+    "legacyCompatibility": "runtime.json과 planningVersion이 없는 기존 작업이 실제 verify→review까지 열려 제거 전제가 성립하지 않음(회귀 통과)",
+    "2-8⑩": "보고서 stat 캐시는 선택 항목으로 유지",
+    "4-1": "시험 전용·파일 내부 export의 대규모 변경은 선택 항목으로 유지",
+    "4-7": "의존성 범위 통일·표시 버전 정책·retryPolicy 분할은 선택 항목으로 유지"
+  },
+  "validationConditions": [
+    "실제 모델·유료 평가 호출 없음",
+    "대상 프로젝트 시험은 임시 Git 저장소에서 실행",
+    "저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
+    "실제 호스트 자식 프로세스 시험 셸에서 상속된 Codex 샌드박스 표지만 제거했으며 운영 검사는 유지",
+    "4단계 전체 시험은 파일 동시 실행 4개이며 다른 전체 시험과 겹치지 않음"
+  ],
+  "commitAudit": {
+    "through": "cd8a5f8",
+    "commits": 39,
+    "behaviorCommitsWithoutFlowDocument": [],
+    "referencedCommits": 112,
+    "invalidReferences": 0
+  },
+  "interruptedRuns": [
+    {
+      "stage": 1,
+      "reason": "상속된 CODEX_SANDBOX_NETWORK_DISABLED 표지 때문에 가짜 호스트 검사 거부",
+      "completed": false
+    }
+  ],
+  "partialRunsBeforeCorrection": [
+    {
+      "item": "2-8",
+      "tests": 18,
+      "pass": 17,
+      "fail": 1,
+      "reason": "다음 회차 시험 데이터가 기존 TC를 깨뜨림",
+      "correctedPass": 3
+    },
+    {
+      "item": "2-2·2-10",
+      "tests": 33,
+      "pass": 32,
+      "fail": 1,
+      "reason": "hook 등록표 앞 문서 배치",
+      "correctedPass": 3
+    },
+    {
+      "item": "4-2",
+      "tests": 66,
+      "pass": 61,
+      "fail": 5,
+      "reason": "시험 셸의 상속된 Codex 샌드박스 표지",
+      "correctedPass": 6
+    },
+    {
+      "item": "4-6",
+      "tests": 34,
+      "pass": 33,
+      "fail": 1,
+      "reason": "공통 절 분리 후 담당 호출 문장 수의 고정 기대",
+      "correctedPass": 13
+    }
+  ],
+  "finalStatus": "1~4단계 필수 항목·추천 결정 반영, 전체 시험 통과"
+}
