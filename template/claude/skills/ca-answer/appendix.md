@@ -42,7 +42,7 @@
 | 요구사항·계획 반려 기록 | 해당 `request` 또는 `plan`에 `"decision":"reject","comment":"<사용자 사유>"`를 포함한다. 이 동작도 별도 동의 후 적용한다 |
 | 검증 결과 반영 | `{"action":"deliver"}` |
 | 오래된 지식 항목 정리 | `{"action":"knowledge-prune"}` |
-| 모델·추론 강도 변경 | 먼저 `code-agent model --host claude`로 지금 값을 조회한다. `{"action":"model","host":"claude","agent":"<역할|all>","model":"<opus|sonnet|haiku|fable|claude-…|default>","reasoning":"<low|medium|high|xhigh|max>"}` — `reasoning`은 바꿀 때만 넣는다. 사용자가 고른 값만 넣고 임의로 다른 모델로 바꾸지 않는다. 진행 중인 작업이 있으면 준비가 거부된다 — 작업을 반영하거나 종료한 뒤 요청하게 한다 |
+| 모델·추론 강도 변경 | 먼저 `code-agent model --host <호스트>`로 지금 값을 조회한다. `{"action":"model","host":"<claude|codex>","agent":"<역할|all>","model":"<조회한 모델 ID|default>","reasoning":"<해당 호스트의 추론 강도>"}` — `reasoning`은 바꿀 때만 넣는다. 사용자가 고른 값만 넣고 임의로 다른 모델로 바꾸지 않는다. 진행 중인 작업이 있으면 준비가 거부된다 — 작업을 반영하거나 종료한 뒤 요청하게 한다 |
 | 접수·작업 종료 | `{"action":"abort"}` |
 | 플러그인 추가 | `{"action":"plugin-add","name":"<이름>","command":"<명령>","slots":"<슬롯>","sendsCode":false}` — 인증이 필요하면 `secretEnv`로 기존 환경변수 이름만 참조한다 |
 | 플러그인 제거 | `{"action":"plugin-remove","name":"<이름>"}` |

@@ -1,7 +1,7 @@
 ---
 name: ca-explorer
 description: code-agent 요구사항 범위 역공학 — 요구 항목들이 닿는 영역 하나의 코드(관련 파일·호출 경로·현행 데이터·API)를 찾아 근거와 함께 돌려준다. 읽기 전용 — 계획 배정의 staging 문서만 쓴다.
-tools: Read, Grep, Glob, Write
+tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 effort: medium
 ---

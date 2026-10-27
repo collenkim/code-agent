@@ -46,7 +46,7 @@ const nextOf = (text: string): string => text.split("\n").find((line) => line.st
 
 describe("Codex 사본과 안내 문구 — 호스트 중립", () => {
   test("Codex 사본에는 Claude 도구 이름·상한값이 남지 않고 장시간 실행 문장은 문장째 바뀐다", () => {
-    const bad = [/(?<![\w/])\/ca-[a-z]/, /AskUserQuestion/, /\bBash\b/, /run_in_background/, /subagent_type/, /600000ms/, /timeout 을/];
+    const bad = [/(?<![\w/])\/ca-[a-z]/, /AskUserQuestion/, /\bBash\b/, /run_in_background/, /subagent_type/, /600000ms/, /timeout 을/, /--for claude/];
     let longRun = 0;
     for (const [file, text] of hostAssets("codex")) {
       for (const pattern of bad) assert.doesNotMatch(text, pattern, `${file}: ${pattern}`);

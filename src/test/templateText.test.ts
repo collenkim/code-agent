@@ -9,6 +9,7 @@ import { test } from "node:test";
 
 import { CODEX_SENTENCES, hostAssets } from "../agent/hosts";
 import { POWERSHELL_COMMAND_GUIDE } from "../agent/hostText";
+import { normalizeReviewTable, reviewResultProblems } from "../agent/crossRecord";
 import { PHASES } from "../agent/layout";
 
 const TEMPLATE = join(__dirname, "../../template/claude");
@@ -203,4 +204,29 @@ test("두 호스트 사본의 머리말은 YAML 로 안전하다 — argument-hi
   assert.deepEqual(problems, []);
   assert.deepEqual(frontmatterProblems("x", "---\nname: a\nargument-hint: [ID] <서술>\n---\n"), ["x: argument-hint 값을 큰따옴표로 감싸야 합니다 — [ID] <서술>"]);
   assert.match(skill("ca-feature"), /^argument-hint: "\[ID\] /m);
+});
+
+
+test("3-4 리뷰 봉투는 계획 파일과 AC 형식을 지침·검사에서 함께 제한한다", () => {
+  const planned = ["src/a.ts"], pattern = /^F\d+$/;
+  const good = JSON.stringify({ findings: "- 없음", checked: [{ path: planned[0], acceptance: ["AC-R1-1"] }] });
+  assert.equal(normalizeReviewTable(good, planned, pattern).body, "- 없음");
+  for (const body of [good.replace("src/a.ts", "outside.ts"), good.replace("AC-R1-1", "AC-1")]) {
+    assert.ok(reviewResultProblems(normalizeReviewTable(body, planned, pattern).body, planned, pattern).length);
+  }
+  for (const host of ["claude", "codex"] as const) {
+    const text = [...hostAssets(host)].find(([path]) => /ca-reviewer\.(md|toml)$/.test(path))![1];
+    assert.match(text, /계획 밖 파일은 제외/); assert.match(text, /AC-R<n>-<m>/);
+  }
+});
+
+test("3-5 Codex 블록의 검증·비밀값·언어 규칙과 조사 담당 수정 도구가 일치한다", () => {
+  const block = readFileSync(join(TEMPLATE, "../CODEX.block.md"), "utf8");
+  for (const text of ["직접 돌린 빌드·테스트는 게이트를 열지 못한다", "비밀값은 질문·요약·JSON·명령 인자에 넣지 않는다", "사용자가 쓰는 언어로"]) assert.ok(block.includes(text), text);
+  assert.match(readFileSync(join(TEMPLATE, "agents/ca-explorer.md"), "utf8"), /^tools: .*Write, Edit$/m);
+  for (const host of ["claude", "codex"] as const) {
+    const prefix = host === "claude" ? ".claude" : ".agents", assets = hostAssets(host);
+    assert.match(assets.get(prefix + "/skills/ca-review/SKILL.md")!, /update --templates-only/);
+    assert.match(assets.get(prefix + "/skills/ca-answer/reference.md")!, /code_agent.confirm.*사용자가 요청한 호환 경로/);
+  }
 });

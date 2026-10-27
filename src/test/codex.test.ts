@@ -129,6 +129,8 @@ test("Codex 사본의 동의 필드 표는 JSON 필드 이름 \"agent\" 를 그�
   const reference = hostAssets("codex").get(".agents/skills/ca-answer/appendix.md")!;
   assert.match(reference, /\| `"agent"`, `"model"` \|/);
   assert.doesNotMatch(reference, /`hostAgents\.codex`, `model`/);
+  assert.doesNotMatch(reference, /--for claude|--host claude|"host":"claude"/);
+  assert.match(reference, /--for codex/);
   assert.match(reference, /\| `reasoning` \| 선택 문자열: 추론 강도/);
   assert.match(hostAssets("codex").get(".agents/skills/ca-answer/SKILL.md")!, /"host":"claude"/);
 });

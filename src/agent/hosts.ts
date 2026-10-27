@@ -187,6 +187,7 @@ function codexText(text: string, footer: boolean): string {
     .replace(/\bBash 로 /g, "셸로 ")
     .replace(/\bBash 등으로/g, "셸 등으로")
     .replace(/subagent_type/g, "agent_type")
+    .replace(/--for claude/g, "--for codex")
     // 교차 검증은 지금 호스트가 아닌 쪽이 맡는다
     .replace(/--by codex/g, "--by claude")
     // Codex 메인의 교차 명령은 다른 호스트를 띄우고 네트워크를 쓴다 — 샌드박스 밖(권한 상승)으로 실행하게 한다(`Bash:`·`--by` 치환 뒤의 글자)

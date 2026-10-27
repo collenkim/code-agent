@@ -55,7 +55,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-test/tc-names.md": 1500,
   "template/CLAUDE.block.md": 1700,
   "template/codex/ca-answer.md": 5400,
-  "template/CODEX.block.md": 1800,
+  "template/CODEX.block.md": 2200,
 };
 /** Claude 흐름 합계(CLAUDE.block + 흐름 스킬 12) */
 const FLOW_BUDGET = 53300;
