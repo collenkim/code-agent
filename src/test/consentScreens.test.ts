@@ -3,8 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realp
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-
-import { checkApproval, diffBoundary, formatBoundary, hashManifest, manifestBoundary, recordDecision } from "../core/approval";
+import { diffBoundary, formatBoundary, hashManifest, manifestBoundary, recordDecision } from "../core/approval";
 import type { Manifest } from "../core/manifest";
 import { consentSnapshot, loadConsent, observeConsent } from "../agent/consent";
 import { prDocFile, deliverProblems } from "../agent/deliver";

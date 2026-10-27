@@ -2,7 +2,6 @@
 import { z } from "zod";
 import { ControlError } from "./master/protocol";
 
-export const INTERACTION_SCHEMA = 1;
 export const INTERACTION_STAGES = ["setup", "document", "request", "planning", "implementation", "verification", "review", "delivery", "recovery", "maintenance"] as const;
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
 const Input = z.object({ required: z.boolean(), minLength: z.number().int().min(0).max(8000), maxLength: z.number().int().min(1).max(8000), description: z.string().max(2000) }).strict()

@@ -4,7 +4,6 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { hostname, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { after, afterEach, before, beforeEach, test } from "node:test";
-
 import { next, requireValidatable, status } from "../agent/commands";
 import { crossReview, netProbeRunner } from "../agent/crossCheck";
 import { codexHook, runCodexHook } from "../agent/codexHook";
@@ -15,7 +14,7 @@ import { loadEvidence } from "../agent/evidence";
 import { loadActive } from "../agent/layout";
 import { runPlanningHook } from "../agent/planningHook";
 import { RetryRefused } from "../agent/retryPolicy";
-import { loadReview, mutateReview, openRound, reviewBudgets, reviewDocFile, reviewProblems, saveReview, type ReviewLog } from "../agent/review";
+import { loadReview, mutateReview, openRound, reviewBudgets, reviewDocFile, reviewProblems, saveReview } from "../agent/review";
 import { observeReviewer, RecordedFailure, runReviewHook } from "../agent/reviewHook";
 import { previewCrossStop, previewWaiveFinding, recordCrossStop, waiveFinding } from "../agent/reviewJudgment";
 import { runSessionHook } from "../agent/sessionHook";

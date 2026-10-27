@@ -7,9 +7,7 @@ import { loadActive } from "../agent/layout";
 import { currentInteractions } from "../agent/interactions";
 import { drainInteraction } from "../agent/interactionService";
 import { prepareConsent, loadConsent } from "../agent/consent";
-
-
-import { root, request, approveDashboard } from "./dashboardFixture";
+import { root, approveDashboard } from "./dashboardFixture";
 
 test("설정과 접수 동의는 실제 도메인 처리 후 최초 feature 작업을 한 번만 연다", () => {
   approveDashboard(JSON.parse(prepareConsent(root, { action: "setup" }, { binding: { id: "owner", host: "claude" } })).id);

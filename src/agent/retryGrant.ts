@@ -10,7 +10,6 @@
  */
 import { existsSync, readFileSync } from "fs";
 import { relative } from "path";
-
 import { hashManifest, hashPlan } from "../core/approval";
 import { crossAttemptsOf, orphanView } from "./crossRecord";
 import { planningCrossBudgets } from "./crossCheck";
@@ -19,10 +18,7 @@ import { reviewFile, verifyFile } from "./layout";
 import { skill } from "./hostText";
 import { mutatePlanning, planningBudget, grantPlanningRetry } from "./planning";
 import { criticCrossPoint, loadPlanning, planningFile, withPlanningCache } from "./planningState";
-import {
-  budgetOf, COUNTER_LABEL, GRANT_STEP, grantFor, grantScope, LIMITS, NO_REVIEW_CHOICES, verifyRetryOf,
-  type Budget, type CounterKey, type RetryGrant,
-} from "./retryPolicy";
+import { budgetOf, COUNTER_LABEL, GRANT_STEP, grantFor, grantScope, LIMITS, NO_REVIEW_CHOICES, verifyRetryOf, type Budget, type RetryGrant } from "./retryPolicy";
 import { loadReview, mutateReview, reviewBudgets } from "./review";
 import { Stop } from "./stop";
 import { patchEvidence } from "./validate";
@@ -270,4 +266,3 @@ export function grantRetry(root: string, key: string, consentId: string, reason:
 }
 
 /** 테스트·문서가 대조하는 허용 가능 키 */
-export const GRANTABLE_KEYS: readonly CounterKey[] = Object.keys(GRANT_STEP) as CounterKey[];

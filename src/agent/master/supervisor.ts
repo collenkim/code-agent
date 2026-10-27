@@ -13,7 +13,6 @@ import { spawn } from "child_process";
 import { appendFileSync, createWriteStream, readFileSync } from "fs";
 import { delimiter, isAbsolute, relative, sep } from "path";
 import { canonical } from "../layout";
-
 import { hostBaseEnv } from "../crossEnv";
 import { hostLaunch } from "../hosts";
 import { POWERSHELL_COMMAND_GUIDE } from "../hostText";
@@ -21,7 +20,7 @@ import { requireManagedHost } from "./hostProfile";
 import { CodexTransport } from "./codexTransport";
 import { acquireLock } from "../lock";
 import { hideGitWindowInThisProcess, stateView } from "../stateView";
-import { killVerified, liveness } from "./processes";
+import { killVerified } from "./processes";
 import { ACTIVE_RUN_STATES, type HostProfile, type Policy, type RunState } from "./protocol";
 import { buildResult, readHostOutput } from "./result";
 import { observeProgress } from "./observe";
@@ -289,7 +288,3 @@ export function supervise(root: string, runId: string): Promise<number> {
   });
 }
 
-/** 같은 표지로 호스트가 아직 살아 있는지 — 재조정이 쓴다 */
-export function hostAlive(run: RunRecord): ReturnType<typeof liveness> {
-  return run.host ? liveness(run.host.pid, run.host.marker) : "dead";
-}

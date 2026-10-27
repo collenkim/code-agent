@@ -39,8 +39,6 @@ export function planningReuseAnswer(root: string, question: string, contract: st
   });
 }
 
-/** 역할 → 단계 매핑은 planningState.ts 의 ROLE_PHASE 다(순환 import 를 피해 옮겼다). 옛 이름으로도 import 할 수 있게 남긴다 */
-export { ROLE_PHASE as PHASE } from "./planningState";
 const BatchSchema = z.object({ maxParallel: z.number().int().min(1).max(4).default(3), tasks: z.array(TaskSchema).min(1).max(100) }).strict();
 
 /** 계획 담당이 출력 문서를 쓰는 임시 자리. 완료 hook이 읽어 정식 문서로 옮기고 지운다 — 결과 보고에 본문을 싣지 않기 위해서다. */

@@ -7,7 +7,6 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { hostname } from "os";
 import { join } from "path";
-
 import { writeAtomic } from "../core/atomic";
 import { pidAlive } from "./lock";
 import { TIMING } from "./retryPolicy";
@@ -23,7 +22,6 @@ export const CONSENT_TITLES = {
   model: "에이전트 모델 변경", abort: "작업 진행 종료", "plugin-add": "플러그인 등록", "plugin-remove": "플러그인 제거",
   update: "code-agent 업데이트", "repro-log": "오류 로그 근거로 수정 진행", judgment: "사람 판단 기록",
 } as const;
-export type ConsentActionName = keyof typeof CONSENT_TITLES;
 
 /** 응답·적용을 기다리는 상태 — 색인의 open 에 든다 */
 export const OPEN_STATUSES: readonly string[] = ["pending", "approved", "applying"];

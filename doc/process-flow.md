@@ -864,6 +864,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+빌드는 `noUnusedLocals`로 운영 코드와 시험의 미사용 선언·import를 거부한다. 외부 호출이 없는 기능·타입은 유지하지 않으며, 시험 초기화를 실행하는 fixture import는 값 사용과 별개로 보존한다.
+
 파일 작업의 공통 경로·완료 판정은 `core/fileOperations.ts`, 기준 커밋 사전 검사와 승인된 실행은 `agent/fileOperations.ts`다. 낡은 질문의 증거 대조는 읽기 전용 `nativeQuestionEvidence.ts`를 상태 요약·동기화·버전 적용 차단 판정에서 공유한다.
 
 Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연결·thread 재개·단건 RPC·완료 알림을 처리한다. `master/codexPermissions.ts`는 권한 요청 영속화·사람 응답 적용·문맥 대조·중복 전달 차단·종료 처리를 담당한다. 요청과 응답은 §8의 기존 `interactions/state.json` 원장에 저장한다.
@@ -913,9 +915,11 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 동의 검사 순서와 Codex hook 수를 코드에 맞추고 hook·계획 설명은 함수 이름으로 참조한다 — `docs(3-6,3-7)`.
+- 미참조 코드·타입과 미사용 import를 제거하고 컴파일에서 미사용 선언을 차단한다 — `refactor(4-1)`.
 
-- 영속 질문의 재개 우선순위와 미호출·다른 세션 실행 배정의 재개 기준을 맞춘다 — `fix(3-3)`.
+- 동의 검사 순서와 Codex hook 수를 코드에 맞추고 hook·계획 설명은 함수 이름으로 참조한다 — `d89ee55`.
+
+- 영속 질문의 재개 우선순위와 미호출·다른 세션 실행 배정의 재개 기준을 맞춘다 — `d89ee55`.
 
 - 호스트별 동의 인자와 리뷰 결과 조건·복구 안내·공통 지침 및 조사 담당 수정 도구를 맞춘다 — `4f612ce`.
 

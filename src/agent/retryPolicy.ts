@@ -10,7 +10,6 @@
  */
 import { Stop } from "./stop";
 
-export const RETRY_POLICY_VERSION = 1 as const;
 
 // ---- 원인·카운터 ----
 
@@ -86,7 +85,6 @@ export const TIMING = {
 } as const;
 
 const limitTable = LIMITS as Readonly<Partial<Record<CounterKey, number>>>;
-const grantTable = GRANT_STEP as Readonly<Partial<Record<CounterKey, number>>>;
 const minutes = (ms: number): number => Math.round(ms / 60_000);
 
 // ---- 실패 기록·거부 ----

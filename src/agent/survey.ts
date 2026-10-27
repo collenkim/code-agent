@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { extname, join, posix } from "path";
-
 import { collectExemplars } from "../core/exemplar";
 import { loadManifest, MANIFEST_FILE } from "../core/manifest";
 import type { Manifest } from "../core/manifest";
@@ -130,9 +129,6 @@ function walk(repoRoot: string): { files: Entry[]; truncated: boolean } {
 export function sourceFileScan(repoRoot: string): { files: { path: string; ext: string }[]; truncated: boolean } {
   const { files, truncated } = walk(repoRoot);
   return { files: files.filter((file) => SOURCE_EXT.has(file.ext)).map(({ path, ext }) => ({ path, ext })), truncated };
-}
-export function sourceFiles(repoRoot: string): { path: string; ext: string }[] {
-  return sourceFileScan(repoRoot).files;
 }
 /** 저장소 파일 상한 — 넘으면 앞부분(경로 사전순)만 본다 */
 export const SURVEY_MAX_FILES = MAX_FILES;

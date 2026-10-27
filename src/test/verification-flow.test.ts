@@ -4,13 +4,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, mock, test } from "node:test";
-
 import * as build from "../core/build";
 import { next, requireValidatable, status, Stop } from "../agent/commands";
 import { loadEvidence, runsOf, saveEvidence, stageProblems, validationDocFile, verifyView } from "../agent/evidence";
 import { loadActive, saveActive, verifyFile } from "../agent/layout";
 import { loadReview, openRound, saveReview } from "../agent/review";
-import { check, runTests, tailOf, TAIL_LINE_CHARS, TAIL_TOTAL_CHARS } from "../agent/validate";
+import { check, runTests, tailOf, TAIL_TOTAL_CHARS } from "../agent/validate";
 import { verify, verificationFlowFile } from "../agent/verificationFlow";
 import type { VerificationHistory } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";

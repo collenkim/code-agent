@@ -1,7 +1,6 @@
 import { existsSync } from "fs";
 import { join } from "path";
-
-import { canonical, DOCS_SESSION_FILE, findRepoRoot, workDocsDir } from "./layout";
+import { DOCS_SESSION_FILE, findRepoRoot, workDocsDir } from "./layout";
 import { allCursors } from "./branchCursor";
 import { loadPlanning, runView, TASK_AGENTS } from "./planningState";
 import { loadRequestSession } from "./request";

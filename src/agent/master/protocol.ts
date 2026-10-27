@@ -19,7 +19,6 @@ export const READ_TYPES = ["snapshot", "events", "heartbeat", "command", "questi
 export const MUTATING_TYPES = ["submit", "pause", "cancel", "resume", "decide", "answer", "handover", "reconcile", "policy", "revoke", "interaction.respond"] as const;
 export const COMMAND_TYPES = [...OPEN_TYPES, ...READ_TYPES, ...MUTATING_TYPES] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
-export type MutatingType = (typeof MUTATING_TYPES)[number];
 
 /** 이 버전이 지원하지 않는다고 명시하는 기능 — hello 가 그대로 돌려준다 */
 export const UNSUPPORTED = [
@@ -41,7 +40,6 @@ export class ControlError extends Error {
 
 /** 위임할 수 있는 동작 — 동의 동작 셋과 업무 질문 답 */
 export const DELEGABLE_ACTIONS = ["request", "plan", "deliver", "answer"] as const;
-export type DelegableAction = (typeof DELEGABLE_ACTIONS)[number];
 /** 사람만 하는 동의 — 권한 문서에 넣어도 받지 않는다(설치·기준·모델·플러그인·업데이트·지식 삭제·종료·로그 근거·사람 판단) */
 export const HUMAN_ONLY_ACTIONS = ["setup", "docs", "baseline", "model", "plugin-add", "plugin-remove", "update", "knowledge-prune", "abort", "repro-log", "judgment"] as const;
 

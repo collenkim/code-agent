@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { filePaths, fileOutcomeProblems } from "../core/fileOperations";
 import { dirname, join, posix } from "path";
-
 import { hashManifest, hashPlan } from "../core/approval";
-import type { Manifest, StageDef } from "../core/manifest";
+import type { Manifest } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
 import { docPaths, firstListNames, sectionBody } from "./docs";
 import { knowledgePath } from "./knowledge";
@@ -25,7 +24,7 @@ import {
 import type { RoundCause, RunCause, VerifyBudget, VerifyRetryState, VerifyRetryView, VerifyState } from "./retryPolicy";
 import type { ReviewLog } from "./review";
 import { KNOWLEDGE_KINDS, SCHEMAS } from "./schemas";
-import { changedPaths, fileHashes, partialTreeHash, trackedPaths } from "./tree";
+import { changedPaths, fileHashes, partialTreeHash } from "./tree";
 import type { Change } from "./tree";
 import { approvalOf } from "./work";
 import type { Work } from "./work";
@@ -332,11 +331,6 @@ export function outsideChanges(work: Work): Change[] {
   return changedPaths(repoRoot, active.baseCommit).filter(
     (change) => !allowed.has(change.path) && !prefixes.some((prefix) => change.path.startsWith(prefix)),
   );
-}
-
-/** 계획에 있는데 사라진 파일 — 지워서 통과시키는 길 */
-export function missingPlanFiles(work: Work): string[] {
-  return (work.plan?.files ?? []).filter(file => file.operation !== "delete").map(file => file.path).filter(path => !existsSync(join(work.repoRoot, path)));
 }
 
 // ---- 무엇을 돌릴 것인가 ----

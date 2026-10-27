@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { root, ID, DIR, SPEC, REQUIREMENTS, IMPACT, DESIGN, FUNCTIONAL, write, dispatch, finish, analysis } from "./planningFixture";
+import { root, ID, DIR, REQUIREMENTS, IMPACT, DESIGN, FUNCTIONAL, write, dispatch, finish, analysis } from "./planningFixture";
 import { planningContracts, planningReuseAnswer, preparePlanning } from "../agent/planning";
 import { contractsFile, dependencyContracts } from "../agent/dependencyContracts";
 import { answerSources, formatAnswerSources, openQuestions, readAnswerRows } from "../agent/answers";

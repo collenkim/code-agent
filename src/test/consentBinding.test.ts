@@ -4,10 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { hostname, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-
-import {
-  applyConsent, codexReplyCode, CONSENT_ACTIONS, consentSnapshot, consentStatus, finishConsent, loadConsent, observeConsent, prepareConsent,
-} from "../agent/consent";
+import { applyConsent, codexReplyCode, CONSENT_ACTIONS, consentSnapshot, consentStatus, loadConsent, observeConsent, prepareConsent } from "../agent/consent";
 import type { ConsentAction } from "../agent/consent";
 import { consentCommandOf, takeTicket, terminalCaller } from "../agent/consentTicket";
 import { codexHook } from "../agent/codexHook";

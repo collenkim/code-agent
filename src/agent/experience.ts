@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
-
 import { documentEntries, entryFields, keyRefs, pathList } from "./knowledge";
 import { freshnessText, pathTouches } from "./knowledgeIndex";
 import type { Freshness, SearchQuery } from "./knowledgeIndex";
@@ -281,11 +280,6 @@ export function experienceLine(hit: ExperienceHit, fresh?: Freshness): string {
 
 /** 경험 묶음 끝의 안내 — 출력마다 같은 문장 */
 export const EXPERIENCE_NOTE = "경험은 당시 작업의 기록이지 확정 정책이 아닙니다 — 적용 전에 그 줄 범위와 현재 코드를 확인하고, 정책으로 올리려면 지식 제안(knowledge.proposal)으로 반영 동의를 거칩니다. 변경이 감지되지 않았다는 것은 내용이 맞다는 보장이 아닙니다.";
-
-/** 원래 작업 ID — `EXP-<작업 ID>-<순번>` 에서 */
-export function originWork(id: string): string {
-  return id.replace(/^EXP-/, "").replace(/-\d+$/, "");
-}
 
 /** 새 기록의 순번 — 그 작업 폴더에 있는 처음 버전 ID 의 최댓값 + 1 */
 export function nextExperienceId(repoRoot: string, work: string): string {

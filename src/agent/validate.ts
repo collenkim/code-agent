@@ -18,7 +18,6 @@ import {
 } from "fs";
 import { hostname, tmpdir } from "os";
 import { basename, dirname, join } from "path";
-
 import { hashManifest, hashPlan, ledgerPath } from "../core/approval";
 import { DOCS_LEDGER } from "./docs";
 import { writeAtomic } from "../core/atomic";
@@ -124,11 +123,6 @@ export function tailOf(text: string, lines: number): string {
   let start = kept.length, total = 0;
   while (start > 0 && total + kept[start - 1].length + 1 <= TAIL_TOTAL_CHARS) total += kept[--start].length + 1;
   return (start > 0 ? [`… (앞 ${start}줄 생략)`, ...kept.slice(start)] : kept).join("\n");
-}
-
-export interface ValidateOptions {
-  /** 테스트에서 시간을 재현 가능하게 만들기 위한 자리 */
-  now?: () => string;
 }
 
 /**

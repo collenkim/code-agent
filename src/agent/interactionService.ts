@@ -1,5 +1,5 @@
 /** 공개 조회·사람 응답과 원래 처리기의 적용. 전송 수신과 적용·재개는 별개다. */
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";

@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import childProcess = require("node:child_process");
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, sep } from "node:path";
 import { mock, test } from "node:test";
 import { setupConsentProject, writeFixture, gitFixture } from "./consentFixture";
-import { call } from "../agent/master/control";
 import { listRuns, readBinding, writeBinding, readOwner, writeOwner, writeRunRecord } from "../agent/master/store";
 import { PublishInteraction, INTERACTION_STAGES } from "../agent/interactionSchema";
 import { bumpInteraction, currentInteractions, interactionContext, mutateInteractions, needInteraction, publishInteraction } from "../agent/interactions";
@@ -19,9 +18,7 @@ import { answerSources, appendDelegatedAnswer, answerHash } from "../agent/answe
 import { parseQuestions } from "../agent/questions";
 import type { RequestEnvelope } from "../agent/master/protocol";
 import { prepareConsent } from "../agent/consent";
-
-
-import { root, token, key, question, publish, request, choose, send, read, previousRun } from "./dashboardFixture";
+import { root, token, question, publish, request, choose, send, read, previousRun } from "./dashboardFixture";
 
 test("2-11 반복 조회는 응답 처리기를 일정 간격 안에 중복 실행하지 않는다", () => {
   const r = publish();

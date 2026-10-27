@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { delimiter, join } from "path";
 import { assetKeys, assetText, CLAUDE_ASSETS, isPackaged } from "./assets";
 import { isBatchScript, resolveExecutable } from "../core/build";

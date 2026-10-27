@@ -1,6 +1,6 @@
 import { loadRequestSession } from "./requestSession";
 /** 기존 질문 문서·동의와 공통 요청의 연결. 추천은 Markdown 문구에서 추측하지 않는다. */
-import { existsSync, readFileSync, readdirSync, realpathSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { DOCS_SESSION_FILE, loadActive, questionsFile, REQUEST_SESSION_FILE } from "./layout";
 import { readLease } from "./lease";

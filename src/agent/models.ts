@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-
 import { writeAtomic } from "../core/atomic";
 import { requireTerminal } from "./tty";
 import { selectedHosts, type Host } from "./hosts";
@@ -28,8 +27,6 @@ export { AGENTS, type AgentName, codexModelOf, claudeModelOf } from "./modelPoli
  * Codex는 modelPolicy의 역할별 기본값과 codex-models.json을 사용하며 호스트 간 설정은 섞지 않는다.
  */
 
-/** Claude 모델 별칭 — 전체 ID(`claude-…`)도 받는다 */
-export const MODELS = CLAUDE_MODEL_ALIASES;
 export const MODELS_FILE = CLAUDE_MODELS_FILE;
 
 function agentFile(repoRoot: string, agent: AgentName): string {

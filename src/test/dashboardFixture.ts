@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { afterEach, beforeEach, mock, test } from "node:test";
+import { afterEach, beforeEach, mock } from "node:test";
 import { setupConsentProject, writeFixture } from "./consentFixture";
 import { setCaller } from "./reviewFixture";
 import { init } from "../agent/init";
@@ -83,6 +83,5 @@ function previousRun(state: RunRecord["state"] = "blocked"): RunRecord {
   return { version: 1, runId: `run-${randomUUID()}`, commandId: randomUUID(), controller: "dashboard", generation: 1, mode: "start", links: {}, state, acceptedAt: at, updatedAt: at, finishedAt: at,
     sessionId: "owner", promptHash: "fixture", timeoutMs: 60000, workId: null, baseHead: null, baseStateVersion: "fixture", history: [] };
 }
-
 
 export { root, token, key, channelId, question, publish, request, choose, send, read, approval, approveDashboard, consentRequest, reject, writeLease, orphanLease, previousRun };
