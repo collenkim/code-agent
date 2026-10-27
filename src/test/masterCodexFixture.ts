@@ -9,7 +9,7 @@ import { masterEnable } from "../agent/master/admin";
 import { call } from "../agent/master/control";
 import { withInteraction } from "../agent/tty";
 import { listRuns, readRun } from "../agent/master/store";
-import { liveness, killVerified } from "../agent/master/processes";
+import { killVerified, waitDead } from "../agent/master/processes";
 import { codexReadiness } from "../agent/codexReadiness";
 export function codexProject() {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-managed-codex-"))), root = join(dir, "project"), home = join(dir, "codex-home");
@@ -34,9 +34,13 @@ export function codexProject() {
     throw new Error(`실행 대기 초과 ${JSON.stringify(readRun(root, runId))}`);
   };
   const close = () => {
-    for (const run of listRuns(root)) for (const p of [run.host, run.supervisor]) if (p && liveness(p.pid, p.marker) === "alive") killVerified(p.pid, p.marker);
+    // 끝 상태가 기록돼도 감독의 OS 프로세스·파일 핸들은 아직 닫히는 중일 수 있다.
+    for (const run of listRuns(root)) for (const p of [run.supervisor, run.host]) if (p) {
+      killVerified(p.pid, p.marker);
+      assert.ok(waitDead(p.pid, p.marker, 30_000), `시험 프로세스 종료 대기 초과: ${p.marker}`);
+    }
     for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-    assert.ok(resolve(dir).startsWith(realpathSync.native(tmpdir()) + sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    assert.ok(resolve(dir).startsWith(realpathSync.native(tmpdir()) + sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
   };
   return { root, home, dir, send, wait, close, recheck };
 }

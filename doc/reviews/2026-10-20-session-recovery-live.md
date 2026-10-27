@@ -13,7 +13,7 @@ code-agent만 수정했다. 다른 저장소와 실제 관리 프로젝트는 �
 
 | 검사 | 결과·근거 |
 |---|---|
-| 실제 Claude 종료 세션 복원 | 통과. 실제 hook으로 질문 발행 → 호스트 종료 → 원본 대조·복원 → 서명 답 재전송 → 동일 sessionId 한 번 재개 → consume·complete. 대화에만 있던 기억값을 재개 결과에서 확인했다. [원자료](evidence/2026-10-20-live-session-recovery.json) |
+| 실제 Claude 종료 세션 복원 | 통과. 실제 hook으로 질문 발행 → 호스트 종료 → 원본 대조·복원 → 서명 답 재전송 → 동일 sessionId 한 번 재개 → consume·complete. 대화에만 있던 기억값을 재개 결과에서 확인했다. [원자료·통합 기록](evidence/2026-10-20-session-recovery-live.json) |
 | 실제 Claude 신규 개발 완주 | 통과. 최초 계획 검토의 제한 시간 종료 후 같은 세션 ID로 재개했다. 테스트 실패에 따른 재계획·재승인 후 TC 11개와 통합 TC 11개 통과, 실제 독립 리뷰 1회 관찰, 로컬 반영 커밋 `a07af9d`와 진행 커서 종료를 확인했다. 최초 ID `WORK-0001`·종류 `feature`의 식별 기록은 하나다. [원자료](evidence/full-flow-new-2026-10-20-live-claude.json) |
 | 실제 Codex 신규 개발 완주 | 미통과. 원문·sourceMap·공통 문서·요구 제출 후 `start`의 `.git/index.lock: Permission denied`로 중단됐다. Windows workspace-write·approval_policy=never 권한은 확대하지 않았다. 비용은 측정 불가이며 0으로 주장하지 않는다. [원자료](evidence/full-flow-new-2026-10-20-live-codex.json) |
 | 실제 Codex 원본 대조 | 위 실제 실행의 native JSONL을 복원 파서로 읽어 thread ID·프로젝트·주 세션·대화 존재를 확인했다. 원자료의 `nativeSessionValidation`에 파일·해시·크기를 남겼다. 관리 재개 완주 검사는 아니다 |

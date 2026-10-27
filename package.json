@@ -7,14 +7,15 @@
     "code-agent": "dist/agent/cli.js"
   },
   "files": [
-    "dist",
+    "dist/agent",
+    "dist/core",
     "template"
   ],
   "scripts": {
     "build": "tsc",
     "build:bin": "node scripts/build-bin.js",
     "prepare": "tsc",
-    "test": "tsc && node scripts/prune-dist-tests.cjs && node --test \"dist/test/**/*.test.js\""
+    "test": "tsc && node scripts/prune-dist-tests.cjs && node --test --test-concurrency=4 \"dist/test/**/*.test.js\""
   },
   "keywords": [],
   "author": "",

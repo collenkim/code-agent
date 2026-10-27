@@ -53,13 +53,52 @@
       "tests": "TC-1~TC-11 11개 모두 passed(source 출력, 테스트 실행 결과 (TAP)) — 항목별 기록은 evidence 파일의 tests"
     },
     "claudeRecovery": {
-      "evidence": "doc/reviews/evidence/2026-10-20-live-session-recovery.json",
       "passed": true,
       "memoryPreserved": true,
       "originalSession": "c296ee76-5c84-41e5-bb6b-92384537d391",
       "resumedSession": "c296ee76-5c84-41e5-bb6b-92384537d391",
       "status": "applied",
-      "resumedRunCount": 1
+      "resumedRunCount": 1,
+      "details": {
+        "at": "2026-10-19T23:07:04.924Z",
+        "host": "claude",
+        "repo": "C:\\Users\\kai\\AppData\\Local\\Temp\\ca-recovery-live-FOi0AW",
+        "session": "c296ee76-5c84-41e5-bb6b-92384537d391",
+        "build": "dist-bin",
+        "scope": "Real model and hooks; synthetic TTY, human-channel and signed answer fixtures; not real human approval",
+        "passed": true,
+        "recovery": {
+          "recovered": true,
+          "runId": "run-recover-a9094f94516da3b046c523c9",
+          "sessionId": "c296ee76-5c84-41e5-bb6b-92384537d391",
+          "started": false,
+          "note": "기존 응답은 대시보드 조회 또는 interaction drain으로 처리하고, 미응답은 실제 제출을 기다립니다"
+        },
+        "run": {
+          "runId": "run-21cad718-49b3-4a02-9967-af55e2a89be4",
+          "state": "completed",
+          "sessionId": "c296ee76-5c84-41e5-bb6b-92384537d391",
+          "resumeOf": "c296ee76-5c84-41e5-bb6b-92384537d391",
+          "outcome": {
+            "state": "completed",
+            "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work"
+          }
+        },
+        "interaction": {
+          "requestId": "f3ed0ae7-954e-460b-afdf-5bacd04dc292",
+          "status": "applied",
+          "consumed": {
+            "at": "2026-10-19T23:07:39.581Z",
+            "sessionId": "c296ee76-5c84-41e5-bb6b-92384537d391"
+          },
+          "continuation": {
+            "state": "started",
+            "runId": "run-21cad718-49b3-4a02-9967-af55e2a89be4"
+          }
+        },
+        "memoryPreserved": true,
+        "driverCorrection": "재전송의 at·replayed는 달라질 수 있어 영수증과 실행 개수를 대조한다. 같은 실제 실행의 저장 기록을 재검증했다."
+      }
     },
     "codexFullFlow": {
       "evidence": "doc/reviews/evidence/full-flow-new-2026-10-20-live-codex.json",

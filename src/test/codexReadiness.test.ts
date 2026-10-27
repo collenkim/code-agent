@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import childProcess, { type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, test } from "node:test";
+import { afterEach, beforeEach, mock, test } from "node:test";
 
 import { classifyCodexReadiness, codexReadiness, type CodexProbeRaw } from "../agent/codexReadiness";
 import { init, initialize } from "../agent/init";
@@ -13,6 +14,7 @@ import { probeResponse, stubCodexProbe, type ProbeState } from "./codexProbeFixt
 
 let root: string;
 let stub: ReturnType<typeof stubCodexProbe> | undefined;
+let children: ChildProcess[] = [];
 const cli = join(__dirname, "../agent/cli.js");
 const saved = { home: process.env.CODEX_HOME, sandbox: process.env.CODEX_SANDBOX };
 beforeEach(() => {
@@ -20,13 +22,21 @@ beforeEach(() => {
   process.env.CODEX_HOME = join(root, "codex-home");
   delete process.env.CODEX_SANDBOX;
 });
-afterEach(() => {
+afterEach(async () => {
+  // 판정 파일 기록과 분리 프로세스 종료는 다르다. 이 시험이 띄운 자식의 종료 후 폴더를 정리한다.
+  for (const child of children) if (child.exitCode === null && child.signalCode === null) {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Codex 준비 조회 자식 종료 대기 초과")), 30_000);
+      child.once("close", () => { clearTimeout(timer); resolve(); });
+    });
+  }
+  children = []; mock.restoreAll();
   stub?.restore(); stub = undefined;
   for (const [key, value] of [["CODEX_HOME", saved.home], ["CODEX_SANDBOX", saved.sandbox]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
   assert.equal(dirname(root), realpathSync.native(tmpdir())); assert.ok(root.includes("ca-ready-root-"));
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(root, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
 });
 const codes = (raw: CodexProbeRaw): string[] => classifyCodexReadiness(root, raw).problems.map((problem) => problem.code);
 const userConfig = (text: string): void => { mkdirSync(join(root, "codex-home"), { recursive: true }); writeFileSync(join(root, "codex-home", "config.toml"), text); };
@@ -131,6 +141,10 @@ test("Codex 샌드박스 안에서는 묻지 않는다 — 지문이 같은 기�
 });
 
 test("hello 의 분리 갱신 — 연동한 프로젝트에서 띄운 master codex-check 가 같은 자리에 판정을 남기고, 도는 동안 겹쳐 띄우지 않는다", () => {
+  const spawn = childProcess.spawn;
+  mock.method(childProcess, "spawn", (...args: Parameters<typeof spawn>) => {
+    const child = spawn(...args); children.push(child); return child;
+  });
   spawnSync("git", ["init", "-q", root], { windowsHide: true });
   init(root, { host: "codex", cli });
   // 분리 프로세스는 이 대역 밖이다 — CODE_AGENT_CODEX_BIN(이 node)이 app-server 를 띄우지 못해 '답하기 전에 끝남'이 기록된다

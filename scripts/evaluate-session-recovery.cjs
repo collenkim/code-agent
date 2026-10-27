@@ -7,6 +7,14 @@ const fs = require('node:fs'), path = require('node:path'), os = require('node:o
 const root = path.resolve(__dirname, '..'), build = process.argv[2] ?? 'dist';
 if (!['dist', 'dist-bin'].includes(build)) throw Error('Use dist or dist-bin');
 const use = name => require(path.join(root, build, 'agent', name));
+const recoveryFile = path.join(root, 'doc/reviews/evidence/2026-10-20-session-recovery-live.json');
+function saveRecoveryReport(report) {
+  const all = JSON.parse(fs.readFileSync(recoveryFile, 'utf8'));
+  all.realModels.claudeRecovery = { passed: report.passed, memoryPreserved: report.memoryPreserved,
+    originalSession: report.session, resumedSession: report.run?.sessionId, status: report.interaction?.status,
+    resumedRunCount: report.run ? 1 : 0, details: report };
+  fs.writeFileSync(recoveryFile, JSON.stringify(all, null, 2) + '\n');
+}
 function verify(report, marker) {
   const store = use('master/store'), runs = store.listRuns(report.repo), resumed = runs.find(r => !r.recovery);
   assert.ok(resumed); report.run = { runId: resumed.runId, state: resumed.state, sessionId: resumed.sessionId, resumeOf: resumed.resumeOf, outcome: resumed.outcome };
@@ -18,15 +26,14 @@ function verify(report, marker) {
   report.memoryPreserved = true; report.passed = true;
 }
 if (process.argv.includes('--recheck')) {
-  const file = path.join(root, 'doc/reviews/evidence/2026-10-20-live-session-recovery.json');
-  const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const report = JSON.parse(fs.readFileSync(recoveryFile, 'utf8')).realModels.claudeRecovery.details;
   if (path.dirname(report.repo) !== fs.realpathSync.native(os.tmpdir()) || !path.basename(report.repo).startsWith('ca-recovery-live-')) throw Error('Disposable recovery repository required');
   const recovery = use('master/store').listRuns(report.repo).find(r => r.recovery);
   const native = fs.readFileSync(recovery.recovery.source.file, 'utf8');
   const marker = report.memoryMarker ?? native.match(/검사값은 ([a-f0-9-]{36})입니다/)?.[1]; assert.ok(marker);
   verify(report, marker);
   if (report.error) { report.driverCorrection = '재전송의 at·replayed는 달라질 수 있어 영수증과 실행 개수를 대조한다. 같은 실제 실행의 저장 기록을 재검증했다.'; delete report.error; }
-  fs.writeFileSync(file, JSON.stringify(report, null, 2) + '\n'); console.log(JSON.stringify(report)); return;
+  saveRecoveryReport(report); console.log(JSON.stringify(report)); return;
 }
 const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ca-recovery-live-')));
 const cli = path.join(root, build, 'agent/cli.js');
@@ -73,6 +80,6 @@ async function run() {
   throw Error('Timed out waiting for the original-session continuation');
 }
 run().catch(error => { report.error = error.message; process.exitCode = 1; }).finally(() => {
-  fs.writeFileSync(path.join(root, 'doc/reviews/evidence/2026-10-20-live-session-recovery.json'), JSON.stringify(report, null, 2) + '\n');
+  saveRecoveryReport(report);
   console.log(JSON.stringify(report));
 });

@@ -1,6 +1,6 @@
 import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,18 +75,18 @@ test("터미널 확인 중 upstream이 바뀌면 확인 기록도 fetch도 남�
   assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false);
 });
 
-test("T-L5-2 비TTY 의 직접 소스 업데이트는 확인 단계에서 멈추고 fetch 하지 않는다", { skip: !!process.stdin.isTTY }, () => {
-  let npm = 0;
-  // 사람의 터미널(호스트 표지 없음)에서 부른 것으로 둔다 — 이 시험을 호스트 안에서 돌려도 확인 단계까지 간다
-  const saved = Object.fromEntries(["CLAUDECODE", ...CODEX_MARKERS].map((key) => [key, process.env[key]]));
-  for (const key of Object.keys(saved)) delete process.env[key];
-  try {
-    assert.throws(() => updateFromSourceConfirmed(target, { sourceRoot: source, runNpm: () => { npm++; } }), /터미널에서 받습니다/);
-  } finally {
-    for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value;
-  }
+test("T-L5-2 비TTY 의 직접 소스 업데이트는 확인 단계에서 멈추고 fetch 하지 않는다", () => {
+  const env = { ...process.env };
+  for (const key of ["CLAUDECODE", ...CODEX_MARKERS]) delete env[key];
+  const code = `const assert=require('node:assert/strict');
+    const {updateFromSourceConfirmed}=require(process.argv[1]);
+    assert.equal(!!process.stdin.isTTY,false); let npm=0;
+    assert.throws(()=>updateFromSourceConfirmed(process.argv[2],{sourceRoot:process.argv[3],runNpm:()=>{npm++;}}),/터미널에서 받습니다/);
+    assert.equal(npm,0);`;
+  const child = spawnSync(process.execPath, ["-e", code, require.resolve("../agent/sourceUpdate"), target, source],
+    { env, stdio: "pipe", encoding: "utf8", timeout: 30_000 });
+  assert.equal(child.status, 0, child.stderr || String(child.error));
   assert.equal(existsSync(join(source, ".git/FETCH_HEAD")), false, "git fetch 가 돌지 않았다");
-  assert.equal(npm, 0);
 });
 
 test("검토 #14 호스트 셸(표지 있음)의 직접 소스 업데이트는 TTY 여부와 관계없이 거부하고 fetch 하지 않는다", () => {
