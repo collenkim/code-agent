@@ -15,7 +15,7 @@ description: 정적 분석·컴파일 단계(check)를 진행한다 — code-age
 
 ## 하는 일
 
-**전체 작업 흐름에서는** 계획된 테스트 작성이 끝난 상태에서 Bash: `code-agent verify --json`을 호출한다. CLI가 `check → 결과 판정 → test → 결과 판정`을 연속 실행하고 기존 게이트를 통과하면 `review`까지 이동한다. 아래 단일 단계 명령을 중복 실행하지 않는다.
+**전체 작업 흐름에서는** 구현 중 테스트를 쓴다(`kind: test`가 있으면 tester, 없으면 implementer). 작성이 끝난 상태에서 Bash: `code-agent verify --json`을 호출한다. CLI가 `check → 결과 판정 → test → 결과 판정`을 연속 실행하고 기존 게이트를 통과하면 `review`까지 이동한다. 아래 단일 단계 명령을 중복 실행하지 않는다.
 
 - `node: review` — `/ca-review` 절차로 이어간다. `next`를 추가 호출하지 않는다.
 - `node: repair` — 반환된 `repairFile`(실패 명령·로그 경로·실패 TC→AC→Task·고칠 수 없는 테스트)·`problems`·`plannedFiles`를 근거로 아래 수정 루프를 수행하고 `code-agent verify --json`으로 재검증한다. 사용자 보고에는 `budget`의 남은 고쳐 쓰기 회차를 함께 적는다.

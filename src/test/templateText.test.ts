@@ -25,6 +25,17 @@ function claudeTexts(): Map<string, string> {
 }
 const skill = (name: string): string => readFileSync(join(TEMPLATE, "skills", name, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
 
+test("3-1 두 호스트는 테스트 단계가 없을 때 구현 담당에게 계획된 TC 작성을 맡긴다", () => {
+  for (const host of ["claude", "codex"] as const) {
+    const assets = hostAssets(host), prefix = host === "claude" ? ".claude" : ".agents";
+    const role = assets.get(host === "claude" ? ".claude/agents/ca-implementer.md" : ".codex/agents/ca-implementer.toml")!;
+    assert.match(role, /없으면 현재 계획 파일의 테스트도/);
+    assert.match(assets.get(`${prefix}/skills/ca-implement/SKILL.md`)!, /없으면 구현 담당이 계획된 테스트도/);
+    assert.match(assets.get(`${prefix}/skills/ca-check/SKILL.md`)!, /없으면 implementer/);
+    assert.match(assets.get(`${prefix}/skills/ca-test/SKILL.md`)!, /없으면 계획 파일만 쓰는/);
+  }
+});
+
 test("Codex 하위 에이전트 지침과 AGENTS.md 블록은 PowerShell .cmd 호출과 대화 응답 예외를 안내한다 — 스킬 사본은 블록을 늘 싣는 메인이 읽어 꼬리말이 없다", () => {
   for (const [path, text] of hostAssets("codex")) {
     if (path.startsWith(".codex/agents/")) assert.ok(text.includes(POWERSHELL_COMMAND_GUIDE), path);

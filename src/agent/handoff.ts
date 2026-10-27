@@ -4,7 +4,7 @@ import { join, posix } from "path";
 import { writeAtomic } from "../core/atomic";
 import { assetText } from "./assets";
 import { context } from "./commands";
-import { handoffDir } from "./layout";
+import { handoffDir, workDocsDir } from "./layout";
 import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
 import { loadWork } from "./work";
 import { agentName, notation } from "./hostText";
@@ -44,13 +44,16 @@ const CRITERIA: Record<string, string> = {
 
 /** context 전문을 handoff 파일로 쓴다 — 작업이 없으면(접수 중) 쓰지 않는다 */
 function writeContext(root: string): { text: string; file?: string; agent?: string } {
-  const text = context(root);
+  let text = context(root);
   const work = loadWork(root);
   if (!work) return { text };
   const { phase } = work.active;
+  const separateTests = work.stages.some(stage => stage.kind === "test");
+  if (["implement", "test"].includes(phase) && !separateTests) text +=
+    `\n\n테스트 작성: 별도 kind:test 단계가 없으므로 구현 담당이 현재 계획 파일에 있는 테스트도 작성한다. TC 명세: ${posix.join(workDocsDir(work.active.id), "07-test-spec.md")}. refactor의 기존 테스트 보호는 유지한다.\n`;
   const file = writeHandoff(root, work.active.id, "context.md", `${text}\n`);
   const agent = phase === "implement" ? (work.stage?.kind === "test" ? "ca-tester" : "ca-implementer")
-    : phase === "test" ? "ca-tester" : phase === "review" ? "ca-reviewer" : undefined;
+    : phase === "test" ? (separateTests ? "ca-tester" : "ca-implementer") : phase === "review" ? "ca-reviewer" : undefined;
   return { text, file, agent };
 }
 function handoffLines(file: string, agent?: string): string[] {

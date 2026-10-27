@@ -15,7 +15,7 @@ description: 테스트 단계(test)를 진행한다 — ⑦ 의 TC 만 쓰게 �
 ## 하는 일
 
 1. Bash: `code-agent context --file` — 이 스테이지에서 쓸 테스트 파일과 ⑦ 의 TC 를 파일로 쓰고 `전문` 경로를 출력한다.
-2. ⑦ 에 아직 코드가 없는 TC 가 남아 있으면 `ca-tester` 를 부른다 (매니페스트에 `kind: test` 단계가 있어 `implement` 에서 이미 다 썼으면 이 자리는 **실행만** 한다). Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).
+2. 구현 중 테스트를 썼으면 **실행만** 한다. 빠진 TC가 있으면 출력의 `담당`을 부른다(`kind: test`가 있으면 `ca-tester`, 없으면 계획 파일만 쓰는 `ca-implementer`). Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).
    `전문` 경로와 `07-test-spec.md` · `04-functional.md` 경로를 준다 — context 본문을 옮겨 쓰지 않는다.
    **⑦ 의 TC 를 그대로, 그것만** 쓰게 한다 — 빼지도 더하지도 않는다. 명세가 모자라 보인다는 보고가 오면 고치지 말고 그대로 사용자에게 전한다 (⑦ 은 승인에 묶여 있다).
 3. Bash: `code-agent test` — `test` 와 테스트 전략이 적은 명령을 돌리고 ⑦ 의 TC id 를 대조한다. 전체 테스트라 오래 걸릴 수 있다. Bash 도구의 timeout 을 최대(600000ms)로 주고, 그보다 긴 저장소는 백그라운드 실행(`run_in_background`) 뒤 완료 알림을 기다린다.

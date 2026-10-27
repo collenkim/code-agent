@@ -19,7 +19,7 @@ description: 코드 생성 단계(implement)를 진행한다 — 승인된 계�
 
 1. 직전 `code-agent next` 출력의 `담당`·`전문` 줄(계획 동의 적용 결과면 `contextAgent`·`contextFile`)이 이 Task 의 context 다. 없을 때만 Bash: `code-agent context --file` — 만들 파일·단계 규칙·참조 표준 코드를 파일로 쓰고 `담당`·`전문` 경로만 출력한다.
 2. `담당`(테스트 단계면 `ca-tester`, 아니면 `ca-implementer`)을 부른다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 프롬프트에는 `전문` 경로와
-   작업 폴더의 `03-design.md` · `04-functional.md` 경로(테스트 단계면 `07-test-spec.md` 도)를 준다 — context 본문을 옮겨 쓰지 않는다.
+   작업 폴더의 `03-design.md` · `04-functional.md` · `07-test-spec.md` 경로를 준다. `kind: test`가 없으면 구현 담당이 계획된 테스트도 쓴다 — context 본문을 옮겨 쓰지 않는다.
    서브에이전트는 새 컨텍스트에서 시작하므로 필요한 경로는 전부 넘긴다.
 3. **`fix` 이고 방금 끝낸 것이 테스트 단계면** Bash: `code-agent repro` — 로컬 재현이면 지금 코드에서 재현 TC 가 **실패**하는 것을 본다. 재현은 테스트 전체를 돌릴 수 있다. Bash 도구의 timeout 을 최대(600000ms)로 주고, 그보다 긴 저장소는 백그라운드 실행(`run_in_background`) 뒤 완료 알림을 기다린다.
    ⑦ 이 `방식: 로그 근거` 로 승인됐으면 수정 전 결과만 남기고 지난다.

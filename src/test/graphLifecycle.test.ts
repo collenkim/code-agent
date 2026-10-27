@@ -13,8 +13,8 @@ import { loadEvidence } from "../agent/evidence";
 import { stateView } from "../agent/stateView";
 import { useNotation } from "../agent/hostText";
 import { integrate } from "../agent/validate";
-import { requireValidatable } from "../agent/commands";
-import { ORDER, createStageRepo, removeStageRepo, repo, toCheck, toIntegrate, useManifest, FAIL_UNTIL_FIXED, write } from "./stageFixture";
+import { back, requireValidatable } from "../agent/commands";
+import { ORDER, createStageRepo, removeStageRepo, repo, toCheck, toIntegrate, useManifest, manifest, FAIL_UNTIL_FIXED, write } from "./stageFixture";
 
 beforeEach(() => createStageRepo("ca-graph-flow-"));
 afterEach(() => { useNotation("claude"); removeStageRepo(); });
@@ -27,6 +27,17 @@ test("2-9 plan 초안이 없어도 미응답 질문은 사람 판단으로 인�
   const result = await advanceFlow(repo);
   assert.equal(result.kind, "human");
   assert.equal(result.node, "decision");
+});
+
+test("3-1 전담 테스트 단계가 없으면 그래프가 구현 담당에게 TC 작성 책임을 함께 넘긴다", async () => {
+  const stages = JSON.parse(manifest()).stages.map((stage: Record<string, unknown>) => ({ ...stage, kind: "code" }));
+  useManifest({ stages }); toCheck(); back(repo, "implement");
+  const result = await advanceFlow(repo);
+  assert.equal(result.node, "implement");
+  assert.equal(result.agent, "ca-implementer");
+  const context = readFileSync(join(repo, result.contextFile!), "utf8");
+  assert.match(context, /별도 kind:test 단계가 없으므로 구현 담당이 현재 계획 파일에 있는 테스트도 작성/);
+  assert.match(context, /doc\/work\/ORD-1\/07-test-spec\.md/);
 });
 
 test("2-9 모르는 단계는 그래프 라우팅 전에 Stop으로 안내한다", async () => {
