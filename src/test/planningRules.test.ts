@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
 import { observeQuestionAnswers } from "./consentFixture";
@@ -20,7 +21,7 @@ const ID = "RULE-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`;
 const LOG = "java.lang.NullPointerException: items is null\n    at app.OrderService.place(OrderService.java:42)\n    at app.OrderController.post(OrderController.java:17)";
 let root: string;
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content);
+  writeRepoFile(root, path, content);
   if (path.endsWith("questions.md")) observeQuestionAnswers(root);
 }
 beforeEach(() => {

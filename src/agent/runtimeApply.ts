@@ -1,3 +1,4 @@
+import { readOptionalText } from "../core/text";
 /**
  * 버전 적용 — **이 프로세스의 코드**(릴리스 저장소의 릴리스, 또는 진입점의 번들)를 이 프로젝트의 적용 버전으로 만들고 그 템플릿을 반영한다.
  *
@@ -86,7 +87,7 @@ export function ownedHash(text: string): string {
 }
 
 function readText(root: string, path: string): string | undefined {
-  try { return readFileSync(join(root, path), "utf8"); } catch { return undefined; }
+  return readOptionalText(join(root, path));
 }
 
 function readManifest(root: string): TemplateManifest | undefined {

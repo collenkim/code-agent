@@ -1,3 +1,4 @@
+import { canonical as real, pathKey as fold, samePath } from "./layout";
 /**
  * Codex 실행 준비 판정 — 관리 실행이 띄울 같은 실행 파일·계정(CODEX_HOME)·작업 경로로 Codex app-server 를 띄워 묻는다.
  * 설정 파일을 직접 읽어 추정하지 않는다.
@@ -24,9 +25,9 @@
  */
 import { spawn } from "child_process";
 import { createHash, randomUUID } from "crypto";
-import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { isAbsolute, join, resolve } from "path";
+import { isAbsolute, join } from "path";
 import { Worker } from "worker_threads";
 
 import { isPackaged, packageVersion } from "./assets";
@@ -84,13 +85,6 @@ const CACHE_KEEP_MS = 7 * 24 * 3_600_000;
 const PROBE_BYTES = 1 << 20;
 
 const now = (): string => new Date().toISOString();
-const real = (path: string): string => { try { return realpathSync.native(path); } catch { return resolve(path); } };
-/** 경로 비교 꼴 — Windows 는 `\\?\` 머리·구분자·대소문자를 접는다(Codex 는 실제 경로를 그대로, 신뢰 키는 소문자로 적는다) */
-const fold = (path: string): string => {
-  const trimmed = path.replace(/^\\\\\?\\/, "").replace(/[\\/]+$/, "");
-  return process.platform === "win32" ? trimmed.replace(/\//g, "\\").toLowerCase() : trimmed;
-};
-const samePath = (value: unknown, path: string): boolean => typeof value === "string" && value !== "" && fold(real(value)) === fold(real(path));
 const camel = (event: string): string => event[0].toLowerCase() + event.slice(1);
 const HOOK_STATUS_TEXT: Record<string, string> = { untrusted: "검토 전", modified: "바뀌어 다시 검토", disabled: "꺼짐" };
 /** 모르는 요청의 RPC 오류인가 — 옛 Codex 는 없는 메서드를 `Invalid request: unknown variant` 로 답한다(0.163.0 실측). worker 도 같은 식을 쓴다 */

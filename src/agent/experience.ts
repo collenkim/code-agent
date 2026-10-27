@@ -1,3 +1,4 @@
+import { readOptionalText } from "../core/text";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
@@ -98,7 +99,7 @@ export interface ExperienceIndex {
 }
 
 function readText(path: string): string | undefined {
-  try { return existsSync(path) ? readFileSync(path, "utf8").replace(/\r\n/g, "\n") : undefined; } catch { return undefined; }
+  return readOptionalText(path, true);
 }
 
 /** 작업의 검증 증거에서 통과한 단계 — 단계마다 마지막으로 돈 회차의 실행이 전부 통과했을 때만 */

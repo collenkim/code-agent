@@ -1,21 +1,23 @@
+import { createRepo, removeRepo, repoTools, PASS } from "./repoFixture";
+export { PASS, NOT_INSTALLED } from "./repoFixture";
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+
+import { readFileSync } from "node:fs";
+
+import { join } from "node:path";
 
 import { recordDecision } from "../core/approval";
 import { next, requireValidatable } from "../agent/commands";
 import { deliver, prDocFile } from "../agent/deliver";
 import { withInteraction } from "../agent/tty";
-import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
+
 import { loadEvidence } from "../agent/evidence";
-import { decide } from "../agent/hook";
+
 import { loadActive } from "../agent/layout";
 import { openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
 import { check, integrate, runTests } from "../agent/validate";
-import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
+import { approvalDocsHash, loadWork } from "../agent/work";
 
 /**
  * 종류별 흐름 픽스처(p6 에서 꺼냈다) — fix·refactor·feature 흐름 시험(fix-flow·refactor-flow·deliver-scope)이 함께 쓴다.
@@ -28,9 +30,7 @@ import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
  * 스크립트라 통과·실패·없는 실행 파일을 이 머신에서 재현할 수 있다.
  */
 
-export const PASS = ["node", "-e", "process.exit(0)"];
 export const FAIL = ["node", "-e", "process.exit(4)"];
-export const NOT_INSTALLED = ["code-agent-does-not-exist-on-this-machine"];
 
 export const SRC = "src/main/app/order.js";
 export const REPRO_TEST = "src/test/order.test.js";
@@ -83,28 +83,7 @@ export const QUALITY_PREPARE = ["# 품질·보안 기준", "## 정적 분석", "
 
 export let repo: string;
 
-export function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
-}
-
-export function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
-
-export function hook(tool: string, input: Record<string, string>): string | undefined {
-  return decide({ cwd: repo, tool_name: tool, tool_input: input });
-}
-
-export function writeFileHook(path: string): string | undefined {
-  return hook("Write", { file_path: join(repo, path) });
-}
-
-export function confirmDocs(): void {
-  for (const entry of checkProjectDocs(repo, loadManifestIfAny(repo))) {
-    recordDocConfirmation(repo, entry, "test", { channel: "tty", verified: true, detail: "테스트" });
-  }
-}
+export const { write, git, hook, writeFileHook, confirmDocs } = repoTools(() => repo);
 
 export function approve(): void {
   const work = loadWork(repo)!;
@@ -123,10 +102,7 @@ export function approve(): void {
 }
 
 export function newRepo(prefix: string): void {
-  repo = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
-  execFileSync("git", ["init", "-q", "-b", "master"], { cwd: repo });
-  git("config", "user.name", "t");
-  git("config", "user.email", "t@t");
+  repo = createRepo(prefix);
   write("doc/architecture.md", ARCH);
   write("doc/conventions.md", CONV);
   write("doc/test-strategy.md", STRATEGY);
@@ -135,7 +111,7 @@ export function newRepo(prefix: string): void {
 }
 
 export function dropRepo(): void {
-  rmSync(repo, { recursive: true, force: true });
+  removeRepo(repo);
 }
 
 /** 승인·리뷰 관찰만 fixture로 제공하고 검증·통합·반영은 실제 코드로 끝까지 실행한다. */

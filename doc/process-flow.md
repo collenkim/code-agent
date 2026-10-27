@@ -18,6 +18,7 @@ Codex 관리 실행의 `master/codexTransport.ts`·`codexPermissions.ts`는 §4.
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `core/serialize.ts`·`core/text.ts`·`layout.ts` 공통 직렬화·읽기·경로 비교, `test/repoFixture.ts` | §9 | 승인·상태·master 해시의 기존 바이트 규약, 선택 문서의 공백·줄바꿈 처리, Windows 경로 비교, 단계·종류·동의 시험 fixture |
 | `core/fileOperations.ts`·`agent/fileOperations.ts`, 계획 `operation`·`from`, `nativeQuestionEvidence.ts`, 계획 되돌림 전달 상태 | §3.1, §4.3, §6.1, §6.4, §9 | `core/plan.ts` 두 계획 형식·경계·완료 판정·Task 소유·검증/반영 경로, `ca-analyze/criteria.md`·`ca-plan/criteria.md`, `doc/planning.md`·`doc/usage.md`, `ca-next`·`ca-status`, `runtimeSelect.STATE_SCHEMA` |
 | `interaction*.ts`, `master/control.ts`·`observe.ts`·`recovery.ts`·`nativeSession.ts`, `choiceServer.ts`, `consent.ts`·`answers.ts`의 대시보드 사람 채널 | §3.2, §4.2, §4.3, §5.4, §6.0, §8, §9 | `doc/dashboard-interactions.md` 계약·지원표, `master/protocol.ts` 명령·이벤트 ↔ `doc/master-control.md`, `ca-answer/dashboard.md`·Claude/Codex 스킬 진입 문장, `STATE_SCHEMA`, `runtimeSelect.pendingInteractionMarker` ↔ `runtimeApply.busyReasons` |
 | `branchCursor.ts`·`layout.ts`의 브랜치 진행 커서 | §3.1, §5.3, §8, §9 | `doc/usage.md`·`doc/install.md`·`doc/codex.md`·`doc/design.md`, CLI·hook의 커서 선택, 임대 경로·동의 스냅샷·버전 적용 표지·모델 변경 제한·상태 형식 세대 |
@@ -864,6 +865,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+공통 직렬화·해시는 `core/serialize.ts`를 쓴다. 승인 해시는 배열의 undefined를 null로 쓰는 기존 규약을 유지한다. 선택 문서 읽기·시각 표시는 `core/text.ts`, 실제 부모와 없는 꼬리의 경로 비교는 `layout.ts`가 맡는다. 시험의 파일 쓰기·Git·hook·임시 저장소는 `test/repoFixture.ts`를 공유하며 질문 관찰 등 시험별 동작은 호출 쪽에 둔다.
+
 빌드는 `noUnusedLocals`로 운영 코드와 시험의 미사용 선언·import를 거부한다. 외부 호출이 없는 기능·타입은 유지하지 않으며, 시험 초기화를 실행하는 fixture import는 값 사용과 별개로 보존한다.
 
 파일 작업의 공통 경로·완료 판정은 `core/fileOperations.ts`, 기준 커밋 사전 검사와 승인된 실행은 `agent/fileOperations.ts`다. 낡은 질문의 증거 대조는 읽기 전용 `nativeQuestionEvidence.ts`를 상태 요약·동기화·버전 적용 차단 판정에서 공유한다.
@@ -915,7 +918,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 미참조 코드·타입과 미사용 import를 제거하고 컴파일에서 미사용 선언을 차단한다 — `refactor(4-1)`.
+- 해시·문서 읽기·경로 비교와 시험 저장소 도우미를 공통 정의로 모으고 기존 승인 해시 규약을 보존한다 — `refactor(4-2)`.
+
+- 미참조 코드·타입과 미사용 import를 제거하고 컴파일에서 미사용 선언을 차단한다 — `d253835`.
 
 - 동의 검사 순서와 Codex hook 수를 코드에 맞추고 hook·계획 설명은 함수 이름으로 참조한다 — `d89ee55`.
 

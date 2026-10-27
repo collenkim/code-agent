@@ -1,5 +1,6 @@
+import { readOptionalText } from "../core/text";
 import { execFileSync } from "child_process";
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join, posix } from "path";
 
 import type { Manifest } from "../core/manifest";
@@ -76,14 +77,7 @@ export interface KnowledgeIndex {
   docs: { kind: KnowledgeKind; path: string; exists: boolean }[];
 }
 
-function readText(repoRoot: string, path: string): string | undefined {
-  const full = join(repoRoot, path);
-  try {
-    return existsSync(full) ? readFileSync(full, "utf-8").replace(/\r\n/g, "\n") : undefined;
-  } catch {
-    return undefined;
-  }
-}
+const readText = (root: string, path: string): string | undefined => readOptionalText(join(root, path), true);
 
 function markdownUnder(repoRoot: string, path: string): string[] {
   const full = join(repoRoot, path);

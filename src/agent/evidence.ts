@@ -1,3 +1,4 @@
+import { COUNTER_LABEL } from "./retryPolicy";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { filePaths, fileOutcomeProblems } from "../core/fileOperations";
 import { dirname, join, posix } from "path";
@@ -775,7 +776,7 @@ export const RUN_CAUSE_LABEL: Record<RunCause, string> = {
 };
 
 /** 회차를 연 원인 — ⑧ 수정 루프 줄에 붙는다 */
-const CAUSE_LABEL: Record<RoundCause, string> = { first: "첫 실행", fix: "고쳐 쓰기", collect: "수집 수정", review: "통과 뒤 변경" };
+const CAUSE_LABEL: Record<RoundCause, string> = { first: "첫 실행", fix: COUNTER_LABEL.fix, collect: COUNTER_LABEL.collect, review: "통과 뒤 변경" };
 
 function outcomeText(run: VerifyRun): string {
   // 기록 변경(guard)은 돈 실행이다 — "돌지 못함" 대신 증거로 받지 않았다고 쓴다
@@ -864,7 +865,7 @@ export function renderValidationDoc(work: Work, evidence: Evidence): string {
         `- ${round}회차${cause ? ` (${CAUSE_LABEL[cause]})` : ""}: ` +
           `${failed.length === 0 ? "전부 통과" : `실패 ${failed.map((run) => `${run.kind}(${run.outcome})`).join(", ")}`}` +
           (reruns ? ` · 같은 코드 재실행 ${reruns}회` : "") +
-          rebased.map((entry) => ` · ${entry.by === "finding" ? "⑨ 지적" : "수집 수정"}으로 바뀐 테스트 파일: ${entry.files.join(", ")}`).join(""),
+          rebased.map((entry) => ` · ${entry.by === "finding" ? "⑨ 지적" : COUNTER_LABEL.collect}으로 바뀐 테스트 파일: ${entry.files.join(", ")}`).join(""),
       );
     }
   }

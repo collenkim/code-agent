@@ -1,8 +1,8 @@
+import { sha256 as digest } from "../core/serialize";
 /** 명시적으로 지정한 Git 근거만 읽는다. 계약 재인용은 사람 답이나 승인 권한이 아니다. */
 import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import { execFileSync } from "child_process";
 import { isAbsolute, join, relative, resolve, sep } from "path";
-import { createHash } from "crypto";
 import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { STATE_DIR } from "./layout";
@@ -12,7 +12,6 @@ const LIMIT = 131072;
 // await·다음 명령으로 넘어가기 전에 버리며 stat이나 계약 내용이 바뀌면 즉시 다시 검증한다.
 const sourceMemo = new Map<string, string>();
 let clearScheduled = false;
-const digest = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const Key = z.string().regex(/^[a-z][a-z0-9.-]{0,95}$/);
 const Claim = z.object({ key: Key, text: z.string().trim().min(1).max(8000).regex(/^[^\r\n\u2028\u2029]+$/) }).strict();
 const Reference = z.object({

@@ -1,3 +1,5 @@
+import { sha256, canonicalJson } from "../../core/serialize";
+export { sha256, canonicalJson } from "../../core/serialize";
 /**
  * master 연동 통신 계약(`code-agent.master` v1) — 순수 모듈(fs·child_process 없음). 명령·응답·이벤트의 꼴과 오류 코드, 위임할 수 있는
  * 동작과 사람만 하는 동작, 시간 정책의 기본값을 한곳에 둔다. 문서는 doc/master-control.md 다.
@@ -5,7 +7,6 @@
  * - 전송은 로컬 CLI 다: `code-agent master call` 이 stdin 의 요청 한 건을 읽어 응답 한 건을 stdout 에 쓴다(서버·포트 없음).
  * - 연결(토큰)은 권한이 아니다: 승인·답 위임은 사람이 TTY 에서 따로 준 권한(grant) 범위에서만 받는다.
  */
-import { createHash } from "crypto";
 
 export const PROTOCOL = "code-agent.master";
 export const PROTOCOL_VERSION = 1;
@@ -244,17 +245,6 @@ export function parseRequest(text: string): RequestEnvelope {
   }
   return raw as unknown as RequestEnvelope;
 }
-
-/** 키 순서를 고정한 JSON — 요청 해시·판단 해시 입력 */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value as Record<string, unknown>).sort().filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-export const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** 같은 commandId 의 재전송인지 가르는 해시 — 토큰·세대는 넣지 않는다(내용이 같으면 같은 명령) */
 export function requestHash(request: RequestEnvelope): string {

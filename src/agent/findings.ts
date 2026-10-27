@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { sha256 as sha } from "../core/serialize";
 import { existsSync, readFileSync } from "fs";
 import { isAbsolute, join, posix, resolve } from "path";
 import { z } from "zod";
@@ -106,7 +106,6 @@ export interface FindingRecord {
 }
 export interface FindingsLog { version: 1; id: string; findings: FindingRecord[] }
 
-const sha = (value: string): string => createHash("sha256").update(value).digest("hex");
 const norm = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
 
 export function findingKey(work: string, draft: Pick<FindingDraft, "class" | "title" | "evidence">): string {

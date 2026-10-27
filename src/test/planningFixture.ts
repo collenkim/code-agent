@@ -1,9 +1,10 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 /** 계획 시험 공통 저장소·자료·관찰 헬퍼. 시험 파일별 프로세스에서 독립적으로 초기화한다. */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, beforeEach } from "node:test";
 import { start } from "./confirmedStart";
 import { observeQuestionAnswers } from "./consentFixture";
@@ -36,7 +37,7 @@ export const PLAN = { domainName: "Value", domainLabel: "값", domainRoot: "", d
 export let root: string, serial = 0;
 export const advance = async () => JSON.parse((await advancePlanning(root)));
 export function write(path: string, content: string): void {
-  mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content);
+  writeRepoFile(root, path, content);
   // 질문 답은 사람이 질문 도구로 고른 것으로 둔다(답 출처 게이트) — 출처 판정 자체는 answers.test 가 본다
   if (path.endsWith("questions.md")) observeQuestionAnswers(root);
 }

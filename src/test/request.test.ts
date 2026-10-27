@@ -1,6 +1,7 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -45,8 +46,7 @@ const PASS = ["node", "-e", "process.exit(0)"];
 let repo: string;
 
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
+  writeRepoFile(repo, path, content);
 }
 
 function read(path: string): string {

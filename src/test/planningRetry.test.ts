@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { start } from "./confirmedStart";
 import { observeQuestionAnswers } from "./consentFixture";
@@ -23,7 +24,7 @@ const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n출처: REQ-1\n근�
 const IMPACT = '# 영향도\n## 기존 시스템 분석\n- src/current.ts:1 에 값을 반환한다\n## 영향 범위\n| R 번호 | 닿는 파일 | 호출자 | 파급 |\n|---|---|---|---|\n| R1 | src/current.ts:1 | 없음 | 새 진입점 |\n## Risk\n- 기존 반환값 보존\n## 문서 영향\n| 문서 | 키 | 판단 | 근거 |\n|---|---|---|---|\n| - | - | 영향 없음 | 지식 항목이 없다 |\n';
 let root: string, serial = 0;
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content);
+  writeRepoFile(root, path, content);
   if (path.endsWith("questions.md")) observeQuestionAnswers(root);
 }
 const dispatch = (id: string) => JSON.parse(dispatchPlanning(root, id));

@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "crypto";
+import { sha256 as hash } from "../core/serialize";
+import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "fs";
 import { z } from "zod";
 import { errorFingerprint } from "./errorFingerprint";
@@ -12,7 +13,6 @@ import { aidlcBlock } from "./aidlc";
 import { JiraSchema, loadTriage, readTriageRecord, TRIAGE_ACTIVE, TRIAGE_DIR, triageDraft, triageFolder, triageRecordFile,
   triageSummary, TriageReportSchema, type TriageRecord, type TriageReport } from "./triageState";
 
-const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
 function save(root: string, record: TriageRecord): void {
   writeAtomic(join(root, triageRecordFile(record.id)), JSON.stringify(record, null, 2) + "\n");
 }

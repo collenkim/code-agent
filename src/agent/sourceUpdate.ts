@@ -1,7 +1,8 @@
+import { canonical, samePath } from "./layout";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { appendFileSync, existsSync, mkdirSync, realpathSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { appendFileSync, existsSync, mkdirSync } from "fs";
+import { dirname, join } from "path";
 
 import { isPackaged } from "./assets";
 import { Stop } from "./stop";
@@ -45,14 +46,6 @@ interface Audit {
   pending?: string;
   store: string;
   blocked?: string;
-}
-
-function canonical(path: string): string {
-  return realpathSync.native(resolve(path));
-}
-
-function samePath(a: string, b: string): boolean {
-  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
 function localGit(source: string, args: string[]): string | undefined {

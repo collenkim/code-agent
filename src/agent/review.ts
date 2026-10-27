@@ -1,3 +1,4 @@
+import { localClock as clock } from "../core/text";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join, posix, relative } from "path";
 
@@ -549,7 +550,6 @@ export function findingOpensFile(work: Work, path: string): boolean {
 
 // ---- 게이트 (review → integrate) ----
 
-const clock = (at: string): string => new Date(at).toTimeString().slice(0, 5);
 const REVIEWER_ORPHAN_MIN = Math.round(TIMING.reviewerOrphanMs / 60_000);
 const JUDGMENT_TAIL = " — 기록된 결과라 고칠 수 없습니다. 새 회차에서 리뷰어가 바로잡게 하거나 사용자 판단을 ca-answer 동의 judgment waive-finding 으로 기록하세요";
 
@@ -719,7 +719,7 @@ export function reviewBudgets(work: Work): ReviewBudget[] {
   // 리뷰 회차 행은 검증 예산과 같은 값이다(통과 뒤 변경으로 연 검증 회차도 센다 — reviewRoundBudget)
   const usage = reviewRoundBudget(work);
   const rows: ReviewBudget[] = [{ key: "reviewRounds", used: usage.used, limit: usage.limit, left: Math.max(0, usage.limit - usage.used),
-    exhausted: usage.used >= usage.limit, point: "리뷰 회차", scope: grantScope({ file: "review", key: "reviewRounds" }) }];
+    exhausted: usage.used >= usage.limit, point: COUNTER_LABEL.reviewRounds, scope: grantScope({ file: "review", key: "reviewRounds" }) }];
   const last = log?.rounds.at(-1);
   if (!log || !last || usage.stale) return rows;
   const planned = planPaths(work), now = Date.now(), grants = log.grants ?? [];

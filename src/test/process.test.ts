@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, test, mock } from "node:test";
 import { sourceItems, sourceTrace } from "../agent/sourceTrace";
 import { confirmDoc, docsBegin, docsEnd } from "../agent/docsCommands";
@@ -29,7 +30,7 @@ import * as tty from "../agent/tty";
 
 let repo: string;
 const presence = { channel: "tty" as const, verified: true, detail: "테스트 fixture" };
-function write(file: string, text: string) { mkdirSync(dirname(join(repo, file)), { recursive: true }); writeFileSync(join(repo, file), text); }
+function write(file: string, text: string) { writeRepoFile(repo, file, text); }
 function read(file: string) { return readFileSync(join(repo, file), "utf8"); }
 function git(...args: string[]) {
   return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "user.name=test", "-c", "user.email=test@example.invalid", ...args], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });

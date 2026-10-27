@@ -1,3 +1,4 @@
+import { localClock as clock } from "../core/text";
 import { runCrossProcess } from "./crossProcess";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { hostname, tmpdir } from "os";
@@ -301,7 +302,6 @@ function unfence(text: string): string {
   return text.trim().replace(/^```(?:\w+)?\s*\n([\s\S]*?)\n```$/, "$1").trim();
 }
 const oneLine = (text: string | undefined, max: number): string => (text ?? "").replace(/\s+/g, " ").trim().slice(0, max);
-const clock = (at: string): string => new Date(at).toTimeString().slice(0, 5);
 const WAS_STOPPED = " — 이 지점은 이전 중지 기록대로 교차 검증 없이 진행합니다(게이트는 막히지 않습니다).";
 
 /** 지점의 이름과 문장 조각 */

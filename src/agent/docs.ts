@@ -1,4 +1,5 @@
-import { createHash } from "crypto";
+import { shortHash as sha } from "../core/serialize";
+export { shortHash as sha } from "../core/serialize";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { dirname, join, posix } from "path";
 
@@ -240,9 +241,6 @@ function commandProblems(manifest: Manifest | undefined, schema: DocSchema, text
   });
 }
 
-export function sha(text: string): string {
-  return `sha256:${createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 16)}`;
-}
 
 /** 줄바꿈은 해시에 넣지 않는다 — Windows 의 autocrlf 가 내용을 바꾸지 않았는데 확정을 무효로 만들면 안 된다 */
 function hashFiles(repoRoot: string, files: string[]): string {

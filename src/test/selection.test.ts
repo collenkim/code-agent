@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { assetKeys, assetText, CLAUDE_ASSETS, installedPath } from "../agent/assets";
 import { init } from "../agent/init";
@@ -15,8 +16,7 @@ import { recommendSetup, setupProject } from "../agent/setup";
 
 let repo: string;
 function write(file: string, value: string) {
-  mkdirSync(dirname(join(repo, file)), { recursive: true });
-  writeFileSync(join(repo, file), value);
+  writeRepoFile(repo, file, value);
 }
 beforeEach(() => {
   repo = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-selection-")));

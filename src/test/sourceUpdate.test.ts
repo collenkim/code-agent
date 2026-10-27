@@ -1,3 +1,4 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 /**
  * 새 버전 설치(릴리스 저장소) — Git 소스의 upstream 커밋을 **실행 중인 설치 폴더를 건드리지 않고** 별도 폴더에 설치·검증·등록하고,
  * 그 릴리스의 CLI 가 스스로 적용하게 한다. Git·빌드·자식 실행은 실제이고 의존성 설치만 바꿔 끼운다.
@@ -5,9 +6,9 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { installGitRelease, listReleases, lockStore } from "../agent/releaseStore";
@@ -27,8 +28,7 @@ let savedHome: string | undefined;
 let savedCaller: Record<string, string | undefined>;
 
 function write(base: string, file: string, value: string): void {
-  mkdirSync(dirname(join(base, file)), { recursive: true });
-  writeFileSync(join(base, file), value);
+  writeRepoFile(base, file, value);
 }
 
 function git(cwd: string, ...args: string[]): string {

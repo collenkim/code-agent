@@ -1,9 +1,10 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { Module } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { assetKeys, assetText, CLAUDE_ASSETS, installedPath, isPackaged, packageVersion } from "../agent/assets";
@@ -37,8 +38,7 @@ let repo: string;
 const CLI = join(__dirname, "..", "agent", "cli.js");
 
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
+  writeRepoFile(repo, path, content);
 }
 
 function read(path: string): string {

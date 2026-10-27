@@ -1,7 +1,8 @@
+import { canonical as canonicalRoot, samePath } from "./layout";
 import { readJson } from "./stateJson";
 import { execFileSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, type Stats } from "fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, type Stats } from "fs";
 import { hostname } from "os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { isDeepStrictEqual } from "util";
@@ -105,7 +106,6 @@ const CHANGE = "수정 요청";
 const DEFER = "보류";
 const APPLY = "적용";
 const KEEP = "유지";
-export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
 /**
  * 동의 스냅샷에서 빼는 code-agent 자체 기록 — hook·CLI 가 응답을 기다리는 동안에도 쓴다(모두 gitignore 대상).
  * 동의 기록·티켓·색인·캐시(consents), 단계 이동·검증·플러그인 로그와 Codex 미판정 도구 기록(log), 작업 임대(lease.json*).
@@ -116,16 +116,6 @@ export const TITLES: Record<Action["action"], string> = CONSENT_TITLES;
 const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`, `${STATE_DIR}/interactions`,
   `${STATE_DIR}/runtime.lock`, `${STATE_DIR}/runtime.lock.reclaim`];
 
-function canonicalRoot(root: string): string {
-  return realpathSync.native(resolve(root));
-}
-function pathKey(path: string): string {
-  const key = resolve(path).replace(/\\/g, "/");
-  return process.platform === "win32" ? key.toLowerCase() : key;
-}
-function samePath(a: string, b: string): boolean {
-  return pathKey(canonicalRoot(a)) === pathKey(canonicalRoot(b));
-}
 function statIfPresent(path: string): Stats | undefined {
   try { return lstatSync(path); }
   catch (error) {
@@ -485,7 +475,7 @@ function preview(root: string, action: Action): { confirmations: Prompt[]; choic
       break;
     }
   }
-  summary = [TITLES[action.action], ...(reject ? [`반려 사유: ${action.comment ?? ""}`] : []), summary, ...confirmations.map(c => c.shown)].filter(Boolean).join("\n\n");
+  summary = [CONSENT_TITLES[action.action], ...(reject ? [`반려 사유: ${action.comment ?? ""}`] : []), summary, ...confirmations.map(c => c.shown)].filter(Boolean).join("\n\n");
   if (!confirmations.length && !starting && ["docs", "setup", "baseline", "request"].includes(action.action)) summary += "\n현재 내용은 이미 처리되어 추가 변경이 없습니다.";
   return { confirmations, choices, summary };
 }
@@ -596,7 +586,7 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
       ...(action.action === "update" ? {sourceSnapshot:sourceUpdateSnapshot(root)} : {})};
     save(root,record);
     const warning = repeated
-      ? `같은 동작(${TITLES[action.action]})의 확인이 연속 2회 대상 변경으로 폐기됐습니다 — 외부 hook·편집기·백그라운드 빌드가 확인 대상(${(repeated.detail ?? "").replace(/^확인 대상 변경:\s*/, "") || "기록 없음"})을 바꾸고 있는지 사용자에게 확인받으세요. 원인을 두고 같은 동의를 반복해서 준비하지 않습니다.`
+      ? `같은 동작(${CONSENT_TITLES[action.action]})의 확인이 연속 2회 대상 변경으로 폐기됐습니다 — 외부 hook·편집기·백그라운드 빌드가 확인 대상(${(repeated.detail ?? "").replace(/^확인 대상 변경:\s*/, "") || "기록 없음"})을 바꾸고 있는지 사용자에게 확인받으세요. 원인을 두고 같은 동의를 반복해서 준비하지 않습니다.`
       : undefined;
     return consentStatus(root,record.id,{ warning });
   });
@@ -979,7 +969,7 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
   const action=record.action;
   const pluginPreview = action.action === "plugin-add" ? previewPluginAdd(root, action) : action.action === "plugin-remove" ? previewPluginRemove(action.name) : undefined;
   if (pluginPreview !== undefined) {
-    if (record.summary !== `${TITLES[action.action]}\n\n${pluginPreview}`) {
+    if (record.summary !== `${CONSENT_TITLES[action.action]}\n\n${pluginPreview}`) {
       discard(root, record, "target", "확인 대상 변경: 플러그인 설명");
       throw new Stop("플러그인 설명이 바뀌었습니다. 다시 확인하세요.");
     }

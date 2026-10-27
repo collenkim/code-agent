@@ -1,3 +1,4 @@
+import { samePath } from "./layout";
 import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "path";
@@ -102,19 +103,6 @@ export function npmCli(path: string): string | undefined {
   return isAbsolute(raw) ? raw : resolve(dirname(path), raw);
 }
 
-/** Windows 는 구분자도 대소문자도 흔들린다 */
-function samePath(a: string, b: string): boolean {
-  const fold = (path: string) => {
-    let real = path;
-    try {
-      real = realpathSync.native(path);
-    } catch {
-      // 없는 경로는 문자열로 견준다
-    }
-    return process.platform === "win32" ? real.replace(/\\/g, "/").toLowerCase() : real;
-  };
-  return fold(a) === fold(b);
-}
 
 /** hook 명령이 지금 이 PC 에서 풀리는지 — 안 풀리면 이유 */
 function hookProblem(command: string, onPath: string | undefined): string | undefined {

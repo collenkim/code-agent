@@ -1,3 +1,4 @@
+import { shortDigest as sha16 } from "../core/serialize";
 import { loadRequestSession } from "./requestSession";
 /**
  * 업무 질문의 답 관찰(CON-6) — `.code-agent/work/<ID>/answers.jsonl`.
@@ -11,7 +12,6 @@ import { loadRequestSession } from "./requestSession";
  * hook 이 읽으므로 consent.ts·request.ts 를 import 하지 않는다.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
-import { createHash } from "crypto";
 import { dirname, join } from "path";
 
 import { findRepoRoot, loadActive, questionsFile, STATE_DIR } from "./layout";
@@ -44,7 +44,6 @@ interface QuestionHookInput {
   tool_response?: unknown;
 }
 
-const sha16 = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 

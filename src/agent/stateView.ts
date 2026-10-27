@@ -1,5 +1,5 @@
+import { sha256 as sha, canonicalJson as canonical } from "../core/serialize";
 import { execFileSync } from "child_process";
-import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { join, relative } from "path";
 
@@ -103,19 +103,8 @@ function git(repoRoot: string, args: string[]): string | undefined {
   }
 }
 
-const sha = (value: string): string => createHash("sha256").update(value).digest("hex");
 const rel = (repoRoot: string, path: string): string => relative(repoRoot, path).replace(/\\/g, "/");
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error)).split("\n")[0].slice(0, 300);
-
-/** 키 순서를 고정한 JSON — 해시 입력 */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value as Record<string, unknown>).sort().filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 function repoFacts(repoRoot: string): StateJson["repo"] {
   const head = git(repoRoot, ["rev-parse", "--verify", "-q", "HEAD"])?.trim() || null;

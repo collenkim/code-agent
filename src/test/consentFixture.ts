@@ -1,7 +1,9 @@
+import { writeFixture, gitFixture } from "./repoFixture";
+export { writeFixture, gitFixture } from "./repoFixture";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { applyConsent, codexReplyCode, consentStatus, loadConsent, observeConsent, prepareConsent } from "../agent/consent";
@@ -34,14 +36,6 @@ export interface PreparedConsentFixture {
   toolUseId: string;
 }
 
-export function writeFixture(root: string, file: string, text: string): void {
-  mkdirSync(dirname(join(root, file)), { recursive: true });
-  writeFileSync(join(root, file), text);
-}
-
-export function gitFixture(root: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
-}
 
 /** Only creates an isolated project; no confirmation records are seeded. */
 export function setupConsentProject(root: string): void {

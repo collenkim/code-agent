@@ -1,7 +1,8 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { aidlcBlock, aidlcWarning } from "../agent/aidlc";
 import { pendingBaselineFiles } from "../agent/bootstrap";
@@ -19,7 +20,7 @@ let root: string;
 // doctor 는 Codex 준비를 지금 묻는다 — 실제 Codex·사용자 CODEX_HOME 대신 신뢰하지 않은 새 프로젝트의 응답으로 답한다
 let probe: { restore(): void };
 const SPACE = "aidlc/spaces/default/intents";
-function write(file: string, text: string): void { mkdirSync(dirname(join(root, file)), { recursive: true }); writeFileSync(join(root, file), text); }
+function write(file: string, text: string): void { writeRepoFile(root, file, text); }
 function intent(record: string, state: string, registry?: string): void {
   write(`${SPACE}/${record}/aidlc-state.md`, `# 상태\n- **Status**: ${state}\n`);
   if (registry) write(`${SPACE}/intents.json`, JSON.stringify([{ uuid: "u", slug: record, dirName: record, status: registry }]));

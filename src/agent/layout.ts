@@ -161,6 +161,20 @@ export function canonical(path: string): string {
   return join(realpathSync.native(head), ...rest);
 }
 
+/** 비교용 경로 꼴 — Windows의 긴 경로 머리·구분자·대소문자를 한 곳에서 접는다. */
+export function pathKey(path: string): string {
+  const full = resolve(path);
+  return process.platform === "win32"
+    ? full.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase()
+    : full;
+}
+/** 없는 꼬리는 실제 부모에 이어 비교한다. 접근 자체가 불가능한 경로는 같다고 판정하지 않는다. */
+export function samePath(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || !a || typeof b !== "string" || !b) return false;
+  try { return pathKey(canonical(resolve(a))) === pathKey(canonical(resolve(b))); }
+  catch { return false; }
+}
+
 /** IPv6 주소의 비교용 꼴 — 영역(`%n`)을 떼고 URL 정규화로 줄인다(`0::1` → `::1`). IPv6 가 아니면 소문자 그대로 */
 function ipv6Key(address: string): string {
   const bare = address.replace(/^\[|\]$/g, "").replace(/%.*$/, "");

@@ -1,3 +1,4 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 /**
  * 작업 경험 기록(experience.ts·experienceCommands.ts) — 확정 정책과 따로 세는 선택 기록.
  *
@@ -6,9 +7,9 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { codexHook } from "../agent/codexHook";
@@ -25,8 +26,7 @@ import * as stage from "./stageFixture";
 let repo: string;
 
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
+  writeRepoFile(repo, path, content);
 }
 function git(...args: string[]): string {
   return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();

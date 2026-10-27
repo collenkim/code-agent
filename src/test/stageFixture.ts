@@ -1,33 +1,33 @@
+import { createRepo, removeRepo, repoTools, PASS } from "./repoFixture";
+export { PASS, NOT_INSTALLED } from "./repoFixture";
 /**
  * 스테이지 흐름 픽스처 — 임시 git 저장소(주문 도메인 ORD-1, 단계 entity·repository·test)와 스테이지마다 세우는 헬퍼.
  * 검증·리뷰·통합·반영·스테이지 명령 시험(verification-flow·verification-stages·review-gate·integrate-deliver·stage-commands, 옛 p5)과 stageFlow.test 가 함께 쓴다. `repo` 는 createStageRepo 가 정하는 지금 테스트의 저장소다.
  */
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+
+import { readFileSync, writeFileSync } from "node:fs";
+
+import { join } from "node:path";
 
 import { recordDecision } from "../core/approval";
 import { next, requireValidatable, submitPlan } from "../agent/commands";
 import { start } from "./confirmedStart";
 import { prDocFile } from "../agent/deliver";
-import { decide } from "../agent/hook";
+
 import { loadActive } from "../agent/layout";
 import { openRound, reviewDocFile } from "../agent/review";
 import { recordReviewFixture } from "./reviewFixture";
 import { check, integrate, runTests } from "../agent/validate";
-import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
-import { approvalDocsHash, loadManifestIfAny, loadWork } from "../agent/work";
+
+import { approvalDocsHash, loadWork } from "../agent/work";
 
 export const APP = "src/main/java/com/acme/app/application";
 export const ORDER = `${APP}/order`;
 export const TEST_FILE = "src/test/java/com/acme/app/application/order/OrderTest.java";
 
 /** 통과하는 명령 · 실패하는 명령 · 아예 없는 실행 파일 */
-export const PASS = ["node", "-e", "process.exit(0)"];
 export const FAIL = ["node", "-e", "process.exit(3)"];
-export const NOT_INSTALLED = ["code-agent-does-not-exist-on-this-machine"];
 /** ⑦ 의 TC id 를 출력에 그대로 낸다 — 코드가 출력에서 읽는 갈래 */
 export const PRINT_CASES = ["node", "-e", "console.log('ok 1 - TC-1'); console.log('ok 2 - TC-2')"];
 /** Order.java 에 `fixed` 가 들어가기 전에는 실패한다 — 수정 루프를 실제로 한 바퀴 돌리는 갈래 */
@@ -136,28 +136,7 @@ export const TEST_SPEC = [
 
 export let repo: string;
 
-export function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
-}
-
-export function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
-
-export function hook(tool: string, input: Record<string, string>): string | undefined {
-  return decide({ cwd: repo, tool_name: tool, tool_input: input });
-}
-
-export function writeFileHook(path: string): string | undefined {
-  return hook("Write", { file_path: join(repo, path) });
-}
-
-export function confirmDocs(): void {
-  for (const check_ of checkProjectDocs(repo, loadManifestIfAny(repo))) {
-    recordDocConfirmation(repo, check_, "test", { channel: "tty", verified: true, detail: "테스트" });
-  }
-}
+export const { write, git, hook, writeFileHook, confirmDocs } = repoTools(() => repo);
 
 export function approve(): void {
   const work = loadWork(repo)!;
@@ -272,11 +251,7 @@ export function writePr(): void {
 
 /** 저장소를 만든다 — beforeEach 에서 부른다 */
 export function createStageRepo(prefix = "ca-p5-"): void {
-  repo = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
-  execFileSync("git", ["init", "-q", "-b", "master"], { cwd: repo });
-  // deliver 의 커밋은 -c 없이 저장소 설정으로 돈다 — 실제 사용과 같은 경로를 밟게 여기서 심는다
-  git("config", "user.name", "t");
-  git("config", "user.email", "t@t");
+  repo = createRepo(prefix);
   write("code-agent.json", manifest());
   write("doc/architecture.md", ARCH);
   write("doc/conventions.md", CONV);
@@ -291,5 +266,5 @@ export function createStageRepo(prefix = "ca-p5-"): void {
 
 /** 저장소를 지운다 — afterEach 에서 부른다 */
 export function removeStageRepo(): void {
-  rmSync(repo, { recursive: true, force: true });
+  removeRepo(repo);
 }

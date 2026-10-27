@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, mock, test } from "node:test";
 import { pendingBaselineFiles, setupBaseline } from "../agent/bootstrap";
 import { confirmDoc, docsBegin, docsEnd } from "../agent/docsCommands";
@@ -16,7 +17,7 @@ import { start } from "./confirmedStart";
 
 let root: string;
 function git(...args: string[]): string { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim(); }
-function write(file: string, text: string): void { mkdirSync(dirname(join(root, file)), { recursive: true }); writeFileSync(join(root, file), text); }
+function write(file: string, text: string): void { writeRepoFile(root, file, text); }
 const spec = "doc/work/ADOPT-1/requirement.md";
 beforeEach(() => {
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-adoption-")));

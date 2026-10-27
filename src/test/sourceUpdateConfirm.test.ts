@@ -1,8 +1,9 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { CODEX_MARKERS } from "../agent/crossEnv";
@@ -14,8 +15,7 @@ import { withInteraction } from "../agent/tty";
 let root: string, remote: string, seed: string, source: string, target: string;
 let savedEnv: Record<string, string | undefined>;
 function write(base: string, file: string, value: string): void {
-  mkdirSync(dirname(join(base, file)), { recursive: true });
-  writeFileSync(join(base, file), value);
+  writeRepoFile(base, file, value);
 }
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"],

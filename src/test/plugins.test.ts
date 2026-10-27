@@ -1,3 +1,4 @@
+import { writeFixture as writeRepoFile } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -51,8 +52,7 @@ let homeBefore: string | undefined;
 // ---- 저장소·스토어 ----
 
 function write(path: string, content: string): void {
-  mkdirSync(dirname(join(repo, path)), { recursive: true });
-  writeFileSync(join(repo, path), content);
+  writeRepoFile(repo, path, content);
 }
 
 function git(...args: string[]): string {

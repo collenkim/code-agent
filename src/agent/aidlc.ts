@@ -1,3 +1,4 @@
+import { readTrimmedText as readText } from "../core/text";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -25,14 +26,6 @@ interface Intent {
 function readStatus(file: string): string {
   try {
     return /\*\*Status\*\*:\s*([^\r\n]+)/.exec(readFileSync(file, "utf8"))?.[1].trim() ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function readText(file: string): string {
-  try {
-    return readFileSync(file, "utf8").trim();
   } catch {
     return "";
   }

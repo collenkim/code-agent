@@ -1,3 +1,4 @@
+import { shortHash as sha, approvalJson as canonical } from "./serialize";
 /**
  * 사람이 판정하는 게이트 — 계획 승인.
  *
@@ -16,7 +17,6 @@
  *
  * 규격은 doc/requirement.md 의 "승인 기록" 절에 있다.
  */
-import { createHash } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
@@ -151,24 +151,6 @@ export class LedgerTamperError extends Error {
 }
 
 // ---- 해시 ----
-
-function sha(text: string): string {
-  return `sha256:${createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 16)}`;
-}
-
-/** 키 순서가 바뀌었다고 승인이 무효가 되면 안 된다 — 정렬해서 담는다. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonical).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : 1));
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`;
-  }
-  return JSON.stringify(value ?? null);
-}
 
 /**
  * 지시서 해시. 이것이 바뀌면 그 지시서의 **모든** 승인이 무효다 —
