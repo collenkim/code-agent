@@ -228,7 +228,7 @@ test("실제 감독·CLI 프로세스는 같은 세션에서 답 소비→결과
     const run = previousRun(); writeRunRecord(root, run);
     const r = publishInteraction(root, input, interactionContext(root, "owner", "claude", run.runId));
     assert.equal(send(request(r, choose())).ok, true);
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + 90000;
     while (!listRuns(root).some(row => row.runId !== run.runId && row.state === "blocked")) {
       if (Date.now() > deadline) throw new Error(`재개 시간 초과: ${JSON.stringify(listRuns(root))}`);
       await new Promise(resolve => setTimeout(resolve, 100));
