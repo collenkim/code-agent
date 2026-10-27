@@ -13,6 +13,7 @@ import { errorLogProblems } from "../core/workOrder";
 import type { Manifest, StageDef } from "../core/manifest";
 import { formatPlan, planFormatFor, planTasks, sequenceProblems } from "../core/plan";
 import { planningProblems, requiredOutputs } from "./planningState";
+import { withPlanningBack } from "./planning";
 import { formatPlanIssues, planningDocumentProblems, planRuleProblems, planShapeProblems, reviewedPlanProblems } from "./planningValidation";
 import { writeAtomic } from "../core/atomic";
 import { checkProjectDocs, docsReady, formatDocChecks } from "./docs";
@@ -1104,7 +1105,8 @@ export function back(repoRoot: string, to: string): string {
   }
   // implement 로 되감으면 계획의 첫 단계부터 — 단계 키가 비면 hook 이 지금 단계를 찾지 못해 쓰기를 전부 막는다
   const stage = target === "implement" ? plannedStages(work)[0]?.key : undefined;
-  saveActive(repoRoot, { ...active, phase: target, stage, task: target === "implement" ? work.plan?.tasks?.[0]?.id : undefined }, "back");
+  withPlanningBack(work, target, () => saveActive(repoRoot,
+    { ...active, phase: target, stage, task: target === "implement" ? work.plan?.tasks?.[0]?.id : undefined }, "back"));
   return (
     `커서를 ${PHASE_LABEL[active.phase]}(${active.phase}) 에서 ${PHASE_LABEL[target]}(${target}) 로 되감았습니다.\n` +
     backNotes(target, active.phase)

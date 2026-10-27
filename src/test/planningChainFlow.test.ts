@@ -135,8 +135,8 @@ test("C7 실제 출력 — 되감기(rewind-required)는 rewind.phase·command·
   const first = await chainedWithoutGate("rewind-required");
   assert.match(first.next, /^앞 단계\(impact\) 계획 작업이 지금 입력과 맞지 않는다 — code-agent back impact 를 실행하고\(같은 사유의 첫 자동 되감기라 사용자 지시 없이 한다\) ca-impact 절차로 잇는다$/);
   const again = await chainedWithoutGate("rewind-required");
-  assert.equal(again.rewind.auto, false);
-  assert.match(again.next, /^앞 단계\(impact\) 계획 작업이 같은 사유로 다시 낡았다 — 자동으로 되감지 않는다\. rewind\.reason 과 rewind\.tasks\[\]\.staleBecause/);
+  assert.equal(again.rewind.auto, true);
+  assert.equal(again.next, first.next);
   assert.equal(loadActive(root)!.phase, "design");
 });
 

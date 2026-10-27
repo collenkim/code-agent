@@ -464,6 +464,16 @@ export function repairPlanning(root: string, id: string): string {
 
 // ---- 앞 단계가 낡았을 때 — 되감기 ----
 
+/** 실제 커서 이동이 성공한 back만 같은 사유의 자동 허용을 소비한다. 안내 조회는 기록하지 않는다. */
+export function withPlanningBack(work: Work, to: string, move: () => void): void {
+  if (!work.active.planningVersion || !(PLANNING_PHASES as readonly string[]).includes(work.active.phase)
+      || !(PLANNING_PHASES as readonly string[]).includes(to)) { move(); return; }
+  mutatePlanning(work, state => {
+    rewindOf(work, state, to);
+    move(); // 실패하면 mutatePlanning이 변경한 retry를 저장하지 않는다.
+  });
+}
+
 interface Rewind {
   phase: string; command: string; auto: boolean; reason: string; notice?: string;
   tasks: { id: string; role: string; phase: string; staleBecause: string[] }[];
@@ -473,7 +483,7 @@ interface Rewind {
  * 스킬은 이때만 사용자 지시 없이 되감는다. 두 번째부터는 사람에게 보고한다. 넓은 되감기(analysis 까지 또는
  * 기준 커밋·code-agent.json·호스트 지침 변경)는 notice 한 줄을 먼저 알린다. 거짓 되감기를 막으려 메모 없이 다시 계산해 확정한다.
  */
-function rewindOf(work: Work, state: PlanningState): Rewind | undefined {
+function rewindOf(work: Work, state: PlanningState, consumeTo?: string): Rewind | undefined {
   const order: readonly string[] = PLANNING_PHASES, current = order.indexOf(work.active.phase);
   const earlierStale = () => state.tasks.filter(record => order.indexOf(ROLE_PHASE[record.task.role]) < current && !taskCurrent(work, state, record));
   let stale = earlierStale();
@@ -489,7 +499,7 @@ function rewindOf(work: Work, state: PlanningState): Rewind | undefined {
   const global = all.some(cause => cause.kind === "base" || cause.kind === "manifest" || cause.kind === "host");
   const rerun = state.tasks.filter(record => order.indexOf(ROLE_PHASE[record.task.role]) >= order.indexOf(phase)).map(record => record.task.id);
   const summary = [...all].sort((a, b) => STALE_PRIORITY.indexOf(a.kind) - STALE_PRIORITY.indexOf(b.kind))[0]?.text ?? "입력이 바뀌었습니다";
-  if (!repeated) state.retry!.rewinds = [...(state.retry!.rewinds ?? []), { at: new Date().toISOString(), phase, key }].slice(-20);
+  if (!repeated && consumeTo === phase) state.retry!.rewinds = [...(state.retry!.rewinds ?? []), { at: new Date().toISOString(), phase, key }].slice(-20);
   return {
     phase, command: `code-agent back ${phase}`, auto: !repeated,
     reason: repeated

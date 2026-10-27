@@ -433,7 +433,7 @@ Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 �
 
 **결과·계획 사전 점검** — 단일 `결과: <resultFile>` 줄 앞뒤의 설명은 허용한다. 복수 포인터는 거부하며 경로·소유권·스키마·입력 해시·크기 검사는 그대로다. 판단·질문·지적은 결과 JSON에 기록한다. `submitChecklist`는 각 Task의 R → AC → 실행 가능한 TC 연결과 기능 단언·절차 구분을 안내한다. `testSpecProblems`는 AC 없는 TC와 명백한 전체 테스트 통과 자기참조 TC를 거부하고, `planRuleProblems`의 작업별 AC 검사는 완료 hook과 제출에서 같은 함수를 쓴다.
 
-`advancePlanning`은 `graph/planning.ts`의 준비 → 작업 선택 → 개별 배정 → 판정 → 대기 그래프를 실행한다. 각 배정은 최신 계획을 파일 잠금 안에서 다시 검사한다. 자동 되감기 허용은 준비 노드에서 한 번만 소비한다. 배정 이후 중단되면 다음 호출이 기록된 배정을 관찰하므로 같은 효과 노드를 체크포인트에서 재생하지 않는다.
+`advancePlanning`은 `graph/planning.ts`의 준비 → 작업 선택 → 개별 배정 → 판정 → 대기 그래프를 실행한다. 각 배정은 최신 계획을 파일 잠금 안에서 다시 검사한다. 자동 되감기 허용은 준비 노드에서 조회하고, 같은 대상의 실제 `back` 커서 이동이 성공할 때 계획 잠금 안에서 소비한다. 배정 이후 중단되면 다음 호출이 기록된 배정을 관찰하므로 같은 효과 노드를 체크포인트에서 재생하지 않는다.
 
 | 역할 | 단계 | 담당(Claude / Codex) | 출력 | 선행(dependsOn) |
 |---|---|---|---|---|
@@ -451,7 +451,7 @@ Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 �
 1. 계획 단계가 아니면 거부한다. 잠금 밖에서 모든 작업의 current 판정을 한 번 돌려 메모를 채운 뒤(411), 전체 처리를 `<target>.planning.json.lock` 잠금 안에서 한다(`mutatePlanning` 48-64). 잠금은 공통 `acquireLock`(`lock.ts`, `ageReclaim`)이다 — 주인 `{pid, host, at, started?, nonce}`를 적고, 같은 PC의 죽은 주인과 주인 기록 없는 오래된 잠금은 같은 호출에서 회수한다(stderr 한 줄). 살아 있는 주인은 CLI 2초·hook 10초(`TIMING`) 기다린 뒤 "같은 명령을 한 번만 다시 실행" Stop, 다른 PC·주인 불명은 곧바로 사람에게 넘기는 Stop이다(문구에 잠금의 저장소 상대 경로). 잠금 안에서 처음 쓸 때 `retry.since`를 기록한다(58).
 2. 이 단계의 기본 작업 중 빠진 것만 등록한다(`defaults` 73-97, `prepareState` 102-141). 새로 만드는 analysis·design 작업은 존재하는 업무 규칙 KNOWLEDGE(`businessRuleFiles` `planningState.ts:500-511`)를 inputs에 넣는다. 이미 있는 작업은 그대로다. 새 작업은 `contextVersion` 4 다 — analysis·design 의 공통 POLICY 입력은 아키텍처·컨벤션뿐이다(3부터. explore·synthesis 와 같다. 테스트 전략·품질 기준은 plan·critic 이 읽는다 — `inputFiles` `planningState.ts:273-294`). 그래서 두 문서를 고쳐도 analysis·design 결과는 낡지 않는다. 4 는 지침·context 가 읽으라고 주는 파일도 입력에 넣는다(`supportFiles` 247-267): design·plan·critic 의 참조 표준 파일, critic 의 계획 `files`가 가리키는 기존 파일, refactor plan·critic 의 TC id 가 있는 기존 테스트 — 담당이 인용할 수 있고, 바뀌면 결과가 낡는다. 저장소 밖·`.code-agent`·`doc/work`·`..` 경로와 없는 파일은 넣지 않는다. 버전은 작업 정의에 남으므로 진행 중이던 작업(3 이하)의 입력 해시는 그대로다.
 3. 고아 정리(`sweepOrphans` 163-175) — 마지막 시도가 running인 모든 작업을 `orphanState`(§6.4, 관찰 정보는 `runView` `planningState.ts:366-388`)로 판정한다. 연결된 담당이 모두 끝났는데 running이면 확실한 고아라 `orphaned`(`failure.class: dispatch-orphan`)로 표시하고 같은 호출에서 다시 배정한다. 시작이 관찰되지 않은 채(배정 시각과 그 뒤 관찰된 마지막 담당 시작·종료 중 늦은 시각부터) 또는 시작이 관찰된 채 기한이 지나면 의심 고아(`stale`)다. 이 정리는 동시 한도보다 먼저다.
-4. 되감기 판정(`rewindOf` 349-374) — 앞 단계 작업 중 current가 아닌 것이 있으면 메모를 모두 버리고 다시 계산해 확정한 뒤, 배정 없이 `rewind`를 낸다. `phase`는 가장 앞 단계, `command`는 `code-agent back <단계>`, `tasks[].staleBecause`는 `staleCauses`(`planningState.ts:398-434`)의 항목별 이유(입력 파일·질문과 출처·선행 결과·기준 커밋·code-agent.json·호스트 지침·출력 문서)다. 같은 사유 키(단계 + 작업별 낡은 원인)의 첫 회만 `auto:true`이고 `retry.rewinds`(최근 20개)에 남긴다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `notice`를 붙인다.
+4. 되감기 판정(`rewindOf` 349-374) — 앞 단계 작업 중 current가 아닌 것이 있으면 메모를 모두 버리고 다시 계산해 확정한 뒤, 배정 없이 `rewind`를 낸다. `phase`는 가장 앞 단계, `command`는 `code-agent back <단계>`, `tasks[].staleBecause`는 `staleCauses`(`planningState.ts:398-434`)의 항목별 이유(입력 파일·질문과 출처·선행 결과·기준 커밋·code-agent.json·호스트 지침·출력 문서)다. 같은 사유 키(단계 + 작업별 낡은 원인)로 아직 되감지 않았으면 `auto:true`다. 안내 반복 조회와 거부된 `back`은 허용을 소비하지 않으며, 해당 대상으로 실제 되감은 때 `retry.rewinds`(최근 20개)에 남긴다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `notice`를 붙인다.
 5. 이 단계 작업마다 다음 순서로 판정한다(429-468).
    - 현재 결과가 유효하면(`taskCurrent`, `planningState.ts:330-337`) `reused`.
    - 실행 중이면 3의 판정대로 `stale`(의심 고아) 또는 `waiting`.
@@ -907,7 +907,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- PC별 Codex 선택 UI 설정을 무시 목록에 넣고 모든 준비 커밋에서 제외한다 — `fix(2-6)`.
+- 계획 되감기의 자동 허용은 안내 조회 대신 실제 커서 이동이 성공할 때 소비한다 — `fix(2-9)`.
+
+- PC별 Codex 선택 UI 설정을 무시 목록에 넣고 모든 준비 커밋에서 제외한다 — `d6ce32e`.
 
 - 재질문·손상 상태 안내의 시험 기대값과 대시보드 시험의 모의 프로세스 격리·종료 정리를 맞춘다 — `e2ac4a7`.
 

@@ -50,7 +50,7 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 우선순위는 표의 위에서 아래다(`rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`). `running`(실행 중 배정의 담당 시작 관찰 여부·배정 뒤 경과 분), `orphaned`(이번 호출이 고아로 표시한 배정), `stale`·`cancel`, `rewind`, `feedback`은 해당할 때만 실린다.
 
-**되감기** — 앞 단계 작업이 낡은 이유는 `rewind.tasks[].staleBecause`(입력 파일·질문·선행 결과·기준 커밋·code-agent.json·호스트 지침 등 항목별)로 보인다. 자동 되감기는 같은 사유(단계와 작업별 낡은 원인)에 한 번이다. 기록은 `planning.json`의 `retry.rewinds`(최근 20개)에 남고 승인 묶음 밖이다. 두 번째부터는 `auto:false`로 사람에게 넘긴다 — 계속 바뀌는 입력이 앞 단계를 반복해 돌리는 일을 막는다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `rewind.notice`가 다시 도는 작업 수를 한 줄로 알린다. 되감기는 커서만 옮기고 지우는 것이 없으며, 다시 `next`로 모든 게이트를 지난다.
+**되감기** — 앞 단계 작업이 낡은 이유는 `rewind.tasks[].staleBecause`(입력 파일·질문·선행 결과·기준 커밋·code-agent.json·호스트 지침 등 항목별)로 보인다. 자동 되감기는 같은 사유(단계와 작업별 낡은 원인)에 한 번이다. 안내를 반복 조회하거나 `back`이 거부되어도 허용은 남고, 해당 대상으로 실제 커서를 옮길 때 소비한다. 기록은 `planning.json`의 `retry.rewinds`(최근 20개)에 남고 승인 묶음 밖이다. 두 번째부터는 `auto:false`로 사람에게 넘긴다 — 계속 바뀌는 입력이 앞 단계를 반복해 돌리는 일을 막는다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `rewind.notice`가 다시 도는 작업 수를 한 줄로 알린다. 되감기는 커서만 옮기고 지우는 것이 없으며, 다시 `next`로 모든 게이트를 지난다.
 
 **차단 지적** — `feedback[]`은 이 단계 이하 작업과 현재 critic의 교차 검토가 낸 차단 지적이다. `citedTask`·`citedPhase`는 지적의 근거 문서를 낸 작업일 뿐 원인이 아니다(예: AC→TC 공백은 04를 인용해도 고칠 곳은 07·plan이다). 고칠 작업은 지적 내용으로 정하고, 앞 단계 작업을 고쳐야 하면 원인과 다시 도는 작업을 사용자에게 보고해 지시를 받는다. 차단 지적으로는 자동으로 되감지 않는다.
 

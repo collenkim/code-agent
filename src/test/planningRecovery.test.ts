@@ -73,7 +73,7 @@ test("plan 단계 critic 질문은 critic 만 다시 배정하고 plan 결과를
   assert.deepEqual(reply.assignments.map((item: any) => item.task.id), ["critic"]);
 });
 
-test("앞 단계 입력이 바뀌면 advance 는 같은 사유에 한 번만 자동 되감기를 낸다", async () => {
+test("2-9 되감기 안내와 거부된 back은 자동 허용을 쓰지 않고 실제 back만 소비한다", async () => {
   toDesign();
   write("src/current.ts", "export const current = 2;\n");
   const reply = (await advance());
@@ -85,13 +85,14 @@ test("앞 단계 입력이 바뀌면 advance 는 같은 사유에 한 번만 자
   assert.equal(reply.assignments.length, 0);
   const state = loadPlanning(loadWork(root)!);
   assert.equal(state.tasks.find((record) => record.task.id === "design")!.attempts.length, 0, "되감기 판정은 배정하지 않는다");
-  assert.equal(state.retry!.rewinds!.length, 1);
-  // 되감지 않고 다시 부르면 같은 사유다 — 자동으로 되감지 않는다
+  assert.equal(state.retry!.rewinds?.length ?? 0, 0);
+  assert.throws(() => back(root, "plan"), /뒤로만/);
+  // 안내만 여러 번 읽어도 실제 되감기 전에는 허용이 남는다.
   const again = (await advance());
-  assert.equal(again.rewind.auto, false);
-  assert.match(again.rewind.reason, /이미 한 번/);
-  assert.equal(loadPlanning(loadWork(root)!).retry!.rewinds!.length, 1);
+  assert.equal(again.rewind.auto, true);
+  assert.equal(loadPlanning(loadWork(root)!).retry!.rewinds?.length ?? 0, 0);
   back(root, "impact");
+  assert.equal(loadPlanning(loadWork(root)!).retry!.rewinds!.length, 1);
   assert.deepEqual((await advance()).assignments.map((item: any) => item.task.id), ["explore"]);
 });
 
