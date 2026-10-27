@@ -15,6 +15,7 @@ import type { VerificationHistory } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
 import { grantScope, RetryRefused } from "../agent/retryPolicy";
 import { deadPid } from "./deadPid";
+import { readRuntime, selectRuntime } from "../agent/runtimeSelect";
 
 /**
  * 검증 workflow 노드(verify) — check·test 를 잇는 노드 판정과 원인별 재시도.
@@ -33,6 +34,10 @@ afterEach(() => removeStageRepo());
 describe("검증 workflow 노드", () => {
   test("한 번 호출로 check·test·게이트를 실행하고 리뷰에 인계한다", async () => {
     toCheck();
+    // 상태 세대는 릴리스 적용의 내림을 막는다. 고정 없는 이전 작업의 읽기를 막지는 않는다.
+    assert.equal(readRuntime(repo), undefined);
+    assert.equal(loadActive(repo)!.planningVersion, undefined);
+    assert.equal(selectRuntime("hook", [], true, () => JSON.stringify({ cwd: repo }), {}).kind, "self");
     assert.equal(hook("Bash", { command: "code-agent verify --json" }), undefined);
     const result = await verify(repo);
     assert.equal(result.node, "review");
