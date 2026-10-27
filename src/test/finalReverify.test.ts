@@ -539,10 +539,13 @@ const CITED_LINES: Record<string, RegExp> = {
   "template/claude/skills/ca-next/SKILL.md:25": /^\| `integrate` · `deliver` \| `\/ca-integrate` \|/,
   "template/claude/skills/ca-next/SKILL.md:31": /계획 단계\(`analysis`~`plan`\)이면 `code-agent planning status`도 본다/,
   "template/claude/skills/ca-next/SKILL.md:75": /사이클이 스스로 되감지는 않는다 — 예외는/,
-  "template/claude/skills/ca-plan/contract.md:10": /`questionIds`: 관련 질문 ID\. 담당·교차 검토가 낸 질문/,
-  "template/claude/skills/ca-plan/contract.md:16": /^\*\*수정 피드백\*\*/,
-  "doc/usage.md:228": /^설치되는 실행 절차는 모두 \*\*\d+개\*\*다/,
 };
+const CITED_SECTIONS = [
+  { path: "template/claude/skills/ca-plan/contract.md", cited: "ca-plan/contract.md", heading: "작업 등록·입력·피드백",
+    contents: [/`questionIds`: 관련 질문 ID\. 담당·교차 검토가 낸 질문/, /^\*\*수정 피드백\*\*/m] },
+  { path: "doc/usage.md", cited: "doc/usage.md", heading: "4. 슬래시 명령 (Claude Code 안)",
+    contents: [/^설치되는 실행 절차는 모두 \*\*\d+개\*\*다/m] },
+];
 
 describe("R5 — 흐름도의 줄 인용", () => {
   test("R5 흐름도(§10 앞)의 template/·doc/ 인용은 지금 파일의 그 줄을 가리킨다 — 표에 없는 인용도 없다", () => {
@@ -569,6 +572,14 @@ describe("R5 — 흐름도의 줄 인용", () => {
       }
     }
     assert.deepEqual(Object.keys(CITED_LINES).filter((key) => !seen.has(key)), [], "흐름도에 없는 표 항목");
+    const flow = lines.slice(0, history).join("\n");
+    for (const citation of CITED_SECTIONS) {
+      assert.ok(flow.includes(`\`${citation.cited}\`의 「${citation.heading}」`), `흐름도에 없는 절 인용: ${citation.cited}`);
+      const text = readFileSync(join(ROOT, citation.path), "utf8").replace(/\r\n/g, "\n");
+      const section = text.split(`## ${citation.heading}\n`)[1]?.split(/\n## /)[0];
+      assert.ok(section, `없는 절: ${citation.path} ${citation.heading}`);
+      for (const pattern of citation.contents) assert.match(section, pattern, citation.path);
+    }
   });
 });
 
