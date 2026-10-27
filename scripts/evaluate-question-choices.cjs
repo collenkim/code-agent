@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-question-choices.cjs');
 /** 실제 모델을 호출하는 수동 검사. UI·동의·실제 cloud 작업의 검증으로 해석하지 않는다.
  * node scripts/evaluate-question-choices.cjs claude|codex [--recheck]
  * 생성 지침에 따른 응답·질문 호출 검사이며 프로젝트 설치·사용자 답·재개 검사는 아니다.

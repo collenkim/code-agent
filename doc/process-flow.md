@@ -907,7 +907,8 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 | hook | `hook.ts`(`decide` — 교차 자식 거부 `crossChildGuard`·읽기 전용 담당 거부 `readOnlyRoleGuard`가 먼저, 경로 판정 `expandTilde`·`readDenied`·`aliasGuard`·`repoPath`·`foldStreams`·`userHostConfig`(사용자 수준 호스트 설정), 작업 임대 자리 `leaseGated`·`LEASE_FREE`), `lease.ts`(작업 임대, 원래 세션 밖 경로의 같은 판정 `leaseConflict`), `layout.ts`(경로 별칭 `foldWindowsAlias`·`shareInside`), `stopHook.ts`, `sessionHook.ts`, `hookLog.ts`(hook 출력 기록 — 측정, Stop 의 같은 사유 재차단 억제), `codexHook.ts`(이벤트별 지연 로드, SessionStart 의 임대 넘겨받기). hook 경로의 모듈 그래프·로드 실패 표는 `src/test/hookLoad.test.ts`가 지킨다 |
 | 재시도 규약·공통 기반 (§6.4, 계획 쪽·검증·리뷰 회차 한도·교차 지점·리뷰어 실행에 연결됨) | `retryPolicy.ts`(원인·카운터·한도·판정·안내 문구 — 순수 모듈), `stateJson.ts`(상태 JSON 읽기·구조 검사), `processIdentity.ts`(OS 프로세스 시작 식별), `lock.ts`(공통 파일 잠금 `acquireLock`(회수 가드·자기 기록 해제)·`pidAlive`), `crossEnv.ts`(실행 환경 표지 `runtimeHost`·`crossChild` — 순수 모듈), `hostText.ts`(호스트별 표기 `skill`·`skillFile`·`agentName`·`askVia`·`viaShell`·`shellLabel`·`fileToolsHint`·`readVia`·`readToolVia`·`editVia`, 판정 `notationFor` — CLI·hook 문구에 배선됨, 역할 이름 `ROLE_NAMES`의 정본) |
 | 기타 | `aidlc.ts`(AI-DLC 공존), `usage.ts`·`prices.ts`(사용량 — 스테이지·에이전트·모델별 토큰과 호출 통계 `usageReport`·명령 키 `commandKey`, 단가표 `PRICES`·`priceKey`), `codexUsage.ts`(Codex 세션 기록 — codex-cli 0.161.0 꼴, 하위 에이전트 행·`token_usage_record`·`CommandExecution`), `retryReport.ts`(작업 기록의 재시도·재배정·실패 원인·교차 실행 합, 계획 담당의 역할별 첫 시도 통과·규칙별 거부·되돌림·형식 교정·초안 이어 쓰기 — 읽기 전용, 카운터 이름표는 `COUNTER_LABEL` import), `plugins/`, `read.ts`(`code-agent read`), `stop.ts`(`Stop` 예외), `core/exemplar.ts`(참조 코드), `core/atomic.ts`(`writeAtomic`), `core/types.ts`(공통 타입) |
-| 개발 스크립트 | `scripts/prune-dist-tests.cjs`(`npm test`가 tsc 뒤 부른다 — 소스가 없는 `dist/test/*.test.js` 삭제), `scripts/template-sizes.cjs`(템플릿 크기·예산 제안), `scripts/evaluate-full-flow.cjs`(유료 평가 — 실행은 사람이 정한다)·`scripts/summarize-evaluations.cjs`(반복 평가 요약, 파일을 쓰지 않음) |
+| 개발 스크립트 — 무료 | `scripts/prune-dist-tests.cjs`(소스 없는 시험·fixture JS 제거), `template-sizes.cjs`(크기·예산), `summarize-evaluations.cjs`(기록 요약), `smoke-langgraph-bin.cjs`(바이너리 검사), `build-bin.js`(빌드) |
+| 개발 스크립트 — 유료·수동 | `scripts/evaluate-model.cjs`, `evaluate-review.cjs`, `evaluate-question-choices.cjs`, `evaluate-planning-hosts.cjs`, `evaluate-session-recovery.cjs`, `evaluate-full-flow.cjs`, `evaluate-codex-git-permission.cjs`, `evaluate-choice-ui.cjs`, `live-codex.cjs`(평가용 보조), `diagnose-codex-hooks.cjs`. 공통 `live-eval-guard.cjs`가 `CODE_AGENT_LIVE_EVAL=1`을 요구하며, 없거나 `--help`이면 사용법만 내고 종료한다. 실모델 호출은 사람이 정한다 |
 | 절차 템플릿 | `template/claude/skills/ca-*/SKILL.md`(+`criteria.md`·`legacy.md`·`contract.md`·`reference.md`·`appendix.md`·`ca-integrate/knowledge.md`·`ca-test/tc-names.md`), `template/claude/agents/ca-*.md`, `template/CLAUDE.block.md`, `template/CODEX.block.md`, `template/codex/ca-answer.md` |
 
 단계 스킬은 `ca-next/SKILL.md:14-25` 표를 따른다. 서브에이전트 사용처는 다음과 같다.
@@ -920,7 +921,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 버전 고정이 없는 이전 작업의 재개 경로를 확인하고 기록 호환 처리의 유지 조건을 명시한다 — `test(4-4)`.
+- 실제 모델 평가를 명시적 환경 설정으로 제한하고 삭제된 시험 도우미의 산출물도 정리한다 — `chore(4-5)`.
+
+- 버전 고정이 없는 이전 작업의 재개 경로를 확인하고 기록 호환 처리의 유지 조건을 명시한다 — `7f1efae`.
 
 최신 변경부터 적는다. 경위와 검증 결과는 [검토 기록](reviews/README.md)을 따른다.
 

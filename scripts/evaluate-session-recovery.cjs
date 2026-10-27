@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-session-recovery.cjs');
 /* 선택 실행: 실제 Claude 주 세션의 질문 발행 → 종료 → TTY 복원 → 서명 답 → 같은 세션 재개.
  * TTY 확인·답·사람 채널은 명시적 합성 fixture. 실제 사람 승인·전체 개발 완주 검사가 아니다.
  * node scripts/evaluate-session-recovery.cjs [dist|dist-bin]

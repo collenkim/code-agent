@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-full-flow.cjs');
 /* Opt-in live evaluation from intake through local delivery in disposable repositories.
  * Only TTY interaction is mocked by this driver; every such decision is labelled as a fixture.
  * Never claims to measure a real beginner or human approval. No push or external publication.

@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-planning-hosts.cjs');
 /* 선택 실행: 실제 호스트·모델이 설치된 역할을 호출하고 계획 결과를 hook으로 남기는지 검사한다.
  * 요구사항·초기 준비 동의만 명시적인 합성 fixture다. 실제 사람의 승인 검증이 아니다.
  * node scripts/evaluate-planning-hosts.cjs claude|codex [기록이름] [--vetted-hooks] [--model 모델] [--through-impact]

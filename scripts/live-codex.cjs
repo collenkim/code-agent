@@ -2,6 +2,7 @@
 // 사용자 설정·권한·인증 파일을 바꾸지 않는다. 제품의 관리 실행은 이 도우미를 사용하지 않는다.
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 module.exports = function liveCodex(root, repo, cli, session) {
+  require('./live-eval-guard.cjs')('live-codex: evaluate-full-flow.cjs에서 호출');
   if (path.dirname(repo) !== fs.realpathSync.native(os.tmpdir()) || !path.basename(repo).startsWith('ca-full-')) throw Error('Disposable full-flow repository required');
   const inline = /^\s*\[\[?hooks(?:\]|\.(?!state[.\]]))/m;
   const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');

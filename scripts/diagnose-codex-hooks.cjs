@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/diagnose-codex-hooks.cjs');
 /* 실제 Codex 이벤트만 기록하는 격리 진단. 제품 상태나 관찰 이벤트를 합성하지 않는다. */
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), cp = require('node:child_process');
 const { values } = require('node:util').parseArgs({ options: { standalone: { type: 'boolean' }, 'user-config': { type: 'boolean' }, 'project-config': { type: 'boolean' }, 'native-trust-path': { type: 'boolean' } } });

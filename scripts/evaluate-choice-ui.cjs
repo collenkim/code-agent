@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-choice-ui.cjs');
 /** 수동 키보드 검증: npm run build 후 node scripts/evaluate-choice-ui.cjs.
  * 실제 Codex TUI를 임시 저장소에서 연다. UI·MCP·hook 신뢰 및 선택은 사람이 조작한다.
  * 모델·사용자 전역 설정을 덮어쓰지 않는다. 임시 저장소와 기록은 검증 후 확인용으로 남긴다.

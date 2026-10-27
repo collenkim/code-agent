@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-model.cjs');
 /* Opt-in live model evaluation. Requires a build and an authenticated Claude CLI.
  * Approvals/documents/plans below are TEST FIXTURES, not human approvals or model output.
  * Every scenario gets an isolated temporary Git repository; no delivery or push is performed.

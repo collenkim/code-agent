@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-codex-git-permission.cjs');
 /* 선택 실행: 실제 Codex app-server의 Git 차단→단건 승인 RPC→동일 작업 시작.
  * 문서·요구·신뢰·대시보드 응답은 격리 저장소의 합성 평가 fixture이며 실제 사람 승인으로 보고하지 않는다.
  * 사용자 설정·다른 저장소를 수정하지 않는다. node scripts/evaluate-codex-git-permission.cjs

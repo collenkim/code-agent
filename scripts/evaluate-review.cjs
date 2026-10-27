@@ -1,3 +1,4 @@
+require('./live-eval-guard.cjs')('node scripts/evaluate-review.cjs');
 /* Opt-in seeded review benchmark. No project mutation, implementation, approval, or delivery.
  * node scripts/evaluate-review.cjs
  * Fixtures contain 3 known defects and 1 correct implementation; expectations stay outside model cwd.
