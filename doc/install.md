@@ -121,7 +121,7 @@ claude
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| hook 등록 9개 | `.claude/settings.json` — PreToolUse `hook`, PreToolUse·PostToolUse `consent-event`, Stop `stop`, SubagentStart·SubagentStop `review-event`·`planning-event`, SessionStart `session-event` | O |
+| hook | Claude 9개·Codex 6개 — [등록·matcher·출력 정본](process-flow.md#5-hook-등록표) | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -149,7 +149,7 @@ Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접
 
 ## 4. `code-agent doctor` — 점검
 
-**막는 것이 하나도 없으면 종료 코드 0**, 하나라도 있으면 1 이다. 진행 중인 작업이 있어도 돈다.
+진행 중인 작업이 있어도 점검할 수 있다. 종료 여부는 [CLI 종료 코드](usage.md#cli-종료-코드)를 따른다.
 
 ```
 code-agent doctor — C:\IdeaProjects\code-agent-p8
@@ -167,13 +167,13 @@ code-agent doctor — C:\IdeaProjects\code-agent-p8
 
 표시는 셋이다.
 
-| 표시 | 뜻 | 종료 코드 |
-|---|---|---|
-| `✓` | 확인됐다 | 0 |
-| `✗` | **막는다** — 이대로면 어딘가에서 거부당한다. 다음 줄의 `→` 가 고치는 법이다 | 1 |
-| `·` | 알리기만 한다 | 들어가지 않는다 |
+| 표시 | 뜻 |
+|---|---|
+| `✓` | 확인됐다 |
+| `✗` | **막는다** — 다음 줄의 `→` 가 고치는 법이다 |
+| `·` | 알리기만 한다 |
 
-`·` 를 종료 코드에 넣지 않는 이유: TTY 가 없는 CI 에서 doctor 가 늘 빨개지면 아무도 쓰지 않는다.
+TTY가 없는 CI에서도 알림만으로 점검 실패가 되지는 않는다.
 
 ### 검사
 

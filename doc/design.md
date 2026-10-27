@@ -23,7 +23,7 @@
 
 실행은 **Claude Code 안에서 모델이 도구를 직접 쓰는 구조**다. `code-agent init`은 스킬(`.claude/skills/ca-*`), 서브에이전트(`.claude/agents/ca-*`), hook과 `CLAUDE.md` 블록을 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`로 공통 접수한다. 신규·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`로 종류를 명시할 수도 있다.
 
-메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI(`src/agent/`)는 호출마다 검사·실행·기록 후 종료한다. hook은 9개를 등록한다. PreToolUse의 `hook`은 쓰기·도구 경계를 검사하고, PreToolUse·PostToolUse의 `consent-event`는 AskUserQuestion의 질문·응답을 관찰한다. Stop은 턴 종료 상태를 확인하고, SubagentStart·SubagentStop의 `review-event`는 독립 리뷰 실행과 결과를 기록한다. 같은 이벤트의 `planning-event` 2개는 ca-analyst·ca-explorer·ca-writer·ca-critic의 실제 계획 작업 결과를 기록한다. SessionStart의 `session-event`는 대화 시작·재개·압축·비우기 뒤 진행 중인 작업의 위치를 몇 줄로 붙인다.
+메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI는 호출마다 검사·실행·기록 후 종료한다. hook은 Claude 9개·Codex 6개를 등록한다. 이벤트별 역할과 종료 동작은 [흐름도 §5](process-flow.md#5-hook-등록표)를 따른다.
 
 기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초/도입 준비 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
@@ -814,90 +814,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 ## 9. 명령
 
-### Claude Code 안 (스킬)
-
-| 스킬 | 하는 일 |
-|---|---|
-| `/ca-docs [architecture \| conventions \| test-strategy \| quality \| data-dictionary \| api-catalog \| business-rules \| features \| flows]` | 프로젝트 필수 문서 점검·작성 — 빠진 문서마다 역공학 / 사용자 입력 / 기존 문서 연결 중 고르게 한다 |
-| `/ca-adopt` | 레거시 첫 도입 — 뼈대 역공학으로 문서와 `code-agent.json` 까지 |
-| `/ca-request [ID] [--kind <종류>] <요구사항 서술 · 붙여넣은 티켓 · 파일 경로>` | 공통 접수부터 초기 준비·요구사항·계획·결과 확인까지 같은 화면에서 진행한다. 사용자가 선택하면 이어서 작업하고, 수정 요청은 사유를 반영해 다시 확인한다 |
-| `/ca-feature [ID] <요구사항 서술 · 티켓 · 파일> [--base <기준>] [--target <대상>]` · `/ca-fix` · `/ca-refactor` | 종류별 접수(feature=신규·기능 변경, fix=결함 수정, refactor=동작 보존) → 같은 화면에서 요구사항 확인 → 분석·계획 확인 → 구현·검증·결과 확인까지 자동 진행한다. 종류(`--kind`)를 고르는 것이 이 셋이다. `/ca-fix`·`/ca-refactor` 가 더 지는 것(② 의 현행 분석 · ⑦ 의 `## 재현` · `sequence[0]` · 기존 테스트 보호)은 **전부 코드가 막는다** |
-| `/ca-next` | **중단 후 재개** — 현재 접수·작업부터 단계 스킬을 따라 진행한다. 필요한 질문·확인도 같은 화면에서 받고 이어간다 |
-| `/ca-analyze` · `/ca-impact` · `/ca-design` · `/ca-plan` | 분석·영향도·설계·계획을 하나씩. `/ca-analyze` 는 진행 중인 작업이 없고 접수한 요구사항이 **확정됨** 이면 `code-agent start doc/work/<ID>/requirement.md` 부터, `/ca-plan`은 같은 세션에서 계획을 확인한다 (반려 사유를 읽는 자리도 여기) |
-| `/ca-implement` · `/ca-check` · `/ca-test` · `/ca-review` · `/ca-integrate` | 구현·정적 검사·테스트·독립 리뷰·통합을 하나씩. `/ca-implement` 는 커서가 `check` 에 닿을 때까지, `/ca-integrate`는 이어서 ⑩을 작성하고 같은 세션의 결과 확인으로 연결한다 |
-| `/ca-answer` | 남은 질문을 하나씩 묻고 `questions.md` 에 기록 |
-| `/ca-status` | 위치·막힌 이유·다음 할 일 |
-
-**절차의 출처는 단계 스킬 하나다.** 스테이지가 하는 일은 `/ca-<스테이지>` 스킬에만 적혀 있고, `/ca-next` 사이클도
-`/ca-feature`·`/ca-fix`·`/ca-refactor` 도 그 파일을 읽는다 — 단계로 끊어 돌든 사이클로 몰든 도는 내용이 갈리지 않는다.
-단계를 나눈 이유는 **단계마다 결과를 보고 보완할 자리를 만드는 것**이다.
-
-단계 스킬은 넷을 한다: (1) 자리를 확인하고(방금 받은 `code-agent` 출력에 지금 스테이지가 없을 때만 `code-agent status`) (2) 그 스테이지의 일만 하고 (3) `code-agent next` 로 게이트를 지나고
-(4) 자동 진행 중이면 다음 단계 스킬을 이어서 읽는다. 사용자가 한 단계만 요청했으면 해당 범위에서 마친다. 커서가 그 스테이지가 아니면 일하지 않는다 — 아직 이르면 먼저 할 명령을 알리고,
-이미 지났으면 `code-agent back <스테이지>` 를 알린다 (되감기는 **사용자가 되돌리라고 말했을 때만** 돈다 — 예외는 셋이고 원천은 `ca-next` 스킬의 되감기 문단이다: 승인 무효의 재진입(`다음:` 의 재진입 순서), 계획 `planning advance` 의 자동 되감기 `rewind-required`·`rewind.auto: true`(상태로 판정하고 같은 사유에 한 번), 반영 단계에서 사용자 확인을 받은 수정 요청. 되감기는 커서만 옮기고 사람 확인 지점은 그대로다).
-**↺ 수정 루프**는 `/ca-check` 에 한 벌 있고 `/ca-test`·`/ca-review`·`/ca-integrate` 가 그것을 가리킨다 — 루프가 돌아가는 자리가 `check` 라서다.
-
-### 직접 CLI 명령 (선택 경로)
-
-같은 세션에서는 `setup`·`docs`·`baseline`·`request`·`plan`·`deliver`·`model`·`abort`·`knowledge-prune`·`plugin-add`·`plugin-remove`·`update`·`repro-log`·`judgment` action으로 사용자 확인을 받아 적용한다(목록의 정본은 `consent.ts` `ActionSchema` — `ca-answer` 스킬 세 곳과 흐름도 §4.1 을 시험이 대조한다). 아래 직접 확인 명령에는 TTY 검사가 적용된다.
-
-| 명령 | 하는 일 |
-|---|---|
-| `code-agent init [--host claude\|codex\|both] [--cli <경로>]` | 이 저장소에 설치 — `.claude/` 스킬·에이전트·hook, CLAUDE.md 블록, `.gitignore`, 버전 고정. `--help`나 받지 않는 인자면 아무것도 쓰지 않는다 |
-| `code-agent doctor` | 설치·환경 점검 — 런타임 · git · PATH · 저장소 · 설정 · PreToolUse 도구 검사·Pre/PostToolUse consent·Stop·SubagentStart/Stop review·planning·SessionStart hook 등록 9개 · (Codex) 이벤트별 hook·Windows 명령·프로젝트 신뢰·hook 검토(관리 실행과 같은 실행 파일로 app-server 에 조회) · 버전 · 템플릿 · 매니페스트 · POLICY · 키 파일 · TTY. `✗`가 없으면 종료 코드 0 ([install.md §4](install.md#4-code-agent-doctor--점검)) |
-| `code-agent status` | 문서·작업·스테이지·질문·승인 상태와 다음 할 일 |
-| `code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]` | 기계 판독용 상태(`code-agent.state` v1) — 읽기 전용. 재개 코드·근거·`stateVersion`, 기대와 다르면 `stale-request`(종료 코드 3). 상위 조정자·러너의 연결 지점(§1 외부 실행기와의 경계) |
-| `code-agent setup` · `setup baseline` | 준비 상태 조회(테스트 실행 없음) · 준비 파일 확인 후 최초/도입 커밋(TTY) |
-| `code-agent docs` | 프로젝트 필수 문서 — 종류별 있음·섹션·확정 여부 |
-| `code-agent confirm doc <all \| architecture \| conventions \| test-strategy \| quality>` | POLICY 일괄 또는 개별 확정 (해시를 원장에, TTY 에서만) |
-| `code-agent confirm request <ID> [<지시서>]` · `reject request <ID> [<지시서>] --comment <사유>` | **요구사항 확정·반려** (TTY 에서만) — 지시서를 통째로 띄워 원문과 정리를 나란히 읽히고, **보여 준 바이트**의 해시로 판정을 `approvals/<slug(ID)>/request.jsonl` 에 남긴다(읽는 사이에 바뀌었으면 아무것도 남기지 않는다). 지시서를 생략하면 그 ID 가 진행 중인 작업이면 그 작업의 지시서, 아니면 `doc/work/<ID>/requirement.md` — 다른 자리에 손으로 쓴 지시서는 경로를 함께 준다. 확정해야 `start` 가 받는다. 확정 뒤 내용이 바뀌면 다시 확정한다 |
-| `code-agent approve [--comment <메모>]` · `reject --comment <사유>` | 계획 + 작업 문서 판정 (계획·가정 표시, 반려 사유 필수, TTY 에서만 — 남는 인자는 사용법 오류) |
-| `code-agent takeover` | 다른 세션이 쥔 작업 임대를 풀어 다음 진행 명령의 세션이 이어받게 한다(저쪽 세션 종료를 사용자가 확인한 뒤 — 스킬 규칙) |
-| `code-agent abort` | 진행 중인 작업 커서 지우기 (작업 폴더·계획·원장은 남는다). 작업이 없으면 **접수 세션을 닫는다** — 작업 폴더와 확정 원장은 남아 같은 ID 로 다시 접수할 수 있다 |
-| `code-agent deliver` | 반영 — 게이트 재검사 · ⑩ 의 코드 구역 렌더 · TTY 확인 · KNOWLEDGE 항목 선택 · 작업 브랜치에 **로컬 커밋**. push·MR/PR 없음 |
-| `code-agent model [<에이전트\|all> <모델>]` | 호스트별 모델·추론 강도 조회·변경·복원 (--host, --reasoning·--effort; 변경은 같은 세션 동의 또는 TTY) |
-| `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 스테이지·에이전트·모델별 토큰과 호출 통계 — Claude Code 기록(`~/.claude/projects/<인코딩한 경로>`)과 Codex 세션 기록(codex-cli 0.161.0 꼴, 하위 에이전트 행 따로)을 읽고 `.code-agent/log/stages.jsonl` 의 전이로 구간을 가른다. 비용은 추정(Claude 만) |
-| `code-agent knowledge` · `knowledge find` · `knowledge prune` | 공통 KNOWLEDGE 항목과 그것을 마지막으로 넣은 작업(git 이력에서 복원)·최신성 · 키·경로·별칭·본문으로 항목·POLICY 절을 찾아 줄 범위와 반드시 적용하는 업무 정책 보이기(읽기 전용 — 작업 중에도 된다) · 근거 경로가 전부 사라진 항목을 사람이 골라 지우기 (`prune` 은 TTY, 자동 삭제 없음) |
-| `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 — 어댑터는 `node <경로>` 로 도는 파일이라 단일 실행 파일만 받은 PC 에도 꺼낼 자리가 있어야 한다 |
-| `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 변수 이름>]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록·해제 — `describe` → 동의(코드를 보내면 이름 입력) → 키 → `probe`. 키·동의는 `~/.code-agent/credentials.json` 에만 (TTY 에서만) |
-| `code-agent update [--cli <경로>]` | 로컬 Git 소스의 upstream 을 받아(`FETCH_HEAD`만 — 소스의 작업 트리·브랜치는 그대로) 그 커밋을 릴리스 저장소의 새 폴더에 꺼내 잠금 파일 기준 의존성 설치·빌드·검증 → 등록 → 그 릴리스가 이 프로젝트에 적용(진행 중인 일이 있으면 예약)·doctor. 바이너리·npm 패키지는 받지 않는다 |
-| `code-agent update --templates-only [--cli <경로>]` | 받지 않고 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿을 다시 반영한다(npm 패키지 진입점이면 설치된 패키지를 들인다). 다른 hook·블록 밖·모델 설정·사람이 고친 사본은 보존한다. 진행 중인 일이 있으면 바꾸지 않는다 |
-| `code-agent update --release <ID>` · `update --bundled` · `version [--json]` | 설치된 릴리스 고르기(TTY) · 고정 풀기 · 적용·적용 대기·설치 버전과 실행 중인 MCP 조회 |
-
-### 스킬·hook 이 부른다
-
-| 명령 | 하는 일 |
-|---|---|
-| `code-agent request begin [ID] --kind <feature \| fix \| refactor> [--base <기준 브랜치>] [--target <대상>]` | 접수 세션·초안 형식·대상 후보를 제공한다. ID 생략 시 WORK 번호를 발급한다. 매니페스트가 없어도 원문 보관부터 시작하며, `--base`·`--target`은 세션에 남아 `start`가 이어받는다 |
-| `code-agent consent prepare <action.json> \| --action <동작> [--for claude\|codex]` · `consent status <ID>` · `consent apply <ID>` · `consent finish <ID>` | 확인 준비 → 반환된 질문을 그대로 표시 → hook이 응답 관찰 → 상태 확인 → 승인된 대상만 적용. `finish`는 확인과 적용을 한 번에 하고 승인 전에는 status와 같다. 파일·Git 상태·세션과 적용 대상을 대조한다. `prepare`·`apply`·`finish`는 hook 이 그 명령을 본 세션의 티켓(적용은 호스트 표지 없는 TTY 도)이 있어야 돈다 |
-| `code-agent consent-event` | AskUserQuestion의 PreToolUse·PostToolUse hook에서 질문·세션·호출 ID·실제 응답을 관찰한다. 동의 질문은 동의 기록에, 업무 질문은 `answers.jsonl`에 남긴다(업무 질문 관찰 실패는 질문을 막지 않는다). 모델이 직접 관찰 기록을 작성하지 않는다 |
-| `code-agent request` | 접수 초안 형식 · 규칙 · 대상 후보 · 지금 상태. **작업 중에도 같은 것을 준다** — 이미 시작한 작업의 요구사항을 고칠 때 초안 형식이 필요하다(그때 `code-agent context` 는 스테이지 컨텍스트를 준다). 접수도 작업도 없으면 접수를 열라고 세운다 |
-| `code-agent request submit <request.json>` | 접수 초안 검사 → `doc/work/<ID>/requirement.md` 렌더 — 스키마 · **손으로 쓴 지시서와 같은 지시서 검사** · 머리말 왕복 대조. 확정은 사람이 한다. 작업이 시작된 뒤에도 같은 ID 면 다시 제출할 수 있다(확정이 풀린다). **반려된 내용 그대로면 거부**하고 사유를 다시 찍는다 |
-| `code-agent start <지시서> [--target <대상>] [--base <기준 브랜치>]` | 작업 시작 — 문서 게이트 확인, **요구사항이 지금 내용 그대로 확정됐는지** 확인, 작업 브랜치, 작업 폴더. 접수 때 말한 `--base`·`--target` 을 이어받는다(여기서 직접 준 값이 이긴다). 시작하면 접수 세션을 지운다 |
-| `code-agent next` | 게이트를 확인하고 다음 스테이지·단계로 — 구현 Task 로 옮기면 그 Task 의 context 파일도 쓴다 |
-| `code-agent back <스테이지>` | 커서를 **이전** 스테이지로만 되감는다 (`analysis`…`integrate`). 앞으로는 못 가고, `deliver` 에서도 사용자 지시가 있으면 되감으며(준비해 둔 반영 동의는 무효가 된다), 진행 중인 작업이 없으면 거부한다. 증거·승인 원장·작업 문서는 그대로 두고 커서만 움직이며(`implement` 로 가면 계획의 첫 단계로), **무엇이 무효가 되는지 함께 찍는다** |
-| `code-agent context` | 지금 스테이지에 필요한 것 — 경로 · 형식 · 참조 표준 코드 · 단계 규칙. 아직 커서가 없고 접수 중이면 접수 컨텍스트를 준다(그것만 다시 보려면 `code-agent request`) |
-| `code-agent plan submit <초안.json>` | 계획 검사 후 제출 |
-| `code-agent experience [add <초안.json> \| list [--all] \| show <EXP-ID>]` | 작업 경험 기록(선택, §2.6) — add 는 ID·버전·기준 커밋을 정해 이 작업 폴더의 `experience.md` 에 쓴다. list·show 는 읽기 전용 |
-| `code-agent finding [report <초안.json> \| list [--json] [--work <ID>]]` | 진행 중 발견 보고(§2.6) — 분류·근거·영향·차단·상태. 보고일 뿐 권한이 아니다. list 는 읽기 전용 |
-| `code-agent repro` | 재현 (**`fix` 전용** — 스테이지가 아니라 `implement` 안에서 돈다) — `kind:"test"` 단계 파일만 바뀐 트리에서 테스트 명령을 돌려 재현 TC 의 **실패**를 확인하고 증거에 적는다. 이것을 통과해야 고칠 파일 쓰기가 열리고, 그 순간 테스트가 언다 |
-| `code-agent check` | 정적 분석·컴파일 — `build` + 품질·보안 기준의 명령을 돌려 증거에 기록하고 ⑧ 을 렌더 |
-| `code-agent test` | 테스트 — `test` + 테스트 전략의 명령을 돌리고 ⑦ 의 TC id 를 대조 |
-| `code-agent review` | 코드 리뷰 — 회차를 열어 기준 트리 해시를 굳히고 ⑨ 의 회차 구역을 렌더, 리뷰어의 context 파일도 쓴다 |
-| `code-agent integrate` | 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 (`prepare` 가 있으면 그것 먼저) 전체 `build`·`test`. 통과하면 커서를 deliver 로 옮긴다 |
-| `code-agent docs begin \| end` | 문서 작성 세션 (도는 동안 문서 자리 밖 쓰기 금지). 접수 중에는 원문·ID를 유지한 채 준비하고, 종료 후 같은 접수로 돌아간다 |
-| `code-agent docs skeleton <종류>` | 빈 문서의 섹션 뼈대 — POLICY 4종(`architecture` · `conventions` · `test-strategy` · `quality`) · `knowledge`(KNOWLEDGE 5종을 한 번에) · KNOWLEDGE 낱개(`data-dictionary` · `api-catalog` · `business-rules` · `features` · `flows`) · 작업 문서(`01-requirements` · `02-analysis` · `03-design` · `04-functional` · `07-test-spec`) |
-| `code-agent docs interview <종류> [--sections a,b]` | 사용자 입력으로 채울 때 묻는 것 |
-| `code-agent docs link <종류> <경로...>` | 기존 문서를 등록. 접수 중에는 docs 준비 세션 안에서 가능하고 작업 시작 뒤에는 거부한다 |
-| `code-agent survey` | 뼈대 역공학용 저장소 개요 — 빌드·언어·구조·계층 후보·표본 |
-| `code-agent manifest check` | `code-agent.json` 이 실제 참조 파일을 찾는지 |
-| `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 개인 등록 · 저장소 선언을 읽는다. 등록·제거는 같은 세션 확인 또는 사람의 직접 TTY 명령을 사용한다 |
-| `code-agent hook` | PreToolUse 판정 (stdin JSON → deny 사유) |
-| `code-agent stop` | Stop 판정 (stdin JSON) — 계획 밖 변경·답 없는 질문을 턴 끝에 한 번 |
-
-동의 스냅샷은 Git 저장소(일반 저장소와 worktree)에서 `ls-files --cached --others --exclude-standard`의 파일과 명시적인 제어·문서 경로를 합친다. 루트 전체 순회는 Git이 없을 때만 한다. 무시된 외부 hook의 세션·사용량·캐시 기록은 기본 수집 대상이 아니다. `code-agent.json`·`CLAUDE.md`·`AGENTS.md`, `.code-agent`(code-agent 자체 기록인 `consents/`·`log/`·`lease.json*` 제외 — 응답을 기다리는 동안 hook·CLI 가 쓰는 기록이 열린 동의를 깨지 않게 한다. 업무 답 기록 `work/<ID>/answers.jsonl`은 포함한다)·`.claude`·`.agents`·`.codex`·`doc`·`docs`, 매니페스트의 POLICY·KNOWLEDGE·템플릿과 action의 spec는 무시 여부와 관계없이 포함하며 setup/baseline은 실제 준비 커밋 경로도 포함한다. 명시 경로 안의 로그와 추적된 감사 파일은 계속 검증한다. 명시 경로 밖의 무시된 실행 설정은 포함하지 않으며 임의 제외 설정은 제공하지 않는다. 제어 경로 **아래**의 링크는 따라가지 않고 대상 경로(`link:<대상>`)로 해시한다(Git 이 접합점 아래 파일을 나열해도 링크 하나로 본다). 제어 루트·제어 파일·문서 경로 자체나 그 조상이 링크이면 거부한다. 파일 내용 해시는 (size·mtime·ctime·ino) 캐시(`consents/snapshot-cache.json`)로 재사용한다 — ctime 은 사용자 도구로 되돌릴 수 없어 mtime 을 되돌린 같은 크기 변경도 잡고, 2초 안에 바뀐 파일과 ctime 을 주지 않는 파일 시스템은 캐시하지 않는다. 값은 캐시 없이 구한 것과 같다.
-
-준비 기록의 `snapshotEntries`는 파일별 경로·mode·내용을 합친 해시와 Git HEAD·브랜치·index·설정(다른 worktree 의 `push -u` 가 남기는 `branch.*` 추적 정보 제외), 해당 action의 플러그인 저장소·업데이트 소스 해시, model 동의의 모델 정책(`modelPolicyFingerprint` — 역할 등급·등급별 기본값·강도 미지원 규칙의 지문, 이유 문장 제외) 해시를 보관한다. 적용은 준비 때의 확인 문구를 다시 만들지 않으므로, 준비 뒤 code-agent의 모델 정책이 바뀌면 model 동의를 `변경 대상: 모델 정책`으로 거부한다. 이 항목이 없는 갱신 전의 model 동의도 같은 사유로 거부되며 다시 준비한다. 내용·설정 원문은 추가 저장하지 않는다. 준비·질문 전·응답 기록·적용 직전의 비교 실패는 변경 경로/상태 최대 6개와 나머지 개수를 안내한다. 파일 추가·삭제도 비교한다. 기존 기록에 상세 해시가 없으면 전체 해시 검사를 유지하고 불일치 시 재준비를 안내한다. 동의 자체와 잠금 파일은 스냅샷에서 제외한다. 대상이 바뀐 동의는 폐기한다(`failure.kind: target`) — 되돌려도 같은 동의로 다시 적용하지 않는다. 적용 때 확인 화면 불일치는 첫 확인 전이면 대상 변경(업그레이드로 화면이 바뀐 경우), 앞선 확인을 통과한 뒤면 적용 실패다. 적용 직전 재대조는 한 번이다(플러그인 동작만 설명 대조 뒤 한 번 더).
+스킬과 CLI의 사용법·인자는 [사용 안내의 명령 목록](usage.md#5-터미널-명령-사람)을 따른다. [CLI 종료 코드](usage.md#cli-종료-코드)와 [hook 등록·출력·종료 동작](process-flow.md#5-hook-등록표)을 같은 정본에서 확인한다.
 
 ## 10. core 재사용
 

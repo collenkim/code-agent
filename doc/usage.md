@@ -87,6 +87,17 @@ Jira는 **사람이 생성·조회**한다. 현재 사전 판별의 연결은 Ji
 
 전용 파일 읽기 도구가 없는 호스트는 `code-agent read <파일> [시작 줄] [줄 수]`를 사용한다. 저장소 안의 1 MB 이하 텍스트를 머리 한 줄(`<경로> · <시작>-<끝> / 전체 N줄`)과 `줄번호<탭>본문`으로 반환하고, 남은 줄이 있으면 `(이어서: code-agent read <경로> <다음 줄>)`을 붙인다. 기본 200줄·최대 400줄이다. 배정받은 입력 범위는 그대로 지켜야 한다. 명령은 파일을 읽을 뿐 작업 완료나 실행 관찰을 대신하지 않는다.
 
+## CLI 종료 코드
+
+일반 CLI의 종료 코드는 아래 표를 따른다. hook은 호스트가 해석하므로 [흐름도 §5의 이벤트별 표](process-flow.md#5-hook-등록표)를 확인한다.
+
+| 코드 | 뜻 |
+|---|---|
+| 0 | 명령·조회 완료. 상태 조회가 성공했다는 뜻이며 모든 게이트의 통과를 뜻하지 않는다. `doctor`는 막는 항목이 없고, `manifest check`는 오류가 없으면 경고·알림이 있어도 0이다. `verify`는 review 인계일 때 0이다 |
+| 1 | 사용법·전제·게이트 거부. `doctor`의 막는 항목, `manifest check`의 오류, `verify`의 수정·진단·사람 판단 요청도 포함한다 |
+| 2 | 예상하지 못한 내부 오류. stderr의 사유를 확인한다 |
+| 3 | `status --json --expect-*`의 기대 불일치 또는 버전·템플릿 적용 대기. 상태·적용 결과를 다시 확인한다 |
+
 ## 목차
 
 - [1. 설치](#1-설치)
@@ -119,12 +130,7 @@ claude                                   # 이 안에서 /ca-request 입력
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 실행 절차·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| PreToolUse hook | `.claude/settings.json` — matcher `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell\|Read\|Grep\|Glob\|mcp__.*`, command `code-agent hook` | O |
-| 동의·업무 질문 관찰 | `.claude/settings.json` — PreToolUse·PostToolUse matcher `AskUserQuestion`, `code-agent consent-event` | O |
-| Stop hook | `.claude/settings.json` — `code-agent stop` | O |
-| ca-reviewer SubagentStart/Stop | `.claude/settings.json` — 독립 리뷰 실행·결과를 기록하는 `code-agent review-event` | O |
-| 계획 담당 SubagentStart/Stop | `.claude/settings.json` — matcher `ca-analyst\|ca-explorer\|ca-writer\|ca-critic`, `code-agent planning-event` | O |
-| SessionStart hook | `.claude/settings.json` — 진행 상태 요약을 내는 `code-agent session-event` | O |
+| hook | Claude 9개·Codex 6개 — 등록·matcher·출력은 [흐름도 §5](process-flow.md#5-hook-등록표) | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 설치한 절차 버전 | `.code-agent/version` | O |
