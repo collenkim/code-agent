@@ -24,8 +24,9 @@ export function processIdentity(pid: number): string | undefined {
   } catch { return undefined; }
 }
 
-let own: string | undefined, attempted = false;
+let own: string | undefined;
 export function ownProcessIdentity(): string | undefined {
-  if (!attempted) { attempted = true; own = processIdentity(process.pid); }
+  // OS 조회의 일시적 실패는 캐시하지 않는다. 다음 잠금에서 다시 확인하되 확인 전에는 회수하지 않는다.
+  own ??= processIdentity(process.pid);
   return own;
 }
