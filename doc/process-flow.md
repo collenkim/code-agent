@@ -229,7 +229,7 @@ Claude 업무 질문의 Post는 실제 답 관찰을 먼저 기록한다. 영속
 
 문서 연결 질문은 같은 작업의 원래 질문 모두에 기존 출처 검사를 통과한 답이 있고 questions.md 해시가 바뀌면 미수신 요청만 superseded로 닫는다. 질문 삭제·출처 미확인 답은 대기를 풀지 않는다. 이미 받은 서명 답은 보존하고 문서 적용 때 원본을 다시 검사한다. 원래 문서의 답으로 대시보드 사람 응답·승인을 합성하지 않는다.
 
-Codex의 `init`·`update --templates-only`는 `.codex/config.toml` 관리 블록에 로컬 MCP 선택 서버를 등록한다. 사용자 설정과 전역 설정은 유지한다. 선택 UI 관리 블록이 있는 설정 파일은 기존 저장소의 준비 커밋에도 포함하며 확인 화면에 파일 경로를 표시한다. Windows 샌드박스에서 원장의 표시 이름을 OS로 조회하지 못하면 환경값 또는 미확인 표기를 사용한다. 이 이름은 승인 여부·신원 증명에 쓰지 않는다. Git 커밋이 포함된 적용은 `.git` 쓰기 권한을 갖춘 셸에서 시작한다.
+Codex의 `init`·`update --templates-only`는 `.codex/config.toml` 관리 블록에 로컬 MCP 선택 서버를 등록한다. 사용자 설정과 전역 설정은 유지한다. `.codex/config.toml`은 이 PC의 실행 파일·프로젝트 경로와 사용자 설정을 담아 `.gitignore` 및 준비 커밋 제외 대상이다. 각 PC에서 `init --host codex` 또는 `update --templates-only --host codex`로 등록한다. 이미 추적 중이면 사람이 `git rm --cached -- .codex/config.toml`로 추적만 해제하고 그 삭제를 커밋한다. 설치는 기존 Git index와 블록 밖 사용자 설정을 바꾸지 않는다. Windows 샌드박스에서 원장의 표시 이름을 OS로 조회하지 못하면 환경값 또는 미확인 표기를 사용한다. 이 이름은 승인 여부·신원 증명에 쓰지 않는다. Git 커밋이 포함된 적용은 `.git` 쓰기 권한을 갖춘 셸에서 시작한다.
 
 ```mermaid
 sequenceDiagram
@@ -721,6 +721,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+`.codex/config.toml`은 이 PC의 실행 파일·프로젝트 경로와 사용자 설정을 담아 `.gitignore` 및 준비 커밋 제외 대상이다. 각 PC에서 `init --host codex` 또는 `update --templates-only --host codex`로 등록한다. 이미 추적 중이면 사람이 `git rm --cached -- .codex/config.toml`로 추적만 해제하고 그 삭제를 커밋한다. 설치는 기존 Git index와 블록 밖 사용자 설정을 바꾸지 않는다.
+
 설정·설치 파일은 내용이 달라질 때 임시 파일을 원자 교체하며 일시적 rename 잠금은 재시도한다. 템플릿과 runtime.json을 같은 스냅샷·복원 범위에서 반영한다. npm 패키지의 전체 해시와 의존성 복사는 여는 명령의 atNextWork에서만 수행하고 hook은 예약된 릴리스만 반영한다. 사본은 Node의 검색 순서와 중첩 버전을 보존하며 같은 상위 의존성만 공유한다.
 
 첫 `init`은 설치한 스킬·에이전트 사본의 기준 해시를 `templates.json`에 남긴다. 설치 기록이 있는 프로젝트의 `init` 재실행은 템플릿 반영과 같은 보존·복원 판정을 거쳐 수동 사본을 유지하고 새 번들을 `template-conflicts/`에 둔다. 기준 해시가 없는 이전 설치도 현재 번들과 다른 사본을 보존한다. 빠진 hook은 복구하며, 보존한 경로와 병합할 사본 위치를 출력한다.
@@ -905,7 +907,9 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 변경 이력
 
-- 재질문·손상 상태 안내의 시험 기대값과 대시보드 시험의 모의 프로세스 격리·종료 정리를 맞춘다 — `test(2-2,2-5,2-11)`.
+- PC별 Codex 선택 UI 설정을 무시 목록에 넣고 모든 준비 커밋에서 제외한다 — `fix(2-6)`.
+
+- 재질문·손상 상태 안내의 시험 기대값과 대시보드 시험의 모의 프로세스 격리·종료 정리를 맞춘다 — `e2ac4a7`.
 
 - 질문 세션 인자가 없는 기존 MCP 도구 목록은 설정 형식 갱신을 통해 Codex 재시작을 안내한다 — `1ca3b7c`.
 

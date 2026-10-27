@@ -87,6 +87,8 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 다른 세션·서브 에이전트·미리 넣은 답·질문 밖 응답·내용 변경·연결 종료는 승인하지 않는다. 이 처리는 신뢰하는 로컬 MCP 클라이언트와 hook의 관찰이며 사용자 신원 증명은 아니다. 서버에는 답을 전달하는 별도 도구나 CLI 옵션이 없다. 이미 실패한 동의는 새로 준비한다.
 
+`.codex/config.toml`은 이 PC의 실행 파일·프로젝트 경로와 사용자 설정을 담아 `.gitignore` 및 준비 커밋 제외 대상이다. 각 PC에서 `init --host codex` 또는 `update --templates-only --host codex`로 등록한다. 이미 추적 중이면 사람이 `git rm --cached -- .codex/config.toml`로 추적만 해제하고 그 삭제를 커밋한다. 설치는 기존 Git index와 블록 밖 사용자 설정을 바꾸지 않는다.
+
 `init`와 `update --templates-only --host codex`는 프로젝트 `.codex/config.toml`의 관리 블록에 선택 UI 서버를 등록한다. 블록 밖 사용자 설정과 전역 설정은 유지한다. 처음 등록하면 Codex를 다시 열어 프로젝트·hook을 신뢰해야 한다. 등록 내용(진입점 경로)은 버전을 적용해도 바뀌지 않는다 — MCP 프로세스(연결부)는 세션 시작 때의 코드로 돌고 도구 호출마다 프로젝트의 적용 버전 처리기를 부르므로, 버전 적용 뒤에도 다시 열 필요가 없다(`code-agent version`이 연결부 버전과 마지막 호출을 처리한 버전을 보인다). `doctor`는 MCP 설치 누락을 점검하며, 실제 UI 표시는 대화형 Codex에서 확인한다. MCP 폼 미지원·도구 오류는 원인을 알리고 복구하며 번호 나열을 UI 완료로 보고하지 않는다. 비대화형 `codex exec`는 UI 검증 수단이 아니다.
 
 `code-agent consent respond <ID> <번호들> <확인 코드>`와 UserPromptSubmit 관찰은 사용자가 명시적으로 요청한 대화 입력 호환 경로다. 이 경로는 `codex-prompt` 출처를 유지한다. 훅을 사용할 수 없다면 사람이 터미널에서 직접 `confirm`·`approve`·`deliver`를 실행할 수 있으나 계획·리뷰의 실행 관찰 요구는 유지한다.

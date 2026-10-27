@@ -19,6 +19,7 @@ import { modelsTable, setModel, codexModelOf } from "../agent/models";
 import { defaultCodexModel } from "../agent/modelPolicy";
 import { usage } from "../agent/usage";
 import { start } from "../agent/commands";
+import { baselineFiles, pendingBaselineFiles } from "../agent/bootstrap";
 import { approveAndApplyFixture, CONSENT_SPEC, CONSENT_WORK_ID, prepareDeliveryFixture, setupConsentProject, submitConsentRequest, writeFixture } from "./consentFixture";
 import { withCaller } from "./reviewFixture";
 import { probeResponse, stubCodexProbe, type ProbeState } from "./codexProbeFixture";
@@ -73,6 +74,24 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   assert.equal(read(".codex/hooks.json"),before);
   assert.match(installedHook(root,"PreToolUse","codex-event","codex")!,/node .*cli\.js.*codex-event/);
   assert.equal((read("AGENTS.md").match(/<!-- code-agent:start -->/g) ?? []).length,1);
+});
+
+test("2-6 PC별 Codex 설정은 최초·추가 준비 커밋에서 제외하고 사용자 설정을 보존한다", () => {
+  const git = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  init(root, { host: "codex", cli });
+  assert.ok(!baselineFiles(root).includes(".codex/config.toml"));
+  git("init", "-q"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
+  assert.equal(git("check-ignore", ".codex/config.toml"), ".codex/config.toml");
+  git("add", "-f", "--", ...baselineFiles(root)); git("commit", "-qm", "baseline");
+  assert.equal(git("ls-files", ".codex/config.toml"), "");
+  writeFixture(root, ".codex/config.toml", 'model = "my-model"\n' + read(".codex/config.toml").replaceAll(root.replace(/\\/g, "\\\\"), "Z:\\\\other-machine"));
+  update(root);
+  assert.match(read(".codex/config.toml"), /^model = "my-model"/);
+  assert.deepEqual(pendingBaselineFiles(root), [], "PC 경로를 다시 등록해도 준비 커밋을 요구하지 않는다");
 });
 
 test("역할별 Codex 모델은 동의 후 적용되고 다른 호스트와 역할을 보존하며 갱신·복원한다", () => {

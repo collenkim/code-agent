@@ -10,7 +10,6 @@ import { commitOf, mergeBase } from "./tree";
 import { docPaths } from "./docs";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { skill } from "./hostText";
-import { choiceConfigProblem } from "./choiceConfig";
 
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -41,7 +40,7 @@ export function setupStatus(root: string): string {
 /**
  * 준비 커밋에 담는 것 — **code-agent 가 만들거나 고치는 파일만.** 다른 도구(AWS AI-DLC 등)가 `.claude/`·`.codex/`·`doc/` 에
  * 둔 파일은 그 도구의 몫이라 담지 않는다. 담으면 그 도구가 고칠 때마다 시작이 막히거나 계획 밖 변경이 된다.
- * README와 관리 블록 없는 .codex/config.toml은 최초 커밋에서만 담는다. 선택 UI 관리 블록이 있는 설정은 도입 대상이다.
+ * README는 최초 커밋에서만 담는다. .codex/config.toml은 이 PC의 경로·사용자 설정을 담으므로 항상 제외한다.
  */
 export function baselineFiles(root: string): string[] {
   const manifest = loadManifestIfAny(root);
@@ -50,15 +49,14 @@ export function baselineFiles(root: string): string[] {
   });
   const roots = new Set(["code-agent.json", "CLAUDE.md", "AGENTS.md", ".gitignore", ".claude/settings.json", ".codex/hooks.json", "doc/code-agent",
     ".code-agent/version", ".code-agent/hosts.json", ".code-agent/execution.json", ".code-agent/models.json", ".code-agent/codex-models.json", ".code-agent/templates.json", ...owned,
-    ...(hasBaseline(root) ? [] : ["README.md", ".codex/config.toml"]),
-    ...(choiceConfigProblem(root) === undefined ? [".codex/config.toml"] : []),
+    ...(hasBaseline(root) ? [] : ["README.md"]),
     ...(manifest?.stages.map(stage => stage.template) ?? []),
     ...[...POLICY_KINDS, ...KNOWLEDGE_KINDS].flatMap(kind => docPaths(manifest, kind))]);
   const found = new Set<string>();
   function walk(file: string) {
     const full = resolve(root, file);
     const rel = relative(root, full).replace(/\\/g, "/");
-    if (isAbsolute(rel) || rel.startsWith("../") || rel === ".." || rel === ".git" || rel.startsWith(".git/") || rel === "doc/work" || rel.startsWith("doc/work/") || rel === ".claude/settings.local.json") return;
+    if (isAbsolute(rel) || rel.startsWith("../") || rel === ".." || rel === ".git" || rel.startsWith(".git/") || rel === "doc/work" || rel.startsWith("doc/work/") || rel === ".claude/settings.local.json" || rel === ".codex/config.toml") return;
     if (!existsSync(full) || lstatSync(full).isSymbolicLink()) return;
     if (lstatSync(full).isDirectory()) for (const name of readdirSync(full)) walk(`${rel}/${name}`);
     else found.add(rel);

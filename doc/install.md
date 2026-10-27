@@ -13,6 +13,8 @@
 
 ---
 
+`.codex/config.toml`은 이 PC의 실행 파일·프로젝트 경로와 사용자 설정을 담아 `.gitignore` 및 준비 커밋 제외 대상이다. 각 PC에서 `init --host codex` 또는 `update --templates-only --host codex`로 등록한다. 이미 추적 중이면 사람이 `git rm --cached -- .codex/config.toml`로 추적만 해제하고 그 삭제를 커밋한다. 설치는 기존 Git index와 블록 밖 사용자 설정을 바꾸지 않는다.
+
 별도 패키지 설치나 서버 수동 실행은 필요 없다. Codex 선택 UI용 로컬 MCP 서버는 프로젝트 `.codex/config.toml`에 자동 등록되며 Codex가 stdio로 실행한다. 새 버전은 `code-agent update`(Git 소스 설치) 또는 패키지 관리자(npm 패키지)로 설치하고, 프로젝트마다 진행 중인 일이 없을 때 적용된다([5절](#5-code-agent-update--갱신)). 호스트는 종료하지 않는다 — 다시 열어야 하는 변경이 있으면 적용 보고가 그것만 알린다. `code-agent version`과 `doctor`로 적용 버전과 설치 상태를 확인한다. 이미 진행 중인 작업은 그 작업의 증거로 재개한다.
 
 작업 임대(`.code-agent/lease.json`)·이 PC 의 적용 버전(`runtime.json`) 같은 개인 기록은 적용이 `.gitignore` 블록에 줄을 더한다 — 적용 전에는 미추적 파일로 보이지만 `.code-agent/` 아래라 게이트·동의 스냅샷에는 걸리지 않는다(그대로 둬도 무해하다). 진행 중인 작업이 있으면 적용은 설치 파일(`.gitignore` 블록·스킬·에이전트 사본·hook 설정)을 바꾸지 않고 예약한다(`update --templates-only`는 종료 코드 3) — 바뀐 설치 파일이 그 작업의 계획 밖 변경이 되어 검증·반영을 막지 않게 한다. 적용으로 바뀐 설치 파일은 다음 작업 전에 준비 커밋(setup/baseline 확인)으로 반영한다.
