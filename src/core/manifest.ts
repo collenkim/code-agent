@@ -199,7 +199,7 @@ const ManifestSchema = z.object({
     .record(z.string(), z.array(z.string()).min(1, EMPTY_ARGV))
     .default({})
     .describe(
-      "검증(P5)이 build·test 말고 이름으로 돌릴 수 있는 추가 명령. 두 리터럴만으로는 " +
+      "검증이 build·test 말고 이름으로 돌릴 수 있는 추가 명령. 두 리터럴만으로는 " +
         "마이그레이션이나 테스트 필터(gradlew test --tests X)를 돌릴 자리가 없다. 이름은 build·test 를 " +
         "덮어쓸 수 없다 — 그 둘은 최상위 선언이 이미 쓰고 있는 이름이다",
     ),

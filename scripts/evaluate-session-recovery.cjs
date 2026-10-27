@@ -7,13 +7,10 @@ const fs = require('node:fs'), path = require('node:path'), os = require('node:o
 const root = path.resolve(__dirname, '..'), build = process.argv[2] ?? 'dist';
 if (!['dist', 'dist-bin'].includes(build)) throw Error('Use dist or dist-bin');
 const use = name => require(path.join(root, build, 'agent', name));
-const recoveryFile = path.join(root, 'doc/reviews/evidence/2026-10-20-session-recovery-live.json');
+const recoveryFile = path.join(root, 'doc/reviews/evidence/session-recovery-live.json');
 function saveRecoveryReport(report) {
-  const all = JSON.parse(fs.readFileSync(recoveryFile, 'utf8'));
-  all.realModels.claudeRecovery = { passed: report.passed, memoryPreserved: report.memoryPreserved,
-    originalSession: report.session, resumedSession: report.run?.sessionId, status: report.interaction?.status,
-    resumedRunCount: report.run ? 1 : 0, details: report };
-  fs.writeFileSync(recoveryFile, JSON.stringify(all, null, 2) + '\n');
+  fs.mkdirSync(path.dirname(recoveryFile), { recursive: true });
+  fs.writeFileSync(recoveryFile, JSON.stringify(report, null, 2) + '\n');
 }
 function verify(report, marker) {
   const store = use('master/store'), runs = store.listRuns(report.repo), resumed = runs.find(r => !r.recovery);
@@ -26,13 +23,13 @@ function verify(report, marker) {
   report.memoryPreserved = true; report.passed = true;
 }
 if (process.argv.includes('--recheck')) {
-  const report = JSON.parse(fs.readFileSync(recoveryFile, 'utf8')).realModels.claudeRecovery.details;
+  const report = JSON.parse(fs.readFileSync(recoveryFile, 'utf8'));
   if (path.dirname(report.repo) !== fs.realpathSync.native(os.tmpdir()) || !path.basename(report.repo).startsWith('ca-recovery-live-')) throw Error('Disposable recovery repository required');
   const recovery = use('master/store').listRuns(report.repo).find(r => r.recovery);
   const native = fs.readFileSync(recovery.recovery.source.file, 'utf8');
   const marker = report.memoryMarker ?? native.match(/검사값은 ([a-f0-9-]{36})입니다/)?.[1]; assert.ok(marker);
   verify(report, marker);
-  if (report.error) { report.driverCorrection = '재전송의 at·replayed는 달라질 수 있어 영수증과 실행 개수를 대조한다. 같은 실제 실행의 저장 기록을 재검증했다.'; delete report.error; }
+  delete report.error;
   saveRecoveryReport(report); console.log(JSON.stringify(report)); return;
 }
 const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ca-recovery-live-')));

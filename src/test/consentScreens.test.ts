@@ -44,7 +44,7 @@ function startWork(): void {
   start(root, join(root, CONSENT_SPEC));
 }
 
-// ---- CON-3 문서 세션 범위 ----
+// ---- 문서 세션 범위 ----
 
 test("T-3-1 문서 세션의 쓰기 범위는 docs begin 때의 매니페스트로 고정된다", () => {
   docsBegin(root);
@@ -94,7 +94,7 @@ test("T-M1-1·T-M1-2 .md 가 아닌 KNOWLEDGE 경로는 계획 밖 변경 예외
   assert.match(result.text, /공통 KNOWLEDGE business-rules: src\/a\.ts — \.md 파일이어야/);
 });
 
-// ---- CON-4 승인 화면 경계 절·재승인 diff ----
+// ---- 승인 화면 경계 절·재승인 diff ----
 
 const goldenBase = { language: "typescript", sourceExtensions: [], domainBase: "src", domainRoots: [""], conventions: [], docs: {}, git: { base: "master" },
   commands: {}, commandTimeoutMinutes: 10, fixRounds: 2, workOrder: { attributes: [], requireApprover: false, requireVerifiedApproval: false }, plugins: {},
@@ -161,7 +161,7 @@ test("T-4-3·T-4-4·T-4-5 승인이 경계 스냅샷과 문서별 해시를 남�
   assert.deepEqual(approvalChangeLines({ status: "none" }), []);
 });
 
-// ---- CON-14·CON-15 스냅샷 ----
+// ---- 스냅샷 ----
 
 function link(target: string, path: string): boolean {
   try { symlinkSync(join(root, target), join(root, path), process.platform === "win32" ? "junction" : "dir"); return true; }
@@ -208,7 +208,7 @@ test("T-15-1·T-15-2 내용 해시 캐시는 값을 바꾸지 않고, mtime 을 
   assert.equal(existsSync(cacheFile) && "doc/new.md" in JSON.parse(readFileSync(cacheFile, "utf8")).entries, false, "2초 안에 바뀐 파일은 캐시하지 않는다");
 });
 
-// ---- CON-16 동의 영수증·원장 대조 ----
+// ---- 동의 영수증·원장 대조 ----
 
 test("T-16-1·T-16-2 반영 커밋에 동의 영수증을 넣고, 원장 끝줄이 지워지면 반영을 막는다", async () => {
   await prepareDeliveryFixture(root);

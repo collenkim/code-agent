@@ -593,7 +593,7 @@ describe("plan submit — 제출 전 검사", () => {
       }],
     }));
     git("add", "code-agent.json"); git("commit", "-qm", "prepare refactor manifest");
-    // abort 한 ORD-1 의 작업 폴더가 미추적으로 남으면 새 작업 브랜치로 따라가 start 가 거부한다(FLOW-07)
+    // abort 한 ORD-1 의 작업 폴더가 미추적으로 남으면 새 작업 브랜치로 따라가 start 가 거부한다
     git("add", "-A", "doc/work/ORD-1"); git("commit", "-qm", "ORD-1 작업 문서");
     write("doc/work/REF-1.md", [
       "---", "kind: refactor", "id: REF-1", "title: 거래 경계 정리",
@@ -605,7 +605,7 @@ describe("plan submit — 제출 전 검사", () => {
     write("doc/work/REF-1/01-requirements.md",
       ["## R1 · 경계 정리", "근거: \"경계만 옮긴다.\"", "- 데이터: 안 건드린다", "## 가정", "- 없음", ""].join("\n"));
     write("doc/work/REF-1/02-analysis.md", [
-      // refactor 의 ② 는 '지금 동작' 을 근거 path:line 과 함께 적어야 지난다 (P6)
+      // refactor 의 ② 는 '지금 동작' 을 근거 path:line 과 함께 적어야 지난다
       "## 기존 시스템 분석", `- DealFacade 가 트랜잭션을 연다 — ${DEAL}/facade/DealFacade.java:42`,
       "## 영향 범위", "| R 번호 | 닿는 파일 | 부르는 곳 | 파급 |", "|---|---|---|---|", "| R1 | Deal.java | DealFacade | 없음 |",
       "## Risk", "- 없음 — 시그니처를 바꾸지 않는다", "## 문서 영향", "| 문서 | 키 | 판단 | 근거 |", "|---|---|---|---|", "| - | - | 영향 없음 | 지식 항목이 없다 |", "",

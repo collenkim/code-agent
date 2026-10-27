@@ -342,7 +342,7 @@ async function runSpecs(
       ...(scan.truncated ? { reportScan: "truncated" as const } : {}),
     });
   }
-  // 검증 명령이 code-agent 기록을 바꿨으면 되돌리고 이 실행을 증거로 받지 않는다 — 리뷰 회차·교차 지점을 지워 한도를 피하는 길을 닫는다.
+  // 검증 명령이 code-agent 기록을 바꿨으면 되돌리고 이 실행을 증거로 받지 않는다 — 리뷰·계획·승인 원장의 변조를 증거로 인정하지 않는다.
   // 실행마다 원인 guard(전제 미충족 — runClass)로 남긴다: 게이트·status·같은 코드 재실행 거부가 같은 사실을 말하고, 결과(통과)로 세지 않는다
   const tampered = restoreState(work, guarded);
   if (tampered.length) {
@@ -369,7 +369,7 @@ function unconfirmedCases(cases: TestCaseEvidence[]): string {
     const status = entry.status ?? "unknown";
     if (status !== "unknown") return `${entry.id}(${status})`;
     if (entry.source === "테스트 파일") return `${entry.id}(unknown — 테스트 파일에는 있으나 실행 결과에 없음)`;
-    if (entry.source === "없음") return `${entry.id}(unknown — 계획 파일 어디에도 없음)`;
+    if (entry.source === "없음") return `${entry.id}(unknown — TC 대조 대상 파일에 없음)`;
     return `${entry.id}(unknown)`;
   }).join(", ");
 }
@@ -481,10 +481,10 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
     lines.push("", "!! 보고서 탐색이 2만 항목·깊이 12에서 끊겼습니다 — JUnit 보고서를 찾지 못했을 수 있습니다.");
   }
   if (phase === "check" && !testFrozen(evidence)) {
-    // FLOW-05 사전 점검 — 막지 않는다. TC id 가 어디에도 없으면 test 의 결과가 인식되지 않는다
+    // TC 대조 대상에서 토큰을 찾지 못하면 테스트 이름을 보완하도록 안내한다. 사전 점검은 진행을 막지 않는다.
     const missing = tcPrecheck(work);
     if (missing.length > 0) {
-      lines.push("", `!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다: ${missing.join(", ")} — code-agent test 전에 테스트 이름에 넣으세요. 결과가 인식된 test 실행부터 kind:test 파일이 업니다.`);
+      lines.push("", `!! ⑦ 의 TC id 가 대조 대상 파일에 없습니다: ${missing.join(", ")} — kind:test 계획 파일(refactor는 기존 테스트 포함), 테스트 단계가 없으면 계획 파일의 테스트 이름에 넣으세요. 결과가 인식된 test 실행부터 kind:test 파일이 얼어 있습니다.`);
       lines.push(...nearMissLines(work, missing));
     }
   }
@@ -499,7 +499,7 @@ function summary(work: Work, evidence: Evidence, phase: "check" | "test" | "inte
     for (const entry of unknown) {
       lines.push(`  - ${entry.id}: ${entry.source === "테스트 파일"
         ? `테스트 파일에 id 는 있지만 실행 결과에 없습니다 — 러너 출력·보고서 형식을 확인하세요(러너별 이름: ${skillFile("ca-test", undefined, "tc-names.md")})`
-        : "계획 파일 어디에도 id 가 없습니다 — 테스트 이름에 TC id 를 넣으세요"}`);
+        : "TC 대조 대상 파일에 id가 없습니다 — 테스트 이름에 TC id를 넣으세요"}`);
     }
     lines.push(...nearMissLines(work, unknown.filter((entry) => entry.source !== "테스트 파일").map((entry) => entry.id)));
     if (work.stages.every((stage) => stage.kind !== "test")) {

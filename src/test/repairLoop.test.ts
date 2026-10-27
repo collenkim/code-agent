@@ -64,11 +64,11 @@ describe("TC 표기 안내", () => {
     toCheck();
     write(TEST_FILE, "// tc_1 saves · TC-2\nclass OrderTest {}\n");
     const checked = await check(requireValidatable(repo, "check"));
-    assert.match(checked, /!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다: TC-1 /);
+    assert.match(checked, /!! ⑦ 의 TC id 가 대조 대상 파일에 없습니다: TC-1 /);
     assert.match(checked, /TC-1: 계획 파일에 tc_1 가 있습니다 — 결과는 TC-1 표기\(대문자 TC, 하이픈, 숫자\)만 인식합니다/);
     next(repo);
     const tested = await runTests(requireValidatable(repo, "test"));
-    assert.match(tested, /TC-1: 계획 파일 어디에도 id 가 없습니다/);
+    assert.match(tested, /TC-1: TC 대조 대상 파일에 id가 없습니다/);
     assert.match(tested, /TC-1: 계획 파일에 tc_1 가 있습니다/);
     assert.ok(!/TC-2: 계획 파일에/.test(tested), "인식된 TC 는 안내하지 않는다");
     const gate = stageProblems(loadWork(repo)!, "test").join("\n");

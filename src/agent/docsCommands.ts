@@ -193,7 +193,7 @@ export function docsBegin(repoRoot: string): string {
  * 없는 KNOWLEDGE 문서를 빈 뼈대로 만든다.
  *
  * 도입 세션을 여는 자리가 유일하게 "아직 작업이 없는" 자리다 — 명령을 하나 더 만드는 대신 여기서 만든다.
- * 막지 않는 문서라 사람에게 시키면 영영 안 생기고, 그러면 P5 의 반영이 쓸 자리가 없다.
+ * 확정 게이트로 막지 않는 문서이므로 준비 단계에서 만들어 반영할 지식의 자리를 확보한다.
  */
 function createKnowledgeSkeletons(repoRoot: string): string[] {
   const created: string[] = [];

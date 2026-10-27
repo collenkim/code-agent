@@ -119,8 +119,8 @@ function stageCommand(phase: Exclude<Phase, "deliver">): string {
 const AIDLC_HINT = "AI-DLC 작업이 진행 중이라 code-agent 를 진행하지 않습니다 — 위 AI-DLC 줄의 안내대로 정리한 뒤 이어갑니다";
 
 /**
- * 모르는 스테이지는 옛 버전이 남긴 커서다 (P3 의 `research`). 조용히 다른 칸으로 옮겨 이어 가면
- * 그 작업의 문서가 어느 게이트를 지났는지 아무도 모른다 — 지우고 다시 시작하게 한다.
+ * PHASES에 없는 커서는 통과한 게이트를 확인할 수 없어 진행하지 않는다.
+ * 작업 문서를 보존하고 abort 동의 후 다시 시작하도록 안내한다.
  */
 export function requirePhase(active: ActiveWork): void {
   if (!(PHASES as readonly string[]).includes(active.phase)) {
@@ -132,7 +132,7 @@ export function requirePhase(active: ActiveWork): void {
 }
 
 /**
- * P5 이전에 시작된 작업에는 굳혀 둔 기준 커밋이 없다. 그 위에서 검증하면 변경 목록이 실제보다
+ * 기준 커밋이 기록되지 않은 작업을 검증하면 변경 목록이 실제보다
  * 넓거나 좁고, 증거가 무엇 위에서 났는지 아무도 모른다 — 지금 다시 굳히는 것도 같은 이유로 안 된다
  * (그 사이 기준 브랜치가 움직였을 수 있다). 지우고 다시 시작하게 한다.
  *
@@ -141,7 +141,7 @@ export function requirePhase(active: ActiveWork): void {
 function requireBaseCommit(active: ActiveWork): void {
   if (active.branch && !active.baseCommit) {
     throw new Stop(
-      "이 작업에는 굳혀 둔 기준 커밋이 없습니다 (P5 이전에 시작된 커서입니다).\n" +
+      "이 작업에는 굳혀 둔 기준 커밋이 없습니다.\n" +
         "현재 호스트 세션에서 ca-answer의 abort 동의 절차로 커서를 지우고 다시 시작하세요 — 작업 폴더의 문서는 그대로 남습니다.",
     );
   }
@@ -310,7 +310,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   if (current) {
     return `이미 진행 중입니다: ${current.id} · ${PHASE_LABEL[current.phase]}\n\n${status(repoRoot)}`;
   }
-  // 작업 하나는 대상 하나만 진행한다(FLOW-08) — 진행 중 확인 뒤라 대상 여럿인 지시서로 이미 시작한 작업은 위에서 그대로 잇고,
+  // 작업 하나는 대상 하나만 진행한다 — 진행 중 확인 뒤라 대상 여럿인 지시서로 이미 시작한 작업은 위에서 그대로 잇고,
   // 브랜치 전환 앞이라 거부 때 아무것도 바뀌지 않는다. 확정 뒤 고쳐 다시 제출하면 지시서 해시가 바뀌어 사람이 다시 확정한다
   if (order.target.length > 1) {
     const draft = requestDraftFile(order.id);
@@ -335,7 +335,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     const retained = cursorOnBranch(repoRoot, branch);
     if (retained) throw new Stop(`브랜치 ${branch}에 진행 중인 작업 ${retained.active.id}가 보관되어 있습니다. 해당 브랜치로 돌아가 code-agent status 로 확인한 뒤 재개하세요. 기존 커서는 덮어쓰지 않았습니다.`);
     requirePreparedBranch(repoRoot, branch, base);
-    // 새 작업 브랜치를 딸 때만 미커밋 변경을 본다(FLOW-07) — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
+    // 새 작업 브랜치를 딸 때만 미커밋 변경을 본다 — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
     // 반영 커밋에 섞인다. 이미 있는 브랜치는 중단 뒤 재시작이라 그 작업의 변경이 남아 있을 수 있다
     if (!commitOf(repoRoot, branch)) {
       const blockers = startBlockers(repoRoot, order.id, specPath);
@@ -684,7 +684,7 @@ export function status(repoRoot: string): string {
       );
     }
   }
-  // 계획 밖 변경은 모든 스테이지에 낸다(FLOW-07) — analysis~plan 은 계획 파일이 없어 작업 폴더 밖 변경이 전부 나온다
+  // 계획 밖 변경은 모든 스테이지에 낸다 — analysis~plan 은 계획 파일이 없어 작업 폴더 밖 변경이 전부 나온다
   // (그 단계에서 모델은 작업 폴더 밖을 쓸 수 없으므로 사람·외부 도구의 변경이다)
   const outside = outsideChanges(work);
   if (outside.length > 0) {
@@ -727,7 +727,7 @@ function movedStatus(repoRoot: string): string {
 }
 
 /**
- * 처리 주체가 없는 상태(FLOW-13)의 `다음:` — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
+ * 처리 주체가 없는 상태의 `다음:` — AI-DLC 차단, 문서 세션(매니페스트가 아직 없어도 — ca-adopt 도중), 매니페스트 없음,
  * 준비 동의(preparationHint 가 고른다) 순으로 본다. 문서 세션 중에는 request begin 이 거부되므로 접수 안내를 내지 않는다
  */
 function idleHint(repoRoot: string, manifest: Manifest | undefined): string {

@@ -271,7 +271,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `되돌림 ${LIMITS.agentReturn}, 교정 ${LIMITS.correction}, 리뷰어 호출 ${LIMITS.reviewerRuns}/회차`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "none", onExhausted: "blocked", exceededText: "같은 입력 규칙, 리뷰어는 decision",
-    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(C2 SubagentStop). 기록된 시도는 record 변형(recordedVariant)
+    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(SubagentStop). 기록된 시도는 record 변형(recordedVariant)
     guide: "결과 형식 오류입니다 — {detail}. 같은 배정의 resultShape 형태 JSON 하나로 다시 반환하세요(문서 본문은 staging 그대로).",
     enforcedAt: ["planningHook.ts observePlanner", "reviewHook.ts observeReviewer", "retryPolicy.subagentExit", "planning.ts repairState"],
   },
@@ -283,7 +283,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
     limitText: `되돌림 ${LIMITS.agentReturn}, 같은 입력 실패 ${LIMITS.sameInput}, 작업 총 배정 ${LIMITS.taskTotal}`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "none", onExhausted: "blocked", exceededText: "총 배정 상한 → 사람 판단",
-    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(C2 SubagentStop). 기록된 시도는 record 변형(recordedVariant)
+    // 기본 문구는 기록 전에 같은 담당에게 돌려보내는 문구다(SubagentStop). 기록된 시도는 record 변형(recordedVariant)
     guide: "결과가 검사에 걸렸습니다 — 고친 뒤 같은 형태의 결과 JSON을 다시 반환하세요(한 번만 돌려보냅니다):\n{detail}",
     enforcedAt: ["planningHook.ts observePlanner", "stagedChecks.ts(결정적 문서 검사)", "commands.ts next(최종 게이트)"],
   },
@@ -471,7 +471,7 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
   },
   precondition: {
     /**
-     * 진행 중인 작업(접수부터 반영·종료 전까지)이 있을 때의 역할 모델·추론 강도 변경 거부(2026-10-08 사용자 결정 D1) — 동의 준비·적용과
+     * 진행 중인 작업(접수부터 반영·종료 전까지)이 있을 때의 역할 모델·추론 강도 변경 거부 — 동의 준비·적용과
      * 사람의 `code-agent model <역할> <모델>` 이 같은 문장을 쓴다(models.ts requireNoWorkInProgress)
      */
     "model-in-work": "진행 중인 작업 {id}({phase})이 있어 역할 모델·추론 강도를 바꾸지 않습니다 — 에이전트 정의 파일(.claude/agents·.codex/agents 아래)과 변경값 파일(.code-agent/models.json·codex-models.json)은 커밋되는 설치 파일이라 작업 중에 바꾸면 그 작업의 계획 밖 변경이 됩니다. 작업을 반영(deliver)하거나 종료(abort)한 뒤 바꾸세요. 지금 값은 작업 중에도 code-agent model 로 조회할 수 있습니다.",
@@ -502,8 +502,7 @@ export const GUIDE_VARIANTS: Readonly<Partial<Record<FailureClass, Readonly<Reco
   },
   "host-sandbox-denied": {
     /**
-     * Codex 가 부른 claude 의 네트워크 오류가 권한 상승 안내 뒤 같은 지점에서 다시 났다(앞선 sandbox-network 시도나 사전 판정 거부가 있다 —
-     * 2026-10-08 사용자 결정 D2). 실행 불가로 넘기지 않고 사람이 정한다: 네트워크를 확인해 다시 실행하거나 judgment cross-stop.
+     * Codex 가 부른 claude 의 네트워크 오류가 권한 상승 안내 뒤 같은 지점에서 다시 났다(앞선 sandbox-network 시도나 사전 판정 거부가 있다). 실행 불가로 넘기지 않고 사람이 정한다: 네트워크를 확인해 다시 실행하거나 judgment cross-stop.
      * 지점 시도가 남았을 때다(recordedVariant)
      */
     "network-repeat": "{host} 교차 실행이 이 지점에서 다시 네트워크 오류로 끝났습니다({detail}) — 실행 불가(중지)로 기록하지 않았습니다. 권한 상승(샌드박스 밖 실행)으로 실행했는데도 같다면 실제 네트워크 문제일 수 있습니다. 사용자에게 알리고 지시를 받으세요 — 사용자가 네트워크를 확인하면 권한 상승한 같은 명령을 다시 실행하고(남은 지점 시도 {left}회), 이 지점을 교차 검증 없이 진행하기로 정하면 ca-answer 동의 judgment cross-stop 으로 이 지점의 중지를 기록합니다. 사용자 확인 없이 중지를 기록하지 않습니다.",
@@ -772,10 +771,8 @@ export function roundStateOf(input: {
 }
 
 /**
- * 원인 기록이 없는 옛 증거의 회차 원인 추정 — 직전 회차가 모두 통과면 review, 그 밖(기록 없음 포함)은 fix.
- * 옛 규칙은 실패한 채 한도를 넘는 회차를 거부했으므로 추정한 fix 수는 rounds−1 과 fixRounds 를 넘지 않는다 — 추정 카운터는
- * 옛 규칙보다 엄격해지지 않는다. 엄격해지는 것은 판정 규칙 하나다: 마지막 회차가 실행 기록 없이 끊긴 뒤 코드를 고치면
- * 새 규칙은 고쳐 쓰기를 쓴다(옛 규칙은 마지막으로 기록된 실행을 봤다). 진행 중 작업이 여기서 막히면 judgment retry-grant 로 넘긴다.
+ * 원인 기록이 없는 증거의 회차를 추정한다. 첫 회차는 first, 직전 회차가 모두 통과하면 review, 그 밖은 fix다.
+ * 추정값과 실행 중단 뒤 변경의 판정은 verifyRetryOf가 재시도 한도에 반영한다.
  */
 export function deriveLegacyCauses(rounds: number, runs: readonly RunView[]): Record<string, RoundCause> {
   const causes: Record<string, RoundCause> = {};
@@ -1220,7 +1217,7 @@ export function crossPointState(attempts: readonly CrossAttemptView[]): {
 export type CrossCounterKey = "crossPoint" | "crossTimeout" | "crossError" | "crossFormat";
 /**
  * 교차 지점의 카운터 예산 — Budget 규약(used = 이미 쓴 시도·재실행 수, exhausted = used ≥ limit 이면 그 원인으로 다시 실행하지
- * 않는다)을 따르는 유일한 계산이다. crossPointDecision·crossPointHint 와 리뷰·계획 쪽 예산 보고(C1 reviewBudgets·
+ * 않는다)을 따르는 유일한 계산이다. crossPointDecision·crossPointHint 와 리뷰·계획 쪽 예산 보고(reviewBudgets·
  * planningCrossBudgets)·사람 허용(retryGrant)·안내의 `{left}` 는 이 값만 쓴다(원인별 수를 따로 세지 않는다).
  * - crossPoint: 지점 시도(review·correct — preflight·human 제외) 수.
  * - crossFormat: 형식 교정(correct) 수.
@@ -1347,7 +1344,7 @@ export function consecutiveCrossStops(points: readonly { state: string; by?: str
 export interface LockOwner { pid?: number; host?: string; at?: string; started?: string }
 /**
  * 잠금 판정. 같은 PC 의 주인이 살아 있고 시작 식별이 맞거나 미확인이면 wait(busy), 죽었거나 식별이 다르면 reclaim. 다른 PC 는 stop(사람).
- * 주인 기록이 없으면(옛 빈 잠금·쓰는 중·손상) 나이 회수를 허용한 잠금만 10분 뒤 reclaim, 그 밖은 stop.
+ * 주인 기록이 없으면 나이 회수를 허용한 잠금만 TIMING.lockStaleMs 뒤 reclaim, 그 밖은 stop.
  */
 export function lockDecision(input: { owner?: LockOwner; sameHost: boolean; alive?: boolean; identity?: boolean; ageMs: number; ageReclaim: boolean }): "reclaim" | "wait" | "stop" {
   if (typeof input.owner?.pid === "number" && typeof input.owner.host === "string") {

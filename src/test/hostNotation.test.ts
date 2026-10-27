@@ -1,5 +1,5 @@
 /**
- * 호스트별 표기의 배선(FLOW-11·HP-5·OPT-8) — CLI·hook 의 사용자 문구가 hostText 표기 함수를 쓴다.
+ * 호스트별 표기의 배선 — CLI·hook 의 사용자 문구가 hostText 표기 함수를 쓴다.
  *
  * Claude 표기는 배선 전 문자열과 바이트가 같다(예외 셋: setup 추천의 질문 도구 문장, setup 의 `현재 호스트 세션에서`,
  * 요구 반려의 `Claude Code 에서 ` 삭제). Codex 진입(codexHook)은 Codex 표기로 판정하고, CLI 는 설치·실행 환경으로 표기를 고른다.
@@ -129,7 +129,7 @@ describe("CLI 표기 — 설치·실행 환경", () => {
   test("Claude 바이트 — 배선 전 문자열과 같고 예외 세 줄만 바뀐다", () => {
     // next 의 미응답 질문·context 의 계획 밖 질문은 아래 'hook·검증' 의 실제 함수 시험이, fix 재현 절은 fix-flow 가 본다
     withNotation("claude", () => {
-      // 접수 출력은 질문 규칙을 다시 싣지 않는다(C7 OPT-14 — 원천은 ca-request 스킬) — 질문 도구 이름도 없다
+      // 접수 출력은 질문 규칙을 다시 싣지 않는다(원천은 ca-request 스킬) — 질문 도구 이름도 없다
       assert.doesNotMatch(requestContext(root, { id: "W-1", kind: "feature", startedAt: "" }), /AskUserQuestion|최대 4개 질문/);
       assert.match(interview(SCHEMAS.architecture), /추천·이유·선택지를 구성해 AskUserQuestion으로 받습니다\./);
       assert.match(decide({ cwd: root, tool_name: "Bash", tool_input: { command: "cat .code-agent/active.json" } }) ?? "", /작업 상태 · 승인과 확정 원장을 Bash 로 건드리지 않습니다/);
@@ -226,7 +226,7 @@ describe("hook·검증의 Codex 표기", () => {
 
   test("Claude 바이트 — next 의 미응답 질문 문장이 배선 전 문자열과 같고, context 의 계획 밖 문장은 서브에이전트 제약이다", () => {
     toCheck();
-    // context --file 은 서브에이전트가 읽는다 — 사람에게 묻는 것은 메인이라 질문 도구 이름이 없고 두 호스트가 같다(C7 OPT-16)
+    // context --file 은 서브에이전트가 읽는다 — 사람에게 묻는 것은 메인이라 질문 도구 이름이 없고 두 호스트가 같다
     const outside = "계획 밖을 고쳐야 하면 고치지 말고 메인에게 보고합니다 — 메인이 doc/work/ORD-1/questions.md 에 질문으로 남기고, 사람의 답과 재계획·재승인 뒤에만 구현합니다.";
     assert.ok(withNotation("claude", () => context(repo)).split("\n").includes(outside));
     assert.ok(withNotation("codex", () => context(repo)).split("\n").includes(outside));

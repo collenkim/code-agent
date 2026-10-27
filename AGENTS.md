@@ -4,15 +4,15 @@
 
 ## 먼저 읽는다
 
-1. [`doc/process-flow.md`](doc/process-flow.md) — 접수부터 반영까지의 단계·게이트·동의·hook·호스트 차이·파일 지도·모듈 지도. **전문을 읽지 않는다**(10만 자가 넘는다). §1.1 대응표와 §9 모듈 지도에서 바꾸려는 동작의 절을 찾아 그 절만 읽고 파일을 연다.
+1. [`doc/process-flow.md`](doc/process-flow.md) — 접수부터 반영까지의 단계·게이트·동의·hook·호스트 차이·파일 지도·모듈 지도. **전문을 읽지 않는다**. §1.1 대응표와 §9 모듈 지도에서 바꾸려는 동작의 절을 찾아 그 절만 읽고 파일을 연다.
 2. 해당 코드. 흐름도와 코드가 다르면 코드가 맞다. 이때는 흐름도를 고친다.
-3. 필요할 때만 읽는다: [`doc/design.md`](doc/design.md)(설계 근거), [`doc/codex.md`](doc/codex.md)(Codex 차이), [`doc/planning.md`](doc/planning.md)(계획 작업), [`doc/reviews/README.md`](doc/reviews/README.md)(변경·검증 이력).
+3. 필요할 때만 읽는다: [`doc/design.md`](doc/design.md)(설계 근거), [`doc/codex.md`](doc/codex.md)(Codex 차이), [`doc/planning.md`](doc/planning.md)(계획 작업), [`doc/reviews/README.md`](doc/reviews/README.md)(최신 검증 범위·결과).
 
 흐름도에 없는 동작은 추측하지 말고 코드를 연다. 줄 번호를 인용할 때는 실제로 연 파일의 줄만 쓴다.
 
 ## 바꿀 때 지킨다
 
-- 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고, §10 변경 이력에 변경당 한 줄(바뀐 것의 요지 한 문장과 커밋 — 함수·상수 이름을 늘어놓지 않는다. 경위·지적별 처리·검증 결과는 `doc/reviews/` 기록에)을 남긴다.
+- 동작을 바꾸면 **같은 커밋에서** `doc/process-flow.md` §1.1 대응표에 따라 해당 절을 고치고 §10의 검증 근거를 갱신한다. 상세 시험 결과·실행 조건·한계는 `doc/reviews/`의 최신 기록에 둔다. 변경 경위는 Git 이력으로 확인하며 완료된 지시·중간 결과·중복 이력을 문서에 누적하지 않는다.
 - **함께 맞출 중복 정의는 §1.1 셋째 칸이 정본이다** — 바꾸는 코드의 행을 찾아 그 칸을 모두 맞춘다. 다음 시험이 일부를 대조한다. 깨지면 사본(문서·템플릿·목록)을 코드에 맞춘다: `docSync`(흐름도 §3.2 단계·§4.1 동의·§5.1·§5.2 hook 등록표·§6.4 생성 블록·§7 모델 기본값), `consentBinding`·`consentOutput`(동의 동작·준비 인자 목록), `retryPolicy`(안내 자리표시·`UNRENDERED_GUIDES`), `modelPolicy`(에이전트 머리말·`doc/codex.md` 모델 표), `hostText`(`SKILL_NAMES`·`ROLE_NAMES` ↔ 템플릿 폴더), `hostNotation`·`templateText`(Codex 사본 치환·공통 문단·계획 스킬의 공통 계약 참조), `planningChain`(`planningNextLine`), `hookLoad`(hook 경로의 import), `hookPaths`(읽기 전용 담당 ↔ 정의 파일 `tools`), `planningRetry`(`planningRules.ts` `RULES` ↔ 검사 문구의 `ruled("…")` 식별자), `templateBudget`.
 - 시험이 없거나 일부만 보는 것 — §1.1 해당 행에 상세가 있다:
   - hook 등록(`init.ts`) → `doctor.ts` 목록, `update.ts` hook 출력, `doc/codex.md` 이벤트 표, `README.md` 동작 구조 표, `doc/install.md`·`doc/usage.md`의 흐름도 정본 링크.
@@ -31,7 +31,7 @@
   - 동의 제목(`CONSENT_TITLES`)·카운터 이름표(`COUNTER_LABEL`)·안내 문구(`retryPolicy.ts`)는 한 모듈이 원천이다 — 따로 정의하지 않고 import 한다. 단가표(`prices.ts`)에는 번들 claude-api 스킬 표에 값이 있는 모델만 넣는다.
 - `template/claude/**` 문장을 바꾸면 Codex 사본이 `src/agent/hosts.ts`의 `codexText()`로 변환된다. 문장째 치환(`CODEX_SENTENCES`)과 장시간 실행·교차 4-1 리터럴 치환의 원문이 템플릿과 글자 그대로 같아야 한다 — 다르면 오류 없이 치환되지 않는다. 17개 스킬의 질문·동의 공통 문단도 같은 글자여야 한다. 예외가 둘 있다. `ca-answer/SKILL.md`는 변환하지 않고 `template/codex/ca-answer.md`로 대체하며, 에이전트 머리말의 `description`은 변환 없이 옮긴다. 이 둘은 따로 맞춘다.
 - 템플릿 문장을 늘려 `src/test/templateBudget.test.ts` 예산을 넘기면 필요할 때만 읽는 보조 문서로 옮기거나, 예산을 올리는 근거를 `doc/reviews/`에 남기고 `BUDGET`을 고친다(`node scripts/template-sizes.cjs --suggest`).
-- 현행 문서(`README.md`, `doc/*.md` — `process-flow.md` §10 제외)에는 현재 동작과 설계 근거만 쓴다. '이전에는'·'~로 바뀌었다'·결정 날짜·검토 지적 번호 같은 경위는 쓰지 않는다(실제 호스트에서 확인한 버전처럼 사실의 조건인 날짜·버전은 남긴다). 변경 경위와 검증 결과는 `doc/reviews/<날짜>-<주제>.md`와 `doc/reviews/evidence/`에 남기고 `doc/reviews/README.md` 표에 추가한다.
+- 문서와 코드 주석에는 현재 동작·계약·설계 근거만 쓴다. 과거 지적 번호·완료된 작업 지시·변경 경위는 지운다. 호환 처리는 적용 조건과 현재 동작으로 설명하며, 실제 호스트에서 확인한 버전처럼 사실의 조건은 남긴다. 검증 기록은 최신 결과·생략·미확인 범위와 템플릿 예산 근거를 유지하고 `doc/reviews/README.md`에서 연결한다.
 - 사용자에게 보이는 문서는 한국어로, 기존 문체를 따른다.
 
 ## 빌드와 테스트

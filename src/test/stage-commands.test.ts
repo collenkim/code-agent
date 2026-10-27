@@ -164,7 +164,7 @@ describe("hook · Stop hook · context — 새 스테이지", () => {
   test("Stop hook 은 implement·deliver 모두 계획 밖 변경을 보고한다", async () => {
     await toDeliver();
     write("anywhere.txt", "도구를 거치지 않고 생긴 파일\n");
-    // 동의 흐름에서는 사람이 TTY 앞에 있지 않다 — 반영 동의를 묻기 전에 턴 끝에 한 번 알린다(FLOW-02)
+    // 동의 흐름에서는 사람이 TTY 앞에 있지 않다 — 반영 동의를 묻기 전에 턴 끝에 한 번 알린다
     assert.match(decideStop({ cwd: repo }) ?? "", /계획 밖의 변경이 남아 있습니다/);
 
     saveActive(repo, { ...loadActive(repo)!, phase: "implement", stage: "entity" });
@@ -421,7 +421,7 @@ describe("code-agent back", () => {
 
   test("deliver 에서도 사용자 지시로 되감고 반영 동의 무효를 알린다", async () => {
     await toDeliver();
-    // 반영 전에 고칠 것이 생기면 수정 루프로 돌아가는 유일한 길이다 — 준비해 둔 deliver 동의는 스냅샷 대조가 무효로 만든다(FLOW-02)
+    // 반영 전에 고칠 것이 생기면 수정 루프로 돌아가는 유일한 길이다 — 준비해 둔 deliver 동의는 스냅샷 대조가 무효로 만든다
     assert.match(back(repo, "check"), /반영 확인\(deliver 동의\)/);
     assert.equal(loadActive(repo)!.phase, "check");
   });

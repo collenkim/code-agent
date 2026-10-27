@@ -103,7 +103,7 @@ export interface SlotInput {
     files: string[];
     rules: { source: string; rule: string }[];
   };
-  /** 예약 — P7 은 이 자리를 부르지 않는다 */
+  /** 예약 필드 — 현재 호출하지 않는다 */
   "code.index": { symbols?: string[]; from: string[] };
   "verify.extra": {
     phase: "check";

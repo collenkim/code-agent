@@ -187,9 +187,8 @@ const READONLY_BRANCH = /^git branch(\s+(--list|-a|--all|-r|--remotes|-v|-vv|--v
 /**
  * 등록된 키가 사는 자리 — **모델은 여기를 읽지 못한다.**
  *
- * P7 이 사용자 키를 평문으로 디스크에 두면서 생긴 자리다. 등록·제거는 TTY 로 막았지만, 막은 것은
- * *쓰는* 길뿐이었다 — `Read ~/.code-agent/credentials.json` 한 번이면 그 키가 모델의 화면에 그대로
- * 온다. 경로 비교는 구분자와 대소문자를 접어 본다 (Windows 는 둘 다 흔들린다).
+ * 사용자 키 파일은 등록·제거뿐 아니라 읽기도 막는다. 경로 비교는 구분자와 대소문자를 접어
+ * 같은 파일의 별칭으로 접근하는 경우도 검사한다.
  */
 function normalized(path: string): string {
   // 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\C:\…`)는 드라이브 경로로 접고, NTFS 스트림 표기
@@ -458,7 +457,7 @@ export function crossChildGuard(input: HookInput): string | undefined {
 }
 
 /**
- * PreToolUse 판정. 허용한 셸 명령이 동의 준비·적용(정확한 꼴)이면 이 세션의 티켓을 낸다 — CLI 는 그 티켓이 있어야 준비·적용한다(CON-1·2).
+ * PreToolUse 판정. 허용한 메인 세션의 동의 준비·적용 명령에 티켓을 발급한다. CLI는 세션에 묶인 티켓을 확인한다.
  * 연결자·리디렉션·치환이 든 명령은 티켓을 내지 않는다. 티켓을 쓰지 못해도 판정은 바꾸지 않는다(CLI 가 거부한다).
  */
 export function decide(input: HookInput, projectDir?: string): string | undefined {

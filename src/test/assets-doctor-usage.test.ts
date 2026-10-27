@@ -26,7 +26,7 @@ import { loadManifestIfAny } from "../agent/work";
 import { readRuntime } from "../agent/runtimeSelect";
 
 /**
- * P8 — 단일 실행 파일(자원 해석) · doctor · update.
+ * 단일 실행 파일(자원 해석) · doctor · update.
  *
  * 임시 디렉토리에 실제 함수를 그대로 부른다. 단일 실행 파일 모드는 `node:sea` 를 가짜로 바꿔 흉내낸다 —
  * 빌트인 모듈이라 `require.cache` 로는 못 바꾸고 모듈 로더를 잠깐 가로채야 한다.

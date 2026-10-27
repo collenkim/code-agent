@@ -178,7 +178,7 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
     assert.equal(copy.split(CODEX).length, text.split(FOREGROUND).length, `${path} 의 Codex 사본에 기다림 문장 수가 다릅니다`);
     assert.doesNotMatch(copy, /run_in_background|Agent 도구/, path);
   }
-  // 계획 스킬 4개·ca-review·ca-implement 둘(2항 호출·5항 다시 맡기기)·ca-test·ca-check·ca-docs 둘·ca-adopt, 이전 버전 절차(legacy.md) — 분석·설계·계획 하나씩·영향도 둘
+  // 계획 공통 계약·ca-review·ca-implement 둘·ca-test·ca-check·ca-docs 둘·ca-adopt와 legacy.md의 담당 호출을 함께 센다.
   assert.equal(calls, 14, "계획 네 스킬의 호출 문장은 공통 계약의 한 문장으로 모인다");
 });
 

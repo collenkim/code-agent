@@ -136,7 +136,6 @@ test("Windows .cmd 명령은 조회·임대·읽기 전용 역할·셸 제한을
   assert.equal(bash("code-agent.cmd status"), undefined);
 });
 
-// ---- CON-8 ----
 
 test("T-8-1 Grep glob·Glob pattern 의 정적 접두와 키 저장소 상위 폴더 검색을 모든 모드에서 거부한다", () => {
   const check = (mode: string) => {
@@ -158,7 +157,6 @@ test("T-8-1 Grep glob·Glob pattern 의 정적 접두와 키 저장소 상위 �
   check("상태 읽기 실패");
 });
 
-// ---- CON-9 ----
 
 test("T-9-1·T-9-2 Windows 의 이름 끝 점·공백과 로컬 관리 공유 경로를 같은 파일로 판정한다", { skip: process.platform !== "win32" }, () => {
   for (const path of [".code-agent./active.json", ".code-agent /active.json", ".claude./settings.json", "doc/work/W-1/requirement.md "]) {
@@ -170,7 +168,6 @@ test("T-9-1·T-9-2 Windows 의 이름 끝 점·공백과 로컬 관리 공유 �
   }
 });
 
-// ---- CON-13 ----
 
 test("T-13-1 Claude MCP 도구 — 로컬 파일 서버는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안 절대 경로만 판정한다", () => {
   startWork();
@@ -369,7 +366,6 @@ test("H3 Windows — --cli 없는 설치(cmd /c code-agent)는 실행 정책 Res
   assert.equal(powershellHook(codexWindowsCommand("Stop"), stdin, env(0), "Restricted").stdout, JSON.stringify({ via: "cmd", got: "PreToolUse" }));
 });
 
-// ---- CON-17 ----
 
 test("T-17-1 세션 밖 셸이 hook 설정 파일을 가리키면 거부한다", () => {
   for (const command of ["echo {} > .claude/settings.json", "type .codex\\hooks.json", "cat .claude/settings.local.json", "cat .codex/config.toml"]) {
@@ -412,7 +408,6 @@ test("작업 중인 세션도 code-agent master trust·untrust·call 은 부르�
   }
 });
 
-// ---- LRN-5 · CON-15 ----
 
 test("T-L5-1 세션 밖에서도 소스 업데이트는 사람의 확인이 필요하다 — 템플릿 적용은 연다", () => {
   for (const command of ["code-agent update", "code-agent update --host both"]) assert.match(bash(command) ?? "", /사람의 확인이 필요합니다/, command);

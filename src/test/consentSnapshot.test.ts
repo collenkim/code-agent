@@ -99,7 +99,7 @@ test("setup: ignored preparation document is included in consent before the ques
   const fixture = prepareConsentFixture(root, { action: "setup" });
   appendFileSync(join(root, "doc/architecture.md"), "changed\n");
   assert.throws(() => observeConsent(consentEvent(fixture, "PreToolUse")), /doc\/architecture\.md/);
-  // 대상이 바뀐 동의는 폐기된다 — 되돌려도 같은 동의로 다시 묻지 않는다(C5 재시도 규약)
+  // 대상이 바뀐 동의는 폐기된다 — 되돌려도 같은 동의로 다시 묻지 않는다(재시도 규약)
   assert.equal(loadConsent(root, fixture.id).status, "failed");
   assert.equal(loadConsent(root, fixture.id).failure?.kind, "target");
 });

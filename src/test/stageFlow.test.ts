@@ -1,7 +1,7 @@
 /**
- * 단계 전이·CLI 안내·반영 범위(C4) — deliver 의 쓰기·되감기(FLOW-02), 승인 무효의 재진입(FLOW-03), start 사전 검사(FLOW-07),
- * 작업당 대상 하나(FLOW-08), 준비 동의 선택(FLOW-09), doctor 허용(FLOW-10), 관찰 흐름·검증의 `다음:`(FLOW-12),
- * 처리 주체 없는 상태(FLOW-13), approve·reject·confirm 인자(FLOW-17), 반영 커밋의 handoff·staging·잠금 제외(PVR-7).
+ * 단계 전이·CLI 안내·반영 범위 — deliver 의 쓰기·되감기, 승인 무효의 재진입, start 사전 검사,
+ * 작업당 대상 하나, 준비 동의 선택, doctor 허용, 관찰 흐름·검증의 `다음:`,
+ * 처리 주체 없는 상태, approve·reject·confirm 인자, 반영 커밋의 handoff·staging·잠금 제외.
  */
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";

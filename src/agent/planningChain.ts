@@ -24,7 +24,7 @@ const STAGE_SKILL: Record<string, string> = { analysis: "ca-analyze", impact: "c
 export interface GateStep { from: string; gate: "passed" | "rejected"; to?: string; reason?: string; questions?: number }
 interface Rewind { phase: string; command: string; auto: boolean; reason: string; notice?: string; tasks?: { id: string; staleBecause?: string[] }[] }
 interface Blocked { id: string; reasons: string[]; class?: string; counter?: { key?: string; used?: number; limit?: number } }
-/** advance 출력(handoff 뒤)의 읽는 부분 — C2 계약 */
+/** advance 출력에서 연쇄 실행기가 읽는 필드 */
 export interface AdvanceView {
   phase: string;
   action: string;
@@ -66,7 +66,7 @@ function blockedGuide(item: Blocked): string | undefined {
   return PLACEHOLDER.test(text) ? undefined : text;
 }
 
-/** advance 출력의 다음 행동 한 줄 — 위에서부터 처음 맞는 행 하나(명세 C7 §3.4.1 표) */
+/** advance 출력의 다음 행동 한 줄 — 위에서부터 처음 맞는 행 하나 */
 export function planningNextLine(view: AdvanceView, options: { chained: boolean; gate?: GateStep; workDir: string }): string {
   const { chained, gate } = options;
   const adv = chained ? "code-agent planning advance --chain" : "code-agent planning advance";

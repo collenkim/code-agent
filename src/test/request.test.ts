@@ -203,7 +203,7 @@ describe("접수 — 세션이 없을 때도 hook 이 지키는 것", () => {
     start(repo, join(repo, SPEC));
     const format = requestFormat(repo);
     assert.match(format, /# code-agent request — ORD-7 접수 \(feature\)[\s\S]*"requirements"[\s\S]*다음: 확정됨/);
-    // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다(C7 OPT-14)
+    // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다
     assert.match(format, /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\. 연결 규칙은 ca-request 의 정리 절\.$/m);
     assert.doesNotMatch(format, /## 질문 — 접수에서 물을 것|AskUserQuestion/);
     // context 는 스테이지 컨텍스트다
@@ -392,7 +392,7 @@ describe("접수 — 확정 · 시작", () => {
   test("손으로 쓴 지시서도 확정을 거쳐야 시작한다", () => {
     write("doc/work/ORD-9/requirement.md", "---\nkind: feature\nid: ORD-9\ntitle: 손으로\ntarget: order\n---\n\n본문\n");
     abort(repo);
-    // 닫은 접수(ORD-7)의 작업 폴더는 새 작업 브랜치로 따라가면 start 가 거부한다(FLOW-07) — 사람이 커밋해 둔 상태로 시작한다
+    // 닫은 접수(ORD-7)의 작업 폴더는 새 작업 브랜치로 따라가면 start 가 거부한다 — 사람이 커밋해 둔 상태로 시작한다
     git("add", "-A", "doc/work/ORD-7"); git("commit", "-qm", "ORD-7 접수 기록");
     assert.throws(() => start(repo, join(repo, "doc/work/ORD-9/requirement.md")), /요구사항이 확정되지 않았습니다/);
     confirm("ORD-9", "doc/work/ORD-9/requirement.md");

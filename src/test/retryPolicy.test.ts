@@ -2,7 +2,7 @@
  * 실패 원인별 재시도 규약(retryPolicy.ts) — 순수 판정 함수의 진리표.
  *
  * 원인 분류·카운터·한도·사람 허용·검증 회차 판정·계획 배정·교차 실행 분류·잠금·hook 실패 코드·안내 문구를
- * 파일 없이 본다. 교차 실패 분류 fixture 는 설계 sandbox(C1 rev3 40건, C6 모델·강도 문구)와 같다.
+ * 파일 없이 본다. 교차 실패 분류는 실행 오류·모델·강도 문구를 fixture로 검사한다.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -107,7 +107,7 @@ describe("원인 정책 표는 21개 원인을 빠짐없이 같은 꼴로 정한
   });
 
   test("담당 형식·내용 오류 — 변형 없는 호출은 같은 담당에게 돌려보내는 문구(C2 SubagentStop), 기록된 시도는 record 변형", () => {
-    // C2 §3.6 은 되돌림 경로에서 guidance(cls, { detail }) 를 변형 없이 부른다 — 기록 문구가 나가면 안 된다
+    // 계획 담당 되돌림 경로는 guidance(cls, { detail }) 를 변형 없이 부른다 — 기록 문구가 나가면 안 된다
     const format = guidance("agent-format-error", { detail: "JSON 아님" });
     assert.match(format, /^결과 형식 오류입니다 — JSON 아님\. 같은 배정의 resultShape 형태 JSON 하나로 다시 반환하세요/);
     const content = guidance("agent-content-error", { detail: "- 근거 없음" });
@@ -402,7 +402,7 @@ describe("검증 카운터·회차 판정", () => {
     assert.deepEqual(node("result-unconfirmed", { totalRounds: true, rerun: true }), ["decision", "totalRounds"]);
     assert.deepEqual(node("result-unconfirmed", { fix: true, totalRounds: true, rerun: true }), ["decision", "totalRounds"], "수집 수정이 남았으면 막는 것은 총 회차");
     assert.deepEqual(node("precondition"), ["diagnose", undefined]);
-    // nodeCounter 는 VerifyBudget 의 키다 — C3 assess 의 budget[counter] 가 그대로 컴파일된다
+    // nodeCounter 는 VerifyBudget 의 키다 — assess의 budget[counter] 가 그대로 컴파일된다
     const exhausted = budgets({ fix: true });
     const key = nodeCounter("code-defect", exhausted);
     assert.equal(key && exhausted[key].limit, 2);
@@ -537,7 +537,7 @@ const CROSS_FIXTURES: [string, string, CrossProbe][] = [
   ["cross-config-error/unclassified", "codex quota.ts 전사 + EOF", { host: "codex", sentPrompt: "", status: 1, stderr: "codex> reading src/billing/quota.ts\n export function checkQuota() {}\nError: unexpected EOF while parsing event stream" }],
   ["cross-config-error/unclassified", "codex 전사 끝줄 status 500", { host: "codex", sentPrompt: "", status: 1, stderr: "exec\ncat src/http.ts\n succeeded in 3ms:\nif (status === 500) throw new Error('internal');" }],
   ["cross-config-error/unclassified", "claude 거부된 도구 입력에 rate limit", { host: "claude", status: 1, stdout: JSON.stringify({ is_error: true, subtype: "error_during_execution", permission_denials: [{ tool_input: { command: "grep -n 'rate limit\\|quota exceeded\\|401' src" } }] }) }],
-  // C6 모델·강도 문구와 배너·되풀이된 프롬프트
+  // 모델·강도 문구와 배너·되풀이된 프롬프트
   ["cross-unavailable/quota", "C6 codex 배너 + spend cap", { host: "codex", sentPrompt: prompt, stderr: `${banner}\nuser\n${prompt}\nERROR: You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.` }],
   ["cross-unavailable/auth", "C6 codex 배너 + Not logged in", { host: "codex", sentPrompt: prompt, stderr: `${banner}\nuser\n${prompt}\nNot logged in` }],
   ["cross-unavailable/quota", "C6 codex 도구 출력 뒤 usage limit", { host: "codex", sentPrompt: prompt, stderr: `${banner}\nuser\n${prompt}\n${toolOut}\nERROR: You've hit your usage limit. Upgrade to Plus to continue using Codex` }],
@@ -789,7 +789,7 @@ describe("교차 지점 상태와 판정", () => {
       if (attempts.length < 3) for (const make of kinds) walk([...attempts, make()]);
     };
     walk([]);
-    // C5 retryGrant 의 소진 검사 — 첫 설정 오류 뒤에는 아직 재실행이 남아 허용을 기록하지 않는다
+    // retryGrant의 소진 검사 — 첫 설정 오류 뒤에는 아직 재실행이 남아 허용을 기록하지 않는다
     const grant = (attempts: CrossAttemptView[]) => grantFor({ key: "crossError", scope: "round:1", budget: crossBudgets(attempts, [], "round:1").crossError, consent: "c", reason: "r", at: "t" });
     assert.throws(() => grant([ended("cross-config-error")]), /한도가 남아 있어\(사용 0 \/ 한도 1\)/);
     assert.equal(grant([ended("cross-config-error"), ended("cross-config-error")]).step, 1);

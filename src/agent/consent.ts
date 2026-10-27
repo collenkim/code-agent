@@ -80,7 +80,7 @@ export interface ConsentRecord {
   fullText?: string;
   /** 준비 때의 작업·접수 ID — 반영 영수증이 이 작업의 동의를 고른다 */
   workId?: string;
-  /** 준비 명령을 관찰한 hook 의 세션(CON-1) — 응답·적용은 이 세션에서만 받는다. 없으면 첫 응답 관찰이 세션을 정한다(이전 규칙) */
+  /** 준비 명령을 관찰한 hook 의 세션 — 응답·적용은 이 세션에서만 받는다. 없으면 첫 응답 관찰이 세션을 정한다(이전 규칙) */
   preparedSession?: { id: string; host: "claude" | "codex"; at: string };
   failure?: ConsentFailure;
   /** `consent prepare --for <호스트>` — CLI 출력(prepare·status·finish)을 그 호스트가 쓰는 필드로 줄인다. 없으면 전체 출력(이전 형식) */
@@ -203,7 +203,7 @@ function discard(root: string, record: ConsentRecord, kind: "target" | "apply", 
   record.status = "failed"; record.binding = undefined; fail(record, kind, detail); save(root, record);
 }
 const KINDS: readonly ConsentFailureKind[] = ["target", "response-change", "response-defer", "response-none", "response-invalid", "apply"];
-/** 실패 갈래 — kind 가 없는 기록(C5 이전에는 생길 수 없다)은 class 로 고른다 */
+/** 실패 갈래 — kind가 없으면 class로 고른다 */
 function kindOf(record: Pick<ConsentFailure, "class"> & { kind?: string }): ConsentFailureKind {
   return record.kind && (KINDS as readonly string[]).includes(record.kind) ? record.kind as ConsentFailureKind : record.class === "consent-apply-failed" ? "apply" : "target";
 }
@@ -381,7 +381,7 @@ function capture(run: () => string): Prompt[] {
 const JUDGMENT_KINDS = { "retry-grant": "재시도 한도 추가", "waive-finding": "지적 기각", "cross-stop": "교차 검증 중지 결정" } as const;
 /**
  * judgment 소유 함수(retryGrant·reviewJudgment)는 그 동작의 준비·적용 때만 읽는다 — hook(PreToolUse)·consent-event 가
- * 매 도구 호출마다 이 파일을 읽으므로, 정적으로 import 하면 교차·검증 흐름 모듈까지 hook 기동 비용에 든다(C5 §3.2.1, C7 OPT-15).
+ * 매 도구 호출마다 이 파일을 읽으므로, 정적으로 import 하면 교차·검증 흐름 모듈까지 hook 기동 비용에 든다.
  */
 function judgmentModules(): { grant: typeof import("./retryGrant"); review: typeof import("./reviewJudgment") } {
   return { grant: require("./retryGrant") as typeof import("./retryGrant"), review: require("./reviewJudgment") as typeof import("./reviewJudgment") };
@@ -527,7 +527,7 @@ function questions(record: ConsentRecord): Question[] {
   return [{ question: `${record.summary}${selected}\n이 내용으로 진행할까요?`, header: "진행 확인", multiSelect: false, options: FINAL_OPTIONS }];
 }
 /**
- * Codex 응답의 확인 코드(CON-5) — 지금 묻는 질문 묶음의 해시 앞 6자. prepare·status 출력에 실려 모델도 보는 값이다 — 요약을 줄이다
+ * Codex 응답의 확인 코드 — 지금 묻는 질문 묶음의 해시 앞 6자. prepare·status 출력에 실려 모델도 보는 값이다 — 요약을 줄이다
  * 마지막 질문·코드 줄까지 빠지는 실수를 막을 뿐, 사람이 입력했다는 증명은 아니다(`codex exec resume` 한계와 같다).
  */
 function replyCode(items: Question[]): string {

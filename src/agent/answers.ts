@@ -1,7 +1,7 @@
 import { shortDigest as sha16 } from "../core/serialize";
 import { loadRequestSession } from "./requestSession";
 /**
- * 업무 질문의 답 관찰(CON-6) — `.code-agent/work/<ID>/answers.jsonl`.
+ * 업무 질문의 답 관찰 — `.code-agent/work/<ID>/answers.jsonl`.
  *
  * Claude 의 AskUserQuestion 중 동의 질문이 아닌 것(업무 질문)을 consent-event hook 이 Pre(질문)·Post(응답)로 기록한다. 게이트는
  * questions.md 의 `[Answer]:` 가 관찰된 응답과 맞는지 본다. 관찰할 수 없는 답(사용자가 대화로 직접 준 답, Codex 에서 받은 모든 답)은

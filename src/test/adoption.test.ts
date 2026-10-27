@@ -49,7 +49,7 @@ test("H1: 기존 저장소의 미커밋 도입은 시작 전에 안내하고 준
     assert.ok(git("ls-tree", "--name-only", "HEAD", file).includes(file));
   }
   assert.deepEqual(pendingBaselineFiles(root), []);
-  // 준비 커밋에 섞지 않은 무관한 변경은 새 작업 브랜치로 따라가지 않게 start 가 거부한다(FLOW-07) — 사람이 정리한 뒤 시작한다
+  // 준비 커밋에 섞지 않은 무관한 변경은 새 작업 브랜치로 따라가지 않게 start 가 거부한다 — 사람이 정리한 뒤 시작한다
   assert.throws(() => start(root, join(root, spec)), /커밋하지 않은 변경이 있어 시작하지 않았습니다[\s\S]*\[A\] src\/unrelated\.js/);
   assert.equal(git("branch", "--show-current"), "master");
   assert.equal(loadActive(root), undefined);

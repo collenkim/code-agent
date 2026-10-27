@@ -187,7 +187,7 @@ export const DUPLICATED_AC = `${FUNCTIONAL}\n- AC-R1-1: 다시 반환된다`;
 
 // ---- 검토 반영: 크기 한도·늦은 결과·고아 표시·직전 실패·되돌린 보고 ----
 
-// ---- C7 — next 줄·연쇄(--chain) ----
+// ---- next 줄·연쇄(--chain) ----
 
 export const chain = async (on = true) => { const out = (await planningAdvanceCli(root, { chain: on })); return { exit: out.exit, view: JSON.parse(out.text) }; };
 

@@ -208,7 +208,7 @@ function planningTaskTarget(work: Work, key: (typeof PLANNING_KEYS)[number], tas
     lastFailure: firstLine(record?.attempts.at(-1)?.failure?.detail),
     resume: key === "taskTotal" ? "code-agent planning advance" : `입력을 보완했으면 code-agent planning dispatch ${taskId}`,
     granted: (consentId) => withPlanningCache(() => loadPlanning(work).retry?.grants.find((grant) => grant.consent === consentId)),
-    // C2 함수가 계획 기록 잠금 안에서 다시 읽고 소진을 다시 확인한 뒤 append 한다(sameInput 은 현재 입력의 inputHash 범위)
+    // 계획 허용 함수가 기록 잠금 안에서 다시 읽고 소진을 다시 확인한 뒤 append 한다(sameInput 은 현재 입력의 inputHash 범위)
     record(consentId, reason) { grantPlanningRetry(work.repoRoot, key, taskId, consentId, reason); },
   };
 }

@@ -74,7 +74,7 @@ test("2-9 실행 중인 그래프 잠금이 실제 응답의 동의 적용을 �
   } finally { release(); }
 });
 
-// ---- CON-1 준비 티켓 ----
+// ---- 준비 티켓 ----
 
 test("Windows .cmd 동의 명령도 준비 티켓과 적용 세션 결속을 거친다", () => {
   assert.equal(bash("code-agent.cmd consent prepare --action docs --for claude"), undefined);
@@ -186,7 +186,7 @@ test("검토 #1 hook·consent-event 진입은 judgment 소유 모듈(retryGrant�
   };
   for (const entry of ["hook.js", "consent.js"]) {
     const loaded = probe(entry);
-    // hook 은 consent.ts 를 적용 명령 꼴에서만 지연 로드한다(C7 OPT-15 — hookLoad.test 가 실행 경로를 본다)
+    // hook 은 consent.ts 를 적용 명령 꼴에서만 지연 로드한다(hookLoad.test가 실행 경로를 확인한다)
     assert.equal(loaded.some((file) => file.endsWith("/agent/consent.js")), entry === "consent.js", entry);
     for (const name of ["retryGrant.js", "reviewJudgment.js", "crossCheck.js", "verificationFlow.js"]) {
       assert.equal(loaded.some((file) => file.endsWith(`/agent/${name}`)), false, `${entry} → ${name}`);
@@ -220,7 +220,7 @@ test("T-1-8 세션 검사는 스냅샷 대조보다 먼저다 — 남의 세션�
   assert.equal(loadConsent(root, second.id).status, "approved");
 });
 
-// ---- CON-2 적용 티켓·열린 동의 창 ----
+// ---- 적용 티켓·열린 동의 창 ----
 
 test("T-2-1 준비 세션이 있는 동의는 응답을 관찰한 세션의 적용만 받는다", () => {
   const { id } = prepared({ action: "docs" }, { id: "S1", host: "claude" });
@@ -396,7 +396,7 @@ test("T-RP-8b 첫 확인 전 화면 불일치는 대상 변경이다(업그레�
     ["failed", "target", "확인 대상 변경: 확인 화면"]);
 });
 
-// ---- CON-5 Codex 확인 코드 ----
+// ---- Codex 확인 코드 ----
 
 test("T-5-1·T-5-2·T-5-3 Codex 응답은 확인 코드를 요구하고, 이전 형식 기록은 코드 없이도 받는다", () => {
   const record = prepared({ action: "docs" });

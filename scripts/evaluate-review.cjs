@@ -35,6 +35,6 @@ if(correctedRun.error)throw correctedRun.error;
 const corrected=JSON.parse(correctedRun.stdout);
 const clear=/^\s*-\s*없음\s*$/m.test(corrected.result||'')&&!/^\|\s*F\d+\s*\|/m.test(corrected.result||'');
 const report={at:new Date().toISOString(),scope:'Small live seeded-review benchmark; file-level detection counts require reading the reported reasons; corrections are fixture code, not model implementation; not a general accuracy guarantee',modelError:!!model.is_error,exitCode:result.status,models:Object.keys(model.modelUsage||{}),durationMs:model.duration_ms,reportedCostUSD:model.total_cost_usd,expectedDefectFiles:expected,detectedFiles:hit,missedFiles:expected.filter(file=>!hit.includes(file)),falsePositiveCount:falsePositive.length,reportedFindings:text,afterCorrection:{modelError:!!corrected.is_error,reportedFindings:corrected.result,clear,reportedCostUSD:corrected.total_cost_usd,durationMs:corrected.duration_ms}};
-fs.writeFileSync(path.join(root,'doc/reviews/evidence/review-quality-2026-10-01.json'),JSON.stringify(report,null,2)+'\n');
+fs.writeFileSync(path.join(root,'doc/reviews/evidence/review-quality.json'),JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify(report,null,2));
 if(model.is_error||hit.length!==3||falsePositive.length||corrected.is_error||!clear)process.exitCode=1;

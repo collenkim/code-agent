@@ -4,15 +4,15 @@ require('./live-eval-guard.cjs')('node scripts/evaluate-full-flow.cjs');
  * Never claims to measure a real beginner or human approval. No push or external publication.
  * Usage: node scripts/evaluate-full-flow.cjs run|resume <new|enhance|fix|refactor> [--model sonnet|opus] [--agents policy|exec-opus|opus|sonnet] [--label 기록이름] [--budget USD] [--timeout 분] [--hosts claude|both] [--main codex --vetted-hooks]
  * --hosts both 는 Codex 도 설치해 계획 검토·코드 리뷰의 교차 검증을 실제 Codex 로 돈다(로그인된 codex 필요).
- * 기본은 2026-10-01 기록과 같은 sonnet·$5 한도다. --model 은 메인 세션 모델이다. 담당(서브에이전트) 모델은 --agents 가 정한다 —
+ * 기본은 sonnet·$5 한도다. --model 은 메인 세션 모델이다. 담당(서브에이전트) 모델은 --agents 가 정한다 —
  * policy = 설치 정책 그대로(판단 opus/high · 실행 sonnet/medium, --model opus 의 기본), exec-opus = 실행 역할만 model: opus(강도 줄 유지),
- * opus·sonnet = 모든 역할을 그 모델로 바꾸고 effort 줄을 지운다(--model sonnet 의 기본 = 이전 동작, opus 는 2026-10-06 기준선 재현용).
+ * opus·sonnet = 모든 역할을 그 모델로 바꾸고 effort 줄을 지운다(--model sonnet의 기본은 sonnet).
  * 정책 효과 비교는 policy 대 exec-opus 로 한다 — 실행 역할의 모델 하나만 다르다. 보고서의 agents 에 역할별 model/effort 를 싣는다.
  * 판단 역할 목록은 modelPolicy ROLE_POLICY 의 등급에서 가져온다. resume 은 기록된 agentsMode 를 잇고 다른 --agents 는 거부한다
  * (agentsMode 가 없는 이전 기록은 그 기록의 --model 값 opus·sonnet 을 모드로 본다).
  * 보고서에는 usage 텍스트와 함께 usageData(usageReport — 요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기)·retry(retryReports — 읽기 전용)·
  * 턴별 numTurns·codexAgents 를 싣는다. 반복 실행 편차는 scripts/summarize-evaluations.cjs 로 요약한다.
- * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다(2026-10-01 기록은 누적값을 더해 과대 집계됐다).
+ * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다.
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.
  */
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), cp = require('node:child_process');
@@ -40,14 +40,13 @@ if (!['run','resume'].includes(process.argv[2]) || !['new', 'enhance', 'fix', 'r
 const option = name => { const at = process.argv.indexOf(`--${name}`); return at > 0 ? process.argv[at + 1] : undefined; };
 const mainHost = option('main') ?? 'claude';
 if (!['claude', 'codex'].includes(mainHost) || mainHost === 'codex' && !process.argv.includes('--vetted-hooks')) throw Error('Codex main requires --main codex --hosts both --vetted-hooks');
-const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ?? 'sonnet', label = option('label') ?? '2026-10-01', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
+const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ?? 'sonnet', label = option('label') ?? 'latest', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
 if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
 const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
 if (previous && (previous.mainHost ?? 'claude') !== mainHost) throw Error('Resume must keep the original main host');
 if (mainHost === 'codex' && installHosts !== 'both') throw Error('Codex evaluation requires --hosts both');
-// resume 은 기록된 담당 모델 모드를 잇는다 — 도중에 바꾸면 A/B 기록이 틀어진다. agentsMode 가 없는 이전 기록(C6 전)은
-// 설치본이 전부 그 기록의 --model 값(강도 줄 없음)이었으므로 opus·sonnet 모드로 본다
+// resume은 기록된 담당 모델을 유지한다. agentsMode가 없으면 model의 opus·sonnet 값을 사용한다.
 const recordedAgents = previous && (previous.agentsMode ?? (['opus', 'sonnet'].includes(previous.model) ? previous.model : undefined));
 if (resume && !recordedAgents) throw Error('Resume needs agentsMode or model (opus|sonnet) in the previous report.');
 if (resume && option('agents') && option('agents') !== recordedAgents) throw Error(`Resume keeps the recorded --agents ${recordedAgents}; start a new --label to run another mode.`);

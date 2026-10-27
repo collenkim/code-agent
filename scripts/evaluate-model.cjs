@@ -110,7 +110,7 @@ function collect() {
       deliverProblems:deliverProblems(work,report)};
   });
   const output={at:new Date().toISOString(),claudeVersion:cp.execFileSync(process.env.CLAUDE_EVALUATION_BIN||path.join(os.homedir(),'.local','bin',process.platform==='win32'?'claude.exe':'claude'),['--version'],{encoding:'utf8'}).trim(),scenarios};
-  const file=path.join(root,'doc/reviews/evidence/model-evaluation-2026-10-01.json');
+  const file=path.join(root,'doc/reviews/evidence/model-evaluation.json');
   fs.writeFileSync(file,JSON.stringify(output,null,2)+'\n');
   console.log(JSON.stringify(scenarios.map(s=>({scenario:s.scenario,phase:s.phase,baselineTestUnchanged:s.baselineTestUnchanged,headUnchanged:s.headUnchanged,blockers:s.deliverProblems})),null,2));
 }

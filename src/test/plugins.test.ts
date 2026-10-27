@@ -28,7 +28,7 @@ import { check, runTests } from "../agent/validate";
 import { approvalDocsHash, approvalOf, loadWork } from "../agent/work";
 
 /**
- * P7 — 플러그인(명령 어댑터)과 자리(slot).
+ * 플러그인(명령 어댑터)과 자리(slot).
  *
  * 스테이지 흐름 시험(stageFixture·kindFlowFixture)과 같은 방식이다: 임시 git 저장소에 실제 함수를 그대로 부르고, 어댑터는 임시 디렉토리에
  * 쓴 node 스크립트다(= 테스트 더블). `CODE_AGENT_HOME` 을 임시 디렉토리로 돌려 실제 사용자 홈을
@@ -1150,15 +1150,14 @@ describe("P7 · hook — plugin list 만 열린다", () => {
   });
 
   /**
-   * P8 이 더한 넷은 전부 **사람의 자리**다. `knowledge` 를 열면 접두어 일치로 `knowledge prune` 까지
-   * 열리는데, 그것은 `plugin` → `plugin list` 와 똑같은 함정이다 (`prune` 은 TTY 가 한 번 더 막지만
-   * 두 겹으로 닫는다). `doctor`·`update`·`usage` 는 작업 중에 모델이 부를 이유가 없다.
+   * 일반 update·usage·knowledge 명령은 모델 허용 목록에 없다. 접두어만으로 허용하면 knowledge prune까지 열리므로
+   * 하위 명령별로 판정한다. doctor는 읽기 전용 조회로 허용한다.
    */
-  test("44b. P8 의 update · usage · knowledge 는 모델의 자리가 아니다 — doctor 는 읽기 전용 조회라 연다", () => {
+  test("44b. update · usage · knowledge 는 모델의 자리가 아니다 — doctor 는 읽기 전용 조회라 연다", () => {
     for (const command of ["code-agent update", "code-agent usage", "code-agent knowledge", "code-agent knowledge prune"]) {
       assert.match(bash(command) ?? "", /Bash 로 code-agent 명령/, command);
     }
-    // doctor 는 상태 파일을 쓰지 않는다 — 교차 설정 오류 안내(doctor --cross)를 모델이 그대로 따를 수 있게 작업 중에도 연다(FLOW-10)
+    // doctor 는 상태 파일을 쓰지 않는다 — 교차 설정 오류 안내(doctor --cross)를 모델이 그대로 따를 수 있게 작업 중에도 연다
     assert.equal(bash("code-agent doctor"), undefined);
     assert.match(bash("code-agent doctor --fix") ?? "", /Bash 로 code-agent 명령/);
   });

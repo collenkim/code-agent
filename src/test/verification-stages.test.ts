@@ -96,7 +96,7 @@ describe("기준 커밋을 굳힌다", () => {
     assert.equal(changedPaths(repo, "master").some((change) => change.path === "other.txt"), true);
   });
 
-  test("P5 이전에 시작된 커서(기준 커밋 없음)는 진행하지 않고 다시 시작하게 한다", () => {
+  test("기준 커밋이 없는 커서는 진행하지 않고 다시 시작하게 한다", () => {
     start(repo, join(repo, "doc/work/ORD-1.md"));
     const { baseCommit, ...legacy } = loadActive(repo)!;
     assert.ok(baseCommit);
@@ -236,11 +236,11 @@ describe("code-agent check", () => {
     assert.throws(() => next(repo), /build: error/);
   });
 
-  test("⑦ 의 TC id 가 계획 파일 어디에도 없으면 test 전에 알려 준다 — 막지는 않는다 (FLOW-05)", async () => {
+  test("⑦의 TC id가 대조 대상 파일에 없으면 test 전에 알려 주며 진행을 막지는 않는다", async () => {
     toCheck();
     write(TEST_FILE, "// TC-1 만 있다\nclass OrderTest {}\n");
     const out = await check(requireValidatable(repo, "check"));
-    assert.match(out, /!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다: TC-2/);
+    assert.match(out, /!! ⑦ 의 TC id 가 대조 대상 파일에 없습니다: TC-2/);
     assert.match(out, /build: passed/);
   });
 
@@ -595,7 +595,7 @@ describe("테스트 동결", () => {
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
   });
 
-  // 같은 회차의 리뷰는 한 번만 기록된다(PVR-2) — 지적 두 줄은 한 실행의 결과로 함께 기록한다
+  // 같은 회차의 리뷰는 한 번만 기록된다 — 지적 두 줄은 한 실행의 결과로 함께 기록한다
   test("⑨ 에 그 파일을 가리키는 열린 계획 안 지적이 있으면 풀린다 — 해결로 닫으면 다시 언다", async () => {
     await toReview();
     assert.match(writeFileHook(TEST_FILE) ?? "", /얼어 있는 파일입니다/);
@@ -622,7 +622,7 @@ describe("테스트 동결", () => {
 
 describe("매니페스트 kind:\"test\"", () => {
   test("enum 에 값을 더해도 그 값을 쓰지 않는 매니페스트의 해시는 그대로다", () => {
-    // P4 코드가 같은 매니페스트에 내던 값. 바뀌면 진행 중인 모든 계획 승인이 stale-manifest 로 떨어진다
+    // 매니페스트 해시의 호환 기준값. 바뀌면 진행 중인 모든 계획 승인이 stale-manifest 로 떨어진다
     const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-hash-")));
     writeFileSync(
       join(dir, "code-agent.json"),

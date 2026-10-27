@@ -641,7 +641,7 @@ function safePending(repoRoot: string): string[] {
 }
 
 /**
- * 새 작업 브랜치를 딸 때 따라갈 미커밋·미추적 변경(FLOW-07) — start 는 거부하고, 접수 begin·접수 중 status 는 미리 알린다.
+ * 새 작업 브랜치를 딸 때 따라갈 미커밋·미추적 변경 — start 는 거부하고, 접수 begin·접수 중 status 는 미리 알린다.
  * 작업 폴더(`doc/work/<ID>/`)·`.code-agent/`·지시서와, 준비 커밋에 담을 도입 파일(start 가 requirePreparedBranch 로 먼저 따로 본다)은 뺀다.
  * git 저장소가 아니거나 HEAD 가 없으면, 또는 git 이 실패하면 빈 목록이다.
  */

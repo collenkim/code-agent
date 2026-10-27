@@ -1,8 +1,6 @@
 /**
- * 최종 재검증(952594c) 지적 R1~R6 의 회귀 시험 — 지적마다 되돌리면 실패한다. 지적 번호는 doc/reviews/2026-10-08-procedure-fix-summary.md 의
- * '전체 검토와 후속 수정' 절이다(지적별 처리 표는 git show 0a77595:doc/reviews/2026-10-08-full-review.md). 그 수정(72f6b97)의 반박 검증 지적 F1~F4 시험도 고친 R 의 이름으로 여기 있다(F1·F2 → R2, F3 → R3, F4 → R6 —
- * 같은 절). 모델·호스트는 부르지 않는다(교차는 가짜 실행 파일 경로만 쓴다).
- * R1 은 사용자 홈을 임시 폴더로 바꾼 뒤(USERPROFILE·HOME·CODEX_HOME) 판정 함수만 부른다 — 사용자의 실제 ~/.claude·~/.codex 파일은 읽거나 쓰지 않는다.
+ * 경로 별칭·재시도·교차 오류·문서 인용·PID 사용의 회귀 시험. 모델은 호출하지 않는다.
+ * 사용자 경로 검사는 USERPROFILE·HOME·CODEX_HOME을 임시 폴더로 바꿔 실제 사용자 설정을 보호한다.
  */
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
@@ -39,7 +37,7 @@ const nextLine = (text: string): string => text.split("\n").find((line) => line.
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const WIN = process.platform === "win32";
 
-// ---- R1 — 사용자 수준 호스트 설정의 다른 이름(NTFS 스트림 표기·Windows 별칭) ----
+// ---- 사용자 수준 호스트 설정의 다른 이름(NTFS 스트림 표기·Windows 별칭) ----
 
 describe("R1 — 사용자 수준 호스트 설정 쓰기 거부를 같은 파일의 다른 이름으로 비켜 가지 못한다", () => {
   let root: string, home: string;
@@ -203,7 +201,7 @@ describe("R1 — 사용자 수준 호스트 설정 쓰기 거부를 같은 파�
   });
 });
 
-// ---- R2·R4 — 검증 단계(임시 git 저장소, 주문 도메인 ORD-1) ----
+// ---- 검증 단계(임시 git 저장소, 주문 도메인 ORD-1) ----
 
 describe("R2 — 검증 명령이 code-agent 기록을 바꿔 되돌린 실행은 전제 미충족이고, status·next·verify·재실행 거부가 같은 사실을 말한다", () => {
   beforeEach(() => createStageRepo("ca-r2-"));
@@ -421,7 +419,7 @@ describe("R4 — 리뷰 없이 리뷰 회차를 다 쓴 자리의 안내는 실�
   });
 });
 
-// ---- R3 — 교차 검증 안내의 설정 오류·실행 불가 구분 ----
+// ---- 교차 검증 안내의 설정 오류·실행 불가 구분 ----
 
 describe("R3 — 교차 검증 안내(status·doctor·init)는 설정 오류와 실행 불가를 나눠 쓴다", () => {
   let dir: string;
@@ -531,7 +529,7 @@ describe("R3 — 교차 검증 안내(status·doctor·init)는 설정 오류와 
   });
 });
 
-// ---- R5 — 흐름도의 template/·doc/ 줄 인용 ----
+// ---- 흐름도의 template/·doc/ 줄 인용 ----
 
 /** 흐름도의 template/·doc/ 인용(머리말 규칙: HEAD 기준) — 그 줄에 있어야 하는 글. 줄이 밀리면 시험이 깨지고, 인용과 이 표를 함께 고친다 */
 const CITED_LINES: Record<string, RegExp> = {
@@ -583,7 +581,7 @@ describe("R5 — 흐름도의 줄 인용", () => {
   });
 });
 
-// ---- R6 — 시험의 죽은 pid ----
+// ---- 시험의 죽은 pid ----
 
 /** 동기 실행(끝난 프로세스) 호출 — 인자 안의 괄호는 두 겹까지 본다 */
 const ENDED_CALL = String.raw`(?:[\w$.]+\.)?(?:spawnSync|execFileSync|execSync)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;

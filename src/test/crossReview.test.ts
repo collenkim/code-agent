@@ -873,7 +873,7 @@ test("doctor --cross — 다른 호스트의 --help 에 교차 실행 옵션이 
   assert.match(text, /✓ 교차 실행 옵션\(codex\): 사용하는 옵션이 모두 있습니다/);
 });
 
-// ---- 사람 허용의 대상(C5 judgment retry-grant 가 읽는다) ----
+// ---- 사람 허용의 대상(judgment retry-grant 가 읽는다) ----
 
 test("reviewBudgets — 리뷰 회차(reviewRoundUsage)·리뷰어 호출(고아 포함)·교차 지점·원인별 예산을 사람 허용과 함께 읽기만 하고, 묶임이 바뀌면 리뷰 회차 행만 낸다", async () => {
   await crossRepo({ reviewer: false });
@@ -919,7 +919,7 @@ test("reviewBudgets — 한 호스트 설치는 교차 행이 없다", async () 
   assert.deepEqual(reviewBudgets(loadWork(root)!).map((row) => [row.key, row.used]), [["reviewRounds", 1], ["reviewerRuns", 1]]);
 });
 
-// ---- 반영(PVR-16) ----
+// ---- 반영 ----
 
 test("PVR-16 (b): 커밋이 실패하면 고른 KNOWLEDGE 갱신을 스테이지에서 내리고 원래 내용으로 되돌린다", async () => {
   await toDeliver();

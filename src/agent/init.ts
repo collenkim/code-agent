@@ -190,8 +190,6 @@ export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected 
 
 /**
  * settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 항목만 하나로 맞춘다.
- *
- * 이벤트 이름을 받는 것은 P5 에서 Stop hook 이 늘었기 때문이다.
  */
 function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string, extra: { commandWindows?: string } = {}): void {
   const settings = readSettings(path);

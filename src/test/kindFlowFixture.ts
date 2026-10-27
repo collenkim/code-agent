@@ -23,10 +23,10 @@ import { approvalDocsHash, loadWork } from "../agent/work";
  * 종류별 흐름 픽스처(p6 에서 꺼냈다) — fix·refactor·feature 흐름 시험(fix-flow·refactor-flow·deliver-scope)이 함께 쓴다.
  * `repo` 는 newRepo 가 정하는 지금 시험의 저장소다(실시간 바인딩).
  *
- * P6 — fix 의 재현 먼저 · refactor 의 동작 보존 · 종류별 단계 · 빈 저장소 ·
+ * fix 의 재현 먼저 · refactor 의 동작 보존 · 종류별 단계 · 빈 저장소 ·
  * deliver 커밋 범위 · integrate 의 prepare.
  *
- * P5 와 같은 방식이다: 임시 git 저장소에 실제 함수를 그대로 부르고, 검증 명령은 node 한 줄짜리
+ * 임시 git 저장소에 실제 함수를 그대로 부르고, 검증 명령은 node 한 줄짜리
  * 스크립트라 통과·실패·없는 실행 파일을 이 머신에서 재현할 수 있다.
  */
 

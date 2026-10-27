@@ -1,9 +1,8 @@
 /**
  * 검증 재시도 — 증거를 판정 입력으로 바꾸는 자리(evidence.ts)와 ⑧ 렌더의 하위 호환.
  *
- * 순수 판정 함수의 진리표(verifyState·nextRoundDecision·verifyNode·writeBlockReason·verifyBudget·budgetText —
- * 명세 T-P1~T-P10)는 retryPolicy.test.ts 에 있다. 여기서는 파일 없이 부를 수 있는 증거 쪽 함수와,
- * 새 필드가 없는 옛 증거의 ⑧ 이 바이트 그대로인지(T-L3)를 본다.
+ * 순수 판정 함수의 진리표(verifyState·nextRoundDecision·verifyNode·writeBlockReason·verifyBudget·budgetText)는
+ * retryPolicy.test.ts에 있다. 여기서는 파일 없이 부를 수 있는 증거 함수와 필드가 없는 증거의 ⑧ 바이트 보존을 본다.
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

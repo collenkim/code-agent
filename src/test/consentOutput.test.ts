@@ -1,6 +1,6 @@
 /**
- * 동의 왕복 줄이기(C7 OPT-1·2) — `consent prepare --action` 인라인 준비, `--for claude|codex` 호스트별 출력, `consent finish` 의
- * 적용 뒤 `phase`·`next`. 준비 티켓(hook 이 관찰한 세션)과 적용 결속(C5)은 그대로 거친다 — hook 판정 → CLI 자식 프로세스로 왕복한다.
+ * 동의 왕복 출력 — `consent prepare --action` 인라인 준비, `--for claude|codex` 호스트별 출력, `consent finish` 의
+ * 적용 뒤 `phase`·`next`. 준비 티켓(hook 이 관찰한 세션)과 적용 결속은 그대로 거친다 — hook 판정 → CLI 자식 프로세스로 왕복한다.
  */
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";

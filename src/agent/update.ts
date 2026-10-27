@@ -140,7 +140,7 @@ function updateClaude(repoRoot: string, options: InitOptions): string {
     const was = beforeModels.get(agent), now = installedClaudeModel(repoRoot, agent);
     return was && now && (was.model !== now.model || was.effort !== now.effort) ? [{ agent, was, now }] : [];
   });
-  // 이전 번들 기본값 꼴(opus·강도 없음)이던 역할 중 사용자 변경값이 없는 것 — 이번 버전의 역할별 기본값을 받았다
+  // opus·강도 없음인 설치 정의에 사용자 변경값이 없으면 현재 역할별 기본값을 적용한다
   const legacy = rewritten.filter(({ agent, was }) => was.model === "opus" && was.effort === undefined && !isClaudeOverride(repoRoot, agent));
   const overrides = AGENTS.filter((agent) => isClaudeOverride(repoRoot, agent));
   // 이 버전이 더는 담지 않는 `ca-*`. 쓰지 않는 키는 건드리지 않으니 영영 남고 Claude Code 는 계속 읽는다.

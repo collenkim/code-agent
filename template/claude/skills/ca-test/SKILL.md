@@ -22,7 +22,7 @@ description: 테스트 단계(test)를 진행한다 — ⑦ 의 TC 만 쓰게 �
    전체 작업 흐름에서는 테스트 작성 후 `code-agent verify --json`을 사용한다. 유효한 check 증거는 재사용하고 test 실행·판정·review 전이를 코드가 처리한다. 반환 노드 처리는 ca-check의 전체 흐름 규칙을 따른다. `review`를 반환했으면 아래 `next`를 중복 호출하지 않는다. 이미 verify가 review로 이동했다면 이 테스트 절차도 반복하지 않는다.
    TC별 실제 `passed` 결과가 필요하다. 이름·주석에 ID가 있다는 사실만으로는 통과하지 않는다.
    기존 테스트 도구·명령을 그대로 사용한다. 결과 수집은 에이전트가 처리한다: 콘솔의 TAP, Node spec, unittest -v, pytest -v, Go JSON, code-agent-test JSONL과 이번 실행이 생성·갱신한 JUnit XML을 읽는다. Gradle/Maven 표준 보고서도 자동 수집하므로 사용자에게 러너·어댑터 선택을 묻지 않는다.
-   skip·미실행·실제 결과를 얻지 못한 TC는 차단한다. 사용자에게는 ‘어떤 요구가 통과했고 무엇을 확인하지 못했는지’를 보여준다. 실행 전에 `code-agent check` 출력의 `!! ⑦ 의 TC id 가 계획 파일 어디에도 없습니다` 줄을 보고 테스트 이름에 TC id 를 먼저 넣는다. 결과가 확인되지 않으면 `verify` 의 `diagnose` 안내(수집 수정 1회)를 따르고, 해결할 수 없는 설정 변경만 보고한다.
+   skip·미실행·실제 결과를 얻지 못한 TC는 차단한다. 사용자에게는 ‘어떤 요구가 통과했고 무엇을 확인하지 못했는지’를 보여준다. 실행 전에 `code-agent check` 출력의 `!! ⑦ 의 TC id 가 대조 대상 파일에 없습니다` 줄을 보고 테스트 이름에 TC id 를 먼저 넣는다. 결과가 확인되지 않으면 `verify` 의 `diagnose` 안내(수집 수정 1회)를 따르고, 해결할 수 없는 설정 변경만 보고한다.
    **결과가 인식된(또는 코드 결함으로 실패한) 첫 실행부터 `kind: test` 단계의 파일은 언다** — 실패해도 단언을 고쳐 통과시키는 길은 hook 이 막는다. 아무 TC 결과도 인식되지 않고 실패도 없던 실행은 얼리지 않는다.
    (`fix` 는 `code-agent repro` 가 재현을 본 순간 이미 얼었다.)
 4. 실패가 있으면 `.claude/skills/ca-check/SKILL.md` 의 **↺ 수정 루프**. 고친 뒤에는 `code-agent verify --json` 으로 check 부터 다시 돈다.

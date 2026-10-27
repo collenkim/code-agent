@@ -270,7 +270,7 @@ export interface ProposalCheck {
 /**
  * 반영 전에 제안 하나를 본다. 막는 것은 둘이다 — 계획만 있고 구현되지 않은 것을 사실로 적는 길(기능·흐름이 든 코드·테스트 경로가
  * 지금 트리에 없다)과 코드 관찰을 확정 정책으로 올리는 길(업무 정책 `상태: 확정` 의 출처가 경로뿐이다).
- * `strict` 는 문서 영향 판단이 켜진 작업(`knowledgeVersion`) — 업무 정책에 구분·상태·출처를 요구한다. 옛 작업의 제안은 지금처럼 받는다.
+ * `strict` 는 문서 영향 판단이 켜진 작업(`knowledgeVersion`) — 업무 정책에 구분·상태·출처를 요구한다. knowledgeVersion이 없는 작업은 이 추가 필드를 요구하지 않는다.
  */
 export function proposalCheck(
   repoRoot: string,

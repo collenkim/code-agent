@@ -199,7 +199,7 @@ export type SandboxSuspicion = "caller" | "point";
 /**
  * 표지 없는 Codex 샌드박스 의심 — Codex 가 부른(`runtimeHost` codex) `--by claude` 의 네트워크 오류는 실행 불가(중지)가 아니라
  * 샌드박스 거부(게이트 막힘)로 본다. 같은 지점에서 몇 번째든 같다 — 권한 상승 뒤에도 다시 나면 실제 네트워크 문제인지 샌드박스인지
- * CLI 가 가를 수 없으므로 사람이 정한다(네트워크를 확인해 다시 실행하거나 judgment cross-stop — 2026-10-08 사용자 결정 D2).
+ * CLI 가 가를 수 없으므로 사람이 정한다(네트워크를 확인해 다시 실행하거나 judgment cross-stop).
  * 지금 부른 쪽을 판별하지 못해도(호스트 표지가 없는 셸 — 사람의 터미널, 두 호스트 표지가 함께 있는 셸) 그 지점의 앞선 시도를
  * Codex 가 불렀거나 Codex 샌드박스가 막았으면(sandbox-network·preflight) 같다 — 재실행이 그 지점의 중지를 사람 판단 없이 기록하지 않게 한다.
  * 지점 시도(review·correct)는 지점 시도 한도에 세므로 기록이 끝없이 늘지 않는다. Windows Codex 0.161.0 실측(2026-10-08): 모든 모드의 셸에
@@ -827,7 +827,7 @@ export function crossCritic(root: string, by: string | undefined): string {
   });
 }
 
-// ---- 사람 허용의 대상(C5 judgment retry-grant 가 읽는다) ----
+// ---- 사람 허용의 대상(judgment retry-grant 가 읽는다) ----
 
 /**
  * 현재 critic 지점의 교차 예산 — 지점 시도·설정 오류·형식 교정(crossBudgets, 게이트 쪽 고아 보기·질문을 모두 답한 needs-input 보기).

@@ -360,7 +360,7 @@ export function openRound(work: Work): string {
   const planHash = hashPlan(work.plan!);
   const manifestHash = hashManifest(work.manifest);
   const binding = { baseCommit: active.baseCommit!, planHash, manifestHash };
-  /** stale → 같은 트리 거부 → 리뷰 회차 한도(C3). 잠금 밖에서 한 번, 잠금 안에서 다시 읽은 기록으로 한 번 더 한다 */
+  /** stale → 같은 트리 거부 → 리뷰 회차 한도. 잠금 밖에서 한 번, 잠금 안에서 다시 읽은 기록으로 한 번 더 한다 */
   const decide = (previous: ReviewLog | undefined) => {
     // 다른 계획·경계 위에서 난 회차를 이어 세면 "마지막 회차가 본 트리" 가 거짓말이 된다
     const stale = !previous || previous.rounds.some(
@@ -706,7 +706,7 @@ export function reviewStatusTail(work: Work, log: ReviewLog, last: ReviewRound):
   return ` · ${parts.join(" · ")}`;
 }
 
-// ---- 사람 허용의 대상(C5 judgment retry-grant 가 읽는다) ----
+// ---- 사람 허용의 대상(judgment retry-grant 가 읽는다) ----
 
 export type ReviewBudget = Budget & { point: string; scope: string };
 /**
