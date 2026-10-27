@@ -62,7 +62,8 @@ test("Codex 단독 설치와 갱신은 Claude 없이 사용자 설정·지침·�
   }
   const agent = read(".codex/agents/ca-analyst.toml");
   assert.match(agent,/^name = "ca_analyst"/);
-  assert.match(read(".agents/skills/ca-analyze/SKILL.md"), /hostAgents\.codex/);
+  assert.match(read(".agents/skills/ca-analyze/SKILL.md"), /\.agents\/skills\/ca-plan\/contract\.md/);
+  assert.match(read(".agents/skills/ca-plan/contract.md"), /hostAgents\.codex/);
   assert.match(read(".agents/skills/ca-analyze/legacy.md"), /ca_analyst/);
   assert.match(agent,/^model = "gpt-6.1-sol"$/m);
   assert.match(agent,/^model_reasoning_effort = "high"$/m);
