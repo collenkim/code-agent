@@ -1,4 +1,4 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, repoTools } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { recordDecision } from "../core/approval";
 import { abort, context, next, status, Stop, submitPlan, decide as decideApproval } from "../agent/commands";
 import { start } from "./confirmedStart";
-import { decide } from "../agent/hook";
+
 import { init } from "../agent/init";
 import { loadActive, saveActive } from "../agent/layout";
 import type { ActiveWork } from "../agent/layout";
@@ -103,13 +103,9 @@ function write(path: string, content: string): void {
   writeRepoFile(repo, path, content);
 }
 
-function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
+const { git, hook } = repoTools(() => repo);
 
-function hook(tool: string, input: Record<string, string>): string | undefined {
-  return decide({ cwd: repo, tool_name: tool, tool_input: input });
-}
+
 
 function writeFile(path: string): string | undefined {
   return hook("Write", { file_path: join(repo, path) });

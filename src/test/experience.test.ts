@@ -1,4 +1,4 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, repoTools } from "./repoFixture";
 /**
  * 작업 경험 기록(experience.ts·experienceCommands.ts) — 확정 정책과 따로 세는 선택 기록.
  *
@@ -28,9 +28,7 @@ let repo: string;
 function write(path: string, content: string): void {
   writeRepoFile(repo, path, content);
 }
-function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
+const { git } = repoTools(() => repo);
 function commit(message: string): void {
   git("add", "-A");
   git("commit", "-qm", message);

@@ -1,4 +1,4 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, repoTools } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -31,9 +31,7 @@ function write(path: string, content: string): void {
   writeRepoFile(repo, path, content);
 }
 
-function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
+const { git } = repoTools(() => repo);
 
 function commit(message: string): void {
   git("add", "-A");

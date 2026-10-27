@@ -1,6 +1,6 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, gitFixture } from "./repoFixture";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -16,7 +16,7 @@ import { loadWork } from "../agent/work";
 import { start } from "./confirmedStart";
 
 let root: string;
-function git(...args: string[]): string { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim(); }
+const git = (...args: string[]): string => gitFixture(root, ...args);
 function write(file: string, text: string): void { writeRepoFile(root, file, text); }
 const spec = "doc/work/ADOPT-1/requirement.md";
 beforeEach(() => {

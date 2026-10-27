@@ -1,4 +1,4 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, repoTools } from "./repoFixture";
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { abort, context, next, start, status, Stop } from "../agent/commands";
 import { checkProjectDocs, recordDocConfirmation } from "../agent/docs";
 import { docsBegin, docsLink } from "../agent/docsCommands";
-import { decide } from "../agent/hook";
+
 import { loadActive, readStages, REQUEST_SESSION_FILE } from "../agent/layout";
 import {
   decideRequest,
@@ -53,13 +53,9 @@ function read(path: string): string {
   return readFileSync(join(repo, path), "utf-8");
 }
 
-function git(...args: string[]): string {
-  return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf-8" }).trim();
-}
+const { git, hook } = repoTools(() => repo);
 
-function hook(tool: string, input: Record<string, string>): string | undefined {
-  return decide({ cwd: repo, tool_name: tool, tool_input: input });
-}
+
 
 const TTY = { channel: "tty" as const, verified: true, detail: "테스트 — 터미널 확정을 흉내낸다" };
 

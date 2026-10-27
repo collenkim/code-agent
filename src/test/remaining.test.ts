@@ -1,6 +1,6 @@
-import { writeFixture as writeRepoFile } from "./repoFixture";
+import { writeFixture as writeRepoFile, gitFixture } from "./repoFixture";
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
+
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ import * as tty from "../agent/tty";
 
 let root: string;
 function write(file: string, body: string) { writeRepoFile(root, file, body); }
-function git(...args: string[]) { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim(); }
+const git = (...args: string[]): string => gitFixture(root, ...args);
 const presence = { channel: "tty" as const, verified: true, detail: "automated fixture, not a human" };
 beforeEach(() => { root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-remaining-"))); });
 afterEach(() => { mock.restoreAll(); rmSync(root, { recursive: true, force: true }); });

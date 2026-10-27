@@ -1,3 +1,4 @@
+import { writeFixture } from "./repoFixture";
 /**
  * 참조 표준 선정 — 코드가 결정론적으로 고른다는 축이 실제로 서는가.
  *
@@ -5,7 +6,7 @@
  * 그리고 상한에 걸려 잘린 것이 **잘렸다고 드러나는가**.
  */
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -30,10 +31,8 @@ function caseSensitiveFs(): boolean {
 }
 const CASE_SENSITIVE = caseSensitiveFs();
 
-function write(relative: string, content = "x = 1\n") {
-  const path = join(root, relative);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, content, "utf-8");
+function write(relative: string, content = "x = 1\n"): void {
+  writeFixture(root, relative, content);
 }
 
 const MANIFEST: Manifest = {

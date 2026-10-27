@@ -1,3 +1,4 @@
+import { writeFixture } from "./repoFixture";
 /**
  * 경계 검사 — 지시서가 정한 상한선이 코드로 강제되는가.
  *
@@ -9,9 +10,9 @@
  * (단계별 outputDirs)이고, 둘 다 통과해야 한다.
  */
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { checkPaths, missingPlannedFiles, preservedPaths, unplannedFiles } from "../core/gate";
@@ -111,9 +112,7 @@ test("1-1 스마트 따옴표와 ASCII 혼합 인자는 동의 준비 티켓으�
 });
 
 function write(relative: string, content = "x = 1\n"): void {
-  const path = join(repo, relative);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content, "utf-8");
+  writeFixture(repo, relative, content);
 }
 
 /** 한 경로를 이 단계에서 쓰려 할 때 걸리는 위반 */
