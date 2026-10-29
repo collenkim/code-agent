@@ -15,7 +15,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 실
 
 작업 종류는 최초 접수 요구로 정한다. feature 작업의 후속 수정·검증 실패도 같은 ID·feature로 이어간다. 접수를 닫아도 ID·종류는 보존하며 다른 종류로 다시 접수할 수 없다. 다른 브랜치에 보관된 작업 ID는 그 브랜치에서 재개하고 현재 브랜치에 중복 생성하지 않는다. 요구 변경은 같은 ID 로 확정 개정 기준의 변경안(추가·수정·삭제)을 제출·확정한다 — 아래 [같은 ID 의 후속 요청](#같은-id-의-후속-요청--요구-변경안).
 
-모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 9개(이벤트 6종), Codex 공통 hook 등록 6개와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 11개(이벤트 6종), Codex 공통 hook 등록 6개와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인은 같은 세션에서 호스트별 응답 절차로 받는다.
 
@@ -130,7 +130,7 @@ claude                                   # 이 안에서 /ca-request 입력
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 실행 절차·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| hook | Claude 9개·Codex 6개 — 등록·matcher·출력은 [흐름도 §5](process-flow.md#5-hook-등록표) | O |
+| hook | Claude 11개·Codex 6개 — 등록·matcher·출력은 [흐름도 §5](process-flow.md#5-hook-등록표) | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 설치한 절차 버전 | `.code-agent/version` | O |
@@ -1027,11 +1027,12 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `code-agent review` | 독립 리뷰 회차를 열어 기준 트리 고정하고 리뷰어에게 넘길 context 파일도 쓴다. hook이 리뷰어 시작·완료와 ⑨ 결과 기록 |
 | `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단. 통과하면 커서를 반영(deliver)으로 옮긴다 |
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
+| `code-agent agent-event` | ca-implementer·ca-tester SubagentStart/Stop hook 전용. 판정 없이 담당 실행 구간과 완료만 기록한다 — 실패해도 담당을 막지 않는다 |
 | `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분에 끊는다 — 사람이 셸에서 `CODE_AGENT_CROSS_TIMEOUT_MIN`(분, 기본 9, 소수 허용)으로 바꾼다. Codex 셸에서 `--by claude` 면 샌드박스 표지를 보고 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 이 사전 점검은 사람이 셸에서 `CODE_AGENT_CROSS_PREFLIGHT=off` 로만 끈다 |
 | `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번. 제한 시간(`CODE_AGENT_CROSS_TIMEOUT_MIN`)·사전 점검(`CODE_AGENT_CROSS_PREFLIGHT`)은 `review cross` 와 같다 |
 | `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 읽기 전용이라 작업 중에도 모델이 부를 수 있다(교차 설정 오류 안내가 가리킨다) |
 | `code-agent hook` | PreToolUse 판정 (stdin JSON). 사람이 부르지 않는다 |
-| `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`deliver` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
+| `code-agent stop` | Stop 판정 (stdin JSON) — `implement`~`deliver` 에서 계획 밖 변경·답 없는 질문이 있으면 턴을 **한 번 막는다**(`decision: block`). 모든 단계에서 담당이 끝났는데 메인이 다음 명령 없이 턴을 끝내면 다음 명령을 사유로 한 번 막는다(실행 중인 담당·응답을 기다리는 동의·앞서 있던 답 없는 질문이 있으면 막지 않는다). 이어 붙은 다음 턴은 그대로 놓아 주고, 판정 자체가 실패하면 막지 않는다. 사람이 부르지 않는다 |
 
 `code-agent hook` · `code-agent stop` · `code-agent review-event`는 hook 전용이며 모델 Bash에 허용되지 않는다. 모델은 허용된 절차·상태 명령을 사용하고 사람 전용 승인 명령을 대신 실행하지 않는다.
 `init` · `abort` · `approve` · `reject` · `confirm doc` · `confirm request` · `reject request` · `deliver` · `model` · `plugin add` · `plugin remove` 도 hook 이 거부한다 (사람의 터미널 명령이다).
@@ -1553,6 +1554,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `사슬이 끊겼습니다 — 누가 원장을 고쳤는지 확인하세요` | `.code-agent/approvals/*.jsonl` 이 손으로 바뀌었다. git 이력으로 확인한다 |
 | `기준 브랜치가 없습니다: master` | `start --base <브랜치>` 또는 `code-agent.json` 의 `git.base` |
 | `code-agent hook 이 판정에 실패해 막았습니다` | hook 자체가 터졌다. 막는 쪽으로 닫힌다 — 메시지를 보고 `code-agent status` 로 상태를 확인 |
+| `담당 완료가 기록됐습니다(…). 완료 알림을 따로 기다리지 않고 이 턴에서 다음 명령을 실행합니다: …` (턴 끝) | 담당은 끝났는데 메인이 다음 명령 없이 턴을 끝내려 해 Stop hook 이 한 번 이어 붙인 것이다. 안내된 명령(계획은 `planning advance`, 구현은 `next`, 수정 루프는 `verify --json`)부터 잇는다. 질문·승인이 필요한 자리면 그 절차로 멈춘다 |
 | `승인된 계획 밖의 변경이 남아 있습니다 (도구를 거치지 않고 생긴 파일일 수 있습니다):` (턴 끝) | Stop hook 이 기준 커밋과 대조해 턴을 한 번 막은 것이다 (이어 붙은 다음 턴은 그대로 간다). 되돌리거나 사람에게 알린다 — 계획을 넓히려면 재승인 |
 | `검증 증거가 지금 트리와 맞지 않습니다` | 통과 뒤에 코드·계획·매니페스트가 바뀌었다. `code-agent check` 부터 다시 돈다 |
 | `플러그인 jev(candidates.rank) 가 실패해 기본 구현으로 돕니다: <이유>` | 어댑터가 제한 시간·응답 형식·종료 코드 중 하나에서 걸렸다. **명령은 정상 종료한다** — 그 자리의 결과가 기본 구현의 것일 뿐이다. 이유별 뜻은 [plugins.md §5](plugins.md#5-자리-해결-순서와-실패), 자세한 것은 `.code-agent/log/plugins/<자리>.jsonl` |

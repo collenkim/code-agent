@@ -10,6 +10,7 @@ import { planPaths, treeHashNow } from "./evidence";
 import { findRepoRoot } from "./layout";
 import { noteSubagentReturn } from "./hookLog";
 import { recordEvent } from "./timeline";
+import { noteAgentFinished, noteAgentReturned, noteAgentStarted, settleAgent } from "./agentRuns";
 import { grantScope, LIMITS, limitOf, subagentExit, TIMING } from "./retryPolicy";
 import { loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog, type ReviewRound } from "./review";
 import { loadWork } from "./work";
@@ -125,7 +126,11 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
       runs.push(entry);
       return { log, value: undefined };
     }, { hook: true });
-    if (started !== false) recordEvent(repoRoot, { type: "agent.started", ...place, host, session, agent, detail: { agentType: "ca-reviewer", round: opened.round, ...(started ? { ignored: started } : {}) } });
+    if (started !== false) {
+      recordEvent(repoRoot, { type: "agent.started", ...place, host, session, agent, detail: { agentType: "ca-reviewer", round: opened.round, ...(started ? { ignored: started } : {}) } });
+      // 무시한 실행도 담당은 실제로 돈다 — 끝날 때까지 메인이 그 결과를 기다리는 자리다
+      noteAgentStarted(repoRoot, id, agent, { source: "review", type: "ca-reviewer", phase: work.active.phase, session, host });
+    }
     return;
   }
 
@@ -139,7 +144,8 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   const problems = reviewResultProblems(body, planned, REVIEWER_ID);
   const docPath = join(repoRoot, reviewDocFile(id));
   let section: string | undefined;
-  const outcome = mutateReview<{ error?: Error; recorded?: string }>(repoRoot, id, target, (current) => {
+  /** progressed: 메인의 다음 행동이 있는 결과(완료·형식 오류 기록) — 무시한 실행·이미 기록한 결과의 재알림은 아니다 */
+  const outcome = mutateReview<{ error?: Error; recorded?: string; progressed?: true }>(repoRoot, id, target, (current) => {
     const { log, last, runs } = sameRound(current);
     const mine = runs.filter((run) => run.sessionId === session && run.agentId === agent);
     const run = [...mine].reverse().find(open) ?? mine.at(-1);
@@ -160,23 +166,29 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
       }
       run.failure = { class: "agent-format-error", at, detail: problems.join(" · ").slice(0, 300), raw: report.slice(0, 2000) };
       const left = Math.max(0, runLimit(log, last.round) - reviewerState(last, planned).runs);
-      return { log, value: { recorded: `리뷰 결과 형식 오류를 기록했습니다(${problems[0]}) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).` } };
+      return { log, value: { recorded: `리뷰 결과 형식 오류를 기록했습니다(${problems[0]}) — ${agentName("ca-reviewer")} 를 새로 호출하세요(이 회차 남은 호출 ${left}회).`, progressed: true } };
     }
     run.result = body;
     run.completedAt = at;
     const text = existsSync(docPath) ? stripBlock(readFileSync(docPath, "utf-8"), REVIEW_BLOCK) : "";
-    if (!/^## 지적\s*$/m.test(text)) return { log, value: { recorded: "리뷰 문서의 ## 지적 절이 없습니다." } };
+    if (!/^## 지적\s*$/m.test(text)) return { log, value: { recorded: "리뷰 문서의 ## 지적 절이 없습니다.", progressed: true } };
     section = body;
-    return { log, value: {} };
+    return { log, value: { progressed: true } };
   }, {
     hook: true,
     // `## 지적` 절을 기록으로 다시 쓴다(회차 구역은 mutateReview 가 다시 렌더한다)
     document: (text) => section === undefined ? text
       : stripBlock(text, REVIEW_BLOCK).replace(/(^## 지적[^\S\n]*\n)[\s\S]*?(?=^## |$(?![\s\S]))/m, (_, heading: string) => `${heading}\n${section}\n\n`),
   });
-  if (outcome.error instanceof ReturnToReviewer) recordEvent(repoRoot, { type: "retry.used", ...place, host, session, agent, reason: "리뷰어 되돌림(agent-format-error)", detail: { counter: "agentReturn", limit: LIMITS.agentReturn } });
-  else if (!outcome.error) recordEvent(repoRoot, { type: "agent.finished", ...place, host, session, agent, ...(outcome.recorded ? { reason: outcome.recorded } : {}),
-    detail: { agentType: "ca-reviewer", round: opened.round, status: outcome.recorded ? "recorded" : "completed" } });
+  if (outcome.error instanceof ReturnToReviewer) {
+    recordEvent(repoRoot, { type: "retry.used", ...place, host, session, agent, reason: "리뷰어 되돌림(agent-format-error)", detail: { counter: "agentReturn", limit: LIMITS.agentReturn } });
+    noteAgentReturned(repoRoot, id, agent);
+  } else if (!outcome.error) {
+    const status = outcome.recorded ? "recorded" : "completed";
+    recordEvent(repoRoot, { type: "agent.finished", ...place, host, session, agent, ...(outcome.recorded ? { reason: outcome.recorded } : {}),
+      detail: { agentType: "ca-reviewer", round: opened.round, status } });
+    noteAgentFinished(repoRoot, id, agent, { source: "review", type: "ca-reviewer", status, phase: work.active.phase, session, host, advance: outcome.progressed === true });
+  }
   if (outcome.error) throw outcome.error;
   if (outcome.recorded) throw new RecordedFailure(outcome.recorded);
 }
@@ -225,6 +237,7 @@ export function runReviewHook(stdin: string): number {
     const code = subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true,
       failure: error instanceof ReturnToReviewer ? "agent-format-error" : "hook-failure", recorded });
     if (code === 2) noteSubagentReturn(input, text);
+    else if (input?.hook_event_name === "SubagentStop" && input.agent_id) settleAgent(findRepoRoot(process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd()), input.agent_id, "hook-failure");
     return code;
   }
 }

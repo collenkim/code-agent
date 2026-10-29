@@ -53,7 +53,7 @@ beforeEach(() => { scratch = mkdtempSync(join(tmpdir(), "ca-hookload-")); });
 afterEach(() => { rmSync(scratch, { recursive: true, force: true }); });
 
 describe("hook 기동 — 모듈 그래프", () => {
-  for (const entry of ["hook.js", "codexHook.js", "stopHook.js", "sessionHook.js"]) {
+  for (const entry of ["hook.js", "codexHook.js", "stopHook.js", "sessionHook.js", "agentHook.js"]) {
     test(`${entry} 는 명령 모듈을 읽지 않는다`, () => {
       const heavy = heavyIn(loaded(entry), entry);
       assert.deepEqual(heavy, [], `${entry} 가 ${heavy.join(", ")} 를 읽습니다 — hook 경로에서 명령 모듈을 import하지 마세요(지연 로드는 cli.ts HOOKS·분기 안 require)`);
@@ -125,6 +125,9 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
     ["planning-event", "./planningHook", JSON.stringify({ hook_event_name: "SubagentStart" })],
     ["planning-event", "./planningHook", JSON.stringify({ hook_event_name: "SubagentStop" })],
     ["review-event", "./reviewHook", JSON.stringify({ hook_event_name: "SubagentStart" })],
+    ["agent-event", "./agentHook", JSON.stringify({ hook_event_name: "SubagentStart" })],
+    ["agent-event", "./agentHook", JSON.stringify({ hook_event_name: "SubagentStop" })],
+    ["agent-event", "./agentHook", "not json"],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "PreToolUse" })],
     ["codex-event", "./codexHook", "not json"],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "Stop" })],
@@ -155,6 +158,7 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
     ["codex-event", "./consent", JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "s1", turn_id: "t", cwd: scratch, prompt: `code-agent consent respond ${UUID} 1 abcdef` })],
     ["codex-event", "./stopHook", JSON.stringify({ hook_event_name: "Stop", session_id: "s1", turn_id: "t", cwd: scratch })],
     ["codex-event", "./planningHook", JSON.stringify({ hook_event_name: "SubagentStart", session_id: "s1", cwd: scratch, agent_id: "a1", agent_type: "ca_analyst" })],
+    ["codex-event", "./agentHook", JSON.stringify({ hook_event_name: "SubagentStop", session_id: "s1", cwd: scratch, agent_id: "a1", agent_type: "ca_implementer" })],
     ["codex-event", "./sessionHook", JSON.stringify({ hook_event_name: "SessionStart", session_id: "s1", cwd: scratch, source: "compact" })],
   ];
   test("분기 안의 지연 로드 실패 — 동의 적용 가드·Codex 동의 응답은 막고, Codex Stop·담당 이벤트·세션 시작은 막지 않는다", () => {
@@ -169,7 +173,7 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
       else assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny", label);
     }
     // 표의 값 그대로 — Claude 적용 가드 2, Codex 적용 가드 deny, 동의 응답 2, Stop·담당·세션 시작 0
-    assert.deepEqual(lazyRows().map(([command, , stdin]) => hookFailureExit(hookFailureInput(command, stdin)).code), [2, 0, 2, 0, 0, 0]);
+    assert.deepEqual(lazyRows().map(([command, , stdin]) => hookFailureExit(hookFailureInput(command, stdin)).code), [2, 0, 2, 0, 0, 0, 0]);
   });
 
   test("깨진 stdin — 계획·리뷰 담당 hook 의 진입 함수(subagentExit)와 모듈 로드 실패(hookFailureExit)가 같은 종료 코드다", () => {
@@ -187,7 +191,8 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
   test("표의 값 — Stop·SessionStart·SubagentStop 은 막지 않고 PreToolUse·SubagentStart 와 Codex 도구 호출은 막는다", () => {
     const code = (command: HookFailureInput["command"], stdin: string) => hookFailureExit(hookFailureInput(command, stdin)).code;
     assert.deepEqual([code("stop", "{}"), code("session-event", "{}"), code("hook", "{}"), code("consent-event", "{\"hook_event_name\":\"PreToolUse\"}"),
-      code("planning-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("planning-event", "{\"hook_event_name\":\"SubagentStop\"}")], [0, 0, 2, 2, 2, 0]);
+      code("planning-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("planning-event", "{\"hook_event_name\":\"SubagentStop\"}"),
+      code("agent-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("agent-event", "not json")], [0, 0, 2, 2, 2, 0, 0, 0]);
     assert.match(hookFailureExit(hookFailureInput("codex-event", "not json")).stdout ?? "", /"permissionDecision":"deny"/);
   });
 });

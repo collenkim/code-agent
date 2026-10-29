@@ -113,9 +113,10 @@ const KEEP = "유지";
  * 확인 화면은 이 파일들을 읽지 않으므로 빼도 사람이 확인한 대상이 줄지 않는다. 업무 답 기록(work/<ID>/answers.jsonl)은 남긴다.
  * master 연동 기록(master — 실행 heartbeat·이벤트·명령 기록)도 응답을 기다리는 동안 감독 프로세스가 쓰므로 뺀다.
  * 버전 적용 잠금(runtime.lock*)은 적용·세션을 여는 명령이 잠깐 쥐는 파일이다 — 적용 직후 동의 정리가 그 잠금 안에서 스냅샷을 비교한다.
+ * 담당 실행 장부(agent-runs.json*)는 담당 hook 과 진행 명령이 쓴다 — 동의를 묻는 동안 끝난 담당이 동의를 깨지 않게 뺀다.
  */
 const SNAPSHOT_EXCLUDED = [DIR, `${STATE_DIR}/log`, `${STATE_DIR}/lease.json`, `${STATE_DIR}/lease.json.lock`, `${STATE_DIR}/master`, `${STATE_DIR}/graph`, `${STATE_DIR}/interactions`,
-  `${STATE_DIR}/runtime.lock`, `${STATE_DIR}/runtime.lock.reclaim`];
+  `${STATE_DIR}/runtime.lock`, `${STATE_DIR}/runtime.lock.reclaim`, `${STATE_DIR}/agent-runs.json`, `${STATE_DIR}/agent-runs.json.lock`];
 
 function statIfPresent(path: string): Stats | undefined {
   try { return lstatSync(path); }

@@ -10,6 +10,7 @@ import { commonAgentName, withNotation } from "./hostText";
 import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
 import { noteHookOutput } from "./hookLog";
 import { recordEvent } from "./timeline";
+import { settleAgent } from "./agentRuns";
 
 interface CodexHookInput extends ReviewHookInput {
   tool_name?: string;
@@ -178,6 +179,8 @@ function codexEvent(input: CodexHookInput): object {
     // Codex 담당은 exit 2 로 되돌리지 않는다(subagentExit — 0.161.0 바이너리에는 SubagentStop exit 2 를 이어가기로 받는 문구가 있으나
     // 실제로 확인하지 않아 쓰지 않는다, HP-15) — 계획 담당의 실패는 되돌림 없이 바로 기록한다.
     // 이벤트별 모듈은 그 분기에서만 읽는다 — 모든 이벤트가 담당 관찰·Stop 판정 그래프를 함께 읽지 않게(hookLoad.test)
+    // 구현·테스트 담당은 실행 구간만 남긴다(판정 없음 — 막지 않는다)
+    (require("./agentHook") as typeof import("./agentHook")).observeAgent(event, root, "codex");
     (require("./planningHook") as typeof import("./planningHook")).observePlanner(event, root, {host: "codex"});
     (require("./reviewHook") as typeof import("./reviewHook")).observeReviewer(event, root, "codex");
   } else if (input.hook_event_name === "UserPromptSubmit") {
@@ -233,9 +236,9 @@ function noteCodexOutput(input: CodexHookInput, output: object): void {
 }
 
 function runCodexEvent(stdin: string): number {
-  let event: string | undefined;
+  let event: string | undefined, input: CodexHookInput | undefined;
   try {
-    const input = JSON.parse(stdin) as CodexHookInput;
+    input = JSON.parse(stdin) as CodexHookInput;
     event = input.hook_event_name;
     const output = codexHook(input);
     process.stdout.write(JSON.stringify(output));
@@ -247,6 +250,8 @@ function runCodexEvent(stdin: string): number {
       // 기록한 실패든 기록하지 못한 판정 실패든 Codex 담당은 되돌리지 않는다(subagentExit) — 사유만 남기고 통과한다
       process.stderr.write(`code-agent codex-event: ${message}\n`);
       process.stdout.write("{}");
+      // 담당은 끝났다 — 판정 전에 실패한 실행도 메인의 다음 진행 명령이 그 상태를 보게 완료로 남긴다(이미 적었으면 그대로)
+      if (event === "SubagentStop" && input?.agent_id && typeof input.cwd === "string") settleAgent(findRepoRoot(input.cwd), input.agent_id, "hook-failure");
       return subagentExit({host: "codex", event, recorded: recordedFailure(error)});
     }
     const result = hookFailureExit(hookFailureInput("codex-event", stdin), message);

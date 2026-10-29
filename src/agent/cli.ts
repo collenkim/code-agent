@@ -2,7 +2,7 @@
 /**
  * code-agent 진입점. hook 하위 명령은 도구 호출마다 새 프로세스로 돈다 — 명령 모듈 전체(cliMain)를 읽지 않고 그 hook 의 모듈만
  * 지연 로드한다. 모듈 로드(설치가 깨졌거나 소스 빌드 도중 dist 가 반쯤 바뀐 상태)·stdin 읽기 실패는 retryPolicy.hookFailureExit 표대로
- * 끝낸다: PreToolUse(hook)와 동의 질문·응답은 막고, Stop·SessionStart·SubagentStop·업무 질문·사용자 메시지는 막지 않는다.
+ * 끝낸다: PreToolUse(hook)와 동의 질문·응답은 막고, Stop·SessionStart·SubagentStop·구현·테스트 담당 관찰·업무 질문·사용자 메시지는 막지 않는다.
  * 판정 함수의 예외는 각 run 함수가 같은 표대로 처리한다.
  *
  * 무엇보다 먼저 이 프로젝트가 적용한 릴리스를 고른다(runtimeSelect.ts) — 다르면 그 릴리스의 cli.js 로 같은 프로세스에서 넘기고
@@ -24,6 +24,7 @@ const HOOKS: Record<HookCommand, () => HookRunner> = {
   stop: () => (require("./stopHook") as typeof import("./stopHook")).runStopHook,
   "review-event": () => (require("./reviewHook") as typeof import("./reviewHook")).runReviewHook,
   "planning-event": () => (require("./planningHook") as typeof import("./planningHook")).runPlanningHook,
+  "agent-event": () => (require("./agentHook") as typeof import("./agentHook")).runAgentHook,
   "consent-event": () => (require("./consent") as typeof import("./consent")).runConsentHook,
   "session-event": () => (require("./sessionHook") as typeof import("./sessionHook")).runSessionHook,
 };

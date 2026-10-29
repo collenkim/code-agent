@@ -5,10 +5,13 @@ import { loadActive, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, findRepoRoot, ques
 import { openQuestions } from "./answers";
 import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
-import { askVia, withNotation } from "./hostText";
+import { agentName, askVia, skill, withNotation } from "./hostText";
 import { questionPresentationProblem } from "./questionPresentation";
 import { blockedBefore, noteHookOutput, reasonKey } from "./hookLog";
 import { recordEvent } from "./timeline";
+import { pendingCompletion, type Completion } from "./agentRuns";
+import { openConsent } from "./consentState";
+import type { Work } from "./work";
 
 /**
  * Claude Code Stop hook 의 판정 — **턴이 끝날 때 한 번만** 본다.
@@ -21,6 +24,11 @@ import { recordEvent } from "./timeline";
  * 놓아 준다" 를 만든다 — 연속 차단 캡에 닿아 울타리가 조용히 꺼지는 일이 없다.
  * 같은 세션에서 같은 사유(글이 같은 차단)로 이미 막았으면 다시 막지 않는다(hookLog 기록) — 상기는 한 번이면 되고, 막을 때마다
  * 모델이 한 턴을 더 돈다. 목록이 바뀌면(새 파일·새 질문) 사유가 달라져 다시 막는다.
+ *
+ * 울타리 사유가 없으면 **완료 뒤 이어가기**를 본다(continuation): 담당 실행 장부(agentRuns)에 메인이 아직 처리하지 않은 완료가 있고
+ * 실행 중인 담당이 없는데 턴이 끝나면, 완료 알림을 기다리지 말고 이 턴에서 다음 명령을 실행하라고 한 번 막는다. 담당 결과가 인계
+ * 메시지로 먼저 오고 완료 알림은 새 턴을 열지 않은 채 소비되는 호스트에서 흐름이 사람 입력을 기다리며 멈추던 자리다. 사람 판단 자리
+ * (응답·적용을 기다리는 동의, 이 완료가 낸 것이 아닌 답 없는 질문)에서는 막지 않는다.
  */
 export interface StopHookInput {
   cwd?: string;
@@ -55,11 +63,15 @@ function stopReason(input: StopHookInput, repoRoot: string): string | undefined 
     if (presentation) return presentation;
   }
   const work = loadWork(repoRoot);
-  if (!work || !work.active.baseCommit || !STOP_PHASES.includes(work.active.phase)) {
-    // code-agent 작업이 아니거나 아직 코드를 쓰는 자리가 아니면 남의 턴에 끼어들지 않는다
-    return undefined;
-  }
+  // code-agent 작업이 아니면 남의 턴에 끼어들지 않는다
+  if (!work) return undefined;
+  return fenceReason(input, work) ?? continuation(input, work);
+}
 
+/** 코드를 쓰는 자리(STOP_PHASES)의 울타리 — 계획 밖 변경과 답 없는 질문 */
+function fenceReason(input: StopHookInput, work: Work): string | undefined {
+  const repoRoot = work.repoRoot;
+  if (!work.active.baseCommit || !STOP_PHASES.includes(work.active.phase)) return undefined;
   const outside = outsideChanges(work);
   const { unanswered, unverified } = openQuestions(repoRoot, questionsFile(work.active.id));
   const open = [...unanswered, ...unverified];
@@ -85,6 +97,30 @@ function stopReason(input: StopHookInput, repoRoot: string): string | undefined 
           `답을 받기 전에는 진행하지 마세요 — 메인이 ca-answer 공통 절차의 ${askVia()} 답을 받고 기록합니다. 미응답이면 멈춥니다. 작업 폴더는 ${workDocsDir(work.active.id)}/ 입니다.`,
         ]
       : []),
+  ].join("\n");
+  return blockedBefore(repoRoot, input.session_id, "Stop", reasonKey(reason)) ? undefined : reason;
+}
+
+/** 완료한 담당 다음에 메인이 실행할 명령 — 담당 종류와 지금 단계로 고른다 */
+function nextHint(completion: Completion, phase: string): string {
+  if (completion.source === "planning") return "`code-agent planning advance`(쓰던 옵션 그대로 — 출력의 next 줄을 따른다)";
+  if (completion.source === "review") return `${skill("ca-review")} 절차 4-1부터(교차 검증을 쓰지 않으면 열린 지적을 확인하고 \`code-agent next\`)`;
+  if (phase === "implement") return `${skill("ca-implement")} 절차의 담당 호출 다음 항목(\`code-agent next\` — fix 의 테스트 단계면 \`code-agent repro\` 먼저)`;
+  if (phase === "test" && completion.type === "ca-tester") return "`code-agent test`";
+  return "`code-agent verify --json`(수정 루프 — check 부터 다시 검증)";
+}
+
+function continuation(input: StopHookInput, work: Work): string | undefined {
+  const repoRoot = work.repoRoot;
+  const pending = pendingCompletion(repoRoot, work.active.id);
+  if (!pending || pending.running > 0) return undefined;
+  if (openConsent(repoRoot, Date.now(), input.session_id)) return undefined;
+  const { completion } = pending;
+  const { unanswered, unverified } = openQuestions(repoRoot, questionsFile(work.active.id));
+  if (unanswered.length + unverified.length > 0 && completion.status !== "needs-input") return undefined;
+  const reason = [
+    `담당 완료가 기록됐습니다(${agentName(completion.type)} · ${completion.status} · ${completion.at}). 완료 알림을 따로 기다리지 않고 이 턴에서 다음 명령을 실행합니다: ${nextHint(completion, work.active.phase)}.`,
+    "질문·승인·반영처럼 사람 판단이 필요한 자리면 그 절차로 멈춥니다. 단계 절차를 모르면 `code-agent flow advance --json`이 다음 인계를 냅니다.",
   ].join("\n");
   return blockedBefore(repoRoot, input.session_id, "Stop", reasonKey(reason)) ? undefined : reason;
 }

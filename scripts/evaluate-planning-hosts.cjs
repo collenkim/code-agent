@@ -188,9 +188,10 @@ if (host === 'codex') report.runtime = {
     : !state.agents.length ? 'no-observed-agent'
     : 'result-not-accepted',
 };
-// 새 실행을 배정하는 부작용 없이 실제 관찰 완료 뒤에만 게이트 준비를 확인한다.
+// 새 실행을 배정하는 부작용 없이 실제 관찰 완료 뒤에만 게이트 준비를 확인한다. advancePlanning 은 Promise 를 돌려준다
+(async () => {
 if (completed) {
-  report.action = JSON.parse(advancePlanning(repo)).action;
+  report.action = JSON.parse(await advancePlanning(repo)).action;
   if (report.action === 'ready-for-gate') {
     // 관찰된 결과 수락과 문서 내용 게이트를 구분한다. 다음 담당은 배정하지 않는다.
     try { report.contentGate = { passed: true, output: next(repo) }; }
@@ -200,3 +201,4 @@ if (completed) {
 fs.writeFileSync(path.join(root, 'dist', `${outputName}.json`), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ host, completed: report.completed, action: report.action, exitCode: report.exitCode, error: report.error, durationMs: report.durationMs }));
 if (!completed || report.action !== 'ready-for-gate' || !report.contentGate?.passed) process.exitCode = 1;
+})();

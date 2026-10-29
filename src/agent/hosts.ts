@@ -166,9 +166,9 @@ export const CODEX_SENTENCES: readonly (readonly [string, string])[] = [
   ["CLI 가 9분에 끊고 기록하므로 timeout 을 600000ms 로 주거나 백그라운드로 실행한다.",
     "CLI 가 9분에 끊고 기록하므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드로 실행한다."],
   ["(CLI 가 9분에 끊으므로 timeout 600000ms 또는 백그라운드)", "(CLI 가 9분에 끊으므로 셸 명령의 제한 시간을 10분 넘게 주거나 백그라운드)"],
-  // 담당 호출(계획 공통 계약·ca-review·ca-implement·ca-test·ca-check·ca-docs·ca-adopt) — Claude 의 Agent 도구는 인자 없이 백그라운드로 뜰 수 있어
-  // 결과를 기다리게 한다(claude 2.1.293 실측). Codex 에는 그 인자가 없다 — 결과를 기다린다는 뜻만 남긴다
-  ["Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).", "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다."],
+  // 담당 호출(계획 공통 계약·ca-review·ca-implement·ca-test·ca-check·ca-docs·ca-adopt) — Claude 의 Agent 도구는 담당을 백그라운드로 띄우고 결과를
+  // 인계 메시지나 완료 알림으로 돌려준다(claude 2.1.312 의 Agent 도구에는 전경 실행 인자가 없다). Codex 는 결과를 기다린다는 뜻만 남긴다
+  ["담당은 백그라운드로 끝날 수 있다 — 결과(호출 결과·인계 메시지·완료 알림 중 먼저 온 것)를 받은 그 턴에 다음 단계로 간다.", "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다."],
 ];
 
 /**

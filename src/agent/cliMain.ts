@@ -39,6 +39,7 @@ import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repa
 import { manifestCheck, survey } from "./survey";
 import { commandKey, usage, usageReport } from "./usage";
 import { recordEvent } from "./timeline";
+import { consumeCompletion } from "./agentRuns";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
@@ -270,6 +271,16 @@ const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent u
 const UNTIMED = new Set(["update", "version", "doctor", "usage", "help", "--help", "-h"]);
 
 /**
+ * 담당 완료 뒤 메인이 실제로 다음 행동을 했다고 보는 진행 명령 — 실행하면 담당 실행 장부의 완료를 처리된 것으로 지운다(agentRuns.consumeCompletion).
+ * 조회(status·context·planning status 등)는 행동이 아니라 지우지 않는다 — 조회만 하고 턴을 끝내면 Stop hook 이 이어가게 한다.
+ */
+const PROGRESS = new Set(["next", "flow", "back", "start", "check", "test", "verify", "review", "integrate", "repro"]);
+const PROGRESS_SUB: Record<string, readonly string[]> = {
+  planning: ["advance", "prepare", "dispatch", "repair", "cancel", "cross", "reuse-answer"], plan: ["submit"], consent: ["prepare", "apply", "finish"],
+};
+const progressCommand = (command: string, args: string[]): boolean => PROGRESS.has(command) || (PROGRESS_SUB[command]?.includes(args[0] ?? "") ?? false);
+
+/**
  * 명령 한 번의 시작·끝을 실행 타임라인에 남긴다 — 완료 알림 뒤 호스트가 다음 행동을 실제로 실행했는지의 근거다.
  * 인자 값(파일 경로·사유 글)은 남기지 않고 명령 이름(`commandKey`)만 남긴다. 사람이 터미널에서 친 명령은 terminal 로 가른다.
  */
@@ -281,6 +292,7 @@ export async function runCommand(command: string | undefined, args: string[]): P
   const startedAt = new Date().toISOString();
   const terminal = !!terminalCaller(process.stdin.isTTY, process.env);
   recordEvent(repoRoot, { type: "action.started", at: startedAt, detail: { command: key, ...(terminal ? { terminal } : {}) } });
+  if (progressCommand(command, args)) consumeCompletion(repoRoot);
   const ended = (exit: number, reason?: string) => {
     const at = new Date().toISOString();
     recordEvent(repoRoot, { type: "action.ended", at, ...(reason ? { reason } : {}), detail: { command: key, exit, startedAt, durationMs: Date.parse(at) - Date.parse(startedAt) } });

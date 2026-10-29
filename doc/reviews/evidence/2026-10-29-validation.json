@@ -5,103 +5,123 @@
     "node": "24.19.0",
     "shell": "PowerShell 5.1.26100"
   },
+  "hosts": {
+    "claude": "2.1.312",
+    "codex": "0.165.0"
+  },
   "stateSchema": 19,
+  "stateSchemaNote": "담당 실행 장부(agent-runs.json)는 게이트·배정·승인 판정에 쓰지 않아 세대를 올리지 않음",
   "scopedTests": [
     {
-      "group": "요구·흐름·상태 조회",
-      "command": "node --test --test-concurrency=2 <파일 10개>",
+      "group": "이어가기·hook·문서·템플릿",
+      "command": "node --test --test-concurrency=2 <파일 16개>",
       "files": [
-        "request",
-        "requestRevisions",
-        "requestRevisionFlow",
+        "agentContinuation",
         "reproScenarios",
-        "stageFlow",
-        "timeline",
         "hookLoad",
-        "process",
-        "consent",
-        "stateView"
-      ],
-      "tests": 209,
-      "pass": 208,
-      "fail": 1,
-      "durationSeconds": 448.3,
-      "failed": "stateView 읽기 전용 조회 — CLI status --json 이 타임라인에 기록",
-      "rerunAfterFix": {
-        "files": [
-          "stateView"
-        ],
-        "tests": 14,
-        "pass": 14,
-        "fail": 0
-      }
-    },
-    {
-      "group": "반영·회차·재개 경로",
-      "command": "node --test --test-concurrency=2 <파일 18개>",
-      "files": [
-        "deliver-scope",
-        "integrate-deliver",
-        "consentScreens",
-        "fullReview",
-        "knowledgeDocs",
-        "fix-flow",
-        "refactor-flow",
-        "triage",
-        "branchResume",
-        "branchCursor",
-        "finalReverify",
-        "screenText",
-        "failureHint",
-        "consentSnapshot",
-        "remaining",
-        "crossReview",
-        "lease",
-        "master"
-      ],
-      "tests": 359,
-      "pass": 359,
-      "fail": 0,
-      "durationSeconds": 744.8
-    },
-    {
-      "group": "문서·템플릿·상태 세대·Codex",
-      "command": "node --test --test-concurrency=2 <파일 12개>",
-      "files": [
         "docSync",
-        "templateBudget",
+        "docs",
         "templateText",
+        "templateBudget",
         "hostNotation",
         "hostText",
-        "docs",
-        "dashboardContinuation",
-        "installRobustness",
-        "runtimeRecovery",
+        "retryPolicy",
+        "codex",
+        "stage-commands",
+        "questionPresentation",
         "timeline",
-        "reproScenarios",
-        "codex"
+        "hookPaths",
+        "assets-doctor-usage"
       ],
-      "tests": 132,
-      "pass": 132,
+      "tests": 328,
+      "durationSeconds": 161.9,
+      "pass": 328,
       "fail": 0,
-      "durationSeconds": 141.8
+      "rerunAfterTestFix": [
+        "templateText",
+        "hookLoad"
+      ]
     },
     {
-      "group": "상태 조회를 쓰는 흐름",
+      "group": "계획·리뷰·상태 조회",
+      "command": "node --test --test-concurrency=2 <파일 11개>",
+      "files": [
+        "planning",
+        "planningRecovery",
+        "planningRetry",
+        "planningChainFlow",
+        "resultContracts",
+        "review-gate",
+        "crossReview",
+        "fullReview",
+        "finalReverify",
+        "stateView",
+        "lease"
+      ],
+      "tests": 290,
+      "durationSeconds": 464.7,
+      "pass": 290,
+      "fail": 0,
+      "rerunAfterTestFix": [
+        "planning"
+      ]
+    },
+    {
+      "group": "동의·진행 명령·재개",
+      "command": "node --test --test-concurrency=2 <파일 30개>",
+      "files": [
+        "consentBinding",
+        "consentOutput",
+        "consentSnapshot",
+        "consentScreens",
+        "answers",
+        "command",
+        "coexistence",
+        "choiceProtocol",
+        "choiceServer",
+        "branchCursor",
+        "branchResume",
+        "triage",
+        "experience",
+        "verification-flow",
+        "verification-stages",
+        "stageFlow",
+        "masterCodex",
+        "nodeRuntime",
+        "build",
+        "runtimeRelease",
+        "agent",
+        "adoption",
+        "codexReadiness",
+        "process",
+        "selection",
+        "masterRuns",
+        "installRobustness",
+        "master",
+        "executionMode",
+        "masterPairing"
+      ],
+      "tests": 482,
+      "durationSeconds": 717.3,
+      "pass": 482,
+      "fail": 0
+    },
+    {
+      "group": "계획 교차·연쇄·요구 개정·반영",
       "command": "node --test --test-concurrency=2 <파일 7개>",
       "files": [
-        "assets-doctor-usage",
-        "dashboardInteractions",
-        "findings",
-        "graphLifecycle",
-        "planningRetry",
-        "runtimePackage",
-        "verification-flow"
+        "planningCross",
+        "planningChain",
+        "dependencyContracts",
+        "scripts",
+        "modelPolicy",
+        "requestRevisionFlow",
+        "integrate-deliver"
       ],
-      "tests": 158,
-      "pass": 158,
+      "tests": 96,
+      "pass": 96,
       "fail": 0,
-      "durationSeconds": 202.8
+      "durationSeconds": 184.7
     }
   ],
   "lastFullTest": {
@@ -112,20 +132,72 @@
     "skip": 4,
     "fail": 0
   },
+  "liveHost": {
+    "command": "CODE_AGENT_LIVE_EVAL=1 node scripts/evaluate-planning-hosts.cjs claude s2-continuation --through-impact --timeout-seconds 900",
+    "host": "Claude Code 2.1.312",
+    "mode": "print(-p)",
+    "model": "sonnet(메인·담당)",
+    "budgetUsd": 1.5,
+    "costUsd": 0.47,
+    "fixtures": "준비·요구·모델 선택 동의는 합성 fixture — 사람 승인이 아님",
+    "userMessagesAfterPrompt": 0,
+    "agents": [
+      {
+        "role": "analysis",
+        "type": "ca-analyst",
+        "launch": "isAsync",
+        "returnedOnce": "agent-format-error",
+        "status": "completed",
+        "completionToNextCommandSeconds": 3.6,
+        "next": [
+          "planning advance(ready-for-gate)",
+          "next(게이트 통과·impact 진입)",
+          "planning advance(impact 배정)"
+        ]
+      },
+      {
+        "role": "impact",
+        "type": "ca-explorer",
+        "launch": "isAsync",
+        "returnedOnce": "agent-format-error",
+        "status": "completed",
+        "completionToNextCommandSeconds": 2.7,
+        "next": [
+          "planning advance(ready-for-gate)"
+        ]
+      }
+    ],
+    "hostResumedOnNotification": true,
+    "stopContinuationBlocks": 0,
+    "stopsWhileAgentRunning": 2,
+    "finalStopBlocked": false,
+    "sessionSeconds": 152,
+    "notificationToNextActionMs": [
+      1802,
+      1809
+    ],
+    "contentGatePassed": true,
+    "notVerified": [
+      "Claude 대화형 세션에서 Stop 이어가기 차단이 턴을 잇는 모습",
+      "관리 실행(master supervise) 자체",
+      "Codex 실제 호스트"
+    ],
+    "report": "호스트를 다시 부르지 않고 같은 판정(advancePlanning·next)을 따로 실행해 만듦"
+  },
   "reproBaseline": {
     "file": "2026-10-29-repro-baseline.json",
     "command": "node scripts/repro-baseline.cjs --repeat 3",
     "fixture": "sha256:4be6f82c570ee977",
     "stable": true,
     "afterThisChange": {
-      "fixture": "sha256:fb3511d4b85935f8",
-      "fixtureChanged": "amendment·staleIds 시나리오를 요구 개정 계약에 맞춰 바꿈",
+      "fixture": "sha256:17ab377fa3014d4f",
+      "stable": true,
       "amendment": {
         "fullDraftRefused": true,
         "keptPrevious": true,
         "parent": 2,
         "revision": 3,
-        "medianMs": 43
+        "medianMs": 79
       },
       "staleIds": {
         "assignedBefore": [
@@ -135,11 +207,20 @@
           "REQ-1",
           "REQ-2"
         ],
-        "medianMs": 30
+        "medianMs": 60
       },
       "completionStall": {
-        "facts": "같음",
-        "medianMs": 2587
+        "stopAfterCompletionBlocked": true,
+        "nextNamed": true,
+        "humanInputNeeded": false,
+        "continuedTurnBlocked": false,
+        "duplicateStopExit": 0,
+        "stopAfterDuplicateBlocked": false,
+        "restartedStopBlocked": false,
+        "resumedAction": "ready-for-gate",
+        "gate": "passed",
+        "medianMs": 5344,
+        "boundMs": 20000
       }
     }
   },
@@ -147,7 +228,7 @@
     "calculation": "LF 정규화 글자 수 ×1.03(파일)·×1.02(흐름)를 100자 단위 올림",
     "claudeFlow": {
       "limit": 49200,
-      "current": 48253
+      "current": 48331
     },
     "codexFlow": {
       "limit": 45900,
@@ -167,48 +248,31 @@
   },
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
-    "files": 220,
-    "compressedBytes": 885889,
-    "unpackedBytes": 3082500,
-    "agentFiles": 159,
+    "files": 222,
+    "compressedBytes": 891480,
+    "unpackedBytes": 3103824,
+    "agentFiles": 161,
     "coreFiles": 13,
     "templateFiles": 46,
     "testFiles": 0
   },
   "limitations": [
     "이번 변경 뒤 전체 시험은 실행하지 않았다.",
+    "메인이 쉬는 동안 완료 알림이 새 턴을 열지 않으면 hook 이 메인을 깨울 길은 없다 — 다음 세션 시작 요약이 처리하지 않은 완료를 알린다.",
+    "실제 Claude 대화형 세션과 실제 Codex 에서 이어가기 차단이 턴을 잇는지는 확인하지 않았다. Codex 완료 알림은 관측하지 않는다.",
+    "백그라운드로 돌린 긴 검증 명령(Bash run_in_background)의 완료는 담당 실행 장부에 남지 않아 이어가기 대상이 아니다.",
     "분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 같은 회차에서 이미 고친 Task 파일은 다시 고치지 않아도 지난다(새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다).",
     "이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다 — 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.",
-    "실제 Claude·Codex 호스트의 타임라인 기록(완료 알림 표지·Codex UserPromptSubmit 시각)은 확인하지 않았다 — 격리 가짜 호스트와 hook 입력으로만 확인했다.",
-    "구현·테스트 담당은 SubagentStart·Stop hook 이 없어 담당 실행 구간이 없다.",
-    "Codex 완료 알림은 관측하지 않는다.",
+    "Codex UserPromptSubmit 시각의 타임라인 기록은 실제 Codex 에서 확인하지 않았다.",
     "자동 회귀는 실제 모델·실제 사람 승인·사용자 사용성 검사가 아니다."
   ],
   "validationConditions": [
-    "실제 모델·유료 평가 호출 없음",
+    "실제 모델 호출은 Claude print 모드 평가 1회(sonnet, $1.5 한도, 비용 $0.47)",
     "대상 프로젝트 시험은 임시 Git 저장소에서 실행",
     "저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
-    "범위 시험 묶음은 서로 겹치지 않게 차례로 실행"
+    "범위 시험 묶음은 서로 겹치지 않게 차례로 실행 — 셋째 묶음은 실제 호스트 평가와 함께 돌았다"
   ],
   "notRerun": {
-    "files": [
-      "planning",
-      "planningRecovery",
-      "planningCross",
-      "planningChain",
-      "planningChainFlow",
-      "resultContracts",
-      "dependencyContracts",
-      "review-gate",
-      "verification-stages",
-      "answers",
-      "questionPresentation",
-      "consentOutput",
-      "consentBinding",
-      "scripts",
-      "retryPolicy",
-      "modelPolicy"
-    ],
-    "reason": "이번 변경이 닿지 않음 — 앞의 13개는 흐름의 개정 연결 뒤, 뒤의 3개는 요구 개정 접수 변경 뒤 통과"
+    "reason": "이 변경이 닿지 않는 시험 파일은 다시 실행하지 않음"
   }
 }

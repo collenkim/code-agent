@@ -2,7 +2,7 @@
 
 작업 커서는 Git 브랜치 이름에 결속한다. `branchCursor.ts`는 현재 HEAD와 일치하는 커서만 반환하고, 다른 작업을 저장할 때 이전 커서·세션 임대를 별도 보관한다. 조회는 기록을 바꾸지 않으며 승인·검증은 기존 근거를 그대로 대조한다. 접수·문서 준비는 checkout 단위이고 동시 실행은 worktree로 분리한다. 브랜치 없는 이전 커서는 저장소 단위로 유지한다.
 
-호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md)을 따른다. 아래 Claude 경로·도구·9개 훅 설명은 Claude 어댑터 기준이다.
+호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md)을 따른다. 아래 Claude 경로·도구·11개 훅 설명은 Claude 어댑터 기준이다.
 
 전용 Read 도구가 없는 호스트에는 `read.ts`의 `code-agent read`가 줄 번호 기반 파일 읽기를 제공한다. 실제 경로가 저장소 안인지 확인하고 기존 Read 보호를 적용하며 셸 표현식은 실행하지 않는다. Windows 신뢰 키·부모 실행 기록·실제 훅 호출의 검증 절차는 [Codex 연동](codex.md#동작과-검증)을 따른다.
 
@@ -23,7 +23,7 @@
 
 실행은 **Claude Code 안에서 모델이 도구를 직접 쓰는 구조**다. `code-agent init`은 스킬(`.claude/skills/ca-*`), 서브에이전트(`.claude/agents/ca-*`), hook과 `CLAUDE.md` 블록을 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`로 공통 접수한다. 신규·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`로 종류를 명시할 수도 있다.
 
-메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI는 호출마다 검사·실행·기록 후 종료한다. hook은 Claude 9개·Codex 6개를 등록한다. 이벤트별 역할과 종료 동작은 [흐름도 §5](process-flow.md#5-hook-등록표)를 따른다.
+메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI는 호출마다 검사·실행·기록 후 종료한다. hook은 Claude 11개·Codex 6개를 등록한다. 이벤트별 역할과 종료 동작은 [흐름도 §5](process-flow.md#5-hook-등록표)를 따른다.
 
 기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초/도입 준비 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
@@ -423,6 +423,8 @@ workDocsHash    = 고정 목록의 `경로:sha` — requirement.md 본문 · 01 
 있으면 다음 스테이지로 넘어가지 않는다** (`code-agent next` · `plan submit` 과 `repro` · `check` · `test` · `review` · `integrate` · `deliver` 가 확인한다.
 턴 끝에 보는 Stop hook 은 `implement`~`deliver` 에서 그 턴을 **한 번 막고**(`decision: "block"`) 다음 턴은 놓아 주는 쪽이고 — `stop_hook_active` 면 즉시 통과하고 판정이 실패해도 막지 않는다 — 절대적인 차단은 이들이다). 같은 세션에서 같은 사유로 이미 막았으면 다음 턴들도 다시 막지 않는다 — 상기는 한 번이면 되고, 막을 때마다 모델이 한 턴을 더 돌며 같은 목록을 다시 읽는다. 목록이 바뀌면 사유가 달라져 다시 막는다.
 
+같은 Stop hook 이 **담당 완료 뒤 이어가기**도 맡는다. Claude Code 의 Agent 도구는 담당을 백그라운드로 띄우고 결과를 인계 메시지나 완료 알림으로 돌려준다 — 인계 메시지를 받은 메인이 "완료 알림을 기다린다"며 턴을 끝내고, 곧이어 온 완료 알림이 새 턴을 열지 않은 채 소비되면 흐름은 사람이 "계속"이라고 말할 때까지 멈춘다(2.1.306 세션 기록). 프롬프트에 "계속하라"를 더하는 것으로는 이 자리를 닫지 못하므로 상태로 판정한다. 담당 hook 이 판정·기록을 마친 뒤 담당 실행 장부(`agentRuns.ts`)에 완료를 남기고, 메인의 진행 명령이나 새 담당 시작이 그것을 지운다. 턴 끝에 처리하지 않은 완료가 있고 실행 중인 담당이 없으면 다음 명령을 사유로 한 번 막는다. 같은 완료로는 세션마다 한 번만 막고(사유에 완료 시각이 든다), 중복 완료 알림·취소된 배정의 늦은 결과·이미 기록한 리뷰 결과의 재알림은 완료로 남기지 않는다. 응답·적용을 기다리는 동의와 앞서 있던 답 없는 질문은 사람의 자리라 막지 않는다. 메인이 쉬는 동안 완료 알림이 새 턴을 열지 않으면 hook 이 메인을 깨울 길은 없다 — 다음 세션 시작 요약이 처리하지 않은 완료를 알린다.
+
 ```
 ## Q3 · 요구사항 분석
 주문 취소 후 재주문이 가능한가?
@@ -609,6 +611,7 @@ implement → check (build · commands 의 정적 분석 명령) → test (작�
 | 반영 경로는 `deliveryPaths()`로 정한다. 이 작업의 `.code-agent/work/<ID>/` · `approvals/<slug(ID)>.jsonl` · `approvals/<slug(ID)>/`와 존재하는 `.code-agent/version` · `.code-agent/models.json`·`.code-agent/codex-models.json` · `.code-agent/approvals/docs.jsonl`을 포함한다. 같은 세션의 최종 확인은 실제 커밋 경로와 선택한 KNOWLEDGE를 보여 준다. `git add`와 `git commit`은 **같은 경로 목록**을 사용하며 `.code-agent/` 전체나 다른 설정·소스를 일괄 추가하지 않는다. 없는 경로는 제외한다 | `code-agent deliver` (`deliveryPaths` · `commitDelivery`) · consent | 반영 시 |
 | ⑩ 의 추적표·검증·변경 요약은 코드 구역이다 — 손으로 고치면 `deliver` 가 다시 렌더해 덮고 확인 화면에 알린다. 표시 짝이 둘 이상이면 전부 걷어 내 하나로 만들고, 표시 **밖**에 같은 제목의 절을 따로 써 두면 커밋을 세운다 (재렌더가 덮지 못하고 아래에 덧붙어, 화면에는 진짜가 보이는데 커밋에는 지어낸 표가 함께 실린다) | `code-agent deliver` (`blocks.ts` · `deliverProblems`) | 반영 시 |
 | 답 없는 질문·계획과 실제 변경(기준 커밋 대비)을 턴 끝에 대조 — **한 번만** 막는다 (`stop_hook_active` 면 통과, 판정 실패도 통과). 절대적인 차단은 `check`·`test`·`next` 가 한다 | Stop hook (`code-agent stop`) | 턴 끝 |
+| 처리하지 않은 담당 완료가 있는데 다음 명령 없이 끝나는 턴 — 다음 명령을 사유로 **한 번만** 잇는다(실행 중인 담당·사람 판단 대기면 통과) | Stop hook (`code-agent stop`), 담당 실행 장부(`agentRuns.ts`) | 턴 끝 |
 
 경로는 실제 경로로 풀어 비교한다 (`canonical` — Windows 8.3 이름·junction·심볼릭 링크). Windows 의 로컬 관리 공유·장치 경로(`\\localhost\C$\…`·`\\?\UNC\…`·`\\.\C:`)는 드라이브 경로로 접어 판정하고(이 PC 의 이름·네트워크 주소·IPv6 리터럴 이름, 이름으로 모르는 UNC 는 쓰기 판정에서 (dev, ino)로 저장소 안인지 본다), 이름 끝의 점·공백(다른 이름의 같은 파일)은 모든 모드에서 거부한다. 경로의 맨 앞 `~`는 도구가 실행하는 대로 홈으로 풀어 판정한다.
 Grep·Glob 은 경로뿐 아니라 `glob`·`pattern` 의 정적 접두와 검색 루트도 보고, 키 저장소의 상위 폴더를 통째로 검색하는 것도 막는다. 경로 인자가 있는 MCP 도구(Claude matcher `mcp__.*`, Codex `mcp__*`)는 같은 규칙으로 판정한다 — 로컬 파일 서버(`fs`·`filesystem` 등)는 모든 경로를, 그 밖의 서버는 저장소·키 저장소 안을 가리키는 절대 경로·`file://`만(원격 서비스의 경로 인자를 잘못 막지 않으려고 쓰기 여부를 도구 이름 동사로 추정하는 한계가 있다). Codex 의 판정하지 않는 도구는 이름만 기록해 doctor 가 알린다.
@@ -775,7 +778,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 대상 저장소에 생기는 것 | 커밋 |
 |---|---|
-| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 9개, `.code-agent/version` | O |
+| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 11개, `.code-agent/version` | O |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` · `doc/test-strategy.md` · `doc/quality.md` | O |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md` · `features.md` · `flows.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O |

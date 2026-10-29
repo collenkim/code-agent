@@ -15,6 +15,7 @@ import { loadTriage, triageSummary } from "./triageState";
 import { noteHookOutput } from "./hookLog";
 import { masterRunNote } from "./master/runGuard";
 import { recordEvent } from "./timeline";
+import { pendingCompletion } from "./agentRuns";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume·fork) 비워지거나(clear) 압축된(compact) 뒤
@@ -59,6 +60,22 @@ function runningPlanning(work: Work, source?: string): string[] {
         ? `- 이 대화는 방금 시작·재개·비워졌으므로 그 담당의 결과는 이 대화로 돌아오지 않는다. 다른 터미널에서 실행 중이 아니면 ${cancel} 뒤 \`code-agent planning advance\`로 다시 배정한다.`
         : "- 담당 완료를 기다리는 중이 아니면 `code-agent planning advance`의 stale·cancel 안내를 따른다.",
     ];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 메인이 아직 처리하지 않은 담당 완료(agentRuns) — 완료 뒤 다음 명령 없이 대화가 끝났거나 재시작됐다. 상태는 기록돼 있으므로 이 대화가 이어서 처리한다.
+ * 읽기 실패는 무시한다(이 hook 은 막지 않는다).
+ */
+function pendingLine(work: Work): string[] {
+  try {
+    const pending = pendingCompletion(work.repoRoot, work.active.id);
+    if (!pending) return [];
+    const { completion } = pending;
+    return [`- 담당 완료가 기록돼 있고 다음 명령은 아직 실행하지 않았다(${agentName(completion.type)} · ${completion.status} · ${completion.at}). ` +
+      `사용자가 이어가자고 하면 \`${skill("ca-next")}\` 절차로 그 다음 행동부터 한다${pending.running ? ` — 실행 중으로 기록된 담당 ${pending.running}개가 있으면 그 결과를 먼저 확인한다` : ""}.`];
   } catch {
     return [];
   }
@@ -110,6 +127,7 @@ function progress(repoRoot: string, source: string | undefined, sessionId: strin
       `- 작업 ${order.id} (${order.kind}) · 스테이지 ${active.phase}${active.task ? ` · Task ${active.task}` : ""} · 계획 ${work.plan ? approvalOf(work).status : "미제출"} · 작업 폴더 ${workDocsDir(active.id)}/`,
       ...leaseNote(work, host, sessionId, source),
       ...runningPlanning(work, source),
+      ...pendingLine(work),
       ...(open ? [open] : []),
     ].join("\n");
   }

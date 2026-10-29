@@ -17,7 +17,7 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, IMPLEMENT_MATCHER, installedHook, settingsProblem, unmatchedTools } from "./init";
 import { hostReadiness } from "./master/hostProfile";
 import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
@@ -238,7 +238,8 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
         continue;
       }
       const problem = hookProblem(command, onPath);
-      const unmatched = subcommand === "planning-event" ? unmatchedTools(repoRoot, event, "ca-analyst|ca-explorer|ca-writer|ca-critic", subcommand) : subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
+      const unmatched = subcommand === "planning-event" ? unmatchedTools(repoRoot, event, "ca-analyst|ca-explorer|ca-writer|ca-critic", subcommand)
+        : subcommand === "agent-event" ? unmatchedTools(repoRoot, event, IMPLEMENT_MATCHER, subcommand) : subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
       if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>] — 수동 스킬·에이전트 사본은 보존합니다");
       else if (unmatched.length > 0) {
         add("✗", `${event} hook`, `${command} — matcher 가 ${unmatched.join(" · ")} 를 넘기지 않습니다`, "code-agent update");

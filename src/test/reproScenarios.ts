@@ -6,8 +6,8 @@
  *
  * - amendment: 확정한 요구가 있는 작업에 같은 ID 로 추가 요구만 든 전체 목록 초안을 낸 뒤(거부), 확정 개정 기준의 변경안을 제출·확정한다.
  * - staleIds: 확정한 요구에 새 요구 ID 가 생긴 뒤 계획을 다시 준비한다.
- * - completionStall: 격리한 가짜 Claude 호스트 — CLI 진입점에 hook 입력을 넣고 메인 대화 기록을 임시 폴더에 쓴다. 담당 완료 뒤 Stop hook 이
- *   턴을 이어 붙이지 않으면 사람 입력이 있어야 다음 행동을 실행한다.
+ * - completionStall: 격리한 가짜 Claude 호스트 — CLI 진입점에 hook 입력을 넣고 메인 대화 기록을 임시 폴더에 쓴다. 담당 완료 뒤 다음 행동 없이
+ *   끝나는 턴을 Stop hook 이 이어 붙이면 사람 입력 없이 다음 행동을 실행한다. 중복 완료 알림·세션 재시작은 다시 막지 않는다.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -120,22 +120,32 @@ function completionStall(root: string, transcripts: string): Record<string, unkn
   const finished = hostCli(root, ["planning-event"], { ...agent, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
   say(`<task-notification>\n<task-id>${agent.agent_id}</task-id>\n<status>completed</status>\n</task-notification>`);
   // 알림을 받은 턴이 다음 행동 없이 끝난다 — Stop hook 이 막으면(턴을 이어 붙이면) 호스트가 바로 다음 행동을 실행한다
-  const after = hostCli(root, ["stop"], { cwd: root, session_id: SESSION, hook_event_name: "Stop", last_assistant_message: "분석 담당이 완료되었습니다." });
-  const blocked = after.stdout.trim() ? (JSON.parse(after.stdout) as { decision?: string }).decision === "block" : false;
-  if (!blocked) say("계속 진행해");
+  const stop = (session: string, extra: object = {}) => {
+    const out = hostCli(root, ["stop"], { cwd: root, session_id: session, hook_event_name: "Stop", last_assistant_message: "분석 담당이 완료되었습니다.", ...extra });
+    return { blocked: out.stdout.trim() ? (JSON.parse(out.stdout) as { decision?: string }).decision === "block" : false, reason: out.stdout };
+  };
+  const after = stop(SESSION);
+  // 이어 붙인 턴이 그래도 다음 행동 없이 끝나면 놓아 준다(stop_hook_active) — 같은 완료로 두 번 막지 않는다
+  const continued = stop(SESSION, { stop_hook_active: true });
+  if (!after.blocked) say("계속 진행해");
   const resumed = advance();
+  // 이미 처리한 완료의 중복 알림·다른 세션(재시작)의 턴 끝 — 다음 행동을 다시 부르지 않는다
+  const duplicate = hostCli(root, ["planning-event"], { ...agent, hook_event_name: "SubagentStop", last_assistant_message: JSON.stringify(result) });
+  const afterDuplicate = stop(SESSION), restarted = stop("repro-restarted");
   mkdirSync(transcripts, { recursive: true });
   writeFileSync(join(transcripts, `${SESSION}.jsonl`), main.map((row) => JSON.stringify(row)).join("\n") + "\n");
   return {
     dispatched: dispatched.action, stopWhileRunningBlocked: !!waiting.stdout.trim(), subagentStopExit: finished.status,
-    stopAfterCompletionBlocked: blocked, humanInputNeeded: !blocked, resumedAction: resumed.action, gate: resumed.chain?.gate ?? null,
+    stopAfterCompletionBlocked: after.blocked, nextNamed: /planning advance/.test(after.reason), continuedTurnBlocked: continued.blocked,
+    humanInputNeeded: !after.blocked, resumedAction: resumed.action, gate: resumed.chain?.gate ?? null,
+    duplicateStopExit: duplicate.status, stopAfterDuplicateBlocked: afterDuplicate.blocked, restartedStopBlocked: restarted.blocked,
   };
 }
 
 export const SCENARIOS = {
   amendment: { title: "같은 ID 의 추가 요구가 확정한 요구를 보존한 새 개정으로 반영된다", run: amendment },
   staleIds: { title: "확정 요구에 새 요구 ID 가 생긴 뒤 계획을 다시 준비하면 지금 요구 ID 로 배정한다", run: staleIds },
-  completionStall: { title: "담당 완료 알림 뒤 Stop 이 턴을 잇지 않아 사람 입력으로 재개한다", run: completionStall },
+  completionStall: { title: "담당 완료 뒤 다음 행동 없이 끝나는 턴을 Stop 이 한 번 이어 사람 입력 없이 다음 행동을 실행한다", run: completionStall },
 } as const;
 export type ScenarioName = keyof typeof SCENARIOS;
 

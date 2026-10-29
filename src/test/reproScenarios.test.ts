@@ -34,25 +34,38 @@ test("요구 변경 재현 — 확정 요구에 새 요구 ID 가 생기면 다�
   assert.deepEqual(facts.assignedAfter, facts.sourceIds);
 });
 
-test("완료 알림 → 후속 실행 정지 재현 — 격리 호스트에서 Stop 이 턴을 잇지 않아 사람 입력 뒤에야 다음 행동을 실행하고, 그 대기의 사유가 남는다", () => {
+/** 격리 호스트에서 담당 완료 기록 → 다음 진행 명령 시작의 상한 — 자식 프로세스 셋(Stop 둘·advance 하나)의 기동 시간이다. 사람 입력을 기다리면 넘는다 */
+const CONTINUATION_BOUND_MS = 20_000;
+
+test("완료 알림 → 후속 실행 재현 — 격리 호스트에서 완료 뒤 끝나는 턴을 Stop 이 한 번 이어 사람 입력 없이 다음 행동을 실행하고, 중복 알림·재시작은 다시 막지 않는다", () => {
   const { facts, timeline, events } = runScenario("completionStall");
   assert.deepEqual(facts, {
     dispatched: "dispatch", stopWhileRunningBlocked: false, subagentStopExit: 0,
-    stopAfterCompletionBlocked: false, humanInputNeeded: true, resumedAction: "ready-for-gate", gate: "passed",
+    stopAfterCompletionBlocked: true, nextNamed: true, continuedTurnBlocked: false, humanInputNeeded: false, resumedAction: "ready-for-gate", gate: "passed",
+    duplicateStopExit: 0, stopAfterDuplicateBlocked: false, restartedStopBlocked: false,
   });
   const [work] = timeline;
   assert.equal(work.workId, "PLAN-1");
-  const [wait] = work.waits;
-  assert.equal(work.waits.length, 1);
+  // 완료 뒤 대기는 Stop 이 이은 턴의 다음 도구 호출이 닫는다 — 사람 입력이 아니다. 마지막 대기는 시나리오가 끝난 자리(게이트 통과 뒤)다
+  const [wait, last] = work.waits;
+  assert.equal(work.waits.length, 2);
   assert.deepEqual([wait.category, wait.reason, wait.taskId, wait.phase, wait.stopped, wait.human, wait.closedBy, wait.open],
-    ["host-resume", "담당 완료(completed) 뒤 다음 행동 대기", "analysis", "analysis", true, true, "host.tool", false]);
+    ["host-resume", "담당 완료(completed) 뒤 다음 행동 대기", "analysis", "analysis", true, undefined, "host.tool", false]);
+  assert.deepEqual([last.reason, last.phase, last.open], ["호스트 턴 종료 뒤 재개 대기", "impact", true]);
+  assert.ok(work.waits.every((item) => !item.human));
   assert.match(wait.dispatchId!, /^[0-9a-f-]{36}$/);
-  assert.deepEqual([work.categories.agent.count, work.categories["host-resume"].count], [1, 1]);
-  // 한 번의 advance 는 다음 행동 하나만 남긴다
+  assert.equal(events.filter((event) => event.type === "human.input").length, 0);
+  // 완료 기록 → 다음 진행 명령 시작의 상한, 그 사이 막은 턴 끝은 하나
+  const finishedAt = Date.parse(events.find((event) => event.type === "agent.finished")!.at);
+  const resumed = events.filter((event) => event.type === "action.started")[1];
+  assert.ok(Date.parse(resumed.at) - finishedAt <= CONTINUATION_BOUND_MS, `${Date.parse(resumed.at) - finishedAt}ms`);
+  assert.equal(events.filter((event) => event.type === "host.stopped" && event.detail?.blocked === true && Date.parse(event.at) < Date.parse(resumed.at)).length, 1);
+  // 한 번의 advance 는 다음 행동 하나만 남긴다. 중복 완료 알림은 다음 행동을 부르지 않는다
   assert.deepEqual(events.filter((event) => event.type === "next.selected").map((event) => event.detail?.action), ["dispatch", "ready-for-gate"]);
   assert.deepEqual(events.filter((event) => event.type === "action.started").map((event) => event.detail?.command), ["planning advance --chain", "planning advance --chain"]);
   assert.deepEqual(events.filter((event) => event.type === "agent.assigned" || event.type === "agent.started" || event.type === "agent.finished")
-    .map((event) => [event.type, event.taskId, event.dispatchId]), ["agent.assigned", "agent.started", "agent.finished"].map((type) => [type, "analysis", wait.dispatchId]));
+    .map((event) => [event.type, event.taskId, event.dispatchId, event.detail?.status]),
+    [["agent.assigned", "analysis", wait.dispatchId, undefined], ["agent.started", "analysis", wait.dispatchId, undefined], ["agent.finished", "analysis", wait.dispatchId, "completed"], ["agent.finished", "analysis", wait.dispatchId, "duplicate"]]);
   assert.ok(events.every((event) => event.eventId && event.runtime && event.workId === "PLAN-1"));
   assert.equal(new Set(events.map((event) => event.eventId)).size, events.length);
   // 담당 결과·메인 응답 본문은 기록하지 않는다

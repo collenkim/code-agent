@@ -15,6 +15,7 @@ import { crossChild } from "./crossEnv";
 import { withNotation } from "./hostText";
 import { noteSubagentReturn } from "./hookLog";
 import { recordEvent } from "./timeline";
+import { noteAgentFinished, noteAgentReturned, noteAgentStarted, settleAgent } from "./agentRuns";
 
 /** 기록하지 않고 같은 담당에게 한 번 돌려보낸다(Claude SubagentStop exit 2) — 담당이 고쳐 다시 멈추면 처음부터 다시 판정한다 */
 export class ReturnToAgent extends Error { constructor(message: string, readonly failureClass: FailureClass) { super(message); } }
@@ -176,7 +177,8 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   return { received, parsed, reported, staged };
 }
 
-type Decision = { kind: "ignored" } | { kind: "done" } | { kind: "recorded"; message: string; cls: FailureClass } | { kind: "return"; message: string; cls: FailureClass };
+/** late: 취소·교체된 배정의 늦은 결과 — 기록만 하고 메인의 다음 행동을 부르지 않는다 */
+type Decision = { kind: "ignored" } | { kind: "done" } | { kind: "recorded"; message: string; cls: FailureClass; late?: true } | { kind: "return"; message: string; cls: FailureClass };
 const DUPLICATE_STOP = "이미 처리한 완료 이벤트입니다.";
 const recorded = (message: string, cls: FailureClass): Decision => ({ kind: "recorded", message, cls });
 function endAgent(agent: PlanningAgent, record?: FailureRecord): void {
@@ -239,7 +241,7 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   const lateResult = (reportedAttempt?: TaskAttempt): Decision => {
     if (reportedAttempt && reportedAttempt.status !== "running") agent.dispatchId = reportedAttempt.dispatchId;
     endAgent(agent, failure("dispatch-orphan", "취소·교체된 배정의 늦은 결과"));
-    return recorded("현재 배정에 속한 실행 결과가 아닙니다.", "dispatch-orphan");
+    return { kind: "recorded", message: "현재 배정에 속한 실행 결과가 아닙니다.", cls: "dispatch-orphan", late: true };
   };
 
   // 출처 검증 실패 — 되돌릴 수 없다
@@ -442,6 +444,7 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
         const only = writers.length === 1 ? writers[0] : undefined;
         recordEvent(root, { type: "agent.started", ...placeOf(work), host: options.host, session: input.session_id, agent: input.agent_id,
           ...(only ? { taskId: only.task.id, dispatchId: only.attempts.at(-1)!.dispatchId } : {}), detail: { agentType: input.agent_type!, candidates: writers.length } });
+        noteAgentStarted(root, work.active.id, input.agent_id!, { source: "planning", type: input.agent_type!, phase: work.active.phase, session: input.session_id, ...(options.host ? { host: options.host } : {}) });
       }
       return;
     }
@@ -451,7 +454,10 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
       const decision = decideStop(input, work, state, prepared, options.host);
       return { decision, seen: decision.kind === "ignored" ? undefined : outcomeOf(input, state, prepared) };
     }, { waitMs: TIMING.hookLockWaitMs });
-    if (seen) noteStop(work, input, options.host, decision, seen);
+    if (seen) {
+      noteStop(work, input, options.host, decision, seen);
+      noteRun(work, input, options.host, decision, seen);
+    }
     if (decision.kind === "recorded") throw new PlanningFailure(decision.message, decision.cls);
     if (decision.kind === "return") throw new ReturnToAgent(decision.message, decision.cls);
   });
@@ -481,6 +487,17 @@ function noteStop(work: Work, input: ReviewHookInput, host: "claude" | "codex" |
     detail: { agentType: input.agent_type ?? "", status: duplicate ? "duplicate" : seen.status ?? "late", ...(decision.kind === "recorded" ? { class: decision.cls } : {}), ...(duplicate ? { duplicate: true } : {}) } });
   if (seen.status === "cancelled" && decision.kind === "recorded") recordEvent(work.repoRoot, { type: "invalidated", ...ref, reason: decision.message });
 }
+/**
+ * 담당 실행 장부 — 되돌림은 실행 중으로 두고, 그 밖의 종료는 메인이 다음 행동(planning advance)을 할 완료로 남긴다. 이미 처리한 완료(중복 알림)와
+ * 취소·교체된 배정의 늦은 결과는 실행 중 표시만 지운다 — 같은 완료로 두 번 진행하거나 지난 배정의 결과로 진행하지 않게.
+ */
+function noteRun(work: Work, input: ReviewHookInput, host: "claude" | "codex" | undefined, decision: Decision, seen: Seen): void {
+  const root = work.repoRoot, agent = input.agent_id!;
+  if (decision.kind === "return") return noteAgentReturned(root, work.active.id, agent);
+  const advance = !(decision.kind === "recorded" && (decision.late || decision.message === DUPLICATE_STOP));
+  noteAgentFinished(root, work.active.id, agent, { source: "planning", type: input.agent_type ?? "", status: seen.status ?? "late", phase: work.active.phase,
+    ...(input.session_id ? { session: input.session_id } : {}), ...(host ? { host } : {}), advance });
+}
 export function runPlanningHook(stdin: string): number {
   // 교차 실행이 띄운 다른 호스트 안에서는 계획 담당을 관찰하지 않는다
   if (crossChild()) return 0;
@@ -492,6 +509,7 @@ export function runPlanningHook(stdin: string): number {
     const cls = error instanceof ReturnToAgent || error instanceof PlanningFailure ? error.failureClass : "hook-failure";
     const code = subagentExit({ host: "claude", event: input?.hook_event_name, stopHookActive: input?.stop_hook_active === true, failure: cls, recorded: error instanceof RecordedFailure });
     if (code === 2) noteSubagentReturn(input, text);
+    else if (input?.hook_event_name === "SubagentStop" && input.agent_id) settleAgent(findRepoRoot(process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd()), input.agent_id, "hook-failure");
     return code;
   }
 }

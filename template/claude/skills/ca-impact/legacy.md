@@ -6,7 +6,7 @@
    후보 파일과 참고 문서는 **먼저 보라는 목록**이다 — 저장소를 다시 훑지 말고 그대로 explorer 에게 넘긴다.
    출처 줄이 `기본 구현` 인지 `플러그인 <이름>` 인지 함께 찍힌다. **순위는 단서일 뿐 근거가 아니다** — 근거는 explorer 가 읽은 `path:line` 이다.
 2. 요구 항목을 **닿는 영역**(이번 도메인 · 공통 모듈 · 다른 도메인과의 연결)으로 묶어 영역마다 `ca-explorer` 하나를 **한 메시지에서 병렬로** 부른다 —
-   요구 항목마다 하나씩 부르지 않는다 (같은 도메인만 닿는 작업이면 explorer 하나). 영역의 항목들 + context 출력 + 관련 문서 경로 + criteria.md 경로를 넘긴다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).
-3. Bash: `code-agent docs skeleton 02-analysis` — 뼈대 + explorer 결과 + 답한 질문을 `ca-writer` 에게 넘겨 `02-analysis.md` 에 쓰게 한다. Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다). 기준은 criteria.md다.
+   요구 항목마다 하나씩 부르지 않는다 (같은 도메인만 닿는 작업이면 explorer 하나). 영역의 항목들 + context 출력 + 관련 문서 경로 + criteria.md 경로를 넘긴다. 담당은 백그라운드로 끝날 수 있다 — 결과(호출 결과·인계 메시지·완료 알림 중 먼저 온 것)를 받은 그 턴에 다음 단계로 간다.
+3. Bash: `code-agent docs skeleton 02-analysis` — 뼈대 + explorer 결과 + 답한 질문을 `ca-writer` 에게 넘겨 `02-analysis.md` 에 쓰게 한다. 담당은 백그라운드로 끝날 수 있다 — 결과(호출 결과·인계 메시지·완료 알림 중 먼저 온 것)를 받은 그 턴에 다음 단계로 간다. 기준은 criteria.md다.
 4. 모호한 점과 writer 가 돌려준 `확인 필요` 를 나눈다 — 업무 규칙·범위는 `questions.md`에 기록하고 공통 선택 절차로 답을 받는다(필수 답이 없으면 멈춘다),
    기본값을 댈 수 있는 기술 세부는 `01-requirements.md` 의 `## 가정` 에 근거와 함께 더한다.

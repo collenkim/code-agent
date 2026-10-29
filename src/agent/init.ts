@@ -19,7 +19,7 @@ const GITIGNORE_END = "# code-agent:end";
  * .gitignore 블록 — 개인 진행 상태·세션·동의 기록·작업 임대(lease.json·잠금)·이 PC 의 적용 버전(runtime.json·잠금)·보존한 사본 대신 둔
  * 번들 내용. 두 호스트 설치가 같은 블록을 쓴다
  */
-const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*", "runtime.json", "runtime.lock",
+const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.json", "log/", "consents/", "lease.json*", "agent-runs.json*", "runtime.json", "runtime.lock",
   "template-conflicts/", "graph/", "branches/", "identities/", "interactions/"].map((line) => `${STATE_DIR}/${line}`).concat("/.codex/config.toml").join("\n");
 
 /**
@@ -27,11 +27,14 @@ const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.js
  * hook 의 읽기 분기는 여기에 없으면 불리지 않는다. `mcp__.*` 는 경로 인자가 있는 MCP 도구를 같은 규칙으로 판정한다.
  */
 export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob|mcp__.*";
+/** 구현·테스트 담당 hook(agent-event)이 받을 담당 — agentHook.IMPLEMENT_AGENTS 와 같다 */
+export const IMPLEMENT_MATCHER = "ca-implementer|ca-tester";
 
 /** Claude 에 설치하는 hook — (이벤트, 하위 명령). doctor·설치 감지가 같은 목록을 쓴다 */
 export const CLAUDE_HOOKS = [
   ["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"],
   ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"],
+  ["SubagentStart", "agent-event"], ["SubagentStop", "agent-event"],
   ["SessionStart", "session-event"],
 ] as const;
 /** Codex 에 설치하는 이벤트(모두 codex-event). SessionStart 는 작업 임대를 새 세션으로 넘겨받는다(Claude session-event 와 같은 규칙) */
@@ -395,9 +398,12 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
   upsertHook(settings, "SubagentStop", "review-event", invoke("review-event"), "ca-reviewer");
   upsertHook(settings, "SubagentStart", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
   upsertHook(settings, "SubagentStop", "planning-event", invoke("planning-event"), "ca-analyst|ca-explorer|ca-writer|ca-critic");
+  // 구현·테스트 담당의 실행 구간 — 판정 없이 기록만 한다. Stop hook 이 담당 완료 뒤 다음 명령 없이 끝나는 턴을 가른다
+  upsertHook(settings, "SubagentStart", "agent-event", invoke("agent-event"), IMPLEMENT_MATCHER);
+  upsertHook(settings, "SubagentStop", "agent-event", invoke("agent-event"), IMPLEMENT_MATCHER);
   // 시작·재개·비우기·압축 뒤 진행 상태를 붙인다 — 대화 요약이 단계·동의를 잃어도 상태 파일에서 다시 잡는다
   upsertHook(settings, "SessionStart", "session-event", invoke("session-event"));
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")} · SessionStart ${invoke("session-event")}`);
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")} · 구현 SubagentStart/Stop ${invoke("agent-event")} · SessionStart ${invoke("session-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);

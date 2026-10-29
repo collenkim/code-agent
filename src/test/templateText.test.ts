@@ -62,8 +62,8 @@ test("계획 스킬 넷은 두 호스트에서 공통 계약을 읽고 action별
   for (const host of ["claude", "codex"] as const) {
     const prefix = host === "claude" ? ".claude" : ".agents", assets = hostAssets(host);
     const contract = assets.get(`${prefix}/skills/ca-plan/contract.md`)!;
-    for (const phrase of ["assignmentFile", "run_in_background", "staging", "`cancel` 목록", "rewind.auto", "chain.gate", "사용자가 되돌리라고 말했을 때만"]) {
-      if (host === "codex" && phrase === "run_in_background") continue;
+    for (const phrase of ["assignmentFile", "인계 메시지", "staging", "`cancel` 목록", "rewind.auto", "chain.gate", "사용자가 되돌리라고 말했을 때만"]) {
+      if (host === "codex" && phrase === "인계 메시지") continue;
       assert.ok(contract.includes(phrase), `${host}: ${phrase}`);
     }
     for (const name of ["ca-analyze", "ca-impact", "ca-design", "ca-plan"]) {
@@ -155,13 +155,13 @@ test("단계별 선택 표는 전체 단계와 접수·준비·재개를 다루�
   }
 });
 
-test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run_in_background: false 로 부르게 하고, Codex 사본은 결과를 기다리는 문장으로 바꾼다", () => {
-  // claude 2.1.293 은 run_in_background 를 주지 않은 Agent 호출을 백그라운드로 띄운 일이 있다 — 결과 전에 메인 차례가 끝나지 않게 한다
-  const FOREGROUND = "Agent 도구는 `run_in_background: false` 로 부른다(결과를 받아야 다음 단계로 간다).";
+test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 결과를 받은 턴에 다음 단계로 가게 하고, Codex 사본은 결과를 기다리는 문장으로 바꾼다", () => {
+  // claude 2.1.312 의 Agent 도구는 담당을 백그라운드로 띄우고 전경 실행 인자가 없다 — 없는 인자를 지시하지 않고, 결과(인계 메시지·완료 알림)를 받은 턴에 잇게 한다
+  const FOREGROUND = "담당은 백그라운드로 끝날 수 있다 — 결과(호출 결과·인계 메시지·완료 알림 중 먼저 온 것)를 받은 그 턴에 다음 단계로 간다.";
   const CODEX = "담당의 결과를 받을 때까지 기다린 뒤 다음 단계로 간다.";
   assert.ok(CODEX_SENTENCES.some(([from, to]) => from === FOREGROUND && to === CODEX), "codexText 치환이 없습니다");
-  // 역할 이름 없이 부르는 다시 맡기기(ca-implement 5항 '같은 서브에이전트에게 그 Task만 한 번 더 맡긴다')도 담당 호출이다
-  const call = /`ca-(?:analyst|explorer|writer|critic|reviewer|implementer|surveyor|tester)`[^\n]*?(?:부른다|맡긴다|쓰게 한다|옮기게 한다|요청한다|검토를 받는다)|`agent` 서브에이전트를 호출|서브에이전트에게[^\n]*?맡긴다/;
+  // 역할 이름 없이 부르는 다시 맡기기(ca-implement 5항 '같은 서브에이전트에게 그 Task만 한 번 더 맡긴다')와 출력의 `담당`을 부르는 문장(ca-test 2항)도 담당 호출이다
+  const call = /`ca-(?:analyst|explorer|writer|critic|reviewer|implementer|surveyor|tester)`[^\n]*?(?:부른다|맡긴다|쓰게 한다|옮기게 한다|요청한다|검토를 받는다)|`agent` 서브에이전트를 호출|`담당`을 부른다|서브에이전트에게[^\n]*?맡긴다/;
   const codex = hostAssets("codex");
   let calls = 0;
   for (const [path, text] of claudeTexts()) {
@@ -171,12 +171,12 @@ test("H7 ca-* 담당을 부르는 Claude 스킬 문장마다 Agent 도구를 run
     lines.forEach((line, index) => {
       if (!call.test(line)) return;
       calls += 1;
-      assert.ok(`${line}\n${lines[index + 1] ?? ""}`.includes(FOREGROUND), `${path}:${index + 1} 담당 호출에 전경 실행 문장이 없습니다: ${line.slice(0, 60)}`);
+      assert.ok(`${line}\n${lines[index + 1] ?? ""}`.includes(FOREGROUND), `${path}:${index + 1} 담당 호출에 결과 수신 문장이 없습니다: ${line.slice(0, 60)}`);
     });
     const copy = codex.get(`.agents/${path}`);
     if (copy === undefined || path.startsWith("skills/ca-answer/")) continue;
     assert.equal(copy.split(CODEX).length, text.split(FOREGROUND).length, `${path} 의 Codex 사본에 기다림 문장 수가 다릅니다`);
-    assert.doesNotMatch(copy, /run_in_background|Agent 도구/, path);
+    assert.doesNotMatch(copy, /run_in_background|Agent 도구|인계 메시지/, path);
   }
   // 계획 공통 계약·ca-review·ca-implement 둘·ca-test·ca-check·ca-docs 둘·ca-adopt와 legacy.md의 담당 호출을 함께 센다.
   assert.equal(calls, 14, "계획 네 스킬의 호출 문장은 공통 계약의 한 문장으로 모인다");
