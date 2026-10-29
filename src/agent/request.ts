@@ -27,6 +27,7 @@ import { changedPaths, commitOf, type Change } from "./tree";
 import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
 import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, workIdentity } from "./workIdentity";
 import { acquireLock } from "./lock";
+import { deliveredCycle } from "./cycles";
 import { appendRevision, applyChanges, changeLine, changeSummary, initialSnapshot, legacyDocument, normalizeText, readRevisions, replaceSnapshot,
   SECTION_LABEL, SECTIONS, textHash, touchedIds, type Change as RevisionChange, type DraftChange, type OriginalText, type RequirementItem, type RevisionDocument, type RevisionRecord,
   type Section } from "./requirementRevisions";
@@ -494,6 +495,28 @@ export function syncRequestRevision(repoRoot: string, active: ActiveWork): { act
   ].join("\n") };
 }
 
+/**
+ * status 의 개정·회차 줄 — 흐름이 따르는 개정과 그 개정의 변경(앞 3건), 아직 따르지 않은 확정 개정, 실행 회차. 첫 개정·첫 회차이고
+ * 확정본을 따르고 있으면 없다(요구사항 줄의 개정 번호로 충분하다).
+ */
+export function flowRevisionLines(repoRoot: string, active: ActiveWork): string[] {
+  const lines: string[] = [];
+  const followed = active.request?.revision;
+  const place = existsSync(join(repoRoot, active.spec)) ? requestPlace(repoRoot, active.id, active.spec) : undefined;
+  if (followed && followed > 1) {
+    const changes = readRevisions(repoRoot, active.id).find((record) => record.revision === followed)?.changes.filter((change) => change.op !== "header") ?? [];
+    lines.push(`흐름이 따르는 개정: ${followed}${changes.length ? ` — 변경 ${changeSummary(changes)}` : ""}`,
+      ...changes.slice(0, 3).map((change) => `  - ${changeLine(change)}`), ...(changes.length > 3 ? [`  - 외 ${changes.length - 3}건 — ${active.spec} 의 '이번 개정의 변경'`] : []));
+  }
+  if (place && active.request && place.hash !== active.request.hash) {
+    lines.push(`확정 개정 ${place.revision ?? "?"} 은 다음 진행 명령 때 흐름에 반영합니다${followed ? ` (지금 따르는 개정 ${followed})` : ""}`);
+  }
+  if (active.cycle) {
+    lines.push(`실행 회차: ${active.cycle.number} (회차 ${active.cycle.number - 1} 반영 커밋 ${active.cycle.delivered.slice(0, 12)}${active.cycle.revision ? ` · 개정 ${active.cycle.revision}` : ""}) — 이전 회차의 변경·증거·Task 통과는 이번 회차에 세지 않습니다`);
+  }
+  return lines;
+}
+
 export type RequestState =
   /** 판정 기록이 없다 */
   | { status: "none" }
@@ -686,12 +709,18 @@ export function requestBegin(
   }
   recordEvent(repoRoot, { type: "request.received", workId: id, phase: "request", detail: { kind, resumed: !!current } });
   mkdirSync(join(repoRoot, workDocsDir(id)), { recursive: true });
-  // 시작 전 정리 — 새 접수이고 작업 브랜치가 아직 없을 때만 미리 알린다(거부하지 않는다. 확정 뒤 start 가 거부한다)
-  const blockers = !current && !commitOf(repoRoot, `${kind}/${id}`) ? startBlockers(repoRoot, id) : [];
+  // 시작 전 정리 — 새 접수이고 작업 브랜치가 아직 없거나 반영된 ID(새 회차)일 때만 미리 알린다(거부하지 않는다. 확정 뒤 start 가 거부한다)
+  const branch = `${kind}/${id}`;
+  const delivered = !current && isGitRepo(repoRoot)
+    ? deliveredCycle(repoRoot, id, requirementFile(id), commitOf(repoRoot, branch) ? branch : options.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master") : undefined;
+  const blockers = !current && (delivered || !commitOf(repoRoot, branch)) ? startBlockers(repoRoot, id) : [];
   return [
     current
       ? `이미 접수 중입니다: ${id} (${kind}) — 이어서 정리합니다.`
       : `요구사항 접수를 열었습니다: ${id} (${kind}). 끝날 때까지 ${workDocsDir(id)}/ 밖은 쓸 수 없고, 지시서(requirement.md)는 코드만 씁니다.`,
+    ...(delivered
+      ? [`${id} 는 회차 ${delivered.cycle} 에서 반영했습니다 (커밋 ${delivered.commit.slice(0, 12)}) — 후속 요청은 확정 요구에 대한 변경안으로 올리고, 확정하면 실행 회차 ${delivered.cycle + 1} 로 시작합니다.`]
+      : []),
     ...[aidlcWarning(repoRoot)].filter((line): line is string => !!line),
     ...(blockers.length > 0
       ? [`시작 전 정리 필요: 커밋하지 않은 변경 ${blockers.length}개(${blockerList(blockers)}) — 요구사항 확정 뒤 시작할 때 이 변경이 남아 있으면 start 가 거부합니다. 사람이 커밋·stash 하거나 되돌려 둡니다(모델은 되돌리지 않습니다).`]
@@ -1313,12 +1342,15 @@ export function confirmStartsWork(repoRoot: string, id: string): RequestSession 
 export function confirmStartNotice(repoRoot: string, session: RequestSession, spec: string): string {
   const branch = `${session.kind}/${session.id}`;
   const exists = isGitRepo(repoRoot) && Boolean(commitOf(repoRoot, branch));
+  const base = session.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master";
   const where = !isGitRepo(repoRoot) ? "git 저장소가 아니라 브랜치는 만들지 않고"
     : exists ? `이미 있는 작업 브랜치 ${branch} 로 전환하고`
-    : `작업 브랜치 ${branch} 를 ${session.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master"} 에서 만들고`;
-  const blockers = exists ? [] : startBlockers(repoRoot, session.id, spec);
+    : `작업 브랜치 ${branch} 를 ${base} 에서 만들고`;
+  const delivered = isGitRepo(repoRoot) ? deliveredCycle(repoRoot, session.id, spec, exists ? branch : base) : undefined;
+  const blockers = exists && !delivered ? [] : startBlockers(repoRoot, session.id, spec);
   return [
-    `확정을 적용하면 작업을 시작합니다 — ${where} 분석 단계로 갑니다.`,
+    `확정을 적용하면 ${delivered ? `실행 회차 ${delivered.cycle + 1} 로 ` : ""}작업을 시작합니다 — ${where} 분석 단계로 갑니다.` +
+      (delivered ? ` 회차 ${delivered.cycle} 반영 커밋 ${delivered.commit.slice(0, 12)} 이 이번 회차의 기준입니다.` : ""),
     ...(blockers.length > 0 ? [`시작 전 정리 필요: ${blockerList(blockers)} — 이대로면 확정만 남고 시작은 막힙니다(사람이 커밋·stash 한 뒤 시작)`] : []),
   ].join("\n");
 }

@@ -80,6 +80,11 @@ export interface ActiveWork {
    * 진행 명령이 흐름을 맞춘다(`syncRequestRevision`). 없는 기록은 이 기능 전에 시작한 작업이다 — 첫 진행 때 지금 확정본을 기록만 한다.
    */
   request?: { hash: string; items: string; revision?: number };
+  /**
+   * 실행 회차 — 같은 ID 가 반영된 뒤 다시 시작한 작업이다(cycles.ts). `delivered` 는 이전 회차의 반영 커밋, `revision` 은 그때 반영한 개정.
+   * 없으면 첫 회차다. 새 회차의 기준 커밋은 시작 때의 작업 브랜치 끝이라 이전 회차의 변경·증거·Task 통과를 다시 쓰지 않는다.
+   */
+  cycle?: { number: number; delivered: string; revision?: number };
 }
 
 /**

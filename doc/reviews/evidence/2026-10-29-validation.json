@@ -5,11 +5,11 @@
     "node": "24.19.0",
     "shell": "PowerShell 5.1.26100"
   },
-  "stateSchema": 18,
+  "stateSchema": 19,
   "scopedTests": [
     {
-      "group": "요구·흐름",
-      "command": "node --test --test-concurrency=2 <파일 9개>",
+      "group": "요구·흐름·상태 조회",
+      "command": "node --test --test-concurrency=2 <파일 10개>",
       "files": [
         "request",
         "requestRevisions",
@@ -19,55 +19,54 @@
         "timeline",
         "hookLoad",
         "process",
-        "consent"
+        "consent",
+        "stateView"
       ],
-      "tests": 193,
-      "pass": 193,
-      "fail": 0,
-      "durationSeconds": 425.6
+      "tests": 209,
+      "pass": 208,
+      "fail": 1,
+      "durationSeconds": 448.3,
+      "failed": "stateView 읽기 전용 조회 — CLI status --json 이 타임라인에 기록",
+      "rerunAfterFix": {
+        "files": [
+          "stateView"
+        ],
+        "tests": 14,
+        "pass": 14,
+        "fail": 0
+      }
     },
     {
-      "group": "계획",
-      "command": "node --test --test-concurrency=2 <파일 8개>",
+      "group": "반영·회차·재개 경로",
+      "command": "node --test --test-concurrency=2 <파일 18개>",
       "files": [
-        "planning",
-        "planningRecovery",
-        "planningRetry",
-        "planningCross",
-        "planningChain",
-        "planningChainFlow",
-        "resultContracts",
-        "dependencyContracts"
-      ],
-      "tests": 180,
-      "pass": 180,
-      "fail": 0,
-      "durationSeconds": 331.5
-    },
-    {
-      "group": "검증·리뷰·동의·Codex",
-      "command": "node --test --test-concurrency=2 <파일 11개>",
-      "files": [
-        "review-gate",
+        "deliver-scope",
+        "integrate-deliver",
+        "consentScreens",
+        "fullReview",
+        "knowledgeDocs",
+        "fix-flow",
+        "refactor-flow",
+        "triage",
+        "branchResume",
+        "branchCursor",
+        "finalReverify",
+        "screenText",
+        "failureHint",
+        "consentSnapshot",
+        "remaining",
         "crossReview",
-        "verification-stages",
-        "runtimeRecovery",
-        "graphLifecycle",
-        "answers",
-        "questionPresentation",
-        "codex",
-        "assets-doctor-usage",
-        "consentOutput",
-        "consentBinding"
+        "lease",
+        "master"
       ],
-      "tests": 302,
-      "pass": 302,
+      "tests": 359,
+      "pass": 359,
       "fail": 0,
-      "durationSeconds": 633.2
+      "durationSeconds": 744.8
     },
     {
-      "group": "문서·템플릿",
-      "command": "node --test --test-concurrency=2 <파일 7개>",
+      "group": "문서·템플릿·상태 세대·Codex",
+      "command": "node --test --test-concurrency=2 <파일 12개>",
       "files": [
         "docSync",
         "templateBudget",
@@ -75,21 +74,34 @@
         "hostNotation",
         "hostText",
         "docs",
-        "dashboardContinuation"
+        "dashboardContinuation",
+        "installRobustness",
+        "runtimeRecovery",
+        "timeline",
+        "reproScenarios",
+        "codex"
       ],
-      "tests": 89,
-      "pass": 89,
-      "fail": 0
+      "tests": 132,
+      "pass": 132,
+      "fail": 0,
+      "durationSeconds": 141.8
     },
     {
-      "group": "상태 세대",
-      "command": "node --test dist/test/installRobustness.test.js",
+      "group": "상태 조회를 쓰는 흐름",
+      "command": "node --test --test-concurrency=2 <파일 7개>",
       "files": [
-        "installRobustness"
+        "assets-doctor-usage",
+        "dashboardInteractions",
+        "findings",
+        "graphLifecycle",
+        "planningRetry",
+        "runtimePackage",
+        "verification-flow"
       ],
-      "tests": 6,
-      "pass": 6,
-      "fail": 0
+      "tests": 158,
+      "pass": 158,
+      "fail": 0,
+      "durationSeconds": 202.8
     }
   ],
   "lastFullTest": {
@@ -113,7 +125,7 @@
         "keptPrevious": true,
         "parent": 2,
         "revision": 3,
-        "medianMs": 53
+        "medianMs": 43
       },
       "staleIds": {
         "assignedBefore": [
@@ -123,11 +135,11 @@
           "REQ-1",
           "REQ-2"
         ],
-        "medianMs": 34
+        "medianMs": 30
       },
       "completionStall": {
         "facts": "같음",
-        "medianMs": 2746
+        "medianMs": 2587
       }
     }
   },
@@ -149,24 +161,24 @@
     "requestAmendment": {
       "file": "template/claude/skills/ca-request/amend.md",
       "limit": 1300,
-      "current": 1260,
+      "current": 1284,
       "reason": "같은 ID 의 요구 변경안 형식 — 확정 요구가 있는 후속 요청에서만 읽는다"
     }
   },
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
-    "files": 219,
-    "compressedBytes": 880101,
-    "unpackedBytes": 3062321,
-    "agentFiles": 158,
+    "files": 220,
+    "compressedBytes": 885889,
+    "unpackedBytes": 3082500,
+    "agentFiles": 159,
     "coreFiles": 13,
     "templateFiles": 46,
     "testFiles": 0
   },
   "limitations": [
     "이번 변경 뒤 전체 시험은 실행하지 않았다.",
-    "요구 개정은 접수·확정·반려 복구와 진행 중 흐름의 개정 연결까지다 — 실행 회차·상태 출력의 개정·회차·타임라인 회차 필드는 아직 없다.",
-    "분석으로 되감은 뒤 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 같은 회차에서 이미 고친 Task 파일은 다시 고치지 않아도 지난다(새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다).",
+    "분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 같은 회차에서 이미 고친 Task 파일은 다시 고치지 않아도 지난다(새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다).",
+    "이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다 — 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.",
     "실제 Claude·Codex 호스트의 타임라인 기록(완료 알림 표지·Codex UserPromptSubmit 시각)은 확인하지 않았다 — 격리 가짜 호스트와 hook 입력으로만 확인했다.",
     "구현·테스트 담당은 SubagentStart·Stop hook 이 없어 담당 실행 구간이 없다.",
     "Codex 완료 알림은 관측하지 않는다.",
@@ -180,11 +192,23 @@
   ],
   "notRerun": {
     "files": [
+      "planning",
+      "planningRecovery",
+      "planningCross",
+      "planningChain",
+      "planningChainFlow",
+      "resultContracts",
+      "dependencyContracts",
+      "review-gate",
+      "verification-stages",
+      "answers",
+      "questionPresentation",
+      "consentOutput",
+      "consentBinding",
       "scripts",
-      "knowledgeDocs",
       "retryPolicy",
       "modelPolicy"
     ],
-    "reason": "이번 변경이 닿지 않음 — 요구 개정 접수 변경 뒤 303건 묶음에서 통과"
+    "reason": "이번 변경이 닿지 않음 — 앞의 13개는 흐름의 개정 연결 뒤, 뒤의 3개는 요구 개정 접수 변경 뒤 통과"
   }
 }

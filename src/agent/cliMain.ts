@@ -274,7 +274,8 @@ const UNTIMED = new Set(["update", "version", "doctor", "usage", "help", "--help
  * 인자 값(파일 경로·사유 글)은 남기지 않고 명령 이름(`commandKey`)만 남긴다. 사람이 터미널에서 친 명령은 terminal 로 가른다.
  */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
-  if (command === undefined || UNTIMED.has(command)) return runCommandBody(command, args);
+  // 기계 판독 상태 조회(`status --json`)는 아무것도 쓰지 않는 계약이라 기록하지 않는다
+  if (command === undefined || UNTIMED.has(command) || (command === "status" && args.includes("--json"))) return runCommandBody(command, args);
   const repoRoot = findRepoRoot(process.cwd());
   const key = commandKey(["code-agent", command, ...args].join(" ")) ?? command;
   const startedAt = new Date().toISOString();

@@ -791,7 +791,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 | `.code-agent/models.json`·`.code-agent/codex-models.json` — 에이전트별 모델·추론 강도 (바꾼 것만) | O |
 | `.code-agent/templates.json` — 마지막으로 적용한 스킬·에이전트 사본의 해시(사람이 고친 사본을 가린다) | O |
 | `.code-agent/active.json`, `.code-agent/docs-session.json`, `.code-agent/request-session.json`, `.code-agent/consents/`(동의 기록·`index.json`·`tickets/`·`snapshot-cache.json`), `.code-agent/log/`(`codex-tools.json` 포함), `.code-agent/lease.json`(작업 임대 — 진행 세션·마지막 활동), `.code-agent/runtime.json`·`runtime.lock`(이 PC 의 적용 버전·적용 대기 — 저장소 경로가 든다), `.code-agent/template-conflicts/`(사람이 고친 사본 대신 둔 새 번들) | X (`init`이 `.gitignore`에 넣는다). consent는 같은 세션의 질문·응답·적용 상태를 보관하며 실제 키 값은 포함하지 않는다 |
-| `.code-agent/work/<ID>/answers.jsonl`(업무 답 관찰) · `.code-agent/approvals/<slug(ID)>/consents.jsonl`(동의 영수증) · `<target>-<seq>.manifest.json`(승인 때 경계 스냅샷) | O |
+| `.code-agent/work/<ID>/answers.jsonl`(업무 답 관찰) · `cycles.json`(실행 회차 — 다음 start 가 커밋된 기록으로 이전 회차를 찾는다) · `.code-agent/approvals/<slug(ID)>/consents.jsonl`(동의 영수증) · `<target>-<seq>.manifest.json`(승인 때 경계 스냅샷) | O |
 
 작업 폴더(`doc/work/<ID>/`)는 **모델과 사람이** 쓴다. `.code-agent/` 는 **코드만** 쓴다 — hook 이 모든 도구 쓰기를 막는다.
 

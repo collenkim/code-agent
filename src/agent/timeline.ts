@@ -23,6 +23,8 @@ export type TimelineType =
   | "request.received" | "request.submitted" | "request.decided" | "request.restored"
   /** 흐름이 새로 확정된 요구 개정을 따름(요구 항목이 바뀌었으면 분석으로 되감음) */
   | "revision.applied"
+  /** 반영된 같은 ID 를 새 실행 회차로 시작함(cycles.ts) */
+  | "cycle.opened"
   /** 담당 배정(계획 배정·교정 배정·구현 인계)·시작·완료(hook 이 받은 완료 — Claude 비동기 담당은 이 직후 메인에 완료 알림이 들어간다) */
   | "agent.assigned" | "agent.started" | "agent.finished"
   /** 흐름이 고른 다음 행동과 호스트가 실행한 명령 */
@@ -48,6 +50,8 @@ export interface TimelineEvent {
   phase?: string;
   /** 흐름이 따르는 확정 요구 개정 — 자리를 커서에서 채울 때와 개정 전환 줄에만 */
   revision?: number;
+  /** 실행 회차 — 반영 뒤 다시 시작한 작업에만(첫 회차는 비운다) */
+  cycle?: number;
   /** 계획 작업 ID 또는 구현 Task */
   taskId?: string;
   dispatchId?: string;
@@ -82,10 +86,11 @@ export function shortReason(text: string): string {
 }
 
 /** 지금 자리의 작업 — 커서가 있으면 그 작업, 없으면 접수 중인 ID */
-function placeOf(root: string): Pick<TimelineEvent, "workId" | "target" | "phase" | "revision"> {
+function placeOf(root: string): Pick<TimelineEvent, "workId" | "target" | "phase" | "revision" | "cycle"> {
   try {
     const active = loadActive(root);
-    if (active) return { workId: active.id, target: active.target, phase: active.phase, ...(active.request?.revision ? { revision: active.request.revision } : {}) };
+    if (active) return { workId: active.id, target: active.target, phase: active.phase, ...(active.request?.revision ? { revision: active.request.revision } : {}),
+      ...(active.cycle ? { cycle: active.cycle.number } : {}) };
   } catch { /* 깨진 커서는 상태 조회가 알린다 */ }
   try {
     const session = JSON.parse(readFileSync(join(root, REQUEST_SESSION_FILE), "utf8")) as { id?: unknown };

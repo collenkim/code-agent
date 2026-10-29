@@ -64,9 +64,10 @@ export interface StateJson {
   observedAt: string;
   stateVersion: string;
   repo: { root: string; head: string | null; branch: string | null; uncommitted: { known: boolean; count?: number; paths?: string[]; truncated?: boolean } };
-  work: null | { id: string; target: string; kind?: string; phase: string; stage?: string; task?: string; branch?: string; base?: string; baseCommit?: string; planningVersion?: number };
+  work: null | { id: string; target: string; kind?: string; phase: string; stage?: string; task?: string; branch?: string; base?: string; baseCommit?: string; planningVersion?: number; cycle?: { number: number; delivered: string; revision?: number } };
   attempt: null | { id: string; kind: string };
-  request: null | { status: string };
+  /** `revision` 은 지금 확정된 개정, `followed` 는 흐름(커서)이 따르는 개정 — 다르면 다음 진행 명령이 흐름을 맞춘다 */
+  request: null | { status: string; revision?: number; followed?: number };
   approval: null | { status: string; label: string; staleFrom?: string };
   planning: null | { attempts: { task: string; role: string; phase: string; dispatchId: string; status: string; at: string; run?: { state: string; observedStart: boolean; elapsedMin: number; agentSession?: string } }[] };
   verification: null | { rounds: number; bound: { valid: boolean; problems: string[] }; phases: Partial<Record<VerifyPhase, { round: number; runs: number; passed: boolean }>> };
@@ -268,7 +269,9 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
       blockers.push({ code: "questions-unreadable", detail: `질문을 읽을 수 없습니다: ${errorText(error)}` });
     }
     try {
-      request = { status: requestState(repoRoot, cursor.id, cursor.spec).status };
+      const state = requestState(repoRoot, cursor.id, cursor.spec);
+      const revision = state.status === "confirmed" ? state.record.revision : undefined;
+      request = { status: state.status, ...(revision ? { revision } : {}), ...(cursor.request?.revision ? { followed: cursor.request.revision } : {}) };
     } catch (error) {
       blockers.push({ code: "request-unreadable", detail: `요구사항 확정 원장을 판정할 수 없습니다: ${errorText(error)}` });
     }
@@ -398,6 +401,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     ...(work.active.stage ? { stage: work.active.stage } : {}), ...(work.active.task ? { task: work.active.task } : {}),
     ...(work.active.branch ? { branch: work.active.branch } : {}), ...(work.active.base ? { base: work.active.base } : {}),
     ...(work.active.baseCommit ? { baseCommit: work.active.baseCommit } : {}), ...(work.active.planningVersion ? { planningVersion: work.active.planningVersion } : {}),
+    ...(work.active.cycle ? { cycle: work.active.cycle } : {}),
   } : active ? { id: String(active.id), target: String(active.target), phase: String(active.phase) } : null;
   const approvalJson: StateJson["approval"] = approval ? {
     status: approval.status, label: approval.status === "approved" ? "승인됨" : APPROVAL_LABEL[approval.status], ...(staleFrom ? { staleFrom } : {}),

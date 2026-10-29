@@ -17,9 +17,11 @@ import { buildIndex } from "./knowledgeIndex";
 import { clearActive, draftFile, handoffDir, logStage, questionsFile, STATE_DIR, workDocsDir } from "./layout";
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
+import { recordDeliveredCycle } from "./cycles";
 import { crossQuestionViews, loadPlanning } from "./planningState";
 import { COUNTER_LABEL, crossPointState, grantText, type RetryGrant } from "./retryPolicy";
 import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./review";
+import { textHash } from "./requirementRevisions";
 import { Stop } from "./stop";
 import { changedPaths } from "./tree";
 import { askOnTerminal, confirmOnTerminal } from "./tty";
@@ -713,8 +715,9 @@ export function deliver(work: Work): string {
   let impact: ReturnType<typeof deliverImpact>;
   try {
     impact = deliverImpact(work, applied);
-    // 동의 영수증(선택 label·시각·세션·실패 원인)을 반영 커밋에 남긴다.
+    // 동의 영수증(선택 label·시각·세션·실패 원인)과 이번 실행 회차를 반영 커밋에 남긴다 — 다음 start 가 회차 기록으로 이 반영을 찾는다
     writeConsentReceipts(work);
+    recordDeliveredCycle(repoRoot, active, { requestHash: textHash(readFileSync(join(repoRoot, active.spec), "utf-8")), baseCommit: evidence!.baseCommit, treeHash: evidence!.treeHash });
   } catch (error) {
     restoreKnowledge(repoRoot, originals);
     throw error;
@@ -735,7 +738,7 @@ export function deliver(work: Work): string {
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, active.id, drift.length ? "paused" : "awaiting-deployment");
   clearActive(repoRoot);
   return [
-    `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}`,
+    `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}${active.cycle ? ` (실행 회차 ${active.cycle.number})` : ""}`,
     `확인한 사람: ${presence.detail}`,
     ...(knowledge.length > 0 ? [`공통 KNOWLEDGE 갱신: ${knowledge.join(", ")}`] : ["공통 KNOWLEDGE 는 갱신하지 않았습니다."]),
     // 선언한 갱신을 적용하지 않았으면 그 항목은 최신이 아니다 — 문서에는 손대지 않고 code-agent knowledge 가 보류로 보여 준다

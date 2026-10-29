@@ -36,6 +36,9 @@ import { hookInstallWarning, requireStartHooks } from "./init";
 import { isGitRepo, switchToWorkBranch } from "./git";
 import { requirePreparedBranch } from "./bootstrap";
 import { changedPaths, commitOf, mergeBase, trackedPaths } from "./tree";
+import { deliveredCycle } from "./cycles";
+import { textHash } from "./requirementRevisions";
+import { recordEvent } from "./timeline";
 import { planReviewLines, prDocFile } from "./deliver";
 import {
   bindingProblems,
@@ -55,6 +58,7 @@ import { budgetText, guidance, nextRoundDecision, NO_REVIEW_CHOICES, verifyNode,
 import { verifyGuidance } from "./validate";
 import {
   clearRequestSession,
+  flowRevisionLines,
   loadRequestSession,
   preparationHint,
   requestContext,
@@ -341,6 +345,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   let branch: string | undefined;
   let base: string | undefined;
   let baseCommit: string | undefined;
+  let cycle: ActiveWork["cycle"];
   let branchNote = "git 저장소가 아니라 작업 브랜치를 만들지 않았습니다.";
   if (isGitRepo(repoRoot)) {
     base = options.base ?? manifest.git.base;
@@ -348,16 +353,27 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     const retained = cursorOnBranch(repoRoot, branch);
     if (retained) throw new Stop(`브랜치 ${branch}에 진행 중인 작업 ${retained.active.id}가 보관되어 있습니다. 해당 브랜치로 돌아가 code-agent status 로 확인한 뒤 재개하세요. 기존 커서는 덮어쓰지 않았습니다.`);
     requirePreparedBranch(repoRoot, branch, base);
-    // 새 작업 브랜치를 딸 때만 미커밋 변경을 본다 — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
-    // 반영 커밋에 섞인다. 이미 있는 브랜치는 중단 뒤 재시작이라 그 작업의 변경이 남아 있을 수 있다
-    if (!commitOf(repoRoot, branch)) {
+    // 이미 반영한 ID 면 후속 요청의 새 실행 회차다 — 같은 확정 요구는 다시 반영하지 않는다(브랜치 전환 앞이라 거부 때 아무것도 바뀌지 않는다)
+    const delivered = deliveredCycle(repoRoot, order.id, specPath, commitOf(repoRoot, branch) ? branch : base);
+    if (delivered) {
+      if (delivered.requestHash === textHash(readFileSync(join(repoRoot, specPath), "utf-8"))) {
+        throw new Stop(
+          `${order.id} 는 이 요구로 이미 반영했습니다 (회차 ${delivered.cycle}, 반영 커밋 ${delivered.commit.slice(0, 12)}) — 같은 요구는 다시 반영하지 않습니다. ` +
+            `후속 요청이면 ${skill("ca-request")} 로 같은 ID 의 변경안을 올려 사람이 확정한 뒤 시작합니다 (브랜치는 바꾸지 않았습니다).`,
+        );
+      }
+      cycle = { number: delivered.cycle + 1, delivered: delivered.commit, ...(delivered.revision ? { revision: delivered.revision } : {}) };
+    }
+    // 새 작업 브랜치를 딸 때와 새 회차를 열 때만 미커밋 변경을 본다 — git switch -c 는 변경을 데려가 첫 검증의 '계획 밖 변경'이 되거나
+    // 반영 커밋에 섞이고, 새 회차는 시작 때의 브랜치 끝을 기준으로 굳힌다. 이미 있는 브랜치는 중단 뒤 재시작이라 그 작업의 변경이 남아 있을 수 있다
+    if (cycle || !commitOf(repoRoot, branch)) {
       const blockers = startBlockers(repoRoot, order.id, specPath);
       if (blockers.length > 0) {
         throw new Stop([
           "작업 트리에 커밋하지 않은 변경이 있어 시작하지 않았습니다 (브랜치는 바꾸지 않았습니다):",
           ...blockers.slice(0, 10).map((change) => `  - [${change.status}] ${change.path}`),
           ...(blockers.length > 10 ? [`  - 외 ${blockers.length - 10}개`] : []),
-          "이대로 시작하면 이 변경이 새 작업 브랜치로 따라가, 계획 승인 뒤 첫 검증에서 '계획 밖 변경'으로 막히거나 계획 파일과 겹치면 무관한 수정이 반영 커밋에 섞입니다.",
+          `이대로 시작하면 이 변경이 ${cycle ? "새 회차의 변경으로 잡혀" : "새 작업 브랜치로 따라가"}, 계획 승인 뒤 첫 검증에서 '계획 밖 변경'으로 막히거나 계획 파일과 겹치면 무관한 수정이 반영 커밋에 섞입니다.`,
           "사람이 커밋·stash 하거나 되돌린 뒤 같은 명령으로 다시 시작합니다 (모델은 파일을 되돌리지 않습니다).",
         ].join("\n"));
       }
@@ -375,8 +391,9 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     // 기준을 **이름이 아니라 커밋으로** 굳힌다. 새로 딴 브랜치는 기준 브랜치의 끝이 곧 갈라진
     // 자리지만, 이미 있던 브랜치로 돌아온 것이라면 그 사이 기준이 나아갔을 수 있다 — 그때 끝을
     // 굳히면 기준이 더한 파일이 전부 이 작업의 `[D]` 삭제로 잡혀 검증이 통째로 막힌다.
+    // 새 회차는 작업 브랜치의 지금 끝(이전 회차 반영 뒤)이다 — 이전 회차의 변경을 이번 회차의 변경으로 다시 세지 않는다.
     baseCommit =
-      (how === "created" ? commitOf(repoRoot, base) : mergeBase(repoRoot, base, "HEAD")) ??
+      (how === "created" ? commitOf(repoRoot, base) : cycle ? commitOf(repoRoot, "HEAD") : mergeBase(repoRoot, base, "HEAD")) ??
       commitOf(repoRoot, base) ??
       commitOf(repoRoot, "HEAD");
     if (!baseCommit) {
@@ -385,6 +402,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
       );
     }
     branchNote += ` 기준 커밋 ${baseCommit.slice(0, 12)} 를 굳혔습니다.`;
+    if (cycle) branchNote += `\n실행 회차 ${cycle.number} 를 엽니다 — 회차 ${cycle.number - 1} 반영 커밋 ${cycle.delivered.slice(0, 12)} 뒤의 변경만 이번 회차의 변경입니다.`;
   }
 
   const questions = join(repoRoot, questionsFile(order.id));
@@ -398,7 +416,9 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   }
   // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
   writeAnswerBaseline(repoRoot, order.id, specPath);
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1, request: requestPlace(repoRoot, order.id, specPath) }, "start");
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1, request: requestPlace(repoRoot, order.id, specPath),
+    ...(cycle ? { cycle } : {}) }, "start");
+  if (cycle) recordEvent(repoRoot, { type: "cycle.opened", reason: `회차 ${cycle.number - 1} 반영 커밋 ${cycle.delivered.slice(0, 12)} 뒤 새 회차` });
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
@@ -656,6 +676,7 @@ export function status(repoRoot: string): string {
     `작업: ${order.id} · ${order.title} (${order.kind}, 대상 ${active.target})`,
     `지시서: ${active.spec}`,
     requestStateLine(repoRoot, active.id, active.spec),
+    ...flowRevisionLines(repoRoot, active),
     `작업 폴더: ${workDocsDir(active.id)}/`,
     `계획 처리: ${active.planningVersion ? "관찰 흐름 — code-agent planning status" : "기존 작업 호환 흐름"}`,
     `브랜치: ${active.branch ? `${active.branch} (기준 ${active.base})` : "없음"}`,

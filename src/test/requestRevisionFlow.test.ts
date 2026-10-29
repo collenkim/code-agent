@@ -4,24 +4,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 
-import { next, status } from "../agent/commands";
-import { applyConsent } from "../agent/consent";
+import { next, start as startWork, status } from "../agent/commands";
+import { applyConsent, finishConsent } from "../agent/consent";
+import { cyclesFile, deliveredCycle, recordDeliveredCycle } from "../agent/cycles";
 import { loadActive, saveActive } from "../agent/layout";
 import { planningStatus, preparePlanning } from "../agent/planning";
 import { loadPlanning } from "../agent/planningState";
-import { requestSubmit } from "../agent/request";
+import { requestBegin, requestSubmit } from "../agent/request";
+import { textHash } from "../agent/requirementRevisions";
+import { stateView } from "../agent/stateView";
 import { readTimeline } from "../agent/timeline";
+import { changedPaths } from "../agent/tree";
 import { approvalOf, loadWork } from "../agent/work";
 import { confirmForTest, start } from "./confirmedStart";
 import {
-  approveAndApplyFixture, CONSENT_SPEC, CONSENT_WORK_ID, observeConsentFixture, preparePlanFixture, prepareConsentFixture, prepareReviewFixture,
-  setupConsentProject, writeFixture,
+  approveAndApplyFixture, confirmationText, CONSENT_SPEC, CONSENT_WORK_ID, gitFixture, observeConsentFixture, preparePlanFixture, prepareConsentFixture,
+  prepareDeliveryFixture, prepareReviewFixture, setupConsentProject, writeFixture,
 } from "./consentFixture";
 import { advance, DIR, finish, REQUIREMENTS, root, SPEC, throughDesign, write } from "./planningFixture";
 
 /**
  * 확정된 요구 개정과 흐름 — 변경안 대기 중 배정 멈춤, 분석 중 개정 전환의 작업 정의 갱신, 이후 단계의 분석 되감기(브랜치·코드 보존),
- * 늦은 결과·이전 승인 응답 거부, 머리말만 바뀐 개정과 따르던 기록 없는 커서.
+ * 늦은 결과·이전 승인 응답 거부, 머리말만 바뀐 개정과 따르던 기록 없는 커서, 반영한 ID 의 새 실행 회차.
  */
 
 const analysisTask = () => loadPlanning(loadWork(root)!).tasks.find((record) => record.task.role === "analysis")!;
@@ -142,4 +146,65 @@ describe("동의 흐름 — 렌더한 지시서의 변경안", () => {
     assert.notEqual(approvalOf(loadWork(repo)!).status, "approved");
     assert.ok(existsSync(join(repo, CONSENT_SPEC)));
   }));
+
+  test("반영한 ID — 같은 요구로는 다시 시작하지 않고, 후속 변경안을 확정하면 반영 커밋을 기준으로 새 실행 회차를 연다(이전 회차의 변경·증거를 세지 않는다)", consentRepo(async (repo) => {
+    await prepareDeliveryFixture(repo);
+    assert.match(approveAndApplyFixture(repo, { action: "deliver" }).result, /반영했습니다/);
+    const delivered = gitFixture(repo, "rev-parse", "HEAD");
+    assert.ok(gitFixture(repo, "show", "--name-only", "--format=", "HEAD").split("\n").includes(cyclesFile(CONSENT_WORK_ID)), "회차 기록은 반영 커밋에 들어간다");
+    assert.equal(loadActive(repo), undefined);
+    assert.throws(() => startWork(repo, join(repo, CONSENT_SPEC)), /이 요구로 이미 반영했습니다 \(회차 1, 반영 커밋 [0-9a-f]{12}\)/);
+    assert.deepEqual([gitFixture(repo, "rev-parse", "HEAD"), loadActive(repo)], [delivered, undefined]);
+
+    assert.match(requestBegin(repo, CONSENT_WORK_ID, "feature"), /회차 1 에서 반영했습니다 \(커밋 [0-9a-f]{12}\) — [^\n]*실행 회차 2 로 시작합니다/);
+    amend(repo, "0이면 0을 반환해 주세요.", "0이면 0을 반환한다.");
+    const confirm = prepareConsentFixture(repo, { action: "request", id: CONSENT_WORK_ID });
+    assert.match(confirmationText(confirm), /확정을 적용하면 실행 회차 2 로 작업을 시작합니다 — 이미 있는 작업 브랜치 feature\/CONSENT-1 로 전환하고/);
+    observeConsentFixture(confirm);
+    const finished = JSON.parse(finishConsent(repo, confirm.id));
+    assert.match(finished.started, /실행 회차 2 를 엽니다 — 회차 1 반영 커밋 [0-9a-f]{12} 뒤의 변경만 이번 회차의 변경입니다/);
+    const active = loadActive(repo)!;
+    assert.deepEqual([active.phase, active.baseCommit, active.cycle, active.request?.revision], ["analysis", delivered, { number: 2, delivered, revision: 1 }, 2]);
+    assert.deepEqual(changedPaths(repo, delivered).filter((change) => /^(src|tests)\//.test(change.path)), [], "이전 회차의 구현은 이번 회차의 변경이 아니다");
+    const view = stateView(repo);
+    assert.deepEqual([view.work?.cycle, view.request?.revision, view.request?.followed], [active.cycle, 2, 2]);
+    assert.notEqual(view.verification?.bound.valid, true, "이전 회차의 증거는 새 기준 커밋에 묶이지 않는다");
+    const text = status(repo);
+    assert.match(text, /흐름이 따르는 개정: 2 — 변경 추가 1\n {2}- 추가 \[REQ-3\] 0이면 0을 반환한다\./);
+    assert.match(text, /실행 회차: 2 \(회차 1 반영 커밋 [0-9a-f]{12} · 개정 1\)/);
+    const opened = readTimeline(repo).filter((event) => event.type === "cycle.opened");
+    assert.deepEqual(opened.map((event) => [event.workId, event.cycle, event.revision, event.phase]), [[CONSENT_WORK_ID, 2, 2, "analysis"]]);
+  }));
+});
+
+describe("이전 회차 찾기", () => {
+  test("커밋된 회차 기록을 읽고, 기록 전 반영은 반영 커밋 제목으로 찾는다 — 비슷한 ID·커밋하지 않은 기록은 회차가 아니다", () => {
+    const repo = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-cycles-")));
+    try {
+      const git = (...args: string[]) => gitFixture(repo, "-c", "user.name=t", "-c", "user.email=t@t", ...args);
+      const spec = "doc/work/W-1/requirement.md";
+      git("init", "-q", "-b", "master");
+      writeFixture(repo, spec, "요구 1\r\n");
+      git("add", "-A"); git("commit", "-q", "-m", "준비");
+      assert.equal(deliveredCycle(repo, "W-1", spec, "HEAD"), undefined);
+      writeFixture(repo, "doc/work/W-10/requirement.md", "다른 작업\n");
+      git("add", "-A"); git("commit", "-q", "-m", "[W-10] 다른 작업");
+      assert.equal(deliveredCycle(repo, "W-1", spec, "HEAD"), undefined, "W-10 의 반영은 W-1 이 아니다");
+      writeFixture(repo, "doc/work/W-1/10-pr.md", "PR\n");
+      git("add", "-A"); git("commit", "-q", "-m", "[W-1] 값 반환");
+      const legacy = gitFixture(repo, "rev-parse", "HEAD");
+      assert.deepEqual(deliveredCycle(repo, "W-1", spec, "HEAD"), { commit: legacy, cycle: 1, requestHash: textHash("요구 1\n") });
+      const active = { id: "W-1", spec, target: "value", phase: "deliver" as const, cycle: { number: 2, delivered: legacy }, request: { hash: "h", items: "i", revision: 3 } };
+      recordDeliveredCycle(repo, active, { requestHash: "a", baseCommit: legacy, treeHash: "t" });
+      assert.equal(deliveredCycle(repo, "W-1", spec, "HEAD")?.commit, legacy, "커밋하지 않은 회차 기록은 읽지 않는다");
+      writeFixture(repo, spec, "요구 2\n");
+      recordDeliveredCycle(repo, active, { requestHash: "b", baseCommit: legacy, treeHash: "t" });
+      git("add", "-A"); git("commit", "-q", "-m", "[W-1] 값 반환 — 회차 2");
+      const cycles = JSON.parse(readFileSync(join(repo, cyclesFile("W-1")), "utf8")).cycles;
+      assert.deepEqual(cycles.map((record: { cycle: number; requestHash: string }) => [record.cycle, record.requestHash]), [[2, "b"]], "같은 회차를 다시 반영하면 그 줄을 바꾼다");
+      assert.deepEqual(deliveredCycle(repo, "W-1", spec, "HEAD"), { commit: gitFixture(repo, "rev-parse", "HEAD"), cycle: 2, revision: 3, requestHash: textHash("요구 2\n") });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
