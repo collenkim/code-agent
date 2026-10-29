@@ -1,0 +1,512 @@
+{
+  "review": "2026-10-30-validation.md",
+  "platform": {
+    "os": "Windows 11",
+    "node": "24.19.0",
+    "shell": "PowerShell 5.1.26100"
+  },
+  "hosts": {
+    "claude": "2.1.312",
+    "codex": "0.166.0"
+  },
+  "stateSchema": 20,
+  "fullTest": {
+    "command": "npm test",
+    "runner": "node --test --test-concurrency=4",
+    "tests": 1868,
+    "suites": 244,
+    "pass": 1864,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 4,
+    "skipReason": "플랫폼 조건",
+    "wallSeconds": 543,
+    "testRunSeconds": 541.5,
+    "slowestSuite": {
+      "name": "npm 패키지 진입점 — 사람이 패키지 관리자로 설치한 패키지를 릴리스로 들인다",
+      "seconds": 78.5
+    }
+  },
+  "liveHosts": [
+    {
+      "id": "claude-print-full-flow",
+      "command": "CODE_AGENT_LIVE_EVAL=1 node scripts/evaluate-full-flow.cjs run enhance --label s2-native --budget 5 --timeout 30",
+      "host": "Claude Code 2.1.312",
+      "mode": "print(-p)",
+      "model": "sonnet(메인·담당)",
+      "finished": true,
+      "turns": [
+        {
+          "turn": 1,
+          "stoppedAt": "request",
+          "minutes": 0.6,
+          "costUsd": 0.2634
+        },
+        {
+          "turn": 2,
+          "stoppedAt": "plan",
+          "minutes": 3.6,
+          "costUsd": 0.9975
+        },
+        {
+          "turn": 3,
+          "stoppedAt": "deliver",
+          "minutes": 1.4,
+          "costUsd": 0.5124
+        }
+      ],
+      "humanGates": [
+        "request",
+        "plan",
+        "deliver"
+      ],
+      "userMessagesBetweenGates": 0,
+      "agents": [
+        {
+          "phase": "analysis",
+          "task": "analysis",
+          "nextActionMs": 990
+        },
+        {
+          "phase": "impact",
+          "task": "explore",
+          "nextActionMs": 1047
+        },
+        {
+          "phase": "impact",
+          "task": "synthesis",
+          "nextActionMs": 913
+        },
+        {
+          "phase": "design",
+          "task": "design",
+          "nextActionMs": 861
+        },
+        {
+          "phase": "plan",
+          "task": "plan",
+          "nextActionMs": 887
+        },
+        {
+          "phase": "plan",
+          "task": "critic",
+          "nextActionMs": 980
+        },
+        {
+          "phase": "implement",
+          "task": "T1",
+          "nextActionMs": 876
+        },
+        {
+          "phase": "implement",
+          "task": "T2",
+          "nextActionMs": 1116
+        },
+        {
+          "phase": "review",
+          "task": "review:r1",
+          "nextActionMs": 969
+        }
+      ],
+      "continuationBlocks": 0,
+      "wakes": 0,
+      "tests": [
+        "TC-1:passed",
+        "TC-2:passed",
+        "TC-3:passed",
+        "TC-4:passed",
+        "TC-5:passed"
+      ],
+      "review": [
+        {
+          "round": 1,
+          "result": "- 없음"
+        }
+      ],
+      "costUsd": 1.77,
+      "minutes": 5.6,
+      "fixtures": "요구 확정·계획 승인·반영 응답과 POLICY 확정은 평가 TTY fixture — 사람 승인이 아님"
+    },
+    {
+      "id": "claude-interactive",
+      "driver": "저장소 밖 일회성 구동기 — Windows ConPTY(STARTF_USESTDHANDLES)로 claude.exe 를 띄우고 폴더 신뢰에서 Yes 선택 뒤 프롬프트를 붙여 넣음",
+      "host": "Claude Code 2.1.312",
+      "mode": "대화형 CLI",
+      "model": "sonnet(메인·담당)",
+      "args": "--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Agent,Skill,Bash(code-agent *)",
+      "scope": "분석 → 게이트 → 영향도(조사·종합) → ready-for-gate",
+      "userMessagesAfterPrompt": 0,
+      "agents": [
+        {
+          "phase": "analysis",
+          "task": "analysis",
+          "nextActionMs": 1130
+        },
+        {
+          "phase": "impact",
+          "task": "explore",
+          "nextActionMs": 1090
+        },
+        {
+          "phase": "impact",
+          "task": "synthesis",
+          "nextActionMs": 1131
+        }
+      ],
+      "completionNotificationsOpenedTurns": 3,
+      "stopsWhileAgentRunning": 3,
+      "continuationBlocks": 0,
+      "wakes": 0,
+      "costUsdEstimate": 0.54,
+      "secondsToReadyForGate": 99,
+      "fixtures": "준비·모델 선택·요구 확정 동의는 합성 fixture — 사람 승인이 아님"
+    },
+    {
+      "id": "claude-managed-a",
+      "driver": "저장소 밖 일회성 구동기 — master enable·grant 는 TTY fixture, 동의는 master 위임 판단(decide, routine)",
+      "host": "Claude Code 2.1.312",
+      "mode": "master supervise → claude -p --output-format stream-json",
+      "model": "sonnet(메인·담당)",
+      "hostProfile": "permissionMode acceptEdits, 기본 허용 도구",
+      "outcome": "접수 → 계획 → 구현·테스트 담당 → check·test → 리뷰 → 통합 통과. 반영 동의 준비는 거부됐다 — 구동기가 TTY fixture 를 위임 판단에도 적용해 원장 판정 줄에 동의 ID 가 빠졌다(구동기 결함, 반영 검사는 의도대로 거부)",
+      "runs": [
+        {
+          "round": 0,
+          "state": "blocked",
+          "reason": "호스트 실행 권한이 거절·취소되었습니다",
+          "seconds": 47,
+          "turns": 20
+        },
+        {
+          "round": 1,
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human",
+          "seconds": 378,
+          "turns": 30
+        },
+        {
+          "round": 2,
+          "state": "blocked",
+          "reason": "호스트 실행 권한이 거절·취소되었습니다",
+          "seconds": 149,
+          "turns": 31
+        }
+      ],
+      "decisions": [
+        "request:applied",
+        "plan:applied"
+      ],
+      "agents": [
+        {
+          "phase": "analysis",
+          "task": "analysis",
+          "nextActionMs": 1376
+        },
+        {
+          "phase": "impact",
+          "task": "explore",
+          "nextActionMs": 1071
+        },
+        {
+          "phase": "impact",
+          "task": "synthesis",
+          "nextActionMs": 1518
+        },
+        {
+          "phase": "design",
+          "task": "design",
+          "nextActionMs": 1291
+        },
+        {
+          "phase": "plan",
+          "task": "plan",
+          "nextActionMs": 1246
+        },
+        {
+          "phase": "plan",
+          "task": "critic",
+          "nextActionMs": 15795
+        },
+        {
+          "phase": "plan",
+          "task": "critic",
+          "nextActionMs": 1596
+        },
+        {
+          "phase": "implement",
+          "task": "T1",
+          "nextActionMs": 1129
+        },
+        {
+          "phase": "implement",
+          "task": "T2",
+          "nextActionMs": 1094
+        },
+        {
+          "phase": "review",
+          "task": "review:r1",
+          "nextActionMs": 4011
+        },
+        {
+          "phase": "review",
+          "task": "review:r1",
+          "nextActionMs": 1167
+        }
+      ],
+      "duplicateCompletions": 8,
+      "continuationBlocks": 0,
+      "wakes": 0,
+      "costUsd": 2.43
+    },
+    {
+      "id": "claude-managed-b",
+      "driver": "저장소 밖 일회성 구동기 — master enable·grant 는 TTY fixture, 동의는 master 위임 판단(decide, routine)",
+      "host": "Claude Code 2.1.312",
+      "mode": "master supervise → claude -p --output-format stream-json",
+      "model": "sonnet(메인·담당)",
+      "hostProfile": "permissionMode acceptEdits, 기본 허용 도구",
+      "outcome": "구동기 수정 뒤 — 접수 → 계획 → 구현·테스트 담당 → check → test 실패에서 멈춤. 테스트 담당이 쓴 TC-6 이 자식 `node --test`를 띄워 실패했고 동결 파일이라 세션이 고치지 않았다(사람 판단 자리)",
+      "runs": [
+        {
+          "round": 0,
+          "state": "completed",
+          "reason": "호스트 턴이 끝났습니다 — code-agent 재개 판정 no-work",
+          "seconds": 45,
+          "turns": 16
+        },
+        {
+          "round": 1,
+          "state": "blocked",
+          "reason": "code-agent 재개 판정 needs-human",
+          "seconds": 349,
+          "turns": 27
+        },
+        {
+          "round": 2,
+          "state": "blocked",
+          "reason": "호스트 실행 권한이 거절·취소되었습니다",
+          "seconds": 66,
+          "turns": 15
+        }
+      ],
+      "decisions": [
+        "request:applied",
+        "plan:applied"
+      ],
+      "agents": [
+        {
+          "phase": "analysis",
+          "task": "analysis",
+          "nextActionMs": 887
+        },
+        {
+          "phase": "impact",
+          "task": "explore",
+          "nextActionMs": 958
+        },
+        {
+          "phase": "impact",
+          "task": "synthesis",
+          "nextActionMs": 982
+        },
+        {
+          "phase": "design",
+          "task": "design",
+          "nextActionMs": 996
+        },
+        {
+          "phase": "plan",
+          "task": "plan",
+          "nextActionMs": 822
+        },
+        {
+          "phase": "plan",
+          "task": "critic",
+          "nextActionMs": 946
+        },
+        {
+          "phase": "implement",
+          "task": "T1",
+          "nextActionMs": 840
+        },
+        {
+          "phase": "implement",
+          "task": "T2",
+          "nextActionMs": 1142
+        }
+      ],
+      "duplicateCompletions": 6,
+      "continuationBlocks": 0,
+      "wakes": 0,
+      "costUsd": 1.9
+    },
+    {
+      "id": "codex-exec",
+      "command": "CODE_AGENT_LIVE_EVAL=1 node scripts/evaluate-planning-hosts.cjs codex s2-codex --vetted-hooks --through-impact --timeout-seconds 900",
+      "host": "codex-cli 0.166.0",
+      "mode": "exec --json(검토한 생성 hook 만 일회성 신뢰)",
+      "models": [
+        {
+          "role": "main",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "role": "ca_analyst",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "role": "ca_explorer",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "scope": "분석 → 게이트 → 영향도 → ready-for-gate",
+      "completed": true,
+      "action": "ready-for-gate",
+      "contentGatePassed": true,
+      "agents": [
+        {
+          "phase": "analysis",
+          "agent": "ca-analyst",
+          "nextActionMs": 3886
+        },
+        {
+          "phase": "impact",
+          "agent": "ca-explorer",
+          "nextActionMs": 2754
+        }
+      ],
+      "hookEvents": {
+        "SessionStart": 1,
+        "UserPromptSubmit": 1,
+        "PreToolUse": 38,
+        "SubagentStart": 2,
+        "SubagentStop": 2,
+        "Stop": 1
+      },
+      "stopBlocked": false,
+      "humanInputRecorded": true,
+      "seconds": 146,
+      "costUsd": null,
+      "costNote": "Codex 비용은 집계하지 않는다"
+    }
+  ],
+  "wakeProbe": {
+    "host": "Claude Code 2.1.312",
+    "mode": "스트리밍 입력(-p --input-format stream-json --output-format stream-json)",
+    "model": "haiku",
+    "budgetUsd": 0.3,
+    "costUsd": 0.013,
+    "hook": "SubagentStop asyncRewake(15초 뒤 exit 2, 임시 폴더의 프로젝트 hook — code-agent 의 wake-event 가 아님)",
+    "userMessagesAfterPrompt": 0,
+    "subagentStopBlocked": false,
+    "mainIdleBeforeWake": true,
+    "exitToNewTurnMs": 26,
+    "woke": true,
+    "subagentStopInput": [
+      "session_id",
+      "transcript_path",
+      "cwd",
+      "prompt_id",
+      "permission_mode",
+      "agent_id",
+      "agent_type",
+      "effort",
+      "hook_event_name",
+      "stop_hook_active",
+      "agent_transcript_path",
+      "last_assistant_message",
+      "background_tasks",
+      "session_crons"
+    ],
+    "transcriptVersion": "2.1.312",
+    "hookEnv": {
+      "CLAUDE_CODE_ENTRYPOINT": "sdk-cli",
+      "CLAUDE_CODE_SESSION_ATTENDED": "0"
+    },
+    "interactiveHookEnv": {
+      "CLAUDE_CODE_ENTRYPOINT": "cli",
+      "CLAUDE_CODE_SESSION_ATTENDED": "1"
+    },
+    "binary": "asyncRewake hook 은 대화형이거나 스트리밍 입력일 때만 백그라운드, 그 밖의 -p 에서는 동기 — exit 2 의 stderr 를 다음 메시지로 큐에 넣는다",
+    "notVerified": "대화형 CLI 에서 wake-event 가 메인을 깨우는 모습(대화형 TTY 를 구동할 수 없음)"
+  },
+  "reproBaseline": {
+    "file": "2026-10-29-repro-baseline.json",
+    "command": "node scripts/repro-baseline.cjs --repeat 3",
+    "fixture": "sha256:4be6f82c570ee977",
+    "stable": true,
+    "current": {
+      "fixture": "sha256:17ab377fa3014d4f",
+      "stable": true,
+      "medianMs": {
+        "amendment": 41,
+        "staleIds": 30,
+        "completionStall": 4850
+      },
+      "completionStall": {
+        "dispatched": "dispatch",
+        "stopWhileRunningBlocked": false,
+        "subagentStopExit": 0,
+        "stopAfterCompletionBlocked": true,
+        "nextNamed": true,
+        "continuedTurnBlocked": false,
+        "humanInputNeeded": false,
+        "resumedAction": "ready-for-gate",
+        "gate": "passed",
+        "duplicateStopExit": 0,
+        "stopAfterDuplicateBlocked": false,
+        "restartedStopBlocked": false,
+        "boundMs": 20000
+      }
+    }
+  },
+  "templateBudgets": {
+    "calculation": "LF 정규화 글자 수 ×1.03(파일)·×1.02(흐름)를 100자 단위 올림",
+    "claudeFlow": {
+      "limit": 49200,
+      "current": 48331
+    },
+    "codexFlow": {
+      "limit": 45900,
+      "current": 44958
+    },
+    "sharedPlanningContract": "template/claude/skills/ca-plan/contract.md",
+    "planningContract": {
+      "limit": 4100,
+      "reason": "네 계획 스킬의 공통 진행·되감기를 필수 참조하는 계약 문서"
+    },
+    "requestAmendment": {
+      "file": "template/claude/skills/ca-request/amend.md",
+      "limit": 1300,
+      "current": 1284,
+      "reason": "같은 ID 의 요구 변경안 형식 — 확정 요구가 있는 후속 요청에서만 읽는다"
+    }
+  },
+  "packageDryRun": {
+    "command": "npm pack --dry-run --ignore-scripts --json",
+    "files": 223,
+    "compressedBytes": 897540,
+    "unpackedBytes": 3123075,
+    "agentFiles": 162,
+    "coreFiles": 13,
+    "templateFiles": 46,
+    "testFiles": 0
+  },
+  "limitations": [
+    "Stop 의 이어가기 차단과 깨우기가 실제 호스트의 턴을 잇는 모습은 관찰하지 않았다 — 다섯 실행 모두 완료 알림이 새 턴을 열거나(Claude) 메인이 결과를 기다려(Codex) 그 자리가 생기지 않았다. 근거는 격리 시험과 스트리밍 입력 asyncRewake 실측이다.",
+    "쉬는 메인 깨우기는 Claude 대화형 CLI 에서 확인한 호스트 버전(2.1.312 이상)과 asyncRewake 설치가 있을 때만 동작한다 — 그 밖에서 완료 알림이 새 턴을 열지 않으면 다음 세션 시작 요약이 처리하지 않은 완료를 알린다. Codex 에는 깨우기 hook 이 없고 Codex 의 완료 알림은 관측하지 않는다.",
+    "예산 구간은 계획 작업 총 배정에만 있다(결정적 판정이라 실제 호스트로 따로 실행하지 않음). 검증·리뷰 회차·교차 지점 한도는 그 회차·지점에서 센다. 비용·시간 안전장치는 따로 두지 않았다 — 작업 총 배정·같은 입력 실패·동시 실행 한도, 시작·실행 기한(고아), 반복 전달 실패 차단이 그 몫이다.",
+    "새 ID 로 준비한 계획 작업은 그 작업의 예산을 따로 받는다(계획 작업 수 상한 100개).",
+    "테스트 담당이 쓴 테스트가 동결 뒤 테스트 자체의 결함으로 실패하면 세션은 테스트를 고치지 않고 사람 판단에서 멈춘다(관리 실행 B, 실패 원인은 확인하지 않음).",
+    "백그라운드로 돌린 긴 검증 명령(Bash run_in_background)의 완료는 담당 실행 장부에 남지 않아 이어가기 대상이 아니다.",
+    "분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다.",
+    "이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다 — 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.",
+    "자동 회귀와 평가 fixture·위임 판단은 실제 사람 승인·사용자 사용성 검사가 아니다. 실제 호스트 버전은 관찰 조건이며 지원 최소 버전이 아니다."
+  ],
+  "validationConditions": [
+    "실제 모델 호출: Claude print 전체 흐름 1회($1.77), 대화형 CLI 1회(약 $0.54 추정), 관리 실행 2회($2.43·$1.90), Codex exec 1회, 스트리밍 입력 깨우기 실측 1회(약 $0.013)",
+    "평가 스크립트·구동기는 부른 세션(Claude Code)의 표지를 지우고 호스트를 띄운다",
+    "대상 프로젝트는 임시 Git 저장소에서 실행 — 저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
+    "보고서·로그·임시 저장소는 dist 나 임시 폴더에 두며 커밋하지 않는다"
+  ]
+}

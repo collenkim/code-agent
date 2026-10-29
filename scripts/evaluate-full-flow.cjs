@@ -141,7 +141,8 @@ for (let turn = startingTurn; turn < startingTurn + 8 && !finished && cost < cos
   const prompt = turn === 0
     ? `이 저장소는 실제 모델 프로세스 평가용 임시 저장소입니다. 사용자 요청: ${requests[scenario]}\n/ca-request부터 원문 접수·공통 문서 준비·분석·계획·구현·검증·독립 리뷰·반영 대기까지 ca-next 절차대로 진행하세요. 단계별로 멈추지 말고 사람 판정 또는 필수 미답 질문에서만 멈추세요. 승인·최초 커밋·deliver는 호출하지 마세요. 평가 드라이버가 별도로 명시적인 테스트용 TTY fixture로 처리하며 실제 사람의 승인으로 보고하지 않습니다. 원문 내용은 임의로 줄이지 말고 sourceMap을 완성하세요. 내부 기술 선택은 기존 구성으로 정하고 업무 질문만 남기세요. Bash는 code-agent 명령만 사용합니다.`
     : '평가 드라이버가 가능한 문서·요구사항·계획 확인을 테스트용 TTY fixture로 처리했습니다. 실제 사람 승인으로 보고하지 마세요. code-agent status로 현재 상태를 읽고 ca-next 절차를 이어가세요. 독립 ca-reviewer 호출과 실제 검증을 수행하고 deliver 대기에서 멈추세요. 원문 미연결·문서 형식 문제는 기존 요청에 근거해 보완하세요.';
-  const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
+  // 부른 세션(Claude·Codex)의 표지를 지워 사용자가 터미널에서 띄운 호스트와 같은 환경으로 띄운다
+  const env = use('agent/crossEnv').hostBaseEnv(process.env); delete env.NODE_TEST_CONTEXT;
   const argv = ['-p', prompt, ...(nativeSession ? ['--resume', nativeSession] : []), '--model', hostModel, '--max-budget-usd', String(Math.min(perTurn, costLimit - cost)), '--output-format', 'json', '--setting-sources', 'project', '--permission-prompts', 'none', '--allowedTools', 'Read,Edit,Write,Grep,Glob,Agent,Skill,Bash(code-agent *)'];
   const codex = mainHost === 'codex' ? require('./live-codex.cjs')(root, repo, path.join(root, 'dist/agent/cli.js'), nativeSession) : undefined;
   const result = cp.spawnSync(codex?.command ?? claude, codex?.args ?? argv, { cwd: repo, env, ...(codex ? { input: prompt.replaceAll('/ca-', 'ca_') } : {}), encoding: 'utf8', windowsHide: true, timeout:timeoutMin*60000, maxBuffer:12*1024*1024 });

@@ -30,7 +30,8 @@ const prompt = [
   '미응답은 테스트 기준과 품질 기준입니다. 제안: 테스트는 Maven test와 기본키 충돌 회귀 테스트, 품질은 Maven verify와 변경 범위 정적 검사입니다. 근거는 기존 Maven 구성입니다. 두 기준은 아직 확정하지 않았습니다.',
   '직전 응답은 선택지 없이 “둘 다 기본안 적용”이라고 답하라고만 했습니다. 사용자 최신 메시지: 같은 UZRF-392 오류를 수정해 줘. 다음 사용자 응답을 기다리는 곳까지만 수행하세요.',
 ].join('\n\n');
-const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
+// 부른 세션(Claude·Codex)의 표지를 지워 사용자가 터미널에서 띄운 호스트와 같은 환경으로 띄운다
+const env = require(path.join(root, 'dist/agent/crossEnv')).hostBaseEnv(process.env); delete env.NODE_TEST_CONTEXT;
 let command, args;
 if (host === 'claude') {
   command = process.env.CLAUDE_EVALUATION_BIN || path.join(os.homedir(), '.local/bin', process.platform === 'win32' ? 'claude.exe' : 'claude');

@@ -26,6 +26,8 @@ const INLINE_HOOKS = /^\s*\[\[?hooks(?:\]|\.(?!state[.\]]))/m;
 if (vettedHooks && host !== 'codex') throw Error('검토한 훅의 일회성 실행은 Codex 검사 전용입니다.');
 if (fs.existsSync(path.join(root, 'dist', `${outputName}.json`))) throw Error('기존 검증 기록을 덮어쓰지 않습니다. 다른 기록 이름을 지정하세요.');
 const use = file => require(path.join(root, 'dist', file));
+// 부른 세션(Claude·Codex)의 표지를 지운다 — 준비 fixture 와 띄우는 호스트가 사람의 터미널에서 실행한 것과 같게 본다
+process.env = use('agent/crossEnv').hostBaseEnv(process.env);
 const fixture = use('test/consentFixture');
 const { init, CODEX_EVENTS } = use('agent/init'), { start, next } = use('agent/commands');
 const { advancePlanning, planningStatus, preparePlanning } = use('agent/planning');
