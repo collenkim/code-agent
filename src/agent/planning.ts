@@ -23,6 +23,7 @@ import type { PlanningCrossView } from "./crossRecord";
 import { dependencyContracts, registerContracts } from "./dependencyContracts";
 import { reuseContractAnswer } from "./answers";
 import { recordEvent, type TimelineInput } from "./timeline";
+import { requireRequestConfirmed, requirementHash, syncRequestRevision } from "./request";
 
 /** 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다. */
 export function planningContracts(root: string, input: string): string {
@@ -98,6 +99,16 @@ export function planningWork(root: string): Work {
   return work;
 }
 /**
+ * 준비·배정의 요구 확인 — 요구 변경안이 확정을 기다리는 동안에는 준비·배정하지 않는다. 새로 확정된 개정은 흐름을 맞춘 뒤 진행한다
+ * (request.ts `syncRequestRevision` — 요구 항목이 바뀌어 분석으로 되감았으면 그 안내로 멈춘다). 조회·취소·형식 교정은 거치지 않는다.
+ */
+function currentRequestWork(root: string, work: Work): Work {
+  requireRequestConfirmed(root, work.active.id, work.active.spec);
+  const { active, notice } = syncRequestRevision(root, work.active);
+  if (notice) throw new Stop(notice);
+  return active === work.active ? work : planningWork(root);
+}
+/**
  * 병렬 완료 이벤트는 짧은 파일 잠금 안에서 읽고 갱신한다. 에이전트 실행 동안 잠그지 않는다.
  * 잠금은 공통 acquireLock 이다 — 주인 {pid, host, at, nonce} 를 적고, 같은 PC 의 죽은 주인과 주인 기록 없는 10분 잠금은 회수한다.
  */
@@ -125,10 +136,42 @@ function predecessor(state: PlanningState, role: PlanningTask["role"]): string[]
   const previous = role === "explore" || role === "impact" ? "analysis" : role === "synthesis" ? "explore" : role === "design" ? state.tasks.some(item => item.task.role === "impact") ? "impact" : "synthesis" : role === "plan" ? "design" : role === "critic" ? "plan" : undefined;
   return state.tasks.filter(item => item.task.role === previous).map(item => item.task.id);
 }
+/** 지금 단계 작업이 다루는 요구 — 분석은 지시서 항목 ID, 그 뒤는 01 의 R 항목 */
+function phaseKeys(work: Work): string[] {
+  const requirementsPath = `${workDocsDir(work.active.id)}/01-requirements.md`;
+  return work.active.phase === "analysis" ? readSourceTrace(work.repoRoot, work.active.id, work.active.spec).rows.map(row => row.id) : existsSync(planningPath(work.repoRoot, requirementsPath)) ? [...readFileSync(planningPath(work.repoRoot, requirementsPath), "utf8").matchAll(/^## (R\d+)\b/gm)].map(match => match[1]) : [];
+}
+// 업무 규칙 KNOWLEDGE 는 묻기 전에 먼저 찾는 자료다 — analysis·design 기본 작업에만 넣는다
+const defaultInputs = (work: Work, role: PlanningTask["role"]): string[] => [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])];
+/** 작업 정의가 따르는 확정 요구 — 진행 경로는 확정을 확인한 뒤 부른다 */
+const requestBasis = (work: Work): string | undefined => work.active.request?.hash ?? requirementHash(work.repoRoot, work.active.spec);
+/**
+ * 개정 전환 — 작업 정의가 따르던 확정 요구(basis)와 지금 확정본이 다를 때만 지금 단계 작업의 요구 범위·입력·선행을 현행으로 맞춘다.
+ * 같은 확정본 위의 준비·재배정은 정의를 바꾸지 않는다(같은 입력 실패 한도가 준비마다 흔들리지 않게). 따르던 기록이 없는 작업(이 기능 전)은
+ * 지금 확정본을 기록만 한다. 기본 작업(id = 역할)은 기본 정의로 다시 쓰고, 나눈 작업은 사라진 요구를 빼고(남는 것이 없으면 지금 요구 전체)
+ * 선행 역할을 채운다. 실행 중인 작업은 건드리지 않는다 — 그 결과는 입력 해시가 달라 받지 않는다.
+ */
+function alignTasks(work: Work, state: PlanningState): string[] {
+  const basis = requestBasis(work);
+  if (!basis) return [];
+  const keys = phaseKeys(work), scope = keys.length ? keys : ["REQ-1"];
+  const aligned: string[] = [];
+  for (const record of state.tasks) {
+    if (ROLE_PHASE[record.task.role] !== work.active.phase || record.basis === basis || record.attempts.at(-1)?.status === "running") continue;
+    if (record.basis !== undefined) {
+      const kept = record.task.requirements.filter(key => keys.includes(key));
+      const task: PlanningTask = record.task.id === record.task.role
+        ? { ...record.task, requirements: scope, inputs: defaultInputs(work, record.task.role), dependsOn: predecessor(state, record.task.role) }
+        : { ...record.task, requirements: kept.length ? kept : scope, dependsOn: [...new Set([...record.task.dependsOn.filter(id => state.tasks.some(item => item.task.id === id)), ...predecessor(state, record.task.role)])] };
+      if (JSON.stringify(task) !== JSON.stringify(record.task)) { record.task = task; aligned.push(task.id); }
+    }
+    record.basis = basis;
+  }
+  return aligned;
+}
 /** 인자 없는 준비는 한 영역을 조사하는 기본 흐름. 큰 작업은 명시한 영역별 작업으로 교체한다. */
 function defaults(work: Work, state: PlanningState, optimize = false): unknown {
-  const requirementsPath = `${workDocsDir(work.active.id)}/01-requirements.md`;
-  const keys = work.active.phase === "analysis" ? readSourceTrace(work.repoRoot, work.active.id, work.active.spec).rows.map(row => row.id) : existsSync(planningPath(work.repoRoot, requirementsPath)) ? [...readFileSync(planningPath(work.repoRoot, requirementsPath), "utf8").matchAll(/^## (R\d+)\b/gm)].map(match => match[1]) : [];
+  const keys = phaseKeys(work);
   const existingImpact = state.tasks.some(item => item.task.role === "impact");
   let compact = existingImpact;
   if (optimize && work.active.phase === "impact" && !state.tasks.some(item => ROLE_PHASE[item.task.role] === "impact") && keys.length > 0 && keys.length <= 3) {
@@ -144,18 +187,18 @@ function defaults(work: Work, state: PlanningState, optimize = false): unknown {
   const tasks = roles.map(role => {
     const existing = pending.tasks.find(item => item.task.role === role);
     if (existing) return existing.task;
-    // 업무 규칙 KNOWLEDGE 는 묻기 전에 먼저 찾는 자료다 — 새로 만드는 analysis·design 작업에만 넣는다(기존 작업의 해시는 그대로)
-    const task: PlanningTask = { id: role, role, contextVersion: 4, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])], scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
+    const task: PlanningTask = { id: role, role, contextVersion: 4, title: role === "impact" ? "소규모 조사와 영향도 정리" : `${role} 단계 수행`, requirements: keys.length ? keys : ["REQ-1"], inputs: defaultInputs(work, role), scopes: role === "explore" || role === "impact" ? ["."] : [], outputs: requiredOutputs(work, role), dependsOn: predecessor(pending, role), questionIds: [] };
     pending.tasks.push({ task, attempts: [] });
     return task;
   });
   return { maxParallel: state.maxParallel, tasks };
 }
 export function preparePlanning(root: string, batch?: unknown): string {
-  const work = planningWork(root);
+  const work = currentRequestWork(root, planningWork(root));
   return withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => prepareState(root, work, state, batch)), null, 2));
 }
 function prepareState(root: string, work: Work, state: PlanningState, batch?: unknown) {
+    const aligned = alignTasks(work, state), basis = requestBasis(work);
     const parsed = BatchSchema.parse(batch ?? defaults(work, state));
     if (new Set(parsed.tasks.map(task => task.id)).size !== parsed.tasks.length) throw new Stop("계획 작업 식별자가 중복되었습니다.");
     const merged = state.tasks.filter(record => !parsed.tasks.some(task => task.id === record.task.id));
@@ -174,7 +217,7 @@ function prepareState(root: string, work: Work, state: PlanningState, batch?: un
       if (!["explore", "impact"].includes(task.role) && task.scopes.length) throw new Stop("소스 영역은 조사 작업에만 지정합니다. 다른 역할은 선행 조사 결과를 입력으로 받습니다.");
       if (["explore", "impact"].includes(task.role) && !task.scopes.length) throw new Stop("조사할 소스 영역을 지정하세요.");
       for (const scope of task.scopes) if (!existsSync(planningPath(root, scope))) throw new Stop(`조사 영역이 없습니다: ${scope} — 기존 상위 영역이나 관련 영역을 지정하세요.`);
-      merged.push({ task, attempts: old?.attempts ?? [] });
+      merged.push({ task, attempts: old?.attempts ?? [], ...(basis ? { basis } : {}) });
     }
     const candidate = { ...state, tasks: merged };
     if (merged.some(record => record.task.role === "impact") && merged.some(record => ["explore", "synthesis"].includes(record.task.role))) throw new Stop("통합 영향도 작업과 분할 조사·합성 작업을 함께 등록할 수 없습니다. 기본 자동 배정 전에 필요한 조사 방식을 준비하세요.");
@@ -193,7 +236,7 @@ function prepareState(root: string, work: Work, state: PlanningState, batch?: un
     }
     state.tasks = merged;
     state.maxParallel = parsed.maxParallel;
-    return { prepared: parsed.tasks.map(task => task.id), maxParallel: state.maxParallel };
+    return { prepared: parsed.tasks.map(task => task.id), maxParallel: state.maxParallel, ...(aligned.length ? { aligned } : {}) };
 }
 /** 문서 전문은 상태에 보존하고, 호출 경계에는 근거와 산출물 참조만 보낸다. */
 function compactResult(record: TaskRecord) {
@@ -312,9 +355,9 @@ export function planningResult(root: string, id: string): string {
   });
 }
 export function dispatchPlanning(root: string, id: string): string {
-  const work = planningWork(root);
+  const work = currentRequestWork(root, planningWork(root));
   const notes: TimelineInput[] = [];
-  const output = withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => dispatchState(work, state, id, undefined, notes)), null, 2));
+  const output = withPlanningCache(() => JSON.stringify(mutatePlanning(work, state => { alignTasks(work, state); return dispatchState(work, state, id, undefined, notes); }), null, 2));
   for (const note of notes) recordEvent(root, note);
   return output;
 }
@@ -585,7 +628,7 @@ export async function advancePlanning(root: string): Promise<string> {
 
 /** 그래프의 한 배정 트랜잭션. 매번 최신 계획을 잠금 안에서 검사한다. 빈 목록은 관찰·준비만 한다. */
 export function planningAdvanceStep(root: string, taskIds: readonly string[], observeRewind = false): string {
-  const work = planningWork(root);
+  const work = currentRequestWork(root, planningWork(root));
   if (!(PLANNING_PHASES as readonly string[]).includes(work.active.phase)) throw new Stop("계획 단계에서만 진행할 수 있습니다.");
   const phase = work.active.phase as typeof PLANNING_PHASES[number];
   return withPlanningCache(() => {
@@ -594,6 +637,7 @@ export function planningAdvanceStep(root: string, taskIds: readonly string[], ob
     const now = Date.now();
     const notes: TimelineInput[] = [];
     const output = mutatePlanning(work, state => {
+      alignTasks(work, state);
       const batch = BatchSchema.parse(defaults(work, state, true));
       const missing = batch.tasks.filter(task => !state.tasks.some(record => record.task.id === task.id));
       if (missing.length) prepareState(root, work, state, { maxParallel: state.maxParallel, tasks: missing });

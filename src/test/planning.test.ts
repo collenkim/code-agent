@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { prepareConsentFixture } from "./consentFixture";
+import { confirmForTest } from "./confirmedStart";
 import { next, status, submitPlan, decide as approveCommand } from "../agent/commands";
 import { decide as hook } from "../agent/hook";
 import { contextHandoff, handoffPlanning } from "../agent/handoff";
@@ -237,6 +238,9 @@ test("교정도 입력 변경·취소·의미상 근거 오류를 우회하지 �
   write(SPEC, readFileSync(join(root, SPEC), "utf8") + "\n추가 요구\n");
   assert.throws(() => repairPlanning(root, "analysis"), /입력이 바뀌/);
   cancelPlanning(root, "analysis");
+  // 바뀐 지시서는 사람이 다시 확정해야 다시 배정한다
+  await assert.rejects(advance(), /요구사항이 확정 뒤 바뀌었습니다/);
+  confirmForTest(root, join(root, SPEC));
   assert.throws(() => repairPlanning(root, "analysis"), /교정할/);
   const second = (await advance()).assignments[0]; malformed(second);
   const repaired = JSON.parse(repairPlanning(root, "analysis"));

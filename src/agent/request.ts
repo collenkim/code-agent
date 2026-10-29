@@ -11,7 +11,9 @@ import { errorLogProblems, KINDS, parseFrontMatter, slug, validateWorkOrder, Wor
 import type { WorkKind, WorkOrder } from "../core/workOrder";
 import { sha } from "./docs";
 // init(설치·hook 검사)은 접수 시작에서만 쓴다 — hook 이 이 모듈(loadRequestSession)을 읽으므로 지연 로드한다
-import { canonical, DOCS_SESSION_FILE, loadActive, logStage, REQUEST_SESSION_FILE, STATE_DIR, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, loadActive, logStage, PHASES, REQUEST_SESSION_FILE, saveActive, STATE_DIR, workDocsDir, type ActiveWork } from "./layout";
+import { PHASE_LABEL } from "./phaseInfo";
+import { sourceItems } from "./sourceTrace";
 import { Stop } from "./stop";
 import { confirmOnTerminal } from "./tty";
 import { loadManifestIfAny, loadWork } from "./work";
@@ -366,6 +368,14 @@ export function recordRequestDecision(
   repoRoot: string,
   input: { id: string; spec: string; decision: RequestDecision; approver: string; presence: Presence; comment?: string; hash?: string },
 ): RequestRecord {
+  return recordDecision(repoRoot, input).record;
+}
+
+/** 판정을 남기고, 진행 중인 같은 작업이면 확정한 개정에 흐름을 맞춘다 — 되감았으면 `flow` 가 그 안내다 */
+function recordDecision(
+  repoRoot: string,
+  input: { id: string; spec: string; decision: RequestDecision; approver: string; presence: Presence; comment?: string; hash?: string },
+): { record: RequestRecord; flow?: string } {
   const hash = input.hash ?? requirementHash(repoRoot, input.spec);
   if (!hash) {
     throw new Stop(`지시서가 없습니다: ${input.spec}`);
@@ -402,7 +412,8 @@ export function recordRequestDecision(
         detail: { rejected: judged.revision, restored: confirmed.revision } });
     }
   }
-  return record;
+  const flow = input.decision === "confirmed" && active?.id === input.id && active.spec === input.spec ? syncRequestRevision(repoRoot, active).notice : undefined;
+  return { record, ...(flow ? { flow } : {}) };
 }
 
 export interface RevisionHeads {
@@ -423,6 +434,64 @@ export function revisionHeads(repoRoot: string, id: string, spec: string): Revis
   const after = confirmed ? records.slice(records.lastIndexOf(confirmed) + 1) : records;
   const pending = now === confirmed?.specHash ? undefined : [...after].reverse().find((record) => record.specHash === now);
   return { confirmed, ...(pending ? { pending } : {}), records };
+}
+
+// ---- 흐름이 따르는 개정 ----
+
+/** 흐름(커서)이 따르는 확정 요구 — `ActiveWork.request` */
+export type RequestPlace = NonNullable<ActiveWork["request"]>;
+
+/** 요구 항목(요구 내용·완료 조건·제약·범위 밖)의 ID 와 글 — 머리말·원문·이력만 바뀐 개정은 흐름을 되감지 않는다 */
+function requestItemsHash(text: string): string {
+  const out = text.split(/^##\s+/m).slice(1).filter((section) => section.split(/\r?\n/)[0].trim() === "범위 밖")
+    .flatMap((section) => section.split(/\r?\n/).slice(1).map((line) => line.trim()).filter((line) => /^[-*]\s/.test(line)));
+  return sha(JSON.stringify({ items: sourceItems(text).map((item) => [item.id, item.text]), out }));
+}
+
+/** 지금 확정된 요구의 자리 — 확정 전(변경안 대기·반려)이면 없다 */
+export function requestPlace(repoRoot: string, id: string, spec: string): RequestPlace | undefined {
+  const state = requestState(repoRoot, id, spec);
+  if (state.status !== "confirmed") return undefined;
+  const revision = state.record.revision ?? revisionHeads(repoRoot, id, spec).confirmed?.revision;
+  return { hash: state.record.hash, items: requestItemsHash(readFileSync(join(repoRoot, spec), "utf-8")), ...(revision ? { revision } : {}) };
+}
+
+/** 두 확정 개정 사이에 확정된 변경 — 개정 기록이 없으면(손으로 쓴 지시서·이전 형식) 비어 있다 */
+function changesBetween(repoRoot: string, id: string, spec: string, from: number | undefined, to: number | undefined): RevisionChange[] {
+  if (!to) return [];
+  const confirmed = new Set(readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec && record.decision === "confirmed").map((record) => record.hash));
+  return readRevisions(repoRoot, id).filter((record) => record.revision > (from ?? 0) && record.revision <= to && record.parent > 0 && confirmed.has(record.specHash))
+    .flatMap((record) => record.changes);
+}
+
+/**
+ * 흐름을 확정된 요구 개정에 맞춘다. 커서가 따르던 확정 요구와 지금 확정본이 다르면 커서에 새 개정을 남기고, 요구 항목이 바뀌었으면
+ * 요구사항 분석으로 되감는다 — 브랜치·코드·작업 문서는 그대로 두고 분석부터 바뀐 요구를 반영해 게이트를 다시 지난다. 되감았으면 그 안내를 돌려준다.
+ * 확정 전(변경안 대기)이면 아무것도 하지 않는다 — 진행 명령이 확정 대기로 멈춘다. 따르던 기록이 없는 커서(이 기능 전에 시작한 작업)는
+ * 지금 확정본을 기록만 한다. 커서를 바꿨으면 바꾼 커서를 돌려준다 — 호출자는 들고 있던 커서로 다시 저장하지 않는다.
+ */
+export function syncRequestRevision(repoRoot: string, active: ActiveWork): { active: ActiveWork; notice?: string } {
+  const place = requestPlace(repoRoot, active.id, active.spec);
+  if (!place || active.request?.hash === place.hash) return { active };
+  const before = active.request;
+  const rewind = !!before && before.items !== place.items && PHASES.indexOf(active.phase) > PHASES.indexOf("analysis");
+  const next: ActiveWork = rewind ? { ...active, phase: "analysis", stage: undefined, task: undefined, request: place } : { ...active, request: place };
+  saveActive(repoRoot, next, rewind ? "back" : undefined);
+  if (!before) return { active: next };
+  const changes = changesBetween(repoRoot, active.id, active.spec, before.revision, place.revision);
+  const label = place.revision ? `요구 개정 ${place.revision}` : "바뀐 요구";
+  recordEvent(repoRoot, { type: "revision.applied", workId: active.id, target: active.target, phase: next.phase, ...(place.revision ? { revision: place.revision } : {}),
+    reason: `${label} 확정${rewind ? ` — ${active.phase} 에서 analysis 로 되감음` : before.items === place.items ? " — 요구 항목은 그대로" : " — 분석 중 반영"}`,
+    detail: { from: active.phase, to: next.phase, rewound: rewind, ...(before.revision ? { previous: before.revision } : {}), ...(changes.length ? { changes: changeSummary(changes) } : {}) } });
+  if (!rewind) return { active: next };
+  const shown = changes.filter((change) => change.op !== "header");
+  return { active: next, notice: [
+    `${label} 확정 — 흐름을 ${PHASE_LABEL[active.phase]} 에서 ${PHASE_LABEL.analysis} 으로 되감았습니다${before.revision ? ` (따르던 개정 ${before.revision})` : ""}.`,
+    ...shown.slice(0, 5).map((change) => `  - ${changeLine(change)}`),
+    ...(shown.length > 5 ? [`  - 외 ${shown.length - 5}건 — ${active.spec} 의 '이번 개정의 변경'`] : []),
+    "브랜치·코드·작업 문서는 그대로입니다. 분석부터 바뀐 요구만 반영해 게이트를 다시 지납니다 — 계획 문서가 바뀌면 계획을 다시 승인받습니다.",
+    `다음: ${skill("ca-next")}`,
+  ].join("\n") };
 }
 
 export type RequestState =
@@ -1325,7 +1394,7 @@ export function decideRequest(
   if (requirementHash(repoRoot, spec) !== hash) {
     throw new Stop(`확정하는 동안 지시서가 바뀌었습니다 — 판정을 남기지 않았습니다. 다시 읽고 판정하세요: ${spec}`);
   }
-  const record = recordRequestDecision(repoRoot, {
+  const { record, flow } = recordDecision(repoRoot, {
     id,
     spec,
     decision,
@@ -1334,9 +1403,15 @@ export function decideRequest(
     comment,
     hash,
   });
-  return decision === "confirmed"
-    ? `${id} 요구사항을 확정했습니다 (${record.hash}). 현재 호스트 세션에서는 ca-next 흐름으로 분석을 자동으로 이어갑니다 (수동 재개: ${skill("ca-next")} 또는 ${skill("ca-analyze")}).`
-    : `${id} 요구사항 반려를 남겼습니다. ${skill("ca-request")} 가 사유를 읽고 다시 정리합니다.`;
+  if (decision === "rejected") {
+    return amended
+      ? `${id} 요구 변경안 ${pendingLabel(amended)} 반려를 남기고 지시서를 확정 개정 ${amended.parent} 으로 되돌렸습니다. 진행 중이던 흐름은 그 개정으로 이어갑니다.`
+      : `${id} 요구사항 반려를 남겼습니다. ${skill("ca-request")} 가 사유를 읽고 다시 정리합니다.`;
+  }
+  if (amended) {
+    return `${id} 요구 변경안을 개정 ${amended.revision} 으로 확정했습니다 (${record.hash}).${flow ? `\n${flow}` : " 현재 호스트 세션에서는 ca-next 흐름으로 이어갑니다."}`;
+  }
+  return `${id} 요구사항을 확정했습니다 (${record.hash}). 현재 호스트 세션에서는 ca-next 흐름으로 분석을 자동으로 이어갑니다 (수동 재개: ${skill("ca-next")} 또는 ${skill("ca-analyze")}).`;
 }
 
 // ---- status (작업이 없을 때) ----

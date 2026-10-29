@@ -18,15 +18,20 @@ test("요구 변경 재현 — 추가 요구만 든 전체 목록 초안은 확�
   assert.deepEqual([facts.statusAfterSubmit, facts.proposalShown, facts.reconfirmed], ["unconfirmed", true, "confirmed"]);
   const [work] = timeline;
   assert.equal(work.workId, "PLAN-1");
-  assert.deepEqual(work.causes.map((cause) => [cause.type, cause.reason, cause.phase]), [["invalidated", `요구 변경안 개정 ${facts.revision} 제출 — 확정해야 진행`, "analysis"]]);
+  // 시드의 이전 형식 재확정과 변경안 확정은 분석 중이라 흐름을 되감지 않고 그 개정을 따른다
+  assert.deepEqual(work.causes.map((cause) => [cause.type, cause.reason, cause.phase]), [
+    ["revision.applied", "바뀐 요구 확정 — 분석 중 반영", "analysis"],
+    ["invalidated", `요구 변경안 개정 ${facts.revision} 제출 — 확정해야 진행`, "analysis"],
+    ["revision.applied", `요구 개정 ${facts.revision} 확정 — 분석 중 반영`, "analysis"],
+  ]);
   assert.equal(work.counts["request.submitted"], 1);
 });
 
-test("요구 변경 재현 — 새 요구 ID 가 생겨도 다시 준비한 분석 배정은 옛 요구 ID 만 가진다", () => {
+test("요구 변경 재현 — 확정 요구에 새 요구 ID 가 생기면 다시 준비한 분석 배정이 지금 요구 ID 전부를 가진다", () => {
   const { facts } = runScenario("staleIds");
   assert.deepEqual(facts.sourceIds, ["REQ-1", "REQ-2"]);
-  assert.deepEqual(facts.assignedAfter, ["REQ-1"]);
-  assert.deepEqual(facts.assignedAfter, facts.assignedBefore);
+  assert.deepEqual(facts.assignedBefore, ["REQ-1"]);
+  assert.deepEqual(facts.assignedAfter, facts.sourceIds);
 });
 
 test("완료 알림 → 후속 실행 정지 재현 — 격리 호스트에서 Stop 이 턴을 잇지 않아 사람 입력 뒤에야 다음 행동을 실행하고, 그 대기의 사유가 남는다", () => {

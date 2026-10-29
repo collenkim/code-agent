@@ -700,7 +700,7 @@ function timelineBlock(timeline: TimelineSummary[]): string[] {
       `${[wait.phase, wait.taskId, wait.dispatchId?.slice(0, 8)].some(Boolean) ? ` [${[wait.phase, wait.taskId, wait.dispatchId?.slice(0, 8)].filter(Boolean).join(" · ")}]` : ""} · ${wait.startedAt.slice(11, 19)}`));
     if (summary.runs.length) lines.push(`    검증 실행 ${summary.runs.length}회 · 합 ${durationText(summary.runs.reduce((sum, run) => sum + (run.durationMs ?? 0), 0))}` +
       `${summary.runs.some((run) => !run.endedAt) ? ` · 끝나지 않음 ${summary.runs.filter((run) => !run.endedAt).length}` : ""} · 마지막 로그 ${summary.runs.at(-1)!.logFile ?? "(없음)"}`);
-    for (const cause of summary.causes.slice(-WAIT_TOP)) lines.push(`    ${cause.type === "invalidated" ? "무효화" : "재시도"}: ${cause.reason}${cause.taskId ? ` [${cause.taskId}]` : ""}`);
+    for (const cause of summary.causes.slice(-WAIT_TOP)) lines.push(`    ${cause.type === "invalidated" ? "무효화" : cause.type === "revision.applied" ? "요구 개정" : "재시도"}: ${cause.reason}${cause.taskId ? ` [${cause.taskId}]` : ""}`);
   }
   return lines;
 }

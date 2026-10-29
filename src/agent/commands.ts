@@ -60,11 +60,13 @@ import {
   requestContext,
   requestDraftFile,
   requestHint,
+  requestPlace,
   requestState,
   requestStateLine,
   requestStatusLines,
   requireRequestConfirmed,
   startBlockers,
+  syncRequestRevision,
 } from "./request";
 import { loadReview, reviewDocFile, reviewProblems, reviewStatusTail } from "./review";
 import { crossStopStreak } from "./crossRecord";
@@ -234,6 +236,16 @@ function requireRequirements(repoRoot: string, active: ActiveWork): Requirements
   return requirements;
 }
 
+/**
+ * 확정 요구가 커서가 따르던 개정과 다르면 흐름을 맞춘다(request.ts `syncRequestRevision`) — 요구 항목이 바뀌어 분석으로 되감았으면 그 안내로 멈추고,
+ * 기록만 바뀌었으면 다시 읽은 작업을 돌려준다(들고 있던 커서로 다시 저장하면 새 개정 기록을 잃는다).
+ */
+function followRevision(repoRoot: string, work: Work): Work {
+  const { active, notice } = syncRequestRevision(repoRoot, work.active);
+  if (notice) throw new Stop(notice);
+  return active === work.active ? work : requireWork(repoRoot);
+}
+
 /** 번호 문서의 게이트 — 지나지 못하면 무엇이 모자란지 그대로 알린다 */
 function requireWorkDocs(problems: string[]): void {
   if (problems.length > 0) {
@@ -308,7 +320,8 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
     );
   }
   if (current) {
-    return `이미 진행 중입니다: ${current.id} · ${PHASE_LABEL[current.phase]}\n\n${status(repoRoot)}`;
+    const { active: resumed, notice } = syncRequestRevision(repoRoot, current);
+    return `이미 진행 중입니다: ${resumed.id} · ${PHASE_LABEL[resumed.phase]}${notice ? `\n${notice}` : ""}\n\n${status(repoRoot)}`;
   }
   // 작업 하나는 대상 하나만 진행한다 — 진행 중 확인 뒤라 대상 여럿인 지시서로 이미 시작한 작업은 위에서 그대로 잇고,
   // 브랜치 전환 앞이라 거부 때 아무것도 바뀌지 않는다. 확정 뒤 고쳐 다시 제출하면 지시서 해시가 바뀌어 사람이 다시 확정한다
@@ -385,7 +398,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   }
   // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
   writeAnswerBaseline(repoRoot, order.id, specPath);
-  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1 }, "start");
+  saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1, request: requestPlace(repoRoot, order.id, specPath) }, "start");
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
@@ -795,10 +808,11 @@ export interface PhaseTransition { from: ActiveWork; phase: Phase; stage?: strin
 /** 게이트는 이동할 커서를 계산한다. 실제 기록은 그래프의 commit 노드에서 한다. */
 export function nextTransition(repoRoot: string): PhaseTransition {
   requireNoAidlc(repoRoot);
-  const work = requireWork(repoRoot);
-  const { active } = work;
+  let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
-  requireRequestConfirmed(repoRoot, active.id, active.spec);
+  requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
+  work = followRevision(repoRoot, work);
+  const { active } = work;
   requireAnswers(repoRoot, active);
 
   if (["analysis", "impact", "design", "plan"].includes(active.phase)) requireWorkDocs([...planningProblems(work, active.phase as "analysis" | "impact" | "design" | "plan"), ...planningDocumentProblems(work, active.phase)]);
@@ -968,6 +982,7 @@ export function requireValidatable(
   let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
+  work = followRevision(repoRoot, work);
   requireRequirements(repoRoot, work.active);
   requireAnswers(repoRoot, work.active);
   if (phase === "check" && (REWINDABLE.includes(work.active.phase) || (work.active.phase === "deliver" && evidenceBroken(work)))) {
@@ -997,9 +1012,10 @@ export function requireValidatable(
  * 승인 위에서 나지 않은 재현은 나중에 계획이 바뀌면 무엇에 대한 재현이었는지 알 수 없다.
  */
 export function requireReproable(repoRoot: string): Work {
-  const work = requireWork(repoRoot);
+  let work = requireWork(repoRoot);
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
+  work = followRevision(repoRoot, work);
   requireAnswers(repoRoot, work.active);
   if (work.order.kind !== "fix") {
     throw new Stop(`code-agent repro 는 fix 작업에서만 돕니다 (지금: ${work.order.kind}).`);
@@ -1148,6 +1164,7 @@ export function submitPlan(repoRoot: string, draft: string): string {
   }
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, active.id, active.spec);
+  followRevision(repoRoot, work);
   requireAnswers(repoRoot, active);
   requireWorkDocs([...planningProblems(work, "plan"), ...planningDocumentProblems(work, "plan")]);
   if (active.planningVersion && canonical(resolve(process.cwd(), draft)) !== canonical(join(repoRoot, requiredOutputs(work, "plan")[0]))) throw new Stop("관찰된 계획 작업이 생성한 plan.json만 제출할 수 있습니다.");
@@ -1232,6 +1249,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
   // 확정되지 않은 문서 위의 계획은 승인하지 않는다 — 승인이 묶을 근거가 없다.
   requireDocs(repoRoot, work);
   requireRequestConfirmed(repoRoot, active.id, active.spec);
+  followRevision(repoRoot, work);
   // 제출과 승인 사이에도 작업 폴더는 쓸 수 있다 — 제출 때 지난 게이트를 다시 본다.
   requireAnswers(repoRoot, active);
   if (decision === "approved") requireWorkDocs([...planningProblems(work, "plan"), ...planningDocumentProblems(work, "plan"), ...reviewedPlanProblems(work)]);

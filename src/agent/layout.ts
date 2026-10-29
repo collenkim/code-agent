@@ -75,6 +75,11 @@ export interface ActiveWork {
   baseCommit?: string;
   /** implement 에서 지금 도는 매니페스트 단계 key */
   stage?: string;
+  /**
+   * 흐름이 따르는 확정 요구 — 지시서 해시·요구 항목 해시·개정 번호(request.ts `requestPlace`). 확정본이 이와 다르면 새 개정이 확정된 것이라
+   * 진행 명령이 흐름을 맞춘다(`syncRequestRevision`). 없는 기록은 이 기능 전에 시작한 작업이다 — 첫 진행 때 지금 확정본을 기록만 한다.
+   */
+  request?: { hash: string; items: string; revision?: number };
 }
 
 /**

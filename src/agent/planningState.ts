@@ -88,7 +88,11 @@ export interface TaskAttempt {
   /** 메인이 되돌림 후 종료된 담당을 취소하여 회수했다. 입력별 1회만 전달 실패로 분리한다. */
   returnDeliveryFailed?: boolean;
 }
-export interface TaskRecord { task: PlanningTask; attempts: TaskAttempt[] }
+export interface TaskRecord {
+  task: PlanningTask; attempts: TaskAttempt[];
+  /** 작업 정의가 따르는 확정 요구(지시서 해시) — 지금 확정본과 다르면 준비·배정이 정의를 현행 요구로 맞춘다(planning.ts `alignTasks`). 승인 해시 밖이다 */
+  basis?: string;
+}
 export interface PlanningAgent {
   id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string;
   /** 같은 담당에게 되돌린 횟수(Claude SubagentStop exit 2) */

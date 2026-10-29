@@ -134,7 +134,7 @@ function completionStall(root: string, transcripts: string): Record<string, unkn
 
 export const SCENARIOS = {
   amendment: { title: "같은 ID 의 추가 요구가 확정한 요구를 보존한 새 개정으로 반영된다", run: amendment },
-  staleIds: { title: "새 요구 ID 가 생겨도 계획 준비가 옛 요구 ID 로 배정한다", run: staleIds },
+  staleIds: { title: "확정 요구에 새 요구 ID 가 생긴 뒤 계획을 다시 준비하면 지금 요구 ID 로 배정한다", run: staleIds },
   completionStall: { title: "담당 완료 알림 뒤 Stop 이 턴을 잇지 않아 사람 입력으로 재개한다", run: completionStall },
 } as const;
 export type ScenarioName = keyof typeof SCENARIOS;
