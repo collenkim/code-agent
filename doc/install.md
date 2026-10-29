@@ -44,7 +44,7 @@ CLI와 템플릿(스킬·에이전트 정의)은 한 릴리스로 함께 적용�
 
 LangGraph 실행 기록은 Node 내장 SQLite를 사용하므로 별도 DB 서버나 실행용 네이티브 SQLite 모듈이 필요 없다. 공식 saver의 전이 의존성에는 `better-sqlite3`가 포함되어 npm 기본 설치 시 설치 스크립트가 실행될 수 있다. 소스에서 이를 생략하려면 `npm ci --ignore-scripts` 후 `npm run build`를 실행한다. Node 범위와 LangGraph 패키지 버전은 master-agent와 맞추며 정확한 의존성은 `package.json`·`package-lock.json`을 따른다.
 
-어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 16개 포함), 서브에이전트 8개와 hook 11개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 구현·테스트 담당의 SubagentStart·SubagentStop(`code-agent agent-event`) 2개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). `init`은 설치 완료와 Codex 실행 준비(준비 완료·신뢰 확인 필요·hook 검토 필요·신뢰 확인 실패 등)를 나눠 알리고, 신뢰한 뒤에는 `code-agent doctor --host codex`로 다시 확인한다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
+어느 쪽이든 **저장소에 들어가는 것은 같다.** `init`은 스킬 18개(보조 문서 16개 포함), 서브에이전트 8개와 hook 12개를 등록한다. hook은 도구 경계를 검사하는 PreToolUse(`code-agent hook`) 1개, AskUserQuestion의 질문·응답을 관찰하는 PreToolUse·PostToolUse(`code-agent consent-event`) 2개, Stop(`code-agent stop`) 1개, ca-reviewer의 SubagentStart·SubagentStop(`code-agent review-event`) 2개, 계획 담당의 SubagentStart·SubagentStop(`code-agent planning-event`) 2개, 구현·테스트 담당의 SubagentStart·SubagentStop(`code-agent agent-event`) 2개, 쉬는 메인을 깨우는 SubagentStop(`code-agent wake-event`, 백그라운드 `asyncRewake`) 1개, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart(`code-agent session-event`) 1개다. PreToolUse matcher 는 쓰기·셸·읽기 도구와 MCP 도구(`mcp__.*`)를 넘긴다. Codex 는 공통 hook 6개(도구 실행 전·사용자 메시지·담당 시작·담당 종료·턴 종료·세션 시작)를 쓰고, PreToolUse 항목만 비Windows 명령을 `… codex-event || exit 2`로 감싼다. Windows 용 `commandWindows`는 `cmd /c code-agent codex-event`에 종료 코드를 넘기는 꼴이다(Windows PowerShell 5.1 이 exit 2 를 바꾸지 않게 — [Codex 연동](codex.md)). 이전 버전으로 설치한 저장소는 `code-agent update --templates-only --host codex`로 새 꼴이 된다. Codex 는 프로젝트와 hook 을 신뢰해야 hook 을 돌린다 — Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰하고 'Hooks need review' 화면에서 hook 을 검토·신뢰한다(`codex exec`는 신뢰되지 않은 hook 을 알리지 않고 건너뛴다). `init`은 설치 완료와 Codex 실행 준비(준비 완료·신뢰 확인 필요·hook 검토 필요·신뢰 확인 실패 등)를 나눠 알리고, 신뢰한 뒤에는 `code-agent doctor --host codex`로 다시 확인한다. PATH에서 풀리므로 `.claude/settings.json`을 팀이 공유할 수 있다.
 
 | 누구 | 무엇을 |
 |---|---|
@@ -121,7 +121,7 @@ claude
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 스킬·에이전트 (26개 — 스킬 18 · 에이전트 8) | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| hook | Claude 11개·Codex 6개 — [등록·matcher·출력 정본](process-flow.md#5-hook-등록표) | O |
+| hook | Claude 12개·Codex 6개 — [등록·matcher·출력 정본](process-flow.md#5-hook-등록표) | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 버전 고정 | `.code-agent/version` | O |
@@ -135,7 +135,7 @@ claude
 code-agent 를 설치했습니다 — C:\work\shop
   - 스킬·에이전트 26개 · 보조 문서 16개: .claude/skills/ca-*, .claude/agents/ca-*
   - 모델·추론 강도: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium — code-agent model 로 확인·변경
-  - hook: .claude/settings.json → PreToolUse code-agent hook · 질문 Pre/PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart/Stop code-agent review-event · 계획 SubagentStart/Stop code-agent planning-event · 구현 SubagentStart/Stop code-agent agent-event · SessionStart code-agent session-event
+  - hook: .claude/settings.json → PreToolUse code-agent hook · 질문 Pre/PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart/Stop code-agent review-event · 계획 SubagentStart/Stop code-agent planning-event · 구현 SubagentStart/Stop code-agent agent-event · 깨우기 SubagentStop code-agent wake-event · SessionStart code-agent session-event
   - CLAUDE.md: code-agent 블록 생성
   - .gitignore: 개인 진행 상태·세션 확인 제외 (.code-agent/active.json, docs-session.json, request-session.json, log/, consents/, lease.json)
   - 버전 고정: .code-agent/version = 1.0.0
@@ -186,7 +186,7 @@ TTY가 없는 CI에서도 알림만으로 점검 실패가 되지는 않는다.
 | 적용 버전 | 이 프로젝트의 적용 버전(고정이 없으면 진입점 번들)과 적용 대기를 찍는다 | `runtime.json`을 읽지 못하거나 적용 버전이 릴리스 저장소에 없다 — `code-agent version`으로 확인하고 `update`로 다시 설치하거나 `update --bundled`로 고정을 푼다 |
 | git 저장소 | `.git` 이 있다 | 공통 문서 준비 후 같은 세션의 `setup` 확인으로 최초 커밋 또는 기존 저장소의 도입 커밋을 만든다. 직접 TTY에서는 `code-agent setup baseline`도 가능하다. 기존 Git 이력은 유지한다 |
 | hook 설정 파일 | `.claude/settings.json` 이 JSON 으로 읽힌다. 읽히면 이 줄은 나오지 않는다 | 깨진 자리를 그대로 찍는다. **고치기 전에는 `init`·`update` 도 멈춘다** — 그래서 hook 검사보다 먼저 본다 |
-| hook 등록 11개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `agent-event` 2개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic, agent는 ca-implementer·ca-tester에 연결된다 | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>`. 옛 matcher(MCP·읽기 도구 없음)는 ✗ 로 짚는다 |
+| hook 등록 12개 | `hook` 1개, `consent-event` 2개, `stop` 1개, `review-event` 2개, `planning-event` 2개, `agent-event` 2개, `wake-event` 1개, `session-event` 1개의 명령과 matcher를 확인한다. consent는 AskUserQuestion, review는 ca-reviewer, planning은 ca-analyst·ca-explorer·ca-writer·ca-critic, agent는 ca-implementer·ca-tester, wake는 그 담당 전부에 연결된다. wake 항목에 `asyncRewake`가 없으면 ✗ 로 짚는다(`update`가 고친다) | 설치 방식에 맞게 `update` 또는 `update --templates-only` 후 Claude Code 재시작. 개발 CLI 경로 오류는 `code-agent init --cli <경로>`. 옛 matcher(MCP·읽기 도구 없음)는 ✗ 로 짚는다 |
 | Codex 이벤트(Codex 설치 — 이벤트마다 한 줄) | `.codex/hooks.json`의 그 이벤트에 `codex-event` 명령이 있고, Windows 명령(`commandWindows`)이 이 버전의 꼴과 같다. `commandWindows`가 없어도 Codex 가 돌리는 `command`가 이 꼴과 같으면(`--cli` 설치의 Stop·Subagent·SessionStart) 맞는 것으로 본다 | 우리 이벤트가 하나도 없으면 `code-agent init`. 다른 이벤트는 있는데 일부만 없거나(이벤트가 늘기 전의 옛 설치 — SessionStart 등) Windows 명령만 다르면 `code-agent update --templates-only --host codex`(작업 중이면 작업이 끝난 뒤) |
 | Codex 프로젝트 신뢰 | 관리 실행과 같은 실행 파일·`CODEX_HOME`으로 Codex app-server 에 묻는다 — `config/read`가 이 저장소 `.codex`의 프로젝트 설정을 켰다. 물은 Codex 버전·실행 파일·`CODEX_HOME`을 함께 찍는다. 상위 폴더만 신뢰한 경우도 Codex 가 켜지 않으면 신뢰 필요다 | (`·`) 신뢰 필요 → Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰한 뒤 다시 doctor. 조회 실패·Codex 실행 파일 없음·Codex 갱신 필요(이 판정을 지원하지 않는 버전)도 `·`로 그 사유를 찍는다. Codex 샌드박스 안에서는 묻지 않고 터미널에서 확인하라고 알린다. 앞의 Codex 설치 줄이 막히면 '설치 복구 뒤 확인'이다 |
 | Codex 훅 신뢰 | `hooks/list`에서 code-agent hook 6개가 이 저장소 `.codex/hooks.json`에서 로드돼 신뢰·켜짐 상태다 | (`·`) 검토 필요 → 알린 hook 만(검토 전·바뀜·꺼짐) Codex 대화형 세션의 `/hooks`('Hooks need review')에서 검토·신뢰한다. 프로젝트를 신뢰하기 전에는 Codex 가 hook 을 읽지 않으므로 '프로젝트 신뢰 뒤 확인'이다. 사용자 설정에서 hook 기능을 끈 경우(`[features] hooks = false`)도 `·`다. (✗) Codex 가 이 저장소의 hook 을 로드하지 못했다(빠짐·읽기 오류) → `code-agent init` |
@@ -302,7 +302,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 
 | 무엇 | 어떻게 |
 |---|---|
-| `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 11개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
+| `.claude/settings.json` 의 **다른** hook·설정 | code-agent의 hook 등록 12개만 갱신한다. PreToolUse에는 도구 검사와 consent 관찰이 각각 있고, PostToolUse에도 consent 관찰이 있다 |
 | `CLAUDE.md` · `.gitignore` 의 **블록 밖** | 표시 블록 안쪽만 쓴다 |
 | 에이전트별 모델·추론 강도(`.code-agent/models.json`·`.code-agent/codex-models.json`) | 다시 설치한 정의 파일에 그 선택을 다시 바른다. 정의 파일의 model·effort가 설정과 달랐던 역할은 전후 값을 출력에 적는다(원인은 가리지 않는다) |
 | 개발용 `--cli` | 기본 소스 갱신과 `--templates-only` 모두 설치된 hook 명령의 꼴을 승계한다 — `code-agent …` 은 그대로 두고, 개발 CLI 경로(`node "<경로>" …`)는 그 경로를 잇는다. 새로 빌드한 이 PC 의 절대 경로를 공유 설정에 새로 박지 않는다. `--cli`를 명시하면 지정한 경로를 적용한다 |
@@ -310,7 +310,7 @@ hook 이 읽기 호출을 받아 `~/.code-agent/` 의 키 파일을 닫는다 �
 ```
 code-agent 를 1.0.0 → 1.1.0 으로 갱신했습니다 — C:\work\shop
   - 스킬·에이전트 3개 갱신: .claude/skills/ca-plan/SKILL.md · …
-  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · 질문 PreToolUse code-agent consent-event · 질문 PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart code-agent review-event · SubagentStop code-agent review-event · 계획 SubagentStart code-agent planning-event · 계획 SubagentStop code-agent planning-event · 구현 SubagentStart code-agent agent-event · 구현 SubagentStop code-agent agent-event · SessionStart code-agent session-event)
+  - .claude/settings.json: 그대로 (PreToolUse code-agent hook · 질문 PreToolUse code-agent consent-event · 질문 PostToolUse code-agent consent-event · Stop code-agent stop · SubagentStart code-agent review-event · SubagentStop code-agent review-event · 계획 SubagentStart code-agent planning-event · 계획 SubagentStop code-agent planning-event · 구현 SubagentStart code-agent agent-event · 구현 SubagentStop code-agent agent-event · 깨우기 SubagentStop code-agent wake-event · SessionStart code-agent session-event)
   - CLAUDE.md: 갱신
   - .gitignore: 그대로
   - 에이전트 모델 오버라이드 1개 유지: implementer=opus/medium
@@ -347,7 +347,7 @@ AI-DLC 와 code-agent 는 번갈아 쓴다. 같은 브랜치에 진행 중인 AI
 | # | 무엇 | 어떻게 |
 |---|---|---|
 | 1 | 스킬·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` 삭제 |
-| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent consent-event`(PreToolUse·PostToolUse), `code-agent stop`(Stop), `code-agent review-event`·`code-agent planning-event`·`code-agent agent-event`(각 SubagentStart·SubagentStop), `code-agent session-event`(SessionStart) 등록 11개를 제거한다. **설정 파일 전체를 지우지 않는다** |
+| 2 | hook | `.claude/settings.json`의 `code-agent hook`(PreToolUse), `code-agent consent-event`(PreToolUse·PostToolUse), `code-agent stop`(Stop), `code-agent review-event`·`code-agent planning-event`·`code-agent agent-event`(각 SubagentStart·SubagentStop), `code-agent wake-event`(SubagentStop), `code-agent session-event`(SessionStart) 등록 12개를 제거한다. **설정 파일 전체를 지우지 않는다** |
 | 3 | 블록 | `CLAUDE.md` · `.gitignore` 의 `code-agent:start` ~ `end` 블록 제거 (블록 밖은 그대로) |
 | 4 | 진행 상태 | `.code-agent/` 는 **남긴다** — 승인·확정 원장과 검증 증거가 git 이력에 남은 커밋의 근거다. 정말 지울 것이면 그 이력도 근거를 잃는다는 것을 알고 지운다 |
 | 5 | 도구 | npm 전역이면 `npm rm -g code-agent`, 단일 실행 파일이면 그 파일 삭제 |

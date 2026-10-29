@@ -17,7 +17,7 @@ import {
   templateHash,
 } from "./assets";
 import { checkProjectDocs } from "./docs";
-import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, IMPLEMENT_MATCHER, installedHook, settingsProblem, unmatchedTools } from "./init";
+import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, IMPLEMENT_MATCHER, installedHook, settingsProblem, unmatchedTools, WAKE_MATCHER, wakeHookAsync } from "./init";
 import { hostReadiness } from "./master/hostProfile";
 import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
@@ -239,8 +239,9 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
       }
       const problem = hookProblem(command, onPath);
       const unmatched = subcommand === "planning-event" ? unmatchedTools(repoRoot, event, "ca-analyst|ca-explorer|ca-writer|ca-critic", subcommand)
-        : subcommand === "agent-event" ? unmatchedTools(repoRoot, event, IMPLEMENT_MATCHER, subcommand) : subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
+        : subcommand === "agent-event" ? unmatchedTools(repoRoot, event, IMPLEMENT_MATCHER, subcommand) : subcommand === "wake-event" ? unmatchedTools(repoRoot, event, WAKE_MATCHER, subcommand) : subcommand === "consent-event" ? unmatchedTools(repoRoot, event, "AskUserQuestion") : event === "PreToolUse" ? unmatchedTools(repoRoot) : event.startsWith("Subagent") ? unmatchedTools(repoRoot, event, "ca-reviewer") : [];
       if (problem) add("✗", `${event} hook`, `${command} — ${problem}`, "code-agent init [--cli <경로>] — 수동 스킬·에이전트 사본은 보존합니다");
+      else if (subcommand === "wake-event" && !wakeHookAsync(repoRoot)) add("✗", `${event} hook`, `${command} — asyncRewake 가 없어 깨우기가 꺼져 있습니다`, "code-agent update");
       else if (unmatched.length > 0) {
         add("✗", `${event} hook`, `${command} — matcher 가 ${unmatched.join(" · ")} 를 넘기지 않습니다`, "code-agent update");
       } else add("✓", `${event} hook`, command);

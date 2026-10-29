@@ -53,7 +53,7 @@ beforeEach(() => { scratch = mkdtempSync(join(tmpdir(), "ca-hookload-")); });
 afterEach(() => { rmSync(scratch, { recursive: true, force: true }); });
 
 describe("hook 기동 — 모듈 그래프", () => {
-  for (const entry of ["hook.js", "codexHook.js", "stopHook.js", "sessionHook.js", "agentHook.js"]) {
+  for (const entry of ["hook.js", "codexHook.js", "stopHook.js", "sessionHook.js", "agentHook.js", "wakeHook.js"]) {
     test(`${entry} 는 명령 모듈을 읽지 않는다`, () => {
       const heavy = heavyIn(loaded(entry), entry);
       assert.deepEqual(heavy, [], `${entry} 가 ${heavy.join(", ")} 를 읽습니다 — hook 경로에서 명령 모듈을 import하지 마세요(지연 로드는 cli.ts HOOKS·분기 안 require)`);
@@ -128,6 +128,8 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
     ["agent-event", "./agentHook", JSON.stringify({ hook_event_name: "SubagentStart" })],
     ["agent-event", "./agentHook", JSON.stringify({ hook_event_name: "SubagentStop" })],
     ["agent-event", "./agentHook", "not json"],
+    ["wake-event", "./wakeHook", JSON.stringify({ hook_event_name: "SubagentStop" })],
+    ["wake-event", "./wakeHook", "not json"],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "PreToolUse" })],
     ["codex-event", "./codexHook", "not json"],
     ["codex-event", "./codexHook", JSON.stringify({ hook_event_name: "Stop" })],
@@ -192,7 +194,8 @@ describe("hook 기동 — 모듈 로드 실패는 hookFailureExit 표를 따른�
     const code = (command: HookFailureInput["command"], stdin: string) => hookFailureExit(hookFailureInput(command, stdin)).code;
     assert.deepEqual([code("stop", "{}"), code("session-event", "{}"), code("hook", "{}"), code("consent-event", "{\"hook_event_name\":\"PreToolUse\"}"),
       code("planning-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("planning-event", "{\"hook_event_name\":\"SubagentStop\"}"),
-      code("agent-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("agent-event", "not json")], [0, 0, 2, 2, 2, 0, 0, 0]);
+      code("agent-event", "{\"hook_event_name\":\"SubagentStart\"}"), code("agent-event", "not json"),
+      code("wake-event", "{\"hook_event_name\":\"SubagentStop\"}"), code("wake-event", "not json")], [0, 0, 2, 2, 2, 0, 0, 0, 0, 0]);
     assert.match(hookFailureExit(hookFailureInput("codex-event", "not json")).stdout ?? "", /"permissionDecision":"deny"/);
   });
 });

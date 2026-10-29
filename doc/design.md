@@ -2,7 +2,7 @@
 
 작업 커서는 Git 브랜치 이름에 결속한다. `branchCursor.ts`는 현재 HEAD와 일치하는 커서만 반환하고, 다른 작업을 저장할 때 이전 커서·세션 임대를 별도 보관한다. 조회는 기록을 바꾸지 않으며 승인·검증은 기존 근거를 그대로 대조한다. 접수·문서 준비는 checkout 단위이고 동시 실행은 worktree로 분리한다. 브랜치 없는 이전 커서는 저장소 단위로 유지한다.
 
-호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md)을 따른다. 아래 Claude 경로·도구·11개 훅 설명은 Claude 어댑터 기준이다.
+호스트 분리는 `hosts.ts`의 설치·자원 변환, `codexHook.ts`의 이벤트 변환으로 처리한다. 단계·계획·검증·리뷰·동의 판정은 공유한다. Codex의 별도 승인 출처는 `codex-prompt`이며 Claude는 `claude-question`을 유지한다. 상세 계약·경로·한계는 [Codex 연동](codex.md)을 따른다. 아래 Claude 경로·도구·12개 훅 설명은 Claude 어댑터 기준이다.
 
 전용 Read 도구가 없는 호스트에는 `read.ts`의 `code-agent read`가 줄 번호 기반 파일 읽기를 제공한다. 실제 경로가 저장소 안인지 확인하고 기존 Read 보호를 적용하며 셸 표현식은 실행하지 않는다. Windows 신뢰 키·부모 실행 기록·실제 훅 호출의 검증 절차는 [Codex 연동](codex.md#동작과-검증)을 따른다.
 
@@ -23,7 +23,7 @@
 
 실행은 **Claude Code 안에서 모델이 도구를 직접 쓰는 구조**다. `code-agent init`은 스킬(`.claude/skills/ca-*`), 서브에이전트(`.claude/agents/ca-*`), hook과 `CLAUDE.md` 블록을 설치하고 종료한다. 같은 프로젝트에서 `claude`를 실행하고 `/ca-request`로 공통 접수한다. 신규·기능 변경은 `/ca-feature`, 결함 수정은 `/ca-fix`, 동작 보존은 `/ca-refactor`로 종류를 명시할 수도 있다.
 
-메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI는 호출마다 검사·실행·기록 후 종료한다. hook은 Claude 11개·Codex 6개를 등록한다. 이벤트별 역할과 종료 동작은 [흐름도 §5](process-flow.md#5-hook-등록표)를 따른다.
+메인 대화가 스킬 18개의 절차를 따르고 필요한 서브에이전트 8개를 호출한다. 별도 메인 에이전트 등록이나 상주 서버는 없다. `code-agent` CLI는 호출마다 검사·실행·기록 후 종료한다. hook은 Claude 12개·Codex 6개를 등록한다. 이벤트별 역할과 종료 동작은 [흐름도 §5](process-flow.md#5-hook-등록표)를 따른다.
 
 기본 사용 흐름은 `/ca-request`로 접수하고 같은 Claude Code 화면의 질문·확인에 답하면 계속 진행하는 방식이다. `/ca-next`는 중단된 접수·작업을 재개할 때 사용한다. 초기 준비의 `setup` 확인은 POLICY 4종 확정과 필요한 최초/도입 준비 커밋을 묶으며, 이미 준비된 프로젝트에서 작업마다 반복하지 않는다. 요구사항·계획·결과는 각각의 내용을 확인하되 별도 TTY를 필수로 요구하지 않는다.
 
@@ -778,7 +778,7 @@ npm 설치면 패키지 폴더에서, 단일 실행 파일이면 `node:sea` 의 
 
 | 대상 저장소에 생기는 것 | 커밋 |
 |---|---|
-| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 11개, `.code-agent/version` | O |
+| `CLAUDE.md` 의 code-agent 블록, `.claude/skills/ca-*`, `.claude/agents/ca-*`, `.claude/settings.json`의 hook 등록 12개, `.code-agent/version` | O |
 | `code-agent.json` (`docs.*` · `conventions` 에 문서 경로 등록, `git.base`, 단계 정의 — `kinds` 로 종류별, build · test · **prepare**(선택) · commands · **plugins**(선택, 자리 선언만 — 키는 없다)) | O |
 | 공통 POLICY — `doc/architecture.md` · `doc/conventions.md` · `doc/test-strategy.md` · `doc/quality.md` | O |
 | 공통 KNOWLEDGE — `doc/knowledge/data-dictionary.md` · `api-catalog.md` · `business-rules.md` · `features.md` · `flows.md`. 도입 때 빈 뼈대, 반영마다 자란다 | O |

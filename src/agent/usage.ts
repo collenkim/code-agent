@@ -671,10 +671,10 @@ function hookSummaries(repoRoot: string, filter: Filter): HookSummary[] {
   return [...groups.values()].sort((a, b) => b.chars - a.chars || a.event.localeCompare(b.event));
 }
 
-const HOOK_KIND: Record<HookOutputKind, string> = { deny: "거부", block: "차단", return: "되돌림", context: "주입" };
+const HOOK_KIND: Record<HookOutputKind, string> = { deny: "거부", block: "차단", return: "되돌림", context: "주입", wake: "깨움" };
 function hookBlock(hooks: HookSummary[]): string[] {
   if (!hooks.length) return [];
-  return ["hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용)", ...hooks.map((row) =>
+  return ["hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입·깨움, 기록 — 읽기 전용)", ...hooks.map((row) =>
     `  ${row.host} ${row.event} ${HOOK_KIND[row.kind]}${row.tool ? `(${row.tool})` : ""}: ${row.count}회 · ${row.chars.toLocaleString("en-US")}자${row.repeats ? ` · 같은 글 반복 ${row.repeats}` : ""}`)];
 }
 

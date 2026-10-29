@@ -15,7 +15,7 @@ code-agent는 **Claude Code 또는 Codex 안에서** 실행한다. `init`은 실
 
 작업 종류는 최초 접수 요구로 정한다. feature 작업의 후속 수정·검증 실패도 같은 ID·feature로 이어간다. 접수를 닫아도 ID·종류는 보존하며 다른 종류로 다시 접수할 수 없다. 다른 브랜치에 보관된 작업 ID는 그 브랜치에서 재개하고 현재 브랜치에 중복 생성하지 않는다. 요구 변경은 같은 ID 로 확정 개정 기준의 변경안(추가·수정·삭제)을 제출·확정한다 — 아래 [같은 ID 의 후속 요청](#같은-id-의-후속-요청--요구-변경안).
 
-모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 11개(이벤트 6종), Codex 공통 hook 등록 6개와 `code-agent` CLI가 맡는다.
+모델이 도구를 직접 쓰고 규칙은 실행 절차·에이전트 정의에 있다. Claude는 `.claude/`, Codex는 `.agents/skills/`와 `.codex/agents/`를 읽는다. 진행 조건 검사와 결과 기록은 Claude hook 등록 12개(이벤트 6종), Codex 공통 hook 등록 6개와 `code-agent` CLI가 맡는다.
 
 사용자 안내는 **준비 → 요구 확인 → 계획 확인 → 개발·검증 → 결과 확인**으로 요약한다. 내부 단계 명령을 기억할 필요 없이 요구를 말하고 필요한 선택에 답하면 사이클을 이어간다. 문서·요구·계획·반영 확인은 같은 세션에서 호스트별 응답 절차로 받는다.
 
@@ -130,7 +130,7 @@ claude                                   # 이 안에서 /ca-request 입력
 | 무엇 | 자리 | 커밋 |
 |---|---|---|
 | 실행 절차·에이전트 | `.claude/skills/ca-*` · `.claude/agents/ca-*` | O |
-| hook | Claude 11개·Codex 6개 — 등록·matcher·출력은 [흐름도 §5](process-flow.md#5-hook-등록표) | O |
+| hook | Claude 12개·Codex 6개 — 등록·matcher·출력은 [흐름도 §5](process-flow.md#5-hook-등록표) | O |
 | 절차 블록 | `CLAUDE.md` 의 `<!-- code-agent:start -->` ~ `end` 사이 | O |
 | 제외 목록 | `.gitignore` 의 `# code-agent:start` ~ `end` 사이 | O |
 | 설치한 절차 버전 | `.code-agent/version` | O |
@@ -773,7 +773,7 @@ code-agent 명령별 호출: consent finish 4 · consent prepare 4 · planning a
 재시도·재배정 (작업 기록, 읽기 전용)
   ORD-1/order: 배정 14회(재배정 3) · 첫 시도 통과 analysis 1/1 · critic 1/1 · design 1/1 · impact 1/2(질문 대기 1) · plan 0/1 · 형식 교정 1 · 리뷰 회차 1 · 교차 지점 시도 2 · 초안 이어 쓰기 1 · 거부 규칙 PLN-SEQ 1 · 실패 원인 agent-format-error 1 · cross-unavailable 1 · 교차 실행 2회 412초 비용 0.81 USD 토큰 입력 12·캐시 쓰기 41,200·캐시 읽기 188,400·출력 3,050
 
-hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용)
+hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입·깨움, 기록 — 읽기 전용)
   claude PreToolUse 거부(Bash): 6회 · 5,120자 · 같은 글 반복 2
   claude SubagentStop 되돌림(ca-analyst): 1회 · 640자
   claude Stop 차단: 1회 · 410자
@@ -799,7 +799,7 @@ hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, �
 | 명령별 호출 | 셸 도구의 `code-agent <명령>` — `planning`·`consent`·`docs`·`request`·`review`·`plan`·`plugin`·`setup`·`manifest`·`knowledge`·`model` 은 셋째 낱말까지, `--chain`·`--json`·`--retry` 는 키에 붙인다 |
 | 스킬 읽기 | 읽기 도구(Codex 는 `code-agent read`)가 연 `.claude/skills/`·`.agents/skills/` 아래 파일 |
 | 문서 탐색 | 스테이지별로, `code-agent.json` 에 등록된 공통 POLICY·KNOWLEDGE 경로를 연 읽기·검색 도구(Read·Grep·Glob) 호출, 그 경로를 언급한 셸 명령, `code-agent knowledge find`. 작업 폴더 문서는 세지 않는다. 문서 생성·갱신 비용은 같은 구간의 토큰·호출 표에 함께 들어 있다 |
-| hook 출력 | `.code-agent/log/hooks.jsonl` — hook 이 모델에게 낸 PreToolUse 거부·Stop 차단·질문 도구 막음·담당 되돌림·세션 시작 주입의 호스트·이벤트·도구·글자 수·글 해시(글은 남기지 않는다). `같은 글 반복` 은 같은 세션에서 같은 글이 앞서 나온 횟수다 |
+| hook 출력 | `.code-agent/log/hooks.jsonl` — hook 이 모델에게 낸 PreToolUse 거부·Stop 차단·질문 도구 막음·담당 되돌림·세션 시작 주입·쉬는 메인 깨움의 호스트·이벤트·도구·글자 수·글 해시(글은 남기지 않는다). `같은 글 반복` 은 같은 세션에서 같은 글이 앞서 나온 횟수다 |
 | 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로(담당 되돌림·형식 교정 포함), 실패 원인은 기록된 `failure.class`, 계획 담당의 역할별 첫 시도 통과(결과까지 간 첫 시도가 되돌림·형식 교정 없이 완료나 질문 대기로 끝난 task 수 / task 수 — 질문 대기는 정상 결정 대기라 통과로 세고 괄호에 따로 적는다, 입력 변경으로 취소된 시도는 첫 시도가 아니다), 초안 이어 쓰기(직전 미완성 초안이 남은 채 다시 배정한 수), 거부 규칙(기록된 실패와 Claude 되돌림 문구의 규칙 식별자별 횟수), 교차 실행은 시도마다 남긴 시간·비용·토큰의 합(Claude 는 입력·캐시 쓰기·캐시 읽기·출력, Codex 는 `tokens used` 합계 하나 — 캐시 아닌 입력 + 출력). Claude 교차 실행은 대화 기록을 남기지 않으므로 그 사용량은 이 줄에만 나온다. 개선 효과는 같은 시나리오·호스트·모델로 돈 작업끼리 첫 시도 통과·거부 규칙·재배정과 위 토큰 표를 비교해 본다 — 단위 시험이나 한 번의 실행으로 판단하지 않는다. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
 | 실행 타임라인 | `.code-agent/log/timeline.jsonl`(덧붙이기만 하는 측정 기록, 작업별로 묶는다) — 담당 실행(담당 시작~완료), 빌드·테스트(검증 명령 한 실행), 사람 응답 대기(동의 준비~응답, 흐름의 사람 판단), 외부 의존 대기(흐름의 결과 대기), 호스트 재개 대기(담당 완료·완료 알림·턴 종료부터 호스트의 다음 명령·도구 호출까지 — 담당이 도는 동안 끝난 턴은 세지 않고, Stop hook 이 막은 턴은 이어지는 턴이며, 사람이 터미널에서 친 명령은 대기를 닫지 않고 사람 입력으로 표시한다). Claude 는 메인 대화 기록의 완료 알림(`<task-notification>`)·사람 입력·도구 호출 시각을, Codex 는 hook 이 남긴 사람 입력 시각을 함께 쓴다(본문은 남기지 않는다). 분류 시간은 같은 분류의 겹침을 한 번만 센 합집합이고, 괄호 값은 겹친 시간을 빌드·테스트 > 담당 > 사람 > 외부 > 호스트 재개 순으로 하나에만 넣은 값이다 — 괄호 값의 합과 `그 밖`(어느 구간에도 들지 않은 시간)이 경과와 같다. 끝까지 닫히지 않은 구간은 `열림`으로 센다. 대기 구간은 긴 순 10개까지 사유·단계·작업 ID·배정 ID 앞 8자와 함께, 무효화·재시도 사유는 마지막 10개를 싣는다. 런타임은 그 줄을 쓴 코드(릴리스 ID 또는 `bundle@<버전>`)라 버전을 바꿔 가며 돈 실행을 가른다 |
 
@@ -1028,6 +1028,7 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `code-agent integrate` | 통합 검증 — 기준 커밋의 깨끗한 worktree에 변경을 얹고 prepare → build·test. prepare 실패 시 후속 실행 중단. 통과하면 커서를 반영(deliver)으로 옮긴다 |
 | `code-agent review-event` | ca-reviewer SubagentStart/Stop hook 전용. 리뷰어 실행·결과 기록 |
 | `code-agent agent-event` | ca-implementer·ca-tester SubagentStart/Stop hook 전용. 판정 없이 담당 실행 구간과 완료만 기록한다 — 실패해도 담당을 막지 않는다 |
+| `code-agent wake-event` | 담당 SubagentStop 의 백그라운드(`asyncRewake`) hook 전용. 대화형 Claude 세션에서 처리하지 않은 담당 완료가 남은 채 메인이 쉬면 다음 명령을 사유로 한 번 깨운다 — 사람 판단 자리·메인이 처리한 완료에서는 깨우지 않고, 실패해도 담당을 막지 않는다 |
 | `code-agent review cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 리뷰 — 다른 호스트를 읽기 전용으로 실행해 마지막 회차를 검토하고 ⑨ `## 교차 지적`(X 번호)에 기록. CLI 가 9분에 끊는다 — 사람이 셸에서 `CODE_AGENT_CROSS_TIMEOUT_MIN`(분, 기본 9, 소수 허용)으로 바꾼다. Codex 셸에서 `--by claude` 면 샌드박스 표지를 보고 claude 를 띄우기 전에 멈추고 권한 상승을 안내한다 — 이 사전 점검은 사람이 셸에서 `CODE_AGENT_CROSS_PREFLIGHT=off` 로만 끈다 |
 | `code-agent planning cross --by <호스트>` | 두 호스트 설치 프로젝트의 교차 계획 검토 — 현재 critic 결과를 다른 호스트가 검토. critic 결과마다 한 번. 제한 시간(`CODE_AGENT_CROSS_TIMEOUT_MIN`)·사전 점검(`CODE_AGENT_CROSS_PREFLIGHT`)은 `review cross` 와 같다 |
 | `code-agent doctor --cross` | 두 호스트 설치 때 다른 호스트의 `--help` 로 교차 실행이 쓰는 옵션이 모두 있는지 점검(모델 호출 없음). 읽기 전용이라 작업 중에도 모델이 부를 수 있다(교차 설정 오류 안내가 가리킨다) |

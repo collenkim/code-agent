@@ -946,7 +946,7 @@ describe("P8 · usage 호출·재시도 집계", () => {
       "",
     ].join("\n"));
     const text = usage(repo, { transcripts: dir });
-    assert.match(text, /hook 출력 \(모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용\)\n  claude PreToolUse 거부\(Bash\): 2회 · 1,600자 · 같은 글 반복 1\n  codex SessionStart 주입\(startup\): 1회 · 300자\n  claude Stop 차단: 1회 · 120자/);
+    assert.match(text, /hook 출력 \(모델에게 간 거부·차단·되돌림·세션 시작 주입·깨움, 기록 — 읽기 전용\)\n  claude PreToolUse 거부\(Bash\): 2회 · 1,600자 · 같은 글 반복 1\n  codex SessionStart 주입\(startup\): 1회 · 300자\n  claude Stop 차단: 1회 · 120자/);
     assert.equal(usage(repo, { transcripts: dir, since: "2026-10-01T00:00:00.000Z" }).includes("hook 출력"), false, "--since 밖의 기록은 세지 않는다");
   });
 

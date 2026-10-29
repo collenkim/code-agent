@@ -22,7 +22,7 @@ export const AGENT_RUNS_FILE = `${STATE_DIR}/agent-runs.json`;
 export type RunSource = "planning" | "review" | "implement";
 type Host = "claude" | "codex";
 export interface AgentRun { source: RunSource; type: string; phase: string; startedAt: string; session?: string; host?: Host; returnedAt?: string }
-export interface Completion { eventId: string; agent: string; source: RunSource; type: string; status: string; phase: string; at: string; session?: string; host?: Host }
+export interface Completion { eventId: string; agent: string; source: RunSource; type: string; status: string; phase: string; at: string; session?: string; host?: Host; wokenAt?: string }
 interface WorkRuns { running: Record<string, AgentRun>; completed?: Completion }
 interface Ledger { version: 1; works: Record<string, WorkRuns> }
 
@@ -96,6 +96,29 @@ export function settleAgent(root: string, agent: string, status: string): void {
       ...(run.session ? { session: run.session } : {}), ...(run.host ? { host: run.host } : {}) };
     return true;
   });
+}
+
+/** 회수한 배정의 담당 — 끝을 관찰하지 못해도(되돌림 뒤 종료·중단) 실행 중으로 세지 않는다(planning cancel). 나중에 오는 늦은 결과는 완료로 남지 않는다 */
+export function forgetAgents(root: string, workId: string, agents: readonly string[]): void {
+  if (!agents.length || !existsSync(join(root, AGENT_RUNS_FILE))) return;
+  mutate(root, (ledger) => {
+    const entry = ledger.works[workId];
+    const known = agents.filter((agent) => entry?.running[agent]);
+    for (const agent of known) delete entry!.running[agent];
+    return known.length > 0;
+  }, TIMING.lockWaitMs);
+}
+
+/** 이 완료로 쉬는 메인을 깨울 차례를 잡는다 — 같은 완료(eventId)는 한 번만 잡힌다(동시에 끝난 깨우기 hook 둘 중 하나). 잡았으면 true */
+export function claimWake(root: string, workId: string, eventId: string): boolean {
+  let claimed = false;
+  mutate(root, (ledger) => {
+    const completed = ledger.works[workId]?.completed;
+    if (completed?.eventId !== eventId || completed.wokenAt) return false;
+    completed.wokenAt = new Date().toISOString();
+    return claimed = true;
+  });
+  return claimed;
 }
 
 /** 메인이 진행 명령을 실행했다 — 지금 작업의 완료를 처리된 것으로 본다(cliMain.runCommand) */

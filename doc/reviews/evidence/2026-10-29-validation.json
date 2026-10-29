@@ -10,118 +10,84 @@
     "codex": "0.165.0"
   },
   "stateSchema": 19,
-  "stateSchemaNote": "담당 실행 장부(agent-runs.json)는 게이트·배정·승인 판정에 쓰지 않아 세대를 올리지 않음",
+  "stateSchemaNote": "담당 실행 장부(agent-runs.json)와 완료의 wokenAt 은 게이트·배정·승인 판정에 쓰지 않아 세대를 올리지 않음",
   "scopedTests": [
     {
-      "group": "이어가기·hook·문서·템플릿",
-      "command": "node --test --test-concurrency=2 <파일 16개>",
+      "group": "깨우기·이어가기·요구 개정",
+      "command": "node --test --test-concurrency=4 <파일 4개>",
       "files": [
+        "wakeHook",
         "agentContinuation",
-        "reproScenarios",
         "hookLoad",
-        "docSync",
-        "docs",
-        "templateText",
-        "templateBudget",
-        "hostNotation",
-        "hostText",
-        "retryPolicy",
-        "codex",
-        "stage-commands",
-        "questionPresentation",
-        "timeline",
-        "hookPaths",
-        "assets-doctor-usage"
+        "requestRevisionFlow"
       ],
-      "tests": 328,
-      "durationSeconds": 161.9,
-      "pass": 328,
-      "fail": 0,
-      "rerunAfterTestFix": [
-        "templateText",
-        "hookLoad"
-      ]
-    },
-    {
-      "group": "계획·리뷰·상태 조회",
-      "command": "node --test --test-concurrency=2 <파일 11개>",
-      "files": [
-        "planning",
-        "planningRecovery",
-        "planningRetry",
-        "planningChainFlow",
-        "resultContracts",
-        "review-gate",
-        "crossReview",
-        "fullReview",
-        "finalReverify",
-        "stateView",
-        "lease"
-      ],
-      "tests": 290,
-      "durationSeconds": 464.7,
-      "pass": 290,
-      "fail": 0,
-      "rerunAfterTestFix": [
-        "planning"
-      ]
-    },
-    {
-      "group": "동의·진행 명령·재개",
-      "command": "node --test --test-concurrency=2 <파일 30개>",
-      "files": [
-        "consentBinding",
-        "consentOutput",
-        "consentSnapshot",
-        "consentScreens",
-        "answers",
-        "command",
-        "coexistence",
-        "choiceProtocol",
-        "choiceServer",
-        "branchCursor",
-        "branchResume",
-        "triage",
-        "experience",
-        "verification-flow",
-        "verification-stages",
-        "stageFlow",
-        "masterCodex",
-        "nodeRuntime",
-        "build",
-        "runtimeRelease",
-        "agent",
-        "adoption",
-        "codexReadiness",
-        "process",
-        "selection",
-        "masterRuns",
-        "installRobustness",
-        "master",
-        "executionMode",
-        "masterPairing"
-      ],
-      "tests": 482,
-      "durationSeconds": 717.3,
-      "pass": 482,
+      "tests": 55,
+      "durationSeconds": 90.6,
+      "pass": 55,
       "fail": 0
     },
     {
-      "group": "계획 교차·연쇄·요구 개정·반영",
-      "command": "node --test --test-concurrency=2 <파일 7개>",
+      "group": "계획",
+      "command": "node --test --test-concurrency=4 <파일 2개>",
       "files": [
-        "planningCross",
-        "planningChain",
-        "dependencyContracts",
-        "scripts",
-        "modelPolicy",
-        "requestRevisionFlow",
-        "integrate-deliver"
+        "planningRetry",
+        "planning"
       ],
-      "tests": 96,
-      "pass": 96,
+      "tests": 65,
+      "durationSeconds": 93.5,
+      "pass": 65,
+      "fail": 0
+    },
+    {
+      "group": "설치·hook·관리 실행·재현",
+      "command": "node --test --test-concurrency=4 <파일 9개>",
+      "files": [
+        "retryPolicy",
+        "stage-commands",
+        "assets-doctor-usage",
+        "installRobustness",
+        "codex",
+        "timeline",
+        "master",
+        "masterRuns",
+        "reproScenarios"
+      ],
+      "tests": 224,
+      "durationSeconds": 92.6,
+      "pass": 224,
+      "fail": 0
+    },
+    {
+      "group": "문서 대조·usage",
+      "command": "node --test --test-concurrency=4 <파일 5개>",
+      "files": [
+        "assets-doctor-usage",
+        "docSync",
+        "docs",
+        "hookPaths",
+        "scripts"
+      ],
+      "tests": 153,
+      "durationSeconds": 65.3,
+      "pass": 153,
       "fail": 0,
-      "durationSeconds": 184.7
+      "rerunAfterTestFix": [
+        "assets-doctor-usage"
+      ]
+    },
+    {
+      "group": "계획 회복·연쇄·상태 조회",
+      "command": "node --test --test-concurrency=4 <파일 4개>",
+      "files": [
+        "planningRecovery",
+        "planningChainFlow",
+        "stateView",
+        "consentSnapshot"
+      ],
+      "tests": 107,
+      "durationSeconds": 101.8,
+      "pass": 107,
+      "fail": 0
     }
   ],
   "lastFullTest": {
@@ -178,7 +144,7 @@
     ],
     "contentGatePassed": true,
     "notVerified": [
-      "Claude 대화형 세션에서 Stop 이어가기 차단이 턴을 잇는 모습",
+      "Claude 대화형 세션에서 Stop 이어가기 차단·wake-event 깨우기가 턴을 잇는 모습",
       "관리 실행(master supervise) 자체",
       "Codex 실제 호스트"
     ],
@@ -248,18 +214,18 @@
   },
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
-    "files": 222,
-    "compressedBytes": 891480,
-    "unpackedBytes": 3103824,
-    "agentFiles": 161,
+    "files": 223,
+    "compressedBytes": 895493,
+    "unpackedBytes": 3117001,
+    "agentFiles": 162,
     "coreFiles": 13,
     "templateFiles": 46,
     "testFiles": 0
   },
   "limitations": [
     "이번 변경 뒤 전체 시험은 실행하지 않았다.",
-    "메인이 쉬는 동안 완료 알림이 새 턴을 열지 않으면 hook 이 메인을 깨울 길은 없다 — 다음 세션 시작 요약이 처리하지 않은 완료를 알린다.",
-    "실제 Claude 대화형 세션과 실제 Codex 에서 이어가기 차단이 턴을 잇는지는 확인하지 않았다. Codex 완료 알림은 관측하지 않는다.",
+    "쉬는 메인 깨우기는 Claude 대화형 CLI 에서 확인한 호스트 버전(2.1.312 이상)과 asyncRewake 설치가 있을 때만 동작한다 — 그 밖에서 완료 알림이 새 턴을 열지 않으면 다음 세션 시작 요약이 처리하지 않은 완료를 알린다. Codex 에는 깨우기 hook 이 없다.",
+    "실제 Claude 대화형 세션에서 깨우기·이어가기 차단이 턴을 잇는지, 실제 Codex 에서 이어가기 차단이 턴을 잇는지는 확인하지 않았다. Codex 완료 알림은 관측하지 않는다.",
     "백그라운드로 돌린 긴 검증 명령(Bash run_in_background)의 완료는 담당 실행 장부에 남지 않아 이어가기 대상이 아니다.",
     "분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 같은 회차에서 이미 고친 Task 파일은 다시 고치지 않아도 지난다(새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다).",
     "이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다 — 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.",
@@ -267,12 +233,59 @@
     "자동 회귀는 실제 모델·실제 사람 승인·사용자 사용성 검사가 아니다."
   ],
   "validationConditions": [
-    "실제 모델 호출은 Claude print 모드 평가 1회(sonnet, $1.5 한도, 비용 $0.47)",
+    "실제 모델 호출은 Claude print 모드 평가 1회(sonnet, $1.5 한도, 비용 $0.47)와 스트리밍 입력 깨우기 실측 1회(haiku, $0.3 한도, 비용 약 $0.013)",
     "대상 프로젝트 시험은 임시 Git 저장소에서 실행",
     "저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
-    "범위 시험 묶음은 서로 겹치지 않게 차례로 실행 — 셋째 묶음은 실제 호스트 평가와 함께 돌았다"
+    "범위 시험 묶음은 서로 겹치지 않게 차례로 실행"
   ],
   "notRerun": {
     "reason": "이 변경이 닿지 않는 시험 파일은 다시 실행하지 않음"
+  },
+  "previousScopedTests": {
+    "commit": "085d283",
+    "groups": 4,
+    "tests": 1196,
+    "pass": 1196,
+    "fail": 0
+  },
+  "wakeProbe": {
+    "host": "Claude Code 2.1.312",
+    "mode": "스트리밍 입력(-p --input-format stream-json --output-format stream-json)",
+    "model": "haiku",
+    "budgetUsd": 0.3,
+    "costUsd": 0.013,
+    "hook": "SubagentStop asyncRewake(15초 뒤 exit 2, 임시 폴더의 프로젝트 hook — code-agent 의 wake-event 가 아님)",
+    "userMessagesAfterPrompt": 0,
+    "subagentStopBlocked": false,
+    "mainIdleBeforeWake": true,
+    "exitToNewTurnMs": 26,
+    "woke": true,
+    "subagentStopInput": [
+      "session_id",
+      "transcript_path",
+      "cwd",
+      "prompt_id",
+      "permission_mode",
+      "agent_id",
+      "agent_type",
+      "effort",
+      "hook_event_name",
+      "stop_hook_active",
+      "agent_transcript_path",
+      "last_assistant_message",
+      "background_tasks",
+      "session_crons"
+    ],
+    "transcriptVersion": "2.1.312",
+    "hookEnv": {
+      "CLAUDE_CODE_ENTRYPOINT": "sdk-cli",
+      "CLAUDE_CODE_SESSION_ATTENDED": "0"
+    },
+    "interactiveHookEnv": {
+      "CLAUDE_CODE_ENTRYPOINT": "cli",
+      "CLAUDE_CODE_SESSION_ATTENDED": "1"
+    },
+    "binary": "asyncRewake hook 은 대화형이거나 스트리밍 입력일 때만 백그라운드, 그 밖의 -p 에서는 동기 — exit 2 의 stderr 를 다음 메시지로 큐에 넣는다",
+    "notVerified": "대화형 CLI 에서 wake-event 가 메인을 깨우는 모습(대화형 TTY 를 구동할 수 없음)"
   }
 }

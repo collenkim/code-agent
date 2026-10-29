@@ -10,6 +10,7 @@ import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 import { runtimeHost } from "./crossEnv";
 import { checkChoiceConfig, installChoiceConfig } from "./choiceConfig";
+import { WAKE } from "./wakeHook";
 
 const BLOCK_START = "<!-- code-agent:start -->";
 const BLOCK_END = "<!-- code-agent:end -->";
@@ -29,12 +30,14 @@ const GITIGNORE_LINES = ["active.json", "docs-session.json", "request-session.js
 export const HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob|mcp__.*";
 /** 구현·테스트 담당 hook(agent-event)이 받을 담당 — agentHook.IMPLEMENT_AGENTS 와 같다 */
 export const IMPLEMENT_MATCHER = "ca-implementer|ca-tester";
+/** 쉬는 메인 깨우기(wake-event)가 받을 담당 — 담당 실행 장부에 완료를 남기는 담당 전부(계획·리뷰·구현·테스트) */
+export const WAKE_MATCHER = "ca-analyst|ca-explorer|ca-writer|ca-critic|ca-reviewer|ca-implementer|ca-tester";
 
 /** Claude 에 설치하는 hook — (이벤트, 하위 명령). doctor·설치 감지가 같은 목록을 쓴다 */
 export const CLAUDE_HOOKS = [
   ["PreToolUse", "hook"], ["PreToolUse", "consent-event"], ["PostToolUse", "consent-event"], ["Stop", "stop"],
   ["SubagentStart", "review-event"], ["SubagentStop", "review-event"], ["SubagentStart", "planning-event"], ["SubagentStop", "planning-event"],
-  ["SubagentStart", "agent-event"], ["SubagentStop", "agent-event"],
+  ["SubagentStart", "agent-event"], ["SubagentStop", "agent-event"], ["SubagentStop", "wake-event"],
   ["SessionStart", "session-event"],
 ] as const;
 /** Codex 에 설치하는 이벤트(모두 codex-event). SessionStart 는 작업 임대를 새 세션으로 넘겨받는다(Claude session-event 와 같은 규칙) */
@@ -72,7 +75,7 @@ function upsertBlock(path: string, start: string, end: string, body: string): "c
 
 interface HookEntry {
   matcher?: string;
-  hooks: { type: string; command: string; commandWindows?: string }[];
+  hooks: { type: string; command: string; commandWindows?: string; asyncRewake?: boolean; timeout?: number }[];
 }
 
 /**
@@ -144,6 +147,14 @@ export function installedHook(repoRoot: string, event: string, subcommand: strin
   return entry?.hooks.find((hook) => ourEntry({hooks:[hook]}, subcommand))?.command;
 }
 
+/** 설치된 깨우기 hook(wake-event)이 백그라운드(asyncRewake)로 등록돼 있는가 — 없으면 동기로 돌 수 있다(wakeHook 은 그때 아무것도 하지 않는다) */
+export function wakeHookAsync(repoRoot: string): boolean {
+  let settings: Record<string, unknown>;
+  try { settings = readSettings(settingsFile(repoRoot, "claude")); } catch { return false; }
+  const entries = ((settings.hooks ?? {}) as Record<string, HookEntry[] | undefined>).SubagentStop ?? [];
+  return entries.flatMap((entry) => entry.hooks).some((hook) => ourEntry({ hooks: [hook] }, "wake-event") && hook.asyncRewake === true);
+}
+
 /** 설치된 Codex 우리 항목의 Windows 명령(commandWindows). 없거나 파일이 깨졌으면 undefined */
 function installedCodexWindows(repoRoot: string, event: string): string | undefined {
   let settings: Record<string, unknown>;
@@ -194,7 +205,7 @@ export function unmatchedTools(repoRoot: string, event = "PreToolUse", expected 
 /**
  * settings.json 의 다른 설정·다른 hook 은 그대로 두고 code-agent 항목만 하나로 맞춘다.
  */
-function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string, extra: { commandWindows?: string } = {}): void {
+function upsertHook(path: string, event: string, subcommand: string, command: string, matcher?: string, extra: { commandWindows?: string; asyncRewake?: true; timeout?: number } = {}): void {
   const settings = readSettings(path);
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>;
   const ours = (entry: HookEntry) => ourEntry(entry, subcommand);
@@ -204,7 +215,8 @@ function upsertHook(path: string, event: string, subcommand: string, command: st
       const remaining = entry.hooks.filter(hook => !ourEntry({hooks:[hook]}, subcommand));
       return remaining.length ? [{...entry, hooks:remaining}] : [];
     }),
-    { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command, ...(extra.commandWindows ? { commandWindows: extra.commandWindows } : {}) }] },
+    { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command, ...(extra.commandWindows ? { commandWindows: extra.commandWindows } : {}),
+      ...(extra.asyncRewake ? { asyncRewake: true } : {}), ...(extra.timeout ? { timeout: extra.timeout } : {}) }] },
   ];
   settings.hooks = hooks;
   writeIfChanged(path, `${JSON.stringify(settings, null, 2)}\n`);
@@ -401,9 +413,11 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
   // 구현·테스트 담당의 실행 구간 — 판정 없이 기록만 한다. Stop hook 이 담당 완료 뒤 다음 명령 없이 끝나는 턴을 가른다
   upsertHook(settings, "SubagentStart", "agent-event", invoke("agent-event"), IMPLEMENT_MATCHER);
   upsertHook(settings, "SubagentStop", "agent-event", invoke("agent-event"), IMPLEMENT_MATCHER);
+  // 쉬는 메인 깨우기 — 백그라운드(asyncRewake)로 돌다가 처리하지 않은 완료가 남으면 exit 2 로 메인의 새 턴을 연다
+  upsertHook(settings, "SubagentStop", "wake-event", invoke("wake-event"), WAKE_MATCHER, { asyncRewake: true, timeout: WAKE.timeoutSec });
   // 시작·재개·비우기·압축 뒤 진행 상태를 붙인다 — 대화 요약이 단계·동의를 잃어도 상태 파일에서 다시 잡는다
   upsertHook(settings, "SessionStart", "session-event", invoke("session-event"));
-  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")} · 구현 SubagentStart/Stop ${invoke("agent-event")} · SessionStart ${invoke("session-event")}`);
+  lines.push(`hook: .claude/settings.json → PreToolUse ${command} · 질문 Pre/PostToolUse ${invoke("consent-event")} · Stop ${invoke("stop")} · SubagentStart/Stop ${invoke("review-event")} · 계획 SubagentStart/Stop ${invoke("planning-event")} · 구현 SubagentStart/Stop ${invoke("agent-event")} · 깨우기 SubagentStop ${invoke("wake-event")} · SessionStart ${invoke("session-event")}`);
 
   const claude = upsertBlock(join(repoRoot, "CLAUDE.md"), BLOCK_START, BLOCK_END, assetText("template/CLAUDE.block.md"));
   lines.push(`CLAUDE.md: code-agent 블록 ${claude === "created" ? "생성" : "갱신"}`);

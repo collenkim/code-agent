@@ -1,8 +1,9 @@
 /**
- * hook 이 모델에게 낸 글의 기록 — PreToolUse 거부, Stop 차단, 담당 되돌림(SubagentStop exit 2), 세션 시작 주입.
+ * hook 이 모델에게 낸 글의 기록 — PreToolUse 거부, Stop 차단, 담당 되돌림(SubagentStop exit 2), 세션 시작 주입, 쉬는 메인 깨우기.
  *
  * `usage` 가 이벤트별 횟수와 글자 수를 센다(측정용). 판정에 쓰는 곳은 하나다 — Stop 은 같은 세션에서 같은 사유로 이미
- * 막았으면 다시 막지 않는다(`blockedBefore`). 글 자체는 남기지 않고 길이와 해시 앞 12자만 남긴다.
+ * 막았으면 다시 막지 않고(`blockedBefore`), 완료 뒤 이어가기는 Stop 차단과 깨우기를 합쳐 한 번만 한다(`nudgedBefore`).
+ * 글 자체는 남기지 않고 길이와 해시 앞 12자만 남긴다.
  *
  * `.code-agent/` 가 있는 저장소에서만 쓰고(설치되지 않은 저장소에 폴더를 만들지 않는다), 쓰기 실패는 삼킨다 — 집계용 기록이
  * hook 을 세우면 안 된다. 2MB 를 넘으면 `.old` 로 한 번 밀어낸다.
@@ -16,8 +17,8 @@ import { findRepoRoot, STATE_DIR } from "./layout";
 export const HOOK_LOG = `${STATE_DIR}/log/hooks.jsonl`;
 const ROTATE_BYTES = 2_000_000;
 
-/** deny: PreToolUse 거부 · block: Stop 차단·질문 도구 막음(exit 2) · return: 같은 담당에게 되돌림 · context: 세션 시작 주입 */
-export type HookOutputKind = "deny" | "block" | "return" | "context";
+/** deny: PreToolUse 거부 · block: Stop 차단·질문 도구 막음(exit 2) · return: 같은 담당에게 되돌림 · context: 세션 시작 주입 · wake: 쉬는 메인 깨우기(asyncRewake exit 2) */
+export type HookOutputKind = "deny" | "block" | "return" | "context" | "wake";
 export interface HookOutput {
   at: string;
   host: "claude" | "codex";
@@ -80,4 +81,10 @@ export function readHookOutputs(root: string): HookOutput[] {
 export function blockedBefore(root: string, session: string | undefined, event: string, key: string): boolean {
   if (!session) return false;
   return readHookOutputs(root).some((row) => row.session === session && row.event === event && row.kind === "block" && row.key === key);
+}
+
+/** 같은 세션에서 같은 사유로 이미 상기했는가 — Stop 차단과 쉬는 메인 깨우기를 함께 본다. 세션이 없으면 언제나 아니다 */
+export function nudgedBefore(root: string, session: string | undefined, key: string): boolean {
+  if (!session) return false;
+  return readHookOutputs(root).some((row) => row.session === session && row.key === key && (row.kind === "wake" || (row.event === "Stop" && row.kind === "block")));
 }

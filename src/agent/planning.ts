@@ -23,6 +23,7 @@ import type { PlanningCrossView } from "./crossRecord";
 import { dependencyContracts, registerContracts } from "./dependencyContracts";
 import { reuseContractAnswer } from "./answers";
 import { recordEvent, type TimelineInput } from "./timeline";
+import { forgetAgents } from "./agentRuns";
 import { requireRequestConfirmed, requirementHash, syncRequestRevision } from "./request";
 
 /** 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다. */
@@ -490,11 +491,12 @@ function assignment(work: Work, state: PlanningState, record: TaskRecord) {
 }
 export function cancelPlanning(root: string, id: string): string {
   const work = planningWork(root);
-  let cancelled: { dispatchId: string; reason: string } | undefined;
+  let cancelled: { dispatchId: string; reason: string; agents: string[] } | undefined;
   const output = withPlanningCache(() => mutatePlanning(work, state => {
     const last = state.tasks.find(record => record.task.id === id)?.attempts.at(-1);
     if (!last || !["running", "needs-correction"].includes(last.status)) throw new Stop("실행 중인 작업이 아닙니다.");
-    cancelled = { dispatchId: last.dispatchId, reason: last.returnPending ? "되돌림 뒤 종료된 담당의 배정 회수" : `${last.status} 배정 취소` };
+    cancelled = { dispatchId: last.dispatchId, reason: last.returnPending ? "되돌림 뒤 종료된 담당의 배정 회수" : `${last.status} 배정 취소`,
+      agents: state.agents.filter(agent => agent.dispatchId === last.dispatchId && !agent.finished).map(agent => agent.id) };
     if (last.returnPending) {
       last.returnDeliveryFailed = true;
       last.error = last.returnPending.detail;
@@ -504,7 +506,11 @@ export function cancelPlanning(root: string, id: string): string {
     last.status = "cancelled";
     return `${id} 배정을 취소했습니다. 이전 실행의 늦은 결과는 받지 않습니다.`;
   }));
-  if (cancelled) recordEvent(root, { type: "invalidated", workId: work.active.id, target: work.active.target, phase: work.active.phase, taskId: id, dispatchId: cancelled.dispatchId, reason: cancelled.reason });
+  if (cancelled) {
+    recordEvent(root, { type: "invalidated", workId: work.active.id, target: work.active.target, phase: work.active.phase, taskId: id, dispatchId: cancelled.dispatchId, reason: cancelled.reason });
+    // 담당 실행 장부의 실행 중 표시도 거둔다 — 끝나지 않은 담당이 재배정한 담당의 완료 뒤 이어가기를 막지 않게
+    forgetAgents(root, work.active.id, cancelled.agents);
+  }
   return output;
 }
 

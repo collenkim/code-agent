@@ -4,24 +4,26 @@
 
 ## 자동 시험
 
-담당 완료 뒤 이어가기가 닿는 시험 파일을 `node --test --test-concurrency=2`로 묶음별로 실행했다. 닿는 범위는 담당 실행 장부, 구현·테스트 담당 hook, Stop 의 이어가기, 세션 시작 요약, 진행 명령의 완료 소비, 담당 호출 문장이다. 묶음은 서로 겹치지 않게 차례로 돌렸고, 셋째 묶음은 실제 호스트 평가와 함께 돌았다.
+담당 완료 뒤 쉬는 메인 깨우기가 닿는 시험 파일을 `node --test --test-concurrency=4`로 묶음별로 실행했다. 닿는 범위는 깨우기 hook(`wake-event`)과 설치·doctor·update, 담당 실행 장부(같은 완료의 한 번 잡기·배정 회수 뒤 정리), Stop 의 이어가기와 상기 1회, 이전 개정 완료, hook 출력 기록·타임라인, 문서 대조다. 묶음은 동시에 돌리지 않고 차례로 돌렸다.
 
 | 묶음 | 파일 | 결과 | 소요 |
 |---|---|---|---:|
-| 이어가기·hook·문서·템플릿 | `agentContinuation`·`reproScenarios`·`hookLoad`·`docSync`·`docs`·`templateText`·`templateBudget`·`hostNotation`·`hostText`·`retryPolicy`·`codex`·`stage-commands`·`questionPresentation`·`timeline`·`hookPaths`·`assets-doctor-usage` | 328건 모두 통과(`templateText`·`hookLoad`는 시험을 고친 뒤 다시 실행) | 161.9초 |
-| 계획·리뷰·상태 조회 | `planning`·`planningRecovery`·`planningRetry`·`planningChainFlow`·`resultContracts`·`review-gate`·`crossReview`·`fullReview`·`finalReverify`·`stateView`·`lease` | 290건 모두 통과(`planning`은 시험을 고친 뒤 다시 실행) | 464.7초 |
-| 동의·진행 명령·재개 | `consentBinding`·`consentOutput`·`consentSnapshot`·`consentScreens`·`answers`·`command`·`coexistence`·`choiceProtocol`·`choiceServer`·`branchCursor`·`branchResume`·`triage`·`experience`·`verification-flow`·`verification-stages`·`stageFlow`·`masterCodex`·`nodeRuntime`·`build`·`runtimeRelease`·`agent`·`adoption`·`codexReadiness`·`process`·`selection`·`masterRuns`·`installRobustness`·`master`·`executionMode`·`masterPairing` | 482건 모두 통과 | 717.3초 |
-| 계획 교차·연쇄·요구 개정·반영 | `planningCross`·`planningChain`·`dependencyContracts`·`scripts`·`modelPolicy`·`requestRevisionFlow`·`integrate-deliver` | 96건 모두 통과 | 184.7초 |
+| 깨우기·이어가기·요구 개정 | `wakeHook`·`agentContinuation`·`hookLoad`·`requestRevisionFlow` | 55건 모두 통과 | 90.6초 |
+| 계획 | `planningRetry`·`planning` | 65건 모두 통과 | 93.5초 |
+| 설치·hook·관리 실행·재현 | `retryPolicy`·`stage-commands`·`assets-doctor-usage`·`installRobustness`·`codex`·`timeline`·`master`·`masterRuns`·`reproScenarios` | 224건 모두 통과 | 92.6초 |
+| 문서 대조·usage | `assets-doctor-usage`·`docSync`·`docs`·`hookPaths`·`scripts` | 153건 모두 통과(`assets-doctor-usage`는 hook 출력 제목을 고친 뒤 다시 실행) | 65.3초 |
+| 계획 회복·연쇄·상태 조회 | `planningRecovery`·`planningChainFlow`·`stateView`·`consentSnapshot` | 107건 모두 통과 | 101.8초 |
 
-- `templateText` H7 은 담당을 부르는 줄(출력의 `` `담당`을 부른다 `` 꼴 포함 14줄)마다 결과 수신 문장과 Codex 치환을 대조한다. `planning`은 설치 hook 11개와 `agent-event` 설치를 확인한다.
-- `agentContinuation`은 다음을 본다.
-  - 구현 담당 완료 뒤 다음 명령 없이 끝나는 턴을 한 번 막고 `next`를 알린다. 실행 중인 담당이 있거나, 이어 붙인 턴이거나, 같은 완료의 두 번째 턴 끝이면 막지 않는다. 조회 명령은 완료를 지우지 않고 진행 명령은 지운다.
-  - 병렬 담당은 모두 끝나야 잇고, 새 담당 시작은 앞 완료를 처리한 것으로 본다. Codex 담당 이벤트도 장부에 남고 Codex Stop 이 Codex 표기로 잇는다.
-  - 계획 담당 완료는 `planning advance`로 잇는다. 앞서 있던 답 없는 질문·응답을 기다리는 동의가 있으면 막지 않고, 담당이 낸 질문(needs-input)은 `planning advance`가 질문으로 넘기도록 잇는다. 세션 시작 요약이 처리하지 않은 완료를 알린다.
-  - 다음 행동이 없는 종료(중복·늦은 결과)는 완료로 남기지 않는다. 끝을 관찰하지 못한 오래된 실행은 세지 않고, hook 실패 정리는 한 번만 한다. `agent-event`는 hook 실패 표에서 언제나 0이고 `init`이 구현·테스트 담당 matcher 로 설치한다.
-  - 기록한 리뷰 결과는 `ca-review` 4-1부터 잇고, 이미 기록한 결과의 재알림은 완료로 남기지 않는다.
-- `reproScenarios`의 `completionStall`은 격리 가짜 호스트에서 다음을 고정한다. 담당 완료 뒤 끝나는 턴은 한 번 막히고 사유에 `planning advance`가 든다. 이어 붙인 턴, 중복 완료 알림, 다른 세션(재시작)의 턴 끝은 막지 않는다. 사람 입력 없이 다음 행동까지 20초(`CONTINUATION_BOUND_MS`) 안에 이어진다. 이 상한은 자식 프로세스 기동을 포함한 시험 환경의 값이며 실제 호스트 지연의 기준이 아니다.
-- 이 변경이 닿지 않는 시험 파일은 다시 실행하지 않았다.
+- `wakeHook`은 다음을 본다.
+  - 처리하지 않은 완료가 남은 채 메인이 쉬면 exit 2 와 다음 명령(`planning advance`) 사유로 한 번 깨운다. hook 출력 기록(`wake`)·타임라인 `host.woken`·장부의 `wokenAt`이 남는다. 같은 완료의 재알림으로 다시 깨우지 않고, 깨운 세션의 턴 끝은 같은 완료로 다시 막지 않는다. 재시작한 세션은 한 번 잇는다.
+  - 동시에 끝난 깨우기 hook 둘 중 하나만 깨운다(같은 eventId 는 장부 잠금 안에서 한 번만 잡힌다). 새 완료는 새로 잡는다.
+  - 완료 → 깨움은 `graceMs` + `pollMs` 안이고, 기다림 전체가 설치 항목의 timeout 안에 끝난다.
+  - 진입점이 `cli`가 아니거나(`sdk-cli`·없음), 호스트 버전을 모르거나 2.1.312 보다 낮거나, asyncRewake 를 지운 설치, 교차 자식, 깨진 입력이면 깨우지 않고 0 이다. asyncRewake 를 지운 설치는 doctor 가 ✗ 로 짚는다. 조건을 다시 갖추면 같은 완료로 깨운다.
+  - 메인이 처리한 완료, 병렬 담당이 도는 동안, 완료로 남지 않은 담당(되돌림·늦은 결과·중복), 완료 뒤 그 세션의 턴 끝, Stop 이 이미 막은 세션, 앞서 있던 답 없는 질문·응답을 기다리는 동의에서는 깨우지 않는다.
+  - `init`은 장부에 완료를 남기는 담당 전부의 matcher·`asyncRewake`·timeout 으로 한 번만 설치하고, 실패 표는 언제나 0 이다.
+- `planningRetry`는 되돌림 뒤 종료된 담당의 배정을 `planning cancel`로 회수하면 장부의 실행 중 표시도 거두고, 재배정한 담당의 완료가 실행 중 0 으로 남는 것을 본다. `requestRevisionFlow`는 이전 개정으로 배정한 담당의 완료가 완료 한 번·재배정 한 건이고, 같은 완료의 재알림이 재배정 전후 모두 상태를 바꾸지 않는 것을 본다. `planning`은 설치 hook 12개를 확인한다.
+- `reproScenarios`의 `completionStall`은 격리 가짜 호스트에서 담당 완료 뒤 끝나는 턴이 한 번 막히고 사람 입력 없이 다음 행동까지 20초(`CONTINUATION_BOUND_MS`) 안에 이어지는 것을 고정한다. 이 상한은 자식 프로세스 기동을 포함한 시험 환경의 값이며 실제 호스트 지연의 기준이 아니다.
+- 이 변경이 닿지 않는 시험 파일은 다시 실행하지 않았다. 직전 커밋(`085d283`)의 범위 시험은 4묶음 1196건 모두 통과했다.
 
 이 변경 뒤 전체 시험은 실행하지 않았다. 마지막 전체 시험은 요구 개정 전 코드(`cd8a5f8`)에서 실행했으며 결과는 1807건 중 1803 통과·4 생략·0 실패다. 생략 4건은 플랫폼 조건이다.
 
@@ -43,6 +45,22 @@
 - 관리 실행(`master supervise`)도 같은 print 모드(`--output-format stream-json`)로 호스트를 띄운다. 하지만 관리 실행 자체는 돌리지 않았다. Codex 실제 호스트도 실행하지 않았다.
 - 이 실행의 보고서는 호스트를 다시 부르지 않고 같은 판정(`advancePlanning`·`next`)을 따로 실행해 만들었다. 보고서·로그·임시 저장소는 `dist` 아래에 두며 커밋하지 않는다.
 
+### 쉬는 메인 깨우기
+
+Claude Code 2.1.312 바이너리에서 hook 옵션 `asyncRewake`는 "백그라운드로 돌다가 exit 2 면 모델을 깨운다"이다. 실행 경로를 보면 asyncRewake hook 은 대화형이거나 스트리밍 입력일 때만 백그라운드로 돌고, 그 밖의 `-p`에서는 동기로 돈다. exit 2 의 stderr 는 다음 메시지로 큐에 들어간다.
+
+임시 폴더의 프로젝트 hook 으로 스트리밍 입력 모드(`-p --input-format stream-json`, haiku, 한도 $0.3)를 한 번 실행했다. SubagentStop 에 15초 뒤 exit 2 로 끝나는 asyncRewake hook 을 달았고, 첫 메시지 뒤 사용자 메시지는 없다. 비용은 약 $0.013 이다.
+
+| 시각(UTC) | 관찰 |
+|---|---|
+| 08:43:11.7 | 메인이 Agent 도구로 담당을 백그라운드로 띄우고 턴을 끝냈다 |
+| 08:43:13.2~14.6 | 담당이 끝났다. SubagentStop hook 이 시작됐고(13.3), 메인은 완료 알림으로 열린 턴에서 답하고 쉬었다(14.6) — hook 이 담당 종료를 막지 않았다 |
+| 08:43:28.3 | hook 이 exit 2 로 끝났고 26ms 뒤 메인의 새 턴이 열렸다. 메인은 깨움 문구대로 답했다(29.6) |
+
+- SubagentStop 입력에는 `transcript_path`·`agent_id`·`agent_type`·`agent_transcript_path`·`last_assistant_message`가 있고, 메인 대화 기록에는 `"version":"2.1.312"`가 있다. hook 환경은 `CLAUDE_CODE_ENTRYPOINT=sdk-cli`·`CLAUDE_CODE_SESSION_ATTENDED=0`이다. 이 대화형 세션의 hook 환경은 `cli`·`1`이다.
+- `-p`와 스트리밍 입력을 hook 환경으로 가를 표지가 없다. 그래서 `wake-event`는 대화형 CLI(`cli`)에서만 기다리고, 그 밖에서는 바로 0 으로 끝낸다. print 모드와 스트리밍 입력에서는 호스트가 완료 알림으로 새 턴을 열어 이어갔다.
+- 대화형 세션에서 `wake-event`가 메인을 깨우는 모습은 실제 호스트로 확인하지 않았다. 여기서는 대화형 TTY 를 구동할 수 없다. 근거는 바이너리 실행 경로, 위 스트리밍 입력 실측, 격리 시험(`wakeHook`)이다.
+
 ## 재현 기준선
 
 [재현 기준선 자료](evidence/2026-10-29-repro-baseline.json)는 개선 전 빌드에서 `scripts/repro-baseline.cjs --repeat 3`으로 남겼다(fixture `sha256:4be6f82c570ee977`, 세 번 모두 같은 사실).
@@ -57,7 +75,7 @@
 
 ## 상태 형식 세대
 
-상태 형식 세대는 19이다. 담당 실행 장부(`.code-agent/agent-runs.json`)는 새 파일이지만 세대를 올리지 않는다. 승인·증거·작업 기록의 형식은 그대로다. 장부는 게이트·배정·승인 판정에 쓰지 않는 이어가기 안내용이다. 장부를 모르는 이전 릴리스는 이 파일을 읽지 않고, 그 릴리스의 담당 hook 은 장부를 쓰지 않는다. 그래서 이어가기 안내만 없을 뿐 흐름의 판정은 같다. 세대 19의 근거는 요구 개정 기록, 확정 원장의 `revision`, 커서의 `request`·`cycle`, 계획 작업의 `basis`, 반영 커밋의 실행 회차 기록이다.
+상태 형식 세대는 19이다. 담당 실행 장부(`.code-agent/agent-runs.json`)와 그 완료의 `wokenAt`은 세대를 올리지 않는다. 승인·증거·작업 기록의 형식은 그대로다. 장부는 게이트·배정·승인 판정에 쓰지 않는 이어가기 안내용이다. 장부를 모르는 이전 릴리스는 이 파일을 읽지 않고, 그 릴리스의 담당 hook 은 장부를 쓰지 않는다. 그래서 이어가기 안내·깨우기만 없을 뿐 흐름의 판정은 같다. 세대 19의 근거는 요구 개정 기록, 확정 원장의 `revision`, 커서의 `request`·`cycle`, 계획 작업의 `basis`, 반영 커밋의 실행 회차 기록이다.
 
 ## 템플릿 예산
 
@@ -65,12 +83,12 @@
 
 ## 배포와 검증 한계
 
-- 패키지 dry-run은 222개 파일이다. `dist/agent/agentHook.js`·`dist/agent/agentRuns.js`를 포함하고 `dist/test`는 포함하지 않는다. 재현 시나리오와 기준선 스크립트는 이 소스 저장소에서만 실행된다.
+- 패키지 dry-run은 223개 파일이다. `dist/agent/agentHook.js`·`dist/agent/agentRuns.js`·`dist/agent/wakeHook.js`를 포함하고 `dist/test`는 포함하지 않는다. 재현 시나리오와 기준선 스크립트는 이 소스 저장소에서만 실행된다.
 - 진행 중 대상(`target`) 변경은 요구 변경으로 받지 않는다. 다른 대상이면 사람이 그 대상의 ID 로 접수한다.
 - 분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다. 같은 회차에서 이미 고친 Task 파일은 다시 고치지 않아도 그 판정을 지난다 — 새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다.
 - 이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다. 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.
-- 메인이 쉬는 동안 완료 알림이 새 턴을 열지 않으면 hook 이 메인을 깨울 길은 없다. 이때는 다음 세션 시작 요약이 처리하지 않은 완료를 알린다.
-- 실제 Claude 대화형 세션과 실제 Codex 에서 이어가기 차단이 턴을 잇는지는 확인하지 않았다. Codex 의 완료 알림은 관측하지 않는다.
+- 쉬는 메인 깨우기는 Claude 대화형 CLI 에서 확인한 호스트 버전(2.1.312 이상)과 asyncRewake 설치가 있을 때만 동작한다. 그 밖에서 완료 알림이 새 턴을 열지 않으면 다음 세션 시작 요약이 처리하지 않은 완료를 알린다. Codex 에는 깨우기 hook 이 없다.
+- 실제 Claude 대화형 세션에서 깨우기·이어가기 차단이 턴을 잇는지, 실제 Codex 에서 이어가기 차단이 턴을 잇는지는 확인하지 않았다. Codex 의 완료 알림은 관측하지 않는다.
 - 백그라운드로 돌린 긴 검증 명령(Bash `run_in_background`)의 완료는 담당 실행 장부에 남지 않는다. 그래서 이어가기 대상이 아니다.
 - Codex UserPromptSubmit 시각의 타임라인 기록은 실제 Codex 에서 확인하지 않았다.
 - 자동 회귀를 실제 사람 승인·전체 모델 완주·사용자 사용성의 증거로 해석하지 않는다. 실제 호스트 동작 설명에 붙은 버전은 관찰 조건이며 지원 최소 버전을 뜻하지 않는다.

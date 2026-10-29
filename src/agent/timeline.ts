@@ -35,8 +35,8 @@ export type TimelineType =
   | "verify.started" | "verify.ended"
   /** 무효화 원인과 재시도 사용 사유 */
   | "invalidated" | "retry.used"
-  /** 호스트 턴 종료(Stop hook)·세션 시작(SessionStart hook)·사람 입력 시각(Codex UserPromptSubmit — 본문 없이) */
-  | "host.stopped" | "host.session" | "human.input";
+  /** 호스트 턴 종료(Stop hook)·세션 시작(SessionStart hook)·사람 입력 시각(Codex UserPromptSubmit — 본문 없이)·쉬는 메인 깨우기(wake-event) */
+  | "host.stopped" | "host.session" | "human.input" | "host.woken";
 
 export interface TimelineEvent {
   v: 1;

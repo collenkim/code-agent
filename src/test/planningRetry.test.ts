@@ -18,6 +18,7 @@ import { RULES, rulesFor, submitChecklist, type ChecklistContext } from "../agen
 import { loadManifest } from "../core/manifest";
 import { loadWork } from "../agent/work";
 import { stateView } from "../agent/stateView";
+import { AGENT_RUNS_FILE, pendingCompletion } from "../agent/agentRuns";
 
 const ID = "RETRY-1", DIR = `doc/work/${ID}`, SPEC = `${DIR}/requirement.md`, OUT = `${DIR}/01-requirements.md`;
 const REQUIREMENTS = '# 요구 정의\n## R1 · 값 반환\n출처: REQ-1\n근거: "값을 반환한다."\n## 가정\n- 없음';
@@ -41,6 +42,8 @@ function run(item: Item, result: Partial<PlanningResult>, host: "claude" | "code
   return undefined;
 }
 const attempts = (id: string) => loadPlanning(loadWork(root)!).tasks.find((record) => record.task.id === id)!.attempts;
+/** 담당 실행 장부의 실행 중 담당 */
+const running = () => Object.keys((JSON.parse(readFileSync(join(root, AGENT_RUNS_FILE), "utf8")).works[loadWork(root)!.active.id]?.running) ?? {});
 
 beforeEach(() => {
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-retry-")));
@@ -155,8 +158,10 @@ test("종료된 담당에게 닿지 않은 되돌림은 지적·초안을 보존
   assert.notEqual(view.resume.code, "wait");
   assert.ok(view.resume.reasons.some(reason => reason.code === "attempt-return-pending"));
   assert.match(await advancePlanning(root), /담당이 이미 종료됐다면/);
+  assert.deepEqual(running(), [`agent-${serial}`], "되돌린 담당은 끝을 관찰하기 전까지 실행 중이다");
   cancelPlanning(root, "analysis");
   assert.equal(attempts("analysis").at(-1)!.returnDeliveryFailed, true);
+  assert.deepEqual(running(), [], "회수한 배정의 담당은 장부에서도 거둔다 — 재배정한 담당의 완료 뒤 이어가기를 막지 않는다");
   const summary = JSON.parse(handoffPlanning(root, dispatchPlanning(root, "analysis")));
   const assignment = readFileSync(join(root, summary.assignmentFile), "utf8");
   assert.match(assignment, /REQ-FORMAT/);
@@ -166,6 +171,7 @@ test("종료된 담당에게 닿지 않은 되돌림은 지적·초안을 보존
     write(again.staging[OUT], REQUIREMENTS);
   });
   assert.equal(attempts("analysis").at(-1)!.status, "completed");
+  assert.deepEqual([pendingCompletion(root, loadWork(root)!.active.id)?.completion.status, pendingCompletion(root, loadWork(root)!.active.id)?.running], ["completed", 0]);
 });
 
 test("완료된 정식 문서보다 오래된 초안은 다시 놓지 않는다", () => {

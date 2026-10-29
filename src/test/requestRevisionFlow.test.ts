@@ -9,6 +9,8 @@ import { applyConsent, finishConsent } from "../agent/consent";
 import { cyclesFile, deliveredCycle, recordDeliveredCycle } from "../agent/cycles";
 import { loadActive, saveActive } from "../agent/layout";
 import { planningStatus, preparePlanning } from "../agent/planning";
+import { observePlanner } from "../agent/planningHook";
+import { pendingCompletion } from "../agent/agentRuns";
 import { loadPlanning } from "../agent/planningState";
 import { requestBegin, requestSubmit } from "../agent/request";
 import { textHash } from "../agent/requirementRevisions";
@@ -21,7 +23,7 @@ import {
   approveAndApplyFixture, confirmationText, CONSENT_SPEC, CONSENT_WORK_ID, gitFixture, observeConsentFixture, preparePlanFixture, prepareConsentFixture,
   prepareDeliveryFixture, prepareReviewFixture, setupConsentProject, writeFixture,
 } from "./consentFixture";
-import { advance, DIR, finish, REQUIREMENTS, root, SPEC, throughDesign, write } from "./planningFixture";
+import { advance, completed, DIR, finish, REQUIREMENTS, root, serial, SPEC, throughDesign, write } from "./planningFixture";
 
 /**
  * 확정된 요구 개정과 흐름 — 변경안 대기 중 배정 멈춤, 분석 중 개정 전환의 작업 정의 갱신, 이후 단계의 분석 되감기(브랜치·코드 보존),
@@ -51,7 +53,7 @@ describe("계획 흐름 — 손으로 쓴 지시서", () => {
     assert.deepEqual([event.phase, event.detail?.rewound, event.detail?.from, event.reason], ["analysis", false, "analysis", "바뀐 요구 확정 — 분석 중 반영"]);
   });
 
-  test("늦은 결과 — 이전 확정본으로 배정한 담당의 완료는 받지 않고 새 요구 범위로 다시 배정한다", async () => {
+  test("늦은 결과 — 이전 확정본으로 배정한 담당의 완료는 받지 않고 새 요구 범위로 다시 배정한다. 같은 완료의 재알림은 효과가 없다", async () => {
     const [item] = (await advance()).assignments;
     write(SPEC, revised(["값을 반환한다.", "추가 값을 반환한다."]));
     confirmForTest(root, join(root, SPEC));
@@ -59,10 +61,28 @@ describe("계획 흐름 — 손으로 쓴 지시서", () => {
     assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false, "늦은 결과의 문서는 쓰지 않는다");
     const [view] = JSON.parse(planningStatus(root)).tasks;
     assert.notEqual(view.state, "completed");
+    const workId = loadWork(root)!.active.id, late = pendingCompletion(root, workId);
+    assert.ok(late, "다음 행동(재배정)을 낼 완료 한 번으로 남는다");
+    const attemptsOf = () => { const [task] = JSON.parse(planningStatus(root)).tasks; return [task.attempts, task.last?.status, task.last?.dispatchId]; };
+    const resend = () => {
+      try {
+        observePlanner({ cwd: root, session_id: "s", agent_id: `agent-${serial}`, agent_type: item.hostAgents.claude, hook_event_name: "SubagentStop",
+          last_assistant_message: JSON.stringify(completed(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS })) });
+      } catch { /* 기록한 실패는 예외로 알린다 — 효과는 상태로 본다 */ }
+    };
+    const before = attemptsOf();
+    resend();
+    assert.equal(pendingCompletion(root, workId)?.completion.eventId, late!.completion.eventId, "중복 알림은 새 완료를 만들지 않는다");
+    assert.deepEqual(attemptsOf(), before);
     const again = await advance();
     assert.equal(again.action, "dispatch");
+    assert.equal(again.assignments.length, 1);
     assert.notEqual(again.assignments[0].resultShape.dispatchId, item.resultShape.dispatchId);
     assert.deepEqual(again.assignments[0].task.requirements, ["REQ-1", "REQ-2"]);
+    const redispatched = attemptsOf();
+    resend();
+    assert.deepEqual(attemptsOf(), redispatched, "재배정 뒤 온 이전 개정 완료는 새 배정을 건드리지 않는다");
+    assert.equal(existsSync(join(root, DIR, "01-requirements.md")), false);
   });
 
   test("분석 뒤 단계에서 요구 항목이 바뀌어 확정되면 분석으로 되감고 문서·브랜치를 보존한다 — 재개·같은 확정은 다시 되감지 않는다", () => {

@@ -1357,7 +1357,7 @@ export function lockDecision(input: { owner?: LockOwner; sameHost: boolean; aliv
 // ---- hook 실패 ----
 
 export interface HookFailureInput {
-  command: "hook" | "consent-event" | "stop" | "session-event" | "review-event" | "planning-event" | "agent-event" | "codex-event";
+  command: "hook" | "consent-event" | "stop" | "session-event" | "review-event" | "planning-event" | "agent-event" | "wake-event" | "codex-event";
   /** stdin 의 hook_event_name(읽었으면) */
   event?: string;
   /** consent-event: tool_input.metadata.source 가 "code-agent:" 로 시작한다. tool_input 이 없어 알 수 없으면 undefined */
@@ -1384,7 +1384,7 @@ export function hookFailureInput(command: HookFailureInput["command"], stdin: st
 }
 /**
  * hook 이 판정(또는 모듈 로드)에 실패했을 때의 종료 코드와 stdout. 판정하는 PreToolUse 와 동의 질문·응답은 막고(fail-closed),
- * Stop·SessionStart·SubagentStop·구현·테스트 담당 관찰(agent-event)·업무 질문·사용자 메시지는 막지 않는다. 알 수 없으면(읽지 못함·필드 없음) 막는 쪽이다.
+ * Stop·SessionStart·SubagentStop·구현·테스트 담당 관찰(agent-event)·쉬는 메인 깨우기(wake-event)·업무 질문·사용자 메시지는 막지 않는다. 알 수 없으면(읽지 못함·필드 없음) 막는 쪽이다.
  * 입력은 언제나 hookFailureInput(command, stdin) 으로 만든다 — `{ command, event }` 를 손으로 만들거나 parsed 를 채워 넣지 않는다
  * (parsed:false 는 "stdin 을 읽지 못함"이라 codex-event Stop 에도 deny JSON 을 낸다). 진입점의 꼴:
  * hookFailureExit(hookFailureInput(command, stdin), "hook 을 실행하지 못했습니다: " + message).
@@ -1393,8 +1393,9 @@ export function hookFailureExit(input: HookFailureInput, message = "판정 모�
   switch (input.command) {
     case "hook": return { code: 2 };
     case "consent-event": return { code: !input.parsed || input.consentQuestion !== false ? 2 : 0 };
-    // agent-event 는 판정하지 않고 실행 구간만 남긴다 — 실패해도 담당의 시작·종료를 막지 않는다
-    case "stop": case "session-event": case "agent-event": return { code: 0 };
+    // agent-event 는 판정하지 않고 실행 구간만 남긴다 — 실패해도 담당의 시작·종료를 막지 않는다.
+    // wake-event 의 exit 2 는 깨우기다 — 동기로 돈 SubagentStop 이면 담당 되돌림이 되므로 실패는 언제나 0 이다
+    case "stop": case "session-event": case "agent-event": case "wake-event": return { code: 0 };
     // SubagentStop 만 막지 않는다 — Start 와 알 수 없는 이벤트(읽지 못함·깨진 JSON·필드 없음)는 막는다. 진입 함수
     // (runPlanningHook·runReviewHook)가 깨진 stdin 을 subagentExit(event 없음 → 2)로 끝내는 것과 같은 규칙이다
     case "review-event": case "planning-event": return { code: input.event === "SubagentStop" ? 0 : 2 };

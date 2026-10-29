@@ -557,7 +557,7 @@ test("관찰되지 않은 결과는 문서를 만들지 않으며 잘못된 출�
 test("설치와 재설치는 계획 관찰 hook 둘을 중복 없이 유지한다", () => {
   init(root); init(root);
   const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
-  assert.equal(Object.values(settings.hooks).flat().length, 11);
+  assert.equal(Object.values(settings.hooks).flat().length, 12);
   assert.match(installedHook(root, "SessionStart", "session-event")!, /session-event$/);
   for (const event of ["SubagentStart", "SubagentStop"]) {
     assert.match(installedHook(root, event, "planning-event")!, /planning-event$/);

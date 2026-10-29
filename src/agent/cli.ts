@@ -25,6 +25,7 @@ const HOOKS: Record<HookCommand, () => HookRunner> = {
   "review-event": () => (require("./reviewHook") as typeof import("./reviewHook")).runReviewHook,
   "planning-event": () => (require("./planningHook") as typeof import("./planningHook")).runPlanningHook,
   "agent-event": () => (require("./agentHook") as typeof import("./agentHook")).runAgentHook,
+  "wake-event": () => (require("./wakeHook") as typeof import("./wakeHook")).runWakeHook,
   "consent-event": () => (require("./consent") as typeof import("./consent")).runConsentHook,
   "session-event": () => (require("./sessionHook") as typeof import("./sessionHook")).runSessionHook,
 };

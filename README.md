@@ -64,10 +64,10 @@ Codex는 설치 후 다시 열고 프로젝트와 훅을 검토·신뢰해야 �
 | LangGraph 실행기 | 준비·접수·계획·구현·검증·리뷰·반영을 연결하고 SQLite에 실행 위치·대기를 기록합니다. |
 | 호스트별 실행 절차 18개 | Claude는 `.claude/skills/`, Codex는 `.agents/skills/`의 `ca-*/SKILL.md`에 접수·단계별 절차를 정의합니다. |
 | 호스트별 서브에이전트 8개 | Claude는 `.claude/agents/ca-*.md`, Codex는 `.codex/agents/ca-*.toml`에 분석·조사·작성·구현·테스트·검토 역할을 정의합니다. |
-| hook 등록 11개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개, 구현·테스트 담당의 실행 구간을 남기는 SubagentStart·SubagentStop `agent-event` 2개와, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart `session-event` 1개도 등록합니다. 담당이 끝났는데 메인이 다음 명령 없이 턴을 끝내면 Stop 이 한 번 이어 붙입니다. |
+| hook 등록 12개 | PreToolUse의 `hook` 1개, AskUserQuestion의 PreToolUse·PostToolUse `consent-event` 2개, Stop 1개, 리뷰어의 SubagentStart·SubagentStop `review-event` 2개입니다. 도구 경계, 실제 사용자 선택, 턴 종료, 독립 리뷰를 각각 관찰합니다. 분석·조사·설계·계획의 SubagentStart·SubagentStop `planning-event` 2개, 구현·테스트 담당의 실행 구간을 남기는 SubagentStart·SubagentStop `agent-event` 2개, 쉬는 메인을 깨우는 SubagentStop `wake-event` 1개와, 대화 시작·재개·압축·비우기 뒤 진행 상태를 붙이는 SessionStart `session-event` 1개도 등록합니다. 담당이 끝났는데 메인이 다음 명령 없이 턴을 끝내면 Stop 이 한 번 이어 붙이고, 대화형 세션에서 완료 알림이 새 턴을 열지 않은 채 메인이 쉬면 `wake-event`가 한 번 깨웁니다. |
 | `code-agent` CLI | 상태 전환, 승인·범위 검사, 검증 명령 실행, 증거 기록, 로컬 반영을 처리하고 종료합니다. 상주 서버가 아닙니다. |
 
-위 11개 훅은 Claude 기준입니다. PreToolUse 는 MCP 도구(`mcp__.*`)의 로컬 경로 인자도 같은 규칙으로 보고, 질문 훅은 업무 질문의 답도 기록해 기록한 답이 실제 선택과 맞는지 게이트가 대조합니다. Codex는 도구 실행 전·사용자 메시지·서브 에이전트 시작과 종료·턴 종료·세션 시작의 6종 훅을 하나의 어댑터에 연결합니다. 세션 시작은 Claude와 같이 진행 상태를 붙이고 작업 임대를 넘겨받습니다. Codex의 기본 대화·MCP 경로에서 받은 업무 답은 `[Source]: 대화`로 표시돼 승인 화면에 드러납니다. 별도 대시보드 사람 채널의 답은 검증된 응답 영수증과 함께 구분해 기록합니다.
+위 12개 훅은 Claude 기준입니다. PreToolUse 는 MCP 도구(`mcp__.*`)의 로컬 경로 인자도 같은 규칙으로 보고, 질문 훅은 업무 질문의 답도 기록해 기록한 답이 실제 선택과 맞는지 게이트가 대조합니다. Codex는 도구 실행 전·사용자 메시지·서브 에이전트 시작과 종료·턴 종료·세션 시작의 6종 훅을 하나의 어댑터에 연결합니다. 세션 시작은 Claude와 같이 진행 상태를 붙이고 작업 임대를 넘겨받습니다. Codex의 기본 대화·MCP 경로에서 받은 업무 답은 `[Source]: 대화`로 표시돼 승인 화면에 드러납니다. 별도 대시보드 사람 채널의 답은 검증된 응답 영수증과 함께 구분해 기록합니다.
 
 두 호스트 모두 역할을 판단(analyst·critic·reviewer)과 실행(그 밖)으로 나눠 모델·추론 강도 기본값을 둡니다(Claude opus/high·sonnet/medium, Codex gpt-6.1-sol high·medium). `code-agent model`로 현재값을 확인하고 필요하면 역할별로 변경하거나 `default`로 복원합니다. 사용자 변경값은 업데이트 후에도 유지합니다. [역할별 모델 설정](doc/codex.md#역할별-모델-기본값과-변경)을 참고하세요.
 

@@ -7,7 +7,7 @@ import { loadWork } from "./work";
 import { crossChild } from "./crossEnv";
 import { agentName, askVia, skill, withNotation } from "./hostText";
 import { questionPresentationProblem } from "./questionPresentation";
-import { blockedBefore, noteHookOutput, reasonKey } from "./hookLog";
+import { blockedBefore, noteHookOutput, nudgedBefore, reasonKey } from "./hookLog";
 import { recordEvent } from "./timeline";
 import { pendingCompletion, type Completion } from "./agentRuns";
 import { openConsent } from "./consentState";
@@ -28,7 +28,8 @@ import type { Work } from "./work";
  * 울타리 사유가 없으면 **완료 뒤 이어가기**를 본다(continuation): 담당 실행 장부(agentRuns)에 메인이 아직 처리하지 않은 완료가 있고
  * 실행 중인 담당이 없는데 턴이 끝나면, 완료 알림을 기다리지 말고 이 턴에서 다음 명령을 실행하라고 한 번 막는다. 담당 결과가 인계
  * 메시지로 먼저 오고 완료 알림은 새 턴을 열지 않은 채 소비되는 호스트에서 흐름이 사람 입력을 기다리며 멈추던 자리다. 사람 판단 자리
- * (응답·적용을 기다리는 동의, 이 완료가 낸 것이 아닌 답 없는 질문)에서는 막지 않는다.
+ * (응답·적용을 기다리는 동의, 이 완료가 낸 것이 아닌 답 없는 질문)에서는 막지 않는다. 같은 판정을 쉬는 메인 깨우기(wakeHook)가 쓰며,
+ * 같은 완료의 상기는 Stop 차단과 깨우기를 합쳐 세션당 한 번이다(hookLog.nudgedBefore).
  */
 export interface StopHookInput {
   cwd?: string;
@@ -122,7 +123,13 @@ function continuation(input: StopHookInput, work: Work): string | undefined {
     `담당 완료가 기록됐습니다(${agentName(completion.type)} · ${completion.status} · ${completion.at}). 완료 알림을 따로 기다리지 않고 이 턴에서 다음 명령을 실행합니다: ${nextHint(completion, work.active.phase)}.`,
     "질문·승인·반영처럼 사람 판단이 필요한 자리면 그 절차로 멈춥니다. 단계 절차를 모르면 `code-agent flow advance --json`이 다음 인계를 냅니다.",
   ].join("\n");
-  return blockedBefore(repoRoot, input.session_id, "Stop", reasonKey(reason)) ? undefined : reason;
+  return nudgedBefore(repoRoot, input.session_id, reasonKey(reason)) ? undefined : reason;
+}
+
+/** 쉬는 메인을 깨울 사유 — Stop 의 이어가기와 같은 판정(wakeHook). 작업이 없거나 깨울 자리가 아니면 undefined */
+export function wakeReason(input: StopHookInput, repoRoot: string): string | undefined {
+  const work = loadWork(repoRoot);
+  return work ? continuation(input, work) : undefined;
 }
 
 /** stdin JSON → stdout JSON. 판정이 실패해도 **막지 않는다** — 고장 난 hook 이 턴을 못 끝내게 하는 것이 더 나쁘다 */
