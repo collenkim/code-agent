@@ -24,6 +24,10 @@ import { isGitRepo } from "./git";
 import { changedPaths, commitOf, type Change } from "./tree";
 import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
 import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, workIdentity } from "./workIdentity";
+import { acquireLock } from "./lock";
+import { appendRevision, applyChanges, changeLine, changeSummary, initialSnapshot, legacyDocument, normalizeText, readRevisions, replaceSnapshot,
+  SECTION_LABEL, SECTIONS, textHash, touchedIds, type Change as RevisionChange, type DraftChange, type OriginalText, type RequirementItem, type RevisionDocument, type RevisionRecord,
+  type Section } from "./requirementRevisions";
 
 /**
  * 요구사항 접수 — 13단계의 1.
@@ -80,7 +84,8 @@ const RequestSchema = z
     original: z.string().optional(),
     originalFile: z.string().optional(),
     background: z.string().default(""),
-    requirements: z.array(z.string().trim().min(1)).min(1),
+    // 최초 접수·전체 교체는 목록 전체, 요구 변경(amend)은 changes 로만 — superRefine 이 가른다
+    requirements: z.array(z.string().trim().min(1)).default([]),
     done: z.array(z.string().trim().min(1)).default([]),
     outOfScope: z.array(z.string().trim().min(1)).default([]),
     constraints: z.array(z.string().trim().min(1)).default([]),
@@ -90,10 +95,30 @@ const RequestSchema = z
     errorLog: z.string().optional(),
     errorLogFile: z.string().optional(),
     noErrorLog: z.object({ reason: ONE_LINE("noErrorLog.reason"), steps: z.array(z.string().trim().min(1)).min(1) }).optional(),
+    // 확정된 개정이 있는 작업의 후속 요청 — parent 는 기준으로 삼은 확정 개정 번호
+    revision: z.object({ parent: z.number().int().min(1), mode: z.enum(["amend", "replace"]), replaceQuote: z.string().trim().min(1).optional() }).strict().optional(),
+    changes: z.array(z.discriminatedUnion("op", [
+      z.object({ op: z.literal("add"), section: z.enum(SECTIONS), id: z.string().trim().min(1).optional(), text: z.string().trim().min(1) }).strict(),
+      z.object({ op: z.literal("modify"), id: z.string().trim().min(1), text: z.string().trim().min(1) }).strict(),
+      z.object({ op: z.literal("remove"), id: z.string().trim().min(1), reason: ONE_LINE("remove.reason") }).strict(),
+    ])).optional(),
   })
   .superRefine((request, ctx) => {
+    const amend = request.revision?.mode === "amend";
+    if (amend) {
+      const lists = (["requirements", "done", "outOfScope", "constraints"] as const).filter((key) => request[key].length > 0);
+      if (lists.length) ctx.addIssue({ code: "custom", path: [lists[0]], message: "요구 변경(revision.mode amend)은 changes 로만 씁니다 — 목록 전체를 다시 주지 않습니다. 언급하지 않은 항목은 그대로 남습니다" });
+      if (!request.changes) ctx.addIssue({ code: "custom", path: ["changes"], message: "요구 변경(amend)에는 changes 가 필요합니다 — 머리말만 바꾸면 빈 배열" });
+    } else {
+      if (request.requirements.length === 0) ctx.addIssue({ code: "custom", path: ["requirements"], message: "requirements 는 1개 이상입니다" });
+      if (request.changes) ctx.addIssue({ code: "custom", path: ["changes"], message: "changes 는 요구 변경(revision.mode amend)에서만 씁니다" });
+    }
+    if (request.revision?.mode === "replace" && !request.revision.replaceQuote) {
+      ctx.addIssue({ code: "custom", path: ["revision", "replaceQuote"], message: "전체 교체는 사람이 그 뜻으로 요청한 원문 인용(replaceQuote)이 필요합니다" });
+    }
     const logs = [request.errorLog !== undefined, request.errorLogFile !== undefined, request.noErrorLog !== undefined].filter(Boolean).length;
-    if (request.kind === "fix" && logs !== 1) {
+    // 개정은 이전 개정의 오류 로그를 잇는다 — 새로 줄 때만 하나
+    if (request.kind === "fix" && (request.revision ? logs > 1 : logs !== 1)) {
       ctx.addIssue({
         code: "custom",
         path: ["errorLog"],
@@ -124,7 +149,9 @@ export type RequestDraft = z.infer<typeof RequestSchema>;
 /** 예약 속성 — 확장 속성(extra)이 이 이름을 쓰면 머리말에서 겹친다 */
 const RESERVED_KEYS = ["kind", "id", "title", "target", "scope", "preserve", "approver"];
 
-function frontMatter(request: RequestDraft): string {
+type Header = Pick<RevisionDocument, "kind" | "id" | "title" | "target" | "scope" | "preserve" | "approver" | "extra">;
+
+function frontMatter(request: Header): string {
   const lines = ["---", `kind: ${request.kind}`, `id: ${request.id}`, `title: ${request.title}`];
   const list = (key: string, values: string[]) => {
     if (values.length > 0) lines.push(`${key}:`, ...values.map((value) => `  - ${value}`));
@@ -139,10 +166,6 @@ function frontMatter(request: RequestDraft): string {
   }
   lines.push("---");
   return lines.join("\n");
-}
-
-function bullets(items: string[], none: string): string {
-  return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : `- ${none}`;
 }
 
 /** 원문은 한 글자도 바꾸지 않고 인용으로만 감싼다 — 확정하는 사람이 정리본과 나란히 읽는 자리다 */
@@ -166,58 +189,121 @@ function fenced(text: string): string {
 }
 
 /** fix 의 오류 로그 절 — 원문 다음, 사람이 확정하는 지시서 안에 둔다 */
-function errorLogSection(request: RequestDraft, log: { text: string; source: string } | undefined): string[] {
+function errorLogSection(log: { text: string; source: string } | undefined, noErrorLog: RevisionDocument["noErrorLog"]): string[] {
   if (log) return ["## 오류 로그", "", `<!-- ${log.source} -->`, fenced(log.text), ""];
-  if (request.noErrorLog) {
-    return ["## 오류 로그 없음", "", `- 사유: ${request.noErrorLog.reason}`, "- 재현 절차:",
-      ...request.noErrorLog.steps.map((step, index) => `  ${index + 1}. ${step.replace(/\r?\n/g, " ")}`), ""];
+  if (noErrorLog) {
+    return ["## 오류 로그 없음", "", `- 사유: ${noErrorLog.reason}`, "- 재현 절차:",
+      ...noErrorLog.steps.map((step, index) => `  ${index + 1}. ${step.replace(/\r?\n/g, " ")}`), ""];
   }
   return [];
 }
 
-export function renderRequirement(request: RequestDraft, original: string, source: string, log?: { text: string; source: string }): string {
+const listOf = (snapshot: RevisionRecord["snapshot"], section: Section): string[] => snapshot.items[section].map((item) => item.text);
+const itemLines = (items: RequirementItem[], none: string): string =>
+  items.length ? items.map((item) => `- [${item.id}] ${item.text.replace(/\r?\n/g, "\n  ")}`).join("\n") : `- ${none}`;
+
+/**
+ * 원문 대조 — 최초 개정은 최초 원문을 목록 위치(REQ-1…)로, 그 뒤 개정은 이번에 받은 후속 원문을 안정 ID 로 대조한다.
+ * 이번 개정에서 삭제한 항목도 연결 대상이다(원문이 지우라고 한 곳).
+ */
+function revisionTrace(record: Pick<RevisionRecord, "revision" | "mode" | "snapshot" | "document" | "changes">) {
+  const { document: doc, snapshot } = record;
+  const input = { title: doc.title, background: doc.background, requirements: listOf(snapshot, "REQ"), done: listOf(snapshot, "DONE"),
+    constraints: listOf(snapshot, "CON"), outOfScope: listOf(snapshot, "OUT"), sourceMap: doc.sourceMap };
+  if (record.mode === "initial") return intakeTrace(doc.originals[0]?.text ?? "", input);
+  const targets: Record<string, string> = {};
+  for (const section of SECTIONS) for (const item of snapshot.items[section]) targets[item.id] = item.text;
+  for (const change of record.changes) if (change.op === "remove") targets[change.id] = `삭제: ${change.reason}`;
+  const fresh = doc.originals.filter((original) => original.revision === record.revision).map((original) => original.text).join("\n\n");
+  const trace = intakeTrace(fresh, input, targets);
+  return { ...trace, text: trace.text.replace("원문을 어디에 반영했는지 확인합니다.", `개정 ${record.revision}에서 받은 후속 원문을 어디에 반영했는지 확인합니다.`) };
+}
+
+/** 확정 원장이 확정하는 바이트 — 이행한 이전 형식 지시서는 그 글 그대로 */
+export function revisionText(record: RevisionRecord): string {
+  return record.legacyText ?? renderRevision(record);
+}
+
+export function renderRevision(record: Pick<RevisionRecord, "revision" | "parent" | "mode" | "snapshot" | "document" | "changes" | "history">): string {
+  const { document: doc, snapshot } = record;
+  const [first, ...later] = doc.originals;
+  const originalBlock = (original: OriginalText | undefined) => [`<!-- ${original?.source ?? "원문 없음"} -->`, quoted(original?.text ?? ""), ""];
+  const amended = record.revision > 1 && record.mode !== "initial";
   return [
-    frontMatter(request),
+    frontMatter(doc),
     "",
-    `${RENDER_MARK}${requestDraftFile(request.id)} 에서 렌더한다. 고칠 것은 request.json 에 쓰고 다시 제출한다 — ` +
-      `현재 호스트 세션에서 ca-answer의 request 동의 절차로 ${request.id} 요구사항을 확정하면 ca-next 흐름이 자동으로 이어진다. -->`,
+    `${RENDER_MARK}${requestDraftFile(doc.id)} 에서 렌더한다. 고칠 것은 request.json 에 쓰고 다시 제출한다 — ` +
+      `현재 호스트 세션에서 ca-answer의 request 동의 절차로 ${doc.id} 요구사항을 확정하면 ca-next 흐름이 자동으로 이어진다. -->`,
     "",
-    `# ${request.id} 요구사항 — ${request.title}`,
+    `# ${doc.id} 요구사항 — ${doc.title}`,
     "",
+    ...(amended ? [`개정 ${record.revision} · 부모 개정 ${record.parent} · ${record.mode === "replace" ? "전체 교체 · " : ""}${changeSummary(record.changes)}`, ""] : []),
     `## 원문`,
     "",
-    `<!-- ${source} -->`,
-    quoted(original),
-    "",
-    ...errorLogSection(request, log),
-    intakeTrace(original, request).text,
+    ...originalBlock(first),
+    ...later.flatMap((original) => [`## 후속 원문 — 개정 ${original.revision}`, "", ...originalBlock(original)]),
+    ...errorLogSection(doc.errorLog, doc.noErrorLog),
+    revisionTrace(record).text,
+    ...(amended ? ["## 이번 개정의 변경", "", record.changes.map((change) => `- ${changeLine(change)}`).join("\n"), ""] : []),
     "## 배경",
     "",
-    request.background.trim() === "" ? "- 없음" : request.background.trim(),
+    doc.background.trim() === "" ? "- 없음" : doc.background.trim(),
     "",
     "## 요구 내용",
     "",
-    request.requirements.map((text, index) => `- [REQ-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n"),
+    itemLines(snapshot.items.REQ, "없음"),
     "",
     "## 완료 조건",
     "",
-    request.done.length ? request.done.map((text, index) => `- [DONE-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n") : "- 원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다",
+    itemLines(snapshot.items.DONE, "원문에 없음 — 분석 단계의 수락 기준(AC)에서 정한다"),
     "",
     "## 범위 밖",
     "",
-    bullets(request.outOfScope, "없음"),
+    itemLines(snapshot.items.OUT, "없음"),
     "",
     "## 제약",
     "",
-    request.constraints.length ? request.constraints.map((text, index) => `- [CON-${index + 1}] ${text.replace(/\r?\n/g, "\n  ")}`).join("\n") : "- 없음",
+    itemLines(snapshot.items.CON, "없음"),
     "",
+    ...(snapshot.removed.length ? ["## 삭제된 요구", "",
+      snapshot.removed.map((item) => `- [${item.id}] ${item.text.replace(/\r?\n/g, " ")} — 개정 ${item.removedIn}에서 삭제: ${item.reason}`).join("\n"), ""] : []),
     "## 접수 때 정한 것",
     "",
-    request.clarifications.length > 0
-      ? request.clarifications.map((entry) => `- Q: ${entry.question}\n  - A: ${entry.answer}`).join("\n")
+    doc.clarifications.length > 0
+      ? doc.clarifications.map((entry) => `- Q: ${entry.question}\n  - A: ${entry.answer}`).join("\n")
       : "- 없음",
     "",
+    ...(amended ? ["## 개정 이력", "",
+      [...record.history, { revision: record.revision, mode: record.mode, changes: record.changes.length, at: "" }]
+        .map((entry) => `- 개정 ${entry.revision} · ${entry.mode === "initial" ? "최초 접수" : entry.mode === "migrated" ? "이전 형식 이행" : entry.mode === "replace" ? `전체 교체 ${entry.changes}건` : `변경 ${entry.changes}건`}` +
+          (entry.at ? ` · ${entry.at.slice(0, 10)}` : " · 이 문서")).join("\n"), ""] : []),
   ].join("\n");
+}
+
+function draftLists(request: RequestDraft): Record<Section, string[]> {
+  return { REQ: request.requirements, DONE: request.done, CON: request.constraints, OUT: request.outOfScope };
+}
+
+/** 최초 접수의 렌더 — 접수 초안 하나로 개정 1 을 만든다 */
+export function renderRequirement(request: RequestDraft, original: string, source: string, log?: { text: string; source: string }): string {
+  return renderRevision({ revision: 1, parent: 0, mode: "initial", changes: [], history: [], snapshot: initialSnapshot(draftLists(request), 1),
+    document: draftDocument(request, [{ revision: 1, text: original, source, hash: textHash(original) }], log) });
+}
+
+function draftDocument(request: RequestDraft, originals: OriginalText[], log: { text: string; source: string } | undefined, base?: RevisionDocument): RevisionDocument {
+  const clarifications = [...(base?.clarifications ?? [])];
+  for (const entry of request.clarifications) {
+    if (!clarifications.some((known) => known.question === entry.question && known.answer === entry.answer)) clarifications.push(entry);
+  }
+  const errorLog = log ?? (request.noErrorLog ? undefined : base?.errorLog);
+  const noErrorLog = request.noErrorLog ?? (log ? undefined : base?.noErrorLog);
+  return {
+    kind: request.kind, id: request.id, title: request.title, target: request.target, scope: request.scope, preserve: request.preserve,
+    ...(request.approver ? { approver: request.approver } : {}), extra: request.extra,
+    background: request.background.trim() === "" && base ? base.background : request.background,
+    clarifications, ...(errorLog ? { errorLog } : {}), ...(noErrorLog ? { noErrorLog } : {}), originals,
+    ...(request.sourceMap ? { sourceMap: request.sourceMap } : {}),
+  };
 }
 
 // ---- 확정 원장 ----
@@ -235,11 +321,8 @@ export interface RequestRecord {
   at: string;
   presence: Presence;
   prev: string;
-}
-
-/** 줄바꿈 · BOM 은 내용이 아니다 — autocrlf 가 확정을 무효로 만들지 않게 */
-function textHash(text: string): string {
-  return sha(text.replace(/^﻿/, "").replace(/\r\n/g, "\n"));
+  /** 판정한 요구 개정 번호 — 개정 기록(requirements.jsonl)에 같은 해시의 개정이 있을 때만 */
+  revision?: number;
 }
 
 export function requirementHash(repoRoot: string, spec: string): string | undefined {
@@ -289,6 +372,8 @@ export function recordRequestDecision(
   }
   readRequestLedger(repoRoot, input.id);
   const lines = ledgerLines(repoRoot, input.id);
+  const revisions = readRevisions(repoRoot, input.id);
+  const judged = [...revisions].reverse().find((revision) => revision.specHash === hash);
   const record: RequestRecord = {
     id: input.id,
     spec: input.spec,
@@ -299,14 +384,45 @@ export function recordRequestDecision(
     at: new Date().toISOString(),
     presence: input.presence,
     prev: lines.length === 0 ? "genesis" : sha(lines[lines.length - 1]),
+    ...(judged ? { revision: judged.revision } : {}),
   };
   const path = requestLedgerFile(repoRoot, input.id);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(record)}\n`, "utf-8");
   const active = loadActive(repoRoot);
-  recordEvent(repoRoot, { type: "request.decided", workId: input.id, phase: active?.id === input.id ? active.phase : "request",
-    detail: { decision: input.decision, channel: input.presence.channel, hash: hash.slice(0, 12) } });
+  const place = { workId: input.id, phase: active?.id === input.id ? active.phase : "request" };
+  recordEvent(repoRoot, { type: "request.decided", ...place,
+    detail: { decision: input.decision, channel: input.presence.channel, hash: hash.slice(0, 12), ...(judged ? { revision: judged.revision } : {}) } });
+  // 확정된 개정이 있는데 그 뒤의 변경안을 반려하면 지시서를 직전 확정본으로 되돌린다 — 확정본과 진행 상태가 어긋난 채 남지 않게
+  if (input.decision === "rejected" && judged && judged.parent > 0 && requirementHash(repoRoot, input.spec) === hash) {
+    const confirmed = revisionHeads(repoRoot, input.id, input.spec).confirmed;
+    if (confirmed) {
+      writeAtomic(join(repoRoot, input.spec), revisionText(confirmed));
+      recordEvent(repoRoot, { type: "request.restored", ...place, reason: `변경안(개정 ${judged.revision}) 반려 — 확정 개정 ${confirmed.revision} 으로 되돌림`,
+        detail: { rejected: judged.revision, restored: confirmed.revision } });
+    }
+  }
   return record;
+}
+
+export interface RevisionHeads {
+  /** 확정 원장의 마지막 확정이 가리키는 개정 */
+  confirmed?: RevisionRecord;
+  /** 지시서가 지금 보이는 확정 전 변경안(확정본이 아닌 개정) */
+  pending?: RevisionRecord;
+  records: RevisionRecord[];
+}
+
+/** 확정본과 수정안 — 개정 기록이 없으면(손으로 쓴 지시서·이전 형식) 둘 다 없다 */
+export function revisionHeads(repoRoot: string, id: string, spec: string): RevisionHeads {
+  const records = readRevisions(repoRoot, id);
+  if (!records.length) return { records };
+  const lastConfirmed = readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec && record.decision === "confirmed").pop();
+  const confirmed = lastConfirmed ? [...records].reverse().find((record) => record.specHash === lastConfirmed.hash) : undefined;
+  const now = requirementHash(repoRoot, spec);
+  const after = confirmed ? records.slice(records.lastIndexOf(confirmed) + 1) : records;
+  const pending = now === confirmed?.specHash ? undefined : [...after].reverse().find((record) => record.specHash === now);
+  return { confirmed, ...(pending ? { pending } : {}), records };
 }
 
 export type RequestState =
@@ -335,10 +451,16 @@ export function requestState(repoRoot: string, id: string, spec: string): Reques
   const records = readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec);
   const last = records[records.length - 1];
   if (!last) return { status: "none" };
-  if (last.hash !== requirementHash(repoRoot, spec)) return { status: "unconfirmed", record: last };
-  if (last.decision === "rejected") return { status: "rejected", record: last };
-  if (requiresVerified(repoRoot) && last.presence?.verified !== true) return { status: "unverified", record: last };
-  return { status: "confirmed", record: last };
+  const now = requirementHash(repoRoot, spec);
+  // 변경안을 반려해 직전 확정본으로 되돌린 자리 — 마지막 확정 뒤로 다른 내용의 반려만 있으면 그 확정이 지금 내용이다
+  const confirmedAt = records.map((record) => record.decision).lastIndexOf("confirmed");
+  const restored = last.hash !== now && confirmedAt >= 0 && records[confirmedAt].hash === now &&
+    records.slice(confirmedAt + 1).every((record) => record.decision === "rejected" && record.hash !== now);
+  const current = restored ? records[confirmedAt] : last;
+  if (current.hash !== now) return { status: "unconfirmed", record: last };
+  if (current.decision === "rejected") return { status: "rejected", record: current };
+  if (requiresVerified(repoRoot) && current.presence?.verified !== true) return { status: "unverified", record: current };
+  return { status: "confirmed", record: current };
 }
 
 /** 사람이 지금 내용으로 확정하지 않은 요구사항 위에서는 아무것도 진행하지 않는다 */
@@ -352,13 +474,17 @@ export function requireRequestConfirmed(repoRoot: string, id: string, spec: stri
         `요구사항이 반려됐습니다 (${spec}): ${state.record.comment ?? "(사유 없음)"}\n` +
           `${skill("ca-request")} 로 사유대로 고쳐 다시 제출하세요 — 확정은 현재 호스트 세션에서 ca-answer의 request 동의 절차로 받습니다.`,
       );
-    case "unconfirmed":
+    case "unconfirmed": {
+      const pending = revisionHeads(repoRoot, id, spec).pending;
       throw new Stop(
-        (state.record.decision === "confirmed"
+        (pending && pending.parent > 0
+          ? `요구사항이 확정 뒤 바뀌었습니다 — 변경안 ${pendingLabel(pending)}이 확정을 기다립니다 (${spec}). 확정 전에는 진행·계획 배정을 하지 않습니다(확정 개정 ${pending.parent} 의 결과는 그대로 둡니다).\n`
+          : state.record.decision === "confirmed"
           ? `요구사항이 확정 뒤 바뀌었습니다 (${spec}). 다시 확정해야 진행합니다.\n`
           : `요구사항이 다시 제출돼 확정을 기다립니다 (${spec}).\n`) +
           `현재 호스트 세션에서 ca-answer의 request 동의 절차로 다시 확인하세요. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}).`,
       );
+    }
     case "unverified":
       throw new Stop(
         `요구사항 확정에 사람이 관측되지 않았습니다 (${spec} · ${state.record.presence?.detail ?? "기록 없음"}).\n` +
@@ -372,17 +498,27 @@ export function requireRequestConfirmed(repoRoot: string, id: string, spec: stri
   }
 }
 
+/** 변경안 이름 — `개정 3(부모 2 · 추가 1 · 삭제 1)` */
+export function pendingLabel(pending: RevisionRecord): string {
+  return `개정 ${pending.revision}(부모 ${pending.parent} · ${pending.mode === "replace" ? "전체 교체 · " : ""}${changeSummary(pending.changes)})`;
+}
+
 /** status 한 줄 */
 export function requestStateLine(repoRoot: string, id: string, spec: string): string {
   if (!existsSync(join(repoRoot, spec))) return "요구사항: 아직 렌더되지 않음";
   const state = requestState(repoRoot, id, spec);
   switch (state.status) {
-    case "confirmed":
-      return `요구사항: 확정됨 (${state.record.hash.slice(-12)} · ${state.record.at.slice(0, 10)})`;
+    case "confirmed": {
+      const revision = state.record.revision ?? revisionHeads(repoRoot, id, spec).confirmed?.revision;
+      return `요구사항: 확정됨 (${revision ? `개정 ${revision} · ` : ""}${state.record.hash.slice(-12)} · ${state.record.at.slice(0, 10)})`;
+    }
     case "rejected":
       return `요구사항: 반려됨 — ${state.record.comment ?? "(사유 없음)"}`;
-    case "unconfirmed":
+    case "unconfirmed": {
+      const pending = revisionHeads(repoRoot, id, spec).pending;
+      if (pending && pending.parent > 0) return `요구사항: 변경안 확정 대기 — ${pendingLabel(pending)}. 확정 전에는 진행·계획 배정을 멈춥니다`;
       return state.record.decision === "confirmed" ? "요구사항: 확정 뒤 바뀜 — 다시 확정 필요" : "요구사항: 다시 제출됨 — 확정 대기";
+    }
     case "unverified":
       return "요구사항: 확정에 사람이 관측되지 않음 — 현재 호스트 세션에서 ca-answer의 request 동의 절차로 다시 확정 필요";
     case "none":
@@ -451,7 +587,7 @@ export function requestBegin(
   if (active) {
     throw new Stop(
       active.id === id
-        ? `${id} 는 이미 시작된 작업입니다 (${active.phase}). 요구사항을 고치려면 ${requestDraftFile(id)} 를 고쳐 code-agent request submit 으로 다시 제출하고, 사람이 다시 확정합니다.`
+        ? `${id} 는 이미 시작된 작업입니다 (${active.phase}). 요구사항을 고치려면 code-agent request 가 보여 주는 요구 변경 형식(revision · changes)으로 ${requestDraftFile(id)} 를 써서 code-agent request submit 으로 제출하고, 사람이 변경안을 확정합니다.`
         : `진행 중인 작업이 있습니다: ${active.id} (${active.phase}). 끝내거나 현재 호스트 세션에서 ca-answer의 abort 동의 절차로 종료한 뒤 접수하세요.`,
     );
   }
@@ -557,6 +693,9 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
       ? { errorLog: "<사람이 준 오류 로그 그대로 — 스택 트레이스·메시지·발생 시각. 파일이면 대신 errorLogFile, 로그가 없으면 대신 noErrorLog: {reason, steps}>" }
       : {}),
   };
+  // 확정된 개정이 있으면 후속 요청은 그 개정 기준의 변경안이다 — 이전 형식으로 확정된 지시서도 표시된 ID 로 보인다(제출 때 기록으로 옮긴다)
+  const heads = existsSync(join(repoRoot, spec)) ? revisionHeads(repoRoot, id, spec) : { records: [] as RevisionRecord[] } as RevisionHeads;
+  const base = heads.confirmed ?? (existsSync(join(repoRoot, spec)) ? migratedRevision(repoRoot, id, spec, heads.records) : undefined);
   const out = [
     `# code-agent request — ${id} 접수 (${kind})`,
     "",
@@ -565,14 +704,16 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     `- 확정: 현재 호스트 세션에서 ca-answer의 request 동의 절차로 확인하고 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 ${confirmCommand(id, spec)}, 반려는 code-agent reject request ${id} --comment "사유").`,
     `- 지금: ${requestStateLine(repoRoot, id, spec).replace(/^요구사항: /, "")}`,
     "",
-    "## request.json",
-    "```json",
-    JSON.stringify(example, null, 2),
-    "```",
-    "- 원문은 `original`(사람이 준 글) 또는 `originalFile`(사람이 준 파일의 저장소 경로 — 코드가 그 파일을 그대로 옮긴다) 중 하나.",
-    "- `requirements` 는 1개 이상. 원문에 없는 요구를 더하지 않는다 — 있으면 좋을 것 같은 것은 질문으로.",
-    // 연결·질문 규칙의 원천은 ca-request 스킬이다(정리 절·질문 절) — 여기에는 형식과 데이터만 싣는다
-    "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 연결 규칙은 ca-request 의 정리 절.",
+    ...(base ? amendmentFormat(base, heads.pending) : [
+      "## request.json",
+      "```json",
+      JSON.stringify(example, null, 2),
+      "```",
+      "- 원문은 `original`(사람이 준 글) 또는 `originalFile`(사람이 준 파일의 저장소 경로 — 코드가 그 파일을 그대로 옮긴다) 중 하나.",
+      "- `requirements` 는 1개 이상. 원문에 없는 요구를 더하지 않는다 — 있으면 좋을 것 같은 것은 질문으로.",
+      // 연결·질문 규칙의 원천은 ca-request 스킬이다(정리 절·질문 절) — 여기에는 형식과 데이터만 싣는다
+      "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 연결 규칙은 ca-request 의 정리 절.",
+    ]),
     "- 머리말에 들어가는 값(title · target · scope · preserve · approver · extra)은 한 줄씩. 따옴표나 [ ] 로 감싸지 않는다.",
     pathKind
       ? `- ${kind}: target 은 **저장소에 있는 경로**, scope · preserve 는 필수다. scope 도 실재하는 경로여야 한다. scope 는 바꿀 제품 코드의 경계라 테스트 경로는 적지 않아도 된다(테스트 단계 위치 안에서 계획한다).`
@@ -603,6 +744,44 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
     `다음: ${preparationHint(repoRoot) ?? requestHint(repoRoot, id, spec)}`,
   );
   return out.join("\n");
+}
+
+/** 요구 변경 형식 — 확정 개정의 항목(안정 ID)과 다음 새 ID, 대기 중 변경안, 그 개정 기준의 초안 예시 */
+function amendmentFormat(base: Omit<RevisionRecord, "prev">, pending: RevisionRecord | undefined): string[] {
+  const doc = base.document, next = base.snapshot.next;
+  const example = {
+    kind: doc.kind, id: doc.id, title: doc.title, target: doc.target, scope: doc.scope, preserve: doc.preserve,
+    ...(doc.approver ? { approver: doc.approver } : {}), extra: doc.extra,
+    original: "<사람이 이번에 준 글 그대로 — 후속 요청 원문>",
+    revision: { parent: base.revision, mode: "amend" },
+    changes: [
+      { op: "add", section: "REQ", id: `REQ-${next.REQ}`, text: "<새 요구 — 이번 원문에 근거가 있는 것만>" },
+      { op: "modify", id: "<바꿀 항목 ID>", text: "<고친 뒤의 문장 전체>" },
+      { op: "remove", id: "<지울 항목 ID>", reason: "<사람이 지우라고 한 이유>" },
+    ],
+    clarifications: [],
+    sourceMap: [{ quote: "<이번 원문 일부 그대로>", targets: [`REQ-${next.REQ}`] }],
+  };
+  const flat = (text: string) => { const line = text.replace(/\s+/g, " ").trim(); return line.length > 120 ? `${line.slice(0, 119)}…` : line; };
+  return [
+    `## 확정된 요구 — 개정 ${base.revision} (후속 요청은 이 개정 기준의 변경안으로 낸다)`,
+    ...SECTIONS.filter((section) => base.snapshot.items[section].length > 0)
+      .map((section) => `- ${SECTION_LABEL[section]}: ${base.snapshot.items[section].map((item) => `[${item.id}] ${flat(item.text)}`).join(" · ")}`),
+    `- 새 ID 는 ${SECTIONS.map((section) => `${section}-${next[section]}`).join(" · ")} 부터 — 삭제한 ID 는 다시 쓰지 않는다`,
+    ...(pending && pending.parent === base.revision
+      ? [`- 대기 중 변경안: ${pendingLabel(pending)} — 다시 낼 때는 그 변경까지 포함해 개정 ${base.revision} 기준으로 쓴다(대기안은 대체되고 그 원문은 함께 남는다)`] : []),
+    "",
+    `## request.json — 요구 변경 (확정 개정 ${base.revision} 기준)`,
+    "```json",
+    JSON.stringify(example, null, 2),
+    "```",
+    "- `original` 은 사람이 **이번에** 준 글 그대로다. 최초 원문과 앞 개정의 원문은 코드가 그대로 보존한다.",
+    "- 언급하지 않은 항목은 그대로 남는다 — 초안에서 빠뜨려도 지워지지 않는다. 지우려면 `remove` 에 사람이 말한 사유를 쓴다. 수정은 같은 ID, 추가는 새 ID(`section`: REQ · DONE · CON · OUT).",
+    "- 사람이 전체 교체를 요청했을 때만 `revision.mode` 를 \"replace\" 로, 그 원문 인용을 `replaceQuote` 에 쓰고 requirements · done · constraints · outOfScope 전체 목록을 준다.",
+    "- `sourceMap`: 이번 원문 인용 quote → 바뀐 항목 ID(새 항목은 add 의 id). 이미 있는 요구를 다시 말한 부분은 그 항목 ID 로 잇는다.",
+    "- 같은 변경안·같은 원문을 다시 내면 새 개정을 만들지 않는다. 오래된 parent 의 변경안은 그 뒤 확정된 개정이 바꾼 항목과 겹치지 않을 때만 최신 개정 위에 적용된다.",
+    "- 머리말 값은 바꿀 때만 고친다 — 진행 중인 작업의 target 은 요구 변경으로 바꾸지 않는다.",
+  ];
 }
 
 /**
@@ -795,9 +974,176 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
     throw new Stop("오류 로그가 20만 자를 넘습니다 — 발생 시각 앞뒤의 스택 트레이스·오류 메시지 구간만 남긴 파일을 사람에게 받아 다시 제출하세요.");
   }
 
-  const traced = intakeTrace(original, request);
+  // 사람이 편집기로 쓴 지시서는 덮지 않는다 — 렌더한 파일에는 코드가 남긴 표시가 있다
+  const existing = existsSync(join(repoRoot, spec)) ? readFileSync(join(repoRoot, spec), "utf-8") : undefined;
+  if (existing !== undefined && !existing.includes(RENDER_MARK)) {
+    throw new Stop(
+      `사람이 쓴 지시서가 이미 있습니다: ${spec} — 덮어쓰지 않았습니다.\n` +
+        `그 지시서로 하려면 현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정하세요 (직접 CLI를 원하면 TTY에서 ${confirmCommand(request.id, spec)}). 적용 뒤 ca-next 흐름에서 code-agent start ${spec} 로 자동으로 이어갑니다. ` +
+        "접수로 새로 받으려면 사람이 그 파일을 옮기거나 지웁니다.",
+    );
+  }
+  // 같은 ID 의 제출·판정은 한 번에 하나 — 동시에 들어온 변경안이 서로의 부모를 덮지 않게
+  const lockDir = join(repoRoot, STATE_DIR, "work", request.id);
+  mkdirSync(lockDir, { recursive: true });
+  const release = acquireLock(join(lockDir, "requirements.lock"), { waitMs: 5_000, ageReclaim: true, label: "요구 개정 기록",
+    display: `${STATE_DIR}/work/${request.id}/requirements.lock` });
+  try {
+    return submitRevision(repoRoot, { request, original, source, log, spec, active, manifest, existing });
+  } finally { release(); }
+}
+
+interface Submission {
+  request: RequestDraft; original: string; source: string; log?: { text: string; source: string }; spec: string;
+  active: ReturnType<typeof loadActive>; manifest: Manifest; existing?: string;
+}
+
+/** 이전 형식으로 렌더·확정된 지시서 — 개정 기록의 첫 줄(이행)로 옮길 내용. 확정본이 아니거나 손으로 쓴 지시서면 없다 */
+function migratedRevision(repoRoot: string, id: string, spec: string, records: RevisionRecord[]): Omit<RevisionRecord, "prev"> | undefined {
+  const path = join(repoRoot, spec);
+  if (!existsSync(path)) return undefined;
+  const text = readFileSync(path, "utf-8");
+  if (!text.includes(RENDER_MARK) || requestState(repoRoot, id, spec).status !== "confirmed") return undefined;
+  const confirmations = readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec && record.decision === "confirmed")
+    .filter((record, index, all) => index === 0 || all[index - 1].hash !== record.hash).length;
+  const revision = Math.max(records.reduce((max, record) => Math.max(max, record.revision), 0) + 1, confirmations, 1);
+  const { snapshot, document } = legacyDocument(text, revision);
+  return { workId: id, revision, parent: 0, mode: "migrated", changes: [], snapshot, document, history: [], draftHash: "", specHash: textHash(text),
+    at: new Date().toISOString(), legacyText: text };
+}
+
+/** 머리말·배경·오류 로그의 변경 — 요구 항목 변경과 같은 목록에 남긴다 */
+function headerChanges(base: RevisionDocument, next: RevisionDocument): RevisionChange[] {
+  const show = (value: unknown) => value === undefined ? "" : Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value.replace(/\r?\n/g, " ") : JSON.stringify(value);
+  const fields: [string, unknown, unknown][] = [["title", base.title, next.title], ["target", base.target, next.target], ["scope", base.scope, next.scope],
+    ["preserve", base.preserve, next.preserve], ["approver", base.approver, next.approver], ["background", base.background.trim(), next.background.trim()],
+    ["errorLog", base.errorLog?.text, next.errorLog?.text], ["noErrorLog", base.noErrorLog, next.noErrorLog]];
+  for (const key of new Set([...Object.keys(base.extra), ...Object.keys(next.extra)])) fields.push([`extra.${key}`, base.extra[key], next.extra[key]]);
+  return fields.filter(([, before, after]) => JSON.stringify(before ?? null) !== JSON.stringify(after ?? null))
+    .map(([field, before, after]) => ({ op: "header" as const, field, before: show(before).slice(0, 200), after: show(after).slice(0, 200) }));
+}
+
+/**
+ * 개정 하나를 만든다 — 확정본이 없으면 최초 접수(목록 전체), 있으면 그 확정 개정을 부모로 한 변경안(amend·replace)이다.
+ * 같은 변경안·같은 원문의 재전송은 새 개정을 만들지 않는다. 오래된 부모의 변경안은 그 뒤 확정된 개정이 건드린 항목과 겹치지 않을 때만
+ * 최신 확정본 위에 적용한다. 기록을 먼저 남기고 지시서를 렌더한다 — 그 사이에 멈추면 같은 제출이 지시서를 다시 렌더한다.
+ */
+function submitRevision(repoRoot: string, input: Submission): string {
+  const { request, original, source, log, spec, active, manifest } = input;
+  const id = request.id;
+  const records = readRevisions(repoRoot, id);
+  let heads = revisionHeads(repoRoot, id, spec);
+  const notes: string[] = [];
+  if (!heads.confirmed) {
+    const migrated = migratedRevision(repoRoot, id, spec, records);
+    if (migrated) {
+      const appended = appendRevision(repoRoot, migrated);
+      records.push(appended);
+      heads = { confirmed: appended, records };
+      notes.push(`이전 형식으로 확정된 지시서를 개정 ${appended.revision} 으로 옮겼습니다 — 표시된 ID 를 그대로 씁니다.`);
+    }
+  }
+  const draftHash = sha(JSON.stringify({ request: { ...request, original: undefined, originalFile: undefined, errorLogFile: undefined }, original, log: log?.text }));
+  const base = heads.confirmed;
+  const fileHash = input.existing === undefined ? undefined : textHash(input.existing);
+  const confirmedHashes = new Set(readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec && record.decision === "confirmed").map((record) => record.hash));
+  const tail = base ? records.slice(records.lastIndexOf(base) + 1) : records;
+  const latest = tail.at(-1);
+  // 기록은 남았는데 렌더 전에 멈춘 같은 제출 — 지시서를 다시 렌더해 기록과 맞춘다
+  if (latest && latest.draftHash === draftHash && latest.specHash !== fileHash && !readRequestLedger(repoRoot, id).some((record) => record.hash === latest.specHash)) {
+    writeAtomic(join(repoRoot, spec), revisionText(latest));
+    return `이전 제출이 지시서 렌더 전에 멈췄습니다 — 기록된 ${latest.parent > 0 ? `변경안 ${pendingLabel(latest)}` : "접수 초안"} 으로 ${spec} 를 다시 렌더했습니다. 새 개정을 만들지 않았습니다.\n` +
+      `현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정합니다 (직접 CLI를 원하면 TTY에서 \`${confirmCommand(id, spec)}\`).`;
+  }
+  if (heads.pending && heads.pending.draftHash === draftHash) {
+    const rejected = readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec).pop();
+    if (rejected?.decision === "rejected" && rejected.hash === heads.pending.specHash) {
+      throw new Stop(`반려된 내용과 같습니다 — 다시 제출하지 않았습니다. 반려 사유: ${rejected.comment ?? "(사유 없음)"}\n` +
+        "사유가 가리키는 곳을 초안에서 고치고, 사유만으로 정할 수 없으면 사람에게 물으세요.");
+    }
+    return `같은 ${heads.pending.parent > 0 ? `변경안 ${pendingLabel(heads.pending)}` : "접수 초안"}이 이미 제출돼 확정을 기다립니다 — 새 개정을 만들지 않았습니다.\n` +
+      `현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정합니다 (직접 CLI를 원하면 TTY에서 \`${confirmCommand(id, spec)}\`).`;
+  }
+  const now = new Date().toISOString();
+  let proposal: Omit<RevisionRecord, "prev">;
+  if (!base) {
+    if (request.revision) {
+      throw new Stop(`${id} 에는 확정된 요구 개정이 없습니다 — 최초 접수 형식(requirements · done · constraints · outOfScope 전체 목록)으로 제출합니다. 형식은 code-agent request 가 보여 줍니다.`);
+    }
+    const snapshot = initialSnapshot(draftLists(request), 1);
+    proposal = { workId: id, revision: 1, parent: 0, mode: "initial", changes: [], snapshot,
+      document: draftDocument(request, [{ revision: 1, text: original, source, hash: textHash(original) }], log), history: [], draftHash, specHash: "", at: now };
+  } else {
+    // 같은 변경안이 이미 확정된 개정 — 다시 반영하지 않는다
+    const done = records.find((record) => record.draftHash === draftHash && confirmedHashes.has(record.specHash));
+    if (done) return `같은 변경안이 이미 개정 ${done.revision} 으로 확정돼 있습니다 — 새 개정을 만들지 않았습니다. 지금 확정 개정은 ${base.revision} 입니다.`;
+    if (!request.revision) {
+      const lists = draftLists(request);
+      const missing = SECTIONS.flatMap((section) => base.snapshot.items[section]
+        .filter((item) => !lists[section].some((text) => normalizeText(text) === normalizeText(item.text))).map((item) => item.id));
+      const added = SECTIONS.reduce((sum, section) => sum + lists[section].filter((text) => !base.snapshot.items[section].some((item) => normalizeText(item.text) === normalizeText(text))).length, 0);
+      const header = headerChanges(base.document, draftDocument(request, base.document.originals, log, base.document)).flatMap((change) => change.op === "header" ? [change.field] : []);
+      if (!missing.length && !added && !header.length && textHash(original) === base.document.originals[0]?.hash) {
+        return `바뀐 것이 없습니다 — 확정 개정 ${base.revision} 그대로입니다(항목 순서가 달라도 ID 는 그대로입니다). 새 개정을 만들지 않았습니다.`;
+      }
+      throw new Stop([
+        `${id} 에는 확정된 요구 개정 ${base.revision} 이 있습니다 — 후속 요청은 요구 변경 형식으로 제출합니다(전체 목록을 다시 내면 빠뜨린 요구가 지워질 수 있어 받지 않습니다).`,
+        ...(missing.length ? [`  - 이 초안에 없는 확정 항목: ${missing.join(", ")} — 초안에서 빠졌다는 이유로 지우지 않습니다. 지우려면 changes 의 remove 에 사람이 말한 사유를 씁니다.`] : []),
+        ...(header.length ? [`  - 바뀐 머리말: ${header.join(", ")} — 변경안에 그 값과 바꾸라고 한 원문을 함께 씁니다.`] : []),
+        `  - 형식: "revision": {"parent": ${base.revision}, "mode": "amend"}, "changes": [{"op":"add","section":"REQ","text":"…"}, {"op":"modify","id":"REQ-1","text":"…"}, {"op":"remove","id":"REQ-2","reason":"…"}], "original": 이번에 받은 글 그대로.`,
+        "  - 사람이 전체 교체를 요청했을 때만 \"mode\": \"replace\" 와 그 원문 인용(replaceQuote), 전체 목록을 씁니다. code-agent request 가 현재 항목과 형식을 보여 줍니다.",
+      ].join("\n"));
+    }
+    const revision = base.revision + 1;
+    const { parent, mode, replaceQuote } = request.revision;
+    if (parent > base.revision) throw new Stop(`개정 ${parent} 은 확정되지 않았습니다 — 지금 확정 개정은 ${base.revision} 입니다. revision.parent 를 ${base.revision} 으로 씁니다.`);
+    if (base.document.originals.some((entry) => entry.hash === textHash(original))) {
+      const seen = base.document.originals.find((entry) => entry.hash === textHash(original))!;
+      return `같은 원문이 이미 개정 ${seen.revision} 에 반영돼 있습니다 — 새 개정을 만들지 않았습니다. 사람이 새로 요청한 내용이 있으면 그 글을 original 로 씁니다.`;
+    }
+    if (parent < base.revision) {
+      // 그 뒤 확정된 개정들이 건드린 항목과 겹치면 받지 않는다 — 겹치지 않으면 최신 확정본 위에 적용한다
+      const confirmedLater = records.filter((record) => record.revision > parent && record.revision <= base.revision && confirmedHashes.has(record.specHash));
+      const theirs = new Set(confirmedLater.flatMap((record) => touchedIds(record.changes)));
+      const mine = (request.changes ?? []).map((change) => change.id).filter((value): value is string => !!value);
+      const clash = mine.filter((value) => theirs.has(value));
+      if (mode === "replace" || clash.length) {
+        throw new Stop(`개정 ${parent} 기준 변경안이 그 뒤 확정된 개정 ${base.revision} 과 ${clash.length ? `겹칩니다(${clash.join(", ")})` : "충돌합니다(전체 교체)"} — 적용하지 않았습니다.\n` +
+          `code-agent request 로 지금 확정 개정 ${base.revision} 의 항목을 보고 그 개정 기준으로 다시 작성합니다. 같은 항목을 두고 뜻이 갈리면 사람에게 묻습니다.`);
+      }
+      notes.push(`개정 ${parent} 기준 변경안을 그 뒤 확정된 개정 ${base.revision} 위에 적용했습니다 — 겹치는 항목이 없습니다.`);
+    }
+    // 아직 확정하지 않은 대기 변경안을 대체할 때 그 원문은 함께 남긴다 — 대조표가 미연결로 보여 빠뜨린 변경을 잡는다
+    const carried = heads.pending && heads.pending.parent === base.revision
+      ? heads.pending.document.originals.filter((entry) => entry.revision === revision && entry.hash !== textHash(original)) : [];
+    if (carried.length) notes.push(`대기 중이던 변경안 ${pendingLabel(heads.pending!)} 을 이 변경안으로 대체합니다 — 그 원문 ${carried.length}개를 함께 남겼습니다.`);
+    const originals = [...base.document.originals, ...carried, { revision, text: original, source, hash: textHash(original) }];
+    let applied: { snapshot: RevisionRecord["snapshot"]; changes: RevisionChange[] };
+    let sourceMap = request.sourceMap;
+    if (mode === "replace") {
+      const fresh = originals.filter((entry) => entry.revision === revision).map((entry) => normalizeText(entry.text)).join(" ");
+      if (!fresh.includes(normalizeText(replaceQuote!))) throw new Stop(`replaceQuote 가 이번 원문에 없습니다: ${replaceQuote} — 사람이 전체 교체를 요청한 글을 그대로 인용합니다.`);
+      const replaced = replaceSnapshot(base.snapshot, draftLists(request), revision, `전체 교체 — "${replaceQuote}"`);
+      applied = replaced;
+      sourceMap = request.sourceMap?.map((entry) => ({ ...entry, targets: entry.targets.map((target) => replaced.positional[target] ?? target) }));
+    } else applied = applyChanges(base.snapshot, (request.changes ?? []) as DraftChange[], revision);
+    const document = draftDocument({ ...request, sourceMap }, originals, log, base.document);
+    const header = headerChanges(base.document, document);
+    if (active?.id === id && document.target[0] !== active.target) {
+      throw new Stop(`진행 중인 작업(${id})의 대상은 ${active.target} 입니다 — 대상 변경(${document.target.join(", ")})은 같은 작업의 요구 변경으로 받지 않습니다. ` +
+        "대상을 바꾸는 것이 맞는지 사람에게 묻고, 다른 대상이면 그 대상의 ID 로 따로 접수합니다(같은 대상의 추가 요구는 이 ID 로 이어갑니다).");
+    }
+    const changes = [...applied.changes, ...header];
+    const newAnswers = document.clarifications.length > base.document.clarifications.length;
+    if (!changes.length && !newAnswers) throw new Stop(`바뀐 것이 없습니다 — changes 와 머리말이 확정 개정 ${base.revision} 과 같습니다. 새 개정을 만들지 않았습니다.`);
+    proposal = { workId: id, revision, parent: base.revision, parentHash: base.specHash, mode, changes, snapshot: applied.snapshot, document,
+      history: [...base.history, { revision: base.revision, mode: base.mode, changes: base.changes.length, at: base.at }],
+      ...(replaceQuote ? { replaceQuote } : {}), draftHash, specHash: "", at: now };
+  }
+
+  const traced = revisionTrace(proposal);
   if (traced.problems.length) throw new Stop(`원문 연결이 올바르지 않습니다:\n${traced.problems.join("\n")}`);
-  const text = renderRequirement(request, original, source, log);
+  const text = renderRevision(proposal);
   // 지시서 규칙은 하나다 — 손으로 쓴 지시서와 같은 검사를 렌더한 결과에 그대로 건다
   let order: WorkOrder;
   try {
@@ -821,51 +1167,55 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
       `머리말로 옮기면 값이 달라집니다: ${bent.join(", ")} — 따옴표나 [ ] 로 감싼 값, 빈 항목은 쓰지 않습니다.`,
     );
   }
-
-  // 사람이 편집기로 쓴 지시서는 덮지 않는다 — 렌더한 파일에는 코드가 남긴 표시가 있다
-  const existing = existsSync(join(repoRoot, spec)) ? readFileSync(join(repoRoot, spec), "utf-8") : undefined;
-  if (existing !== undefined && !existing.includes(RENDER_MARK)) {
-    throw new Stop(
-      `사람이 쓴 지시서가 이미 있습니다: ${spec} — 덮어쓰지 않았습니다.\n` +
-        `그 지시서로 하려면 현재 호스트 세션에서 ca-answer의 request 동의 절차로 확정하세요 (직접 CLI를 원하면 TTY에서 ${confirmCommand(request.id, spec)}). 적용 뒤 ca-next 흐름에서 code-agent start ${spec} 로 자동으로 이어갑니다. ` +
-        "접수로 새로 받으려면 사람이 그 파일을 옮기거나 지웁니다.",
-    );
-  }
-  const before = requestState(repoRoot, request.id, spec);
+  const hash = textHash(text);
+  const before = requestState(repoRoot, id, spec);
   // 반려된 그 내용을 그대로 다시 내지 않는다 — 사유를 읽지 않은 제출은 사람에게 같은 화면을 한 번 더 보일 뿐이다
-  const lastDecision = readRequestLedger(repoRoot, request.id)
-    .filter((record) => record.id === request.id && record.spec === spec)
-    .pop();
-  if (lastDecision?.decision === "rejected" && lastDecision.hash === textHash(text)) {
+  const rejected = readRequestLedger(repoRoot, id).filter((record) => record.id === id && record.spec === spec && record.decision === "rejected" && record.hash === hash).pop();
+  if (rejected) {
     throw new Stop(
-      `반려된 내용과 같습니다 — 다시 제출하지 않았습니다. 반려 사유: ${lastDecision.comment ?? "(사유 없음)"}\n` +
+      `반려된 내용과 같습니다 — 다시 제출하지 않았습니다. 반려 사유: ${rejected.comment ?? "(사유 없음)"}\n` +
         "사유가 가리키는 곳을 초안에서 고치고, 사유만으로 정할 수 없으면 사람에게 물으세요.",
     );
   }
-  writeAtomic(join(repoRoot, spec), text);
-  const after = requestState(repoRoot, request.id, spec);
-  const place = { workId: request.id, phase: active?.id === request.id ? active.phase : "request" };
-  recordEvent(repoRoot, { type: "request.submitted", ...place, detail: { requirements: request.requirements.length, done: request.done.length,
-    hash: textHash(text).slice(0, 12), before: before.status, after: after.status } });
-  // 확정한 지시서를 바꿨으면 그 확정(과 거기 묶인 계획 승인)은 다시 확정할 때까지 쓰이지 않는다
-  if (before.status === "confirmed" && after.status !== "confirmed") recordEvent(repoRoot, { type: "invalidated", ...place, reason: "확정 뒤 요구사항 재제출 — 다시 확정해야 진행" });
+  // 렌더가 지금 지시서와 같으면 기록할 것이 없다(같은 내용의 다른 초안 표기)
+  if (hash !== fileHash) {
+    appendRevision(repoRoot, { ...proposal, specHash: hash });
+    writeAtomic(join(repoRoot, spec), text);
+  }
+  const after = requestState(repoRoot, id, spec);
+  const place = { workId: id, phase: active?.id === id ? active.phase : "request" };
+  recordEvent(repoRoot, { type: "request.submitted", ...place, detail: { revision: proposal.revision, parent: proposal.parent, mode: proposal.mode,
+    changes: proposal.changes.length, requirements: proposal.snapshot.items.REQ.length, done: proposal.snapshot.items.DONE.length,
+    hash: hash.slice(0, 12), before: before.status, after: after.status } });
+  // 확정한 지시서를 바꿨으면 그 확정(과 거기 묶인 계획 승인)은 변경안을 확정할 때까지 쓰이지 않는다
+  if (before.status === "confirmed" && after.status !== "confirmed") {
+    recordEvent(repoRoot, { type: "invalidated", ...place, reason: proposal.parent > 0 ? `요구 변경안 개정 ${proposal.revision} 제출 — 확정해야 진행` : "확정 뒤 요구사항 재제출 — 다시 확정해야 진행" });
+  }
+  const amended = proposal.parent > 0;
   const note =
     after.status === "confirmed"
       ? "지금 내용은 이미 확정돼 있습니다 — 바뀐 것이 없습니다."
-      : before.status === "confirmed"
-        ? "확정 뒤 내용이 바뀌었습니다 — 사람이 다시 확정해야 진행합니다."
-        : "사람이 확정해야 분석이 시작됩니다.";
+      : amended
+        ? `요구 변경안을 받았습니다 — 확정 개정 ${proposal.parent} 의 결과는 그대로 두고, 변경안을 확정하기 전에는 진행·계획 배정을 멈춥니다.`
+        : before.status === "confirmed"
+          ? "확정 뒤 내용이 바뀌었습니다 — 사람이 다시 확정해야 진행합니다."
+          : "사람이 확정해야 분석이 시작됩니다.";
+  const { items } = proposal.snapshot;
   return [
-    `요구사항을 렌더했습니다: ${spec} (${request.kind} · ${request.title})`,
-    `  - 대상: ${request.target.join(", ")}`,
-    ...(request.scope.length > 0 ? [`  - 범위: ${request.scope.join(", ")}`] : []),
-    ...(request.preserve.length > 0 ? [`  - 보존: ${request.preserve.join(" / ")}`] : []),
-    `  - 요구 내용 ${request.requirements.length}개 · 완료 조건 ${request.done.length}개 · 접수 때 정한 것 ${request.clarifications.length}개`,
+    amended
+      ? `요구 변경안을 렌더했습니다: ${spec} — ${pendingLabel(proposal as RevisionRecord)}`
+      : `요구사항을 렌더했습니다: ${spec} (${request.kind} · ${request.title})`,
+    `  - 대상: ${proposal.document.target.join(", ")}`,
+    ...(proposal.document.scope.length > 0 ? [`  - 범위: ${proposal.document.scope.join(", ")}`] : []),
+    ...(proposal.document.preserve.length > 0 ? [`  - 보존: ${proposal.document.preserve.join(" / ")}`] : []),
+    `  - 요구 내용 ${items.REQ.length}개 · 완료 조건 ${items.DONE.length}개 · 제약 ${items.CON.length}개 · 범위 밖 ${items.OUT.length}개 · 접수 때 정한 것 ${proposal.document.clarifications.length}개`,
+    ...proposal.changes.map((change) => `  - ${changeLine(change)}`),
+    ...notes.map((line) => `  - ${line}`),
     "",
     traced.missing ? `원문 대조에 미연결 내용이 있습니다: ${traced.missing}\n에이전트가 sourceMap으로 반영·제외를 연결하고 다시 제출하세요. 아직 사용자에게 확정을 요청하지 않습니다.` : note,
     after.status === "confirmed" || traced.missing
       ? ""
-      : `현재 호스트 세션에서 원문과 정리를 나란히 읽고 ca-answer의 request 동의 절차로 확정합니다. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 \`${confirmCommand(request.id, spec)}\`, 반려는 \`code-agent reject request ${request.id} --comment "사유"\`).`,
+      : `현재 호스트 세션에서 원문과 정리를 나란히 읽고 ca-answer의 request 동의 절차로 확정합니다. 적용 뒤 ca-next 흐름을 자동으로 이어갑니다 (직접 CLI를 원하면 TTY에서 \`${confirmCommand(id, spec)}\`, 반려는 \`code-agent reject request ${id} --comment "사유"\`).`,
   ]
     .filter((line, index, all) => !(line === "" && index === all.length - 1))
     .join("\n");
@@ -954,13 +1304,20 @@ export function decideRequest(
   if (decision === "confirmed" && state.status === "confirmed") {
     return `${id} 요구사항은 지금 내용으로 이미 확정돼 있습니다 (${state.record.hash}).`;
   }
+  const pending = revisionHeads(repoRoot, id, spec).pending;
+  const amended = pending && pending.parent > 0 && pending.specHash === textHash(text) ? pending : undefined;
   const shown = [
     text.replace(/\s+$/, ""),
     "",
     "----",
+    ...(amended ? [`요구 변경안 ${pendingLabel(amended)} — 확정 개정 ${amended.parent} 에서 바뀌는 것:`, ...amended.changes.map((change) => `- ${changeLine(change)}`), ""] : []),
     decision === "confirmed"
-      ? `확정하면 이 요구사항이 분석 · 설계 · 계획의 근거가 됩니다. 원문과 정리가 같은 뜻인지 직접 읽고 확인하세요 (${spec}).`
-      : `반려 사유: ${comment}`,
+      ? amended
+        ? `확정하면 이 개정이 분석 · 설계 · 계획의 근거가 됩니다. 언급하지 않은 항목은 그대로 남습니다 — 변경과 최종 전체를 직접 읽고 확인하세요 (${spec}).`
+        : `확정하면 이 요구사항이 분석 · 설계 · 계획의 근거가 됩니다. 원문과 정리가 같은 뜻인지 직접 읽고 확인하세요 (${spec}).`
+      : amended
+        ? `반려 사유: ${comment}\n반려하면 지시서를 확정 개정 ${amended.parent} 으로 되돌리고 그 개정으로 이어갑니다.`
+        : `반려 사유: ${comment}`,
   ].join("\n");
   const presence = confirmOnTerminal(shown, word);
   // 사람이 읽는 사이에 다시 제출됐으면 남기지 않는다 — 보여 준 것과 남는 것이 같아야 한다

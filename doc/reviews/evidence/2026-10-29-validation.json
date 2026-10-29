@@ -5,28 +5,48 @@
     "node": "24.19.0",
     "shell": "PowerShell 5.1.26100"
   },
-  "stateSchema": 16,
-  "scopedTests": {
-    "command": "node --test --test-concurrency=4 <파일 27개>",
-    "files": ["timeline", "reproScenarios", "verification-stages", "verifyRetry", "planning", "planningChain", "planningChainFlow", "planningRecovery", "planningRetry", "planningCross", "resultContracts", "dependencyContracts", "review-gate", "crossReview", "request", "consent", "consentOutput", "assets-doctor-usage", "knowledgeDocs", "hookLoad", "hookPaths", "codex", "questionPresentation", "runtimeRecovery", "graphLifecycle", "stageFlow", "docSync"],
-    "tests": 664,
-    "pass": 662,
-    "fail": 2,
-    "cancelled": 0,
-    "skipped": 0,
-    "durationSeconds": 1024.1,
-    "failures": [
-      { "test": "대시보드 릴리스 확인 — 읽기 전용 미리보기·거부, 확인한 버전 적용과 작업 중 예약", "cause": "CLI 명령 기록이 미리보기 중 log/timeline.jsonl 을 바꿨다", "fix": "설치·버전·진단·측정 명령을 기록하지 않는다(cliMain.ts UNTIMED)" },
-      { "test": "다시 돌려도 앞 실행의 로그를 덮지 않고, 실행마다 시작·끝·소요를 타임라인에 남긴다", "cause": "시험이 단계마다 마지막 실행만 남는 증거를 대조했다", "fix": "로그 파일과 타임라인으로 대조한다" }
-    ],
-    "rerunAfterFix": {
-      "files": ["verification-stages", "runtimeRecovery", "timeline", "reproScenarios"],
-      "tests": 73,
-      "pass": 73,
+  "stateSchema": 17,
+  "scopedTests": [
+    {
+      "group": "요구·개정·재현",
+      "command": "node --test --test-concurrency=4 <파일 4개>",
+      "files": ["request", "requestRevisions", "reproScenarios", "stageFlow"],
+      "tests": 77,
+      "pass": 77,
+      "fail": 0
+    },
+    {
+      "group": "접수·흐름 인접",
+      "command": "node --test --test-concurrency=4 <파일 15개>",
+      "files": ["answers", "codexPermissions", "cross", "crossReview", "dependencyContracts", "master", "nodeRuntime", "process", "read", "remaining", "selection", "stageFlow", "consent", "hookLoad", "timeline"],
+      "tests": 296,
+      "pass": 295,
+      "fail": 1,
+      "durationSeconds": 340.7,
+      "failures": [
+        { "test": "관찰 흐름: 승인 뒤 지시서가 바뀌면 낡은 계획 작업의 단계로 되감는 순서를 안내한다", "cause": "머리말만 바꾼 전체 초안을 바뀐 것이 없다고 넘겼다", "fix": "바뀐 머리말을 알리고 변경안으로 내게 한다 — 첫 묶음에서 다시 확인" }
+      ]
+    },
+    {
+      "group": "문서·템플릿·Codex",
+      "command": "node --test --test-concurrency=2 <파일 14개>",
+      "files": ["docSync", "templateBudget", "templateText", "hostText", "hostNotation", "codex", "docs", "scripts", "knowledgeDocs", "retryPolicy", "modelPolicy", "consentBinding", "consentOutput", "assets-doctor-usage"],
+      "tests": 303,
+      "pass": 303,
       "fail": 0,
-      "durationSeconds": 175
+      "durationSeconds": 212.5,
+      "note": "파일 4개 동시 첫 실행은 시스템 메모리 부족으로 중단 — 중단 전 codex 의 보조 문서 수 고정값 2건 실패를 고친 뒤 다시 실행"
+    },
+    {
+      "group": "계획·타임라인",
+      "command": "node --test --test-concurrency=2 <파일 6개>",
+      "files": ["planning", "planningRecovery", "planningRetry", "planningCross", "planningChain", "timeline"],
+      "tests": 143,
+      "pass": 143,
+      "fail": 0,
+      "durationSeconds": 175.6
     }
-  },
+  ],
   "lastFullTest": {
     "commit": "cd8a5f8",
     "beforeThisChange": true,
@@ -39,40 +59,53 @@
     "file": "2026-10-29-repro-baseline.json",
     "command": "node scripts/repro-baseline.cjs --repeat 3",
     "fixture": "sha256:4be6f82c570ee977",
-    "stable": true
+    "stable": true,
+    "afterThisChange": {
+      "fixture": "sha256:d52666f43939a93d",
+      "fixtureChanged": "amendment 시나리오를 요구 개정 계약에 맞춰 바꿈",
+      "amendment": { "fullDraftRefused": true, "keptPrevious": true, "parent": 2, "revision": 3, "medianMs": 40 },
+      "staleIds": { "facts": "같음", "medianMs": 17 },
+      "completionStall": { "facts": "같음", "medianMs": 2308 }
+    }
   },
   "templateBudgets": {
     "calculation": "LF 정규화 글자 수 ×1.03(파일)·×1.02(흐름)를 100자 단위 올림",
-    "claudeFlow": 49200,
-    "codexFlow": 45900,
+    "claudeFlow": { "limit": 49200, "current": 48253 },
+    "codexFlow": { "limit": 45900, "current": 44958 },
     "sharedPlanningContract": "template/claude/skills/ca-plan/contract.md",
     "planningContract": {
       "limit": 4100,
       "reason": "네 계획 스킬의 공통 진행·되감기를 필수 참조하는 계약 문서"
+    },
+    "requestAmendment": {
+      "file": "template/claude/skills/ca-request/amend.md",
+      "limit": 1300,
+      "current": 1211,
+      "reason": "같은 ID 의 요구 변경안 형식 — 확정 요구가 있는 후속 요청에서만 읽는다"
     }
   },
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
-    "files": 217,
-    "compressedBytes": 865824,
-    "unpackedBytes": 3010088,
-    "agentFiles": 157,
+    "files": 219,
+    "compressedBytes": 880101,
+    "unpackedBytes": 3062321,
+    "agentFiles": 158,
     "coreFiles": 13,
-    "templateFiles": 45,
+    "templateFiles": 46,
     "testFiles": 0
   },
   "limitations": [
     "이번 변경 뒤 전체 시험은 실행하지 않았다.",
+    "요구 개정은 접수·확정·반려 복구까지다 — 진행 중 흐름의 개정 전환·계획 배정 갱신·실행 회차·상태 출력의 개정·회차·타임라인 필드는 아직 없다.",
     "실제 Claude·Codex 호스트의 타임라인 기록(완료 알림 표지·Codex UserPromptSubmit 시각)은 확인하지 않았다 — 격리 가짜 호스트와 hook 입력으로만 확인했다.",
     "구현·테스트 담당은 SubagentStart·Stop hook 이 없어 담당 실행 구간이 없다.",
     "Codex 완료 알림은 관측하지 않는다.",
-    "요구 개정 번호(revision/cycle)는 도입하지 않았다.",
     "자동 회귀는 실제 모델·실제 사람 승인·사용자 사용성 검사가 아니다."
   ],
   "validationConditions": [
     "실제 모델·유료 평가 호출 없음",
     "대상 프로젝트 시험은 임시 Git 저장소에서 실행",
     "저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
-    "범위 시험은 파일 동시 실행 4개이며 다른 시험 실행과 겹치지 않음"
+    "범위 시험 묶음은 서로 겹치지 않게 차례로 실행"
   ]
 }

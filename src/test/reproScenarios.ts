@@ -4,7 +4,7 @@
  * 판정하지 않는다. `reproScenarios.test`가 지금 동작을 고정하고, `scripts/repro-baseline.cjs`가 빌드(dist)마다 같은 시나리오를 돌려
  * 개선 전후의 사실과 시간을 비교한다. 저장소는 시나리오마다 새 임시 저장소이고 끝나면 지운다.
  *
- * - amendment: 확정한 요구가 있는 작업에 같은 ID 로 추가 요구만 든 초안을 제출한다.
+ * - amendment: 확정한 요구가 있는 작업에 같은 ID 로 추가 요구만 든 전체 목록 초안을 낸 뒤(거부), 확정 개정 기준의 변경안을 제출·확정한다.
  * - staleIds: 확정한 요구에 새 요구 ID 가 생긴 뒤 계획을 다시 준비한다.
  * - completionStall: 격리한 가짜 Claude 호스트 — CLI 진입점에 hook 입력을 넣고 메인 대화 기록을 임시 폴더에 쓴다. 담당 완료 뒤 Stop hook 이
  *   턴을 이어 붙이지 않으면 사람 입력이 있어야 다음 행동을 실행한다.
@@ -17,7 +17,7 @@ import { DIR, ID, planningRepo, REQUIREMENTS, SPEC } from "./planningRepo";
 import { writeFixture } from "./repoFixture";
 import { preparePlanning, planningWork } from "../agent/planning";
 import { loadPlanning } from "../agent/planningState";
-import { recordRequestDecision, renderRequirement, requestState, requestSubmit, type RequestDraft } from "../agent/request";
+import { recordRequestDecision, renderRequirement, requestFormat, requestState, requestSubmit, revisionHeads, type RequestDraft } from "../agent/request";
 import { sourceItems } from "../agent/sourceTrace";
 import { readTimeline, runtimeLabel, summarizeByWork, type TimelineEvent, type TimelineSummary } from "../agent/timeline";
 import { usageReport } from "../agent/usage";
@@ -55,14 +55,24 @@ function amendment(root: string): Record<string, unknown> {
   const before = ["결제 뒤 24시간 안에 주문을 취소한다.", "배송이 시작된 주문은 취소하지 않는다."], added = ["취소 사유를 저장한다."];
   seed(root, before);
   const file = `${DIR}/request.json`;
+  // 추가 요구만 든 전체 목록 초안 — 빠진 확정 요구를 지우지 않고 받지 않는다
   writeFixture(root, file, JSON.stringify(draft(added)));
+  let refused = false;
+  try { requestSubmit(root, file); } catch { refused = true; }
+  const keptAfterRefusal = sourceTexts(root).map((item) => item.text);
+  // 확정 개정 기준의 변경안 — 담당이 형식(code-agent request)에서 부모 개정을 읽는다
+  const parent = Number(/## 확정된 요구 — 개정 (\d+)/.exec(requestFormat(root))?.[1]);
+  const { requirements: _all, ...rest } = draft(added);
+  writeFixture(root, file, JSON.stringify({ ...rest, revision: { parent, mode: "amend" }, changes: [{ op: "add", section: "REQ", text: added[0] }],
+    sourceMap: [{ quote: added[0], targets: [`REQ-${before.length + 1}`] }] }));
   const response = requestSubmit(root, file);
   const after = sourceTexts(root).map((item) => item.text);
   const status = requestState(root, ID, SPEC).status;
   confirm(root);
   return {
-    before, submitted: added, after, keptPrevious: before.every((text) => after.includes(text)),
-    statusAfterSubmit: status, warnedChanged: /확정 뒤 내용이 바뀌었습니다/.test(response), reconfirmed: requestState(root, ID, SPEC).status,
+    before, submitted: added, fullDraftRefused: refused, keptAfterRefusal: before.every((text) => keptAfterRefusal.includes(text)), after,
+    keptPrevious: before.every((text) => after.includes(text)), parent, revision: revisionHeads(root, ID, SPEC).confirmed?.revision ?? null,
+    statusAfterSubmit: status, proposalShown: /요구 변경안을 렌더했습니다/.test(response), reconfirmed: requestState(root, ID, SPEC).status,
   };
 }
 
@@ -123,7 +133,7 @@ function completionStall(root: string, transcripts: string): Record<string, unkn
 }
 
 export const SCENARIOS = {
-  amendment: { title: "추가 요구만 든 같은 ID 초안이 확정한 요구를 대체한다", run: amendment },
+  amendment: { title: "같은 ID 의 추가 요구가 확정한 요구를 보존한 새 개정으로 반영된다", run: amendment },
   staleIds: { title: "새 요구 ID 가 생겨도 계획 준비가 옛 요구 ID 로 배정한다", run: staleIds },
   completionStall: { title: "담당 완료 알림 뒤 Stop 이 턴을 잇지 않아 사람 입력으로 재개한다", run: completionStall },
 } as const;

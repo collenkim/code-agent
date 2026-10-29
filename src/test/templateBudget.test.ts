@@ -48,6 +48,7 @@ const BUDGET: Record<string, number> = {
   "template/claude/skills/ca-plan/legacy.md": 1000,
   "template/claude/skills/ca-plan/SKILL.md": 3500,
   "template/claude/skills/ca-refactor/SKILL.md": 1700,
+  "template/claude/skills/ca-request/amend.md": 1300,
   "template/claude/skills/ca-request/SKILL.md": 5700,
   "template/claude/skills/ca-review/SKILL.md": 3600,
   "template/claude/skills/ca-status/SKILL.md": 2100,

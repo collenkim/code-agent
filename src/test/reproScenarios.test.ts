@@ -5,17 +5,20 @@ import { REQUIREMENTS } from "./planningRepo";
 import { runScenario } from "./reproScenarios";
 
 /**
- * 재현 시나리오의 **지금 동작**을 고정한다 — 바라는 계약이 아니라 개선 전 기준선이다. 동작을 고치면 이 시험의 기대값을 그 변경과 함께 바꾸고,
+ * 재현 시나리오의 **지금 동작**을 고정한다 — 고친 시나리오는 바라는 계약을, 아직 고치지 않은 시나리오는 개선 전 동작을 본다. 동작을 고치면 이 시험의 기대값을 그 변경과 함께 바꾸고,
  * 같은 시나리오를 `scripts/repro-baseline.cjs`로 전후 빌드에서 돌려 사실과 시간을 비교한다.
  */
-test("요구 변경 재현 — 추가 요구만 든 같은 ID 초안이 확정한 요구를 대체하고, 무효화 원인을 남긴 뒤 다시 확정된다", () => {
+test("요구 변경 재현 — 추가 요구만 든 전체 목록 초안은 확정 요구를 지우지 않고 거부하고, 변경안은 기존 요구를 보존한 새 개정으로 확정된다", () => {
   const { facts, timeline } = runScenario("amendment");
-  assert.deepEqual(facts.after, facts.submitted);
-  assert.equal(facts.keptPrevious, false);
-  assert.deepEqual([facts.statusAfterSubmit, facts.warnedChanged, facts.reconfirmed], ["unconfirmed", true, "confirmed"]);
+  assert.equal(facts.fullDraftRefused, true);
+  assert.equal(facts.keptAfterRefusal, true);
+  assert.deepEqual(facts.after, [...(facts.before as string[]), ...(facts.submitted as string[])]);
+  assert.equal(facts.keptPrevious, true);
+  assert.equal(facts.revision, (facts.parent as number) + 1);
+  assert.deepEqual([facts.statusAfterSubmit, facts.proposalShown, facts.reconfirmed], ["unconfirmed", true, "confirmed"]);
   const [work] = timeline;
   assert.equal(work.workId, "PLAN-1");
-  assert.deepEqual(work.causes.map((cause) => [cause.type, cause.reason, cause.phase]), [["invalidated", "확정 뒤 요구사항 재제출 — 다시 확정해야 진행", "analysis"]]);
+  assert.deepEqual(work.causes.map((cause) => [cause.type, cause.reason, cause.phase]), [["invalidated", `요구 변경안 개정 ${facts.revision} 제출 — 확정해야 진행`, "analysis"]]);
   assert.equal(work.counts["request.submitted"], 1);
 });
 

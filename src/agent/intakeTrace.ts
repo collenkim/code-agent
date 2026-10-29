@@ -6,10 +6,14 @@ export interface IntakeInput {
 const normalize = (s: string) => s.normalize("NFC").replace(/\s+/g, " ").trim();
 const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
-/** 의미를 자동 판정하지 않는다. 원문의 각 부분이 어디에 반영/제외됐는지를 확정 전에 보여준다. */
-export function intakeTrace(original: string, request: IntakeInput) {
+/**
+ * 의미를 자동 판정하지 않는다. 원문의 각 부분이 어디에 반영/제외됐는지를 확정 전에 보여준다.
+ * `explicit` 는 요구 개정의 연결 대상(안정 ID → 내용)이다 — 없으면 목록 위치로 REQ-1 처럼 붙인다.
+ */
+export function intakeTrace(original: string, request: IntakeInput, explicit?: Record<string, string>) {
   const targets: Record<string, string> = { TITLE: request.title, BACKGROUND: request.background };
-  for (const [prefix, values] of [["REQ", request.requirements], ["DONE", request.done], ["CON", request.constraints], ["OUT", request.outOfScope]] as const) {
+  if (explicit) Object.assign(targets, explicit);
+  else for (const [prefix, values] of [["REQ", request.requirements], ["DONE", request.done], ["CON", request.constraints], ["OUT", request.outOfScope]] as const) {
     values.forEach((value, index) => { targets[`${prefix}-${index + 1}`] = value; });
   }
   const raw = normalize(original);

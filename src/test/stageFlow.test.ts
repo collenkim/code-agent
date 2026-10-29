@@ -152,8 +152,9 @@ describe("FLOW-03 — 승인 무효의 재진입", () => {
       next(root);
       assert.equal(loadActive(root)!.phase, "implement");
       const draft = `doc/work/${CONSENT_WORK_ID}/request.json`;
-      const request = JSON.parse(readFileSync(join(root, draft), "utf8"));
-      writeFixture(root, draft, JSON.stringify({ ...request, title: "값과 오류 — 고침" }));
+      const { requirements: _listed, ...request } = JSON.parse(readFileSync(join(root, draft), "utf8"));
+      writeFixture(root, draft, JSON.stringify({ ...request, title: "값과 오류 — 고침", original: "제목을 '값과 오류 — 고침'으로 바꿔 주세요.",
+        revision: { parent: 1, mode: "amend" }, changes: [] }));
       requestSubmit(root, join(root, draft));
       confirmForTest(root, join(root, CONSENT_SPEC));
       const line = nextLine(status(root));

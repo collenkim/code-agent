@@ -195,16 +195,18 @@ describe("접수 — 세션이 없을 때도 hook 이 지키는 것", () => {
     assert.throws(() => docsLink(repo, "conventions", ["doc/work/ORD-7/fake-conv.md"]), /요구사항을 접수 중입니다 \(ORD-7\)\. 문서 연결/);
   });
 
-  test("작업 중에도 code-agent request 는 접수 형식을 준다 — 요구사항을 고칠 때", () => {
+  test("작업 중에도 code-agent request 는 접수 형식을 준다 — 요구사항을 고칠 때는 확정 개정 기준의 변경 형식", () => {
     requestBegin(repo, ID, "feature");
     draft();
+    // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다
+    assert.match(requestFormat(repo), /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\. 연결 규칙은 ca-request 의 정리 절\.$/m);
     requestSubmit(repo, DRAFT);
     confirm();
     start(repo, join(repo, SPEC));
     const format = requestFormat(repo);
-    assert.match(format, /# code-agent request — ORD-7 접수 \(feature\)[\s\S]*"requirements"[\s\S]*다음: 확정됨/);
-    // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다
-    assert.match(format, /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\. 연결 규칙은 ca-request 의 정리 절\.$/m);
+    assert.match(format, /# code-agent request — ORD-7 접수 \(feature\)[\s\S]*## 확정된 요구 — 개정 1[\s\S]*\[REQ-1\] 결제 뒤 24시간 안의 주문을 취소한다[\s\S]*"revision": \{\s*"parent": 1,\s*"mode": "amend"[\s\S]*"changes"[\s\S]*다음: 확정됨/);
+    assert.doesNotMatch(format, /"requirements"/);
+    assert.match(format, /^- 언급하지 않은 항목은 그대로 남는다 — 초안에서 빠뜨려도 지워지지 않는다\./m);
     assert.doesNotMatch(format, /## 질문 — 접수에서 물을 것|AskUserQuestion/);
     // context 는 스테이지 컨텍스트다
     assert.match(context(repo), /# code-agent context — ORD-7 · 요구사항 분석/);
@@ -374,8 +376,12 @@ describe("접수 — 확정 · 시작", () => {
     confirm();
     start(repo, join(repo, SPEC));
     assert.match(hook("Write", { file_path: join(repo, SPEC) }) ?? "", /작업 지시서\(doc\/work\/ORD-7\/requirement\.md\)는 고칠 수 없습니다/);
+    // 전체 목록을 다시 내면 받지 않는다 — 빠진 확정 항목이 조용히 지워지지 않게
     draft({ requirements: ["결제 뒤 24시간 안의 주문을 취소한다", "취소 사유를 남긴다"] });
-    assert.match(requestSubmit(repo, DRAFT), /확정 뒤 내용이 바뀌었습니다 — 사람이 다시 확정해야 진행합니다/);
+    assert.throws(() => requestSubmit(repo, DRAFT), /이 초안에 없는 확정 항목: REQ-2/);
+    const said = "취소 사유도 남겨 주세요.";
+    draft({ original: said, requirements: [], revision: { parent: 1, mode: "amend" }, changes: [{ op: "add", section: "REQ", text: "취소 사유를 남긴다" }], sourceMap: [{ quote: said, targets: ["REQ-3"] }] });
+    assert.match(requestSubmit(repo, DRAFT), /요구 변경안을 받았습니다 — 확정 개정 1 의 결과는 그대로 두고/);
     assert.throws(() => next(repo), /요구사항이 확정 뒤 바뀌었습니다/);
   });
 

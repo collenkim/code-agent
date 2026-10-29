@@ -19,8 +19,8 @@ import { ownRelease } from "./runtimeSelect";
 export const TIMELINE_LOG = `${STATE_DIR}/log/timeline.jsonl`;
 
 export type TimelineType =
-  /** 요청 접수(접수 세션 열기)·초안 제출(지시서 렌더)·사람의 확정·반려 */
-  | "request.received" | "request.submitted" | "request.decided"
+  /** 요청 접수(접수 세션 열기)·초안 제출(지시서 렌더)·사람의 확정·반려·반려한 변경안 대신 직전 확정본으로 되돌림 */
+  | "request.received" | "request.submitted" | "request.decided" | "request.restored"
   /** 담당 배정(계획 배정·교정 배정·구현 인계)·시작·완료(hook 이 받은 완료 — Claude 비동기 담당은 이 직후 메인에 완료 알림이 들어간다) */
   | "agent.assigned" | "agent.started" | "agent.finished"
   /** 흐름이 고른 다음 행동과 호스트가 실행한 명령 */
