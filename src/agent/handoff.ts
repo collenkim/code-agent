@@ -14,6 +14,7 @@ import type { PreviousAttempt } from "./planning";
 import { errorLogOf } from "../core/workOrder";
 import { planFormatFor } from "../core/plan";
 import { stageTestRoots } from "./testFiles";
+import { recordEvent } from "./timeline";
 import type { Work } from "./work";
 
 /**
@@ -73,9 +74,12 @@ export function contextHandoff(root: string): string {
  * 커서가 그 스테이지가 아니면 undefined. 커서는 이미 옮겨졌으므로 context 를 만들지 못해도 명령을 실패시키지 않는다
  */
 export function stageHandoff(root: string, at: "implement" | "review"): { lines: string[]; file?: string; agent?: string } | undefined {
-  if (loadWork(root)?.active.phase !== at) return undefined;
+  const work = loadWork(root);
+  if (work?.active.phase !== at) return undefined;
   try {
     const { file, agent } = writeContext(root);
+    if (file) recordEvent(root, { type: "agent.assigned", workId: work.active.id, target: work.active.target, phase: at, ...(work.active.task ? { taskId: work.active.task } : {}),
+      detail: { agentType: agent ?? "", mode: "handoff", contextFile: file } });
     return file ? { lines: handoffLines(file, agent), file, agent: agent && agentName(agent) } : undefined;
   } catch (error) {
     if (!(error instanceof Stop)) throw error;

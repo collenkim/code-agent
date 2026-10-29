@@ -10,7 +10,7 @@ require('./live-eval-guard.cjs')('node scripts/evaluate-full-flow.cjs');
  * 정책 효과 비교는 policy 대 exec-opus 로 한다 — 실행 역할의 모델 하나만 다르다. 보고서의 agents 에 역할별 model/effort 를 싣는다.
  * 판단 역할 목록은 modelPolicy ROLE_POLICY 의 등급에서 가져온다. resume 은 기록된 agentsMode 를 잇고 다른 --agents 는 거부한다
  * (agentsMode 가 없는 이전 기록은 그 기록의 --model 값 opus·sonnet 을 모드로 본다).
- * 보고서에는 usage 텍스트와 함께 usageData(usageReport — 요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기)·retry(retryReports — 읽기 전용)·
+ * 보고서에는 usage 텍스트와 함께 usageData(usageReport — 요청·도구 호출·도구 결과 글자·명령별 호출·스킬 읽기·실행 타임라인 요약)·retry(retryReports — 읽기 전용)·
  * 턴별 numTurns·codexAgents 를 싣는다. 반복 실행 편차는 scripts/summarize-evaluations.cjs 로 요약한다.
  * total_cost_usd는 --continue 세션의 누적값이다 — 턴 비용은 직전 누적값과의 차이로 센다.
  * 업무 질문의 빈 답은 드라이버가 '평가 fixture 답'으로 채운다. 실제 사람의 답이 아니며 questionFixtures에 남긴다.

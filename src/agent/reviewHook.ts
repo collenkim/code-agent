@@ -9,6 +9,7 @@ import { effectiveReviewer, materializeReviewers, normalizeReviewTable, REVIEWER
 import { planPaths, treeHashNow } from "./evidence";
 import { findRepoRoot } from "./layout";
 import { noteSubagentReturn } from "./hookLog";
+import { recordEvent } from "./timeline";
 import { grantScope, LIMITS, limitOf, subagentExit, TIMING } from "./retryPolicy";
 import { loadReview, mutateReview, normalizeFindings, REVIEW_BLOCK, reviewDocFile, type ReviewLog, type ReviewRound } from "./review";
 import { loadWork } from "./work";
@@ -86,6 +87,7 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   }
   const planned = planPaths(work);
   const session = input.session_id, agent = input.agent_id;
+  const place = { workId: id, target, phase: work.active.phase, taskId: `review:r${opened.round}` };
   /** 잠금 안에서 다시 읽은 기록의 같은 회차 — 그 사이 새 회차가 열렸으면 이 실행은 그 회차의 것이 아니다 */
   const sameRound = (log: ReviewLog | undefined): { log: ReviewLog; last: ReviewRound; runs: ReviewerRun[] } => {
     const last = log?.rounds.at(-1);
@@ -95,33 +97,35 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
   const runLimit = (log: ReviewLog, round: number) => limitOf("reviewerRuns", LIMITS.reviewerRuns, log.grants ?? [], grantScope({ file: "review", key: "reviewerRuns", round }));
 
   if (input.hook_event_name === "SubagentStart") {
-    mutateReview(repoRoot, id, target, (current) => {
+    // 무시한 시작도 담당은 실제로 돈다 — 실행 시간에 넣고 무시 사유를 남긴다. 같은 실행의 중복 이벤트만 남기지 않는다
+    const started = mutateReview<string | undefined | false>(repoRoot, id, target, (current) => {
       const { log, last, runs } = sameRound(current);
       const mine = runs.filter((run) => run.sessionId === session && run.agentId === agent);
       // 같은 실행의 중복 이벤트 — 아무것도 하지 않는다
-      if (mine.some(open)) return { value: undefined };
+      if (mine.some(open)) return { value: false };
       const now = Date.now(), at = new Date(now).toISOString();
       const entry: ReviewerRun = { sessionId: session, agentId: agent, startedAt: at, host, ...(mine.length ? { resumed: true } : {}) };
       if (effectiveReviewer(last, planned)) {
         runs.push({ ...entry, ignored: { at, reason: "completed-round" } });
-        return { log, value: undefined };
+        return { log, value: "completed-round" };
       }
       const running = runs.find((run) => !run.ignored && !run.failure && !run.completedAt);
       if (running) {
         // 먼저 **시작한** 실행만 결과가 된다 — 병렬로 불러 빨리 끝난 결과를 고르는 재굴림을 닫는다
         if (now - Date.parse(running.startedAt) <= TIMING.reviewerOrphanMs) {
           runs.push({ ...entry, ignored: { at, reason: "concurrent" } });
-          return { log, value: undefined };
+          return { log, value: "concurrent" };
         }
         running.ignored = { at, reason: "orphaned" };
       }
       if (reviewerState(last, planned, now).runs >= runLimit(log, last.round)) {
         runs.push({ ...entry, ignored: { at, reason: "run-limit" } });
-        return { log, value: undefined };
+        return { log, value: "run-limit" };
       }
       runs.push(entry);
       return { log, value: undefined };
     }, { hook: true });
+    if (started !== false) recordEvent(repoRoot, { type: "agent.started", ...place, host, session, agent, detail: { agentType: "ca-reviewer", round: opened.round, ...(started ? { ignored: started } : {}) } });
     return;
   }
 
@@ -170,6 +174,9 @@ export function observeReviewer(input: ReviewHookInput, projectDir?: string, hos
     document: (text) => section === undefined ? text
       : stripBlock(text, REVIEW_BLOCK).replace(/(^## 지적[^\S\n]*\n)[\s\S]*?(?=^## |$(?![\s\S]))/m, (_, heading: string) => `${heading}\n${section}\n\n`),
   });
+  if (outcome.error instanceof ReturnToReviewer) recordEvent(repoRoot, { type: "retry.used", ...place, host, session, agent, reason: "리뷰어 되돌림(agent-format-error)", detail: { counter: "agentReturn", limit: LIMITS.agentReturn } });
+  else if (!outcome.error) recordEvent(repoRoot, { type: "agent.finished", ...place, host, session, agent, ...(outcome.recorded ? { reason: outcome.recorded } : {}),
+    detail: { agentType: "ca-reviewer", round: opened.round, status: outcome.recorded ? "recorded" : "completed" } });
   if (outcome.error) throw outcome.error;
   if (outcome.recorded) throw new RecordedFailure(outcome.recorded);
 }

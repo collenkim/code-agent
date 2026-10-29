@@ -37,7 +37,8 @@ import { decideRequest, requestBegin, requestFormat, requestSubmit } from "./req
 import { openRound } from "./review";
 import { preparePlanning, planningStatus, dispatchPlanning, cancelPlanning, repairPlanning, planningResult, planningContracts, planningReuseAnswer } from "./planning";
 import { manifestCheck, survey } from "./survey";
-import { usage, usageReport } from "./usage";
+import { commandKey, usage, usageReport } from "./usage";
+import { recordEvent } from "./timeline";
 import { check, integrate, repro, runTests } from "./validate";
 import { recommendSetup, setupProject } from "./setup";
 import { setupBaseline, setupStatus } from "./bootstrap";
@@ -265,8 +266,35 @@ const MASTER_USAGE = "사용법: code-agent master status [--json] | enable --co
   "trust --controller <ID> [--preview | --shown-hash <해시>] | trust --list | untrust --controller <ID> | call (stdin 요청 → stdout 응답)";
 const UPDATE_USAGE = "사용법: code-agent update [--cli <path>] | code-agent update --templates-only [--host claude|codex|both] [--cli <path>] | code-agent update --release <ID> | code-agent update --bundled | code-agent update --install-only (--preview | --shown-hash <해시>) --json | code-agent update --release <ID> (--preview | --shown-hash <해시>) --json";
 
-/** 실행 명령은 LangGraph·검증 자식 프로세스를 기다리고, 조회 명령은 기록을 바꾸지 않는다. */
+/** 설치·버전·진단·측정 명령 — 작업 흐름의 행동이 아니라 기록하지 않는다(버전 미리보기·거부는 프로젝트 파일을 바꾸지 않는다) */
+const UNTIMED = new Set(["update", "version", "doctor", "usage", "help", "--help", "-h"]);
+
+/**
+ * 명령 한 번의 시작·끝을 실행 타임라인에 남긴다 — 완료 알림 뒤 호스트가 다음 행동을 실제로 실행했는지의 근거다.
+ * 인자 값(파일 경로·사유 글)은 남기지 않고 명령 이름(`commandKey`)만 남긴다. 사람이 터미널에서 친 명령은 terminal 로 가른다.
+ */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
+  if (command === undefined || UNTIMED.has(command)) return runCommandBody(command, args);
+  const repoRoot = findRepoRoot(process.cwd());
+  const key = commandKey(["code-agent", command, ...args].join(" ")) ?? command;
+  const startedAt = new Date().toISOString();
+  const terminal = !!terminalCaller(process.stdin.isTTY, process.env);
+  recordEvent(repoRoot, { type: "action.started", at: startedAt, detail: { command: key, ...(terminal ? { terminal } : {}) } });
+  const ended = (exit: number, reason?: string) => {
+    const at = new Date().toISOString();
+    recordEvent(repoRoot, { type: "action.ended", at, ...(reason ? { reason } : {}), detail: { command: key, exit, startedAt, durationMs: Date.parse(at) - Date.parse(startedAt) } });
+  };
+  try {
+    const exit = await runCommandBody(command, args);
+    ended(exit);
+    return exit;
+  } catch (error) {
+    ended(error instanceof Stop ? 1 : 2, error instanceof Error ? error.message.split("\n")[0] : String(error));
+    throw error;
+  }
+}
+
+async function runCommandBody(command: string | undefined, args: string[]): Promise<number> {
   const repoRoot = findRepoRoot(process.cwd());
   // 출력 문구의 실행 절차·역할·도구 표기 — CODE_AGENT_HOST → hosts.json(설치 호스트 하나) → 실행 환경 → 중립
   useNotation(notationFor(repoRoot));

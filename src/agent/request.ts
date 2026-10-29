@@ -39,6 +39,7 @@ import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, work
 
 export { loadRequestSession, type RequestSession } from "./requestSession";
 import { loadRequestSession, type RequestSession } from "./requestSession";
+import { recordEvent } from "./timeline";
 
 /** 폴더 이름 · 브랜치 이름(`<kind>/<ID>`)이 되는 값이라 경로 조각으로 안전한 글자만 받는다 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -302,6 +303,9 @@ export function recordRequestDecision(
   const path = requestLedgerFile(repoRoot, input.id);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(record)}\n`, "utf-8");
+  const active = loadActive(repoRoot);
+  recordEvent(repoRoot, { type: "request.decided", workId: input.id, phase: active?.id === input.id ? active.phase : "request",
+    detail: { decision: input.decision, channel: input.presence.channel, hash: hash.slice(0, 12) } });
   return record;
 }
 
@@ -475,6 +479,7 @@ export function requestBegin(
   if (!current) {
     logStage(repoRoot, { id, target: "", phase: "request" }, "request");
   }
+  recordEvent(repoRoot, { type: "request.received", workId: id, phase: "request", detail: { kind, resumed: !!current } });
   mkdirSync(join(repoRoot, workDocsDir(id)), { recursive: true });
   // 시작 전 정리 — 새 접수이고 작업 브랜치가 아직 없을 때만 미리 알린다(거부하지 않는다. 확정 뒤 start 가 거부한다)
   const blockers = !current && !commitOf(repoRoot, `${kind}/${id}`) ? startBlockers(repoRoot, id) : [];
@@ -839,6 +844,11 @@ export function requestSubmit(repoRoot: string, draftArg: string | undefined): s
   }
   writeAtomic(join(repoRoot, spec), text);
   const after = requestState(repoRoot, request.id, spec);
+  const place = { workId: request.id, phase: active?.id === request.id ? active.phase : "request" };
+  recordEvent(repoRoot, { type: "request.submitted", ...place, detail: { requirements: request.requirements.length, done: request.done.length,
+    hash: textHash(text).slice(0, 12), before: before.status, after: after.status } });
+  // 확정한 지시서를 바꿨으면 그 확정(과 거기 묶인 계획 승인)은 다시 확정할 때까지 쓰이지 않는다
+  if (before.status === "confirmed" && after.status !== "confirmed") recordEvent(repoRoot, { type: "invalidated", ...place, reason: "확정 뒤 요구사항 재제출 — 다시 확정해야 진행" });
   const note =
     after.status === "confirmed"
       ? "지금 내용은 이미 확정돼 있습니다 — 바뀐 것이 없습니다."

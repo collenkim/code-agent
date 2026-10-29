@@ -8,6 +8,7 @@ import { crossChild } from "./crossEnv";
 import { askVia, withNotation } from "./hostText";
 import { questionPresentationProblem } from "./questionPresentation";
 import { blockedBefore, noteHookOutput, reasonKey } from "./hookLog";
+import { recordEvent } from "./timeline";
 
 /**
  * Claude Code Stop hook 의 판정 — **턴이 끝날 때 한 번만** 본다.
@@ -34,12 +35,20 @@ export const STOP_LIST_LIMIT = 10;
 const listed = <T>(items: readonly T[], line: (item: T) => string, rest: (count: number) => string): string[] =>
   [...items.slice(0, STOP_LIST_LIMIT).map(line), ...(items.length > STOP_LIST_LIMIT ? [rest(items.length - STOP_LIST_LIMIT)] : [])];
 
-export function decideStop(input: StopHookInput, projectDir?: string): string | undefined {
+export function decideStop(input: StopHookInput, projectDir?: string, host?: "claude" | "codex"): string | undefined {
+  // 하위 폴더에서 연 세션도 저장소 루트로 본다(PreToolUse hook·CLI 와 같은 루트)
+  const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
+  const reason = stopReason(input, repoRoot);
+  // 턴이 끝난 시각 — 완료 뒤 다음 행동 없이 멈춘 구간(호스트 재개 대기)을 가르는 근거다. 막은 턴은 이어진다
+  recordEvent(repoRoot, { type: "host.stopped", ...(host ? { host } : {}), ...(input.session_id ? { session: input.session_id } : {}),
+    ...(reason ? { reason: `Stop 차단: ${reason.split("\n")[0]}` } : {}), detail: { blocked: !!reason, continued: input.stop_hook_active === true } });
+  return reason;
+}
+
+function stopReason(input: StopHookInput, repoRoot: string): string | undefined {
   if (input.stop_hook_active === true) {
     return undefined;
   }
-  // 하위 폴더에서 연 세션도 저장소 루트로 본다(PreToolUse hook·CLI 와 같은 루트)
-  const repoRoot = findRepoRoot(projectDir ?? input.cwd ?? process.cwd());
   // 준비·접수·전체 단계에 공통 적용한다. 작업 로딩 전에 검사하여 문서·계획 미완성도 포함한다.
   if (loadActive(repoRoot) || [DOCS_SESSION_FILE, REQUEST_SESSION_FILE].some(file => existsSync(join(repoRoot, file)))) {
     const presentation = questionPresentationProblem(input.last_assistant_message);
@@ -87,7 +96,7 @@ export function runStopHook(stdin: string): number {
   try {
     const input = JSON.parse(stdin) as StopHookInput;
     const root = findRepoRoot(process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd());
-    const reason = withNotation("claude", () => decideStop(input, root));
+    const reason = withNotation("claude", () => decideStop(input, root, "claude"));
     if (reason) {
       process.stdout.write(JSON.stringify({ decision: "block", reason }));
       noteHookOutput(root, { host: "claude", event: "Stop", kind: "block", text: reason, session: input.session_id });

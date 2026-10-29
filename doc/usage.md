@@ -747,6 +747,16 @@ hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, �
   claude PreToolUse 거부(Bash): 6회 · 5,120자 · 같은 글 반복 2
   claude SubagentStop 되돌림(ca-analyst): 1회 · 640자
   claude Stop 차단: 1회 · 410자
+
+실행 타임라인 (.code-agent/log/timeline.jsonl, 읽기 전용 — 분류 시간은 합집합이고 괄호는 겹친 시간을 우선순위 하나에만 넣은 값)
+  ORD-1 · 2026-09-28T09:12 ~ 2026-09-28T11:40 · 경과 2시간 28분 · 런타임 bundle@1.0.0
+    담당 실행 52분 10초(48분 2초) · 빌드·테스트 6분 40초(6분 40초) · 사람 응답 대기 12분 3초(12분 3초) · 호스트 재개 대기 1시간 1분(1시간 0분) · 그 밖(호스트 처리) 21분 15초
+    대기 구간 3개 (긴 순 3):
+      - 호스트 재개 대기 58분 12초 · 담당 완료(completed) 뒤 다음 행동 대기 · 호스트 턴 종료 · 사람 입력 뒤 재개 [analysis · analysis · 3f2a9c1e] · 09:31:07
+      - 사람 응답 대기 12분 3초 · 동의 응답 대기: plan-approval [plan] · 10:42:19
+      - 호스트 재개 대기 2분 48초 · 담당 완료(completed) 뒤 다음 행동 대기 [design · design · 7c01d2aa] · 10:05:44
+    검증 실행 3회 · 합 6분 40초 · 마지막 로그 .code-agent/log/verify/ORD-1/test-2-test-20260928T112801123Z.log
+    재시도: 직전 시도 failed(agent-format-error): 결과 형식 오류 [impact]
 ```
 
 서브에이전트 기록이 작업 기록의 담당 id(계획 담당은 `planning.json` 의 담당 기록, 리뷰어는 `review.json` 회차의 실행 기록)와 이어지면 **배정별** 표(`ORD-1/order analysis#2` — 작업/대상, 계획 작업, 몇 번째 배정 · `ORD-1/order 리뷰 2회차`)와 `호출별 (배정)` 표가 붙는다 — 같은 역할이라도 어느 배정·회차가 비쌌는지 본다.
@@ -761,10 +771,11 @@ hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, �
 | 문서 탐색 | 스테이지별로, `code-agent.json` 에 등록된 공통 POLICY·KNOWLEDGE 경로를 연 읽기·검색 도구(Read·Grep·Glob) 호출, 그 경로를 언급한 셸 명령, `code-agent knowledge find`. 작업 폴더 문서는 세지 않는다. 문서 생성·갱신 비용은 같은 구간의 토큰·호출 표에 함께 들어 있다 |
 | hook 출력 | `.code-agent/log/hooks.jsonl` — hook 이 모델에게 낸 PreToolUse 거부·Stop 차단·질문 도구 막음·담당 되돌림·세션 시작 주입의 호스트·이벤트·도구·글자 수·글 해시(글은 남기지 않는다). `같은 글 반복` 은 같은 세션에서 같은 글이 앞서 나온 횟수다 |
 | 재시도·재배정 | `.code-agent/work/<ID>/` 의 검증·계획·리뷰·검증 노드 기록 — 카운터는 재시도 규약의 `retrySummary` 그대로(담당 되돌림·형식 교정 포함), 실패 원인은 기록된 `failure.class`, 계획 담당의 역할별 첫 시도 통과(결과까지 간 첫 시도가 되돌림·형식 교정 없이 완료나 질문 대기로 끝난 task 수 / task 수 — 질문 대기는 정상 결정 대기라 통과로 세고 괄호에 따로 적는다, 입력 변경으로 취소된 시도는 첫 시도가 아니다), 초안 이어 쓰기(직전 미완성 초안이 남은 채 다시 배정한 수), 거부 규칙(기록된 실패와 Claude 되돌림 문구의 규칙 식별자별 횟수), 교차 실행은 시도마다 남긴 시간·비용·토큰의 합(Claude 는 입력·캐시 쓰기·캐시 읽기·출력, Codex 는 `tokens used` 합계 하나 — 캐시 아닌 입력 + 출력). Claude 교차 실행은 대화 기록을 남기지 않으므로 그 사용량은 이 줄에만 나온다. 개선 효과는 같은 시나리오·호스트·모델로 돈 작업끼리 첫 시도 통과·거부 규칙·재배정과 위 토큰 표를 비교해 본다 — 단위 시험이나 한 번의 실행으로 판단하지 않는다. `--work` 가 없으면 동의 기록의 실패 원인도 `(동의)` 한 줄로. **읽기만 한다** — 어떤 파일에도 쓰지 않고 다음 작업에 넘기지 않는다 |
+| 실행 타임라인 | `.code-agent/log/timeline.jsonl`(덧붙이기만 하는 측정 기록, 작업별로 묶는다) — 담당 실행(담당 시작~완료), 빌드·테스트(검증 명령 한 실행), 사람 응답 대기(동의 준비~응답, 흐름의 사람 판단), 외부 의존 대기(흐름의 결과 대기), 호스트 재개 대기(담당 완료·완료 알림·턴 종료부터 호스트의 다음 명령·도구 호출까지 — 담당이 도는 동안 끝난 턴은 세지 않고, Stop hook 이 막은 턴은 이어지는 턴이며, 사람이 터미널에서 친 명령은 대기를 닫지 않고 사람 입력으로 표시한다). Claude 는 메인 대화 기록의 완료 알림(`<task-notification>`)·사람 입력·도구 호출 시각을, Codex 는 hook 이 남긴 사람 입력 시각을 함께 쓴다(본문은 남기지 않는다). 분류 시간은 같은 분류의 겹침을 한 번만 센 합집합이고, 괄호 값은 겹친 시간을 빌드·테스트 > 담당 > 사람 > 외부 > 호스트 재개 순으로 하나에만 넣은 값이다 — 괄호 값의 합과 `그 밖`(어느 구간에도 들지 않은 시간)이 경과와 같다. 끝까지 닫히지 않은 구간은 `열림`으로 센다. 대기 구간은 긴 순 10개까지 사유·단계·작업 ID·배정 ID 앞 8자와 함께, 무효화·재시도 사유는 마지막 10개를 싣는다. 런타임은 그 줄을 쓴 코드(릴리스 ID 또는 `bundle@<버전>`)라 버전을 바꿔 가며 돈 실행을 가른다 |
 
 Codex 설치면 같은 구간으로 **Codex 세션 기록**(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)을 센다 — 입력·캐시 입력·캐시 쓰기·출력·추론 출력 토큰과 요청·도구 호출·도구 결과 글자를 스테이지별·에이전트별(메인 `main`, 하위 에이전트는 `ca-explorer` 같은 역할·`guardian`)로, 파일 변경(`FileChange`) 수를 한 줄로 낸다. 셸 명령(`CommandExecution` 항목의 `["powershell.exe","-Command",…]`·`["bash","-lc",…]`·`["cmd","/c",…]`)은 래퍼를 벗겨 `code-agent` 명령별 호출·`code-agent read` 실행 절차 읽기로 센다. 형식은 codex-cli 0.161.0 의 기록 꼴이다 — 하위 에이전트 기록 앞머리의 부모 대화 사본은 세지 않고, 토큰은 응답마다 한 번만 센다. 입력은 캐시 입력을 포함한다. 단가표가 없어 비용은 내지 않는다. 하위 에이전트 기록의 thread id 가 작업 기록의 담당 id 와 같으면 배정별 표에도 넣는다(Codex 에서 두 id 가 같다는 것은 아직 실제 기록으로 확인하지 않았다 — 이어지지 않으면 배정별 표가 비어 있다).
 
-`--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, assignments, models, tools, commands, skillReads, …}], retry[], hooks[], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
+`--json` 은 같은 값을 객체(`{head, sections[{source, stages[{label, tokens, cost, calls}], agents, assignments, models, tools, commands, skillReads, …}], retry[], hooks[], timeline[{workId, wallMs, categories, otherMs, waits, runs, causes, counts, runtimes}], pricesAsOf}`)로 낸다 — 평가 스크립트(`scripts/evaluate-full-flow.cjs`)가 보고서의 `usageData` 로 싣고, `scripts/summarize-evaluations.cjs <시나리오> <label 접두어>` 가 반복 실행의 평균·최소·최대를 낸다.
 
 `--work <ID>` 는 그 작업의 구간만, `--since <날짜>` 는 그 시각 이후만 센다. 두 깃발 다 값이 없으면 멈춘다 —
 `--since` 만 치면 전 기간을 세면서 그럴듯한데 틀린 숫자가 나온다.
@@ -1055,7 +1066,8 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `.code-agent/branches/cursor.lock` | 커서 저장·종료 잠금 | 커서 변경 시에만 사용한다 | X |
 | `.code-agent/docs-session.json` | 문서 작성 세션 표시 | `docs begin` · `end` | X |
 | `.code-agent/request-session.json` | 요구사항 접수 세션 표시 (id·종류·연 시각 · 접수 때 준 `base`·`target`) | `request begin` 이 쓰고 `start` · `abort` 가 지운다 | X |
-| `.code-agent/log/` | 검증 명령의 전체 로그 (`<스테이지>-<회차>-<종류>.log` — 재현은 `repro-0-<종류>.log`) — ⑧ 에는 꼬리만 남는다 | `repro` · `check` · `test` · `integrate` | X |
+| `.code-agent/log/verify/<ID>/` | 검증 명령의 전체 로그 — 실행마다 하나(`<스테이지>-<회차>-<종류>-<시작 시각>.log`, 재현은 `repro-0-<종류>-…`), 머리에 명령·시작·끝·소요·종료 코드. 다시 돌려도 앞 실행의 로그를 덮지 않는다 — ⑧ 에는 꼬리만 남는다 | `repro` · `check` · `test` · `integrate` | X |
+| `.code-agent/log/timeline.jsonl` | 실행 타임라인 — 요청·담당·다음 행동·동의·검증의 시작·끝·대기 사유(본문 없이), `usage` 가 읽는다 | 명령·hook | X |
 | `.code-agent/log/plugins/<자리>.jsonl` | 플러그인 호출 기록 — 요청 요약·소요·결과. 마지막 200줄만, **키 값은 들어가지 않는다** | 플러그인을 부르는 명령 | X |
 
 `<ID>`는 지시서 머리말의 `id`다. 티켓 ID를 주면 그대로 쓰고 생략하면 CLI가 미사용 WORK 번호를 발급한다. 모델이 임의 번호를 만들지 않으며 지시서 ID와 작업 폴더 이름은 같아야 한다.

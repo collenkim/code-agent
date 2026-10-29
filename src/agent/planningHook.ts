@@ -14,6 +14,7 @@ import { loadWork, type Work } from "./work";
 import { crossChild } from "./crossEnv";
 import { withNotation } from "./hostText";
 import { noteSubagentReturn } from "./hookLog";
+import { recordEvent } from "./timeline";
 
 /** 기록하지 않고 같은 담당에게 한 번 돌려보낸다(Claude SubagentStop exit 2) — 담당이 고쳐 다시 멈추면 처음부터 다시 판정한다 */
 export class ReturnToAgent extends Error { constructor(message: string, readonly failureClass: FailureClass) { super(message); } }
@@ -176,6 +177,7 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
 }
 
 type Decision = { kind: "ignored" } | { kind: "done" } | { kind: "recorded"; message: string; cls: FailureClass } | { kind: "return"; message: string; cls: FailureClass };
+const DUPLICATE_STOP = "이미 처리한 완료 이벤트입니다.";
 const recorded = (message: string, cls: FailureClass): Decision => ({ kind: "recorded", message, cls });
 function endAgent(agent: PlanningAgent, record?: FailureRecord): void {
   agent.finished = true;
@@ -210,7 +212,7 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   const root = work.repoRoot;
   const agent = [...state.agents].reverse().find(agent => agent.id === input.agent_id && agent.session === input.session_id);
   if (!agent) return { kind: "ignored" }; // 다른 스킬이 부른 동일 이름 에이전트
-  if (agent.finished) return recorded("이미 처리한 완료 이벤트입니다.", "dispatch-orphan");
+  if (agent.finished) return recorded(DUPLICATE_STOP, "dispatch-orphan");
   const canReturn = host === "claude" && input.stop_hook_active !== true && (agent.returns ?? 0) < LIMITS.agentReturn;
   const giveBack = (message: string, cls: FailureClass): Decision => {
     agent.returns = (agent.returns ?? 0) + 1;
@@ -437,15 +439,47 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
       if (writers.length) {
         openStaging(work);
         for (const record of writers) seedStaging(work, record);
+        const only = writers.length === 1 ? writers[0] : undefined;
+        recordEvent(root, { type: "agent.started", ...placeOf(work), host: options.host, session: input.session_id, agent: input.agent_id,
+          ...(only ? { taskId: only.task.id, dispatchId: only.attempts.at(-1)!.dispatchId } : {}), detail: { agentType: input.agent_type!, candidates: writers.length } });
       }
       return;
     }
     const prepared = prepareStop(input, work);
     if (!prepared) return; // 다른 스킬이 부른 동일 이름 에이전트
-    const decision = mutatePlanning(work, state => decideStop(input, work, state, prepared, options.host), { waitMs: TIMING.hookLockWaitMs });
+    const { decision, seen } = mutatePlanning(work, state => {
+      const decision = decideStop(input, work, state, prepared, options.host);
+      return { decision, seen: decision.kind === "ignored" ? undefined : outcomeOf(input, state, prepared) };
+    }, { waitMs: TIMING.hookLockWaitMs });
+    if (seen) noteStop(work, input, options.host, decision, seen);
     if (decision.kind === "recorded") throw new PlanningFailure(decision.message, decision.cls);
     if (decision.kind === "return") throw new ReturnToAgent(decision.message, decision.cls);
   });
+}
+
+const placeOf = (work: Work) => ({ workId: work.active.id, target: work.active.target, phase: work.active.phase });
+interface Seen { taskId?: string; dispatchId?: string; status?: string; returns: number }
+/** 판정 뒤 이 담당이 가리키는 시도 — 연결된 배정이 없으면 보고한 배정 */
+function outcomeOf(input: ReviewHookInput, state: PlanningState, prepared: Prepared): Seen {
+  const agent = [...state.agents].reverse().find(item => item.id === input.agent_id && item.session === input.session_id);
+  const dispatchId = agent?.dispatchId ?? prepared.reported?.dispatchId;
+  const record = dispatchId ? state.tasks.find(item => item.attempts.some(attempt => attempt.dispatchId === dispatchId)) : undefined;
+  return { taskId: record?.task.id, dispatchId, status: record?.attempts.find(attempt => attempt.dispatchId === dispatchId)?.status, returns: agent?.returns ?? 0 };
+}
+/**
+ * 완료 hook 의 기록 — 되돌림은 같은 담당이 이어 가므로 완료가 아니라 재시도 사용(agentReturn)이다. 실행 중 입력이 바뀌어 취소한 시도는
+ * 무효화 원인을 함께 남긴다. 이미 처리한 완료(중복 알림)는 duplicate 로 남긴다.
+ */
+function noteStop(work: Work, input: ReviewHookInput, host: "claude" | "codex" | undefined, decision: Decision, seen: Seen): void {
+  const ref = { ...placeOf(work), host, session: input.session_id, agent: input.agent_id, ...(seen.taskId ? { taskId: seen.taskId } : {}), ...(seen.dispatchId ? { dispatchId: seen.dispatchId } : {}) };
+  if (decision.kind === "return") {
+    recordEvent(work.repoRoot, { type: "retry.used", ...ref, reason: `담당 되돌림(${decision.cls})`, detail: { counter: "agentReturn", used: seen.returns, limit: LIMITS.agentReturn } });
+    return;
+  }
+  const duplicate = decision.kind === "recorded" && decision.message === DUPLICATE_STOP;
+  recordEvent(work.repoRoot, { type: "agent.finished", ...ref, ...(decision.kind === "recorded" ? { reason: decision.message } : {}),
+    detail: { agentType: input.agent_type ?? "", status: duplicate ? "duplicate" : seen.status ?? "late", ...(decision.kind === "recorded" ? { class: decision.cls } : {}), ...(duplicate ? { duplicate: true } : {}) } });
+  if (seen.status === "cancelled" && decision.kind === "recorded") recordEvent(work.repoRoot, { type: "invalidated", ...ref, reason: decision.message });
 }
 export function runPlanningHook(stdin: string): number {
   // 교차 실행이 띄운 다른 호스트 안에서는 계획 담당을 관찰하지 않는다

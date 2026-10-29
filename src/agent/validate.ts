@@ -57,6 +57,7 @@ import type { CommandSpec, Evidence, LogBasis, Outcome, ReproAttemptClass, TestC
 import { skillFile } from "./hostText";
 import { logDir, questionsFile, reviewFile, STATE_DIR, workDocsDir } from "./layout";
 import { acquireLock, pidAlive } from "./lock";
+import { recordEvent, type TimelineInput } from "./timeline";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
 import {
   budgetText,
@@ -287,6 +288,8 @@ async function runSpecs(
 ): Promise<{ runs: VerifyRun[]; outputs: string[]; guarded: string[] }> {
   const runs: VerifyRun[] = [];
   const outputs: string[] = [];
+  const ended: TimelineInput[] = [];
+  const place = { workId: work.active.id, target: work.active.target, phase };
   mkdirSync(logDir(work.repoRoot), { recursive: true });
   const guarded = snapshotState(guardedStateFiles(work));
 
@@ -303,7 +306,10 @@ async function runSpecs(
     // 보고서 탐색 기록 — 탐색이 상한에서 끊겼는지와, 새 보고서의 TC 아닌 testcase 까지 담는다(환경 분류가 쓴다)
     const scan: ReportScan = { truncated: false, cases: [] };
     const reports = phase === "repro" || phase === "test" || (phase === "integrate" && spec.kind === "test") ? reportSnapshot(cwd, scan) : undefined;
+    const logFile = runLogFile(work, phase, round, spec.kind, at);
+    recordEvent(work.repoRoot, { type: "verify.started", ...place, at, detail: { run: logFile, kind: spec.kind, round, logFile } });
     const result = await runCommand(cwd, spec.argv, commandEnv, work.manifest.commandTimeoutMinutes * 60_000);
+    const endedAt = new Date().toISOString(), durationMs = Date.parse(endedAt) - Date.parse(at);
     const log = [result.stdout, result.stderr, reports ? freshTestReports(cwd, reports, scan) : ""].filter(Boolean).join("\n").trim();
     // 선언된 환경 오류 문구가 실패 출력에 있으면 코드 결함이 아니라 환경 오류다 — 돌지 못한 것(error)과 같이 다룬다.
     // 단 같은 실행에 실패한 테스트 결과(콘솔 결과 줄·새 보고서의 testcase, TC id 유무와 무관)가 하나라도 있으면 환경이 아니다.
@@ -315,12 +321,12 @@ async function runSpecs(
     const cause: RunCause | undefined = result.timedOut ? "timeout" : result.notFound ? "missing-tool"
       : result.error ? "spawn" : environment ? "environment" : undefined;
     const outcome = environment ? "error" : outcomeOf(result);
-    const logFile = `.code-agent/log/${phase}-${round}-${spec.kind}.log`;
     writeFileSync(
       join(work.repoRoot, logFile),
-      `${spec.argv.join(" ")}\n\n${result.error ? `실행 실패: ${result.error.message}\n\n` : ""}${log}\n`,
+      `${spec.argv.join(" ")}\n시작 ${at} · 끝 ${endedAt} · ${durationMs}ms · exit ${result.status ?? "없음"}\n\n${result.error ? `실행 실패: ${result.error.message}\n\n` : ""}${log}\n`,
     );
     outputs.push(log);
+    ended.push({ type: "verify.ended", ...place, at: endedAt, detail: { run: logFile, kind: spec.kind, round, startedAt: at, durationMs, logFile } });
     runs.push({
       round,
       phase,
@@ -337,6 +343,8 @@ async function runSpecs(
         .filter(Boolean)
         .join("\n"),
       at,
+      endedAt,
+      durationMs,
       ...(environment ? { environment } : {}),
       ...(cause ? { cause } : {}),
       ...(scan.truncated ? { reportScan: "truncated" as const } : {}),
@@ -354,7 +362,26 @@ async function runSpecs(
       run.tail = [stateGuardText(tampered), run.tail].filter(Boolean).join("\n");
     }
   }
+  // 끝 기록은 최종 판정(guard 반영) 뒤에 실행이 끝난 시각으로 남긴다
+  for (const event of ended) {
+    const run = runs.find((item) => item.logFile === event.detail?.logFile);
+    recordEvent(work.repoRoot, { ...event, detail: { ...event.detail, ...(run ? { outcome: run.outcome } : {}), ...(run?.cause ? { cause: run.cause } : {}) } });
+  }
   return { runs, outputs, guarded: tampered };
+}
+
+/**
+ * 실행 한 번의 전체 로그 — 작업·단계·회차·명령 종류와 시작 시각으로 이름을 정해 같은 회차를 다시 돌려도 앞 실행의 로그를 덮지 않는다.
+ * 같은 밀리초에 같은 이름이 있으면 순번을 붙인다.
+ */
+function runLogFile(work: Work, phase: VerifyPhase, round: number, kind: string, at: string): string {
+  const dir = `${STATE_DIR}/log/verify/${work.active.id}`;
+  mkdirSync(join(work.repoRoot, dir), { recursive: true });
+  const stamp = at.replace(/[-:.]/g, "");
+  for (let n = 1; ; n++) {
+    const file = `${dir}/${phase}-${round}-${kind}-${stamp}${n > 1 ? `-${n}` : ""}.log`;
+    if (!existsSync(join(work.repoRoot, file))) return file;
+  }
 }
 
 /** 인식 규칙(`TC-<숫자>`)에 걸리지 않는 표기로 적힌 TC — 막지 않고 고칠 표기만 알린다 */

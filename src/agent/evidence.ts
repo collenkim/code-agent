@@ -65,11 +65,15 @@ export interface VerifyRun {
   command: string;
   outcome: Outcome;
   status: number | null;
-  /** `.code-agent/log/` 의 전체 로그. 커밋되지 않으므로 근거는 tail 이 든다 */
+  /** `.code-agent/log/verify/<ID>/` 의 실행별 전체 로그(같은 회차를 다시 돌려도 덮지 않는다). 커밋되지 않으므로 근거는 tail 이 든다 */
   logFile?: string;
   /** 실패·error 는 마지막 40줄, 통과는 마지막 5줄 */
   tail: string;
+  /** 명령을 시작한 시각 */
   at: string;
+  /** 명령이 끝난 시각과 소요(ms) — 옛 기록에는 없다 */
+  endedAt?: string;
+  durationMs?: number;
   /** 출력이 code-agent.json 의 environmentErrors 와 맞아 환경 오류(error)로 분류됐을 때 맞은 패턴 */
   environment?: string;
   /** 실행이 끝난 원인(시간 초과·실행 실패·실행 파일 없음·환경 오류). 없는 옛 기록은 runCauseOf 가 tail 문구로 추정한다 */

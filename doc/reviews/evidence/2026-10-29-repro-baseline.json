@@ -1,0 +1,279 @@
+{
+  "at": "2026-10-29T01:08:43.911Z",
+  "node": "v24.19.0",
+  "platform": "win32-x64",
+  "dist": "dist",
+  "runtime": "bundle@1.0.0",
+  "fixture": "sha256:4be6f82c570ee977",
+  "repeat": 3,
+  "scenarios": [
+    {
+      "name": "amendment",
+      "title": "추가 요구만 든 같은 ID 초안이 확정한 요구를 대체한다",
+      "facts": {
+        "before": [
+          "결제 뒤 24시간 안에 주문을 취소한다.",
+          "배송이 시작된 주문은 취소하지 않는다."
+        ],
+        "submitted": [
+          "취소 사유를 저장한다."
+        ],
+        "after": [
+          "취소 사유를 저장한다."
+        ],
+        "keptPrevious": false,
+        "statusAfterSubmit": "unconfirmed",
+        "warnedChanged": true,
+        "reconfirmed": "confirmed"
+      },
+      "stable": true,
+      "wallMs": {
+        "runs": [
+          14,
+          17,
+          29
+        ],
+        "median": 17,
+        "min": 14,
+        "max": 29
+      },
+      "timeline": [
+        {
+          "workId": "PLAN-1",
+          "from": "2026-10-29T01:08:19.192Z",
+          "to": "2026-10-29T01:08:20.764Z",
+          "wallMs": 1572,
+          "categories": {
+            "build-test": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "agent": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "human": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "external": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "host-resume": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            }
+          },
+          "otherMs": 1572,
+          "waits": [],
+          "runs": [],
+          "causes": [
+            {
+              "type": "invalidated",
+              "at": "2026-10-29T01:08:20.758Z",
+              "reason": "확정 뒤 요구사항 재제출 — 다시 확정해야 진행",
+              "workId": "PLAN-1",
+              "phase": "analysis"
+            }
+          ],
+          "counts": {
+            "request.decided": 3,
+            "request.submitted": 1,
+            "invalidated": 1
+          },
+          "runtimes": [
+            "bundle@1.0.0"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "staleIds",
+      "title": "새 요구 ID 가 생겨도 계획 준비가 옛 요구 ID 로 배정한다",
+      "facts": {
+        "sourceIds": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "assignedBefore": [
+          "REQ-1"
+        ],
+        "assignedAfter": [
+          "REQ-1"
+        ]
+      },
+      "stable": true,
+      "wallMs": {
+        "runs": [
+          16,
+          18,
+          18
+        ],
+        "median": 18,
+        "min": 16,
+        "max": 18
+      },
+      "timeline": [
+        {
+          "workId": "PLAN-1",
+          "from": "2026-10-29T01:08:24.824Z",
+          "to": "2026-10-29T01:08:25.716Z",
+          "wallMs": 892,
+          "categories": {
+            "build-test": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "agent": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "human": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "external": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "host-resume": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            }
+          },
+          "otherMs": 892,
+          "waits": [],
+          "runs": [],
+          "causes": [],
+          "counts": {
+            "request.decided": 3
+          },
+          "runtimes": [
+            "bundle@1.0.0"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "completionStall",
+      "title": "담당 완료 알림 뒤 Stop 이 턴을 잇지 않아 사람 입력으로 재개한다",
+      "facts": {
+        "dispatched": "dispatch",
+        "stopWhileRunningBlocked": false,
+        "subagentStopExit": 0,
+        "stopAfterCompletionBlocked": false,
+        "humanInputNeeded": true,
+        "resumedAction": "ready-for-gate",
+        "gate": "passed"
+      },
+      "stable": true,
+      "wallMs": {
+        "runs": [
+          2457,
+          2710,
+          4052
+        ],
+        "median": 2710,
+        "min": 2457,
+        "max": 4052
+      },
+      "timeline": [
+        {
+          "workId": "PLAN-1",
+          "from": "2026-10-29T01:08:27.497Z",
+          "to": "2026-10-29T01:08:31.131Z",
+          "wallMs": 3634,
+          "categories": {
+            "build-test": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "agent": {
+              "ms": 438,
+              "exclusiveMs": 438,
+              "count": 1,
+              "open": 0
+            },
+            "human": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "external": {
+              "ms": 0,
+              "exclusiveMs": 0,
+              "count": 0,
+              "open": 0
+            },
+            "host-resume": {
+              "ms": 136,
+              "exclusiveMs": 136,
+              "count": 1,
+              "open": 0
+            }
+          },
+          "otherMs": 3060,
+          "waits": [
+            {
+              "category": "host-resume",
+              "reason": "담당 완료(completed) 뒤 다음 행동 대기",
+              "startedAt": "2026-10-29T01:08:29.740Z",
+              "endedAt": "2026-10-29T01:08:29.876Z",
+              "durationMs": 136,
+              "open": false,
+              "workId": "PLAN-1",
+              "phase": "analysis",
+              "taskId": "analysis",
+              "dispatchId": "ccbb62e2-e666-445d-85f3-61fd56eb7182",
+              "stopped": true,
+              "human": true,
+              "closedBy": "host.tool"
+            }
+          ],
+          "runs": [],
+          "causes": [],
+          "counts": {
+            "request.decided": 1,
+            "host.tool": 2,
+            "action.started": 2,
+            "agent.assigned": 1,
+            "next.selected": 2,
+            "action.ended": 2,
+            "agent.started": 1,
+            "host.stopped": 2,
+            "agent.finished": 1,
+            "host.notified": 1,
+            "human.input": 1
+          },
+          "runtimes": [
+            "bundle@1.0.0"
+          ]
+        }
+      ]
+    }
+  ]
+}

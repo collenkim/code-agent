@@ -10,6 +10,7 @@ import { selectedHosts } from "./hosts";
 import { readCodexLog, type CodexTokens } from "./codexUsage";
 import { assignmentLabels, retryLine, retryReports, type RetryReport } from "./retryReport";
 import { readHookOutputs, type HookOutputKind } from "./hookLog";
+import { CATEGORY_LABEL, readTimeline, summarizeByWork, type HostMark, type SpanCategory, type TimelineSummary } from "./timeline";
 import { docPaths } from "./docs";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { loadManifestIfAny } from "./work";
@@ -109,7 +110,8 @@ export interface UsageSection {
 }
 /** hook 이 모델에게 낸 글 — 호스트·이벤트·종류·도구별. repeats 는 같은 세션에서 같은 글이 앞서 나온 횟수 */
 export interface HookSummary { host: string; event: string; kind: HookOutputKind; tool?: string; count: number; chars: number; repeats: number }
-export interface UsageReport { head: string; sections: UsageSection[]; retry: RetryReport[]; hooks: HookSummary[]; pricesAsOf: string }
+/** timeline: 실행 타임라인(timeline.jsonl)의 작업별 구간 요약 — Claude 설치면 메인 대화의 완료 알림·사람 입력·도구 호출 시각을 함께 쓴다 */
+export interface UsageReport { head: string; sections: UsageSection[]; retry: RetryReport[]; hooks: HookSummary[]; timeline: TimelineSummary[]; pricesAsOf: string }
 
 /**
  * Claude Code 가 저장소 경로를 폴더 이름으로 바꾸는 방식 — **영숫자가 아닌 글자 하나마다 `-` 하나**.
@@ -187,18 +189,35 @@ interface RawUsage {
   output_tokens?: number;
 }
 
-interface RawBlock { type?: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; content?: unknown }
+interface RawBlock { type?: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; content?: unknown; text?: unknown }
 interface RawLine {
   type?: string;
   timestamp?: string;
   requestId?: string;
+  isMeta?: boolean;
   message?: { id?: string; model?: string; usage?: RawUsage; content?: unknown };
 }
 /** 도구 호출 하나 — 버킷은 그 줄의 시각과 기록 파일의 에이전트 */
 interface ToolCall { at: string; agent: string; name: string; input: Record<string, unknown>; assignment?: string }
 /** 도구 결과 하나 — 대화에 들어간 글자 수 */
 interface ToolResult { at: string; agent: string; chars: number; assignment?: string }
-interface Collected { messages: Message[]; calls: ToolCall[]; results: ToolResult[] }
+/** marks: 메인 대화의 완료 알림·사람 입력 시각(본문은 담지 않는다) */
+interface Collected { messages: Message[]; calls: ToolCall[]; results: ToolResult[]; marks: HostMark[] }
+
+/** 사람이 친 글이 아닌 user 줄 — 호스트가 넣은 안내·명령 출력·압축 요약 */
+const HOST_TEXT = /^\s*(?:<system-reminder>|<local-command|<command-|<user-prompt-submit-hook>|This session is being continued|Another Claude session|Caveat:)/;
+/** 메인 대화의 user 줄 → 완료 알림(`<task-notification>`과 그 상태) 또는 사람 입력. 도구 결과·메타 줄은 아니다 */
+function hostMark(row: RawLine): HostMark | undefined {
+  if (row.type !== "user" || row.isMeta || typeof row.timestamp !== "string") return undefined;
+  const content = row.message?.content;
+  const text = typeof content === "string" ? content : blocks(content).filter((block) => block.type === "text" && typeof block.text === "string").map((block) => block.text as string).join("\n");
+  if (!text.trim()) return undefined;
+  if (text.trimStart().startsWith("<task-notification>")) {
+    const status = /<status>([\w-]+)<\/status>/.exec(text)?.[1];
+    return { at: row.timestamp, type: "host.notified", ...(status ? { status } : {}) };
+  }
+  return HOST_TEXT.test(text) ? undefined : { at: row.timestamp, type: "human.input" };
+}
 
 function blocks(content: unknown): RawBlock[] {
   return Array.isArray(content) ? content.filter((block): block is RawBlock => !!block && typeof block === "object") : [];
@@ -243,6 +262,7 @@ function collect(files: Transcript[]): Collected {
   const byKey = new Map<string, Message>();
   const calls = new Map<string, ToolCall>();
   const results = new Map<string, ToolResult>();
+  const marks: HostMark[] = [];
   for (const file of files) {
     let text: string;
     try {
@@ -258,6 +278,10 @@ function collect(files: Transcript[]): Collected {
         row = JSON.parse(line) as RawLine;
       } catch {
         continue; // 반쯤 쓰인 줄 — 기록은 지금도 쓰이는 중일 수 있다
+      }
+      if (file.agent === MAIN_AGENT) {
+        const mark = hostMark(row);
+        if (mark) marks.push(mark);
       }
       if (typeof row.timestamp === "string") {
         // 도구 호출은 assistant 줄의 tool_use 블록(id 로 한 번), 결과는 user 줄의 tool_result 블록(tool_use_id 로 한 번)
@@ -283,7 +307,7 @@ function collect(files: Transcript[]): Collected {
     }
   }
   const byTime = <T extends { at: string }>(list: T[]): T[] => list.sort((a, b) => a.at.localeCompare(b.at));
-  return { messages: byTime([...byKey.values()]), calls: byTime([...calls.values()]), results: byTime([...results.values()]) };
+  return { messages: byTime([...byKey.values()]), calls: byTime([...calls.values()]), results: byTime([...results.values()]), marks: byTime(marks) };
 }
 
 // ---- 귀속 ----
@@ -517,7 +541,8 @@ interface Filter { since?: number; work?: string; stages: StageTransition[]; lab
 const kept = (filter: Filter) => (at: string): boolean =>
   (filter.since === undefined || Date.parse(at) >= filter.since) && (filter.work === undefined || bucketOf(filter.stages, at).id === filter.work);
 
-function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter): UsageSection {
+/** marks: 메인 대화의 완료 알림·사람 입력·도구 호출 시각을 실행 타임라인에 넘긴다(거르지 않은 전체) */
+function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter, marks: HostMark[] = []): UsageSection {
   const dir = options.transcripts ?? transcriptDir(repoRoot);
   const empty = { source: "claude" as const, dir, sessions: 0, subagents: 0, stages: [], agents: [], assignments: [], models: [], tools: {}, commands: {}, skillReads: {}, docReads: {}, unpriced: [], stageLog: filter.stages.length > 0 };
   if (!existsSync(dir)) {
@@ -526,6 +551,7 @@ function claudeSection(repoRoot: string, options: UsageOptions, filter: Filter):
   const files = transcripts(dir, filter.labels);
   const subagents = files.filter((file) => file.agent !== MAIN_AGENT).length;
   const all = collect(files);
+  marks.push(...all.marks, ...all.calls.filter((call) => call.agent === MAIN_AGENT).map((call) => ({ at: call.at, type: "host.tool" as const })));
   const keep = kept(filter);
   const messages = all.messages.filter((message) => keep(message.at));
   if (messages.length === 0) {
@@ -619,10 +645,12 @@ export function usageReport(repoRoot: string, options: UsageOptions = {}): Usage
   const hosts = selectedHosts(repoRoot);
   const filter: Filter = { since, work: options.work, stages: readStages(repoRoot), labels: assignmentLabels(repoRoot, options.work) };
   const sections: UsageSection[] = [];
-  if (options.transcripts || hosts.includes("claude")) sections.push(claudeSection(repoRoot, options, filter));
+  const marks: HostMark[] = [];
+  if (options.transcripts || hosts.includes("claude")) sections.push(claudeSection(repoRoot, options, filter, marks));
   if (options.codexSessions || hosts.includes("codex")) sections.push(codexSection(repoRoot, options, filter));
+  const events = readTimeline(repoRoot).filter((event) => (since === undefined || Date.parse(event.at) >= since) && (options.work === undefined || event.workId === options.work));
   return { head: [...(options.work ? [options.work] : []), repoRoot].join(" · "), sections, retry: retryReports(repoRoot, options.work),
-    hooks: hookSummaries(repoRoot, filter), pricesAsOf: PRICES_AS_OF };
+    hooks: hookSummaries(repoRoot, filter), timeline: summarizeByWork(events, marks), pricesAsOf: PRICES_AS_OF };
 }
 
 /** hook 출력 기록(hookLog)을 호스트·이벤트·종류·도구로 묶는다. 같은 세션에서 같은 글이 앞서 나왔으면 repeats 에 센다 */
@@ -648,6 +676,33 @@ function hookBlock(hooks: HookSummary[]): string[] {
   if (!hooks.length) return [];
   return ["hook 출력 (모델에게 간 거부·차단·되돌림·세션 시작 주입, 기록 — 읽기 전용)", ...hooks.map((row) =>
     `  ${row.host} ${row.event} ${HOOK_KIND[row.kind]}${row.tool ? `(${row.tool})` : ""}: ${row.count}회 · ${row.chars.toLocaleString("en-US")}자${row.repeats ? ` · 같은 글 반복 ${row.repeats}` : ""}`)];
+}
+
+/** 1시간 2분 · 34분 12초 · 850ms */
+function durationText(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 1000), [h, m, s] = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60];
+  return h ? `${h}시간 ${m}분` : m ? `${m}분 ${s}초` : `${s}초`;
+}
+const WAIT_TOP = 10;
+/** 실행 타임라인 — 분류별 시간(합집합·단독 귀속), 긴 대기 구간과 사유, 검증 실행, 무효화·재시도 사유 */
+function timelineBlock(timeline: TimelineSummary[]): string[] {
+  if (!timeline.length) return [];
+  const lines = ["실행 타임라인 (.code-agent/log/timeline.jsonl, 읽기 전용 — 분류 시간은 합집합이고 괄호는 겹친 시간을 우선순위 하나에만 넣은 값)"];
+  for (const summary of timeline) {
+    const cats = (Object.entries(summary.categories) as [SpanCategory, TimelineSummary["categories"][SpanCategory]][]).filter(([, value]) => value.count);
+    lines.push(`  ${summary.workId ?? "(작업 ID 없음)"} · ${summary.from?.slice(0, 16) ?? ""} ~ ${summary.to?.slice(0, 16) ?? ""} · 경과 ${durationText(summary.wallMs)} · 런타임 ${summary.runtimes.join(", ")}`,
+      `    ${[...cats.map(([category, value]) => `${CATEGORY_LABEL[category]} ${durationText(value.ms)}(${durationText(value.exclusiveMs)}${value.open ? `, 열림 ${value.open}` : ""})`),
+        `그 밖(호스트 처리) ${durationText(summary.otherMs)}`].join(" · ")}`);
+    const waits = [...summary.waits].sort((a, b) => b.durationMs - a.durationMs).slice(0, WAIT_TOP);
+    if (waits.length) lines.push(`    대기 구간 ${summary.waits.length}개 (긴 순 ${waits.length}):`, ...waits.map((wait) =>
+      `      - ${CATEGORY_LABEL[wait.category]} ${durationText(wait.durationMs)}${wait.open ? "(열림)" : ""} · ${wait.reason}${wait.stopped ? " · 호스트 턴 종료" : ""}${wait.human ? " · 사람 입력 뒤 재개" : ""}` +
+      `${[wait.phase, wait.taskId, wait.dispatchId?.slice(0, 8)].some(Boolean) ? ` [${[wait.phase, wait.taskId, wait.dispatchId?.slice(0, 8)].filter(Boolean).join(" · ")}]` : ""} · ${wait.startedAt.slice(11, 19)}`));
+    if (summary.runs.length) lines.push(`    검증 실행 ${summary.runs.length}회 · 합 ${durationText(summary.runs.reduce((sum, run) => sum + (run.durationMs ?? 0), 0))}` +
+      `${summary.runs.some((run) => !run.endedAt) ? ` · 끝나지 않음 ${summary.runs.filter((run) => !run.endedAt).length}` : ""} · 마지막 로그 ${summary.runs.at(-1)!.logFile ?? "(없음)"}`);
+    for (const cause of summary.causes.slice(-WAIT_TOP)) lines.push(`    ${cause.type === "invalidated" ? "무효화" : "재시도"}: ${cause.reason}${cause.taskId ? ` [${cause.taskId}]` : ""}`);
+  }
+  return lines;
 }
 
 // ---- 출력(텍스트) ----
@@ -727,9 +782,9 @@ function renderCodex(report: UsageReport, section: UsageSection, retry: string[]
 
 export function usage(repoRoot: string, options: UsageOptions = {}): string {
   const report = usageReport(repoRoot, options);
-  const hooks = hookBlock(report.hooks);
-  const retry = [...retryBlock(report.retry), ...(report.retry.length && hooks.length ? [""] : []), ...hooks];
+  const hooks = hookBlock(report.hooks), timeline = timelineBlock(report.timeline);
+  const retry = [retryBlock(report.retry), hooks, timeline].filter((block) => block.length).flatMap((block, index) => index ? ["", ...block] : block);
   if (!report.sections.length) return retry.length ? retry.join("\n") : "집계할 호스트 기록이 없습니다.";
-  // 재시도·hook 출력 절은 첫 절에 한 번만 싣는다(저장소 기록이라 호스트와 무관하다)
+  // 재시도·hook 출력·실행 타임라인 절은 첫 절에 한 번만 싣는다(저장소 기록이라 호스트와 무관하다)
   return report.sections.map((section, index) => (section.source === "claude" ? renderClaude : renderCodex)(report, section, index === 0 ? retry : []).join("\n")).join("\n\n");
 }

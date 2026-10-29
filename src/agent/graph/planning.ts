@@ -2,6 +2,7 @@ import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgr
 import { planningAdvanceStep, planningWork } from "../planning";
 import { loadPlanning, ROLE_PHASE } from "../planningState";
 import { Stop } from "../stop";
+import { recordEvent } from "../timeline";
 import { withGraphRun } from "./runtime";
 
 interface Step {
@@ -69,6 +70,12 @@ export async function advancePlanningGraph(root: string): Promise<string> {
       .compile({ checkpointer: run.saver });
     // 결과는 최신 도메인 기록으로 다시 계산한다. 중단된 배정 노드를 재생하지 않는다.
     await run.invoke<typeof State.State>(graph, { tasks: [], cursor: 0, action: "prepare" });
+    // 다음 행동은 그래프가 정한 최종 action 하나만 남긴다. 담당 결과 대기(wait) 말고는 메인이 이어서 한다 — 사람 판단은 흐름(flow advance)이 가른다
+    const why = (item: unknown) => { const value = item as { reason?: string; reasons?: string[] } | undefined; return value?.reason ?? value?.reasons?.[0]; };
+    recordEvent(root, { type: "next.selected", workId: work.active.id, target: work.active.target, phase: work.active.phase,
+      reason: why(result.rewind) ?? why(result.stale?.[0]) ?? why(result.blocked[0]) ?? result.problems[0] ?? "",
+      detail: { source: "planning", action: result.action, kind: result.action === "wait" ? "wait" : "agent",
+        assignments: result.assignments.length, waiting: result.waiting.length, blocked: result.blocked.length } });
     return JSON.stringify(result, null, 2);
   });
 }

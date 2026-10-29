@@ -14,6 +14,7 @@ import { openConsent } from "./consentState";
 import { loadTriage, triageSummary } from "./triageState";
 import { noteHookOutput } from "./hookLog";
 import { masterRunNote } from "./master/runGuard";
+import { recordEvent } from "./timeline";
 
 /**
  * SessionStart hook — 대화가 새로 열리거나(startup·resume·fork) 비워지거나(clear) 압축된(compact) 뒤
@@ -26,6 +27,7 @@ import { masterRunNote } from "./master/runGuard";
  * 스킬 이름·경로는 부르는 hook 의 표기(withNotation)로 쓴다.
  */
 export function sessionAnchor(repoRoot: string, source?: string, session?: string, host: HostName = "claude"): string {
+  recordEvent(repoRoot, { type: "host.session", host, ...(session ? { session } : {}), detail: { source: source ?? "" } });
   const anchor = withReread(repoRoot, progress(repoRoot, source, session, host), source);
   const aidlc = aidlcBlock(repoRoot) ?? aidlcWarning(repoRoot);
   const text = aidlc && anchor ? `${anchor}\n- ${aidlc.replace(/\n/g, "\n  ")}` : anchor;

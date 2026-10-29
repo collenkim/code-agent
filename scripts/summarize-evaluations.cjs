@@ -1,7 +1,7 @@
 /* 반복 평가 실행 요약 — doc/reviews/evidence/full-flow-<scenario>-<label 접두어>*.json 을 읽어 지표별 n·평균·최소·최대를 출력한다.
  * 사용: node scripts/summarize-evaluations.cjs <new|enhance|fix|refactor> <label 접두어>
  * 예: 조건별 3회(--label opt-r1·opt-r2·opt-r3)를 evaluate-full-flow.cjs 로 돌린 뒤 `node scripts/summarize-evaluations.cjs new opt-r`.
- * 파일을 쓰지 않는다. 모델을 부르지 않는다. usageData 가 없는 이전 보고서는 그 지표를 빼고 센다.
+ * 파일을 쓰지 않는다. 모델을 부르지 않는다. usageData·실행 타임라인이 없는 이전 보고서는 그 지표를 빼고 센다.
  */
 const fs = require('node:fs'), path = require('node:path');
 const [scenario, prefix] = process.argv.slice(2);
@@ -15,6 +15,9 @@ if (!files.length) { console.log(`${dir} 에 full-flow-${scenario}-${prefix}*.js
 const reports = files.map(name => ({ name, report: JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) }));
 const claudeSection = report => report.usageData?.sections?.find(section => section.source === 'claude');
 const mainRow = report => claudeSection(report)?.agents?.find(row => row.label === 'main');
+/** 실행 타임라인 분류 시간(겹친 시간은 우선순위 하나에만 넣은 값) — timeline 이 없는 이전 보고서는 빼고 센다 */
+const timelineSeconds = (report, category) => Array.isArray(report.usageData?.timeline)
+  ? report.usageData.timeline.reduce((sum, work) => sum + (work.categories?.[category]?.exclusiveMs ?? 0), 0) / 1000 : undefined;
 const total = rows => rows?.reduce((sum, row) => ({ requests: sum.requests + row.calls.requests, toolCalls: sum.toolCalls + row.calls.toolCalls, toolResultChars: sum.toolResultChars + row.calls.toolResultChars }), { requests: 0, toolCalls: 0, toolResultChars: 0 });
 const METRICS = [
   ['비용(USD, 보고값)', report => report.reportedCostUSD],
@@ -29,6 +32,10 @@ const METRICS = [
   ['code-agent next 호출', report => claudeSection(report)?.commands?.next],
   ['code-agent status 호출', report => claudeSection(report)?.commands?.status],
   ['ca-answer 읽기', report => claudeSection(report)?.skillReads?.['ca-answer/SKILL.md']],
+  ['호스트 재개 대기(초)', report => timelineSeconds(report, 'host-resume')],
+  ['사람 응답 대기(초)', report => timelineSeconds(report, 'human')],
+  ['빌드·테스트(초)', report => timelineSeconds(report, 'build-test')],
+  ['담당 실행(초)', report => timelineSeconds(report, 'agent')],
 ];
 const fmt = value => Number.isInteger(value) ? value.toLocaleString('en-US') : value.toFixed(2);
 console.log(`${scenario} · ${prefix}* · 보고서 ${reports.length}개 (끝까지 간 것 ${reports.filter(item => item.report.finished).length})`);

@@ -30,6 +30,7 @@ import { failure, guidance, TIMING, type FailureRecord } from "./retryPolicy";
 import { KNOWLEDGE_KINDS, POLICY_KINDS, SCHEMAS } from "./schemas";
 import { SnapshotCache } from "./snapshotCache";
 import { Stop } from "./stop";
+import { recordEvent } from "./timeline";
 import { withInteraction } from "./tty";
 import { loadManifestIfAny } from "./work";
 import { previewSourceUpdate, sourceUpdateSnapshot, updateFromSource } from "./sourceUpdate";
@@ -590,7 +591,10 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
       : undefined;
     return consentStatus(root,record.id,{ warning });
   });
-  (require("./interactionSources") as typeof import("./interactionSources")).publishConsentInteraction(root, loadConsent(root, JSON.parse(output).id));
+  const prepared = loadConsent(root, JSON.parse(output).id);
+  recordEvent(root, { type: "consent.requested", ...(prepared.workId ? { workId: prepared.workId } : {}), ...(options.binding ? { host: options.binding.host, session: options.binding.id } : {}),
+    detail: { consent: prepared.id, action: prepared.action.action } });
+  (require("./interactionSources") as typeof import("./interactionSources")).publishConsentInteraction(root, prepared);
   return output;
 }
 function currentWorkId(root: string): string | undefined {
@@ -622,6 +626,7 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
   if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) throw new Stop("질문 도구의 작업 경로가 다른 프로젝트입니다.");
   if (statIfPresent(join(root, ".git")) && !samePath(findRepoRoot(cwd), root)) throw new Stop("질문 도구의 작업 경로가 다른 Git 저장소입니다.");
   const sessionId = input.session_id, toolId = input.tool_use_id;
+  let responded: { workId?: string; status: string } | undefined;
   withConsentLock(root, () => {
   const record = loadConsent(root,id);
   assertInteractionUnanswered(root, id);
@@ -691,9 +696,12 @@ export function observeConsent(input: ConsentHookInput, projectDir?: string, cha
     if (record.status === "deferred") fail(record, "response-defer", "응답: 보류");
     else if (record.status === "changes-requested") fail(record, "response-change", "응답: 수정 요청");
     record.binding=undefined;
+    responded = { workId: record.workId, status: record.status };
   } else return;
   save(root,record);
   }, TIMING.hookLockWaitMs);
+  if (responded) recordEvent(root, { type: "consent.answered", ...(responded.workId ? { workId: responded.workId } : {}), host: channel === "claude-question" ? "claude" : "codex",
+    session: sessionId, detail: { consent: id, status: responded.status, channel } });
 }
 
 function plainObject(value: unknown): value is Record<string, unknown> {
@@ -1023,7 +1031,9 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
         }
       }
     });
-    record.status="applied";save(root,record);return record.result;
+    record.status="applied";save(root,record);
+    recordEvent(root, { type: "consent.applied", ...(record.workId ? { workId: record.workId } : {}), detail: { consent: id, action: action.action, status: "applied", channel: presence.channel } });
+    return record.result;
   }catch(error){
     if (error instanceof ScreenMismatch) {
       // 도메인 함수는 첫 확인 전에 효과를 내지 않는다 — 그 전 불일치는 대상 변경(업그레이드로 화면이 바뀐 경우 등)이다
@@ -1032,6 +1042,8 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
     } else {
       discard(root, record, "apply", (error instanceof Error ? error.message : String(error)).split("\n").find((line) => line.trim()) ?? "알 수 없는 오류");
     }
+    recordEvent(root, { type: "consent.applied", ...(record.workId ? { workId: record.workId } : {}), reason: (error instanceof Error ? error.message : String(error)).split("\n")[0],
+      detail: { consent: id, action: action.action, status: "failed", channel: presence.channel } });
     throw error;
   }
 }

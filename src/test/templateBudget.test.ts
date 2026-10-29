@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { hostAssets } from "../agent/hosts";
 
 const ROOT = join(__dirname, "../..");
-/** LF 정규화 글자 수의 상한. 공통 계획 절차는 ca-plan/contract.md에 두며, 산정 근거는 doc/reviews/2026-10-27-validation.md를 따른다. */
+/** LF 정규화 글자 수의 상한. 공통 계획 절차는 ca-plan/contract.md에 두며, 산정 근거는 doc/reviews/2026-10-29-validation.md를 따른다. */
 const BUDGET: Record<string, number> = {
   "template/claude/agents/ca-analyst.md": 900,
   "template/claude/agents/ca-critic.md": 1900,

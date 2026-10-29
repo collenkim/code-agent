@@ -45,7 +45,7 @@ Codex 대화에서 `$ca-request <요구사항>`으로 시작한다. 중단한 �
 | 이벤트 | code-agent 처리 |
 |---|---|
 | PreToolUse | 셸 명령과 패치의 모든 추가·수정·삭제·이동 전후 경로, MCP 도구(`mcp__서버__도구`)의 로컬 경로 인자를 기존 쓰기·읽기 게이트에 대조. 허용한 동의 준비·적용 명령과 `code_agent.confirm`은 이 세션의 티켓을 남긴다. 판정하지 않는 그 밖의 도구 이름은 작업·세션 중에만 `.code-agent/log/codex-tools.json`에 세고 doctor 가 알린다(하위 에이전트 조율 도구 `collaboration…`은 세지 않는다). 하위 에이전트 안의 호출은 `agent_id`·`agent_type`을 싣는다 — 읽기 전용 담당(critic·reviewer, surveyor 는 초안 자리 `doc/.survey/` 밖)의 쓰기·진행 명령과 실행 중인 계획 담당의 파일 쓰기를 거부한다 |
-| UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 그 밖의 메시지는 기록하지 않는다(업무 답 관찰 없음) |
+| UserPromptSubmit | 준비된 확인 요청에 대한 명시적 사용자 메시지(확인 코드 포함)를 동의 기록에 연결. 모든 메시지의 입력 시각만 실행 타임라인에 남기고(본문 없이) 그 밖의 메시지 내용은 기록하지 않는다(업무 답 관찰 없음) |
 | SubagentStart | 계획 담당·독립 리뷰어의 세션과 실행 ID 관찰 |
 | SubagentStop | 호스트가 전달한 최종 응답을 배정·입력 해시·근거·출력 계약·문서 검사에 대조. 실패는 되돌리지 않고 기록하며 판정 실패도 `{}`·exit 0으로 통과시킨다(사유는 stderr) |
 | Stop | 계획 밖 변경·미결 질문 검사와 필요한 후속 안내. 목록은 10줄까지 싣고, 같은 세션에서 같은 사유로 이미 막았으면 다시 막지 않는다 |
@@ -101,7 +101,7 @@ CLI·hook 의 안내 문구(`다음:`·거부 사유)는 호스트 표기로 나
 
 모든 호스트를 제거했다면 `hosts.json`도 제거한다. 빈 배열로 남기지 않는다. 작업 문서와 증거 보존 여부는 별도로 결정한다.
 
-`code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별·에이전트별 토큰(입력·캐시 입력·캐시 쓰기·출력·추론 출력)·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출·파일 변경 수를 센다. 형식은 codex-cli 0.161.0 의 실제 기록으로 확인했다 — 토큰은 응답마다 한 줄인 `token_usage_record`(없는 기록만 `token_count`)로, 셸 명령은 `CommandExecution` 항목(`powershell.exe -Command` 같은 래퍼는 벗긴다)으로 센다. 하위 에이전트 기록(`ca_explorer` 같은 담당, 승인 검토 `guardian`)은 따로 행을 두고, 그 앞머리에 복사된 부모 대화는 세지 않는다. 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다).
+`code-agent usage`는 Codex 설치면 Codex 세션 기록(`$CODEX_HOME/sessions`, 없으면 `~/.codex/sessions` 아래 `rollout-*.jsonl`)에서 이 저장소의 세션을 골라 스테이지별·에이전트별 토큰(입력·캐시 입력·캐시 쓰기·출력·추론 출력)·요청·도구 호출·도구 결과 글자와 `code-agent` 명령별 호출·파일 변경 수를 센다. 형식은 codex-cli 0.161.0 의 실제 기록으로 확인했다 — 토큰은 응답마다 한 줄인 `token_usage_record`(없는 기록만 `token_count`)로, 셸 명령은 `CommandExecution` 항목(`powershell.exe -Command` 같은 래퍼는 벗긴다)으로 센다. 하위 에이전트 기록(`ca_explorer` 같은 담당, 승인 검토 `guardian`)은 따로 행을 두고, 그 앞머리에 복사된 부모 대화는 세지 않는다. 모르는 줄은 버리고 0으로 센다. 단가표가 없어 비용은 산정하지 않는다(호스트 화면에서 확인한다). 실행 타임라인 절은 두 호스트가 같은 `.code-agent/log/timeline.jsonl`을 읽는다 — Codex 는 완료 알림을 관측하지 않으므로 담당 완료 뒤 대기를 담당 완료 hook 과 Stop·사람 입력(UserPromptSubmit) 시각으로만 가른다.
 
 메인 컨텍스트 절감은 두 호스트가 같다. Codex 계획 담당도 출력 문서와 결과 파일(`result.json`)을 배정의 staging 경로에 `apply_patch`로 쓰고 최종 응답은 `결과: <경로>` 한 줄이며, 결과 JSON의 `artifacts`에는 `{path, staged}`만 넣는다 — 훅은 하위 에이전트 입력의 `agent_id`·`agent_type`(0.161.0 실측)으로 실행 중인 그 배정의 담당에게만 staging 을 열고, 그 담당의 다른 파일 쓰기는 거부한다. 쓰기가 거부되면 `{path, content}`로 낸다. staging 폴더(정식 문서가 이미 있는 재배정이면 그 배정 폴더와 현행 문서 사본까지)는 샌드박스 밖인 담당 시작 훅이 만든다 — Windows 샌드박스 셸(`code-agent` 명령 포함)이 만든 폴더는 그 작업 공간에서 `apply_patch`를 처음 쓰기 전에 생기면 이후에도 `apply_patch`로 쓸 수 없다(0.162.1 실측, 첫 `apply_patch` 뒤에 생긴 폴더는 쓸 수 있다). 훅이 미리 넣은 현행 문서 사본을 Codex 담당이 `apply_patch`로 고치는 동작은 실제 호스트에서 아직 확인하지 않았다(미확인) — 거부되면 `{path, content}`로 낸다. 배정 파일(`assignmentFile`)과 `context --file` 전달도 두 호스트가 같다.
 

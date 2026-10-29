@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -18,11 +18,12 @@ import { verify } from "../agent/verificationFlow";
 import { loadWork } from "../agent/work";
 import { RetryRefused } from "../agent/retryPolicy";
 import { deadPid } from "./deadPid";
+import { readTimeline, summarizeTimeline } from "../agent/timeline";
 
 /**
- * 검증 스테이지 — 기준 커밋·check·test·증거 묶임·수정 루프·테스트 동결·검증 hook·되감기.
+ * 검증 스테이지 — 기준 커밋·check·test·증거 묶임·수정 루프·테스트 동결·검증 hook·되감기·실행별 로그.
  *
- * p5.test 에서 describe 단위로 옮겼다(이름·본문 그대로 — 이력 추적용). 임시 git 저장소에 실제 함수를 그대로 부른다.
+ * 임시 git 저장소에 실제 함수를 그대로 부른다.
  * 검증 명령은 node 한 줄짜리 스크립트라 통과·실패·없는 실행 파일 세 경우를 이 머신에서 재현할 수 있다.
  */
 import {
@@ -205,7 +206,11 @@ describe("code-agent check", () => {
     assert.equal(evidence.rounds, 1);
     assert.equal(evidence.baseCommit, loadActive(repo)!.baseCommit);
     assert.equal(evidence.runs.filter((run) => run.phase === "check").length, 1);
-    assert.ok(existsSync(join(repo, ".code-agent/log/check-1-build.log")));
+    // 실행마다 따로 남는 로그 — 이름에 시작 시각이 들고, 머리에 시작·끝·소요가 있다
+    const [run] = evidence.runs.filter((entry) => entry.phase === "check");
+    assert.match(run.logFile!, /^\.code-agent\/log\/verify\/ORD-1\/check-1-build-\d{8}T\d{9}Z\.log$/);
+    assert.ok(run.endedAt && typeof run.durationMs === "number");
+    assert.ok(readFileSync(join(repo, run.logFile!), "utf-8").includes(`시작 ${run.at} · 끝 ${run.endedAt} · ${run.durationMs}ms · exit 0`));
     assert.match(readFileSync(join(repo, validationDocFile("ORD-1")), "utf-8"), /## 실행 결과/);
 
     next(repo);
@@ -217,7 +222,24 @@ describe("code-agent check", () => {
     toCheck();
     const out = await check(requireValidatable(repo, "check"));
     assert.match(out, /build: passed/);
-    assert.match(readFileSync(join(repo, ".code-agent/log/check-1-build.log"), "utf-8"), /rounds=1/);
+    assert.match(readFileSync(join(repo, loadEvidence(repo, "ORD-1", "order")!.runs.at(-1)!.logFile!), "utf-8"), /rounds=1/);
+  });
+
+  test("다시 돌려도 앞 실행의 로그를 덮지 않고, 실행마다 시작·끝·소요를 타임라인에 남긴다", async () => {
+    useManifest({ build: PRINT_ROUNDS });
+    toCheck();
+    await check(requireValidatable(repo, "check"));
+    await check(requireValidatable(repo, "check"));
+    // 증거에는 단계마다 마지막 실행만 남는다 — 앞 실행은 로그 파일과 타임라인에 남는다
+    const ended = readTimeline(repo).filter((event) => event.type === "verify.ended");
+    const logs = ended.map((event) => String(event.detail?.logFile));
+    assert.equal(new Set(logs).size, 2);
+    assert.deepEqual(readdirSync(join(repo, ".code-agent/log/verify/ORD-1")).sort(), logs.map((file) => file.split("/").at(-1)).sort());
+    assert.ok(logs.every((file) => /^rounds=\d$/m.test(readFileSync(join(repo, file), "utf-8"))));
+    assert.deepEqual(ended.map((event) => [event.workId, event.phase, event.detail?.outcome]), [["ORD-1", "check", "passed"], ["ORD-1", "check", "passed"]]);
+    assert.ok(ended.every((event) => typeof event.detail?.durationMs === "number" && String(event.detail.startedAt) <= event.at));
+    assert.equal(loadEvidence(repo, "ORD-1", "order")!.runs.find((run) => run.phase === "check")!.logFile, logs[1]);
+    assert.deepEqual(summarizeTimeline(readTimeline(repo)).runs.map((run) => run.logFile), logs);
   });
 
   test("돌아서 실패한 명령은 failed 다 — next 가 열리지 않는다", async () => {

@@ -9,6 +9,7 @@ import { ACTIVE_FILE, DOCS_SESSION_FILE, REQUEST_SESSION_FILE, STATE_DIR } from 
 import { commonAgentName, withNotation } from "./hostText";
 import { CROSS_CHILD_PASS_EVENTS, crossChild } from "./crossEnv";
 import { noteHookOutput } from "./hookLog";
+import { recordEvent } from "./timeline";
 
 interface CodexHookInput extends ReviewHookInput {
   tool_name?: string;
@@ -180,9 +181,11 @@ function codexEvent(input: CodexHookInput): object {
     (require("./planningHook") as typeof import("./planningHook")).observePlanner(event, root, {host: "codex"});
     (require("./reviewHook") as typeof import("./reviewHook")).observeReviewer(event, root, "codex");
   } else if (input.hook_event_name === "UserPromptSubmit") {
+    // 사람이 입력한 시각만 남긴다(본문 없이) — 완료 뒤 멈춘 흐름을 사람이 다시 움직였는지 가른다
+    recordEvent(root, { type: "human.input", host: "codex", ...(input.session_id ? { session: input.session_id } : {}) });
     observeCodexConsent(input, root);
   } else if (input.hook_event_name === "Stop") {
-    const reason = (require("./stopHook") as typeof import("./stopHook")).decideStop(input, root);
+    const reason = (require("./stopHook") as typeof import("./stopHook")).decideStop(input, root, "codex");
     return reason ? {decision: "block", reason} : {};
   } else if (input.hook_event_name === "SessionStart") {
     // Claude session-event 와 같은 진행 상태를 붙이고 작업 임대를 이 세션으로 넘겨받는다(sessionAnchor — 압축 compact 은 넘겨받지 않고,

@@ -10,6 +10,7 @@ import { PHASE_SKILL } from "../reentry";
 import { loadRequestSession } from "../request";
 import { stateView, type StateJson, type StateOptions } from "../stateView";
 import { Stop } from "../stop";
+import { recordEvent } from "../timeline";
 import { loadTriage } from "../triageState";
 import { integrate } from "../validate";
 import { verify } from "../verificationFlow";
@@ -144,6 +145,9 @@ export async function advanceFlow(root: string, options: StateOptions = {}): Pro
     edges.addEdge("wait", END);
     // 대기 뒤에도 START에서 최신 승인·입력·master 정지를 다시 검사한다.
     await run.invoke<typeof State.State>(graph.compile({ checkpointer: run.saver }), { route: "observe", node: "observe", action: "observe" });
+    // 흐름이 고른 다음 행동 — 사람·외부 대기는 그 사유를 남긴다(호스트가 실제로 실행했는지는 다음 명령의 기록이 말한다)
+    recordEvent(root, { type: "next.selected", ...(output.kind === "human" || output.kind === "wait" ? { reason: output.instruction } : {}),
+      detail: { source: "flow", node: output.node, kind: output.kind, action: output.action, run: run.id } });
     return output;
   });
 }
