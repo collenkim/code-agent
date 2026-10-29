@@ -494,8 +494,8 @@ test("사람 허용은 소진된 카운터에만 기록하고 그 범위의 한�
   assert.throws(() => dispatch("analysis"), /총 6회/);
   assert.deepEqual({ ...planningBudget(root, "analysis").taskTotal }, { key: "taskTotal", used: 6, limit: 6, left: 0, exhausted: true });
   assert.throws(() => grantPlanningRetry(root, "sameInput", "analysis", "consent-1", "사유"), /한도가 남아 있어/);
-  assert.equal(grantPlanningRetry(root, "taskTotal", "analysis", "consent-2", "사람 판단"), "작업 analysis의 작업 총 배정 한도를 6→9회로 늘렸습니다(사람 판단, 동의 consent-2)");
-  assert.equal(loadPlanning(loadWork(root)!).retry!.grants[0].scope, "planning:analysis");
+  assert.match(grantPlanningRetry(root, "taskTotal", "analysis", "consent-2", "사람 판단"), /^작업 analysis의 작업 총 배정 한도를 6→9회로 늘렸습니다\(실행 회차 1 · 요구 항목 [0-9a-f]{8} 안에서만, 사람 판단, 동의 consent-2\)$/);
+  assert.match(loadPlanning(loadWork(root)!).retry!.grants[0].scope, /^planning:analysis@c1-[0-9a-f]{12}$/);
   assert.equal(planningBudget(root, "analysis").taskTotal.limit, 9);
   assert.doesNotThrow(() => dispatch("analysis"));
 });
@@ -593,7 +593,8 @@ test("planning status 는 실행 관찰·낡은 이유·재시도 예산을 보�
   let status = JSON.parse(planningStatus(root)).tasks[0];
   assert.equal(status.run.observedStart, true);
   assert.equal(status.run.orphan, "running");
-  assert.deepEqual(status.budget, { sameInput: { used: 0, limit: 3 }, taskTotal: { used: 1, limit: 6 } });
+  assert.match(status.budget.taskTotal.epoch, /^실행 회차 1 · 요구 항목 [0-9a-f]{8}$/);
+  assert.deepEqual(status.budget, { sameInput: { used: 0, limit: 3 }, taskTotal: { used: 1, limit: 6, epoch: status.budget.taskTotal.epoch } });
   observePlanner(JSON.parse(stopEvent(item, "watch", completed(item, { [`${DIR}/01-requirements.md`]: REQUIREMENTS }))));
   write("doc/conventions.md", `${readFileSync(join(root, "doc/conventions.md"), "utf8")}\n- 추가 규칙\n`);
   status = JSON.parse(planningStatus(root)).tasks[0];

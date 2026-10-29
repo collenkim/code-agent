@@ -3,7 +3,7 @@
  *
  * 카운터 키마다 기록 파일·소유 함수·범위(scope)·잠금·소진 재확인이 고정돼 있다(아래 grantTarget 이 유일한 구현).
  * 범위는 코드가 현재 단계·회차·테스트 트리·critic 지점에서 구한다 — 모델이 주는 값은 계획 배정 한도(taskTotal·sameInput)의
- * 계획 작업 ID 하나다. 같은 키가 두 파일에 있으면(crossPoint 등) 현재 단계가 파일을 정한다.
+ * 계획 작업 ID 하나다. 계획 배정 허용은 지금 예산 구간(planning.ts budgetEpoch)에 묶여 다음 구간에서 다시 쓰이지 않는다. 같은 키가 두 파일에 있으면(crossPoint 등) 현재 단계가 파일을 정한다.
  * 소진되지 않은 카운터에는 허용을 기록하지 않는다 — 한도를 미리 늘려 두는 길을 닫는다.
  *
  * 동의 미리보기·적용에서만 쓴다(hook 은 이 모듈을 읽지 않는다).
@@ -200,11 +200,12 @@ function planningTaskTarget(work: Work, key: (typeof PLANNING_KEYS)[number], tas
   requirePhase(work, key, PLANNING_PHASES);
   const budgets = planningBudget(work.repoRoot, taskId);
   const budget = key === "taskTotal" ? budgets.taskTotal : budgets.sameInput;
-  const scope = key === "taskTotal" ? grantScope({ file: "planning", key, taskId }) : grantScope({ file: "planning", key, taskId, inputHash: budgets.sameInput.inputHash });
+  const epoch = budgets.epoch.key;
+  const scope = key === "taskTotal" ? grantScope({ file: "planning", key, taskId, epoch }) : grantScope({ file: "planning", key, taskId, inputHash: budgets.sameInput.inputHash, epoch });
   const record = withPlanningCache(() => loadPlanning(work).tasks.find((item) => item.task.id === taskId));
   const file = planningFile(work);
   return {
-    key, label: COUNTER_LABEL[key], file: `${rel(work, file)} (retry.grants)`, point: `계획 작업 ${taskId}`, scope, ...pick(budget),
+    key, label: COUNTER_LABEL[key], file: `${rel(work, file)} (retry.grants)`, point: `계획 작업 ${taskId} · ${budgets.epoch.label}`, scope, ...pick(budget),
     lastFailure: firstLine(record?.attempts.at(-1)?.failure?.detail),
     resume: key === "taskTotal" ? "code-agent planning advance" : `입력을 보완했으면 code-agent planning dispatch ${taskId}`,
     granted: (consentId) => withPlanningCache(() => loadPlanning(work).retry?.grants.find((grant) => grant.consent === consentId)),

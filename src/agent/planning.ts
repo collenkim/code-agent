@@ -12,13 +12,13 @@ import { acquireLock } from "./lock";
 import { Stop } from "./stop";
 import { codexAgentName } from "./hosts";
 import { editVia } from "./hostText";
-import { budgetOf, COUNTER_LABEL, failure, grantFor, grantScope, guidance, planningDispatchDecision, RetryRefused, TIMING,
-  type Budget, type CounterKey, type FailureClass } from "./retryPolicy";
+import { budgetOf, COUNTER_LABEL, epochLabel, failure, grantFor, grantScope, guidance, planningDispatchDecision, RetryRefused, TIMING,
+  type Budget, type CounterKey, type FailureClass, type RetryGrant } from "./retryPolicy";
 import { readSourceTrace } from "./sourceTrace";
 import { loadWork, type Work } from "./work";
 import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputChanges, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
   ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
-  type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
+  type BudgetEpoch, type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 import type { PlanningCrossView } from "./crossRecord";
 import { dependencyContracts, registerContracts } from "./dependencyContracts";
 import { reuseContractAnswer } from "./answers";
@@ -122,8 +122,10 @@ export function mutatePlanning<T>(work: Work, fn: (state: PlanningState) => T, o
     // 잠금 밖에서 조립한 taskHash 메모는 버린다 — 잠금 안 판정은 stat 으로 검증한 부품으로 다시 조립한다
     invalidatePlanningCache();
     const state = loadPlanning(work);
-    // 재시도 카운터 이행 — 이 시각 이후의 배정만 작업별 총 배정 한도에 센다
+    // 재시도 카운터 이행 시각을 처음 쓸 때 남기고, 쓸 때마다 지금 예산 구간을 맞춘다 — 작업 총 배정은 구간 시작 뒤의 배정만 센다
+    const fresh = !state.retry;
     state.retry ??= { version: 1, since: new Date().toISOString(), grants: [] };
+    syncEpoch(work, state, fresh);
     const value = fn(state);
     writeAtomic(path, `${JSON.stringify(state, null, 2)}\n`);
     invalidatePlanningCache();   // 상태(선행 결과)가 바뀌었다
@@ -277,19 +279,67 @@ const runningCount = (state: PlanningState): number => state.tasks.filter(item =
 
 // ---- 재시도 예산 ----
 
-/** 작업별 같은 입력 실패·총 배정 사용량(현재 입력 기준) */
-function taskBudgets(work: Work, state: PlanningState, record: TaskRecord): { taskTotal: Budget; sameInput: Budget & { inputHash: string } } {
-  const inputHash = hashInput(work, state, record.task).hash, grants = state.retry?.grants ?? [], taskId = record.task.id;
+/**
+ * 예산 구간 — 작업 총 배정을 세는 단위. 실행 회차(cycles.ts)와 흐름이 따르는 확정 요구의 요구 항목 해시(커서 `request.items`)가 정한다.
+ * 둘 다 사람이 정한 것(반영 동의 뒤 새 회차, 요구 확정 동의)이라 모델의 준비·입력 변경·재배정으로는 바뀌지 않는다. 머리말만 바뀐 개정은
+ * 요구 항목이 같아 같은 구간이다. 요구 항목을 기록하기 전 작업은 `c<회차>-legacy`다.
+ */
+export function budgetEpoch(work: Work): { key: string; cycle: number; revision?: number } {
+  const cycle = work.active.cycle?.number ?? 1, items = work.active.request?.items, revision = work.active.request?.revision;
+  // 해시의 알고리즘 접두(`sha256:`)는 걷는다 — 키는 허용 범위(`planning:<작업>@<키>`) 안에 들어가 `:` 를 쓰지 않는다
+  return { key: `c${cycle}-${items ? items.replace(/^[a-z0-9]+:/, "").slice(0, 12) : "legacy"}`, cycle, ...(revision ? { revision } : {}) };
+}
+/**
+ * 기록 잠금 안에서 지금 구간을 맞춘다(mutatePlanning). 구간 기록이 없는 이전 형식은 지금 구간을 이행 시각(retry.since)부터 이어받는다 —
+ * 이행 뒤 사용량이 이행 전과 같다. 요구 항목 기록 전(legacy)이던 같은 회차의 구간은 키만 바꾼다. 그 밖의 구간 변경은 지난 구간을 남기고
+ * 지금 시각부터 새로 센다.
+ */
+function syncEpoch(work: Work, state: PlanningState, fresh: boolean): void {
+  const retry = state.retry!, current = budgetEpoch(work), stored = retry.epoch;
+  if (!stored) { retry.epoch = { ...current, since: retry.since, ...(fresh ? {} : { migrated: true as const }) }; return; }
+  if (stored.key === current.key) return;
+  if (stored.key === `c${stored.cycle}-legacy` && stored.cycle === current.cycle) { retry.epoch = { ...stored, ...current }; return; }
+  const now = new Date().toISOString();
+  retry.epochs = [...(retry.epochs ?? []), { ...stored, until: now }].slice(-20);
+  retry.epoch = { ...current, since: now };
+}
+interface EpochView { key: string; label: string; since?: number; migrated: boolean; record?: BudgetEpoch }
+/** 읽기 경로도 쓰는 지금 구간 — 아직 기록하지 않은 새 구간이면 since 가 없다(그 구간의 배정이 아직 없다) */
+function epochView(work: Work, state: PlanningState): EpochView {
+  const current = budgetEpoch(work), stored = state.retry?.epoch, label = epochLabel(current.key);
+  if (!state.retry) return { key: current.key, label, migrated: true };
+  if (!stored) return { key: current.key, label, since: Date.parse(state.retry.since), migrated: true };
+  const same = stored.key === current.key || (stored.key === `c${stored.cycle}-legacy` && stored.cycle === current.cycle);
+  return same ? { key: current.key, label, since: Date.parse(stored.since), migrated: !!stored.migrated, record: stored } : { key: current.key, label, migrated: false };
+}
+/** 지금 구간에 쓰는 사람 허용 — 구간 표기가 없는 이전 형식의 계획 허용은 그 기록을 이어받은 첫 구간에서만 그 구간의 허용으로 읽는다 */
+function epochGrants(state: PlanningState, view: EpochView): RetryGrant[] {
+  return (state.retry?.grants ?? []).flatMap(grant => {
+    if (!grant.scope.startsWith("planning:") || grant.scope.includes("@")) return [grant];
+    return view.migrated ? [{ ...grant, scope: `${grant.scope}@${view.key}` }] : [];
+  });
+}
+/** 예산 구간 보기 — planning status·동의 미리보기가 사용량을 설명할 때 쓴다 */
+export interface EpochBudget { key: string; label: string; since?: string; earlier: number }
+/** 작업별 같은 입력 실패·총 배정 사용량(현재 입력·지금 구간 기준). earlier: 지금 구간 밖(이전 구간·이행 전)의 배정 — 집계에만 남는다 */
+function taskBudgets(work: Work, state: PlanningState, record: TaskRecord): { taskTotal: Budget; sameInput: Budget & { inputHash: string }; epoch: EpochBudget } {
+  const inputHash = hashInput(work, state, record.task).hash, view = epochView(work, state), grants = epochGrants(state, view), taskId = record.task.id;
   const same = record.attempts.filter(attempt => attempt.inputHash === inputHash && attempt.status === "failed").length;
-  const since = state.retry ? Date.parse(state.retry.since) : undefined;
-  const total = since === undefined ? 0 : chargedPlanningAttempts(record.attempts).filter(attempt => Date.parse(attempt.at) >= since).length;
+  const charged = view.since === undefined ? [] : chargedPlanningAttempts(record.attempts).filter(attempt => Date.parse(attempt.at) >= view.since!);
+  const earlier = record.attempts.filter(attempt => view.since === undefined || Date.parse(attempt.at) < view.since).length;
   return {
-    taskTotal: budgetOf("taskTotal", total, undefined, grants, grantScope({ file: "planning", key: "taskTotal", taskId })),
-    sameInput: { ...budgetOf("sameInput", same, undefined, grants, grantScope({ file: "planning", key: "sameInput", taskId, inputHash })), inputHash },
+    taskTotal: budgetOf("taskTotal", charged.length, undefined, grants, grantScope({ file: "planning", key: "taskTotal", taskId, epoch: view.key })),
+    sameInput: { ...budgetOf("sameInput", same, undefined, grants, grantScope({ file: "planning", key: "sameInput", taskId, inputHash, epoch: view.key })), inputHash },
+    epoch: { key: view.key, label: view.label, ...(view.since !== undefined ? { since: new Date(view.since).toISOString() } : {}), earlier },
   };
 }
-/** 동의 미리보기용 — 작업별 같은 입력 실패·총 배정 사용량 */
-export function planningBudget(root: string, taskId: string): { taskTotal: Budget; sameInput: Budget & { inputHash: string } } {
+/** 배정·교정 판정의 예산 입력 — 지금 구간의 시작·허용 */
+function dispatchBudget(work: Work, state: PlanningState): { since?: string; epoch: string; grants: RetryGrant[] } {
+  const view = epochView(work, state);
+  return { ...(view.since !== undefined ? { since: new Date(view.since).toISOString() } : {}), epoch: view.key, grants: epochGrants(state, view) };
+}
+/** 동의 미리보기용 — 작업별 같은 입력 실패·총 배정 사용량과 예산 구간 */
+export function planningBudget(root: string, taskId: string): { taskTotal: Budget; sameInput: Budget & { inputHash: string }; epoch: EpochBudget } {
   const work = planningWork(root);
   return withPlanningCache(() => {
     const state = loadPlanning(work), record = state.tasks.find(item => item.task.id === taskId);
@@ -308,10 +358,11 @@ export function grantPlanningRetry(root: string, key: "taskTotal" | "sameInput",
     if (!record) throw new Stop(`계획 작업이 없습니다: ${taskId}`);
     const budgets = taskBudgets(work, state, record);
     const budget = key === "taskTotal" ? budgets.taskTotal : budgets.sameInput;
-    const scope = key === "taskTotal" ? grantScope({ file: "planning", key, taskId }) : grantScope({ file: "planning", key, taskId, inputHash: budgets.sameInput.inputHash });
+    const epoch = budgets.epoch.key;
+    const scope = key === "taskTotal" ? grantScope({ file: "planning", key, taskId, epoch }) : grantScope({ file: "planning", key, taskId, inputHash: budgets.sameInput.inputHash, epoch });
     const grant = grantFor({ key, scope, budget, consent, reason });
     state.retry!.grants.push(grant);
-    return `작업 ${taskId}의 ${COUNTER_LABEL[key as CounterKey]} 한도를 ${budget.limit}→${budget.limit + grant.step}회로 늘렸습니다(사람 판단, 동의 ${consent})`;
+    return `작업 ${taskId}의 ${COUNTER_LABEL[key as CounterKey]} 한도를 ${budget.limit}→${budget.limit + grant.step}회로 늘렸습니다(${budgets.epoch.label} 안에서만, 사람 판단, 동의 ${consent})`;
   }));
 }
 
@@ -330,7 +381,8 @@ export function planningStatus(root: string): string {
         ...(last?.returnPending ? { returnPending: last.returnPending, recovery: `담당이 종료됐으면 code-agent planning cancel ${record.task.id} 후 planning advance로 재배정합니다. 지적·초안은 보존됩니다.` } : {}),
         ...(run ? { run: { observedStart: run.observedStart, ...(run.agentSession ? { agentSession: run.agentSession } : {}), elapsedMin: run.elapsedMin, orphan: run.state, reason: run.reason } } : {}),
         ...(name === "stale" ? { staleBecause: staleReasons(work, state, record) } : {}),
-        budget: { sameInput: { used: budgets.sameInput.used, limit: budgets.sameInput.limit }, taskTotal: { used: budgets.taskTotal.used, limit: budgets.taskTotal.limit } },
+        budget: { sameInput: { used: budgets.sameInput.used, limit: budgets.sameInput.limit },
+          taskTotal: { used: budgets.taskTotal.used, limit: budgets.taskTotal.limit, epoch: budgets.epoch.label, ...(budgets.epoch.earlier ? { earlier: budgets.epoch.earlier } : {}) } },
         last: last && { dispatchId: last.dispatchId, at: last.at, status: last.status, error: last.error, ...(last.failure ? { failure: last.failure } : {}), summary: last.result?.summary, findings: last.result?.findings, questions: last.result?.questions }, detailCommand: `code-agent planning result ${record.task.id}` };
     }), conflicts: mergeProblems(state) }, null, 2);
   });
@@ -371,7 +423,7 @@ function assignmentNotes(work: Work, state: PlanningState, record: TaskRecord, p
   const ref = { workId: work.active.id, target: work.active.target, phase: work.active.phase, taskId: record.task.id, dispatchId: attempt.dispatchId };
   const budgets = taskBudgets(work, state, record);
   const counters = { taskTotalUsed: budgets.taskTotal.used, taskTotalLimit: budgets.taskTotal.limit, sameInputUsed: budgets.sameInput.used, sameInputLimit: budgets.sameInput.limit };
-  const notes: TimelineInput[] = [{ type: "agent.assigned", ...ref, detail: { role: record.task.role, agentType: TASK_AGENTS[record.task.role], mode, attempts: record.attempts.length } }];
+  const notes: TimelineInput[] = [{ type: "agent.assigned", ...ref, detail: { role: record.task.role, agentType: TASK_AGENTS[record.task.role], mode, attempts: record.attempts.length, budgetEpoch: budgets.epoch.key } }];
   if (mode === "correction") notes.push({ type: "retry.used", ...ref, reason: `결과 형식 교정: ${attempt.correction?.error ?? ""}`, detail: { counter: "sameInput", ...counters } });
   else if (prior && prior.status !== "completed") {
     const changed = prior.inputHash !== attempt.inputHash;
@@ -401,7 +453,7 @@ function dispatchState(work: Work, state: PlanningState, id: string, swept?: Swe
     if (runningCount(state) >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다. 실행 결과를 기다리세요.");
     if (record.attempts.at(-1)?.status === "needs-correction") throw new Stop(`출력 형식 교정이 필요합니다. planning repair ${id}를 실행하세요.`);
     const { hash: inputHash, parts } = hashInput(work, state, record.task);
-    const decision = planningDispatchDecision({ attempts: record.attempts, inputHash, since: state.retry?.since, grants: state.retry?.grants, taskId: record.task.id });
+    const decision = planningDispatchDecision({ attempts: record.attempts, inputHash, ...dispatchBudget(work, state), taskId: record.task.id });
     if (!decision.allow) throw new RetryRefused(decision.failure);
     const prior = record.attempts.at(-1);
     const attempt: TaskAttempt = { dispatchId: randomUUID(), inputHash, inputParts: parts, at: new Date().toISOString(), status: "running" };
@@ -522,7 +574,7 @@ function repairState(work: Work, state: PlanningState, id: string, swept?: Sweep
   const problems = readyProblems(work, state, record);
   if (problems.length) throw new Stop(problems.join("\n"));
   // 교정은 같은 시도다 — 같은 입력 실패 한도만 본다(작업 총 배정을 쓰지 않는다)
-  const decision = planningDispatchDecision({ attempts: record.attempts, inputHash: last.inputHash, since: state.retry?.since, grants: state.retry?.grants, taskId: record.task.id, repair: true });
+  const decision = planningDispatchDecision({ attempts: record.attempts, inputHash: last.inputHash, ...dispatchBudget(work, state), taskId: record.task.id, repair: true });
   if (!decision.allow) throw new RetryRefused(decision.failure);
   if (!swept) sweepOrphans(state, Date.now());
   if (runningCount(state) >= state.maxParallel) throw new Stop("동시 실행 한도에 도달했습니다.");

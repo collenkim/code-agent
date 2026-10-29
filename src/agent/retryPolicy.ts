@@ -134,26 +134,35 @@ export type GrantPoint =
   | { file: "verify"; key: "reproRerun"; tree: string }
   | { file: "review"; key: "reviewRounds" }
   | { file: "review"; key: "reviewerRuns" | "crossPoint" | "crossError" | "crossFormat"; round: number }
-  | { file: "planning"; key: "taskTotal"; taskId: string }
-  | { file: "planning"; key: "sameInput"; taskId: string; inputHash: string }
+  | { file: "planning"; key: "taskTotal"; taskId: string; epoch?: string }
+  | { file: "planning"; key: "sameInput"; taskId: string; inputHash: string; epoch?: string }
   | { file: "planning"; key: "crossPoint" | "crossError" | "crossFormat"; criticDispatchId: string };
 export function grantScope(point: GrantPoint): string {
   if ("round" in point) return `round:${point.round}`;
   if ("tree" in point) return `tree:${point.tree}`;
-  if ("inputHash" in point) return `planning:${point.taskId}:${point.inputHash}`;
-  if ("taskId" in point) return `planning:${point.taskId}`;
+  // 계획 허용은 예산 구간(planning.ts budgetEpoch)에 묶인다 — 구간 표기가 없는 범위는 이 형식 전에 기록한 허용이다
+  const epoch = "epoch" in point && point.epoch ? `@${point.epoch}` : "";
+  if ("inputHash" in point) return `planning:${point.taskId}:${point.inputHash}${epoch}`;
+  if ("taskId" in point) return `planning:${point.taskId}${epoch}`;
   if ("criticDispatchId" in point) return `critic:${point.criticDispatchId}`;
   return "";
 }
 export function grantable(key: string): key is keyof typeof GRANT_STEP { return key in GRANT_STEP; }
 /** 허용 범위의 읽는 이름 — ⑧·⑩·커밋 메시지가 사람 허용을 보일 때 쓴다 */
 export function grantScopeLabel(scope: string): string {
-  const [kind, a, b] = scope.split(":");
+  const [body, epoch] = scope.split("@");
+  const [kind, a, b] = body.split(":");
   if (kind === "round") return `${a}회차`;
   if (kind === "tree") return `테스트 트리 ${a.slice(-8)}`;
-  if (kind === "planning") return b ? `계획 작업 ${a} · 같은 입력` : `계획 작업 ${a}`;
+  if (kind === "planning") return `계획 작업 ${a}${b ? " · 같은 입력" : ""}${epoch ? ` · ${epochLabel(epoch)}` : ""}`;
   if (kind === "critic") return `critic ${a.slice(0, 8)}`;
   return "";
+}
+/** 예산 구간 키(`c<회차>-<확정 요구 항목 해시 12자>`, 항목 기록 전 작업은 `c<회차>-legacy`)의 읽는 이름 */
+export function epochLabel(key: string): string {
+  const match = /^c(\d+)-(.+)$/.exec(key);
+  if (!match) return `예산 구간 ${key}`;
+  return match[2] === "legacy" ? `실행 회차 ${match[1]}` : `실행 회차 ${match[1]} · 요구 항목 ${match[2].slice(0, 8)}`;
 }
 /** 사람 허용 한 건의 한 줄 — `<카운터> +N (범위) — 사유 · 동의 <8자>` */
 export function grantText(grant: RetryGrant): string {
@@ -300,7 +309,7 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "same-input-repeat": {
     id: "same-input-repeat", label: "같은 입력 반복 실패", group: "planning", auxiliary: false,
-    detect: `같은 작업·같은 inputHash 로 failed ${LIMITS.sameInput}`,
+    detect: `같은 작업·같은 inputHash 로 failed ${LIMITS.sameInput}(예산 구간과 무관)`,
     retry: "same-input-reassign", retryText: "입력을 보완한 뒤 `planning dispatch`로 명시할 때만",
     counters: ["sameInput"],
     limitText: `같은 입력 실패 ${LIMITS.sameInput}(+${GRANT_STEP.sameInput}/사람)`,
@@ -311,14 +320,14 @@ export const POLICIES: Readonly<Record<FailureClass, ClassPolicy>> = {
   },
   "reassign-total": {
     id: "reassign-total", label: "입력 변경 재배정 총 상한", group: "planning", auxiliary: false,
-    detect: "작업별 배정 수(이행 시각 이후, 취소·고아 포함, 입력별 첫 되돌림 전달 실패 제외)",
+    detect: "지금 예산 구간(실행 회차·확정 요구 항목)의 작업별 배정 수(정상 완료·질문·취소·고아 포함, 형식 교정·입력별 첫 되돌림 전달 실패 제외, 이전 구간은 집계에만)",
     retry: "no-retry", retryText: "없음 — 자동 재배정을 멈춘다",
     counters: ["taskTotal"],
     limitText: `작업 총 배정 ${LIMITS.taskTotal}(+${GRANT_STEP.taskTotal}/사람)`,
     consumesFixRound: false, fixRoundText: "안 씀",
     handoff: "blocked", onExhausted: "consent:judgment", exceededText: "사람 판단(judgment)",
     // 같은 작업을 다시 준비해도 시도 기록이 남으므로 "재계획"으로 한도가 풀린다고 안내하지 않는다 — 사람 허용(judgment retry-grant)이 길이다
-    guide: "작업 {id}의 배정이 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 같은 작업을 다시 준비(planning prepare)해도 배정 기록은 그대로라 한도가 풀리지 않습니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 지시를 받으세요 — 사용자가 한 번 더 허용을 고르면 ca-answer 동의 judgment retry-grant(name taskTotal, id {id})로 기록하고, 아니면 작업 종료(abort)입니다.",
+    guide: "작업 {id}의 배정이 이 예산 구간에서 총 {limit}회에 닿았습니다(취소·고아 포함) — 자동 재배정을 멈춥니다. 같은 작업을 다시 준비(planning prepare)하거나 입력을 바꿔도 구간은 그대로라 한도가 풀리지 않습니다 — 새 구간은 사용자가 확정한 요구 항목 변경과 새 실행 회차에서만 열립니다. 막힌 이유와 기록(code-agent planning status)을 사용자에게 보고하고 지시를 받으세요 — 사용자가 한 번 더 허용을 고르면 ca-answer 동의 judgment retry-grant(name taskTotal, id {id})로 기록하고, 아니면 작업 종료(abort)입니다.",
     enforcedAt: ["planning.ts dispatchState·repairState"],
   },
   "cross-unavailable": {
@@ -954,14 +963,17 @@ export function chargedPlanningAttempts(attempts: readonly AttemptView[]): Attem
 export interface AgentView { id: string; session: string; type: string; startedAt: string; finished?: boolean; dispatchId?: string; returns?: number; endedAt?: string }
 
 /**
- * 배정·교정을 허용할지 — 같은 입력의 failed 만 sameInput 으로, retry.since 이후의 모든 시도를 taskTotal 로 센다.
- * 교정(repair)은 같은 시도라 taskTotal 을 쓰지 않는다. 계획 쪽 한도는 limit-exceeded 로 감싸지 않는다.
+ * 배정·교정을 허용할지. 과금은 둘로 나뉜다.
+ * - sameInput: 같은 입력(inputHash)의 failed 만 센다 — 예산 구간과 무관하다(같은 입력의 반복 실패는 구간이 바뀌어도 막힌다).
+ * - taskTotal: 지금 예산 구간이 시작된 뒤(since)의 배정을 센다 — 정상 완료·질문·실패·취소·고아를 모두 세고, 형식 교정(repair — 같은 시도)과
+ *   입력별 첫 되돌림 전달 실패는 세지 않는다. 이전 구간의 시도는 기록·집계에만 남는다.
+ * 사람 허용은 그 구간(epoch)의 범위에서만 더한다. 계획 쪽 한도는 limit-exceeded 로 감싸지 않는다.
  */
-export function planningDispatchDecision(input: { attempts: readonly AttemptView[]; inputHash: string; since?: string;
+export function planningDispatchDecision(input: { attempts: readonly AttemptView[]; inputHash: string; since?: string; epoch?: string;
   grants?: readonly RetryGrant[]; taskId: string; repair?: boolean }): { allow: true } | { allow: false; failure: FailureRecord } {
   if (input.attempts.filter(a => a.inputHash === input.inputHash && a.returnDeliveryFailed).length > 1) return {
     allow: false, failure: failure("hook-failure", "같은 입력에서 완료 hook 되돌림 전달 실패가 반복됐습니다. 호스트 재개 경로를 복구하거나 입력을 고친 뒤 다시 배정하세요.") };
-  const sameScope = grantScope({ file: "planning", key: "sameInput", taskId: input.taskId, inputHash: input.inputHash });
+  const sameScope = grantScope({ file: "planning", key: "sameInput", taskId: input.taskId, inputHash: input.inputHash, epoch: input.epoch });
   const same = input.attempts.filter((attempt) => attempt.inputHash === input.inputHash && attempt.status === "failed").length;
   const sameLimit = limitOf("sameInput", LIMITS.sameInput, input.grants, sameScope);
   if (same >= sameLimit) {
@@ -971,7 +983,7 @@ export function planningDispatchDecision(input: { attempts: readonly AttemptView
   if (input.repair) return { allow: true };
   const since = input.since === undefined ? Infinity : Date.parse(input.since);
   const total = chargedPlanningAttempts(input.attempts).filter((attempt) => Date.parse(attempt.at) >= since).length;
-  const totalLimit = limitOf("taskTotal", LIMITS.taskTotal, input.grants, grantScope({ file: "planning", key: "taskTotal", taskId: input.taskId }));
+  const totalLimit = limitOf("taskTotal", LIMITS.taskTotal, input.grants, grantScope({ file: "planning", key: "taskTotal", taskId: input.taskId, epoch: input.epoch }));
   if (total >= totalLimit) {
     return { allow: false, failure: failure("reassign-total", guidance("reassign-total", { id: input.taskId, limit: totalLimit }),
       { counter: { key: "taskTotal", used: total, limit: totalLimit } }) };

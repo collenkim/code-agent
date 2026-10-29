@@ -442,7 +442,7 @@ describe("검증 카운터·회차 판정", () => {
 describe("계획 배정 한도·고아·hook 종료 코드", () => {
   const attempt = (status: string, inputHash = "h1", at = "2026-10-07T01:00:00.000Z") => ({ dispatchId: `d-${Math.random()}`, inputHash, at, status });
 
-  test("같은 입력은 failed 만 세고, 작업 총 배정은 이행 시각 이후 모든 시도를 센다", () => {
+  test("같은 입력은 failed 만 세고, 작업 총 배정은 지금 예산 구간이 시작된 뒤의 모든 시도를 센다", () => {
     const decide = (attempts: ReturnType<typeof attempt>[], extra: Partial<Parameters<typeof planningDispatchDecision>[0]> = {}) =>
       planningDispatchDecision({ attempts, inputHash: "h1", taskId: "design", since: "2026-10-07T00:00:00.000Z", ...extra });
     assert.deepEqual(decide([attempt("failed"), attempt("failed"), attempt("cancelled"), attempt("orphaned")]), { allow: true });
@@ -454,9 +454,9 @@ describe("계획 배정 한도·고아·hook 종료 코드", () => {
     assert.deepEqual(decide([attempt("failed"), attempt("failed"), attempt("failed")], { grants }), { allow: true });
     const six = Array.from({ length: 6 }, () => attempt("cancelled"));
     const total = decide(six);
-    assert.ok(!total.allow && total.failure.class === "reassign-total" && /작업 design의 배정이 총 6회/.test(total.failure.detail));
+    assert.ok(!total.allow && total.failure.class === "reassign-total" && /작업 design의 배정이 이 예산 구간에서 총 6회/.test(total.failure.detail));
     assert.deepEqual(!total.allow && total.failure.counter, { key: "taskTotal", used: 6, limit: 6 });
-    assert.deepEqual(decide([...six.slice(0, 3), ...Array.from({ length: 3 }, () => attempt("cancelled", "h1", "2026-10-06T00:00:00.000Z"))]), { allow: true }, "이행 전 시도는 세지 않는다");
+    assert.deepEqual(decide([...six.slice(0, 3), ...Array.from({ length: 3 }, () => attempt("cancelled", "h1", "2026-10-06T00:00:00.000Z"))]), { allow: true }, "구간 시작 전 시도는 세지 않는다");
     assert.deepEqual(decide(six, { since: undefined }), { allow: true }, "since 가 없으면 아직 세지 않는다");
     assert.deepEqual(decide(six, { grants: [{ key: "taskTotal", scope: "planning:design", step: 3, consent: "c", at: "t", reason: "r" }] }), { allow: true });
     assert.deepEqual(decide(six, { repair: true }), { allow: true }, "교정은 같은 시도다");

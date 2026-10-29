@@ -490,7 +490,7 @@ test("judgment retry-grant(taskTotal) 통합 — 작업 총 배정 6회 소진 �
   const applied = approveAndApplyFixture(root, judgment({ name: "taskTotal", id: "analysis" }));
   assert.match(applied.result, /작업 총 배정 한도를 6→9회로 늘렸습니다.*code-agent planning advance/);
   assert.equal(planningBudget(root, "analysis").taskTotal.limit, 9);
-  assert.equal(loadPlanning(loadWork(root)!).retry!.grants[0].scope, "planning:analysis");
+  assert.match(loadPlanning(loadWork(root)!).retry!.grants[0].scope, /^planning:analysis@c1-[0-9a-f]{12}$/, "허용은 지금 예산 구간에 묶인다");
   assert.doesNotThrow(() => dispatchPlanning(root, "analysis"));
 });
 

@@ -104,11 +104,20 @@ export interface PlanningAgent {
   failure?: FailureRecord;
   endedAt?: string;
 }
+/**
+ * 예산 구간 — 작업 총 배정을 세는 단위. 실행 회차와 흐름이 따르는 확정 요구 항목이 정한다(planning.ts `budgetEpoch`).
+ * migrated: 이 필드 전 기록을 이어받은 첫 구간 — 재시도 카운터 이행 시각부터 세고, 구간 표기 없는 이전 허용도 이 구간에서만 쓴다
+ */
+export interface BudgetEpoch { key: string; since: string; cycle: number; revision?: number; migrated?: true }
 export interface PlanningRetry {
   version: 1;
-  /** 이 시각 이후의 배정만 작업별 총 배정 한도에 센다 — 처음 쓸 때 기록한다 */
+  /** 재시도 카운터 이행 시각 — 처음 쓸 때 기록한다. 구간 기록이 없는 이전 형식은 이 시각부터 첫 구간(migrated)으로 센다 */
   since: string;
   grants: RetryGrant[];
+  /** 지금 예산 구간 — 구간이 바뀌면 그 시각부터 작업 총 배정을 다시 센다. 이전 구간의 시도는 지우지 않는다(기록·집계용) */
+  epoch?: BudgetEpoch;
+  /** 지난 예산 구간(최근 20개) — 사용량을 설명하는 기록이다. 판정에 쓰지 않는다 */
+  epochs?: (BudgetEpoch & { until: string })[];
   /** 자동 되감기 기록(최근 20개) — 같은 사유의 두 번째부터는 자동으로 되감지 않는다 */
   rewinds?: { at: string; phase: string; key: string }[];
 }
