@@ -478,12 +478,21 @@ export interface PreviousAttempt {
   answered?: { id: string; question: string; answer: string }[];
   /** 직전 시도 뒤 바뀐 입력(staleCauses 와 같은 문구) */
   changed?: string[];
+  /** 완료된 직전 critic 의 차단 지적 — 재검토는 그 해결과 바뀐 입력이 닿는 곳부터 본다 */
+  findings?: { id: string; detail: string; source: { path: string; line: number } }[];
 }
 /**
  * 다시 배정할 때 직전 시도(완료 hook 이 기록한 고아·실패·질문 대기) — 담당이 같은 원인을 되풀이하지 않고 직전 초안·새 답변·바뀐 입력에서 이어 가게
  * 배정에 싣는다. Claude 완료 hook 의 기록 뒤 실패는 exit 0 이라 메인에게 사유가 보이지 않기 때문이다. 메인은 이 내용을 다시 설명하지 않는다.
  */
 function previousOf(work: Work, record: TaskRecord, attempt: TaskAttempt | undefined, parts: InputParts): { previous?: PreviousAttempt } {
+  // 차단 지적을 낸 critic 이 고친 계획으로 다시 돌면 직전 지적과 바뀐 입력을 싣는다 — 같은 계획 전체를 처음 보듯 다시 훑어 새 문구 지적을 쌓지 않게
+  const blocking = record.task.role === "critic" && attempt?.status === "completed" ? (attempt.result?.findings ?? []).filter(finding => finding.severity === "blocking") : [];
+  if (attempt && blocking.length) {
+    const changed = attempt.inputHash !== record.attempts.at(-1)?.inputHash ? inputChanges(attempt.inputParts, parts).map(cause => cause.text) : [];
+    return { previous: { dispatchId: attempt.dispatchId, status: attempt.status, detail: (attempt.result?.summary ?? "").slice(0, 1000),
+      findings: blocking.map(({ id, detail, source }) => ({ id, detail, source })), ...(changed.length ? { changed } : {}) } };
+  }
   if (!attempt || !["orphaned", "failed", "needs-input"].includes(attempt.status)) return {};
   const detail = attempt.error ?? attempt.failure?.detail ?? attempt.result?.summary ?? "";
   const problems = attempt.error ? attempt.error.split("\n").filter(Boolean) : [];

@@ -113,6 +113,12 @@ function checklistContext(work: Work, item: Assignment): ChecklistContext {
 /** 배정 파일의 `## 직전 시도` — 담당이 같은 원인을 되풀이하지 않고 초안·답변·바뀐 입력에서 이어 가게 */
 function previousSection(previous: PreviousAttempt): string[] {
   const lines = ["", "## 직전 시도", "", `- 상태: ${previous.status}${previous.class ? ` (${previous.class})` : ""}`];
+  if (previous.findings?.length) {
+    lines.push("- 직전 검토의 차단 지적 — 각 지적이 해결됐는지와 그 수정이 닿은 곳(아래 바뀐 입력)을 먼저 본다. 바뀐 부분의 새 차단 문제(보안 포함)와 놓친 중대 문제는 계속 blocking 으로 낸다. 바뀌지 않은 곳의 문구·배치는 다시 지적하지 않는다:",
+      ...previous.findings.map((finding) => `  - ${finding.id} ${finding.source.path}:${finding.source.line} — ${finding.detail}`));
+    if (previous.changed?.length) lines.push("- 직전 검토 뒤 바뀐 입력:", ...previous.changed.map((text) => `  - ${text}`));
+    return lines;
+  }
   const problems = previous.problems ?? (previous.detail ? [previous.detail] : []);
   if (problems.length) lines.push("- 거부·실패 사유 — 이 부분만 고친다:", ...problems.map((problem) => `  - ${problem.replace(/^- /, "")}`));
   if (previous.drafts?.length) lines.push(`- staging 에 직전 초안을 미리 두었다: ${previous.drafts.join(", ")} — 처음부터 다시 쓰지 않고 위 사유·답변·바뀐 입력에 걸리는 곳만 고친다. 초안은 완료 결과가 아니라 같은 검사를 다시 받는다`);

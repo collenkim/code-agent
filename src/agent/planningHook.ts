@@ -4,7 +4,7 @@ import { writeAtomic } from "../core/atomic";
 import { sha } from "./docs";
 import { findRepoRoot, questionsFile, workDocsDir } from "./layout";
 import { mutatePlanning, openStaging, requireRolePhase, seedStaging, stagingPath } from "./planning";
-import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, RESULT_FILE, RESULT_POINTER, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
+import { fileHash, hashInput, inputFiles, invalidatePlanningCache, loadPlanning, planningPath, readyProblems, referenceProblem, repoRelative, RESULT_FILE, RESULT_POINTER, resultPointerPath, ResultSchema, SOURCE_FAILURE, TASK_AGENTS, withPlanningCache,
   type PlanningAgent, type PlanningResult, type PlanningState, type ResolvedResult, type TaskAttempt, type TaskRecord } from "./planningState";
 import { failure, guidance, LIMITS, subagentExit, TIMING, type FailureClass, type FailureRecord } from "./retryPolicy";
 import { RecordedFailure, type ReviewHookInput } from "./reviewHook";
@@ -95,23 +95,36 @@ function comparable(root: string, items: PlanningResult["artifacts"]): unknown {
   });
 }
 
-/** 보고된 출력 문서의 본문과 그 역할의 결정적 문서 검사 — 잠금 밖에서 미리 계산하고, 잠금 안에서 같은 배정이면 그대로 쓴다 */
+/**
+ * 보고된 출력 문서의 본문과 그 역할의 결정적 문서 검사 — 잠금 밖에서 미리 계산하고, 잠금 안에서 같은 배정이면 그대로 쓴다.
+ * 보고한 출력 집합이 배정과 다르거나 읽지 못했으면(RES-OUTPUT·읽기 오류) 이 배정 staging 에 있는 배정 출력 전체로 문서를 본다 —
+ * 집합 오류와 문서 문제를 한 반려에 싣는다. 출력이 하나라도 staging 에 없으면 문서 검사는 다음 결과로 미룬다.
+ */
 interface Staged { dispatchId: string; artifacts: { path: string; content: string }[]; readErrors: string[]; docProblems: string[] }
-function readStaged(work: Work, record: TaskRecord, reported: PlanningResult): Staged {
+function readStaged(work: Work, record: TaskRecord, dispatchId: string, reported: PlanningResult["artifacts"]): Staged {
   const artifacts: { path: string; content: string }[] = [], readErrors: string[] = [];
-  for (const item of reported.artifacts) {
+  for (const item of reported) {
     if (!("staged" in item)) { artifacts.push(item); continue; }
-    try { artifacts.push({ path: item.path, content: stagedContent(work.repoRoot, work.active.id, reported.dispatchId, item) }); }
+    try { artifacts.push({ path: item.path, content: stagedContent(work.repoRoot, work.active.id, dispatchId, item) }); }
     catch (error) { readErrors.push(error instanceof Error ? error.message : String(error)); }
   }
-  const outputs = reported.artifacts.map(artifact => artifact.path);
+  const outputs = reported.map(artifact => artifact.path);
   const exact = JSON.stringify([...outputs].sort()) === JSON.stringify([...record.task.outputs].sort());
+  // 본문을 결과에 직접 실은 담당은 staging 을 쓰지 않았다 — 거기 미리 둔 현행 문서(seedStaging)를 그 담당의 문서로 보지 않는다
+  const checked = !readErrors.length && exact ? artifacts : reported.every(item => "staged" in item) ? stagingOutputs(work, record, dispatchId) : undefined;
   let docProblems: string[] = [];
-  if (!readErrors.length && exact && artifacts.length) {
-    try { docProblems = stagedDocumentProblems(work, record.task.role, artifacts); }
+  if (checked?.length) {
+    try { docProblems = stagedDocumentProblems(work, record.task.role, checked); }
     catch (error) { docProblems = [`문서 검사를 실행하지 못했습니다: ${error instanceof Error ? error.message : error}`]; }
   }
-  return { dispatchId: reported.dispatchId, artifacts, readErrors, docProblems };
+  return { dispatchId, artifacts, readErrors, docProblems };
+}
+/** 이 배정 staging 에 있는 배정 출력 전체 — 하나라도 없거나 읽지 못하면 없다 */
+function stagingOutputs(work: Work, record: TaskRecord, dispatchId: string): { path: string; content: string }[] | undefined {
+  if (!record.task.outputs.length) return undefined;
+  try {
+    return record.task.outputs.map(path => ({ path, content: stagedContent(work.repoRoot, work.active.id, dispatchId, { path, staged: stagingPath(work.active.id, dispatchId, path) }) }));
+  } catch { return undefined; }
 }
 
 interface Prepared {
@@ -123,24 +136,39 @@ interface Prepared {
   staged?: Staged;
 }
 /**
- * 최종 응답의 단일 `결과: <경로>` 줄에서 그 결과 파일을 읽는다(앞뒤 설명 허용) — 이 담당이 맡을 수 있는 실행 중 배정(역할의 담당 종류·시작 때 고른 배정)의
- * resultFile 자리만 받는다. 그 자리는 그 배정의 담당만 쓸 수 있고(hook), 줄 자체는 검증한 실행 기록에서 왔다.
+ * 최종 응답의 단일 `결과: <경로>` 줄에서 그 결과 파일을 읽는다(앞뒤 줄·경로 뒤 설명 허용) — 이 담당이 맡을 수 있는 실행 중 배정(역할의 담당 종류·
+ * 시작 때 고른 배정)의 resultFile 자리만 받는다. 절대 경로·역슬래시는 저장소 안일 때만 상대 경로로 바꾼 뒤 그 자리와 글자째 대조한다 —
+ * 다른 배정·저장소 밖·staging 밖 경로는 받지 않는다. 그 자리는 그 배정의 담당만 쓸 수 있고(hook), 줄 자체는 검증한 실행 기록에서 왔다.
  */
 function pointedResult(work: Work, snapshot: ReturnType<typeof loadPlanning>, agent: { type: string; dispatchId?: string }, raw: string): { text: string } | { error: string } | undefined {
   const pointer = RESULT_POINTER.exec(raw.trim());
   if (!pointer) return undefined;
-  if (raw.split(/\r?\n/).filter(line => /^\s*결과:/.test(line)).length !== 1) return { error: "복수 결과 포인터는 받을 수 없습니다" };
+  if (raw.split(/\r?\n/).filter(line => new RegExp(RESULT_POINTER.source).test(line)).length !== 1) return { error: "복수 결과 포인터는 받을 수 없습니다" };
   const allowed = snapshot.tasks.flatMap(record => {
     const last = record.attempts.at(-1);
     return last?.status === "running" && TASK_AGENTS[record.task.role] === agent.type && (!agent.dispatchId || agent.dispatchId === last.dispatchId)
       ? [stagingPath(work.active.id, last.dispatchId, RESULT_FILE)] : [];
   });
-  const path = pointer[1].replace(/\\/g, "/").replace(/^\.\//, "");
-  if (!allowed.includes(path)) return { error: `결과 파일 경로가 이 배정의 resultFile 이 아닙니다: ${pointer[1]} — 배정 파일의 resultFile 경로를 그대로 쓰세요` };
+  const written = resultPointerPath(pointer[1]);
+  const path = repoRelative(work.repoRoot, written).replace(/^\.\//, "");
+  if (!allowed.includes(path)) return { error: `결과 파일 경로가 이 배정의 resultFile 이 아닙니다: ${written} — 배정 파일의 resultFile 경로(${allowed.join(", ") || "실행 중 배정 없음"})를 그대로 쓰세요` };
   const file = planningPath(work.repoRoot, path);
   if (!existsSync(file)) return { error: `결과 파일이 없습니다: ${path} — resultFile 에 결과 JSON 을 쓴 뒤 그 경로를 돌려주세요` };
   const text = readFileSync(file, "utf8").replace(/^\uFEFF/, "");
   return text.length > RESULT_LIMIT ? { error: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` } : { text };
+}
+
+type Refs = Pick<PlanningResult, "evidence" | "facts" | "findings">;
+/**
+ * 근거 경로를 저장소 상대 경로로(repoRelative) — 저장소 안 파일을 절대 경로로 쓴 근거도 범위 검사가 같은 파일로 본다.
+ * 저장소 밖 경로는 그대로 남아 범위 밖(RES-SCOPE)으로 거부된다. 기록하는 결과도 상대 경로다(후속 담당이 그 근거를 인용한다)
+ */
+function inRepo<T extends Partial<Refs>>(root: string, value: T): T {
+  const at = <R extends { path: string }>(ref: R): R => ({ ...ref, path: repoRelative(root, ref.path) });
+  return { ...value,
+    ...(value.evidence ? { evidence: value.evidence.map(at) } : {}),
+    ...(value.facts ? { facts: value.facts.map(fact => ({ ...fact, source: at(fact.source) })) } : {}),
+    ...(value.findings ? { findings: value.findings.map(finding => ({ ...finding, source: at(finding.source) })) } : {}) };
 }
 
 /** 결과 스키마 위반 — zod 의 JSON 덤프 대신 `경로: 문구` 한 줄씩(20개까지) */
@@ -156,14 +184,14 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
   if (!agent) return undefined;
   let received = receive(input, work.repoRoot, agent.startedAt, agent.judgedHandbacks);
   if (received.sourceError !== undefined) return { received };
-  if (received.tooLarge) return { received, formatError: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다` };
+  if (received.tooLarge) return { received, formatError: `계획 결과가 크기 한도(${RESULT_LIMIT.toLocaleString("en-US")}자)를 넘었습니다`, staged: formatStaged(work, snapshot, agent) };
   const pointed = pointedResult(work, snapshot, agent, received.raw);
-  if (pointed && "error" in pointed) return { received, formatError: pointed.error };
+  if (pointed && "error" in pointed) return { received, formatError: pointed.error, staged: formatStaged(work, snapshot, agent) };
   if (pointed) received = { ...received, raw: pointed.text.trim() };
   let parsed: unknown, parseError: unknown;
   try { parsed = JSON.parse(received.raw); } catch (error) { parseError = error; }
   const schema = ResultSchema.safeParse(parsed);
-  if (!schema.success) return { received, parsed, formatError: (parseError instanceof Error ? parseError.message : resultIssues(schema.error.issues)).slice(0, 4000) };
+  if (!schema.success) return { received, parsed, formatError: (parseError instanceof Error ? parseError.message : resultIssues(schema.error.issues)).slice(0, 4000), staged: formatStaged(work, snapshot, agent, parsed) };
   const reported = schema.data;
   const record = snapshot.tasks.find(item => item.task.id === reported.taskId), last = record?.attempts.at(-1);
   let staged: Staged | undefined;
@@ -172,9 +200,19 @@ function prepareStop(input: ReviewHookInput, work: Work): Prepared | undefined {
       // 잠금 안의 같은 계산은 stat 만 다시 보고 sha 를 재사용한다
       hashInput(work, snapshot, record.task); readyProblems(work, snapshot, record); inputFiles(work, record.task, snapshot);
     } catch { /* 잠금 안에서 다시 판정한다 */ }
-    if (reported.status === "completed") staged = readStaged(work, record, reported);
+    if (reported.status === "completed") staged = readStaged(work, record, reported.dispatchId, reported.artifacts);
   }
   return { received, parsed, reported, staged };
+}
+/**
+ * 형식 오류 결과의 staging 문서 검사 — 결과 JSON 이 깨져도 그 배정 staging 의 문서는 판정할 수 있다. 결과의 dispatchId, 없으면 담당이 시작 때
+ * 연결된 배정의 실행 중 시도만 본다(병렬 담당을 추측하지 않는다). 판정은 잠금 안에서 같은 배정인지 다시 확인한 뒤 쓴다.
+ */
+function formatStaged(work: Work, snapshot: ReturnType<typeof loadPlanning>, agent: PlanningAgent, parsed?: unknown): Staged | undefined {
+  const claimed = parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).dispatchId === "string" ? (parsed as Record<string, string>).dispatchId : undefined;
+  const dispatchId = claimed ?? agent.dispatchId;
+  const record = dispatchId ? snapshot.tasks.find(item => item.attempts.at(-1)?.status === "running" && item.attempts.at(-1)?.dispatchId === dispatchId) : undefined;
+  return record && dispatchId ? readStaged(work, record, dispatchId, []) : undefined;
 }
 
 /** late: 취소·교체된 배정의 늦은 결과 — 기록만 하고 메인의 다음 행동을 부르지 않는다 */
@@ -279,13 +317,25 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
       endAgent(agent);
       return recorded(changed, "dispatch-orphan");
     }
-    if (canReturn) return giveBack(guidance("agent-format-error", { detail }), "agent-format-error");
+    // 같은 배정 staging 문서의 결정적 검사 — 형식과 함께 한 번에 돌려준다. 기록할 때는 형식 교정을 건너뛴다: 교정은 문서를 바꿀 수 없어
+    // 교정한 결과도 같은 검사에 걸린다. 두 사유를 함께 실패로 남겨 다음 배정이 한 번에 고친다
+    const docs = prepared.staged?.dispatchId === last.dispatchId ? prepared.staged.docProblems : [];
+    const docDetail = docs.map(problem => `- ${problem}`).join("\n");
+    if (canReturn) return giveBack(docs.length ? `${guidance("agent-format-error", { detail })}\n${guidance("agent-content-error", { detail: docDetail })}` : guidance("agent-format-error", { detail }), "agent-format-error");
     endAgent(agent);
     last.error = `결과 형식 오류: ${detail}`;
     last.failure = failure("agent-format-error", detail);
     if (last.correction?.used) {
       last.status = "failed";
       return recorded(`${last.error} — 한 번의 교정을 사용했습니다. 원인을 확인하세요.`, "agent-format-error");
+    }
+    if (docs.length) {
+      last.status = "failed";
+      last.error = [last.error, ...docs].join("\n");
+      last.failure = failure("agent-content-error", docs[0]);
+      const drafts = keepDrafts(work, record, last.dispatchId, record.task.outputs.map(path => ({ path, staged: stagingPath(work.active.id, last.dispatchId, path) })));
+      if (drafts.length) last.drafts = drafts;
+      return recorded(last.error, "agent-content-error");
     }
     // 크기 한도를 넘은 결과는 원본을 보존하지 않는다 — 교정 담당에게 넘길 원본이 없으므로(빈 원본은 대조 없이 새 판단을 받게 된다) 교정 대기로 두지 않는다
     if (prepared.received.tooLarge) {
@@ -326,9 +376,9 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
   }
 
   // 내용 검사 — 예외 대신 문제 목록으로 모은다. 기존 단일 문구가 앞에 오도록 기존 검사 순서를 지킨다
-  const staged = prepared.staged?.dispatchId === last.dispatchId ? prepared.staged : reported.status === "completed" ? readStaged(work, record, reported) : undefined;
+  const staged = prepared.staged?.dispatchId === last.dispatchId ? prepared.staged : reported.status === "completed" ? readStaged(work, record, reported.dispatchId, reported.artifacts) : undefined;
   const problems: string[] = [...(staged?.readErrors ?? [])];
-  const result: ResolvedResult = { ...reported, artifacts: reported.status === "completed" ? staged?.artifacts ?? [] : [] };
+  const result: ResolvedResult = { ...inRepo(root, reported), artifacts: reported.status === "completed" ? staged?.artifacts ?? [] : [] };
   const permitted = new Set(inputFiles(work, record.task, state));
   // 직접 선행 결과의 근거(evidence·facts·findings 의 출처)는 그 담당의 완료 hook 이 이미 배정 범위·실재를 확인했다 — 후속 담당이 그 사실을 인용할 수 있다.
   // 선행 입력이 바뀌면 선행 결과가 낡고(readyProblems) 후속도 다시 돈다
@@ -355,12 +405,16 @@ function decideStop(input: ReviewHookInput, work: Work, state: PlanningState, pr
       const source = original as Record<string, unknown>;
       for (const key of ["status", "summary", "evidence", "facts", "questions", "artifacts", "findings"] as const) {
         const value = ResultSchema.shape[key].safeParse(source[key]);
+        if (!value.success) continue;
+        // 근거 경로는 양쪽 모두 같은 저장소 상대 경로로 맞춰 대조한다 — 교정이 절대 경로를 상대 경로로 바꾼 것은 판단 변경이 아니다
+        const was = key === "artifacts" ? comparable(root, value.data as PlanningResult["artifacts"])
+          : key === "evidence" || key === "facts" || key === "findings" ? inRepo(root, { [key]: value.data } as Partial<Refs>)[key] : value.data;
         const now = key === "artifacts" ? comparable(root, reported.artifacts) : result[key];
-        if (value.success && JSON.stringify(key === "artifacts" ? comparable(root, value.data as PlanningResult["artifacts"]) : value.data) !== JSON.stringify(now)) problems.push(`형식 교정에서 유효한 원본 ${key}를 바꿀 수 없습니다. 판단 보완은 새 작업으로 처리하세요.`);
+        if (JSON.stringify(was) !== JSON.stringify(now)) problems.push(`형식 교정에서 유효한 원본 ${key}를 바꿀 수 없습니다. 판단 보완은 새 작업으로 처리하세요.`);
       }
     }
   }
-  // 출력 집합이 맞는 completed 결과에만 있다(readStaged) — 같은 게이트 함수를 staging 본문에 먼저 돈 결과다
+  // completed 결과의 staging 본문에 같은 게이트 함수를 먼저 돈 결과다(readStaged) — 출력 집합이 틀려도 배정 출력이 staging 에 모두 있으면 함께 싣는다
   const docProblems = staged?.docProblems ?? [];
   problems.push(...docProblems);
   if (problems.length) {
@@ -431,7 +485,9 @@ export function observePlanner(input: ReviewHookInput, projectDir?: string, opti
       const writers = mutatePlanning(work, state => {
         const candidates = state.tasks.filter(record => TASK_AGENTS[record.task.role] === input.agent_type && record.attempts.at(-1)?.status === "running");
         if (!candidates.length) return [];
-        if (state.agents.some(agent => agent.id === input.agent_id && agent.session === input.session_id && !agent.finished)) throw new Error("중복 시작 이벤트입니다.");
+        // 끝나지 않은 같은 담당의 시작은 재개다(메인이 그 담당을 이어 부름 — 되돌림이 전달되지 않은 뒤 Claude 에서 실측). 새로 등록하지 않고
+        // staging 도 다시 채우지 않는다 — 그 담당의 다음 Stop 이 연결된 배정으로 그대로 판정된다
+        if (state.agents.some(agent => agent.id === input.agent_id && agent.session === input.session_id && !agent.finished)) return [];
         const dispatchId = candidates.length === 1 ? candidates[0].attempts.at(-1)!.dispatchId : undefined;
         state.agents.push({ id: input.agent_id!, session: input.session_id!, type: input.agent_type!, startedAt: new Date().toISOString(), dispatchId });
         return candidates.map(record => structuredClone(record));

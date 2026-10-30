@@ -198,6 +198,18 @@ export function planningPath(root: string, file: string): string {
   return full;
 }
 /**
+ * 담당이 쓴 경로를 저장소 루트 기준 상대 경로로 — 절대 경로·역슬래시·`./` 경로가 저장소 안을 가리키면 상대 경로로 바꾸고,
+ * 저장소 밖이거나 바꿀 수 없으면 그대로 돌려준다(그대로 둔 경로는 범위·실재 검사가 거부한다). 경계는 planningPath 와 같은 canonical 비교다.
+ */
+export function repoRelative(root: string, file: string): string {
+  const slashed = file.replace(/\\/g, "/");
+  if (slashed === file && !isAbsolute(file) && !/^[A-Za-z]:\//.test(file) && !file.startsWith("./")) return file;
+  try {
+    const rel = relative(canonical(root), canonical(resolve(root, slashed)));
+    return !rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? file : rel.split(sep).join("/");
+  } catch { return file; }
+}
+/**
  * 파일 sha. 메모 범위 안에서는 부를 때마다 stat 을 다시 하고 (mtimeNs, size, ino)가 같을 때만 sha 를 재사용한다 —
  * 원자 쓰기(임시 파일 rename)는 ino 를 바꾸므로 정식 문서 교체도 잡힌다. 아끼는 것은 파일 전체 읽기이고 stat 은 아끼지 않는다.
  */
@@ -460,8 +472,15 @@ export const SOURCE_FAILURE = "source";
  * 결과 본문(사실·근거 각 100개, 요약 4,000자까지)이 메인 대화를 거치지 않는다. 그 자리는 실행 중인 그 배정의 담당만 쓴다(hook).
  */
 export const RESULT_FILE = "result.json";
-/** 최종 응답의 결과 파일 줄 */
-export const RESULT_POINTER = /^결과:[ \t]*(\S+)[ \t]*$/m;
+/**
+ * 최종 응답의 결과 파일 줄 — 줄 전체를 백틱·따옴표로 감싸도 받는다(`` `결과: <경로>` ``). 경로는 백틱·따옴표 안이거나 첫 공백까지이고
+ * 그 뒤의 설명은 버린다(resultPointerPath)
+ */
+export const RESULT_POINTER = /^[ \t]*[`"'“]?결과:[ \t]*(\S.*?)[ \t]*$/m;
+export function resultPointerPath(value: string): string {
+  const quoted = /^([`"'“])(.+?)[`"'”]/.exec(value);
+  return quoted ? quoted[2].trim() : value.split(/\s/)[0].replace(/[`"'”]+$/, "");
+}
 export function runView(state: PlanningState, record: TaskRecord, attempt: TaskAttempt, now: number): RunView {
   const agentType = TASK_AGENTS[record.task.role];
   const verdict = orphanState({ attempt, agentType, agents: state.agents, now });

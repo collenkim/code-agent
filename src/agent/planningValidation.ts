@@ -8,6 +8,7 @@ import { ruled } from "./planningRules";
 import { normalizeHeading } from "./docs";
 import { WORK_SCHEMAS } from "./schemas";
 import { errorLogOf } from "../core/workOrder";
+import { sourceItems } from "./sourceTrace";
 import { parseQuestions } from "./questions";
 import type { Work } from "./work";
 import { coverageProblems, parseTestCases, readWorkDoc, type DocOverlay } from "./workDocs";
@@ -37,15 +38,20 @@ const clip = (value: string) => { const text = flat(value); return text.length >
 /** 줄 번호를 지키며 HTML 주석을 지운다 */
 const uncommented = (text: string) => text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, " "));
 
+/** 인용 표시 — 백틱·큰따옴표·굽은 따옴표·낫표. 작은따옴표는 문장 속 아포스트로피와 섞여 쓰지 않는다 */
+const QUOTED = /`([^`]+)`|"([^"]+)"|“([^”]+)”|「([^」]+)」|『([^』]+)』/g;
 /**
- * 근거로 검사하지 않는 자리 — 지시서 `## 오류 로그` 의 글자를 그대로 인용한 백틱(8자 이상)·코드 블록 줄이다. 로그의 `OrderService.java:42` 는
- * 로그일 뿐 저장소 근거가 아니다. 로그에 없는 백틱 내용(`src/a.ts:10`)은 그대로 근거로 검사한다.
+ * 근거로 검사하지 않는 자리 — 확정 지시서 원문(오류 로그·요구 내용·완료 조건·제약)의 글자를 그대로 인용한 따옴표·백틱(8자 이상)과
+ * 오류 로그를 그대로 옮긴 코드 블록 줄이다. 로그의 `OrderService.java:42`, 요구의 "cache.internal.net:6379 로 연결" 은 사람이 준 글일 뿐
+ * 저장소 근거가 아니다 — 01 의 근거 인용(REQ-TRACE)은 이 글자를 그대로 옮기라고 요구한다. 원문에 없는 인용(`src/a.ts:10`)은 그대로 근거로 검사한다.
  */
-function logQuoteRanges(line: string, fenced: boolean, log: string | undefined): [number, number][] {
-  if (!log) return [];
-  if (fenced) return flat(line).length >= 8 && log.includes(flat(line)) ? [[0, line.length]] : [];
-  return [...line.matchAll(/`([^`]+)`/g)].filter((match) => flat(match[1]).length >= 8 && log.includes(flat(match[1])))
-    .map((match): [number, number] => [match.index!, match.index! + match[0].length]);
+function sourceQuoteRanges(line: string, fenced: boolean, log: string | undefined, request: readonly string[]): [number, number][] {
+  if (fenced) return log && flat(line).length >= 8 && log.includes(flat(line)) ? [[0, line.length]] : [];
+  const sources = [...(log ? [log] : []), ...request];
+  return [...line.matchAll(QUOTED)].filter((match) => {
+    const quote = flat((match.slice(1).find((group) => group !== undefined) ?? "").normalize("NFC"));
+    return quote.length >= 8 && sources.some((source) => source.includes(quote));
+  }).map((match): [number, number] => [match.index!, match.index! + match[0].length]);
 }
 
 /**
@@ -98,11 +104,17 @@ export function planningDocumentProblems(work: Work, phase: string, options: { o
   const answered = existsSync(questionsPath) ? parseQuestions(readFileSync(questionsPath, "utf8")).filter(question => question.answer).map(question => question.id) : [];
   let rules: string[] | undefined;
   const knownRules = (): string[] => (rules ??= buildIndex(root, work.manifest, []).entries.filter(entry => entry.kind === "business-rules").map(entry => entry.key));
-  // 업무 정책 문서에 이미 있는 BR 키를 가리키면 근거다 — 정책 본문은 한곳(business-rules)에 두고 작업 문서는 ID 로 잇는다
-  const grounded = (line: string): boolean => new RegExp(REFERENCE.source).test(line) || answered.some(id => new RegExp(`\\b${id}\\b`).test(line))
+  // 업무 정책 문서에 이미 있는 BR 키를 가리키면 근거다 — 정책 본문은 한곳(business-rules)에 두고 작업 문서는 ID 로 잇는다.
+  // 지시서 원문을 그대로 인용한 자리의 `파일:줄`은 DOC-REF 처럼 근거로 보지 않는다(sourceQuoteRanges)
+  const grounded = (line: string): boolean => new RegExp(REFERENCE.source).test(sourceQuoteRanges(line, false, log, request).reduce((text, [from, to]) => text.slice(0, from) + " ".repeat(to - from) + text.slice(to), line))
+    || answered.some(id => new RegExp(`\\b${id}\\b`).test(line))
     || knownRules().some(key => new RegExp(`(?<![\\w-])${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(line));
-  let log: string | undefined;
-  try { const logged = errorLogOf(readFileSync(join(root, work.active.spec), "utf8")); log = logged && "log" in logged ? flat(logged.log) : undefined; } catch { /* 지시서가 없으면 로그 인용도 없다 */ }
+  let log: string | undefined, request: string[] = [];
+  try {
+    const spec = readFileSync(join(root, work.active.spec), "utf8"), logged = errorLogOf(spec);
+    log = logged && "log" in logged ? flat(logged.log) : undefined;
+    request = sourceItems(spec).map((item) => flat(item.text.normalize("NFC")));
+  } catch { /* 지시서가 없으면 원문 인용도 없다 */ }
   for (const file of files) {
     const path = `${dir}/${file}`;
     const staged = options.overlay?.get(path);
@@ -114,7 +126,7 @@ export function planningDocumentProblems(work: Work, phase: string, options: { o
       if (/^\s*(?:`{3,}|~{3,})/.test(line)) { fenced = !fenced; return; }
       const marker = PENDING.exec(line);
       if (marker) pending.push(`${index + 1}행 '${marker[0]}': ${clip(line)}`);
-      const skipped = logQuoteRanges(line, fenced, log);
+      const skipped = sourceQuoteRanges(line, fenced, log, request);
       for (const match of line.matchAll(REFERENCE)) {
         const start = match.index!;
         // URL·JDBC 의 `//호스트:포트` 와 `계정@호스트:포트` 는 파일:줄이 아니다
@@ -123,7 +135,7 @@ export function planningDocumentProblems(work: Work, phase: string, options: { o
         if (!problem) continue;
         const candidates = problem.startsWith("근거 파일이 없습니다") && !match[1].includes("/") ? similarPaths(root, match[1]) : [];
         const hint = problem.startsWith("근거 파일이 없습니다")
-          ? ` — 저장소 루트 기준 전체 경로로 씁니다${candidates.length ? ` (저장소에 있는 같은 이름: ${candidates.join(", ")})` : ""}. 오류 로그의 줄이면 지시서 로그 글자 그대로 백틱 안에 인용합니다`
+          ? ` — 저장소 루트 기준 전체 경로로 씁니다${candidates.length ? ` (저장소에 있는 같은 이름: ${candidates.join(", ")})` : ""}. 지시서 원문(요구·오류 로그)의 글이면 원문 글자 그대로 따옴표나 백틱 안에 인용합니다`
           : "";
         problems.push(ruled("DOC-REF", `${path}:${index + 1}: ${problem}${hint}`));
       }
