@@ -6,7 +6,8 @@ import { assetText } from "./assets";
 import { context } from "./commands";
 import { handoffDir, workDocsDir } from "./layout";
 import { isWorkDocKind, skeleton, WORK_SCHEMAS } from "./schemas";
-import { loadWork } from "./work";
+import { approvalOf, loadWork } from "./work";
+import { impactAssignmentLines } from "./changeImpact";
 import { agentName, notation } from "./hostText";
 import { Stop } from "./stop";
 import { submitChecklist, type ChecklistContext } from "./planningRules";
@@ -57,7 +58,7 @@ function writeContext(root: string): { text: string; file?: string; agent?: stri
     : phase === "test" ? (separateTests ? "ca-tester" : "ca-implementer") : phase === "review" ? "ca-reviewer" : undefined;
   return { text, file, agent };
 }
-function handoffLines(file: string, agent?: string): string[] {
+export function handoffLines(file: string, agent?: string): string[] {
   return [...(agent ? [`- 담당: ${agentName(agent)}`] : []), `- 전문: ${file} — 서브에이전트에게 이 경로를 넘긴다. 메인이 본문을 옮겨 쓰지 않는다.`];
 }
 
@@ -121,7 +122,19 @@ function previousSection(previous: PreviousAttempt): string[] {
   return lines;
 }
 
-function assignmentText(item: Assignment & { staging?: Record<string, string> }, stage: string, checklist?: ChecklistContext): string {
+/**
+ * 계획 배정에 싣는 요구 변경 영향(changeImpact.ts) — 흐름이 따른 마지막 개정의 영향이 지금 승인보다 뒤일 때만(그 개정을 반영하는 재계획).
+ * 승인을 읽지 못하면 싣는다 — 영향 범위를 알리는 것이 빠뜨리는 것보다 낫다
+ */
+function pendingImpactLines(work: Work): string[] {
+  const impact = work.active.request?.impacts?.at(-1);
+  if (!impact) return [];
+  let approvedAt: string | undefined;
+  try { const approval = approvalOf(work); approvedAt = "record" in approval ? approval.record.at : undefined; } catch { approvedAt = undefined; }
+  return approvedAt && Date.parse(approvedAt) > Date.parse(impact.at) ? [] : impactAssignmentLines(work.active);
+}
+
+function assignmentText(item: Assignment & { staging?: Record<string, string> }, stage: string, checklist?: ChecklistContext, impact: string[] = []): string {
   const lines = [
     `# 계획 배정 — ${item.task.id} · ${item.task.title}`,
     "",
@@ -136,6 +149,7 @@ function assignmentText(item: Assignment & { staging?: Record<string, string> },
   ];
   if (item.mode === "correction") return `${lines.join("\n")}\n`;
   if (item.previous) lines.push(...previousSection(item.previous));
+  if (impact.length) lines.push("", ...impact);
   if (checklist) lines.push("", submitChecklist(checklist));
   const criteria = CRITERIA[item.task.role];
   if (criteria) lines.push("", "## 문서 기준", "", assetText(`template/claude/skills/${criteria}/criteria.md`).trim());
@@ -163,6 +177,8 @@ export function handoffPlanning(root: string, json: string): string {
   const work = loadWork(root);
   if (!work) return json;
   let stage: string | undefined;
+  let impact: string[] = [];
+  try { impact = pendingImpactLines(work); } catch { /* 영향을 못 읽어도 배정 파일은 남긴다 */ }
   const move = (item: unknown): unknown => {
     const assignment = item as Assignment;
     if (!assignment?.resultShape?.dispatchId) return item; // 재사용된 결과는 이미 요약이다
@@ -172,7 +188,7 @@ export function handoffPlanning(root: string, json: string): string {
     }
     let checklist: ChecklistContext | undefined;
     try { checklist = checklistContext(work, assignment); } catch { /* 점검 목록을 못 만들어도 배정 파일은 남긴다 */ }
-    const file = writeHandoff(root, work.active.id, `${assignment.resultShape.dispatchId}.md`, assignmentText(assignment, stage, checklist));
+    const file = writeHandoff(root, work.active.id, `${assignment.resultShape.dispatchId}.md`, assignmentText(assignment, stage, checklist, impact));
     // 담당 이름은 지금 호스트가 부를 것만 — Claude 는 agent, Codex 는 hostAgents.codex(표기를 정할 수 없으면 둘 다). 배정 ID 는 assignmentFile 이름에 있다
     const n = notation();
     return {

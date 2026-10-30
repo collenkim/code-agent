@@ -15,7 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 
 import { findRepoRoot, loadActive, questionsFile, STATE_DIR } from "./layout";
-import { parseQuestions, questionContent, type Question } from "./questions";
+import { parseQuestions, QUESTION_KIND_LABEL, questionContent, type Question } from "./questions";
 import { dependencyContracts } from "./dependencyContracts";
 import { writeAtomic } from "../core/atomic";
 import { skill } from "./hostText";
@@ -23,7 +23,8 @@ import { skill } from "./hostText";
 export const ANSWERS_FILE = "answers.jsonl";
 export function answersFile(id: string): string { return `${STATE_DIR}/work/${id}/${ANSWERS_FILE}`; }
 
-interface AskItem { q?: string; header: string; questionHash: string; documentHash?: string; options: string[] }
+/** kindShown: 질문 원문에 변경 분류(`[Kind]`)가 있고 도구 질문 본문에 그 분류 이름이 보였다 — 분류가 있는 질문의 관찰 답은 이것이 있어야 맞는다 */
+interface AskItem { q?: string; header: string; questionHash: string; documentHash?: string; options: string[]; kindShown?: true }
 interface AnswerItem { q?: string; questionHash: string; answer: string; free: boolean; note?: string }
 export type AnswerRow =
   | { type: "start"; at: string; version: 1; intake: { q: string; hash: string }[] }
@@ -131,7 +132,8 @@ export function observeAnswerEvent(input: QuestionHookInput, projectDir?: string
       items: items.map(({ q, header, questionHash, options, question }) => {
         const source = documented.find(entry => entry.id === q);
         const documentHash = source && question.split(/\r?\n/)[0].trim() === source.title ? sha16(questionContent(text, source.id)) : undefined;
-        return { ...(q ? { q } : {}), header, questionHash, options, ...(documentHash ? { documentHash } : {}) };
+        const kindShown = !!source?.kind && question.includes(`분류: ${QUESTION_KIND_LABEL[source.kind]}`);
+        return { ...(q ? { q } : {}), header, questionHash, options, ...(documentHash ? { documentHash } : {}), ...(kindShown ? { kindShown: true as const } : {}) };
       }) });
     return;
   }
@@ -174,6 +176,7 @@ function candidates(question: Question): string[] {
 /**
  * 관찰된 응답이 이 질문의 답인가 — 같은 Q 번호의 응답만 본다. Q 번호 없는 질문 호출(예: "다음으로 넘어갈까요?" → "예")의 응답은
  * 어느 질문에도 맞추지 않는다 — 맞추면 같은 답(예·A)을 가진 다른 질문이 사람이 받은 적 없이 '관찰됨'이 된다(ca-answer 1-5: 질문은 Q 번호로 시작한다).
+ * 변경 분류가 있는 질문은 도구 질문 본문에 `분류: <이름>` 이 보인 호출의 응답만 맞는다 — 무효화 범위를 줄이는 분류를 사람이 보고 답했어야 한다.
  */
 function observedMatch(root: string, id: string, question: Question, rows: AnswerRow[]): boolean {
   const wanted = candidates(question);
@@ -181,7 +184,8 @@ function observedMatch(root: string, id: string, question: Question, rows: Answe
   return rows.some((row) => row.type === "answer" && row.items.some((item) =>
     item.q === question.id && wanted.includes(normalizeAnswer(item.answer)) && rows.some(ask =>
       ask.type === "ask" && !ask.prefilled && ask.session === row.session && ask.toolId === row.toolId &&
-      ask.items.some(entry => entry.q === question.id && entry.questionHash === item.questionHash && entry.documentHash === current))));
+      ask.items.some(entry => entry.q === question.id && entry.questionHash === item.questionHash && entry.documentHash === current &&
+        (!question.kind || entry.kindShown)))));
 }
 
 /**

@@ -152,7 +152,27 @@ describe("동의 흐름 — 렌더한 지시서의 변경안", () => {
     assert.equal(readFileSync(join(repo, "src/value.js"), "utf8"), code, "구현 결과를 그대로 둔다");
     assert.match(status(repo), /요구사항: 확정됨 \(개정 2 · /);
     const [event] = applied(repo);
-    assert.deepEqual([event.revision, event.detail?.previous, event.detail?.changes], [2, 1, "추가 1"]);
+    assert.deepEqual([event.revision, event.detail?.previous, event.detail?.changes, event.detail?.conservative], [2, 1, "추가 1", true]);
+    assert.match(after.request!.impacts!.at(-1)!.conservative.join(" "), /새 항목 REQ-3/, "새 항목은 범위를 입증하지 못해 전체로 본다");
+  }));
+
+  test("리뷰 중 권한 요구 수정 — 흐름이 개정을 따르며 바뀐 항목의 R·Task·AC·TC·파일과 보안 영향을 커서·사건·status 에 남긴다", consentRepo(async (repo) => {
+    await prepareReviewFixture(repo);
+    const draft = `doc/work/${CONSENT_WORK_ID}/request.json`;
+    const { requirements: _listed, ...request } = JSON.parse(readFileSync(join(repo, draft), "utf8"));
+    const said = "JWT 로 인증된 사용자에게만 값 1을 반환해 주세요.";
+    writeFixture(repo, draft, JSON.stringify({ ...request, original: said, revision: { parent: 1, mode: "amend" },
+      changes: [{ op: "modify", id: "REQ-1", text: "JWT 로 인증된 사용자에게만 값 1을 반환한다." }], sourceMap: [{ quote: said, targets: ["REQ-1"] }] }));
+    requestSubmit(repo, join(repo, draft));
+    const { result } = approveAndApplyFixture(repo, { action: "request", id: CONSENT_WORK_ID });
+    assert.match(result, /영향 — 요구 개정 2: 항목 REQ-1 · R R1 · Task T1, T2 · TC 1개 · 파일 2개 · 보안 영향\(인증·JWT·토큰\)/);
+    const impact = loadActive(repo)!.request!.impacts!.at(-1)!;
+    assert.deepEqual([impact.items, impact.requirements, impact.tasks, impact.acceptance, impact.cases, impact.files, impact.security, impact.conservative],
+      [["REQ-1"], ["R1"], ["T1", "T2"], ["AC-R1-1"], ["TC-1"], ["src/value.js", "tests/value.test.js"], ["인증", "JWT·토큰"], []]);
+    const [event] = applied(repo);
+    assert.deepEqual([event.detail?.security, event.detail?.impactFiles, event.detail?.conservative], [true, 2, false]);
+    assert.match(status(repo), /요구 변경 영향 — 요구 개정 2: 항목 REQ-1[\s\S]*- AC: AC-R1-1[\s\S]*- TC: TC-1/);
+    assert.deepEqual(stateView(repo).request?.impact?.files, ["src/value.js", "tests/value.test.js"]);
   }));
 
   test("계획 승인 응답이 적용되기 전에 요구 변경안이 확정되면 그 승인은 적용되지 않는다", consentRepo((repo) => {

@@ -47,6 +47,7 @@ import { appendRevision, applyChanges, changeLine, changeSummary, initialSnapsho
 export { loadRequestSession, type RequestSession } from "./requestSession";
 import { loadRequestSession, type RequestSession } from "./requestSession";
 import { recordEvent } from "./timeline";
+import { IMPACT_KEEP, impactBrief, impactLines, impactOf } from "./changeImpact";
 
 /** 폴더 이름 · 브랜치 이름(`<kind>/<ID>`)이 되는 값이라 경로 조각으로 안전한 글자만 받는다 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -476,28 +477,37 @@ export function syncRequestRevision(repoRoot: string, active: ActiveWork): { act
   if (!place || active.request?.hash === place.hash) return { active };
   const before = active.request;
   const rewind = !!before && before.items !== place.items && PHASES.indexOf(active.phase) > PHASES.indexOf("analysis");
-  const next: ActiveWork = rewind ? { ...active, phase: "analysis", stage: undefined, task: undefined, request: place } : { ...active, request: place };
+  const changes = before ? changesBetween(repoRoot, active.id, active.spec, before.revision, place.revision) : [];
+  // 영향은 되감기 전의 01·승인된 계획·⑦ 로 계산한다 — 개정 기록이 없는데 요구 항목이 바뀌었으면 바뀐 항목을 모르는 것이다
+  const impact = before ? impactOf(repoRoot, active, { changes, unknownChanges: before.items !== place.items && !changes.some((change) => change.op !== "header"),
+    revision: place.revision, previous: before.revision }) : undefined;
+  const recorded = impact && (impact.items.length || impact.conservative.length || impact.security.length) ? impact : undefined;
+  const impacts = [...(before?.impacts ?? []), ...(recorded ? [recorded] : [])].slice(-IMPACT_KEEP);
+  const request: RequestPlace = { ...place, ...(impacts.length ? { impacts } : {}) };
+  const next: ActiveWork = rewind ? { ...active, phase: "analysis", stage: undefined, task: undefined, request } : { ...active, request };
   saveActive(repoRoot, next, rewind ? "back" : undefined);
   if (!before) return { active: next };
-  const changes = changesBetween(repoRoot, active.id, active.spec, before.revision, place.revision);
   const label = place.revision ? `요구 개정 ${place.revision}` : "바뀐 요구";
   recordEvent(repoRoot, { type: "revision.applied", workId: active.id, target: active.target, phase: next.phase, ...(place.revision ? { revision: place.revision } : {}),
     reason: `${label} 확정${rewind ? ` — ${active.phase} 에서 analysis 로 되감음` : before.items === place.items ? " — 요구 항목은 그대로" : " — 분석 중 반영"}`,
-    detail: { from: active.phase, to: next.phase, rewound: rewind, ...(before.revision ? { previous: before.revision } : {}), ...(changes.length ? { changes: changeSummary(changes) } : {}) } });
+    detail: { from: active.phase, to: next.phase, rewound: rewind, ...(before.revision ? { previous: before.revision } : {}), ...(changes.length ? { changes: changeSummary(changes) } : {}),
+      ...(recorded ? { impact: impactBrief(recorded).slice(0, 200), impactFiles: recorded.files.length, security: recorded.security.length > 0, conservative: recorded.conservative.length > 0 } : {}) } });
   if (!rewind) return { active: next };
   const shown = changes.filter((change) => change.op !== "header");
   return { active: next, notice: [
     `${label} 확정 — 흐름을 ${PHASE_LABEL[active.phase]} 에서 ${PHASE_LABEL.analysis} 으로 되감았습니다${before.revision ? ` (따르던 개정 ${before.revision})` : ""}.`,
     ...shown.slice(0, 5).map((change) => `  - ${changeLine(change)}`),
     ...(shown.length > 5 ? [`  - 외 ${shown.length - 5}건 — ${active.spec} 의 '이번 개정의 변경'`] : []),
-    "브랜치·코드·작업 문서는 그대로입니다. 분석부터 바뀐 요구만 반영해 게이트를 다시 지납니다 — 계획 문서가 바뀌면 계획을 다시 승인받습니다.",
+    ...(recorded ? [`영향 — ${impactBrief(recorded)}`, ...impactLines(recorded)] : []),
+    "브랜치·코드·작업 문서는 그대로입니다. 분석부터 바뀐 요구만 반영해 게이트를 다시 지납니다 — 계획 문서가 바뀌면 계획을 다시 승인받습니다. " +
+      "계획이 그대로여도 영향받은 검증(check·test·통합 검증)과 리뷰는 다시 돕니다.",
     `다음: ${skill("ca-next")}`,
   ].join("\n") };
 }
 
 /**
- * status 의 개정·회차 줄 — 흐름이 따르는 개정과 그 개정의 변경(앞 3건), 아직 따르지 않은 확정 개정, 실행 회차. 첫 개정·첫 회차이고
- * 확정본을 따르고 있으면 없다(요구사항 줄의 개정 번호로 충분하다).
+ * status 의 개정·회차 줄 — 흐름이 따르는 개정과 그 개정의 변경(앞 3건), 아직 따르지 않은 확정 개정, 마지막 요구 변경 영향과 그 근거,
+ * 실행 회차. 첫 개정·첫 회차이고 확정본을 따르고 있으면 없다(요구사항 줄의 개정 번호로 충분하다).
  */
 export function flowRevisionLines(repoRoot: string, active: ActiveWork): string[] {
   const lines: string[] = [];
@@ -511,6 +521,8 @@ export function flowRevisionLines(repoRoot: string, active: ActiveWork): string[
   if (place && active.request && place.hash !== active.request.hash) {
     lines.push(`확정 개정 ${place.revision ?? "?"} 은 다음 진행 명령 때 흐름에 반영합니다${followed ? ` (지금 따르는 개정 ${followed})` : ""}`);
   }
+  const impact = active.request?.impacts?.at(-1);
+  if (impact) lines.push(`요구 변경 영향 — ${impactBrief(impact)}`, ...impactLines(impact));
   if (active.cycle) {
     lines.push(`실행 회차: ${active.cycle.number} (회차 ${active.cycle.number - 1} 반영 커밋 ${active.cycle.delivered.slice(0, 12)}${active.cycle.revision ? ` · 개정 ${active.cycle.revision}` : ""}) — 이전 회차의 변경·증거·Task 통과는 이번 회차에 세지 않습니다`);
   }

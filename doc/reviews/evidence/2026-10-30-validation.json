@@ -9,22 +9,22 @@
     "claude": "2.1.312",
     "codex": "0.166.0"
   },
-  "stateSchema": 20,
+  "stateSchema": 21,
   "fullTest": {
     "command": "npm test",
     "runner": "node --test --test-concurrency=4",
-    "tests": 1871,
-    "suites": 245,
-    "pass": 1867,
+    "tests": 1884,
+    "suites": 249,
+    "pass": 1880,
     "fail": 0,
     "cancelled": 0,
     "skipped": 4,
     "skipReason": "플랫폼 조건",
-    "wallSeconds": 531,
-    "testRunSeconds": 530.1,
+    "wallSeconds": 500,
+    "testRunSeconds": 498.8,
     "slowestSuite": {
-      "name": "검증 workflow 노드",
-      "seconds": 73.8
+      "name": "P6 · fix — 재현 먼저",
+      "seconds": 62.5
     }
   },
   "liveHosts": [
@@ -464,11 +464,11 @@
     "calculation": "LF 정규화 글자 수 ×1.03(파일)·×1.02(흐름)를 100자 단위 올림",
     "claudeFlow": {
       "limit": 49200,
-      "current": 48331
+      "current": 48595
     },
     "codexFlow": {
       "limit": 45900,
-      "current": 44958
+      "current": 45082
     },
     "sharedPlanningContract": "template/claude/skills/ca-plan/contract.md",
     "planningContract": {
@@ -480,16 +480,22 @@
       "limit": 1300,
       "current": 1284,
       "reason": "같은 ID 의 요구 변경안 형식 — 확정 요구가 있는 후속 요청에서만 읽는다"
+    },
+    "testRepair": {
+      "file": "template/claude/skills/ca-test/repair.md",
+      "limit": 1100,
+      "current": 1041,
+      "reason": "테스트 수정 창의 원인·금지·판정·보고 — 동결된 테스트의 구현 오류를 고칠 때만 읽는다. ca-check ↺ 4항은 경로 한 줄만 가리켜 흐름 예산을 올리지 않았다"
     }
   },
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
-    "files": 223,
-    "compressedBytes": 897540,
-    "unpackedBytes": 3123075,
-    "agentFiles": 162,
+    "files": 227,
+    "compressedBytes": 913959,
+    "unpackedBytes": 3174132,
+    "agentFiles": 165,
     "coreFiles": 13,
-    "templateFiles": 46,
+    "templateFiles": 47,
     "testFiles": 0
   },
   "limitations": [
@@ -498,16 +504,122 @@
     "예산 구간은 계획 작업 총 배정에만 있다(결정적 판정이라 실제 호스트로 따로 실행하지 않음). 검증·리뷰 회차·교차 지점 한도는 그 회차·지점에서 센다. 비용·시간 안전장치는 따로 두지 않았다 — 작업 총 배정·같은 입력 실패·동시 실행 한도, 시작·실행 기한(고아), 반복 전달 실패 차단이 그 몫이다.",
     "새 ID 로 준비한 계획 작업은 제 예산을 받는다(계획 작업 수 상한 100개). 막힌 작업은 지워지지 않고 뒤 역할의 선행으로 남아 새 ID 로 우회하지 못한다.",
     "master 위임 판단으로 요구를 확정하면 구간 전환 수는 사람이 준 권한의 사용 한도·만료가 묶는다. 위임 확정이 여는 구간 전환은 따로 시험하지 않았다.",
-    "테스트 담당이 쓴 테스트가 동결 뒤 테스트 자체의 결함으로 실패하면 세션은 테스트를 고치지 않고 사람 판단에서 멈춘다(관리 실행 B, 실패 원인은 확인하지 않음).",
     "백그라운드로 돌린 긴 검증 명령(Bash run_in_background)의 완료는 담당 실행 장부에 남지 않아 이어가기 대상이 아니다.",
     "분석으로 되감은 뒤 같은 회차의 구현 Task 통과 판정은 기준 커밋과 다른 파일로 본다 — 새 개정의 반영은 계획 재승인과 검증·리뷰 재실행이 확인한다.",
     "이전 회차는 작업 브랜치(없으면 기준 브랜치)의 이력에서 찾는다 — 반영 커밋을 기준 브랜치에 넣지 않은 채 작업 브랜치를 지웠으면 첫 회차로 시작한다.",
-    "자동 회귀와 평가 fixture·위임 판단은 실제 사람 승인·사용자 사용성 검사가 아니다. 실제 호스트 버전은 관찰 조건이며 지원 최소 버전이 아니다."
+    "자동 회귀와 평가 fixture·위임 판단은 실제 사람 승인·사용자 사용성 검사가 아니다. 실제 호스트 버전은 관찰 조건이며 지원 최소 버전이 아니다.",
+    "테스트 수정 창은 실제 호스트에서 돌리지 않았다 — 메인이 창을 여는지, 테스트 담당이 창의 지킬 것을 따르는지는 관찰하지 않았다.",
+    "창의 기계 검사는 TC 토큰 유지·창의 TC 인식·건너뛰기 표지·파일 존재만 본다. 단언 약화는 다음 리뷰 회차가 판단한다. 창은 실패한 TC 의 토큰이 있는 파일만 연다.",
+    "요구 개정 범위는 01 의 출처 추적으로 정한다. 같은 항목의 글만 바꾼 수정도 01 인용이 바뀌어 분석부터 다시 돈다 — 영향은 배정에 범위로 실릴 뿐 조사·종합의 부분 재사용은 없다. 보안 영향은 낱말 대조라 넓히는 데만 쓴다.",
+    "질문의 변경 분류는 Claude 의 관찰된 답에만 적용된다 — Codex·master 위임 답은 요구·설계 변경으로 본다."
   ],
   "validationConditions": [
     "실제 모델 호출: Claude print 전체 흐름 1회($1.77), 대화형 CLI 1회(약 $0.54 추정), 관리 실행 2회($2.43·$1.90), Codex exec 1회, 스트리밍 입력 깨우기 실측 1회(약 $0.013)",
     "평가 스크립트·구동기는 부른 세션(Claude Code)의 표지를 지우고 호스트를 띄운다",
     "대상 프로젝트는 임시 Git 저장소에서 실행 — 저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
     "보고서·로그·임시 저장소는 dist 나 임시 폴더에 두며 커밋하지 않는다"
-  ]
+  ],
+  "minimalReplan": {
+    "source": "users-api YSIJ-262 의 stages.jsonl·계획 기록·answers.jsonl·동의 원장·리뷰 기록(2026-10-28 UTC)",
+    "after": "지금 코드의 결정적 경로(testRepair 통합 검증 시험) — 실제 호스트로 다시 돌리지 않음. 후의 담당 소요는 전의 같은 구간에서 가져온 추정",
+    "q62": {
+      "case": "통합 검증 TC-100·TC-146 빈 db/migration 디렉터리 단언 — 두 단언을 '아래에 파일이 없다'로",
+      "before": {
+        "replan": "back plan → 자동 analysis 되감기 → analysis·explore·synthesis·design·plan·critic 재실행, 계획 재승인, 구현 재진입, 검증·리뷰 회차 1부터",
+        "planningDispatches": {
+          "analysis": 1,
+          "explore": 1,
+          "synthesis": 1,
+          "design": 1,
+          "plan": 1,
+          "critic": 1,
+          "total": 6
+        },
+        "reviewerDispatches": 1,
+        "humanInputs": {
+          "total": 6,
+          "items": [
+            "Q62 답",
+            "Q63 답(critic 한도)",
+            "critic 한도 허용 동의",
+            "계획 승인",
+            "리뷰 기각 F1 다시",
+            "리뷰 기각 F2 다시"
+          ]
+        },
+        "segments": [
+          {
+            "name": "질문 대기",
+            "from": "03:42:42",
+            "to": "03:56:29",
+            "seconds": 827
+          },
+          {
+            "name": "analysis 재실행",
+            "from": "03:57:51",
+            "to": "03:59:37",
+            "seconds": 106
+          },
+          {
+            "name": "impact(explore·synthesis) 재실행",
+            "from": "03:59:37",
+            "to": "06:04:25",
+            "seconds": 7488
+          },
+          {
+            "name": "design 재실행",
+            "from": "06:04:25",
+            "to": "06:48:50",
+            "seconds": 2665
+          },
+          {
+            "name": "plan·critic·한도 질문·허용·계획 승인",
+            "from": "06:48:50",
+            "to": "07:18:56",
+            "seconds": 1806
+          },
+          {
+            "name": "구현 재진입",
+            "from": "07:18:56",
+            "to": "07:36:08",
+            "seconds": 1032
+          },
+          {
+            "name": "check·test",
+            "from": "07:36:08",
+            "to": "07:38:19",
+            "seconds": 131
+          },
+          {
+            "name": "리뷰어",
+            "from": "07:38:44",
+            "to": "07:41:41",
+            "seconds": 177
+          }
+        ],
+        "answerToReviewSeconds": 13512
+      },
+      "after": {
+        "replan": "없음 — 창은 TC-100·TC-146 과 그 토큰이 있는 테스트 파일만 연다. 계획·승인·01~04·⑦ 그대로",
+        "planningDispatches": 0,
+        "testerDispatches": 1,
+        "reviewerDispatches": 1,
+        "humanInputs": 0,
+        "verifyRounds": "고쳐 쓰기 1(검증 회차 +1)",
+        "reviewRounds": "+1(리뷰 기록 유지)",
+        "answerToReviewSecondsEstimate": 1340,
+        "estimateBasis": "구현 재진입 1032 + check·test 131 + 리뷰어 177 초(전의 같은 구간)"
+      }
+    },
+    "q58": {
+      "case": "test 단계 실패 TC-11·TC-127·TC-150·TC-158",
+      "before": {
+        "planningDispatches": 5,
+        "humanInputs": 4,
+        "answerToReviewSeconds": 8876
+      },
+      "after": "TC-127·TC-150 은 창 하나(assertion), TC-158 은 계획 안 고쳐 쓰기. TC-11 은 다른 테스트 파일(TC-166)을 고쳐야 해 창에 들지 않아 질문·재계획 경로다"
+    },
+    "security": "보안 낱말(권한·JWT·데이터 계약 등)이 있는 개정은 계획·트리가 그대로여도 check·test·통합 검증과 리뷰(요구 변경 회차)를 다시 지나야 반영한다 — changeImpact 시험"
+  }
 }

@@ -14,6 +14,7 @@ import {
   BACK_PHASES,
   context,
   decide,
+  requireRepairable,
   requireReproable,
   requireValidatable,
   start,
@@ -163,6 +164,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent check                    8 정적 분석·컴파일 — build + 품질·보안 기준의 명령을 돌리고 증거로 기록
   code-agent test                     9 테스트 — test + 테스트 전략의 명령을 돌리고 ⑦ 의 TC별 실제 결과를 대조
   code-agent verify [--json] [--retry]  check·test 노드를 연속 실행하고 수정·실행 문제 확인·리뷰 요청을 반환 (retry는 check부터 재실행)
+  code-agent test-repair <TC-ID…> --cause <assertion|fixture|notation|filesystem> --reason <근거>
+                                      동결된 테스트의 구현 오류를 고치는 창 — 실패한 ⑦ TC 의 파일만 지정 테스트 담당이 고치고, 다음 check 가 기계 검사·리뷰 회차가 재검토
   code-agent review                   11 코드 리뷰 — 회차를 열고 독립 리뷰어의 시작·완료와 결과는 hook이 기록
   code-agent review cross --by <claude|codex>   두 호스트 설치 시 — 다른 호스트가 같은 회차를 교차 리뷰 (읽기 전용 실행)
   code-agent integrate                12 통합 검증 — 기준 커밋 위의 깨끗한 worktree 에서 전체 build · test
@@ -274,7 +277,7 @@ const UNTIMED = new Set(["update", "version", "doctor", "usage", "help", "--help
  * 담당 완료 뒤 메인이 실제로 다음 행동을 했다고 보는 진행 명령 — 실행하면 담당 실행 장부의 완료를 처리된 것으로 지운다(agentRuns.consumeCompletion).
  * 조회(status·context·planning status 등)는 행동이 아니라 지우지 않는다 — 조회만 하고 턴을 끝내면 Stop hook 이 이어가게 한다.
  */
-const PROGRESS = new Set(["next", "flow", "back", "start", "check", "test", "verify", "review", "integrate", "repro"]);
+const PROGRESS = new Set(["next", "flow", "back", "start", "check", "test", "verify", "test-repair", "review", "integrate", "repro"]);
 const PROGRESS_SUB: Record<string, readonly string[]> = {
   planning: ["advance", "prepare", "dispatch", "repair", "cancel", "cross", "reuse-answer"], plan: ["submit"], consent: ["prepare", "apply", "finish"],
 };
@@ -507,6 +510,12 @@ async function runCommandBody(command: string | undefined, args: string[]): Prom
       const result = await verify(repoRoot, { retry: args.includes("--retry") });
       print(args.includes("--json") ? verificationJson(result) : renderVerification(result));
       return result.node === "review" ? 0 : 1;
+    }
+    case "test-repair": {
+      const { openTestRepair, parseRepairArgs } = require("./testRepairCommand") as typeof import("./testRepairCommand");
+      const request = parseRepairArgs(args);
+      print(await operation("test-repair", () => openTestRepair(requireRepairable(repoRoot), request)));
+      return 0;
     }
     case "review":
       // 회차를 열면 리뷰어에게 넘길 context 파일도 쓴다

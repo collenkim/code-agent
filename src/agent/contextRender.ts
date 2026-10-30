@@ -19,6 +19,8 @@ import { buildIndex, freshness, hitLine, mandatoryPolicies, relatedEntries, requ
 import type { Freshness, Hit, IndexEntry, KnowledgeIndex, SearchQuery } from "./knowledgeIndex";
 import { collectWindowOpen, loadEvidence, planPaths, reviewRoundUsage, runsOf, testFrozen, testRoots, testStageFiles, validationDocFile, verifyView } from "./evidence";
 import { budgetText } from "./retryPolicy";
+import { openRepair, repairReviewLines } from "./testRepair";
+import { impactBrief, impactLines, impactReviewFiles } from "./changeImpact";
 import { experienceIndex, experienceLine, searchExperience } from "./experience";
 import { CONTEXT_POLICY_KINDS, docRefs, hitSection, isTestPath, keywordsOf, rankCandidatesScan, requirementItems, type RankScan } from "./plugins/defaults";
 import { MAX_ITEMS } from "./plugins/protocol";
@@ -526,6 +528,7 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
   const frozen = testStageFiles(work);
   const evidence = loadEvidence(repoRoot, active.id, active.target);
   const view = evidence ? verifyView(work, evidence) : undefined;
+  const repair = openRepair(evidence);
   // 동결 표시 셋 — 결과 미확인의 수집 수정 창, 얼어 있음, 아직 얼지 않음(결과가 인식된 test 실행부터 언다)
   const frozenNote = !evidence || !view
     ? " · kind:test (결과가 인식된 test 실행부터 언다)"
@@ -538,7 +541,7 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
     ...work.plan.files.map(
       (file) =>
         `- [${file.stage}] ${fileLabel(file)} — ${file.purpose} · 요구 ${(file.requirements ?? []).join(", ") || "없음"}` +
-        (frozen.includes(file.path) ? frozenNote : ""),
+        (frozen.includes(file.path) ? frozenNote : "") + (repair?.files.includes(file.path) ? ` · **테스트 수정 창 #${repair.n} — 지정 테스트 담당만**` : ""),
     ),
   );
   const index = docSectionIndex(repoRoot, active.id);
@@ -557,7 +560,7 @@ export function verificationSection({ repoRoot, work }: RenderInput, out: string
         ].join("\n")
       : "- 아직 없습니다 — code-agent check",
     "",
-    "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요." +
+    "동결된 테스트는 review 단계의 관찰된 독립 리뷰 지적이 해당 계획 파일을 가리킬 때, 또는 열린 테스트 수정 창(code-agent test-repair)의 파일을 지정 테스트 담당이 고칠 때만 수정할 수 있습니다. 범위는 계획 파일 목록으로 판정하며 refactor의 기준 커밋 테스트는 계속 보호합니다. 수정 후 check부터 재검증·재리뷰하세요." +
       " 결과가 하나도 인식되지 않고 실패도 없던 test 실행은 얼리지 않습니다. 일부만 인식됐으면 수집 수정 1회 동안 TC 이름을 고칠 수 있습니다.",
     // 읽는 쪽은 서브에이전트다 — 사람에게 묻는 것은 메인이 한다(질문 도구 이름을 싣지 않는다)
     `계획 밖을 고쳐야 하면 고치지 말고 메인에게 보고합니다 — 메인이 ${questionsFile(active.id)} 에 질문으로 남기고, 사람의 답과 재계획·재승인 뒤에만 구현합니다.`,
@@ -572,6 +575,9 @@ export function reviewSection({ repoRoot, work }: RenderInput, out: string[]): v
   const last = review?.rounds[review.rounds.length - 1];
   const usage = reviewRoundUsage(work);
   const changes = roundChanges(review, planPaths(work));
+  const repairs = (loadEvidence(repoRoot, active.id, active.target)?.testRepairs ?? []).filter((repair) => repair.accepted);
+  const impact = last?.cause === "requirement" ? active.request?.impacts?.find((entry) => entry.at === last.impact) : undefined;
+  const impactFiles = impact ? impactReviewFiles(impact, planPaths(work)) : [];
   out.push(
     "",
     `## ⑨ ${reviewDocFile(active.id)} — 코드 리뷰`,
@@ -583,7 +589,16 @@ export function reviewSection({ repoRoot, work }: RenderInput, out: string[]): v
         "바뀌지 않은 계획 파일은 직전 회차 판정을 이어받는다 — 바뀐 파일과 그 호출자·테스트, 직전 지적의 수정 여부를 먼저 대조하고, 바뀐 것이 닿는 나머지만 다시 읽는다.",
       ...(changes.findings.length ? [`- 직전 ${changes.previous}회차 ${agentName("ca-reviewer")} 지적 — 같은 id·경로로 상태를 갱신한다:`, ...changes.findings.map((line) => `  ${line}`)] : []),
     ] : []),
+    ...(impact ? [
+      `- **요구 변경 재검토** — ${impactBrief(impact)}. 코드는 그대로이고 요구가 바뀌었다 — 바뀐 요구·AC 를 지금 코드와 테스트가 충족하는지 본다. ` +
+        `재검토 범위: 계획 파일 ${impactFiles.length}개${changedList(impactFiles)}${impact.security.length ? " — 보안 영향이라 인증·권한·토큰·데이터 계약 경로와 그 실패 케이스 TC 를 계획 파일 전체에서 다시 본다" : impact.conservative.length ? " — 범위를 입증하지 못해 전체를 본다" : ""}.`,
+      ...impactLines(impact),
+    ] : []),
     ...(review?.waivers ?? []).map((waiver) => `- 사람 판단으로 기각한 지적: ${waiver.id}(${waiver.path}) — ${waiver.reason.replace(/\s+/g, " ").slice(0, 120)} · ${waiver.round}회차 — 리뷰어에게 넘겨 같은 지적을 새 번호로 다시 내지 않게 한다`),
+    ...(repairs.length ? [
+      "- **받아들인 테스트 수정 창** — 고친 테스트가 ⑦ 의 기대 결과·AC·보안 요구를 약하게 하지 않았는지 대조한다. 단언을 지우거나 기대값을 느슨하게 했거나 실패 케이스를 정상 케이스로 바꿨으면 그 파일에 계획 안 지적(열림)을 낸다:",
+      ...repairs.flatMap(repairReviewLines).map((line) => `  ${line}`),
+    ] : []),
     "",
     `${agentName("ca-reviewer")}를 호출하면 hook이 실행·완료를 관찰하고 \`## 지적\` 표를 자동 기록합니다. 메인은 결과·상태를 대신 쓰지 않습니다:`,
     "```markdown",

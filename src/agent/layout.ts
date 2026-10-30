@@ -3,6 +3,7 @@ import { hostname, networkInterfaces } from "os";
 import { basename, dirname, join, posix, resolve } from "path";
 
 import { currentCursor, writeCursor, removeCursor } from "./branchCursor";
+import type { RequirementImpact } from "./changeImpact";
 
 /**
  * 대상 저장소 안의 자리.
@@ -78,8 +79,9 @@ export interface ActiveWork {
   /**
    * 흐름이 따르는 확정 요구 — 지시서 해시·요구 항목 해시·개정 번호(request.ts `requestPlace`). 확정본이 이와 다르면 새 개정이 확정된 것이라
    * 진행 명령이 흐름을 맞춘다(`syncRequestRevision`). 없는 기록은 이 기능 전에 시작한 작업이다 — 첫 진행 때 지금 확정본을 기록만 한다.
+   * `impacts` 는 흐름이 따른 개정마다 계산한 영향(changeImpact.ts) — 최근 것만 둔다. 검증 게이트가 그 뒤의 실행·리뷰 회차를 요구한다.
    */
-  request?: { hash: string; items: string; revision?: number };
+  request?: { hash: string; items: string; revision?: number; impacts?: RequirementImpact[] };
   /**
    * 실행 회차 — 같은 ID 가 반영된 뒤 다시 시작한 작업이다(cycles.ts). `delivered` 는 이전 회차의 반영 커밋, `revision` 은 그때 반영한 개정.
    * 없으면 첫 회차다. 새 회차의 기준 커밋은 시작 때의 작업 브랜치 끝이라 이전 회차의 변경·증거·Task 통과를 다시 쓰지 않는다.

@@ -24,6 +24,8 @@ import {
 } from "./retryPolicy";
 import type { RoundCause, RunCause, VerifyBudget, VerifyRetryState, VerifyRetryView, VerifyState } from "./retryPolicy";
 import type { ReviewLog } from "./review";
+import { openRepair, type TestRepair } from "./testRepair";
+import { impactAfter, impactBrief } from "./changeImpact";
 import { KNOWLEDGE_KINDS, SCHEMAS } from "./schemas";
 import { changedPaths, fileHashes, partialTreeHash } from "./tree";
 import type { Change } from "./tree";
@@ -163,6 +165,8 @@ export interface Evidence {
   retry?: VerifyRetryState;
   /** 테스트 동결의 기준 — 결과가 인식된(또는 코드 결함으로 실패한) 첫 test 실행 때의 kind:test 파일별 해시 */
   testFreeze?: TestFreeze;
+  /** 테스트 수정 창(testRepair.ts) — 동결된 테스트의 구현 오류를 지정 테스트 담당이 고친 기록. 묶임이 바뀌면 증거와 함께 버려진다 */
+  testRepairs?: TestRepair[];
   at: string;
 }
 
@@ -173,10 +177,10 @@ export interface TestFreeze {
   at: string;
   files: Record<string, string>;
   /**
-   * 새 회차를 열며 기준을 다시 굳힌 파일 — 수집 수정 회차의 파일과 ⑨ 지적으로 연 파일만이다. reviewRound 는 ⑨ 지적으로
-   * 받아들일 때의 리뷰 회차 수다 — 같은 리뷰 회차 안에서 한 파일을 두 번 받아들이지 않는다
+   * 새 회차를 열며 기준을 다시 굳힌 파일 — 수집 수정 회차의 파일, ⑨ 지적으로 연 파일, 기계 검사를 통과한 테스트 수정 창의 파일만이다.
+   * reviewRound 는 ⑨ 지적으로 받아들일 때의 리뷰 회차 수다 — 같은 리뷰 회차 안에서 한 파일을 두 번 받아들이지 않는다. repair 는 창 번호다
    */
-  rebased?: { round: number; at: string; by?: "collect" | "finding"; files: string[]; reviewRound?: number }[];
+  rebased?: { round: number; at: string; by?: "collect" | "finding" | "repair"; files: string[]; reviewRound?: number; repair?: number }[];
 }
 
 export function loadEvidence(repoRoot: string, id: string, target: string): Evidence | undefined {
@@ -420,6 +424,11 @@ export function guardedFiles(evidence: Evidence, phase?: VerifyPhase): string[] 
   return [...new Set(runs.flatMap((run) => run.guarded ?? []))];
 }
 
+/** 실행들의 마지막 시작 시각 — 요구 변경 영향(changeImpact.ts impactAfter)과 견준다 */
+export function latestRunAt(runs: VerifyRun[]): string | undefined {
+  return runs.reduce<string | undefined>((latest, run) => !latest || Date.parse(run.at) > Date.parse(latest) ? run.at : latest, undefined);
+}
+
 /** `not-run` · `error` · `skipped` 는 통과가 아니다 — passed 만 통과다 */
 export function failedRuns(runs: VerifyRun[]): VerifyRun[] {
   return runs.filter((run) => run.outcome !== "passed");
@@ -466,7 +475,8 @@ export function reviewRoundUsageOf(log: ReviewLog | undefined, binding: { baseCo
   const stale = !log || !Array.isArray(log.rounds) || log.rounds.some((round) =>
     round.baseCommit !== binding.baseCommit || round.planHash !== binding.planHash || round.manifestHash !== binding.manifestHash);
   if (stale) return { used: 0, base: LIMITS.reviewRounds, limit: LIMITS.reviewRounds, usedPaths: [], stale: true };
-  const used = log!.rounds.length;
+  // 요구 변경 회차(같은 트리를 바뀐 요구로 다시 본 회차)는 고친 것이 없어 세지 않는다 — review.ts ReviewRound.cause
+  const used = log!.rounds.filter((round) => round.cause !== "requirement").length;
   const base = log!.limit ?? (used >= LIMITS.reviewRounds ? used + 1 : LIMITS.reviewRounds);
   return {
     used,
@@ -630,9 +640,17 @@ export function testFreezeProblems(work: Work, evidence: Evidence): string[] {
   if (!freeze) return [];
   const now = fileHashes(work.repoRoot, testStageFiles(work));
   const paths = [...new Set([...Object.keys(freeze.files), ...Object.keys(now)])].sort();
-  return paths.filter((path) => freeze.files[path] !== now[path]).map((path) =>
-    `테스트 동결 뒤 바뀐 kind:test 파일: ${path} — 동결(${freeze.round}회차) 뒤에는 ⑨ 지적으로 연 파일만 바뀔 수 있고, ` +
-    "바꾼 뒤에는 code-agent verify 로 check 부터 다시 돌아야 기준이 갱신됩니다. 지적 없이 바꿨으면 되돌리세요");
+  const changed = paths.filter((path) => freeze.files[path] !== now[path]);
+  const repair = openRepair(evidence), rejected = repair?.rejections?.at(-1);
+  return [
+    ...changed.map((path) =>
+      `테스트 동결 뒤 바뀐 kind:test 파일: ${path} — 동결(${freeze.round}회차) 뒤에는 ⑨ 지적이나 테스트 수정 창으로 연 파일만 바뀔 수 있고, ` +
+      "바꾼 뒤에는 code-agent verify 로 check 부터 다시 돌아야 기준이 갱신됩니다. 근거 없이 바꿨으면 되돌리세요"),
+    ...(repair && rejected && changed.some((path) => repair.files.includes(path))
+      ? [`테스트 수정 창 #${repair.n} 을 받아들이지 않았습니다(${rejected.round}회차): ${rejected.problems.join(" / ")} — ` +
+        `창은 열려 있습니다. 지정 테스트 담당이 다시 고치거나 되돌린 뒤 code-agent verify 로 check 부터 다시 돕니다`]
+      : []),
+  ];
 }
 
 /** 다음 수정 회차가 고쳐 쓰기 한도로 거부되는가 — hook·check() 와 같은 판정(nextRoundDecision)이다 */
@@ -725,6 +743,10 @@ export function stageProblemEntries(work: Work, phase: VerifyPhase): StageProble
   } else if (Math.max(...runs.map((run) => run.round)) !== evidence.rounds) {
     // 앞 회차의 통과로 지금 회차를 덮지 않는다 — 고쳐 쓴 뒤 check 만 다시 돌리고 test 는 건너뛰는 길
     add("rerun", `${phase} 결과가 ${evidence.rounds}회차의 것이 아닙니다 — code-agent ${phase} 를 다시 돌리세요`);
+  } else if (phase !== "repro") {
+    // 계획이 그대로라 묶임이 유지돼도 흐름이 따른 요구 개정의 영향 뒤에는 다시 돈다 — 같은 트리의 다시 실행은 회차를 쓰지 않는다
+    const impact = impactAfter(work.active, latestRunAt(runs));
+    if (impact) add("rerun", `${impactBrief(impact)} — 이 영향 뒤 ${phase} 를 다시 돌리지 않았습니다. code-agent ${phase === "integrate" ? "integrate" : "verify"} 로 다시 검증하세요`);
   }
   // 검증 명령이 code-agent 기록을 바꾼 실행은 결과가 아니라 전제 미충족이다 — 같은 코드로 다시 돌려도 같다
   const guarded = guardedFiles(evidence, phase);

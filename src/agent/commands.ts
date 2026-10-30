@@ -43,6 +43,7 @@ import { planReviewLines, prDocFile } from "./deliver";
 import {
   bindingProblems,
   guardedFiles,
+  latestRunAt,
   loadEvidence,
   outsideChanges,
   planPaths,
@@ -54,6 +55,7 @@ import {
   verifyView,
 } from "./evidence";
 import type { VerifyPhase, VerifyView } from "./evidence";
+import { impactAfter } from "./changeImpact";
 import { budgetText, guidance, nextRoundDecision, NO_REVIEW_CHOICES, verifyNode, verifyRetryOf, verifyState, writeBlockReason } from "./retryPolicy";
 import { verifyGuidance } from "./validate";
 import {
@@ -621,7 +623,7 @@ function nextHint(work: Work): string {
       // 사람이 반영 단계에서 계획 파일·경계 선언을 고쳐 증거 묶임이 깨졌으면 반영 게이트가 막는다 — 돌아갈 길을 먼저 보인다
       // (verify·check 는 이때만 deliver 에서도 check 로 되감는다 — requireValidatable)
       if (evidenceBroken(work)) {
-        return `${stageCommand("check")} — 반영할 트리가 검증 뒤 바뀌었습니다(증거가 지금 계획 파일·code-agent.json·기준 커밋과 맞지 않습니다). ` +
+        return `${stageCommand("check")} — 반영할 트리가 검증 뒤 바뀌었거나(증거가 지금 계획 파일·code-agent.json·기준 커밋과 맞지 않습니다) 검증 뒤 따른 요구 개정이 다시 검증을 요구합니다. ` +
           "code-agent verify --json 이 check 로 되감아 다시 검증합니다 — 바꾼 것을 되돌리려면 사람이 되돌립니다";
       }
       return `현재 호스트 세션에서 ca-answer의 deliver 동의 절차로 확인하고 반영합니다 — ${prDocFile(active.id)} 의 요약·확인 방법·위험을 먼저 쓰세요`;
@@ -974,15 +976,18 @@ function untouchedTaskFiles(repoRoot: string, baseCommit: string | undefined, fi
  *
  * `deliver` 는 넣지 않는다. 거기는 사용자가 반영할 내용을 확인하는 자리라, 증거가 지금 트리와 맞는데 모델이 부른 `check`
  * 한 번에 커서가 뒤로 가면 사람이 보던 화면이 조용히 무효가 된다. 증거 묶임이 이미 깨졌을 때(`evidenceBroken` — 사람이
- * 계획 파일·경계·계획을 바꿨다)만 deliver 에서도 check 로 되감는다 — 그때는 반영 게이트가 어차피 막아 막다른 자리가 된다.
+ * 계획 파일·경계·계획을 바꿨거나 요구 개정을 확정했다)만 deliver 에서도 check 로 되감는다 — 그때는 반영 게이트가 어차피 막아 막다른 자리가 된다.
  * 사용자가 반영 전에 수정을 요청하면 `back` 으로 되감는다(사용자 지시 — 스킬 규칙).
  */
 const REWINDABLE: readonly Phase[] = ["test", "review", "integrate"];
 
-/** 증거가 있고 그 묶임(기준 커밋·계획 파일 트리·매니페스트·계획 해시)이 지금과 맞지 않는가 — 계획 밖 변경만이면 되감아도 풀리지 않아 넣지 않는다 */
+/**
+ * 증거가 있고 그 묶임(기준 커밋·계획 파일 트리·매니페스트·계획 해시)이 지금과 맞지 않거나, 마지막 check 뒤 흐름이 따른 요구 개정의 영향이
+ * 다시 검증을 요구하는가(changeImpact.ts) — 계획 밖 변경만이면 되감아도 풀리지 않아 넣지 않는다
+ */
 function evidenceBroken(work: Work): boolean {
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
-  return !!evidence && bindingProblems(work, evidence).length > 0;
+  return !!evidence && (bindingProblems(work, evidence).length > 0 || !!impactAfter(work.active, latestRunAt(runsOf(evidence, "check"))));
 }
 
 /**
@@ -1047,6 +1052,28 @@ export function requireReproable(repoRoot: string): Work {
   const approval = approvalOf(work);
   if (approval.status !== "approved") {
     throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서 나지 않은 재현은 증거가 아닙니다.\n${reentryHint(work, approval) ?? ""}`);
+  }
+  return work;
+}
+
+/**
+ * `code-agent test-repair` 의 전제 — 승인된 계획 위의 재검증(check·test·review·integrate) 중에만 연다.
+ * 동결·실패한 TC·남은 회차는 testRepairCommand 가 증거로 본다.
+ */
+export function requireRepairable(repoRoot: string): Work {
+  requireNoAidlc(repoRoot);
+  let work = requireWork(repoRoot);
+  requireDocs(repoRoot, work);
+  requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
+  work = followRevision(repoRoot, work);
+  requireRequirements(repoRoot, work.active);
+  requireAnswers(repoRoot, work.active);
+  if (!["check", "test", "review", "integrate"].includes(work.active.phase)) {
+    throw new Stop(`테스트 수정 창은 재검증 중(check·test·review·integrate)에 엽니다 (지금: ${work.active.phase}).\n${nextHint(work)}`);
+  }
+  const approval = approvalOf(work);
+  if (approval.status !== "approved") {
+    throw new Stop(`계획이 승인되지 않았습니다 (${approval.status}). 승인 위에서만 동결된 테스트를 고칩니다.\n${reentryHint(work, approval) ?? ""}`);
   }
   return work;
 }

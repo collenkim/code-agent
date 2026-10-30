@@ -410,6 +410,7 @@ code-agent verify --json
 | `code-agent takeover` | 다른 세션(호스트)이 쥔 작업 진행 기록을 풀어 이 세션이 이어받게 한다 — 저쪽 세션을 멈춘 것을 확인한 뒤 |
 | `code-agent flow advance --json` | 전체 흐름 그래프 실행·재개. 자동 검증·단계 전이를 수행하고 호스트가 이어갈 절차·사용자 확인·대기·완료를 반환합니다. 대화에서는 `/ca-next`·`$ca-next`가 호출합니다 |
 | `code-agent verify [--json]` | 검증 그래프 실행·재개. 정적 검사·테스트 결과에 따라 리뷰 또는 수정·진단·사람 판단으로 연결합니다 |
+| `code-agent test-repair <TC...> --cause <원인> --reason <근거>` | 동결된 테스트의 구현 오류(null 단언·`List.of(null)`·TC 표기·빈 디렉터리 판정)를 계획을 되감지 않고 지정 테스트 담당이 고치게 엽니다. 다음 `check`가 TC 유지·건너뛰기 표지를 보고 받아들이며, 다음 리뷰 회차가 그 수정을 다시 봅니다 |
 | `code-agent status [--json]` | 진행 상태와 다음 할 일. `--json`은 기계 판독용 상태(`code-agent.state` v1 — 재개 코드·근거·`stateVersion`)이고, `--expect-state`·`--expect-work`·`--expect-attempt`가 지금과 다르면 종료 코드 3 (읽기 전용) |
 | `code-agent usage [--json]` | 토큰·추정 비용·요청·도구 호출·재시도(계획 담당의 첫 시도 통과·규칙별 거부 포함)·hook 출력·교차 실행 토큰·스테이지별 문서 탐색 기록 |
 | `code-agent knowledge` · `code-agent knowledge find <낱말\|키\|경로>` | KNOWLEDGE 항목의 최신성(최신·재검토 필요·갱신 보류 등) 목록 · 키·코드 경로·별칭·본문으로 항목과 POLICY 절을 찾아 줄 범위와 연결 정책을 보여 줌 (읽기 전용 — `find`는 작업 중 담당도 쓴다) |

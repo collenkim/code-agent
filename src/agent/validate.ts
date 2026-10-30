@@ -56,6 +56,7 @@ import {
 import type { CommandSpec, Evidence, LogBasis, Outcome, ReproAttemptClass, TestCaseEvidence, VerifyPhase, VerifyRun } from "./evidence";
 import { skillFile } from "./hostText";
 import { logDir, questionsFile, reviewFile, STATE_DIR, workDocsDir } from "./layout";
+import { openRepair, repairFileStats, repairProblems } from "./testRepair";
 import { acquireLock, pidAlive } from "./lock";
 import { recordEvent, type TimelineInput } from "./timeline";
 import { PLUGIN_LOG_DIR, pluginVerifyRuns } from "./plugins/run";
@@ -908,6 +909,31 @@ function rebaseTestFreeze(work: Work, evidence: Evidence, by: "collect" | "findi
     { round: evidence.rounds, at: new Date().toISOString(), by, files: opened, ...(usage ? { reviewRound: usage.used } : {}) }];
 }
 
+/**
+ * 열린 테스트 수정 창을 새 회차에서 판정한다(testRepair.ts). 창의 파일이 바뀌었을 때만 본다 — 기계 검사(repairProblems)를 통과하면
+ * 그 파일의 동결 기준을 다시 굳히고(`by: "repair"`) 받아들인 때의 파일 통계를 남긴다(리뷰 context 의 단언 수 변화). 통과하지 못하면 거부를
+ * 쌓고 창은 열어 둔다 — 기준을 굳히지 않으므로 test·integrate 게이트가 바뀐 파일과 거부 사유로 막고, 지정 담당이 다시 고치거나 되돌린다.
+ */
+function settleTestRepair(work: Work, evidence: Evidence): void {
+  const repair = openRepair(evidence), freeze = evidence.testFreeze;
+  if (!repair || !freeze) return;
+  const now = fileHashes(work.repoRoot, repair.files);
+  if (repair.files.every((path) => freeze.files[path] === now[path])) return;
+  const texts: Record<string, string | undefined> = {};
+  for (const path of repair.files) {
+    const full = join(work.repoRoot, path);
+    texts[path] = existsSync(full) ? readFileSync(full, "utf-8") : undefined;
+  }
+  const problems = repairProblems(repair, texts), at = new Date().toISOString();
+  if (problems.length) {
+    repair.rejections = [...(repair.rejections ?? []), { round: evidence.rounds, at, problems }];
+    return;
+  }
+  for (const path of repair.files) freeze.files[path] = now[path];
+  freeze.rebased = [...(freeze.rebased ?? []), { round: evidence.rounds, at, by: "repair", files: [...repair.files], repair: repair.n }];
+  repair.accepted = { round: evidence.rounds, at, stats: Object.fromEntries(repair.files.map((path) => [path, repairFileStats(texts[path] ?? "")])) };
+}
+
 /** 7 정적 분석·컴파일 — build + 품질·보안 기준이 적은 명령 */
 export async function check(work: Work, options: { retry?: boolean; note?: boolean } = {}): Promise<string> {
   const disk = loadEvidence(work.repoRoot, work.active.id, work.active.target);
@@ -969,6 +995,8 @@ export async function check(work: Work, options: { retry?: boolean; note?: boole
     retry.causes[String(evidence.rounds)] = decision.cause;
     // 지운 통합 검증 상태는 그 회차에만 든다. 지운 test 상태는 다음 test 가 돌 때까지 남는다(앞 회차 이어받기)
     if (retry.wiped?.integrate) clearWiped(retry, "integrate");
+    // 창을 먼저 닫는다 — 받아들인 창의 파일은 뒤의 수집·지적 재기준이 다시 볼 것이 없다
+    settleTestRepair(work, evidence);
     if (evidence.testFreeze) rebaseTestFreeze(work, evidence, decision.cause === "collect" ? "collect" : "finding");
   }
   evidence.retry = retry;

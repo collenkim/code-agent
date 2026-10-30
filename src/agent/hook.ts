@@ -25,7 +25,7 @@ import { TIMING, writeBlockReason } from "./retryPolicy";
 import { storeDir } from "./plugins/store";
 import { findingOpensFile } from "./review";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
-import { canonical, DOCS_SESSION_FILE, draftFile, experienceFile, findRepoRoot, foldWindowsAlias, loadDocsSession, questionsFile, shareInside, STATE_DIR, SURVEY_DRAFTS, workDocsDir } from "./layout";
+import { canonical, DOCS_SESSION_FILE, draftFile, experienceFile, findRepoRoot, foldWindowsAlias, handoffDir, loadDocsSession, questionsFile, shareInside, STATE_DIR, SURVEY_DRAFTS, workDocsDir } from "./layout";
 import { loadRequestSession, requirementFile } from "./request";
 import type { RequestSession } from "./request";
 import { approvalOf, loadManifestIfAny, loadWork } from "./work";
@@ -42,6 +42,8 @@ import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVi
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
 import { noteHookOutput } from "./hookLog";
+import { runningAgentType } from "./agentRuns";
+import { openRepair, REPAIR_AGENT } from "./testRepair";
 import { shortCommand } from "./screenText";
 import { loadTriage, triageDraft, TRIAGE_INPUT } from "./triageState";
 import { entryPackage, OPENING_COMMAND, pendingSwitch } from "./runtimeSelect";
@@ -141,6 +143,8 @@ const MODEL_SUBCOMMANDS = [
   "repro",
   "check",
   "test",
+  // 테스트 수정 창 — 동결된 테스트의 구현 오류를 지정 테스트 담당에게 여는 기록만 쓴다(창의 파일 쓰기는 그 담당만, 받아들이기는 check)
+  "test-repair",
   "verify",
   "review",
   "integrate",
@@ -646,7 +650,7 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
   }
   if (work) {
     const planner = decidePlanner(work, path, input);
-    const reason = planner === undefined ? decideWrite(work, path) : planner || undefined;
+    const reason = planner === undefined ? decideWrite(work, path, { agentType: input.agent_type, agentId: input.agent_id }) : planner || undefined;
     return reason ?? leaseGuard(work, input.host ?? "claude", input.session_id);
   }
   return requesting ? decideRequestWrite(requesting, path) : decideDocWrite(docsSession, manifest, path);
@@ -980,7 +984,10 @@ function decidePlanner(work: Work, path: string, input: HookInput): string | und
   return "";
 }
 
-function decideWrite(work: Work, path: string): string | undefined {
+/** 쓰는 쪽 — 하위 에이전트 호출이면 종류·ID. 테스트 수정 창의 지정 담당을 가린다 */
+interface Writer { agentType?: string; agentId?: string }
+
+function decideWrite(work: Work, path: string, writer: Writer = {}): string | undefined {
   const { repoRoot, active } = work;
   // 지시서는 사람의 입력이다 — 작업 폴더 안에 있어도 모델이 고치지 않는다. 모호하면 질문으로 돌린다.
   if (path === active.spec) {
@@ -1075,7 +1082,7 @@ function decideWrite(work: Work, path: string): string | undefined {
   }
   // 동결은 **그 파일이 속한 단계**로 잰다. 커서 단계로 재면, 구현 중 커서가 테스트 단계에 서 있는
   // 동안 고칠 파일까지 '테스트가 얼었다' 는 엉뚱한 사유로 막힌다 (막히는 것은 맞아도 이유가 틀린다).
-  const frozen = freezeReason(work, planStage ?? stage, path);
+  const frozen = freezeReason(work, planStage ?? stage, path, writer);
   if (frozen) {
     return frozen;
   }
@@ -1131,10 +1138,11 @@ function reproReason(work: Work, path: string): string | undefined {
  * **② 테스트 동결** — 결과가 인식된(또는 코드 결함으로 실패한) test 실행 뒤, 또는 재현을 본 뒤에는
  * `kind: "test"` 단계의 계획 파일을 고칠 수 없다. 실패한 단언을 지워 통과시키는 길이 여기서 닫힌다.
  * `kind` 는 `hashManifest` 가 이미 해시하므로 승인 묶임이 따라온다: 승인 뒤에 선언을 끌 수 없다.
- * 푸는 길은 셋 — ⑨ 에 그 파일을 가리키는 열린 계획 안 지적, 결과 미확인 회차의 수집 수정 1회(fix 는 없다),
+ * 푸는 길은 넷 — ⑨ 에 그 파일을 가리키는 열린 계획 안 지적, 결과 미확인 회차의 수집 수정 1회(fix 는 없다),
+ * 열린 테스트 수정 창의 파일을 지정 테스트 담당이 쓸 때(testRepair.ts — 메인·다른 담당은 막는다),
  * 또는 계획 재승인(planHash 가 달라지면 증거가 통째로 무효라 동결도 함께 풀린다).
  */
-function freezeReason(work: Work, stage: StageDef, path: string): string | undefined {
+function freezeReason(work: Work, stage: StageDef, path: string, writer: Writer = {}): string | undefined {
   const evidence = loadEvidence(work.repoRoot, work.active.id, work.active.target);
   if (!evidence || !work.plan || evidence.planHash !== hashPlan(work.plan)) {
     return undefined;
@@ -1152,16 +1160,25 @@ function freezeReason(work: Work, stage: StageDef, path: string): string | undef
     if (findingOpensFile(work, path)) {
       return undefined;
     }
+    // 테스트 수정 창 — 창의 파일은 지정 테스트 담당만 쓴다. 담당 종류가 호출에 없으면 시작 hook 이 남긴 실행 장부로 가린다
+    const repair = openRepair(evidence);
+    if (repair?.files.includes(path)) {
+      const type = commonAgentName(writer.agentType) ?? (writer.agentId ? commonAgentName(runningAgentType(work.repoRoot, work.active.id, writer.agentId)) : undefined);
+      if (type === REPAIR_AGENT) return undefined;
+      return `테스트 수정 창 #${repair.n} 의 파일은 지정 테스트 담당(${agentName(REPAIR_AGENT)})만 고칩니다: ${path} — ` +
+        `창의 전문(${handoffDir(work.active.id)}/test-repair-${repair.n}.md)을 그 담당에게 넘기세요.`;
+    }
     // 결과 미확인 — 수집 수정 1회 동안 TC 이름을 고치는 자리다(그 회차는 고쳐 쓰기를 쓰지 않는다)
     if (collectWindowOpen(view)) {
       return undefined;
     }
     return (
       `테스트가 이미 돌아 얼어 있는 파일입니다: ${path} (단계 ${stage.key}, kind: test). ` +
-      "테스트가 틀렸다고 판단되면 고치지 말고 근거와 함께 보고하세요 — 단언을 지워 통과시키는 길을 막는 자리입니다. " +
+      "테스트가 틀렸다고 판단되면 직접 고치지 말고 근거와 함께 보고하세요 — 단언을 지워 통과시키는 길을 막는 자리입니다. " +
       "(재현을 본 뒤에는 재현 테스트가 얼립니다 — 그 단언을 약하게 하면 재현이 증거가 아니게 됩니다.) " +
-      `정말 고쳐야 하면 ${workDocsDir(work.active.id)}/09-review.md 에 그 파일을 가리키는 지적으로 남기거나, ` +
-      "계획을 고쳐 사람의 재승인을 받으세요." +
+      "⑦ 의 기대 결과는 그대로이고 테스트 구현만 틀렸으면 code-agent test-repair <TC-ID…> --cause <원인> --reason <근거> 로 " +
+      `테스트 수정 창을 열어 ${agentName(REPAIR_AGENT)} 에게 맡깁니다. 리뷰 단계라면 ${workDocsDir(work.active.id)}/09-review.md 에 그 파일을 가리키는 지적으로 남길 수도 있습니다. ` +
+      "기대 결과를 바꿔야 하면 계획을 고쳐 사람의 재승인을 받으세요." +
       (view.testState === "result-unconfirmed" && view.budget.collect.limit > 0 && view.budget.collect.left === 0
         ? " 결과가 일부 인식되지 않은 회차라면 수집 수정 1회 동안만 열리고, 그 회차는 이미 썼습니다."
         : "")

@@ -8,7 +8,7 @@ import { hashManifest } from "../core/approval";
 import { sha, docPaths } from "./docs";
 import { canonical, STATE_DIR, workDocsDir } from "./layout";
 import { POLICY_KINDS } from "./schemas";
-import { parseQuestions, structuralLine, type Question } from "./questions";
+import { kindReaches, parseQuestions, structuralLine, type Question } from "./questions";
 import { answerSources, unverifiedAnswerHint } from "./answers";
 import { crossPointHint, crossPointState, grantScope, orphanState, type FailureRecord, type RetryGrant } from "./retryPolicy";
 import { Stop } from "./stop";
@@ -348,11 +348,14 @@ export function questionOrigin(question: { id: string; origin?: string }, state:
   return origin && state.questionOrigins?.[question.id] === origin && state.tasks.some(record => record.task.id === origin) ? origin : undefined;
 }
 /**
- * 질문이 이 작업의 입력인가 — 코드가 기록한 출처가 있는 질문은 출처 작업과 그 후손만, 없는 질문은 기존 규칙(요구 겹침·범위 없음).
- * 출처 작업이 상태에 없으면(작업 삭제·이름 변경) 기존 규칙으로 떨어진다.
+ * 질문이 이 작업의 입력인가 — 작업이 질문 ID 를 직접 받으면 언제나 입력이다. 그 밖에는 분류(`[Kind]`)가 닿는 역할만 받는다
+ * (questions.ts `kindReaches` — 운영·파일 정리는 어느 작업에도, 문서 표현·테스트 구현 오류는 plan·critic 에만). 닿으면 코드가 기록한
+ * 출처가 있는 질문은 출처 작업과 그 후손만, 없는 질문은 요구 범위가 겹치는 작업(범위가 없으면 전체)이다. 출처 작업이 상태에 없으면(작업 삭제·이름 변경)
+ * 출처 없는 질문으로 다룬다.
  */
 export function questionApplies(question: Question, task: PlanningTask, state: PlanningState): boolean {
   if (task.questionIds.includes(question.id)) return true;
+  if (!kindReaches(question.kind, task.role)) return false;
   const origin = questionOrigin(question, state);
   if (origin) return task.id === origin || ancestorsOf(state, task.id).has(origin);
   return !question.requirements?.length || question.requirements.some(key => task.requirements.includes(key));

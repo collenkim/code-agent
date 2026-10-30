@@ -4,6 +4,7 @@ import { writeHandoff } from "./handoff";
 import { budgetText, type VerifyBudget } from "./retryPolicy";
 import { shortCommand } from "./screenText";
 import { trackedTestFiles } from "./testFiles";
+import { REPAIR_CAUSE_LABEL, REPAIR_CAUSES } from "./testRepair";
 import type { Work } from "./work";
 import { parseTestCases, readWorkDoc } from "./workDocs";
 
@@ -55,7 +56,10 @@ function repairText(work: Work, evidence: Evidence, problems: string[], budget?:
   }
   const frozen = [...new Set([...(testFrozen(evidence) ? testStageFiles(work) : []), ...(work.order.kind === "refactor" ? trackedTestFiles(work) : [])])];
   lines.push("", "## 고칠 수 있는 범위", "", `- 계획 파일: ${planned.join(", ")}`);
-  if (frozen.length) lines.push(`- 고칠 수 없는 테스트 파일(동결·기존 테스트): ${frozen.join(", ")} — 실패가 테스트 탓으로 보이면 고치지 않고 근거와 함께 보고한다`);
+  if (frozen.length) {
+    lines.push(`- 고칠 수 없는 테스트 파일(동결·기존 테스트): ${frozen.join(", ")} — 실패가 테스트 탓으로 보이면 고치지 않고 근거(실패 로그 줄·파일:줄)와 함께 보고한다.`,
+      `  ⑦ 의 기대 결과를 바꾸지 않는 테스트 구현 오류(${REPAIR_CAUSES.map((cause) => REPAIR_CAUSE_LABEL[cause]).join(" · ")})면 메인이 code-agent test-repair 로 지정 테스트 담당에게 그 TC 의 창을 연다.`);
+  }
   if (budget) lines.push(`- 남은 회차: ${budgetText(budget)}`);
   return `${lines.join("\n")}\n`;
 }

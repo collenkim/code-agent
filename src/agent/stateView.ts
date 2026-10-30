@@ -22,6 +22,7 @@ import { loadPlanning, planningFile, PLANNING_PHASES, ROLE_PHASE, runView } from
 import type { PlanningState } from "./planningState";
 import { APPROVAL_LABEL, staleEarliest } from "./reentry";
 import { requestState } from "./request";
+import type { RequirementImpact } from "./changeImpact";
 import { retrySummary, TIMING } from "./retryPolicy";
 import type { Budget, CounterKey } from "./retryPolicy";
 import { loadReview } from "./review";
@@ -66,8 +67,11 @@ export interface StateJson {
   repo: { root: string; head: string | null; branch: string | null; uncommitted: { known: boolean; count?: number; paths?: string[]; truncated?: boolean } };
   work: null | { id: string; target: string; kind?: string; phase: string; stage?: string; task?: string; branch?: string; base?: string; baseCommit?: string; planningVersion?: number; cycle?: { number: number; delivered: string; revision?: number } };
   attempt: null | { id: string; kind: string };
-  /** `revision` 은 지금 확정된 개정, `followed` 는 흐름(커서)이 따르는 개정 — 다르면 다음 진행 명령이 흐름을 맞춘다 */
-  request: null | { status: string; revision?: number; followed?: number };
+  /**
+   * `revision` 은 지금 확정된 개정, `followed` 는 흐름(커서)이 따르는 개정 — 다르면 다음 진행 명령이 흐름을 맞춘다.
+   * `impact` 는 흐름이 마지막으로 따른 개정의 영향(changeImpact.ts) — 바뀐 항목·R·Task·AC·TC·파일·보안 낱말·범위 미입증 이유
+   */
+  request: null | { status: string; revision?: number; followed?: number; impact?: RequirementImpact };
   approval: null | { status: string; label: string; staleFrom?: string };
   planning: null | { attempts: { task: string; role: string; phase: string; dispatchId: string; status: string; at: string; run?: { state: string; observedStart: boolean; elapsedMin: number; agentSession?: string } }[] };
   verification: null | { rounds: number; bound: { valid: boolean; problems: string[] }; phases: Partial<Record<VerifyPhase, { round: number; runs: number; passed: boolean }>> };
@@ -271,7 +275,8 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     try {
       const state = requestState(repoRoot, cursor.id, cursor.spec);
       const revision = state.status === "confirmed" ? state.record.revision : undefined;
-      request = { status: state.status, ...(revision ? { revision } : {}), ...(cursor.request?.revision ? { followed: cursor.request.revision } : {}) };
+      const impact = cursor.request?.impacts?.at(-1);
+      request = { status: state.status, ...(revision ? { revision } : {}), ...(cursor.request?.revision ? { followed: cursor.request.revision } : {}), ...(impact ? { impact } : {}) };
     } catch (error) {
       blockers.push({ code: "request-unreadable", detail: `요구사항 확정 원장을 판정할 수 없습니다: ${errorText(error)}` });
     }

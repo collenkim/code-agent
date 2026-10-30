@@ -7,7 +7,8 @@ import { hashManifest, hashPlan } from "../core/approval";
 import { runWorkflow } from "../core/workflow";
 import type { NodeEvent, WorkflowHandoff, WorkflowNode } from "../core/workflow";
 import { next, requireValidatable } from "./commands";
-import { bindingProblems, loadEvidence, runsOf, stageProblemEntries, stageProblems, treeHashNow, validationDocFile, verifyView } from "./evidence";
+import { bindingProblems, latestRunAt, loadEvidence, runsOf, stageProblemEntries, stageProblems, treeHashNow, validationDocFile, verifyView } from "./evidence";
+import { impactAfter } from "./changeImpact";
 import type { Evidence } from "./evidence";
 import { STATE_DIR, verifyFile } from "./layout";
 import { skill } from "./hostText";
@@ -81,8 +82,10 @@ function evidenceOf(work: Work): Evidence | undefined {
 
 function currentRuns(work: Work, phase: "check" | "test"): boolean {
   const evidence = evidenceOf(work);
+  const runs = evidence ? runsOf(evidence, phase) : [];
+  // 흐름이 따른 요구 개정의 영향 뒤 실행이 없으면 지금 실행이 아니다 — 판정만 하지 않고 다시 돈다
   return !!evidence && bindingProblems(work, evidence).length === 0 &&
-    runsOf(evidence, phase).some((run) => run.round === evidence.rounds);
+    runs.some((run) => run.round === evidence.rounds) && !impactAfter(work.active, latestRunAt(runs));
 }
 
 /**
@@ -187,7 +190,7 @@ export const VERIFICATION_NODES: Record<string, WorkflowNode<FlowContext>> = {
     executor: "program", run: (context) => assess(context, "test"),
     edges: { passed: "review", repair: "repair", diagnose: "diagnose", blocked: "decision" },
   },
-  repair: { executor: "agent", task: "repairFile(실패 명령·로그·실패 TC→AC→Task·동결 테스트)을 근거로 승인된 계획 안에서 원인별로 수정하세요. ca-check의 수정 루프와 테스트 동결 규칙을 따릅니다. 수정 후 code-agent verify로 재검증하세요." },
+  repair: { executor: "agent", task: "repairFile(실패 명령·로그·실패 TC→AC→Task·동결 테스트)을 근거로 승인된 계획 안에서 원인별로 수정하세요. ca-check의 수정 루프와 테스트 동결 규칙을 따릅니다. 동결된 테스트의 구현 오류는 code-agent test-repair로 지정 테스트 담당에게 창을 엽니다. 수정 후 code-agent verify로 재검증하세요." },
   diagnose: { executor: "agent", task: "미실행·실행 오류·TC 결과 미확인 원인을 확인하세요. 이를 코드 결함이나 통과로 단정하지 않습니다. 환경·결과 수집 문제를 해결한 뒤 code-agent verify --retry로 다시 검증하세요. 선언된 환경 오류(environmentErrors)로 막힌 회차는 코드를 그대로 둔 재실행에 회차를 쓰지 않습니다." },
   review: { executor: "agent", task: "검증을 통과했습니다. ca-review 절차로 독립 리뷰를 진행하세요." },
   decision: { executor: "human", task: "재시도 한도에 닿았습니다. 막힌 이유를 보고하고 사람 판단(ca-answer)을 받으세요." },

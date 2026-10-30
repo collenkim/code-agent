@@ -76,7 +76,7 @@ describe("FLOW-02 — deliver 의 쓰기와 되감기", () => {
     assert.match(nextLine(status(repo)), /ca-answer의 deliver 동의 절차로 확인하고 반영합니다/);
     write(`${ORDER}/domain/Order.java`, "class Order { int changed; }\n");
     const line = nextLine(status(repo));
-    assert.match(line, /^다음: \/ca-check \(또는 \/ca-next 로 사이클\) — 반영할 트리가 검증 뒤 바뀌었습니다[\s\S]*code-agent verify --json 이 check 로 되감아 다시 검증합니다/);
+    assert.match(line, /^다음: \/ca-check \(또는 \/ca-next 로 사이클\) — 반영할 트리가 검증 뒤 바뀌었거나[\s\S]*code-agent verify --json 이 check 로 되감아 다시 검증합니다/);
     assert.doesNotMatch(line, /deliver 동의/);
     assert.equal(loadActive(repo)!.phase, "deliver", "status 는 커서를 옮기지 않는다");
   });

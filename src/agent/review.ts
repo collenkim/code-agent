@@ -13,6 +13,7 @@ import {
 } from "./crossRecord";
 import { planPaths, reviewRoundBudget, reviewRoundUsage, reviewRoundUsageOf, stageProblems, treeHashNow } from "./evidence";
 import { fileHashes } from "./tree";
+import { impactAfter, impactBrief } from "./changeImpact";
 import type { ReviewRoundUsage } from "./evidence";
 import { reviewFile, workDocsDir } from "./layout";
 import { acquireLock } from "./lock";
@@ -59,6 +60,12 @@ export interface ReviewRound {
   manifestHash: string;
   /** 회차를 열 때의 계획 파일별 바이트 해시 — 다음 회차의 재검토 범위(roundChanges)만 정한다. 게이트는 treeHash 만 본다. 없으면(옛 기록) 전부 다시 본다 */
   files?: Record<string, string>;
+  /**
+   * 요구 변경 회차 — 흐름이 따른 요구 개정의 영향(changeImpact.ts) 뒤 같은 트리를 다시 본다. 고친 것이 없어 리뷰 회차 한도에 세지 않고,
+   * 재검토 범위는 영향받은 계획 파일이다(보안 영향·범위 미입증이면 전체). impact 는 그 영향의 시각
+   */
+  cause?: "requirement";
+  impact?: string;
   /** 파생 사본(옛 필드) — 배열이 저장된 회차는 syncLegacyRound 가 reviewers 에서 다시 쓴다. 판정에 쓰지 않는다 */
   reviewer?: { sessionId: string; agentId: string; startedAt: string; completedAt?: string; result?: string };
   /** 파생 사본(옛 필드) — 두 호스트 설치 프로젝트의 교차 리뷰. 배열이 저장된 회차는 syncLegacyRound 가 crossAttempts 에서 다시 쓴다 */
@@ -368,7 +375,9 @@ export function openRound(work: Work): string {
     );
     const rounds = stale ? [] : previous!.rounds;
     const last = rounds[rounds.length - 1];
-    if (last && last.treeHash === treeHash) {
+    // 같은 트리라도 마지막 회차 뒤 흐름이 따른 요구 개정의 영향이 있으면 요구 변경 회차로 다시 본다
+    const impact = last ? impactAfter(active, last.at) : undefined;
+    if (last && last.treeHash === treeHash && !impact) {
       throw new Stop(
         `${last.round}회차가 이미 지금 트리를 보고 있습니다 — 고친 것이 없으면 새 회차를 열지 않습니다.\n` +
           `${agentName("ca-reviewer")}를 호출해 결과를 기록하세요. 고친 뒤에는 code-agent check부터 다시 돌리세요.`,
@@ -376,14 +385,15 @@ export function openRound(work: Work): string {
     }
     // 리뷰 회차 한도는 같은 트리 거부 **뒤에** 본다 — 마지막 회차 트리에서 다시 부르면 맞는 안내는 "리뷰어를 호출하세요" 다
     const usage = reviewRoundUsageOf(previous, binding);
-    const refusal = reviewLimitRefusal(usage, reviewDocFile(active.id));
+    const requirement = !!impact && last!.treeHash === treeHash;
+    const refusal = requirement ? undefined : reviewLimitRefusal(usage, reviewDocFile(active.id));
     if (refusal) throw refusal;
-    return { stale, rounds, usage };
+    return { stale, rounds, usage, ...(requirement ? { impact: impact!.at } : {}) };
   };
   decide(loadReview(repoRoot, active.id, active.target));
 
   const { round, log } = mutateReview(repoRoot, active.id, active.target, (previous) => {
-    const { stale, rounds, usage } = decide(previous);
+    const { stale, rounds, usage, impact } = decide(previous);
     const round: ReviewRound = {
       round: rounds.length + 1,
       at: new Date().toISOString(),
@@ -392,6 +402,7 @@ export function openRound(work: Work): string {
       planHash,
       manifestHash,
       files,
+      ...(impact ? { cause: "requirement" as const, impact } : {}),
     };
     // 동결을 푼 기록·사람 허용·사람 판단도 회차와 한 묶음이다 — 회차를 버리면(다른 계획·경계) 그 기록도 함께 버린다.
     // 이전 기록의 다른 필드(교차 기록 등)는 버리지 않는다. 한도는 이 묶임의 첫 회차에 고정한다(옛 기록은 여기서 고정되며 유예가 끝난다)
@@ -459,6 +470,8 @@ export interface RoundChanges { previous: number; changed: string[]; findings: s
  * 하나라도 없으면 undefined 이고 리뷰어는 전부 다시 본다. 같은 묶임의 회차끼리라 계획 파일 목록은 같다. 게이트는 이 값을 보지 않는다.
  */
 export function roundChanges(log: ReviewLog | undefined, planned: readonly string[]): RoundChanges | undefined {
+  // 요구 변경 회차는 같은 트리라 바뀐 파일이 없다 — 재검토 범위는 영향(changeImpact.ts impactReviewFiles)이 정한다
+  if (log?.rounds.at(-1)?.cause === "requirement") return undefined;
   const before = log?.rounds.at(-2);
   const changed = changedSincePrevious(log);
   const result = before && effectiveReviewer(before, planned)?.result;
@@ -580,6 +593,10 @@ export function reviewProblems(work: Work): string[] {
       `${last.round}회차 뒤 계획 파일이 바뀌었습니다 — 리뷰는 그 트리에 묶입니다. ` +
         "code-agent check · test 를 다시 돌리고 code-agent review 로 회차를 여세요",
     );
+  }
+  const impact = impactAfter(active, last.at);
+  if (impact) {
+    problems.push(`${impactBrief(impact)} — 이 영향 뒤 리뷰 회차가 없습니다. code-agent verify 로 check · test 를 다시 돌리고 code-agent review 로 요구 변경 회차를 여세요(리뷰 회차 한도에 세지 않습니다)`);
   }
 
   const planned = planPaths(work);

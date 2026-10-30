@@ -516,7 +516,9 @@ export function orderBody(text: string): string {
 
 /**
  * 계획과 한 묶음으로 승인되는 것의 해시 — **고정 목록**이다.
- * 지시서 본문 · 01 · 02 · 03 · 04 · 07 · 답변된 질문의 제목·본문·답. 모델이 쓴 문서 목록에 기대면 목록에서 빼는 것이 곧 검사를 끄는 것이 된다.
+ * 지시서 본문 · 01 · 02 · 03 · 04 · 07 · 답변된 요구·설계 질문의 제목·본문·답. 모델이 쓴 문서 목록에 기대면 목록에서 빼는 것이 곧 검사를 끄는 것이 된다.
+ * 요구·설계가 아닌 분류(`[Kind]` — 운영·파일 정리·문서 표현·테스트 구현 오류)의 답은 묶지 않는다 — 계획 근거가 아니고, 그 답으로 바뀌는
+ * 계획 문서·계획 파일은 각자 승인·검증 묶임에 걸린다. 분류 줄은 답 관찰이 묶는 원문 안이라 답한 뒤 바꾸면 그 답은 출처 미확인이다.
  * 줄바꿈(CRLF/LF)만 바뀐 것은 바뀐 것으로 보지 않는다 (프로젝트 문서 확정과 같은 이유 — autocrlf).
  */
 export function workDocsHash(repoRoot: string, id: string, spec: string): string {
@@ -525,7 +527,7 @@ export function workDocsHash(repoRoot: string, id: string, spec: string): string
 /** workDocsHash 의 항목(`<경로>:<해시>`) — 재승인 화면이 바뀐 문서를 고른다 */
 export function workDocsEntries(repoRoot: string, id: string, spec: string): string[] {
   const path = questionsFile(id), text = normalized(repoRoot, path);
-  const answers = parseQuestions(text).filter(question => question.answer).map(question => ({
+  const answers = parseQuestions(text).filter(question => question.answer && !question.kind).map(question => ({
     id: question.id, question: sha(questionContent(text, question.id)), answer: question.answer,
   })).sort((a, b) => a.id.localeCompare(b.id, "en"));
   return [

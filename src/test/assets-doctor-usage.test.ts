@@ -208,7 +208,7 @@ describe("P8 · doctor", () => {
     assert.equal(line(report.text, "PreToolUse hook"), `✓ PreToolUse hook: node "${CLI.replace(/\\/g, "/")}" hook`);
     assert.match(line(report.text, "Stop hook"), /^✓ Stop hook:/);
     assert.equal(line(report.text, "설치 버전"), `✓ 설치 버전: ${packageVersion()}`);
-    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 16개 모두 번들과 같습니다$/);
+    assert.match(line(report.text, "스킬·에이전트"), /^✓ 스킬·에이전트: 26개 · 보조 문서 17개 모두 번들과 같습니다$/);
     assert.equal(line(report.text, "에이전트 모델"), "✓ 에이전트 모델: 판단(analyst·critic·reviewer) opus/high · 실행(surveyor·explorer·writer·implementer·tester) sonnet/medium");
     assert.match(line(report.text, "git 저장소"), /^✓/);
   });
@@ -474,7 +474,7 @@ describe("P8 · update", () => {
     gitInit();
     init(repo, { cli: CLI });
     const report = update(repo);
-    assert.match(report, /스킬·에이전트 26개 · 보조 문서 16개 그대로/);
+    assert.match(report, /스킬·에이전트 26개 · 보조 문서 17개 그대로/);
     assert.match(report, /\.claude\/settings\.json: 그대로/);
     assert.match(report, /CLAUDE\.md: 그대로/);
     assert.equal(report.includes("!!"), false);

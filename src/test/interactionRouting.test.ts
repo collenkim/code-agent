@@ -121,7 +121,7 @@ test("Post input의 답만으로 응답을 만들지 않고 취소·빈 응답�
   assert.equal(currentInteractions(root).requests[0].response, undefined);
 });
 
-test("YSIJ-255: HEAD가 바뀌어도 관찰된 호스트 답의 낡은 대기만 닫고 응답·승인을 합성하지 않는다", () => {
+test("HEAD가 바뀌어도 관찰된 호스트 답의 낡은 대기만 닫고 응답·승인을 합성하지 않는다", () => {
   const before = observedLegacy();
   gitFixture(root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "new baseline");
   assert.equal(nativeAnswerWasObserved(root, before), true);

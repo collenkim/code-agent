@@ -10,6 +10,8 @@ import { next, start } from "../agent/commands";
 import { loadConsent, observeConsent, runConsentHook } from "../agent/consent";
 import { loadActive, saveActive } from "../agent/layout";
 import { parseQuestions } from "../agent/questions";
+import { questionApplies, type PlanningState, type PlanningTask } from "../agent/planningState";
+import { workDocsHash } from "../agent/workDocs";
 import { mutateInteractions } from "../agent/interactions";
 import { requestBegin, requestSubmit } from "../agent/request";
 import { decideStop } from "../agent/stopHook";
@@ -216,4 +218,39 @@ test("검토 #11 Q 번호 없는 질문 호출의 응답은 어느 질문에도 
   ask("Q4. 이 범위로 진행할까요?", ["예", "아니오"], "예");
   assert.equal(sources().get("Q4"), "observed", "같은 Q 번호의 응답은 관찰됨");
   assert.equal(sources().get("Q5"), "unverified");
+});
+
+test("변경 분류 — 분류가 있는 질문은 도구 질문 본문에 '분류: <이름>'이 보인 응답만 관찰된 답이고, 출처 표시가 붙은 답은 분류를 쓰지 않는다", () => {
+  startWork();
+  const body = "## Q1 · 빈 폴더\nmigration 폴더를 지울까요?\n[Kind]: operation\n[Answer]: 지운다\n";
+  writeQuestions(body);
+  assert.equal(parseQuestions(readFileSync(join(root, QUESTIONS), "utf8"))[0].kind, "operation");
+  ask("Q1. migration 폴더를 지울까요?", ["지운다", "둔다"], "지운다");
+  assert.equal(sources().get("Q1"), "unverified", "분류를 보이지 않고 받은 답은 그 분류의 답이 아니다");
+  ask("Q1. migration 폴더를 지울까요?\n분류: 운영·파일 정리", ["지운다", "둔다"], "지운다");
+  assert.equal(sources().get("Q1"), "observed");
+  // 답한 뒤 분류를 바꾸면 질문 원문이 달라져 출처 미확인이다
+  writeQuestions(body.replace("[Kind]: operation", "[Kind]: test"));
+  assert.equal(sources().get("Q1"), "unverified");
+  writeQuestions(`${body}[Source]: 대화\n`);
+  assert.equal(parseQuestions(readFileSync(join(root, QUESTIONS), "utf8"))[0].kind, undefined, "관찰되지 않은 답에는 분류를 쓰지 않는다");
+  writeQuestions(body.replace("[Kind]: operation", "[Kind]: requirement"));
+  assert.equal(parseQuestions(readFileSync(join(root, QUESTIONS), "utf8"))[0].kind, undefined, "요구·설계는 기본값이다");
+});
+
+test("변경 분류 — 운영·문서 표현·테스트 구현 오류의 답은 승인 묶음에 들지 않고, 계획 작업 중 plan·critic 만(운영은 어느 작업도) 받는다", () => {
+  startWork();
+  const hash = () => workDocsHash(root, CONSENT_WORK_ID, loadActive(root)!.spec);
+  writeQuestions("");
+  const empty = hash();
+  writeQuestions("## Q1 · 단언\nTC-127 의 null 단언을 고칠까요?\n[Kind]: test\n[Answer]: 고친다\n");
+  assert.equal(hash(), empty, "테스트 구현 오류의 답은 계획 승인을 낡게 하지 않는다");
+  writeQuestions("## Q1 · 범위\n취소도 포함할까요?\n[Answer]: 포함\n");
+  assert.notEqual(hash(), empty, "요구·설계 답은 승인 묶음이다");
+  const task = (role: string) => ({ id: role, role, questionIds: [], requirements: ["R1"] }) as unknown as PlanningTask;
+  const state = { tasks: [] } as unknown as PlanningState;
+  const [operation, wording] = parseQuestions("## Q1 · 폴더\n지울까요?\n[Kind]: operation\n[Answer]: 예\n## Q2 · 문구\n표현?\n[Kind]: wording\n[Answer]: 예\n");
+  assert.deepEqual(["analysis", "design", "plan", "critic"].map((role) => questionApplies(operation, task(role), state)), [false, false, false, false]);
+  assert.deepEqual(["analysis", "design", "plan", "critic"].map((role) => questionApplies(wording, task(role), state)), [false, false, true, true]);
+  assert.equal(questionApplies(operation, { ...task("analysis"), questionIds: ["Q1"] } as PlanningTask, state), true, "작업이 질문 ID 를 직접 받으면 입력이다");
 });

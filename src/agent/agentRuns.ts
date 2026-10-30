@@ -50,6 +50,11 @@ function mutate(root: string, change: (ledger: Ledger) => boolean, waitMs: numbe
   } catch { /* 장부 기록 실패가 hook·명령을 세우지 않는다 */ }
 }
 
+/** 실행 중인 담당의 종류 — 도구 호출 hook 에 담당 종류가 없을 때 시작 hook 이 남긴 종류로 가린다(잠금 없이 읽는다) */
+export function runningAgentType(root: string, workId: string, agent: string): string | undefined {
+  return readLedger(root).works[workId]?.running[agent]?.type;
+}
+
 /** 담당 시작 — 메인이 새 담당을 불렀으면 앞 완료는 처리된 것이다 */
 export function noteAgentStarted(root: string, workId: string, agent: string, run: Omit<AgentRun, "startedAt">): void {
   mutate(root, (ledger) => {
