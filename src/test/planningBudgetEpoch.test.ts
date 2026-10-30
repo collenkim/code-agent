@@ -1,6 +1,7 @@
 /**
  * 계획 배정 예산 구간 — 작업 총 배정은 실행 회차·확정 요구 항목이 정한 구간마다 센다. 이전 구간의 배정은 기록·집계에만 남고,
- * 같은 입력 실패는 구간과 무관하게 막힌다. 사람 허용은 그 구간에만 쓰이고, 구간 표기 없는 이전 허용은 이행한 첫 구간에서만 쓰인다.
+ * 같은 입력 실패는 구간과 무관하게 막힌다. 확정하지 않은 요구 변경·새 작업 ID 로는 막힌 한도를 풀지 못한다. 사람 허용은 그 구간에만 쓰이고,
+ * 구간 표기 없는 이전 허용은 이행한 첫 구간에서만 쓰인다.
  */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -14,7 +15,7 @@ import { budgetReport } from "../agent/retryGrant";
 import { epochLabel, grantScopeLabel, planningDispatchDecision, type RetryGrant } from "../agent/retryPolicy";
 import { loadWork } from "../agent/work";
 import { confirmForTest } from "./confirmedStart";
-import { ago, dispatch, editPlanning, root, SPEC, write } from "./planningFixture";
+import { ago, analysis as analyzed, dispatch, editPlanning, finish, root, SPEC, write } from "./planningFixture";
 
 const revised = (lines: string[], title = "값 반환") => `---\nkind: feature\nid: PLAN-1\ntitle: ${title}\ntarget: value\n---\n\n${lines.join("\n")}\n`;
 const state = (): PlanningState => loadPlanning(loadWork(root)!);
@@ -26,6 +27,13 @@ function chargeCurrent(count: number, status: TaskAttempt["status"] = "completed
     value.retry!.since = ago(120);
     value.retry!.epoch!.since = ago(120);
     analysis(value).attempts.push(...Array.from({ length: count }, (_, index) => ({ dispatchId: `past-${index}`, inputHash: `past-${index}`, at: ago(60 - index), status })));
+  });
+}
+/** 지금 구간 안의 배정 n 건(정상 완료) — 구간 시작 뒤 시각으로 남긴다 */
+function chargeNow(id: string, count: number): void {
+  editPlanning((value) => {
+    const record = value.tasks.find((item) => item.task.id === id)!, at = new Date().toISOString(), start = record.attempts.length;
+    record.attempts.push(...Array.from({ length: count }, (_, index) => ({ dispatchId: `${id}-${start + index}`, inputHash: `${id}-${start + index}`, at, status: "completed" as const })));
   });
 }
 const confirm = (lines: string[], title?: string) => { write(SPEC, revised(lines, title)); confirmForTest(root, join(root, SPEC)); };
@@ -56,6 +64,37 @@ describe("예산 구간", () => {
     assert.ok(Date.parse(epochs![0].until) <= Date.parse(epoch!.since));
     assert.equal(epoch!.key, budgetEpoch(loadWork(root)!).key);
     assert.equal(analysis(state()).attempts.length, 7, "이전 구간의 배정 기록은 지우지 않는다");
+  });
+
+  test("같은 ID 에서 정상 개정을 거듭해도 개정마다 새 구간이라 지난 성공으로 허용을 묻지 않는다 — 지난 구간의 배정은 집계에만 쌓인다", () => {
+    preparePlanning(root);
+    const items = ["값을 반환한다."];
+    for (let round = 1; round <= 3; round += 1) {
+      chargeNow("analysis", 6);
+      assert.throws(() => dispatch("analysis"), /이 예산 구간에서 총 6회/);
+      items.push(`개정 ${round} 의 값을 반환한다.`);
+      confirm(items);
+      preparePlanning(root);
+      assert.ok(dispatch("analysis").resultShape.dispatchId, `개정 ${round}: 지난 구간의 성공으로 허용을 묻지 않는다`);
+      cancelPlanning(root, "analysis");
+      const total = totalOf();
+      assert.deepEqual([total.used, total.limit, total.earlier], [1, 6, 7 * round - 1], "지금 구간은 취소 1건, 지난 구간은 집계에만");
+    }
+    const { epoch, epochs, grants } = state().retry!;
+    assert.equal(new Set([...epochs!.map((item) => item.key), epoch!.key]).size, 4, "개정마다 다른 구간");
+    assert.deepEqual(grants, [], "사람 허용 없이 진행했다");
+  });
+
+  test("확정하지 않은 요구 변경은 구간을 바꾸지 못하고 준비·배정도 멈춘다", () => {
+    preparePlanning(root);
+    const key = state().retry!.epoch!.key;
+    chargeNow("analysis", 6);
+    write(SPEC, revised(["값을 반환한다.", "확정하지 않은 값을 반환한다."]));
+    assert.throws(() => preparePlanning(root), /요구사항이 확정 뒤 바뀌었습니다/);
+    assert.throws(() => dispatch("analysis"), /요구사항이 확정 뒤 바뀌었습니다/);
+    assert.equal(budgetEpoch(loadWork(root)!).key, key, "커서는 확정한 요구 항목만 따른다");
+    assert.equal(state().retry!.epoch!.key, key);
+    assert.equal(totalOf().used, 6);
   });
 
   test("준비 반복·작업 정의 변경·입력 파일 변경은 구간을 바꾸지 않는다", () => {
@@ -99,6 +138,22 @@ describe("같은 입력 실패", () => {
     assert.equal(decide([grant("planning:analysis:same")]).allow, false, "구간 표기 없는 이전 형식 허용은 판정 함수가 직접 쓰지 않는다");
     assert.equal(decide([grant("planning:analysis:same@c1-newitems000")]).allow, true);
     assert.equal(planningDispatchDecision({ attempts, inputHash: "other", since: ago(10), epoch: "c1-newitems000", taskId: "analysis" }).allow, true, "입력이 다르면 새로 센다");
+  });
+});
+
+describe("새 작업 ID", () => {
+  test("막힌 조사 작업은 새 ID 로 다시 준비해도 우회하지 못한다 — 새 작업은 제 예산을 받지만 뒤 역할은 막힌 작업의 완료를 기다린다", () => {
+    analyzed();
+    preparePlanning(root);
+    chargeNow("explore", 6);
+    assert.throws(() => dispatch("explore"), /이 예산 구간에서 총 6회/);
+    const task = (id: string) => state().tasks.find((record) => record.task.id === id)!.task;
+    const synthesis = task("synthesis");
+    preparePlanning(root, { tasks: [{ ...task("explore"), id: "explore-2", title: "같은 영역 다시 조사" }, { ...synthesis, dependsOn: ["explore", "explore-2"] }] });
+    finish(dispatch("explore-2"), {}, { evidence: [{ path: "src/current.ts", line: 1 }] });
+    assert.throws(() => dispatch("synthesis"), /선행 작업 explore의 현재 입력에 대한 완료 결과가 없습니다/);
+    assert.throws(() => preparePlanning(root, { tasks: [{ ...synthesis, dependsOn: ["explore-2"] }] }), /선행 역할 작업 전체를 dependsOn에 넣으세요/);
+    assert.equal(state().tasks.filter((record) => record.task.role === "explore").length, 2, "준비는 기존 작업을 지우지 않는다");
   });
 });
 
