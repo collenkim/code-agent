@@ -16,7 +16,7 @@ import { dirname, join } from "path";
 
 import { findRepoRoot, loadActive, questionsFile, STATE_DIR } from "./layout";
 import { parseQuestions, QUESTION_KIND_LABEL, questionContent, type Question } from "./questions";
-import { dependencyContracts } from "./dependencyContracts";
+import { claimDigest, dependencyContracts } from "./dependencyContracts";
 import { writeAtomic } from "../core/atomic";
 import { skill } from "./hostText";
 
@@ -35,7 +35,8 @@ export type AnswerRow =
    * 권한(grant) 범위에서만 master/delegation.ts 가 쓴다. hash 는 questions.md 에 쓴 답(sha16)이다 — 답을 고치면 출처가 사라진다
    */
   | { type: "delegated"; at: string; q: string; hash: string; actor: "ai" | "human"; decisionId: string; grantId: string; controller: string; generation: number; category: string }
-  | { type: "contract"; at: string; q: string; hash: string; questionHash: string; contractId: string; claimKey: string; bundleHash: string }
+  /** claimHash: 재인용한 항목의 의미 해시. bundleHash 만 있는 기록(계약 묶음 전체에 묶던 형식)은 미확인이다 */
+  | { type: "contract"; at: string; q: string; hash: string; questionHash: string; contractId: string; claimKey: string; claimHash?: string; bundleHash?: string }
   | { type: "dashboard-human"; at: string; q: string; hash: string; questionHash: string; receiptId: string; requestId: string };
 
 /** consent.ts ConsentHookInput 과 같은 꼴(순환을 피하려고 따로 둔다) */
@@ -212,14 +213,14 @@ export function questionHash(root: string, id: string, q: string): string {
 export function reuseContractAnswer(root: string, id: string, q: string, contractId: string, claimKey: string): string {
   const bundle = dependencyContracts(root, id);
   if (bundle.problems.length) throw new Error(bundle.problems.join("\n"));
-  const claim = bundle.contracts.find(item => item.id === contractId)?.claims.find(item => item.key === claimKey);
-  if (!claim || !bundle.hash) throw new Error("검증된 계약 항목이 없습니다 — 근거가 없으면 질문하세요");
+  const contract = bundle.contracts.find(item => item.id === contractId), claim = contract?.claims.find(item => item.key === claimKey);
+  if (!contract || !claim) throw new Error("검증된 계약 항목이 없습니다 — 근거가 없으면 질문하세요");
   const path = join(root, questionsFile(id)), text = readFileSync(path, "utf8");
   const questions = parseQuestions(text).filter(item => item.id === q);
   if (questions.length !== 1 || questions[0].answer || questions[0].status === "deferred") throw new Error("답이 없는 단일 질문만 계약으로 재인용할 수 있습니다");
   const blocks = text.split(/^## /m), index = blocks.findIndex((block, i) => i > 0 && block.split(/\s/)[0] === q);
   if (!/^[ \t]*\[Answer\]:/m.test(blocks[index])) throw new Error("질문에 Answer 필드가 없습니다");
-  const row: Extract<AnswerRow, { type: "contract" }> = { type: "contract", at: new Date().toISOString(), q, hash: sha16(claim.text), questionHash: questionHash(root, id, q), contractId, claimKey, bundleHash: bundle.hash };
+  const row: Extract<AnswerRow, { type: "contract" }> = { type: "contract", at: new Date().toISOString(), q, hash: sha16(claim.text), questionHash: questionHash(root, id, q), contractId, claimKey, claimHash: claimDigest(contract, claim) };
   const head = blocks[index].split(/^[ \t]*\[Answer\]:/m)[0].replace(/^[ \t]*\[Status\]:[^\n]*(?:\n|$)/gm, "");
   blocks[index] = head + `[Answer]: ${claim.text}\n[Source]: 기존 계약 ${contractId} ${claimKey}\n[Status]: answered\n\n`;
   // 기록이 먼저다. 중단돼도 답이 비어 있으면 통과하지 않는다.
@@ -231,7 +232,9 @@ function contractMatch(root: string, id: string, question: Question, rows: Answe
   const row = rows.filter((item): item is Extract<AnswerRow, { type: "contract" }> => item.type === "contract" && item.q === question.id).at(-1);
   if (!row || question.source !== `기존 계약 ${row.contractId} ${row.claimKey}` || row.hash !== sha16(question.answer) || row.questionHash !== questionHash(root, id, question.id)) return false;
   const bundle = dependencyContracts(root, id);
-  return !bundle.problems.length && bundle.hash === row.bundleHash && bundle.contracts.some(contract => contract.id === row.contractId && contract.claims.some(claim => claim.key === row.claimKey && claim.text === question.answer));
+  // 그 항목의 의미 해시에 묶는다 — 기준 커밋만 바뀌었거나 다른 항목만 바뀐 재등록은 재인용을 미확인으로 만들지 않는다
+  return !bundle.problems.length && !!row.claimHash && bundle.contracts.some(contract => contract.id === row.contractId &&
+    contract.claims.some(claim => claim.key === row.claimKey && claim.text === question.answer && claimDigest(contract, claim) === row.claimHash));
 }
 /** master 가 넣은 답과 지금 답이 같은가 — 같은 Q 번호의 마지막 기록만 본다 */
 function delegatedMatch(question: Question, rows: AnswerRow[]): Extract<AnswerRow, { type: "delegated" }> | undefined {

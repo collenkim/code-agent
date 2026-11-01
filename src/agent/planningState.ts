@@ -17,7 +17,8 @@ import { crossRunNote, crossEnabled } from "./hosts";
 import { otherHost, runtimeHost } from "./crossEnv";
 import { collectExemplars } from "../core/exemplar";
 import { trackedTestFiles } from "./testFiles";
-import { dependencyContracts } from "./dependencyContracts";
+import { claimDigest, dependencyContracts, isSecurityClaim, type DependencyContract } from "./dependencyContracts";
+import { requirementBlocks, sourceIds } from "./requirementFields";
 import {
   crossGateHandoff, crossHintText, crossLastRun, crossRerunAfterUser, orphanView, planningCrossAttemptsOf, planningCrossView, pointHost, pointLabel,
   type CrossWaiver, type PlanningCrossAttempt, type PlanningCrossView, type QuestionView,
@@ -62,6 +63,8 @@ export interface InputParts {
   task: string; base?: string; manifest: string; inputs: string;
   /** 입력 파일이 50개 이하일 때만 경로별 해시 */
   files?: Record<string, string>; host?: string; contracts?: string;
+  /** 작업이 기대는 계약 항목(`<계약ID>/<항목키>`)별 의미 해시 앞 16자 — 바뀐 항목을 낡은 이유에 보인다 */
+  claims?: Record<string, string>;
   dependencies: [string, string | undefined][];
   /** [id, sha(질문 투영), origin] */
   questions: [string, string, string?][];
@@ -397,13 +400,55 @@ function relevantQuestions(work: Work, task: PlanningTask, state: PlanningState)
   return parseQuestions(text).filter(question => questionApplies(question, task, state))
     .map(question => hashedQuestion(question, blocks.filter(block => block.split(/\s/)[0] === question.id).map(block => block.trim()).join("\n")));
 }
+/** 보안 계약 항목은 요구 연결과 무관하게 이 역할들이 기댄다 — 설계·구현 계획·테스트 명세가 그 계약 위에 선다 */
+const SECURITY_CONTRACT_ROLES: readonly PlanningTask["role"][] = ["design", "plan", "critic"];
+/**
+ * 작업이 기대는 계약 항목(항목이 없는 계약은 뺀다) — 항목의 requirements 가 없으면 모든 작업이 기댄다. 있으면 작업의 요구와 겹칠 때다:
+ * 같은 ID 끼리, 그리고 R 과 접수 항목 ID 는 01 의 `출처:` 로 잇는다. R 끼리는 직접 비교한다(같은 접수 항목에서 나온 다른 R 은 다른 요구다).
+ * 01 이 없거나 출처를 읽지 못한 R 을 접수 항목 ID 와 이어야 하면, 항목의 R 이 01 에 없으면 겹친다고 본다. R 은 analysis 가 정하므로 R 에만 연결된 항목은 analysis 가
+ * 기대지 않는다(그 R 의 조사·설계·계획이 기댄다). 보안 항목은 설계·계획·독립 검토가 언제나 기댄다.
+ */
+export function taskContracts(work: Work, task: PlanningTask, contracts: DependencyContract[]): DependencyContract[] {
+  let blocks: Map<string, string[]> | undefined | null = null;
+  const analysis = (): Map<string, string[]> | undefined => {
+    if (blocks === null) {
+      try {
+        const text = readFileSync(join(work.repoRoot, workDocsDir(work.active.id), "01-requirements.md"), "utf8");
+        blocks = new Map(requirementBlocks(text).map(block => [block.key, sourceIds(block.sources).ids]));
+      } catch { blocks = undefined; }
+    }
+    return blocks;
+  };
+  const isR = (key: string) => /^R\d+$/.test(key);
+  // R 하나와 접수 항목 ID 하나 — 그 R 의 출처를 모르면 겹친다고 본다
+  const traced = (r: string, intake: string) => { const ids = analysis()?.get(r); return ids?.length ? ids.includes(intake) : true; };
+  // 항목의 R 이 01 에 없으면(01 이 생기기 전 등록·개정으로 사라짐) 어느 R 작업과도 겹친다고 본다
+  const meets = (claimKey: string, mine: string) => claimKey === mine
+    || (isR(claimKey) && isR(mine) ? !analysis()?.has(claimKey) : isR(claimKey) ? traced(claimKey, mine) : isR(mine) && traced(mine, claimKey));
+  const applies = (claim: DependencyContract["claims"][number]): boolean => {
+    if (!claim.requirements) return true;
+    if (SECURITY_CONTRACT_ROLES.includes(task.role) && isSecurityClaim(claim)) return true;
+    if (task.role === "analysis" && claim.requirements.every(isR)) return false;
+    return claim.requirements.some(key => task.requirements.some(mine => meets(key, mine)));
+  };
+  return contracts.map(contract => ({ ...contract, claims: contract.claims.filter(applies) })).filter(contract => contract.claims.length > 0);
+}
+/** 계약의 해시 부품 — 기대는 항목의 의미 해시만이다(사본 파일의 출처·다른 항목은 넣지 않는다). 검증하지 못한 계약은 문제를 담은 해시다 */
+function contractParts(work: Work, task: PlanningTask): { contracts?: string; claims?: Record<string, string>; file?: string } {
+  const bundle = dependencyContracts(work.repoRoot, work.active.id);
+  if (bundle.problems.length) return { contracts: bundle.hash, file: bundle.files[0] };
+  const digests = taskContracts(work, task, bundle.contracts).flatMap(contract => contract.claims.map(claim => [`${contract.id}/${claim.key}`, claimDigest(contract, claim)] as const));
+  if (!digests.length) return { file: bundle.files[0] };
+  return { contracts: sha(JSON.stringify(digests)), claims: Object.fromEntries(digests.map(([key, hash]) => [key, hash.slice(0, 16)])), file: bundle.files[0] };
+}
 /** 입력 해시와 그 부품. 직렬화 객체는 기존 taskHash 와 키 순서까지 같다 — 진행 중 작업의 결과를 낡게 만들지 않는다 */
 export function hashInput(work: Work, state: PlanningState, task: PlanningTask): HashedInput {
-  const contracts = dependencyContracts(work.repoRoot, work.active.id).hash;
+  const { contracts, claims, file: contractCopy } = contractParts(work, task);
   const memoKey = cache ? JSON.stringify([task, contracts, task.dependsOn.map(id => [id, dependencyValue(state, task, id)]), [...ancestorsOf(state, task.id)].sort(), state.tasks.map(record => record.task.id)]) : undefined;
   const memo = memoKey === undefined ? undefined : cache!.hashes.get(memoKey);
   if (memo) return memo;
-  const inputs = inputFiles(work, task, state).map(file => [file, fileHash(work.repoRoot, file)] as [string, string]);
+  // 계약 사본 파일의 바이트는 넣지 않는다 — 기준 커밋·다른 작업의 항목만 바뀐 재등록이 이 작업을 낡게 하지 않는다(위 contracts 부품이 대신한다)
+  const inputs = inputFiles(work, task, state).filter(file => file !== contractCopy).map(file => [file, fileHash(work.repoRoot, file)] as [string, string]);
   // 호스트가 직접 주입하는 지침은 중복 전달하지 않지만 변경 시 기존 판단을 재사용하지 않는다.
   const host = (task.contextVersion ?? 0) >= 2 ? ["CLAUDE.md", "AGENTS.md"].map(file => [file, fileHash(work.repoRoot, file)] as [string, string]) : undefined;
   const dependencies = task.dependsOn.map(id => [id, dependencyValue(state, task, id)] as [string, string | undefined]);
@@ -411,7 +456,7 @@ export function hashInput(work: Work, state: PlanningState, task: PlanningTask):
   const manifest = hashManifest(work.manifest);
   const hash = sha(JSON.stringify({ task, base: work.active.baseCommit, manifest, inputs, ...(host ? { hostInstructions: host } : {}), dependencies, questions, ...(contracts ? { contracts } : {}) }));
   const value: HashedInput = { hash, parts: {
-    task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)), ...(contracts ? { contracts } : {}),
+    task: sha(JSON.stringify(task)), base: work.active.baseCommit, manifest, inputs: sha(JSON.stringify(inputs)), ...(contracts ? { contracts } : {}), ...(claims ? { claims } : {}),
     ...(inputs.length <= 50 ? { files: Object.fromEntries(inputs) } : {}), ...(host ? { host: sha(JSON.stringify(host)) } : {}), dependencies,
     // 셋째 칸은 적용 범위를 정한 출처(코드가 기록한 출처만) — 낡은 이유 문구가 실제 적용 규칙을 보인다
     questions: questions.map(question => {
@@ -520,7 +565,12 @@ const listed = (paths: string[]): string => paths.length <= 6 ? paths.join(", ")
 export function inputChanges(before: InputParts | undefined, after: InputParts): StaleCause[] {
   if (!before) return [{ kind: "unknown", text: "입력이 바뀌었습니다 — 이전 기록이라 바뀐 항목을 알 수 없습니다" }];
   const causes: StaleCause[] = [];
-  if (before.contracts !== after.contracts) causes.push({ kind: "inputs", text: "외부 의존 계약 또는 근거 내용이 바뀌었습니다" });
+  if (before.contracts !== after.contracts) {
+    // 계약이 없던 쪽은 빈 항목이다. 검증하지 못한 쪽(항목 없이 해시만)은 바뀐 항목을 알 수 없다
+    const was = before.claims ?? (before.contracts ? undefined : {}), now = after.claims ?? (after.contracts ? undefined : {});
+    const keys = was && now ? [...new Set([...Object.keys(was), ...Object.keys(now)])].sort().filter(key => was[key] !== now[key]) : [];
+    causes.push({ kind: "inputs", text: keys.length ? `외부 의존 계약 항목: ${listed(keys)}` : "외부 의존 계약 또는 근거 내용이 바뀌었습니다" });
+  }
   if (before.task !== after.task) causes.push({ kind: "task", text: "작업 정의(inputs·requirements 등)가 바뀌었습니다" });
   if (before.base !== after.base) causes.push({ kind: "base", text: "기준 커밋이 바뀌었습니다" });
   if (before.manifest !== after.manifest) causes.push({ kind: "manifest", text: "code-agent.json 이 바뀌었습니다" });

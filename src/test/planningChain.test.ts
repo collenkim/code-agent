@@ -82,6 +82,12 @@ test("차단 지적은 어느 행이든 끝에 덧붙이고(남은 것이 차단
   assert.equal(line({ action: "bogus" }), "알 수 없는 action(bogus) — 출력을 그대로 전하고 멈춘다");
 });
 
+test("제공 저장소의 계약 변경은 어느 행이든 끝에 알리고 진행을 막지 않는다 — 채택은 사용자가 정한다", () => {
+  const view = { action: "wait", waiting: ["impact"], contracts: { drift: [{ key: "jwt.service-path" }] } };
+  assert.match(line(view), /^실행 중: impact — [\s\S]* — 제공 저장소의 계약 항목 1건이 기준 커밋과 다르다\(contracts\.drift\): 자동으로 채택하지 않는다\. 사용자에게 알리고, 채택하면 그 커밋으로 code-agent planning contracts 를 다시 등록한다/);
+  assert.doesNotMatch(line({ action: "wait", waiting: ["impact"], contracts: { drift: [] } }), /contracts/);
+});
+
 test("모든 줄이 호스트 중립이다 — 스킬 접두어·질문 도구·Bash 표기가 없다", () => {
   const views: Partial<AdvanceView>[] = [
     { assignments: [{ taskId: "a" }] }, { action: "wait", waiting: ["a"] }, { action: "stale", stale: [{ id: "a", reason: "r" }], cancel: ["a"] },

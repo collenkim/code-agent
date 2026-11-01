@@ -35,6 +35,8 @@ export interface AdvanceView {
   cancel?: string[];
   rewind?: Rewind;
   feedback?: unknown[];
+  /** 외부 계약 알림 — drift 는 제공 저장소가 기준 커밋과 다른 항목(채택하지 않음) */
+  contracts?: { drift?: unknown[] };
   problems?: string[];
 }
 
@@ -124,8 +126,11 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
         return `알 수 없는 action(${view.action}) — 출력을 그대로 전하고 멈춘다`;
     }
   })();
-  if (!feedback) return line;
-  return line ? `${line} — 차단 지적 ${feedback}건: ${FEEDBACK}` : `차단 지적 ${feedback}건 — ${FEEDBACK}. 고친 뒤 ${adv}`;
+  const step = !feedback ? line : line ? `${line} — 차단 지적 ${feedback}건: ${FEEDBACK}` : `차단 지적 ${feedback}건 — ${FEEDBACK}. 고친 뒤 ${adv}`;
+  // 제공 저장소의 계약 변경은 진행을 막지 않는다 — 채택은 사용자가 정한다
+  const drift = view.contracts?.drift?.length ?? 0;
+  if (!drift) return step;
+  return `${step} — 제공 저장소의 계약 항목 ${drift}건이 기준 커밋과 다르다(contracts.drift): 자동으로 채택하지 않는다. 사용자에게 알리고, 채택하면 그 커밋으로 code-agent planning contracts 를 다시 등록한다(바뀐 항목과 다시 판정할 작업이 나온다)`;
 }
 
 /**

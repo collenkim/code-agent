@@ -1602,4 +1602,4 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 
 ## 외부 의존 계약
 
-선행 프로젝트의 계약은 `code-agent planning contracts <계약.json>`으로 검증해 모든 계획 담당에게 전달한다. 근거 있는 원문의 재인용은 `code-agent planning reuse-answer <Q번호> <계약ID> <항목키>`로 기록하며 사람 답·승인과 구분한다. 입력 형식·변경 감지·거부 조건은 [계약 인계](dependency-contracts.md)를 따른다.
+선행 프로젝트의 계약은 `code-agent planning contracts <계약.json>`으로 검증해 모든 계획 담당에게 전달한다. 계약은 제공 저장소의 기준 커밋에 고정되고, 항목마다 종류(API·헤더·JWT claim·인증·설정·데이터)와 기대는 요구 ID를 적는다. 범위 밖 글·줄바꿈만 바뀐 계약은 다시 등록해도 계획 작업이 다시 돌지 않고, 바뀐 항목에 기대는 작업만 다시 판정한다. JWT claim·인증·인가 항목이 바뀌면 설계·계획·독립 검토와 승인·구현 검증·테스트·리뷰가 다시 돈다. 제공 저장소의 새 커밋·작업 트리는 자동으로 채택하지 않고 `planning status`·`planning advance`에 알리기만 하며, 채택은 그 커밋으로 다시 등록하는 것이다. 아직 구현되지 않은 제공 기능은 `availability: pending`으로 등록해 외부 의존 대기로 표시하고 독립 작업을 계속한다. 근거 있는 원문의 재인용은 `code-agent planning reuse-answer <Q번호> <계약ID> <항목키>`로 기록하며 사람 답·승인과 구분한다. 입력 형식·의존 범위·채택 판정·거부 조건은 [계약 인계](dependency-contracts.md)를 따른다.

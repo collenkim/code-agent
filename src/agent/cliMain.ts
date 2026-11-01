@@ -150,11 +150,11 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent plan preflight <파일작업.json>  분석부터 파일 작업의 형식·기준 파일·경계 검사 (읽기 전용)
   code-agent plan apply-files        승인된 현재 구현 Task의 파일 삭제·이동
   code-agent planning prepare [작업.json]  현재 단계 작업 등록 (생략하면 기본 작업)
-  code-agent planning contracts <계약.json>  지정 Git 근거의 경로·커밋·해시를 검증해 담당 입력으로 등록 (계획 단계)
+  code-agent planning contracts <계약.json>  기준 커밋의 계약 항목을 검증해 담당 입력으로 등록·채택하고 바뀐 항목과 다시 판정할 작업을 알림 (계획 단계)
   code-agent planning reuse-answer <Q번호> <계약ID> <항목키>  검증된 계약 원문 재인용 (사람 답·승인 아님)
   code-agent planning advance [--chain]   준비·재사용·선행 조건 판정 후 실행할 배정 묶음과 다음 행동(next) 반환 (배정 전문은 assignmentFile에)
                                       --chain 이면 analysis·impact·design 결과가 모두 준비됐을 때 같은 호출에서 게이트(next)까지 지난다 (거부되면 exit 1, 다음 단계 배정은 하지 않는다)
-  code-agent planning status          배정·입력 변경·선행 조건·미결 질문 요약
+  code-agent planning status          배정·입력 변경·선행 조건·미결 질문·외부 계약 알림 요약
   code-agent planning result <ID>     원문 산출물을 포함한 상세 결과와 최신성 조회
   code-agent planning repair <ID>     관찰된 출력 형식 오류를 같은 입력에서 한 번 교정
   code-agent planning dispatch <ID>   입력 묶음·담당 에이전트·결과 계약 반환 (같은 입력은 재사용)

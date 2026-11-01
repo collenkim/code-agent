@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { root, ID, DIR, REQUIREMENTS, IMPACT, DESIGN, FUNCTIONAL, write, dispatch, finish, analysis } from "./planningFixture";
 import { planningContracts, planningReuseAnswer, preparePlanning } from "../agent/planning";
-import { contractsFile, dependencyContracts } from "../agent/dependencyContracts";
+import { contractDrift, contractsFile, dependencyContracts } from "../agent/dependencyContracts";
 import { answerSources, formatAnswerSources, openQuestions, readAnswerRows } from "../agent/answers";
 import { parseQuestions } from "../agent/questions";
 import { approvalDocsHash, loadWork } from "../agent/work";
@@ -23,23 +23,37 @@ afterEach(() => {
     rmSync(repository, { recursive: true, force: true }); repository = undefined;
   }
 });
-function bundle() {
+const git = (args: string[]) => execFileSync("git", args, { cwd: repository, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+/** 제공 저장소에 파일을 커밋하고 [커밋, 바이트 sha256] 을 돌려준다 */
+function commit(path: string, content: string): [string, string] {
+  writeFileSync(join(repository!, path), content);
+  git(["-c", "core.autocrlf=false", "add", path]); git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", path]);
+  return [git(["rev-parse", "HEAD"]), createHash("sha256").update(content).digest("hex")];
+}
+function bundle(version: 1 | 2 = 2): { value: { version: number; contracts: any[] }; input: string } {
   repository = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-contract-source-")));
-  writeFileSync(join(repository, "contract.md"), statement + "\n");
-  const git = (args: string[]) => execFileSync("git", args, { cwd: repository, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  git(["init", "-q"]); git(["-c", "core.autocrlf=false", "add", "contract.md"]);
-  git(["-c", "user.name=test", "-c", "user.email=test@test", "commit", "-qm", "contract"]);
-  const value = { version: 1, contracts: [{ id: "discount", repository, path: "contract.md", commit: git(["rev-parse", "HEAD"]), sha256: createHash("sha256").update(statement + "\n").digest("hex"), claims: [{ key: "discount.range", text: statement }] }] };
+  git(["init", "-q"]);
+  const [head, sha256] = commit("contract.md", statement + "\n");
+  const claim = version === 1 ? { key: "discount.range", text: statement } : { key: "discount.range", kind: "data", text: statement };
+  const value = { version, contracts: [{ id: "discount", repository, path: "contract.md", commit: head, sha256, claims: [claim] }] };
   write(`${DIR}/contracts-input.json`, JSON.stringify(value));
   return { value, input: join(root, DIR, "contracts-input.json") };
 }
-function register() { const { input, value } = bundle(); planningContracts(root, input); return value; }
+function register() { const { input, value } = bundle(); planningContracts(root, input); return { value, input }; }
+/** 같은 계약을 새 커밋의 원문으로 다시 등록한다(채택) */
+function readopt(content: string, text = statement): string {
+  const input = join(root, DIR, "contracts-input.json"), value = JSON.parse(readFileSync(input, "utf8"));
+  const [head, sha256] = commit("contract.md", content);
+  value.contracts[0] = { ...value.contracts[0], commit: head, sha256, claims: [{ ...value.contracts[0].claims[0], text }] };
+  writeFileSync(input, JSON.stringify(value));
+  return planningContracts(root, input);
+}
 function questions(answer = "", source = "") {
   writeFileSync(join(root, DIR, "questions.md"), `# 질문\n\n## Q1 계약\n할인의 범위와 오류 계약은 무엇인가\n[Answer]: ${answer}\n${source ? `[Source]: ${source}\n` : ""}`);
 }
 const sources = () => answerSources(root, ID, parseQuestions(readFileSync(join(root, DIR, "questions.md"), "utf8")));
 
-test("2-9 같은 판정 구간의 계약은 Git 검사를 재사용하고 원문 변경과 다음 구간은 다시 검사한다", async () => {
+test("같은 판정 구간의 계약은 Git 검사를 재사용하고 다음 구간은 다시 검사한다 — 제공 저장소의 작업 트리는 읽지 않는다", async () => {
   register(); await Promise.resolve();
   const child = require("node:child_process") as typeof import("node:child_process"), original = child.execFileSync;
   let calls = 0;
@@ -55,7 +69,8 @@ test("2-9 같은 판정 구간의 계약은 Git 검사를 재사용하고 원문
     assert.equal(dependencyContracts(root, ID).problems.length, 0);
     assert.equal(calls, 6);
     appendFileSync(join(repository!, "contract.md"), "changed\n");
-    assert.ok(dependencyContracts(root, ID).problems.length > 0);
+    await Promise.resolve();
+    assert.equal(dependencyContracts(root, ID).problems.length, 0, "기준 커밋의 blob 만 대조한다");
     assert.equal(calls, 9);
   } finally { child.execFileSync = original; }
 });
@@ -65,7 +80,8 @@ test("계약 사본이 explore와 design 입력에 연결되고 사본을 근거
   const explore = dispatch("explore");
   assert.ok(explore.inputs.includes(contractsFile(ID)));
   assert.equal(explore.externalContracts[0].commit.length, 40);
-  assert.equal(explore.externalContracts[0].claims[0].text, statement);
+  assert.deepEqual(explore.externalContracts[0].claims, [{ key: "discount.range", kind: "data", text: statement, availability: "provided" }]);
+  assert.equal(explore.externalContracts[0].excerpt, undefined, "배정은 항목만 싣는다 — 원문 범위는 입력의 사본에 있다");
   assert.ok(!explore.inputs.some((path: string) => path.includes("upstream/")));
   finish(explore, {}, { evidence: [{ path: contractsFile(ID), line: 1 }] });
   finish(dispatch("synthesis"), { [`${DIR}/02-analysis.md`]: IMPACT }); next(root); preparePlanning(root);
@@ -75,12 +91,31 @@ test("계약 사본이 explore와 design 입력에 연결되고 사본을 근거
   assert.deepEqual(openQuestions(root, `${DIR}/questions.md`), { unanswered: [], unverified: [] });
 });
 
-test("외부 근거 변경은 완료 결과를 낡게 하고 새 배정을 막는다", () => {
+test("제공 저장소의 작업 트리·새 커밋은 채택하지 않는다 — 완료 결과·승인 해시는 그대로이고 범위 안 차이만 알린다", () => {
   register(); preparePlanning(root); finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
   const work = loadWork(root)!, state = loadPlanning(work), record = state.tasks[0];
-  const before = hashInput(work, state, record.task).hash;
-  const approvedDocs = approvalDocsHash(work);
+  const before = hashInput(work, state, record.task).hash, approvedDocs = approvalDocsHash(work);
+  assert.deepEqual(contractDrift(root, ID), { drift: [], outOfScope: [], problems: [] });
   writeFileSync(join(repository!, "contract.md"), "다른 계약\n");
+  const unchanged = () => {
+    assert.equal(hashInput(work, state, record.task).hash, before);
+    assert.equal(approvalDocsHash(work), approvedDocs);
+    assert.equal(taskCurrent(work, state, record), true);
+    assert.doesNotMatch(readyProblems(work, state, record).join("\n"), /외부 의존 계약/);
+  };
+  unchanged();
+  assert.deepEqual(contractDrift(root, ID).drift, [{ contract: "discount", key: "discount.range", kind: "data", security: false, change: "removed", where: "worktree" }]);
+  const [head] = commit("contract.md", "다른 계약\n");
+  unchanged();
+  assert.deepEqual(contractDrift(root, ID).drift, [{ contract: "discount", key: "discount.range", kind: "data", security: false, change: "removed", where: "head", head }]);
+});
+
+test("계약 사본 변조는 미확인으로 결과를 낡게 하고 새 배정을 막는다", () => {
+  register(); preparePlanning(root); finish(dispatch("analysis"), { [`${DIR}/01-requirements.md`]: REQUIREMENTS });
+  const work = loadWork(root)!, state = loadPlanning(work), record = state.tasks[0];
+  const before = hashInput(work, state, record.task).hash, approvedDocs = approvalDocsHash(work);
+  const stored = JSON.parse(readFileSync(join(root, contractsFile(ID)), "utf8")); stored.contracts[0].excerpt = "범위 밖도 허용\n";
+  writeFileSync(join(root, contractsFile(ID)), JSON.stringify(stored));
   assert.notEqual(hashInput(work, state, record.task).hash, before);
   assert.notEqual(approvalDocsHash(work), approvedDocs);
   assert.equal(taskCurrent(work, state, record), false);
@@ -96,15 +131,21 @@ test("계약 재인용은 원문과 질문에 묶이고 사람이 답한 것으�
   assert.throws(() => planningReuseAnswer(root, "Q1", "discount", "discount.range"), /답이 없는/);
 });
 
-for (const change of ["answer", "question", "source", "evidence", "copy", "record"]) test(`계약 출처 변조 거부 ${change}`, () => {
+test("범위 밖 글·줄바꿈만 바뀐 계약을 다시 등록해도 재인용 답은 그대로다", () => {
+  register(); questions(); planningReuseAnswer(root, "Q1", "discount", "discount.range");
+  assert.match(readopt(`# 할인 계약\r\n\r\n${statement}  \r\n\r\n## 변경 이력\r\n- 문서 정리\r\n`), /바뀐 항목 0\(보안 0\) · 그대로 1 · 기준 커밋만 바뀐 계약\(범위 밖 변경\): discount/);
+  assert.equal(sources().get("Q1"), "contract");
+});
+
+for (const change of ["answer", "question", "source", "readopt", "copy", "record"]) test(`계약 출처 변조 거부 ${change}`, () => {
   register(); questions(); planningReuseAnswer(root, "Q1", "discount", "discount.range");
   const path = join(root, DIR, "questions.md"), original = readFileSync(path, "utf8");
   if (change === "answer") writeFileSync(path, original.replace(statement, "범위 밖도 허용"));
   if (change === "question") writeFileSync(path, original.replace("할인의 범위와 오류 계약은 무엇인가", "배포를 승인하는가"));
   if (change === "source") writeFileSync(path, original.replace("기존 계약 discount discount.range", "대화"));
-  if (change === "evidence") writeFileSync(join(repository!, "contract.md"), "범위 밖도 허용\n");
+  if (change === "readopt") readopt("범위 밖도 허용\n", "범위 밖도 허용");
   if (change === "copy") {
-    const stored = JSON.parse(readFileSync(join(root, contractsFile(ID)), "utf8")); stored.contracts[0].content = "위조";
+    const stored = JSON.parse(readFileSync(join(root, contractsFile(ID)), "utf8")); stored.contracts[0].claims[0].text = "범위 밖도 허용";
     writeFileSync(join(root, contractsFile(ID)), JSON.stringify(stored));
   }
   if (change === "record") writeFileSync(join(root, ".code-agent/work", ID, "answers.jsonl"), "");
@@ -146,23 +187,45 @@ test("옛 관찰 답은 계약 출처 변경의 우회가 아니며 이후 실�
   }
 });
 
-for (const change of ["hash", "commit", "path", "claim", "conflict", "size"]) test(`유효하지 않은 계약 등록 거부 ${change}`, () => {
+const INVALID: Record<string, RegExp | undefined> = {
+  hash: /커밋 내용 해시/, commit: undefined, path: /경로/, claim: /원문 한 줄과 다릅니다/, conflict: /상충/, size: /크기 한도/,
+  section: /섹션 '없는 섹션'이 원문에 없습니다/, kind: undefined, requirement: undefined, unknown: /요구 ID가 지시서·01-requirements.md 에 없습니다: REQ-9/,
+};
+for (const [change, error] of Object.entries(INVALID)) test(`유효하지 않은 계약 등록 거부 ${change}`, () => {
   const { input, value } = bundle();
-  if (change === "hash") value.contracts[0].sha256 = "0".repeat(64);
-  if (change === "commit") value.contracts[0].commit = "0".repeat(40);
-  if (change === "path") value.contracts[0].path = "../contract.md";
-  if (change === "claim") value.contracts[0].claims[0].text = "범위 밖도 허용";
+  const ref = value.contracts[0], claim = ref.claims[0];
+  if (change === "hash") ref.sha256 = "0".repeat(64);
+  if (change === "commit") ref.commit = "0".repeat(40);
+  if (change === "path") ref.path = "../contract.md";
+  if (change === "claim") claim.text = "범위 밖도 허용";
   if (change === "conflict") {
-    const ref = value.contracts[0];
     // 같은 사실 키에 다른 원문 값이 있는 것은 둘 다 실제 Git 근거라도 거부한다.
-    writeFileSync(join(repository!, "other.md"), "음수도 허용\n");
-    const git = (args: string[]) => execFileSync("git", args, { cwd: ref.repository, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-    git(["-c", "core.autocrlf=false", "add", "other.md"]); git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "other"]);
-    value.contracts.push({ ...ref, id: "other", path: "other.md", commit: git(["rev-parse", "HEAD"]), sha256: createHash("sha256").update("음수도 허용\n").digest("hex"), claims: [{ key: "discount.range", text: "음수도 허용" }] });
+    const [head, sha256] = commit("other.md", "음수도 허용\n");
+    value.contracts.push({ ...ref, id: "other", path: "other.md", commit: head, sha256, claims: [{ key: "discount.range", kind: "data", text: "음수도 허용" }] });
   }
+  if (change === "section") claim.section = "없는 섹션";
+  if (change === "kind") claim.kind = "jwt";
+  if (change === "requirement") claim.requirements = ["R-1"];
+  if (change === "unknown") claim.requirements = ["REQ-9"];
   writeFileSync(input, change === "size" ? "x".repeat(131073) : JSON.stringify(value));
-  assert.throws(() => planningContracts(root, input));
+  assert.throws(() => planningContracts(root, input), error ?? Error);
   assert.deepEqual(dependencyContracts(root, ID).contracts, []);
+});
+
+test("버전 1 입력과 버전 1 사본은 종류 other·범위 없는 항목으로 읽는다", () => {
+  const { value, input } = bundle(1);
+  planningContracts(root, input);
+  const stored = JSON.parse(readFileSync(join(root, contractsFile(ID)), "utf8"));
+  assert.equal(stored.version, 2);
+  assert.deepEqual(stored.contracts[0].claims.map((claim: { kind: string; availability: string }) => [claim.kind, claim.availability]), [["other", "provided"]]);
+  const old = { version: 1, contracts: [{ ...value.contracts[0], content: `${statement}\r\n` }] };
+  writeFileSync(join(root, contractsFile(ID)), JSON.stringify(old));
+  const read = dependencyContracts(root, ID);
+  assert.deepEqual(read.problems, []);
+  assert.equal(read.contracts[0].claims[0].kind, "other");
+  old.contracts[0].content = "위조\n";
+  writeFileSync(join(root, contractsFile(ID)), JSON.stringify(old));
+  assert.match(dependencyContracts(root, ID).problems.join("\n"), /계약 사본이 근거와 다릅니다: discount/);
 });
 
 test("실행 중 배정의 계약 등록은 거부한다", () => {

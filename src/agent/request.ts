@@ -47,7 +47,7 @@ import { appendRevision, applyChanges, changeLine, changeSummary, initialSnapsho
 export { loadRequestSession, type RequestSession } from "./requestSession";
 import { loadRequestSession, type RequestSession } from "./requestSession";
 import { recordEvent } from "./timeline";
-import { IMPACT_KEEP, impactBrief, impactLines, impactOf } from "./changeImpact";
+import { IMPACT_KEEP, impactBrief, impactLines, impactOf, type RequirementImpact } from "./changeImpact";
 
 /** 폴더 이름 · 브랜치 이름(`<kind>/<ID>`)이 되는 값이라 경로 조각으로 안전한 글자만 받는다 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -503,6 +503,13 @@ export function syncRequestRevision(repoRoot: string, active: ActiveWork): { act
       "계획이 그대로여도 영향받은 검증(check·test·통합 검증)과 리뷰는 다시 돕니다.",
     `다음: ${skill("ca-next")}`,
   ].join("\n") };
+}
+
+/** 흐름의 요구 변경 영향 자리에 영향 하나를 더한다(외부 계약 채택) — 따르는 확정 요구 기록이 없는 커서면 남기지 못한다(false) */
+export function recordImpact(repoRoot: string, active: ActiveWork, impact: RequirementImpact): boolean {
+  if (!active.request) return false;
+  saveActive(repoRoot, { ...active, request: { ...active.request, impacts: [...(active.request.impacts ?? []), impact].slice(-IMPACT_KEEP) } });
+  return true;
 }
 
 /**

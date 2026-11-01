@@ -31,7 +31,7 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 파일 생성·수정·삭제·이동은 `plan.json`의 `files[].operation`에 `create`·`modify`·`delete`·`move`로 표시한다. 생략하면 생성·수정이다. 이동의 `from`은 원본, `path`는 대상이고 Task의 `files`에는 대상 경로를 넣는다. 분석 단계부터 후보 파일 배열을 JSON으로 저장하고 `code-agent plan preflight <JSON>`으로 기준 커밋·scope·preserve·단계를 확인한다. 원본과 대상이 같은 경우, 중복 경로, 기준에 없는 원본, 기존 대상 덮어쓰기는 거부된다. 승인 뒤 `code-agent plan apply-files`가 현재 Task의 삭제·이동을 수행한다. 삭제할 파일이 남거나 이동 원본이 남으면 다음 단계로 진행하지 않는다.
 
-외부 의존 계약은 [계약 인계](dependency-contracts.md)의 `planning contracts`로 등록한다. 모든 세부 담당의 `inputs`에는 검증된 사본이, `externalContracts`에는 원문 경로·커밋·해시·항목이 실린다. 원문이나 사본 변경은 입력 해시와 승인 문서 해시에 반영된다. 근거가 없거나 계약 항목이 상충하면 배정하지 않으며, 의미상 불명확한 조건은 담당이 질문한다. 등록은 전체 저장소 탐색이나 외부 파일 수정 권한을 주지 않는다.
+외부 의존 계약은 [계약 인계](dependency-contracts.md)의 `planning contracts`로 등록한다. 계약은 제공 저장소의 기준 커밋에 고정되고, 항목마다 종류(API·헤더·JWT claim·인증·설정·데이터)·의존 범위(항목 줄·지정 섹션)·기대는 요구 ID·제공 여부를 적는다. 모든 세부 담당의 `inputs`에는 검증된 사본이, `externalContracts`에는 그 작업이 기대는 항목만 실린다. 작업의 입력 해시는 기대는 항목의 의미 해시만 묶는다 — 범위 밖 글·줄바꿈·기준 커밋만 바뀐 재등록은 결과를 낡게 하지 않고, 바뀐 항목에 기대는 작업만 다시 돈다(보안 항목은 design·plan·critic 이 언제나 기댄다). 바뀐 항목이 있으면 승인 문서 해시가 바뀌고 그 영향이 검증 게이트로 이어진다. 제공 저장소의 지금 상태는 채택하지 않고 `contracts`로 알리기만 하며, 미구현 기능(`pending`)은 외부 의존 대기로 표시하고 독립 작업은 계속한다. 근거가 없거나 계약 항목이 상충하면 배정하지 않으며, 의미상 불명확한 조건은 담당이 질문한다. 등록은 전체 저장소 탐색이나 외부 파일 수정 권한을 주지 않는다.
 
 결과 JSON은 배정된 `resultFile`에 쓰고 `결과: <resultFile>` 한 줄을 반환한다. 응답 앞뒤의 설명은 허용하지만 결과 포인터는 정확히 하나여야 한다. 다른 경로·복수 포인터·손상된 JSON·크기 초과·소유권·스키마·입력 해시 불일치는 거부한다. 판단·질문·지적은 설명 대신 결과 JSON의 해당 필드에 모두 담는다.
 
@@ -48,7 +48,9 @@ Claude와 Codex 모두 아래 계약을 사용한다. Claude는 `planning-event`
 
 **연쇄(`--chain`)** — `planning advance --chain`은 analysis·impact·design 에서 결과가 모두 준비돼 `ready-for-gate`일 때만 같은 호출에서 그 단계의 게이트(`code-agent next`)를 한 번 지난다. 결과는 `chain{from, gate, to?, reason?, questions?}`에 싣고, 거부면 exit 1 이며 커서는 그대로다. 출력의 최상위 `phase`는 advance 를 돌린 단계이고, 통과하면 지금 스테이지는 `chain.to`다. `questions`는 답이 없거나 출처를 확인할 수 없는 질문 때문에 거부됐을 때만 싣는다 — AI-DLC·공통 문서·요구 확정 때문에 거부되면 질문이 열려 있어도 `reason`만 있고 `next` 줄은 그 사유를 전하고 멈추라고 한다. 다음 단계 배정은 하지 않는다 — 다음 단계 절차가 자기 1항에서 advance 를 다시 부르므로 배정 전 선택(영역 분할 `planning prepare`)이 그대로 있고 시작이 관찰되지 않은 배정이 연쇄 때문에 생기지 않는다. plan 은 잇지 않는다(계획 제출과 승인은 사람 확인이다). 다른 action·실패·거부에서는 게이트를 시도하지 않고 자동으로 다시 시도하지 않는다. `--chain`으로 부른 호출의 `next` 안내는 다음 advance 에도 `--chain`을 유지한다. 사용자가 한 단계만 요청했으면 스킬이 `--chain`을 빼고 부른다.
 
-우선순위는 표의 위에서 아래다(`rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`). `running`(실행 중 배정의 담당 시작 관찰 여부·배정 뒤 경과 분), `orphaned`(이번 호출이 고아로 표시한 배정), `stale`·`cancel`, `rewind`, `feedback`은 해당할 때만 실린다.
+우선순위는 표의 위에서 아래다(`rewind-required` → `dispatch` → `stale` → `wait` → `blocked` → `ready-for-gate`). `running`(실행 중 배정의 담당 시작 관찰 여부·배정 뒤 경과 분), `orphaned`(이번 호출이 고아로 표시한 배정), `stale`·`cancel`, `rewind`, `feedback`, `contracts`는 해당할 때만 실린다.
+
+**외부 계약 알림** — `contracts`는 등록된 계약에 외부 의존 대기 항목(`waits`)이나 기준 커밋과 달라진 제공 저장소 상태(`drift`·`outOfScope`·`problems`)가 있을 때 실린다. `planning status`에도 같은 값이 보인다. 어느 것도 action 을 바꾸지 않는다. `drift`가 있으면 `next` 줄 끝에 채택 여부를 사용자에게 알리라는 문장이 붙는다. 채택하면 그 커밋으로 `planning contracts`를 다시 등록한다.
 
 **되감기** — 앞 단계 작업이 낡은 이유는 `rewind.tasks[].staleBecause`(입력 파일·질문·선행 결과·기준 커밋·code-agent.json·호스트 지침 등 항목별)로 보인다. 자동 되감기는 같은 사유(단계와 작업별 낡은 원인)에 한 번이다. 안내를 반복 조회하거나 `back`이 거부되어도 허용은 남고, 해당 대상으로 실제 커서를 옮길 때 소비한다. 기록은 `planning.json`의 `retry.rewinds`(최근 20개)에 남고 승인 묶음 밖이다. 두 번째부터는 `auto:false`로 사람에게 넘긴다 — 계속 바뀌는 입력이 앞 단계를 반복해 돌리는 일을 막는다. analysis까지 되감거나 원인이 기준 커밋·code-agent.json·호스트 지침이면 `rewind.notice`가 다시 도는 작업 수를 한 줄로 알린다. 되감기는 커서만 옮기고 지우는 것이 없으며, 다시 `next`로 모든 게이트를 지난다.
 
@@ -173,4 +175,4 @@ code-agent planning dispatch common
 
 관찰된 계획 작업은 동일 입력의 중복 호출을 줄이는 구조다. 실제 모델의 토큰 절감량·지연·판단 품질은 별도 실측 대상이다.
 
-외부 의존 계약은 같은 동기 판정 구간에서 계약 내용·원본 stat이 같을 때 Git 결과를 재사용한다. 다음 비동기 구간이나 파일 변경에는 다시 검증한다.
+외부 의존 계약은 같은 동기 판정 구간에서 같은 계약(저장소·경로·기준 커밋·항목)의 Git 결과를 재사용한다. 다음 비동기 구간에는 다시 검증한다. 기준 커밋의 blob 만 읽으므로 제공 저장소의 작업 트리 변경은 검증 결과를 바꾸지 않는다.

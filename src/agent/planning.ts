@@ -6,7 +6,7 @@ import { z } from "zod";
 import { writeAtomic } from "../core/atomic";
 import { planFormatFor } from "../core/plan";
 import { sha } from "./docs";
-import { questionsFile, workDocsDir } from "./layout";
+import { planFile, questionsFile, workDocsDir } from "./layout";
 import { parseQuestions } from "./questions";
 import { acquireLock } from "./lock";
 import { Stop } from "./stop";
@@ -14,25 +14,95 @@ import { codexAgentName } from "./hosts";
 import { editVia } from "./hostText";
 import { budgetOf, COUNTER_LABEL, epochLabel, failure, grantFor, grantScope, guidance, planningDispatchDecision, RetryRefused, TIMING,
   type Budget, type CounterKey, type FailureClass, type RetryGrant } from "./retryPolicy";
-import { readSourceTrace } from "./sourceTrace";
+import { readSourceTrace, sourceItems } from "./sourceTrace";
+import { requirementBlocks } from "./requirementFields";
 import { loadWork, type Work } from "./work";
 import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputChanges, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
-  ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskCurrent, TaskSchema, withPlanningCache,
+  ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskContracts, taskCurrent, TaskSchema, withPlanningCache,
   type BudgetEpoch, type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 import type { PlanningCrossView } from "./crossRecord";
-import { dependencyContracts, registerContracts } from "./dependencyContracts";
+import { claimChanges, contractDrift, dependencyContracts, registerContracts, type ContractDrift } from "./dependencyContracts";
 import { reuseContractAnswer } from "./answers";
 import { recordEvent, type TimelineInput } from "./timeline";
 import { forgetAgents } from "./agentRuns";
-import { requireRequestConfirmed, requirementHash, syncRequestRevision } from "./request";
+import { recordImpact, requireRequestConfirmed, requirementHash, syncRequestRevision } from "./request";
+import { contractImpact, impactBrief, impactLines } from "./changeImpact";
 
-/** 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다. */
+/**
+ * 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다.
+ * 다시 등록하면 새 계약을 채택한다 — 이전 사본과 항목별로 비교해 바뀐 항목과 다시 판정할 계획 작업(그 작업이 기대는 항목의 해시가 바뀐 것)을 알린다.
+ * 바뀐 항목이 있으면 그 영향(changeImpact `contractImpact`)을 흐름의 요구 변경 영향 자리에 남긴다 — 검증 게이트가 그 뒤의 check·test·통합 검증과
+ * 리뷰를 다시 요구한다. 처음 등록이고 완료된 계획 작업·승인된 계획이 없으면 남기지 않는다(다시 볼 것이 없다).
+ */
 export function planningContracts(root: string, input: string): string {
   const work = planningWork(root);
-  return mutatePlanning(work, state => {
+  const outcome = withPlanningCache(() => mutatePlanning(work, state => {
     if (!PLANNING_PHASES.some(phase => phase === work.active.phase) || state.tasks.some(task => task.attempts.at(-1)?.status === "running")) throw new Stop("계약 등록은 실행 중 배정이 없는 계획 단계에서만 가능합니다");
-    return registerContracts(work.repoRoot, work.active.id, input);
-  });
+    const before = dependencyContracts(work.repoRoot, work.active.id);
+    const done = state.tasks.filter(record => record.attempts.at(-1)?.status === "completed");
+    const parts = new Map(done.map(record => [record.task.id, hashInput(work, state, record.task).parts.contracts]));
+    const message = registerContracts(work.repoRoot, work.active.id, input, knownRequirements(work));
+    invalidatePlanningCache();
+    const after = dependencyContracts(work.repoRoot, work.active.id);
+    const affected = done.filter(record => hashInput(work, state, record.task).parts.contracts !== parts.get(record.task.id)).map(record => record.task.id);
+    return { message, before, after, affected };
+  }));
+  const { message, before, after, affected } = outcome;
+  const changes = claimChanges(before.contracts, after.contracts);
+  const lines = [message];
+  if (before.problems.length) lines.push("이전 사본을 검증하지 못해 항목별로 비교하지 않았습니다 — 계약을 쓰는 계획 작업은 모두 다시 판정합니다");
+  else if (before.contracts.length) {
+    const kept = after.contracts.reduce((sum, contract) => sum + contract.claims.length, 0) - changes.filter(change => change.change !== "removed").length;
+    const moved = after.contracts.filter(contract => { const old = before.contracts.find(item => item.id === contract.id); return old && old.commit !== contract.commit && !changes.some(change => change.claim.startsWith(`${contract.id}/`)); }).map(contract => contract.id);
+    lines.push(`채택 판정 — 바뀐 항목 ${changes.length}(보안 ${changes.filter(change => change.security).length}) · 그대로 ${kept}${moved.length ? ` · 기준 커밋만 바뀐 계약(범위 밖 변경): ${moved.join(", ")}` : ""}`,
+      ...changes.slice(0, 10).map(change => `  - ${change.claim} ${CLAIM_CHANGE[change.change]}${change.security ? " · 보안" : ""}${change.requirements.length ? ` (${change.requirements.join(", ")})` : " (요구 연결 없음 — 전체)"}`),
+      ...(changes.length > 10 ? [`  - 외 ${changes.length - 10}건`] : []));
+  }
+  lines.push(affected.length ? `다시 판정할 계획 작업: ${affected.join(", ")} — 선행 결과가 바뀌면 후속 작업도 다시 돕니다` : "다시 판정할 완료된 계획 작업이 없습니다");
+  const active = work.active;
+  const record = changes.length && (before.contracts.length || before.problems.length || affected.length || existsSync(planFile(work.repoRoot, active.id, active.target)));
+  if (record) {
+    const impact = contractImpact(work.repoRoot, active, changes);
+    if (recordImpact(work.repoRoot, active, impact)) lines.push(`영향 — ${impactBrief(impact)}`, ...impactLines(impact), "계획을 다시 승인받은 뒤 영향받은 검증(check·test·통합 검증)과 리뷰를 다시 돕니다.");
+    else lines.push("흐름이 따르는 확정 요구 기록이 없어 검증 영향을 남기지 못했습니다 — 계획 승인 해시는 바뀐 항목을 묶습니다");
+  }
+  const notes = contractNotes(work);
+  if (notes) lines.push(...contractNoteLines(notes));
+  return lines.join("\n");
+}
+const CLAIM_CHANGE = { added: "추가", removed: "삭제", changed: "변경" } as const;
+/** 계약 항목이 가리킬 수 있는 요구 ID — 확정 지시서의 접수 항목과 01 의 R(01 이 없으면 R 은 대조하지 않는다) */
+function knownRequirements(work: Work): { intake: string[]; r?: string[] } {
+  const intake = sourceItems(readFileSync(join(work.repoRoot, work.active.spec), "utf8")).map(item => item.id);
+  const analysis = join(work.repoRoot, workDocsDir(work.active.id), "01-requirements.md");
+  return { intake, ...(existsSync(analysis) ? { r: requirementBlocks(readFileSync(analysis, "utf8")).map(block => block.key) } : {}) };
+}
+/**
+ * 계약 알림 — 외부 의존 대기 항목(제공 저장소 미구현)과 제공 저장소의 지금 상태가 기준과 다른 항목(채택하지 않음). 둘 다 배정을 막지 않는다.
+ * 범위 밖만 달라진 계약은 갱신할 작업이 없어 그 이름만 싣는다.
+ */
+function contractNotes(work: Work): { waits?: { claim: string; requirements: string[] }[]; drift?: ContractDrift[]; outOfScope?: string[]; problems?: string[]; next: string[] } | undefined {
+  const bundle = dependencyContracts(work.repoRoot, work.active.id);
+  if (!bundle.contracts.length) return undefined;
+  const waits = bundle.contracts.flatMap(contract => contract.claims.filter(claim => claim.availability === "pending").map(claim => ({ claim: `${contract.id}/${claim.key}`, requirements: claim.requirements ?? [] })));
+  const now = contractDrift(work.repoRoot, work.active.id);
+  if (!waits.length && !now.drift.length && !now.outOfScope.length && !now.problems.length) return undefined;
+  const next = [
+    ...(waits.length ? ["외부 의존 대기 — 제공 저장소에 아직 없는 기능입니다. 구현 여부를 다시 조사하지 않고 그 요구를 대기로 표시하며 독립 작업은 계속합니다. 제공되면 availability 를 provided 로 바꿔 다시 등록합니다."] : []),
+    ...(now.drift.length ? ["제공 저장소의 계약이 기준 커밋과 다릅니다 — 자동으로 채택하지 않습니다. 사용자에게 채택 여부를 확인하고, 채택하면 그 커밋으로 planning contracts 를 다시 등록합니다(바뀐 항목과 영향받는 작업을 다시 판정합니다). 커밋되지 않은 변경(worktree)은 채택할 수 없습니다."] : []),
+  ];
+  return { ...(waits.length ? { waits } : {}), ...(now.drift.length ? { drift: now.drift } : {}),
+    ...(now.outOfScope.length ? { outOfScope: now.outOfScope.map(item => `${item.contract}(${item.where === "head" ? `HEAD ${item.head!.slice(0, 12)}` : "작업 트리"}) — 범위 밖 변경만, 갱신할 작업 없음`) } : {}),
+    ...(now.problems.length ? { problems: now.problems } : {}), next };
+}
+function contractNoteLines(notes: NonNullable<ReturnType<typeof contractNotes>>): string[] {
+  return [
+    ...(notes.waits ?? []).map(wait => `외부 의존 대기: ${wait.claim}${wait.requirements.length ? ` (${wait.requirements.join(", ")})` : ""}`),
+    ...(notes.drift ?? []).map(item => `제공 저장소 변경(채택하지 않음): ${item.contract}/${item.key} ${item.change === "removed" ? "삭제" : "변경"} — ${item.where === "head" ? `커밋 ${item.head!.slice(0, 12)}` : "커밋되지 않은 작업 트리"}${item.security ? " · 보안" : ""}`),
+    ...(notes.outOfScope ?? []).map(item => `제공 저장소 변경: ${item}`),
+    ...(notes.problems ?? []),
+    ...notes.next,
+  ];
 }
 export function planningReuseAnswer(root: string, question: string, contract: string, claim: string): string {
   const work = planningWork(root);
@@ -369,8 +439,8 @@ export function grantPlanningRetry(root: string, key: "taskTotal" | "sameInput",
 export function planningStatus(root: string): string {
   const work = planningWork(root);
   return withPlanningCache(() => {
-    const state = loadPlanning(work), now = Date.now();
-    return JSON.stringify({ phase: work.active.phase, maxParallel: state.maxParallel, tasks: state.tasks.map(record => {
+    const state = loadPlanning(work), now = Date.now(), contracts = contractNotes(work);
+    return JSON.stringify({ phase: work.active.phase, maxParallel: state.maxParallel, ...(contracts ? { contracts } : {}), tasks: state.tasks.map(record => {
       const last = record.attempts.at(-1);
       const current = taskCurrent(work, state, record);
       const name = current ? "completed" : last?.status === "completed" ? "stale" : last?.status ?? "pending";
@@ -543,8 +613,8 @@ function assignment(work: Work, state: PlanningState, record: TaskRecord) {
       ...(record.task.outputs.length ? { staging: staged } : {}),
       resultFile,
       instructions: `지정 입력과 선행 결과의 근거만 읽으세요. KNOWLEDGE는 검증할 단서이며 코드 재확인 없이 확정 사실로 쓰지 않습니다. staging에 지정된 경로 외의 파일은 쓰지 말고 아래 JSON 형태 하나로 반환하세요. 근거는 실제 파일과 줄이며 경로는 저장소 루트 기준 전체 상대 경로로 씁니다(예: doc/work/<ID>/requirement.md:16, 파일명만 쓰지 않음). 원문 인용은 확정 지시서의 글자 그대로 옮기고 따옴표를 이스케이프하지 않습니다. 이 배정의 출력 문서(이전 판 포함)는 근거로 인용하지 않습니다. ${stagedInstruction()} ${resultInstruction()} 미결 질문은 needs-input, 차단 지적은 blocking으로 반환하세요. 질문·요약·문서 설명문은 확정 지시서와 같은 언어로 씁니다. design·plan은 대안과 경계를 판단하고 synthesis는 관찰 결과를 문서로 정리합니다. plan의 tasks에는 파일 소유·의존성·AC를 넣으세요.`,
-      externalContracts: dependencyContracts(work.repoRoot, work.active.id).contracts.map(({ content, ...ref }) => ref),
-      externalContractInstructions: "inputs의 dependency-contracts.json은 지정 Git 원문·커밋·해시를 대조한 계약 사본입니다. 입력 범위 밖 저장소를 탐색하지 말고 이 사본의 content·claims를 사용하세요. 사람 답이나 승인 권한이 아니며 요구·다른 근거와 모순되거나 필요한 계약이 없으면 needs-input 질문을 반환하세요.",
+      externalContracts: taskContracts(work, record.task, dependencyContracts(work.repoRoot, work.active.id).contracts).map(({ excerpt, normalized, ...ref }) => ({ ...ref, claims: ref.claims.map(({ scope, ...claim }) => claim) })),
+      externalContractInstructions: "inputs의 dependency-contracts.json은 제공 저장소의 기준 커밋 원문에서 의존 범위(항목 줄·지정 섹션)만 옮긴 계약 사본입니다. 이 배정의 externalContracts 항목만 근거로 쓰고 입력 범위 밖 저장소를 탐색하지 마세요 — 제공 저장소의 지금 파일·다른 커밋은 채택된 계약이 아닙니다. availability가 pending인 항목은 제공 기능이 아직 없습니다: 구현 여부를 다시 조사하거나 묻지 말고 계약 원문을 기준으로 판단하며 그 요구를 외부 의존 대기로 문서에 표시하세요. 사람 답이나 승인 권한이 아니며 요구·다른 근거와 모순되거나 필요한 계약이 없으면 needs-input 질문을 반환하세요.",
       statusContract: statusContract(record.task),
       resultShape: { taskId: record.task.id, dispatchId: attempt.dispatchId, inputHash: attempt.inputHash, status: "completed | needs-input | failed", summary: "판단 및 근거 요약", evidence: [{ path: work.active.spec, line: 1 }], facts: [], questions: [], artifacts: record.task.outputs.map(path => ({ path, staged: staged[path] })), findings: [] },
       itemShapes: { fact: { key: "공유 사실 식별자", value: "관찰값", source: { path: work.active.spec, line: 1 } }, question: { id: "Q1", question: "사용자가 결정할 사항", requirements: record.task.requirements }, finding: { id: "F1", severity: "blocking | advisory", detail: "문제와 영향", source: { path: work.active.spec, line: 1 } } },
@@ -764,6 +834,7 @@ export function planningAdvanceStep(root: string, taskIds: readonly string[], ob
       return { phase, assignments, reused, waiting, blocked, running, orphaned, stale, feedback: feedbackOf(work, state) as unknown[] };
     });
     const problems = planningProblems(work, phase);
+    const contracts = contractNotes(work);
     const { rewind, running, orphaned, stale, feedback, ...rest } = output as typeof output & { rewind?: Rewind };
     const action = rewind ? "rewind-required" : rest.assignments.length ? "dispatch" : stale.length ? "stale" : rest.waiting.length ? "wait" : problems.length ? "blocked" : "ready-for-gate";
     const place = { workId: work.active.id, target: work.active.target, phase };
@@ -772,7 +843,7 @@ export function planningAdvanceStep(root: string, taskIds: readonly string[], ob
     return JSON.stringify({ ...rest, action,
       ...(running.length ? { running } : {}), ...(orphaned.length ? { orphaned } : {}),
       ...(stale.length ? { stale, cancel: stale.map(item => (item as { id: string }).id) } : {}),
-      ...(rewind ? { rewind } : {}), ...(feedback.length ? { feedback } : {}),
+      ...(rewind ? { rewind } : {}), ...(feedback.length ? { feedback } : {}), ...(contracts ? { contracts } : {}),
       problems }, null, 2);
   });
 }

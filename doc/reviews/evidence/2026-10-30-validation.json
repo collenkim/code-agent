@@ -9,22 +9,22 @@
     "claude": "2.1.312",
     "codex": "0.166.0"
   },
-  "stateSchema": 21,
+  "stateSchema": 22,
   "fullTest": {
     "command": "npm test",
     "runner": "node --test --test-concurrency=4",
-    "tests": 1897,
+    "tests": 1910,
     "suites": 249,
-    "pass": 1893,
+    "pass": 1906,
     "fail": 0,
     "cancelled": 0,
     "skipped": 4,
     "skipReason": "플랫폼 조건",
-    "wallSeconds": 578,
-    "testRunSeconds": 577.3,
+    "wallSeconds": 558,
+    "testRunSeconds": 556.9,
     "slowestSuite": {
-      "name": "P6 · fix — 재현 먼저",
-      "seconds": 70.5
+      "name": "검증 workflow 노드",
+      "seconds": 62.4
     }
   },
   "liveHosts": [
@@ -497,8 +497,8 @@
   "packageDryRun": {
     "command": "npm pack --dry-run --ignore-scripts --json",
     "files": 227,
-    "compressedBytes": 916525,
-    "unpackedBytes": 3183648,
+    "compressedBytes": 925597,
+    "unpackedBytes": 3215063,
     "agentFiles": 165,
     "coreFiles": 13,
     "templateFiles": 47,
@@ -520,7 +520,10 @@
     "질문의 변경 분류는 Claude 의 관찰된 답에만 적용된다 — Codex·master 위임 답은 요구·설계 변경으로 본다.",
     "결과 줄 경로는 따옴표·백틱으로 감싸지 않으면 첫 공백까지다 — 공백이 든 절대 경로는 바른 resultFile 을 알리는 형식 오류가 된다.",
     "요구 원문 인용의 DOC-REF 면제는 8자 이상이고 확정 지시서(요구·완료 조건·제약·오류 로그)에 글자 그대로 있는 인용만이다. 작은따옴표 인용은 아포스트로피와 섞여 보지 않는다.",
-    "critic 의 blocking·advisory 판단은 지침의 기준을 따르는 모델 판단이다 — 기계로 가르지 않는다. 재검토 범위 안내가 지적 수를 줄이는지는 실제 호스트로 측정하지 않았다."
+    "critic 의 blocking·advisory 판단은 지침의 기준을 따르는 모델 판단이다 — 기계로 가르지 않는다. 재검토 범위 안내가 지적 수를 줄이는지는 실제 호스트로 측정하지 않았다.",
+    "외부 계약의 요구 연결은 등록하는 쪽이 적는다 — 지시서·01 에 없는 ID 는 거부하지만 잘못 고른 ID 는 다시 도는 작업을 좁힌다. 보안 항목은 연결과 무관하게 design·plan·critic 이 기대고, 연결 없는 항목과 01 에 없는 R 을 가리킨 항목은 모든 작업이 기댄다.",
+    "의존 범위는 항목 줄과 ATX 제목의 섹션이다 — Setext 제목·표의 열 단위 범위는 없고, 범위 안 글자 차이(문장 다듬기 포함)는 모두 다시 판정을 부른다.",
+    "제공 저장소의 지금 상태 알림은 로컬 HEAD·작업 트리만 본다(원격은 fetch 뒤). 채택 판단은 사람이 한다. 외부 계약 채택은 결정적 판정이라 실제 호스트로 따로 실행하지 않았다 — 메인이 채택 알림을 전하는지, 담당이 pending 대기 표시를 따르는지는 관찰하지 않았다."
   ],
   "validationConditions": [
     "실제 모델 호출: Claude print 전체 흐름 1회($1.77), 대화형 CLI 1회(약 $0.54 추정), 관리 실행 2회($2.43·$1.90), Codex exec 1회, 스트리밍 입력 깨우기 실측 1회(약 $0.013)",
@@ -698,6 +701,169 @@
       "blocking": 0,
       "note": "advisory 는 게이트·피드백 사유가 아니다. 고친 계획의 critic 재검토에 직전 차단 지적·바뀐 입력을 싣는다 — 재검토 지적 수 변화는 미측정"
     }
+  },
+  "contractAdoption": {
+    "source": "authorization-api doc/contracts/jwt-jwks.md 의 커밋 d84fc70·32b811a·c862902 원문(git show 로 읽기만 함)을 임시 제공 저장소에 차례로 커밋",
+    "service": "계획 fixture — R1(JWKS·aud 검증)·R2(업무 문맥), 요구별 조사 explore-r1·explore-r2 와 synthesis 완료 뒤 변화 하나",
+    "claims": [
+      "jwks.uri api R1",
+      "jwt.audience auth R1",
+      "jwt.service-path jwt-claim R2",
+      "jwt.workspace-issue jwt-claim R2 (발급 API 없는 커밋에서 pending)"
+    ],
+    "before": {
+      "build": "직전 커밋 0c0b483",
+      "input": "버전 1(항목 줄만)"
+    },
+    "after": {
+      "build": "지금 작업 트리",
+      "input": "버전 2(종류·요구 연결·availability)"
+    },
+    "driver": "일회성 구동기(저장소 밖), 모델 호출 없음",
+    "steps": [
+      {
+        "step": "제공 저장소 미커밋 편집(작업 트리 = c862902 원문, 기준 d84fc70)",
+        "before": {
+          "unverified": true,
+          "stale": [
+            "analysis",
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true
+        },
+        "after": {
+          "unverified": false,
+          "stale": [],
+          "approvalChanged": false,
+          "drift": [
+            "jwt.audience removed worktree 보안",
+            "jwt.service-path removed worktree 보안",
+            "jwt.workspace-issue removed worktree 보안"
+          ]
+        }
+      },
+      {
+        "step": "제공 저장소 새 커밋 32b811a — 채택하지 않음",
+        "before": {
+          "unverified": true,
+          "stale": [
+            "analysis",
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true
+        },
+        "after": {
+          "unverified": false,
+          "stale": [],
+          "approvalChanged": false,
+          "drift": [
+            "jwt.service-path removed head 보안",
+            "jwt.workspace-issue removed head 보안"
+          ]
+        }
+      },
+      {
+        "step": "채택 d84fc70 → 32b811a (tenant_id → workspace_id)",
+        "before": {
+          "unverified": false,
+          "stale": [
+            "analysis",
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true,
+          "registerMs": 70
+        },
+        "after": {
+          "unverified": false,
+          "stale": [
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true,
+          "registerMs": 119,
+          "adoption": "채택 판정 — 바뀐 항목 2(보안 2) · 그대로 2",
+          "impact": {
+            "contracts": [
+              "auth-jwt/jwt.service-path",
+              "auth-jwt/jwt.workspace-issue"
+            ],
+            "requirements": [
+              "R2"
+            ],
+            "security": [
+              "외부 인증 계약",
+              "JWT·토큰"
+            ]
+          }
+        }
+      },
+      {
+        "step": "채택 32b811a → c862902 (+44/−20, 기대는 줄 중 aud·발급 claim 변경)",
+        "before": {
+          "unverified": false,
+          "stale": [
+            "analysis",
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true,
+          "registerMs": 68
+        },
+        "after": {
+          "unverified": false,
+          "stale": [
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true,
+          "registerMs": 123,
+          "adoption": "채택 판정 — 바뀐 항목 2(보안 2) · 그대로 2",
+          "impact": {
+            "contracts": [
+              "auth-jwt/jwt.audience",
+              "auth-jwt/jwt.workspace-issue"
+            ],
+            "requirements": [
+              "R1",
+              "R2"
+            ],
+            "security": [
+              "외부 인증 계약",
+              "JWT·토큰"
+            ]
+          }
+        }
+      },
+      {
+        "step": "줄바꿈만 다시 커밋(c862902 LF → CRLF) 후 채택",
+        "before": {
+          "unverified": false,
+          "stale": [
+            "analysis",
+            "explore-r1",
+            "explore-r2",
+            "synthesis"
+          ],
+          "approvalChanged": true,
+          "registerMs": 68
+        },
+        "after": {
+          "unverified": false,
+          "stale": [],
+          "approvalChanged": false,
+          "registerMs": 117,
+          "adoption": "채택 판정 — 바뀐 항목 0(보안 0) · 그대로 4 · 기준 커밋만 바뀐 계약(범위 밖 변경): auth-jwt"
+        }
+      }
+    ]
   },
   "liveReturn": {
     "host": "Claude Code 2.1.314, claude -p, 메인·담당 sonnet, 허용 도구 Read,Grep,Glob,Write,Edit,Agent,Skill,Bash(code-agent *)",
