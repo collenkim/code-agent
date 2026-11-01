@@ -17,7 +17,7 @@ import { budgetOf, COUNTER_LABEL, epochLabel, failure, grantFor, grantScope, gui
 import { readSourceTrace, sourceItems } from "./sourceTrace";
 import { requirementBlocks } from "./requirementFields";
 import { loadWork, type Work } from "./work";
-import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, hashInput, inputChanges, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
+import { RESULT_FILE, businessRuleFiles, criticCrossPoint, dropPlanningCache, fileHash, hashInput, inputChanges, inputFiles, invalidatePlanningCache, loadPlanning, mergeProblems, ORPHANED_REASON, PLANNING_PHASES, planningFile, planningPath, planningProblems, readyProblems, requiredOutputs,
   ROLE_PHASE, runView, scopedFiles, SOURCE_FAILURE, STALE_PRIORITY, staleCauses, staleReasons, TASK_AGENTS, taskContracts, taskCurrent, TaskSchema, withPlanningCache,
   type BudgetEpoch, type InputParts, type PlanningState, type PlanningTask, type RunView, type StaleCause, type TaskAttempt, type TaskRecord } from "./planningState";
 import type { PlanningCrossView } from "./crossRecord";
@@ -27,6 +27,7 @@ import { recordEvent, type TimelineInput } from "./timeline";
 import { forgetAgents } from "./agentRuns";
 import { recordImpact, requireRequestConfirmed, requirementHash, syncRequestRevision } from "./request";
 import { contractImpact, impactBrief, impactLines } from "./changeImpact";
+import { commitTime } from "./tree";
 
 /**
  * 근거 등록·재인용은 계획 잠금 안에서만 한다. 승인·실행 권한을 부여하지 않는다.
@@ -218,11 +219,27 @@ function phaseKeys(work: Work): string[] {
 const defaultInputs = (work: Work, role: PlanningTask["role"]): string[] => [work.active.spec, ...(role === "analysis" || role === "design" ? businessRuleFiles(work) : [])];
 /** 작업 정의가 따르는 확정 요구 — 진행 경로는 확정을 확인한 뒤 부른다 */
 const requestBasis = (work: Work): string | undefined => work.active.request?.hash ?? requirementHash(work.repoRoot, work.active.spec);
+/** 지금 실행 회차가 시작된 시각 — 이전 회차의 반영 커밋 시각. 첫 회차거나 그 커밋을 읽지 못하면 undefined */
+function cycleStart(work: Work): number | undefined {
+  const at = work.active.cycle && commitTime(work.repoRoot, work.active.cycle.delivered);
+  return at ? Date.parse(at) : undefined;
+}
+/**
+ * 따르던 기록이 없는 작업(이 기능 전)의 정의가 지금 확정본 전의 것인가 — 마지막 배정이 지금 회차 시작 전이면 이전 회차의 정의이고, 아니면
+ * 그 배정이 읽은 지시서가 지금과 다를 때 그렇다. 배정이 없거나 읽은 지시서가 기록되지 않았으면 가리지 못해 그대로 둔다.
+ */
+function legacyBehind(work: Work, record: TaskRecord): boolean {
+  const last = record.attempts.at(-1), start = cycleStart(work);
+  if (!last) return false;
+  if (start !== undefined && Date.parse(last.at) < start) return true;
+  const read = last.inputParts?.files?.[work.active.spec];
+  return read !== undefined && read !== fileHash(work.repoRoot, work.active.spec);
+}
 /**
  * 개정 전환 — 작업 정의가 따르던 확정 요구(basis)와 지금 확정본이 다를 때만 지금 단계 작업의 요구 범위·입력·선행을 현행으로 맞춘다.
  * 같은 확정본 위의 준비·재배정은 정의를 바꾸지 않는다(같은 입력 실패 한도가 준비마다 흔들리지 않게). 따르던 기록이 없는 작업(이 기능 전)은
- * 지금 확정본을 기록만 한다. 기본 작업(id = 역할)은 기본 정의로 다시 쓰고, 나눈 작업은 사라진 요구를 빼고(남는 것이 없으면 지금 요구 전체)
- * 선행 역할을 채운다. 실행 중인 작업은 건드리지 않는다 — 그 결과는 입력 해시가 달라 받지 않는다.
+ * legacyBehind 일 때만 맞추고, 아니면 지금 확정본을 기록만 한다. 기본 작업(id = 역할)은 기본 정의로 다시 쓰고, 나눈 작업은 사라진 요구를 빼고
+ * (남는 것이 없으면 지금 요구 전체) 선행 역할을 채운다. 실행 중인 작업은 건드리지 않는다 — 그 결과는 입력 해시가 달라 받지 않는다.
  */
 function alignTasks(work: Work, state: PlanningState): string[] {
   const basis = requestBasis(work);
@@ -231,7 +248,7 @@ function alignTasks(work: Work, state: PlanningState): string[] {
   const aligned: string[] = [];
   for (const record of state.tasks) {
     if (ROLE_PHASE[record.task.role] !== work.active.phase || record.basis === basis || record.attempts.at(-1)?.status === "running") continue;
-    if (record.basis !== undefined) {
+    if (record.basis !== undefined || legacyBehind(work, record)) {
       const kept = record.task.requirements.filter(key => keys.includes(key));
       const task: PlanningTask = record.task.id === record.task.role
         ? { ...record.task, requirements: scope, inputs: defaultInputs(work, record.task.role), dependsOn: predecessor(state, record.task.role) }
@@ -360,13 +377,20 @@ export function budgetEpoch(work: Work): { key: string; cycle: number; revision?
   return { key: `c${cycle}-${items ? items.replace(/^[a-z0-9]+:/, "").slice(0, 12) : "legacy"}`, cycle, ...(revision ? { revision } : {}) };
 }
 /**
- * 기록 잠금 안에서 지금 구간을 맞춘다(mutatePlanning). 구간 기록이 없는 이전 형식은 지금 구간을 이행 시각(retry.since)부터 이어받는다 —
- * 이행 뒤 사용량이 이행 전과 같다. 요구 항목 기록 전(legacy)이던 같은 회차의 구간은 키만 바꾼다. 그 밖의 구간 변경은 지난 구간을 남기고
- * 지금 시각부터 새로 센다.
+ * 구간 기록이 없는 이전 형식의 지금 구간 시작 — 이행 시각(retry.since)부터 이어받아 이행 전과 같은 사용량을 보인다. 단 지금 작업이 새 실행
+ * 회차면 그 기록의 배정·허용은 이전 회차의 것이라 이전 회차의 반영 커밋 시각부터 센다(커밋을 읽지 못하면 이행 시각부터).
+ */
+function legacySince(work: Work, retry: NonNullable<PlanningState["retry"]>): string {
+  const start = cycleStart(work);
+  return start !== undefined && start > Date.parse(retry.since) ? new Date(start).toISOString() : retry.since;
+}
+/**
+ * 기록 잠금 안에서 지금 구간을 맞춘다(mutatePlanning). 구간 기록이 없는 이전 형식은 지금 구간을 legacySince 부터 이어받는다.
+ * 요구 항목 기록 전(legacy)이던 같은 회차의 구간은 키만 바꾼다. 그 밖의 구간 변경은 지난 구간을 남기고 지금 시각부터 새로 센다.
  */
 function syncEpoch(work: Work, state: PlanningState, fresh: boolean): void {
   const retry = state.retry!, current = budgetEpoch(work), stored = retry.epoch;
-  if (!stored) { retry.epoch = { ...current, since: retry.since, ...(fresh ? {} : { migrated: true as const }) }; return; }
+  if (!stored) { retry.epoch = { ...current, since: fresh ? retry.since : legacySince(work, retry), ...(fresh ? {} : { migrated: true as const }) }; return; }
   if (stored.key === current.key) return;
   if (stored.key === `c${stored.cycle}-legacy` && stored.cycle === current.cycle) { retry.epoch = { ...stored, ...current }; return; }
   const now = new Date().toISOString();
@@ -378,15 +402,18 @@ interface EpochView { key: string; label: string; since?: number; migrated: bool
 function epochView(work: Work, state: PlanningState): EpochView {
   const current = budgetEpoch(work), stored = state.retry?.epoch, label = epochLabel(current.key);
   if (!state.retry) return { key: current.key, label, migrated: true };
-  if (!stored) return { key: current.key, label, since: Date.parse(state.retry.since), migrated: true };
+  if (!stored) return { key: current.key, label, since: Date.parse(legacySince(work, state.retry)), migrated: true };
   const same = stored.key === current.key || (stored.key === `c${stored.cycle}-legacy` && stored.cycle === current.cycle);
   return same ? { key: current.key, label, since: Date.parse(stored.since), migrated: !!stored.migrated, record: stored } : { key: current.key, label, migrated: false };
 }
-/** 지금 구간에 쓰는 사람 허용 — 구간 표기가 없는 이전 형식의 계획 허용은 그 기록을 이어받은 첫 구간에서만 그 구간의 허용으로 읽는다 */
+/**
+ * 지금 구간에 쓰는 사람 허용 — 구간 표기가 없는 이전 형식의 계획 허용은 그 기록을 이어받은 첫 구간에서, 그 구간이 시작된 뒤의 것만
+ * 그 구간의 허용으로 읽는다(새 실행 회차로 이어받은 구간은 이전 회차의 허용을 다시 쓰지 않는다)
+ */
 function epochGrants(state: PlanningState, view: EpochView): RetryGrant[] {
   return (state.retry?.grants ?? []).flatMap(grant => {
     if (!grant.scope.startsWith("planning:") || grant.scope.includes("@")) return [grant];
-    return view.migrated ? [{ ...grant, scope: `${grant.scope}@${view.key}` }] : [];
+    return view.migrated && (view.since === undefined || Date.parse(grant.at) >= view.since) ? [{ ...grant, scope: `${grant.scope}@${view.key}` }] : [];
   });
 }
 /** 예산 구간 보기 — planning status·동의 미리보기가 사용량을 설명할 때 쓴다 */

@@ -1,5 +1,5 @@
 {
-  "review": "2026-10-30-validation.md",
+  "review": "2026-11-01-validation.md",
   "platform": {
     "os": "Windows 11",
     "node": "24.19.0",
@@ -7,24 +7,25 @@
   },
   "hosts": {
     "claude": "2.1.312",
-    "codex": "0.166.0"
+    "codex": "0.166.0",
+    "claudeAppliedRelease": "2.1.316"
   },
   "stateSchema": 22,
   "fullTest": {
     "command": "npm test",
     "runner": "node --test --test-concurrency=4",
-    "tests": 1910,
+    "tests": 1913,
     "suites": 249,
-    "pass": 1906,
+    "pass": 1909,
     "fail": 0,
     "cancelled": 0,
     "skipped": 4,
     "skipReason": "플랫폼 조건",
-    "wallSeconds": 558,
-    "testRunSeconds": 556.9,
+    "wallSeconds": 474,
+    "testRunSeconds": 473.4,
     "slowestSuite": {
-      "name": "검증 workflow 노드",
-      "seconds": 62.4
+      "name": "npm 패키지 진입점 — 사람이 패키지 관리자로 설치한 패키지를 릴리스로 들인다",
+      "seconds": 57.6
     }
   },
   "liveHosts": [
@@ -388,6 +389,37 @@
       "seconds": 146,
       "costUsd": null,
       "costNote": "Codex 비용은 집계하지 않는다"
+    },
+    {
+      "id": "claude-applied-status",
+      "host": "Claude Code 2.1.316",
+      "mode": "print(-p)",
+      "model": "haiku",
+      "runtime": "적용 릴리스 1.0.0-8dd977dcf41f(임시 저장소 — 이 기록 커밋과 같은 src·template)",
+      "scenario": "platform-gateway 사본 /ca-status",
+      "costUsd": 0.003,
+      "seconds": 9,
+      "observed": "적용 버전을 status 로 읽어 보고"
+    },
+    {
+      "id": "claude-applied-analysis",
+      "host": "Claude Code 2.1.316",
+      "mode": "print(-p)",
+      "model": "sonnet(메인·담당 — 사본의 담당 정의를 sonnet 으로)",
+      "runtime": "적용 릴리스 1.0.0-8dd977dcf41f(임시 저장소 — 이 기록 커밋과 같은 src·template)",
+      "scenario": "users-api 같은 ID 후속 사본(회차 2) /ca-analyze, ready-for-gate 에서 멈춤",
+      "costUsd": 0.3,
+      "seconds": 63,
+      "agentSeconds": 45.6,
+      "completionToNextSeconds": 0.97,
+      "agentForeground": true,
+      "humanInputsAfterPrompt": 0,
+      "questions": 0,
+      "taskTotal": {
+        "used": 1,
+        "limit": 6,
+        "earlier": 19
+      }
     }
   ],
   "wakeProbe": {
@@ -439,9 +471,9 @@
       "fixture": "sha256:17ab377fa3014d4f",
       "stable": true,
       "medianMs": {
-        "amendment": 41,
-        "staleIds": 30,
-        "completionStall": 4850
+        "amendment": 40,
+        "staleIds": 27,
+        "completionStall": 2687
       },
       "completionStall": {
         "dispatched": "dispatch",
@@ -529,7 +561,8 @@
     "실제 모델 호출: Claude print 전체 흐름 1회($1.77), 대화형 CLI 1회(약 $0.54 추정), 관리 실행 2회($2.43·$1.90), Codex exec 1회, 스트리밍 입력 깨우기 실측 1회(약 $0.013)",
     "평가 스크립트·구동기는 부른 세션(Claude Code)의 표지를 지우고 호스트를 띄운다",
     "대상 프로젝트는 임시 Git 저장소에서 실행 — 저장소 루트 init·이 저장소의 upstream fetch·사용자 홈 릴리스 등록 없음",
-    "보고서·로그·임시 저장소는 dist 나 임시 폴더에 두며 커밋하지 않는다"
+    "보고서·로그·임시 저장소는 dist 나 임시 폴더에 두며 커밋하지 않는다",
+    "적용 릴리스 경로 실제 모델 호출: Claude -p 상태 조회 1회($0.003), 분석 단계 1회($0.30)"
   ],
   "minimalReplan": {
     "source": "users-api YSIJ-262 의 stages.jsonl·계획 기록·answers.jsonl·동의 원장·리뷰 기록(2026-10-28 UTC)",
@@ -712,11 +745,11 @@
       "jwt.workspace-issue jwt-claim R2 (발급 API 없는 커밋에서 pending)"
     ],
     "before": {
-      "build": "직전 커밋 0c0b483",
+      "build": "0c0b483",
       "input": "버전 1(항목 줄만)"
     },
     "after": {
-      "build": "지금 작업 트리",
+      "build": "80a0ea0",
       "input": "버전 2(종류·요구 연결·availability)"
     },
     "driver": "일회성 구동기(저장소 밖), 모델 호출 없음",
@@ -893,5 +926,223 @@
     ],
     "earlierPair": "허용 도구에 Write 없음 — 쓰기 거부로 결과를 응답에 실음, 하나는 줄 전체를 백틱으로 감싼 결과 줄(이 모양은 받는다). $0.20·$0.25",
     "notObserved": "planning cancel 뒤 새 담당으로 재배정하는 회수 경로(메인이 고르지 않음 — 결정적 시험)"
+  },
+  "stateMigration": {
+    "scope": "users-api·platform-gateway·authorization-api·service-api 를 읽기만 하고, 임시 사본·임시 릴리스 저장소(installGitRelease, node_modules 연결)에서 update --release 미리보기 → --shown-hash 로 적용",
+    "versions": {
+      "source": "이 기록을 담은 커밋(부모 80a0ea0), 상태 형식 세대 22",
+      "realStore": [
+        {
+          "release": "f8c67b8",
+          "stateSchema": 13
+        },
+        {
+          "release": "b64c1e8",
+          "stateSchema": 16,
+          "applied": false
+        },
+        {
+          "release": "76328fe7",
+          "stateSchema": 12
+        },
+        {
+          "packageReleases": 5,
+          "stateSchema": "5~10"
+        }
+      ],
+      "projects": {
+        "applied": "1.0.0-f8c67b89bd53",
+        "stateSchema": 13,
+        "pending": 0,
+        "adopted": {
+          "users-api": "a1c684b92de4",
+          "authorization-api": "a1c684b92de4",
+          "platform-gateway": "22118c987cbe",
+          "service-api": null
+        }
+      },
+      "templates": {
+        "manifestRelease": "f8c67b8",
+        "installedCopies": 82,
+        "differFromBundle": 0,
+        "humanEdits": 0,
+        "unrecordedCopies": {
+          "users-api": "Claude 41",
+          "platform-gateway": "Codex 41"
+        }
+      },
+      "toolDefinitions": {
+        "oldTemplateAgentRunInBackgroundFalse": 14,
+        "newTemplateAgentRunInBackground": 0,
+        "agentSchemaHasRunInBackground": {
+          "2.1.306 대화형": false,
+          "2.1.312 대화형": false,
+          "2.1.316 -p": true
+        },
+        "bashSchemaHasRunInBackground": {
+          "2.1.316 -p": true
+        }
+      }
+    },
+    "applyCopies": [
+      {
+        "project": "users-api",
+        "state": "진행 중 YSIJ-262(plan)",
+        "exit": 3,
+        "result": "예약 — f8c67b8 유지",
+        "userFilesChanged": 0,
+        "headBranchesSame": true
+      },
+      {
+        "project": "service-api",
+        "state": "접수 중 YSIJ-268",
+        "exit": 3,
+        "result": "예약 — f8c67b8 유지",
+        "userFilesChanged": 0,
+        "headBranchesSame": true
+      },
+      {
+        "project": "platform-gateway",
+        "state": "없음",
+        "exit": 0,
+        "result": "적용 — 세대 22, adopted 유지",
+        "userFilesChanged": 0,
+        "headBranchesSame": true
+      },
+      {
+        "project": "authorization-api",
+        "state": "없음(사용자 미커밋 변경 14)",
+        "exit": 0,
+        "result": "적용 — 세대 22, adopted 유지",
+        "userFilesChanged": 0,
+        "headBranchesSame": true,
+        "userConfigLinePreserved": true
+      }
+    ],
+    "sameIdFollowUp": {
+      "project": "users-api YSIJ-262",
+      "procedure": "모의 반영(커밋·clearActive) → 적용 → 설치 파일 모의 사람 커밋 → 변경안(개정 9 부모, REQ-24·DONE-7 추가) 제출 → 모의 사람 확정 → start → planning prepare → planning status",
+      "before": {
+        "release": "80a0ea0",
+        "cycle": 2,
+        "nextLine": "답 출처 미확인 질문 68개",
+        "epochSince": "이행 시각",
+        "taskTotal": {
+          "used": 19,
+          "limit": 21
+        },
+        "analysisScope": [
+          "REQ-1",
+          "CON-1",
+          "CON-2",
+          "CON-3",
+          "CON-4",
+          "CON-5"
+        ],
+        "cliMs": {
+          "apply": 2104,
+          "begin": 756,
+          "submit": 532,
+          "confirm": 118,
+          "start": 954,
+          "prepare": 597,
+          "status": 767
+        }
+      },
+      "after": {
+        "release": "1.0.0-8dd977dcf41f(이 기록 커밋과 같은 src·template 의 임시 릴리스)",
+        "cycle": 2,
+        "nextLine": "분석 배정(planning advance)",
+        "epochSince": "이전 회차 반영 커밋 시각",
+        "taskTotal": {
+          "used": 0,
+          "limit": 6,
+          "earlier": 19
+        },
+        "analysisScopeCount": 40,
+        "cliMs": {
+          "apply": 2072,
+          "begin": 750,
+          "submit": 539,
+          "confirm": 116,
+          "start": 1104,
+          "prepare": 637,
+          "status": 1332
+        }
+      },
+      "answers": {
+        "answered": 69,
+        "observedRowsOldFormat": 69,
+        "sameAsDeliveryCommit": 63
+      },
+      "regressionTests": [
+        "planningBudgetEpoch: 이전 형식 기록의 새 회차 이어받기",
+        "planningBudgetEpoch: 같은 회차의 읽은 지시서 차이",
+        "answers: 이전 회차 반영본 이어받기"
+      ],
+      "failOnPreviousBuild": [
+        "planningBudgetEpoch 2건 — 사용량 [6, 9] 대 [0, 6, 6], 범위 REQ-1·CON-1 유지"
+      ]
+    },
+    "budgetReplay": [
+      {
+        "project": "users-api",
+        "id": "YSIJ-262",
+        "attempts": 144,
+        "recordedGrants": 36,
+        "replayOld": 36,
+        "replayNow": 2
+      },
+      {
+        "project": "authorization-api",
+        "id": "YSIJ-254",
+        "recordedGrants": 8,
+        "replayOld": 8,
+        "replayNow": 1
+      },
+      {
+        "project": "platform-gateway",
+        "recordedGrants": 0,
+        "replayOld": 0,
+        "replayNow": 0
+      },
+      {
+        "project": "service-api",
+        "id": "YSIJ-255",
+        "excluded": "남은 범위가 재생과 맞지 않음(배정 3 대 2, 허용 2 대 0)"
+      }
+    ],
+    "completionGap": {
+      "project": "platform-gateway",
+      "case": "구현 T1 완료 → T2",
+      "before": {
+        "humanInputs": 1,
+        "waitMinutes": 33.7
+      },
+      "now": [
+        "Stop 1회 이어가기(격리 시험)",
+        "완료 알림 새 턴 약 1초(2.1.312)",
+        "포그라운드 담당 같은 턴 0.97초(2.1.316)"
+      ]
+    },
+    "preexisting": [
+      "platform-gateway 공통 문서 4종 미확정 — f8c67b8 도 같음",
+      "authorization-api 공통 문서 확정 뒤 바뀜 3·품질 기준 spotbugsTest 미선언 — f8c67b8 도 같음"
+    ],
+    "appliedTemplates": {
+      "copies": [
+        "platform-gateway",
+        "authorization-api",
+        "users-api 시나리오"
+      ],
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "files": 86,
+      "differFromBundle": 0,
+      "unrecorded": 0,
+      "agentRunInBackgroundFalse": 0
+    }
   }
 }

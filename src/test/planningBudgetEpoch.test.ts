@@ -1,9 +1,11 @@
 /**
  * 계획 배정 예산 구간 — 작업 총 배정은 실행 회차·확정 요구 항목이 정한 구간마다 센다. 이전 구간의 배정은 기록·집계에만 남고,
  * 같은 입력 실패는 구간과 무관하게 막힌다. 확정하지 않은 요구 변경·새 작업 ID 로는 막힌 한도를 풀지 못한다. 사람 허용은 그 구간에만 쓰이고,
- * 구간 표기 없는 이전 허용은 이행한 첫 구간에서만 쓰인다.
+ * 구간 표기 없는 이전 허용은 이행한 첫 구간에서만 쓰인다. 이전 형식 기록을 새 실행 회차에서 이어받으면 이전 회차의 배정·허용은 넘어오지 않는다.
  */
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -188,4 +190,56 @@ describe("이행과 사람 허용", () => {
     assert.equal(planningBudget(root, "analysis").taskTotal.limit, 6, "이전 구간의 허용은 새 구간에서 쓰지 않는다");
     assert.equal(epochLabel("c3-legacy"), "실행 회차 3");
   });
+
+  test("이전 형식 기록을 새 실행 회차에서 처음 이어받으면 이전 회차의 반영 커밋 시각부터 센다 — 이전 회차의 배정은 집계에만, 그 허용은 다시 쓰지 않고, 작업 정의는 지금 요구로 맞춘다", () => {
+    preparePlanning(root);
+    legacy((value) => {
+      analysis(value).task.requirements = ["REQ-1", "CON-1"];
+      analysis(value).attempts.push(...Array.from({ length: 6 }, (_, index) => ({ dispatchId: `old-${index}`, inputHash: `old-${index}`, at: ago(200 - index), status: "completed" as const })));
+      value.retry!.grants = [{ key: "taskTotal", scope: "planning:analysis", step: 3, consent: "legacy-consent", at: ago(180), reason: "이전 회차 허용" }];
+    });
+    const delivered = commitAt(ago(100));
+    saveActive(root, { ...loadActive(root)!, cycle: { number: 2, delivered } });
+    confirm(["값을 반환한다.", "추가 값을 반환한다."]);
+    const inherited = totalOf();
+    assert.deepEqual([inherited.used, inherited.limit, inherited.earlier], [0, 6, 6], "이전 회차의 배정은 집계에만 남고 그 허용은 쓰지 않는다");
+    preparePlanning(root);
+    const epoch = state().retry!.epoch!;
+    assert.match(epoch.key, /^c2-[0-9a-f]{12}$/);
+    assert.deepEqual([epoch.migrated, Date.parse(epoch.since)], [true, Date.parse(git(["show", "-s", "--format=%cI", delivered]))]);
+    assert.deepEqual(analysis(state()).task.requirements, ["REQ-1", "REQ-2"], "이전 회차의 요구 범위를 지금 요구로 맞춘다");
+    assert.ok(dispatch("analysis").resultShape.dispatchId);
+  });
+
+  test("같은 회차에서 이어받은 이전 형식 작업은 마지막 배정이 읽은 지시서가 지금과 다를 때만 지금 요구로 맞춘다", () => {
+    preparePlanning(root);
+    const read = (spec: string) => legacy((value) => {
+      analysis(value).task.requirements = ["REQ-1", "CON-1"];
+      analysis(value).attempts.push({ dispatchId: "old", inputHash: "old", at: ago(30), status: "completed",
+        inputParts: { task: "t", manifest: "m", inputs: "i", files: { [SPEC]: spec }, dependencies: [], questions: [] } });
+    });
+    read(createHash("sha256").update(readFileSync(join(root, SPEC))).digest("hex"));
+    preparePlanning(root);
+    assert.deepEqual(analysis(state()).task.requirements, ["REQ-1", "CON-1"], "같은 지시서를 읽은 정의는 기록만 한다");
+    read("이전 지시서");
+    preparePlanning(root);
+    assert.deepEqual(analysis(state()).task.requirements, ["REQ-1"]);
+  });
 });
+
+/** 구간·따르던 확정 요구를 기록하기 전 형식으로 되돌린다 */
+function legacy(change: (value: PlanningState) => void): void {
+  editPlanning((value) => {
+    delete value.retry!.epoch;
+    delete value.retry!.epochs;
+    value.retry!.since = ago(300);
+    for (const record of value.tasks) delete record.basis;
+    change(value);
+  });
+}
+const git = (args: string[], env: NodeJS.ProcessEnv = {}) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, ...env } }).trim();
+/** 그 시각의 반영 커밋 */
+function commitAt(at: string): string {
+  git(["commit", "-q", "--allow-empty", "-m", `[${loadActive(root)!.id}] 반영`], { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at });
+  return git(["rev-parse", "HEAD"]);
+}

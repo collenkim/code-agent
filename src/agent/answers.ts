@@ -19,6 +19,7 @@ import { parseQuestions, QUESTION_KIND_LABEL, questionContent, type Question } f
 import { claimDigest, dependencyContracts } from "./dependencyContracts";
 import { writeAtomic } from "../core/atomic";
 import { skill } from "./hostText";
+import { fileAt } from "./tree";
 
 export const ANSWERS_FILE = "answers.jsonl";
 export function answersFile(id: string): string { return `${STATE_DIR}/work/${id}/${ANSWERS_FILE}`; }
@@ -204,7 +205,7 @@ export function writeAnswerBaseline(root: string, id: string, specPath: string):
   appendRow(root, id, { type: "start", at: new Date().toISOString(), version: 1, intake });
 }
 
-export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "dashboard-human" | "contract" | "conversation" | "legacy" | "unverified";
+export type AnswerSource = "observed" | "intake" | "delegated" | "relayed" | "dashboard-human" | "contract" | "conversation" | "delivered" | "legacy" | "unverified";
 /** 질문 원문도 결속한다. Q 번호만 같은 다른 질문으로 답을 옮길 수 없다. */
 export function questionHash(root: string, id: string, q: string): string {
   const text = readFileSync(join(root, questionsFile(id)), "utf8");
@@ -242,10 +243,29 @@ function delegatedMatch(question: Question, rows: AnswerRow[]): Extract<AnswerRo
   return row && row.hash === sha16(question.answer) ? row : undefined;
 }
 
+/**
+ * 새 실행 회차에서 이전 회차 반영 커밋의 같은 질문과 원문·답·출처 줄이 그대로인 답 — 그 회차의 답 판정과 반영 동의를 지난 답이다.
+ * 질문 본문 결속(`documentHash`) 전 형식의 관찰 기록도 이것으로 이어받는다. 반영 뒤 질문이나 답을 고쳤으면 맞지 않는다.
+ */
+function deliveredMatcher(root: string, id: string): (question: Question) => boolean {
+  let previous: { text: string; questions: Question[] } | undefined | null = null;
+  const plain = (value: string | undefined) => (value ?? "").replace(/\r\n/g, "\n").trim();
+  return (question) => {
+    if (previous === null) {
+      const active = loadActive(root), text = active?.id === id && active.cycle ? fileAt(root, active.cycle.delivered, questionsFile(id)) : undefined;
+      previous = text === undefined ? undefined : { text, questions: parseQuestions(text) };
+    }
+    const before = previous?.questions.find((item) => item.id === question.id);
+    return !!before && plain(before.answer) === plain(question.answer) && plain(before.source) === plain(question.source) &&
+      sha16(questionContent(previous!.text, question.id)) === questionHash(root, id, question.id);
+  };
+}
+
 /** 답이 있는 질문마다 답의 출처 */
 export function answerSources(root: string, id: string, questions: Question[]): Map<string, AnswerSource> {
   const rows = readAnswerRows(root, id);
   const start = rows.find((row): row is Extract<AnswerRow, { type: "start" }> => row.type === "start");
+  const delivered = deliveredMatcher(root, id);
   const sources = new Map<string, AnswerSource>();
   for (const question of questions) {
     if (!question.answer) continue;
@@ -273,7 +293,7 @@ export function answerSources(root: string, id: string, questions: Question[]): 
     else if (observedMatch(root, id, question, rows)) sources.set(question.id, "observed");
     else if (delegatedMatch(question, rows)) sources.set(question.id, delegatedMatch(question, rows)!.actor === "ai" ? "delegated" : "relayed");
     else if (question.source?.startsWith("대화")) sources.set(question.id, "conversation");
-    else sources.set(question.id, "unverified");
+    else sources.set(question.id, delivered(question) ? "delivered" : "unverified");
   }
   return sources;
 }
@@ -308,7 +328,7 @@ export function formatAnswerSources(root: string, id: string): string | undefine
   const count = (source: AnswerSource) => [...sources.values()].filter((value) => value === source).length;
   if (count("legacy") === sources.size) return `질문 답 출처: 이전 형식(관찰 기록 없음) ${sources.size}`;
   const parts = ([["observed", "질문 도구 관찰"], ["intake", "접수 때 정한 것"], ["delegated", "master 위임 판단(사람 응답 아님)"], ["relayed", "master 경유 사람 답(관찰 안 됨)"], ["dashboard-human", "대시보드 사람 답"], ["conversation", "대화 직접 입력(관찰 안 됨)"],
-    ["contract", "기존 계약 재인용(사람 응답 아님)"], ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
+    ["contract", "기존 계약 재인용(사람 응답 아님)"], ["delivered", "이전 회차 반영본"], ["legacy", "이전 형식(관찰 기록 없음)"], ["unverified", "출처 미확인"]] as const)
     .filter(([source]) => count(source) > 0).map(([source, label]) => `${label} ${count(source)}`);
   const conversation = questions.filter((question) => ["conversation", "delegated", "relayed", "contract"].includes(sources.get(question.id) ?? ""));
   const shown = conversation.slice(0, 10).map((question) =>

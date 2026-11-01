@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -19,6 +19,7 @@ import {
   CONSENT_SPEC, CONSENT_WORK_ID, approveAndApplyFixture, confirmationText, consentEvent, prepareConsentFixture, preparePlanFixture,
   setupConsentProject, submitConsentRequest, writeFixture,
 } from "./consentFixture";
+import { gitFixture } from "./repoFixture";
 
 let root: string;
 const QUESTIONS = `doc/work/${CONSENT_WORK_ID}/questions.md`;
@@ -174,6 +175,25 @@ test("T-6-7 이전 형식 작업의 답은 막지 않고, 접수 답은 확정 �
   writeQuestions("## Q3 · 분석\n값?\n[Answer]: 1\n");
   assert.equal(sources().get("Q3"), "legacy", "시작 행이 없는 이전 형식 작업은 막지 않는다");
   assert.match(formatAnswerSources(root, CONSENT_WORK_ID) ?? "", /^질문 답 출처: 이전 형식\(관찰 기록 없음\) 1$/);
+});
+
+test("새 실행 회차는 이전 회차 반영 커밋과 질문 원문·답이 같은 답을 이어받는다 — 질문 본문 결속 전 형식의 관찰 기록이어도 다시 묻지 않고, 반영 뒤 고친 질문·답은 출처 미확인이다", () => {
+  startWork();
+  writeQuestions("## Q1 · 분석\n범위?\n[Answer]: 모듈 하나\n\n## Q2 · 분석\n이름?\n[Answer]: value\n\n## Q3 · 분석\n값?\n[Answer]: 1\n");
+  // 결속 전 형식(f8c67b8 까지) — 질문 행에 documentHash 가 없다
+  const file = join(root, `.code-agent/work/${CONSENT_WORK_ID}/answers.jsonl`);
+  for (const [q, answer] of [["Q1", "모듈 하나"], ["Q2", "value"], ["Q3", "1"]]) {
+    appendFileSync(file, `${JSON.stringify({ type: "ask", at: new Date().toISOString(), host: "claude", session: "old", toolId: `old-${q}`, prefilled: false, items: [{ q, header: "범위", questionHash: `h-${q}`, options: [answer] }] })}\n`);
+    appendFileSync(file, `${JSON.stringify({ type: "answer", at: new Date().toISOString(), host: "claude", session: "old", toolId: `old-${q}`, items: [{ q, questionHash: `h-${q}`, answer, free: false }] })}\n`);
+  }
+  assert.deepEqual([...sources().values()], ["unverified", "unverified", "unverified"], "회차 밖에서는 결속 전 형식의 관찰을 인정하지 않는다");
+  gitFixture(root, "add", "-A");
+  gitFixture(root, "commit", "-qm", `[${CONSENT_WORK_ID}] 반영`);
+  saveActive(root, { ...loadActive(root)!, cycle: { number: 2, delivered: gitFixture(root, "rev-parse", "HEAD") } });
+  assert.deepEqual([...sources().values()], ["delivered", "delivered", "delivered"]);
+  writeQuestions("## Q1 · 분석\n범위?\n[Answer]: 모듈 하나\n\n## Q2 · 분석\n이름?\n[Answer]: other\n\n## Q3 · 분석\n바뀐 값?\n[Answer]: 1\n");
+  assert.deepEqual([...sources().entries()], [["Q1", "delivered"], ["Q2", "unverified"], ["Q3", "unverified"]], "반영 뒤 답·질문을 고치면 이어받지 않는다");
+  assert.match(formatAnswerSources(root, CONSENT_WORK_ID) ?? "", /^질문 답 출처: 이전 회차 반영본 1 · 출처 미확인 2$/);
 });
 
 test("T-6-9 업무 질문 관찰 실패는 질문을 막지 않는다", () => {

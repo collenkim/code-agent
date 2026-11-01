@@ -28,6 +28,25 @@ export function commitOf(repoRoot: string, ref: string): string | undefined {
   }
 }
 
+/** 커밋한 시각(ISO 8601). 없는 커밋이면 undefined */
+export function commitTime(repoRoot: string, commit: string): string | undefined {
+  try {
+    const at = git(repoRoot, ["show", "-s", "--format=%cI", `${commit}^{commit}`]).trim();
+    return Number.isNaN(Date.parse(at)) ? undefined : at;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 그 커밋에 들어 있던 파일 본문. 없는 커밋·경로면 undefined */
+export function fileAt(repoRoot: string, commit: string, path: string): string | undefined {
+  try {
+    return git(repoRoot, ["show", `${commit}:${path}`]);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 두 ref 가 갈라진 자리. 이미 있는 작업 브랜치로 되돌아올 때 굳힐 값이다 —
  * 기준 브랜치의 지금 끝을 굳히면 그 사이 기준이 나아간 만큼이 전부 이 작업의 `[D]` 삭제로 잡힌다.
