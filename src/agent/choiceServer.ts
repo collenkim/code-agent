@@ -125,7 +125,11 @@ export async function confirmChoice(root: string, args: unknown, elicit: Elicit)
   }
   observeConsent({ ...event, hook_event_name: "PostToolUse", tool_response: { questions, answers } }, root, "codex-elicitation");
   const after = JSON.parse(consentStatus(root, id));
-  return { id: after.id, status: after.status, failure: after.failure };
+  return { id: after.id, status: after.status, failure: after.failure,
+    ...(after.status === "pending" ? { next: { tool: "mcp__code_agent__confirm", arguments: { id } },
+      guide: "아직 최종 동의 전입니다. 남은 질문을 같은 confirm으로 표시하세요. consent finish와 셸 권한 요청은 하지 않습니다." }
+      : after.status === "approved" ? { next: { command: `code-agent consent finish ${id}` },
+        guide: "최종 동의를 받았습니다. 같은 세션에서 finish로 적용하세요. Git 쓰기가 필요한 적용만 호스트 권한을 요청합니다." } : {}) };
 }
 
 interface Handlers { id: string; askChoice: typeof askChoice; confirmChoice: typeof confirmChoice }

@@ -199,7 +199,7 @@ describe("접수 — 세션이 없을 때도 hook 이 지키는 것", () => {
     requestBegin(repo, ID, "feature");
     draft();
     // 형식과 데이터만 싣는다 — 연결·질문 규칙의 원천은 ca-request 스킬이다
-    assert.match(requestFormat(repo), /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\. 연결 규칙은 ca-request 의 정리 절\.$/m);
+    assert.match(requestFormat(repo), /^- `sourceMap`: 원문 인용 quote → REQ-1 \/ DONE-1 \/ CON-1 \/ OUT-1 \/ TITLE \/ BACKGROUND\..*INVOCATION.*연결 규칙은 ca-request 의 정리 절\.$/m);
     requestSubmit(repo, DRAFT);
     confirm();
     start(repo, join(repo, SPEC));
@@ -266,6 +266,23 @@ describe("접수 — submit", () => {
     draft({ original: undefined, originalFile: "doc/work/ORD-7/ticket.txt" });
     requestSubmit(repo, DRAFT);
     assert.match(read(SPEC), /<!-- 원문: doc\/work\/ORD-7\/ticket\.txt 그대로 -->\n> 티켓 ORD-7\n> 주문 취소 버튼을 만든다/);
+  });
+
+  test("접수 호출은 원문에 보존하고 요구 연결로 새 항목을 만들지 않는다", () => {
+    requestBegin(repo, ID, "feature");
+    const body = "화면에 $ca-request를 표시한다";
+    const original = `$ca-request ${body}`;
+    draft({ original, requirements: [body], clarifications: [], sourceMap: [
+      { quote: "$ca-request", targets: ["INVOCATION"] }, { quote: body, targets: ["REQ-1"] },
+    ] });
+    requestSubmit(repo, DRAFT);
+    const text = read(SPEC);
+    assert.ok(text.includes(`> ${original}`));
+    assert.match(text, /code-agent-original-unmapped: 0/);
+    assert.match(text, /\[REQ-1\] 화면에 \$ca-request를 표시한다/);
+    assert.doesNotMatch(text, /\[REQ-2\]/);
+    confirm();
+    assert.equal(requestState(repo, ID, SPEC).status, "confirmed");
   });
 
   test("형식 · 지시서 규칙에 안 맞으면 렌더하지 않는다", () => {

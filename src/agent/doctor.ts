@@ -18,6 +18,7 @@ import {
 } from "./assets";
 import { checkProjectDocs } from "./docs";
 import { CLAUDE_HOOKS, CODEX_EVENTS, codexMatcherProblem, codexWindowsProblem, IMPLEMENT_MATCHER, installedHook, settingsProblem, unmatchedTools, WAKE_MATCHER, wakeHookAsync } from "./init";
+import { claudePermissionSummary, CLAUDE_PERMISSION_GUIDE } from "./claudePermissions";
 import { hostReadiness } from "./master/hostProfile";
 import { choiceConfigProblem } from "./choiceConfig";
 import { unknownCodexTools } from "./codexHook";
@@ -227,6 +228,7 @@ export function doctor(repoRoot: string, host?: HostSelection, options: { cross?
   // 파일 자체가 깨져 있으면 먼저 그것을 말한다: 그 경우 `installedHook` 은 "없다" 와 구분되지 않고,
   // "없다" 의 처방인 `code-agent init` 은 같은 파일에서 멈춘다.
   if (hosts.includes("claude")) {
+  add("·", "Claude 명령 실행 권한", claudePermissionSummary(repoRoot), CLAUDE_PERMISSION_GUIDE);
   const settings = settingsProblem(repoRoot);
   if (settings) {
     add("✗", "hook 설정 파일", settings, "이 파일을 고친 뒤 code-agent init — 고치기 전에는 init·update 도 멈춥니다");

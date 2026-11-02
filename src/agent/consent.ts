@@ -38,6 +38,7 @@ import { CONSENT_DIR, CONSENT_LOCK, CONSENT_TITLES, readConsentIndex, repeatedTa
 import { observeAnswerEvent } from "./answers";
 import { withNotation } from "./hostText";
 import { clipLine, excerpt, questionScreenProblem } from "./screenText";
+import { hasConsentPresentation } from "./consentPresentation";
 
 export { openConsent } from "./consentState";
 
@@ -575,6 +576,13 @@ export function prepareConsent(root: string, raw: unknown, options: { binding?: 
     const displayed = preview(root, action);
     const inspected = inspectConsentSnapshot(root, action, true);
     const snapshot = inspected.hash;
+    // 전문에 등장하는 실제 문서·파일을 모델이 경로를 다시 작성하지 않고 그대로 전달할 수 있게 한다.
+    const references = Object.keys(inspected.entries.files).filter(file => displayed.summary.includes(file) && statIfPresent(localPath(root, file, true))?.isFile());
+    if (references.length) displayed.summary += "\n\n문서·파일 링크:\n" + references.map(file => {
+      const label = file.replace(/[\\[\]]/g, "\\$&");
+      const target = localPath(root, file).replace(/\\/g, "/").replace(/[%#<>\r\n]/g, ch => encodeURIComponent(ch));
+      return `- [${label}](<${target}>)`;
+    }).join("\n");
     if (action.action !== "deliver") requireConsentSnapshot(root, { action, snapshot: before.hash, snapshotEntries: before.entries },
       "확인 준비 중 대상이 바뀌었습니다. 현재 내용을 다시 준비하세요.", inspected);
     // 같은 동작이 연속 두 번 대상 변경으로 폐기됐으면 경고만 붙인다 — 사람의 응답 경로는 막지 않는다
@@ -604,6 +612,7 @@ function currentWorkId(root: string): string | undefined {
 
 export interface ConsentHookInput {
   cwd?: string; hook_event_name?: string; session_id?: string; tool_use_id?: string; tool_name?: string;
+  transcript_path?: string;
   agent_id?: string; agent_type?: string;
   tool_input?: { questions?: Question[]; answers?: unknown; metadata?: {source?: string}; [key:string]:unknown };
   tool_response?: unknown;
@@ -1070,6 +1079,24 @@ function askScreenProblem(items: unknown): string | undefined {
     if (problem) return problem;
   }
 }
+/** 실제 Claude hook 경계에서만 대화 출력을 확인한다. MCP·대시보드의 자체 표시 경로와 응답 관찰 함수는 이 검사를 거치지 않는다. */
+function requireConsentPresentation(input: ConsentHookInput, projectDir?: string): void {
+  if (input.hook_event_name !== "PreToolUse" || input.tool_name !== "AskUserQuestion" || !input.cwd) return;
+  const source = input.tool_input?.metadata?.source;
+  if (typeof source !== "string" || !source.startsWith("code-agent:")) return;
+  const id = source.slice("code-agent:".length);
+  if (!id || !UUID.test(id)) return;
+  const record = loadConsent(findRepoRoot(projectDir ?? input.cwd), id);
+  // 다른 세션·잘못된 상태는 observeConsent가 먼저 정한 거부 사유를 유지한다.
+  if (!record.fullText || record.status !== "pending" || record.observed?.length || input.agent_id ||
+      !input.session_id || !input.tool_use_id ||
+      record.preparedSession && (record.preparedSession.host !== "claude" || record.preparedSession.id !== input.session_id) ||
+      record.sessionId && record.sessionId !== input.session_id) return;
+  if (!hasConsentPresentation(input.transcript_path, input.session_id, record.createdAt, record.summary, input.tool_use_id)) {
+    throw new Stop(`동의 요약 전문의 대화 출력을 확인하지 못했습니다. 질문을 아직 열지 않았습니다. consent prepare/status가 반환한 summary를 일반 응답 본문에 그대로 출력하고, 클릭 가능한 문서·파일 링크를 덧붙인 뒤 같은 toolInput으로 질문하세요. 도구 출력·생각 요약·전문 파일 경로만으로 대신하지 않습니다. 대화 기록을 읽지 못하면 호스트 기록 경로를 확인하세요. 전문: ${record.fullText}`);
+  }
+}
+
 /**
  * Claude AskUserQuestion 관찰. 동의 질문(metadata.source 가 code-agent:)의 관찰 실패는 질문을 막는다(exit 2).
  * 업무 질문은 선택 화면을 넘는 크기만 막고(PreToolUse, exit 2) 답 관찰(answers.jsonl)은 실패해도 질문을 막지 않는다 — 게이트가
@@ -1094,7 +1121,10 @@ function consentEvent(stdin:string):number {
   };
   const source = input?.tool_input?.metadata?.source;
   if (typeof source === "string" && source.startsWith("code-agent:")) {
-    try { observeConsent(input, process.env.CLAUDE_PROJECT_DIR); return 0; }
+    try {
+      requireConsentPresentation(input, process.env.CLAUDE_PROJECT_DIR);
+      observeConsent(input, process.env.CLAUDE_PROJECT_DIR); return 0;
+    }
     catch (error) { return block(`code-agent consent-event: ${error instanceof Error ? error.message : error}\n`); }
   }
   // 업무 질문도 선택 화면에 다 보여야 답할 수 있다 — 화면을 넘는 질문은 표시하기 전에 돌려보낸다(Codex ask 와 같은 기준)

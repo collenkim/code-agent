@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, appendFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -88,11 +88,29 @@ test("동의 UI: 동일 세션 hook 티켓 → 서버 폼 응답 → 적용 원�
     return { action: "accept", content: { q1: "확인하고 진행" } };
   });
   assert.equal(result.status, "approved");
+  assert.deepEqual(result.next, { command: `code-agent consent finish ${id}` });
   applyConsent(root, id, { sessionId: "owner" });
   assert.equal(loadConsent(root, id).status, "applied");
   assert.equal(readDocLedger(root).length, 4);
   assert.ok(readDocLedger(root).every(row => row.presence.channel === "codex-elicitation"));
   await assert.rejects(confirmChoice(root, { id }, selected("확인하고 진행")), /hook/);
+});
+
+test("지식 선택 뒤 pending은 finish 없이 같은 confirm으로 최종 동의를 받도록 안내한다", async () => {
+  const id = prepare(), record = loadConsent(root, id);
+  record.choices = [{ shown: "문서 후보", prompt: "적용", target: "doc/knowledge/features.md", key: "FEATURE-1" }];
+  writeFileSync(join(root, `.code-agent/consents/${id}.json`), JSON.stringify(record));
+  open(id);
+  const pending: any = await confirmChoice(root, { id }, selected("적용"));
+  assert.equal(pending.status, "pending");
+  assert.deepEqual(pending.next, { tool: "mcp__code_agent__confirm", arguments: { id } });
+  assert.match(pending.guide, /finish와 셸 권한 요청은 하지 않습니다/);
+  assert.equal(readDocLedger(root).length, 0);
+  open(id);
+  const approved: any = await confirmChoice(root, { id }, selected("확인하고 진행"));
+  assert.equal(approved.status, "approved");
+  assert.deepEqual(approved.next, { command: `code-agent consent finish ${id}` });
+  assert.equal(readDocLedger(root).length, 0, "최종 응답도 finish 전에는 적용하지 않는다");
 });
 
 test("동의 UI: hook 없는 호출·타 세션·하위 담당·미리 채운 답을 거부한다", async () => {

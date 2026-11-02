@@ -72,3 +72,13 @@ test("실행 가능한 TC와 요구 AC 연결은 통과하고 자기참조 TC와
   const bad = structuredClone(PLAN); bad.tasks[1].acceptance = ["AC-R2-1"];
   assert.match(planDraftProblems(work, JSON.stringify(bad), ["AC-R1-1"], ["R1"]).join("\n"), /PLN-SEQ.*T2: 담당 요구의 완료 기준이 없습니다/);
 });
+
+test("테스트 작성 AC는 같은 동작 TC에 연결하고 실행기 자체의 구체적인 동작 TC는 보존한다", () => {
+  const work = loadWork(root)!;
+  const check = (text: string) => testSpecProblems(root, ID, ["AC-R1-1", "AC-R1-2"], work.manifest, "feature", SPEC,
+    new Map([[`${DIR}/07-test-spec.md`, text]])).problems;
+  const linked = TESTS.replace("| AC-R1-1 |", "| AC-R1-1, AC-R1-2 |");
+  assert.deepEqual(check(linked.replace("| 호출 | 숫자 반환 |", "| factorial(0), factorial(2), factorial(-1) 호출 | 각각 1, 2, Error 단언 |")), []);
+  assert.deepEqual(check(linked.replace("| 호출 | 숫자 반환 |", "| 실패 단언 fixture를 node --test로 실행 | 종료 코드 1과 실패한 TC-1 이름 출력 |")), [], "러너가 제품 검증 대상일 수 있다");
+  assert.match(check(linked.replace("| 호출 | 숫자 반환 |", "| 전체 테스트 실행 | 모든 테스트 통과 |" )).join("\n"), /기능 TC가 아닙니다/);
+});

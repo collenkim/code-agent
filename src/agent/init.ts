@@ -10,6 +10,7 @@ import { Stop } from "./stop";
 import { crossNotice, hookFile, Host, HostSelection, hostAssets, selectedHosts } from "./hosts";
 import { runtimeHost } from "./crossEnv";
 import { checkChoiceConfig, installChoiceConfig } from "./choiceConfig";
+import { CLAUDE_PERMISSION_GUIDE } from "./claudePermissions";
 import { WAKE } from "./wakeHook";
 
 const BLOCK_START = "<!-- code-agent:start -->";
@@ -396,6 +397,7 @@ function initClaude(repoRoot: string, options: InitOptions = {}): string {
     writeIfChanged(installedPath(repoRoot, key), assetBytes(key));
   }
   lines.push(`스킬·에이전트 ${assetCount(keys)}: .claude/skills/ca-*, .claude/agents/ca-*`);
+  lines.push(CLAUDE_PERMISSION_GUIDE);
   // 템플릿 머리말은 제품 기본값(ROLE_POLICY)이다. 사람이 바꿔 둔 모델·강도가 있으면 다시 설치해도 그대로 바른다.
   applyModels(repoRoot);
   lines.push(`모델·추론 강도: ${policySummary(repoRoot, "claude")} — code-agent model 로 확인·변경`);

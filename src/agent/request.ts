@@ -829,7 +829,7 @@ export function requestContext(repoRoot: string, session: RequestSession, specPa
       "- 원문은 `original`(사람이 준 글) 또는 `originalFile`(사람이 준 파일의 저장소 경로 — 코드가 그 파일을 그대로 옮긴다) 중 하나.",
       "- `requirements` 는 1개 이상. 원문에 없는 요구를 더하지 않는다 — 있으면 좋을 것 같은 것은 질문으로.",
       // 연결·질문 규칙의 원천은 ca-request 스킬이다(정리 절·질문 절) — 여기에는 형식과 데이터만 싣는다
-      "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 연결 규칙은 ca-request 의 정리 절.",
+      "- `sourceMap`: 원문 인용 quote → REQ-1 / DONE-1 / CON-1 / OUT-1 / TITLE / BACKGROUND. 한 줄 요청의 선두 호출 토큰만 INVOCATION으로 분리할 수 있다. 연결 규칙은 ca-request 의 정리 절.",
     ]),
     "- 머리말에 들어가는 값(title · target · scope · preserve · approver · extra)은 한 줄씩. 따옴표나 [ ] 로 감싸지 않는다.",
     pathKind
@@ -895,7 +895,7 @@ function amendmentFormat(base: Omit<RevisionRecord, "prev">, pending: RevisionRe
     "- `original` 은 사람이 **이번에** 준 글 그대로다. 최초 원문과 앞 개정의 원문은 코드가 그대로 보존한다.",
     "- 언급하지 않은 항목은 그대로 남는다 — 초안에서 빠뜨려도 지워지지 않는다. 지우려면 `remove` 에 사람이 말한 사유를 쓴다. 수정은 같은 ID, 추가는 새 ID(`section`: REQ · DONE · CON · OUT).",
     "- 사람이 전체 교체를 요청했을 때만 `revision.mode` 를 \"replace\" 로, 그 원문 인용을 `replaceQuote` 에 쓰고 requirements · done · constraints · outOfScope 전체 목록을 준다.",
-    "- `sourceMap`: 이번 원문 인용 quote → 바뀐 항목 ID(새 항목은 add 의 id). 이미 있는 요구를 다시 말한 부분은 그 항목 ID 로 잇는다.",
+    "- `sourceMap`: 이번 원문 인용 quote → 바뀐 항목 ID(새 항목은 add 의 id). 이미 있는 요구를 다시 말한 부분은 그 항목 ID 로 잇는다. 한 줄 요청의 선두 호출 토큰만 INVOCATION으로 분리할 수 있다.",
     "- 같은 변경안·같은 원문을 다시 내면 새 개정을 만들지 않는다. 오래된 parent 의 변경안은 그 뒤 확정된 개정이 바꾼 항목과 겹치지 않을 때만 최신 개정 위에 적용된다.",
     "- 머리말 값은 바꿀 때만 고친다 — 진행 중인 작업의 target 은 요구 변경으로 바꾸지 않는다.",
   ];

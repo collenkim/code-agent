@@ -147,6 +147,18 @@ Claude Code 입력창에서 `/ca-request <요구사항>`으로 시작한다. 접
 
 ---
 
+### Claude 명령 실행 권한
+
+`init`은 hook을 등록하지만 `Bash(code-agent *)` 같은 명령 허용 규칙을 자동 추가하지 않는다. 기존 `permissions.allow`·`deny`와 `.claude/settings.local.json`은 보존한다. 명령 실행 허용은 호스트가 명령을 실행할 권한이고, code-agent의 설정·요구·계획·반영 동의는 실제 변경 내용을 확인하는 별도 절차다.
+
+반복 확인이 불편하면 Claude의 권한 화면에서 실행할 명령과 저장 범위를 검토한다. 예를 들어 `Bash(code-agent status *)`는 해당 조회 명령 범위이고 `Bash(code-agent *)`는 모든 code-agent 하위 명령을 포함한다. 후자를 선택해도 code-agent의 hook·동의 검사는 유지된다. 실제 실행명이 `code-agent.cmd`라면 그 실행명으로 규칙을 확인한다. 기존 허용·거부 목록을 통째로 교체하지 않는다.
+
+- `.claude/settings.json`: 프로젝트에서 공유하는 규칙이다.
+- `.claude/settings.local.json`: 이 PC의 프로젝트 설정이다. 개인 선택을 공유하지 않을 때 사용한다.
+- 사용자·관리 정책과 실행 인자도 권한에 영향을 준다. `doctor`는 위 두 파일의 code-agent 규칙만 보여 주며 실효 권한을 보장하지 않는다.
+
+`--setting-sources project`로 실행하면 local에 저장한 허용 규칙은 읽지 않는다. `evaluate-full-flow.cjs`는 기본 `project`, 선택 `--setting-sources project,local`을 지원하고 재개 시 같은 범위를 유지한다. 평가 보고서는 설정 범위와 `--allowedTools`를 기록한다. 평가 자체가 명시적 허용 규칙을 주므로 신규 설치의 권한 확인 횟수 측정에 사용하지 않는다. 특정 실행에서 관찰한 확인 횟수를 모든 신규 사용자의 최소 횟수로 일반화하지 않는다.
+
 ## 4. `code-agent doctor` — 점검
 
 진행 중인 작업이 있어도 점검할 수 있다. 종료 여부는 [CLI 종료 코드](usage.md#cli-종료-코드)를 따른다.

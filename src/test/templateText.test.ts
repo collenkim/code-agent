@@ -13,6 +13,20 @@ import { normalizeReviewTable, reviewResultProblems } from "../agent/crossRecord
 import { PHASES } from "../agent/layout";
 
 const TEMPLATE = join(__dirname, "../../template/claude");
+
+test("반영 스킬은 pending의 호스트별 질문 절차를 따르고 공통 finish 반복을 지시하지 않는다", () => {
+  for (const host of ["claude", "codex"] as const) {
+    const assets = hostAssets(host);
+    const prefix = host === "claude" ? ".claude" : ".agents";
+    const integrate = assets.get(`${prefix}/skills/ca-integrate/SKILL.md`)!;
+    assert.match(integrate, /`pending`.*ca-answer.*호스트별 절차/);
+    assert.doesNotMatch(integrate, /consent finish/);
+  }
+  const codex = hostAssets("codex").get(".agents/skills/ca-answer/SKILL.md")!;
+  assert.match(codex, /`pending`이면.*`confirm`/);
+  assert.match(codex, /`approved`에서만 `code-agent consent finish/);
+});
+
 function claudeTexts(): Map<string, string> {
   const out = new Map<string, string>();
   const walk = (dir: string, prefix: string) => {

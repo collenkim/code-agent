@@ -359,7 +359,7 @@ POLICY 는 **개발 지침**(구조·코드·테스트·품질), `business-rules
    일반 접수 쓰기는 `doc/work/<ID>/` 안이며 **지시서 자체는 코드가 렌더한다**. 준비가 필요하면 접수를 유지한 채 `docs begin`으로 문서 세션을 열고 그 허용 범위에서 공통 문서·설정을 보완한다.
 2. 모델이 `doc/work/<ID>/request.json` 을 쓴다. **원문은 한 글자도 바꾸지 않는다** — 글이면 `original`,
    파일이면 `originalFile` 에 저장소 기준 경로를 적고 **코드가 그 파일을 그대로 옮긴다**.
-   원문을 먼저 저장하고 설정·공통 문서가 없으면 준비·확정 뒤 같은 접수로 돌아온다. `sourceMap`으로 원문과 구조화 항목을 연결하며 미연결은 확정 요청 전에 보완한다.
+   원문을 먼저 저장하고 설정·공통 문서가 없으면 준비·확정 뒤 같은 접수로 돌아온다. `sourceMap`으로 원문과 구조화 항목을 연결하며 미연결은 확정 요청 전에 보완한다. 첫 줄의 독립 `/ca-request`·`$ca-request`는 원문에 보존한 채 호출 표식으로 자동 구분한다. 한 줄 요청은 실제 호출인 선두 토큰만 `quote`와 `targets:["INVOCATION"]`으로 명시한다. 뒤의 같은 문자열·인용·업무 문장은 요구 추적에 남는다.
    원문에 없는 요구는 더하지 않는다 — 있으면 좋겠다 싶은 것은 질문으로 (AskUserQuestion으로 최대 4개 질문씩, 실제 답은 `clarifications`에 그대로).
 3. `code-agent request submit doc/work/<ID>/request.json` — 형식을 검사하고 `requirement.md` 를 렌더한다.
    렌더한 결과는 **손으로 쓴 지시서와 똑같은 검사**를 받고(머리말 규격 · `target`·`scope` 실재 · 프로젝트 확장 속성),
@@ -1252,9 +1252,9 @@ Task(T1, T2…)는 이 순서와 파일 목록에서 자동 생성한다. 별도
 
 1. 메인은 실행할 action JSON을 허용된 작업 문서 경로에 작성한다.
 2. `code-agent consent prepare --action <동작> [--id <작업 ID>] [--kind <종류>] [--spec <지시서>] --for <claude|codex>`(자유 문구가 없는 동작) 또는 `code-agent consent prepare <action.json> --for <호스트>`(반려·model·플러그인·judgment)가 표시할 요약과 질문을 생성한다. `--for`를 주면 그 호스트가 쓰는 필드만 낸다(Claude `toolInput`, Codex `codexReply`). 메인 세션의 셸에서 이 꼴 그대로 실행해야 한다 — hook 이 그 실행을 본 세션에 동의를 묶고(준비 티켓), 다른 경로로 준비한 동의는 받지 않는다.
-3. Codex는 요약을 보여 주고 `code_agent.confirm`에 준비한 ID만 전달한다. Claude는 요약·파일 링크를 보여 주고 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우지 않는다. 두 호스트의 선택 화면은 화면 높이를 넘는 질문을 잘라 보이므로, 질문에는 요약 앞부분·생략 줄 수·전문 파일 경로와 질문 줄만 싣는다. 확인할 전체 내용은 대화의 요약과 준비 때 CLI가 쓴 `.code-agent/consents/confirm-<내용 해시>.md`에서 본다.
+3. 두 호스트 모두 CLI가 생성한 문서·파일 링크를 포함한 `summary` 전문을 일반 응답 본문에 출력한다. Codex는 `code_agent.confirm`에 준비한 ID만 전달한다. Claude는 반환된 **toolInput 전체**를 그대로 `AskUserQuestion`에 전달한다. `questions`와 `metadata.source`를 유지하며 답을 미리 채우거나 질문을 재작성하지 않는다. Claude hook은 준비 이후 같은 메인 세션의 일반 응답에서 전문을 찾지 못하면 첫 질문을 열기 전에 막는다. 도구 출력·thinking·파일 경로는 전문 표시가 아니다. 두 호스트의 질문에는 요약 앞부분·생략 줄 수·전문 파일 경로만 싣고 기존 크기 제한을 유지한다. 전체 내용은 대화와 `.code-agent/consents/confirm-<내용 해시>.md`에서 본다. 대화 기록 검사는 실제 UI 렌더링 확인과 구분한다.
 4. Claude는 질문의 PreToolUse·PostToolUse hook이 실제 응답을 관찰한다. Codex는 PreToolUse의 일회용 질문 티켓과 MCP 폼 응답을 같은 세션·호출·작업 경로·대상에 결속한다.
-5. `code-agent consent finish <ID>`가 상태를 확인하고 `approved`일 때만 그 자리에서 적용한다 — 결과에 지금 할 일(`next`)과 스테이지(`phase`)가 실려 적용 뒤 `code-agent status`를 다시 부르지 않는다. 남은 질문이 있으면 다시 표시한다. `code-agent consent status <ID>` 확인 뒤 `code-agent consent apply <ID>`로 나눠도 같다. 적용은 응답을 받은 세션의 셸에서 hook 이 본 명령(적용 티켓)이나 사람의 터미널에서만 된다.
+5. Codex `confirm`의 `pending`은 `next.tool`·`next.arguments`로 같은 confirm을 이어간다. `approved`에서만 `next.command`의 `code-agent consent finish <ID>`를 실행한다. finish는 승인된 동의를 적용하고 지금 할 일(`next`)과 스테이지(`phase`)를 반환하므로 적용 뒤 status를 다시 부르지 않는다. Claude는 finish의 남은 질문을 다시 표시한다. `consent status` 확인 뒤 `consent apply`로 나눠도 같다. 적용은 응답을 받은 세션의 셸에서 hook이 본 명령(적용 티켓)이나 사람의 터미널에서만 된다.
 6. 적용 후 상태를 읽고 다음 절차를 계속한다. 업데이트는 호스트를 종료하지 않는다 — 적용 보고의 '호스트를 다시 열어야 하는 것'이 있을 때만 다시 열고, 다시 읽으라는 지침·스킬 파일은 읽은 뒤 이어 간다(진행 중인 일이 있으면 설치만 하고 다음 작업부터 적용한다).
 
 취소·보류·응답 누락·시간 초과·추가 질문·다른 세션은 승인으로 처리하지 않는다. 확인 이후 파일·설정·Git 상태가 바뀌면 그 동의는 폐기되고(같은 ID로 다시 묻거나 적용하지 않는다) 새로 준비하여 확인한다. 상태 출력의 `failure`(`class`·`kind`·`guide`)가 다음 행동을 알려 준다 — 보류·명시적 선택 없음은 다시 묻지 않고, 수정 요청은 고친 뒤 새로 준비하며, 적용 실패는 상태를 확인한 뒤 새로 준비한다. 같은 동작이 연속 두 번 대상 변경으로 폐기되면 준비 결과에 `warning` 이 붙는다(외부 hook·편집기·빌드가 대상을 바꾸는지 확인). 작업·세션이 없을 때 응답·적용을 기다리는 동의가 있으면 30분 동안 셸은 code-agent 명령과 읽기용 git 만 돈다 — 진행하지 않을 거면 그 질문에서 `보류` 를 고른다. 동의 자체에는 유효기간이 없어 30분이 지나도 답하지 않은 동의는 `pending` 으로 남지만, 그때부터는 이 셸 제한이 풀려 다시 보호되지 않는다 — 오래 둔 동의는 쓰지 말고 새로 준비한다. 적용이 도는 동안에는 쓰기 도구가 막힌다. 같은 요청을 중복 적용해도 커밋을 반복하지 않는다. 이 기록은 신뢰하는 로컬 hook의 관찰이며 사용자 신원 증명이나 OS 보안 경계는 아니다.

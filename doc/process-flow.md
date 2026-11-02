@@ -20,6 +20,10 @@ Codex 관리 실행의 `master/codexTransport.ts`·`codexPermissions.ts`는 §4.
 
 | 바뀐 코드 | 갱신할 섹션 | 함께 맞출 중복 정의 |
 |---|---|---|
+| `consentPresentation.ts`·`consent.ts` 전문 표시 검사·파일 링크, `choiceServer.ts` 동의 후속 안내 | §4.2, §9 | Claude `ca-answer/SKILL.md`·`template/codex/ca-answer.md`·`ca-integrate/SKILL.md`, `doc/usage.md` 내부 처리·`doc/codex.md` 사용자 확인, 질문 크기 제한과 원본 `toolInput` 결속 |
+| `claudePermissions.ts`·`init.ts`·`doctor.ts` 명령 실행 권한 안내 | §5.1, §9 | `doc/install.md` 명령 실행 권한, 기존 프로젝트·local 설정 보존, 평가의 `settingSources`·`allowedTools` 보고 |
+| `intakeTrace.ts` 호출 표식 | §3.1, §9 | `request.ts` 초안 안내·`ca-request/SKILL.md`·`doc/usage.md`, 원문 보존·`sourceMap`의 `INVOCATION` 대상, `runtimeSelect.STATE_SCHEMA` |
+| `scripts/evaluate-full-flow.cjs`·`full-flow-fixtures.cjs` | §7, §9, §10 | `bootstrap.ts`의 `pendingBaselineFiles`, `live-codex.cjs` 실행 정책, 평가 보고서의 fixture·권한·진척 범위, 최신 검증 기록 |
 | `core/serialize.ts`·`core/text.ts`·`layout.ts` 공통 직렬화·읽기·경로 비교, `test/repoFixture.ts` | §9 | 승인·상태·master 해시의 기존 바이트 규약, 선택 문서의 공백·줄바꿈 처리, Windows 경로 비교, 단계·종류·동의 시험 fixture |
 | `core/fileOperations.ts`·`agent/fileOperations.ts`, 계획 `operation`·`from`, `nativeQuestionEvidence.ts`, 계획 되돌림 전달 상태 | §3.1, §4.3, §6.1, §6.4, §9 | `core/plan.ts` 두 계획 형식·경계·완료 판정·Task 소유·검증/반영 경로, `ca-analyze/criteria.md`·`ca-plan/criteria.md`, `doc/planning.md`·`doc/usage.md`, `ca-next`·`ca-status`, `runtimeSelect.STATE_SCHEMA` |
 | `interaction*.ts`, `master/control.ts`·`observe.ts`·`recovery.ts`·`nativeSession.ts`, `choiceServer.ts`, `consent.ts`·`answers.ts`의 대시보드 사람 채널 | §3.2, §4.2, §4.3, §5.4, §6.0, §8, §9 | `doc/dashboard-interactions.md` 계약·지원표, `master/protocol.ts` 명령·이벤트 ↔ `doc/master-control.md`, `ca-answer/dashboard.md`·Claude/Codex 스킬 진입 문장, `STATE_SCHEMA`, `runtimeSelect.pendingInteractionMarker` ↔ `runtimeApply.busyReasons` |
@@ -121,6 +125,8 @@ flowchart TD
 **공통 전제** (`commands.ts`) — `next`는 매번 AI-DLC 미진행, 유효한 커서와 `baseCommit`(`requireWork`), 공통 문서 확정, 요구 확정(`request.ts`), 답 없는 질문 0(`requireAnswers`)을 확인한다. analysis~plan에서는 `planningProblems`와 `planningDocumentProblems`도 본다. 게이트에 걸린 `next`는 `Stop`을 던지고 커서는 그대로 둔다.
 
 ### 3.1 커서가 생기기 전
+
+접수 원문의 호출 표식은 업무 요구와 분리하되 원문에서 지우지 않는다. 첫 줄의 독립 `/ca-request`·`$ca-request`는 `intakeTrace`가 호출 표식으로 표시하고 미연결 검사에서 제외한다. 한 줄 요청은 자동 제외하지 않으며, 실제 호출인 선두 토큰에 한해 `sourceMap`의 `quote`와 `targets:["INVOCATION"]`으로 명시한다. 이 연결은 선두 한 번만 덮으며 뒤의 동일 문자열·인용·업무 내용은 요구 추적에 남는다. 제목·업무 접두어를 호출 표식으로 추정하지 않는다. `INVOCATION`을 담는 요구 기록의 상태 세대는 23이다.
 
 **버전과 질문 상태** — `version`은 프로젝트 적용 버전과 설치 완료·적용 대기 버전을 구분한다. 예약 당시 사유와 현재 진행 중인 일을 따로 표시하며, 완료된 질문의 낡은 기록은 `interaction list`로 정리한다. 실제 진행 중인 일이 끝나면 호스트 밖 터미널에서 `update --release <ID>`로 적용하거나 다음 작업을 열 때 자동 적용한다. `status`는 문서 질문과 선택창의 응답 대기·보류·받은 답 처리 대기·답변 확인된 낡은 기록을 구분한다. 답이 확인된 기록만 남으면 재응답을 요구하지 않는다.
 
@@ -233,6 +239,10 @@ flowchart TD
 
 ### 4.2 응답 관찰 — 호스트별
 
+동의 `summary`에는 전문에 등장하는 실제 문서·파일의 Markdown 링크를 코드가 덧붙인다. Claude의 첫 동의 질문은 `consent-event` PreToolUse에서 전문 표시를 먼저 확인한다(`consentPresentation.ts`). hook이 넘긴 대화 기록의 최근 16 MiB에서 준비 이후 같은 메인 세션의 일반 응답 본문에 `summary` 전체가 있어야 한다(공백·줄바꿈 차이만 허용). 도구 출력·thinking·다른 세션·부분 요약·현재 질문 뒤의 글은 근거가 아니다. 기록 부재·읽기 실패·전문 누락이면 exit 2로 질문을 막고 상태·질문 결속은 바꾸지 않는다. 전문 출력 후 원래 `toolInput`으로 다시 질문한다. 이미 전체 질문을 담는 이전 기록과 자체 표시 경로인 MCP·대시보드는 이 검사 대상이 아니다. 이 검사는 대화 기록의 텍스트 근거이며 실제 UI 렌더링·사용자의 열람을 입증하지 않는다.
+
+Codex `confirm`은 지식 항목 선택 뒤 `pending`이면 `next.tool`·`next.arguments`로 같은 `confirm` 호출을 안내한다. `approved`에서만 `next.command`의 `consent finish`를 실행한다. 최종 적용 전 `pending`에는 finish나 Git 권한 요청이 필요하지 않다. 최종 Git 반영에 필요한 호스트 권한과 통합 검증의 샌드박스 오류는 별도다. 선택 화면의 앞부분·생략 줄 수·전문 경로와 기존 크기 제한은 유지한다.
+
 Claude 업무 질문의 Post는 실제 답 관찰을 먼저 기록한다. 영속 질문 갱신의 만료·문맥 변경·답 길이 제한·대시보드 선응답 오류는 경고만 남기며 이미 받은 답 관찰을 생략하지 않는다. Pre의 사전 답·소비 전 응답 거부는 유지한다. 적용을 마친 native 질문의 새 호출은 같은 문구여도 새 요청을 만든다.
 
 동의 준비의 파일 해시 캐시는 성능 보조다. 응답 관찰과 `applyLocked`·`consent finish`의 재대조는 캐시를 읽지 않고 대상 파일을 전수 해시한다.
@@ -257,7 +267,9 @@ sequenceDiagram
   M->>C: consent prepare <파일 | --action 동작> --for <호스트> (티켓 소비 → preparedSession, snapshot, pending)
   C-->>M: id, summary, toolInput(claude) | codexReply(codex, 확인 코드), warning? — --for 없으면 전체
   alt Claude (channel claude-question)
+    M-->>U: summary 전문과 문서·파일 링크 표시
     M->>H: AskUserQuestion(toolInput) PreToolUse → consent-event
+    H->>H: 같은 세션의 준비 이후 일반 응답 전문 확인 (누락이면 질문 전 차단)
     H->>C: observeConsent Pre: 세션·toolId·질문 결속
     U->>M: 선택
     M->>H: PostToolUse → consent-event
@@ -269,7 +281,7 @@ sequenceDiagram
     C-->>U: MCP 폼 선택 UI (방향키·Enter)
     U->>C: 실제 선택 응답 (Esc는 보류)
     C->>C: 응답·대상 재검증 → approved 또는 보류·실패
-    C-->>M: 동의 상태
+    C-->>M: 동의 상태·next (pending이면 confirm 반복, approved이면 finish)
   end
   M->>H: Bash consent finish ID (같은 session_id 확인 → 적용 티켓)
   M->>C: consent finish ID (적용 티켓 또는 사람의 TTY)
@@ -335,6 +347,8 @@ Post의 업무 답 원장은 영속 질문 상태 갱신과 별도로 먼저 기
 ## 5. hook 등록표
 
 ### 5.1 Claude — `.claude/settings.json` (`init.ts` `initClaude`, sandbox 확인)
+
+`init`은 hook을 설치하며 `permissions.allow`를 자동으로 넓히지 않는다. 설치 결과에 명령 실행 권한과 작업 동의의 차이, 권한 설정 안내를 싣는다. `doctor`는 project·local 파일에 기록된 code-agent Bash 허용 규칙을 중립 정보로 표시한다. 사용자·관리 정책·실행 인자를 합친 실효 권한 판정은 아니며 규칙 부재를 설치 실패로 보지 않는다. 설정 범위와 `--setting-sources project`의 local 제외는 [설치 안내](install.md#claude-명령-실행-권한)를 따른다.
 
 | 이벤트 | matcher | 하위 명령 | 처리 | 판정·기록 | 실패 시 |
 |---|---|---|---|---|---|
@@ -459,6 +473,8 @@ Codex 관리 실행의 start·verify·repro에 필요한 Git 쓰기 권한은 �
 `flow advance --json`은 준비·문서·접수·사전 판별과 모든 `PHASES`의 재개 위치를 결정한다. 호스트 인계·SQLite·잠금·중단 후 재개는 [LangGraph 실행 구조](langgraph.md), master 통신·정지·제어권은 [master 연동](master-control.md)이 정본이다. 단계별 게이트는 §3, 계획·검증 내부 흐름은 아래 절을 따른다.
 
 ### 6.1 계획 작업 (analysis·impact·design·plan, `planningVersion=1`)
+
+배정의 `FUN-AC`·`TST-CASE` 제출 전 점검과 design·plan 기준, `ca-writer`는 테스트 작성 요구를 구체적인 입력·호출·기대값·오류를 검증하는 AC·TC로 연결한다. 같은 동작 TC 하나에 기능 AC와 테스트 작성 AC를 함께 연결할 수 있다. 전체 테스트 실행·통과와 기존 파일 보존 자체는 실행 절차·preserve에 두며 별도 TC를 추가하지 않는다. 기존 구조 검사와 critic 반려는 유지하고, `node --test` 같은 문자열만으로 정상 동작 TC를 거부하지 않는다.
 
 계획 스킬 네 개는 명령 전에 `ca-plan/contract.md`의 공통 진행·되감기를 읽는다. 담당 호출·staging 결과·next 판정·게이트와 되감기 조건은 그 절을 공유하고, 단계별 역할·교차 검토·승인은 각 스킬에 둔다.
 
@@ -788,6 +804,8 @@ stateDiagram-v2
 
 ## 7. Claude와 Codex 차이
 
+`evaluate-full-flow.cjs`의 전체 흐름 평가는 Claude 메인을 지원한다. 현재 `live-codex.cjs`의 `workspace-write / approval_policy=never`에는 작업 시작·통합 worktree의 Git 쓰기 권한 응답 경로가 없어 `--main codex`는 유료 호출 전에 지원 불가로 끝난다. 승인·샌드박스를 넓히거나 fixture를 사람 승인으로 바꾸지 않는다. 평가 fixture의 Git 처리는 준비 커밋·최종 반영이고 작업 브랜치·통합 검증은 실제 호스트 몫이다. 준비 판정은 HEAD 존재와 제품의 `pendingBaselineFiles`를 함께 보며, 작업·문서·승인·계획 파일·HEAD에 두 턴 연속 진척이 없으면 중단 사유를 기록하고 종료한다. hook/usage 로그·임대 heartbeat는 진척이 아니다. 한국어 응답을 평가 지시에 명시하지만 언어 준수는 별도 실모델 품질 확인 대상이다.
+
 Codex 사본은 동의 준비의 `--for`를 codex로 변환하고, 모델 설정 예시는 호스트·모델 ID를 조회한 값으로 채운다. 공통 블록은 명령이 기록한 검증 증거만 인정하고 비밀값 입력 금지·사용자 언어 보고를 안내한다. 조사 담당은 계획 배정의 staging 문서를 Write/Edit로 고친다. hook 복구는 `init` 또는 `update --templates-only`로 안내한다.
 
 `.codex/config.toml`은 이 PC의 실행 파일·프로젝트 경로와 사용자 설정을 담아 `.gitignore` 및 준비 커밋 제외 대상이다. 각 PC에서 `init --host codex` 또는 `update --templates-only --host codex`로 등록한다. 이미 추적 중이면 사람이 `git rm --cached -- .codex/config.toml`로 추적만 해제하고 그 삭제를 커밋한다. 설치는 기존 Git index와 블록 밖 사용자 설정을 바꾸지 않는다.
@@ -932,6 +950,8 @@ Windows PowerShell에서는 지침·CLI 안내에 적힌 `code-agent` 셸 호출
 
 ## 9. 코드 모듈 지도
 
+전문 표시 근거는 `consentPresentation.ts`, Claude 설치 권한 안내·파일별 진단은 `claudePermissions.ts`에 둔다. 평가의 준비·진척 판정과 지원 조건은 무료로 시험하는 `scripts/full-flow-fixtures.cjs`가 담당한다.
+
 배포 패키지는 `dist/agent`·`dist/core`·`template`만 담고 시험 산출물은 개발 빌드에 남긴다. 전체 시험은 파일 4개까지 병렬 실행하며 릴리스 확인·복구, 일반 적용·템플릿·MCP, npm 패키지 시험은 공통 fixture를 사용하는 별도 파일에서 돈다. 비TTY 확인은 파이프 자식에서 검사하므로 부모 터미널 여부로 생략하지 않는다.
 
 이전 작업의 호환 읽기는 유지한다. 상태 세대는 릴리스 적용의 내림을 막지만, 버전 고정 파일이 없는 저장소는 현재 번들로 열리고 계획 버전 표지가 없는 작업도 읽는다. 회차·재현·추적표·계획 스킬의 이전 기록 해석을 제거하지 않는다.
@@ -992,17 +1012,10 @@ Codex 관리 실행 권한: `master/codexTransport.ts`는 로컬 app-server 연�
 
 ## 10. 검증 근거
 
-계획 배정 예산 구간과 담당 완료 뒤 이어가기·쉬는 메인 깨우기를 시험 묶음과 실제 호스트로, 테스트 수정 창·요구 개정의 영향·질문의 변경 분류를 시험 묶음과 YSIJ-262 실제 기록 대비로, 계획 담당 결과 반려(묶음 반려·결과 줄·근거 경로·원문 인용·critic 재검토 범위)를 시험 묶음과 YSIJ-262 반려 기록 대비로, 완료 hook 되돌림의 전달·재개를 실제 호스트로, 외부 계약 채택(기준 커밋 고정·의존 범위·채택 판정·외부 의존 대기)을 시험 묶음과 authorization-api 계약 원문 재생 대비로, 상태 이행(이전 형식 기록의 새 회차 이어받기)과 실제 적용 버전을 4개 프로젝트 사본·임시 릴리스 저장소와 실제 호스트로 확인했다. 실행 조건·실행별 결과·미확인 범위·템플릿 예산은 [최신 검증](reviews/README.md)에 둔다.
+최신 자동 시험·원본 증거 대조·실행 조건·미확인 범위는 [호스트 흐름 검증](reviews/2026-11-03-host-flow-validation.md), 이전 실제 호스트에서 확인한 버전별 범위는 [보존한 호스트 측정](reviews/2026-11-01-validation.md)에 둔다. 완료된 지시·이전 시험 집계·변경 경위는 여기에 누적하지 않는다.
 
-- 전체 시험: `npm test` 1913건 중 1909 통과·4 생략·0 실패(파일 단위 4개 병렬, 벽시계 474초).
-- `planningBudgetEpoch.test.ts`: 같은 구간에서 정상 완료까지 세어 막기, 머리말만 바뀐 개정은 같은 구간, 확정한 요구 항목 변경·새 실행 회차는 새 구간(과거 성공으로 허용을 묻지 않음, 정상 개정 3회 연속도 허용 없이 진행, `earlier`·`retry.epochs` 보존), 준비 반복·작업 정의·입력 변경·확정하지 않은 지시서 변경은 구간 유지, 새 작업 ID 는 막힌 작업을 우회하지 못함, 같은 입력 실패는 구간 무관, 이전 구간·구간 표기 없는 허용 무효, 이행 뒤 같은 사용량과 이행 구간에서만 쓰이는 이전 허용, 새 회차에서 처음 이어받은 이전 형식 기록(반영 커밋 시각부터 셈·이전 회차 허용 무효·작업 정의를 지금 요구로), 새 허용 범위·동의 지점 이름. `answers.test.ts`: 새 회차의 이전 회차 반영본(`delivered`) 이어받기와 반영 뒤 고친 질문·답의 미확인.
-- `testRepair.test.ts`: test 단계의 null 원인 단언과 통합 worktree 에서만 실패한 빈 디렉터리 단언을 계획 되감기·재승인 없이 고친다 — 창의 파일은 `ca-tester`만, 다음 check 의 받아들임·동결 기준 갱신, 다음 리뷰 회차 context, 건너뛰기 표지 거부·창 유지, 여는 조건.
-- `changeImpact.test.ts`·`requestRevisionFlow.test.ts`: 항목 → R → Task·AC → TC → 파일 범위, 보안 낱말, 범위 미입증의 전체 처리, 권한·JWT 영향 뒤 check·test 같은 회차 재실행·요구 변경 리뷰 회차(한도 밖)·통합 검증 재실행, 커서·`status --json` 의 영향 기록. `answers.test.ts`: 변경 분류의 관찰 조건과 계획 입력·승인 묶음 범위.
-- 실제 작업 기록 대비(users-api YSIJ-262 의 통합 검증 단언 수정): 계획 담당 6 → 0, 사람 입력 6 → 0, 답 → 리뷰 완료 3시간 45분 → 약 22분(후는 추정 — 실제 호스트 미실행).
-- `planningReturns.test.ts`: 결과 줄(경로 뒤 설명·백틱·따옴표·저장소 안 절대 경로는 받고 다른 배정·staging 밖·저장소 밖·되짚는 경로는 바른 `resultFile`을 알리며 거부), 근거 절대 경로의 상대 경로 기록과 저장소 밖·범위 밖 근거의 함께 거부, 형식·출력 집합 오류와 staging 문서 문제의 한 반려·교정 대신 실패, `DOC-REF` 파일 이름만 쓴 근거 거부·전체 경로 통과, 요구 원문 인용의 `REQ-TRACE`·`DOC-REF` 동시 통과와 원문에 없는 인용·인용 밖 참조·인용 안 참조를 근거로 쓴 업무 규칙 거부, critic 재검토의 직전 차단 지적·바뀐 입력, 되돌림 뒤 재개한 담당의 시작.
-- 결과 반려 대비(users-api YSIJ-262): 근거 절대 경로 되돌림 1(`RES-SCOPE` 11건) → 0, 경로 뒤 설명이 붙은 결과 줄의 형식 교정 배정 1 → 0, 절대 경로 결과 줄의 되돌림·회수·재배정 각 1 → 0. 파일 이름만 쓴 근거(`DOC-REF`)와 AC 중복·누락(`FUN-AC`)은 그대로 막는다.
-- `contractAdoption.test.ts`·`dependencyContracts.test.ts`: 범위 밖 절·줄바꿈만 바뀐 재등록은 낡은 작업 0·승인 그대로, R 에 연결된 항목 변경은 그 R 의 작업만(같은 접수 항목의 다른 R·analysis 제외), JWT claim 채택은 설계·계획·독립 검토와 승인·검증 영향(`impactAfter`), 01 에 없는 R 의 보수 처리, 제공 저장소 작업 트리·새 커밋의 알림만(미채택), `pending`의 대기 알림과 독립 배정, 기준 커밋 blob 만 읽는 검증·메모, 사본 변조 미확인, 재인용의 항목 해시 결속, 잘못된 등록 거부, 버전 1 입력·사본. `planningChain.test.ts`: `drift`가 있으면 `next` 줄 끝의 채택 알림.
-- 외부 계약 재생(authorization-api `jwt-jwks.md` d84fc70·32b811a·c862902 원문, 0c0b483 빌드 대비): 제공 저장소 미커밋 편집·채택하지 않은 새 커밋에서 미확인·낡은 작업 4 → 알림만·0, `tenant_id` → `workspace_id` 채택에서 낡은 작업 4 → 2(보안 영향 기록), +44/−20줄 커밋 채택에서 4 → 3(바뀐 항목 2), 줄바꿈만 다시 커밋한 채택에서 4 → 0.
-- 상태 이행·실제 적용 버전(4개 프로젝트 사본·임시 릴리스 저장소, 실제 프로젝트는 읽기만): 진행 중(users-api)·접수 중(service-api)은 예약되고 f8c67b8 그대로, platform-gateway·authorization-api 는 적용(세대 22, 사용자 파일·HEAD·브랜치·`adopted` 보존). users-api 같은 ID 후속(모의 반영·모의 확정)은 80a0ea0 빌드에서 답 출처 미확인 질문 68개·이전 회차 배정 19건을 지금 구간에서 셈(19/21, 이전 허용 15회 재사용)·이전 회차 분석 범위였고, 지금은 질문 차단 0·0/6(`earlier` 19)·지금 요구 40개다. Claude Code 2.1.316 `-p`가 적용 릴리스로 상태를 읽었고, 같은 사본의 분석 단계에서 담당 결과 도착 0.97초 뒤 다음 명령을 사람 입력 없이 실행했다($0.30·63초).
-- 담당 완료 뒤 이어가기·깨우기: `wakeHook.test.ts`·`agentContinuation.test.ts`·`hookLoad.test.ts`, `reproScenarios.test.ts` `completionStall`(격리 가짜 호스트에서 완료 뒤 끝나는 턴이 한 번 막혀 사람 입력 없이 상한 `CONTINUATION_BOUND_MS` 안에 이어진다).
-- 실제 호스트: Claude Code 2.1.312 의 print(`-p`) 전체 흐름·대화형 CLI·관리 실행(master `supervise` → `-p` stream-json)에서 담당 완료 알림이 새 턴을 열어 메인이 사람 입력 없이 약 1초 안에 다음 명령을 실행했고, 요구 확정·계획 승인·반영 대기 같은 사람 판단 자리에서만 멈췄다. 같은 완료의 재알림은 다음 행동을 다시 실행하지 않았다. codex-cli 0.166.0 exec 에서는 메인이 담당 결과를 기다려 다음 명령으로 이어갔다. 스트리밍 입력에서 SubagentStop asyncRewake hook 은 담당 종료를 막지 않았고 exit 2 뒤 쉬던 메인의 새 턴이 열렸다. Stop 의 이어가기 차단과 `wake-event` 깨우기가 실제 호스트의 턴을 잇는 모습은 그 자리가 생기지 않아 관찰하지 않았다. 예산 구간은 결정적 판정이라 실제 호스트로 따로 실행하지 않았다. Claude Code 2.1.314 `-p`(sonnet)에서 다른 배정 자리를 가리킨 결과 줄은 exit 2 로 같은 담당에게 전달돼 1.5초 뒤 바른 결과 줄로 완료됐고(`returnPending` 해제), 전달하지 않은 모의 실행에서는 메인이 `stale`을 보고 같은 담당을 재개해 같은 배정으로 완료됐다. `planning cancel` 뒤 재배정하는 회수는 메인이 고르지 않아 실제 호스트로 보지 않았다.
+- 동의 전문: `consentPresentation`의 합성 대화·실제 hook 경계와 원본 Claude 기록 읽기 전용 대조. 도구 입력 결속·화면 제한은 `consentOutput`·`consentBinding`·`choiceServer`가 함께 본다.
+- 평가·권한: `evaluationDriver`의 제품 준비 판정·진척·지원 조건, `claudePermissions`의 기존 설정 보존. 유료 호스트 호출 없이 검사한다.
+- TC·접수: `resultContracts`의 구체적인 TC/다중 AC와 절차 TC 반려, `intakeInvocation`·`request`의 호출 표식과 업무 원문 보존.
+- 중복 정의: `docSync`·`templateText`·`hostNotation`·`templateBudget`. 상태 세대·적용 계약은 `runtimeRelease`를 포함한 전체 시험에서 확인한다.
+- 전체 시험 결과는 최신 검증 기록 한 곳에서 관리한다. 코드 시험은 실제 모델의 지침 준수·UI 렌더링·사용자의 열람을 입증하지 않는다.
