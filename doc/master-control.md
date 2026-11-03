@@ -8,6 +8,8 @@
 
 ## 1. 적용 조건과 역할
 
+master 관리 작업은 반영 때 회차 커밋을 합치지 않는다. 검증 시점 HEAD 바로 다음의 반영 커밋 하나를 유지한다.
+
 | 항목 | 동작 |
 |---|---|
 | 적용 대상 | 사람이 터미널에서 `code-agent master enable` 로 켜거나, PC 신뢰를 한 번 등록한 뒤 대시보드에서 사람이 확인해 [페어링](#pc-신뢰와-대시보드-페어링)으로 켠 프로젝트(`.code-agent/master/binding.json`)와, 그 안에서 master 실행이 열거나 사람이 `master recover`로 명시적으로 연결한 작업(`works/<작업 ID>.json`)이다. 켜지 않은 프로젝트에서는 `master call` 이 `not-enabled` 를 돌려줄 뿐 아무것도 쓰지 않고, 기존 CLI·hook·동의는 그대로다 |
