@@ -260,7 +260,7 @@ code-agent plugin list                                                          
       "secret": { "required": true, "delivery": "stdin", "value": "sk-…" },
       "adapter": { "name": "jev", "version": "0.3.1", "describedAt": "2026-09-30T04:11:02.913Z" },
       "consent": {
-        "user": "kai", "host": "DESKTOP-K1", "at": "2026-09-30T04:11:41.220Z",
+        "user": "example-user", "host": "EXAMPLE-PC", "at": "2026-09-30T04:11:41.220Z",
         "slots": ["candidates.rank", "review.prefilter"], "sendsCode": true, "typed": "jev"
       },
       "probe": { "at": "2026-09-30T04:11:42.006Z", "ok": true, "detail": "jev.example.com 응답 42ms" }

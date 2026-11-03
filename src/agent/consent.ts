@@ -204,6 +204,11 @@ function fail(record: ConsentRecord, kind: ConsentFailureKind, detail: string): 
 /** 쓸 수 없게 된 동의를 폐기한다 — 같은 동의로 다시 묻거나 적용하지 않는다 */
 function discard(root: string, record: ConsentRecord, kind: "target" | "apply", detail: string): void {
   record.status = "failed"; record.binding = undefined; fail(record, kind, detail); save(root, record);
+  recordConsentClosed(root, record);
+}
+function recordConsentClosed(root: string, record: ConsentRecord): void {
+  recordEvent(root, { type: "consent.closed", ...(record.workId ? { workId: record.workId } : {}),
+    detail: { consent: record.id, action: record.action.action, status: record.status, channel: record.channel ?? "none" } });
 }
 const KINDS: readonly ConsentFailureKind[] = ["target", "response-change", "response-defer", "response-none", "response-invalid", "apply"];
 /** 실패 갈래 — kind가 없으면 class로 고른다 */
@@ -835,6 +840,7 @@ export function closeCancelledDashboardConsent(root: string, id: string): void {
     record.status = "deferred";
     fail(record, "response-defer", "대시보드 사람이 확인 요청을 취소했습니다. 필요한 경우 새로 준비하세요.");
     save(root, record);
+    recordConsentClosed(root, record);
   });
 }
 
@@ -933,6 +939,7 @@ export function decideDelegatedConsent(root: string, id: string, delegation: Con
     record.status = delegation.verdict === "defer" ? "deferred" : "changes-requested";
     fail(record, delegation.verdict === "defer" ? "response-defer" : "response-change", `master 위임 판단 ${delegation.decisionId}: ${delegation.verdict === "defer" ? "보류" : "수정 요청"} — ${delegation.reason}`);
     save(root, record);
+    recordConsentClosed(root, record);
     return { status: record.status, failure: failureView(record) };
   });
   if (decided.status !== "applied") return decided;
@@ -1079,9 +1086,15 @@ function askScreenProblem(items: unknown): string | undefined {
     if (problem) return problem;
   }
 }
-/** 실제 Claude hook 경계에서만 대화 출력을 확인한다. MCP·대시보드의 자체 표시 경로와 응답 관찰 함수는 이 검사를 거치지 않는다. */
+/** Claude는 PreToolUse 뒤에 같은 메시지의 글을 기록한다. Post에서 응답을 승인으로 기록하기 전에 사전 표시를 확인한다. */
 function requireConsentPresentation(input: ConsentHookInput, projectDir?: string): void {
-  if (input.hook_event_name !== "PreToolUse" || input.tool_name !== "AskUserQuestion" || !input.cwd) return;
+  if (input.hook_event_name !== "PostToolUse" || input.tool_name !== "AskUserQuestion" || !input.cwd) return;
+  // 승인으로 이어질 수 없는 응답은 기존 관찰기가 종료·거부한다. 전문 누락을 이유로 취소·보류를 다시 묻지 않는다.
+  const response = input.tool_response;
+  if (!plainObject(response) || !plainObject(response.answers) || !Object.values(response.answers).length ||
+      Object.values(response.answers).some(answer => typeof answer !== "string" || ![ACCEPT, APPLY, KEEP].includes(answer)) ||
+      Object.hasOwn(response, "afkTimeoutMs") || Object.hasOwn(response, "response") ||
+      (Object.hasOwn(response, "followUp") && response.followUp !== false) || !unqualifiedAnnotations(response.annotations, input.tool_input?.questions ?? [])) return;
   const source = input.tool_input?.metadata?.source;
   if (typeof source !== "string" || !source.startsWith("code-agent:")) return;
   const id = source.slice("code-agent:".length);
@@ -1093,12 +1106,12 @@ function requireConsentPresentation(input: ConsentHookInput, projectDir?: string
       record.preparedSession && (record.preparedSession.host !== "claude" || record.preparedSession.id !== input.session_id) ||
       record.sessionId && record.sessionId !== input.session_id) return;
   if (!hasConsentPresentation(input.transcript_path, input.session_id, record.createdAt, record.summary, input.tool_use_id)) {
-    throw new Stop(`동의 요약 전문의 대화 출력을 확인하지 못했습니다. 질문을 아직 열지 않았습니다. consent prepare/status가 반환한 summary를 일반 응답 본문에 그대로 출력하고, 클릭 가능한 문서·파일 링크를 덧붙인 뒤 같은 toolInput으로 질문하세요. 도구 출력·생각 요약·전문 파일 경로만으로 대신하지 않습니다. 대화 기록을 읽지 못하면 호스트 기록 경로를 확인하세요. 전문: ${record.fullText}`);
+    throw new Stop(`동의 질문 전 요약 전문의 대화 출력을 확인하지 못해 이 응답을 승인으로 기록하지 않았습니다. consent prepare/status가 반환한 summary를 일반 응답 본문에 그대로 출력하고, 클릭 가능한 문서·파일 링크를 포함해 새 질문 호출로 다시 확인하세요. toolInput은 재작성하지 않습니다. 도구 출력·생각 요약·전문 파일 경로만으로 대신하지 않습니다. 대화 기록을 읽지 못하면 호스트 기록 경로를 확인하세요. 전문: ${record.fullText}`);
   }
 }
 
 /**
- * Claude AskUserQuestion 관찰. 동의 질문(metadata.source 가 code-agent:)의 관찰 실패는 질문을 막는다(exit 2).
+ * Claude AskUserQuestion 관찰. 동의 질문(metadata.source 가 code-agent:)은 Pre에서 질문 결속, Post에서 전문 표시와 실제 응답을 검사한다(exit 2).
  * 업무 질문은 선택 화면을 넘는 크기만 막고(PreToolUse, exit 2) 답 관찰(answers.jsonl)은 실패해도 질문을 막지 않는다 — 게이트가
  * 나중에 '답 출처 미확인'으로 잡는다.
  */

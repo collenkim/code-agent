@@ -39,7 +39,7 @@ const wake = (extra: Partial<WakeHookInput> = {}, options: WakeOptions = {}) => 
 
 /** 분석 담당 완료 — agoMs 만큼 지난 완료로 고친다(진입점 시험이 깨우기 hook 의 기다림을 건너뛴다) */
 function finished(agent = AGENT, agoMs = 0): void {
-  noteAgentFinished(repo, "ORD-1", agent, { source: "planning", type: "ca-analyst", status: "completed", phase: "analysis", advance: true });
+  noteAgentFinished(repo, "ORD-1", agent, { source: "planning", type: "ca-analyst", status: "completed", phase: "analysis", session: SESSION, advance: true });
   if (!agoMs) return;
   const ledger = JSON.parse(readFileSync(join(repo, AGENT_RUNS_FILE), "utf8"));
   ledger.works["ORD-1"].completed.at = new Date(Date.now() - agoMs).toISOString();
@@ -75,7 +75,7 @@ describe("깨운다", () => {
     assert.match(woken[0].reason ?? "", /^깨움: /);
     assert.equal(cli(["wake-event"], input(), { CLAUDE_CODE_ENTRYPOINT: "cli" }).status, 0, "같은 완료의 재알림으로 다시 깨우지 않는다");
     assert.equal(stop(SESSION), "", "깨운 세션의 턴 끝은 같은 완료로 다시 막지 않는다");
-    assert.match(stop("s2"), /담당 완료가 기록됐습니다/, "재시작한 세션은 처리하지 않은 완료를 한 번 잇는다");
+    assert.equal(stop("s2"), "", "새 세션의 턴은 이전 세션의 담당 완료로 막지 않는다");
   });
 
   test("동시에 끝난 깨우기 hook 둘 중 하나만 깨운다 — 같은 완료(eventId)는 장부 잠금 안에서 한 번만 잡힌다", () => {
@@ -136,7 +136,7 @@ describe("깨우지 않는다", () => {
     assert.equal(wake({ agent_id: "a-2" }), undefined, "되돌림·늦은 결과·중복처럼 완료로 남지 않은 담당");
     recordEvent(repo, { type: "host.stopped", host: "claude", session: SESSION });
     assert.equal(wake(), undefined, "완료 뒤 메인의 턴 끝은 Stop 이 이미 판정했다");
-    assert.match(wake({ session_id: "s2" }) ?? "", /담당 완료가 기록됐습니다/, "다른 세션의 턴 끝은 이 세션을 대신하지 않는다");
+    assert.equal(wake({ session_id: "s2" }), undefined, "다른 세션은 이 완료를 이어갈 주인이 아니다");
   });
 
   test("사람 판단 자리(앞서 있던 답 없는 질문·열린 동의)와 Stop 이 이미 막은 세션에서는 깨우지 않는다", () => {

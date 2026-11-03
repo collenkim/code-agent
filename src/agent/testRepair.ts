@@ -55,13 +55,40 @@ const TC_ANY = /(?<![A-Za-z0-9])TC-\d+(?![A-Za-z0-9])/g;
  * 실행을 건너뛰게 하는 표지 — JUnit·TestNG·Jest/Mocha/Vitest·pytest·unittest·Go 의 흔한 꼴. 창의 파일에서 이 수가 늘면 거부한다
  * (실패하는 TC 를 끄는 것은 테스트 구현 수정이 아니다).
  */
-const SKIP_MARKERS = /@Disabled\b|@Ignore\b|\b(?:it|test|describe|context)\s*\.\s*(?:skip|todo)\b|\bx(?:it|test|describe|context)\s*\(|@pytest\.mark\.(?:skip|skipif|xfail)\b|\bpytest\.skip\s*\(|@unittest\.skip|\bt\.Skip(?:Now|f)?\s*\(|\bassume(?:True|False|That|NotNull)\s*\(|\bAssumptions\s*\.|\bpending\s*\(/g;
+const SKIP_MARKERS = /@(?:[\w$]+\.)*(?:Disabled|Enabled)(?:If\w*|On\w*|For\w*)?\b|@Ignore\b|@(?:org\.testng\.annotations\.)?Test\s*\([^)]*\benabled\s*=\s*false\b|\b(?:it|test|describe|context)\s*\.\s*(?:skip|todo)\b|\bx(?:it|test|describe|context)\s*\(|@pytest\.mark\.(?:skip|skipif|xfail)\b|\bpytest\.skip\s*\(|@unittest\.skip|\bt\.Skip(?:Now|f)?\s*\(|\bassume(?:True|False|That|NotNull)\s*\(|\bAssumptions\s*\.|\bpending\s*\(/g;
 /** 단언 꼴 — 수가 줄면 리뷰어에게 알린다(막지 않는다: 단언 두 줄을 한 줄로 고치는 정당한 수정이 있다) */
 const ASSERT_MARKERS = /\bassert\w*\s*\(|\bexpect\s*\(|\bverify\s*\(|\.should\w*\b|\bassert\s+(?!\()/g;
 
+/** 흔한 주석·문자열을 가린 뒤 실행 코드의 표지만 센다. 언어별 AST·실행 결과를 대신하는 검사는 아니다. */
+function executableText(text: string): string {
+  let out = "", at = 0;
+  const mask = (end: number) => { out += text.slice(at, end).replace(/[^\r\n]/g, " "); at = end; };
+  while (at < text.length) {
+    if (text.startsWith("//", at) || text[at] === "#") {
+      const end = text.indexOf("\n", at); mask(end < 0 ? text.length : end); continue;
+    }
+    if (text.startsWith("/*", at)) {
+      const end = text.indexOf("*/", at + 2); mask(end < 0 ? text.length : end + 2); continue;
+    }
+    if (['"', "'", "`"].includes(text[at])) {
+      const delimiter = text.startsWith(text[at].repeat(3), at) ? text[at].repeat(3) : text[at];
+      let end = at + delimiter.length;
+      while (end < text.length) {
+        if (text[end] === "\\") { end += 2; continue; }
+        if (text.startsWith(delimiter, end)) { end += delimiter.length; break; }
+        end++;
+      }
+      mask(Math.min(end, text.length)); continue;
+    }
+    out += text[at++];
+  }
+  return out;
+}
+
 export function repairFileStats(text: string): RepairFileStats {
   const tcs = [...new Set(text.match(TC_ANY) ?? [])].sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
-  return { tcs, skips: (text.match(SKIP_MARKERS) ?? []).length, asserts: (text.match(ASSERT_MARKERS) ?? []).length };
+  const code = executableText(text);
+  return { tcs, skips: (code.match(SKIP_MARKERS) ?? []).length, asserts: (code.match(ASSERT_MARKERS) ?? []).length };
 }
 
 /** 열려 있는 창 — 받아들이지도 다음 창이 대신하지도 않은 마지막 창 */

@@ -22,7 +22,8 @@ export function hasConsentPresentation(path: string | undefined, session: string
         if (block.type === "text" && typeof block.text === "string") texts.push(block.text);
       }
     }
-    return contains(texts, summary);
+    // 호출의 경계까지 기록돼야 질문 뒤의 글을 사전 표시로 오인하지 않는다.
+    return false;
   } catch { return false; }
   finally { if (fd !== undefined) closeSync(fd); }
 }

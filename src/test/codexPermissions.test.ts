@@ -37,6 +37,23 @@ test("Git 승인 범위는 기존 게이트 명령 하나이며 셸 확장·복�
   for (const c of ["code-agent start doc/work/WORK-0001/requirement.md", 'powershell.exe -NoProfile -Command "code-agent.cmd verify test"', "bash -lc 'code-agent repro run'"]) assert.equal(gitOperationCommand(c), true, c);
   for (const c of ["git switch -c bad", "code-agent master enable", "code-agent verify test; whoami", "code-agent verify $(whoami)", 'code-agent start "$env:SECRET"', "bash -c 'code-agent verify test && whoami'", "code-agent start ../x && git reset --hard", 'powershell.exe -EncodedCommand xxx', "node cli.js start req.md", "code-agent verify test | cat"]) assert.equal(gitOperationCommand(c), false, c);
 });
+test("통합 worktree 검증의 단일 명령도 받되 추가 인자·복합 명령으로 넓히지 않는다", () => {
+  for (const command of ["code-agent integrate", "code-agent.cmd integrate", 'powershell.exe -NoProfile -Command "code-agent.cmd integrate"', "bash -lc 'code-agent integrate'"])
+    assert.equal(gitOperationCommand(command), true, command);
+  for (const command of ["code-agent integrate extra", "code-agent integrate --force", "code-agent integrate; git reset --hard", "code-agent integrate && whoami"])
+    assert.equal(gitOperationCommand(command), false, command);
+  const f = fixture();
+  try {
+    const r = f.publish({ command: 'powershell.exe -Command "code-agent.cmd integrate"' });
+    const decisions: string[] = [];
+    assert.equal(forwardCodexPermission(f.root, r.requestId, f.connection, d => decisions.push(d)), false);
+    assert.equal(f.respond(r, { intent: "submit", explicit: true, verdict: "approve", shownHash: r.contentHash }).ok, false);
+    assert.equal(f.respond(r, accept).ok, true);
+    assert.equal(forwardCodexPermission(f.root, r.requestId, f.connection, d => decisions.push(d)), true);
+    assert.deepEqual(decisions, ["accept"]);
+    assert.throws(() => forwardCodexPermission(f.root, r.requestId, f.connection, d => decisions.push(d)));
+  } finally { f.close(); }
+});
 test("cmd 단순 래퍼를 받고, 래퍼 셸은 맨 이름이나 시스템 경로만 받는다", () => {
   for (const c of ['cmd.exe /c "code-agent verify test"', "cmd /d /s /c 'code-agent.cmd start doc/work/WORK-0001/requirement.md'"]) assert.equal(gitOperationCommand(c), true, c);
   for (const c of ['cmd.exe /c "code-agent verify test & whoami"', 'cmd.exe /c "code-agent start x.md^"', 'cmd.exe /c "code-agent start %CD%"', 'cmd.exe /k "code-agent verify test"',
@@ -140,12 +157,13 @@ test("전달 중 연결 종료·기록 없는 종료에도 같은 승인을 재�
     drainInteraction(f.root, r.requestId); assert.equal(listRuns(f.root).length, 1);
   } finally { f.close(); }
 });
-test("감독→대시보드 서명→실제 RPC 응답 뒤 Git 쓰기와 같은 실행 완료를 확인한다", async () => {
+for (const mode of ["permission", "permission-integrate"]) test(`감독→대시보드 서명→실제 RPC 응답 뒤 Git 쓰기와 같은 실행 완료를 확인한다 (${mode})`, async () => {
   const f = fixture();
   try {
-    const started = f.send("submit", { prompt: "MODE=permission" }); assert.equal(started.ok, true, JSON.stringify(started));
+    const started = f.send("submit", { prompt: `MODE=${mode}` }); assert.equal(started.ok, true, JSON.stringify(started));
     await f.wait(started.result.runId, () => currentInteractions(f.root).requests.some(r => r.kind === "host-permission"));
     const r = currentInteractions(f.root).requests[0];
+    if (mode === "permission-integrate") assert.match(r.permission!.command, /code-agent\.cmd integrate/);
     assert.equal(existsSync(join(f.root, ".code-agent/fixture-permission.json")), false);
     assert.equal(f.respond(r, accept).ok, true);
     const done = await f.wait(started.result.runId); assert.equal(done.state, "completed", JSON.stringify(done.outcome));

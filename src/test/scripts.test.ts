@@ -11,20 +11,26 @@ const scripts = resolve(__dirname, "../../scripts");
 test("세션 복원 평가 결과는 과거 보고서 없이 처음 저장하고 최신 결과로 다시 읽는다", () => {
   const root = mkdtempSync(join(tmpdir(), "ca-recovery-report-"));
   try {
+    const reports: { exports?: unknown } = {};
+    runInNewContext(readFileSync(join(scripts, "evaluation-reports.cjs"), "utf8"), {
+      __dirname: join(root, "scripts"), process: { env: {} }, require, module: reports,
+    });
     const source = readFileSync(join(scripts, "evaluate-session-recovery.cjs"), "utf8");
     const setup = source.slice(0, source.indexOf("function verify("));
     const context = {
       __dirname: join(root, "scripts"), process: { argv: ["node", "evaluate-session-recovery.cjs", "dist"] },
-      require: (name: string) => name === "./live-eval-guard.cjs" ? () => {} : require(name),
+      require: (name: string) => name === "./live-eval-guard.cjs" ? () => {} :
+        name === "./evaluation-reports.cjs" ? reports.exports : require(name),
       report: { passed: false, session: "test-session", error: "interrupted" },
     };
     runInNewContext(`${setup}\nsaveRecoveryReport(report);`, context);
-    const file = join(root, "doc/reviews/evidence/session-recovery-live.json");
+    const file = join(root, ".code-agent/evaluations/session-recovery-live.json");
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), context.report);
     const completed = { passed: true, session: "test-session", memoryPreserved: true };
     runInNewContext(`${setup}\nsaveRecoveryReport(report);`, { ...context, report: completed });
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), completed);
-    assert.deepEqual(readdirSync(join(root, "doc/reviews/evidence")), ["session-recovery-live.json"]);
+    assert.deepEqual(readdirSync(join(root, ".code-agent/evaluations")), ["session-recovery-live.json"]);
+    assert.equal(existsSync(join(root, "doc/reviews/evidence")), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

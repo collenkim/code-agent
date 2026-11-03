@@ -45,7 +45,7 @@ if (!['claude', 'codex'].includes(mainHost)) throw Error('Use --main claude|code
 requireSupportedHost(mainHost);
 const installHosts = option('hosts') ?? 'claude', hostModel = option('model') ?? 'sonnet', label = option('label') ?? 'latest', budget = Number(option('budget') ?? 5), timeoutMin = Number(option('timeout') ?? 10);
 if (!['sonnet', 'opus'].includes(hostModel) || !/^[\w.-]+$/.test(label) || !(budget > 0) || !(timeoutMin > 0) || !['claude', 'both'].includes(installHosts)) throw Error('Use --model sonnet|opus, --label [A-Za-z0-9_.-]+, --budget <positive USD>, --timeout <minutes>');
-const reportPath = path.join(root, 'doc/reviews/evidence', `full-flow-${scenario}-${label}.json`);
+const reportPath = require('./evaluation-reports.cjs').reportFile(`full-flow-${scenario}-${label}.json`);
 const previous = resume ? JSON.parse(fs.readFileSync(reportPath,'utf8')) : undefined;
 const settingSources = option('setting-sources') ?? previous?.permissionScope?.settingSources ?? 'project';
 if (!['project', 'project,local'].includes(settingSources)) throw Error('Use --setting-sources project|project,local');

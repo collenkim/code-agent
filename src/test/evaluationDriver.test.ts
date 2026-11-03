@@ -1,20 +1,48 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createRepo, removeRepo, writeFixture, gitFixture, repoTools } from "./repoFixture";
 import { setupConsentProject } from "./consentFixture";
 import { pendingBaselineFiles } from "../agent/bootstrap";
 import { withInteraction } from "../agent/tty";
+import { prepareConsent, loadConsent } from "../agent/consent";
+import { readTimeline, summarizeTimeline } from "../agent/timeline";
 
 const fixtures = require("../../scripts/full-flow-fixtures.cjs") as {
   prepareBaseline(root: string): boolean; progressKey(root: string): string;
   stalledProgress(previous: string, current: string, count?: number): number;
 };
+
+test("평가 run·resume·집계는 무시되는 같은 보고서 경로를 쓰고 공개 근거를 덮지 않는다", () => {
+  const reports = require("../../scripts/evaluation-reports.cjs") as { reportDirectory(): string; reportFile(name: string): string };
+  const saved = process.env.CODE_AGENT_EVAL_REPORT_DIR;
+  const root = createRepo("ca-eval-report-");
+  try {
+    delete process.env.CODE_AGENT_EVAL_REPORT_DIR;
+    const directory = reports.reportDirectory();
+    assert.ok(directory.endsWith(join(".code-agent", "evaluations")));
+    const ignored = spawnSync("git", ["check-ignore", "--", join(directory, "full-flow-new-trial.json")], { cwd: join(__dirname, "../.."), encoding: "utf8", windowsHide: true });
+    assert.equal(ignored.status, 0, ignored.stderr);
+    process.env.CODE_AGENT_EVAL_REPORT_DIR = root;
+    const file = reports.reportFile("full-flow-new-trial.json");
+    writeFileSync(file, '{"fixture":"not human approval"}');
+    assert.equal(reports.reportFile("full-flow-new-trial.json"), file, "재개도 같은 파일을 읽는다");
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).fixture, "not human approval");
+    assert.throws(() => reports.reportFile("../evidence.json"));
+    process.env.CODE_AGENT_EVAL_REPORT_DIR = "relative";
+    assert.throws(() => reports.reportDirectory(), /absolute/);
+  } finally {
+    if (saved === undefined) delete process.env.CODE_AGENT_EVAL_REPORT_DIR; else process.env.CODE_AGENT_EVAL_REPORT_DIR = saved;
+    removeRepo(root);
+  }
+});
 test("평가 준비는 HEAD 뒤 바뀐 실행 정책도 실제 준비 커밋에 넣으며 같은 준비를 반복하지 않는다", () => {
   const root = createRepo("ca-eval-baseline-");
   try {
     setupConsentProject(root);
+    const pending = JSON.parse(prepareConsent(root, { action: "setup" }));
     repoTools(() => root).confirmDocs();
     gitFixture(root, "add", "-A"); gitFixture(root, "commit", "-qm", "baseline");
     writeFixture(root, ".code-agent/execution.json", '{"version":1,"mode":"codex"}\n');
@@ -24,6 +52,9 @@ test("평가 준비는 HEAD 뒤 바뀐 실행 정책도 실제 준비 커밋에 
       assert.equal(fixtures.prepareBaseline(root), false);
     });
     assert.deepEqual(pendingBaselineFiles(root), []);
+    const timeline = summarizeTimeline(readTimeline(root));
+    assert.equal(timeline.waits.find(wait => wait.reason === "동의 응답 대기: setup")!.closedBy, "preparation.ready");
+    assert.equal(loadConsent(root, pending.id).status, "pending", "측정 종료는 fixture 결정을 동의 승인으로 바꾸지 않는다");
   } finally { removeRepo(root); }
 });
 test("평가 진척은 조회 로그를 제외하고 작업 파일·승인·HEAD 변경을 센다", () => {

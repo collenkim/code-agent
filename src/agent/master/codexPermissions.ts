@@ -54,7 +54,7 @@ export function gitOperationCommand(command: string): boolean {
   }
   // 셸 확장·경로 바꿔치기·환경 변수 대입·cmd 이스케이프는 승인 대상이 아니다.
   if (/[;&|<>`$\r\n(){}\[\]*?!%^]/.test(command) || !words || !/^(?:code-agent|code-agent\.cmd)$/.test(words[0])) return false;
-  return ["start", "verify", "repro"].includes(words[1]) && words.length > 2;
+  return words[1] === "integrate" ? words.length === 2 : ["start", "verify", "repro"].includes(words[1]) && words.length > 2;
 }
 /**
  * 저장소 루트의 명령·셸 가림은 모든 플랫폼에서 거부한다. Windows는 PATHEXT도 대조한다.
@@ -88,7 +88,7 @@ export function publishCodexPermission(root: string, run: RunRecord, connectionI
       (params.kind && params.kind !== "command") || (params.environmentId && params.environmentId !== "local") || params.networkApprovalContext || !params.turnId || !params.itemId ||
       typeof params.command !== "string" || params.command.length > 12000 || !gitOperationCommand(params.command) ||
       typeof params.cwd !== "string" || realpathSync(params.cwd) !== realpathSync(root)) {
-    throw new ControlError("policy-forbids", "지원 범위 밖 Codex 권한 요청입니다 — 저장소 루트의 code-agent start·verify·repro 한 줄(Windows PowerShell 은 code-agent.cmd …)만 받습니다");
+    throw new ControlError("policy-forbids", "지원 범위 밖 Codex 권한 요청입니다 — 저장소 루트의 code-agent start·verify·repro·integrate 한 줄(Windows PowerShell 은 code-agent.cmd …)만 받습니다");
   }
   const context = interactionContext(root, run.sessionId, "codex", run.runId);
   const permission: NonNullable<InteractionRecord["permission"]> = { command: params.command, cwd: params.cwd, reason: (params.reason ?? "Git 작업에 필요한 실행 권한").slice(0, 4000),

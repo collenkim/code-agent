@@ -7,7 +7,9 @@ import { loadManifestIfAny } from "./work";
 import { confirmOnTerminal } from "./tty";
 import { Stop } from "./stop";
 import { commitOf, mergeBase } from "./tree";
-import { docPaths } from "./docs";
+import { checkProjectDocs, docPaths, docsReady } from "./docs";
+import { recordEvent } from "./timeline";
+import { readConsentIndex } from "./consentState";
 import { KNOWLEDGE_KINDS, POLICY_KINDS } from "./schemas";
 import { skill } from "./hostText";
 
@@ -16,6 +18,16 @@ function git(root: string, args: string[]): string {
 }
 export function hasBaseline(root: string): boolean {
   try { return !!git(root, ["rev-parse", "--verify", "HEAD"]); } catch { return false; }
+}
+
+/** 실제 문서 확정·준비 커밋 뒤의 측정 사건. 승인·동의 상태를 만들거나 바꾸지 않는다. */
+export function recordPreparationReady(root: string): void {
+  try {
+    if (!Object.values(readConsentIndex(root)?.open ?? {}).some(entry => ["setup", "baseline", "docs"].includes(entry.action))) return;
+    const manifest = loadManifestIfAny(root);
+    if (manifest && docsReady(checkProjectDocs(root, manifest)) && hasBaseline(root) && !pendingBaselineFiles(root).length)
+      recordEvent(root, { type: "preparation.ready" });
+  } catch { /* 측정 실패가 이미 마친 문서 확정·커밋을 실패로 바꾸지 않는다 */ }
 }
 
 /** 준비 단계에서는 설정과 실행 환경만 확인한다. 테스트 실행은 구현 이후다. */
@@ -134,5 +146,6 @@ export function setupBaseline(root: string): string {
   } catch (error) {
     throw new Stop(`준비 커밋이 실패했습니다. 스테이지 상태를 확인하세요: ${error instanceof Error ? error.message : error}`);
   }
+  recordPreparationReady(root);
   return `준비 파일의 ${head ? "도입" : "최초 기준"} 커밋을 만들었습니다. 같은 세션에서 접수를 계속합니다. 중단했다면 ${skill("ca-next")}로 재개하세요. 실제 소스와 테스트는 승인된 Task에서 생성합니다.`;
 }

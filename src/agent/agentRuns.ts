@@ -140,6 +140,16 @@ export function consumeCompletion(root: string): void {
   }, TIMING.lockWaitMs);
 }
 
+/** 작업 커서를 닫거나 새로 시작할 때 이전 시도의 실행·완료를 남기지 않는다. */
+export function clearWorkRuns(root: string, workId: string): void {
+  if (!existsSync(join(root, AGENT_RUNS_FILE))) return;
+  mutate(root, ledger => {
+    if (!ledger.works[workId]) return false;
+    delete ledger.works[workId];
+    return true;
+  }, TIMING.lockWaitMs);
+}
+
 /**
  * 메인이 아직 처리하지 않은 완료와 그 작업에서 실행 중인 담당 수. 시작 뒤 TIMING.orphanRunMs 가 지난 실행 중 표시는 세지 않는다 —
  * 끝을 관찰하지 못한 담당(호스트 종료·hook 누락)이 완료 뒤 진행을 영영 막지 않게.

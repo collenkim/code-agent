@@ -44,7 +44,7 @@ export function hostArgs(profile: HostProfile, run: Pick<RunRecord, "mode" | "se
   if (typeof resolved === "string") throw new Error(resolved);
   const { file: command, prefix } = resolved;
   if (profile.kind === "codex") {
-    const rules = `${MASTER_SYSTEM_RULES}\n${POWERSHELL_COMMAND_GUIDE}\nGit 쓰기가 필요한 code-agent start·verify·repro가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. ${CODEX_PERMISSION_FORM} 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
+    const rules = `${MASTER_SYSTEM_RULES}\n${POWERSHELL_COMMAND_GUIDE}\nGit 쓰기가 필요한 code-agent start·verify·repro·integrate가 샌드박스 권한으로 실패하면 같은 명령의 단건 실행 권한을 호스트 셸 도구로 요청한다. ${CODEX_PERMISSION_FORM} 권한 응답은 감독이 사람에게 전달한다. 업무 동의를 권한 승인으로 대신하거나 직접 git 명령으로 우회하지 않는다.\n관리 실행 표지: ${run.runId ?? run.sessionId}`;
     return { command, args: [...prefix, "app-server", "--listen", "stdio://", "-c", 'approval_policy="on-request"', "-c", 'approvals_reviewer="user"', "-c", `sandbox_mode=${JSON.stringify(profile.sandbox)}`,
       "-c", "sandbox_workspace_write.network_access=false", "-c", `developer_instructions=${JSON.stringify(rules)}`,
       // 셸 명령(승인받은 단건 실행 포함)의 환경에도 현재 폴더 검색 끄기를 명시한다 — 사용자 설정의 shell_environment_policy 가 상속 변수를 줄여도 남는다

@@ -1,4 +1,4 @@
-/* 반복 평가 실행 요약 — doc/reviews/evidence/full-flow-<scenario>-<label 접두어>*.json 을 읽어 지표별 n·평균·최소·최대를 출력한다.
+/* 반복 평가 실행 요약 — .code-agent/evaluations/full-flow-<scenario>-<label 접두어>*.json 을 읽어 지표별 n·평균·최소·최대를 출력한다.
  * 사용: node scripts/summarize-evaluations.cjs <new|enhance|fix|refactor> <label 접두어>
  * 예: 조건별 3회(--label opt-r1·opt-r2·opt-r3)를 evaluate-full-flow.cjs 로 돌린 뒤 `node scripts/summarize-evaluations.cjs new opt-r`.
  * 파일을 쓰지 않는다. 모델을 부르지 않는다. usageData·실행 타임라인이 없는 이전 보고서는 그 지표를 빼고 센다.
@@ -9,7 +9,7 @@ if (!['new', 'enhance', 'fix', 'refactor'].includes(scenario) || !prefix || !/^[
   console.error('사용법: node scripts/summarize-evaluations.cjs <new|enhance|fix|refactor> <label 접두어>');
   process.exit(1);
 }
-const dir = path.resolve(__dirname, '..', 'doc/reviews/evidence');
+const dir = require('./evaluation-reports.cjs').reportDirectory();
 const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.startsWith(`full-flow-${scenario}-${prefix}`) && name.endsWith('.json')).sort() : [];
 if (!files.length) { console.log(`${dir} 에 full-flow-${scenario}-${prefix}*.json 이 없습니다.`); process.exit(0); }
 const reports = files.map(name => ({ name, report: JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) }));

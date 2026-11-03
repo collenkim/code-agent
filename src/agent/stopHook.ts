@@ -26,7 +26,7 @@ import type { Work } from "./work";
  * 모델이 한 턴을 더 돈다. 목록이 바뀌면(새 파일·새 질문) 사유가 달라져 다시 막는다.
  *
  * 울타리 사유가 없으면 **완료 뒤 이어가기**를 본다(continuation): 담당 실행 장부(agentRuns)에 메인이 아직 처리하지 않은 완료가 있고
- * 실행 중인 담당이 없는데 턴이 끝나면, 완료 알림을 기다리지 말고 이 턴에서 다음 명령을 실행하라고 한 번 막는다. 담당 결과가 인계
+ * 완료를 받은 같은 세션에서 실행 중인 담당이 없는데 턴이 끝나면, 완료 알림을 기다리지 말고 이 턴에서 다음 명령을 실행하라고 한 번 막는다. 담당 결과가 인계
  * 메시지로 먼저 오고 완료 알림은 새 턴을 열지 않은 채 소비되는 호스트에서 흐름이 사람 입력을 기다리며 멈추던 자리다. 사람 판단 자리
  * (응답·적용을 기다리는 동의, 이 완료가 낸 것이 아닌 답 없는 질문)에서는 막지 않는다. 같은 판정을 쉬는 메인 깨우기(wakeHook)가 쓰며,
  * 같은 완료의 상기는 Stop 차단과 깨우기를 합쳐 세션당 한 번이다(hookLog.nudgedBefore).
@@ -114,7 +114,7 @@ function nextHint(completion: Completion, phase: string): string {
 function continuation(input: StopHookInput, work: Work): string | undefined {
   const repoRoot = work.repoRoot;
   const pending = pendingCompletion(repoRoot, work.active.id);
-  if (!pending || pending.running > 0) return undefined;
+  if (!pending || pending.running > 0 || !input.session_id || pending.completion.session !== input.session_id) return undefined;
   if (openConsent(repoRoot, Date.now(), input.session_id)) return undefined;
   const { completion } = pending;
   const { unanswered, unverified } = openQuestions(repoRoot, questionsFile(work.active.id));

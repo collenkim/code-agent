@@ -289,7 +289,7 @@ const progressCommand = (command: string, args: string[]): boolean => PROGRESS.h
  */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
   // 기계 판독 상태 조회(`status --json`)는 아무것도 쓰지 않는 계약이라 기록하지 않는다
-  if (command === undefined || UNTIMED.has(command) || (command === "status" && args.includes("--json"))) return runCommandBody(command, args);
+  if (command === undefined || UNTIMED.has(command) || (command === "master" && args[0] === "call") || (command === "status" && args.includes("--json"))) return runCommandBody(command, args);
   const repoRoot = findRepoRoot(process.cwd());
   const key = commandKey(["code-agent", command, ...args].join(" ")) ?? command;
   const startedAt = new Date().toISOString();

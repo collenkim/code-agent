@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { repairReviewLines } from "./testRepair";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join, posix } from "path";
 
@@ -229,10 +230,10 @@ function crossCommitLines(work: Work, evidence?: Evidence): string[] {
 
 /**
  * 코드 구역 — 추적표 · 검증 · 변경 요약. 다시 렌더해 바이트로 대조한다.
- * legacy 는 교차 검증·사람 판단 줄을 더하기 전 판의 렌더다 — 갱신 전에 렌더된 구역을 손 수정으로 오인하지 않으려고 대조에만 쓴다.
- * noGrants 는 사람 허용(한도 허용) 줄을 더하기 전 판의 렌더다 — 같은 이유로 대조에만 쓴다.
+ * 호환 대조: legacy는 교차 검증·사람 판단·수정 창이 없는 구역, noGrants는 사람 허용이 없는 구역,
+ * noRepairs는 수정 창이 없는 구역이다. 정확히 같은 기존 구역만 자동 갱신 대상으로 인정한다.
  */
-export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean; noGrants?: boolean } = {}): string {
+export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean; noGrants?: boolean; noRepairs?: boolean } = {}): string {
   const { active } = work;
   const rows = traceRows(work, evidence);
   const lines = [
@@ -274,6 +275,10 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined, opt
       `- 코드 리뷰: ${last ? `${last.round}회차 (기준 트리 ${last.treeHash})` : "회차 없음"} — ${reviewDocFile(active.id)}`,
       ...(options.legacy ? [] : crossTraceLines(work)),
       ...(options.legacy || options.noGrants ? [] : grantTraceLines(work, evidence)),
+      ...(options.legacy || options.noRepairs || !evidence.testRepairs?.some(repair => repair.accepted) ? [] : [
+        "- 받아들인 테스트 수정 창 (기계 검사와 리뷰를 거친 수정이며 기대 결과를 완화하는 승인은 아님):",
+        ...evidence.testRepairs.filter(repair => repair.accepted).flatMap(repairReviewLines).map(line => `  ${line}`),
+      ]),
       `- 자세한 것: ${validationDocFile(active.id)} · ${planDocFile(active.id)}`,
     );
   }
@@ -661,10 +666,10 @@ export function deliver(work: Work): string {
   const block = renderTraceBlock(work, evidence);
   const had = blockCount(text, PR_BLOCK);
   const rendered = upsertBlock(text, PR_BLOCK, block);
-  // 갱신 전 판이 렌더한 구역(교차 검증·사람 판단 줄 없음)과 파일 전체가 같으면 손 수정이 아니다
-  // 사람 허용 줄을 더하기 전 판(교차·사람 판단 줄만)의 렌더도 손 수정이 아니다
+  // 호환 렌더와 파일 전체가 같은 기존 구역만 손 수정으로 보지 않는다.
   const tampered = had > 0 && rendered !== text && upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { legacy: true })) !== text &&
-    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noGrants: true })) !== text;
+    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noGrants: true })) !== text &&
+    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noRepairs: true })) !== text;
   writeAtomic(path, rendered);
 
   const problems = deliverProblems(work, rendered);

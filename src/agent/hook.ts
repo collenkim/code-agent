@@ -511,7 +511,7 @@ function applyBeforeOpening(root: string): void {
 }
 
 /**
- * 읽기 전용 담당 — Claude 정의(template/claude/agents)의 tools 에 쓰기·셸이 없는 역할(hookPaths.test 가 정의 파일과 대조한다). Claude 는 도구가
+ * 읽기 전용 담당 — Claude 정의(template/claude/agents)의 tools 에 쓰기·셸이 없는 역할(hookInstallation.test 가 정의 파일과 대조한다). Claude 는 도구가
  * 없어 쓰지 못하지만 Codex 하위 에이전트는 셸·apply_patch 를 가지므로 hook 이 막는다(Codex 0.161.0 의 하위 에이전트 PreToolUse 에 agent_type 이 온다)
  */
 export const READ_ONLY_ROLES = ["ca-critic", "ca-reviewer"] as const;

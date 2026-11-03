@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { consumeCompletion, noteAgentFinished, noteAgentStarted, pendingCompletion, settleAgent, AGENT_RUNS_FILE } from "../agent/agentRuns";
-import { next, requireValidatable, submitPlan } from "../agent/commands";
+import { abort, next, requireValidatable, submitPlan } from "../agent/commands";
 import { codexHook } from "../agent/codexHook";
 import { CONSENT_INDEX } from "../agent/consentState";
 import { CLAUDE_HOOKS, init } from "../agent/init";
@@ -74,7 +74,7 @@ describe("구현 담당 완료 뒤 이어가기", () => {
     assert.match(reason, /\/ca-implement 절차의 담당 호출 다음 항목\(`code-agent next`/);
     assert.equal(stop("s1", { stop_hook_active: true }), "", "이어 붙인 턴은 놓아 준다");
     assert.equal(stop("s1"), "", "같은 완료로 같은 세션을 다시 막지 않는다");
-    assert.match(stop("s2"), /담당 완료가 기록됐습니다/, "재시작한 세션은 처리하지 않은 완료를 한 번 잇는다");
+    assert.equal(stop("s2"), "", "다른 창·새 세션의 턴을 이전 담당 완료로 붙잡지 않는다");
     // 조회는 다음 행동이 아니다 — 완료를 지우지 않는다
     assert.equal(cli(["status"]).status, 0);
     assert.ok(pendingCompletion(repo, "ORD-1"));
@@ -116,7 +116,7 @@ describe("구현 담당 완료 뒤 이어가기", () => {
 });
 
 describe("사람 판단 자리", () => {
-  const finish = (status: string) => noteAgentFinished(repo, "ORD-1", `a-${status}`, { source: "planning", type: "ca-analyst", status, phase: "analysis", advance: true });
+  const finish = (status: string) => noteAgentFinished(repo, "ORD-1", `a-${status}`, { source: "planning", type: "ca-analyst", status, phase: "analysis", session: "s1", advance: true });
 
   test("계획 담당 완료는 planning advance 로 잇고, 앞서 있던 답 없는 질문·열린 동의가 있으면 막지 않는다. 담당이 낸 질문(needs-input)은 잇는다", () => {
     start(repo, join(repo, "doc/work/ORD-1.md"));
@@ -139,6 +139,20 @@ describe("사람 판단 자리", () => {
 });
 
 describe("장부", () => {
+  test("abort와 같은 ID 재시작은 이전 실행·완료를 비우고 세션 없는 완료도 Stop을 막지 않는다", () => {
+    const spec = join(repo, "doc/work/ORD-1.md");
+    start(repo, spec);
+    const done = { source: "planning" as const, type: "ca-analyst", status: "completed", phase: "analysis", advance: true };
+    noteAgentFinished(repo, "ORD-1", "old", done);
+    assert.equal(decideStop({ cwd: repo, session_id: "s1" }), undefined);
+    abort(repo);
+    assert.equal(pendingCompletion(repo, "ORD-1"), undefined);
+    // 중단 시 남은 이전 버전의 장부도 새 시작에서 비운다.
+    noteAgentFinished(repo, "ORD-1", "old", { ...done, session: "s1" });
+    start(repo, spec);
+    assert.equal(pendingCompletion(repo, "ORD-1"), undefined);
+    assert.equal(decideStop({ cwd: repo, session_id: "s1" }), undefined);
+  });
   test("다음 행동이 없는 종료는 완료로 남기지 않고, 끝을 관찰하지 못한 오래된 실행은 세지 않으며, hook 실패 정리는 한 번만 한다", () => {
     start(repo, join(repo, "doc/work/ORD-1.md"));
     noteAgentStarted(repo, "ORD-1", "a1", { source: "planning", type: "ca-analyst", phase: "analysis" });

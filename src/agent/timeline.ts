@@ -30,7 +30,7 @@ export type TimelineType =
   /** 흐름이 고른 다음 행동과 호스트가 실행한 명령 */
   | "next.selected" | "action.started" | "action.ended"
   /** 승인 요청(동의 준비)·응답 관찰·적용 */
-  | "consent.requested" | "consent.answered" | "consent.applied"
+  | "consent.requested" | "consent.answered" | "consent.applied" | "consent.closed" | "plan.decided" | "preparation.ready"
   /** 검증 명령 한 실행 */
   | "verify.started" | "verify.ended"
   /** 무효화 원인과 재시도 사용 사유 */
@@ -212,7 +212,8 @@ export function summarizeByWork(events: readonly TimelineEvent[], marks: readonl
  */
 export function summarizeTimeline(events: readonly TimelineEvent[], marks: readonly HostMark[] = []): TimelineSummary {
   type Row = { at: string; type: string; event?: TimelineEvent; mark?: HostMark };
-  const rows: Row[] = [...events.map((event) => ({ at: iso(event.at), type: event.type as string, event })), ...marks.map((mark) => ({ at: iso(mark.at), type: mark.type as string, mark }))]
+  const rows: Row[] = [...events.filter(event => !(event.type.startsWith("action.") && event.detail?.command === "master call"))
+    .map((event) => ({ at: iso(event.at), type: event.type as string, event })), ...marks.map((mark) => ({ at: iso(mark.at), type: mark.type as string, mark }))]
     .flatMap((row) => row.at === undefined ? [] : [{ ...row, at: row.at }])
     .map((row, index) => ({ row, index })).sort((a, b) => a.row.at.localeCompare(b.row.at) || a.index - b.index).map(({ row }) => row);
   const spans: SpanView[] = [];
@@ -283,10 +284,17 @@ export function summarizeTimeline(events: readonly TimelineEvent[], marks: reado
         break;
       case "consent.answered":
       case "consent.applied":
+      case "consent.closed":
         close(`consent:${detail.consent}`, at, type);
         close("flow-human", at, type);
         break;
       case "request.decided":
+      case "plan.decided":
+      case "preparation.ready":
+        // 동의 ID를 통하지 않고 TTY·평가 fixture 등에서 같은 결정을 마친 경우. 다른 작업·다른 동의는 닫지 않는다.
+        for (const [key, span] of open) if (key.startsWith("consent:") && span.ref.workId === event!.workId &&
+          (type === "preparation.ready" ? ["setup", "baseline", "docs"].includes(String(span.ref.detail?.action)) :
+            span.ref.detail?.action === (type === "request.decided" ? "request" : "plan"))) close(key, at, type);
         close("flow-human", at, type);
         break;
       case "invalidated":

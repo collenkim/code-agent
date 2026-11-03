@@ -77,7 +77,7 @@ function confirmAll(): void {
 
 /**
  * ORD-1 의 번호 문서를 게이트 통과 최소치로 쓰고 계획까지 제출한다.
- * 이 파일의 관심은 공통 문서라 작업 문서 자체의 게이트는 agent.test.ts 가 본다.
+ * 이 파일의 관심은 공통 문서라 작업 문서 자체의 게이트는 agentDocs.test.ts 가 본다.
  */
 function submitOrderPlan(): void {
   write("doc/work/ORD-1/01-requirements.md", "## R1 · 주문\n근거: \"주문\"\n## 가정\n- 없음\n");

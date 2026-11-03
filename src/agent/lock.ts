@@ -139,11 +139,17 @@ export function acquireLock(path: string, options: LockOptions): () => void {
   const deadline = Date.now() + options.waitMs;
   const me = hostname();
   const started = ownProcessIdentity();
-  const identity = (owner: LockOwner): boolean | undefined => {
+  // 같은 주인으로 확인한 결과만 이 대기 안에서 재사용한다. 오래돼도 보수적으로 기다릴 뿐이며 회수 직전에는 새로 대조한다.
+  const liveOwners = new Set<string>();
+  const identity = (owner: LockOwner, fresh = false): boolean | undefined => {
+    const key = JSON.stringify(owner);
+    if (!fresh && liveOwners.has(key)) return true;
     if (options.identity?.(owner) === false) return false;
     if (typeof owner.started !== "string") return undefined;
     const actual = owner.pid === process.pid ? started : processIdentity(owner.pid!);
-    return actual === undefined ? undefined : actual === owner.started;
+    const matches = actual === undefined ? undefined : actual === owner.started;
+    if (matches) liveOwners.add(key);
+    return matches;
   };
   const unseen = (): LockView => ({ label: options.label, display, ageSec: 0, ageReclaim: options.ageReclaim });
   let reclaimed = 0;
@@ -191,7 +197,7 @@ export function acquireLock(path: string, options: LockOptions): () => void {
         // 가드 안에서 다시 보고 다시 판정한다 — 그 사이 다른 프로세스가 회수하고 새로 잡았으면 건드리지 않는다
         const again = observe(path, Date.now());
         const still = !again.gone && !again.busy && again.text === text && lockDecision({ owner, sameHost,
-          alive: sameHost ? pidAlive(owner!.pid!) : undefined, identity: sameHost ? identity(owner!) : undefined,
+          alive: sameHost ? pidAlive(owner!.pid!) : undefined, identity: sameHost ? identity(owner!, true) : undefined,
           ageMs: Math.max(0, Date.now() - again.mtimeMs), ageReclaim: options.ageReclaim }) === "reclaim";
         if (still) {
           unlinkSync(path);

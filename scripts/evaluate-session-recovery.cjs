@@ -7,7 +7,7 @@ const fs = require('node:fs'), path = require('node:path'), os = require('node:o
 const root = path.resolve(__dirname, '..'), build = process.argv[2] ?? 'dist';
 if (!['dist', 'dist-bin'].includes(build)) throw Error('Use dist or dist-bin');
 const use = name => require(path.join(root, build, 'agent', name));
-const recoveryFile = path.join(root, 'doc/reviews/evidence/session-recovery-live.json');
+const recoveryFile = require('./evaluation-reports.cjs').reportFile('session-recovery-live.json');
 function saveRecoveryReport(report) {
   fs.mkdirSync(path.dirname(recoveryFile), { recursive: true });
   fs.writeFileSync(recoveryFile, JSON.stringify(report, null, 2) + '\n');

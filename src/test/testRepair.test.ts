@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { context, next, requireRepairable, requireValidatable } from "../agent/commands";
 import { loadEvidence, stageProblems } from "../agent/evidence";
+import { renderTraceBlock } from "../agent/deliver";
 import { decide } from "../agent/hook";
 import { openRound } from "../agent/review";
 import { repairFileStats, repairProblems, type TestRepair } from "../agent/testRepair";
@@ -81,6 +82,7 @@ describe("테스트 수정 창", () => {
     // 고친 테스트는 다음 리뷰 회차가 다시 본다(verify 가 통과한 게이트마다 커서를 옮겨 review 에 서 있다)
     openRound(requireValidatable(repo, "review"));
     assert.match(context(repo), /받아들인 테스트 수정 창[\s\S]*창 #1 · 단언 형식·null 처리 · TC-2 — 근거: TC-2 실패 로그[\s\S]*단언 꼴 1 → 1/);
+    assert.match(renderTraceBlock(loadWork(repo)!, evidence), /받아들인 테스트 수정 창[\s\S]*TC-2 실패 로그[\s\S]*단언 꼴 1 → 1/, "반영 보고서와 동의 전문에도 같은 수정 근거를 싣는다");
   });
 
   test("통합 검증 — 깨끗한 worktree 에서만 실패한 빈 디렉터리 단언을 계획을 되감지 않고 고쳐 반영 자리까지 간다", async () => {
@@ -155,6 +157,15 @@ describe("창의 기계 검사", () => {
     n: 1, at: "2026-10-30T00:00:00.000Z", round: 1, cause: "assertion", reason: "근거", cases, files: ["A.java"], baseline: { "A.java": repairFileStats(text) },
   });
   const BASE = "@Test @DisplayName(\"TC-127\") void a() { assertThat(x).isNotNull(); }\n@Test @DisplayName(\"TC-150\") void b() { assertTrue(List.of(1, null).contains(null)); }\n";
+
+  test("조건부 비활성화 증가는 거부하고 주석·문자열의 단언은 실행 단언 수로 세지 않는다", () => {
+    for (const marker of ['@DisabledIf("condition")', '@EnabledIf("condition")', '@org.junit.jupiter.api.condition.DisabledOnOs(OS.WINDOWS)', '@Test(enabled = false)', '@org.testng.annotations.Test(groups = {"unit"}, enabled = false)'])
+      assert.match(repairProblems(repair(BASE), { "A.java": `${marker}\n${BASE}` }).join("\n"), /건너뛰기/, marker);
+    const commented = '// TC-127 assertTrue(x);\n/* expect(x); @DisabledIf("x") */\n# assert False\nString url = "https://host/assertTrue(x)";\nassertThat(url).isNotNull();';
+    assert.deepEqual(repairFileStats(commented), { tcs: ["TC-127"], skips: 0, asserts: 1 });
+    assert.equal(repairFileStats('boolean enabled = false; assertFalse(enabled);').skips, 0, "업무 데이터의 enabled=false는 테스트 비활성화가 아니다");
+    assert.equal(repairFileStats(BASE.replace("assertTrue(List.of(1, null).contains(null));", "// assertTrue(List.of(1, null).contains(null));\n")).asserts, 1);
+  });
 
   test("TC 토큰 유지·창의 TC 인식·건너뛰기 표지·파일 삭제를 본다 — 단언을 고쳐 쓴 것은 받아들인다", () => {
     const opened = repair(BASE);

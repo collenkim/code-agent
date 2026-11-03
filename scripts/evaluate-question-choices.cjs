@@ -13,7 +13,7 @@ const host = process.argv[2];
 if (!['claude', 'codex'].includes(host)) throw Error('claude 또는 codex를 지정하세요.');
 const root = path.resolve(__dirname, '..');
 const recheck = process.argv[3] === '--recheck';
-const reportPath = path.join(root, 'dist', `question-choices-live-${host}.json`);
+const reportPath = require('./evaluation-reports.cjs').reportFile(`question-choices-live-${host}.json`);
 const stdoutPath = path.join(root, 'dist', `question-choices-live-${host}.stdout.jsonl`);
 const previous = recheck ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : undefined;
 const repo = recheck ? undefined : fs.mkdtempSync(path.join(os.tmpdir(), 'ca-choice-live-'));

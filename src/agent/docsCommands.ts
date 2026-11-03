@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join } from "path";
 import { actorName } from "./actor";
+import { recordPreparationReady } from "./bootstrap";
 
 import { MANIFEST_FILE } from "../core/manifest";
 import { writeAtomic } from "../core/atomic";
@@ -231,6 +232,7 @@ export function confirmDoc(repoRoot: string, kindArg: string | undefined): strin
       throw new Stop("확정하는 동안 공통 문서가 바뀌었습니다 — 판정을 남기지 않았습니다. 다시 확인하세요.");
     }
     for (const entry of checks.filter((entry) => !entry.ok)) recordDocConfirmation(repoRoot, entry, actorName(), presence);
+    recordPreparationReady(repoRoot);
     return `공통 POLICY 4종을 확정했습니다.\n\n${docsStatus(repoRoot)}`;
   }
   const kind = policyKindOf(kindArg);
@@ -249,5 +251,6 @@ export function confirmDoc(repoRoot: string, kindArg: string | undefined): strin
   ].join("\n");
   const presence = confirmOnTerminal(shown, "confirm");
   recordDocConfirmation(repoRoot, check, actorName(), presence);
+  recordPreparationReady(repoRoot);
   return `${check.label} 문서를 확정했습니다 (${check.hash}).\n\n${docsStatus(repoRoot)}`;
 }

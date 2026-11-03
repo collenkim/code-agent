@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { root, ID, DIR, REQUIREMENTS, IMPACT, DESIGN, FUNCTIONAL, write, dispatch, finish, analysis } from "./planningFixture";
 import { planningContracts, planningReuseAnswer, preparePlanning } from "../agent/planning";
-import { contractDrift, contractsFile, dependencyContracts } from "../agent/dependencyContracts";
+import { claimChanges, contractDrift, contractsFile, dependencyContracts } from "../agent/dependencyContracts";
 import { answerSources, formatAnswerSources, openQuestions, readAnswerRows } from "../agent/answers";
 import { parseQuestions } from "../agent/questions";
 import { approvalDocsHash, loadWork } from "../agent/work";
@@ -51,6 +51,41 @@ function readopt(content: string, text = statement): string {
 function questions(answer = "", source = "") {
   writeFileSync(join(root, DIR, "questions.md"), `# 질문\n\n## Q1 계약\n할인의 범위와 오류 계약은 무엇인가\n[Answer]: ${answer}\n${source ? `[Source]: ${source}\n` : ""}`);
 }
+
+test("section 없는 보안 항목도 제목·본문 문맥에 묶여 필수에서 선택으로 옮겨지면 변경이다", () => {
+  const { input, value } = bundle();
+  const claim = "- tenant_id: string";
+  const adopt = (content: string) => {
+    const [head, sha256] = commit("contract.md", content);
+    value.contracts[0] = { ...value.contracts[0], commit: head, sha256, claims: [{ key: "tenant", kind: "jwt-claim", text: claim }] };
+    writeFileSync(input, JSON.stringify(value)); planningContracts(root, input);
+    return dependencyContracts(root, ID).contracts;
+  };
+  const before = adopt(`# JWT\n## 필수\n${claim}\n## 선택\n- locale: string\n`);
+  const after = adopt(`# JWT\n## 필수\n- sub: string\n## 선택\n${claim}\n- locale: string\n`);
+  const [changed] = claimChanges(before, after);
+  assert.equal(changed.change, "changed"); assert.equal(changed.security, true);
+  assert.ok(changed.texts.includes("## 필수") && changed.texts.includes("## 선택"));
+  const same = adopt(`# JWT\n## 필수\n- sub: string\n## 선택\n${claim}\n- locale: string\n## 이력\n- 정리\n`);
+  assert.deepEqual(claimChanges(after, same), [], "다른 절의 이력은 의존 범위가 아니다");
+  assert.throws(() => adopt(`# JWT\n## 필수\n${claim}\n## 선택\n${claim}\n`), /원문 줄이 여러 번/);
+});
+
+test("버전 2 사본은 원래 범위의 무결성부터 확인하고 현재 문맥으로 읽는다", () => {
+  register();
+  readopt(`# 필수\n${statement}\n`);
+  const current = dependencyContracts(root, ID).hash;
+  const file = join(root, contractsFile(ID)), old = JSON.parse(readFileSync(file, "utf8"));
+  old.version = 2;
+  old.contracts[0].claims[0].scope = createHash("sha256").update(statement).digest("hex");
+  old.contracts[0].excerpt = statement + "\n";
+  writeFileSync(file, JSON.stringify(old));
+  assert.deepEqual(dependencyContracts(root, ID).problems, []);
+  assert.equal(dependencyContracts(root, ID).hash, current, "검증한 커밋 원문으로 문맥을 복구한다");
+  old.contracts[0].claims[0].scope = "0".repeat(64);
+  writeFileSync(file, JSON.stringify(old));
+  assert.match(dependencyContracts(root, ID).problems.join("\n"), /사본이 근거와 다릅니다/);
+});
 const sources = () => answerSources(root, ID, parseQuestions(readFileSync(join(root, DIR, "questions.md"), "utf8")));
 
 test("같은 판정 구간의 계약은 Git 검사를 재사용하고 다음 구간은 다시 검사한다 — 제공 저장소의 작업 트리는 읽지 않는다", async () => {
@@ -133,7 +168,7 @@ test("계약 재인용은 원문과 질문에 묶이고 사람이 답한 것으�
 
 test("범위 밖 글·줄바꿈만 바뀐 계약을 다시 등록해도 재인용 답은 그대로다", () => {
   register(); questions(); planningReuseAnswer(root, "Q1", "discount", "discount.range");
-  assert.match(readopt(`# 할인 계약\r\n\r\n${statement}  \r\n\r\n## 변경 이력\r\n- 문서 정리\r\n`), /바뀐 항목 0\(보안 0\) · 그대로 1 · 기준 커밋만 바뀐 계약\(범위 밖 변경\): discount/);
+  assert.match(readopt(`${statement}  \r\n\r\n## 변경 이력\r\n- 문서 정리\r\n`), /바뀐 항목 0\(보안 0\) · 그대로 1 · 기준 커밋만 바뀐 계약\(범위 밖 변경\): discount/);
   assert.equal(sources().get("Q1"), "contract");
 });
 
@@ -216,7 +251,7 @@ test("버전 1 입력과 버전 1 사본은 종류 other·범위 없는 항목�
   const { value, input } = bundle(1);
   planningContracts(root, input);
   const stored = JSON.parse(readFileSync(join(root, contractsFile(ID)), "utf8"));
-  assert.equal(stored.version, 2);
+  assert.equal(stored.version, 3);
   assert.deepEqual(stored.contracts[0].claims.map((claim: { kind: string; availability: string }) => [claim.kind, claim.availability]), [["other", "provided"]]);
   const old = { version: 1, contracts: [{ ...value.contracts[0], content: `${statement}\r\n` }] };
   writeFileSync(join(root, contractsFile(ID)), JSON.stringify(old));

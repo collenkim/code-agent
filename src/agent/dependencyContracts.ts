@@ -42,8 +42,9 @@ const InputV1 = z.object({ version: z.literal(1), contracts: z.array(z.object({ 
 const InputV2 = z.object({ version: z.literal(2), contracts: z.array(z.object({ ...RefFields, claims: z.array(Claim).min(1).max(40) }).strict()).min(1).max(20) }).strict();
 const StoredClaim = Claim.extend({ scope: z.string().regex(/^[a-f0-9]{64}$/) });
 const StoredV1 = z.object({ version: z.literal(1), contracts: z.array(z.object({ ...RefFields, claims: z.array(ClaimV1).min(1).max(40), content: z.string().max(LIMIT) }).strict()).min(1).max(20) }).strict();
-/** excerpt: 의존 범위의 원문(항목 줄·지정 섹션, 원문 순서). normalized: 기준 원문 전체를 정규화한 해시 — 범위 밖 변경을 알리는 데만 쓴다 */
+/** excerpt: 의존 범위의 원문(문맥·지정 섹션·상위 제목, 원문 순서). normalized: 기준 원문 전체를 정규화한 해시 — 범위 밖 변경을 알리는 데만 쓴다 */
 const StoredV2 = z.object({ version: z.literal(2), contracts: z.array(z.object({ ...RefFields, claims: z.array(StoredClaim).min(1).max(40), excerpt: z.string().max(LIMIT), normalized: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(20) }).strict();
+const StoredV3 = StoredV2.extend({ version: z.literal(3) });
 type Reference = z.infer<typeof InputV2>["contracts"][number];
 export type ContractClaim = z.infer<typeof StoredClaim>;
 export type DependencyContract = z.infer<typeof StoredV2>["contracts"][number];
@@ -76,7 +77,7 @@ function sections(lines: string[]): Section[] {
 }
 interface Derived { claims: ContractClaim[]; excerpt: string; normalized: string }
 /** 정규화한 원문에서 항목마다 의존 범위를 정한다 — 항목 줄이 없거나 섹션 밖이면 오류다 */
-function derive(contractId: string, text: string, claims: z.infer<typeof Claim>[]): Derived {
+function derive(contractId: string, text: string, claims: z.infer<typeof Claim>[], contextual = true): Derived {
   const normalized = normalizeContract(text), lines = normalized.split("\n");
   const all = sections(lines);
   const ranges: [number, number][] = [];
@@ -89,11 +90,26 @@ function derive(contractId: string, text: string, claims: z.infer<typeof Claim>[
       if (matches.length !== 1) throw new Error(`계약 ${contractId}의 ${claim.key} 섹션 '${claim.section}'이 ${matches.length ? "여러 번 나옵니다" : "원문에 없습니다"}`);
       range = [matches[0].start, matches[0].end];
     }
-    const at = lines.findIndex((line, index) => line.trim() === want && (!range || index >= range[0] && index < range[1]));
+    const matches = lines.flatMap((line, index) => line.trim() === want && (!range || index >= range[0] && index < range[1]) ? [index] : []);
+    if (contextual && matches.length > 1) throw new Error(`계약 ${contractId}의 ${claim.key} 원문 줄이 여러 번 나옵니다 — 고유한 section을 지정하세요`);
+    const at = matches[0] ?? -1;
     if (at < 0) throw new Error(`계약 ${contractId}의 ${claim.key}가 ${range ? "지정 섹션의 " : ""}원문 한 줄과 다릅니다`);
+    if (!range && contextual) {
+      const enclosing = all.filter(section => section.start <= at && at < section.end).at(-1);
+      // 자동 범위는 가장 가까운 제목의 직접 본문이다. 하위·다음 제목은 별도 범위다.
+      if (enclosing) range = [enclosing.start, all.find(section => section.start > at)?.start ?? lines.length];
+      else {
+        let start = at, end = at + 1;
+        while (start > 0 && lines[start - 1].trim()) start--;
+        while (end < lines.length && lines[end].trim() && !all.some(section => section.start === end)) end++;
+        range = [start, end];
+      }
+    }
     range ??= [at, at + 1];
+    const ancestors = contextual ? all.filter(section => section.start < range![0] && section.end > range![0]).map(section => section.start) : [];
+    ranges.push(...ancestors.map(start => [start, start + 1] as [number, number]));
     ranges.push(range);
-    return { ...claim, text: want, scope: digest(lines.slice(range[0], range[1]).join("\n").replace(/\n+$/, "")) };
+    return { ...claim, text: want, scope: digest([...ancestors.map(start => lines[start]), ...lines.slice(range[0], range[1])].join("\n").replace(/\n+$/, "")) };
   });
   // 범위들을 원문 순서로 합친다 — 겹치는 섹션·줄은 한 번만
   const merged: [number, number][] = [];
@@ -104,9 +120,9 @@ function derive(contractId: string, text: string, claims: z.infer<typeof Claim>[
   }
   return { claims: scoped, excerpt: merged.map(([start, end]) => lines.slice(start, end).join("\n").replace(/\n+$/, "")).join("\n\n…\n\n") + "\n", normalized: digest(normalized) };
 }
-/** 항목의 의존 범위 글 — 섹션이 있으면 사본 excerpt 의 그 섹션, 없으면 항목 줄 */
+/** 변경 설명용 글 — 명시 섹션 또는 자동 문맥을 담은 사본. 변경 여부 자체는 항목의 scope 해시로 판정한다. */
 function scopeLines(contract: DependencyContract, claim: ContractClaim): string[] {
-  if (!claim.section) return [claim.text];
+  if (!claim.section) return contract.excerpt.split("\n");
   const lines = contract.excerpt.split("\n"), found = sections(lines).find(section => section.title === claim.section!.normalize("NFC").trim());
   return found ? lines.slice(found.start, found.end) : [claim.text];
 }
@@ -150,16 +166,16 @@ function committedText(git: ReturnType<typeof gitIn>, commit: string, path: stri
   return { text, bytes };
 }
 /** 기준 커밋의 원문으로 항목 범위를 정한다 — 작업 트리는 읽지 않는다 */
-function source(ref: Reference): Derived {
+function source(ref: Reference, contextual = true): Derived {
   const root = checkedPath(ref);
-  const key = JSON.stringify([ref, root]);
+  const key = JSON.stringify([ref, root, contextual]);
   const cached = sourceMemo.get(key);
   if (cached) return cached;
   const git = gitIn(root);
   if (realpathSync(git(["rev-parse", "--show-toplevel"]).toString().trim()) !== root) throw new Error("계약 repository는 Git 저장소 루트여야 합니다");
   const blob = committedText(git, ref.commit, ref.path);
   if (digest(blob.bytes) !== ref.sha256) throw new Error(`계약 근거의 커밋 내용 해시가 다릅니다 — sha256 은 git show ${ref.commit.slice(0, 12)}:${ref.path} 의 바이트입니다`);
-  const derived = derive(ref.id, blob.text, ref.claims);
+  const derived = derive(ref.id, blob.text, ref.claims, contextual);
   sourceMemo.set(key, derived);
   if (!clearScheduled) {
     clearScheduled = true;
@@ -203,7 +219,7 @@ export function registerContracts(root: string, id: string, input: string, known
   }
   const contracts: DependencyContract[] = refs.map(ref => { const derived = source(ref); return { ...ref, claims: derived.claims, excerpt: derived.excerpt, normalized: derived.normalized }; });
   conflicts(contracts);
-  const text = JSON.stringify({ version: 2, contracts }, null, 2) + "\n";
+  const text = JSON.stringify({ version: 3, contracts }, null, 2) + "\n";
   if (Buffer.byteLength(text) > LIMIT) throw new Error("계약 묶음이 크기 한도를 넘었습니다");
   writeAtomic(join(root, contractsFile(id)), text);
   return `외부 의존 계약 ${contracts.length}개 기록: ${contractsFile(id)} — 사람 답·승인 아님`;
@@ -225,13 +241,16 @@ export function dependencyContracts(root: string, id: string): { contracts: Depe
         if (normalizeContract(content) !== normalizeContract(committedText(gitIn(checkedPath(ref)), ref.commit, ref.path).text)) throw new Error(`계약 사본이 근거와 다릅니다: ${ref.id}`);
         return { ...upgraded, claims: derived.claims, excerpt: derived.excerpt, normalized: derived.normalized };
       })
-      : StoredV2.parse(raw).contracts;
+      : (raw.version === 2 ? StoredV2 : StoredV3).parse(raw).contracts;
     conflicts(contracts);
     for (const contract of contracts) {
       const { excerpt, claims, normalized, ...ref } = contract;
-      const derived = source({ ...ref, claims: claims.map(({ scope, ...claim }) => claim) });
+      const input = { ...ref, claims: claims.map(({ scope, ...claim }) => claim) };
+      // 버전 2는 저장 당시 한 줄 범위로 먼저 무결성을 대조한 뒤 현재 문맥 범위로 읽는다. 조회는 파일을 다시 쓰지 않는다.
+      const derived = source(input, raw.version !== 2);
       const same = derived.claims.length === claims.length && derived.claims.every((claim, index) => claimDigest(contract, claim) === claimDigest(contract, claims[index]));
       if (derived.excerpt !== excerpt || derived.normalized !== normalized || !same) throw new Error(`계약 사본이 근거와 다릅니다: ${contract.id}`);
+      if (raw.version === 2) Object.assign(contract, source(input));
     }
     return { contracts, files: [file], problems: [], hash: digest(JSON.stringify(contracts.flatMap(contract => contract.claims.map(claim => claimDigest(contract, claim))))) };
   } catch (error) {

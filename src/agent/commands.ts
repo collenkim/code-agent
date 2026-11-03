@@ -108,6 +108,7 @@ import { leaseLine } from "./lease";
 import { loadTriage, requireNoTriage, triageSummary } from "./triageState";
 import { renderContext } from "./contextRender";
 import { PHASE_LABEL } from "./phaseInfo";
+import { clearWorkRuns } from "./agentRuns";
 
 // Stop 은 work.ts 도 던지므로 따로 있다 (여기 두면 work.ts ↔ commands.ts 가 서로를 부른다)
 export { Stop } from "./stop";
@@ -418,6 +419,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   }
   // 답 출처 판정의 시작 행 — 이미 답이 있던 질문은 확정 지시서의 "접수 때 정한 것"과 같을 때만 접수 답으로 본다
   writeAnswerBaseline(repoRoot, order.id, specPath);
+  clearWorkRuns(repoRoot, order.id);
   saveActive(repoRoot, { id: order.id, spec: specPath, target: chosen, phase: "analysis", branch, base, baseCommit, planningVersion: 1, knowledgeVersion: 1, request: requestPlace(repoRoot, order.id, specPath),
     ...(cycle ? { cycle } : {}) }, "start");
   if (cycle) recordEvent(repoRoot, { type: "cycle.opened", reason: `회차 ${cycle.number - 1} 반영 커밋 ${cycle.delivered.slice(0, 12)} 뒤 새 회차` });
@@ -1110,6 +1112,7 @@ export function abort(repoRoot: string): string {
   }
   logStage(repoRoot, active, "abort");
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, active.id, "paused");
+  clearWorkRuns(repoRoot, active.id);
   clearActive(repoRoot);
   return `작업 커서를 지웠습니다: ${active.id}. 작업 폴더·계획·원장은 남아 있습니다 — 같은 지시서로 다시 시작할 수 있습니다.`;
 }
@@ -1337,6 +1340,7 @@ export function decide(repoRoot: string, decision: Decision, comment?: string): 
     docsHash: docs.hash,
     docsParts: docs.parts,
   });
+  recordEvent(repoRoot, { type: "plan.decided", detail: { decision, channel: presence.channel } });
   return decision === "approved"
     ? `승인을 원장에 남겼습니다. 현재 호스트 세션에서는 ca-next 흐름으로 구현을 자동으로 이어갑니다 (수동 재개: ${skill("ca-next")}).`
     : "반려를 원장에 남겼습니다. 계획을 고쳐 다시 제출해야 합니다.";

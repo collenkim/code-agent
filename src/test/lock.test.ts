@@ -34,6 +34,23 @@ const stopMessage = (run: () => void): string => {
 };
 
 describe("acquireLock", () => {
+  test("같은 살아 있는 주인의 시작 식별은 대기 동안 재사용하지만 회수 판정은 새로 확인한다", t => {
+    const identity = require("../agent/processIdentity") as typeof import("../agent/processIdentity");
+    t.mock.method(identity, "ownProcessIdentity", () => "self");
+    const peer = process.pid + 100000;
+    const kill = process.kill;
+    t.mock.method(process, "kill", (pid: number, signal: number) => pid === peer ? true : kill(pid, signal));
+    const lookup = t.mock.method(identity, "processIdentity", () => "peer-start");
+    const path = join(dir, "peer.lock");
+    writeFileSync(path, JSON.stringify({ pid: peer, host: hostname(), at: "t", started: "peer-start" }));
+    assert.throws(() => acquireLock(path, { waitMs: 100, ageReclaim: false, label: "시험" }), /다른 code-agent 프로세스/);
+    assert.equal(lookup.mock.callCount(), 1, "폴링마다 OS 조회를 만들지 않는다");
+    lookup.mock.resetCalls();
+    writeFileSync(path, JSON.stringify({ pid: peer, host: hostname(), at: "t", started: "old-start" }));
+    const { value: release } = captureStderr(() => acquireLock(path, { waitMs: 0, ageReclaim: false, label: "시험" }));
+    assert.equal(lookup.mock.callCount(), 2, "재사용 PID로 판단해도 회수 가드 안에서 다시 확인한다");
+    release();
+  });
   test("주인 {pid, host, at} 을 쓰고, 해제는 한 번만 지운다", () => {
     const path = join(dir, "a.lock");
     const release = acquireLock(path, { waitMs: 100, ageReclaim: true, label: "시험" });

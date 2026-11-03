@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { readTimeline, recordEvent, runtimeLabel, summarizeByWork, summarizeTimeline, TIMELINE_LOG, type HostMark, type TimelineEvent } from "../agent/timeline";
 import { usage } from "../agent/usage";
+import { spawnSync } from "node:child_process";
 
 /** 실행 타임라인 — 덧붙이기 기록과 구간 요약(분류·겹침·대기 사유). 재현 시나리오의 실제 hook·CLI 기록은 reproScenarios.test 가 본다 */
 const T0 = Date.parse("2026-10-01T00:00:00.000Z");
@@ -18,6 +19,22 @@ const mark = (type: HostMark["type"], second: number, status?: string): HostMark
 const SEC = 1000;
 
 describe("구간 요약", () => {
+  test("별도 요구·계획 결정과 폐기 시 동의 대기를 닫고 조회 polling은 호스트 재개가 아니다", () => {
+    const summary = summarizeTimeline([
+      ev("consent.requested", 0, { detail: { consent: "setup", action: "setup" } }),
+      ev("consent.requested", 1, { detail: { consent: "plan", action: "plan" } }),
+      ev("preparation.ready", 9), ev("plan.decided", 12),
+      ev("agent.finished", 13),
+      ev("action.started", 14, { detail: { command: "master call" } }),
+      ev("action.ended", 15, { detail: { command: "master call" } }),
+      ev("consent.requested", 16, { detail: { consent: "other", action: "deliver" } }),
+      ev("consent.closed", 20, { detail: { consent: "other", status: "failed" } }),
+    ], [mark("host.tool", 463)]);
+    assert.deepEqual(summary.waits.filter(w => w.category === "human").map(w => [w.durationMs, w.open, w.closedBy]),
+      [[9000, false, "preparation.ready"], [11000, false, "plan.decided"], [4000, false, "consent.closed"]]);
+    assert.equal(summary.waits.find(w => w.category === "host-resume")!.durationMs, 450000);
+    assert.equal(summary.counts["action.started"], undefined);
+  });
   test("겹친 구간은 분류별 합집합과 우선순위 귀속으로 따로 세고, 귀속 합과 그 밖이 경과와 같다", () => {
     const summary = summarizeTimeline([
       ev("verify.started", 0, { detail: { run: "a", kind: "build", round: 1, logFile: "a.log" } }),
@@ -95,6 +112,18 @@ describe("기록", () => {
   let root: string;
   beforeEach(() => { root = mkdtempSync(join(tmpdir(), "ca-timeline-")); });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  test("실제 CLI의 master call 조회는 타임라인에 쓰지 않는다", () => {
+    mkdirSync(join(root, ".code-agent"));
+    recordEvent(root, { type: "agent.finished", workId: "W-1" });
+    const before = readFileSync(join(root, TIMELINE_LOG), "utf8");
+    for (let n = 0; n < 3; n++) {
+      const result = spawnSync(process.execPath, [join(__dirname, "../agent/cli.js"), "master", "call"],
+        { cwd: root, input: "{}", encoding: "utf8", windowsHide: true, env: { ...process.env, CODE_AGENT_HOST: "claude" } });
+      assert.match(result.stdout + result.stderr, /invalid-request|protocol|master|연동/);
+    }
+    assert.equal(readFileSync(join(root, TIMELINE_LOG), "utf8"), before);
+  });
 
   test("code-agent 저장소에서만 덧붙인다 — 덮어쓰지 않고, 줄마다 eventId·런타임을 싣고, 사유는 한 줄로 자른다", () => {
     recordEvent(root, { type: "request.received" });
