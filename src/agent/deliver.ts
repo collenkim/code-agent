@@ -19,6 +19,7 @@ import { clearActive, draftFile, handoffDir, logStage, questionsFile, STATE_DIR,
 import { formatAnswerSources, openQuestions } from "./answers";
 import { consentLedgerProblems, writeConsentReceipts } from "./consentReceipts";
 import { recordDeliveredCycle } from "./cycles";
+import { cleanCycleArchives, cycleCoauthors, cycleMessageLines, inspectSquash, squashDelivery, squashPreview, SQUASH_LIMIT } from "./cycleGit";
 import { crossQuestionViews, loadPlanning } from "./planningState";
 import { COUNTER_LABEL, crossPointState, grantText, type RetryGrant } from "./retryPolicy";
 import { crossRequired, loadReview, reviewDocFile, reviewProblems } from "./review";
@@ -231,9 +232,9 @@ function crossCommitLines(work: Work, evidence?: Evidence): string[] {
 /**
  * 코드 구역 — 추적표 · 검증 · 변경 요약. 다시 렌더해 바이트로 대조한다.
  * 호환 대조: legacy는 교차 검증·사람 판단·수정 창이 없는 구역, noGrants는 사람 허용이 없는 구역,
- * noRepairs는 수정 창이 없는 구역이다. 정확히 같은 기존 구역만 자동 갱신 대상으로 인정한다.
+ * noRepairs는 수정 창, noSquash는 squash 메시지가 없는 구역이다. 정확히 같은 기존 구역만 자동 갱신 대상으로 인정한다.
  */
-export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean; noGrants?: boolean; noRepairs?: boolean } = {}): string {
+export function renderTraceBlock(work: Work, evidence: Evidence | undefined, options: { legacy?: boolean; noGrants?: boolean; noRepairs?: boolean; noSquash?: boolean } = {}): string {
   const { active } = work;
   const rows = traceRows(work, evidence);
   const lines = [
@@ -297,6 +298,7 @@ export function renderTraceBlock(work: Work, evidence: Evidence | undefined, opt
   if (changes.length === 0) {
     lines.push("- 없음");
   }
+  if (evidence && !options.noSquash && !options.legacy) lines.push("", "## squash 커밋 메시지", "", "```text", squashCommitMessage(work, evidence), "```");
   return lines.join("\n");
 }
 
@@ -502,19 +504,22 @@ function git(repoRoot: string, args: string[]): string {
  * 커밋 메시지는 지시서에서 결정론적으로 만든다 — 모델이 쓴 문장을 커밋 이력에 싣지 않는다.
  * 사람이 읽을 서사는 ⑩ 에 있고, 그 파일이 이 커밋 안에 함께 들어간다.
  */
-function commitMessage(work: Work, evidence: Evidence): string {
+export function squashCommitMessage(work: Work, evidence: Evidence): string {
   const { order, active } = work;
   const keys = loadRequirements(work.repoRoot, active.id)?.keys ?? [];
+  const coauthors = cycleCoauthors(work.repoRoot, active);
   return [
     `[${order.id}] ${order.title}`,
     "",
     `요구: ${keys.join(", ") || "없음"}`,
+    ...cycleMessageLines(work.repoRoot, active),
     `검증: ${(["check", "test", "integrate"] as VerifyPhase[])
       .map((phase) => `${phase}=${runsOf(evidence, phase).every((run) => run.outcome === "passed") ? "passed" : "?"}`)
       .join(" · ")} · 기준 커밋 ${evidence.baseCommit.slice(0, 12)} · 트리 ${evidence.treeHash.slice(-12)}`,
     ...(evidence.repro?.mode === "log" ? [`재현: ${reproLine(evidence.repro)}`] : []),
     ...crossCommitLines(work, evidence),
     `근거: ${prDocFile(active.id)} · ${validationDocFile(active.id)} · ${reviewDocFile(active.id)}`,
+    ...(coauthors.length ? ["", ...coauthors] : []),
   ].join("\n");
 }
 
@@ -598,7 +603,7 @@ function committedOutside(work: Work, paths: string[]): string[] {
     .filter((file) => file !== "" && (!roots.some((root) => file === root || file.startsWith(`${root}/`)) || isDeliveryExcluded(work, file)));
 }
 
-export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[], originals?: ReadonlyMap<string, string | undefined>): { commit: string; outside: string[] } {
+export function commitDelivery(work: Work, evidence: Evidence, knowledge: string[], originals?: ReadonlyMap<string, string | undefined>, preview = inspectSquash(work.repoRoot, work.active), message = squashCommitMessage(work, evidence)): { commit: string; outside: string[]; squash: string } {
   const { repoRoot } = work;
   const paths = deliveryPaths(work, knowledge);
   const excludes = deliveryExcludes(work);
@@ -627,7 +632,7 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
     // 커밋도 **같은 경로 목록으로** 묶는다. `git add` 가 무엇을 올리는지만 정하면, 이미 인덱스에
     // 올라가 있던 것(사람이 터미널에서 친 git add · 앞서 실패한 deliver 가 남긴 스테이지)이
     // 이 커밋에 그대로 실려 간다 — 검증된 변경 집합만 커밋한다는 말이 그때 거짓이 된다.
-    git(repoRoot, ["commit", "-m", commitMessage(work, evidence), "--", ...pathspecs(kept, excludes)]);
+    git(repoRoot, ["commit", "-m", message, "--", ...pathspecs(kept, excludes)]);
   } catch (error) {
     // 스테이지는 이미 올라가 있다 — 사람이 git commit 만 다시 치면 된다. 고른 KNOWLEDGE 갱신은 되돌린다(확인한 반영이 없었으므로)
     const message = error instanceof Error ? error.message : String(error);
@@ -636,7 +641,9 @@ export function commitDelivery(work: Work, evidence: Evidence, knowledge: string
     }
     throw new Stop(`git commit 이 실패했습니다 (변경은 스테이지에 올라가 있습니다): ${message}`);
   }
-  return { commit: git(repoRoot, ["rev-parse", "HEAD"]), outside: committedOutside(work, paths) };
+  const delivered = git(repoRoot, ["rev-parse", "HEAD"]), outside = committedOutside(work, paths);
+  const result = squashDelivery(repoRoot, work.active, preview, delivered, message);
+  return { commit: result.commit, outside, squash: result.note };
 }
 
 // ---- code-agent deliver ----
@@ -651,7 +658,7 @@ function answerSourceLines(work: Work): string[] {
  * 11 반영. 관찰된 같은 세션의 선택 또는 직접 TTY로 확인한다.
  * 화면을 그리기 직전에 게이트를 다시 돌려 확인 대상과 실제 커밋 범위를 대조한다.
  */
-export function deliver(work: Work): string {
+export function deliver(work: Work, approvedSquashLine?: string): string {
   const { repoRoot, active } = work;
   if (!active.baseCommit) {
     throw new Stop("기준 커밋이 굳혀져 있지 않아 반영할 수 없습니다 — code-agent abort 뒤 다시 시작하세요.");
@@ -667,9 +674,9 @@ export function deliver(work: Work): string {
   const had = blockCount(text, PR_BLOCK);
   const rendered = upsertBlock(text, PR_BLOCK, block);
   // 호환 렌더와 파일 전체가 같은 기존 구역만 손 수정으로 보지 않는다.
-  const tampered = had > 0 && rendered !== text && upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { legacy: true })) !== text &&
-    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noGrants: true })) !== text &&
-    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { noRepairs: true })) !== text;
+  const variants = [{}, { legacy: true }, { noGrants: true }, { noRepairs: true }];
+  const tampered = had > 0 && rendered !== text && !variants.some(options => [false, true].some(noSquash =>
+    upsertBlock(text, PR_BLOCK, renderTraceBlock(work, evidence, { ...options, noSquash })) === text));
   writeAtomic(path, rendered);
 
   const problems = deliverProblems(work, rendered);
@@ -693,10 +700,16 @@ export function deliver(work: Work): string {
     }
   }
 
+  const squashPlan = inspectSquash(repoRoot, active);
+  const squashLine = `회차 커밋: ${squashPreview(squashPlan)}. ${SQUASH_LIMIT} 조회 ${textHash(JSON.stringify(squashPlan)).slice(-12)}`;
+  // 동의 때 보인 합치기 판단만 보존한다. 다른 화면·파일·검증 대조는 기존 동의 경로가 그대로 수행한다.
+  if (approvedSquashLine !== undefined && approvedSquashLine !== squashLine) squashPlan.reason = "동의 준비 후 합치기 판정 또는 참조 상태가 바뀌었습니다";
+  const message = evidence ? squashCommitMessage(work, evidence) : "";
   const shown = [
     `# ${active.id} 반영 — ${work.order.title}`,
     "",
     `브랜치 ${active.branch ?? "(없음)"} 에 **로컬 커밋**합니다. push · MR/PR 생성은 하지 않습니다.`,
+    approvedSquashLine ?? squashLine,
     ...(tampered ? ["", `!! ${prDocFile(active.id)} 의 코드 구역이 손으로 고쳐져 있어 다시 렌더했습니다.`] : []),
     ...answerSourceLines(work),
     // 모델이 쓴 PR 본문 구역 — 커밋되는 글이라 사람이 보고 승인한다(코드 구역 앞)
@@ -727,7 +740,8 @@ export function deliver(work: Work): string {
     restoreKnowledge(repoRoot, originals);
     throw error;
   }
-  const { commit, outside } = commitDelivery(work, evidence!, knowledge, originals);
+  const { commit, outside, squash } = commitDelivery(work, evidence!, knowledge, originals, squashPlan, message);
+  const archiveNotes = cleanCycleArchives(repoRoot);
   // 커밋 중 계획 파일이 바뀌었는가(pre-commit hook 등) — 검증한 부분 트리와 지금, 커밋본과 작업 트리를 대조한다. 되돌리지 않는다
   const planned = planPaths(work);
   const nowTree = treeHashNow(work);
@@ -744,6 +758,8 @@ export function deliver(work: Work): string {
   clearActive(repoRoot);
   return [
     `반영했습니다 — ${active.branch ?? "현재 브랜치"} 에 로컬 커밋 ${commit.slice(0, 12)}${active.cycle ? ` (실행 회차 ${active.cycle.number})` : ""}`,
+    squash,
+    ...archiveNotes,
     `확인한 사람: ${presence.detail}`,
     ...(knowledge.length > 0 ? [`공통 KNOWLEDGE 갱신: ${knowledge.join(", ")}`] : ["공통 KNOWLEDGE 는 갱신하지 않았습니다."]),
     // 선언한 갱신을 적용하지 않았으면 그 항목은 최신이 아니다 — 문서에는 손대지 않고 code-agent knowledge 가 보류로 보여 준다

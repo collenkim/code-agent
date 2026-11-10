@@ -28,6 +28,7 @@ import { baselineFiles, hasBaseline, pendingBaselineFiles } from "./bootstrap";
 import { rememberWorkIdentity, requireWorkKind, requireWorkOnCurrentBranch, workIdentity } from "./workIdentity";
 import { acquireLock } from "./lock";
 import { deliveredCycle } from "./cycles";
+import { cycleBranchNotice } from "./cycleBranch";
 import { appendRevision, applyChanges, changeLine, changeSummary, initialSnapshot, legacyDocument, normalizeText, readRevisions, replaceSnapshot,
   SECTION_LABEL, SECTIONS, textHash, touchedIds, type Change as RevisionChange, type DraftChange, type OriginalText, type RequirementItem, type RevisionDocument, type RevisionRecord,
   type Section } from "./requirementRevisions";
@@ -733,6 +734,7 @@ export function requestBegin(
   const delivered = !current && isGitRepo(repoRoot)
     ? deliveredCycle(repoRoot, id, requirementFile(id), commitOf(repoRoot, branch) ? branch : options.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master") : undefined;
   const blockers = !current && (delivered || !commitOf(repoRoot, branch)) ? startBlockers(repoRoot, id) : [];
+  const mergeNotice = !current && delivered ? cycleBranchNotice(repoRoot, id, branch, options.base ?? loadManifestIfAny(repoRoot)?.git.base ?? "master", requirementFile(id)) : {};
   return [
     current
       ? `이미 접수 중입니다: ${id} (${kind}) — 이어서 정리합니다.`
@@ -741,6 +743,8 @@ export function requestBegin(
       ? [`${id} 는 회차 ${delivered.cycle} 에서 반영했습니다 (커밋 ${delivered.commit.slice(0, 12)}) — 후속 요청은 확정 요구에 대한 변경안으로 올리고, 확정하면 실행 회차 ${delivered.cycle + 1} 로 시작합니다.`]
       : []),
     ...[aidlcWarning(repoRoot)].filter((line): line is string => !!line),
+    ...(mergeNotice.blocked ? [`시작 전 정리 필요: ${mergeNotice.blocked}`] : []),
+    ...(mergeNotice.warning ? [mergeNotice.warning] : []),
     ...(blockers.length > 0
       ? [`시작 전 정리 필요: 커밋하지 않은 변경 ${blockers.length}개(${blockerList(blockers)}) — 요구사항 확정 뒤 시작할 때 이 변경이 남아 있으면 start 가 거부합니다. 사람이 커밋·stash 하거나 되돌려 둡니다(모델은 되돌리지 않습니다).`]
       : []),
@@ -1367,10 +1371,13 @@ export function confirmStartNotice(repoRoot: string, session: RequestSession, sp
     : `작업 브랜치 ${branch} 를 ${base} 에서 만들고`;
   const delivered = isGitRepo(repoRoot) ? deliveredCycle(repoRoot, session.id, spec, exists ? branch : base) : undefined;
   const blockers = exists && !delivered ? [] : startBlockers(repoRoot, session.id, spec);
+  const mergeNotice = delivered ? cycleBranchNotice(repoRoot, session.id, branch, base, spec) : {};
   return [
     `확정을 적용하면 ${delivered ? `실행 회차 ${delivered.cycle + 1} 로 ` : ""}작업을 시작합니다 — ${where} 분석 단계로 갑니다.` +
       (delivered ? ` 회차 ${delivered.cycle} 반영 커밋 ${delivered.commit.slice(0, 12)} 이 이번 회차의 기준입니다.` : ""),
     ...(blockers.length > 0 ? [`시작 전 정리 필요: ${blockerList(blockers)} — 이대로면 확정만 남고 시작은 막힙니다(사람이 커밋·stash 한 뒤 시작)`] : []),
+    ...(mergeNotice.blocked ? [`시작 전 정리 필요: ${mergeNotice.blocked} 이대로면 확정만 남고 시작은 막힙니다.`] : []),
+    ...(mergeNotice.warning ? [mergeNotice.warning] : []),
   ].join("\n");
 }
 

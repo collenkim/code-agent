@@ -29,7 +29,7 @@ description: 통합 검증과 반영을 진행한다 — 깨끗한 worktree 에�
 ## 3. 반영 준비 — ⑩ `10-pr.md`
 
 1. ⑩ `10-pr.md` 의 **모델 구역**(`요약` · `확인 방법` · `위험·되돌리기`)을 계획·분석·리뷰를 근거로 쓴다. 코드를 다시 읽지 않는다.
-   `추적표` · `검증` 은 `<!-- code-agent:trace:start -->` ~ `end` 블록 안이고 `code-agent deliver` 가 렌더한다 — 손대면 바이트 대조에서 걸린다.
+   `추적표` · `검증` · `squash 커밋 메시지`는 `<!-- code-agent:trace:start -->` ~ `end` 블록 안이고 `code-agent deliver`가 렌더한다 — 손대면 바이트 대조에서 걸린다. 현재 회차는 `이번 반영`, 확인 가능한 이전 회차만 SHA로 표시한다.
 2. 지식 제안 — `integrate`(재개면 `status`) 출력의 `지식 제안:` 줄이 고른 키만 `doc/work/<ID>/knowledge.proposal.md`에 항목으로 적는다(형식 `.claude/skills/ca-integrate/knowledge.md`). 줄이 `없음`이면 쓰지 않는다. 줄이 없는 이전 작업은 KNOWLEDGE에 올릴 것이 있을 때만 적는다. `deliver` 동의에서 사용자가 고른 항목만 최종 승인 범위에 포함된다.
 3. 작업 경험(선택) — 다시 쓸 만한 문제·실패한 시도·원인·해결이 있었을 때만 `code-agent experience add doc/work/<ID>/experience.draft.json`(형식: `code-agent experience`). `검증됨` 은 통과한 검증 근거가 있어야 하고, 정책으로 올릴 것은 지식 제안으로 쓴다.
 

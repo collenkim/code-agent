@@ -171,8 +171,8 @@ export function useManifest(overrides: Record<string, unknown> = {}, quality?: s
 }
 
 /** 계획 파일까지 만들어 check 스테이지에 세운다 */
-export function toCheck(): void {
-  start(repo, join(repo, "doc/work/ORD-1.md"));
+export function toCheck(spec = "doc/work/ORD-1.md"): void {
+  start(repo, join(repo, spec));
   write("doc/work/ORD-1/01-requirements.md", REQUIREMENTS);
   write("doc/work/ORD-1/02-analysis.md", IMPACT);
   write("doc/work/ORD-1/03-design.md", DESIGN);
@@ -196,8 +196,8 @@ export function toCheck(): void {
 }
 
 /** check · test 를 통과시켜 리뷰 스테이지에 세운다 */
-export async function toReview(): Promise<void> {
-  toCheck();
+export async function toReview(spec?: string): Promise<void> {
+  toCheck(spec);
   await check(requireValidatable(repo, "check"));
   next(repo);
   await runTests(requireValidatable(repo, "test"));
@@ -226,16 +226,16 @@ export function forgeReviewDoc(...rows: string[]): void {
 }
 
 /** 리뷰 회차를 열고 지적 없이 닫아 통합 검증까지 세운다 */
-export async function toIntegrate(): Promise<void> {
-  await toReview();
+export async function toIntegrate(spec?: string): Promise<void> {
+  await toReview(spec);
   openRound(requireValidatable(repo, "review"));
   writeFindings();
   next(repo);
   assert.equal(loadActive(repo)!.phase, "integrate");
 }
 
-export async function toDeliver(): Promise<void> {
-  await toIntegrate();
+export async function toDeliver(spec?: string): Promise<void> {
+  await toIntegrate(spec);
   await integrate(requireValidatable(repo, "integrate"));
   next(repo);
   assert.equal(loadActive(repo)!.phase, "deliver");

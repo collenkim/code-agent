@@ -1029,7 +1029,7 @@ function applyLocked(root: string, id: string, caller?: ConsentCaller, delegated
         case "baseline": return setupBaseline(root);
         case "request": return decideRequest(root,action.id,action.decision==="reject"?"rejected":"confirmed",action.comment,action.spec);
         case "plan": return decide(root,action.decision==="reject"?"rejected":"approved",action.comment);
-        case "deliver": return deliver(requireValidatable(root,"deliver"));
+        case "deliver": return deliver(requireValidatable(root,"deliver"), record.confirmations.find(p => p.word === "deliver")?.shown.split("\n").find(line => line.startsWith("회차 커밋: ")));
         case "knowledge-prune": return knowledgePrune(root);
         case "model": return setModel(root,action.agent,action.model,action);
         case "abort": return abort(root);

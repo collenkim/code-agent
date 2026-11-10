@@ -37,6 +37,8 @@ import { isGitRepo, switchToWorkBranch } from "./git";
 import { requirePreparedBranch } from "./bootstrap";
 import { changedPaths, commitOf, mergeBase, trackedPaths } from "./tree";
 import { deliveredCycle } from "./cycles";
+import { cycleBranchNotice } from "./cycleBranch";
+import { cleanCycleArchives } from "./cycleGit";
 import { textHash } from "./requirementRevisions";
 import { recordEvent } from "./timeline";
 import { planReviewLines, prDocFile } from "./deliver";
@@ -350,11 +352,15 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   let baseCommit: string | undefined;
   let cycle: ActiveWork["cycle"];
   let branchNote = "git 저장소가 아니라 작업 브랜치를 만들지 않았습니다.";
+  const cycleNotes: string[] = [];
   if (isGitRepo(repoRoot)) {
     base = options.base ?? manifest.git.base;
     branch = `${order.kind}/${order.id}`;
     const retained = cursorOnBranch(repoRoot, branch);
     if (retained) throw new Stop(`브랜치 ${branch}에 진행 중인 작업 ${retained.active.id}가 보관되어 있습니다. 해당 브랜치로 돌아가 code-agent status 로 확인한 뒤 재개하세요. 기존 커서는 덮어쓰지 않았습니다.`);
+    const mergeNotice = cycleBranchNotice(repoRoot, order.id, branch, base, specPath);
+    if (mergeNotice.blocked) throw new Stop(mergeNotice.blocked);
+    if (mergeNotice.warning) cycleNotes.push(mergeNotice.warning);
     requirePreparedBranch(repoRoot, branch, base);
     // 이미 반영한 ID 면 후속 요청의 새 실행 회차다 — 같은 확정 요구는 다시 반영하지 않는다(브랜치 전환 앞이라 거부 때 아무것도 바뀌지 않는다)
     const delivered = deliveredCycle(repoRoot, order.id, specPath, commitOf(repoRoot, branch) ? branch : base);
@@ -382,6 +388,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
       }
     }
     let how: "created" | "switched" | "already";
+    cycleNotes.push(...cleanCycleArchives(repoRoot));
     try {
       how = switchToWorkBranch(repoRoot, branch, base);
       branchNote =
@@ -426,7 +433,7 @@ export function start(repoRoot: string, spec: string, startOptions: { target?: s
   (require("./triage") as typeof import("./triage")).triageWorkState(repoRoot, order.id, "fixing");
   // 접수는 끝났다 — 이제부터는 작업 커서가 hook 의 판정을 맡는다
   if (intake) clearRequestSession(repoRoot);
-  const headline = `시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}`;
+  const headline = [`시작했습니다: ${order.id} · ${order.title} (${order.kind}, 대상 ${chosen})\n${branchNote}`, ...cycleNotes].join("\n");
   if (startOptions.brief) return `${headline}${hooks ? `\n${hooks}` : ""}`;
   return `${headline}\n\n${movedStatus(repoRoot)}${hooks ? `\n\n${hooks}` : ""}`;
 }
