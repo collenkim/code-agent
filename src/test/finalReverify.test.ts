@@ -536,7 +536,7 @@ const CITED_LINES: Record<string, RegExp> = {
   "template/claude/skills/ca-next/SKILL.md:14": /^\| 스테이지 \| 단계 명령 \| 절차 \|$/,
   "template/claude/skills/ca-next/SKILL.md:25": /^\| `integrate` · `deliver` \| `\/ca-integrate` \|/,
   "template/claude/skills/ca-next/SKILL.md:31": /계획 단계\(`analysis`~`plan`\)이면 `code-agent planning status`도 본다/,
-  "template/claude/skills/ca-next/SKILL.md:75": /사이클이 스스로 되감지는 않는다 — 예외는/,
+  "template/claude/skills/ca-next/SKILL.md:76": /사이클이 스스로 되감지는 않는다 — 예외는/,
 };
 const CITED_SECTIONS = [
   { path: "template/claude/skills/ca-plan/contract.md", cited: "ca-plan/contract.md", heading: "작업 등록·입력·피드백",

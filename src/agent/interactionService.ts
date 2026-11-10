@@ -18,7 +18,7 @@ import { entryScript } from "./runtimeSelect";
 import { Stop } from "./stop";
 import { ControlError, type RequestEnvelope } from "./master/protocol";
 import { activeRuns, createRun, reconcileRuns, spawnSupervisor } from "./master/runs";
-import { CONTROL_LOCK, listRuns, readBinding, readOwner, readRun, runPrompt, withLock, type Binding, type RunRecord } from "./master/store";
+import { CONTROL_LOCK, listRuns, readBinding, readOwner, readRun, readWorkBinding, runPrompt, withLock, type Binding, type RunRecord } from "./master/store";
 
 export const INTERACTION_CAPABILITIES = {
   schemaVersion: 1, transport: "code-agent.master v1 / local CLI", stages: INTERACTION_STAGES,
@@ -263,6 +263,19 @@ function continuationPrompt(root: string, r: InteractionRecord): string {
   return `${head} 아직 작업이 열리기 전입니다. 이 세션이 받은 원래 실행의 지시서로 최초 접수를 이어가세요${intake ? ` — 접수 ID ${intake}를 그대로 씁니다` : " — 작업 ID는 지시서·접수 규칙이 정한 값을 씁니다"}. ` +
     `code-agent status 의 다음 할 일을 따르고, 작업 ID를 임의로 만들거나 다른 ID로 접수하지 마세요. ${guard}`;
 }
+/**
+ * 재개 실행이 이을 인계 근거 — 이전 실행이 묶인 작업 연결(실행 기록의 작업, 또는 지금 작업·접수 중 그 실행을 runs 에 가진 연결)이
+ * 정본이다. 연결이 인계를 뗐으면(교체로 null) 잇지 않는다. 연결이 없을 때만(작업을 열기 전) 이전 실행이 받은 인계를 잇는다.
+ */
+function continuationKnowledge(root: string, previous: RunRecord): RunRecord["knowledge"] {
+  const request = (require("./request") as typeof import("./request")).loadRequestSession(root)?.id;
+  for (const id of [previous.workId, loadActive(root)?.id, request]) {
+    if (!id) continue;
+    const work = readWorkBinding(root, id);
+    if (work && (id === previous.workId || work.runs.includes(previous.runId))) return work.knowledge;
+  }
+  return previous.knowledge;
+}
 function resumeInteraction(root: string, r: InteractionRecord): void {
   if (!interactionRunId(r) || r.continuation?.state === "started" || r.continuation?.state === "blocked") return;
   if (currentInteractions(root).requests.some(other => other.requestId !== r.requestId && other.context.sessionId === r.context.sessionId && ["pending", "deferred"].includes(other.status))) return;
@@ -284,6 +297,20 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
       mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: passing ? "queued" : "blocked", detail: String(error) }; bumpInteraction(state, saved); }); return;
     }
     const commandId = `interaction:${r.requestId}`, existing = listRuns(root).find(run => run.commandId === commandId);
+    // master 인계 근거 — required 참조가 검증 전이거나 실패한 작업은 사람 응답 뒤에도 실행을 다시 열지 않는다(재검증·재계획이 먼저).
+    // 대기로 두어 재검증·인계 교체 뒤의 다음 조회가 다시 판정한다
+    if (!existing) {
+      const { knowledgeGate, knowledgeHint } = require("./knowledgeGate") as typeof import("./knowledgeGate");
+      const gate = knowledgeGate(root);
+      if (gate.state === "blocked") {
+        const detail = `knowledge-blocked: ${knowledgeHint(gate)}`;
+        // 같은 판정이면 다시 쓰지 않는다 — 조회마다 기록 버전이 바뀌지 않게
+        if (r.continuation?.state !== "queued" || r.continuation.detail !== detail) {
+          mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "queued", detail }; bumpInteraction(state, saved); });
+        }
+        return;
+      }
+    }
     if (existing) { mutateInteractions(root, state => { const saved = needInteraction(state, r.requestId); saved.continuation = { state: "started", runId: existing.runId }; bumpInteraction(state, saved); }); return; }
     if (activeRuns(root).length) return;
     const runId = `run-${randomUUID()}`, at = new Date().toISOString();
@@ -291,8 +318,8 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     writeFileSync(runPrompt(root, runId), prompt, "utf8");
     const run: RunRecord = { version: 1, runId, commandId, controller: owner.controller, generation: owner.generation, mode: "continue", links: previous.links,
       state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile, ...(previous.execution ? { execution: previous.execution } : {}),
-      // 이전 실행이 받은 인계 근거도 잇는다 — 작업을 열기 전이면 이 실행의 기록이 그 근거의 원천이다(workKnowledge.managedKnowledge)
-      ...(previous.knowledge ? { knowledge: previous.knowledge } : {}),
+      // 인계 근거는 작업 연결이 정본이다(인계 교체가 바꾼다) — 작업을 열기 전이면 이전 실행이 받은 인계를 잇는다(workKnowledge.managedKnowledge)
+      ...(() => { const knowledge = continuationKnowledge(root, previous); return knowledge ? { knowledge } : {}; })(),
       ...(profile.kind === "codex" ? { sessionAlias: previous.sessionId, sessionConfirmed: true } : {}), promptHash: interactionHash(prompt), timeoutMs: binding.policy.runTimeoutMs,
       workId: previous.workId, baseHead: r.context.head, baseStateVersion: previous.baseStateVersion, history: [{ at, state: "accepted", note: `사람 응답 ${r.response!.receiptId}` }] };
     createRun(root, run);

@@ -13,6 +13,7 @@ import {
   back,
   BACK_PHASES,
   context,
+  knowledgeVerify,
   decide,
   requireRepairable,
   requireReproable,
@@ -472,6 +473,12 @@ async function runCommandBody(command: string | undefined, args: string[]): Prom
       return 0;
     }
     case "knowledge":
+      // master 인계 근거의 재검증 — 인계 참조만 다시 대조해 진행 게이트의 검증 기록을 쓴다(새 검색 없음)
+      if (args[0] === "verify") {
+        if (args.slice(1).some((arg) => arg !== "--json")) throw new Stop("사용법: code-agent knowledge verify [--json]");
+        print(await operation("verify", () => knowledgeVerify(repoRoot, args.includes("--json"))));
+        return 0;
+      }
       print(knowledge(repoRoot, args));
       return 0;
     case "experience":

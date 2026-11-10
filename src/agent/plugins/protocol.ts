@@ -90,25 +90,70 @@ export const CONTEXT_DOCS_PHASES = ["analysis", "impact", "design", "plan"] as c
 export type ContextDocsPhase = (typeof CONTEXT_DOCS_PHASES)[number];
 
 /**
- * master 가 인계한 지식 항목 참조 — agent-knowledge 공통 계약 제안(`itemId`·`generation`·`commit`·`itemSha256`)의 이름 그대로에
- * `required` 를 더했다. 본문은 싣지 않는다 — 받는 쪽이 같은 세대에서 다시 꺼내 해시·커밋·범위를 대조한다.
- * master 쪽(hook 경로의 순수 모듈)은 이 타입을 `import type` 으로만 쓴다.
+ * master 가 인계한 지식 항목 참조 — 어댑터 입력(`context.docs.refs`)과 진행 게이트(knowledgeGate.ts)가 쓰는 정규화한 꼴이다.
+ * 인계 형식 1(`{itemId, generation, commit, itemSha256, required}`)은 앞의 다섯 필드만, 형식 2(생산자 응답 `items[].ref` 의 필드 +
+ * `required`)는 색인 식별·원본 범위·분할 식별까지 채운다(`indexGeneration` → `generation`). 본문은 싣지 않는다 — 받는 쪽이 같은
+ * 색인·세대에서 다시 꺼내 해시·커밋·범위를 대조한다. master 쪽(hook 경로의 순수 모듈)은 이 타입을 `import type` 으로만 쓴다.
  */
 export interface KnowledgeRef {
   itemId: string;
   generation: number;
-  /** 40자리 소문자 16진 커밋 SHA */
+  /** 40자리(SHA-1) 또는 64자리(SHA-256) 소문자 16진 커밋 — 형식 1은 40자리만 */
   commit: string;
   /** 64자리 소문자 16진 — 항목 내용(UTF-8)의 SHA-256 */
   itemSha256: string;
-  /** 검증에 실패하면 이 작업의 근거 재확인·재계획이 필요한 항목인가 */
+  /** 이 작업을 진행하는 데 검증이 필요한 참조인가 — 실패하면 이 작업만 근거 재확인·재계획까지 멈춘다 */
+  required: boolean;
+  /** 형식 2 — 생산자 DB 식별(32자리 16진). 같은 세대 번호의 다른 DB 를 가른다 */
+  indexId?: string;
+  sourceId?: string;
+  /** 형식 2 — 원본 경로·줄 범위(1부터, 끝 포함) */
+  path?: string;
+  startLine?: number;
+  endLine?: number;
+  /** 형식 2 — 분할 항목을 가리키면 그 식별·내용 해시·줄 범위 */
+  segmentId?: string;
+  segmentSha256?: string;
+  segmentStartLine?: number;
+  segmentEndLine?: number;
+}
+
+/** 인계 형식 1 — `{version:1, refs}` 의 참조. 엄격 파서(master/protocol.ts `knowledgeHandoffOf`)가 이 다섯 키만 받는다 */
+export interface KnowledgeRefV1 {
+  itemId: string;
+  generation: number;
+  commit: string;
+  itemSha256: string;
   required: boolean;
 }
 
-export interface KnowledgeHandoff {
-  version: 1;
-  refs: KnowledgeRef[];
+/**
+ * 인계 형식 2 — 생산자 V2 응답의 `items[].ref`(ItemRef) 필드 이름 그대로에 `required` 를 더했다. hello 의 `knowledge.refs.acceptedVersions`
+ * 에 2가 있을 때만 받는다(생산자 응답 형식 `responseVersion` 2와는 다른 번호다).
+ */
+export interface KnowledgeRefV2 {
+  indexId: string;
+  indexGeneration: number;
+  itemId: string;
+  itemSha256: string;
+  commit: string;
+  sourceId: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  segmentId?: string | null;
+  segmentSha256?: string | null;
+  segmentStartLine?: number | null;
+  segmentEndLine?: number | null;
+  handle?: string;
+  projectId?: string;
+  documentSha256?: string;
+  blobSha?: string;
+  required: boolean;
 }
+
+/** 실행·작업 기록에 받은 그대로(검사·`required` 기본값 적용 뒤) 남기는 인계 */
+export type KnowledgeHandoff = { version: 1; refs: KnowledgeRefV1[] } | { version: 2; refs: KnowledgeRefV2[] };
 
 export interface SlotInput {
   "survey.classify": {
@@ -172,6 +217,8 @@ export interface DocSection {
 /** 인계 참조 하나를 어댑터가 되찾은 결과 */
 export interface PinnedResult {
   itemId: string;
+  /** 분할 항목을 가리킨 인계 참조의 결과면 그 분할 식별 — 같은 항목의 여러 분할을 가른다 */
+  segmentId?: string | null;
   ok: boolean;
   reason?: string;
   section?: DocSection;
@@ -247,7 +294,7 @@ export const SLOT_OUTPUT_SCHEMA: { [S in Slot]: z.ZodType<SlotOutput[S]> } = {
       .optional(),
     diagnostics: z.record(z.string(), z.unknown()).optional(),
     pinned: z
-      .array(z.object({ itemId: z.string().min(1), ok: z.boolean(), reason: z.string().optional(), section: DocSectionSchema.optional() }))
+      .array(z.object({ itemId: z.string().min(1), segmentId: z.string().min(1).nullable().optional(), ok: z.boolean(), reason: z.string().optional(), section: DocSectionSchema.optional() }))
       .optional(),
   }),
   "review.prefilter": z.object({
@@ -298,8 +345,18 @@ export const OPTIONAL_INPUTS: Partial<Record<Slot, readonly string[]>> = {
   "context.docs": ["phase", "files", "refs"],
 };
 
+/**
+ * 입력 필드가 아닌 **기능** 협의 토큰 — `context.docs.refs.indexed`: 인계 참조의 색인 식별(`indexId`)·원본 범위·분할 식별을 받아
+ * 정확한 색인·세대에서 대조한다. 이 토큰이 없는 등록에는 참조를 형식 1의 다섯 필드로만 보낸다(`negotiatedInput`).
+ */
+export const FEATURE_ACCEPTS: readonly string[] = ["context.docs.refs.indexed"];
+export const INDEXED_REFS = "context.docs.refs.indexed";
+
 /** 알려진 협의 토큰 전부 — 등록이 이 밖의 토큰은 버린다 */
-export const KNOWN_ACCEPTS: readonly string[] = Object.entries(OPTIONAL_INPUTS).flatMap(([slot, fields]) => (fields ?? []).map((field) => `${slot}.${field}`));
+export const KNOWN_ACCEPTS: readonly string[] = [
+  ...Object.entries(OPTIONAL_INPUTS).flatMap(([slot, fields]) => (fields ?? []).map((field) => `${slot}.${field}`)),
+  ...FEATURE_ACCEPTS,
+];
 
 export interface DescribeOutput {
   name: string;

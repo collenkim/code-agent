@@ -72,7 +72,11 @@ export function approvalDocsState(work: Work): { hash?: string; parts?: Record<s
   for (const entry of entries) { const at = entry.lastIndexOf(":sha256:"); parts[entry.slice(0, at)] = entry.slice(at + 1); }
   if (proof) parts["계획 작업 기록"] = sha(proof);
   if (contractHash) parts["외부 의존 계약"] = contractHash;
-  return { hash: sha(`${project}\n${sha(entries.join("\n"))}${proof ? `\n${proof}` : ""}${contractHash ? `\ncontracts:${contractHash}` : ""}`), parts };
+  // master 인계 근거 — 작업 연결에 고정된 인계가 있을 때만 묶는다(없는 작업의 승인 해시는 그대로다). 인계를 바꾸면 승인을 다시 받는다
+  const handoff = (require("./master/workKnowledge") as typeof import("./master/workKnowledge")).managedKnowledgeOf(work.repoRoot, {}, work.active.id);
+  const knowledgeHash = handoff?.source === "work" ? handoff.digest : undefined;
+  if (knowledgeHash) parts["master 인계 근거"] = knowledgeHash;
+  return { hash: sha(`${project}\n${sha(entries.join("\n"))}${proof ? `\n${proof}` : ""}${contractHash ? `\ncontracts:${contractHash}` : ""}${knowledgeHash ? `\nknowledge:${knowledgeHash}` : ""}`), parts };
 }
 
 /**

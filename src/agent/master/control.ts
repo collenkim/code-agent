@@ -13,7 +13,7 @@
  */
 import { randomUUID } from "crypto";
 import { timingSafeEqual } from "crypto";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, rmSync, writeFileSync } from "fs";
 
 import { consentReceipts } from "../consentReceipts";
 import { readLease, releaseLease } from "../lease";
@@ -26,15 +26,16 @@ import { acceptHandover, abortHandover, advanceHandover, requestHandover } from 
 import { liveness } from "./processes";
 import type { KnowledgeHandoff } from "../plugins/protocol";
 import {
-  ACTIVE_RUN_STATES, canonicalJson, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, executionMain, HUMAN_ONLY_ACTIONS,
-  knowledgeHandoffOf, MAX_KNOWLEDGE_REFS, mergePolicy, MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES,
-  requestHash, sha256, SUPPORTED_VERSIONS, runExecutionOf, TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
+  ACTIVE_RUN_STATES, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, executionMain, HUMAN_ONLY_ACTIONS,
+  KNOWLEDGE_HANDOFF_VERSIONS, knowledgeDigest, knowledgeHandoffOf, knowledgeRefPath, MAX_KNOWLEDGE_BYTES, MAX_KNOWLEDGE_REFS, mergePolicy, normalizedKnowledgeRefs, MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES,
+  requestHash, requireHandoffVersion, sha256, SUPPORTED_VERSIONS, runExecutionOf, TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
 } from "./protocol";
 import { activeRuns, createRun, newRunId, reconcileRuns, requestStop, spawnSupervisor } from "./runs";
 import {
   CONTROL_LOCK, type CommandRecord, emit, eventPosition, grantViews, listRuns, masterPath, readBinding, readCommand, readEvents, readOwner, readRun, readWorkBinding, runPrompt,
-  tokenHash, withLock, writeBinding, writeCommand, writeOwner, appendGrantRow, type Binding, type Links, type Owner, type RunRecord,
+  tokenHash, withLock, writeBinding, writeCommand, writeOwner, writeWorkBinding, appendGrantRow, type Binding, type Links, type Owner, type RunRecord,
 } from "./store";
+import { KNOWLEDGE_CAUSES, KNOWLEDGE_VERIFY_TTL_MS, knowledgeGate, knowledgeRecordFile, knowledgeView } from "../knowledgeGate";
 
 const MAX_PROMPT = 20_000;
 
@@ -134,27 +135,99 @@ function hello(root: string, binding: Binding | undefined): unknown {
   };
 }
 
-/** hello.knowledge — 플러그인 이름·명령·설정 경로는 넣지 않는다. 모드와 인계 참조를 받는지만 알린다(master 는 accepted 일 때만 knowledge 를 싣는다) */
+/**
+ * hello.knowledge — 플러그인 이름·명령·설정 경로는 넣지 않는다. 모드, 인계 참조를 받는지(accepted), 지금 받는 인계 형식(versions — 형식 2는
+ * 어댑터가 색인 식별을 대조하는 등록일 때만)과 이 빌드가 읽는 형식(supportedVersions), 상한(max·maxBytes), required 진행 게이트가 있다는
+ * 표시(requiredGate)와 그 재개 코드·원인·회복 명령(gate)을 알린다. master 는 accepted 이고 versions 에 있는 형식으로만 knowledge 를 싣는다
+ * (공통 계약 정본: agent-knowledge docs/integration.md 「인계 형식」·「송신 결정」).
+ */
 function knowledgeCapability(root: string): unknown {
   const link = knowledgeLinkOf(root);
-  return { schemaVersion: 1, mode: link.mode, refs: { supported: true, accepted: link.refs, max: MAX_KNOWLEDGE_REFS } };
+  return {
+    schemaVersion: 1, mode: link.mode,
+    refs: {
+      supported: true, accepted: link.refs, max: MAX_KNOWLEDGE_REFS, versions: acceptedHandoffVersions(link), supportedVersions: [...KNOWLEDGE_HANDOFF_VERSIONS],
+      maxBytes: MAX_KNOWLEDGE_BYTES, requiredGate: true, requiredDefault: true, scope: "registered-docs",
+    },
+    gate: {
+      resume: "knowledge-blocked", actions: ["knowledge-reverify", "knowledge-replan"], causes: KNOWLEDGE_CAUSES, ttlSeconds: KNOWLEDGE_VERIFY_TTL_MS / 1000,
+      command: { type: "knowledge", actions: ["verify", "replace"] },
+    },
+  };
+}
+
+/**
+ * 받는 프로젝트의 수신 범위 — 인계 참조의 원본 경로가 이 저장소의 등록 문서 안이어야 하고, 지식 검색 어댑터(agent-knowledge) 설정이 이
+ * 저장소를 생산자 프로젝트에 대응시키면 참조의 원본(sourceId)·프로젝트(projectId)가 그 대응 안이어야 한다. 밖이면 받기 전에 사유와 함께
+ * 거부한다 — 범위를 넓히지 않는다. 설정을 읽지 못하거나 대응이 없으면 대응 검사는 하지 않는다: 그때는 대조 자체가 어댑터 실패로 끝나
+ * 진행 게이트가 원인 adapter 로 그 작업만 보류한다(설정을 고친 뒤 재검증).
+ */
+function requireKnowledgeScope(root: string, handoff: KnowledgeHandoff, plugin: string | undefined): void {
+  const manifest = (require("../work") as typeof import("../work")).loadManifestIfAny(root);
+  const docs = new Set((require("../plugins/defaults") as typeof import("../plugins/defaults")).docRefs(root, manifest).map((doc) => doc.path));
+  let mapping: { project: string; sources?: string[] } | undefined;
+  try {
+    const stored = plugin ? (require("../plugins/store") as typeof import("../plugins/store")).readStore().plugins[plugin] : undefined;
+    if (stored?.adapter.name === "agent-knowledge") {
+      const ak = require("../plugins/agentKnowledge") as typeof import("../plugins/agentKnowledge");
+      const at = stored.command.indexOf("--config");
+      const loaded = ak.loadAdapterConfig(at >= 0 ? stored.command[at + 1] : undefined, process.env);
+      mapping = loaded.ok ? ak.mapProject(loaded.config, root) : undefined;
+    }
+  } catch { mapping = undefined; }
+  const outside: { itemId: string; segmentId?: string; reason: string }[] = [];
+  normalizedKnowledgeRefs(handoff).forEach((ref, index) => {
+    const source = ref.sourceId ?? ref.itemId.slice(0, ref.itemId.indexOf(":"));
+    const projectId = handoff.version === 2 ? handoff.refs[index].projectId : undefined;
+    const reason = !docs.has(knowledgeRefPath(ref)) ? "not-in-docs"
+      : mapping && mapping.sources && !mapping.sources.includes(source) ? "out-of-scope"
+        : mapping && projectId !== undefined && projectId !== mapping.project ? "out-of-scope" : undefined;
+    if (reason) outside.push({ itemId: ref.itemId, ...(ref.segmentId ? { segmentId: ref.segmentId } : {}), reason });
+  });
+  if (outside.length) {
+    throw new ControlError("invalid-request", `받는 프로젝트의 수신 범위 밖 참조 ${outside.length}개 — 등록 문서·대응 프로젝트 밖은 받지 않습니다(범위를 넓히지 않습니다)`,
+      { reason: "knowledge-scope", refs: outside.slice(0, MAX_KNOWLEDGE_REFS) });
+  }
+}
+
+/** 지금 받는 인계 형식 — 형식 2(색인 식별·분할)는 등록이 `context.docs.refs.indexed` 를 협의했을 때만 */
+function acceptedHandoffVersions(link: { indexed: boolean }): number[] {
+  return link.indexed ? [...KNOWLEDGE_HANDOFF_VERSIONS] : [1];
+}
+
+/** 인계를 받을 수 있는지 — 연결 상태·형식·수신 범위. submit start 와 인계 교체가 같은 검사를 쓴다 */
+function requireKnowledgeAccepted(root: string, handoff: KnowledgeHandoff): void {
+  // 받을 수 없는 참조를 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다
+  const link = knowledgeLinkOf(root);
+  if (!link.refs) {
+    throw new ControlError("invalid-state", `이 프로젝트는 지식 항목 참조를 받지 않습니다(지식 검색 ${link.mode}) — hello 의 knowledge.refs.accepted 가 true 일 때만 knowledge 를 보냅니다`,
+      { reason: "knowledge-refs-not-accepted", mode: link.mode });
+  }
+  requireHandoffVersion(handoff, acceptedHandoffVersions(link));
+  requireKnowledgeScope(root, handoff, link.plugin);
+}
+
+/** submit·교체 응답의 인계 접수 — 받았다(stored)와 검증됐다(verification)를 가른다 */
+function knowledgeReceipt(root: string, knowledge: KnowledgeHandoff, workId: string | null): Record<string, unknown> {
+  let verification = "pending";
+  try { if (workId && stateView(root).work?.id === workId) verification = knowledgeGate(root, {}, Date.now(), workId).state; } catch { verification = "pending"; }
+  return { refs: knowledge.refs.length, version: knowledge.version, digest: knowledgeDigest(knowledge), receipt: "stored", verification };
 }
 
 /**
  * 지식 검색 연결(`context.docs`) — 저장소 선언(code-agent.json plugins)과 이 PC 의 플러그인 등록. 설정을 읽지 못하면 off 다:
  * 인계 참조를 받았다가 검증할 길이 없는 것보다 받지 않는다고 알리는 편이 master 가 근거를 다른 경로로 옮길 수 있다.
  */
-function knowledgeLinkOf(root: string): { mode: "off" | "shadow" | "enabled"; refs: boolean } {
+function knowledgeLinkOf(root: string): { mode: "off" | "shadow" | "enabled"; refs: boolean; indexed: boolean; plugin?: string } {
   try {
     const manifest = (require("../work") as typeof import("../work")).loadManifestIfAny(root);
     return (require("../plugins/run") as typeof import("../plugins/run")).knowledgeLink(manifest);
-  } catch { return { mode: "off", refs: false }; }
+  } catch { return { mode: "off", refs: false, indexed: false }; }
 }
 
-/** 같은 인계인가 — 참조 순서는 보지 않는다(항목 ID 가 겹치지 않으므로 ID 순으로 맞춰 견준다) */
+/** 같은 인계인가 — 형식과 참조 집합(순서 무관, 정본 해시)이 같아야 한다 */
 function sameKnowledge(a: KnowledgeHandoff | undefined, b: KnowledgeHandoff | undefined): boolean {
-  const key = (value: KnowledgeHandoff | undefined) => value ? canonicalJson([...value.refs].sort((x, y) => x.itemId < y.itemId ? -1 : x.itemId > y.itemId ? 1 : 0)) : null;
-  return key(a) === key(b);
+  return (a ? knowledgeDigest(a) : null) === (b ? knowledgeDigest(b) : null);
 }
 function managedHost(root: string, binding: Binding | undefined): unknown {
   try { return (require("./hostProfile") as typeof import("./hostProfile")).managedHostView(root, binding); }
@@ -254,14 +327,7 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   // 지식 참조도 새 실행만 받는다(실행 방식과 같은 규칙) — 이어 실행은 이전 실행의 인계를 그대로 쓴다
   const handoff = knowledgeHandoffOf(payload.knowledge);
   if (handoff && mode === "continue") throw new ControlError("invalid-request", "이어 실행은 이전 실행의 인계 근거를 씁니다 — knowledge 는 start 에만 보냅니다");
-  if (handoff) {
-    // 받을 수 없는 참조를 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다
-    const link = knowledgeLinkOf(root);
-    if (!link.refs) {
-      throw new ControlError("invalid-state", `이 프로젝트는 지식 항목 참조를 받지 않습니다(지식 검색 ${link.mode}) — hello 의 knowledge.refs.accepted 가 true 일 때만 knowledge 를 보냅니다`,
-        { reason: "knowledge-refs-not-accepted", mode: link.mode });
-    }
-  }
+  if (handoff) requireKnowledgeAccepted(root, handoff);
   if (requested) requireExecutionHosts(root, requested);
   let execution = requested;
   let knowledge = handoff;
@@ -305,12 +371,12 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     }
     // 인계 근거도 처음 연 실행이 작업에 고정한다. 실행 방식과 달리 다른 참조를 조용히 갈음하지 않는다 — master 는 보낸 근거가 쓰인다고
     // 알기 때문이다. 같은 참조의 재전송은 받고, 참조 없이 시작하면 작업에 고정된 참조를 이어 쓴다
-    if (mode === "start") {
-      if (handoff && !sameKnowledge(handoff, work.knowledge)) {
-        throw new ControlError("conflict", `작업 ${bound} 는 처음 연 실행의 인계 근거에 고정돼 있습니다 — 다른 knowledge 로 바꾸지 않습니다`, { workId: bound, refs: work.knowledge?.refs.length ?? 0 });
-      }
-      knowledge = work.knowledge;
+    if (mode === "start" && handoff && !sameKnowledge(handoff, work.knowledge)) {
+      throw new ControlError("conflict", `작업 ${bound} 는 고정된 인계 근거가 있습니다 — 다른 knowledge 로 바꾸려면 knowledge replace(재계획)를 씁니다`,
+        { workId: bound, refs: work.knowledge?.refs.length ?? 0, digest: work.knowledge ? knowledgeDigest(work.knowledge) : null });
     }
+    // 이어 실행·재개도 작업 연결의 인계를 쓴다 — 명시적 교체(knowledge replace)가 바꾼 것이 정본이고, 이전 실행 기록을 몰래 다시 쓰지 않는다
+    knowledge = work.knowledge;
   } else if (mode === "continue") {
     // 작업 없이 이어 실행 — 이전 실행이 작업을 열지 않았거나 반영으로 닫았다. 같은 세션의 대화를 잇는 것이라 받는다
   }
@@ -341,7 +407,7 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   spawnSupervisor(root, runId);
   return { runId, sessionId, state: "accepted", mode, workId: bound, stateVersion: view.stateVersion, resume: view.resume.code, hostKind: profile.kind, execution: execution ?? null,
     // 인계가 있는 실행만 — knowledge 가 없는 실행의 응답에는 knowledge 키가 없다
-    ...(knowledge ? { knowledge: { refs: knowledge.refs.length } } : {}) };
+    ...(knowledge ? { knowledge: knowledgeReceipt(root, knowledge, workId) } : {}) };
 }
 
 function dispatch(root: string, binding: Binding, owner: Owner, request: RequestEnvelope): unknown {
@@ -396,6 +462,7 @@ function dispatch(root: string, binding: Binding, owner: Owner, request: Request
       emit(root, "policy.changed", { commandId: request.commandId, data: { policy: next, by: owner.controller } });
       return { policy: next };
     }
+    case "knowledge": return knowledgeCommand(root, owner, request);
     case "revoke": {
       const grant = grantViews(root).find((item) => item.id === payload.grantId);
       if (!grant || grant.controller !== owner.controller) throw new ControlError("grant-missing", "이 제어자의 권한이 아닙니다");
@@ -407,6 +474,56 @@ function dispatch(root: string, binding: Binding, owner: Owner, request: Request
     }
   }
   throw new ControlError("unsupported", `지원하지 않는 명령: ${request.type}`);
+}
+
+/**
+ * `knowledge` — 작업에 고정된 인계 근거의 회복. verify: 같은 참조만 다시 검증한다(지금 작업만, 새 검색 없음). replace: 명시적 재계획으로 인계를
+ * 바꾼다(reason 필수, knowledge null 이면 인계를 뗀다) — 검증 기록을 지우고 이력을 남긴다. 인계 해시가 승인 근거에 묶여 있어 옛 승인은
+ * 다시 받는다. 이 작업의 실행이 진행 중이면 하지 않는다.
+ */
+function knowledgeCommand(root: string, owner: Owner, request: RequestEnvelope): unknown {
+  const payload = request.payload ?? {};
+  const current = stateView(root).work?.id ?? null;
+  const workId = typeof payload.workId === "string" ? payload.workId : current;
+  if (!workId) throw new ControlError("invalid-state", "인계 근거를 다룰 작업이 없습니다");
+  const work = readWorkBinding(root, workId);
+  if (!work) throw new ControlError("not-enabled", `작업 ${workId} 는 master 실행이 연 작업이 아닙니다`);
+  if (listRuns(root).some((run) => run.workId === workId && ACTIVE_RUN_STATES.includes(run.state))) {
+    throw new ControlError("busy", `작업 ${workId} 의 실행이 진행 중입니다 — 멈춘 뒤 인계 근거를 다룹니다`);
+  }
+  if (payload.action === "verify") {
+    if (current !== workId) throw new ControlError("invalid-state", "지금 작업만 다시 검증합니다 — 검증은 지금 작업 트리의 문서와 대조합니다", { workId, current });
+    if (!work.knowledge) throw new ControlError("invalid-state", `작업 ${workId} 에는 인계 근거가 없습니다`);
+    const manifest = (require("../work") as typeof import("../work")).loadManifestIfAny(root);
+    if (!manifest) throw new ControlError("invalid-state", "code-agent.json 이 없어 검증하지 않습니다");
+    const gate = (require("../knowledgeContext") as typeof import("../knowledgeContext")).verifyHandoff(root, manifest, "master");
+    emit(root, gate.state === "blocked" ? "knowledge.blocked" : "knowledge.verified", { commandId: request.commandId,
+      data: { workId, state: gate.state, digest: gate.digest, blocked: gate.blocked.slice(0, MAX_KNOWLEDGE_REFS) } });
+    const view = stateView(root);
+    return { workId, knowledge: knowledgeView(gate) ?? { state: "none" }, resume: view.resume, stateVersion: view.stateVersion };
+  }
+  if (payload.action === "replace") {
+    const reason = typeof payload.reason === "string" ? payload.reason.trim().slice(0, 300) : "";
+    if (!reason) throw new ControlError("invalid-request", "인계 교체에는 reason(재계획 사유)이 필요합니다");
+    if (payload.knowledge !== null && payload.knowledge === undefined) throw new ControlError("invalid-request", "knowledge 가 필요합니다(인계를 떼려면 null)");
+    const next = payload.knowledge === null ? undefined : knowledgeHandoffOf(payload.knowledge);
+    if (next) requireKnowledgeAccepted(root, next);
+    const from = work.knowledge ? knowledgeDigest(work.knowledge) : null;
+    const to = next ? knowledgeDigest(next) : null;
+    if (from === to) {
+      const view = stateView(root);
+      return { workId, replaced: false, knowledge: next ? knowledgeReceipt(root, next, workId) : null, resume: view.resume, stateVersion: view.stateVersion };
+    }
+    const at = new Date().toISOString();
+    const { knowledge: _previous, ...rest } = work;
+    writeWorkBinding(root, { ...rest, ...(next ? { knowledge: next } : {}),
+      knowledgeHistory: [...(work.knowledgeHistory ?? []), { at, from, to, reason, controller: owner.controller, commandId: request.commandId ?? "" }].slice(-20) });
+    rmSync(knowledgeRecordFile(root, workId), { force: true });
+    emit(root, "knowledge.replaced", { commandId: request.commandId, data: { workId, from, to, refs: next?.refs.length ?? 0, reason } });
+    const view = stateView(root);
+    return { workId, replaced: true, knowledge: next ? knowledgeReceipt(root, next, workId) : null, approval: view.approval, resume: view.resume, stateVersion: view.stateVersion };
+  }
+  throw new ControlError("invalid-request", "knowledge action 은 verify·replace 입니다");
 }
 
 function read(root: string, binding: Binding, request: RequestEnvelope): unknown {

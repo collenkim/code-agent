@@ -16,6 +16,7 @@ import {
   DESCRIBE_SCHEMA,
   ENVELOPE_SCHEMA,
   HANDSHAKE_LIMIT,
+  INDEXED_REFS,
   LOG_LINES,
   LOG_RESPONSE_BYTES,
   MAX_ITEMS,
@@ -28,7 +29,7 @@ import {
   SLOT_OUTPUT_SCHEMA,
   VERSION,
 } from "./protocol";
-import type { DescribeOutput, Limit, ProbeOutput, Slot, SlotInput, SlotOutput } from "./protocol";
+import type { DescribeOutput, KnowledgeRef, Limit, ProbeOutput, Slot, SlotInput, SlotOutput } from "./protocol";
 import { readStore } from "./store";
 
 /**
@@ -378,6 +379,10 @@ export function negotiatedInput(slot: Slot, input: Record<string, unknown>, acce
     if (value === undefined) continue;
     out[key] = value;
   }
+  // 색인 식별을 협의하지 않은 등록에는 인계 참조를 형식 1의 다섯 필드로만 보낸다 — 호스트는 돌아온 결과의 색인 식별을 따로 대조한다
+  if (slot === "context.docs" && Array.isArray(out.refs) && !accepts?.includes(INDEXED_REFS)) {
+    out.refs = (out.refs as KnowledgeRef[]).map(({ itemId, generation, commit, itemSha256, required }) => ({ itemId, generation, commit, itemSha256, required }));
+  }
   return out;
 }
 
@@ -476,21 +481,25 @@ export interface KnowledgeLink {
   registered: boolean;
   /** master 인계 참조를 받을 수 있는가 — enabled·등록·어댑터가 `context.docs.refs` 를 받겠다고 한 경우 */
   refs: boolean;
+  /** 형식 2 인계(색인 식별·분할)를 대조할 수 있는가 — refs 이고 어댑터가 `context.docs.refs.indexed` 도 받겠다고 한 경우 */
+  indexed: boolean;
 }
 
 export function knowledgeLink(manifest: Manifest | undefined): KnowledgeLink {
   const enabled = declaredFor(manifest, "context.docs");
   const shadow = enabled ? undefined : shadowFor(manifest, "context.docs");
   const name = enabled ?? shadow;
-  if (!name) return { mode: "off", registered: false, refs: false };
+  if (!name) return { mode: "off", registered: false, refs: false, indexed: false };
   let plugin: ReturnType<typeof readStore>["plugins"][string] | undefined;
   try { plugin = readStore().plugins[name]; } catch { plugin = undefined; }
   const registered = Boolean(plugin && plugin.slots.includes("context.docs"));
+  const refs = Boolean(enabled && registered && plugin?.adapter.accepts?.includes("context.docs.refs"));
   return {
     mode: enabled ? "enabled" : "shadow",
     plugin: name,
     registered,
-    refs: Boolean(enabled && registered && plugin?.adapter.accepts?.includes("context.docs.refs")),
+    refs,
+    indexed: refs && Boolean(plugin?.adapter.accepts?.includes(INDEXED_REFS)),
   };
 }
 

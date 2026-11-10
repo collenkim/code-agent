@@ -85,6 +85,7 @@ import { confirmOnTerminal } from "./tty";
 import { approvalDocsState, approvalOf, loadManifestIfAny, loadWork, readOrder } from "./work";
 import type { Work } from "./work";
 import { docImpactProblems, proposalHint } from "./knowledgeImpact";
+import { knowledgeGate, knowledgeHint, knowledgeView, requireKnowledge } from "./knowledgeGate";
 import {
   analysisProblems,
   designProblems,
@@ -487,7 +488,7 @@ function exhaustedHint(view: VerifyView, id: string, state?: string): string {
 }
 
 /**
- * `다음:` 한 줄. 판정 순서(위가 먼저): AI-DLC 차단 → 요구 미확정 → 미응답 질문 → 승인 무효(implement 이후, 재진입 순서) →
+ * `다음:` 한 줄. 판정 순서(위가 먼저): AI-DLC 차단 → 요구 미확정 → 미응답 질문 → master 인계 근거 게이트(knowledgeGate) → 승인 무효(implement 이후, 재진입 순서) →
  * 검증 한도(check·test, 증거 기반) → 원천이 `다음:` 에 닿지 않는 실패(failureHint — 관찰 흐름의 배정 실패·고아, deliver 동의 실패) →
  * 스테이지별 문구. 원인별 안내는 원인을 판정한 모듈이 렌더한 문구다 — 검증은 아래 check·test 갈래, 리뷰·교차는 reviewProblems 첫 줄,
  * 계획 배정은 planning advance. 같은 상태에서 직전 명령과 무관하게 같은 줄이다(증거·기록만 본다).
@@ -515,6 +516,8 @@ function nextHint(work: Work): string {
     const unverified = questions.unverified.length ? ` (${unverifiedAnswerHint(questions.unverified.map((question) => question.id))})` : "";
     return `답이 없거나 출처를 확인할 수 없는 질문 ${open}개 — ${skill("ca-answer")}${unverified}`;
   }
+  const knowledge = knowledgeHint(knowledgeGate(repoRoot));
+  if (knowledge) return knowledge;
   if (work.plan && PHASES.indexOf(active.phase) > PHASES.indexOf("plan")) {
     const reentry = reentryHint(work);
     if (reentry) return reentry;
@@ -701,6 +704,11 @@ export function status(repoRoot: string): string {
     lines.push(`단계: ${keys.join(" → ")}`);
   }
   lines.push(`문서 질문: ${open.length === 0 ? "답 없는 질문 없음" : open.map((q) => q.id).join(", ") + " 답 없음"}${unverified.length ? ` · ${unverified.map((q) => q.id).join(", ")} 답 출처 미확인` : ""}`);
+  const gate = knowledgeGate(repoRoot);
+  if (gate.state !== "none") {
+    const label = { pending: "검증 전(required 없음)", verified: "검증됨", blocked: "진행 보류" }[gate.state];
+    lines.push(`인계 근거: ${gate.refs}개(required ${gate.required}) · ${label}${gate.blocked.length ? ` — ${gate.blocked.map((entry) => `${entry.itemId}: ${entry.reason}`).slice(0, 3).join(", ")}` : ""}${gate.optional.length ? ` · 선택 참조 실패 ${gate.optional.length}개` : ""}`);
+  }
   if (work.plan) {
     const approval = approvalOf(work).status;
     lines.push(`계획: 제출됨 · 승인 ${approval}`);
@@ -846,6 +854,8 @@ export function nextTransition(repoRoot: string): PhaseTransition {
   work = followRevision(repoRoot, work);
   const { active } = work;
   requireAnswers(repoRoot, active);
+  // master 인계 근거 — required 참조가 검증 전이거나 실패했으면 이 작업만 멈춘다(질문 다음, 문서·승인 게이트보다 먼저)
+  requireKnowledge(repoRoot, "다음 단계로 넘어갈");
 
   if (["analysis", "impact", "design", "plan"].includes(active.phase)) requireWorkDocs([...planningProblems(work, active.phase as "analysis" | "impact" | "design" | "plan"), ...planningDocumentProblems(work, active.phase)]);
   // implement 이후의 승인 무효는 스테이지 게이트보다 먼저 재진입 순서로 멈춘다 — status 의 다음:(nextHint)·requireValidatable·
@@ -1020,6 +1030,7 @@ export function requireValidatable(
   work = followRevision(repoRoot, work);
   requireRequirements(repoRoot, work.active);
   requireAnswers(repoRoot, work.active);
+  requireKnowledge(repoRoot, "검증·반영을 진행할");
   if (phase === "check" && (REWINDABLE.includes(work.active.phase) || (work.active.phase === "deliver" && evidenceBroken(work)))) {
     saveActive(repoRoot, { ...work.active, phase: "check", stage: undefined }, "next");
     work = requireWork(repoRoot);
@@ -1052,6 +1063,7 @@ export function requireReproable(repoRoot: string): Work {
   requireRequestConfirmed(repoRoot, work.active.id, work.active.spec);
   work = followRevision(repoRoot, work);
   requireAnswers(repoRoot, work.active);
+  requireKnowledge(repoRoot, "재현을 돌릴");
   if (work.order.kind !== "fix") {
     throw new Stop(`code-agent repro 는 fix 작업에서만 돕니다 (지금: ${work.order.kind}).`);
   }
@@ -1077,6 +1089,7 @@ export function requireRepairable(repoRoot: string): Work {
   work = followRevision(repoRoot, work);
   requireRequirements(repoRoot, work.active);
   requireAnswers(repoRoot, work.active);
+  requireKnowledge(repoRoot, "테스트 수정 창을 열");
   if (!["check", "test", "review", "integrate"].includes(work.active.phase)) {
     throw new Stop(`테스트 수정 창은 재검증 중(check·test·review·integrate)에 엽니다 (지금: ${work.active.phase}).\n${nextHint(work)}`);
   }
@@ -1189,6 +1202,27 @@ export function back(repoRoot: string, to: string): string {
       .join("\n") +
     `\n\n${movedStatus(repoRoot)}`
   );
+}
+
+// ---- master 인계 근거 재검증 ----
+
+/**
+ * `code-agent knowledge verify` — 이 작업에 고정된 인계 참조만 어댑터로 다시 대조해 진행 게이트의 검증 기록을 쓴다. 새 검색을 하지 않고
+ * required 를 바꾸지 않는다. off·미등록이면 생산자를 부르지 않고 그 사유로 기록한다. 멈춘 채면 Stop(종료 1), `--json` 이면 판정을 그대로.
+ */
+export function knowledgeVerify(repoRoot: string, json = false): string {
+  const work = requireWork(repoRoot);
+  const { verifyHandoff } = require("./knowledgeContext") as typeof import("./knowledgeContext");
+  const gate = verifyHandoff(repoRoot, work.manifest, "verify");
+  if (json) return JSON.stringify(knowledgeView(gate) ?? { state: "none" }, null, 2);
+  if (gate.state === "none") return "이 작업에는 master 인계 근거가 없습니다 — 검증할 참조가 없습니다.";
+  const lines = [
+    `인계 근거 ${gate.refs}개(required ${gate.required}) — ${gate.state === "blocked" ? "진행 보류" : gate.state === "verified" ? "검증됨" : "검증 전(required 없음)"}`,
+    ...gate.blocked.map((entry) => `  - ${entry.segmentId ?? entry.itemId}: ${entry.reason} (${entry.cause} → ${entry.recovery === "replan" ? "재계획" : "재검증"})`),
+    ...gate.optional.map((entry) => `  - (선택) ${entry.segmentId ?? entry.itemId}: ${entry.reason}`),
+  ];
+  if (gate.state === "blocked") throw new Stop(`${lines.join("\n")}\n${knowledgeHint(gate)}`);
+  return [...lines, `다음: ${nextHint(work)}`].join("\n");
 }
 
 // ---- context ----

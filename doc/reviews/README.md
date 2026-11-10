@@ -4,7 +4,7 @@
 
 | 검증 | 범위 |
 |---|---|
-| [agent-knowledge 선택 연결·최신 자동 시험](2026-11-10-agent-knowledge-validation.md) | 어댑터·호스트 검증·비교만(shadow)·master 인계의 자동 회귀, off 출력·요청 동일성, 실제 agent-knowledge CLI 대조, 실제 호스트 미확인 범위, 전체 시험 조건·결과 |
+| [agent-knowledge 선택 연결·최신 자동 시험](2026-11-10-agent-knowledge-validation.md) | 어댑터 형식 1·2·호스트 검증·비교만(shadow)과 그 갱신·master 인계(형식 2·수신 범위·회복)·required 인계 근거의 진행 게이트 자동 회귀, 공통 계약 사례, 실제 agent-knowledge CLI 종단, off 출력·요청 동일성, Codex 모의 시험 격리, 실제 호스트·master-agent 미확인 범위, 전체 시험 조건·결과 |
 | [회차 커밋 합치기](2026-11-03-cycle-squash-validation.md) | 후보·참조 대조, 비교 갱신·보관·실제 SSH 서명, 문서·메시지 일치, 병합 뒤 시작·동의 경로, 그 변경의 전체 시험 조건·결과 |
 | [호스트 흐름 검증](2026-11-03-host-flow-validation.md) | 동의·실행 권한·계획 TC·요구 원문·담당 세션·상태 보호·계약·타임라인의 자동 회귀와 제공된 호스트 증거 대조, 미확인 범위 |
 | [버전별 호스트 실측](2026-11-01-validation.md) | 명시된 호스트 버전에서 확인한 범위·한계와 원본 집계·재현 기준선. 현재 코드의 재검증 결과와 구분 |

@@ -679,6 +679,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent usage [--work <ID>] [--since <날짜>] [--json]` | 이 저장소의 Claude Code 기록(과 Codex 세션 기록)에서 스테이지·에이전트·모델별 토큰과 비용 **추정**, 요청·도구 호출·재시도 기록을 집계 (아래) | — |
 | `code-agent knowledge` | 공통 KNOWLEDGE 문서 5종의 항목, 그것을 마지막으로 넣은 작업 ID, 최신성 (아래) | — |
 | `code-agent knowledge find <낱말\|키\|경로...>` | 지식 항목·POLICY 절을 키·코드 경로·별칭·본문으로 찾아 줄 범위·상태·연결과 반드시 적용하는 업무 정책을 보여 준다 (아래). 읽기 전용 — 작업 중 담당도 부른다 | — |
+| `code-agent knowledge verify [--json]` | master 가 지금 작업에 고정한 인계 참조를 enabled 지식 검색 어댑터로 다시 대조해 진행 게이트의 검증 기록을 쓴다 — 새 검색을 하지 않고 `required` 를 바꾸지 않는다. off·미등록이면 생산자를 부르지 않고 그 사유로 기록한다. `required` 가 막히면 원인·회복과 함께 종료 코드 1(`--json` 은 판정을 그대로 내고 0). 인계가 없는 작업에서는 할 일이 없다고 알린다. 모델이 부른다(작업 임대를 본다) ([플러그인 §10.9](plugins.md#109-진행-게이트--required-인계-참조)) | — |
 | `code-agent status --json [--expect-state <v>] [--expect-work <ID>] [--expect-attempt <시도>] [--session <ID>] [--run-id <ID>]` | 기계 판독용 상태 — 재개 코드·근거·`stateVersion`. 읽기 전용, 기대와 다르면 종료 코드 3 (아래) | — |
 | `code-agent experience [list [--all] \| show <EXP-ID>]` | 작업 경험 기록 목록·한 기록의 버전 이력 (아래). 읽기 전용 | — |
 | `code-agent finding list [--json] [--work <ID>]` | 진행 중 발견 보고 목록 — 사람이 판단할 것(차단 b·c)이 위에 표시된다 (아래). 읽기 전용 | — |
@@ -912,6 +913,7 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `review` · `retry` · `questions` | 리뷰 회차 수 · 원인별 재시도 사용량 `used` 과 검증 한도 `budgets`(`used`·`limit`·`left`·`exhausted`) · 답 없는 질문·답 출처 미확인 질문 |
 | `ownership` | 작업 임대(`none`·`held`·`idle`·`released`·`other-work`·`unreadable`, 호스트·세션·마지막 활동, `--session` 을 주면 `self`)와 `process: "unverified"` |
 | `consents` · `findings` · `files` | 열린 동의(적용 중이면 같은 PC 의 잠금 보유 `lockHeld`) · 발견 요약 · 상태 파일 경로 |
+| `knowledge` | 작업에 master 인계가 있을 때만 — 게이트 상태(`pending`·`verified`·`blocked`)·인계 형식·정본 해시 `digest`·참조 수·`required` 수·검증 시각과 만료(`verifiedAt`·`expiresAt`·`by`)·멈춘 참조(`blocked[]` — `itemId`·`segmentId`·`required`·`reason`·`cause`·`recovery`)·선택 참조 실패(`optional[]`)·회복 `action` |
 | `resume` | `code`(아래) · `reasons[]`(`code`·`detail`) · `next`(`action`·`by` — `model`·`human`·`runner`·`none` · `hint` 는 사람용 `다음:` 줄로, 파싱하지 않는다) |
 | `expect` · `correlation` · `unknown` | 대조 결과(`matches`·`mismatches`) · `--run-id` 를 되돌려 준 값 · 확인하지 못한 것(프로세스 생존은 언제나 여기에 있다) |
 
@@ -927,6 +929,7 @@ doc/knowledge/features.md (항목 1) · 기능 목록
 | `ownership-conflict` | 다른 세션이 30분 안에 쓴 임대가 있다 — 그 실행이 끝났는지는 러너가 확인한다. 30분 넘게 쉰 임대는 이유(`lease-idle`)로만 적고 기존 규칙대로 다음 명령이 넘겨받는다 | `runner` |
 | `wait` | 같은 PC 에서 동의를 적용하는 중이거나, 계획 배정이 기한 안에서 실행 중으로 기록돼 있다 | `runner` |
 | `needs-human` | AI-DLC 진행 중, 요구사항 미확정, 답 없는 질문, 응답을 기다리는 동의, 계획 승인 대기, 차단으로 보고된 발견(b·c), 반영 확인, 영속 질문 미응답·보류(`human-input`) | `human` |
+| `knowledge-blocked` | master 가 이 작업에 고정한 `required` 인계 참조가 검증 전이거나 실패했다 — 그 작업만 멈춘다. 이유 `knowledge-<원인>`(`unverified`·`expired`·`hash-mismatch`·`identity-mismatch`·`source-changed`·`source-deleted`·`scope`·`adapter`). `next.action` 이 `knowledge-reverify` 면 `code-agent knowledge verify`(관리 실행은 master `knowledge verify`), `knowledge-replan` 이면 master·사람의 인계 교체([플러그인 §10.9](plugins.md#109-진행-게이트--required-인계-참조)) | `model`(재검증) · `human`(재계획) |
 | `replan-required` | 승인이 무효가 됐고 낡은 계획 작업이 있다 — `staleFrom` 단계로 되감아 다시 계획한다 | `model` |
 | `reapproval-required` | 승인이 무효가 됐다(계획·근거 문서·매니페스트 변경) — 다시 승인받는다 | `human` |
 | `limit-reached` | check·test 의 재시도 한도에 닿았다 — 사람 판단 | `human` |
@@ -947,7 +950,7 @@ $ code-agent status --json --expect-state sha256:4f2e… --expect-work ORD-1 --e
 1. 실행 직전에 `status --json --expect-state <조회한 stateVersion> --expect-work <ID> --expect-attempt <시도>` 를 다시 부른다. 종료 코드 3 이면 실행하지 않고 다시 조회한다.
 2. `resume.code` 가 `ready` 일 때만 모델 세션을 띄워 기존 재개 경로(`/ca-next`·`$ca-next`)를 따르게 한다. 그 경로의 명령이 승인·임대·한도를 다시 확인한다 — 조회와 실행 사이에 상태가 바뀌어도 명령이 막는다.
 3. `ownership-conflict`·`wait` 는 그 실행이 정말 살아 있는지 러너가 확인한다(이 출력은 프로세스를 보지 않는다). 끝난 것이 확인되면 사람의 확인을 받아 `takeover` 한다.
-4. `needs-human`·`reapproval-required`·`limit-reached`·`unobservable` 은 사람에게 넘긴다. 상태·승인 파일을 고쳐 잇지 않는다.
+4. `needs-human`·`reapproval-required`·`limit-reached`·`unobservable` 은 사람에게 넘긴다. 상태·승인 파일을 고쳐 잇지 않는다. `knowledge-blocked` 는 `next.by` 대로 — 재검증(`model`)은 기존 재개 경로가 `knowledge verify` 를 부르고, 재계획(`human`)은 master·사람이 인계를 바꾼다. 검증 기록·작업 연결을 고쳐 잇지 않는다.
 
 영속 질문의 받은 답은 `ready`·`consume-interaction`으로 같은 세션의 소비자에게 넘긴다. 작업 ID 없는 설정·운영도 이 경로를 사용한다. 수신은 적용·작업 완료가 아니며 [대시보드 질문·동의 API](dashboard-interactions.md)로 결과를 대조한다.
 

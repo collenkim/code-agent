@@ -13,6 +13,7 @@ import { loadEvidence, runsOf, treeHashNow, verifyView } from "./evidence";
 import type { Evidence, VerifyPhase } from "./evidence";
 import { failureHint } from "./failureHint";
 import { findingSummary, loadFindings } from "./findings";
+import { knowledgeGate, knowledgeView, type KnowledgeGate } from "./knowledgeGate";
 import type { FindingsLog } from "./findings";
 import { ACTIVE_FILE, experienceFile, findingsFile, PHASES, planFile, questionsFile, reviewFile, verifyFile, workDocsDir } from "./layout";
 import { currentCursor, currentLeaseFile } from "./branchCursor";
@@ -51,7 +52,7 @@ export const STATE_SCHEMA_VERSION = 1;
 
 /** 기본 판정 순서. 영속 질문은 unobservable 다음에 먼저 처리한다(응답 대기 needs-human·답 소비 ready). */
 export const RESUME_CODES = [
-  "stale-request", "unobservable", "no-work", "ownership-conflict", "wait", "needs-human", "replan-required", "reapproval-required", "limit-reached", "ready",
+  "stale-request", "unobservable", "no-work", "ownership-conflict", "wait", "needs-human", "knowledge-blocked", "replan-required", "reapproval-required", "limit-reached", "ready",
 ] as const;
 export type ResumeCode = (typeof RESUME_CODES)[number];
 
@@ -87,6 +88,11 @@ export interface StateJson {
   correlation?: { runId: string };
   unknown: string[];
   graph?: GraphView;
+  /**
+   * master 인계 근거 게이트(knowledgeGate.ts) — 작업에 인계가 있을 때만. state(pending·verified·blocked)·정본 해시·검증 시각·멈춘 참조(사유·원인·회복)·
+   * 다음 동작. 받았다(submit 접수)는 것과 검증됐다(verified)는 것을 가른다
+   */
+  knowledge?: Record<string, unknown>;
 }
 
 /**
@@ -182,6 +188,7 @@ const NEXT_ACTION: Record<string, string> = {
 /** `code-agent status --json` 의 값 */
 export function stateView(repoRoot: string, options: StateOptions = {}): StateJson {
   const now = options.now ?? Date.now();
+  let knowledgeState: KnowledgeGate | undefined;
   const unknown: string[] = ["프로세스 생존: 호스트 기록(작업 임대·담당 시작/종료)만 본다 — OS 프로세스 생존·실제 종료는 확인하지 않는다(실행 러너의 책임)"];
   const blockers: Reason[] = [];
   const reasons: Reason[] = [];
@@ -329,6 +336,9 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
       code = "unobservable"; by = "human"; action = "inspect";
       reasons.push({ code: "lease-unreadable", detail: "작업 임대를 읽을 수 없습니다" });
     }
+    let knowledge: KnowledgeGate | undefined;
+    try { knowledge = work ? knowledgeGate(repoRoot, process.env, now) : undefined; } catch (error) { unknown.push(`인계 근거 판정을 읽지 못했습니다: ${errorText(error)}`); }
+    knowledgeState = knowledge;
     if (lease.state === "idle") reasons.push({ code: "lease-idle", detail: `임대가 ${Math.floor((lease.idleMs ?? 0) / 60_000)}분 동안 쓰이지 않았습니다 — 다음 명령이 기존 규칙으로 넘겨받습니다` });
     if (code === "ready") {
       const applying = consents.open.find((entry) => entry.status === "applying" && entry.lockHeld);
@@ -354,6 +364,11 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
       } else if (approved.length > 0) {
         action = "consent-apply";
         for (const entry of approved) reasons.push({ code: "consent-approved", detail: `동의 ${entry.id}(${entry.action})가 응답을 받았고 적용을 기다립니다 — 응답을 관찰한 세션이 적용합니다` });
+      } else if (knowledge?.state === "blocked") {
+        // master 인계 근거 — 진행 게이트(nextTransition·검증 실행·hook)와 같은 판정이다. 재검증은 모델(code-agent knowledge verify)·master 가,
+        // 재계획(인계 교체)은 master·사람이 한다
+        code = "knowledge-blocked"; by = knowledge.action === "knowledge-replan" ? "human" : "model"; action = knowledge.action ?? "knowledge-reverify";
+        for (const entry of knowledge.blocked) reasons.push({ code: `knowledge-${entry.cause}`, detail: `${entry.segmentId ?? entry.itemId}: ${entry.reason}` });
       } else if (approval && approval.status !== "approved" && phase && PHASES.indexOf(phase) >= PHASES.indexOf("plan")) {
         const label = APPROVAL_LABEL[approval.status as Exclude<ApprovalState["status"], "approved">];
         if (approval.status === "none") { code = "needs-human"; by = "human"; action = "plan-consent"; reasons.push({ code: "approval-pending", detail: label }); }
@@ -424,6 +439,7 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     lease: { state: ownership.lease.state, session: ownership.lease.session ?? null },
     findings: summary ? summary.blockingHuman.map((record) => [record.id, record.version]) : null,
     blockers: blockers.map((item) => item.code), interactions,
+    knowledge: knowledgeState ? { state: knowledgeState.state, digest: knowledgeState.digest, at: knowledgeState.verifiedAt, blocked: knowledgeState.blocked.map((entry) => [entry.itemId, entry.segmentId, entry.reason]) } : null,
   };
   const stateVersion = `sha256:${sha(canonical(basis)).slice(0, 32)}`;
 
@@ -438,6 +454,8 @@ export function stateView(repoRoot: string, options: StateOptions = {}): StateJs
     resume: { code, reasons, next: { action, by, ...(hint ? { hint } : {}) } }, interactions,
     unknown,
   };
+  const knowledgeJson = knowledgeState ? knowledgeView(knowledgeState) : undefined;
+  if (knowledgeJson) result.knowledge = knowledgeJson;
   try { result.graph = graphView(repoRoot); }
   catch (error) { result.unknown.push(`그래프 실행 기록을 읽지 못했습니다: ${errorText(error)}`); }
   if (options.runId) result.correlation = { runId: options.runId };

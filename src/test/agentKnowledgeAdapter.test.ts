@@ -44,6 +44,8 @@ import { createRepo, removeRepo, writeFixture } from "./repoFixture";
  *
  * 실제 agent-knowledge 대신 가짜 CLI(agentKnowledgeFixture)가 실측한 응답 모양으로 답한다. 어댑터는 함수로 직접 부르고(stdin 문자열 →
  * 봉투 문자열), CLI 갈래·종료 코드·타임라인 제외만 실제 프로세스로 본다. `CODE_AGENT_HOME` 을 임시 폴더로 돌려 사용자 홈을 건드리지 않는다.
+ * 이 파일의 가짜는 capabilities 를 모른다(usage) — 형식 2 이전 빌드에서의 형식 1 경로다. 형식 2 협의·요청은 agentKnowledgeV2.test.ts,
+ * 실제 agent-knowledge 와의 왕복은 agentKnowledgeRealCli.test.ts 가 본다.
  */
 
 let root: string;
@@ -160,7 +162,7 @@ describe("agent-knowledge 어댑터 — 봉투·설정·probe", () => {
     assert.deepEqual(described.slots, ["context.docs"]);
     assert.equal(described.sendsCode, false);
     assert.deepEqual(described.accepts, [...AGENT_KNOWLEDGE_ACCEPTS]);
-    assert.match(described.note ?? "", /읽기 전용\(search·get·status\)/);
+    assert.match(described.note ?? "", /읽기 전용\(capabilities·search·get·status\)/);
     assert.deepEqual(fake.calls(), []);
   });
 
@@ -356,10 +358,19 @@ describe("agent-knowledge 어댑터 — 검색·분류·합치기", () => {
         returned: 2,
         dropped: { mandatory: 1, linked: 0, otherProject: 0, outOfDocs: 0, invalid: 0, deprecated: 0 },
         limitations: ["keyword-only", "unconfirmed-results"],
-        calls: 1,
+        // 이 가짜는 capabilities 를 모른다(usage) — 형식 2 이전 빌드로 보고 형식 1로 부른다
+        responseVersion: 1,
+        fallbackFrom: { responseVersion: 2, reason: "capabilities-missing" },
+        calls: 2,
         durationMs: 0,
       },
     );
+    assert.deepEqual(fake.calls().map((entry) => entry.command), ["capabilities", "search"]);
+    assert.deepEqual(fake.calls()[0].args, [
+      "--config", join(root, "kb", "sources.yaml"),
+      "--retrieval-config", join(root, "kb", "retrieval.yaml"),
+      "--db", join(root, "kb", "knowledge.sqlite"),
+    ], "capabilities 는 요청 본문 없이 같은 설정 경로로");
 
     const [search] = searchCalls();
     assert.deepEqual(search.args, [
@@ -768,7 +779,7 @@ describe("agent-knowledge 어댑터 — CLI 갈래·등록·plugin list·hook", 
     });
     const registered = pluginList(repo);
     assert.match(registered, /\| context\.docs +\| .+ \| 기본 구현 · agent-knowledge 비교만\(shadow\) \|/);
-    assert.match(registered, /- agent-knowledge · 자리 context\.docs · 코드 외부 전송 아니오 · 선택 입력 context\.docs\.phase, context\.docs\.files, context\.docs\.refs · /);
+    assert.match(registered, /- agent-knowledge · 자리 context\.docs · 코드 외부 전송 아니오 · 선택 입력 context\.docs\.phase, context\.docs\.files, context\.docs\.refs, context\.docs\.refs\.indexed · /);
 
     manifest({ "agent-knowledge": { slots: ["context.docs"] } });
     const enabled = pluginList(repo);

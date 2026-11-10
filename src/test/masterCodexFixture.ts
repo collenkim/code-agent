@@ -11,6 +11,7 @@ import { withInteraction } from "../agent/tty";
 import { listRuns, readRun } from "../agent/master/store";
 import { killVerified, waitDead } from "../agent/master/processes";
 import { codexReadiness } from "../agent/codexReadiness";
+import { isolateSandboxMarkers } from "./codexProbeFixture";
 export function codexProject() {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-managed-codex-"))), root = join(dir, "project"), home = join(dir, "codex-home");
   mkdirSync(root); mkdirSync(home);
@@ -20,6 +21,9 @@ export function codexProject() {
   // 모의 app-server 가 CODEX_HOME 의 신뢰 기록으로 config/read·hooks/list 에 답한다. 판정 기록은 시험 폴더에, 교차 검증 호스트는 이 node 로
   const saved = { CODEX_HOME: process.env.CODEX_HOME, CODE_AGENT_HOME: process.env.CODE_AGENT_HOME, CODE_AGENT_CLAUDE_BIN: process.env.CODE_AGENT_CLAUDE_BIN, CODE_AGENT_CODEX_BIN: process.env.CODE_AGENT_CODEX_BIN };
   Object.assign(process.env, { CODEX_HOME: home, CODE_AGENT_HOME: join(dir, "code-agent-home"), CODE_AGENT_CLAUDE_BIN: process.execPath, CODE_AGENT_CODEX_BIN: process.execPath });
+  // 부모 셸(Codex 샌드박스·권한 상승 셸)에서 상속된 샌드박스 표지는 모의 조회·감독·모의 호스트를 codex-sandboxed 로 막는다 — 이 프로젝트를
+  // 닫을 때까지만 지운다(제품 판정은 그대로)
+  const restoreSandbox = isolateSandboxMarkers();
   const hostFile = join(dir, "host.json"), tokenFile = join(dir, "token");
   writeFileSync(hostFile, JSON.stringify({ kind: "codex", command: [process.execPath, join(__dirname, "masterCodexFakeHost.js")] }));
   withInteraction({ confirm: () => ({ channel: "tty", verified: true, detail: "synthetic fixture" }), ask: () => "" }, () => masterEnable(root, { controller: "test", host: hostFile, tokenOut: tokenFile }));
@@ -40,6 +44,7 @@ export function codexProject() {
       assert.ok(waitDead(p.pid, p.marker, 30_000), `시험 프로세스 종료 대기 초과: ${p.marker}`);
     }
     for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    restoreSandbox();
     assert.ok(resolve(dir).startsWith(realpathSync.native(tmpdir()) + sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
   };
   return { root, home, dir, send, wait, close, recheck };

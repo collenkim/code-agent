@@ -14,6 +14,7 @@ import { handoffPlanning } from "./handoff";
 import { OpenQuestionsStop } from "./commands";
 import { loadActive, workDocsDir } from "./layout";
 import { FAILURE_CLASSES, guidance, recordedVariant, type FailureClass } from "./retryPolicy";
+import { KnowledgeStop } from "./knowledgeGate";
 import { Stop } from "./stop";
 
 /** next 가 program 게이트인 계획 단계 — plan 의 게이트는 제출과 사람 승인이라 잇지 않는다 */
@@ -21,7 +22,11 @@ const GATE_PHASES = ["analysis", "impact", "design"];
 /** 단계 → 그 단계 절차 이름(호스트 중립 — `/`·`$` 접두어 없이) */
 const STAGE_SKILL: Record<string, string> = { analysis: "ca-analyze", impact: "ca-impact", design: "ca-design", plan: "ca-plan" };
 
-export interface GateStep { from: string; gate: "passed" | "rejected"; to?: string; reason?: string; questions?: number }
+export interface GateStep {
+  from: string; gate: "passed" | "rejected"; to?: string; reason?: string; questions?: number;
+  /** master 인계 근거 게이트로 거부됐을 때 — 다음 동작과 멈춘 참조 */
+  knowledge?: { action?: string; refs: { itemId: string; reason: string; cause: string }[] };
+}
 interface Rewind { phase: string; command: string; auto: boolean; reason: string; notice?: string; tasks?: { id: string; staleBecause?: string[] }[] }
 interface Blocked { id: string; reasons: string[]; class?: string; counter?: { key?: string; used?: number; limit?: number } }
 /** advance 출력에서 연쇄 실행기가 읽는 필드 */
@@ -82,6 +87,11 @@ export function planningNextLine(view: AdvanceView, options: { chained: boolean;
     }
     if (gate?.gate === "rejected" && (gate.questions ?? 0) > 0) {
       return `답이 없거나 출처를 확인할 수 없는 질문 ${gate.questions}개 때문에 게이트(${gate.from})를 지나지 못했다 — ca-answer 절차로 실제 답을 받아 기록한 뒤 ${adv}`;
+    }
+    if (gate?.gate === "rejected" && gate.knowledge) {
+      return gate.knowledge.action === "knowledge-replan"
+        ? `master 인계 근거가 지금 근거와 맞지 않아 게이트(${gate.from})를 지나지 못했다 — 범위를 넓혀 다시 찾지 말고 chain.knowledge 의 사유를 보고한 뒤 master 의 재계획(인계 교체)을 기다린다`
+        : `master 인계 근거를 아직 검증하지 못해 게이트(${gate.from})를 지나지 못했다 — code-agent knowledge verify 로 같은 참조를 다시 검증한 뒤 ${adv}`;
     }
     if (gate?.gate === "rejected") return `게이트 거부(${gate.from}) — chain.reason 을 그대로 전하고 멈춘다`;
     switch (view.action) {
@@ -159,6 +169,9 @@ export async function planningAdvanceCli(root: string, options: { chain: boolean
       gate = { from: view.phase, gate: "rejected", reason: error.message };
       // 질문 수는 답 없는·출처 미확인 질문 때문에 거부됐을 때만 싣는다 — AI-DLC·문서·요구 확정 거부는 질문이 열려 있어도 그 사유다
       if (error instanceof OpenQuestionsStop && error.count > 0) gate.questions = error.count;
+      if (error instanceof KnowledgeStop) {
+        gate.knowledge = { ...(error.gate.action ? { action: error.gate.action } : {}), refs: error.gate.blocked.map(({ itemId, reason, cause }) => ({ itemId, reason, cause })) };
+      }
     }
   }
   const workDir = active ? workDocsDir(active.id) : "doc/work/<ID>";

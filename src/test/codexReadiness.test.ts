@@ -16,11 +16,13 @@ let root: string;
 let stub: ReturnType<typeof stubCodexProbe> | undefined;
 let children: ChildProcess[] = [];
 const cli = join(__dirname, "../agent/cli.js");
-const saved = { home: process.env.CODEX_HOME, sandbox: process.env.CODEX_SANDBOX };
+const saved = { home: process.env.CODEX_HOME, sandbox: process.env.CODEX_SANDBOX, network: process.env.CODEX_SANDBOX_NETWORK_DISABLED };
 beforeEach(() => {
   root = realpathSync.native(mkdtempSync(join(tmpdir(), "ca-ready-root-")));
   process.env.CODEX_HOME = join(root, "codex-home");
+  // 부모 셸에서 상속된 샌드박스 표지를 지운다 — 표지를 켜는 시험은 스스로 켠다(제품 판정은 그대로)
   delete process.env.CODEX_SANDBOX;
+  delete process.env.CODEX_SANDBOX_NETWORK_DISABLED;
 });
 afterEach(async () => {
   // 판정 파일 기록과 분리 프로세스 종료는 다르다. 이 시험이 띄운 자식의 종료 후 폴더를 정리한다.
@@ -32,7 +34,7 @@ afterEach(async () => {
   }
   children = []; mock.restoreAll();
   stub?.restore(); stub = undefined;
-  for (const [key, value] of [["CODEX_HOME", saved.home], ["CODEX_SANDBOX", saved.sandbox]] as const) {
+  for (const [key, value] of [["CODEX_HOME", saved.home], ["CODEX_SANDBOX", saved.sandbox], ["CODEX_SANDBOX_NETWORK_DISABLED", saved.network]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
   assert.equal(dirname(root), realpathSync.native(tmpdir())); assert.ok(root.includes("ca-ready-root-"));

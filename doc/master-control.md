@@ -57,10 +57,15 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
                    "both": { "claude": { "ready": true, "state": "ready", "blocking": [] }, "codex": { "ready": false, "state": "project-untrusted", "blocking": [ … ] } } },
                  "hosts": { "claude": { "ready": true, "state": "ready", "problems": [] },
                             "codex": { "ready": false, "state": "project-untrusted", "problems": [ … ], "checkedAt": "…", "target": { "executable": "…", "codexHome": "…", "version": "0.163.0" } } } },
-"knowledge": { "schemaVersion": 1, "mode": "enabled", "refs": { "supported": true, "accepted": true, "max": 20 } }
+"knowledge": { "schemaVersion": 1, "mode": "enabled",
+               "refs": { "supported": true, "accepted": true, "max": 20, "versions": [1, 2], "supportedVersions": [1, 2], "maxBytes": 32768,
+                         "requiredGate": true, "requiredDefault": true, "scope": "registered-docs" },
+               "gate": { "resume": "knowledge-blocked", "actions": ["knowledge-reverify", "knowledge-replan"],
+                         "causes": ["unverified", "hash-mismatch", "identity-mismatch", "expired", "source-changed", "source-deleted", "scope", "adapter"],
+                         "ttlSeconds": 86400, "command": { "type": "knowledge", "actions": ["verify", "replace"] } } }
 ```
 
-`knowledge`는 이 프로젝트의 지식 검색 연결(`context.docs` 자리 — [agent-knowledge 연결](plugins.md#10-agent-knowledge-연결))이다. `mode`는 `code-agent.json`의 선언이다 — 선언 없음 `off`, 비교만 하는 `shadow`(`plugins.<이름>.shadow`), 결과를 쓰는 `enabled`(`plugins.<이름>.slots`). 설정을 읽지 못하면 `off`다. `refs.accepted`는 `enabled`이고, 이 PC 에 그 플러그인이 `context.docs`로 등록돼 있고, 어댑터가 describe 의 `accepts`에 `context.docs.refs`를 적었을 때만 `true`다. 플러그인 이름·명령·설정 경로는 알리지 않는다. master 는 `refs.accepted`가 `true`일 때만 `submit`에 `knowledge`를 싣는다(§11 [지식 항목 참조 인계](#지식-항목-참조-인계)). `knowledge`를 알리지 않는 code-agent 는 `submit`의 `knowledge`를 읽지 않고 버리므로 보내지 않는다.
+`knowledge`는 이 프로젝트의 지식 검색 연결(`context.docs` 자리 — [agent-knowledge 연결](plugins.md#10-agent-knowledge-연결))이다. `mode`는 `code-agent.json`의 선언이다 — 선언 없음 `off`, 비교만 하는 `shadow`(`plugins.<이름>.shadow`), 결과를 쓰는 `enabled`(`plugins.<이름>.slots`). 설정을 읽지 못하면 `off`다. `refs.accepted`는 `enabled`이고, 이 PC 에 그 플러그인이 `context.docs`로 등록돼 있고, 어댑터가 describe 의 `accepts`에 `context.docs.refs`를 적었을 때만 `true`다. 플러그인 이름·명령·설정 경로는 알리지 않는다. `refs.versions`는 **지금** 받는 인계 형식이다 — 형식 2(색인 식별·원본 범위·분할)는 어댑터가 `context.docs.refs.indexed`까지 협의한 등록일 때만 들고, 아니면 `[1]`이다. `supportedVersions`는 이 빌드가 읽는 형식, `maxBytes`는 인계 정본 JSON 의 바이트 상한, `requiredGate: true`는 실패한 `required` 참조가 그 작업의 진행을 실제로 막는다는 표시, `requiredDefault`는 `required` 생략값, `scope: "registered-docs"`는 이 저장소의 등록 문서(어댑터 설정이 대응시킨 프로젝트·원본) 밖 참조를 받지 않는다는 뜻이다. `gate`는 진행 게이트의 재개 코드·회복 동작·원인 갈래·검증 기록의 유효 시간과 회복 명령이다(§4 `knowledge`, [플러그인 §10.9](plugins.md#109-진행-게이트--required-인계-참조)). master 는 `refs.accepted`가 `true`이고 `refs.versions`에 든 형식으로만 `submit`에 `knowledge`를 싣는다(§11 [지식 항목 참조 인계](#지식-항목-참조-인계)). 이 형식 번호는 생산자 응답 형식(agent-knowledge `responseVersion`)과 다른 번호다. `knowledge`를 알리지 않는 code-agent 는 `submit`의 `knowledge`를 읽지 않고 버리므로 보내지 않는다. `refs.versions`가 없는 code-agent 는 형식 1만 받는다.
 
 `trustedControllers`는 이 PC 에서 신뢰한 제어자 ID 뿐이다. 키·토큰·키 경로는 넣지 않는다. `managedHost.selected`는 켠 연동이면 지금 선택될 호스트(`source`: `execution`·`execution-main`·`binding`), 켜기 전이면 켜면 선택될 호스트(`execution`·`execution-main`·`installed`·`default`, §11)다. `state`는 실행 준비 상태다 — 설치 누락 `not-installed`·프로젝트 미신뢰 `project-untrusted`·hook 검토 필요 `hooks-review`·조회 실패 `query-failed`·확인 중 `checking`·준비 완료 `ready`. 앞 단계가 막히면 뒤 단계는 판정하지도 알리지도 않는다(설치가 막히면 Codex 신뢰를 묻지 않고, 프로젝트를 신뢰하지 않았으면 hook 검토를 알리지 않는다). `problems`의 `code`는 설치 단계의 `host-not-installed`(설치 기록에 없음)·`hooks-missing`·`settings-unreadable`·`hosts-unreadable`·`execution-unreadable`과, Codex 는 `codex-not-found`(실행 파일 없음)·`codex-hooks-invalid`·`codex-hooks-not-loaded`·`codex-hooks-disabled`(`[features] hooks = false`)·`codex-unsupported`(이 판정을 지원하지 않는 Codex)·`codex-project-untrusted`·`codex-project-disabled`·`codex-hooks-untrusted`·`codex-query-failed`·`codex-sandboxed`·`codex-checking`·`codex-unchecked`다. `ready`가 `true`일 때만 관리 실행 접수가 받는다 — 조회 실패·확인 중도 `invalid-state`로 거부된다. `selected`·`ready`·`state`·`problems`는 실행 방식을 고르지 않은 실행에 쓰는 호스트의 판정이다. `runSelection.modes`는 `submit`의 `execution`으로 고를 수 있는 실행 방식이다(설치 기록의 호스트, 둘 다 있으면 `both`도 — §11). 고를 수 있다고 실행 준비가 된 것은 아니다 — `runReadiness`가 실행 방식마다의 준비와 차단 이유(`blocking`, 호스트 표시)이고, `both`는 주 호스트마다 그 호스트의 관리 실행 준비와 다른 호스트의 교차 검증 준비(설치와 실행 파일 — 교차 검증의 Codex 는 읽기 전용 `exec`라 신뢰가 필요 없다. 코드 `cross-host-config`·`cross-host-not-found`)를 합친다. `hosts`는 설치된 호스트마다의 관리 실행 준비(`ready`·`state`·`problems`, Codex 는 판정 시각 `checkedAt`과 물은 대상 `target`)다. master 는 `runSelection`이 없는 code-agent 에는 `execution`을 보내지 않는다.
 
@@ -87,6 +92,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 | mutating | `interaction.respond` | `requestId`, `expectedRevision`, `contentHash`, `challenge`, `channelId`, `signature`, `submission` | 별도 사람 채널. [계약·예제](dashboard-interactions.md) |
 | mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `execution`(start — §11), `knowledge`(start — [§11](#지식-항목-참조-인계)), `links`, `timeoutMs` | §5 |
 | mutating | `resume` | `runId`, `prompt?`, `links?` | 끝난 실행(`paused`·`blocked`·`completed`·`failed`·`unknown`·`cancelled`)의 세션을 잇는다 |
+| mutating | `knowledge` | `action`(verify·replace), `workId?`, `reason`(replace), `knowledge`(replace — 새 인계 또는 `null`) | 작업에 고정된 인계 근거의 회복([§11](#지식-항목-참조-인계)). 그 작업의 실행이 진행 중이면 `busy` |
 | mutating | `pause`·`cancel` | `runId`, `reason?`, `graceMs?`, `force?`, `waitMs?` | §7 |
 | mutating | `decide` | `consentId`, `verdict`, `decisionId`, `grantId`, `category`, `reason`, `evidence[]`, `shownHash`, `choices?` | §8 |
 | mutating | `answer` | `actor`(ai·human), `decisionId`, `grantId`, `category`, `reason`, `evidence[]`, `questionsHash`, `answers[{q, answer}]`, `workId?` | §8 |
@@ -103,7 +109,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 
 | 코드 | 뜻 |
 |---|---|
-| `invalid-request` | 꼴·값 오류 |
+| `invalid-request` | 꼴·값 오류. 지식 인계는 `detail.reason` 으로 가른다 — `knowledge-format`·`knowledge-version`(모르는 형식이거나 지금 받지 않는 형식)·`knowledge-limit`·`knowledge-too-large`·`knowledge-duplicate`·`knowledge-scope`(등록 문서·대응 프로젝트 밖 — `detail.refs[]` 에 참조마다 `not-in-docs`·`out-of-scope`) |
 | `unsupported-protocol`·`unsupported` | 모르는 프로토콜·버전·명령·호스트 |
 | `not-enabled` | 연동을 켜지 않은 프로젝트, master 실행이 열지 않은 작업 |
 | `unauthorized` | 등록되지 않은 제어자·토큰 불일치·다른 제어자의 명령 조회, 페어링의 PC 신뢰 없음·서명 없음·서명 불일치 |
@@ -129,7 +135,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 2. 처리 전에 `received`를 먼저 쓴다. 처리 도중 끊겨 `received`로 남은 명령의 재전송은 다시 실행하지 않는다 — 그 명령으로 접수된 실행이 있으면 그 실행을 `recovered: true`로 돌려주고, 없으면 `internal`(결과를 확인할 수 없음)로 답한다. master 는 `snapshot`으로 대조한 뒤 새 `commandId`를 쓴다.
 3. 소유·세대 대조(§10) → 실행·인계 재조정 → 처리 → `accepted`(응답 포함) 또는 `rejected`로 기록하고 `command.accepted`·`command.rejected` 이벤트를 남긴다.
 
-`submit`은 같은 잠금 안에서 다음을 함께 확인한 뒤에만 실행을 접수한다: 실행 중인 실행 없음(`busy`), 지식 참조의 꼴·수락 여부(§11), `expect`(`stateVersion`·`work`·`attempt` — 다르면 `stale-state`), 작업 임대(다른 세션이면 `busy` — 끝난 master 실행의 세션이 쥔 임대만 푼다), 작업 연결(사람이 연 작업이면 `not-enabled`, 다른 임무·작업이면 `conflict`), 재개 판정(`no-work`·`ready`·`replan-required`만 시작, continue 는 자기 시도 실행 중 대기도 받는다. master 위임 판단이 수정 요청으로 닫은 확인 요청을 다시 준비할 자리 — `needs-human`·`reapproval-required`의 요구 확정·계획·반영 확인이고 같은 동작의 마지막 동의가 위임 수정 요청이다 — 는 그 동의를 준비한 세션의 continue 만 받는다. 사람이 낸 수정 요청은 사람 경로로 남는다. 그 밖의 사람 판단 대기·한도·관측 불가는 `invalid-state`). 접수하면 프롬프트·실행 기록을 `accepted`로 쓰고 감독 프로세스를 띄운다. 감독이 시작하지 못하고 끝나도 기록은 남아 재조정이 `abandoned`로 닫는다.
+`submit`은 같은 잠금 안에서 다음을 함께 확인한 뒤에만 실행을 접수한다: 실행 중인 실행 없음(`busy`), 지식 참조의 꼴·수락 여부(§11), `expect`(`stateVersion`·`work`·`attempt` — 다르면 `stale-state`), 작업 임대(다른 세션이면 `busy` — 끝난 master 실행의 세션이 쥔 임대만 푼다), 작업 연결(사람이 연 작업이면 `not-enabled`, 다른 임무·작업이면 `conflict`), 재개 판정(`no-work`·`ready`·`replan-required`만 시작 — `knowledge-blocked`는 `invalid-state`로 거부하고 `knowledge` 명령으로 회복한다, continue 는 자기 시도 실행 중 대기도 받는다. master 위임 판단이 수정 요청으로 닫은 확인 요청을 다시 준비할 자리 — `needs-human`·`reapproval-required`의 요구 확정·계획·반영 확인이고 같은 동작의 마지막 동의가 위임 수정 요청이다 — 는 그 동의를 준비한 세션의 continue 만 받는다. 사람이 낸 수정 요청은 사람 경로로 남는다. 그 밖의 사람 판단 대기·한도·관측 불가는 `invalid-state`). 접수하면 프롬프트·실행 기록을 `accepted`로 쓰고 감독 프로세스를 띄운다. 감독이 시작하지 못하고 끝나도 기록은 남아 재조정이 `abandoned`로 닫는다.
 
 응답을 잃은 master 는 같은 `commandId`로 다시 보내거나 `command`로 처리 상태를 묻는다. 둘 다 실행을 두 번 만들지 않는다. 명령 기록 파일은 commandId의 SHA-256 이름을 쓰고 읽을 때 원래 ID를 재대조한다.
 
@@ -142,7 +148,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 `events.jsonl`은 순번(`seq`, 1씩 증가) 기록이고 `events-meta.json`의 `logId`가 기록 하나를 가린다. 모든 응답에 `events: {logId, latestSeq}`가 붙는다. 메타와 마지막 이벤트의 큰 순번을 이어 중단 뒤에도 순번을 재사용하지 않는다. 최근 이벤트를 최대 10,000건 보관하며 1,000건 단위로 정리한다. 조회는 필요한 꼬리만 읽는다.
 
 - `events {after, logId}` → `after` 다음부터 `limit`개와 `latestSeq`·`hasMore`. 기록 ID 가 다르거나(기록이 새로 만들어짐) `after`가 최신보다 크거나 이미 지난 구간이면 `gap: true` — master 는 `snapshot`으로 다시 맞추고 그 위치부터 읽는다.
-- 종류: 연동·권한·정책(`binding.*`·`controller.added`·`human-channel.changed`·`grant.*`·`policy.changed` — 연동·제어자·사람 채널 이벤트의 `data.channel`은 연결 방식 `tty`·`dashboard-pairing`), 명령(`command.*`), 실행(`run.accepted`·`starting`·`started`·`stop-requested`·`finished`·`abandoned`·`orphaned`·`unknown`), 연결(`master.disconnected`·`reconnected`), 진척(`work.bound`·`phase.changed`·`attempt.changed`·`resume.changed`·`question.*`·`consent.*`·`verification.recorded`), 판단(`decision.recorded`·`applied`·`rejected`·`answer.recorded`), 인계(`handover.*`). 진척 이벤트는 감독이 `progressMs`마다 `stateView`를 직전 관찰(`observed.json`)과 비교해 남긴다.
+- 종류: 연동·권한·정책(`binding.*`·`controller.added`·`human-channel.changed`·`grant.*`·`policy.changed` — 연동·제어자·사람 채널 이벤트의 `data.channel`은 연결 방식 `tty`·`dashboard-pairing`), 명령(`command.*`), 실행(`run.accepted`·`starting`·`started`·`stop-requested`·`finished`·`abandoned`·`orphaned`·`unknown`), 연결(`master.disconnected`·`reconnected`), 진척(`work.bound`·`phase.changed`·`attempt.changed`·`resume.changed`·`question.*`·`consent.*`·`verification.recorded`), 판단(`decision.recorded`·`applied`·`rejected`·`answer.recorded`), 지식 인계 근거(`knowledge.verified`·`knowledge.blocked`·`knowledge.replaced` — `knowledge` 명령이 남긴다), 인계(`handover.*`). 진척 이벤트는 감독이 `progressMs`마다 `stateView`를 직전 관찰(`observed.json`)과 비교해 남긴다.
 
 세 가지를 따로 낸다:
 
@@ -259,38 +265,72 @@ hook 은 사고 방지 장치다. 토큰 파일은 저장소 밖에 두고(`--to
 
 ### 지식 항목 참조 인계
 
-master 는 새 실행(`submit mode:start`)의 `knowledge`로 그 작업이 기대는 agent-knowledge 항목의 참조를 넘길 수 있다. hello 의 `knowledge.refs.accepted`가 `true`일 때만 보낸다(§3). 본문·발췌는 싣지 않는다 — 받는 쪽이 같은 세대에서 항목을 다시 꺼내 대조한다.
+master 는 새 실행(`submit mode:start`)의 `knowledge`로 그 작업이 기대는 agent-knowledge 항목의 참조를 넘길 수 있다. hello 의 `knowledge.refs.accepted`가 `true`일 때만, `refs.versions`에 든 형식으로 보낸다(§3). 본문·발췌는 싣지 않는다 — 받는 쪽이 같은 세대에서 항목을 다시 꺼내 대조한다. 형식·정규화·해시·사례는 공통 계약(agent-knowledge `docs/integration.md` 「인계 형식」·`docs/contract/handoff-cases.json`)이 정본이고, 이 빌드는 그 사례를 그대로 시험한다(`knowledgeHandoffContract.test.ts`).
 
 ```jsonc
+// 형식 1 — 항목 단위
 "knowledge": { "version": 1, "refs": [
   { "itemId": "orders:doc/policy/order.md#cancel-rule", "generation": 12,
     "commit": "<40자리 소문자 16진>", "itemSha256": "<64자리 소문자 16진>", "required": true } ] }
+// 형식 2 — 생산자 형식 2 검색이 낸 항목 참조(ItemRef) 그대로 + required
+"knowledge": { "version": 2, "refs": [
+  { "indexId": "<32자리 소문자 16진>", "indexGeneration": 12, "projectId": "orders", "sourceId": "orders",
+    "itemId": "orders:doc/policy/order.md#cancel-rule", "path": "doc/policy/order.md", "commit": "<40·64자리 소문자 16진>",
+    "itemSha256": "<64자리>", "documentSha256": "<64자리>", "blobSha": "<40·64자리>", "startLine": 10, "endLine": 24,
+    "segmentId": null, "segmentSha256": null, "segmentStartLine": null, "segmentEndLine": null, "handle": "<생산자 핸들>",
+    "required": true } ] }
 ```
 
 | 필드 | 조건 |
 |---|---|
-| `version` | `1` |
-| `refs` | 1~20개 배열. 같은 `itemId`를 두 번 쓰지 않는다 |
+| `version` | `1` · `2`. 지금 받지 않는 형식(`refs.versions` 밖)은 `invalid-request`(`knowledge-version`) |
+| `refs` | 1~20개 배열. 겹침 키는 형식 1 이 `itemId`, 형식 2 가 (`itemId`, `segmentId`). 정본 JSON 이 32768 바이트 이하 |
 | `itemId` | agent-knowledge 항목 ID(`<원본>:<경로>#<위치>`). `:`·`#`를 담은 512자 이하 문자열, 제어 문자·공백뿐인 값 없음 |
-| `generation` | 그 항목을 꺼낸 색인 세대(1 이상의 정수) |
-| `commit` | 항목 원본의 커밋(40자리 소문자 16진) |
+| `generation` (형식 1) · `indexGeneration` (형식 2) | 그 항목을 꺼낸 색인 세대(1 이상의 정수) |
+| `commit` | 항목 원본의 커밋(형식 1 은 40자리, 형식 2 는 40·64자리 소문자 16진) |
 | `itemSha256` | 항목 내용(UTF-8)의 SHA-256(64자리 소문자 16진) |
-| `required` | 생략하면 `true`. 검증에 실패하면 이 작업의 근거를 다시 확인해야 하는 항목이다 |
+| 형식 2 의 나머지 | 필수 — `indexId`(32자리 소문자 16진 DB 식별 — 다른 DB 의 같은 세대 번호를 가른다)·`sourceId`·`path`(저장소 기준 상대 경로, `itemId` 가 `<sourceId>:<path>#` 로 시작한다)·`startLine`·`endLine`. 선택 — 분할이면 `segmentId`(`<itemId>#` 로 시작)·`segmentSha256`·`segmentStartLine`·`segmentEndLine`(원본 범위 안, 아니면 넷 다 `null`이거나 없다)·`projectId`·`documentSha256`·`blobSha`·`handle`. 필수 키가 빠지거나 모르는 키는 `knowledge-format` |
+| `required` | 생략하면 `true`. `true` 인 참조가 확인되기 전·실패한 뒤에는 이 작업이 진행하지 않는다(아래 진행 게이트) |
 
-검사와 거부:
+정본 해시: 받은 인계는 `required`를 채우고 참조를 겹침 키로 정렬한 `{version, refs}` 의 정본 JSON 을 SHA-256 한 `sha256:<64자리>`(`knowledgeDigest`)로 가린다. 같은 참조의 순서만 다른 재전송은 같은 해시다.
 
-- 최상위·참조의 모르는 키와 꼴 오류는 `invalid-request`다. 꼴 검사가 수락 여부보다 먼저다.
-- 참조를 받지 않는 프로젝트(`refs.accepted: false` — `off`·`shadow`, 등록 없음, `context.docs.refs`를 협의하지 않은 어댑터)에 보내면 `invalid-state`(`detail: { reason: "knowledge-refs-not-accepted", mode }`)로 거부하고 실행을 쓰지 않는다. 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다.
-- `continue`와 `resume`에 보내면 `invalid-request`다(`execution`과 같은 규칙). 이어 실행과 사람 응답으로 잇는 실행은 이전 실행의 인계를 옮긴다. 종료 세션 복원(`master recover`)은 인계를 만들지 않는다 — 독립 세션에는 master 인계가 없고, 작업 연결에 고정된 인계가 있으면 그대로 쓰인다.
+검사와 거부(받기 전에 — 실행을 쓰지 않는다):
+
+- 최상위·참조의 모르는 키와 꼴 오류는 `invalid-request`(`detail.reason` — §4 오류 코드)다. 꼴 검사가 수락 여부보다 먼저다.
+- 참조를 받지 않는 프로젝트(`refs.accepted: false` — `off`·`shadow`, 등록 없음, `context.docs.refs`를 협의하지 않은 어댑터)에 보내면 `invalid-state`(`detail: { reason: "knowledge-refs-not-accepted", mode }`)로 거부한다. 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다.
+- 받는 형식이면 수신 범위를 본다 — 참조의 원본 경로가 이 저장소의 등록 문서가 아니면 `not-in-docs`, 어댑터 설정이 이 저장소를 생산자 프로젝트에 대응시키면 그 `sources` 밖 원본이나(형식 2) 다른 `projectId` 는 `out-of-scope` 로, 모두 `invalid-request`(`knowledge-scope`, `detail.refs[]`)다. 범위를 넓히지 않는다. 설정을 읽지 못하거나 대응이 없으면 대응 검사는 하지 않고, 그 대조는 어댑터 실패로 끝나 게이트가 원인 `adapter` 로 그 작업만 보류한다.
+- `continue`와 `resume`에 보내면 `invalid-request`다(`execution`과 같은 규칙). 이어 실행과 사람 응답으로 잇는 실행은 **작업 연결의 지금 인계**를 쓴다(교체됐으면 교체된 인계 — 이전 실행 기록의 사본이 아니다). 종료 세션 복원(`master recover`)은 인계를 만들지 않는다 — 독립 세션에는 master 인계가 없고, 작업 연결에 고정된 인계가 있으면 그대로 쓰인다.
 - `knowledge`도 요청 해시의 `payload`에 들어 같은 `commandId` 재전송(`replayed`)과 `conflict` 판정에 함께 쓰인다.
 
-저장: 받은 인계는 `required`를 채워 실행 기록(`runs/<runId>.json`의 `knowledge`)에 남고, 그 실행이 작업(또는 접수)을 열면 `works/<작업 ID>.json`에 고정된다(`execution`과 같은 자리). 이미 연 작업에 새 실행을 시작하면 작업에 고정된 인계를 쓴다. 같은 참조(순서 무관)의 재전송은 받고, 다른 참조는 `conflict`(`detail.workId`)다. 참조 없이 시작해도 작업의 인계를 잇는다. 접수 결과에는 인계가 있는 실행만 `knowledge: { refs: <개수> }`가 붙는다. 참조는 실행 프롬프트에 싣지 않는다. 이 필드를 담은 기록은 상태 형식 세대(`stateSchema`) 25부터다 — 낮은 세대의 릴리스는 인계를 모르고 버리므로 이 프로젝트에 적용되지 않는다.
+접수 영수증: 인계가 있는 실행의 접수 결과에는 `knowledge: { refs, version, digest, receipt: "stored", verification }`가 붙는다. `receipt: "stored"`는 받아 고정했다는 뜻이고 검증이 아니다. `verification`은 그 작업의 게이트 상태(`pending`·`verified`·`blocked`)이며 작업을 열기 전이면 `pending`이다.
 
-검증: 참조는 근거의 주장이지 답·승인이 아니다. 받을 때는 꼴만 보고, 단계 문맥(`code-agent context` — analysis·impact·design·plan)을 만들 때마다 다시 대조한다. 지금 작업의 연결(작업을 열기 전이면 이 세션의 실행 기록 — `CODE_AGENT_MASTER_RUN`)에서 인계를 읽어(`workKnowledge.ts` `managedKnowledge`) `context.docs` 어댑터에 넘긴다. 어댑터는 그 세대로 항목을 다시 꺼내 세대·항목 ID·커밋·`itemSha256`·대응 프로젝트·등록 문서 경로를 대조하고, code-agent 는 그 범위를 현재 작업 트리 파일에서 읽어 내용 해시를 다시 맞춘다. 확인된 항목만 `## 인계받은 지식 근거` 블록으로 문맥에 들어간다. 실패한 `required` 참조가 있으면 그 작업의 문맥에만 `## 근거 재확인 필요` 블록(항목 ID·사유)이 붙는다 — 범위를 넓혀 다시 찾지 말고 그 작업의 근거를 다시 확인하거나 재계획을 요청하라는 뜻이다. `enabled` 어댑터가 없거나 호출이 실패하면 모든 참조가 `adapter-unavailable`로 실패한다. 이 결과는 그 작업의 문맥 출력에만 붙는다 — 다른 작업의 문맥과 게이트 판정은 바뀌지 않는다.
+저장: 받은 인계는 실행 기록(`runs/<runId>.json`의 `knowledge`)에 남고, 그 실행이 작업(또는 접수)을 열면 `works/<작업 ID>.json`에 고정된다(`execution`과 같은 자리). 이미 연 작업에 새 실행을 시작하면 작업에 고정된 인계를 쓴다. 같은 인계(같은 정본 해시)의 재전송은 받고, 다른 인계는 `conflict`(`detail.workId`)다 — 이전 승인을 다른 인계에 다시 쓰지 않는다. 참조 없이 시작해도 작업의 인계를 잇는다. 참조는 실행 프롬프트에 싣지 않는다. 이 필드를 담은 기록은 상태 형식 세대(`stateSchema`) 25부터, 형식 2·교체 이력·검증 기록은 26부터다 — 낮은 세대의 릴리스는 이 프로젝트에 적용되지 않는다. 25 세대 기록의 형식 1 인계는 그대로 읽고, 검증 기록이 없으니 첫 판정은 `unverified`(재검증)다. 계획 승인 해시가 작업 연결의 인계 해시를 담으므로, 인계가 고정된 채 진행 중이던 작업은 이 세대로 올리면 계획을 다시 승인받는다(인계 없는 작업의 승인 해시는 그대로다).
 
-권한: 모델에게 agent-knowledge 를 열지 않는다. 관리 실행의 기본 허용 도구(`DEFAULT_ALLOWED_TOOLS`)에 agent-knowledge CLI 를 넣지 않으며, 어댑터 하위 명령(`code-agent plugin agent-knowledge`)은 hook 의 모델 명령 허용 목록에 없고, 작업·세션 밖의 셸에서도 hook 이 거부한다. 어댑터는 code-agent 가 문맥을 만들 때 플러그인으로만 부른다.
+검증: 참조는 근거의 주장이지 답·승인이 아니다. 받을 때는 꼴·형식·범위만 보고, 단계 문맥(`code-agent context` — analysis·impact·design·plan)이나 재검증 명령이 enabled 어댑터로 대조한다. 지금 작업의 연결(작업을 열기 전이면 이 세션의 실행 기록 — `CODE_AGENT_MASTER_RUN`)에서 인계를 읽어(`workKnowledge.ts` `managedKnowledge`) `context.docs` 어댑터에 넘긴다. 어댑터는 그 세대(형식 2 는 그 DB 식별까지)로 항목을 다시 꺼내 세대·항목 ID·커밋·해시·대응 프로젝트·등록 문서 경로를 대조하고, code-agent 는 그 범위를 현재 작업 트리 파일에서 읽어 내용 해시를 다시 맞춘다. 확인된 항목만 `## 인계받은 지식 근거` 블록으로 문맥에 들어가고, 실패한 `required` 참조는 그 작업의 문맥에 `## 근거 재확인 필요` 블록으로 붙는다. 대조 결과는 검증 기록(`knowledge/<작업 ID>.json`)에 남는다. off·shadow·미등록이면 생산자를 부르지 않고 각각 `adapter-off`·`adapter-unregistered` 로 실패한다 — 연결을 끊어 필수 근거를 조용히 지우지 않는다.
 
-이 계약은 agent-knowledge 공통 계약 제안의 필드 이름(`itemId`·`generation`·`commit`·`itemSha256`)에 `required`를 더한 제안 단계다. 실제 master-agent 와의 통합 시험은 하지 않았다(§14).
+진행 게이트: `required` 참조가 검증 기록으로 확인되기 전이거나 실패했으면 그 작업만 `next`·계획 배정·검증 실행·코드 쓰기·선언된 명령·`submit`(start·continue)·사람 응답 뒤 재개를 하지 않고, 재개 판정이 `knowledge-blocked`(이유 `knowledge-<원인>`)다. 판정은 검증 기록과 현재 파일만 읽는다 — 진단 로그를 지우거나 context 를 부르지 않아도 같다. 기록은 인계 해시가 같고 24시간 안이고 확인한 범위의 지금 해시가 같을 때만 인정한다. 다른 작업·인계 없는 작업·선택 참조(`required: false`) 실패·일반 검색 장애는 막지 않는다. 원인·사유·회복 표는 [플러그인 §10.9](plugins.md#109-진행-게이트--required-인계-참조)다.
+
+회복(`knowledge` 명령 — 그 작업의 실행이 진행 중이면 `busy`):
+
+```jsonc
+// 같은 참조만 다시 검증한다(지금 작업만, 새 검색 없음, required 를 바꾸지 않는다)
+{ "type": "knowledge", "payload": { "action": "verify" } }
+→ { "workId": "ORD-1", "knowledge": { "state": "blocked", "digest": "sha256:…", "blocked": [
+      { "itemId": "orders:doc/policy/order.md#cancel-rule", "required": true, "reason": "hash-mismatch", "cause": "hash-mismatch", "recovery": "replan" } ], … },
+    "resume": { "code": "knowledge-blocked", "next": { "action": "knowledge-replan", "by": "human" }, … }, "stateVersion": "sha256:…" }
+// 명시적 재계획 — 인계를 바꾸거나(null 이면 뗀다) 사유를 남긴다
+{ "type": "knowledge", "payload": { "action": "replace", "reason": "정책 문서 개정 반영", "knowledge": { "version": 2, "refs": [ … ] } } }
+→ { "workId": "ORD-1", "replaced": true, "knowledge": { "refs": 1, "version": 2, "digest": "sha256:…", "receipt": "stored", "verification": "pending" },
+    "approval": { … }, "resume": { … }, "stateVersion": "sha256:… " }
+```
+
+- `verify` — 지금 작업에 인계가 있을 때만(다른 작업 ID 는 `invalid-state`). 결과로 `knowledge.verified`·`knowledge.blocked` 이벤트를 남긴다.
+- `replace` — `reason` 이 필수이고 새 인계는 `submit` 과 같은 꼴·형식·범위 검사를 받는다. 같은 해시면 바꾸지 않는다(`replaced: false`). 바꾸면 작업 연결의 `knowledgeHistory`(최근 20개 — 시각·이전·새 해시·사유·제어자·명령 ID)에 남기고 검증 기록을 지우고 `knowledge.replaced` 이벤트를 남긴다. 계획 승인 해시가 인계 해시를 담으므로 교체 뒤 이전 승인은 무효다(다시 승인받는다).
+- 회복은 이 둘뿐이다 — `required` 를 자동으로 낮추거나 활성 세대의 같은 ID 로 갈아 끼우거나 범위를 넓혀 다시 찾지 않는다.
+
+권한: 모델에게 agent-knowledge 를 열지 않는다. 관리 실행의 기본 허용 도구(`DEFAULT_ALLOWED_TOOLS`)에 agent-knowledge CLI 를 넣지 않으며, 어댑터 하위 명령(`code-agent plugin agent-knowledge`)은 hook 의 모델 명령 허용 목록에 없고, 작업·세션 밖의 셸에서도 hook 이 거부한다. 어댑터는 code-agent 가 문맥을 만들거나 재검증할 때 플러그인으로만 부른다. 모델이 부르는 재검증(`code-agent knowledge verify`)도 고정된 참조만 다시 대조한다.
+
+이 계약은 agent-knowledge 공통 계약(「인계 형식」·「hello 공지」·「송신 결정」·「수신 확인」)의 수신 쪽 구현이다. 실제 master-agent 와의 통합 시험은 하지 않았다(§14).
 
 ## 12. 사람의 설정과 정책
 
@@ -411,7 +451,8 @@ code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자�
 | `commands/<commandId>.json` | 처리 상태(`received`·`accepted`·`rejected`)와 기록된 응답 |
 | `pairing/<challengeId>.json` | 페어링 챌린지(제어자·프로젝트 경로·nonce·만료·사용 시각). 만료한 것은 다음 챌린지 때 지운다 |
 | `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과, master 가 고른 실행 방식(`execution`)·인계한 지식 참조(`knowledge`) |
-| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록, 그 작업에 고정한 실행 방식(`execution`)·지식 참조(`knowledge`) |
+| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록, 그 작업에 고정한 실행 방식(`execution`)·지식 참조(`knowledge`)와 교체 이력(`knowledgeHistory`) |
+| `knowledge/<작업 ID>.json` | 인계 근거 검증 기록(`code-agent.knowledge-verification` v1 — 인계 해시·시각·검증한 곳·모드·참조마다 결과와 확인한 범위의 해시). 진행 게이트의 근거다. 교체하면 지운다 |
 | `events.jsonl` · `events-meta.json` · `observed.json` | 이벤트와 기록 ID, 마지막 진척 관찰 |
 | `control.lock` · `observe.lock` | 제어·관찰 잠금 |
 
@@ -429,6 +470,6 @@ code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자�
 - 통신은 같은 PC 의 CLI 호출이다. 원격 연결·밀어넣기 이벤트는 없다.
 - PC 신뢰 키·연결 토큰·사람 채널 키는 같은 OS 계정의 다른 프로세스가 읽을 수 있다. 그 계정을 탈취한 프로세스는 페어링·사람 응답을 할 수 있다([페어링](#pc-신뢰와-대시보드-페어링)).
 - 한 프로젝트에 실행은 한 번에 하나다. 여러 프로젝트는 master 가 프로젝트마다 따로 부른다.
-- 지식 항목 참조 인계(§11)는 제안 단계 계약이다. 모의 시험(`masterKnowledge.test.ts`)으로만 확인했고 실제 master-agent 와 맞춰 보지 않았다. 이미 연 작업의 인계를 바꾸는 명령은 없다 — 다른 근거가 필요하면 새 작업으로 시작한다.
+- 지식 항목 참조 인계(§11)는 수신·게이트를 모의 제어 시험(`masterKnowledge.test.ts`)·공통 계약 사례·실제 agent-knowledge CLI 로 확인했고, 실제 master-agent 의 송신과는 맞춰 보지 않았다. 이미 연 작업의 인계는 `knowledge replace` 로만 바꾼다 — 공통 계약은 고정된 인계를 바꾸지 않고 새 작업으로 재계획하는 것을 기본으로 두며, 이 빌드는 그와 함께 이력·승인 무효를 남기는 명시적 교체를 연다(교체를 쓸지는 master·사람의 정책이다). 검증 기록의 유효 시간(24시간)은 고정값이다.
 - 다른 저장소의 산출물을 가져다 쓰는 작업은 통합 검증(`code-agent integrate`)이 기준 커밋을 뜬 깨끗한 worktree 에서 돌므로, 형제 저장소의 상대 경로가 풀리지 않는다. 프로젝트 사이 의존은 사람이 도입 설정에서 `code-agent.json`의 `prepare`로 깨끗한 트리에 잇는다. master 연동은 이 설정을 만들거나 바꾸지 않는다 — 매니페스트는 계획 승인이 묶는다.
 - 프로세스 확인은 Windows 에서 PowerShell `Get-CimInstance`, 그 밖에서 `/proc`·`ps`로 명령줄을 본다. 확인하지 못하면 `unknown`으로 두고 끝내지 않는다.

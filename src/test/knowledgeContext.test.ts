@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { context, next } from "../agent/commands";
 import { consentSnapshot } from "../agent/consent";
-import { KNOWLEDGE_LOG, optionalDocsInput } from "../agent/knowledgeContext";
+import { KNOWLEDGE_LOG, optionalDocsInput, registrationFingerprint, SHADOW_REFRESH_ENV } from "../agent/knowledgeContext";
 import { loadActive } from "../agent/layout";
 import type { KnowledgeRef } from "../agent/plugins/protocol";
 import { readStore, writeStore } from "../agent/plugins/store";
@@ -269,7 +269,7 @@ describe("지식 검색 연결 — off", () => {
     assert.doesNotMatch(before, /인계받은 지식 근거|근거 재확인 필요|검증 제외/);
   });
 
-  test("master 인계 참조가 있는데 어댑터가 없으면 required 참조를 adapter-unavailable 로 재확인 블록에 싣는다 — 나머지 줄은 그대로", () => {
+  test("master 인계 참조가 있는데 연결이 off 면 생산자를 부르지 않고 required 참조를 adapter-off 로 재확인 블록에 싣는다 — 나머지 줄은 그대로", () => {
     toImpact();
     const before = context(repo);
     handoff([
@@ -277,7 +277,7 @@ describe("지식 검색 연결 — off", () => {
       { itemId: "kb:doc/architecture.md#a99", generation: 2, commit: head(), itemSha256: "d".repeat(64), required: false },
     ]);
     const text = context(repo);
-    const block = "\n\n## 근거 재확인 필요 (인계 항목 검증 실패 — 범위를 넓혀 다시 찾지 말고 이 작업의 근거를 다시 확인하거나 재계획을 요청한다)\n- kb:doc/architecture.md#a14: adapter-unavailable";
+    const block = "\n\n## 근거 재확인 필요 (인계 항목 검증 실패 — 범위를 넓혀 다시 찾지 말고 이 작업의 근거를 다시 확인하거나 재계획을 요청한다)\n- kb:doc/architecture.md#a14: adapter-off";
     assert.ok(text.includes(block));
     assert.equal(text.replace(block, ""), before, "블록 말고는 off 와 같다");
     assert.doesNotMatch(text, /#a99/, "required 가 아닌 실패는 화면에 싣지 않는다");
@@ -285,7 +285,7 @@ describe("지식 검색 연결 — off", () => {
     assert.equal(record.mode, "off");
     assert.equal(record.outcome, "adapter-unavailable");
     assert.deepEqual(record.pinned.map((entry: any) => [entry.itemId, entry.ok, entry.reason]), [
-      ["kb:doc/architecture.md#a14", false, "adapter-unavailable"], ["kb:doc/architecture.md#a99", false, "adapter-unavailable"],
+      ["kb:doc/architecture.md#a14", false, "adapter-off"], ["kb:doc/architecture.md#a99", false, "adapter-off"],
     ]);
   });
 });
@@ -485,13 +485,13 @@ describe("지식 검색 연결 — enabled", () => {
     assert.match(block, /`BR-ORDER-03` 주문 등록 승인 \[업무 정책 · 필수 확정[^\]]*\] \(기본 검색이 고름\)/);
   });
 
-  test("어댑터가 refs 를 받지 않는 등록이면 인계 참조는 adapter-unavailable", () => {
+  test("어댑터가 refs 를 받지 않는 등록이면 인계 참조는 adapter-unsupported", () => {
     register(["context.docs.phase"]);
     reply({ sections: [] });
     handoff([{ itemId: "kb:doc/architecture.md#a1", generation: 2, commit: head(), itemSha256: "c".repeat(64), required: true }]);
     const text = context(repo);
     assert.equal(seen().input.refs, undefined);
-    assert.match(text, /- kb:doc\/architecture\.md#a1: adapter-unavailable/);
+    assert.match(text, /- kb:doc\/architecture\.md#a1: adapter-unsupported/);
   });
 });
 
@@ -566,6 +566,116 @@ describe("지식 검색 연결 — shadow", () => {
     writeStore({ ...store, plugins: { ak: { ...store.plugins.ak, adapter: { ...store.plugins.ak.adapter, describedAt: "2026-11-11T00:00:00.000Z" } } } });
     assert.equal(context(repo), off);
     assert.equal(calls(), 3);
+  });
+
+  /** 기록의 시각을 모두 ms 앞으로 옮긴다 */
+  const ageLog = (ms: number): void => {
+    const path = join(repo, KNOWLEDGE_LOG);
+    const old = new Date(Date.now() - ms).toISOString();
+    writeFileSync(path, readFileSync(path, "utf-8").split("\n").filter(Boolean).map((line) => JSON.stringify({ ...JSON.parse(line), at: old })).join("\n") + "\n");
+  };
+  /** 등록 명령 뒤에 인자를 더하고 어댑터 이름을 바꾼다(다시 등록하지 않은 채 같은 경로의 파일만 바뀌는 상황을 만든다) */
+  const extendRegistration = (args: string[], name?: string): void => {
+    const store = readStore();
+    const ak = store.plugins.ak;
+    writeStore({ ...store, plugins: { ak: { ...ak, command: [...ak.command, ...args], adapter: { ...ak.adapter, ...(name ? { name } : {}) } } } });
+  };
+
+  test("성공한 비교 뒤 같은 경로의 어댑터 설정 내용·생산자 설정·DB(WAL)가 바뀌면 다시 비교한다 — 바뀌지 않으면 다시 부르지 않는다", () => {
+    const off = context(repo);
+    const cfg = join(tools, "agent-knowledge.json");
+    const sources = join(tools, "sources.json");
+    const db = join(tools, "kb.db");
+    const config = (project: string): string => JSON.stringify({ command: ["node", "producer.js"], sourcesConfig: "sources.json", db: "kb.db", projects: [{ root: repo, project }] });
+    writeFileSync(cfg, config("orders"));
+    writeFileSync(sources, "{\"sources\":[]}");
+    writeFileSync(db, "db-1");
+    writeFileSync(join(tools, "producer.js"), "// 생산자 1");
+    extendRegistration(["--config", cfg], "agent-knowledge");
+    declare({ ak: { shadow: ["context.docs"] } });
+    reply({ sections: [] });
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 1);
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 1, "같은 입력·같은 지문");
+    // 같은 경로의 설정 파일에서 프로젝트 대응만 바꾼다
+    writeFileSync(cfg, config("billing"));
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 2);
+    writeFileSync(sources, "{\"sources\":[\"kb\"]}");
+    context(repo);
+    assert.equal(calls(), 3, "생산자 원본 설정 내용");
+    writeFileSync(db, "db-2 — 다시 색인했다");
+    context(repo);
+    assert.equal(calls(), 4, "DB 교체·재색인(크기·수정 시각)");
+    writeFileSync(`${db}-wal`, "wal");
+    context(repo);
+    assert.equal(calls(), 5, "WAL 에만 쓴 재색인");
+    writeFileSync(join(tools, "producer.js"), "// 생산자 2 — 순위 방식이 바뀐 빌드");
+    context(repo);
+    assert.equal(calls(), 6, "생산자 명령 파일");
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 6);
+    assert.equal(new Set(records().map((record) => record.inputHash)).size, 6, "비교마다 다른 지문이다");
+  });
+
+  test("성공한 비교는 60분 뒤 다시 비교하고, CODE_AGENT_SHADOW_REFRESH=1 이면 바로 다시 비교한다", () => {
+    const off = context(repo);
+    declare({ ak: { shadow: ["context.docs"] } });
+    reply({ sections: [] });
+    context(repo);
+    assert.equal(calls(), 1);
+    ageLog(59 * 60 * 1000);
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 1, "60분 안의 성공은 다시 쓴다");
+    ageLog(61 * 60 * 1000);
+    assert.equal(context(repo), off);
+    assert.equal(calls(), 2, "60분이 지난 성공은 다시 비교한다");
+    const before = process.env[SHADOW_REFRESH_ENV];
+    process.env[SHADOW_REFRESH_ENV] = "1";
+    try {
+      assert.equal(context(repo), off);
+      assert.equal(calls(), 3, "강제 갱신");
+      context(repo);
+      assert.equal(calls(), 4);
+    } finally {
+      if (before === undefined) delete process.env[SHADOW_REFRESH_ENV]; else process.env[SHADOW_REFRESH_ENV] = before;
+    }
+    context(repo);
+    assert.equal(calls(), 4, "강제 갱신을 끄면 방금 비교를 다시 쓴다");
+    assert.equal(records().at(-1)!.outcome, "compared");
+  });
+
+  test("갱신 실패는 이전 성공을 지금 비교로 남기지 않는다 — 실패를 잠시 억제하되 설정을 고치면 바로 다시 부른다", () => {
+    const off = context(repo);
+    const cfg = join(tools, "adapter.json");
+    writeFileSync(cfg, "{\"v\":1}");
+    extendRegistration(["--config", cfg]);
+    declare({ ak: { shadow: ["context.docs"] } });
+    reply({ sections: [] });
+    context(repo);
+    const success = records().at(-1)!;
+    assert.equal(success.outcome, "compared");
+    writeFileSync(cfg, "{\"v\":2}");
+    crash();
+    assert.equal(context(repo), off, "실패해도 화면은 off 와 같다");
+    assert.equal(calls(), 2);
+    const failed = records().at(-1)!;
+    assert.equal(failed.outcome, "shadow-failed");
+    assert.notEqual(failed.inputHash, success.inputHash, "실패는 새 지문의 기록이다 — 이전 성공이 지금 설정의 비교가 아니다");
+    context(repo);
+    assert.equal(calls(), 2, "같은 지문의 실패는 잠시 다시 부르지 않는다");
+    writeFileSync(cfg, "{\"v\":3}");
+    reply({ sections: [] });
+    context(repo);
+    assert.equal(calls(), 3, "설정을 고치면 억제 시간을 기다리지 않는다");
+    assert.equal(records().at(-1)!.outcome, "compared");
+  });
+
+  test("등록 지문에 저장소 경로가 들어간다 — 다른 저장소의 비교를 다시 쓰지 않는다", () => {
+    const plugin = readStore().plugins.ak;
+    assert.notEqual(registrationFingerprint(repo, plugin), registrationFingerprint(join(repo, "..", "다른-저장소"), plugin));
+    assert.equal(registrationFingerprint(repo, plugin), registrationFingerprint(repo, plugin));
   });
 
   test("shadow 선언이 있어도 등록이 없으면 부르지도 기록하지도 않는다", () => {

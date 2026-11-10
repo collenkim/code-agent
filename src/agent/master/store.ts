@@ -102,7 +102,13 @@ export interface RunRecord {
   history: { at: string; state: RunState; note?: string }[];
 }
 /** execution 은 이 작업을 연 master 실행이 고른 실행 방식이다 — 작업이 끝날 때까지 교차 검증·단독 호스트 판정이 따르고, 사람의 execution --handoff 만 바꾼다 */
-export interface WorkBinding { workId: string; links: Links; boundAt: string; runId: string; controller: string; runs: string[]; execution?: RunExecution; knowledge?: KnowledgeHandoff }
+/** 인계 교체 기록 한 줄 — master 의 명시적 재계획(`knowledge replace`)이 남긴다. 해시는 knowledgeDigest */
+export interface KnowledgeReplacement { at: string; from: string | null; to: string | null; reason: string; controller: string; commandId: string }
+export interface WorkBinding {
+  workId: string; links: Links; boundAt: string; runId: string; controller: string; runs: string[]; execution?: RunExecution; knowledge?: KnowledgeHandoff;
+  /** 인계 교체 이력(최근 20줄) — 처음 고정한 인계를 바꾼 명시적 재계획만 */
+  knowledgeHistory?: KnowledgeReplacement[];
+}
 
 export interface EventRow { seq: number; logId: string; at: string; type: EventType; runId?: string; commandId?: string; stateVersion?: string; data?: unknown }
 

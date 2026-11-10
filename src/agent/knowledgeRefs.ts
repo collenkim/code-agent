@@ -5,7 +5,8 @@
  * - 참조는 섹션마다 엄격히 검사한다(`parseSectionRef`). 하나가 깨졌다고 호출 전체를 버리지 않는다.
  * - 읽는 파일은 이번 입력이 보낸 문서 경로(docRefs) 안의 상대 경로뿐이다. 원격 결과가 준 임의 경로를 열지 않는다.
  * - 줄 범위는 과거 줄 번호·같은 제목을 믿지 않는다. 적힌 범위의 해시가 맞으면 그대로(exact), 아니면 같은 길이의 창을
- *   제목 줄에서 시작하는 자리에서만 찾아 정확히 한 곳이 맞을 때만 옮긴다(moved). 문서 단위 항목은 exact 만 받는다.
+ *   제목 줄에서 시작하는 자리에서만 찾아 정확히 한 곳이 맞을 때만 옮긴다(moved). 문서 단위 항목과 분할 항목은 exact 만 받는다.
+ * - 줄 나눔은 생산자 해시 규칙과 같다 — BOM 을 떼고 `\r\n`·`\n`·`\r` 을 모두 줄 끝으로 본다(`splitLines`).
  * - 상태 표시는 어댑터가 준 상태를 올리지 않는다 — 확정이 아니면 확정이라고 쓰지 않는다.
  */
 import { execFileSync } from "child_process";
@@ -26,8 +27,9 @@ export interface DocSectionRef {
   itemId: string;
   projectId: string;
   sourceId: string;
-  /** DB 별 색인 세대 번호(1부터) */
+  /** DB 별 색인 세대 번호(1부터) — 생산자 V2 의 `indexGeneration` */
   generation: number;
+  /** 40자리(SHA-1) 또는 64자리(SHA-256) 소문자 16진 */
   commit: string;
   blobSha: string;
   documentSha256: string;
@@ -42,10 +44,21 @@ export interface DocSectionRef {
   declaredStatus: string | null;
   reason?: string;
   pinned?: boolean;
+  /** 생산자 V2 — DB 식별(32자리 16진). V1 응답·스키마 2 이전 DB 에는 없다(null) */
+  indexId?: string | null;
+  /** 생산자 V2 — 짧은 참조 핸들(기록·표시용, 대조에는 쓰지 않는다) */
+  handle?: string;
+  /** 생산자 V2 — 분할 항목이면 그 식별·내용 해시·줄 범위(원본 항목 범위 안). 원본 항목이면 null 또는 없음 */
+  segmentId?: string | null;
+  segmentSha256?: string | null;
+  segmentStartLine?: number | null;
+  segmentEndLine?: number | null;
 }
 
-const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
+/** 커밋·blob SHA — 저장소 해시 방식에 따라 40자리(SHA-1) 또는 64자리(SHA-256) */
+export const GIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const INDEX_ID = /^[0-9a-f]{32}$/;
 
 // 모르는 키를 받지 않는다 — 계약 밖의 필드가 섞인 참조는 어댑터와 호스트가 다른 것을 뜻할 수 있다
 const SECTION_REF_SCHEMA: z.ZodType<DocSectionRef> = z
@@ -55,8 +68,8 @@ const SECTION_REF_SCHEMA: z.ZodType<DocSectionRef> = z
     projectId: z.string().min(1),
     sourceId: z.string().min(1),
     generation: z.number().int().min(1),
-    commit: z.string().regex(HEX40),
-    blobSha: z.string().regex(HEX40),
+    commit: z.string().regex(GIT_SHA),
+    blobSha: z.string().regex(GIT_SHA),
     documentSha256: z.string().regex(HEX64),
     itemSha256: z.string().regex(HEX64),
     startLine: z.number().int().min(1),
@@ -68,9 +81,27 @@ const SECTION_REF_SCHEMA: z.ZodType<DocSectionRef> = z
     declaredStatus: z.string().nullable(),
     reason: z.string().optional(),
     pinned: z.boolean().optional(),
+    indexId: z.string().regex(INDEX_ID).nullable().optional(),
+    handle: z.string().min(1).max(64).optional(),
+    segmentId: z.string().min(1).max(600).nullable().optional(),
+    segmentSha256: z.string().regex(HEX64).nullable().optional(),
+    segmentStartLine: z.number().int().min(1).nullable().optional(),
+    segmentEndLine: z.number().int().min(1).nullable().optional(),
   })
   .strict()
-  .refine((ref) => ref.startLine <= ref.endLine, { message: "startLine 이 endLine 보다 뒤입니다" });
+  .refine((ref) => ref.startLine <= ref.endLine, { message: "startLine 이 endLine 보다 뒤입니다" })
+  // 분할 항목은 식별·해시·줄 범위가 함께 있고 원본 항목 범위 안이다. 원본 항목이면 분할 필드가 모두 비어 있다
+  .refine((ref) => segmentOf(ref) !== false, { message: "분할 필드가 어긋납니다" });
+
+/** 분할 범위 — 원본 항목이면 undefined, 필드가 어긋나면 false */
+export function segmentOf(ref: Pick<DocSectionRef, "itemId" | "startLine" | "endLine" | "segmentId" | "segmentSha256" | "segmentStartLine" | "segmentEndLine">):
+  { id: string; sha256: string; start: number; end: number } | undefined | false {
+  const { segmentId: id, segmentSha256: sha256, segmentStartLine: start, segmentEndLine: end } = ref;
+  if (id === undefined || id === null) return sha256 == null && start == null && end == null ? undefined : false;
+  if (typeof sha256 !== "string" || typeof start !== "number" || typeof end !== "number") return false;
+  if (!id.startsWith(`${ref.itemId}#`) || start > end || start < ref.startLine || end > ref.endLine) return false;
+  return { id, sha256, start, end };
+}
 
 /** 참조 하나를 엄격히 읽는다 — 형식이 어긋나면 undefined */
 export function parseSectionRef(value: unknown): DocSectionRef | undefined {
@@ -120,14 +151,19 @@ export function repoRelativePath(file: string): string | undefined {
 /** 문서를 줄로 읽는 함수 — 없으면 undefined. 한 번의 context 안에서 같은 파일을 여러 번 읽지 않게 캐시한다 */
 export type DocReader = (path: string) => string[] | undefined;
 
-/** BOM 을 떼고 `\r?\n` 으로 나눈다 — agent-knowledge 가 해시를 낸 원본 줄과 같은 단위다 */
+/** 생산자 해시 규칙의 줄 — BOM 을 떼고 `\r\n`·`\n`·`\r` 을 모두 줄 끝으로 본다 */
+export function splitLines(text: string): string[] {
+  return text.replace(/^﻿/, "").split(/\r\n|\n|\r/);
+}
+
+/** 문서를 생산자 해시 규칙의 줄로 읽는다(`splitLines`) — agent-knowledge 가 해시를 낸 원본 줄과 같은 단위다 */
 export function docReader(repoRoot: string): DocReader {
   const cache = new Map<string, string[] | undefined>();
   return (path) => {
     if (!cache.has(path)) {
       let lines: string[] | undefined;
       try {
-        lines = readFileSync(join(repoRoot, path), "utf8").replace(/^﻿/, "").split(/\r?\n/);
+        lines = splitLines(readFileSync(join(repoRoot, path), "utf8"));
       } catch {
         lines = undefined;
       }
@@ -160,6 +196,14 @@ export function verifySectionRef(section: Pick<DocSection, "path" | "ref">, docs
   if (!safeDocPath(path) || !docs.has(path)) return { ok: false, reason: "not-in-docs", itemId: ref.itemId, path };
   const lines = read(path);
   if (!lines) return { ok: false, reason: "missing-file", itemId: ref.itemId, path };
+  // 분할 항목은 그 분할 범위를 그 해시로만 본다 — 분할은 제목 줄에서 시작하지 않을 수 있어 옮겨 찾지 않는다
+  const segment = segmentOf(ref);
+  if (segment) {
+    const text = segment.end <= lines.length ? lines.slice(segment.start - 1, segment.end).join("\n") : undefined;
+    return text !== undefined && sha256(text) === segment.sha256
+      ? { ok: true, ref, path, start: segment.start, end: segment.end, how: "exact" }
+      : { ok: false, reason: "content-changed", itemId: ref.itemId, path };
+  }
   const length = ref.endLine - ref.startLine + 1;
   const hashAt = (start: number): string | undefined =>
     start + length - 1 <= lines.length ? sha256(lines.slice(start - 1, start - 1 + length).join("\n")) : undefined;
@@ -225,7 +269,7 @@ export function headingAt(lines: readonly string[], start: number): string | und
 export function headCommit(repoRoot: string): string | undefined {
   try {
     const out = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], { cwd: repoRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    return HEX40.test(out) ? out : undefined;
+    return GIT_SHA.test(out) ? out : undefined;
   } catch {
     return undefined;
   }

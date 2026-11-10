@@ -94,7 +94,7 @@ function finalState(run: RunRecord, host: { exitCode: number | null; isError?: b
   const automatic = host.permissionDenials?.find((d): d is { automatic: true; reason?: string } => !!d && typeof d === "object" && (d as { automatic?: unknown }).automatic === true);
   if (automatic) return { state: "blocked", reason: `감독이 호스트 권한 요청을 받지 않았습니다: ${automatic.reason ?? "지원 범위 밖"}` };
   if (host.permissionDenials?.length) return { state: "blocked", reason: "호스트 실행 권한이 거절·취소되었습니다" };
-  if (["needs-human", "limit-reached", "unobservable", "ownership-conflict", "stale-request"].includes(resume)) return { state: "blocked", reason: `code-agent 재개 판정 ${resume}` };
+  if (["needs-human", "knowledge-blocked", "limit-reached", "unobservable", "ownership-conflict", "stale-request"].includes(resume)) return { state: "blocked", reason: `code-agent 재개 판정 ${resume}` };
   return { state: "completed", reason: `호스트 턴이 끝났습니다 — code-agent 재개 판정 ${resume}` };
 }
 

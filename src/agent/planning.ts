@@ -9,6 +9,7 @@ import { sha } from "./docs";
 import { planFile, questionsFile, workDocsDir } from "./layout";
 import { parseQuestions } from "./questions";
 import { acquireLock } from "./lock";
+import { knowledgeGate, knowledgeHint, KnowledgeStop } from "./knowledgeGate";
 import { Stop } from "./stop";
 import { codexAgentName } from "./hosts";
 import { editVia } from "./hostText";
@@ -178,6 +179,12 @@ function currentRequestWork(root: string, work: Work): Work {
   requireRequestConfirmed(root, work.active.id, work.active.spec);
   const { active, notice } = syncRequestRevision(root, work.active);
   if (notice) throw new Stop(notice);
+  // master 인계 근거 — 이미 실패한 required 참조가 있으면 배정하지 않는다(진행 게이트와 같은 판정). 아직 검증 전·만료면 배정한다: 배정한
+  // 작업의 context 가 그 참조를 다시 대조해 검증 기록을 쓰고, 단계 이동은 그 기록으로 다시 판정한다
+  const gate = knowledgeGate(root);
+  if (gate.state === "blocked" && gate.blocked.some((entry) => entry.cause !== "unverified" && entry.reason !== "verification-expired")) {
+    throw new KnowledgeStop(gate, `계획 작업을 배정할 수 없습니다 — ${knowledgeHint(gate)}`);
+  }
   return active === work.active ? work : planningWork(root);
 }
 /**

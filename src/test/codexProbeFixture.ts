@@ -1,7 +1,9 @@
 /**
  * Codex 준비 조회의 시험 대역 — codexProbeRunner.query 를 실측(codex-cli 0.163.0) 꼴의 응답으로 바꿔 끼운다. 실제 Codex 와 사용자의
  * CODEX_HOME 을 띄우지 않는다. 실행 파일 해석(hostCommand)도 Codex 설치와 무관하게 지나가도록 CODE_AGENT_CODEX_BIN 을 이 node 로 두고,
- * 판정 기록이 사용자 홈에 남지 않게 CODE_AGENT_HOME 을 임시 폴더로 둔다.
+ * 판정 기록이 사용자 홈에 남지 않게 CODE_AGENT_HOME 을 임시 폴더로 둔다. 시험을 돌리는 부모 셸이 Codex 샌드박스(또는 권한 상승 셸)면
+ * 상속된 표지(CODEX_SANDBOX·CODEX_SANDBOX_NETWORK_DISABLED)가 모의 조회를 codex-sandboxed 로 막으므로 대역을 끼운 동안만 지웠다가 되돌린다
+ * — 제품의 샌드박스 판정(crossEnv.sandboxMarkers)은 그대로다.
  */
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
@@ -40,6 +42,7 @@ export function probeResponse(root: string, state: ProbeState, home = join(root,
  */
 export function stubCodexProbe(state: ProbeState | ((root: string) => CodexProbeRaw), options: { bin?: boolean } = {}): { restore(): void; calls(): number } {
   const original = codexProbeRunner.query, bin = process.env.CODE_AGENT_CODEX_BIN, home = process.env.CODE_AGENT_HOME;
+  const restoreSandbox = isolateSandboxMarkers();
   const store = mkdtempSync(join(tmpdir(), "ca-readiness-"));
   let count = 0;
   if (options.bin !== false) process.env.CODE_AGENT_CODEX_BIN = process.execPath;
@@ -50,8 +53,21 @@ export function stubCodexProbe(state: ProbeState | ((root: string) => CodexProbe
       codexProbeRunner.query = original;
       if (bin === undefined) delete process.env.CODE_AGENT_CODEX_BIN; else process.env.CODE_AGENT_CODEX_BIN = bin;
       if (home === undefined) delete process.env.CODE_AGENT_HOME; else process.env.CODE_AGENT_HOME = home;
+      restoreSandbox();
       rmSync(store, { recursive: true, force: true });
     },
     calls: () => count,
+  };
+}
+
+/** 시험을 돌리는 부모 셸에서 상속된 Codex 샌드박스 표지 — 모의 Codex 시험 동안만 지운다 */
+export const SANDBOX_MARKERS = ["CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED"] as const;
+
+/** 상속된 샌드박스 표지를 지우고 되돌리는 함수를 돌려준다. 시험이 스스로 표지를 켜는 경우는 그 시험이 다시 지운다 */
+export function isolateSandboxMarkers(): () => void {
+  const saved = Object.fromEntries(SANDBOX_MARKERS.map((key) => [key, process.env[key]]));
+  for (const key of SANDBOX_MARKERS) delete process.env[key];
+  return () => {
+    for (const key of SANDBOX_MARKERS) { const value = saved[key]; if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   };
 }

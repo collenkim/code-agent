@@ -57,6 +57,7 @@ description: 중단된 code-agent 작업을 현재 위치부터 재개한다 —
 | 작업·접수 없음 | `/ca-request` — 공통 문서가 없거나 미확정이면 `다음:` 이 가리키는 준비(`setup`·`docs`·`baseline` 동의)부터 |
 | 접수 없이 문서 세션만 열림 | `/ca-docs`(설정 `code-agent.json` 이 아직 없으면 `/ca-adopt`)로 마저 쓰고 Bash: `code-agent docs end` — 그 뒤 `다음:` 의 `setup`·`docs`·`baseline` 동의. 문서 세션 중에는 접수(`request begin`)가 거부된다 |
 | AI-DLC 차단 줄이 있음 | 진행하지 않고 차단 복구로 기존 절차 계속·종료 확인 후 재개·보류를 묻는다 |
+| `다음:` 의 `master 인계 근거` 줄(`knowledge-blocked`) | `knowledge verify` 를 안내하면 Bash: `code-agent knowledge verify` 뒤 `code-agent status`. 재계획 안내면 멈추고 사유를 보고한다 — 범위를 넓혀 다시 찾거나 `required` 를 바꾸지 않는다 |
 | 승인 무효(`승인 stale-*`·`unverified`·`none`) | `다음:` 의 재진입 순서대로 — 낡은 계획 작업이 있으면 `code-agent back <단계>` → 그 단계 스킬로 계획 작업 재실행 → `plan submit` → `plan` 동의, 없으면 지금 자리에서 `plan` 동의. `다음:` 이 두 갈래(계획을 바꿔야 하면 / 그대로면)를 보이면 바뀐 문서·지시서가 계획에 닿는지 사용자에게 한 줄로 알리고 고른다. 이 되감기는 사용자 지시 없이 한다 |
 | 계획 배정 `stale`·`다음:` 의 `[배정 식별 불일치·고아 실행]`(실행 중으로 기록된 배정) | `run` 없이 dispatch만 된 배정은 호출한다. `run`이 있고 이 대화의 담당이 아니거나 종료됐으면 `code-agent planning cancel <ID>` 뒤 `planning advance`. 이 대화에서 실행 중이면 결과를 기다린다 |
 | `다음:` 의 `[담당 출력 형식 오류]`·`[담당 결과 내용 오류]` | Bash: `code-agent planning advance` 의 `action`·`reasons` 를 따른다(형식 교정·수정 피드백 재배정·사람 판단). 같은 배정을 스스로 다시 부르지 않는다 |

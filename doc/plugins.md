@@ -202,6 +202,7 @@ argv 는 프로세스 목록에 보이고 환경변수는 손자 프로세스까
 | `context.docs.phase` | 이 context 의 단계 — `analysis` · `impact` · `design` · `plan` 중 하나 |
 | `context.docs.files` | 이 작업이 닿는 파일 — ② `02-analysis.md` 영향 범위 표의 파일 가운데 저장소 기준 상대 경로인 것(역슬래시·앞 `./`·끝 `/` 를 맞추고, 표에서 뽑힌 엔드포인트·절대 경로·`..` 는 뺀다). ② 가 없거나 남는 것이 없으면 싣지 않는다(analysis 에는 늘 없다) |
 | `context.docs.refs` | master 가 이 작업에 인계한 지식 항목 참조 `[{itemId, generation, commit, itemSha256, required}]` ([master 연동 §11](master-control.md#지식-항목-참조-인계)). 없으면 싣지 않는다 |
+| `context.docs.refs.indexed` | 기능 토큰 — `context.docs.refs` 와 함께 협의하면 형식 2 인계의 색인 식별·원본 범위·분할(`indexId`·`sourceId`·`path`·`startLine`·`endLine`·`segmentId`·`segmentSha256`·`segmentStartLine`·`segmentEndLine`)을 참조에 더해 보낸다. 없으면 참조를 위 다섯 필드로만 보낸다(`negotiatedInput`). 이 협의가 있어야 master `hello` 가 형식 2 를 받는다고 알린다 |
 
 `accepts` 가 없는 등록(선택 입력을 모르는 어댑터)에는 선택 필드가 하나도 가지 않는다 — **요청은 그 자리의 필수 입력뿐이다**
 (`context.docs` 는 `requirements`·`docs`·`limit`). 그런 어댑터의 등록 미리보기에는 `accepts` 줄이 없다. 등록 화면의 자리별 입력 줄(`SLOT_SENDS`)은
@@ -214,7 +215,7 @@ argv 는 프로세스 목록에 보이고 환경변수는 손자 프로세스까
 | `sections[].ref` | 그 절의 출처 참조. 스키마는 모양을 보지 않고 통과시키고 `code-agent context` 가 **절마다** 엄격히 검사한 뒤 지금 파일과 내용 해시가 맞은 범위만 싣는다(§10.6). 하나가 깨졌다고 호출 전체를 버리지 않는다 |
 | `fallback` | `{code, message?}` — 이번 결과를 쓰지 말고 기본 검색으로 돌라는 요청. `code` 는 `^[a-z0-9][a-z0-9-]{0,63}$` |
 | `diagnostics` | 객체. 지식 기록(§10.7)에만 남기고 화면(모델 입력)에 싣지 않는다 |
-| `pinned` | `[{itemId, ok, reason?, section?}]` — 입력 `refs` 마다 어댑터가 되찾은 결과 |
+| `pinned` | `[{itemId, segmentId?, ok, reason?, section?}]` — 입력 `refs` 마다 어댑터가 되찾은 결과. 분할 참조의 결과에는 `segmentId` 가 있고 호스트는 (`itemId`, `segmentId`) 로 맞춘다 |
 
 `fallback` 이 기본 검색으로 돌리는 것은 **그 필드를 낸 어댑터뿐**이다. `ref`·`fallback` 을 내지 않는 어댑터가 정상으로 돌려준
 빈 `sections` 는 지금처럼 "걸리는 항목 없음"이고 기본 검색으로 돌지 않는다.
@@ -542,11 +543,13 @@ A 와 B 가 같은 계획을 내는데 B 가 더 비싸면 그 자리는 끄는 
 
 ### 10.1 무엇을 하고 무엇을 하지 않나
 
-- **읽기 명령만 부른다** — `search`·`get`·`status`. `index`·`eval` 같은 쓰기 명령을 부르지 않고 원본 문서·색인 DB 를 바꾸지 않는다.
-  agent-knowledge 의 요청 스키마가 엄격해(모르는 키 거부) 그 CLI 가 이미 아는 필드만 보낸다.
+- **읽기 명령만 부른다** — `capabilities`·`status`·`search`·`get`. `index`·`eval`·`lease` 같은 쓰기 명령을 부르지 않고 원본 문서·색인 DB 를 바꾸지
+  않는다. agent-knowledge 의 요청 스키마가 엄격해(모르는 키 거부) 그 CLI 가 이미 아는 필드만 보낸다. 자식 프로세스 환경에서는 `AGENT_KNOWLEDGE_*`
+  변수를 지운다(`producerEnv`) — 상속된 값이 설정과 다른 DB·설정 파일을 가리키지 못하게.
 - **본문·발췌를 싣지 않는다.** 어댑터가 넘기는 것은 경로·제목·줄 범위·해시·상태(출처 참조 `ref`)뿐이고, `get` 의 `content`·`search` 의
   `excerpt` 는 버린다. 화면에 싣는 범위는 `code-agent context` 가 지금 작업 트리 파일을 읽어 내용 해시로 확인한 것뿐이다(§10.6).
-- **검색 결과는 한 세대만 합친다.** 둘째 질의부터 첫 응답의 색인 세대(`version.generation`)에 고정한다. 인계 참조는 인계받은 세대로 되찾는다.
+- **응답 형식을 협의한다**(10.4). 생산자가 형식 2 를 알리고 DB 가 스키마 2 면 형식 2(질의 묶음 한 번·문서 필터·출력 예산·색인 식별 고정), 아니면
+  형식 1(질의마다 한 번, 둘째 질의부터 첫 응답의 세대에 고정)이다. 인계 참조는 인계받은 세대(형식 2 는 그 DB 식별까지)로 되찾는다.
 - **지원 단계는 `analysis`·`impact`·`design`·`plan` 뿐이다** — `context.docs` 가 불리는 곳이다. `implement` 이후 단계는 부르지 않는다.
 - 반드시 적용하는 업무 정책·작업 경험·줄 범위·최신성은 지금처럼 `code-agent context` 가 붙인다. 어댑터는 순위만 바꾼다.
 - **어댑터는 `code-agent context` 가 플러그인으로만 부른다.** 세션·작업 중 모델의 셸 허용 목록에서 `plugin` 하위 명령은 `plugin list`
@@ -569,10 +572,11 @@ A 와 B 가 같은 계획을 내는데 B 가 더 비싸면 그 자리는 끄는 
 - 선언 제약은 §4 — 한 플러그인이 같은 자리를 `slots`·`shadow` 에 함께 적거나 두 플러그인이 같은 자리를 `shadow` 로 선언하면 형식 오류다.
 - 선언이 있어도 이 PC 에 등록이 없으면 shadow 는 아무것도 하지 않고, enabled 는 기본 구현 + 알림 한 줄(§5)이다.
 - **연결 해제**는 선언을 지우거나 `shadow` 로 옮기면 된다. 작업·등록을 지우지 않아도 다음 context 부터 기본 검색으로 돈다.
-  다만 master 가 그 작업에 인계한 참조가 있으면 enabled 어댑터가 없으므로 `required` 참조가 `adapter-unavailable` 로 재확인 블록에 남는다(§10.6).
+  다만 master 가 그 작업에 인계한 참조가 있으면 생산자를 부르지 않고 `required` 참조를 `adapter-off`(등록이 없으면 `adapter-unregistered`, `refs` 협의가
+  없으면 `adapter-unsupported`)로 재확인 블록에 싣고, 진행 게이트(§10.9)가 **그 작업만** 보류한다 — 연결을 끊어 필수 근거를 조용히 지우지 않는다.
 - 이 키를 모르는 이전 릴리스는 `shadow` 를 버리고 기본 구현으로 돈다(§4). 이전 릴리스에는 이 어댑터 하위 명령도 없다.
-- master `hello` 는 이 모드를 `knowledge.mode` 로 알린다. 인계 참조는 enabled·등록·`context.docs.refs` 협의가 모두 있을 때만 받는다
-  ([master 연동 §3·§11](master-control.md#지식-항목-참조-인계)).
+- master `hello` 는 이 모드를 `knowledge.mode` 로 알린다. 인계 참조는 enabled·등록·`context.docs.refs` 협의가 모두 있을 때만 받고, 형식 2 는
+  `context.docs.refs.indexed` 협의까지 있을 때만 받는다(`knowledge.refs.versions`, [master 연동 §3·§11](master-control.md#지식-항목-참조-인계)).
 
 ### 10.3 설정·등록·제거
 
@@ -595,7 +599,9 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
   "sourcesConfig": "D:/kb/sources.yaml",        // 선택 → agent-knowledge --config
   "retrievalConfig": "D:/kb/retrieval.yaml",    // 선택 → --retrieval-config
   "db": "D:/kb/knowledge.sqlite",               // 선택 → --db
-  "projects": [ { "root": "C:/IdeaProjects/orders", "project": "orders", "sources": ["orders"] } ],
+  "projects": [ { "root": "C:/IdeaProjects/orders", "project": "orders", "sources": ["orders"],
+                  "retrieval": { "ranker": "bm25", "segments": true } } ],  // 선택 — 이 프로젝트만 순위 방식·분할 점수를 바꾼다
+  "responseVersion": "auto",                    // 선택 — auto(기본)·1·2
   "limits": { "timeoutMs": 8000, "maxQueries": 4 }
 }
 ```
@@ -604,7 +610,9 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 |---|---|
 | `schemaVersion` | `1` |
 | `command` | agent-knowledge 를 실행하는 argv 접두(1개 이상). 셸 없이 실행한다(Windows `.cmd`·`.bat` 은 cmd.exe 로 한 줄). 첫 낱말이 이름뿐이면 **PATH 에서만** 찾고, 경로를 적었으면 설정 파일 폴더 기준이다 |
-| `projects` | `[{root, project, sources?}]` 1개 이상. `root` 는 저장소 루트, `project`·`sources` 는 agent-knowledge 의 프로젝트·원본 ID(`^[a-z0-9][a-z0-9._-]{0,63}$`). `sources` 를 적으면 그 원본의 항목만 쓴다. 같은 `root` 를 두 번 적으면 형식 오류다 |
+| `projects` | `[{root, project, sources?, retrieval?}]` 1개 이상. `root` 는 저장소 루트, `project`·`sources` 는 agent-knowledge 의 프로젝트·원본 ID(`^[a-z0-9][a-z0-9._-]{0,63}$`). `sources` 를 적으면 그 원본의 항목만 쓴다. 같은 `root` 를 두 번 적으면 형식 오류다 |
+| `responseVersion` | 선택 — 생산자 응답 형식. `auto`(기본, 협의) · `1`(형식 1만 — `capabilities` 도 부르지 않는다) · `2`(형식 2만 — 쓸 수 없으면 `response-version-unavailable` 로 실패). 인계 형식(master `knowledge.version`)과 다른 번호다 |
+| `retrieval` | 선택 — `{ranker?: "legacy" \| "bm25", segments?: boolean}`. 최상위 값 위에 `projects[].retrieval` 을 키마다 덮는다. 적지 않으면 보내지 않아 생산자 기본(legacy·분할 없음)이다 — 전역 기본을 바꾸지 않는다. 형식 2 이고 생산자가 `capabilities` 로 알린 것만 싣고, 못 실은 기본값 밖의 값은 진단 `featuresDropped` 에 남긴다 |
 | `sourcesConfig` · `retrievalConfig` · `db` | 선택 — 각각 agent-knowledge 의 `--config`·`--retrieval-config`·`--db` 로 간다 |
 | `limits` | 선택 — 아래 표. 적지 않은 키는 기본값 |
 
@@ -633,7 +641,8 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 설정을 기본 위치 밖에 두면 `--command "code-agent plugin agent-knowledge --config D:/kb/agent-knowledge.json"` 처럼 인자로 준다.
 `code-agent` 도 첫 낱말이라 PATH 에서만 찾는다(§6).
 
-- `describe` — `{name: "agent-knowledge", adapterVersion: <code-agent 패키지 버전>, slots: ["context.docs"], sendsCode: false, accepts: ["context.docs.phase", "context.docs.files", "context.docs.refs"], note: "로컬 agent-knowledge CLI 읽기 전용(search·get·status) — 색인·DB 쓰기 없음"}`. 키는 없다.
+- `describe` — `{name: "agent-knowledge", adapterVersion: <code-agent 패키지 버전>, slots: ["context.docs"], sendsCode: false, accepts: ["context.docs.phase", "context.docs.files", "context.docs.refs", "context.docs.refs.indexed"], note: "로컬 agent-knowledge CLI 읽기 전용(capabilities·search·get·status) — 색인·DB 쓰기 없음"}`. 키는 없다.
+  이 협의를 모르는 이전 등록은 `plugin remove` 뒤 다시 `add` 해야 형식 2 인계를 받는다.
 - `probe` — 설정을 읽고 `status` 로 `agent-knowledge.status` v1 과 활성 세대를 확인한다. 등록하는 위치가 대응된 저장소면 그 프로젝트의 원본이
   활성 세대에 색인돼 있어야 한다(없으면 `project-not-indexed`). 대응되지 않은 위치에서 등록하면 준비됨으로 두고 그 사실을 `detail` 에 적는다.
 
@@ -651,32 +660,52 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 
 ### 10.4 한 번의 호출
 
-1. **인계 참조** — 입력 `refs` 가 있으면 먼저 되찾는다(20개까지). 개수가 정해져 있고 실패가 근거 재확인으로 이어지므로, 마감에 걸려
-   건너뛰는 것은 뒤의 검색 질의 쪽이다. 참조마다 `get` 에 `{id, profile: "code", scope: {projects: [<대응 프로젝트>]}, version: {generation}}` 을
-   보내고, 응답의 세대·항목 ID·대응 프로젝트·원본·경로(이번 `docs` 안)·커밋·`itemSha256` 을 차례로 대조한다. 폐기 항목도 되찾은 그대로 내고
-   상태 표시는 호스트가 한다. 결과는 `pinned` 이고, 맞은 것의 `section.ref` 에 `pinned: true` 가 붙는다.
-2. **질의** — 요구 항목 문장의 공백을 정리하고 같은 글을 지운다. `maxQueries` 이하면 항목마다 하나, 넘으면 순서를 지켜 `maxQueries` 묶음으로 이어
-   붙인다(뒤 항목을 버리지 않는다). 질의마다 `queryChars` 이하로(가능하면 공백에서) 자른다. 남은 질의가 없으면 `no-query` 다.
-3. **검색** — `<command…> search [--config …] [--retrieval-config …] [--db …] --request -` 에 stdin 으로
-   `{profile: "code", query, scope: {projects: [<대응 프로젝트>]}, version?: {generation}, task?: {phase?, paths?}, limit}` 을 보낸다.
+0. **협의**(`negotiate`) — 참조나 질의가 있을 때만 부른다. `responseVersion` 이 1 이면 건너뛴다. `capabilities` 가 `search`·`get`·`status` 의
+   `responseVersions` 에 2 를 알리고 `status --response-version 2` 가 성공하면(스키마 2 DB — `indexId`·활성 세대) 형식 2 다. `capabilities` 가 없거나
+   (`usage` — `capabilities` 를 모르는 생산자 빌드) 형식 2 를 알리지 않거나 `status` 가 `index-missing`(`schema-upgrade-required`)이면 `auto` 는 형식 1 로 내려가고
+   (`diagnostics.fallbackFrom`), `2` 는 `response-version-unavailable` 로 실패한다. 형식 2 요청에 생산자가 `invalid-request`
+   (`unsupported-response-version`·`response-version-2-required`)로 답해도 같다. **그 밖의 답은 내려가는 사유가 아니다** — 해시·DB 식별·세대·커밋·범위
+   불일치는 같은 근거가 아니라는 답이라 형식 1 로 다시 묻지 않는다.
+1. **인계 참조** — 입력 `refs` 가 있으면 먼저 되찾는다(20개까지, (`itemId`, `segmentId`) 로 겹침을 본다). 개수가 정해져 있고 실패가 근거 재확인으로
+   이어지므로 마감에 걸려 건너뛰는 것은 뒤의 검색 쪽이다.
+   - 형식 2 — `get` 에 `{responseVersion: 2, id: <segmentId 또는 itemId>, profile: "code", scope: {projects: [<대응 프로젝트>]}, version: {generation, indexId?, exact: true, commits: {<원본>: <커밋>}}, expect: {itemSha256, segmentSha256?}}`.
+     생산자 오류는 `hash-mismatch`·`index-mismatch`(`index-id-mismatch`)·`generation-expired`(`generation-not-found`)·`commit-mismatch`
+     (`commit-not-in-generation`)·`not-found`·`out-of-scope`(`invalid-scope`)로 옮긴다. 돌아온 항목도 세대·DB 식별·항목·대응 프로젝트·원본·경로(이번 `docs` 안)·
+     커밋·해시·분할·참조가 적은 원본 범위(`range-mismatch`)를 다시 대조한다.
+   - 형식 1 — `get` 에 `{id, profile: "code", scope, version: {generation}}` 을 보내고 같은 순서로 대조한다. 색인 식별·분할을 가진 참조는 형식 1 `get` 이
+     대조하지 못하므로 확인했다고 하지 않는다(`identity-unverifiable`).
+   폐기 항목도 되찾은 그대로 내고 상태 표시는 호스트가 한다. 결과는 `pinned` 이고, 맞은 것의 `section.ref` 에 `pinned: true` 가 붙는다.
+2. **질의** — 요구 항목 문장의 공백을 정리하고 같은 글을 지운다. `maxQueries`(형식 2 는 `capabilities.queryLimits` 와 작은 쪽) 이하면 항목마다 하나,
+   넘으면 순서를 지켜 묶음으로 이어 붙인다(뒤 항목을 버리지 않는다). 질의마다 `queryChars` 이하로(가능하면 공백에서) 자른다. 형식 2 는 항목 하나짜리
+   질의에 요구 키를 질의 키로 쓴다. 남은 질의가 없으면 `no-query` 다.
+3. **검색**
+   - 형식 2 — 한 번에 `{responseVersion: 2, profile: "code", queries, overflow: "truncate", scope: {projects: [<대응 프로젝트>]}, filters?: {documents: <이번 docs 경로>}, include: {mandatory: false}, task?, limit, budget: {maxItems: limit, maxResponseBytes}, ranker?, segments?, version?: {generation, indexId, exact: true}}`.
+     `filters.documents` 는 등록 문서가 256개 이하일 때만(넘으면 받은 뒤 거른다), `maxResponseBytes` 는 `maxOutputBytes - 65536`(최소 4096)이다 — 플러그인
+     응답 상한 아래에 둔다. 고정은 협의 때 `status` 의 활성 세대·DB 식별이고 다른 색인의 결과면 `invalid-response` 다. 전체 마감(15초)은 형식과 관계없이
+     호출마다 남은 시간으로 제한 시간을 줄인다.
+   - 형식 1 — 질의마다 `<command…> search [--config …] [--retrieval-config …] [--db …] --request -` 에 `{profile: "code", query, scope, version?: {generation}, task?, limit}`.
    `task` 는 협의한 단계·작업 파일(`maxPaths` 까지)이 있을 때만 싣는다. 작업 파일은 저장소 기준 상대 경로만 보낸다 — agent-knowledge 는 하나라도
    아니면 요청 전체를 거부하므로(`invalid-path`) 엔드포인트·절대 경로·`..` 는 빼고 그 수를 `pathsDropped` 에 남긴다. `limit` 은 요청 `limit` 의
    두 배(최대 50, `requestLimit`)다 — 거른 뒤에도 `limit` 을 채우려고 넉넉히 받고 합친 뒤 자른다. 종료 코드 3 + `status: "no-results"` 는 오류가 아니다.
-4. **거르기** — 직접 결과(이유에 `explicit-key`·`path-overlap`·`keyword-match` 중 하나)만 쓴다. 필수 지정·의존·연결 항목은 세기만 한다 —
-   반드시 적용하는 정책은 code-agent 가 따로 붙인다. 대응 프로젝트·`sources` 밖, 상대 경로가 아니거나 이번 `docs` 밖의 경로, 항목 ID·세대·원본 커밋·해시
-   꼴·줄 범위가 응답의 색인 정보와 어긋나는 항목, 폐기 항목은 뺀다.
-5. **합치기** — 질의마다 거른 직접 결과의 순번 p(0부터)로 Σ 1/(10+p) 를 매기고, 같으면 항목 ID 의 바이트 순이다. 위에서 `limit` 개.
+4. **거르기** — 직접 결과(형식 2 는 `group: "direct"`, 형식 1 은 이유에 `explicit-key`·`path-overlap`·`keyword-match` 중 하나)만 쓴다. 필수 지정·의존·연결
+   항목은 세기만 한다 — 반드시 적용하는 정책은 code-agent 가 따로 붙인다. 대응 프로젝트·`sources` 밖, 상대 경로가 아니거나 이번 `docs` 밖의 경로, 항목 ID·
+   세대·원본 커밋·해시 꼴·줄 범위가 응답의 색인 정보와 어긋나는 항목(형식 2 는 `items[].ref` 가 항목·응답 색인과 다르거나, 분할을 요청하지 않았는데
+   분할이 온 것까지), 폐기 항목은 뺀다.
+5. **합치기** — 형식 2 는 생산자 순위(`directRank`) 그대로, 형식 1 은 질의마다 거른 직접 결과의 순번 p(0부터)로 Σ 1/(10+p) 를 매기고 같으면 항목 ID 의
+   바이트 순이다. 위에서 `limit` 개.
 6. **출력** — 절마다 `{path, heading, why, ref}`. `heading` 은 키가 있으면 `` `<키>` <제목> ``, 없으면 `<제목>`, `why` 는
    `agent-knowledge <이유>`(이유는 `·` 로 잇는다)다. `ref` 는 agent-knowledge 필드 이름 그대로다 — `engine: "agent-knowledge"`·`itemId`(`<원본>:<경로>#<위치>`)·`projectId`·`sourceId`·`generation`·`commit`·`blobSha`·`documentSha256`·
    `itemSha256`(원본 **문서** 줄 `startLine`..`endLine` 을 `\n` 으로 이은 글의 SHA-256)·`startLine`·`endLine`·`unit`(`document`·`section`·`entry`)·
-   `kind`·`status`·`confirmed`·`declaredStatus`·`reason?`·`pinned?`.
-7. **진단** — `diagnostics` 에 세대·원본 커밋·파서 등 버전·질의 수·잘라 낸 글자 수·건너뛴 질의·직접 결과 수·돌려준 수·뺀 사유별 수·제약 코드·
-   호출 수·소요·인계 결과 수를 싣는다. 본문·발췌는 싣지 않는다.
+   `kind`·`status`·`confirmed`·`declaredStatus`·`reason?`·`pinned?`. 형식 2 는 `indexId`·`handle` 과, 결과가 분할이면 `segmentId`·`segmentSha256`·
+   `segmentStartLine`·`segmentEndLine` 을 더한다.
+7. **진단** — `diagnostics` 에 응답 형식(`responseVersion`·`fallbackFrom`)·DB 식별·세대·원본 커밋·파서 등 버전·질의 수·잘라 낸 글자 수·건너뛴 질의·직접
+   결과 수·돌려준 수·뺀 사유별 수·제약 코드·호출 수·소요·인계 결과 수를 싣는다. 형식 2 는 `outcome`·순위 방식·`queryVersion`·`configHash`·`segments`·
+   `budget`(`truncated`·`omittedCount`)·`digests` 와 못 실은 기능(`featuresDropped`)을 더한다. 본문·발췌는 싣지 않는다.
 
 응답은 언제나 종료 코드 0 과 봉투 하나다. 첫 오류에서 멈추고 `ok:false` 의 `error` 를 `<코드>: <설명>` 으로 낸다 — 호스트는 기본 구현 + 알림
-한 줄로 돈다(§5). 인계 참조가 있으면 검색이 실패해도 `ok:true` 로 `pinned` 를 내고 검색 실패는 `fallback` 으로 바꿔 싣는다.
-전체 마감에 닿으면 — 다음 질의를 시작할 시간이 없거나, 진행 중인 질의가 마감 때문에 줄인 제한 시간에 끊기면 — 남은 질의를 건너뛰고
-(`queriesSkipped`) 앞 질의에서 받은 결과를 쓴다. 첫 질의도 마치지 못했으면 `timeout` 이다.
+한 줄로 돈다(§5). 인계 참조가 있으면 검색이 실패해도 `ok:true` 로 `pinned` 를 내고 검색 실패는 `fallback` 으로 바꿔 싣는다. 협의가 실패하면
+인계 참조마다 그 오류 코드를 `pinned` 사유로 낸다. 형식 1 에서 전체 마감에 닿으면 — 다음 질의를 시작할 시간이 없거나, 진행 중인 질의가 마감 때문에
+줄인 제한 시간에 끊기면 — 남은 질의를 건너뛰고(`queriesSkipped`) 앞 질의에서 받은 결과를 쓴다. 첫 질의도 마치지 못했으면 `timeout` 이다.
 
 ### 10.5 코드
 
@@ -690,7 +719,8 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 | `project-not-indexed` | (probe) 대응 프로젝트의 원본이 활성 세대에 없다 |
 | `not-installed` · `spawn-failed` | agent-knowledge 실행 파일이 없다(`node <스크립트>` 의 스크립트가 없어 `Cannot find module` 로 끝난 경우 포함) · 실행하지 못했다 |
 | `timeout` · `output-too-large` | 호출 제한 시간·전체 마감 · `maxOutputBytes` 를 넘었다 |
-| `invalid-json` · `invalid-response` · `unsupported-version` | stdout 이 JSON 이 아니다 · 응답 구조가 다르다(오류 봉투 없는 0 아닌 종료, 고정한 세대가 아닌 응답 포함) · `schema`·`schemaVersion` 이 `agent-knowledge.<명령>` v1 이 아니다 |
+| `invalid-json` · `invalid-response` · `unsupported-version` | stdout 이 JSON 이 아니다 · 응답 구조가 다르다(오류 봉투 없는 0 아닌 종료, 고정한 세대·DB 가 아닌 응답 포함) · `schema`·`schemaVersion` 이 `agent-knowledge.<명령>` 의 요청한 형식(v1·v2)이 아니다 |
+| `response-version-unavailable` | 설정 `responseVersion: 2` 인데 생산자·DB 가 형식 2 를 쓸 수 없다 |
 | agent-knowledge 의 `error.code` | 오류 봉투(`agent-knowledge.error` v1)의 코드 그대로 — `index-missing`·`invalid-scope`·`config-invalid`·`invalid-request`·`usage`·`not-found` 등. 식별자 꼴(`^[a-z0-9][a-z0-9-]{0,63}$`)이 아니면 `agent-knowledge-error` |
 | `adapter-error` | 어댑터 안의 예상하지 못한 예외 |
 
@@ -700,7 +730,9 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 |---|---|
 | `no-query` | 요구 항목 문장이 비어 질의를 만들지 못했다 |
 | `no-results` | 모든 질의가 결과 없음(종료 코드 3)이거나, 직접 결과도 필수 지정 자료도 없다 |
-| `mandatory-only` | 직접 결과 없이 필수 지정 자료만 왔다 |
+| `mandatory-only` | (형식 1) 직접 결과 없이 필수 지정 자료만 왔다 |
+| `supplementary-only` | (형식 2) `retrieval.outcome` 이 `supplementary-only` — 질의에 직접 걸린 항목 없이 필수·의존·연결 자료만 왔다 |
+| `budget-truncated` | (형식 2) 출력 예산으로 직접 결과가 모두 빠졌다 — 일부만 빠졌으면 남은 결과를 쓰고 `diagnostics.budget` 에 남긴다 |
 | `no-usable-items` | 직접 결과가 있었지만 모두 거르기(10.4 의 4)에서 빠졌다 |
 | 검색 오류 코드 | 인계 참조가 있는 요청에서 검색이 실패했다(위 오류 코드 그대로) |
 | `no-verified-items` | (호스트) 참조 절만 왔는데 지금 파일과 하나도 맞지 않았다 — 어댑터가 내는 코드가 아니다 |
@@ -715,13 +747,16 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 | `generation-expired` | 어댑터 | 그 세대가 색인에 없다(보존 범위에서 지워졌다 등) |
 | `not-found` | 어댑터 | agent-knowledge 가 그 항목을 찾지 못했다 |
 | `not-in-docs` | 어댑터·호스트 | 이번 요청의 등록 문서 밖 경로 |
-| `commit-mismatch` · `hash-mismatch` | 어댑터·호스트 | 되찾은 항목의 커밋·`itemSha256` 이 인계와 다르다 |
+| `commit-mismatch` · `hash-mismatch` | 어댑터·호스트 | 되찾은 항목의 커밋·`itemSha256`(분할은 `segmentSha256`)이 인계와 다르다 |
+| `index-mismatch` | 어댑터·호스트 | (형식 2) 인계의 DB 식별(`indexId`)과 다른 DB 에서 되찾았다 — 세대 번호가 같아도 다른 근거다 |
+| `range-mismatch` | 어댑터 | (형식 2) 되찾은 항목의 원본 경로·줄 범위가 인계가 적은 범위와 다르다 |
+| `identity-unverifiable` | 어댑터·호스트 | 색인 식별·분할을 가진 참조를 형식 1 생산자로만 되찾을 수 있다 · 되찾은 절에 DB 식별이 없다 |
 | `generation-mismatch` | 호스트 | 되찾은 절의 세대가 인계와 다르다 |
 | `invalid-response` · 호출 오류 코드 | 어댑터 | `get` 응답이 계약과 다르다 · 위 오류 코드 |
 | `missing-file` · `content-changed` · `ambiguous` | 호스트 | 지금 파일에서 그 범위를 확인하지 못했다(§10.6) |
 | `not-returned` | 호스트 | 어댑터가 그 참조의 결과를 내지 않았다 |
 | `adapter-rejected` | 호스트 | 어댑터의 사유가 코드 꼴이 아니다 — 자유 글은 모델 입력에 싣지 않는다 |
-| `adapter-unavailable` | 호스트 | enabled 어댑터가 없다·호출이 실패했다·등록이 `context.docs.refs` 를 협의하지 않았다 |
+| `adapter-off` · `adapter-unregistered` · `adapter-unsupported` · `adapter-failed` | 호스트 | 생산자를 부르지 않았다(off·shadow — 인계 참조를 몰래 보내지 않는다) · enabled 인데 이 PC 에 등록이 없다 · 등록이 `context.docs.refs` 를 협의하지 않았다 · 어댑터 호출이 실패했다 |
 
 ### 10.6 호스트 검증 — `code-agent context`
 
@@ -731,10 +766,11 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 1. **참조 꼴** — 모르는 키, 16진 꼴(커밋·`blobSha` 40자, 해시 64자, 소문자), 정수·`generation ≥ 1`·`startLine ≤ endLine`, 열거값을 엄격히 본다.
    항목 ID 가 `<sourceId>:<절의 path>#` 로 시작하지 않으면 다른 문서의 해시이므로 받지 않는다. 어긋나면 `invalid-ref`.
 2. **경로** — 저장소 기준 상대 경로(역슬래시·절대·드라이브·`..`·`.`·빈 구성요소 없음)이고 이번 요청의 `docs` 경로 안이어야 한다. 아니면 읽지 않고 `not-in-docs`.
-3. **읽기** — BOM 을 떼고 `\r?\n` 으로 나눈다(agent-knowledge 가 해시를 낸 원본 줄과 같은 단위). 파일이 없으면 `missing-file`.
+3. **읽기** — BOM 을 떼고 `\r\n`·`\n`·`\r` 모두를 줄 끝으로 나눈다(`splitLines` — agent-knowledge 내용 해시 규칙과 같은 단위, 맨 CR 만 쓰는 파일도 같다). 파일이 없으면 `missing-file`.
 4. **범위 확인** — 적힌 줄 범위의 해시가 맞으면 그대로(exact). 아니면 같은 길이의 창을 **제목 줄(`#`~`######`)에서 시작하는 자리에서만**
-   찾아 정확히 한 곳이 맞으면 그 범위로 옮긴다(moved). 둘 이상이면 `ambiguous`, 없으면 `content-changed`. 문서 단위 항목(`unit: "document"`)은
-   exact 만 받는다. 과거 줄 번호·같은 제목을 그대로 믿지 않는다 — 언제나 해시로 확인한 범위만 쓴다.
+   찾아 정확히 한 곳이 맞으면 그 범위로 옮긴다(moved). 둘 이상이면 `ambiguous`, 없으면 `content-changed`. 문서 단위 항목(`unit: "document"`)과 분할
+   참조(`segmentId` — 분할 범위의 `segmentSha256` 으로 대조하고 그 범위만 싣는다)는 exact 만 받는다. 과거 줄 번호·같은 제목을 그대로 믿지 않는다 —
+   언제나 해시로 확인한 범위만 쓴다.
 5. **커밋** — 참조의 커밋이 HEAD 와 다르거나 범위를 옮겨 찾았으면 거부하지 않고 `기준 커밋 <7자> — 현재 파일과 일치 확인` 을 붙인다.
 
 확인된 범위는 이렇게 싣는다.
@@ -769,14 +805,14 @@ agent-knowledge 도 그 폴더를 작업 위치로 돈다. 기본 위치는 키 
 그것을 쓰지 않으므로, 순위가 바뀌었다는 이유로 off 에서 보이던 필수 정책이 사라지지 않게 한다.
 
 **인계 블록** — master 가 이 작업에 인계한 참조가 있으면(`master/workKnowledge.ts` `managedKnowledge` — 지금 작업의 연결, 작업 전이면 이 세션의
-master 실행 기록) 어댑터의 `pinned` 를 위 1~4 로 다시 대조하고, 인계와 항목 ID·`itemSha256`·세대·커밋이 같은지도 본다. 참고 문서 목록·검증 제외 줄·
-최신성 안내 뒤, 반드시 적용하는 업무 정책 앞에 둔다.
+master 실행 기록) 어댑터의 `pinned` 를 위 1~4 로 다시 대조하고, 인계와 항목 ID·`itemSha256`·세대·커밋(형식 2 는 DB 식별·분할 ID·분할 해시·경로까지)이
+같은지도 본다. 참고 문서 목록·검증 제외 줄·최신성 안내 뒤, 반드시 적용하는 업무 정책 앞에 둔다. 대조 결과는 진행 게이트의 검증 기록에도 쓴다(§10.9).
 
 - 확인된 것 — `## 인계받은 지식 근거 (master — 항목·세대·해시를 현재 파일과 대조)` 아래 같은 줄 꼴로.
 - 실패한 `required` 참조 — `## 근거 재확인 필요 (인계 항목 검증 실패 — 범위를 넓혀 다시 찾지 말고 이 작업의 근거를 다시 확인하거나 재계획을 요청한다)`
-  아래 `- <itemId>: <사유>`. `required` 가 아닌 실패는 기록에만 남는다.
-- 인계는 있는데 enabled 어댑터 호출이 없거나(off·shadow·등록 없음) 실패했거나 등록이 `refs` 를 협의하지 않았으면 모든 참조가 `adapter-unavailable` 이다.
-  off 에서도 이 블록만 더해지고 나머지 줄은 그대로다.
+  아래 `- <segmentId 또는 itemId>: <사유>`. `required` 가 아닌 실패는 기록에만 남는다.
+- 인계는 있는데 enabled 어댑터 호출이 없거나(off·shadow·등록 없음) 실패했거나 등록이 `refs` 를 협의하지 않았으면 모든 참조가 그 까닭의 사유
+  (`adapter-off`·`adapter-unregistered`·`adapter-unsupported`·`adapter-failed`)다. off 에서도 이 블록만 더해지고 나머지 줄은 그대로다.
 
 ### 10.7 기록 — `.code-agent/log/knowledge/context.jsonl`
 
@@ -791,10 +827,10 @@ master 실행 기록) 어댑터의 `pinned` 를 위 1~4 로 다시 대조하고,
 |---|---|
 | `at` · `mode` · `phase` · `plugin` | 시각 · 선언 모드(`off`·`shadow`·`enabled`) · 단계 · 플러그인 이름 |
 | `inputHash` · `head` | 협의된 입력 JSON·HEAD·등록 문서 내용 해시(shadow 는 등록 지문까지)를 묶은 SHA-256 · HEAD 커밋 |
-| `outcome` | 어댑터 결과 적용: `verified`(참조 확인)·`fallback`·`plugin`(참조를 쓰지 않는 출력), 인계만 있을 때: `plugin-failed`(enabled 호출 실패)·`not-registered`(enabled 인데 등록 없음)·`adapter-unavailable`(off·shadow). shadow 비교: `compared`·`shadow-failed` |
+| `outcome` | 어댑터 결과 적용: `verified`(참조 확인)·`fallback`·`plugin`(참조를 쓰지 않는 출력), 인계만 있을 때: `plugin-failed`(enabled 호출 실패)·`not-registered`(enabled 인데 등록 없음)·`adapter-unavailable`(off·shadow). shadow 비교: `compared`·`shadow-failed`. 재검증(`code-agent knowledge verify`·master `knowledge verify`): `reverified`(`by` 에 `verify`·`master`) |
 | `fallback` | `{code, by: "adapter" \| "host", message?}` |
 | `verified` · `rejected` | `[{itemId, path, start, end, how: exact\|moved, status}]` · `[{itemId?, path, reason}]` |
-| `pinned` | `[{itemId, required, ok, reason?, path?, start?, end?, how?}]` |
+| `pinned` | `[{itemId, segmentId?, required, ok, reason?, path?, start?, end?, how?, sha256?}]` — `sha256` 은 확인한 범위의 지금 내용 해시 |
 | `diagnostics` | 어댑터의 진단(64 KiB 를 넘으면 잘라 문자열로) |
 
 shadow 기록에는 더 붙는다.
@@ -806,20 +842,72 @@ shadow 기록에는 더 붙는다.
 | `candidate` | `{ok, error?, fallback?, verified, rejected, items}` — `items` 는 enabled 였다면 보였을 항목. 호출 실패·기본 검색 요청이면 기본 검색 결과다 |
 | `comparison` | `{baseline, candidate, overlap, onlyBaseline, onlyCandidate}` — 개수. `overlap` 은 같은 경로에서 줄 범위가 겹치는 쌍(범위 없는 항목은 문서 전체) |
 
+이 기록은 **진단**이다 — 진행 게이트는 이 파일을 읽지 않는다(지워도 판정이 같다, §10.9).
+
 shadow 는 화면 줄을 다 만든 뒤 같은 프로세스에서 부른다 — 화면·승인·계획 입력·동의 스냅샷에 아무것도 더하지 않지만 `context` 가 그 호출만큼
-늦어진다(어댑터 전체 마감 15초까지). shadow 의 `inputHash` 에는 등록 지문(명령·어댑터 버전·`describedAt`)도 들어간다. 기록 끝 50줄에 같은
-`inputHash` 의 `compared` 가 있으면 다시 부르지 않고, `shadow-failed` 는 10분 동안만 다시 부르지 않는다 — 설정·색인을 고친 뒤에는 다시 비교하되
-고장 난 연결이 context 마다 마감만큼 늦추지 않게. 입력·HEAD·등록 문서·등록 가운데 하나가 바뀌면 바로 다시 부른다. 무엇이 실패해도 던지지 않는다.
+늦어진다(어댑터 전체 마감 15초까지). shadow 는 인계 참조를 보내지 않고 진행 게이트의 검증 기록도 쓰지 않는다.
+
+**다시 비교하는 때** — shadow 의 `inputHash` 는 협의된 입력·HEAD·등록 문서 내용에 **등록 지문**(`registrationFingerprint`)을 묶는다. 등록 지문은 이 저장소
+경로(다른 저장소의 비교를 다시 쓰지 않는다)·등록 명령·어댑터 버전·`describedAt`·명령 인자 가운데 있는 절대 경로 파일의 내용이고, agent-knowledge
+어댑터면 어댑터 설정 파일(`--config` → `CODE_AGENT_KNOWLEDGE_CONFIG` → 기본 자리)의 내용, 그 설정이 가리키는 `sourcesConfig`·`retrievalConfig` 의 내용,
+`db` 와 `<db>-wal` 의 크기·수정 시각, 생산자 명령 파일의 크기·수정 시각을 더한다 — 같은 경로의 설정을 고치거나(프로젝트 대응·순위 방식·분할 설정 포함)
+DB 를 바꿔 끼우거나 재색인하거나 생산자 빌드를 바꾸면 다른 지문이다. 생산자를 부르지 않고 파일만 읽는다. 같은 `inputHash` 의 가장 최근 기록이
+
+- `compared` 이고 60분(`SHADOW_SUCCESS_TTL_MS`) 안이면 다시 부르지 않는다. 지나면 다시 비교한다 — 지문이 잡지 못하는 생산자 쪽 변화도 이 주기로 반영된다.
+- `shadow-failed` 이고 10분(`SHADOW_RETRY_MS`) 안이면 다시 부르지 않는다 — 고장 난 연결이 context 마다 마감만큼 늦추지 않게. 설정을 고치면 지문이
+  바뀌어 기다리지 않고 바로 다시 부른다.
+- 시각이 미래이거나 읽을 수 없으면 다시 부른다.
+
+`CODE_AGENT_SHADOW_REFRESH=1` 이면 기록과 관계없이 다시 비교한다(강제 갱신). 갱신이 실패하면 그 실패가 새 지문의 기록으로 남는다 — 이전 성공 기록은
+이전 지문의 것이라 지금 설정의 비교로 읽히지 않는다. 무엇이 실패해도 던지지 않는다.
 
 ### 10.8 상태와 한계
 
-- **실제 Claude·Codex 호스트 세션에서는 확인하지 않았다.** 자동 시험은 가짜 agent-knowledge CLI(`src/test/agentKnowledgeFixture.ts`)로 돌고,
-  실제 CLI 와 맞춘 결과·조건은 [검증 기록](reviews/2026-11-10-agent-knowledge-validation.md)에 있다.
-- **agent-knowledge 커밋 `695de23` 에서 확인한 CLI 계약에 기댄다** — `search`·`get`·`status` 의 `--request -` 입력, `agent-knowledge.<명령>` v1 응답,
-  결과 없음의 종료 코드 3, 오류 봉투 `agent-knowledge.error` v1. 이 꼴이 바뀌면 `unsupported-version`·`invalid-response` 로 기본 검색에 떨어진다.
-- 색인 DB 의 식별자가 없어 세대 번호는 DB 마다의 번호다. DB 를 바꾸면 같은 세대 번호가 다른 내용을 가리킬 수 있고, 그때는 해시 대조가 거른다.
-- agent-knowledge 는 긴 절을 나누지 않아 한 항목의 줄 범위가 길 수 있다. 호스트는 확인한 범위를 그대로 싣고 줄이지 않는다.
-- master 인계 참조는 제안 단계 계약이다([master 연동 §14](master-control.md#14-한계)).
+- **실제 Claude·Codex 호스트 세션에서는 확인하지 않았다.** 자동 시험은 가짜 agent-knowledge CLI(`src/test/agentKnowledgeFixture.ts`)와, 생산자 빌드가
+  있을 때 실제 CLI(`agentKnowledgeRealCli.test.ts` — 형식 2 협의·검색·get·호스트 대조, `knowledgeGateRealCli.test.ts` — 생산자 ItemRef 인계 → 재검증 →
+  진행 게이트)로 돈다. 결과·조건은 [검증 기록](reviews/README.md)에 있다.
+- **agent-knowledge 커밋 `71cd1c7` 에서 확인한 CLI 계약에 기댄다** — `capabilities`, `status --response-version 2`, 형식 2 `search`·`get`(`expect`·
+  `version.exact`), `--request -` 입력, 결과 없음의 종료 코드 3, 오류 봉투 `agent-knowledge.error` v1. 형식 1 은 같은 빌드에 `responseVersion: 1` 로 확인했다. 이 꼴이
+  바뀌면 `unsupported-version`·`invalid-response` 로 기본 검색에 떨어진다.
+- 형식 1 결과에는 DB 식별이 없어 세대 번호는 DB 마다의 번호다. 형식 2 는 `indexId` 로 DB 를 가르고(다른 DB 의 같은 세대 번호는 `index-mismatch`),
+  형식 1 로 내려간 실행은 해시 대조만 거른다.
+- 분할 점수(`segments`)를 켜지 않으면 긴 절의 줄 범위가 길 수 있다. 호스트는 확인한 범위를 그대로 싣고 줄이지 않는다.
+- master 인계는 공통 계약(agent-knowledge `docs/integration.md` 「인계 형식」)의 제안 단계다 — 형식 1 은 수신 구현, 형식 2·hello 확장은 이 빌드가
+  수신·게이트를 구현했고 master 송신은 아직 없다([master 연동 §14](master-control.md#14-한계)).
+
+### 10.9 진행 게이트 — required 인계 참조
+
+master 가 작업에 고정한 인계(`master/works/<작업>.json` 의 `knowledge`)에 `required` 참조가 있으면, 그 참조가 **같은 내용으로 확인되기 전·확인에
+실패한 뒤에는 그 작업만** 진행하지 않는다(`knowledgeGate.ts`). 일반 검색 장애·선택 참조 실패·인계 없는 작업·다른 작업은 영향이 없다.
+
+- **판정의 원천** — 검증 기록 `.code-agent/master/knowledge/<작업 ID>.json`(`{schema: "code-agent.knowledge-verification", version: 1, workId, digest, at, by, mode, plugin?, refs: [{itemId, segmentId?, required, ok, reason?, path?, start?, end?, sha256?}]}`)과
+  지금 파일이다. 기록은 `context`(analysis~plan 의 enabled 대조)·`code-agent knowledge verify`·master `knowledge verify` 가 쓰고 shadow 는 쓰지 않는다.
+  게이트는 생산자를 부르지 않고 기록과 확인한 범위의 지금 내용 해시만 본다 — 진단 로그를 지우거나 context 를 부르지 않거나 프로세스를 다시 띄워도
+  판정이 같다. master 폴더라 `.gitignore`(`*`)가 무시하고 동의 스냅샷 밖이다.
+- **무효가 되는 때** — 인계 해시(`knowledgeDigest`)가 기록과 다르면(인계 교체) `handoff-changed`, 기록이 없거나 그 참조의 줄이 없으면 `not-verified`,
+  검증한 지 24시간(`KNOWLEDGE_VERIFY_TTL_MS`)이 지나면 `verification-expired`, 확인한 범위의 지금 해시가 기록과 다르면 `source-changed`, 파일이 없으면
+  `source-deleted`. 판정은 인계 참조·문서·범위·인계 형식이 바뀌면 다시 확인을 요구한다.
+- **막는 자리** — `next`(단계 이동)·계획 작업 배정(이미 실패한 참조가 있을 때 — 검증 전·만료면 배정하고 그 context 가 대조한다)·검증 실행
+  (`check`·`test`·`review`·`integrate`·`repro`·`test-repair`)·hook 의 코드 쓰기(승인 판정 다음)·선언된 빌드·테스트 명령. 작업 폴더 문서 쓰기·
+  상태 조회·재검증은 열어 둔다. 관리 실행은 재개 판정 `knowledge-blocked` 로 `submit`(start·continue)·사람 응답 뒤 재개 실행을 열지 않는다.
+- **원인 갈래와 회복** — 상태 조회(`status --json` 의 `knowledge`·재개 사유 `knowledge-<원인>`)와 master `hello.knowledge.refs.gate` 가 같은 표를 쓴다.
+
+| 원인 | 사유 | 회복 |
+|---|---|---|
+| `unverified` | `not-verified` · `handoff-changed` · `record-unreadable` | 재검증 |
+| `expired` | `verification-expired` · `generation-expired` | 재검증 · 재계획 |
+| `hash-mismatch` | `hash-mismatch` | 재계획 |
+| `identity-mismatch` | `generation-mismatch` · `commit-mismatch` · `index-mismatch` | 재계획 |
+| `source-changed` · `source-deleted` | `content-changed` · `ambiguous` · `source-changed` · `range-mismatch` · `missing-file` · `source-deleted` | 재계획 |
+| `scope` | `not-found` · `out-of-scope` · `not-in-docs` · `invalid-ref` · `too-many-refs` · 인계 꼴 오류 | 재계획 |
+| `adapter` | `adapter-off` · `adapter-unregistered` · `adapter-unsupported` · `adapter-failed` · `not-returned` · `identity-unverifiable` · `invalid-response` · 그 밖의 호출 오류 | 재검증(연결·설정·생산자를 고친 뒤) |
+
+- **재검증**(`knowledge-reverify`) — 독립 실행은 모델이 `code-agent knowledge verify [--json]`, 관리 실행은 master 가 `{"type":"knowledge","payload":{"action":"verify"}}`.
+  고정된 참조만 enabled 어댑터로 다시 대조한다 — 새 검색을 하지 않고 `required` 를 바꾸지 않는다. off·미등록이면 생산자를 부르지 않고 그 사유로 다시 기록한다.
+- **재계획**(`knowledge-replan`) — master·사람이 `{"type":"knowledge","payload":{"action":"replace","reason":"…","knowledge":<새 인계 또는 null>}}`
+  로 인계를 명시적으로 바꾼다. 교체는 이력(`knowledgeHistory`)을 남기고 검증 기록을 지우며, 승인 해시가 인계 해시를 담으므로 이전 계획 승인을
+  다시 쓰지 않는다. 회복은 이 둘뿐이다 — `required` 를 자동으로 낮추거나 활성 세대의 같은 ID 로 바꾸거나 범위를 넓혀 다시 찾지 않는다.
+
 
 
 ## 계획 작업과의 관계

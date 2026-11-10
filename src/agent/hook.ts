@@ -39,6 +39,7 @@ import { executionMode } from "./executionMode";
 import { mentionsAidlc } from "./aidlc";
 import { CROSS_CHILD_DENY, crossChild } from "./crossEnv";
 import { agentName, commonAgentName, editVia, fileToolsHint, readToolVia, readVia, skill, viaShell, withNotation } from "./hostText";
+import { knowledgeGate, knowledgeHint } from "./knowledgeGate";
 import { reentryHint } from "./reentry";
 import { leaseGuard } from "./lease";
 import { noteHookOutput } from "./hookLog";
@@ -137,6 +138,8 @@ const MODEL_SUBCOMMANDS = [
   "plugin list",
   // 지식 찾기는 읽기 전용이다 — `knowledge` 목록·`prune` 은 사람의 자리라 열지 않는다
   "knowledge find",
+  // master 인계 근거의 재검증 — 고정된 참조만 다시 대조해 검증 기록을 쓴다(새 검색·required 변경 없음). 상태를 바꾸므로 임대를 본다
+  "knowledge verify",
   // 작업 경험·발견 보고 — add·report 는 이 작업의 기록 파일만 검사 뒤 쓴다(쓰기 경계·승인·한도를 바꾸지 않는다). list·show 는 읽기 전용
   "experience",
   "finding",
@@ -633,6 +636,12 @@ function decideTool(input: HookInput, projectDir?: string): string | undefined {
     // 작업 임대 — 기존 거부가 먼저이고, 상태를 바꾸는 code-agent 명령만 본다(읽기 명령·선언된 명령·읽기용 git 은 보지 않는다).
     // 거부되면 바깥 decide 가 동의 티켓을 내지 않는다
     if (reason || !work) return reason;
+    // master 인계 근거 게이트 — required 참조가 검증 전이거나 실패한 작업에서는 선언된 빌드·테스트 명령을 돌리지 않는다(code-agent 명령의
+    // 진행은 CLI 게이트가 같은 판정으로 막는다). 재검증·상태 조회·작업 문서 쓰기는 열어 둔다
+    if (!isModelCommand(command) && declaredCommand(manifest, command)) {
+      const knowledge = knowledgeHint(knowledgeGate(work.repoRoot));
+      if (knowledge) return `선언된 명령을 돌릴 수 없습니다 — ${knowledge}`;
+    }
     // 승인된 동의의 적용은 그 동의의 주인 세션이 한다 — 다른 창이 SessionStart 로 임대를 가져가도 적용이 막히지 않게(사람 확인 지점이 늘지 않는다)
     // 임대가 비었거나 이 세션 것이면 평소처럼 잡거나 touch 하고, 다른 세션이 쥐었으면 그 거부만 무시한다
     if (consentOwner) { leaseGuard(work, input.host ?? "claude", input.session_id); return undefined; }
@@ -915,6 +924,12 @@ function mentionsStore(command: string): boolean {
   return text.includes(normalized(storeDir())) || STORE_MARKERS.some((marker) => text.includes(marker)) || STORE_FILE_NAME.test(command);
 }
 
+/** 매니페스트가 선언한 빌드·테스트·명령과 글자 그대로 같은가 */
+function declaredCommand(manifest: Manifest | undefined, command: string): boolean {
+  return [manifest?.build, manifest?.test, ...Object.values(manifest?.commands ?? {})]
+    .some((argv) => Array.isArray(argv) && argv.length > 0 && argv.join(" ") === command);
+}
+
 function decideBash(manifest: Manifest | undefined, command: string, documenting: boolean, powershell = false): string | undefined {
   if (mentionsStore(command)) {
     return STORE_DENIED;
@@ -1069,6 +1084,9 @@ function decideWrite(work: Work, path: string, writer: Writer = {}): string | un
     // 재진입 순서(되감기는 낡은 계획 작업·계획 변경이 필요할 때만, 아니면 그 자리에서 plan 동의)는 status 의 `다음:` 과 같은 문장이다
     return `계획이 승인되지 않았습니다 (${approval.status}). ${reentryHint(work, approval) ?? ""}`;
   }
+  // master 인계 근거 게이트 — 승인과 같은 자리에서 같은 판정(knowledgeGate)을 본다. 작업 폴더 쓰기(질문·문서)는 위에서 이미 열렸다
+  const knowledge = knowledgeHint(knowledgeGate(work.repoRoot));
+  if (knowledge) return `코드를 쓸 수 없습니다 — ${knowledge}`;
   if (active.phase === "implement" && plan.tasks && !taskPaths(plan, plan.tasks.find(task => task.id === active.task)?.files ?? []).includes(path)) return `현재 Task ${active.task ?? "없음"}에 배정되지 않은 파일입니다: ${path}`;
 
   // 계획이 이 파일에 배정한 단계. 검증·리뷰는 고쳐 쓰는 자리라 커서가 아니라 이 단계의 규칙으로 본다.

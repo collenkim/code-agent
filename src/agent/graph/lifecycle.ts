@@ -78,6 +78,10 @@ export async function advanceFlow(root: string, options: StateOptions = {}): Pro
           return { route: existsSync(join(root, "code-agent.json")) ? "idle" : "setup" };
         }
         if (view.resume.code === "wait") return handoff("external", "wait", "wait", view.resume.next.hint ?? "진행 중인 담당의 결과를 기다립니다.");
+        // master 인계 근거 — 재검증은 이 세션이 code-agent knowledge verify 로, 재계획(인계 교체)은 master·사람이 한다. 단계 노드로 넘기지 않는다
+        if (view.resume.code === "knowledge-blocked") {
+          return handoff("knowledge", view.resume.next.by === "model" ? "agent" : "human", view.resume.next.action, view.resume.next.hint ?? nextStep(root).next);
+        }
         const pending = view.consents.open.some(item => item.status === "pending" || item.status === "approved");
         const planDraft = work.active.phase === "plan" && !work.plan && !pending && view.resume.next.action === "plan-consent";
         if (!planDraft && ["needs-human", "reapproval-required", "limit-reached"].includes(view.resume.code)) {

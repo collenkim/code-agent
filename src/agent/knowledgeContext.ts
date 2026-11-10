@@ -3,7 +3,8 @@
  *
  * 세 모드가 있고 판단은 저장소 선언(code-agent.json `plugins`)이 한다.
  * - off(선언 없음): 어댑터를 부르지 않는다. master 인계 참조가 없으면 읽거나 쓰는 것이 없고 기본 검색의 화면 그대로다. 인계 참조가
- *   남아 있으면 모두 adapter-unavailable 로 처리해 required 참조를 재확인 블록에 싣고 지식 기록에 남긴다.
+ *   남아 있으면 생산자를 몰래 부르지 않고 모두 adapter-off 로 처리해 required 참조를 재확인 블록에 싣고 검증 기록에 남긴다(진행 게이트가
+ *   그 작업만 멈춘다 — knowledgeGate.ts).
  * - enabled(`slots`): 어댑터 출력 중 출처 참조(`ref`)가 있는 섹션은 **지금 파일과 내용 해시가 맞은 범위만** 싣는다. 인덱스 항목·절과
  *   경로·줄 범위가 꼭 맞으면 그 항목(줄 범위·최신성·반드시 적용하는 정책 연결이 그대로 붙고, 구분·상태는 code-agent 문서가 정본이라
  *   어댑터 상태는 낮추는 신호만 덧붙인다), 아니면 확인한 범위만 부분 범위로 — 긴 원본 절 전체로 넓히지 않는다.
@@ -11,31 +12,40 @@
  * - shadow(`shadow`): 반환 줄을 다 만든 뒤 따로 불러 같은 검증으로 "enabled 였다면 보였을 범위"를 계산해 비교 기록만 남긴다.
  *   화면·승인·계획 입력·동의 스냅샷에 아무것도 더하지 않는다.
  *
- * 기록은 `.code-agent/log/knowledge/context.jsonl` 에만 쓴다 — Git 이 무시하고(init 의 `log/`) 동의 스냅샷도 빼는 자리라 작업 상태를
- * 흔들지 않는다. 본문은 싣지 않는다(항목 id·경로·줄 범위·사유·제목만).
+ * 진단·비교 기록은 `.code-agent/log/knowledge/context.jsonl` 에 쓴다 — Git 이 무시하고(init 의 `log/`) 동의 스냅샷도 빼는 자리라 작업
+ * 상태를 흔들지 않는다. 본문은 싣지 않는다(항목 id·경로·줄 범위·사유·제목만). 인계 참조의 검증 결과는 진행 게이트가 읽는 검증 기록
+ * (`.code-agent/master/knowledge/<작업 ID>.json`, 연동 폴더의 `.gitignore` 가 무시하고 동의 스냅샷도 뺀다)에 따로 쓴다 — 진단 로그는 근거가
+ * 아니다. shadow 는 검증 기록을 쓰지 않는다.
  */
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { createHash } from "crypto";
-import { dirname, join, posix } from "path";
+import { dirname, isAbsolute, join, posix, resolve } from "path";
+
+import { writeAtomic } from "../core/atomic";
 
 import type { Manifest } from "../core/manifest";
 import type { Hit, KnowledgeIndex } from "./knowledgeIndex";
 import { cautionLabel, commitNote, docReader, headCommit, headingAt, repoRelativePath, safeDocPath, statusLabel, verifySectionRef } from "./knowledgeRefs";
 import type { DocReader, RejectedRef, VerifiedRef } from "./knowledgeRefs";
-import { STATE_DIR } from "./layout";
-import { managedKnowledge } from "./master/workKnowledge";
+import { knowledgeGate, knowledgeRecordFile, KNOWLEDGE_RECORD_SCHEMA, KNOWLEDGE_RECORD_VERSION, rangeHash, type KnowledgeGate, type KnowledgeRecord } from "./knowledgeGate";
+import { loadActive, STATE_DIR } from "./layout";
+import { knowledgeRefKey } from "./master/protocol";
+import { ensureMasterDir } from "./master/store";
+import { managedKnowledgeOf } from "./master/workKnowledge";
 import { LOG_LINES, LOG_RESPONSE_BYTES, MAX_OUTPUT_ITEMS } from "./plugins/protocol";
 import type { ContextDocsPhase, DocSection, KnowledgeRef, PinnedResult, SlotInput, SlotOutput } from "./plugins/protocol";
-import { callShadow, clamp, knowledgeLink, negotiatedInput, shadowFor } from "./plugins/run";
+import { callShadow, callSlot, clamp, knowledgeLink, negotiatedInput, shadowFor, type KnowledgeLink } from "./plugins/run";
 import type { SlotResult } from "./plugins/run";
-import { readStore } from "./plugins/store";
+import { readStore, type StoredPlugin } from "./plugins/store";
 
 /** 지식 검색 진단·비교 기록 — 끝 LOG_LINES 줄만 남긴다 */
 export const KNOWLEDGE_LOG = posix.join(STATE_DIR, "log", "knowledge", "context.jsonl");
-/** 같은 입력의 shadow 를 다시 부르지 않으려고 보는 기록 끝 줄 수 */
-const SHADOW_RECENT_LINES = 50;
-/** 실패한 shadow 를 같은 입력으로 다시 부르기까지 기다리는 시간 */
-const SHADOW_RETRY_MS = 10 * 60 * 1000;
+/** 성공한 shadow 비교를 같은 입력(입력·HEAD·문서·등록·어댑터 설정·색인 지문)으로 다시 쓰는 시간 — 지나면 다시 비교한다 */
+export const SHADOW_SUCCESS_TTL_MS = 60 * 60 * 1000;
+/** 실패한 shadow 를 같은 입력으로 다시 부르기까지 기다리는 시간 — 설정을 고치면 지문이 바뀌어 바로 다시 부른다 */
+export const SHADOW_RETRY_MS = 10 * 60 * 1000;
+/** 이 환경변수가 `1` 이면 같은 입력의 비교가 남아 있어도 shadow 를 다시 부른다(강제 갱신) */
+export const SHADOW_REFRESH_ENV = "CODE_AGENT_SHADOW_REFRESH";
 
 type DocsOutput = SlotOutput["context.docs"];
 type DocsInput = SlotInput["context.docs"];
@@ -61,10 +71,10 @@ export function partialLine(item: PartialRange): string {
   return `- ${item.path} L${item.start}-L${item.end} · ${item.heading} (부분) [${item.label}]${item.why.length ? ` (${item.why.join(" · ")})` : ""}`;
 }
 
-/** master 가 이 작업에 인계한 지식 참조 — 없으면 undefined(읽기만 한다) */
+/** master 가 이 작업에 인계한 지식 참조(정규화한 꼴) — 없으면 undefined(읽기만 한다) */
 export function handoffRefs(repoRoot: string): KnowledgeRef[] | undefined {
   try {
-    return managedKnowledge(repoRoot)?.refs;
+    return managedKnowledgeOf(repoRoot)?.refs;
   } catch {
     return undefined;
   }
@@ -87,6 +97,7 @@ export function optionalDocsInput(phase: ContextDocsPhase | undefined, files: re
 // ---- 섹션 판정(enabled·shadow 가 같은 규칙을 쓴다) ----
 
 interface Judge {
+  root: string;
   /** 이번 입력이 보낸 문서 경로 — 이 밖은 읽지 않는다 */
   docs: ReadonlySet<string>;
   read: DocReader;
@@ -98,7 +109,7 @@ interface Judge {
 
 interface VerifiedRecord { itemId: string; path: string; start: number; end: number; how: "exact" | "moved"; status: string }
 interface RejectedRecord { itemId?: string; path: string; reason: string }
-interface PinnedRecord { itemId: string; required: boolean; ok: boolean; reason?: string; path?: string; start?: number; end?: number; how?: string }
+interface PinnedRecord { itemId: string; segmentId?: string; required: boolean; ok: boolean; reason?: string; path?: string; start?: number; end?: number; how?: string; sha256?: string }
 type FallbackRecord = { code: string; by: "adapter" | "host"; message?: string };
 
 interface Judged {
@@ -179,30 +190,43 @@ const reasonCode = (reason: string | undefined): string => (reason && /^[a-z0-9]
 /** master 인계 참조의 꼴 — 인계 때 검사(master/protocol.ts `knowledgeHandoffOf`)와 같은 조건의 최소한 */
 const wellFormedRef = (ref: KnowledgeRef): boolean =>
   ref.itemId.includes(":") && ref.itemId.includes("#") && Number.isSafeInteger(ref.generation) && ref.generation >= 1 &&
-  /^[0-9a-f]{40}$/.test(ref.commit) && /^[0-9a-f]{64}$/.test(ref.itemSha256);
+  /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(ref.commit) && /^[0-9a-f]{64}$/.test(ref.itemSha256);
 
 interface Pinned {
   shown: ShownItem[];
-  failed: { itemId: string; reason: string; required: boolean }[];
+  failed: { itemId: string; segmentId?: string; reason: string; required: boolean }[];
   records: PinnedRecord[];
 }
 
 /**
- * 인계 참조마다 어댑터가 되찾은 결과를 다시 대조한다 — 같은 항목 id·세대·커밋·항목 해시이고, 그 범위가 지금 파일과 맞아야 확인이다.
- * 참조를 보내지 못한 호출(선언·등록 없음, 실패, 어댑터가 참조를 받지 않음)이면 전부 adapter-unavailable 이다.
+ * 참조를 어댑터에 보내지 못한 까닭 — 생산자를 부르지 않았거나 부르지 못한 경우를 가른다(진행 게이트의 어댑터 갈래).
+ * off·shadow 는 인계 참조를 어댑터에 보내지 않는다(생산자를 몰래 부르지 않는다).
  */
-function pinnedOutcome(refs: readonly KnowledgeRef[], results: PinnedResult[] | undefined, sent: boolean, judge: Judge | undefined): Pinned {
+function unavailableReason(link: KnowledgeLink, output: DocsOutput | undefined): string {
+  if (link.mode !== "enabled") return "adapter-off";
+  if (!link.registered) return "adapter-unregistered";
+  if (!link.refs) return "adapter-unsupported";
+  return output === undefined ? "adapter-failed" : "not-returned";
+}
+
+/**
+ * 인계 참조마다 어댑터가 되찾은 결과를 다시 대조한다 — 같은 항목(·분할) id·세대·커밋·항목 해시·(형식 2면) 색인 식별·분할 해시이고, 그
+ * 범위가 지금 파일과 맞아야 확인이다. 참조를 보내지 못한 호출이면 전부 `unavailable` 사유다(adapter-off·adapter-unregistered·
+ * adapter-unsupported·adapter-failed).
+ */
+function pinnedOutcome(refs: readonly KnowledgeRef[], results: PinnedResult[] | undefined, unavailable: string | undefined, judge: Judge | undefined): Pinned {
   const pinned: Pinned = { shown: [], failed: [], records: [] };
   const seen = new Set<string>();
   for (const ref of refs) {
+    const segment = ref.segmentId ? { segmentId: ref.segmentId } : {};
     const fail = (reason: string): void => {
-      pinned.failed.push({ itemId: ref.itemId, reason, required: ref.required });
-      pinned.records.push({ itemId: ref.itemId, required: ref.required, ok: false, reason });
+      pinned.failed.push({ itemId: ref.itemId, ...segment, reason, required: ref.required });
+      pinned.records.push({ itemId: ref.itemId, ...segment, required: ref.required, ok: false, reason });
     };
     // 기록에서 읽은 참조의 꼴이 깨졌으면(workKnowledge 가 빈 값으로 남긴 것) 어댑터에 묻기 전에 형식 오류다
     if (!wellFormedRef(ref)) { fail("invalid-ref"); continue; }
-    if (!sent || !judge) { fail("adapter-unavailable"); continue; }
-    const result = results?.find((entry) => entry.itemId === ref.itemId);
+    if (unavailable || !judge) { fail(unavailable ?? "adapter-failed"); continue; }
+    const result = results?.find((entry) => knowledgeRefKey({ itemId: entry.itemId, segmentId: entry.segmentId ?? undefined }) === knowledgeRefKey(ref));
     if (!result) { fail("not-returned"); continue; }
     if (!result.ok) { fail(reasonCode(result.reason)); continue; }
     if (!result.section) { fail("invalid-ref"); continue; }
@@ -212,7 +236,14 @@ function pinnedOutcome(refs: readonly KnowledgeRef[], results: PinnedResult[] | 
     if (found.ref.itemSha256 !== ref.itemSha256) { fail("hash-mismatch"); continue; }
     if (found.ref.generation !== ref.generation) { fail("generation-mismatch"); continue; }
     if (found.ref.commit !== ref.commit) { fail("commit-mismatch"); continue; }
-    pinned.records.push({ itemId: ref.itemId, required: ref.required, ok: true, path: found.path, start: found.start, end: found.end, how: found.how });
+    // 형식 2 참조는 같은 DB(색인 식별)에서 되찾았을 때만 — 같은 세대 번호의 다른 DB 를 같은 근거로 보지 않는다
+    if (ref.indexId !== undefined && found.ref.indexId !== ref.indexId) { fail(found.ref.indexId ? "index-mismatch" : "identity-unverifiable"); continue; }
+    if ((ref.segmentId ?? null) !== (found.ref.segmentId ?? null)) { fail("invalid-ref"); continue; }
+    if (ref.segmentId && found.ref.segmentSha256 !== ref.segmentSha256) { fail("hash-mismatch"); continue; }
+    if (ref.path !== undefined && (found.path !== ref.path)) { fail("invalid-ref"); continue; }
+    const sha = rangeHash(judge.root, found.path, found.start, found.end);
+    pinned.records.push({ itemId: ref.itemId, ...segment, required: ref.required, ok: true, path: found.path, start: found.start, end: found.end, how: found.how,
+      ...(typeof sha === "string" && sha !== "missing" ? { sha256: sha } : {}) });
     const key = rangeKey(found.path, found.start, found.end);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -229,7 +260,7 @@ export function pinnedLines(pinned: DocsKnowledge["pinned"], render: (item: Show
   const required = pinned.failed.filter((entry) => entry.required);
   return [
     ...(pinned.shown.length > 0 ? ["", PINNED_TITLE, ...pinned.shown.map(render)] : []),
-    ...(required.length > 0 ? ["", RECHECK_TITLE, ...required.map((entry) => `- ${clamp(entry.itemId) || "(항목 id 없음)"}: ${entry.reason}`)] : []),
+    ...(required.length > 0 ? ["", RECHECK_TITLE, ...required.map((entry) => `- ${clamp(entry.segmentId ?? entry.itemId) || "(항목 id 없음)"}: ${entry.reason}`)] : []),
   ];
 }
 
@@ -297,6 +328,7 @@ export function applyDocsKnowledge(request: DocsRequest): DocsKnowledge {
   const name = result.name ?? link.plugin;
   const head = headCommit(request.repoRoot);
   const judge: Judge = {
+    root: request.repoRoot,
     docs: new Set((request.sent?.docs ?? []).map((doc) => doc.path)),
     read: docReader(request.repoRoot),
     head,
@@ -313,8 +345,10 @@ export function applyDocsKnowledge(request: DocsRequest): DocsKnowledge {
     applied.shown = judged.shown;
   }
   if (judged && judged.rejected.length > 0) applied.notes = [rejectedLine(judged.rejected)];
-  const pinned = pinnedOutcome(refs ?? [], output?.pinned, output !== undefined && Array.isArray(negotiated?.refs), judge);
+  const refsSent = output !== undefined && Array.isArray(negotiated?.refs);
+  const pinned = pinnedOutcome(refs ?? [], output?.pinned, refsSent ? undefined : unavailableReason(link, output), judge);
   applied.pinned = { shown: pinned.shown, failed: pinned.failed };
+  if (refs && refs.length > 0) recordVerification(request.repoRoot, pinned.records, "context", link);
 
   const outcome = output
     ? judged?.fallback ? "fallback" : judged?.aware ? "verified" : "plugin"
@@ -334,6 +368,75 @@ export function applyDocsKnowledge(request: DocsRequest): DocsKnowledge {
     ...diagnosticsOf(output),
   });
   return applied;
+}
+
+// ---- 검증 기록 ----
+
+/** 인계 참조만 다시 대조할 때 보내는 문서 수 상한 — 새 검색을 하지 않으므로 어댑터는 참조만 되찾는다 */
+const VERIFY_LIMIT = 10;
+
+/**
+ * 인계 참조의 검증 결과를 진행 게이트의 검증 기록으로 남긴다 — 지금 작업이 있고, 인계가 검사를 지났고, 결과가 그 인계의 참조와 같은
+ * 것일 때만(그 사이 인계가 바뀌었으면 쓰지 않는다 — 게이트가 다시 검증을 요구한다). 쓰지 못해도 던지지 않는다: 기록이 없으면 게이트는
+ * 검증 전으로 보고 멈춘다.
+ */
+function recordVerification(root: string, records: readonly PinnedRecord[], by: KnowledgeRecord["by"], link: KnowledgeLink): void {
+  let workId: string | undefined;
+  try { workId = loadActive(root)?.id; } catch { workId = undefined; }
+  const managed = managedKnowledgeOf(root);
+  if (!workId || !managed || managed.invalid) return;
+  const keys = (list: readonly { itemId: string; segmentId?: string }[]) => list.map(knowledgeRefKey).sort().join("\n");
+  if (keys(managed.refs) !== keys(records)) return;
+  const record: KnowledgeRecord = {
+    schema: KNOWLEDGE_RECORD_SCHEMA, version: KNOWLEDGE_RECORD_VERSION, workId, digest: managed.digest, at: new Date().toISOString(), by,
+    mode: link.mode, ...(link.plugin ? { plugin: link.plugin } : {}),
+    refs: records.map((entry) => ({
+      itemId: entry.itemId, ...(entry.segmentId ? { segmentId: entry.segmentId } : {}), required: entry.required, ok: entry.ok,
+      ...(entry.reason ? { reason: entry.reason } : {}),
+      ...(entry.ok && entry.path ? { path: entry.path, start: entry.start, end: entry.end, ...(entry.sha256 ? { sha256: entry.sha256 } : {}) } : {}),
+    })),
+  };
+  try {
+    ensureMasterDir(root);
+    const file = knowledgeRecordFile(root, workId);
+    mkdirSync(dirname(file), { recursive: true });
+    writeAtomic(file, `${JSON.stringify(record, null, 2)}\n`);
+  } catch {
+    // 기록 실패는 삼킨다 — 게이트는 기록이 없으면 검증 전으로 본다
+  }
+}
+
+/**
+ * 인계 참조만 다시 검증한다(`code-agent knowledge verify`·master `knowledge verify`) — 새 검색을 하지 않는다: 요구사항 없이 인계 참조만
+ * 어댑터에 보내고, 돌아온 범위를 지금 파일과 대조해 검증 기록을 쓴다. off·shadow·미등록·참조를 받지 않는 등록이면 생산자를 부르지 않고
+ * 그 사유로 기록한다(게이트가 그 작업만 멈춘다). 깨진 인계는 부르지 않는다 — 재계획이 필요하다.
+ */
+export function verifyHandoff(root: string, manifest: Manifest, by: "verify" | "master"): KnowledgeGate {
+  const managed = managedKnowledgeOf(root);
+  if (!managed || managed.invalid || managed.refs.length === 0) return knowledgeGate(root);
+  const link = knowledgeLink(manifest);
+  const { docRefs } = require("./plugins/defaults") as typeof import("./plugins/defaults");
+  const docs = docRefs(root, manifest);
+  const input: DocsInput = { requirements: [], docs, limit: VERIFY_LIMIT, refs: managed.refs };
+  let output: DocsOutput | undefined;
+  let negotiated: Record<string, unknown> | undefined;
+  if (link.mode === "enabled" && link.registered && link.refs) {
+    const called = callSlot(root, manifest, "context.docs", () => input, () => ({ sections: [] }));
+    output = called.source === "plugin" ? called.output : undefined;
+    negotiated = negotiatedInput("context.docs", input as unknown as Record<string, unknown>, acceptsOf(link.plugin));
+  }
+  const judge: Judge = {
+    root, docs: new Set(docs.map((doc) => doc.path)), read: docReader(root), head: headCommit(root),
+    index: { entries: [], sections: [], docs: [] }, limit: VERIFY_LIMIT, fromPlugin: (section) => section,
+  };
+  const refsSent = output !== undefined && Array.isArray(negotiated?.refs);
+  const pinned = pinnedOutcome(managed.refs, output?.pinned, refsSent ? undefined : unavailableReason(link, output), judge);
+  recordVerification(root, pinned.records, by, link);
+  writeKnowledgeLog(root, {
+    at: new Date().toISOString(), mode: link.mode, phase: null, plugin: link.plugin ?? null, inputHash: null, head: judge.head ?? null,
+    outcome: "reverified", by, verified: [], rejected: [], pinned: pinned.records, ...diagnosticsOf(output),
+  });
+  return knowledgeGate(root);
 }
 
 // ---- shadow ----
@@ -396,12 +499,13 @@ export function shadowDocs(request: ShadowRequest): void {
     const full = request.input();
     const negotiated = negotiatedInput("context.docs", full as unknown as Record<string, unknown>, plugin.adapter.accepts);
     const head = headCommit(request.repoRoot);
-    // 등록이 바뀌면(다시 등록·어댑터 갱신) 같은 질의라도 다시 비교한다
-    const hash = inputHash(request.repoRoot, negotiated, head, [plugin.command.join("\0"), plugin.adapter.version, plugin.adapter.describedAt].join("\n"));
+    // 등록·어댑터 설정·색인이 바뀌면(다시 등록, 설정 내용, DB 교체·재색인, 검색 설정) 같은 질의라도 다시 비교한다
+    const hash = inputHash(request.repoRoot, negotiated, head, registrationFingerprint(request.repoRoot, plugin));
     if (recentShadow(request.repoRoot, hash)) return;
     const call = callShadow(request.repoRoot, request.manifest, "context.docs", () => full);
     if (!call) return;
     const judge: Judge = {
+      root: request.repoRoot,
       docs: new Set(full.docs.map((doc) => doc.path)),
       read: docReader(request.repoRoot),
       head,
@@ -418,7 +522,7 @@ export function shadowDocs(request: ShadowRequest): void {
     const baseline = request.baseline.map((item) => ({ ...rangeOf(item), source: request.baselineSource }));
     const candidate = items.map(rangeOf);
     const pinned = full.refs && full.refs.length > 0
-      ? pinnedOutcome(full.refs, output?.pinned, output !== undefined && Array.isArray(negotiated.refs), judge).records
+      ? pinnedOutcome(full.refs, output?.pinned, output !== undefined && Array.isArray(negotiated.refs) ? undefined : "adapter-off", judge).records
       : [];
     writeKnowledgeLog(request.repoRoot, {
       at: new Date().toISOString(),
@@ -488,22 +592,74 @@ function logLines(repoRoot: string): string[] {
 }
 
 /**
- * 같은 입력의 비교가 끝 SHADOW_RECENT_LINES 줄 안에 있는가 — 성공한 비교는 그것으로 충분하고, 실패한 비교는 SHADOW_RETRY_MS 동안만
- * 다시 부르지 않는다(설정·색인을 고친 뒤에는 다시 비교하되, 고장 난 연결이 context 마다 마감만큼 늦추지 않게).
+ * 같은 입력의 **가장 최근** 비교가 아직 쓸 만한가 — 성공한 비교는 SHADOW_SUCCESS_TTL_MS 동안, 실패한 비교는 SHADOW_RETRY_MS 동안만
+ * 다시 부르지 않는다. 입력 해시에 등록·어댑터 설정·색인 지문이 들어 있어 설정을 고치거나 재색인하면 해시가 바뀌어 바로 다시 비교한다.
+ * `CODE_AGENT_SHADOW_REFRESH=1` 이면 기록과 관계없이 다시 부른다. 갱신이 실패하면 그 실패가 최근 기록이 된다 — 옛 성공을 지금 결과로 쓰지 않는다.
  */
-function recentShadow(repoRoot: string, hash: string): boolean {
-  const now = Date.now();
-  return logLines(repoRoot).slice(-SHADOW_RECENT_LINES).some((line) => {
-    try {
-      const record = JSON.parse(line) as { mode?: unknown; inputHash?: unknown; outcome?: unknown; at?: unknown };
-      if (record.mode !== "shadow" || record.inputHash !== hash) return false;
-      if (record.outcome === "compared") return true;
-      const at = typeof record.at === "string" ? Date.parse(record.at) : Number.NaN;
-      return Number.isFinite(at) && now - at < SHADOW_RETRY_MS;
-    } catch {
-      return false;
+function recentShadow(repoRoot: string, hash: string, now = Date.now(), env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env[SHADOW_REFRESH_ENV] === "1") return false;
+  const lines = logLines(repoRoot);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    let record: { mode?: unknown; inputHash?: unknown; outcome?: unknown; at?: unknown };
+    try { record = JSON.parse(lines[index]) as typeof record; } catch { continue; }
+    if (record.mode !== "shadow" || record.inputHash !== hash) continue;
+    const at = typeof record.at === "string" ? Date.parse(record.at) : Number.NaN;
+    if (!Number.isFinite(at) || at > now) return false;
+    return now - at < (record.outcome === "compared" ? SHADOW_SUCCESS_TTL_MS : SHADOW_RETRY_MS);
+  }
+  return false;
+}
+
+/** 파일 지문 — 내용 해시(작은 설정·스크립트) 또는 크기·수정 시각(DB). 없으면 missing */
+function fileMark(path: string, by: "content" | "stat"): string {
+  try {
+    if (by === "stat") {
+      const stat = statSync(path);
+      return `${stat.size}:${stat.mtimeMs}`;
     }
-  });
+    return createHash("sha256").update(readFileSync(path)).digest("hex");
+  } catch {
+    return "missing";
+  }
+}
+
+/**
+ * shadow 비교의 등록 지문 — 등록(명령·어댑터 버전·describe 시각), 명령 인자 중 있는 파일의 내용, 이 저장소 경로. 기본 제공 어댑터
+ * (agent-knowledge)면 어댑터 설정 파일 내용과 그 설정이 가리키는 생산자 설정 파일 내용·DB(와 WAL) 크기·수정 시각·생산자 명령 파일도 더한다
+ * — 같은 경로의 설정을 고치거나 DB 를 바꾸거나 재색인하면 다른 지문이다. 생산자를 부르지 않는다(파일만 읽는다).
+ */
+export function registrationFingerprint(repoRoot: string, plugin: Pick<StoredPlugin, "command" | "adapter">, env: NodeJS.ProcessEnv = process.env): string {
+  const parts = [`root:${resolve(repoRoot)}`, plugin.command.join("\0"), plugin.adapter.version, plugin.adapter.describedAt];
+  for (const arg of plugin.command.slice(1)) {
+    if (isAbsolute(arg) && existsSync(arg)) parts.push(`arg:${arg}:${fileMark(arg, "content")}`);
+  }
+  if (plugin.adapter.name === "agent-knowledge") {
+    const at = plugin.command.indexOf("--config");
+    let configPath: string;
+    try {
+      // 등록 명령이 넘기는 설정 위치 규칙(어댑터와 같은 순서) — `--config` → 환경변수 → 기본 자리
+      const { configPathOf } = require("./plugins/agentKnowledge") as typeof import("./plugins/agentKnowledge");
+      configPath = configPathOf(at >= 0 ? plugin.command[at + 1] : undefined, env).path;
+    } catch {
+      configPath = "";
+    }
+    parts.push(`config:${configPath}:${configPath ? fileMark(configPath, "content") : "missing"}`);
+    let config: Record<string, unknown> = {};
+    try { config = JSON.parse(readFileSync(configPath, "utf8").replace(/^\ufeff/, "")) as Record<string, unknown>; } catch { config = {}; }
+    const near = (value: unknown): string | undefined => (typeof value === "string" && value ? resolve(dirname(configPath), value) : undefined);
+    for (const key of ["sourcesConfig", "retrievalConfig"]) {
+      const file = near(config[key]);
+      if (file) parts.push(`${key}:${fileMark(file, "content")}`);
+    }
+    const db = near(config.db);
+    if (db) parts.push(`db:${fileMark(db, "stat")}:${fileMark(`${db}-wal`, "stat")}`);
+    const command = Array.isArray(config.command) ? (config.command as unknown[]) : [];
+    for (const arg of command) {
+      const file = near(arg);
+      if (file && existsSync(file) && statSync(file).isFile()) parts.push(`producer:${fileMark(file, "stat")}`);
+    }
+  }
+  return parts.join("\n");
 }
 
 /** 기록 한 줄을 더한다 — 끝 LOG_LINES 줄만 남긴다. 쓰지 못해도 던지지 않는다(판정은 이미 났다) */
