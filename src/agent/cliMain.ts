@@ -99,6 +99,8 @@ const USAGE = `code-agent — Claude Code·Codex 위에서 도는 개발 절차 
   code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]   판정 플러그인 등록 (TTY 에서만 — 키는 ~/.code-agent 에)
   code-agent plugin remove <이름>     등록 해제 (TTY 에서만) — 키·동의를 함께 지운다
   code-agent plugin example [--out <경로>]   번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 ./echo-adapter.js)
+  code-agent plugin agent-knowledge [--config <파일>]   agent-knowledge 연결 어댑터 — 플러그인 요청 한 건(stdin JSON) → 응답 한 건(stdout JSON).
+                                      plugin add 로 context.docs 에 등록해 호스트가 부른다 (agent-knowledge 읽기 전용 — 설정 ~/.code-agent/agent-knowledge.json)
   code-agent master status [--json]   master 연동(선택) 상태 — 제어자·소유 세대·인계·위임 권한·최근 실행 (읽기 전용)
   code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]
                                       master 연동 켜기·제어자 추가 (TTY 에서만) — 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다
@@ -288,8 +290,10 @@ const progressCommand = (command: string, args: string[]): boolean => PROGRESS.h
  * 인자 값(파일 경로·사유 글)은 남기지 않고 명령 이름(`commandKey`)만 남긴다. 사람이 터미널에서 친 명령은 terminal 로 가른다.
  */
 export async function runCommand(command: string | undefined, args: string[]): Promise<number> {
-  // 기계 판독 상태 조회(`status --json`)는 아무것도 쓰지 않는 계약이라 기록하지 않는다
-  if (command === undefined || UNTIMED.has(command) || (command === "master" && args[0] === "call") || (command === "status" && args.includes("--json"))) return runCommandBody(command, args);
+  // 기계 판독 상태 조회(`status --json`)는 아무것도 쓰지 않는 계약이라 기록하지 않는다. agent-knowledge 어댑터는 호스트가
+  // context 안에서 부르는 플러그인 왕복이라 작업 흐름의 행동이 아니고 상태를 쓰지 않는다
+  if (command === undefined || UNTIMED.has(command) || (command === "master" && args[0] === "call") || (command === "status" && args.includes("--json")) ||
+      (command === "plugin" && args[0] === "agent-knowledge")) return runCommandBody(command, args);
   const repoRoot = findRepoRoot(process.cwd());
   const key = commandKey(["code-agent", command, ...args].join(" ")) ?? command;
   const startedAt = new Date().toISOString();
@@ -709,6 +713,14 @@ async function runCommandBody(command: string | undefined, args: string[]): Prom
         case "remove":
           print(pluginRemove(args[1]));
           return 0;
+        case "agent-knowledge": {
+          // 플러그인 계약대로 언제나 exit 0 + 응답 봉투 하나 — 인자·설정 오류도 ok:false 봉투로 낸다(호스트가 기본 검색으로 돈다)
+          let stdin = "";
+          try { stdin = readFileSync(0, "utf-8"); } catch { /* 읽지 못한 요청은 어댑터가 invalid-request 로 답한다 */ }
+          const adapter = require("./plugins/agentKnowledge") as typeof import("./plugins/agentKnowledge");
+          print(adapter.agentKnowledgeAdapter(stdin, { args: args.slice(1), cwd: repoRoot }));
+          return 0;
+        }
         default:
           throw new Stop(PLUGIN_USAGE);
       }

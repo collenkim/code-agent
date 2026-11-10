@@ -11,9 +11,9 @@ import { checkCommands, testCommands } from "../evidence";
 import { Stop } from "../stop";
 import { askOnTerminal, confirmOnTerminal, requireTerminal } from "../tty";
 import { loadManifestIfAny } from "../work";
-import { SLOT_NOTES, SLOT_SENDS } from "./protocol";
+import { KNOWN_ACCEPTS, SLOT_NOTES, SLOT_SENDS } from "./protocol";
 import type { DescribeOutput } from "./protocol";
-import { describeAdapter, probeAdapter, slotOwner } from "./run";
+import { describeAdapter, probeAdapter, shadowFor, slotOwner } from "./run";
 import type { Secret } from "./run";
 import { readStore, storeWarning, STORE_LABEL, WINDOWS_ACL_NOTE, writeStore } from "./store";
 import type { StoredPlugin } from "./store";
@@ -37,7 +37,7 @@ const EXAMPLE_ADAPTER = isPackaged()
 const NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const PLUGIN_USAGE =
-  '사용법: code-agent plugin list | example [--out <경로>] | add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 환경변수 이름>] | remove <이름>';
+  '사용법: code-agent plugin list | example [--out <경로>] | add <이름> --command "<argv>" [--slots a,b] [--sends-code] [--secret-env <기존 환경변수 이름>] | remove <이름> | agent-knowledge [--config <파일>]';
 
 export interface AddOptions {
   name?: string;
@@ -91,10 +91,16 @@ function serving(manifest: Manifest | undefined, slot: Slot): string {
     return "예약 — 부르는 지점이 없습니다";
   }
   const owner = slotOwner(manifest, slot);
-  if (!owner.declared) {
-    return "기본 구현";
+  const filled = !owner.declared
+    ? "기본 구현"
+    : owner.registered ? `플러그인 ${owner.declared}` : `${owner.declared} 선언됨 · 등록 없음 → 기본 구현`;
+  // 비교만(shadow) 하는 플러그인은 출력을 바꾸지 않는다 — 채우는 것은 그대로 두고 옆에 적는다
+  const shadow = shadowFor(manifest, slot);
+  if (!shadow) {
+    return filled;
   }
-  return owner.registered ? `플러그인 ${owner.declared}` : `${owner.declared} 선언됨 · 등록 없음 → 기본 구현`;
+  const registered = Boolean(readStore().plugins[shadow]?.slots.includes(slot));
+  return `${filled} · ${shadow} 비교만(shadow)${registered ? "" : " — 등록 없음, 부르지 않음"}`;
 }
 
 function commandRow(repoRoot: string, label: string, specs: { kind: string; argv?: string[] }[]): string {
@@ -117,7 +123,7 @@ export function pluginList(repoRoot: string): string {
   });
 
   const rg = resolveExecutable(repoRoot, "rg");
-  const declared = Object.entries(manifest?.plugins ?? {}).filter(([, entry]) => entry.slots.length > 0);
+  const declared = Object.entries(manifest?.plugins ?? {}).filter(([, entry]) => entry.slots.length > 0 || (entry.shadow ?? []).length > 0);
   const registered = Object.entries(store.plugins);
   const warning = storeWarning();
 
@@ -151,7 +157,12 @@ export function pluginList(repoRoot: string): string {
     "",
     `이 저장소가 선언한 플러그인 (${MANIFEST_FILE}):`,
     ...(declared.length > 0
-      ? declared.map(([name, entry]) => `  - ${name} · 자리 ${entry.slots.join(", ")}`)
+      ? declared.map(([name, entry]) =>
+          `  - ${[
+            name,
+            ...(entry.slots.length > 0 ? [`자리 ${entry.slots.join(", ")}`] : []),
+            ...((entry.shadow ?? []).length > 0 ? [`비교만(shadow) ${(entry.shadow ?? []).join(", ")} — 결과를 쓰지 않고 비교 기록만`] : []),
+          ].join(" · ")}`)
       : ["  - 없음"]),
     "",
     `등록·제거는 같은 세션의 사용자 확인 또는 직접 TTY에서 진행합니다 — ${PLUGIN_USAGE}`,
@@ -183,6 +194,11 @@ function line(name: string, plugin: StoredPlugin): string {
     name,
     `자리 ${plugin.slots.join(", ")}`,
     `코드 외부 전송 ${plugin.sendsCode ? "예" : "아니오"}`,
+    // 등록 때 어댑터가 받겠다고 한 선택 입력 — 이것만 보낸다
+    ...(plugin.adapter.accepts && plugin.adapter.accepts.length > 0
+      ? [`선택 입력 ${plugin.adapter.accepts.join(", ")}`]
+      // 지식 검색 어댑터는 선택 입력을 받는다 — 협의가 없는 등록(선택 입력을 모르는 릴리스가 같은 스토어를 다시 쓴 경우 등)은 다시 등록해야 쓴다
+      : plugin.adapter.name === "agent-knowledge" ? ["선택 입력 협의 없음 — plugin remove 뒤 다시 add"] : []),
     plugin.secret?.required ? "키 등록됨" : "키 필요 없음",
     plugin.consent ? `동의 ${plugin.consent.at.slice(0, 10)} ${plugin.consent.user}` : "동의 없음",
     `probe ${plugin.probe.ok ? "ok" : "실패"}`,
@@ -261,7 +277,17 @@ function inspectPluginAdd(repoRoot: string, options: AddOptions) {
   const slots = resolveSlots(asked, adapter);
   // 하나만 켜져도 켜진 것이다 — 사람이 몰랐다고 해서 나간 코드가 돌아오지 않는다
   const sendsCode = options.sendsCode || adapter.sendsCode;
-  return { store, name, command, adapter, slots, sendsCode, secretEnv: options.secretEnv };
+  return { store, name, command, adapter, slots, sendsCode, secretEnv: options.secretEnv, accepts: acceptedInputs(adapter, slots) };
+}
+
+/**
+ * 등록이 저장하는 선택 입력 — 이 code-agent 가 아는 협의 토큰(`KNOWN_ACCEPTS`) 가운데 등록하는 자리의 것만.
+ * 모르는 토큰을 저장하면 나중 버전이 그 이름으로 무엇을 보내기 시작할 때 이 등록이 동의한 적 없는 입력을 받게 된다.
+ */
+function acceptedInputs(adapter: DescribeOutput, slots: Slot[]): string[] {
+  return [...new Set(adapter.accepts ?? [])].filter(
+    (token) => KNOWN_ACCEPTS.includes(token) && slots.some((slot) => token.startsWith(`${slot}.`)),
+  );
 }
 
 function redactSecret(text: string, value?: string): string {
@@ -275,12 +301,14 @@ function redactSecret(text: string, value?: string): string {
 type AddPreview = ReturnType<typeof inspectPluginAdd>;
 
 function addPreviewText(plan: AddPreview): string {
-  const { name, command, slots, sendsCode, secretEnv, adapter } = plan;
+  const { name, command, slots, sendsCode, secretEnv, adapter, accepts } = plan;
   return [
     `플러그인 등록: ${name}`,
     // JSON argv preserves argument boundaries, including spaces and quotes.
     `실행 명령(argv): ${JSON.stringify(command)}`,
     `사용할 자리(slots): ${slots.join(", ")}`,
+    // 선택 입력을 받겠다는 어댑터에만 — 다른 어댑터의 미리보기는 그대로다
+    ...(accepts.length > 0 ? [`받는 선택 입력(accepts): ${accepts.join(", ")}`] : []),
     `코드 외부 전송(sendsCode): ${sendsCode ? "예" : "아니오"}`,
     ...(sendsCode ? [SENDS_CODE_WARNING(name, adapter.note)] : [
       "어댑터는 코드 외부 전송을 하지 않는다고 밝혔습니다. 선택한 자리의 입력은 어댑터에 전달됩니다.",
@@ -315,7 +343,7 @@ export function previewPluginAdd(repoRoot: string, options: AddOptions): string 
 /** Describe, confirm, resolve the key, then probe; persist only after all succeed. */
 export function registerPlugin(repoRoot: string, options: AddOptions, prompts: Prompts): string {
   const plan = inspectPluginAdd(repoRoot, options);
-  const { store, name, command, adapter, slots, sendsCode, secretEnv } = plan;
+  const { store, name, command, adapter, slots, sendsCode, secretEnv, accepts } = plan;
   const key = previewKey(repoRoot, name);
   const expected = addPreviews.get(key);
   const shown = addPreviewText(plan);
@@ -368,7 +396,8 @@ export function registerPlugin(repoRoot: string, options: AddOptions, prompts: P
     ...(adapter.secret?.required
       ? { secret: { required: true, delivery: secret!.delivery, ...(secret!.env ? { env: secret!.env } : {}), value: secret!.value } }
       : {}),
-    adapter: { name: adapter.name, version: adapter.adapterVersion, describedAt: now },
+    // accepts 가 없는 등록에는 선택 입력을 보내지 않는다(run.negotiatedInput) — 빈 목록은 적지 않는다
+    adapter: { name: adapter.name, version: adapter.adapterVersion, describedAt: now, ...(accepts.length > 0 ? { accepts } : {}) },
     consent: { user: actorName(), host: hostname(), at: now, slots, sendsCode, typed },
     probe: { at: now, ok: true, ...(probe.output.detail ? { detail: redactSecret(probe.output.detail, sensitiveValue) } : {}) },
   };

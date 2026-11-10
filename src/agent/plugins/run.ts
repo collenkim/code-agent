@@ -21,6 +21,7 @@ import {
   MAX_ITEMS,
   MAX_OUTPUT_ITEMS,
   MAX_TEXT,
+  OPTIONAL_INPUTS,
   PROBE_SCHEMA,
   PROTOCOL,
   SLOT_LIMITS,
@@ -291,6 +292,7 @@ function logCall(
   input: Record<string, unknown>,
   raw: Raw,
   result: Call<unknown>,
+  mode?: "shadow",
 ): void {
   // 응답은 그대로 싣되 64 KiB 를 넘으면 잘라 **문자열로** 남긴다 — 잘린 JSON 을 객체인 척 남기면
   // 로그를 읽는 쪽이 깨진 구조를 만난다
@@ -300,6 +302,8 @@ function logCall(
     at: new Date().toISOString(),
     slot,
     plugin: name,
+    // 비교만 한 호출 — 결과를 쓰지 않았다
+    ...(mode ? { mode } : {}),
     // argv 전체를 남기지 않는다 — 키를 인자로 받는 어댑터를 등록하면(계약이 말리지만 막지는 못한다)
     // 그 키가 저장소 안 파일에 그대로 눕는다. 어느 어댑터가 돌았는지는 첫 낱말로 충분하다
     command: args.length > 0 ? `${program} (+인자 ${args.length}개)` : program,
@@ -353,6 +357,30 @@ function declaredFor(manifest: Manifest | undefined, slot: Slot): string | undef
   return undefined;
 }
 
+/** 이 저장소가 그 자리에 **비교만** 하도록(shadow) 선언한 플러그인 이름 */
+export function shadowFor(manifest: Manifest | undefined, slot: Slot): string | undefined {
+  for (const [name, entry] of Object.entries(manifest?.plugins ?? {})) {
+    if ((entry.shadow as readonly string[] | undefined)?.includes(slot)) return name;
+  }
+  return undefined;
+}
+
+/**
+ * 협의되지 않은 선택 입력을 지운다 — 어댑터가 describe `accepts` 로 받겠다고 한 필드만 보낸다.
+ * describe 에 accepts 가 없는 등록에는 선택 필드를 보내지 않는다 — 요청은 그 자리의 필수 입력(context.docs 는 requirements·docs·limit)뿐이다.
+ */
+export function negotiatedInput(slot: Slot, input: Record<string, unknown>, accepts: readonly string[] | undefined): Record<string, unknown> {
+  const optional = OPTIONAL_INPUTS[slot];
+  if (!optional) return input;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (optional.includes(key) && !accepts?.includes(`${slot}.${key}`)) continue;
+    if (value === undefined) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 /**
  * 자리 하나를 채운다.
  *
@@ -387,7 +415,7 @@ export function callSlot<S extends Slot>(
   }
 
   const invocation: Invocation = { command: plugin.command, secret: plugin.secret, sendsCode: plugin.sendsCode };
-  const body = input() as unknown as Record<string, unknown>;
+  const body = negotiatedInput(slot, input() as unknown as Record<string, unknown>, plugin.adapter.accepts);
   const raw = spawnAdapter(invocation, { op: "run", repoRoot, slot, input: body }, SLOT_LIMITS[slot], repoRoot);
   const result = validate(raw, SLOT_OUTPUT_SCHEMA[slot]);
   logCall(repoRoot, slot, name, invocation, body, raw, result);
@@ -401,6 +429,69 @@ export function callSlot<S extends Slot>(
     };
   }
   return { source: "plugin", name, output: result.output };
+}
+
+export interface ShadowCall<T> {
+  name: string;
+  ok: boolean;
+  output?: T;
+  error?: string;
+  durationMs: number;
+  /** 실제로 보낸 입력(협의 뒤) — 비교 기록의 입력 해시를 같은 바이트로 내려고 */
+  input: Record<string, unknown>;
+}
+
+/**
+ * 비교만 하는 호출(shadow). 선언과 이 PC 의 등록이 함께 있을 때만 부르고, 결과를 **쓰지 않는다** — 화면·승인·계획 입력에 아무것도
+ * 더하지 않으며 알림 줄도 없다. 선언이 없거나 등록이 없으면 undefined. 어떤 실패도 던지지 않는다(조언의 비교가 명령을 세우지 않게).
+ */
+export function callShadow<S extends Slot>(
+  repoRoot: string,
+  manifest: Manifest | undefined,
+  slot: S,
+  input: () => SlotInput[S],
+): ShadowCall<SlotOutput[S]> | undefined {
+  try {
+    const name = shadowFor(manifest, slot);
+    if (!name) return undefined;
+    const plugin = readStore().plugins[name];
+    if (!plugin || !plugin.slots.includes(slot)) return undefined;
+    const invocation: Invocation = { command: plugin.command, secret: plugin.secret, sendsCode: plugin.sendsCode };
+    const body = negotiatedInput(slot, input() as unknown as Record<string, unknown>, plugin.adapter.accepts);
+    const raw = spawnAdapter(invocation, { op: "run", repoRoot, slot, input: body }, SLOT_LIMITS[slot], repoRoot);
+    const result = validate(raw, SLOT_OUTPUT_SCHEMA[slot]);
+    logCall(repoRoot, slot, name, invocation, body, raw, result, "shadow");
+    return result.ok
+      ? { name, ok: true, output: result.output, durationMs: raw.durationMs, input: body }
+      : { name, ok: false, error: result.error, durationMs: raw.durationMs, input: body };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 지식 검색 연결 상태 — `context.docs` 기준. mode 는 저장소 선언, registered 는 이 PC 의 등록 */
+export interface KnowledgeLink {
+  mode: "off" | "shadow" | "enabled";
+  plugin?: string;
+  registered: boolean;
+  /** master 인계 참조를 받을 수 있는가 — enabled·등록·어댑터가 `context.docs.refs` 를 받겠다고 한 경우 */
+  refs: boolean;
+}
+
+export function knowledgeLink(manifest: Manifest | undefined): KnowledgeLink {
+  const enabled = declaredFor(manifest, "context.docs");
+  const shadow = enabled ? undefined : shadowFor(manifest, "context.docs");
+  const name = enabled ?? shadow;
+  if (!name) return { mode: "off", registered: false, refs: false };
+  let plugin: ReturnType<typeof readStore>["plugins"][string] | undefined;
+  try { plugin = readStore().plugins[name]; } catch { plugin = undefined; }
+  const registered = Boolean(plugin && plugin.slots.includes("context.docs"));
+  return {
+    mode: enabled ? "enabled" : "shadow",
+    plugin: name,
+    registered,
+    refs: Boolean(enabled && registered && plugin?.adapter.accepts?.includes("context.docs.refs")),
+  };
 }
 
 /** 출처 줄 — 어느 자리든 같은 모양으로 찍는다 */

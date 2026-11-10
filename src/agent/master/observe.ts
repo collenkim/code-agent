@@ -90,8 +90,9 @@ function bindWork(root: string, run: RunRecord, workId: string | null): void {
     if (!existing.runs.includes(run.runId)) writeWorkBinding(root, { ...existing, runs: [...existing.runs, run.runId] });
     return;
   }
-  // 실행이 고른 실행 방식을 작업에 고정한다 — 이후 실행·사람 세션의 교차 검증·단독 호스트 판정이 이 작업에서는 그 선택을 따른다
+  // 실행이 고른 실행 방식을 작업에 고정한다 — 이후 실행·사람 세션의 교차 검증·단독 호스트 판정이 이 작업에서는 그 선택을 따른다.
+  // 인계받은 지식 참조도 같이 고정한다 — 이 작업의 context 가 그 참조를 다시 대조한다(workKnowledge.managedKnowledge)
   writeWorkBinding(root, { workId, links: run.links, boundAt: new Date().toISOString(), runId: run.runId, controller: run.controller, runs: [run.runId],
-    ...(run.execution ? { execution: run.execution } : {}) });
+    ...(run.execution ? { execution: run.execution } : {}), ...(run.knowledge ? { knowledge: run.knowledge } : {}) });
   emit(root, "work.bound", { runId: run.runId, data: { workId, links: run.links } });
 }

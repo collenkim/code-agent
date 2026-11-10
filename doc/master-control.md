@@ -44,7 +44,7 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
 
 `execution`은 LangGraph 프레임워크·그래프 형식 버전·SQLite 체크포인트·재개 명령·권한 원천을 알린다. 무인 호스트도 `code-agent flow advance --json`의 [인계 계약](langgraph.md#호스트의-실행-계약)을 따른다.
 
-인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude`·`codex`의 start·continue 지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유, 페어링(`pairing`), 관리 실행 호스트(`managedHost`).
+인증 없이 받는다. 돌려주는 것: 지원 버전, code-agent 버전과 상태 형식 세대(`stateSchema`), 프로젝트 ID 와 연동 여부, 등록 제어자, 지금 소유, 명령 목록(open·read·mutating), 호스트(`claude`·`codex`의 start·continue 지원), 승인 방식(사람 응답 채널과 위임 채널 `master-delegation`·위임 가능 동작·사람만 하는 동작·판단 분류, `requireVerifiedApproval` 이면 `delegationAvailable: false`), 이벤트 종류, 실행 상태, 오류 코드, 정책, 지원하지 않는 기능(`unsupported` — `transport:network`, `delegate:human-only-actions`, `events:push`)과 이유, 페어링(`pairing`), 관리 실행 호스트(`managedHost`), 지식 검색 연결(`knowledge`).
 
 ```jsonc
 "pairing": { "supported": true, "version": 1, "signature": "Ed25519", "domain": "code-agent.master-pair.v1", "trustedControllers": ["dashboard"] },
@@ -56,8 +56,11 @@ master 실행도 같은 스킬·hook·CLI 를 거친다. 동의는 `consent.ts`�
                    "codex": { "ready": false, "state": "project-untrusted", "blocking": [{ "host": "codex", "code": "codex-project-untrusted", "message": "…" }] },
                    "both": { "claude": { "ready": true, "state": "ready", "blocking": [] }, "codex": { "ready": false, "state": "project-untrusted", "blocking": [ … ] } } },
                  "hosts": { "claude": { "ready": true, "state": "ready", "problems": [] },
-                            "codex": { "ready": false, "state": "project-untrusted", "problems": [ … ], "checkedAt": "…", "target": { "executable": "…", "codexHome": "…", "version": "0.163.0" } } } }
+                            "codex": { "ready": false, "state": "project-untrusted", "problems": [ … ], "checkedAt": "…", "target": { "executable": "…", "codexHome": "…", "version": "0.163.0" } } } },
+"knowledge": { "schemaVersion": 1, "mode": "enabled", "refs": { "supported": true, "accepted": true, "max": 20 } }
 ```
+
+`knowledge`는 이 프로젝트의 지식 검색 연결(`context.docs` 자리 — [agent-knowledge 연결](plugins.md#10-agent-knowledge-연결))이다. `mode`는 `code-agent.json`의 선언이다 — 선언 없음 `off`, 비교만 하는 `shadow`(`plugins.<이름>.shadow`), 결과를 쓰는 `enabled`(`plugins.<이름>.slots`). 설정을 읽지 못하면 `off`다. `refs.accepted`는 `enabled`이고, 이 PC 에 그 플러그인이 `context.docs`로 등록돼 있고, 어댑터가 describe 의 `accepts`에 `context.docs.refs`를 적었을 때만 `true`다. 플러그인 이름·명령·설정 경로는 알리지 않는다. master 는 `refs.accepted`가 `true`일 때만 `submit`에 `knowledge`를 싣는다(§11 [지식 항목 참조 인계](#지식-항목-참조-인계)). `knowledge`를 알리지 않는 code-agent 는 `submit`의 `knowledge`를 읽지 않고 버리므로 보내지 않는다.
 
 `trustedControllers`는 이 PC 에서 신뢰한 제어자 ID 뿐이다. 키·토큰·키 경로는 넣지 않는다. `managedHost.selected`는 켠 연동이면 지금 선택될 호스트(`source`: `execution`·`execution-main`·`binding`), 켜기 전이면 켜면 선택될 호스트(`execution`·`execution-main`·`installed`·`default`, §11)다. `state`는 실행 준비 상태다 — 설치 누락 `not-installed`·프로젝트 미신뢰 `project-untrusted`·hook 검토 필요 `hooks-review`·조회 실패 `query-failed`·확인 중 `checking`·준비 완료 `ready`. 앞 단계가 막히면 뒤 단계는 판정하지도 알리지도 않는다(설치가 막히면 Codex 신뢰를 묻지 않고, 프로젝트를 신뢰하지 않았으면 hook 검토를 알리지 않는다). `problems`의 `code`는 설치 단계의 `host-not-installed`(설치 기록에 없음)·`hooks-missing`·`settings-unreadable`·`hosts-unreadable`·`execution-unreadable`과, Codex 는 `codex-not-found`(실행 파일 없음)·`codex-hooks-invalid`·`codex-hooks-not-loaded`·`codex-hooks-disabled`(`[features] hooks = false`)·`codex-unsupported`(이 판정을 지원하지 않는 Codex)·`codex-project-untrusted`·`codex-project-disabled`·`codex-hooks-untrusted`·`codex-query-failed`·`codex-sandboxed`·`codex-checking`·`codex-unchecked`다. `ready`가 `true`일 때만 관리 실행 접수가 받는다 — 조회 실패·확인 중도 `invalid-state`로 거부된다. `selected`·`ready`·`state`·`problems`는 실행 방식을 고르지 않은 실행에 쓰는 호스트의 판정이다. `runSelection.modes`는 `submit`의 `execution`으로 고를 수 있는 실행 방식이다(설치 기록의 호스트, 둘 다 있으면 `both`도 — §11). 고를 수 있다고 실행 준비가 된 것은 아니다 — `runReadiness`가 실행 방식마다의 준비와 차단 이유(`blocking`, 호스트 표시)이고, `both`는 주 호스트마다 그 호스트의 관리 실행 준비와 다른 호스트의 교차 검증 준비(설치와 실행 파일 — 교차 검증의 Codex 는 읽기 전용 `exec`라 신뢰가 필요 없다. 코드 `cross-host-config`·`cross-host-not-found`)를 합친다. `hosts`는 설치된 호스트마다의 관리 실행 준비(`ready`·`state`·`problems`, Codex 는 판정 시각 `checkedAt`과 물은 대상 `target`)다. master 는 `runSelection`이 없는 code-agent 에는 `execution`을 보내지 않는다.
 
@@ -82,7 +85,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 | read | `interaction` | `requestId` | 질문·추천·동의 전문·응답 가능 여부·임대 충돌 |
 | read | `interaction.result` | `requestId` | 수신·소비·적용·재개 결과 |
 | mutating | `interaction.respond` | `requestId`, `expectedRevision`, `contentHash`, `challenge`, `channelId`, `signature`, `submission` | 별도 사람 채널. [계약·예제](dashboard-interactions.md) |
-| mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `execution`(start — §11), `links`, `timeoutMs` | §5 |
+| mutating | `submit` | `mode`(start·continue), `prompt`(≤20000자), `sessionId`(continue), `execution`(start — §11), `knowledge`(start — [§11](#지식-항목-참조-인계)), `links`, `timeoutMs` | §5 |
 | mutating | `resume` | `runId`, `prompt?`, `links?` | 끝난 실행(`paused`·`blocked`·`completed`·`failed`·`unknown`·`cancelled`)의 세션을 잇는다 |
 | mutating | `pause`·`cancel` | `runId`, `reason?`, `graceMs?`, `force?`, `waitMs?` | §7 |
 | mutating | `decide` | `consentId`, `verdict`, `decisionId`, `grantId`, `category`, `reason`, `evidence[]`, `shownHash`, `choices?` | §8 |
@@ -106,10 +109,10 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 | `unauthorized` | 등록되지 않은 제어자·토큰 불일치·다른 제어자의 명령 조회, 페어링의 PC 신뢰 없음·서명 없음·서명 불일치 |
 | `fenced` | 지금 소유자가 아니거나 세대가 다르다(이전 소유의 늦은 요청), 다른 제어자가 소유한 프로젝트의 페어링 |
 | `handover-in-progress`·`handover-unaccepted` | 인계 중에 받지 않는 명령, 이전된 뒤 새 제어자가 아직 인수하지 않음 |
-| `conflict` | 같은 `commandId`의 다른 내용, 다른 임무·작업에 묶인 작업, 이미 답한 질문, 인계 중인 프로젝트의 페어링 |
+| `conflict` | 같은 `commandId`의 다른 내용, 다른 임무·작업에 묶인 작업, 작업에 고정된 것과 다른 지식 참조, 이미 답한 질문, 인계 중인 프로젝트의 페어링 |
 | `stale-state` | 기대한 `stateVersion`·동의 내용 해시·질문 문서 해시가 지금과 다르다, 페어링 챌린지 없음·만료·재사용·다른 제어자·다른 프로젝트 경로 |
 | `busy` | 실행 중인 실행이 있다·지금 작업을 다른 세션이 쥔 신선한 작업 임대(작업이 없을 때 남은 임대, 다른 작업의 임대, 푼 임대, 30분 무활동 임대는 해당하지 않는다)·동의를 준비한 실행이 끝나지 않았다 |
-| `not-found`·`invalid-state` | 대상이 없다·지금 재개 판정이나 상태에서는 그 동작을 하지 않는다(만료된 요청, 처리기가 거절한 판단·응답 포함) |
+| `not-found`·`invalid-state` | 대상이 없다·지금 재개 판정이나 상태에서는 그 동작을 하지 않는다(만료된 요청, 처리기가 거절한 판단·응답, 지식 참조를 받지 않는 프로젝트의 `knowledge` 포함) |
 | `human-required` | 사람만 하는 동작·critical 판단·master 실행이 준비하지 않은 동의 |
 | `grant-missing`·`grant-expired`·`grant-revoked`·`grant-exhausted`·`scope-exceeded` | 권한 없음·만료·회수·한도 소진·동작·작업·경로 범위 밖 |
 | `duplicate-decision` | 같은 `decisionId`를 다시 썼다 |
@@ -126,7 +129,7 @@ Codex 준비는 관리 실행과 같은 실행 파일(연동의 Codex 호스트 
 2. 처리 전에 `received`를 먼저 쓴다. 처리 도중 끊겨 `received`로 남은 명령의 재전송은 다시 실행하지 않는다 — 그 명령으로 접수된 실행이 있으면 그 실행을 `recovered: true`로 돌려주고, 없으면 `internal`(결과를 확인할 수 없음)로 답한다. master 는 `snapshot`으로 대조한 뒤 새 `commandId`를 쓴다.
 3. 소유·세대 대조(§10) → 실행·인계 재조정 → 처리 → `accepted`(응답 포함) 또는 `rejected`로 기록하고 `command.accepted`·`command.rejected` 이벤트를 남긴다.
 
-`submit`은 같은 잠금 안에서 다음을 함께 확인한 뒤에만 실행을 접수한다: 실행 중인 실행 없음(`busy`), `expect`(`stateVersion`·`work`·`attempt` — 다르면 `stale-state`), 작업 임대(다른 세션이면 `busy` — 끝난 master 실행의 세션이 쥔 임대만 푼다), 작업 연결(사람이 연 작업이면 `not-enabled`, 다른 임무·작업이면 `conflict`), 재개 판정(`no-work`·`ready`·`replan-required`만 시작, continue 는 자기 시도 실행 중 대기도 받는다. master 위임 판단이 수정 요청으로 닫은 확인 요청을 다시 준비할 자리 — `needs-human`·`reapproval-required`의 요구 확정·계획·반영 확인이고 같은 동작의 마지막 동의가 위임 수정 요청이다 — 는 그 동의를 준비한 세션의 continue 만 받는다. 사람이 낸 수정 요청은 사람 경로로 남는다. 그 밖의 사람 판단 대기·한도·관측 불가는 `invalid-state`). 접수하면 프롬프트·실행 기록을 `accepted`로 쓰고 감독 프로세스를 띄운다. 감독이 시작하지 못하고 끝나도 기록은 남아 재조정이 `abandoned`로 닫는다.
+`submit`은 같은 잠금 안에서 다음을 함께 확인한 뒤에만 실행을 접수한다: 실행 중인 실행 없음(`busy`), 지식 참조의 꼴·수락 여부(§11), `expect`(`stateVersion`·`work`·`attempt` — 다르면 `stale-state`), 작업 임대(다른 세션이면 `busy` — 끝난 master 실행의 세션이 쥔 임대만 푼다), 작업 연결(사람이 연 작업이면 `not-enabled`, 다른 임무·작업이면 `conflict`), 재개 판정(`no-work`·`ready`·`replan-required`만 시작, continue 는 자기 시도 실행 중 대기도 받는다. master 위임 판단이 수정 요청으로 닫은 확인 요청을 다시 준비할 자리 — `needs-human`·`reapproval-required`의 요구 확정·계획·반영 확인이고 같은 동작의 마지막 동의가 위임 수정 요청이다 — 는 그 동의를 준비한 세션의 continue 만 받는다. 사람이 낸 수정 요청은 사람 경로로 남는다. 그 밖의 사람 판단 대기·한도·관측 불가는 `invalid-state`). 접수하면 프롬프트·실행 기록을 `accepted`로 쓰고 감독 프로세스를 띄운다. 감독이 시작하지 못하고 끝나도 기록은 남아 재조정이 `abandoned`로 닫는다.
 
 응답을 잃은 master 는 같은 `commandId`로 다시 보내거나 `command`로 처리 상태를 묻는다. 둘 다 실행을 두 번 만들지 않는다. 명령 기록 파일은 commandId의 SHA-256 이름을 쓰고 읽을 때 원래 ID를 재대조한다.
 
@@ -254,6 +257,41 @@ hook 은 이 표지가 있는 세션에서 기존 판정보다 먼저 본다(`ma
 
 hook 은 사고 방지 장치다. 토큰 파일은 저장소 밖에 두고(`--token-out`이 저장소 안이면 거부), 실행 세션의 허용 도구로 셸을 좁힌다.
 
+### 지식 항목 참조 인계
+
+master 는 새 실행(`submit mode:start`)의 `knowledge`로 그 작업이 기대는 agent-knowledge 항목의 참조를 넘길 수 있다. hello 의 `knowledge.refs.accepted`가 `true`일 때만 보낸다(§3). 본문·발췌는 싣지 않는다 — 받는 쪽이 같은 세대에서 항목을 다시 꺼내 대조한다.
+
+```jsonc
+"knowledge": { "version": 1, "refs": [
+  { "itemId": "orders:doc/policy/order.md#cancel-rule", "generation": 12,
+    "commit": "<40자리 소문자 16진>", "itemSha256": "<64자리 소문자 16진>", "required": true } ] }
+```
+
+| 필드 | 조건 |
+|---|---|
+| `version` | `1` |
+| `refs` | 1~20개 배열. 같은 `itemId`를 두 번 쓰지 않는다 |
+| `itemId` | agent-knowledge 항목 ID(`<원본>:<경로>#<위치>`). `:`·`#`를 담은 512자 이하 문자열, 제어 문자·공백뿐인 값 없음 |
+| `generation` | 그 항목을 꺼낸 색인 세대(1 이상의 정수) |
+| `commit` | 항목 원본의 커밋(40자리 소문자 16진) |
+| `itemSha256` | 항목 내용(UTF-8)의 SHA-256(64자리 소문자 16진) |
+| `required` | 생략하면 `true`. 검증에 실패하면 이 작업의 근거를 다시 확인해야 하는 항목이다 |
+
+검사와 거부:
+
+- 최상위·참조의 모르는 키와 꼴 오류는 `invalid-request`다. 꼴 검사가 수락 여부보다 먼저다.
+- 참조를 받지 않는 프로젝트(`refs.accepted: false` — `off`·`shadow`, 등록 없음, `context.docs.refs`를 협의하지 않은 어댑터)에 보내면 `invalid-state`(`detail: { reason: "knowledge-refs-not-accepted", mode }`)로 거부하고 실행을 쓰지 않는다. 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다.
+- `continue`와 `resume`에 보내면 `invalid-request`다(`execution`과 같은 규칙). 이어 실행과 사람 응답으로 잇는 실행은 이전 실행의 인계를 옮긴다. 종료 세션 복원(`master recover`)은 인계를 만들지 않는다 — 독립 세션에는 master 인계가 없고, 작업 연결에 고정된 인계가 있으면 그대로 쓰인다.
+- `knowledge`도 요청 해시의 `payload`에 들어 같은 `commandId` 재전송(`replayed`)과 `conflict` 판정에 함께 쓰인다.
+
+저장: 받은 인계는 `required`를 채워 실행 기록(`runs/<runId>.json`의 `knowledge`)에 남고, 그 실행이 작업(또는 접수)을 열면 `works/<작업 ID>.json`에 고정된다(`execution`과 같은 자리). 이미 연 작업에 새 실행을 시작하면 작업에 고정된 인계를 쓴다. 같은 참조(순서 무관)의 재전송은 받고, 다른 참조는 `conflict`(`detail.workId`)다. 참조 없이 시작해도 작업의 인계를 잇는다. 접수 결과에는 인계가 있는 실행만 `knowledge: { refs: <개수> }`가 붙는다. 참조는 실행 프롬프트에 싣지 않는다. 이 필드를 담은 기록은 상태 형식 세대(`stateSchema`) 25부터다 — 낮은 세대의 릴리스는 인계를 모르고 버리므로 이 프로젝트에 적용되지 않는다.
+
+검증: 참조는 근거의 주장이지 답·승인이 아니다. 받을 때는 꼴만 보고, 단계 문맥(`code-agent context` — analysis·impact·design·plan)을 만들 때마다 다시 대조한다. 지금 작업의 연결(작업을 열기 전이면 이 세션의 실행 기록 — `CODE_AGENT_MASTER_RUN`)에서 인계를 읽어(`workKnowledge.ts` `managedKnowledge`) `context.docs` 어댑터에 넘긴다. 어댑터는 그 세대로 항목을 다시 꺼내 세대·항목 ID·커밋·`itemSha256`·대응 프로젝트·등록 문서 경로를 대조하고, code-agent 는 그 범위를 현재 작업 트리 파일에서 읽어 내용 해시를 다시 맞춘다. 확인된 항목만 `## 인계받은 지식 근거` 블록으로 문맥에 들어간다. 실패한 `required` 참조가 있으면 그 작업의 문맥에만 `## 근거 재확인 필요` 블록(항목 ID·사유)이 붙는다 — 범위를 넓혀 다시 찾지 말고 그 작업의 근거를 다시 확인하거나 재계획을 요청하라는 뜻이다. `enabled` 어댑터가 없거나 호출이 실패하면 모든 참조가 `adapter-unavailable`로 실패한다. 이 결과는 그 작업의 문맥 출력에만 붙는다 — 다른 작업의 문맥과 게이트 판정은 바뀌지 않는다.
+
+권한: 모델에게 agent-knowledge 를 열지 않는다. 관리 실행의 기본 허용 도구(`DEFAULT_ALLOWED_TOOLS`)에 agent-knowledge CLI 를 넣지 않으며, 어댑터 하위 명령(`code-agent plugin agent-knowledge`)은 hook 의 모델 명령 허용 목록에 없고, 작업·세션 밖의 셸에서도 hook 이 거부한다. 어댑터는 code-agent 가 문맥을 만들 때 플러그인으로만 부른다.
+
+이 계약은 agent-knowledge 공통 계약 제안의 필드 이름(`itemId`·`generation`·`commit`·`itemSha256`)에 `required`를 더한 제안 단계다. 실제 master-agent 와의 통합 시험은 하지 않았다(§14).
+
 ## 12. 사람의 설정과 정책
 
 모두 TTY 에서 확인 단어를 입력받는다(stdin 이 TTY 가 아니면 거부).
@@ -372,8 +410,8 @@ code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자�
 | `grants.jsonl` · `decisions.jsonl` | 권한·회수, 판단과 적용 결과(append 만) |
 | `commands/<commandId>.json` | 처리 상태(`received`·`accepted`·`rejected`)와 기록된 응답 |
 | `pairing/<challengeId>.json` | 페어링 챌린지(제어자·프로젝트 경로·nonce·만료·사용 시각). 만료한 것은 다음 챌린지 때 지운다 |
-| `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과, master 가 고른 실행 방식(`execution`) |
-| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록, 그 작업에 고정한 실행 방식(`execution`) |
+| `runs/<runId>.json` (+`.prompt.md`·`.out.jsonl`·`.err.log`·`.lock`·`.rec.lock`) | 실행 상태·이력·감독·호스트 프로세스·정지 요청·진척·결과, master 가 고른 실행 방식(`execution`)·인계한 지식 참조(`knowledge`) |
+| `works/<작업 ID>.json` | master 실행이 연 작업과 임무·작업·시도·계획 연결, 실행 목록, 그 작업에 고정한 실행 방식(`execution`)·지식 참조(`knowledge`) |
 | `events.jsonl` · `events-meta.json` · `observed.json` | 이벤트와 기록 ID, 마지막 진척 관찰 |
 | `control.lock` · `observe.lock` | 제어·관찰 잠금 |
 
@@ -391,5 +429,6 @@ code-agent 확인을 모두 통과하면 연동 켜기(또는 같은 제어자�
 - 통신은 같은 PC 의 CLI 호출이다. 원격 연결·밀어넣기 이벤트는 없다.
 - PC 신뢰 키·연결 토큰·사람 채널 키는 같은 OS 계정의 다른 프로세스가 읽을 수 있다. 그 계정을 탈취한 프로세스는 페어링·사람 응답을 할 수 있다([페어링](#pc-신뢰와-대시보드-페어링)).
 - 한 프로젝트에 실행은 한 번에 하나다. 여러 프로젝트는 master 가 프로젝트마다 따로 부른다.
+- 지식 항목 참조 인계(§11)는 제안 단계 계약이다. 모의 시험(`masterKnowledge.test.ts`)으로만 확인했고 실제 master-agent 와 맞춰 보지 않았다. 이미 연 작업의 인계를 바꾸는 명령은 없다 — 다른 근거가 필요하면 새 작업으로 시작한다.
 - 다른 저장소의 산출물을 가져다 쓰는 작업은 통합 검증(`code-agent integrate`)이 기준 커밋을 뜬 깨끗한 worktree 에서 돌므로, 형제 저장소의 상대 경로가 풀리지 않는다. 프로젝트 사이 의존은 사람이 도입 설정에서 `code-agent.json`의 `prepare`로 깨끗한 트리에 잇는다. master 연동은 이 설정을 만들거나 바꾸지 않는다 — 매니페스트는 계획 승인이 묶는다.
 - 프로세스 확인은 Windows 에서 PowerShell `Get-CimInstance`, 그 밖에서 `/proc`·`ps`로 명령줄을 본다. 확인하지 못하면 `unknown`으로 두고 끝내지 않는다.

@@ -479,5 +479,5 @@ npm test
 | [대시보드 질문·동의 연동](doc/dashboard-interactions.md) | 전체 단계 영속 질문, 추천·직접 입력, 별도 사람 채널 API와 같은 세션 재개 |
 | [요구사항 규격](doc/requirement.md) | 원문 대조, 접수 데이터, 확정·반려 |
 | [설계](doc/design.md) | 단계 전환, 변경 경계, 승인·증거 모델, 문서 모델, 외부 실행기와의 경계 |
-| [플러그인](doc/plugins.md) | 선택적으로 연결하는 외부 도구 |
+| [플러그인](doc/plugins.md) | 선택적으로 연결하는 외부 도구 — 명령 어댑터 계약, agent-knowledge 지식 검색 연결(비교만·사용) |
 | [최신 검증](doc/reviews/README.md) | 시험 결과·실행 조건·검증 한계 |

@@ -291,6 +291,8 @@ function resumeInteraction(root: string, r: InteractionRecord): void {
     writeFileSync(runPrompt(root, runId), prompt, "utf8");
     const run: RunRecord = { version: 1, runId, commandId, controller: owner.controller, generation: owner.generation, mode: "continue", links: previous.links,
       state: "accepted", acceptedAt: at, updatedAt: at, sessionId: previous.sessionId, resumeOf: previous.sessionId, hostProfile: profile, ...(previous.execution ? { execution: previous.execution } : {}),
+      // 이전 실행이 받은 인계 근거도 잇는다 — 작업을 열기 전이면 이 실행의 기록이 그 근거의 원천이다(workKnowledge.managedKnowledge)
+      ...(previous.knowledge ? { knowledge: previous.knowledge } : {}),
       ...(profile.kind === "codex" ? { sessionAlias: previous.sessionId, sessionConfirmed: true } : {}), promptHash: interactionHash(prompt), timeoutMs: binding.policy.runTimeoutMs,
       workId: previous.workId, baseHead: r.context.head, baseStateVersion: previous.baseStateVersion, history: [{ at, state: "accepted", note: `사람 응답 ${r.response!.receiptId}` }] };
     createRun(root, run);

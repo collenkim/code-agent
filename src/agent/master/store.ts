@@ -20,6 +20,7 @@ import { writeAtomic } from "../../core/atomic";
 import { STATE_DIR } from "../layout";
 import { acquireLock } from "../lock";
 import type { HostProfile, Policy, RunExecution, RunState } from "./protocol";
+import type { KnowledgeHandoff } from "../plugins/protocol";
 import { ControlError, EVENT_TYPES, sha256, type DecisionCategory, type EventType } from "./protocol";
 
 export const MASTER_DIR = `${STATE_DIR}/master`;
@@ -86,6 +87,8 @@ export interface RunRecord {
   hostProfile?: HostProfile;
   /** master 가 고른 실행 방식(작업을 이어 가면 그 작업에 고정된 선택). 없으면 프로젝트 실행 방식(execution.json)을 따른 실행이다 */
   execution?: RunExecution;
+  /** master 가 인계한 지식 항목 참조(hello 의 knowledge.refs.accepted 일 때만 받는다) — 작업을 열면 그 작업에 고정된다 */
+  knowledge?: KnowledgeHandoff;
   handoffId?: string;
   recovery?: { at: string; actor: string; source: { file: string; hash: string; size: number; modifiedAt: string }; context: import("../interactions").InteractionContext; requestIds: string[] };
   workId: string | null; baseHead: string | null; baseStateVersion: string;
@@ -99,7 +102,7 @@ export interface RunRecord {
   history: { at: string; state: RunState; note?: string }[];
 }
 /** execution 은 이 작업을 연 master 실행이 고른 실행 방식이다 — 작업이 끝날 때까지 교차 검증·단독 호스트 판정이 따르고, 사람의 execution --handoff 만 바꾼다 */
-export interface WorkBinding { workId: string; links: Links; boundAt: string; runId: string; controller: string; runs: string[]; execution?: RunExecution }
+export interface WorkBinding { workId: string; links: Links; boundAt: string; runId: string; controller: string; runs: string[]; execution?: RunExecution; knowledge?: KnowledgeHandoff }
 
 export interface EventRow { seq: number; logId: string; at: string; type: EventType; runId?: string; commandId?: string; stateVersion?: string; data?: unknown }
 

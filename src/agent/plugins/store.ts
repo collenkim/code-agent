@@ -52,7 +52,8 @@ export interface StoredPlugin {
   slots: Slot[];
   sendsCode: boolean;
   secret?: StoredSecret;
-  adapter: { name: string; version: string; describedAt: string };
+  /** accepts: 등록 때 describe 가 받겠다고 한 선택 입력(`OPTIONAL_INPUTS`) — 없으면 선택 입력을 보내지 않는다 */
+  adapter: { name: string; version: string; describedAt: string; accepts?: string[] };
   consent?: Consent;
   probe: { at: string; ok: boolean; detail?: string };
 }
@@ -86,7 +87,7 @@ const STORED_PLUGIN_SCHEMA = z.object({
       value: z.string().optional(),
     })
     .optional(),
-  adapter: z.object({ name: z.string(), version: z.string(), describedAt: z.string() }),
+  adapter: z.object({ name: z.string(), version: z.string(), describedAt: z.string(), accepts: z.array(z.string()).optional() }),
   consent: z
     .object({
       user: z.string(),

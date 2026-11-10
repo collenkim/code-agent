@@ -24,6 +24,13 @@ export const SLOTS = [
 ] as const;
 export type Slot = (typeof SLOTS)[number];
 
+/**
+ * 비교만 하는(shadow) 선언을 받는 자리 — 기본 구현과 나란히 불러 결과를 쓰지 않고 비교 기록만 남긴다.
+ * 비교 기록을 만드는 자리가 `context.docs` 하나뿐이라 다른 자리는 받지 않는다(받으면 조용히 아무 일도 하지 않게 된다).
+ */
+export const SHADOW_SLOTS = ["context.docs"] as const;
+export type ShadowSlot = (typeof SHADOW_SLOTS)[number];
+
 const StageSchema = z.object({
   key: z.string().describe("단계를 가리키는 식별자. 계획의 files[].stage 와 작업 커서가 이 값을 쓴다"),
   title: z.string().describe("이 단계가 만드는 것"),
@@ -256,7 +263,19 @@ const ManifestSchema = z.object({
     .default({ attributes: [], requireApprover: false, requireVerifiedApproval: false })
     .describe("작업 지시서의 프로젝트 확장 속성 정책"),
   plugins: z
-    .record(z.string(), z.object({ slots: z.array(z.enum(SLOTS)).default([]) }))
+    .record(
+      z.string(),
+      z.object({
+        slots: z.array(z.enum(SLOTS)).default([]),
+        shadow: z
+          .array(z.enum(SHADOW_SLOTS))
+          .default([])
+          .describe(
+            "비교만 하는 자리 — 결과를 쓰지 않고 .code-agent/log/knowledge/ 에 비교 기록만 남긴다. " +
+              "slots 와 따로 두는 이유: 이 키를 모르는 이전 릴리스는 키를 버리고 기본 구현으로 돈다(slots 가 비어 있으므로)",
+          ),
+      }),
+    )
     .default({})
     .describe(
       "이 프로젝트가 어느 자리에 어느 플러그인을 쓰는가. **키는 여기 없다** — 키는 사람마다 " +
@@ -268,9 +287,21 @@ const ManifestSchema = z.object({
 }).superRefine((manifest, ctx) => {
   // 두 플러그인이 같은 자리를 선언하면 무엇이 도는지 정해지지 않는다 — 형식 오류다
   const owners = new Map<string, string[]>();
+  const shadows = new Map<string, string[]>();
   for (const [name, entry] of Object.entries(manifest.plugins)) {
     for (const slot of entry.slots) {
       owners.set(slot, [...(owners.get(slot) ?? []), name]);
+    }
+    for (const slot of entry.shadow) {
+      shadows.set(slot, [...(shadows.get(slot) ?? []), name]);
+      // 같은 결과를 쓰면서 비교할 수는 없다 — 둘 중 무엇을 뜻했는지 정해지지 않는다
+      if (entry.slots.includes(slot)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["plugins", name],
+          message: `${name} 가 자리 ${slot} 를 slots 와 shadow 에 함께 적었습니다 — 쓰려면 slots, 비교만 하려면 shadow 하나만 적습니다.`,
+        });
+      }
     }
   }
   for (const [slot, names] of owners) {
@@ -279,6 +310,15 @@ const ManifestSchema = z.object({
         code: "custom",
         path: ["plugins"],
         message: `자리 ${slot} 를 두 플러그인이 선언했습니다: ${names.join(", ")} — 한 자리에는 하나만 적습니다.`,
+      });
+    }
+  }
+  for (const [slot, names] of shadows) {
+    if (names.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["plugins"],
+        message: `자리 ${slot} 를 두 플러그인이 shadow 로 선언했습니다: ${names.join(", ")} — 비교는 한 자리에 하나만 적습니다.`,
       });
     }
   }

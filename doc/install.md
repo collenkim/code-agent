@@ -363,6 +363,6 @@ AI-DLC 와 code-agent 는 번갈아 쓴다. 같은 브랜치에 진행 중인 AI
 | 3 | 블록 | `CLAUDE.md` · `.gitignore` 의 `code-agent:start` ~ `end` 블록 제거 (블록 밖은 그대로) |
 | 4 | 진행 상태 | `.code-agent/` 는 **남긴다** — 승인·확정 원장과 검증 증거가 git 이력에 남은 커밋의 근거다. 정말 지울 것이면 그 이력도 근거를 잃는다는 것을 알고 지운다 |
 | 5 | 도구 | npm 전역이면 `npm rm -g code-agent`, 단일 실행 파일이면 그 파일 삭제 |
-| 6 | 이 PC 의 개인 등록 | `~/.code-agent/credentials.json` — 플러그인 키·동의가 여기 있다. 저장소가 아니라 **이 PC 의 이 사용자** 것이라 따로 지운다 ([plugins.md §3](plugins.md#3-등록)) |
+| 6 | 이 PC 의 개인 등록 | `~/.code-agent/credentials.json` — 플러그인 키·동의가 여기 있다. agent-knowledge 어댑터를 썼으면 그 설정 `~/.code-agent/agent-knowledge.json`(또는 `CODE_AGENT_KNOWLEDGE_CONFIG`가 가리킨 파일)도 같이 지운다. 저장소가 아니라 **이 PC 의 이 사용자** 것이라 따로 지운다 ([plugins.md §3](plugins.md#3-등록), [§10.3](plugins.md#103-설정등록제거)) |
 
 1~4 는 저장소의 변경이라 커밋해야 팀에 반영된다.

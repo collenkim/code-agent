@@ -452,6 +452,10 @@ export function search(index: KnowledgeIndex, query: SearchQuery): Hit[] {
   return hits.sort(sortHits);
 }
 
+/** 반드시 적용하는 업무 정책의 대상 — `구분: 필수` 이고 관찰이 아닌 업무 정책 */
+export const isMandatoryRule = (entry: IndexEntry): boolean =>
+  entry.kind === "business-rules" && entry.level === RULE_LEVELS[0] && entry.state !== "관찰";
+
 /**
  * 반드시 적용하는 업무 정책 — 순위와 관계없이 넣는다. `구분: 필수` 이고 관찰이 아닌 업무 정책 중
  * 질의가 키를 들었거나, 함께 나온 항목·관련 항목이 가리키거나, 범위가 이 작업의 파일과 겹치거나 `전체` 인 것.
@@ -460,7 +464,7 @@ export function mandatoryPolicies(index: KnowledgeIndex, query: SearchQuery, sho
   const linkedBy = new Map<string, string>();
   for (const entry of [...shown, ...relatedEntries(index, query.files)]) for (const key of entry.links) if (!linkedBy.has(key)) linkedBy.set(key, entry.key);
   return index.entries
-    .filter((entry) => entry.kind === "business-rules" && entry.level === RULE_LEVELS[0] && entry.state !== "관찰")
+    .filter(isMandatoryRule)
     .flatMap((entry) => {
       const why = query.keys.includes(entry.key) ? "요구가 언급"
         : linkedBy.has(entry.key) ? `${linkedBy.get(entry.key)} 가 가리킴`

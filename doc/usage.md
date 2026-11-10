@@ -686,6 +686,7 @@ fix 는 오류 로그가 1차 근거다. 로컬 재현은 될 수도 안 될 수
 | `code-agent plugin list` | 자리 · 기본 구현 · 감지된 무료 도구 · 등록된 플러그인 · 저장소 선언 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` · `plugin remove <이름>` | 이 PC 에 플러그인 등록 · 해제. 키와 동의는 `~/.code-agent/credentials.json` 에만 들어간다 | **O** |
 | `code-agent plugin example [--out <경로>]` | 번들에 든 예시 어댑터를 파일로 꺼낸다 (기본 `./echo-adapter.js`, 있는 파일은 덮지 않는다) | — |
+| `code-agent plugin agent-knowledge [--config <파일>]` | 로컬 agent-knowledge 를 `context.docs` 에 잇는 내장 어댑터 — `plugin add` 로 등록하면 `code-agent context` 가 부른다. stdin 요청 한 벌 → stdout 응답 한 벌, 언제나 종료 코드 0. 사람이 칠 일은 손으로 확인할 때뿐이고 모델은 부르지 못한다 ([10. 플러그인](#10-플러그인-선택)) | — |
 | `code-agent master enable --controller <ID> [--label <설명>] [--token-out <파일>] [--policy <정책.json>] [--host <호스트설정.json>]` · `master disable` | 상위 조정자(master) 연동 켜기·제어자 추가·끄기 (선택, [master 연동](master-control.md)). 토큰은 한 번만 보인다. 연결만으로 승인 권한은 생기지 않는다 | **O** |
 | `code-agent master trust --controller <ID>` · `master untrust --controller <ID>` · `master trust --list` | 이 PC 의 대시보드 제어자 신뢰 등록·해제·목록 (PC당 1회, 저장소 밖에서도 된다). 등록은 대시보드 확인 화면(`--preview`·`--shown-hash`)으로도 한다. 신뢰한 제어자는 프로젝트마다 대시보드의 사람 확인으로 연동을 켠다([페어링](master-control.md#pc-신뢰와-대시보드-페어링)). 정책·호스트 설정·위임 권한은 바꾸지 못한다 | **O** |
 | `code-agent master grant <권한.json>` · `master revoke <권한 ID> [--reason <사유>]` | master 위임 권한 주기·회수 — 작업·임무·동작(요구 확정·계획 승인·반영·업무 질문)·경로·만료(최대 7일)·사용 한도로 좁힌다. 범위 안의 routine 판단만 받고 원장에 '사람 응답 아님'으로 남는다 | **O** |
@@ -1048,7 +1049,7 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 |---|---|
 | `.code-agent/` 쓰기 | 도구(Write·Edit·MultiEdit·NotebookEdit)로는 대소문자를 가리지 않고 쓸 수 없다 — 상태·승인·확정 원장은 code-agent 명령만 바꾼다 |
 | `doc/work/<ID>/requirement.md` 쓰기 | 지시서는 `request submit` 이 렌더하거나 사람이 편집기로 쓴다 (문서 세션에서도 같다) |
-| `~/.code-agent/` | `Read`·`Grep`·`Glob`·쓰기 전부. 등록된 플러그인 키가 사는 자리다 |
+| `~/.code-agent/` | `Read`·`Grep`·`Glob`·쓰기 전부. 등록된 플러그인 키와 agent-knowledge 어댑터 설정이 사는 자리다 |
 | 그 자리를 가리키는 Bash | `~/.code-agent` 나 `.code-agent` **경로**를 적은 명령은 거부한다. CLI 이름 `code-agent` 는 앞에 점이 없어 걸리지 않는다 |
 
 그 밖의 것은 세션이 없으면 판정하지 않는다 — code-agent 로 하는 작업이 아닐 때까지 막을 이유는 없다.
@@ -1104,7 +1105,8 @@ FND-c5a5004b90 v1 · [c 다른 프로젝트·공유 계약 영향] 열림 · 차
 | `.code-agent/request-session.json` | 요구사항 접수 세션 표시 (id·종류·연 시각 · 접수 때 준 `base`·`target`) | `request begin` 이 쓰고 `start` · `abort` 가 지운다 | X |
 | `.code-agent/log/verify/<ID>/` | 검증 명령의 전체 로그 — 실행마다 하나(`<스테이지>-<회차>-<종류>-<시작 시각>.log`, 재현은 `repro-0-<종류>-…`), 머리에 명령·시작·끝·소요·종료 코드. 다시 돌려도 앞 실행의 로그를 덮지 않는다 — ⑧ 에는 꼬리만 남는다 | `repro` · `check` · `test` · `integrate` | X |
 | `.code-agent/log/timeline.jsonl` | 실행 타임라인 — 요청·담당·다음 행동·동의·검증의 시작·끝·대기 사유(본문 없이), `usage` 가 읽는다 | 명령·hook | X |
-| `.code-agent/log/plugins/<자리>.jsonl` | 플러그인 호출 기록 — 요청 요약·소요·결과. 마지막 200줄만, **키 값은 들어가지 않는다** | 플러그인을 부르는 명령 | X |
+| `.code-agent/log/plugins/<자리>.jsonl` | 플러그인 호출 기록 — 요청 요약·소요·결과(비교만 한 호출은 `mode: "shadow"`). 마지막 200줄만, **키 값은 들어가지 않는다** | 플러그인을 부르는 명령 | X |
+| `.code-agent/log/knowledge/context.jsonl` | 지식 검색 연결의 진단·비교 기록 — 확인·거부한 항목 범위와 사유, 인계 참조 결과, shadow 의 기본 검색 대비 비교. 마지막 200줄만, 본문은 들어가지 않는다 ([plugins.md §10.7](plugins.md#107-기록--code-agentlogknowledgecontextjsonl)) | `code-agent context` | X |
 
 `<ID>`는 지시서 머리말의 `id`다. 티켓 ID를 주면 그대로 쓰고 생략하면 CLI가 미사용 WORK 번호를 발급한다. 모델이 임의 번호를 만들지 않으며 지시서 ID와 작업 폴더 이름은 같아야 한다.
 
@@ -1297,6 +1299,7 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | `code-agent plugin add <이름> --command "<argv>" [--slots a,b] [--sends-code]` | 이 PC 에 등록 — `describe` → 동의 → 키 → `probe` 순서로 묻는다 | **O** |
 | `code-agent plugin remove <이름>` | 등록 해제 — 키·동의·probe 기록을 함께 지운다 | **O** |
 | `code-agent plugin example [--out <경로>]` | 예시 어댑터를 파일로 꺼낸다 — 단일 실행 파일 안에도 들어 있다 | — |
+| `code-agent plugin agent-knowledge [--config <파일>]` | agent-knowledge 연결 어댑터 — 직접 치지 않고 `plugin add` 로 등록한다 (아래 [agent-knowledge 연결](#agent-knowledge-연결)) | — |
 
 `add` · `remove` 는 `approve` · `deliver` 와 같은 문이다 — **직접 호출은 막고 같은 세션의 consent로 적용한다**.
 등록은 사람이 동의를 주는 자리라서다. `list` 는 상태만 읽으므로 실행 절차도 부른다.
@@ -1357,6 +1360,9 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 - **키가 없는 팀원은 기본 구현으로 돈다** — 알림 한 줄이 뜨고 작업은 그대로 진행된다.
 - 개인이 등록해 뒀어도 저장소가 선언하지 않았으면 기본 구현이 돈다 (등록은 개인 것, 선언은 팀 것).
 - 한 자리를 두 플러그인이 선언하면 `code-agent.json` 형식 오류다.
+- `context.docs` 는 쓰지 않고 **비교만** 하게 선언할 수 있다 — `"plugins": {"agent-knowledge": {"shadow": ["context.docs"]}}`.
+  화면은 그대로이고 비교 기록만 남는다. 한 플러그인이 같은 자리를 `slots`·`shadow` 에 함께 적거나, 두 플러그인이 같은 자리를 `shadow` 로
+  선언하면 형식 오류다. 이 키를 모르는 이전 릴리스는 키를 버리고 기본 구현으로 돈다 ([plugins.md §4](plugins.md#4-저장소-선언)).
 - `plugins` 는 매니페스트 해시에 들어가지 않는다 — **더해도 기존 계획 승인이 무효가 되지 않는다.**
 
 ### 어디에 나타나나
@@ -1364,12 +1370,30 @@ Git 저장소에서는 추적 파일과 무시되지 않은 새 파일을 검사
 | 명령 | 무엇이 붙나 |
 |---|---|
 | `code-agent context` (`impact`·`design`) | `## 관련 후보 파일 (순위 …)` — 출처 줄이 `기본 구현` 인지 `플러그인 <이름>` 인지 찍는다. 본 범위가 잘렸으면 `- 범위:` 줄이 붙는다(본문은 32 MiB 예산 안에서 경로가 걸린 파일·테스트가 아닌 파일부터 읽는다, 저장소 파일 2만 개 상한, 플러그인에는 앞 3,000개) — 순위에 없으면 직접 찾는다 |
-| `code-agent context` (`analysis`·`impact`·`design`·`plan`) | `## 참고 문서 (지식 항목·문서 절 순위 …)` — 지식 항목·POLICY 절을 키·경로·별칭·본문으로 골라 줄 범위·최신성·연결을 싣는다(analysis 는 지시서의 접수 요구 낱말로 고른다). 잘렸으면 수를 적고, 반드시 적용하는 업무 정책은 순위와 관계없이 따로 싣는다. 플러그인이 채운 결과도 지식 항목·문서 절과 맞으면 줄 범위·최신성을 붙인다 |
+| `code-agent context` (`analysis`·`impact`·`design`·`plan`) | `## 참고 문서 (지식 항목·문서 절 순위 …)` — 지식 항목·POLICY 절을 키·경로·별칭·본문으로 골라 줄 범위·최신성·연결을 싣는다(analysis 는 지시서의 접수 요구 낱말로 고른다). 잘렸으면 수를 적고, 반드시 적용하는 업무 정책은 순위와 관계없이 따로 싣는다. 플러그인이 채운 결과도 지식 항목·문서 절과 맞으면 줄 범위·최신성을 붙인다. 출처 참조를 내는 어댑터(agent-knowledge)면 지금 파일과 해시가 맞은 범위만 싣고, 항목·절과 꼭 맞지 않으면 `- <경로> L<시작>-L<끝> · <제목> (부분) [<상태>]` 줄, 거부한 것은 `- 검증 제외 N개` 줄, master 인계가 있으면 `## 인계받은 지식 근거`·`## 근거 재확인 필요` 블록이 붙는다 |
 | `code-agent review` | `## 의심 항목` — **단서일 뿐 판정이 아니다.** ⑨ 에 적히는 지적은 `ca-reviewer` 가 낸 것뿐이다 |
 | `code-agent check` | `verify.extra` 의 결과가 증거 런으로 **추가**된다 (`kind: "plugin:<이름>:…"`). 더하기만 하므로 실패한 빌드를 통과로 만들 수 없다 |
 | `code-agent survey` | 계층·컴포넌트 분류 블록 (플러그인이 없으면 출력이 지금과 같다) |
 
 실제 Jev 는 아직 붙지 않았다 — A/B 토큰 비교 절차는 [plugins.md §8](plugins.md#8-ab-토큰-비교-jev-가-붙으면).
+
+### agent-knowledge 연결
+
+로컬 agent-knowledge 색인을 `context.docs` 에 잇는 내장 어댑터다. 읽기 명령(`search`·`get`·`status`)만 부르고 본문을 넘기지 않으며,
+`analysis`·`impact`·`design`·`plan` 의 `code-agent context` 에서만 돈다. 계약·코드·기록 형식은 [plugins.md §10](plugins.md#10-agent-knowledge-연결).
+
+1. agent-knowledge 로 문서를 색인해 둔다(사람 — code-agent 는 색인하지 않는다).
+2. 어댑터 설정 `~/.code-agent/agent-knowledge.json` 을 만든다 — `schemaVersion: 1`, agent-knowledge 실행 argv `command`, 저장소 루트와
+   agent-knowledge 프로젝트의 대응 `projects`, 필요하면 `sourcesConfig`·`retrievalConfig`·`db`·`limits`. 다른 자리에 두려면 절대 경로를
+   `--config <파일>` 이나 `CODE_AGENT_KNOWLEDGE_CONFIG` 로 준다.
+3. 등록한다 — 같은 세션에서는 `{"action":"plugin-add","name":"agent-knowledge","command":"code-agent plugin agent-knowledge","slots":"context.docs"}`,
+   직접 TTY 에서는 `code-agent plugin add agent-knowledge --command "code-agent plugin agent-knowledge" --slots context.docs`.
+   `probe` 가 설정·색인을 확인하고, 등록 화면에 `받는 선택 입력(accepts): context.docs.phase, context.docs.files, context.docs.refs` 가 보인다.
+4. 저장소에 먼저 `"shadow": ["context.docs"]` 로 선언해 화면을 바꾸지 않고 `.code-agent/log/knowledge/context.jsonl` 의 비교를 본다.
+5. 쓸 만하면 `"slots": ["context.docs"]` 로 바꾼다. 되돌리려면 선언을 지우거나 `shadow` 로 옮긴다 — 작업·등록을 지우지 않아도 기본 검색으로 돈다.
+
+제거는 `plugin-remove`(직접 TTY 는 `code-agent plugin remove agent-knowledge`)이고, 설정 파일은 따로 지운다.
+실제 Claude·Codex 호스트 세션에서는 아직 확인하지 않았다 ([plugins.md §10.8](plugins.md#108-상태와-한계)).
 
 ---
 

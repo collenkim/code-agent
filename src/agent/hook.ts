@@ -436,6 +436,9 @@ function readCommand(command: string, powershell: boolean): boolean {
  * 진짜 관문은 CLI 쪽(updateFromSourceConfirmed — 호스트 셸 거부·TTY 확인)이고, 이 판정은 그 앞의 안내다.
  */
 const SOURCE_UPDATE = /(?:^|[\s&;|("'\\/])code-agent(?:\.cmd|\.ps1)?["']?\s+update(?=\s|$)|\bcli\.js["']?\s+update(?=\s|$)/i;
+/** 지식 검색 어댑터 직접 실행 — 따옴표 안(`plugin add … --command "code-agent plugin agent-knowledge"` 의 등록 인자)은 실행이 아니라 보지 않는다 */
+const PLUGIN_ADAPTER_COMMAND = /(?:^|[\s&;|(\\/])(?:code-agent(?:\.cmd|\.ps1)?|cli\.js)\s+plugin\s+agent-knowledge(?=\s|$)/i;
+const PLUGIN_ADAPTER_DENIED = "지식 검색 어댑터(plugin agent-knowledge)는 code-agent context 가 플러그인으로 부릅니다 — 직접 실행하지 않고 해당 단계의 code-agent context 출력에 실린 참고 문서를 씁니다.";
 const SOURCE_UPDATE_DENIED = "code-agent 새 버전 설치(fetch · npm ci · build)와 적용 버전 선택(--release · --bundled)은 사람의 확인이 필요합니다 — 현재 세션의 ca-answer update 동의 절차를 쓰거나, 사람이 호스트 밖의 터미널에서 직접 실행합니다(미리보기 뒤 update 입력). 이미 설치한 적용 대기 버전을 적용하거나 지금 적용 버전의 템플릿만 다시 반영하려면 code-agent update --templates-only 를 씁니다(진행 중인 일이 없을 때).";
 
 /**
@@ -709,6 +712,9 @@ function decideOutside(input: HookInput, repoRoot: string): string | undefined {
     // master 제어(연동 설정·위임 판단·실행 제어)는 러너와 사람의 터미널이 부른다 — 세션 안에서는 허용 목록(MODEL_SUBCOMMANDS)에 없어 이미 막힌다
     if (MASTER_CONTROL_COMMAND.test(command)) return MASTER_CONTROL_DENIED;
     if (/\b(?:code-agent(?:\.cmd)?|cli\.js)\s+interaction\s+drain\b/.test(command)) return "질문 적용 실행기는 대시보드 연결 프로세스가 호출합니다.";
+    // 지식 검색 어댑터는 호스트가 context 안에서 플러그인으로 부른다 — 모델이 직접 부르면 설정의 실행 명령과 색인 조회가 허용 도구 밖으로 열린다.
+    // 세션 안에서는 허용 목록(MODEL_SUBCOMMANDS)에 없어 이미 막힌다
+    if (PLUGIN_ADAPTER_COMMAND.test(command)) return PLUGIN_ADAPTER_DENIED;
     return undefined;
   }
   if (READ_TOOLS.includes(input.tool_name)) {

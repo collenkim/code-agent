@@ -15,7 +15,7 @@ import { AFTER_IMPLEMENT, questionsFile, workDocsDir } from "./layout";
 import { prDocFile } from "./deliver";
 import { keyRefs, proposalFile } from "./knowledge";
 import { impactTableFiles, proposalScope } from "./knowledgeImpact";
-import { buildIndex, freshness, hitLine, mandatoryPolicies, relatedEntries, requiredConventionLines, search } from "./knowledgeIndex";
+import { buildIndex, freshness, hitLine, isMandatoryRule, mandatoryPolicies, relatedEntries, requiredConventionLines, search } from "./knowledgeIndex";
 import type { Freshness, Hit, IndexEntry, KnowledgeIndex, SearchQuery } from "./knowledgeIndex";
 import { collectWindowOpen, loadEvidence, planPaths, reviewRoundUsage, runsOf, testFrozen, testRoots, testStageFiles, validationDocFile, verifyView } from "./evidence";
 import { budgetText } from "./retryPolicy";
@@ -23,9 +23,11 @@ import { openRepair, repairReviewLines } from "./testRepair";
 import { impactBrief, impactLines, impactReviewFiles } from "./changeImpact";
 import { experienceIndex, experienceLine, searchExperience } from "./experience";
 import { CONTEXT_POLICY_KINDS, docRefs, hitSection, isTestPath, keywordsOf, rankCandidatesScan, requirementItems, type RankScan } from "./plugins/defaults";
-import { MAX_ITEMS } from "./plugins/protocol";
-import type { DocSection, RequirementRef } from "./plugins/protocol";
+import { CONTEXT_DOCS_PHASES, MAX_ITEMS } from "./plugins/protocol";
+import type { ContextDocsPhase, DocSection, RequirementRef, SlotInput } from "./plugins/protocol";
 import { callSlot, clamp, sourceLines } from "./plugins/run";
+import { applyDocsKnowledge, handoffRefs, isPartialRange, optionalDocsInput, partialLine, pinnedLines, shadowDocs } from "./knowledgeContext";
+import type { PartialRange, ShownItem } from "./knowledgeContext";
 import { changedList, loadReview, reviewDocFile, roundChanges } from "./review";
 import { KNOWLEDGE_KINDS } from "./schemas";
 import { sourceFileScan, SURVEY_MAX_FILES } from "./survey";
@@ -105,7 +107,12 @@ function fromPlugin(index: KnowledgeIndex, section: DocSection): Hit | DocSectio
   return found ? { section: found, score: 0, why: section.why ? [clamp(section.why)] : [] } : section;
 }
 
-const isHit = (value: Hit | DocSection): value is Hit => "score" in value;
+const isHit = (value: Hit | DocSection | PartialRange): value is Hit => "score" in value;
+
+/** `context.docs` 가 불리는 단계면 그 이름 — 어댑터 선택 입력 `phase` 로 간다 */
+function docsPhase(phase: string): ContextDocsPhase | undefined {
+  return (CONTEXT_DOCS_PHASES as readonly string[]).includes(phase) ? (phase as ContextDocsPhase) : undefined;
+}
 
 function staleShown(fresh: Map<IndexEntry, Freshness>): boolean {
   return [...fresh.values()].some((entry) => entry.state !== "최신" && entry.state !== "근거 경로 없음");
@@ -124,40 +131,73 @@ function mandatoryLines(mandatory: { entry: IndexEntry; why: string }[], fresh: 
 
 /**
  * `context.docs` — 지식 항목·문서 절 순위와 반드시 적용하는 업무 정책.
- * `files` 는 이 작업이 닿는 파일(후보 순위·영향 범위 표) — 근거 경로가 겹치는 항목이 위로 온다.
- * 플러그인이 등록돼 있으면 순위는 플러그인 것이고, 줄 범위·최신성·반드시 적용하는 정책은 코드가 붙인다(플러그인에 더 보내지 않는다).
+ * `files` 는 이 작업이 닿는 파일(② 영향 범위 표 — analysis 에는 없다) — 근거 경로가 겹치는 항목이 위로 온다.
+ * 플러그인이 등록돼 있으면 순위는 플러그인 것이고, 줄 범위·최신성·반드시 적용하는 정책은 코드가 붙인다.
+ * 어댑터가 받겠다고 한 경우만 단계·작업 파일·master 인계 참조를 더 보낸다. 출처 참조를 낸 섹션은 지금 파일과 내용 해시가 맞은 범위만 싣고
+ * (knowledgeContext.ts), 비교만 하는 선언(shadow)은 반환 줄을 다 만든 뒤 따로 불러 기록만 남긴다.
  */
-function docSectionLines(repoRoot: string, manifest: Manifest, items: RequirementRef[], keywords: string[], files: string[] = []): string[] {
+function docSectionLines(repoRoot: string, manifest: Manifest, items: RequirementRef[], keywords: string[], files: string[] = [], phase?: ContextDocsPhase): string[] {
   const index = buildIndex(repoRoot, manifest, CONTEXT_POLICY_KINDS);
   const query: SearchQuery = { keywords, keys: mentionedKeys(items, index), files };
   let hits: Hit[] | undefined;
-  const result = callSlot(
-    repoRoot,
-    manifest,
-    "context.docs",
-    () => ({ requirements: items, docs: docRefs(repoRoot, manifest), limit: DOC_SECTION_LIMIT }),
-    () => {
-      hits = search(index, query);
-      return { sections: hits.slice(0, DOC_SECTION_LIMIT).map(hitSection) };
-    },
-  );
-  const shown = hits ? hits.slice(0, DOC_SECTION_LIMIT) : result.output.sections.slice(0, DOC_SECTION_LIMIT).map((section) => fromPlugin(index, section));
-  const entries = shown.filter(isHit).flatMap((hit) => (hit.entry ? [hit.entry] : []));
-  const mandatory = mandatoryPolicies(index, query, entries).filter(({ entry }) => !entries.includes(entry));
+  const runDefault = () => {
+    hits = search(index, query);
+    return { sections: hits.slice(0, DOC_SECTION_LIMIT).map(hitSection) };
+  };
+  const refs = handoffRefs(repoRoot);
+  // 한 번만 짓는다 — enabled 호출과 shadow 비교가 같은 입력을 보낸다
+  let sent: SlotInput["context.docs"] | undefined;
+  const input = () => (sent ??= {
+    requirements: items,
+    docs: docRefs(repoRoot, manifest),
+    limit: DOC_SECTION_LIMIT,
+    ...optionalDocsInput(phase, files, refs),
+  });
+  const called = callSlot(repoRoot, manifest, "context.docs", input, runDefault);
+  const knowledge = applyDocsKnowledge({
+    repoRoot, manifest, index, phase, limit: DOC_SECTION_LIMIT, refs, sent, result: called, runDefault,
+    fromPlugin: (section) => fromPlugin(index, section),
+  });
+  const result = knowledge.result;
+  const shown: ShownItem[] = knowledge.shown
+    ?? (hits ? hits.slice(0, DOC_SECTION_LIMIT) : result.output.sections.slice(0, DOC_SECTION_LIMIT).map((section) => fromPlugin(index, section)));
+  const entries = [...shown, ...knowledge.pinned.shown].filter(isHit).flatMap((hit) => (hit.entry ? [hit.entry] : []));
+  const mandatory = [
+    ...mandatoryPolicies(index, query, entries),
+    // 확인한 지식 검색 결과로 목록을 갈았으면, 기본 검색이 상위에 올렸을 필수 업무 정책을 이 블록으로 지킨다 — 순위가 바뀌었다고
+    // 반드시 적용하는 정책이 화면에서 빠지지 않게
+    ...(knowledge.shown
+      ? search(index, query).slice(0, DOC_SECTION_LIMIT).flatMap((hit) => (hit.entry && isMandatoryRule(hit.entry) ? [{ entry: hit.entry, why: "기본 검색이 고름" }] : []))
+      : []),
+  ].filter(({ entry }, at, all) => !entries.includes(entry) && all.findIndex((other) => other.entry === entry) === at);
   const fresh = freshness(repoRoot, [...entries, ...mandatory.slice(0, KNOWLEDGE_LIMIT).map(({ entry }) => entry)]);
-  return [
+  const render = (item: ShownItem): string => (isPartialRange(item)
+    ? partialLine(item)
+    : isHit(item)
+      ? hitLine(item, item.entry ? fresh.get(item.entry) : undefined)
+      : `- ${clamp(item.path)} · ## ${clamp(item.heading)}${item.why ? ` (${clamp(item.why)})` : ""}`);
+  const lines = [
     "## 참고 문서 (지식 항목·문서 절 순위 — 전문을 읽지 말고 이 줄 범위만)",
     ...sourceLines(result, "키·경로·별칭·본문 검색"),
     ...(shown.length > 0
-      ? shown.map((item) => (isHit(item)
-        ? hitLine(item, item.entry ? fresh.get(item.entry) : undefined)
-        : `- ${clamp(item.path)} · ## ${clamp(item.heading)}${item.why ? ` (${clamp(item.why)})` : ""}`))
+      ? shown.map(render)
       : ["- 없음 — 등록된 문서에서 걸리는 항목·절이 없습니다."]),
+    ...knowledge.notes,
     ...(hits && hits.length > shown.length ? [`- 범위: 걸린 ${hits.length}개 중 상위 ${shown.length}개만 — 더 찾으려면 ${FIND_HINT}`] : []),
     ...(staleShown(fresh) ? [STALE_NOTE] : []),
+    ...pinnedLines(knowledge.pinned, render),
     ...mandatoryLines(mandatory, fresh),
     ...experienceLines(repoRoot, query),
   ];
+  // 반환 줄은 여기서 이미 정해졌다 — 비교는 그 뒤에 돌고 무엇도 바꾸지 않는다
+  shadowDocs({
+    repoRoot, manifest, index, phase, limit: DOC_SECTION_LIMIT, input,
+    baseline: shown,
+    baselineSource: result.source === "plugin" ? `plugin ${result.name}` : "default",
+    defaults: () => hits ?? search(index, query),
+    fromPlugin: (section) => fromPlugin(index, section),
+  });
+  return lines;
 }
 
 /** 단계 context 에 싣는 작업 경험 수 — 키·경로·이름 낱말로 걸린 것(점수 3 이상)만 */
@@ -241,7 +281,7 @@ export function analysisSection({ repoRoot, work }: RenderInput, out: string[]):
   const specItems = sourceItems(readFileSync(join(repoRoot, active.spec), "utf8")).map((item) => ({ key: item.id, text: item.text }));
   const rules = businessRuleFiles(work);
   out.push("", `- 업무 규칙 KNOWLEDGE (묻기 전에 먼저 찾는다 — 배정 inputs 에 있다): ${rules.join(", ") || "없음"}`);
-  out.push("", ...docSectionLines(repoRoot, manifest, specItems, keywordsOf(specItems)));
+  out.push("", ...docSectionLines(repoRoot, manifest, specItems, keywordsOf(specItems), [], "analysis"));
 
 }
 
@@ -347,7 +387,7 @@ export function planningSupport({ repoRoot, work, keys }: RenderInput, out: stri
   if (active.phase !== "plan") {
     out.push("", ...candidateLines(repoRoot, manifest, items, keywords, files));
   }
-  out.push("", ...docSectionLines(repoRoot, manifest, items, keywords, files));
+  out.push("", ...docSectionLines(repoRoot, manifest, items, keywords, files, docsPhase(active.phase)));
   if (active.phase === "impact" && active.knowledgeVersion) {
     out.push(...fileKnowledgeLines(repoRoot, manifest, files, "## 이 작업이 닿을 파일을 근거로 든 지식 항목 — 02 의 `문서 영향` 에서 빠짐없이 판단한다", false));
   }

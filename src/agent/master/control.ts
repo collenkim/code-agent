@@ -24,10 +24,11 @@ import { stateView, type StateJson } from "../stateView";
 import { consentsView, decideConsent, answerQuestions, questionsView } from "./delegation";
 import { acceptHandover, abortHandover, advanceHandover, requestHandover } from "./handover";
 import { liveness } from "./processes";
+import type { KnowledgeHandoff } from "../plugins/protocol";
 import {
-  ACTIVE_RUN_STATES, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, executionMain, HUMAN_ONLY_ACTIONS, mergePolicy,
-  MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES, requestHash, sha256, SUPPORTED_VERSIONS,
-  runExecutionOf, TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
+  ACTIVE_RUN_STATES, canonicalJson, COMMAND_TYPES, ControlError, DECISION_CATEGORIES, DELEGABLE_ACTIONS, ERROR_CODES, EVENT_TYPES, executionMain, HUMAN_ONLY_ACTIONS,
+  knowledgeHandoffOf, MAX_KNOWLEDGE_REFS, mergePolicy, MUTATING_TYPES, OPEN_TYPES, PAIR_DOMAIN, PAIRING_VERSION, parseRequest, plain, PROTOCOL, PROTOCOL_VERSION, READ_TYPES,
+  requestHash, sha256, SUPPORTED_VERSIONS, runExecutionOf, TERMINAL_RUN_STATES, UNSUPPORTED, validId, type RequestEnvelope, type ResponseEnvelope,
 } from "./protocol";
 import { activeRuns, createRun, newRunId, reconcileRuns, requestStop, spawnSupervisor } from "./runs";
 import {
@@ -129,7 +130,31 @@ function hello(root: string, binding: Binding | undefined): unknown {
     // 키·토큰·키 경로는 넣지 않는다 — 신뢰한 제어자 ID 와 관리 실행 호스트의 준비 상태만
     pairing: { supported: true, version: PAIRING_VERSION, signature: "Ed25519", domain: PAIR_DOMAIN, trustedControllers: (require("./trust") as typeof import("./trust")).trustedControllerIds() },
     managedHost: managedHost(root, binding),
+    knowledge: knowledgeCapability(root),
   };
+}
+
+/** hello.knowledge — 플러그인 이름·명령·설정 경로는 넣지 않는다. 모드와 인계 참조를 받는지만 알린다(master 는 accepted 일 때만 knowledge 를 싣는다) */
+function knowledgeCapability(root: string): unknown {
+  const link = knowledgeLinkOf(root);
+  return { schemaVersion: 1, mode: link.mode, refs: { supported: true, accepted: link.refs, max: MAX_KNOWLEDGE_REFS } };
+}
+
+/**
+ * 지식 검색 연결(`context.docs`) — 저장소 선언(code-agent.json plugins)과 이 PC 의 플러그인 등록. 설정을 읽지 못하면 off 다:
+ * 인계 참조를 받았다가 검증할 길이 없는 것보다 받지 않는다고 알리는 편이 master 가 근거를 다른 경로로 옮길 수 있다.
+ */
+function knowledgeLinkOf(root: string): { mode: "off" | "shadow" | "enabled"; refs: boolean } {
+  try {
+    const manifest = (require("../work") as typeof import("../work")).loadManifestIfAny(root);
+    return (require("../plugins/run") as typeof import("../plugins/run")).knowledgeLink(manifest);
+  } catch { return { mode: "off", refs: false }; }
+}
+
+/** 같은 인계인가 — 참조 순서는 보지 않는다(항목 ID 가 겹치지 않으므로 ID 순으로 맞춰 견준다) */
+function sameKnowledge(a: KnowledgeHandoff | undefined, b: KnowledgeHandoff | undefined): boolean {
+  const key = (value: KnowledgeHandoff | undefined) => value ? canonicalJson([...value.refs].sort((x, y) => x.itemId < y.itemId ? -1 : x.itemId > y.itemId ? 1 : 0)) : null;
+  return key(a) === key(b);
 }
 function managedHost(root: string, binding: Binding | undefined): unknown {
   try { return (require("./hostProfile") as typeof import("./hostProfile")).managedHostView(root, binding); }
@@ -226,8 +251,20 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   // 새 실행만 실행 방식을 고른다 — 이어 실행은 이전 실행(그 작업에 고정된 선택)을 그대로 쓴다
   const requested = runExecutionOf(payload.execution);
   if (requested && mode === "continue") throw new ControlError("invalid-request", "이어 실행은 이전 실행의 실행 방식을 씁니다 — execution 은 start 에만 보냅니다");
+  // 지식 참조도 새 실행만 받는다(실행 방식과 같은 규칙) — 이어 실행은 이전 실행의 인계를 그대로 쓴다
+  const handoff = knowledgeHandoffOf(payload.knowledge);
+  if (handoff && mode === "continue") throw new ControlError("invalid-request", "이어 실행은 이전 실행의 인계 근거를 씁니다 — knowledge 는 start 에만 보냅니다");
+  if (handoff) {
+    // 받을 수 없는 참조를 조용히 버리지 않는다 — 버리면 master 는 근거가 전달된 줄 알고 code-agent 는 그 근거를 대조하지 않는다
+    const link = knowledgeLinkOf(root);
+    if (!link.refs) {
+      throw new ControlError("invalid-state", `이 프로젝트는 지식 항목 참조를 받지 않습니다(지식 검색 ${link.mode}) — hello 의 knowledge.refs.accepted 가 true 일 때만 knowledge 를 보냅니다`,
+        { reason: "knowledge-refs-not-accepted", mode: link.mode });
+    }
+  }
   if (requested) requireExecutionHosts(root, requested);
   let execution = requested;
+  let knowledge = handoff;
   let profile = requested ? profileFor(binding, executionMain(requested)) : selectedProfile(root, binding);
   let sessionId: string;
   if (mode === "continue") {
@@ -237,6 +274,7 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
     const last = previous.at(-1)!;
     profile = requireResumeProfile(root, binding, last);
     execution = last.execution;
+    knowledge = last.knowledge;
     sessionId = last.sessionId;
   } else sessionId = randomUUID();
   const expect = request.expect ?? {};
@@ -265,6 +303,14 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
       execution = work.execution;
       profile = execution ? profileFor(binding, executionMain(execution)) : selectedProfile(root, binding);
     }
+    // 인계 근거도 처음 연 실행이 작업에 고정한다. 실행 방식과 달리 다른 참조를 조용히 갈음하지 않는다 — master 는 보낸 근거가 쓰인다고
+    // 알기 때문이다. 같은 참조의 재전송은 받고, 참조 없이 시작하면 작업에 고정된 참조를 이어 쓴다
+    if (mode === "start") {
+      if (handoff && !sameKnowledge(handoff, work.knowledge)) {
+        throw new ControlError("conflict", `작업 ${bound} 는 처음 연 실행의 인계 근거에 고정돼 있습니다 — 다른 knowledge 로 바꾸지 않습니다`, { workId: bound, refs: work.knowledge?.refs.length ?? 0 });
+      }
+      knowledge = work.knowledge;
+    }
   } else if (mode === "continue") {
     // 작업 없이 이어 실행 — 이전 실행이 작업을 열지 않았거나 반영으로 닫았다. 같은 세션의 대화를 잇는 것이라 받는다
   }
@@ -286,14 +332,16 @@ function submit(root: string, binding: Binding, owner: Owner, request: RequestEn
   writeFileSync(runPrompt(root, runId), text, "utf8");
   const run: RunRecord = {
     version: 1, runId, commandId: request.commandId!, controller: owner.controller, generation: owner.generation, mode, links, state: "accepted", acceptedAt: at, updatedAt: at,
-    sessionId, hostProfile: profile, ...(execution ? { execution } : {}), ...(hostHandoff ? { handoffId: hostHandoff.id } : {}), ...(profile.kind === "codex" ? { sessionAlias: sessionId, sessionConfirmed: mode === "continue" } : {}),
+    sessionId, hostProfile: profile, ...(execution ? { execution } : {}), ...(knowledge ? { knowledge } : {}), ...(hostHandoff ? { handoffId: hostHandoff.id } : {}), ...(profile.kind === "codex" ? { sessionAlias: sessionId, sessionConfirmed: mode === "continue" } : {}),
     ...(mode === "continue" ? { resumeOf: sessionId } : {}), promptHash: `sha256:${sha256(text)}`, timeoutMs,
     workId: bound, baseHead: view.repo.head, baseStateVersion: view.stateVersion, history: [{ at, state: "accepted" }],
   };
   createRun(root, run);
   emit(root, "run.accepted", { runId, commandId: request.commandId, stateVersion: view.stateVersion, data: { mode, sessionId, links, workId: bound } });
   spawnSupervisor(root, runId);
-  return { runId, sessionId, state: "accepted", mode, workId: bound, stateVersion: view.stateVersion, resume: view.resume.code, hostKind: profile.kind, execution: execution ?? null };
+  return { runId, sessionId, state: "accepted", mode, workId: bound, stateVersion: view.stateVersion, resume: view.resume.code, hostKind: profile.kind, execution: execution ?? null,
+    // 인계가 있는 실행만 — knowledge 가 없는 실행의 응답에는 knowledge 키가 없다
+    ...(knowledge ? { knowledge: { refs: knowledge.refs.length } } : {}) };
 }
 
 function dispatch(root: string, binding: Binding, owner: Owner, request: RequestEnvelope): unknown {

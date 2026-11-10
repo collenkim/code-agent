@@ -1,4 +1,5 @@
 import { sha256, canonicalJson } from "../../core/serialize";
+import type { KnowledgeHandoff, KnowledgeRef } from "../plugins/protocol";
 export { sha256, canonicalJson } from "../../core/serialize";
 /**
  * master 연동 통신 계약(`code-agent.master` v1) — 순수 모듈(fs·child_process 없음). 명령·응답·이벤트의 꼴과 오류 코드, 위임할 수 있는
@@ -140,6 +141,50 @@ export function runExecutionOf(raw: unknown): RunExecution | undefined {
   return { mode: "both", main: raw.main };
 }
 export const executionMain = (execution: RunExecution): "claude" | "codex" => execution.mode === "both" ? execution.main! : execution.mode;
+
+/** master 가 인계하는 지식 항목 참조(submit `knowledge`)의 형식 버전과 한 번에 받는 참조 수 */
+export const KNOWLEDGE_REFS_VERSION = 1;
+export const MAX_KNOWLEDGE_REFS = 20;
+const KNOWLEDGE_KEYS = ["version", "refs"];
+const KNOWLEDGE_REF_KEYS = ["itemId", "generation", "commit", "itemSha256", "required"];
+const CONTROL_CHAR = /\p{Cc}/u;
+
+/**
+ * submit 의 `knowledge` 를 엄격히 검사한다 — 없으면 undefined. 모르는 키·형식 오류는 invalid-request 다(조용히 버리면 master 는 근거가
+ * 전달된 줄 안다). 참조의 꼴만 본다: 항목이 실제로 있는지·내용이 맞는지는 context 를 만들 때 어댑터와 호스트가 그 세대에서 다시 대조한다.
+ * `required` 는 생략하면 true 다(검증에 실패하면 이 작업의 근거 재확인이 필요한 항목).
+ */
+export function knowledgeHandoffOf(raw: unknown): KnowledgeHandoff | undefined {
+  if (raw === undefined) return undefined;
+  if (!plain(raw)) throw new ControlError("invalid-request", "knowledge 는 { version, refs } 객체입니다");
+  const extra = Object.keys(raw).filter((key) => !KNOWLEDGE_KEYS.includes(key));
+  if (extra.length) throw new ControlError("invalid-request", `모르는 knowledge 키: ${extra.join(", ")}`);
+  if (raw.version !== KNOWLEDGE_REFS_VERSION) throw new ControlError("invalid-request", `knowledge.version 은 ${KNOWLEDGE_REFS_VERSION} 입니다`);
+  if (!Array.isArray(raw.refs) || raw.refs.length < 1 || raw.refs.length > MAX_KNOWLEDGE_REFS) {
+    throw new ControlError("invalid-request", `knowledge.refs 는 1~${MAX_KNOWLEDGE_REFS}개 배열입니다`);
+  }
+  const refs: KnowledgeRef[] = [];
+  const seen = new Set<string>();
+  raw.refs.forEach((item: unknown, index: number) => {
+    const at = `knowledge.refs[${index}]`;
+    if (!plain(item)) throw new ControlError("invalid-request", `${at} 는 객체입니다`);
+    const unknown = Object.keys(item).filter((key) => !KNOWLEDGE_REF_KEYS.includes(key));
+    if (unknown.length) throw new ControlError("invalid-request", `모르는 ${at} 키: ${unknown.join(", ")}`);
+    const { itemId, generation, commit, itemSha256, required } = item;
+    // 항목 ID 는 `<원본>:<경로>#<위치>` 꼴이다 — 원본 이름으로 대응 프로젝트를 가르므로 구분자가 없으면 받지 않는다
+    if (typeof itemId !== "string" || !itemId.length || itemId.length > 512 || !itemId.trim() || CONTROL_CHAR.test(itemId) || !itemId.includes(":") || !itemId.includes("#")) {
+      throw new ControlError("invalid-request", `${at}.itemId 는 ':'·'#' 를 담은 512자 이하 문자열입니다(제어 문자 없음)`);
+    }
+    if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 1) throw new ControlError("invalid-request", `${at}.generation 은 1 이상의 정수입니다`);
+    if (typeof commit !== "string" || !/^[0-9a-f]{40}$/.test(commit)) throw new ControlError("invalid-request", `${at}.commit 은 40자리 소문자 16진입니다`);
+    if (typeof itemSha256 !== "string" || !/^[0-9a-f]{64}$/.test(itemSha256)) throw new ControlError("invalid-request", `${at}.itemSha256 은 64자리 소문자 16진입니다`);
+    if (required !== undefined && typeof required !== "boolean") throw new ControlError("invalid-request", `${at}.required 는 true·false 입니다`);
+    if (seen.has(itemId)) throw new ControlError("invalid-request", `${at}.itemId 가 겹칩니다: ${itemId}`);
+    seen.add(itemId);
+    refs.push({ itemId, generation, commit, itemSha256, required: required ?? true });
+  });
+  return { version: KNOWLEDGE_REFS_VERSION, refs };
+}
 export const DEFAULT_ALLOWED_TOOLS = [
   "Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "TodoWrite", "Task",
   "Bash(code-agent *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)",

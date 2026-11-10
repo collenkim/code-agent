@@ -85,6 +85,31 @@ export interface DocRef {
   headings: { heading: string; line: number }[];
 }
 
+/** `context.docs` 가 불리는 단계 — 이 자리는 analysis~plan 에서만 돈다(implement 이후는 부르지 않는다) */
+export const CONTEXT_DOCS_PHASES = ["analysis", "impact", "design", "plan"] as const;
+export type ContextDocsPhase = (typeof CONTEXT_DOCS_PHASES)[number];
+
+/**
+ * master 가 인계한 지식 항목 참조 — agent-knowledge 공통 계약 제안(`itemId`·`generation`·`commit`·`itemSha256`)의 이름 그대로에
+ * `required` 를 더했다. 본문은 싣지 않는다 — 받는 쪽이 같은 세대에서 다시 꺼내 해시·커밋·범위를 대조한다.
+ * master 쪽(hook 경로의 순수 모듈)은 이 타입을 `import type` 으로만 쓴다.
+ */
+export interface KnowledgeRef {
+  itemId: string;
+  generation: number;
+  /** 40자리 소문자 16진 커밋 SHA */
+  commit: string;
+  /** 64자리 소문자 16진 — 항목 내용(UTF-8)의 SHA-256 */
+  itemSha256: string;
+  /** 검증에 실패하면 이 작업의 근거 재확인·재계획이 필요한 항목인가 */
+  required: boolean;
+}
+
+export interface KnowledgeHandoff {
+  version: 1;
+  refs: KnowledgeRef[];
+}
+
 export interface SlotInput {
   "survey.classify": {
     files: FileRef[];
@@ -96,7 +121,17 @@ export interface SlotInput {
     files: FileRef[];
     limit: number;
   };
-  "context.docs": { requirements: RequirementRef[]; docs: DocRef[]; limit: number };
+  "context.docs": {
+    requirements: RequirementRef[];
+    docs: DocRef[];
+    limit: number;
+    /** 선택 입력 — 어댑터가 describe `accepts` 에 `context.docs.phase` 를 적었을 때만 보낸다 */
+    phase?: ContextDocsPhase;
+    /** 선택 입력(`context.docs.files`) — 이 작업이 닿는 파일(영향 범위 표·후보 순위), 저장소 기준 경로 */
+    files?: string[];
+    /** 선택 입력(`context.docs.refs`) — master 가 인계한 항목 참조 */
+    refs?: KnowledgeRef[];
+  };
   "review.prefilter": {
     baseCommit: string;
     treeHash: string;
@@ -127,6 +162,25 @@ export interface DocSection {
   path: string;
   heading: string;
   why: string;
+  /**
+   * 선택 — 어댑터가 준 출처 참조(`DocSectionRef` 꼴). 스키마는 모양을 보지 않고 통과시키고 호스트(knowledgeRefs.ts)가 섹션마다
+   * 엄격히 검사한다: 항목 하나가 깨졌다고 호출 전체를 버리지 않는다. 이 필드가 있는 섹션은 현재 파일과 내용 해시가 맞아야 쓴다.
+   */
+  ref?: unknown;
+}
+
+/** 인계 참조 하나를 어댑터가 되찾은 결과 */
+export interface PinnedResult {
+  itemId: string;
+  ok: boolean;
+  reason?: string;
+  section?: DocSection;
+}
+
+/** 어댑터가 기본 검색을 요청하는 이유 — 이 필드를 낸 어댑터에만 적용한다(정상 빈 `sections` 의 뜻은 그대로) */
+export interface DocsFallback {
+  code: string;
+  message?: string;
 }
 
 export interface Suspect {
@@ -155,7 +209,15 @@ export interface SlotOutput {
     components?: { name: string; paths: string[]; note?: string }[];
   };
   "candidates.rank": { ranked: RankedFile[] };
-  "context.docs": { sections: DocSection[] };
+  "context.docs": {
+    sections: DocSection[];
+    /** 선택 — 어댑터가 이번 결과를 쓰지 말고 기본 검색을 쓰라고 요청한다(빈 결과·필수 자료만·쓸 항목 없음 등) */
+    fallback?: DocsFallback;
+    /** 선택 — 로그에만 남긴다. 화면(모델 입력)에 찍지 않는다 */
+    diagnostics?: Record<string, unknown>;
+    /** 선택 — 입력 `refs` 의 결과 */
+    pinned?: PinnedResult[];
+  };
   "review.prefilter": { suspects: Suspect[] };
   "code.index": {
     symbols: { name: string; path: string; line: number; kind: string }[];
@@ -165,6 +227,8 @@ export interface SlotOutput {
 }
 
 const PathString = z.string().min(1);
+
+const DocSectionSchema = z.object({ path: PathString, heading: z.string(), why: z.string(), ref: z.unknown().optional() });
 
 export const SLOT_OUTPUT_SCHEMA: { [S in Slot]: z.ZodType<SlotOutput[S]> } = {
   "survey.classify": z.object({
@@ -177,7 +241,14 @@ export const SLOT_OUTPUT_SCHEMA: { [S in Slot]: z.ZodType<SlotOutput[S]> } = {
     ranked: z.array(z.object({ path: PathString, score: z.number().min(0).max(1), why: z.string() })),
   }),
   "context.docs": z.object({
-    sections: z.array(z.object({ path: PathString, heading: z.string(), why: z.string() })),
+    sections: z.array(DocSectionSchema),
+    fallback: z
+      .object({ code: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "fallback.code 는 소문자·숫자·- 64자 이내입니다"), message: z.string().optional() })
+      .optional(),
+    diagnostics: z.record(z.string(), z.unknown()).optional(),
+    pinned: z
+      .array(z.object({ itemId: z.string().min(1), ok: z.boolean(), reason: z.string().optional(), section: DocSectionSchema.optional() }))
+      .optional(),
   }),
   "review.prefilter": z.object({
     suspects: z.array(
@@ -219,6 +290,17 @@ export interface SecretSpec {
   env?: string;
 }
 
+/**
+ * 자리별 **선택 입력** — 어댑터가 describe 의 `accepts` 에 `<자리>.<필드>` 로 적어 등록한 것만 보낸다.
+ * accepts 가 없는 등록에는 선택 입력을 보내지 않는다 — 그 요청은 자리의 필수 입력뿐이다.
+ */
+export const OPTIONAL_INPUTS: Partial<Record<Slot, readonly string[]>> = {
+  "context.docs": ["phase", "files", "refs"],
+};
+
+/** 알려진 협의 토큰 전부 — 등록이 이 밖의 토큰은 버린다 */
+export const KNOWN_ACCEPTS: readonly string[] = Object.entries(OPTIONAL_INPUTS).flatMap(([slot, fields]) => (fields ?? []).map((field) => `${slot}.${field}`));
+
 export interface DescribeOutput {
   name: string;
   adapterVersion: string;
@@ -226,6 +308,8 @@ export interface DescribeOutput {
   sendsCode: boolean;
   secret?: SecretSpec;
   note?: string;
+  /** 받겠다는 선택 입력(`OPTIONAL_INPUTS`) — `"context.docs.phase"` 꼴 */
+  accepts?: string[];
 }
 
 export const DESCRIBE_SCHEMA: z.ZodType<DescribeOutput> = z
@@ -242,6 +326,8 @@ export const DESCRIBE_SCHEMA: z.ZodType<DescribeOutput> = z
       })
       .optional(),
     note: z.string().optional(),
+    // 모양만 넓게 받는다 — 이 릴리스가 모르는 토큰(다음 버전의 선택 입력)은 등록이 KNOWN_ACCEPTS 로 걸러 버린다(plugin add)
+    accepts: z.array(z.string().min(1).max(128)).max(256).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.secret?.delivery === "env" && !value.secret.env) {
@@ -289,7 +375,7 @@ export const SLOT_NOTES: Record<Slot, { where: string; fallback: string }> = {
 export const SLOT_SENDS: Record<Slot, string> = {
   "survey.classify": "소스 파일 경로 목록 · 계층 후보",
   "candidates.rank": "요구 항목 문장 · 키워드 · 소스 파일 경로 목록",
-  "context.docs": "요구 항목 문장 · 등록된 문서의 경로와 제목",
+  "context.docs": "요구 항목 문장 · 등록된 문서의 경로와 제목 (어댑터가 받겠다고 한 경우만: 단계 · 작업 파일 경로 · master 인계 근거 참조)",
   "review.prefilter": "기준 커밋 · 트리 해시 · 계획 파일 경로 · 컨벤션 규칙 문장",
   "code.index": "(예약 — 부르지 않으므로 아무것도 나가지 않는다)",
   "verify.extra": "기준 커밋 · 트리 해시 · 계획 파일 경로 · 바뀐 파일 경로",
